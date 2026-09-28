@@ -1,0 +1,41 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type DateRangeRuleProps = {
+  limit_range?: boolean;
+  min?: string;
+  max?: string;
+  range_message?: string;
+};
+
+export function DateRangeRule({
+  limit_range = false,
+  min = "",
+  max = "",
+  range_message = "",
+}: DateRangeRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_range"
+      name="limit_range"
+      checked={limit_range}
+      label="Accept only a specified date range"
+      description="Specify the earliest and/or latest allowed date for this field"
+    >
+      <div class="flex flex-wrap items-center gap-3">
+        <Input id="min" name="min" type="date" value={min} classes="w-44" />
+        <Text as="span" variant="body-md">
+          to
+        </Text>
+        <Input id="max" name="max" type="date" value={max} classes="w-44" />
+      </div>
+      <Field>
+        <FieldLabel htmlFor="range_message">Custom error message</FieldLabel>
+        <Input id="range_message" name="range_message" value={range_message} maxLength={255} />
+      </Field>
+    </CheckboxField>
+  );
+}

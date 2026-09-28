@@ -1,0 +1,101 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type ImageDimensionsRuleProps = {
+  min?: string;
+  limit_dimensions?: boolean;
+  width_min?: string;
+  width_max?: string;
+  height_min?: string;
+  height_max?: string;
+  dimensions_message?: string;
+};
+
+export function ImageDimensionsRule({
+  min = "",
+  limit_dimensions = false,
+  width_min = "",
+  width_max = "",
+  height_min = "",
+  height_max = "",
+  dimensions_message = "",
+}: ImageDimensionsRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_dimensions"
+      name="limit_dimensions"
+      checked={limit_dimensions}
+      label="Accept only specified image dimensions"
+      description="Specify a minimum and/or maximum allowed width and height, in pixels"
+    >
+      <div class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-3">
+        <FieldLabel htmlFor="width_min">Width</FieldLabel>
+        <div class="flex flex-wrap items-center gap-3">
+          <Input
+            id="width_min"
+            name="width_min"
+            type="number"
+            min="0"
+            value={width_min}
+            placeholder="Min"
+            classes="w-32"
+          />
+          <Text as="span" variant="body-md">
+            to
+          </Text>
+          <Input
+            id="width_max"
+            name="width_max"
+            type="number"
+            min="0"
+            value={width_max}
+            placeholder="Max"
+            classes="w-32"
+          />
+          <Text as="span" variant="body-md" tone="muted">
+            px
+          </Text>
+        </div>
+        <FieldLabel htmlFor="height_min">Height</FieldLabel>
+        <div class="flex flex-wrap items-center gap-3">
+          <Input
+            id="height_min"
+            name="height_min"
+            type="number"
+            min="0"
+            value={height_min}
+            placeholder="Min"
+            classes="w-32"
+          />
+          <Text as="span" variant="body-md">
+            to
+          </Text>
+          <Input
+            id="height_max"
+            name="height_max"
+            type="number"
+            min="0"
+            value={height_max}
+            placeholder="Max"
+            classes="w-32"
+          />
+          <Text as="span" variant="body-md" tone="muted">
+            px
+          </Text>
+        </div>
+      </div>
+      <Field>
+        <FieldLabel htmlFor="dimensions_message">Custom error message</FieldLabel>
+        <Input
+          id="dimensions_message"
+          name="dimensions_message"
+          value={dimensions_message}
+          maxLength={255}
+        />
+      </Field>
+    </CheckboxField>
+  );
+}

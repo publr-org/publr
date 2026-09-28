@@ -1,0 +1,17 @@
+import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
+
+export type EditorAsideSectionProps = {
+  /** The section's heading; the actions at the top of the aside have none. */
+  title?: string;
+  children?: JSX.Element;
+};
+
+/** One group in the editor's aside: an optional title row, then its rows stacked. */
+export function EditorAsideSection({ title, children }: EditorAsideSectionProps) {
+  return (
+    <section>
+      {title && <SectionTitle title={title} />}
+      <div class="flex flex-col gap-3 px-5 py-4">{children}</div>
+    </section>
+  );
+}

@@ -1,0 +1,113 @@
+import { Publr } from "publr-jsx";
+export const state = Publr.reactive({});
+import { Button } from "@publr/ui/Button.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { RuleRow } from "./RuleRow.ptsx";
+export type RuleBuilderProps = {
+  prefix: string;
+  rows: Array<{ group_index: number; index: number; field: string; operator: string;
+    value: string; first: boolean; last: boolean }>;
+  subjects: Array<{ value: string; label: string; choices: string }>;
+  location?: boolean;
+};
+const refresh = (root: HTMLElement) => {
+  const rows = Array.from(root.querySelectorAll<HTMLElement>("[data-rule]"));
+  const groups = [...new Set(rows.map((row) => row.dataset.ruleGroup))];
+  for (const [group_index, group] of groups.entries()) {
+    const members = rows.filter((row) => row.dataset.ruleGroup === group);
+    for (const [index, row] of members.entries()) {
+      row.dataset.ruleGroup = String(group_index);
+      row.dataset.rule = String(index);
+      for (const input of row.querySelectorAll<HTMLInputElement>("[name]")) {
+        if (input.name.startsWith("rules-")) continue;
+        input.name = `${root.dataset.prefix}.${group_index}.${index}.${input.name.split(".").pop()}`;
+      }
+      row.querySelector<HTMLElement>("[data-first]")!.hidden = index !== 0;
+      row.querySelector<HTMLElement>("[data-or]")!.hidden = group_index === 0;
+      row.querySelector<HTMLElement>("[data-show]")!.hidden = group_index !== 0;
+      row.querySelector<HTMLElement>("[data-and]")!.hidden = index === 0;
+      row.querySelector<HTMLElement>("[data-last]")!.hidden = index !== members.length - 1;
+      row.querySelector<HTMLButtonElement>('[name="rules-add"]')!.disabled = members.length >= 8;
+    }
+  }
+  root.querySelector<HTMLElement>("[data-empty]")!.hidden = rows.length > 0;
+  root.querySelector<HTMLButtonElement>('[name="rules-group"]')!.disabled = groups.length >= 8;
+};
+const valuePicker = (field: HTMLSelectElement) => {
+  const row = field.closest("[data-rule]");
+  const previous = row?.querySelector<HTMLInputElement | HTMLSelectElement>('[name$=".value"]');
+  if (!previous) return;
+  const choices = JSON.parse(field.selectedOptions[0]?.dataset.choices ?? "[]") as Array<{ value: string; label: string }>;
+  if (choices.length === 0) {
+    if (previous.tagName === "INPUT") return;
+    const template = field.closest("[data-prefix]")?.querySelector<HTMLTemplateElement>("template");
+    const input = template?.content.querySelector<HTMLInputElement>('input[name$=".value"]')?.cloneNode(true) as HTMLInputElement;
+    if (!input) return;
+    input.name = previous.name; input.value = previous.value;
+    previous.replaceWith(input);
+    return;
+  }
+  const select = field.cloneNode(false) as HTMLSelectElement;
+  select.name = previous.name; select.setAttribute("aria-label", "Value");
+  for (const choice of choices) select.add(new Option(choice.label, choice.value));
+  if (previous.value && !choices.some((choice) => choice.value === previous.value))
+    select.add(new Option(previous.value, previous.value));
+  if (previous.value) select.value = previous.value;
+  previous.replaceWith(select);
+};
+export const root_ref = Publr.ref<HTMLElement>((root) => {
+  for (const field of root.querySelectorAll<HTMLSelectElement>('select[name$=".field"]')) valuePicker(field);
+});
+export const changed = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  if (input.name?.endsWith(".field")) valuePicker(input as unknown as HTMLSelectElement);
+  if (!input.name?.endsWith(".operator")) return;
+  const row = input.closest("[data-rule]");
+  const value = row?.querySelector<HTMLInputElement>('[name$=".value"]');
+  if (value) value.hidden = input.value === "empty" || input.value === "not_empty";
+};
+export const action = (event: MouseEvent) => {
+  const root = event.currentTarget as HTMLElement;
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[name]");
+  if (!button || !button.name.startsWith("rules-")) return;
+  event.preventDefault();
+  const row = button.closest<HTMLElement>("[data-rule]");
+  const rows = Array.from(root.querySelectorAll<HTMLElement>("[data-rule]"));
+  if (button.name === "rules-remove") row?.remove();
+  else {
+    const groups = [...new Set(rows.map((row) => row.dataset.ruleGroup))];
+    const group = button.name === "rules-group" ? String(groups.length) : row?.dataset.ruleGroup;
+    if (group === undefined || (button.name === "rules-group" && groups.length >= 8)) return;
+    const members = rows.filter((row) => row.dataset.ruleGroup === group);
+    if (members.length >= 8) return;
+    const template = root.querySelector<HTMLTemplateElement>("template")!;
+    const clone = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+    clone.dataset.ruleGroup = group;
+    if (members.length > 0) members[members.length - 1].after(clone);
+    else root.querySelector("[data-rows]")!.append(clone);
+  }
+  refresh(root);
+  for (const field of root.querySelectorAll<HTMLSelectElement>('select[name$=".field"]')) valuePicker(field);
+  root.closest("form")?.dispatchEvent(new Event("input", { bubbles: true }));
+};
+export function RuleBuilder({ prefix, rows, subjects, location = false }: RuleBuilderProps) {
+  return (
+    <div class="flex flex-col gap-4" data-prefix={prefix} ref={root_ref} onChange={changed} onClick={action}>
+      <input type="hidden" name={`${prefix}_present`} value="1" />
+      <div data-empty hidden={rows.length > 0}><Text variant="body-sm" tone="muted">Always shown at this destination.</Text></div>
+      <div data-rows class="flex flex-col gap-4">
+        {rows.map((row) => (
+          <RuleRow prefix={prefix} group_index={row.group_index} index={row.index}
+            field={row.field} operator={row.operator} value={row.value} first={row.first} last={row.last}
+            subjects={subjects} location={location} />
+        ))}
+      </div>
+      <template>
+        <RuleRow prefix={prefix} group_index={0} index={0} field="" operator="equal" value=""
+          first last subjects={subjects} location={location} />
+      </template>
+      <div><Button type="button" hierarchy="secondary" name="rules-group"
+        disabled={subjects.length === 0}>Add rule group</Button></div>
+    </div>
+  );
+}

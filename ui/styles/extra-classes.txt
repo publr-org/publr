@@ -1,0 +1,9 @@
+hidden
+shrink-0
+animate-spin
+opacity-70
+pl-4
+pl-8
+pl-12
+pl-16
+pl-20

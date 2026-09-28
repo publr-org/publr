@@ -1,0 +1,247 @@
+import { Publr } from "publr-jsx";
+import { awaited, mutation } from "publr";
+import { httpOperation } from "publr/transport";
+import { invalidate } from "publr/query";
+import { FormPreview } from "./FormPreview.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import type { StructureLevel } from "./Navigation.ptsx";
+
+export const state = Publr.reactive({
+  floor: "", list_html: null as string | null, initial_html: null as string | null,
+  refresh: 0, busy: false, error: "", refresh_error: false,
+});
+const navigation = Publr.stores.navigation;
+const stack = navigation.structure as StructureLevel[];
+let sequence = 0;
+let disposed = false;
+const panels = new Map<number, HTMLElement>();
+const requests = new Map<number, { refresh: () => void }>();
+export const floor_ref = Publr.ref<HTMLElement>();
+export const root_ref = Publr.ref<HTMLElement>(() => {
+  const unbind = navigation.bindStructure({ to: came_back_to });
+  return () => { disposed = true; unbind(); };
+});
+
+const top = () => stack[stack.length - 1];
+const is_ours = (url: URL) => url.origin === location.origin &&
+  (url.pathname === state.floor || (url.pathname.startsWith(`${state.floor}/fields/`) &&
+    !url.pathname.slice(`${state.floor}/fields/`.length).includes("/")));
+const address = (url: URL) => url.pathname + url.search;
+const settle = (push: boolean) => {
+  const href = top()?.url ?? state.floor;
+  if (push && href !== location.pathname + location.search) history.pushState(null, "", href);
+};
+const pop_to = (depth: number) => {
+  const opener = stack[depth]?.opener;
+  stack.splice(depth);
+  if (opener?.isConnected) opener.focus();
+  else (panels.get(top()?.id) ?? floor_ref.current)?.focus({ preventScroll: true });
+};
+const came_back_to = (depth: number) => {
+  if (depth === 0 && state.floor.startsWith("/admin/custom-fields/")) {
+    location.assign(state.floor); return;
+  }
+  pop_to(Math.max(0, Math.min(depth, stack.length)));
+  settle(true);
+};
+const add_level = (url: string, html: string | null, title: string, opener: HTMLElement | null) => {
+  const id = ++sequence;
+  stack.push({
+    id, url, html: html ?? "", title, opener, below: top()?.title ?? "", requested: html === null,
+    loading: html === null, error: "", panel: null,
+    style: `left:${(stack.length + 1) * 2.5}rem`,
+    get inactive() { return top()?.id !== id; },
+  });
+};
+export const initial_ref = Publr.ref<HTMLElement>((element) => {
+  add_level(element.dataset.url ?? "", element.innerHTML, element.dataset.title ?? "Field", null);
+  state.initial_html = "";
+});
+
+// Each row owns its request; removing a level also disposes its awaited result.
+export const panel_ref = Publr.ref<HTMLElement>((element) => {
+  const id = Number(element.dataset.level);
+  const level = stack.find(entry => entry.id === id);
+  if (!level) return;
+  panels.set(id, element);
+  level.panel = element;
+  const result = awaited(() => {
+    const url = level.url;
+    if (!level.requested) return { html: level.html, title: level.title };
+    return httpOperation<{ html: string; title: string }>(url, {
+      headers: { "Publr-Fragment": "panel", "Publr-Below": level.below, Accept: "application/json" },
+    })();
+  });
+  requests.set(id, result);
+  Publr.effect(() => {
+    const pending = result.isPending;
+    const error = result.isError;
+    const value = result.value;
+    Publr.untrack(() => {
+      if (disposed || !stack.includes(level)) return;
+      level.loading = pending;
+      level.error = error ? "Could not open this field. Try again." : "";
+      if (!pending && !error && value) {
+        level.html = value.html;
+        level.title = value.title;
+        if (top() === level) element.focus({ preventScroll: true });
+      }
+    });
+  });
+  return () => { panels.delete(id); requests.delete(id); };
+});
+
+const columns = awaited(() => {
+  if (!state.refresh || !state.floor) return null;
+  return httpOperation<{ list: string; preview: string }>(state.floor, {
+    headers: { "Publr-Fragment": "columns", Accept: "application/json" },
+  })();
+}, { key: () => ["structure", state.floor], cache: { ttl: 15000, tags: ["structure"] } });
+Publr.effect(() => {
+  const value = columns.value;
+  if (columns.isPending || !value) return;
+  state.list_html = value.list;
+  navigation.previewHtml = value.preview;
+});
+
+const go = (href: string, push: boolean, replace = false, opener: HTMLElement | null = null) => {
+  const url = new URL(href, location.href);
+  if (!is_ours(url)) { location.assign(url.toString()); return; }
+  const wanted = address(url);
+  const index = stack.findIndex(level => level.url === wanted);
+  if (wanted === state.floor) pop_to(0);
+  else if (index >= 0) pop_to(index + 1);
+  else if (replace && top()) {
+    const level = top();
+    level.requested = true;
+    level.url = wanted;
+  } else add_level(wanted, null, "Loading…", opener);
+  settle(push);
+};
+export const onNavigate = (event: Event) => {
+  if ((event.currentTarget as HTMLElement).closest('[data-standalone="true"]')) return;
+  const link = event.currentTarget;
+  if (!(link instanceof HTMLAnchorElement) || !(event instanceof MouseEvent) ||
+      event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey ||
+      event.shiftKey || event.altKey || link.hasAttribute("download") ||
+      (link.target && link.target !== "_self")) return;
+  if (!is_ours(new URL(link.href))) return;
+  event.preventDefault();
+  go(link.href, true, link.dataset.level === "replace", link);
+};
+export const onBack = (event: Event) => {
+  if ((event.currentTarget as HTMLElement).closest('[data-standalone="true"]')) return;
+  if (event.defaultPrevented) return;
+  const link = event.currentTarget;
+  event.preventDefault();
+  if (link instanceof HTMLAnchorElement && link.href.includes("/fields/new")) go(link.href, true, true);
+  else came_back_to(Math.max(0, stack.length - 1));
+};
+export const retryLevel = (event: Event) => {
+  const id = Number((event.currentTarget as HTMLElement).dataset.level);
+  const level = stack.find(entry => entry.id === id);
+  if (level) { level.requested = true; requests.get(id)?.refresh(); }
+};
+
+const write = mutation(async (form: HTMLFormElement, params: URLSearchParams) => {
+  const origin = top();
+  const response = await fetch(form.action, {
+    method: "POST", credentials: "same-origin", body: params.toString(),
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "Publr-Fragment": "panel", Accept: "application/json" },
+  });
+  if (disposed) return;
+  if (!response.ok || response.redirected) throw new Error("Could not save the field. Try again.");
+  const next = response.headers.get("Publr-Location");
+  if (!next) {
+    const answer = await response.json() as { html: string; title: string };
+    if (origin && stack.includes(origin)) { origin.html = answer.html; origin.title = answer.title; }
+    return;
+  }
+  invalidate("structure");
+  state.refresh++;
+  if (top() !== origin) return;
+  const wanted = address(new URL(next, location.href));
+  if (wanted === state.floor && state.floor.startsWith("/admin/custom-fields/")) {
+    location.assign(state.floor); return;
+  }
+  const index = stack.findIndex(level => level.url === wanted);
+  if (wanted === state.floor) pop_to(0);
+  else if (index >= 0) {
+    pop_to(index + 1);
+    stack[index].requested = true;
+    requests.get(stack[index].id)?.refresh();
+  } else go(wanted, false, true);
+  settle(true);
+});
+Publr.effect(() => {
+  state.busy = write.isPending;
+  state.refresh_error = columns.isError;
+  state.error = write.isError ? (write.error as Error).message : columns.isError ? "Could not refresh the fields." : "";
+});
+export const retryColumns = () => columns.refresh();
+export const submitted = (event: Event) => {
+  if ((event.currentTarget as HTMLElement).closest('[data-standalone="true"]')) return;
+  const form = event.currentTarget;
+  if (!(form instanceof HTMLFormElement) || event.defaultPrevented ||
+      !new URL(form.action).pathname.startsWith(`${state.floor}/fields/`)) return;
+  event.preventDefault();
+  const params = new URLSearchParams();
+  for (const [name, value] of new FormData(form)) if (typeof value === "string") params.append(name, value);
+  const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
+  if (submitter?.name) params.set(submitter.name, submitter.value);
+  void write(form, params);
+};
+export const pressed = (event: Event) => {
+  if (event instanceof KeyboardEvent && event.key === "Escape" && !event.defaultPrevented && stack.length) onBack(event);
+};
+export const went_back = () => go(location.href, false);
+
+export type TypeColumnsProps = {
+  type_href: string;
+  list: JSX.Element;
+  levels?: JSX.Element;
+  open: boolean;
+  preview: JSX.Element;
+};
+
+export function TypeColumns({ type_href, list, levels, open, preview }: TypeColumnsProps) {
+  state.floor = type_href;
+  return (
+    <div class="flex min-h-0 grow items-stretch" data-part="type-columns" ref={root_ref}
+      onDocumentKeyDown={pressed} onWindowPopState={went_back} aria-busy={state.busy}>
+      <div class="relative min-w-0 flex-1 lg:w-1/2 lg:flex-none" data-part="type-left" data-type-href={type_href} inert={state.busy}>
+        <div class="h-full overflow-y-auto outline-none" inert={Publr.stores.navigation.structure.length > 0}
+          data-part="type-list" ref={floor_ref} tabindex={-1} innerHTML={state.list_html}>{list}</div>
+        <div innerHTML={state.initial_html}>{levels}</div>
+        <div data-part="type-levels">
+          {Publr.stores.navigation.structure.map((level) => (
+            <div key={level.id} class="contents" data-part="type-level" data-url={level.url}>
+              <a href={type_href} aria-label="Back" class="absolute inset-0 bg-black/50"
+                data-part="type-scrim" onClick={onBack}></a>
+              <div ref={panel_ref} data-level={level.id} data-part="type-panel" style={level.style}
+                class="drawer-enter absolute inset-y-0 right-0 overflow-y-auto border-l border-border bg-card shadow-2xl outline-none"
+                inert={level.inactive} focusScope={!level.inactive} tabindex={-1} aria-busy={level.loading}>
+                <div class="px-8 py-4" hidden={!level.loading} role="status">
+                  <Text variant="body-sm" tone="muted">Loading field…</Text>
+                </div>
+                <div class="px-8 py-4" hidden={!level.error} role="alert">
+                  <Text variant="body-sm">{level.error}</Text>
+                  <Button onClick={retryLevel} data-level={level.id} hierarchy="secondary">Retry</Button>
+                </div>
+                <div class="flex min-h-full flex-col" data-part="type-panel-body" innerHTML={level.html}></div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div class="absolute inset-x-0 bottom-0 px-8 py-4" hidden={!state.error} role="alert">
+          <Text variant="body-sm">{state.error}</Text>
+          <Button onClick={retryColumns} hidden={!state.refresh_error} hierarchy="secondary">Retry refresh</Button>
+        </div>
+      </div>
+      <div class="relative z-10 hidden min-w-0 border-l border-border bg-card lg:flex lg:w-1/2 lg:flex-col">
+        <FormPreview note="" editor={preview} />
+      </div>
+    </div>
+  );
+}

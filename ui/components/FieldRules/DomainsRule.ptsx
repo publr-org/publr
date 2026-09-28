@@ -1,0 +1,33 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+export type DomainsRuleProps = {
+  limit_domains?: boolean;
+  domains?: string;
+  domain_message?: string;
+};
+
+export function DomainsRule({
+  limit_domains = false,
+  domains = "",
+  domain_message = "",
+}: DomainsRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_domains"
+      name="limit_domains"
+      checked={limit_domains}
+      label="Accept only specified domains"
+      description="Only addresses at these domains, one per line"
+    >
+      <Textarea id="domains" name="domains" value={domains} rows={4} placeholder={"company.com"} />
+      <Field>
+        <FieldLabel htmlFor="domain_message">Custom error message</FieldLabel>
+        <Input id="domain_message" name="domain_message" value={domain_message} maxLength={255} />
+      </Field>
+    </CheckboxField>
+  );
+}

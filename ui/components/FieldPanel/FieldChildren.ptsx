@@ -1,0 +1,149 @@
+import { onNavigate, submitted } from "../TypeColumns.ptsx";
+import type { IconName } from "@publr/ui/Icon.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyContent } from "@publr/ui/EmptyContent.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type FieldChildrenProps = {
+  add_child_href: string;
+  children: Array<{
+    path: string;
+    label: string;
+    icon: IconName;
+    summary: string;
+    required: boolean;
+    locked: boolean;
+    edit_href: string;
+    move_action: string;
+    delete_action: string;
+  }>;
+  kind: string;
+  csrf: string;
+};
+
+export function FieldChildren({ add_child_href, children, kind, csrf }: FieldChildrenProps) {
+  return (
+    <section class="mt-10 border-t border-border pt-6">
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <Heading level={2} size="md">
+          Fields inside
+        </Heading>
+        <Button onClick={onNavigate} href={add_child_href} hierarchy="secondary" size="sm">
+          <Icon name="plus" size="sm" />
+          <span>Add a field inside</span>
+        </Button>
+      </div>
+      {children.length === 0 ? (
+        <div class="mt-4">
+          <Empty>
+            <EmptyTitle>Nothing inside yet</EmptyTitle>
+            <EmptyDescription>
+              {kind === "repeater"
+                ? "Each item repeats the fields you add here."
+                : "The group holds the fields you add here."}
+            </EmptyDescription>
+            <EmptyContent>
+              <Button onClick={onNavigate} href={add_child_href}>
+                <Icon name="plus" size="sm" />
+                <span>Add the first field</span>
+              </Button>
+            </EmptyContent>
+          </Empty>
+        </div>
+      ) : (
+        <div class="-mx-8 mt-4 border-t border-border">
+          <Table>
+            <TableBody>
+              {children.map((row) => (
+                <TableRow>
+                  <TableCell>
+                    <span class="inline-flex items-center gap-3">
+                      <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
+                        <Icon name={row.icon} size="sm" />
+                      </span>
+                      {row.locked ? (
+                        <Text as="span" variant="heading-xs">
+                          {row.label}
+                        </Text>
+                      ) : (
+                        <Link onClick={onNavigate} href={row.edit_href} variant="heading-xs" tone="default">
+                          {row.label}
+                        </Link>
+                      )}
+                      {row.required && (
+                        <Text as="span" variant="heading-xs" tone="error">
+                          *
+                        </Text>
+                      )}
+                      <Text as="span" variant="body-md" tone="muted">
+                        {row.summary}
+                      </Text>
+                    </span>
+                  </TableCell>
+                  <TableCell align="right">
+                    {row.locked ? (
+                      <Text as="span" variant="body-sm" tone="muted">
+                        locked
+                      </Text>
+                    ) : (
+                      <span class="inline-flex items-center justify-end gap-1">
+                        <form onSubmit={submitted}
+                          method="post"
+                          action={row.move_action}
+                          class="inline-flex items-center gap-1"
+                        >
+                          <input type="hidden" name="csrf" value={csrf} />
+                          <Button
+                            type="submit"
+                            name="direction"
+                            value="up"
+                            hierarchy="tertiary"
+                            size="sm"
+                            label="Move up"
+                            title="Move up"
+                          >
+                            <Icon name="chevron-up" size="sm" />
+                          </Button>
+                          <Button
+                            type="submit"
+                            name="direction"
+                            value="down"
+                            hierarchy="tertiary"
+                            size="sm"
+                            label="Move down"
+                            title="Move down"
+                          >
+                            <Icon name="chevron-down" size="sm" />
+                          </Button>
+                        </form>
+                        <Button onClick={onNavigate}
+                          href={row.edit_href}
+                          hierarchy="tertiary"
+                          size="sm"
+                          label="Edit"
+                          title="Edit"
+                        >
+                          <Icon name="edit" size="sm" />
+                        </Button>
+                      </span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </section>
+  );
+}

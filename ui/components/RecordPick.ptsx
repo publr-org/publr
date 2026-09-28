@@ -1,0 +1,132 @@
+import { Publr } from "publr-jsx";
+import { onBack, onClose, onPick, submitted } from "./ReferenceDrawer.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export const state = Publr.reactive({ title: "" });
+export const root_ref = Publr.ref<HTMLElement>();
+Publr.effect(() => {
+  const title = state.title;
+  Publr.stores.navigation.rename(root_ref.current, title);
+});
+
+/** The drawer's picker: the target type's records, searched, each with a Link button that
+ * hands its id back to the editor that opened the drawer. Back and Close sit beside the
+ * title, as in an editor drawn for the drawer. The search form is a GET the drawer
+ * fetches and draws again in place. */
+export type RecordPickProps = {
+  type: string;
+  type_name: string;
+  /** The field the picked record goes into, carried back with the pick. */
+  field: string;
+  search: string;
+  /** Only live records are offered: the field takes nothing else. */
+  live: boolean;
+  rows: Array<{ id: string; title: string; status: string; published: boolean }>;
+};
+
+export function RecordPick({ type, type_name, field, search, live, rows }: RecordPickProps) {
+  state.title = `Link a ${type_name}`;
+  return (
+    <div class="flex flex-col" data-part="record-pick" ref={root_ref}>
+      <div class="px-8 py-7">
+        <div class="flex items-center gap-4">
+          <Button
+            type="button"
+            hierarchy="secondary"
+            size="md"
+            label="Back"
+            title="Back"
+            data-part="drawer-back"
+            onClick={onBack}
+          >
+            <Icon name="arrow-left" size="sm" />
+          </Button>
+          <PageHeader title={`Link a ${type_name}`} classes="min-w-0 flex-1">
+            <Button
+              type="button"
+              hierarchy="tertiary"
+              size="sm"
+              label="Close"
+              title="Close"
+              data-part="drawer-close"
+              onClick={onClose}
+            >
+              <Icon name="x-close" size="sm" />
+            </Button>
+          </PageHeader>
+        </div>
+        <form
+          method="get"
+          action="/admin/content/pick"
+          class="mt-5 flex items-center gap-2"
+          data-part="pick-search"
+          onSubmit={submitted}
+        >
+          {live && <input type="hidden" name="live" value="1" />}
+          <input type="hidden" name="type" value={type} />
+          <input type="hidden" name="field" value={field} />
+          <Input type="search" name="q" value={search} placeholder="Search" classes="w-80" />
+          <Button type="submit" hierarchy="secondary">
+            Search
+          </Button>
+        </form>
+      </div>
+      {rows.length === 0 ? (
+        <div class="mx-8">
+          <Empty>
+            <EmptyTitle>Nothing to link</EmptyTitle>
+            <EmptyDescription>No {type_name} records match.</EmptyDescription>
+          </Empty>
+        </div>
+      ) : (
+        <div class="border-t border-border">
+          <Table>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow>
+                  <TableCell>
+                    <Text as="span" variant="heading-xs">
+                      {row.title}
+                    </Text>
+                  </TableCell>
+                  <TableCell>
+                    {row.published ? (
+                      <Status tone="success">{row.status}</Status>
+                    ) : (
+                      <Status tone="neutral">{row.status}</Status>
+                    )}
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button
+                      type="button"
+                      hierarchy="secondary"
+                      size="sm"
+                      data-link-id={row.id}
+                      onClick={onPick}
+                      data-field={field}
+                    >
+                      <Icon name="link" size="sm" />
+                      <span>Link</span>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}

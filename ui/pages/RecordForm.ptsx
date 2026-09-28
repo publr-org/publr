@@ -1,0 +1,42 @@
+import { Editor } from "../layouts/Editor.ptsx";
+import { ReferenceDrawer } from "../components/ReferenceDrawer.ptsx";
+
+/** One record, new or existing: the editor fragment (RecordEditor, rendered by the
+ * adapter and handed over as a node) inside the editor shell. */
+export type RecordFormProps = {
+  user_name: string;
+  user_email: string;
+  csrf: string;
+  title: string;
+  /** "content" for a record, "types" for a term. */
+  section: string;
+  crumb_label: string;
+  crumb_href: string;
+  editor: JSX.Element;
+};
+
+export function RecordForm({
+  user_name,
+  user_email,
+  csrf,
+  title,
+  section,
+  crumb_label,
+  crumb_href,
+  editor,
+}: RecordFormProps) {
+  return (
+    <Editor
+      title={title}
+      section={section}
+      crumb_label={crumb_label}
+      crumb_href={crumb_href}
+      user_name={user_name}
+      user_email={user_email}
+      csrf={csrf}
+    >
+      {editor}
+      <ReferenceDrawer />
+    </Editor>
+  );
+}

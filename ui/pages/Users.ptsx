@@ -1,0 +1,74 @@
+import { Layout } from "../layouts/Layout.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+
+export type UsersProps = {
+  user_name: string;
+  user_email: string;
+  csrf: string;
+  nav: JSX.Element;
+  users: Array<{
+    href: string;
+    name: string;
+    email: string;
+    role: string;
+    /** Signed in at least once; an invited account is inactive until its link is used. */
+    active: boolean;
+    /** The signed-in user's own row. */
+    me: boolean;
+  }>;
+};
+
+/** Every account, oldest first, and a way to add one. */
+export function Users({ user_name, user_email, csrf, nav, users }: UsersProps) {
+  return (
+    <Layout title="Users" section="settings" sidebar={nav}
+      user_name={user_name} user_email={user_email} csrf={csrf}>
+      <div class="px-8 pt-7 pb-6">
+        <PageHeader title="Users" description="Who may sign in, and what they may do.">
+          <Button href="/admin/settings/users/new">Add user</Button>
+        </PageHeader>
+      </div>
+      <div class="border-t border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((user) => (
+              <TableRow>
+                <TableCell>
+                  <Link href={user.href}>{user.name}</Link>
+                  {user.me && <Text as="span" variant="body-sm" tone="muted"> (you)</Text>}
+                </TableCell>
+                <TableCell>{user.email}</TableCell>
+                <TableCell>{user.role}</TableCell>
+                <TableCell>
+                  {user.active ? (
+                    <Status tone="success">Active</Status>
+                  ) : (
+                    <Status tone="warning">Invited</Status>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </Layout>
+  );
+}

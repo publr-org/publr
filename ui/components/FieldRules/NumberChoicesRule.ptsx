@@ -1,0 +1,44 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+export type NumberChoicesRuleProps = {
+  limit_choices?: boolean;
+  number_choices?: string;
+  choices_message?: string;
+};
+
+export function NumberChoicesRule({
+  limit_choices = false,
+  number_choices = "",
+  choices_message = "",
+}: NumberChoicesRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_choices"
+      name="limit_choices"
+      checked={limit_choices}
+      label="Accept only listed values"
+      description="The field becomes a choice among these numbers"
+    >
+      <Textarea
+        id="number_choices"
+        name="number_choices"
+        value={number_choices}
+        rows={4}
+        placeholder={"1\n2\n5"}
+      />
+      <Field>
+        <FieldLabel htmlFor="choices_message">Custom error message</FieldLabel>
+        <Input
+          id="choices_message"
+          name="choices_message"
+          value={choices_message}
+          maxLength={255}
+        />
+      </Field>
+    </CheckboxField>
+  );
+}

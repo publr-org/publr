@@ -1,0 +1,216 @@
+import { Navigation } from "../components/Navigation.ptsx";
+import { IconSprite } from "../components/IconSprite.ptsx";
+import { Mark } from "../components/Mark.ptsx";
+import { Crumbs } from "../components/Crumbs.ptsx";
+import { Avatar } from "@publr/ui/Avatar.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type LayoutProps = {
+  title: string;
+  /** Which section the page belongs to: "dashboard", "content" or "types". */
+  section: string;
+  /** The page's parent inside its section, shown in the breadcrumb before the title. */
+  crumb_label?: string;
+  crumb_href?: string;
+  /** The signed-in user; absent on the setup and login pages, which get no chrome. */
+  user_name?: string;
+  user_email?: string;
+  csrf?: string;
+  /** The section's own sidebar (the views of the content, from ContentNav); absent on pages
+   * whose section has no second level: the overview and the content types. */
+  sidebar?: JSX.Element;
+  children?: JSX.Element;
+};
+
+/** The admin chrome, two levels deep like the other Publr tools: a dark icon rail (the
+ * mark, one icon per section; at the bottom the signed-in user, whose menu signs out,
+ * and the settings), the
+ * section's own light sidebar when it has a second level (the views of the content
+ * under Content, headed by the section's name), and the sheet, which opens with a
+ * breadcrumb bar. The pages
+ * that edit one thing use the Editor layout on top of this one: no section sidebar, the
+ * form centred at a capped width, the actions in an aside. Pages own their title band
+ * (PageHeader) and lists draw edge to edge. The chrome owns shared navigation state so
+ * breadcrumbs follow the active editor stack. Every action on every page is a
+ * form; the one script is the client half of the few components that keep state in the
+ * browser (a handle following a name as it is typed). */
+export function Layout({
+  title,
+  section,
+  crumb_label,
+  crumb_href,
+  user_name,
+  user_email,
+  csrf,
+  sidebar,
+  children,
+}: LayoutProps) {
+  return (
+    <html lang="en" class="h-full bg-background">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{title} · Publr</title>
+        <link rel="stylesheet" href="/admin/styles.css" />
+        <script type="module" src="/admin/stores.js"></script>
+      </head>
+      <body class="min-h-screen bg-background text-foreground antialiased">
+        <Navigation>
+          <IconSprite />
+          {user_email ? (
+            <div class="flex h-dvh overflow-hidden">
+              <div class="flex w-14 shrink-0 flex-col items-center bg-rail text-rail-foreground">
+                <a
+                  href="/admin"
+                  aria-label="Publr"
+                  class="flex h-14 w-full items-center justify-center text-rail-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-rail-foreground"
+                >
+                  <Mark classes="size-6" />
+                </a>
+                <nav aria-label="Sections" class="flex flex-col items-center gap-1 pt-1">
+                  <a
+                    href="/admin"
+                    aria-label="Overview"
+                    title="Overview"
+                    aria-current={section === "dashboard" ? "page" : undefined}
+                    class={[
+                      "inline-flex size-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground",
+                      section === "dashboard"
+                        ? "bg-rail-accent text-rail-foreground"
+                        : "text-rail-muted hover:bg-rail-accent/60 hover:text-rail-foreground",
+                    ]}
+                  >
+                    <Icon name="grid" size="md" />
+                  </a>
+                  <a
+                    href="/admin/content"
+                    aria-label="Content"
+                    title="Content"
+                    aria-current={section === "content" ? "page" : undefined}
+                    class={[
+                      "inline-flex size-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground",
+                      section === "content"
+                        ? "bg-rail-accent text-rail-foreground"
+                        : "text-rail-muted hover:bg-rail-accent/60 hover:text-rail-foreground",
+                    ]}
+                  >
+                    <Icon name="file" size="md" />
+                  </a>
+                  <a
+                    href="/admin/structure"
+                    aria-label="Structure"
+                    title="Structure"
+                    aria-current={(section === "types" || section === "structure") ? "page" : undefined}
+                    class={[
+                      "inline-flex size-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground",
+                      (section === "types" || section === "structure")
+                        ? "bg-rail-accent text-rail-foreground"
+                        : "text-rail-muted hover:bg-rail-accent/60 hover:text-rail-foreground",
+                    ]}
+                  >
+                    <Icon name="components" size="md" />
+                  </a>
+                </nav>
+                <div class="mt-auto flex flex-col items-center gap-1 pb-3">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      classes="inline-flex size-9 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 transition-colors hover:bg-rail-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground"
+                    >
+                      <Avatar size="sm" name={user_name ?? ""} email={user_email} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="left" classes="min-w-56">
+                      <div class="flex flex-col px-2 py-1.5" data-part="account">
+                        <Text as="span" variant="body-md" classes="truncate font-medium">
+                          {user_name}
+                        </Text>
+                        <Text as="span" variant="body-xs" tone="muted" classes="truncate">
+                          {user_email}
+                        </Text>
+                      </div>
+                      <DropdownMenuSeparator />
+                      <form method="post" action="/admin/logout">
+                        <input type="hidden" name="csrf" value={csrf ?? ""} />
+                        <DropdownMenuItem type="submit">
+                          <Icon name="logout" size="sm" />
+                          Log out
+                        </DropdownMenuItem>
+                      </form>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <a
+                    href="/admin/settings"
+                    aria-label="Settings"
+                    title="Settings"
+                    aria-current={section === "settings" ? "page" : undefined}
+                    class={[
+                      "inline-flex size-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground",
+                      section === "settings"
+                        ? "bg-rail-accent text-rail-foreground"
+                        : "text-rail-muted hover:bg-rail-accent/60 hover:text-rail-foreground",
+                    ]}
+                  >
+                    <Icon name="settings" size="md" />
+                  </a>
+                </div>
+              </div>
+              {sidebar && (
+                <aside
+                  aria-label="Section navigation"
+                  class="flex w-60 shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground"
+                >
+                  <a
+                    href={section === "settings" ? "/admin/settings" : (section === "types" || section === "structure") ? "/admin/structure" : "/admin/content"}
+                    class="flex h-14 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-5 text-sidebar-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring"
+                  >
+                    <Icon
+                      name={section === "settings" ? "settings" : (section === "types" || section === "structure") ? "components" : "file"}
+                      size="sm"
+                      classes="shrink-0"
+                    />
+                    <Text as="span" variant="heading-sm">
+                      {section === "settings" ? "Settings" : (section === "types" || section === "structure") ? "Structure" : "Content"}
+                    </Text>
+                  </a>
+                  <nav
+                    class="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4"
+                    aria-label="Section"
+                  >
+                    {sidebar}
+                  </nav>
+                </aside>
+              )}
+              <main
+                id="main"
+                tabindex="-1"
+                class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-card outline-none"
+              >
+                <div class="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card/95 px-8 backdrop-blur">
+                  <Crumbs
+                    section={section}
+                    crumb_label={crumb_label}
+                    crumb_href={crumb_href}
+                    title={title}
+                  />
+                  <Link href="/" tone="quiet" classes="inline-flex shrink-0 items-center gap-1.5">
+                    View site
+                    <Icon name="external" size="xs" />
+                  </Link>
+                </div>
+                {children}
+              </main>
+            </div>
+          ) : (
+            <main class="flex min-h-screen items-center justify-center px-5 py-10">{children}</main>
+          )}
+        </Navigation>
+      </body>
+    </html>
+  );
+}

@@ -1,0 +1,17 @@
+pub const names = .{
+    "publr",
+    "publr-dom",
+    "publr-html",
+    "publr-runtime",
+    "publr-transport",
+    "publr-query",
+    "publr-focus",
+    "publr-position",
+    "publr-router",
+    "publr-class-merge",
+    "class-value",
+    "lifecycle",
+    "operation-context",
+    "query-cache",
+    "ref",
+};

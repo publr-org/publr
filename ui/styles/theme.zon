@@ -1,0 +1,75 @@
+// JIT theme tokens for the admin stylesheet: the design-system palette and type scale. Each `color-*` token chains to the
+// `var(--*)` that `ui/styles/base.css` defines, so the palette stays authored CSS while
+// utilities like `bg-primary` or `text-muted-foreground` generate from it.
+.{
+    .tokens = .{
+        // Surfaces
+        .{ .name = "color-background", .value = "var(--background)" },
+        .{ .name = "color-foreground", .value = "var(--foreground)" },
+        .{ .name = "color-card", .value = "var(--card)" },
+        .{ .name = "color-card-foreground", .value = "var(--card-foreground)" },
+        .{ .name = "color-popover", .value = "var(--popover)" },
+        .{ .name = "color-popover-foreground", .value = "var(--popover-foreground)" },
+
+        // Actions and hierarchy
+        .{ .name = "color-primary", .value = "var(--primary)" },
+        .{ .name = "color-primary-foreground", .value = "var(--primary-foreground)" },
+        .{ .name = "color-secondary", .value = "var(--secondary)" },
+        .{ .name = "color-secondary-foreground", .value = "var(--secondary-foreground)" },
+        .{ .name = "color-muted", .value = "var(--muted)" },
+        .{ .name = "color-muted-foreground", .value = "var(--muted-foreground)" },
+        .{ .name = "color-accent", .value = "var(--accent)" },
+        .{ .name = "color-ui-accent", .value = "var(--ui-accent)" },
+        .{ .name = "color-accent-foreground", .value = "var(--accent-foreground)" },
+
+        // Semantic status
+        .{ .name = "color-destructive", .value = "var(--destructive)" },
+        .{ .name = "color-destructive-foreground", .value = "var(--destructive-foreground)" },
+        .{ .name = "color-error", .value = "var(--error)" },
+        .{ .name = "color-error-foreground", .value = "var(--error-foreground)" },
+        .{ .name = "color-success", .value = "var(--success)" },
+        .{ .name = "color-success-foreground", .value = "var(--success-foreground)" },
+        .{ .name = "color-warning", .value = "var(--warning)" },
+        .{ .name = "color-warning-foreground", .value = "var(--warning-foreground)" },
+        .{ .name = "color-review", .value = "var(--review)" },
+        .{ .name = "color-review-foreground", .value = "var(--review-foreground)" },
+
+        // Borders and focus rings
+        .{ .name = "color-border", .value = "var(--border)" },
+        .{ .name = "color-input", .value = "var(--input)" },
+        .{ .name = "color-ring", .value = "var(--ring)" },
+
+        // Sidebar
+        .{ .name = "color-sidebar", .value = "var(--sidebar)" },
+        .{ .name = "color-sidebar-foreground", .value = "var(--sidebar-foreground)" },
+        .{ .name = "color-sidebar-primary", .value = "var(--sidebar-primary)" },
+        .{ .name = "color-sidebar-primary-foreground", .value = "var(--sidebar-primary-foreground)" },
+        .{ .name = "color-sidebar-accent", .value = "var(--sidebar-accent)" },
+        .{ .name = "color-sidebar-accent-foreground", .value = "var(--sidebar-accent-foreground)" },
+        .{ .name = "color-sidebar-border", .value = "var(--sidebar-border)" },
+        .{ .name = "color-sidebar-ring", .value = "var(--sidebar-ring)" },
+        .{ .name = "color-sidebar-muted", .value = "var(--sidebar-muted)" },
+
+        // Icon rail
+        .{ .name = "color-rail", .value = "var(--rail)" },
+        .{ .name = "color-rail-foreground", .value = "var(--rail-foreground)" },
+        .{ .name = "color-rail-muted", .value = "var(--rail-muted)" },
+        .{ .name = "color-rail-accent", .value = "var(--rail-accent)" },
+
+        // The white sheet the pages sit on, lifted off the canvas
+        .{ .name = "shadow-sheet", .value = "0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(0 0 0 / 0.12)" },
+
+        // Design-system type scale
+        .{ .name = "text-3xs", .value = "0.625rem" },
+        .{ .name = "text-3xs--line-height", .value = "calc(0.875 / 0.625)" },
+        .{ .name = "text-2xs", .value = "0.6875rem" },
+        .{ .name = "text-2xs--line-height", .value = "calc(1 / 0.6875)" },
+        .{ .name = "text-body-sm", .value = "0.8125rem" },
+        .{ .name = "text-body-sm--line-height", .value = "calc(1.125 / 0.8125)" },
+        .{ .name = "text-heading-sm", .value = "0.9375rem" },
+        .{ .name = "text-heading-sm--line-height", .value = "1.3" },
+        .{ .name = "tracking-heading-xl", .value = "-0.02em" },
+        .{ .name = "tracking-heading-lg", .value = "-0.015em" },
+        .{ .name = "tracking-eyebrow", .value = "0.08em" },
+    },
+}

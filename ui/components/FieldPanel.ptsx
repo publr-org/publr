@@ -1,0 +1,247 @@
+import { Text } from "@publr/ui/Text.ptsx";
+import { PanelTab } from "@publr/ui/PanelTab.ptsx";
+import { onBack, submitted } from "./TypeColumns.ptsx";
+import type { IconName } from "@publr/ui/Icon.ptsx";
+import { Publr } from "publr-jsx";
+import { FieldPanelFooter } from "./FieldPanel/FieldPanelFooter.ptsx";
+import { FieldChildren } from "./FieldPanel/FieldChildren.ptsx";
+import { FieldSettings } from "./FieldPanel/FieldSettings.ptsx";
+import { FieldMultiplicity } from "./FieldPanel/FieldMultiplicity.ptsx";
+import { FieldProblems } from "./FieldPanel/FieldProblems.ptsx";
+import { FieldHead } from "./FieldHead.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+
+export const state = Publr.reactive({ tab: "general" });
+export const selectTab = (event: MouseEvent) => {
+  const button = event.currentTarget as HTMLElement;
+  state.tab = button.id.split("-tab-").pop() ?? "general";
+};
+export const tabKeys = (event: KeyboardEvent) => {
+  const tabs = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>("[role=tab]"));
+  const index = tabs.indexOf(event.target as HTMLButtonElement);
+  const next = event.key === "ArrowRight" ? (index + 1) % tabs.length
+    : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+    : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+  if (next < 0) return;
+  event.preventDefault();
+  tabs[next].click();
+  tabs[next].focus();
+};
+export const form_ref = Publr.ref<HTMLFormElement>((form) =>
+  Publr.stores.navigation.bindFieldForm(form),
+);
+export const onInput = () => {
+  if (form_ref.current) Publr.stores.navigation.updateFieldForm(form_ref.current);
+};
+
+export type FieldPanelProps = {
+  csrf: string;
+  title: string;
+  /** The type's fields page: where Cancel leads. */
+  type_href: string;
+  /** The form's id, unique per level (`field-1`, `field-2`), so the footer's buttons outside
+   * it submit the right form when two levels are open. */
+  form_id: string;
+  /** The way back one step: the kind picker for a new field, the parent's page for a field
+   * inside a group or repeater, the fields page otherwise; what that step is called. */
+  back_href: string;
+  back_label: string;
+  action: string;
+  is_new: boolean;
+  is_layout: boolean;
+  /** What was refused, by path, when the last post did not go through. */
+  problems: Array<{ path: string; message: string }>;
+  /** The kind, fixed by the picker (or by the field): what it is called. */
+  kind: string;
+  kind_label: string;
+  /** The group or repeater the field sits in; empty at the top level. */
+  parent: string;
+  name: string;
+  label: string;
+  label_count: string;
+  name_count: string;
+  /** Whether the kind can hold a list of values (any kind but slug, group and repeater). */
+  can_be_many: boolean;
+  many: boolean;
+  /** Only string, text and richtext fields can be searched. */
+  can_search: boolean;
+  searchable: boolean;
+  /** A top-level text field may be the record's title, the name it goes by in lists. */
+  can_title: boolean;
+  is_title: boolean;
+  /** The options of the kind that are choices rather than rules. */
+  has_target: boolean;
+  targets: Array<{ value: string; label: string; selected: boolean }>;
+  /** A terms field: the taxonomy it assigns from. */
+  has_taxonomy: boolean;
+  taxonomies: Array<{ value: string; label: string; selected: boolean }>;
+  has_source: boolean;
+  source: string;
+  has_choices: boolean;
+  choices: string;
+  /** A reference: what purging a record it points at does to the pointer. */
+  on_delete: string;
+  /** The Validation, Default value and Appearance sections, drawn by FieldRules,
+   * FieldDefault and FieldLook from the kind's descriptor and the field. */
+  rules: JSX.Element;
+  defaults: JSX.Element;
+  look: JSX.Element;
+  conditions: JSX.Element;
+  /** A group or repeater: the fields inside it, edited here. */
+  is_container: boolean;
+  add_child_href: string;
+  children: Array<{
+    path: string;
+    label: string;
+    icon: IconName;
+    summary: string;
+    required: boolean;
+    locked: boolean;
+    edit_href: string;
+    move_action: string;
+    delete_action: string;
+  }>;
+  /** The delete form's action; absent for a new field. */
+  delete_action?: string;
+};
+
+/** One field of a content type, the content of a level over the type's fields while the
+ * preview on the right follows every keystroke: what the field is called, whether it holds one value
+ * or a list, its settings, what its values must satisfy, what a new record starts with,
+ * and how it looks in the editor. A group or repeater also lists the fields inside it.
+ * The actions sit in the panel's footer. A refused post comes back here with what was
+ * wrong. */
+export function FieldPanel({
+  csrf,
+  title,
+  type_href,
+  form_id,
+  back_href,
+  back_label,
+  action,
+  is_new,
+  is_layout,
+  problems,
+  kind,
+  kind_label,
+  parent,
+  name,
+  label,
+  label_count,
+  name_count,
+  can_be_many,
+  many,
+  can_search,
+  searchable,
+  can_title,
+  is_title,
+  has_target,
+  targets,
+  has_taxonomy,
+  taxonomies,
+  has_source,
+  source,
+  has_choices,
+  choices,
+  on_delete,
+  rules,
+  defaults,
+  look,
+  conditions,
+  is_container,
+  add_child_href,
+  children,
+  delete_action,
+}: FieldPanelProps) {
+  return (
+    <div class="contents" data-part="type-panel-content" data-title={title}>
+      <div class="px-8 py-7">
+        <PageHeader onBack={onBack}
+          title={title}
+          description={kind_label}
+          back_label={back_label}
+          back_href={back_href}
+        />
+        {problems.length > 0 && <FieldProblems problems={problems} />}
+        <form
+          id={form_id}
+          method="post"
+          action={action}
+          class="mt-8 space-y-8"
+          data-part="field-form"
+          ref={form_ref}
+          onSubmit={submitted}
+          onInput={onInput}
+          onChange={onInput}
+        >
+          <input type="hidden" name="csrf" value={csrf} />
+          <input type="hidden" name="kind" value={kind} />
+          <input type="hidden" name="parent" value={parent} />
+          <div role="tablist" aria-label="Field settings" onKeyDown={tabKeys} class="flex flex-wrap gap-1">
+            <PanelTab id={`${form_id}-tab-general`} panel={`${form_id}-general`}
+              label="General" selected={state.tab === "general"} onClick={selectTab} />
+            <PanelTab id={`${form_id}-tab-validation`} panel={`${form_id}-validation`}
+              label="Validation" selected={state.tab === "validation"} onClick={selectTab} />
+            <PanelTab id={`${form_id}-tab-presentation`} panel={`${form_id}-presentation`}
+              label="Presentation" selected={state.tab === "presentation"} onClick={selectTab} />
+            <PanelTab id={`${form_id}-tab-conditions`} panel={`${form_id}-conditions`}
+              label="Conditional Logic" selected={state.tab === "conditions"} onClick={selectTab} />
+          </div>
+          <div id={`${form_id}-general`} role="tabpanel" aria-labelledby={`${form_id}-tab-general`}
+            hidden={state.tab !== "general"} class="space-y-8">
+          <FieldHead
+            label={label}
+            name={name}
+            label_count={label_count}
+            name_count={name_count}
+            is_new={is_new}
+          />
+          {can_be_many && <FieldMultiplicity many={many} is_new={is_new} />}
+          {(can_title || can_search || has_target || has_taxonomy || has_source || has_choices) && (
+            <FieldSettings
+              can_title={can_title}
+              can_be_many={can_be_many}
+              is_title={is_title}
+              can_search={can_search}
+              searchable={searchable}
+              has_target={has_target}
+              targets={targets}
+              has_taxonomy={has_taxonomy}
+              taxonomies={taxonomies}
+              has_source={has_source}
+              source={source}
+              on_delete={on_delete}
+              has_choices={has_choices}
+              choices={choices}
+            />
+          )}
+          {!is_layout && <div>{defaults}</div>}
+          </div>
+          <div id={`${form_id}-validation`} role="tabpanel" aria-labelledby={`${form_id}-tab-validation`}
+            hidden={state.tab !== "validation"}>{is_layout ? <Text variant="body-sm" tone="muted">Layout elements do not store values.</Text> : rules}</div>
+          <div id={`${form_id}-presentation`} role="tabpanel" aria-labelledby={`${form_id}-tab-presentation`}
+            hidden={state.tab !== "presentation"}>{look}</div>
+          <div id={`${form_id}-conditions`} role="tabpanel" aria-labelledby={`${form_id}-tab-conditions`}
+            hidden={state.tab !== "conditions"}>{is_layout ? <Text variant="body-sm" tone="muted">Apply conditions to the fields in this section.</Text> : conditions}</div>
+        </form>
+        {is_container && !is_new && (
+          <FieldChildren
+            add_child_href={add_child_href}
+            children={children}
+            kind={kind}
+            csrf={csrf}
+          />
+        )}
+      </div>
+      <FieldPanelFooter
+        delete_action={delete_action}
+        label={label}
+        csrf={csrf}
+        type_href={type_href}
+        is_new={is_new}
+        is_container={is_container}
+        form_id={form_id}
+      />
+    </div>
+  );
+}

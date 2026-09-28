@@ -1,0 +1,46 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+
+export type FileTypesRuleProps = {
+  limit_types?: boolean;
+  media_types: Array<{
+    value: string;
+    label: string;
+    selected: boolean;
+  }>;
+  types_message?: string;
+};
+
+export function FileTypesRule({
+  limit_types = false,
+  media_types,
+  types_message = "",
+}: FileTypesRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_types"
+      name="limit_types"
+      checked={limit_types}
+      label="Accept only specified file types"
+      description="Make this field only accept the ticked kinds of file"
+    >
+      <div class="flex flex-wrap gap-x-6 gap-y-3">
+        {media_types.map((media_type) => (
+          <CheckboxField
+            id={`media-type-${media_type.value}`}
+            name="media_types"
+            value={media_type.value}
+            checked={media_type.selected}
+            label={media_type.label}
+          />
+        ))}
+      </div>
+      <Field>
+        <FieldLabel htmlFor="types_message">Custom error message</FieldLabel>
+        <Input id="types_message" name="types_message" value={types_message} maxLength={255} />
+      </Field>
+    </CheckboxField>
+  );
+}

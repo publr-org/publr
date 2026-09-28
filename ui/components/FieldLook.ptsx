@@ -1,0 +1,261 @@
+import { ContainerAppearance } from "./FieldLook/ContainerAppearance.ptsx";
+import { NumberAppearance } from "./FieldLook/NumberAppearance.ptsx";
+import { BooleanAppearance } from "./FieldLook/BooleanAppearance.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { HelpText } from "./HelpText.ptsx";
+
+/** How the field looks in the record editor: the help line, the placeholder, where it
+ * sits, and what its kind lets you shape (a text box's rows, a date's format, a
+ * boolean's labels, a number's unit, a select's control, a reference's buttons, a
+ * container's header). */
+export type FieldLookProps = {
+  help: string;
+  help_count: string;
+  has_placeholder?: boolean;
+  placeholder?: string;
+  has_rows?: boolean;
+  rows?: string;
+  has_text_format?: boolean;
+  markdown?: boolean;
+  has_date_format?: boolean;
+  date_only?: boolean;
+  has_boolean?: boolean;
+  true_label?: string;
+  false_label?: string;
+  boolean_control?: string;
+  has_number?: boolean;
+  unit?: string;
+  unit_after?: boolean;
+  has_decimals?: boolean;
+  decimals?: string;
+  number_control?: string;
+  can_rating?: boolean;
+  has_select?: boolean;
+  select_list?: boolean;
+  select_buttons?: boolean;
+  has_reference?: boolean;
+  reference_create?: boolean;
+  reference_live_only?: boolean;
+  reference_public_only?: boolean;
+  reference_link?: boolean;
+  has_container?: boolean;
+  collapsed?: boolean;
+  has_label_field?: boolean;
+  /** No child chosen: items are numbered. */
+  label_field_none?: boolean;
+  label_fields: Array<{ value: string; label: string; selected: boolean }>;
+  add_label?: string;
+  has_media?: boolean;
+  media_create?: boolean;
+  media_link?: boolean;
+  has_slug?: boolean;
+  lock_on_publish?: boolean;
+  has_email?: boolean;
+  lowercase?: boolean;
+};
+
+export function FieldLook({
+  help,
+  help_count,
+  has_placeholder = false,
+  placeholder = "",
+  has_rows = false,
+  rows = "",
+  has_text_format = false,
+  markdown = false,
+  has_date_format = false,
+  date_only = false,
+  has_boolean = false,
+  true_label = "",
+  false_label = "",
+  boolean_control = "toggle",
+  has_number = false,
+  unit = "",
+  unit_after = true,
+  has_decimals = false,
+  decimals = "",
+  number_control = "input",
+  can_rating = false,
+  has_select = false,
+  select_list = false,
+  select_buttons = false,
+  has_reference = false,
+  reference_create = true,
+  reference_live_only = false,
+  reference_public_only = false,
+  reference_link = true,
+  has_container = false,
+  collapsed = false,
+  has_label_field = false,
+  label_field_none = true,
+  label_fields,
+  add_label = "",
+  has_media = false,
+  media_create = true,
+  media_link = true,
+  has_slug = false,
+  lock_on_publish = false,
+  has_email = false,
+  lowercase = false,
+}: FieldLookProps) {
+  return (
+    <section class="border-t border-border pt-6">
+      <Heading level={2} size="md">
+        Appearance
+      </Heading>
+      <div class="mt-5 flex flex-col gap-6">
+        <HelpText help={help} help_count={help_count} />
+        {has_placeholder && (
+          <Field>
+            <FieldLabel htmlFor="placeholder">Placeholder</FieldLabel>
+            <Input id="placeholder" name="placeholder" value={placeholder} maxLength={255} />
+            <FieldDescription>Shown inside the empty control</FieldDescription>
+          </Field>
+        )}
+        {has_rows && (
+          <Field>
+            <FieldLabel htmlFor="rows">Rows</FieldLabel>
+            <Input id="rows" name="rows" type="number" min="1" value={rows} classes="w-32" />
+            <FieldDescription>How tall the editor's box starts.</FieldDescription>
+          </Field>
+        )}
+        {has_text_format && (
+          <Field>
+            <FieldLabel htmlFor="text_format">Format</FieldLabel>
+            <NativeSelect id="text_format" name="text_format">
+              <option value="plain" selected={!markdown}>
+                Plain text
+              </option>
+              <option value="markdown" selected={markdown}>
+                Markdown
+              </option>
+            </NativeSelect>
+            <FieldDescription>
+              How the text is meant to be read; the editor draws a plain box either way for now.
+            </FieldDescription>
+          </Field>
+        )}
+        {has_date_format && (
+          <Field>
+            <FieldLabel htmlFor="date_format" required>
+              Format
+            </FieldLabel>
+            <NativeSelect id="date_format" name="date_format">
+              <option value="datetime" selected={!date_only}>
+                Date and time
+              </option>
+              <option value="date" selected={date_only}>
+                Date only
+              </option>
+            </NativeSelect>
+            <FieldDescription>Times are entered and shown in UTC.</FieldDescription>
+          </Field>
+        )}
+        <BooleanAppearance
+          has_boolean={has_boolean}
+          true_label={true_label}
+          false_label={false_label}
+          boolean_control={boolean_control}
+        />
+
+        <NumberAppearance
+          has_number={has_number}
+          unit={unit}
+          unit_after={unit_after}
+          has_decimals={has_decimals}
+          decimals={decimals}
+          number_control={number_control}
+          can_rating={can_rating}
+        />
+
+        {has_select && (
+          <Field>
+            <FieldLabel htmlFor="select_control">Control</FieldLabel>
+            <NativeSelect id="select_control" name="select_control">
+              <option value="dropdown" selected={!select_list && !select_buttons}>
+                Dropdown
+              </option>
+              <option value="buttons" selected={select_buttons}>Buttons</option>
+              <option value="list" selected={select_list}>
+                Radio buttons, or checkboxes for multiple values
+              </option>
+            </NativeSelect>
+          </Field>
+        )}
+        {has_reference && <CheckboxField id="reference_live_only" name="reference_live_only"
+          checked={reference_live_only} label="Published entries only" />}
+        {has_reference && <CheckboxField id="reference_public_only" name="reference_public_only"
+          checked={reference_public_only} label="Public content types only" />}
+        {has_reference && (
+          <CheckboxField
+            id="reference_create"
+            name="reference_create"
+            checked={reference_create}
+            label="Allow creating new records"
+            description="Editors can create a record of a target type and link it here."
+          />
+        )}
+        {has_reference && (
+          <CheckboxField
+            id="reference_link"
+            name="reference_link"
+            checked={reference_link}
+            label="Allow linking existing records"
+            description="Editors can pick a record that already exists."
+          />
+        )}
+        <ContainerAppearance
+          has_container={has_container}
+          collapsed={collapsed}
+          has_label_field={has_label_field}
+          label_field_none={label_field_none}
+          label_fields={label_fields}
+          add_label={add_label}
+        />
+
+        {has_slug && (
+          <CheckboxField
+            id="lock_on_publish"
+            name="lock_on_publish"
+            checked={lock_on_publish}
+            label="Lock once published"
+            description="A live record keeps its slug whatever its source does, so its address never changes."
+          />
+        )}
+        {has_email && (
+          <CheckboxField
+            id="lowercase"
+            name="lowercase"
+            checked={lowercase}
+            label="Lowercase on save"
+            description="Addresses are kept in lowercase, however they were typed."
+          />
+        )}
+        {has_media && (
+          <CheckboxField
+            id="media_create"
+            name="media_create"
+            checked={media_create}
+            label="Allow uploading new files"
+            description="Editors can upload a file into the media library and link it here."
+          />
+        )}
+        {has_media && (
+          <CheckboxField
+            id="media_link"
+            name="media_link"
+            checked={media_link}
+            label="Allow linking existing files"
+            description="Editors can pick a file already in the media library."
+          />
+        )}
+      </div>
+    </section>
+  );
+}

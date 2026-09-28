@@ -1,0 +1,72 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type NumberRangeRuleProps = {
+  limit_range?: boolean;
+  min?: string;
+  max?: string;
+  step?: string;
+  range_message?: string;
+};
+
+export function NumberRangeRule({
+  limit_range = false,
+  min = "",
+  max = "",
+  step = "",
+  range_message = "",
+}: NumberRangeRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_range"
+      name="limit_range"
+      checked={limit_range}
+      label="Accept only a specified range"
+      description="Specify a minimum and/or maximum allowed value, and the step between values"
+    >
+      <div class="flex flex-wrap items-center gap-3">
+        <Input
+          id="min"
+          name="min"
+          type="number"
+          step="any"
+          value={min}
+          placeholder="Min"
+          classes="w-32"
+        />
+        <Text as="span" variant="body-md">
+          and
+        </Text>
+        <Input
+          id="max"
+          name="max"
+          type="number"
+          step="any"
+          value={max}
+          placeholder="Max"
+          classes="w-32"
+        />
+        <Text as="span" variant="body-md">
+          step
+        </Text>
+        <Input
+          id="step"
+          name="step"
+          type="number"
+          step="any"
+          min="0"
+          value={step}
+          placeholder="Any"
+          classes="w-32"
+        />
+      </div>
+      <Field>
+        <FieldLabel htmlFor="range_message">Custom error message</FieldLabel>
+        <Input id="range_message" name="range_message" value={range_message} maxLength={255} />
+      </Field>
+    </CheckboxField>
+  );
+}

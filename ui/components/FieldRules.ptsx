@@ -1,0 +1,337 @@
+import { ImageDimensionsRule } from "./FieldRules/ImageDimensionsRule.ptsx";
+import { FileTypesRule } from "./FieldRules/FileTypesRule.ptsx";
+import { FileSizeRule } from "./FieldRules/FileSizeRule.ptsx";
+import { UrlHostsRule } from "./FieldRules/UrlHostsRule.ptsx";
+import { UrlSchemesRule } from "./FieldRules/UrlSchemesRule.ptsx";
+import { DomainsRule } from "./FieldRules/DomainsRule.ptsx";
+import { ReservedSlugsRule } from "./FieldRules/ReservedSlugsRule.ptsx";
+import { DateRangeRule } from "./FieldRules/DateRangeRule.ptsx";
+import { NumberChoicesRule } from "./FieldRules/NumberChoicesRule.ptsx";
+import { NumberRangeRule } from "./FieldRules/NumberRangeRule.ptsx";
+import { PatternRule } from "./FieldRules/PatternRule.ptsx";
+import { WordsRule } from "./FieldRules/WordsRule.ptsx";
+import { LengthRule } from "./FieldRules/LengthRule.ptsx";
+import { ItemsRule } from "./FieldRules/ItemsRule.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+
+/** The validation rules of one field, each a checkbox that reveals its bounds and
+ * custom message while ticked. Which rules appear is the kind's (its descriptor's
+ * `has`); the values are the field's. Every prop has a default so the adapter fills
+ * only the groups the kind has. */
+export type FieldRulesProps = {
+  /** A group holds fields, a boolean is a value either way: neither takes Required. */
+  can_require?: boolean;
+  /** The form offers Single or Multiple: the rules that depend on it follow the choice. */
+  many_choice?: boolean;
+  required?: boolean;
+  can_unique?: boolean;
+  unique?: boolean;
+  has_length?: boolean;
+  limit_length?: boolean;
+  min_len?: string;
+  max_len?: string;
+  length_message?: string;
+  has_words?: boolean;
+  limit_words?: boolean;
+  words_min?: string;
+  words_max?: string;
+  words_message?: string;
+  has_pattern?: boolean;
+  limit_pattern?: boolean;
+  preset?: string;
+  pattern?: string;
+  pattern_message?: string;
+  /** A numeric range, or, for a date and time field, a span of days. */
+  has_range?: boolean;
+  has_dates?: boolean;
+  limit_range?: boolean;
+  min?: string;
+  max?: string;
+  step?: string;
+  range_message?: string;
+  from_now?: boolean;
+  /** A number field may take listed values only. */
+  has_number_choices?: boolean;
+  limit_choices?: boolean;
+  number_choices?: string;
+  choices_message?: string;
+  /** A list of values, or a repeater: how many, and whether all differ. */
+  has_items?: boolean;
+  limit_items?: boolean;
+  items_min?: string;
+  items_max?: string;
+  distinct?: boolean;
+  items_message?: string;
+  has_reserved?: boolean;
+  limit_reserved?: boolean;
+  reserved?: string;
+  reserved_message?: string;
+  has_domains?: boolean;
+  limit_domains?: boolean;
+  domains?: string;
+  domain_message?: string;
+  has_url?: boolean;
+  limit_schemes?: boolean;
+  schemes: Array<{ value: string; label: string; selected: boolean }>;
+  scheme_message?: string;
+  limit_hosts?: boolean;
+  hosts?: string;
+  host_message?: string;
+  has_live_only?: boolean;
+  live_only?: boolean;
+  /** A media field: the file's size, family and image dimensions. */
+  has_media?: boolean;
+  limit_size?: boolean;
+  size_min?: string;
+  size_min_unit?: string;
+  size_max?: string;
+  size_max_unit?: string;
+  size_message?: string;
+  limit_types?: boolean;
+  media_types: Array<{ value: string; label: string; selected: boolean }>;
+  types_message?: string;
+  limit_dimensions?: boolean;
+  width_min?: string;
+  width_max?: string;
+  height_min?: string;
+  height_max?: string;
+  dimensions_message?: string;
+};
+
+export function FieldRules({
+  can_require = true,
+  many_choice = false,
+  required = false,
+  can_unique = false,
+  unique = false,
+  has_length = false,
+  limit_length = false,
+  min_len = "",
+  max_len = "",
+  length_message = "",
+  has_words = false,
+  limit_words = false,
+  words_min = "",
+  words_max = "",
+  words_message = "",
+  has_pattern = false,
+  limit_pattern = false,
+  preset = "any",
+  pattern = "",
+  pattern_message = "",
+  has_range = false,
+  has_dates = false,
+  limit_range = false,
+  min = "",
+  max = "",
+  step = "",
+  range_message = "",
+  from_now = false,
+  has_number_choices = false,
+  limit_choices = false,
+  number_choices = "",
+  choices_message = "",
+  has_items = false,
+  limit_items = false,
+  items_min = "",
+  items_max = "",
+  distinct = false,
+  items_message = "",
+  has_reserved = false,
+  limit_reserved = false,
+  reserved = "",
+  reserved_message = "",
+  has_domains = false,
+  limit_domains = false,
+  domains = "",
+  domain_message = "",
+  has_url = false,
+  limit_schemes = false,
+  schemes,
+  scheme_message = "",
+  limit_hosts = false,
+  hosts = "",
+  host_message = "",
+  has_live_only = false,
+  live_only = false,
+  has_media = false,
+  limit_size = false,
+  size_min = "",
+  size_min_unit = "b",
+  size_max = "",
+  size_max_unit = "b",
+  size_message = "",
+  limit_types = false,
+  media_types,
+  types_message = "",
+  limit_dimensions = false,
+  width_min = "",
+  width_max = "",
+  height_min = "",
+  height_max = "",
+  dimensions_message = "",
+}: FieldRulesProps) {
+  return (
+    <section class="border-t border-border pt-6">
+      <Heading level={2} size="md">
+        Validation
+      </Heading>
+      <div class="mt-5 flex flex-col gap-6">
+        {can_require && (
+          <CheckboxField
+            id="required"
+            name="required"
+            checked={required}
+            label="Required field"
+            description="You won't be able to publish a record while this field is empty"
+          />
+        )}
+        {can_unique && (
+          <div data-when={many_choice ? "single" : undefined}>
+            <CheckboxField
+              id="unique"
+              name="unique"
+              checked={unique}
+              label="Unique field"
+              description="You won't be able to publish a record when another record already holds the same value"
+            />
+          </div>
+        )}
+        {has_items && (
+          <ItemsRule
+            many_choice={many_choice}
+            min={min}
+            limit_items={limit_items}
+            items_min={items_min}
+            items_max={items_max}
+            distinct={distinct}
+            items_message={items_message}
+          />
+        )}
+        {has_length && (
+          <LengthRule
+            limit_length={limit_length}
+            min_len={min_len}
+            max_len={max_len}
+            length_message={length_message}
+            min={min}
+          />
+        )}
+        {has_words && (
+          <WordsRule
+            limit_words={limit_words}
+            words_min={words_min}
+            words_max={words_max}
+            words_message={words_message}
+            min={min}
+          />
+        )}
+        {has_pattern && (
+          <PatternRule
+            limit_pattern={limit_pattern}
+            preset={preset}
+            pattern={pattern}
+            pattern_message={pattern_message}
+          />
+        )}
+        {has_range && !has_dates && (
+          <NumberRangeRule
+            limit_range={limit_range}
+            min={min}
+            max={max}
+            step={step}
+            range_message={range_message}
+          />
+        )}
+        {has_number_choices && (
+          <NumberChoicesRule
+            limit_choices={limit_choices}
+            number_choices={number_choices}
+            choices_message={choices_message}
+          />
+        )}
+        {has_range && has_dates && (
+          <DateRangeRule
+            limit_range={limit_range}
+            min={min}
+            max={max}
+            range_message={range_message}
+          />
+        )}
+        {has_dates && (
+          <CheckboxField
+            id="from_now"
+            name="from_now"
+            checked={from_now}
+            label="Not before today"
+            description="Refuse a moment earlier than the day the record is saved"
+          />
+        )}
+        {has_reserved && (
+          <ReservedSlugsRule
+            limit_reserved={limit_reserved}
+            reserved={reserved}
+            reserved_message={reserved_message}
+          />
+        )}
+        {has_domains && (
+          <DomainsRule
+            limit_domains={limit_domains}
+            domains={domains}
+            domain_message={domain_message}
+          />
+        )}
+        {has_url && (
+          <UrlSchemesRule
+            limit_schemes={limit_schemes}
+            schemes={schemes}
+            scheme_message={scheme_message}
+          />
+        )}
+        {has_url && (
+          <UrlHostsRule limit_hosts={limit_hosts} hosts={hosts} host_message={host_message} />
+        )}
+        {has_live_only && (
+          <CheckboxField
+            id="live_only"
+            name="live_only"
+            checked={live_only}
+            label="Accept only published records"
+            description="A draft or archived record cannot be linked here"
+          />
+        )}
+        {has_media && (
+          <FileSizeRule
+            min={min}
+            step={step}
+            limit_size={limit_size}
+            size_min={size_min}
+            size_min_unit={size_min_unit}
+            size_max={size_max}
+            size_max_unit={size_max_unit}
+            size_message={size_message}
+          />
+        )}
+        {has_media && (
+          <FileTypesRule
+            limit_types={limit_types}
+            media_types={media_types}
+            types_message={types_message}
+          />
+        )}
+        {has_media && (
+          <ImageDimensionsRule
+            min={min}
+            limit_dimensions={limit_dimensions}
+            width_min={width_min}
+            width_max={width_max}
+            height_min={height_min}
+            height_max={height_max}
+            dimensions_message={dimensions_message}
+          />
+        )}
+      </div>
+    </section>
+  );
+}

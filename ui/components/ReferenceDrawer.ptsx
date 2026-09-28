@@ -1,0 +1,166 @@
+import type { NavigationStore } from "./Navigation.ptsx";
+import { awaited } from "publr";
+import { httpOperation } from "publr/transport";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Publr } from "publr-jsx";
+
+export const state = Publr.reactive({ focus: 0 });
+const navigation = Publr.stores.navigation as NavigationStore;
+const stack = navigation.references;
+let sequence = 0;
+const requests = new Map<number, { refresh: () => void }>();
+const panels = new Map<number, HTMLElement>();
+
+export const panel_ref = Publr.ref<HTMLElement>((element) => {
+  const id = Number(element.dataset.level);
+  const level = stack.find(entry => entry.id === id);
+  if (!level) return;
+  panels.set(id, element);
+  level.panel = element;
+  const result = awaited(() => httpOperation<{ html: string }>(level.url, {
+    headers: { "Publr-Drawer": "1", Accept: "application/json" },
+  })());
+  requests.set(id, result);
+  Publr.effect(() => {
+    const pending = result.isPending;
+    const failed = result.isError;
+    const value = result.value;
+    Publr.untrack(() => {
+      if (!stack.includes(level)) return;
+      level.loading = pending;
+      level.error = failed ? "Could not open the reference" : "";
+      if (failed) level.title = level.error;
+      if (!pending && !failed && value) { level.html = value.html; state.focus++; }
+    });
+  });
+  return () => { panels.delete(id); requests.delete(id); };
+});
+
+export const root_ref = Publr.ref<HTMLElement>(() =>
+  navigation.bindReferences({ open: open_level, to: came_back_to }),
+);
+export const retryReference = (event: Event) => {
+  requests.get(Number((event.currentTarget as HTMLElement).dataset.level))?.refresh();
+};
+
+const open_level = (options: {
+  url: string;
+  field: string;
+  opener: HTMLElement | null;
+  deliver: (id: string) => void;
+}) => {
+  const id = ++sequence;
+  stack.push({
+    id,
+    url: options.url,
+    field: options.field,
+    opener: options.opener,
+    deliver: options.deliver,
+    title: "Loading…",
+    html: "",
+    error: "",
+    panel: null,
+    loading: true,
+    style: `left:${(stack.length + 1) * 6}rem`,
+    get inactive() {
+      return stack[stack.length - 1]?.id !== id;
+    },
+  });
+};
+
+const came_back_to = (depth: number) => {
+  const opener = stack[depth]?.opener;
+  stack.splice(depth);
+  if (opener?.isConnected) opener.focus();
+  else panels.get(stack[stack.length - 1]?.id)?.focus();
+};
+
+export const onBack = (event: Event) => {
+  event.preventDefault();
+  came_back_to(Math.max(0, stack.length - 1));
+};
+
+export const onClose = (event: Event) => {
+  event.preventDefault();
+  came_back_to(0);
+};
+
+export const onPick = (event: Event) => {
+  event.preventDefault();
+  const id = (event.currentTarget as HTMLElement).dataset.linkId;
+  const level = stack[stack.length - 1];
+  if (!level || !id) return;
+  level.deliver?.(id);
+  came_back_to(stack.length - 1);
+};
+
+export const submitted = (event: Event) => {
+  const form = event.currentTarget as HTMLFormElement;
+  const level = stack[stack.length - 1];
+  if (!level) return;
+  event.preventDefault();
+  const query = new URLSearchParams();
+  for (const [name, value] of new FormData(form))
+    if (typeof value === "string") query.append(name, value);
+  level.url = `${form.action}?${query}`;
+  level.loading = true;
+  level.error = "";
+};
+
+export const pressed = (event: Event) => {
+  if (!(event instanceof KeyboardEvent) || event.defaultPrevented || !stack.length) return;
+  if (event.key === "Escape") onBack(event);
+};
+
+Publr.effect(() => {
+  const focus = state.focus;
+  if (focus) panels.get(stack[stack.length - 1]?.id)?.focus({ preventScroll: true });
+});
+
+export type ReferenceDrawerProps = { id?: string };
+
+export function ReferenceDrawer({ id }: ReferenceDrawerProps) {
+  return (
+    <div id={id} ref={root_ref} data-part="reference-drawer" onDocumentKeyDown={pressed}>
+      <div
+        class="fixed top-14 right-0 bottom-0 left-14 z-40 overflow-hidden"
+        data-part="drawer-stack"
+        hidden={!(Publr.stores.navigation as NavigationStore).references.length}
+      >
+        {(Publr.stores.navigation as NavigationStore).references.map((level) => (
+          <div key={level.id} class="contents">
+            <div
+              class="absolute inset-0 bg-black/50"
+              data-part="drawer-scrim"
+              onClick={onBack}
+            ></div>
+            <div
+              ref={panel_ref}
+              data-level={level.id}
+              data-part="drawer-level"
+              class="drawer-enter absolute inset-y-0 right-0 flex flex-col overflow-y-auto border-l border-border bg-card text-foreground shadow-2xl outline-none"
+              style={level.style}
+              inert={level.inactive}
+              focusScope={!level.inactive}
+              aria-busy={level.loading}
+              role="dialog"
+              aria-modal="true"
+              aria-label={level.title}
+              tabindex={-1}
+            >
+              <div class="px-8 py-7" hidden={!level.loading} role="status">
+                <Text variant="body-sm" tone="muted">Loading reference…</Text>
+              </div>
+              <div class="px-8 py-7" hidden={!level.error} role="alert">
+                <Text variant="body-sm">{level.error}</Text>
+                <Button hierarchy="secondary" onClick={retryReference} data-level={level.id}>Retry</Button>
+              </div>
+              <div class="contents" innerHTML={level.html}></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

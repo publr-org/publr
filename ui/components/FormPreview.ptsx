@@ -1,0 +1,76 @@
+import { awaited } from "publr";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Publr } from "publr-jsx";
+import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export const state = Publr.reactive({ note: "", html: null as string | null, busy: false, error: "", retry: 0 });
+export const body_ref = Publr.ref<HTMLElement>((element) => {
+  Publr.stores.navigation.previewHtml = element.innerHTML;
+});
+let request: AbortController | undefined = undefined;
+export const root_ref = Publr.ref<HTMLElement>(() => () => request?.abort());
+
+const preview = awaited(async () => {
+  const draft = Publr.stores.navigation.fieldDraft;
+  const saved = Publr.stores.navigation.previewHtml as string | null;
+  void state.retry;
+  request?.abort();
+  if (!draft) return saved;
+  const current = new AbortController();
+  request = current;
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, 300);
+    current.signal.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(new DOMException("Preview cancelled", "AbortError"));
+    }, { once: true });
+  });
+  const response = await fetch(draft.url, {
+    method: "POST",
+    credentials: "same-origin",
+    body: draft.body,
+    signal: current.signal,
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "Publr-Fragment": "preview" },
+  });
+  if (!response.ok || response.redirected) throw new Error("Could not update the preview");
+  return response.text();
+});
+
+export const retryPreview = () => { state.retry++; };
+
+Publr.effect(() => {
+  state.busy = preview.isPending;
+  state.error = preview.isError ? "Could not update the preview" : "";
+  state.note = preview.isPending ? "Updating…" : state.error;
+  if (preview.isLoaded) state.html = preview.value ?? null;
+});
+
+export type FormPreviewProps = {
+  /** What the preview is doing, beside its title; empty when nothing. */
+  note: string;
+  /** The record editor drawn as a preview (RecordEditor with `preview`). */
+  editor: JSX.Element;
+};
+
+/** How a record of the type looks in the editor, drawn from the type's definition with
+ * every default filled in. Nothing in it can be used: the body is inert, only scrolled. */
+export function FormPreview({ note, editor }: FormPreviewProps) {
+  state.note = note;
+
+  return (
+    <div class="flex h-full min-h-0 flex-col" data-part="form-preview" ref={root_ref} aria-busy={state.busy}>
+      <SectionTitle title="Preview">
+        <Text as="span" variant="body-xs" tone="muted">
+          {state.note}
+        </Text>
+        <Button size="sm" hierarchy="tertiary" hidden={!state.error} onClick={retryPreview}>Retry</Button>
+      </SectionTitle>
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <div inert ref={body_ref} data-part="form-preview-body" innerHTML={state.html}>
+          {editor}
+        </div>
+      </div>
+    </div>
+  );
+}

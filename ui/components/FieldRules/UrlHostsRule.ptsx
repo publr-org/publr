@@ -1,0 +1,39 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+export type UrlHostsRuleProps = {
+  limit_hosts?: boolean;
+  hosts?: string;
+  host_message?: string;
+};
+
+export function UrlHostsRule({
+  limit_hosts = false,
+  hosts = "",
+  host_message = "",
+}: UrlHostsRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_hosts"
+      name="limit_hosts"
+      checked={limit_hosts}
+      label="Accept only specified hosts"
+      description="Only links to these hosts, one per line"
+    >
+      <Textarea
+        id="hosts"
+        name="hosts"
+        value={hosts}
+        rows={4}
+        placeholder={"example.com\nwww.example.com"}
+      />
+      <Field>
+        <FieldLabel htmlFor="host_message">Custom error message</FieldLabel>
+        <Input id="host_message" name="host_message" value={host_message} maxLength={255} />
+      </Field>
+    </CheckboxField>
+  );
+}

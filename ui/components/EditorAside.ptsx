@@ -1,0 +1,23 @@
+export type EditorAsideProps = {
+  /** Drawn inside the reference drawer, whose panel scrolls on its own: sticks to its
+   * top, not under the page's topbar. */
+  in_drawer?: boolean;
+  /** EditorAsideSections, drawn one under the other with a rule between. */
+  children?: JSX.Element;
+};
+
+/** The editor's right column: the page's actions first, then what is known about the
+ * thing being edited, then what cannot be undone. It stays in view while the form
+ * scrolls. */
+export function EditorAside({ in_drawer = false, children }: EditorAsideProps) {
+  return (
+    <aside
+      aria-label="Actions and details"
+      class="w-80 shrink-0 border-l border-border"
+    >
+      <div class={["sticky flex flex-col divide-y divide-border", in_drawer ? "top-0" : "top-14"]}>
+        {children}
+      </div>
+    </aside>
+  );
+}

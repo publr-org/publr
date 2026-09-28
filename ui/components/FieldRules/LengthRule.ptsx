@@ -1,0 +1,59 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type LengthRuleProps = {
+  limit_length?: boolean;
+  min_len?: string;
+  max_len?: string;
+  length_message?: string;
+  min?: string;
+};
+
+export function LengthRule({
+  limit_length = false,
+  min_len = "",
+  max_len = "",
+  length_message = "",
+  min = "",
+}: LengthRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_length"
+      name="limit_length"
+      checked={limit_length}
+      label="Limit character count"
+      description="Specify a minimum and/or maximum allowed number of characters"
+    >
+      <div class="flex flex-wrap items-center gap-3">
+        <Input
+          id="min_len"
+          name="min_len"
+          type="number"
+          min="0"
+          value={min_len}
+          placeholder="Min"
+          classes="w-32"
+        />
+        <Text as="span" variant="body-md">
+          and
+        </Text>
+        <Input
+          id="max_len"
+          name="max_len"
+          type="number"
+          min="0"
+          value={max_len}
+          placeholder="Max"
+          classes="w-32"
+        />
+      </div>
+      <Field>
+        <FieldLabel htmlFor="length_message">Custom error message</FieldLabel>
+        <Input id="length_message" name="length_message" value={length_message} maxLength={255} />
+      </Field>
+    </CheckboxField>
+  );
+}

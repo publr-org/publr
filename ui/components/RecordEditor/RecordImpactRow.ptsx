@@ -1,0 +1,96 @@
+import { Link } from "@publr/ui/Link.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type RecordImpactRowProps = {
+  /** The route or fragment address, and the page on the site when there is one to open. */
+  address: string;
+  href: string;
+  /** An entry page's concrete address for this record, when it has a slug. */
+  own: string;
+  /** page or fragment */
+  kind: string;
+  /** In the last build, not built yet, rendered per request. */
+  status: string;
+  /** Built to a file, so rewritten by the change (green); else rendered per request
+   * (purple), the same two colours the `--dev` island tint uses. */
+  rebuild: boolean;
+  /** The dependency chain to this row, one line each: a phrase, a name in code (a link
+   * when it opens somewhere), a trailing phrase; nested lines sit one step in. */
+  why: Array<{ text: string; code: string; href: string; tail: string; nested: boolean }>;
+};
+
+/** One page or fragment the change reaches, with a folded "Why" that shows the chain. A
+ * page's address opens the site in a new tab; a fragment's address is only ever bare
+ * HTML, so it is never a link. */
+export function RecordImpactRow({
+  address,
+  href,
+  own,
+  kind,
+  status,
+  rebuild,
+  why,
+}: RecordImpactRowProps) {
+  return (
+    <li class="flex flex-col px-3 py-2">
+      <div class="flex flex-wrap items-baseline gap-x-2">
+        {href === "" ? (
+          <Text as="span" variant="mono-sm">
+            {address}
+          </Text>
+        ) : (
+          <Link href={href} variant="mono-sm" external>
+            {address}
+          </Link>
+        )}
+        {own !== "" && (
+          <Text as="span" variant="mono-xs" tone="muted">
+            {own}
+          </Text>
+        )}
+        <Text as="span" variant="body-xs" tone="muted">
+          {kind}
+        </Text>
+        {rebuild ? (
+          <Status tone="success">{status}</Status>
+        ) : (
+          <Status tone="review">{status}</Status>
+        )}
+      </div>
+      <details class="mt-0.5">
+        <summary class="inline-flex cursor-pointer">
+          <Text as="span" variant="body-xs" tone="muted">
+            Why
+          </Text>
+        </summary>
+        <ul class="mt-1 flex flex-col gap-0.5 border-l-2 border-border pl-3">
+          {why.map((line) => (
+            <li class={["flex flex-wrap items-baseline gap-x-1", line.nested ? "pl-4" : ""]}>
+              {line.text !== "" && (
+                <Text as="span" variant="body-xs" tone="muted">
+                  {line.text}
+                </Text>
+              )}
+              {line.code !== "" && line.href === "" && (
+                <Text as="span" variant="mono-xs">
+                  {line.code}
+                </Text>
+              )}
+              {line.href !== "" && (
+                <Link href={line.href} variant="mono-xs" external>
+                  {line.code}
+                </Link>
+              )}
+              {line.tail !== "" && (
+                <Text as="span" variant="body-xs" tone="muted">
+                  {line.tail}
+                </Text>
+              )}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </li>
+  );
+}

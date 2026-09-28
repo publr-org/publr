@@ -1,0 +1,37 @@
+import { Layout } from "../layouts/Layout.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+export type CustomFieldsProps = {
+  user_name: string; user_email: string; csrf: string;
+  groups: Array<{ name: string; handle: string; href: string; status: string }>;
+};
+export function CustomFields({ user_name, user_email, csrf, groups }: CustomFieldsProps) {
+  return (
+    <Layout title="Custom Fields" section="structure"
+      user_name={user_name} user_email={user_email} csrf={csrf}>
+      <div class="px-8 pt-7 pb-6">
+        <PageHeader title="Custom Fields" description="Create field groups and choose where they appear.">
+          <Button href="/admin/custom-fields/new">Add field group</Button>
+        </PageHeader>
+      </div>
+      <div class="border-t border-border">
+        {groups.length === 0 && <div class="px-8 py-8"><Text variant="body-md" tone="muted">No field groups yet. Add a group to extend users or media.</Text></div>}
+        {groups.length > 0 && <Table>
+          <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Handle</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+          <TableBody>{groups.map((group) => (<TableRow>
+            <TableCell><Link href={group.href}>{group.name}</Link></TableCell>
+            <TableCell>{group.handle}</TableCell><TableCell>{group.status}</TableCell>
+          </TableRow>))}</TableBody>
+        </Table>}
+      </div>
+    </Layout>
+  );
+}

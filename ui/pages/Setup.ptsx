@@ -1,0 +1,64 @@
+import { Layout } from "../layouts/Layout.ptsx";
+import { Mark } from "../components/Mark.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SetupProps = {
+  notice?: string;
+};
+
+export function Setup({ notice }: SetupProps) {
+  return (
+    <Layout title="Set up Publr" section="">
+      <div class="w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-sheet">
+        <div class="mb-6 inline-flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+          <Mark classes="size-[22px]" />
+        </div>
+        <Heading level={1} size="lg">
+          Set up Publr
+        </Heading>
+        <p class="mt-1.5">
+          <Text variant="body-sm" tone="muted">
+            Create the first administrator.
+          </Text>
+        </p>
+        {notice && (
+          <div class="mt-4">
+            <Status tone="error">{notice}</Status>
+          </div>
+        )}
+        <form method="post" action="/admin/setup" class="mt-6 space-y-4">
+          <Field>
+            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <Input id="email" type="email" name="email" required autocomplete="username" />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="display_name">Name</FieldLabel>
+            <Input id="display_name" name="display_name" required />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="password">Password</FieldLabel>
+            <Input
+              id="password"
+              type="password"
+              name="password"
+              required
+              minLength={12}
+              autocomplete="new-password"
+            />
+            <FieldDescription>At least 12 characters.</FieldDescription>
+          </Field>
+          <Button type="submit" size="lg" classes="mt-2 w-full">
+            Create administrator
+          </Button>
+        </form>
+      </div>
+    </Layout>
+  );
+}

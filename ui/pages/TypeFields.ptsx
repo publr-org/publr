@@ -1,0 +1,57 @@
+import { Editor } from "../layouts/Editor.ptsx";
+import { TypeColumns } from "../components/TypeColumns.ptsx";
+
+export type TypeFieldsProps = {
+  user_name: string;
+  user_email: string;
+  csrf: string;
+  title: string;
+  crumb_label: string;
+  crumb_href: string;
+  type_href: string;
+  /** The fields (FieldList), the levels over them a deep link starts with (TypeLevel), and
+   * the preview (RecordEditor), rendered by the adapter. */
+  list: JSX.Element;
+  levels?: JSX.Element;
+  open: boolean;
+  preview: JSX.Element;
+};
+
+/** A content type's page: its fields on the left, how a record of it looks in the editor
+ * on the right; the picker and the field forms open as levels over the fields, on this
+ * same page. The head of the type is on its settings page; the list's split button leads
+ * there, to the records, and to a new field. */
+export function TypeFields({
+  user_name,
+  user_email,
+  csrf,
+  title,
+  crumb_label,
+  crumb_href,
+  type_href,
+  list,
+  levels,
+  open,
+  preview,
+}: TypeFieldsProps) {
+  return (
+    <Editor
+      title={title}
+      section="types"
+      crumb_label={crumb_label}
+      crumb_href={crumb_href}
+      user_name={user_name}
+      user_email={user_email}
+      csrf={csrf}
+      fill
+    >
+      <TypeColumns
+        type_href={type_href}
+        list={list}
+        levels={levels}
+        open={open}
+        preview={preview}
+      />
+    </Editor>
+  );
+}

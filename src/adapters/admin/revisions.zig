@@ -1,6 +1,6 @@
 const std = @import("std");
+const json = @import("../../lib/json.zig");
 const admin = @import("../admin.zig");
-const fields = @import("fields.zig");
 const registry = @import("../../app/registry.zig");
 const types = @import("../../operations/content_type.zig");
 const record_operations = @import("../../operations/record.zig");
@@ -10,11 +10,12 @@ const Request = admin.Request;
 const Response = admin.Response;
 const Context = admin.Context;
 const Error = admin.Error;
-const Page = admin.Page;
 const Form = admin.Form;
 const Session = admin.Session;
+const views = admin.views;
 
 const back = "/admin/content";
+const json_bytes_max: u32 = 1 << 20;
 
 /// Every snapshot of a record, newest first, with the revision's title where it has one.
 pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -33,50 +34,48 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .id = id,
         .limit = 1000,
     }) catch |err| return admin.fail(&session, err, back);
-    const title = std.fmt.allocPrint(session.arena, "Versions of {s}", .{
-        if (full.record.title.len > 0) full.record.title else full.record.id,
-    }) catch return error.OutOfMemory;
-    var page = try Page.begin(session.arena, title, &session);
-
-    try page.raw("<p><a href=\"/admin/content/");
-    try page.text(full.record.id);
-    try page.raw("\">Back to the record</a></p>\n" ++
-        "<table border=\"1\" cellpadding=\"4\">\n<tr><th>#</th><th>Kind</th>" ++
-        "<th>Title</th><th>Taken</th><th>By</th></tr>\n<tr><td><strong>current</strong></td><td>");
-    try page.text(full.record.status);
-    try page.raw(if (full.record.changed) " (live; pending changes aside)" else "");
-    try page.raw("</td><td>");
-    try page.text(full.record.title);
-    try page.print("</td><td>{d}</td><td>", .{full.record.updated_at});
-    try page.text(full.record.updated_by orelse "");
-    try page.raw("</td></tr>\n");
-
+    const arena = session.arena;
+    const record_title = if (full.record.title.len > 0) full.record.title else full.record.id;
+    var rows: std.ArrayList(views.Revisions.RowsItem) = .empty;
     var index = listed.snapshots.len;
 
     while (index > 0) : (index -= 1) {
         const item = listed.snapshots[index - 1];
-
-        try page.print("<tr><td><a href=\"/admin/content/{s}/revisions/{d}\">{d}</a></td><td>", .{
+        const href = std.fmt.allocPrint(arena, "/admin/content/{s}/revisions/{d}", .{
             full.record.id,
             item.seq,
-            item.seq,
-        });
-        try page.text(item.kind);
-        try page.raw("</td><td>");
-        try page.text(title_of(session.arena, item.document, got.definition.title_field));
-        try page.print("</td><td>{d}</td><td>", .{item.at});
-        try page.text(item.by orelse "");
-        try page.raw("</td></tr>\n");
+        }) catch return error.OutOfMemory;
+
+        rows.append(arena, .{
+            .href = href,
+            .seq = std.fmt.allocPrint(arena, "{d}", .{item.seq}) catch return error.OutOfMemory,
+            .kind = item.kind,
+            .title = title_of(arena, item.document, got.definition.title_field),
+            .at = admin.time_text(arena, item.at),
+            .by = item.by orelse "",
+        }) catch return error.OutOfMemory;
     }
 
-    try page.raw("</table>\n");
+    const shell = admin.shell_of(&session);
 
-    if (listed.snapshots.len == 0) {
-        try page.raw("<p>No previous versions yet: one is kept every time the live document is " ++
-            "replaced.</p>\n");
-    }
-
-    try page.send(response, .ok);
+    try admin.render.page(response, arena, .ok, views.Revisions, .{
+        .user_name = shell.user_name,
+        .user_email = shell.user_email,
+        .csrf = shell.csrf,
+        .nav = try admin.nav_content(&session, .{
+            .filters = .{ .types = &.{full.record.type}, .type_view = true },
+        }),
+        .title = std.fmt.allocPrint(arena, "Versions of {s}", .{record_title}) catch {
+            return error.OutOfMemory;
+        },
+        .record_title = record_title,
+        .record_href = try record_href(arena, full.record.id),
+        .status = full.record.status,
+        .changed = full.record.changed,
+        .updated = admin.time_text(arena, full.record.updated_at),
+        .updated_by = full.record.updated_by orelse "",
+        .rows = rows.items,
+    });
 }
 
 /// One snapshot, field by field, with a way to bring it back.
@@ -97,59 +96,57 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .id = id,
         .seq = seq,
     }) catch |err| return admin.fail(&session, err, back);
-    const document = std.json.parseFromSliceLeaky(
-        std.json.Value,
-        session.arena,
-        item.document,
-        .{},
-    ) catch return admin.fail(&session, error.Invalid, back);
-    const title = std.fmt.allocPrint(session.arena, "Version {d} of {s}", .{
-        seq,
-        if (full.record.title.len > 0) full.record.title else full.record.id,
-    }) catch return error.OutOfMemory;
-    var page = try Page.begin(session.arena, title, &session);
-
-    try page.print("<p><a href=\"/admin/content/{s}/revisions\">All versions</a> | " ++
-        "<a href=\"/admin/content/{s}\">The record</a></p>\n<p>Kind: ", .{
-        full.record.id,
-        full.record.id,
-    });
-    try page.text(item.kind);
-    try page.print(", taken {d} by ", .{item.at});
-    try page.text(item.by orelse "nobody");
-    try page.raw("</p>\n<table border=\"1\" cellpadding=\"4\">\n" ++
-        "<tr><th>Field</th><th>Value</th></tr>\n");
+    const arena = session.arena;
+    const document = snapshot_object(arena, item.document) catch |err| {
+        return admin.fail(&session, err, back);
+    };
+    var fields: std.ArrayList(views.Revision.FieldsItem) = .empty;
 
     for (got.definition.fields) |def| {
-        const value = document.object.get(def.name);
+        const value: []const u8 = if (document.get(def.name)) |present|
+            std.json.Stringify.valueAlloc(arena, present, .{ .whitespace = .indent_2 }) catch {
+                return error.OutOfMemory;
+            }
+        else
+            "";
 
-        try page.raw("<tr><td>");
-        try page.text(def.label);
-        try page.raw("</td><td><pre>");
-
-        if (value) |present| {
-            const text = std.json.Stringify.valueAlloc(session.arena, present, .{
-                .whitespace = .indent_2,
-            }) catch return error.OutOfMemory;
-
-            try page.text(text);
-        }
-
-        try page.raw("</pre></td></tr>\n");
+        fields.append(arena, .{ .label = def.label, .value = value }) catch {
+            return error.OutOfMemory;
+        };
     }
 
-    try page.raw("</table>\n<form method=\"post\" action=\"/admin/content/");
-    try page.text(full.record.id);
-    try page.raw("/restore\">\n");
-    try page.csrf(&session);
-    try page.print("<input type=\"hidden\" name=\"seq\" value=\"{d}\">" ++
-        "<input type=\"hidden\" name=\"expected_version\" value=\"{d}\">\n", .{
-        seq,
-        full.record.version,
+    const record_title = if (full.record.title.len > 0) full.record.title else full.record.id;
+    const shell = admin.shell_of(&session);
+
+    try admin.render.page(response, arena, .ok, views.Revision, .{
+        .user_name = shell.user_name,
+        .user_email = shell.user_email,
+        .csrf = shell.csrf,
+        .nav = try admin.nav_content(&session, .{
+            .filters = .{ .types = &.{full.record.type}, .type_view = true },
+        }),
+        .title = std.fmt.allocPrint(arena, "Version {d} of {s}", .{ seq, record_title }) catch {
+            return error.OutOfMemory;
+        },
+        .versions_title = std.fmt.allocPrint(arena, "Versions of {s}", .{record_title}) catch {
+            return error.OutOfMemory;
+        },
+        .versions_href = std.fmt.allocPrint(arena, "/admin/content/{s}/revisions", .{
+            full.record.id,
+        }) catch return error.OutOfMemory,
+        .record_href = try record_href(arena, full.record.id),
+        .kind = item.kind,
+        .at = admin.time_text(arena, item.at),
+        .by = item.by orelse "nobody",
+        .fields = fields.items,
+        .restore_action = std.fmt.allocPrint(arena, "/admin/content/{s}/restore", .{
+            full.record.id,
+        }) catch return error.OutOfMemory,
+        .seq = std.fmt.allocPrint(arena, "{d}", .{seq}) catch return error.OutOfMemory,
+        .expected_version = std.fmt.allocPrint(arena, "{d}", .{full.record.version}) catch {
+            return error.OutOfMemory;
+        },
     });
-    try page.raw("<p><button>Restore this version</button> (a normal save: parked as pending " ++
-        "changes when the record is live)</p>\n</form>\n");
-    try page.send(response, .ok);
 }
 
 /// Restore = the snapshot's document written back through `record save`.
@@ -162,9 +159,7 @@ pub fn restore(request: *Request, response: *Response, ctx: *Context) Error!void
     const form = &post.form;
     const id = try admin.param(session, "id", back) orelse return;
 
-    const location = std.fmt.allocPrint(session.arena, "/admin/content/{s}", .{id}) catch {
-        return error.OutOfMemory;
-    };
+    const location = try record_href(session.arena, id);
     const seq = number_field(form, "seq") orelse {
         return admin.fail(session, error.Invalid, location);
     };
@@ -178,6 +173,13 @@ pub fn restore(request: *Request, response: *Response, ctx: *Context) Error!void
     }) catch |err| return admin.fail(session, err, location);
 
     try response.redirect(.see_other, location);
+}
+
+fn record_href(arena: std.mem.Allocator, id: []const u8) Error![]const u8 {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(back.len > 0);
+
+    return std.fmt.allocPrint(arena, "/admin/content/{s}", .{id}) catch error.OutOfMemory;
 }
 
 fn seq_param(session: *const Session) ?i64 {
@@ -200,9 +202,9 @@ fn number_field(form: *const Form, name: []const u8) ?i64 {
 
 fn title_of(arena: std.mem.Allocator, document: []const u8, title_field: []const u8) []const u8 {
     std.debug.assert(title_field.len > 0);
-    std.debug.assert(fields.json_bytes_max > 0);
+    std.debug.assert(json_bytes_max > 0);
 
-    const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, document, .{}) catch {
+    const parsed = @import("../../lib/json.zig").parse(std.json.Value, arena, document, .{}) catch {
         return "";
     };
 
@@ -213,4 +215,15 @@ fn title_of(arena: std.mem.Allocator, document: []const u8, title_field: []const
     const title = parsed.object.get(title_field) orelse return "";
 
     return if (title == .string) title.string else "";
+}
+
+fn snapshot_object(arena: std.mem.Allocator, text: []const u8) error{Invalid}!std.json.ObjectMap {
+    std.debug.assert(json.depth_max > 0);
+    const document = json.parse(std.json.Value, arena, text, .{}) catch return error.Invalid;
+
+    if (document != .object) {
+        return error.Invalid;
+    }
+
+    return document.object;
 }

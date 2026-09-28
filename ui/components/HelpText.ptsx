@@ -1,0 +1,45 @@
+import { Publr } from "publr-jsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export const state = Publr.reactive({
+  help: "",
+  help_count: "",
+});
+
+const help_max = 255;
+
+export const onHelp = (event: Event) => {
+  state.help = (event.target as HTMLInputElement).value;
+  state.help_count = `${state.help.length} / ${help_max}`;
+};
+
+export type HelpTextProps = {
+  help: string;
+  help_count: string;
+};
+
+/** A field's help text, the line shown under its control in the editor, with a live
+ * count of the room used. */
+export function HelpText({ help, help_count }: HelpTextProps) {
+  state.help = help;
+  state.help_count = help_count;
+
+  return (
+    <div>
+      <Field>
+        <FieldLabel htmlFor="help">Help text</FieldLabel>
+        <Input id="help" name="help" value={state.help} maxLength={255} onInput={onHelp} />
+        <div class="flex items-baseline justify-between gap-4">
+          <FieldDescription>This help text will show up below the field</FieldDescription>
+          <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+            {state.help_count}
+          </Text>
+        </div>
+      </Field>
+    </div>
+  );
+}

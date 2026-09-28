@@ -1,0 +1,95 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { InputGroup } from "@publr/ui/InputGroup.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type FileSizeRuleProps = {
+  min?: string;
+  step?: string;
+  limit_size?: boolean;
+  size_min?: string;
+  size_min_unit?: string;
+  size_max?: string;
+  size_max_unit?: string;
+  size_message?: string;
+};
+
+export function FileSizeRule({
+  min = "",
+  step = "",
+  limit_size = false,
+  size_min = "",
+  size_min_unit = "b",
+  size_max = "",
+  size_max_unit = "b",
+  size_message = "",
+}: FileSizeRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_size"
+      name="limit_size"
+      checked={limit_size}
+      label="Accept only a specified file size"
+      description="Specify a minimum and/or maximum allowed file size"
+    >
+      <div class="flex flex-wrap items-center gap-3">
+        <InputGroup classes="w-48">
+          <Input
+            id="size_min"
+            name="size_min"
+            type="number"
+            min="0"
+            step="any"
+            value={size_min}
+            placeholder="Min"
+            inset
+          />
+          <NativeSelect name="size_min_unit" inset classes="w-24">
+            <option value="b" selected={size_min_unit === "b"}>
+              Bytes
+            </option>
+            <option value="kb" selected={size_min_unit === "kb"}>
+              KB
+            </option>
+            <option value="mb" selected={size_min_unit === "mb"}>
+              MB
+            </option>
+          </NativeSelect>
+        </InputGroup>
+        <Text as="span" variant="body-md">
+          and
+        </Text>
+        <InputGroup classes="w-48">
+          <Input
+            id="size_max"
+            name="size_max"
+            type="number"
+            min="0"
+            step="any"
+            value={size_max}
+            placeholder="Max"
+            inset
+          />
+          <NativeSelect name="size_max_unit" inset classes="w-24">
+            <option value="b" selected={size_max_unit === "b"}>
+              Bytes
+            </option>
+            <option value="kb" selected={size_max_unit === "kb"}>
+              KB
+            </option>
+            <option value="mb" selected={size_max_unit === "mb"}>
+              MB
+            </option>
+          </NativeSelect>
+        </InputGroup>
+      </div>
+      <Field>
+        <FieldLabel htmlFor="size_message">Custom error message</FieldLabel>
+        <Input id="size_message" name="size_message" value={size_message} maxLength={255} />
+      </Field>
+    </CheckboxField>
+  );
+}

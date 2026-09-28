@@ -1,0 +1,309 @@
+import { onOpenReference } from "./RecordEditor.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Checkbox } from "@publr/ui/Checkbox.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { InputGroup } from "@publr/ui/InputGroup.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { ReferenceCard } from "@publr/ui/ReferenceCard.ptsx";
+import { Switch } from "@publr/ui/Switch.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+export type FieldControlProps = {
+  /** The form field name: `title`, `tags[1]`, `seo.description`, `faq[0].question`. */
+  name: string;
+  /** input, number, range, datetime, date, textarea, switch, checkbox, radios, select,
+   * slug, card, json; `pick` (a reference pointing nowhere) is drawn by the page, which
+   * has the target types. Radios and select options come as children. */
+  control: string;
+  value: string;
+  checked: boolean;
+  /** Shown, not edited: a slug locked on publish. */
+  readonly?: boolean;
+  /** Text beside a switch or checkbox: what "on" means. */
+  label_on?: string;
+  placeholder: string;
+  rows: number;
+  min: string;
+  max: string;
+  step: string;
+  /** The address a slug completes, `https://site/posts/`, or a number's unit before it. */
+  prefix: string;
+  /** A number's unit after it: `kg`. */
+  suffix?: string;
+  /** What a reference card shows about the record it points at. */
+  card_type: string;
+  card_title: string;
+  card_status: string;
+  card_tone: string;
+  card_href: string;
+  /** The reshape actions of one value in a list; empty when the value stands alone. */
+  remove: string;
+  up: string;
+  down: string;
+  /** The options of a select, rendered by the page. */
+  children?: JSX.Element;
+};
+
+/** One value of one field, drawn by its kind's control, with the move and remove
+ * buttons of a value in a list. Every button is a named submit: the form comes back
+ * reshaped, nothing is saved. */
+export function FieldControl({
+  name,
+  control,
+  value,
+  checked,
+  readonly = false,
+  label_on = "",
+  placeholder,
+  rows,
+  min,
+  max,
+  step,
+  prefix,
+  suffix = "",
+  card_type,
+  card_title,
+  card_status,
+  card_tone,
+  card_href,
+  remove,
+  up,
+  down,
+  children,
+}: FieldControlProps) {
+  return (
+    <div class="flex items-start gap-2">
+      <div class="min-w-0 flex-1">
+        {control === "input" && (
+          <Input
+            id={`field-${name}`}
+            name={name}
+            value={value}
+            placeholder={placeholder}
+            readOnly={readonly}
+          />
+        )}
+        {control === "color" && <Input id={`field-${name}`} name={name} type="color" value={value} classes="h-11 max-w-24 p-1.5" />}
+        {control === "time" && <Input id={`field-${name}`} name={name} type="time" value={value} />}
+        {control === "password" && <Input id={`field-${name}`} name={name} type="password" value={value} />}
+        {control === "number" && prefix === "" && suffix === "" && (
+          <Input
+            id={`field-${name}`}
+            type="number"
+            name={name}
+            value={value}
+            placeholder={placeholder}
+            min={min}
+            max={max}
+            step={step}
+          />
+        )}
+        {control === "number" && prefix !== "" && (
+          <InputGroup leading={prefix}>
+            <Input
+              id={`field-${name}`}
+              type="number"
+              name={name}
+              value={value}
+              placeholder={placeholder}
+              min={min}
+              max={max}
+              step={step}
+              inset
+            />
+          </InputGroup>
+        )}
+        {control === "number" && prefix === "" && suffix !== "" && (
+          <InputGroup trailing_text={suffix}>
+            <Input
+              id={`field-${name}`}
+              type="number"
+              name={name}
+              value={value}
+              placeholder={placeholder}
+              min={min}
+              max={max}
+              step={step}
+              inset
+            />
+          </InputGroup>
+        )}
+        {control === "range" && (
+          <div class="flex items-center gap-3">
+            <Input
+              id={`field-${name}`}
+              type="range"
+              name={name}
+              value={value}
+              min={min}
+              max={max}
+              step={step}
+              classes="flex-1"
+            />
+            <Text as="span" variant="body-sm" tone="muted">
+              {min} to {max}
+            </Text>
+          </div>
+        )}
+        {control === "datetime" && (
+          <Input id={`field-${name}`} type="datetime-local" name={name} value={value} />
+        )}
+        {control === "date" && <Input id={`field-${name}`} type="date" name={name} value={value} />}
+        {control === "textarea" && (
+          <Textarea id={`field-${name}`} name={name} value={value} rows={rows} />
+        )}
+        {control === "json" && (
+          <Textarea
+            id={`field-${name}`}
+            name={name}
+            value={value}
+            rows={rows}
+            placeholder="JSON"
+            mono
+          />
+        )}
+        {control === "switch" && (
+          <label class="flex items-center gap-2.5 pt-1">
+            <Switch id={`field-${name}`} name={name} value="1" checked={checked} />
+            {label_on !== "" && (
+              <Text as="span" variant="body-sm">
+                {label_on}
+              </Text>
+            )}
+          </label>
+        )}
+        {control === "checkbox" && (
+          <label class="flex items-center gap-2.5 pt-1">
+            <Checkbox id={`field-${name}`} name={name} value="1" checked={checked} />
+            {label_on !== "" && (
+              <Text as="span" variant="body-sm">
+                {label_on}
+              </Text>
+            )}
+          </label>
+        )}
+        {(control === "radios" || control === "buttons") && (
+          <div class="flex flex-wrap gap-x-6 gap-y-2 pt-1" id={`field-${name}`}>
+            {children}
+          </div>
+        )}
+        {control === "select" && (
+          <NativeSelect id={`field-${name}`} name={name}>
+            {children}
+          </NativeSelect>
+        )}
+        {control === "slug" && prefix !== "" && (
+          <InputGroup leading={prefix}>
+            <Input
+              id={`field-${name}`}
+              name={name}
+              value={value}
+              placeholder={placeholder}
+              readOnly={readonly}
+              inset
+            />
+          </InputGroup>
+        )}
+        {control === "slug" && prefix === "" && (
+          <Input
+            id={`field-${name}`}
+            name={name}
+            value={value}
+            placeholder={placeholder}
+            readOnly={readonly}
+          />
+        )}
+        {control === "card" && (
+          <ReferenceCard
+            onOpen={onOpenReference}
+            type_label={card_type}
+            title={card_title}
+            status={card_status}
+            tone={card_tone}
+            href={card_href}
+          >
+            <input type="hidden" name={name} value={value} />
+            {up !== "" && (
+              <Button
+                type="submit"
+                name="reshape"
+                value={up}
+                hierarchy="tertiary"
+                size="xs"
+                label="Move up"
+                title="Move up"
+              >
+                <Icon name="chevron-up" size="xs" />
+              </Button>
+            )}
+            {down !== "" && (
+              <Button
+                type="submit"
+                name="reshape"
+                value={down}
+                hierarchy="tertiary"
+                size="xs"
+                label="Move down"
+                title="Move down"
+              >
+                <Icon name="chevron-down" size="xs" />
+              </Button>
+            )}
+            {remove !== "" && (
+              <Button
+                type="submit"
+                name="reshape"
+                value={remove}
+                hierarchy="tertiary"
+                size="xs"
+                label="Remove"
+                title="Remove"
+              >
+                <Icon name="x-close" size="xs" />
+              </Button>
+            )}
+          </ReferenceCard>
+        )}
+      </div>
+      {remove !== "" && control !== "card" && (
+        <span class="inline-flex shrink-0 items-center gap-1 pt-0.5">
+          <Button
+            type="submit"
+            name="reshape"
+            value={up}
+            hierarchy="tertiary"
+            size="sm"
+            label="Move up"
+            title="Move up"
+          >
+            <Icon name="chevron-up" size="sm" />
+          </Button>
+          <Button
+            type="submit"
+            name="reshape"
+            value={down}
+            hierarchy="tertiary"
+            size="sm"
+            label="Move down"
+            title="Move down"
+          >
+            <Icon name="chevron-down" size="sm" />
+          </Button>
+          <Button
+            type="submit"
+            name="reshape"
+            value={remove}
+            hierarchy="tertiary"
+            size="sm"
+            label="Remove"
+            title="Remove"
+          >
+            <Icon name="x-close" size="sm" />
+          </Button>
+        </span>
+      )}
+    </div>
+  );
+}

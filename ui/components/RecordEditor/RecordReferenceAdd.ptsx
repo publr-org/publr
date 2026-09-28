@@ -1,0 +1,123 @@
+import { onReference } from "../RecordEditor.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { DropdownMenuSearch } from "@publr/ui/DropdownMenuSearch.ptsx";
+import { ReferenceAddCard } from "@publr/ui/ReferenceAddCard.ptsx";
+
+export type RecordReferenceAddProps = {
+  name: string;
+  reshape: string;
+  can_link: boolean;
+  can_create: boolean;
+  first_handle: string;
+  live_suffix: string;
+  pick_search: boolean;
+  targets: Array<{
+    handle: string;
+    name: string;
+  }>;
+};
+
+export function RecordReferenceAdd({
+  name,
+  reshape,
+  can_link,
+  can_create,
+  first_handle,
+  live_suffix,
+  pick_search,
+  targets,
+}: RecordReferenceAddProps) {
+  return (
+    <ReferenceAddCard>
+      {can_link &&
+        (first_handle !== "" ? (
+          <Button
+            type="button"
+            hierarchy="secondary"
+            size="sm"
+            onClick={onReference}
+            data-verb="link"
+            data-field={name}
+            data-type={first_handle}
+            data-live={live_suffix}
+            data-reshape={reshape}
+          >
+            <Icon name="plus" size="sm" />
+            <span>Link existing item</span>
+          </Button>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" hierarchy="secondary" size="sm">
+                <Icon name="plus" size="sm" />
+                <span>Link existing item</span>
+                <Icon name="chevron-down" size="xs" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {pick_search && <DropdownMenuSearch placeholder="Search content type" />}
+              {targets.map((target) => (
+                <DropdownMenuItem
+                  onClick={onReference}
+                  data-verb="link"
+                  data-field={name}
+                  data-type={target.handle}
+                  data-live={live_suffix}
+                  data-reshape={reshape}
+                >
+                  <Icon name="file" size="sm" />
+                  {target.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ))}
+      {can_create &&
+        (first_handle !== "" ? (
+          <Button
+            type="button"
+            hierarchy="secondary"
+            size="sm"
+            onClick={onReference}
+            data-verb="create"
+            data-field={name}
+            data-type={first_handle}
+            data-reshape={reshape}
+          >
+            <Icon name="plus" size="sm" />
+            <span>Create new item</span>
+          </Button>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" hierarchy="secondary" size="sm">
+                <Icon name="plus" size="sm" />
+                <span>Create new item</span>
+                <Icon name="chevron-down" size="xs" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {pick_search && <DropdownMenuSearch placeholder="Search content type" />}
+              {targets.map((target) => (
+                <DropdownMenuItem
+                  onClick={onReference}
+                  data-verb="create"
+                  data-field={name}
+                  data-type={target.handle}
+                  data-reshape={reshape}
+                >
+                  <Icon name="file" size="sm" />
+                  {target.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ))}
+    </ReferenceAddCard>
+  );
+}

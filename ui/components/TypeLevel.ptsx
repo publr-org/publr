@@ -1,0 +1,31 @@
+import { initial_ref } from "./TypeColumns.ptsx";
+export type TypeLevelProps = {
+  /** The page the level shows; the client keeps the stack by it. */
+  url: string;
+  title: string;
+  /** Where the dimmed area leads: the level under this one, or the type's page. */
+  back_href: string;
+  children?: JSX.Element;
+};
+
+/** The native deep-link panel. TypeColumns adopts its response into the reactive stack. */
+export function TypeLevel({ url, title, back_href, children }: TypeLevelProps) {
+  return (
+    <div class="contents" data-part="type-level" data-url={url}>
+      <a
+        href={back_href}
+        aria-label="Back"
+        class="absolute inset-y-0 right-0 left-0 bg-black/50"
+        data-part="type-scrim"
+      ></a>
+      <div
+        class="absolute inset-y-0 right-0 left-10 overflow-y-auto border-l border-border bg-card shadow-2xl"
+        data-part="type-panel"
+      >
+        <div class="flex min-h-full flex-col" data-part="type-panel-body" ref={initial_ref} data-url={url} data-title={title}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}

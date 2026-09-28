@@ -1,0 +1,28 @@
+import { Layout } from "../layouts/Layout.ptsx";
+
+export type ContentProps = {
+  user_name: string;
+  user_email: string;
+  csrf: string;
+  nav: JSX.Element;
+  /** The view's name, for the window and the breadcrumb. */
+  title: string;
+  /** The list itself (ContentList), rendered once by the adapter: the page wraps it in the
+   * shell, and the list's script fetches it bare to draw it again in place. */
+  list: JSX.Element;
+};
+
+export function Content({ user_name, user_email, csrf, nav, title, list }: ContentProps) {
+  return (
+    <Layout
+      title={title}
+      section="content"
+      user_name={user_name}
+      user_email={user_email}
+      csrf={csrf}
+      sidebar={nav}
+    >
+      {list}
+    </Layout>
+  );
+}

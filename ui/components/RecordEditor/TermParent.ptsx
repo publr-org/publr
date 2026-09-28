@@ -1,0 +1,31 @@
+import { EditorAsideSection } from "../EditorAsideSection.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+
+export type TermParentProps = {
+  /** The terms the term may sit under, in tree order: not itself, not what is below it. */
+  parents: Array<{ id: string; title: string; selected: boolean }>;
+  is_root: boolean;
+};
+
+/** A term's parent, in the editor's aside: a dropdown over the taxonomy's other terms.
+ * Posts with the term's form as `parent`; empty makes the term a root. */
+export function TermParent({ parents, is_root }: TermParentProps) {
+  return (
+    <EditorAsideSection title="Parent">
+      <NativeSelect id="parent" name="parent" form="record">
+        <option value="" selected={is_root}>
+          None (a root term)
+        </option>
+        {parents.map((parent) => (
+          <option value={parent.id} selected={parent.selected}>
+            {parent.title}
+          </option>
+        ))}
+      </NativeSelect>
+      <FieldDescription>
+        Records filed under this term are filed under its parents too.
+      </FieldDescription>
+    </EditorAsideSection>
+  );
+}

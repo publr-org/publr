@@ -1,0 +1,396 @@
+import { Publr } from "publr-jsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { ChoiceCard } from "@publr/ui/ChoiceCard.ptsx";
+import { InputGroup } from "@publr/ui/InputGroup.ptsx";
+import { Switch } from "@publr/ui/Switch.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldError } from "@publr/ui/FieldError.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+export const state = Publr.reactive({
+  name: "",
+  handle: "",
+  description: "",
+  url: "",
+  has_url: false,
+  is_record: true,
+  handle_edited: false,
+  url_edited: false,
+  name_count: "",
+  handle_count: "",
+  description_count: "",
+  show_all_types: false,
+});
+
+export const toggleAllTypes = () => {
+  state.show_all_types = !state.show_all_types;
+};
+
+const name_max = 50;
+const handle_max = 64;
+const description_max = 500;
+
+const count_text = (value: string, max: number) => `${value.length} / ${max}`;
+
+const slugify = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+export const onName = (event: Event) => {
+  state.name = (event.target as HTMLInputElement).value;
+  state.name_count = count_text(state.name, name_max);
+  if (!state.handle_edited) {
+    state.handle = slugify(state.name);
+    state.handle_count = count_text(state.handle, handle_max);
+  }
+  if (!state.url_edited) {
+    state.url = slugify(state.name);
+  }
+};
+
+export const onHandle = (event: Event) => {
+  state.handle = (event.target as HTMLInputElement).value;
+  state.handle_count = count_text(state.handle, handle_max);
+  state.handle_edited = true;
+};
+
+export const onDescription = (event: Event) => {
+  state.description = (event.target as HTMLTextAreaElement).value;
+  state.description_count = count_text(state.description, description_max);
+};
+
+export const onUrl = (event: Event) => {
+  state.url = (event.target as HTMLInputElement).value;
+  state.url_edited = true;
+};
+
+export const toggleUrl = () => {
+  state.has_url = !state.has_url;
+};
+
+export const onKind = (event: Event) => {
+  state.is_record = (event.target as HTMLInputElement).value === "record";
+};
+
+export type TypeHeadProps = {
+  /** Which kind is chosen; exactly one is true. */
+  is_record: boolean;
+  is_settings: boolean;
+  is_component: boolean;
+  name: string;
+  handle: string;
+  description: string;
+  /** The counts as the server printed them, so the page and the script agree at load. */
+  name_count: string;
+  handle_count: string;
+  description_count: string;
+  /** What the last post was refused for, per field; empty when nothing was. */
+  name_error: string;
+  handle_error: string;
+  description_error: string;
+  /** The type's place on the site: records live at `<site_url>/<url>/<slug>`. */
+  url: string;
+  has_url: boolean;
+  site_url: string;
+  /** A new type: the handle and the URL follow the name until edited by hand. */
+  is_new: boolean;
+  choose_kind: boolean;
+  /** A taxonomy has no kind and no URL: it is hierarchical or flat, public or not. */
+  is_taxonomy: boolean;
+  hierarchical: boolean;
+  is_public: boolean;
+  single: boolean;
+  applies_routed: Array<{ value: string; label: string; selected: boolean }>;
+  applies_other: Array<{ value: string; label: string; selected: boolean }>;
+  show_all_types: boolean;
+};
+
+/** The kind, the name, the handle and the description of a content type, kept in step
+ * in the browser: on a new type the handle and the URL path are made from the name as
+ * it is typed, until either is edited by hand; every text shows how much of its room is
+ * used. The form posts plain fields; nothing here is required for the post to work. */
+export function TypeHead({
+  is_record,
+  is_settings,
+  is_component,
+  name,
+  handle,
+  description,
+  name_count,
+  handle_count,
+  description_count,
+  name_error,
+  handle_error,
+  description_error,
+  url,
+  has_url,
+  site_url,
+  is_new,
+  choose_kind,
+  is_taxonomy,
+  hierarchical,
+  is_public,
+  single,
+  applies_routed,
+  applies_other,
+  show_all_types,
+}: TypeHeadProps) {
+  state.show_all_types = show_all_types;
+  state.is_record = is_record;
+  state.name = name;
+  state.handle = handle;
+  state.description = description;
+  state.name_count = name_count;
+  state.handle_count = handle_count;
+  state.description_count = description_count;
+  state.url = url;
+  state.has_url = has_url;
+  state.handle_edited = !is_new;
+  state.url_edited = !is_new;
+
+  return (
+    <div class="space-y-6">
+      {!is_taxonomy && choose_kind && (
+      <fieldset class="m-0 min-w-0 border-0 p-0">
+        <legend class="mb-2 p-0">
+          <Text as="span" variant="body-sm" tone="default">
+            Kind
+          </Text>
+        </legend>
+        <div class="grid gap-3 sm:grid-cols-3">
+          <ChoiceCard
+            name="kind"
+            value="record"
+            checked={is_record}
+            title="Record type"
+            description="Holds any number of records: posts, pages, hotels, players."
+            onChange={onKind}
+          />
+          <ChoiceCard
+            name="kind"
+            value="settings"
+            checked={is_settings}
+            title="Settings"
+            description="Holds exactly one record: the homepage, the header, general options."
+            onChange={onKind}
+          />
+          <ChoiceCard
+            name="kind"
+            value="component"
+            checked={is_component}
+            title="Component"
+            description="Holds no records of its own: a set of fields for other types to reuse."
+            onChange={onKind}
+          />
+        </div>
+      </fieldset>
+      )}
+      <Field>
+        <FieldLabel htmlFor="name" required>
+          Name
+        </FieldLabel>
+        <Input
+          id="name"
+          name="name"
+          value={state.name}
+          required
+          invalid={name_error !== ""}
+          placeholder={is_settings ? "For example Brand, Navigation, Website" : "For example Product, Blog Post, Author"}
+          maxLength={50}
+          onInput={onName}
+        />
+        <div class="flex items-baseline justify-between gap-4">
+          {name_error !== "" ? (
+            <FieldError>{name_error}</FieldError>
+          ) : (
+            <FieldDescription>Shown wherever this definition is named</FieldDescription>
+          )}
+          <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+            {state.name_count}
+          </Text>
+        </div>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="handle" required>
+          Handle
+        </FieldLabel>
+        <Input
+          id="handle"
+          name="handle"
+          value={state.handle}
+          invalid={handle_error !== ""}
+          placeholder={is_settings ? "brand" : "product"}
+          maxLength={64}
+          onInput={onHandle}
+        />
+        <div class="flex items-baseline justify-between gap-4">
+          {handle_error !== "" ? (
+            <FieldError>{handle_error}</FieldError>
+          ) : (
+            <FieldDescription>
+              Generated from the name. Lowercase letters, digits and underscores; how this definition is
+              called in the API and templates
+            </FieldDescription>
+          )}
+          <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+            {state.handle_count}
+          </Text>
+        </div>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="description">Description</FieldLabel>
+        <Textarea
+          id="description"
+          name="description"
+          value={state.description}
+          invalid={description_error !== ""}
+          rows={3}
+          maxLength={500}
+          onInput={onDescription}
+        />
+        <div class="flex items-baseline justify-between gap-4">
+          {description_error !== "" ? (
+            <FieldError>{description_error}</FieldError>
+          ) : (
+            <FieldDescription>
+              What this definition is for, for the people who build with it
+            </FieldDescription>
+          )}
+          <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+            {state.description_count}
+          </Text>
+        </div>
+      </Field>
+      {is_taxonomy && (
+        <Field>
+          <div class="flex items-center gap-2.5">
+            <Switch id="hierarchical" name="hierarchical" value="1" checked={hierarchical} />
+            <FieldLabel htmlFor="hierarchical">Hierarchical</FieldLabel>
+          </div>
+          <FieldDescription>
+            Terms may have a parent term, like categories; a flat taxonomy is a list, like tags.
+            A record filed under a term is filed under its parents too.
+          </FieldDescription>
+        </Field>
+      )}
+      {is_taxonomy && (
+        <Field>
+          <div class="flex items-center gap-2.5">
+            <Switch id="single" name="single" value="1" checked={single} />
+            <FieldLabel htmlFor="single">One term per record</FieldLabel>
+          </div>
+          <FieldDescription>
+            Off, a record may be filed under several terms; on, under exactly one.
+          </FieldDescription>
+        </Field>
+      )}
+      {is_taxonomy && (
+        <fieldset class="m-0 min-w-0 border-0 p-0">
+          <div class="mb-3 flex items-center justify-between gap-4">
+            <legend class="p-0">
+              <Text as="span" variant="body-sm" tone="default">
+                Assign taxonomy to content types
+              </Text>
+            </legend>
+            <div class="flex items-center gap-2.5">
+              <Switch id="show_all_types" checked={state.show_all_types} onChange={toggleAllTypes} />
+              <FieldLabel htmlFor="show_all_types">Show all types</FieldLabel>
+            </div>
+          </div>
+          <div class="flex flex-col gap-3" data-part="applies-to">
+            <Text as="span" variant="body-xs" tone="muted">
+              Content types
+            </Text>
+            {applies_routed.map((entry) => (
+              <CheckboxField
+                id={`applies-${entry.value}`}
+                name="applies_to"
+                value={entry.value}
+                checked={entry.selected}
+                label={entry.label}
+              />
+            ))}
+            {applies_routed.length === 0 && (
+              <Text as="p" variant="body-sm" tone="muted">
+                No content type has an address on the site yet.
+              </Text>
+            )}
+          </div>
+          <div class="hidden" hidden={!state.show_all_types}>
+            <div class="mt-5 flex flex-col gap-3" data-part="applies-to-other">
+              <Text as="span" variant="body-xs" tone="muted">
+                Other content types
+              </Text>
+              {applies_other.map((entry) => (
+                <CheckboxField
+                  id={`applies-${entry.value}`}
+                  name="applies_to"
+                  value={entry.value}
+                  checked={entry.selected}
+                  label={entry.label}
+                />
+              ))}
+              {applies_other.length === 0 && (
+                <Text as="p" variant="body-sm" tone="muted">
+                  Every content type has an address on the site.
+                </Text>
+              )}
+            </div>
+          </div>
+          <div class="mt-2">
+            <FieldDescription>
+              Records of the ticked types select terms of this taxonomy in the editor's
+              sidebar. Types whose records have pages of their own on the site are the
+              usual ones to classify; anything can be.
+            </FieldDescription>
+          </div>
+        </fieldset>
+      )}
+      {(is_taxonomy || is_settings) && (
+        <Field>
+          <div class="flex items-center gap-2.5">
+            <Switch id="public" name="public" value="1" checked={is_public} />
+            <FieldLabel htmlFor="public">Public</FieldLabel>
+          </div>
+          <FieldDescription>
+            Published values can be read by anyone through the API and the site.
+          </FieldDescription>
+        </Field>
+      )}
+      {!is_taxonomy && (
+      <div class="hidden" hidden={!state.is_record}>
+        <Field>
+          <div class="flex items-center gap-2.5">
+            <Switch
+              id="has_url"
+              name="has_url"
+              value="1"
+              checked={state.has_url}
+              onChange={toggleUrl}
+            />
+            <FieldLabel htmlFor="has_url">Accessible via URL</FieldLabel>
+          </div>
+          <div class="hidden" hidden={!state.has_url}>
+            <InputGroup leading={`${site_url}/`} trailing="/{slug}">
+              <Input
+                id="url"
+                name="url"
+                value={state.url}
+                placeholder="posts"
+                inset
+                onInput={onUrl}
+              />
+            </InputGroup>
+          </div>
+        </Field>
+      </div>
+      )}
+    </div>
+  );
+}

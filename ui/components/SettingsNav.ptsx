@@ -1,0 +1,32 @@
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { SidebarNavItem } from "@publr/ui/SidebarNavItem.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SettingsNavProps = {
+  /** The fixed pages first: the system's own settings, then the users. */
+  system_active: boolean;
+  users_active: boolean;
+  /** The settings sections defined under Structure, in their order. */
+  sections: Array<{ label: string; href: string; active: boolean }>;
+};
+
+export function SettingsNav({ system_active, users_active, sections }: SettingsNavProps) {
+  return (
+    <div class="flex flex-col gap-0.5 pt-2">
+      <SidebarNavItem href="/admin/settings/system" active={system_active}>
+        <Icon name="settings" size="sm" classes="shrink-0" />
+        <Text as="span" variant="body-md">System settings</Text>
+      </SidebarNavItem>
+      <SidebarNavItem href="/admin/settings/users" active={users_active}>
+        <Icon name="users" size="sm" classes="shrink-0" />
+        <Text as="span" variant="body-md">Users</Text>
+      </SidebarNavItem>
+      {sections.map((section) => (
+        <SidebarNavItem href={section.href} active={section.active}>
+          <Icon name="file" size="sm" classes="shrink-0" />
+          <Text as="span" variant="body-md">{section.label}</Text>
+        </SidebarNavItem>
+      ))}
+    </div>
+  );
+}

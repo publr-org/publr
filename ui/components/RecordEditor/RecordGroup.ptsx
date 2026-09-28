@@ -1,0 +1,96 @@
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { RecordValue } from "./RecordValue.ptsx";
+
+export type RecordGroupProps = {
+  label: string;
+  required: boolean;
+  collapsed: boolean;
+  parts: Array<{
+    name: string;
+    conditions: string;
+    value_kind: string;
+    label: string;
+    required: boolean;
+    help: string;
+    control: string;
+    value: string;
+    checked: boolean;
+    readonly: boolean;
+    label_on: string;
+    placeholder: string;
+    rows: number;
+    min: string;
+    max: string;
+    step: string;
+    prefix: string;
+    suffix: string;
+    card_type: string;
+    card_title: string;
+    card_status: string;
+    card_tone: string;
+    card_href: string;
+    remove: string;
+    up: string;
+    down: string;
+    part_options: Array<{
+      value: string;
+      label: string;
+      selected: boolean;
+    }>;
+  }>;
+};
+
+export function RecordGroup({ label, required, collapsed, parts }: RecordGroupProps) {
+  return (
+    <details class="rounded-xl border border-border" open={!collapsed}>
+      <summary class="cursor-pointer px-5 py-3">
+        <Text as="span" variant="heading-xs">
+          {label}
+        </Text>
+        {required && (
+          <Text as="span" variant="heading-xs" tone="error">
+            {" "}
+            *
+          </Text>
+        )}
+      </summary>
+      <div class="flex flex-col gap-5 border-t border-border px-5 py-4">
+        {parts.map((child) => (
+          <div data-conditions={child.conditions} data-field-path={child.name} data-value-kind={child.value_kind}><Field>
+            <FieldLabel htmlFor={`field-${child.name}`} required={child.required}>
+              {child.label}
+            </FieldLabel>
+            <RecordValue
+              name={child.name}
+              control={child.control}
+              value={child.value}
+              checked={child.checked}
+              readonly={child.readonly}
+              label_on={child.label_on}
+              placeholder={child.placeholder}
+              rows={child.rows}
+              min={child.min}
+              max={child.max}
+              step={child.step}
+              prefix={child.prefix}
+              suffix={child.suffix}
+              card_type={child.card_type}
+              card_title={child.card_title}
+              card_status={child.card_status}
+              card_tone={child.card_tone}
+              card_href={child.card_href}
+              remove={child.remove}
+              up={child.up}
+              down={child.down}
+              options={child.part_options}
+            />
+            {child.help !== "" && <FieldDescription>{child.help}</FieldDescription>}
+          </Field></div>
+        ))}
+      </div>
+    </details>
+  );
+}

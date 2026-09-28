@@ -1,0 +1,144 @@
+import { Layout } from "../layouts/Layout.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+/** Every kept version of a record, newest first, after the current one. */
+export type RevisionsProps = {
+  user_name: string;
+  user_email: string;
+  csrf: string;
+  nav: JSX.Element;
+  title: string;
+  record_title: string;
+  record_href: string;
+  status: string;
+  changed: boolean;
+  updated: string;
+  updated_by: string;
+  rows: Array<{ href: string; seq: string; kind: string; title: string; at: string; by: string }>;
+};
+
+export function Revisions({
+  user_name,
+  user_email,
+  csrf,
+  nav,
+  title,
+  record_title,
+  record_href,
+  status,
+  changed,
+  updated,
+  updated_by,
+  rows,
+}: RevisionsProps) {
+  return (
+    <Layout
+      title={title}
+      section="content"
+      crumb_label={record_title}
+      crumb_href={record_href}
+      user_name={user_name}
+      user_email={user_email}
+      csrf={csrf}
+      sidebar={nav}
+    >
+      <div class="px-8 pt-7 pb-6">
+        <PageHeader title={title} description={`${rows.length + 1} kept`} />
+      </div>
+      <div class="border-t border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>#</TableHead>
+              <TableHead>Kind</TableHead>
+              <TableHead>Title</TableHead>
+              <TableHead>Taken</TableHead>
+              <TableHead>By</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell>
+                <Text as="span" variant="body-md">
+                  current
+                </Text>
+              </TableCell>
+              <TableCell>
+                {status === "published" ? (
+                  <Status tone="success">{status}</Status>
+                ) : (
+                  <Status tone="neutral">{status}</Status>
+                )}
+                {changed && (
+                  <span class="ml-3">
+                    <Status tone="warning">pending changes aside</Status>
+                  </span>
+                )}
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-md">
+                  {record_title}
+                </Text>
+              </TableCell>
+              <TableCell numeric>
+                <Text as="span" variant="body-md" tone="muted">
+                  {updated}
+                </Text>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-md" tone="muted">
+                  {updated_by}
+                </Text>
+              </TableCell>
+            </TableRow>
+            {rows.map((row) => (
+              <TableRow>
+                <TableCell>
+                  <Link href={row.href} variant="body-md">
+                    {row.seq}
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  <Text as="span" variant="body-md" tone="muted">
+                    {row.kind}
+                  </Text>
+                </TableCell>
+                <TableCell>
+                  <Text as="span" variant="body-md">
+                    {row.title}
+                  </Text>
+                </TableCell>
+                <TableCell numeric>
+                  <Text as="span" variant="body-md" tone="muted">
+                    {row.at}
+                  </Text>
+                </TableCell>
+                <TableCell>
+                  <Text as="span" variant="body-md" tone="muted">
+                    {row.by}
+                  </Text>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      {rows.length === 0 && (
+        <p class="px-8 pt-4">
+          <Text variant="body-sm" tone="muted">
+            No previous versions yet: one is kept every time the live document is replaced.
+          </Text>
+        </p>
+      )}
+    </Layout>
+  );
+}

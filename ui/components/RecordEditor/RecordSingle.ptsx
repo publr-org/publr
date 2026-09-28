@@ -1,0 +1,102 @@
+import { RecordReferenceAdd } from "./RecordReferenceAdd.ptsx";
+import { RecordValue } from "./RecordValue.ptsx";
+
+export type RecordSingleProps = {
+  name: string;
+  items: Array<{
+    name: string;
+    label: string;
+    required: boolean;
+    control: string;
+    value: string;
+    checked: boolean;
+    readonly: boolean;
+    label_on: string;
+    placeholder: string;
+    rows: number;
+    min: string;
+    max: string;
+    step: string;
+    prefix: string;
+    suffix: string;
+    card_type: string;
+    card_title: string;
+    card_status: string;
+    card_tone: string;
+    card_href: string;
+    remove: string;
+    up: string;
+    down: string;
+    options: Array<{
+      value: string;
+      label: string;
+      selected: boolean;
+    }>;
+  }>;
+  can_link: boolean;
+  can_create: boolean;
+  first_handle: string;
+  live_suffix: string;
+  pick_search: boolean;
+  targets: Array<{
+    handle: string;
+    name: string;
+  }>;
+};
+
+export function RecordSingle({
+  name,
+  items,
+  can_link,
+  can_create,
+  first_handle,
+  live_suffix,
+  pick_search,
+  targets,
+}: RecordSingleProps) {
+  return (
+    <>
+      {items.map((item) => (
+        <div class="flex flex-col" data-field={name} data-reshape={`set:${name}`}>
+          {item.control === "pick" ? (
+            <RecordReferenceAdd
+              reshape={`set:${name}`}
+              name={name}
+              can_link={can_link}
+              can_create={can_create}
+              first_handle={first_handle}
+              live_suffix={live_suffix}
+              pick_search={pick_search}
+              targets={targets}
+            />
+          ) : (
+            <RecordValue
+              name={item.name}
+              control={item.control}
+              value={item.value}
+              checked={item.checked}
+              readonly={item.readonly}
+              label_on={item.label_on}
+              placeholder={item.placeholder}
+              rows={item.rows}
+              min={item.min}
+              max={item.max}
+              step={item.step}
+              prefix={item.prefix}
+              suffix={item.suffix}
+              card_type={item.card_type}
+              card_title={item.card_title}
+              card_status={item.card_status}
+              card_tone={item.card_tone}
+              card_href={item.card_href}
+              remove={item.remove}
+              up={item.up}
+              down={item.down}
+              options={item.options}
+            />
+          )}
+        </div>
+      ))}
+    </>
+  );
+}

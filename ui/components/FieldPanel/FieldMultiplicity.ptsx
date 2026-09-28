@@ -1,0 +1,45 @@
+import { ChoiceCard } from "@publr/ui/ChoiceCard.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type FieldMultiplicityProps = {
+  many: boolean;
+  is_new: boolean;
+};
+
+export function FieldMultiplicity({ many, is_new }: FieldMultiplicityProps) {
+  return (
+    <fieldset class="m-0 min-w-0 border-0 p-0">
+      <legend class="mb-2 p-0">
+        <Text as="span" variant="body-sm" tone="default">
+          Values
+        </Text>
+      </legend>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <ChoiceCard
+          name="many"
+          value="0"
+          checked={!many}
+          disabled={!is_new}
+          title="Single"
+          description="One value: a title, a cover, an author."
+        />
+        <ChoiceCard
+          name="many"
+          value="1"
+          checked={many}
+          disabled={!is_new}
+          title="Multiple"
+          description="A list of values of this kind: tags, gallery images, related records."
+        />
+      </div>
+      {!is_new && (
+        <div class="mt-2">
+          <FieldDescription>
+            Set when the field is created: records already hold values in this shape.
+          </FieldDescription>
+        </div>
+      )}
+    </fieldset>
+  );
+}

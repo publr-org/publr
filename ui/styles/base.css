@@ -1,0 +1,117 @@
+/* The admin palette: a near-monochrome light theme (a dark icon rail, a light sidebar
+   on the cool grey canvas, the white sheet, near-black actions). The JIT chains its
+   color-* tokens to these vars (ui/styles/theme.zon), so this file is where the admin's
+   actual colors live. */
+:root {
+  color-scheme: light;
+  --radius: 0.625rem;
+
+  --background: white;
+  --foreground: oklch(0.17 0.006 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0.006 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0.006 260);
+
+  --primary: oklch(0.2 0.01 260);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.955 0.003 250);
+  --secondary-foreground: oklch(0.25 0.006 260);
+  --muted: oklch(0.955 0.003 250);
+  --muted-foreground: oklch(0.5 0.01 260);
+  --accent: oklch(0.94 0.004 250);
+  --accent-foreground: oklch(0.17 0.006 260);
+  --ui-accent: oklch(0.945 0.016 250);
+
+  --destructive: oklch(0.58 0.21 25);
+  --destructive-foreground: oklch(0.985 0 0);
+  --error: oklch(0.58 0.21 25);
+  --error-foreground: oklch(0.985 0 0);
+  --success: oklch(0.55 0.14 150);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.7 0.16 65);
+  --warning-foreground: oklch(0.21 0.034 46);
+  --review: oklch(0.55 0.19 292);
+  --review-foreground: oklch(0.985 0 0);
+
+  --border: oklch(0.915 0.004 250);
+  --input: oklch(0.87 0.005 250);
+  --ring: oklch(0.2 0.01 260);
+
+  --sidebar: oklch(0.977 0.003 250);
+  --sidebar-foreground: oklch(0.17 0.006 260);
+  --sidebar-muted: oklch(0.5 0.01 260);
+  --sidebar-primary: oklch(0.2 0.01 260);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.945 0.016 250);
+  --sidebar-accent-foreground: oklch(0.17 0.006 260);
+  --sidebar-border: oklch(0.915 0.004 250);
+  --sidebar-ring: oklch(0.2 0.01 260);
+
+  --rail: oklch(0.215 0.012 262);
+  --rail-foreground: oklch(0.985 0 0);
+  --rail-muted: oklch(0.68 0.01 260);
+  --rail-accent: oklch(0.32 0.012 262);
+}
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Parts of the field form that only make sense with another choice made on the same
+   form: shown or hidden by the form's own state, so the page needs no script for it.
+   `many` and `single` follow the Values cards, `unique` and `not-unique` the Unique
+   rule, `not-now` the "moment of creation" default. A part without a choice to follow
+   is rendered without the attribute. */
+[data-when="many"],
+[data-when="single"],
+[data-when="unique"],
+[data-when="not-unique"],
+[data-when="not-now"] {
+  display: none;
+}
+
+form:has(input[name="many"][value="1"]:checked) [data-when="many"],
+form:has(input[name="many"][value="0"]:checked) [data-when="single"],
+form:has(#unique:checked) [data-when="unique"],
+form:not(:has(#unique:checked)) [data-when="not-unique"],
+form:not(:has(#default_now:checked)) [data-when="not-now"] {
+  display: block;
+}
+
+
+@keyframes drawer-enter {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .drawer-enter { animation: drawer-enter 200ms ease-out; }
+}
+
+[data-group-position="sidebar"] {
+  max-width: 22rem;
+  margin-left: auto;
+}
+
+[data-instructions="below_label"] > [data-part="field"] > [data-part="field-description"] {
+  order: -1;
+}
+
+[data-instructions="below_label"] > [data-part="field"] > label {
+  order: -2;
+}
+
+@media (min-width: 768px) {
+  [data-labels="beside"] > [data-part="field"] {
+    grid-template-columns: minmax(8rem, 1fr) minmax(0, 3fr);
+  }
+  [data-labels="beside"] > [data-part="field"] > :not(label) {
+    grid-column: 2;
+  }
+}
+
+/* Layout utilities must not override native hidden state. */
+[hidden] {
+  display: none !important;
+}

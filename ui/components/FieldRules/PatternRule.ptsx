@@ -1,0 +1,84 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+
+export type PatternRuleProps = {
+  limit_pattern?: boolean;
+  preset?: string;
+  pattern?: string;
+  pattern_message?: string;
+};
+
+export function PatternRule({
+  limit_pattern = false,
+  preset = "any",
+  pattern = "",
+  pattern_message = "",
+}: PatternRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_pattern"
+      name="limit_pattern"
+      checked={limit_pattern}
+      label="Match a specific shape"
+      description="Accept only text of a given shape: a preset, a pattern, or both"
+    >
+      <div class="grid gap-4 sm:grid-cols-2">
+        <Field>
+          <FieldLabel htmlFor="preset">Preset</FieldLabel>
+          <NativeSelect id="preset" name="preset">
+            <option value="any" selected={preset === "any"}>
+              Anything
+            </option>
+            <option value="digits" selected={preset === "digits"}>
+              Digits only
+            </option>
+            <option value="letters" selected={preset === "letters"}>
+              Letters only
+            </option>
+            <option value="alphanumeric" selected={preset === "alphanumeric"}>
+              Letters and digits
+            </option>
+            <option value="no_spaces" selected={preset === "no_spaces"}>
+              No spaces
+            </option>
+            <option value="lowercase" selected={preset === "lowercase"}>
+              Lowercase
+            </option>
+            <option value="uppercase" selected={preset === "uppercase"}>
+              Uppercase
+            </option>
+            <option value="phone" selected={preset === "phone"}>
+              Phone number
+            </option>
+          </NativeSelect>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="pattern">Pattern</FieldLabel>
+          <Input
+            id="pattern"
+            name="pattern"
+            value={pattern}
+            placeholder="SKU-####"
+            maxLength={255}
+          />
+          <FieldDescription>
+            * any run of characters, ? one character, # a digit, @ a letter
+          </FieldDescription>
+        </Field>
+      </div>
+      <Field>
+        <FieldLabel htmlFor="pattern_message">Custom error message</FieldLabel>
+        <Input
+          id="pattern_message"
+          name="pattern_message"
+          value={pattern_message}
+          maxLength={255}
+        />
+      </Field>
+    </CheckboxField>
+  );
+}

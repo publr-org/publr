@@ -1,0 +1,149 @@
+import { Publr } from "publr-jsx";
+
+type ReferenceOptions = {
+  url: string;
+  field: string;
+  opener: HTMLElement | null;
+  deliver: (id: string) => void;
+};
+type ReferenceController = {
+  open: (options: ReferenceOptions) => void;
+  to: (depth: number) => void;
+};
+type StructureController = { to: (depth: number) => void };
+
+export type ReferenceLevel = {
+  id: number;
+  url: string;
+  field: string;
+  opener: HTMLElement | null;
+  deliver: (id: string) => void;
+  title: string;
+  html: string;
+  error: string;
+  panel: HTMLElement | null;
+  loading: boolean;
+  style: string;
+  readonly inactive: boolean;
+};
+export type StructureLevel = {
+  id: number; url: string; title: string; html: string; below: string;
+  requested: boolean; loading: boolean; error: string; style: string;
+  panel: HTMLElement | null; opener: HTMLElement | null; readonly inactive: boolean;
+};
+type FieldForm = { form: HTMLFormElement; draft: { url: string; body: string } };
+type NavigationState = {
+  previewHtml: string | null;
+  fieldForms: FieldForm[];
+  readonly fieldDraft: FieldForm["draft"] | null;
+  references: ReferenceLevel[];
+  structure: StructureLevel[];
+  readonly levels: Array<{ depth: number; title: string; top: boolean }>;
+  readonly open: boolean;
+};
+
+export const state = Publr.reactive({});
+
+// The chrome owns the shared navigation state; individual editors still own drafts.
+const navigation = Publr.createStore(
+  "navigation",
+  ({ state: shared }: { state: NavigationState }) => {
+    let references: ReferenceController | undefined = undefined;
+    let structure: StructureController | undefined = undefined;
+    return {
+      state: {
+        previewHtml: null as string | null,
+        fieldForms: [] as Array<{ form: HTMLFormElement; draft: { url: string; body: string } }>,
+        get fieldDraft() {
+          return this.fieldForms[this.fieldForms.length - 1]?.draft ?? null;
+        },
+        references: [] as ReferenceLevel[],
+        structure: [] as StructureLevel[],
+        get levels() {
+          const stack = this.references.length ? this.references : this.structure;
+          return stack.map((level, index) => ({
+            depth: index + 1,
+            title: level.title,
+            top: index === stack.length - 1,
+          }));
+        },
+        get open() {
+          return this.references.length > 0 || this.structure.length > 0;
+        },
+      },
+      actions: {
+        bindFieldForm(form: HTMLFormElement) {
+          const draft = {
+            url: form.action,
+            body: new URLSearchParams(
+              Array.from(new FormData(form), ([key, value]) => [key, String(value)]),
+            ).toString(),
+          };
+          shared.fieldForms.push({ form, draft });
+          return () => {
+            const index = shared.fieldForms.findIndex((entry) => entry.form === form);
+            if (index >= 0) shared.fieldForms.splice(index, 1);
+          };
+        },
+        updateFieldForm(form: HTMLFormElement) {
+          const entry = shared.fieldForms.find((entry) => entry.form === form);
+          if (entry)
+            entry.draft = {
+              url: form.action,
+              body: new URLSearchParams(
+                Array.from(new FormData(form), ([key, value]) => [key, String(value)]),
+              ).toString(),
+            };
+        },
+        bindReferences(controller: ReferenceController) {
+          references = controller;
+          return () => {
+            if (references !== controller) return;
+            references = undefined;
+            shared.references.splice(0);
+          };
+        },
+        bindStructure(controller: StructureController) {
+          structure = controller;
+          return () => {
+            if (structure !== controller) return;
+            structure = undefined;
+            shared.structure.splice(0);
+          };
+        },
+        openReference(options: ReferenceOptions) {
+          return references?.open(options);
+        },
+        back(data: { depth?: string } = {}, context?: { event: Event }) {
+          context?.event.preventDefault();
+          const stack = shared.references.length ? shared.references : shared.structure;
+          const depth = data.depth === undefined ? stack.length - 1 : Number(data.depth);
+          if (!Number.isInteger(depth)) return;
+          const target = Math.max(0, Math.min(depth, stack.length));
+          if (shared.references.length) references?.to(target);
+          else structure?.to(target);
+        },
+        rename(root: HTMLElement | null, title: string) {
+          if (!root) return;
+          const level = shared.references.find((level) => level.panel?.contains(root));
+          if (level) level.title = title;
+        },
+        created(root: HTMLElement | null, id: string, title: string) {
+          if (!root) return;
+          const level = shared.references.find((level) => level.panel?.contains(root));
+          if (!level) return;
+          level.title = title;
+          level.deliver?.(id);
+        },
+      },
+    };
+  },
+);
+
+export type NavigationStore = typeof navigation;
+
+export type NavigationProps = { children: JSX.Element };
+
+export function Navigation({ children }: NavigationProps) {
+  return <div class="contents">{children}</div>;
+}

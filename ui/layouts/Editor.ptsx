@@ -1,0 +1,48 @@
+import { Layout } from "./Layout.ptsx";
+
+export type EditorProps = {
+  title: string;
+  /** Which section the page belongs to: "content" or "types". */
+  section: string;
+  /** The page's parent inside its section, shown in the breadcrumb before the title. */
+  crumb_label: string;
+  crumb_href: string;
+  user_name: string;
+  user_email: string;
+  csrf: string;
+  /** The page scrolls inside its own columns (TypeColumns): the row takes the sheet's
+   * remaining height instead of growing with its content. */
+  fill?: boolean;
+  /** An EditorColumn, then optionally an EditorAside. */
+  children?: JSX.Element;
+};
+
+/** The shell of the pages that edit one thing (a record, a type, a field): the rail
+ * alone, no section sidebar, and the sheet split in two. The column (EditorColumn)
+ * centres the form at a capped width; the aside on the right (EditorAside) holds the
+ * page's actions and what is known about the thing being edited. */
+export function Editor({
+  title,
+  section,
+  crumb_label,
+  crumb_href,
+  user_name,
+  user_email,
+  csrf,
+  fill = false,
+  children,
+}: EditorProps) {
+  return (
+    <Layout
+      title={title}
+      section={section}
+      crumb_label={crumb_label}
+      crumb_href={crumb_href}
+      user_name={user_name}
+      user_email={user_email}
+      csrf={csrf}
+    >
+      <div class={["flex grow items-stretch", fill ? "min-h-0" : ""]}>{children}</div>
+    </Layout>
+  );
+}

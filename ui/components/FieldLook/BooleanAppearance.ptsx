@@ -1,0 +1,67 @@
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+
+export type BooleanAppearanceProps = {
+  has_boolean?: boolean;
+  true_label?: string;
+  false_label?: string;
+  boolean_control?: string;
+};
+
+export function BooleanAppearance({
+  has_boolean = false,
+  true_label = "",
+  false_label = "",
+  boolean_control = "toggle",
+}: BooleanAppearanceProps) {
+  return (
+    <>
+      {has_boolean && (
+        <div class="grid gap-4 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="true_label">Label when on</FieldLabel>
+            <Input
+              id="true_label"
+              name="true_label"
+              value={true_label}
+              placeholder="Yes"
+              maxLength={64}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="false_label">Label when off</FieldLabel>
+            <Input
+              id="false_label"
+              name="false_label"
+              value={false_label}
+              placeholder="No"
+              maxLength={64}
+            />
+          </Field>
+        </div>
+      )}
+      {has_boolean && (
+        <Field>
+          <FieldLabel htmlFor="boolean_control">Control</FieldLabel>
+          <NativeSelect id="boolean_control" name="boolean_control">
+            <option value="toggle" selected={boolean_control === "toggle"}>
+              Switch
+            </option>
+            <option value="checkbox" selected={boolean_control === "checkbox"}>
+              Checkbox
+            </option>
+            <option value="radio" selected={boolean_control === "radio"}>
+              Two radio buttons
+            </option>
+          </NativeSelect>
+          <FieldDescription>
+            Radio buttons suit a choice where neither state is the obvious default.
+          </FieldDescription>
+        </Field>
+      )}
+    </>
+  );
+}

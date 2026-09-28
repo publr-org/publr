@@ -1,0 +1,109 @@
+import { Publr } from "publr-jsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export const state = Publr.reactive({
+  label: "",
+  name: "",
+  label_count: "",
+  name_count: "",
+  name_edited: false,
+});
+
+const label_max = 128;
+const name_max = 64;
+
+const count_text = (value: string, max: number) => `${value.length} / ${max}`;
+
+const slugify = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+export const onLabel = (event: Event) => {
+  state.label = (event.target as HTMLInputElement).value;
+  state.label_count = count_text(state.label, label_max);
+  if (!state.name_edited) {
+    state.name = slugify(state.label);
+    state.name_count = count_text(state.name, name_max);
+  }
+};
+
+export const onName = (event: Event) => {
+  state.name = (event.target as HTMLInputElement).value;
+  state.name_count = count_text(state.name, name_max);
+  state.name_edited = true;
+};
+
+export type FieldHeadProps = {
+  label: string;
+  name: string;
+  /** The counts as the server printed them, so the page and the script agree at load. */
+  label_count: string;
+  name_count: string;
+  /** A new field: the name follows the label until edited by hand. */
+  is_new: boolean;
+};
+
+/** The label and the name of a field, kept in step in the browser: on a new field the
+ * name is made from the label as it is typed, until edited by hand; both show how much
+ * of their room is used. The form posts plain fields; nothing here is required for
+ * the post to work. */
+export function FieldHead({ label, name, label_count, name_count, is_new }: FieldHeadProps) {
+  state.label = label;
+  state.name = name;
+  state.label_count = label_count;
+  state.name_count = name_count;
+  state.name_edited = !is_new;
+
+  return (
+    <section class="space-y-5">
+      <Field>
+        <FieldLabel htmlFor="label" required>
+          Label
+        </FieldLabel>
+        <Input
+          id="label"
+          name="label"
+          value={state.label}
+          required
+          placeholder="For example Title, Author, Published at"
+          maxLength={128}
+          onInput={onLabel}
+        />
+        <div class="flex items-baseline justify-between gap-4">
+          <FieldDescription>Shown above the field in the editor</FieldDescription>
+          <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+            {state.label_count}
+          </Text>
+        </div>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="name" required>
+          Name
+        </FieldLabel>
+        <Input
+          id="name"
+          name="name"
+          value={state.name}
+          placeholder="title"
+          maxLength={64}
+          onInput={onName}
+        />
+        <div class="flex items-baseline justify-between gap-4">
+          <FieldDescription>
+            Generated from the label. Lowercase letters, digits and underscores; how the field is
+            called in the API and templates
+          </FieldDescription>
+          <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+            {state.name_count}
+          </Text>
+        </div>
+      </Field>
+    </section>
+  );
+}

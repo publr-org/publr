@@ -1,0 +1,172 @@
+import { Publr } from "publr-jsx";
+import { EditorAsideSection } from "../EditorAsideSection.ptsx";
+import { Checkbox } from "@publr/ui/Checkbox.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { MultiSelect } from "@publr/ui/MultiSelect.ptsx";
+import { MultiSelectContent } from "@publr/ui/MultiSelectContent.ptsx";
+import { MultiSelectItem } from "@publr/ui/MultiSelectItem.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+/** The selection of every hierarchical field, as `field:id` tokens, and the hierarchy of
+ * every term, as `id>parent` tokens (a root has no token). Seeded from the props, so the
+ * page and the script agree at load. */
+export const state = Publr.reactive({
+  selected: "",
+  tree: "",
+});
+
+const boxes = new Set<HTMLInputElement>();
+
+export const box_ref = Publr.ref<HTMLInputElement>((box) => {
+  boxes.add(box);
+  return () => {
+    boxes.delete(box);
+  };
+});
+
+const tokens = (text: string) => text.split(/\s+/).filter(Boolean);
+
+const parents = () => {
+  const map = new Map<string, string>();
+  for (const token of tokens(state.tree)) {
+    const [child, parent] = token.split(">");
+    if (child && parent) map.set(child, parent);
+  }
+  return map;
+};
+
+/** The term and every ancestor above it, root last; at most 16 levels. */
+const chain = (id: string, above: Map<string, string>) => {
+  const found = [id];
+  let current = id;
+  for (let depth = 0; depth < 16; depth++) {
+    const parent = above.get(current);
+    if (!parent) break;
+    found.push(parent);
+    current = parent;
+  }
+  return found;
+};
+
+/** Ticking a term ticks its ancestors too: a record filed under C is filed under A and B.
+ * Unticking a term unticks whatever was filed below it. The checkbox's own input event
+ * reaches the editor, which marks the form dirty and autosaves. */
+export const onToggle = (event: Event) => {
+  const box = event.currentTarget as HTMLInputElement;
+  const field = box.dataset.field ?? "";
+  const id = box.value;
+  const above = parents();
+  const current = new Set(tokens(state.selected));
+  if (box.checked) {
+    for (const ancestor of chain(id, above)) current.add(`${field}:${ancestor}`);
+  } else {
+    for (const token of [...current]) {
+      const [owner, term] = token.split(":");
+      if (owner === field && term && chain(term, above).includes(id)) current.delete(token);
+    }
+  }
+  state.selected = [...current].join(" ");
+};
+
+Publr.effect(() => {
+  const chosen = new Set(tokens(state.selected));
+  for (const box of boxes) {
+    box.checked = chosen.has(`${box.dataset.field ?? ""}:${box.value}`);
+  }
+});
+
+export type RecordTermsProps = {
+  /** The record's `terms` fields, one section each. */
+  fields: Array<{
+    name: string;
+    label: string;
+    help: string;
+    hierarchical: boolean;
+    many: boolean;
+    /** The taxonomy's terms in tree order, each with its depth and whether it is selected. */
+    nodes: Array<{
+      id: string;
+      title: string;
+      depth: number;
+      indent: string;
+      selected: boolean;
+    }>;
+    /** The selected ids, space-separated: what a flat field's control starts with. */
+    selected: string;
+  }>;
+  /** Every hierarchical field's `field:id` tokens, and every term's `id>parent` token. */
+  selected_tokens: string;
+  tree_tokens: string;
+};
+
+/** The record's terms, in the editor's aside, one section per `terms` field of its type:
+ * a tree of checkboxes for a hierarchical taxonomy, a combobox for a flat one, a dropdown
+ * for a field that takes one term. Every control posts with the record's form. */
+export function RecordTerms({ fields, selected_tokens, tree_tokens }: RecordTermsProps) {
+  state.selected = selected_tokens;
+  state.tree = tree_tokens;
+
+  return (
+    <div class="contents" data-part="record-terms">
+      {fields.map((field) => (
+        <EditorAsideSection title={field.label}>
+          {field.many && field.hierarchical && (
+            <div class="flex flex-col gap-2" data-part="term-tree" data-field={field.name}>
+              {field.nodes.map((node) => (
+                <div class={["flex items-center gap-2", node.indent]}>
+                  <Checkbox
+                    id={`term-${field.name}-${node.id}`}
+                    name={field.name}
+                    value={node.id}
+                    form="record"
+                    checked={node.selected}
+                    data-field={field.name}
+                    ref={box_ref}
+                    onChange={onToggle}
+                  />
+                  <FieldLabel htmlFor={`term-${field.name}-${node.id}`}>{node.title}</FieldLabel>
+                </div>
+              ))}
+              {field.nodes.length === 0 && (
+                <Text as="p" variant="body-xs" tone="muted">
+                  No terms yet.
+                </Text>
+              )}
+            </div>
+          )}
+          {field.many && !field.hierarchical && (
+            <MultiSelect
+              id={`term-${field.name}`}
+              name={field.name}
+              form="record"
+              defaultValues={field.selected}
+              placeholder="Pick terms"
+              label={field.label}
+            >
+              <MultiSelectContent>
+                {field.nodes.map((node) => (
+                  <MultiSelectItem value={node.id}>{node.title}</MultiSelectItem>
+                ))}
+              </MultiSelectContent>
+            </MultiSelect>
+          )}
+          {!field.many && (
+            <NativeSelect id={`term-${field.name}`} name={field.name} form="record">
+              <option value="" selected={field.selected === ""}>
+                None
+              </option>
+              {field.nodes.map((node) => (
+                <option value={node.id} selected={node.selected}>
+                  {node.title}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
+          {field.help !== "" && <FieldDescription>{field.help}</FieldDescription>}
+        </EditorAsideSection>
+      ))}
+    </div>
+  );
+}

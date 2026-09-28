@@ -1,0 +1,104 @@
+import { Publr } from "publr-jsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Editor } from "../layouts/Editor.ptsx";
+import { EditorColumn } from "../components/EditorColumn.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { PanelTab } from "@publr/ui/PanelTab.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+export const tabKeys = (event: KeyboardEvent) => {
+  const tabs = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>("[role=tab]"));
+  const index = tabs.indexOf(event.target as HTMLButtonElement);
+  const next = event.key === "ArrowRight" ? (index + 1) % tabs.length
+    : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+    : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+  if (next < 0) return;
+  event.preventDefault();
+  tabs[next].click();
+  tabs[next].focus();
+};
+
+export const state = Publr.reactive({ tab: "location" });
+export const selectTab = (event: MouseEvent) => {
+  state.tab = (event.currentTarget as HTMLElement).id.replace("group-tab-", "");
+};
+export type FieldGroupProps = {
+  user_name: string; user_email: string; csrf: string;
+  title: string; name: string; handle: string; fresh: boolean;
+  back: string; action: string; delete_action: string; fields: JSX.Element;
+  active: boolean; position: string; labels: string; instructions: string;
+  rules: JSX.Element;
+};
+export function FieldGroup({ user_name, user_email, csrf, title, name, handle, fresh, back, action, delete_action, fields,
+  active, position, labels, instructions, rules }: FieldGroupProps) {
+  return (
+    <div class="contents"><Editor title={title} section="types" crumb_label="Custom Fields" crumb_href={back}
+      user_name={user_name} user_email={user_email} csrf={csrf}>
+      <EditorColumn>
+        <div class="flex flex-col gap-8">
+        <PageHeader title={title} back_href={back} back_label="Custom Fields" />
+        <Field><FieldLabel htmlFor="group-name">Group name</FieldLabel>
+          <Input id="group-name" name="name" value={name} form="group-settings-form" required />
+        </Field>
+        {!fresh && <div>{fields}</div>}
+        <form id="group-settings-form" method="post" action={action} class="space-y-8">
+          <input type="hidden" name="csrf" value={csrf} />
+
+          {fresh && <Field><FieldLabel htmlFor="group-handle">Handle</FieldLabel>
+            <Input id="group-handle" name="handle" placeholder="author_details" required />
+            <FieldDescription>Lowercase letters, numbers and underscores. Start with a letter.</FieldDescription>
+          </Field>}
+          <div role="tablist" onKeyDown={tabKeys} aria-label="Field group settings" class="flex gap-1">
+            <PanelTab id="group-tab-location" panel="group-location" selected={state.tab === "location"}
+              onClick={selectTab} label="Location Rules" />
+            <PanelTab id="group-tab-presentation" panel="group-presentation" selected={state.tab === "presentation"}
+              onClick={selectTab} label="Presentation" />
+            <PanelTab id="group-tab-settings" panel="group-settings" selected={state.tab === "settings"}
+              onClick={selectTab} label="Group Settings" />
+          </div>
+          <div role="tabpanel" id="group-location" aria-labelledby="group-tab-location"
+            hidden={state.tab !== "location"} class="space-y-6">
+            {rules}
+          </div>
+          <div role="tabpanel" id="group-presentation" aria-labelledby="group-tab-presentation"
+            hidden={state.tab !== "presentation"} class="space-y-6">
+            <Field><FieldLabel htmlFor="position">Position</FieldLabel>
+              <NativeSelect id="position" name="position">
+                <option value="main" selected={position === "main"}>Main</option>
+                <option value="sidebar" selected={position === "sidebar"}>Sidebar</option>
+              </NativeSelect>
+            </Field>
+            <Field><FieldLabel htmlFor="labels">Labels</FieldLabel>
+              <NativeSelect id="labels" name="labels">
+                <option value="above" selected={labels === "above"}>Above the field</option>
+                <option value="beside" selected={labels === "beside"}>Beside the field</option>
+              </NativeSelect>
+            </Field>
+            <Field><FieldLabel htmlFor="instructions">Instructions</FieldLabel>
+              <NativeSelect id="instructions" name="instructions">
+                <option value="below_label" selected={instructions === "below_label"}>Below the label</option>
+                <option value="below_input" selected={instructions === "below_input"}>Below the input</option>
+              </NativeSelect>
+            </Field>
+          </div>
+          <div role="tabpanel" id="group-settings" aria-labelledby="group-tab-settings"
+            hidden={state.tab !== "settings"}>
+            <CheckboxField id="group-active" name="active" label="Active" checked={active}
+              description="Show this group in the editor. Turning it off preserves existing values." />
+          </div>
+          <Button type="submit">{fresh ? "Create field group" : "Save changes"}</Button>
+        </form>
+        {!fresh && <form method="post" action={delete_action}>
+          <input type="hidden" name="csrf" value={csrf} />
+          <Button type="submit" hierarchy="tertiary">Delete field group</Button>
+        </form>}
+        </div>
+      </EditorColumn>
+</Editor></div>
+  );
+}

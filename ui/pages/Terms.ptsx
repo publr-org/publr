@@ -1,0 +1,138 @@
+import { Layout } from "../layouts/Layout.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type TermsProps = {
+  user_name: string;
+  user_email: string;
+  csrf: string;
+  /** The taxonomy: its name, handle, whether terms nest, and where its head is edited. */
+  title: string;
+  handle: string;
+  hierarchical: boolean;
+  settings_href: string;
+  new_href: string;
+  /** Every term in tree order: parents before children, each with its depth from 0. */
+  terms: Array<{
+    href: string;
+    title: string;
+    slug: string;
+    status: string;
+    published: boolean;
+    depth: number;
+    indent: string;
+    add_child_href: string;
+  }>;
+};
+
+/** A taxonomy's page: its terms as a tree, one row each, with a way to add a term at the
+ * root or under any term of a hierarchical taxonomy. */
+export function Terms({
+  user_name,
+  user_email,
+  csrf,
+  title,
+  handle,
+  hierarchical,
+  settings_href,
+  new_href,
+  terms,
+}: TermsProps) {
+  return (
+    <Layout
+      title={title}
+      section="types"
+      crumb_label="Taxonomies"
+      crumb_href="/admin/taxonomies"
+      user_name={user_name}
+      user_email={user_email}
+      csrf={csrf}
+    >
+      <div class="px-8 pt-7 pb-6">
+        <PageHeader
+          title={title}
+          description={`${handle} · ${hierarchical ? "hierarchical" : "flat"} · ${terms.length} terms`}
+        >
+          <Button href={settings_href} hierarchy="secondary">
+            <Icon name="settings" size="sm" />
+            <span>Settings</span>
+          </Button>
+          <Button href={new_href}>
+            <Icon name="plus" size="sm" />
+            <span>New term</span>
+          </Button>
+        </PageHeader>
+      </div>
+      {terms.length === 0 ? (
+        <div class="mx-8">
+          <Empty>
+            <EmptyTitle>No terms yet</EmptyTitle>
+            <EmptyDescription>
+              A term is what records get filed under. Create the first one.
+            </EmptyDescription>
+          </Empty>
+        </div>
+      ) : (
+        <div class="border-t border-border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Term</TableHead>
+                <TableHead>Slug</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead align="right">Children</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {terms.map((term) => (
+                <TableRow>
+                  <TableCell>
+                    <div class={["flex items-center gap-2", term.indent]}>
+                      {term.depth > 0 && <Icon name="chevron-right" size="xs" />}
+                      <Link href={term.href} variant="body-md" tone="default">
+                        {term.title}
+                      </Link>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Text as="span" variant="mono-xs" tone="muted">
+                      {term.slug}
+                    </Text>
+                  </TableCell>
+                  <TableCell>
+                    {term.published ? (
+                      <Status tone="success">{term.status}</Status>
+                    ) : (
+                      <Status tone="neutral">{term.status}</Status>
+                    )}
+                  </TableCell>
+                  <TableCell align="right">
+                    {term.add_child_href !== "" && (
+                      <Button href={term.add_child_href} hierarchy="secondary" size="sm">
+                        <Icon name="plus" size="xs" />
+                        <span>Add child</span>
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </Layout>
+  );
+}

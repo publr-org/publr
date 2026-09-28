@@ -1,0 +1,118 @@
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { SidebarNavEyebrow } from "@publr/ui/SidebarNavEyebrow.ptsx";
+import { SidebarNavItem } from "@publr/ui/SidebarNavItem.ptsx";
+import { SidebarNavSubItem } from "@publr/ui/SidebarNavSubItem.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type ContentNavProps = {
+  all_href: string;
+  all_active: boolean;
+  recent_href: string;
+  recent_active: boolean;
+  /** The caller's own views: the two that are always there, locked, then the saved ones. */
+  private_views: Array<{ label: string; href: string; active: boolean; locked: boolean }>;
+  /** The content under each status, across types. */
+  statuses: Array<{ label: string; href: string; active: boolean }>;
+  /** The record types, each leading to its records; the settings types to their one page. */
+  types: Array<{ label: string; href: string; active: boolean }>;
+  settings: Array<{ label: string; href: string; active: boolean }>;
+};
+
+/** The Content section's sidebar: the ways of looking at the content. Recent first; then
+ * the caller's private views, the two built in (locked) and the ones they saved; then the
+ * views everyone has, as folders counting what is under them: All, the content by status,
+ * the content by type; then the settings types, each a single page. Rendered once per page
+ * by the adapter and handed to the shell as a node, so no array crosses a component
+ * boundary. */
+export function ContentNav({
+  all_href,
+  all_active,
+  recent_href,
+  recent_active,
+  private_views,
+  statuses,
+  types,
+  settings,
+}: ContentNavProps) {
+  return (
+    <div class="flex flex-col gap-0.5">
+      <SidebarNavItem href={recent_href} active={recent_active} classes="mt-2">
+        <Icon name="clock-rewind" size="sm" classes="shrink-0" />
+        <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+          Recent
+        </Text>
+      </SidebarNavItem>
+      <SidebarNavEyebrow>Private views</SidebarNavEyebrow>
+      {private_views.map((item) => (
+        <SidebarNavItem href={item.href} active={item.active}>
+          <Icon name="bookmark" size="sm" classes="shrink-0" />
+          <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+            {item.label}
+          </Text>
+          {item.locked && <Icon name="lock" size="xs" classes="shrink-0" />}
+        </SidebarNavItem>
+      ))}
+      <SidebarNavEyebrow>Views</SidebarNavEyebrow>
+      <SidebarNavItem href={all_href} active={all_active}>
+        <Icon name="bookmark" size="sm" classes="shrink-0" />
+        <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+          All
+        </Text>
+      </SidebarNavItem>
+      <SidebarNavItem href={all_href}>
+        <Icon name="folder" size="sm" classes="shrink-0" />
+        <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+          Status
+        </Text>
+        <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+          {statuses.length}
+        </Text>
+      </SidebarNavItem>
+      <div class="flex flex-col gap-0.5 pl-6">
+        {statuses.map((item) => (
+          <SidebarNavSubItem href={item.href} active={item.active}>
+            <Icon name="bookmark" size="sm" classes="shrink-0" />
+            <Text as="span" variant="body-sm" classes="min-w-0 flex-1 truncate">
+              {item.label}
+            </Text>
+          </SidebarNavSubItem>
+        ))}
+      </div>
+      <SidebarNavItem href={all_href}>
+        <Icon name="folder" size="sm" classes="shrink-0" />
+        <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+          Content type
+        </Text>
+        <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+          {types.length}
+        </Text>
+      </SidebarNavItem>
+      <div class="flex flex-col gap-0.5 pl-6">
+        {types.map((item) => (
+          <SidebarNavSubItem href={item.href} active={item.active}>
+            <Icon name="bookmark" size="sm" classes="shrink-0" />
+            <Text as="span" variant="body-sm" classes="min-w-0 flex-1 truncate">
+              {item.label}
+            </Text>
+          </SidebarNavSubItem>
+        ))}
+        {types.length === 0 && (
+          <p class="px-2.5 py-1.5">
+            <Text variant="body-sm" tone="muted">
+              None yet.
+            </Text>
+          </p>
+        )}
+      </div>
+      {settings.length > 0 && <SidebarNavEyebrow>Settings</SidebarNavEyebrow>}
+      {settings.map((item) => (
+        <SidebarNavItem href={item.href} active={item.active}>
+          <Icon name="settings" size="sm" classes="shrink-0" />
+          <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+            {item.label}
+          </Text>
+        </SidebarNavItem>
+      ))}
+    </div>
+  );
+}

@@ -1,0 +1,136 @@
+import { EditorAsideSection } from "../EditorAsideSection.ptsx";
+import { RecordImpactRow } from "./RecordImpactRow.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type RecordImpactProps = {
+  /** The record's title, or "a new <type>" before it exists. */
+  title: string;
+  /** The keys a change raises, in the order the site raises them. */
+  keys: Array<{ key: string }>;
+  /** Every page and fragment the change reaches: those built to a file first (`rebuild`,
+   * what the next quiet moment rewrites), then those rendered per request. Each carries
+   * its address (a link when there is a page to open), an entry page's own address for
+   * this record, its kind, its status, and the chain that explains it. */
+  rows: Array<{
+    address: string;
+    href: string;
+    own: string;
+    kind: string;
+    status: string;
+    rebuild: boolean;
+    why: Array<{ text: string; code: string; href: string; tail: string; nested: boolean }>;
+  }>;
+  has_rebuild: boolean;
+  has_live: boolean;
+  /** The theme's markup was too deep to walk: only what the index recorded is listed. */
+  failed: boolean;
+};
+
+/** Development only (`serve --dev`): a dialog that explains what a change to the record
+ * reaches, read from the theme's templates and from what the last build recorded. */
+export function RecordImpact({ title, keys, rows, has_rebuild, has_live, failed }: RecordImpactProps) {
+  return (
+    <EditorAsideSection title="Dependencies">
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button type="button" hierarchy="secondary" size="sm" classes="w-full">
+            <Icon name="share-04" size="sm" />
+            <span>What depends on this</span>
+          </Button>
+        </DialogTrigger>
+        <DialogContent classes="max-w-2xl">
+          <DialogTitle>What changes with {title}</DialogTitle>
+          <DialogDescription>
+            A development view, read from the theme's templates and from the dependency index.
+            Saving raises the keys below; every built page and fragment that read one of them
+            is rewritten at the next quiet moment. Open a row's Why for the chain that leads
+            to it.
+          </DialogDescription>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            {keys.map((item) => (
+              <Code>{item.key}</Code>
+            ))}
+          </div>
+          {failed && (
+            <Text as="p" variant="body-sm" tone="muted" classes="mt-4">
+              The theme's markup is too deep to walk; only what the last build recorded is
+              listed.
+            </Text>
+          )}
+          <div class="mt-5 flex flex-col gap-5">
+            <section class="flex flex-col gap-2">
+              <Text as="h3" variant="eyebrow" tone="muted">
+                Needs a rebuild
+              </Text>
+              {!has_rebuild && (
+                <Text as="p" variant="body-sm" tone="muted">
+                  No built page or fragment reads this type.
+                </Text>
+              )}
+              {has_rebuild && (
+                <ul class="flex flex-col divide-y divide-border rounded-md border border-border">
+                  {rows.map(
+                    (row) =>
+                      row.rebuild && (
+                        <RecordImpactRow
+                          address={row.address}
+                          href={row.href}
+                          own={row.own}
+                          kind={row.kind}
+                          status={row.status}
+                          rebuild={row.rebuild}
+                          why={row.why}
+                        />
+                      ),
+                  )}
+                </ul>
+              )}
+            </section>
+            <section class="flex flex-col gap-2">
+              <Text as="h3" variant="eyebrow" tone="muted">
+                Rendered per request
+              </Text>
+              {!has_live && (
+                <Text as="p" variant="body-sm" tone="muted">
+                  No live page or dynamic fragment reads this type.
+                </Text>
+              )}
+              {has_live && (
+                <ul class="flex flex-col divide-y divide-border rounded-md border border-border">
+                  {rows.map(
+                    (row) =>
+                      !row.rebuild && (
+                        <RecordImpactRow
+                          address={row.address}
+                          href={row.href}
+                          own={row.own}
+                          kind={row.kind}
+                          status={row.status}
+                          rebuild={row.rebuild}
+                          why={row.why}
+                        />
+                      ),
+                  )}
+                </ul>
+              )}
+            </section>
+          </div>
+          <div class="mt-5 flex justify-end">
+            <DialogClose asChild>
+              <Button hierarchy="secondary">Close</Button>
+            </DialogClose>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </EditorAsideSection>
+  );
+}

@@ -1,0 +1,129 @@
+import { state, onSubmit } from "../RecordEditor.ptsx";
+import { EditorAside } from "../EditorAside.ptsx";
+import { EditorAsideSection } from "../EditorAsideSection.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
+import { SplitButton } from "@publr/ui/SplitButton.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type RecordActionsProps = {
+  in_drawer: boolean;
+  is_new: boolean;
+  actions: Array<{
+    name: string;
+    value: string;
+    label: string;
+    destructive: boolean;
+    primary: boolean;
+  }>;
+  action_route: string;
+  csrf: string;
+  expected_version: string;
+  has_destructive: boolean;
+  id: string;
+  parks: boolean;
+  versions_href: string;
+  /** Sections the adapter draws for the thing being edited: a record's terms (RecordTerms),
+   * a term's parent (TermParent). */
+  aside?: JSX.Element;
+  /** The dependency dialog (RecordImpact), present under `serve --dev` only. */
+  impact?: JSX.Element;
+};
+
+export function RecordActions({
+  in_drawer,
+  is_new,
+  actions,
+  action_route,
+  csrf,
+  expected_version,
+  has_destructive,
+  id,
+  parks,
+  versions_href,
+  aside,
+  impact,
+}: RecordActionsProps) {
+  return (
+    <EditorAside in_drawer={in_drawer}>
+      {!is_new && (
+        <EditorAsideSection>
+          <DropdownMenu>
+            <SplitButton classes="w-full">
+              {actions.map(
+                (item) =>
+                  item.primary && (
+                    <form
+                      method="post"
+                      action={action_route}
+                      onSubmit={onSubmit}
+                      class="flex min-w-0 flex-1"
+                    >
+                      <input type="hidden" name="csrf" value={csrf} />
+                      <input type="hidden" name="expected_version" value={state.version} />
+                      <input type="hidden" name={item.name} value={item.value} />
+                      <Button type="submit" attach="start" classes="w-full" disabled={state.submitting}>
+                        {item.label}
+                      </Button>
+                    </form>
+                  ),
+              )}
+              <DropdownMenuTrigger asChild>
+                <Button type="button" attach="end" label="More actions" title="More actions" disabled={state.submitting}>
+                  <Icon name="chevron-down" size="sm" />
+                </Button>
+              </DropdownMenuTrigger>
+            </SplitButton>
+            <DropdownMenuContent align="right">
+              {actions.map(
+                (item) =>
+                  !item.primary &&
+                  !item.destructive && (
+                    <form method="post" action={action_route} onSubmit={onSubmit}>
+                      <input type="hidden" name="csrf" value={csrf} />
+                      <input type="hidden" name="expected_version" value={state.version} />
+                      <input type="hidden" name={item.name} value={item.value} />
+                      <DropdownMenuItem type="submit" disabled={state.submitting}>{item.label}</DropdownMenuItem>
+                    </form>
+                  ),
+              )}
+              {has_destructive && <DropdownMenuSeparator />}
+              {actions.map(
+                (item) =>
+                  item.destructive && (
+                    <form method="post" action={action_route} onSubmit={onSubmit}>
+                      <input type="hidden" name="csrf" value={csrf} />
+                      <input type="hidden" name="expected_version" value={state.version} />
+                      <input type="hidden" name={item.name} value={item.value} />
+                      <DropdownMenuItem type="submit" variant="destructive" disabled={state.submitting}>
+                        {item.label}
+                      </DropdownMenuItem>
+                    </form>
+                  ),
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {parks && (
+            <Text as="p" variant="body-xs" tone="muted">
+              Edits are saved as pending changes; the live version stays until you publish.
+            </Text>
+          )}
+          {versions_href !== "" && (
+            <Link href={versions_href} tone="quiet" classes="inline-flex items-center gap-1.5">
+              <Icon name="clock-rewind" size="xs" />
+              Versions
+            </Link>
+          )}
+        </EditorAsideSection>
+      )}
+      {aside}
+      {impact}
+    </EditorAside>
+  );
+}

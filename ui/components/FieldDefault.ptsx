@@ -1,0 +1,101 @@
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { FieldControl } from "./FieldControl.ptsx";
+
+/** What a new record starts with: the kind's own control, or a note saying why no
+ * default can be set. A date and time field may start with the moment of creation. */
+export type FieldDefaultProps = {
+  /** Why no default can be set: `kind`, or empty when one can. */
+  blocked?: string;
+  /** The form offers the Unique rule: while it is ticked, no default can be set. */
+  can_unique?: boolean;
+  /** input, textarea, number, switch, datetime, date, select. */
+  control?: string;
+  value?: string;
+  checked?: boolean;
+  options: Array<{ value: string; label: string; selected: boolean }>;
+  can_now?: boolean;
+  now?: boolean;
+};
+
+export function FieldDefault({
+  blocked = "",
+  can_unique = false,
+  control = "input",
+  value = "",
+  checked = false,
+  options,
+  can_now = false,
+  now = false,
+}: FieldDefaultProps) {
+  return (
+    <section class="border-t border-border pt-6">
+      <Heading level={2} size="md">
+        Default value
+      </Heading>
+      <div class="mt-5 flex flex-col gap-6">
+        {blocked === "" && can_unique && (
+          <div data-when="unique">
+            <Callout title="You cannot set a default value for unique fields.">
+              Default values cannot be set for fields with the unique validation enabled: every
+              record would start with the same value.
+            </Callout>
+          </div>
+        )}
+        {blocked === "kind" && (
+          <Callout title="Not available for this field type">
+            You can only set a default value for text, boolean, date and time, number and select
+            fields.
+          </Callout>
+        )}
+        {blocked === "" && can_now && (
+          <CheckboxField
+            id="default_now"
+            name="default_now"
+            checked={now}
+            label="Start with the moment of creation"
+            description="A new record takes the time it is created instead of a fixed moment"
+          />
+        )}
+        {blocked === "" && (
+          <div data-when={can_unique ? "not-unique" : undefined}>
+            <div data-when={can_now ? "not-now" : undefined}>
+              <Field>
+                <FieldLabel htmlFor="field-default">What a new record starts with</FieldLabel>
+                <FieldControl
+                  name="default"
+                  control={control}
+                  value={value}
+                  checked={checked}
+                  placeholder=""
+                  rows={4}
+                  min=""
+                  max=""
+                  step=""
+                  prefix=""
+                  card_type=""
+                  card_title=""
+                  card_status=""
+                  card_tone="neutral"
+                  card_href=""
+                  remove=""
+                  up=""
+                  down=""
+                >
+                  {options.map((option) => (
+                    <option value={option.value} selected={option.selected}>
+                      {option.label}
+                    </option>
+                  ))}
+                </FieldControl>
+              </Field>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}

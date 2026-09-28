@@ -1,0 +1,87 @@
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+
+export type NumberAppearanceProps = {
+  has_number?: boolean;
+  unit?: string;
+  unit_after?: boolean;
+  has_decimals?: boolean;
+  decimals?: string;
+  number_control?: string;
+  can_rating?: boolean;
+};
+
+export function NumberAppearance({
+  has_number = false,
+  unit = "",
+  unit_after = true,
+  has_decimals = false,
+  decimals = "",
+  number_control = "input",
+  can_rating = false,
+}: NumberAppearanceProps) {
+  return (
+    <>
+      {has_number && (
+        <div class="grid gap-4 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="unit">Unit</FieldLabel>
+            <Input id="unit" name="unit" value={unit} placeholder="kg, $, %" maxLength={16} />
+            <FieldDescription>Shown beside the input</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="unit_after">Unit position</FieldLabel>
+            <NativeSelect id="unit_after" name="unit_after">
+              <option value="1" selected={unit_after}>
+                After the number
+              </option>
+              <option value="0" selected={!unit_after}>
+                Before the number
+              </option>
+            </NativeSelect>
+          </Field>
+        </div>
+      )}
+      {has_decimals && (
+        <Field>
+          <FieldLabel htmlFor="decimals">Decimal places</FieldLabel>
+          <Input
+            id="decimals"
+            name="decimals"
+            type="number"
+            min="0"
+            max="10"
+            value={decimals}
+            placeholder="Any"
+            classes="w-32"
+          />
+          <FieldDescription>The input steps by this many places</FieldDescription>
+        </Field>
+      )}
+      {has_number && (
+        <Field>
+          <FieldLabel htmlFor="number_control">Control</FieldLabel>
+          <NativeSelect id="number_control" name="number_control">
+            <option value="input" selected={number_control === "input"}>
+              Number input
+            </option>
+            <option value="slider" selected={number_control === "slider"}>
+              Slider over the range
+            </option>
+            {can_rating && (
+              <option value="rating" selected={number_control === "rating"}>
+                Rating, one to the maximum
+              </option>
+            )}
+          </NativeSelect>
+          <FieldDescription>
+            A slider or a rating needs a range; the maximum sets how far it goes.
+          </FieldDescription>
+        </Field>
+      )}
+    </>
+  );
+}

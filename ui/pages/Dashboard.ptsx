@@ -1,0 +1,31 @@
+import { Layout } from "../layouts/Layout.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+
+export type DashboardProps = {
+  user_name: string;
+  user_email: string;
+  csrf: string;
+};
+
+export function Dashboard({ user_name, user_email, csrf }: DashboardProps) {
+  return (
+    <Layout
+      title="Overview"
+      section="dashboard"
+      user_name={user_name}
+      user_email={user_email}
+      csrf={csrf}
+    >
+      <div class="px-8 py-7">
+        <PageHeader title="Overview" />
+        <div class="mt-6">
+          <Empty>
+            <EmptyDescription>Here will be the dashboard.</EmptyDescription>
+          </Empty>
+        </div>
+      </div>
+    </Layout>
+  );
+}

@@ -1,0 +1,29 @@
+import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyContent } from "@publr/ui/EmptyContent.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+
+export type ContentNoTypesProps = {};
+
+export function ContentNoTypes({}: ContentNoTypesProps) {
+  return (
+    <div class="px-8 py-7">
+      <PageHeader title="Content" />
+      <div class="mt-6">
+        <Empty>
+          <EmptyTitle>No content types yet</EmptyTitle>
+          <EmptyDescription>
+            Content is made of records of a type. Define a type first.
+          </EmptyDescription>
+          <EmptyContent>
+            <Button href="/admin/types/new" size="sm">
+              New content type
+            </Button>
+          </EmptyContent>
+        </Empty>
+      </div>
+    </div>
+  );
+}

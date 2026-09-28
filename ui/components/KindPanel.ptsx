@@ -1,0 +1,54 @@
+import { onNavigate, onBack, submitted } from "./TypeColumns.ptsx";
+import type { IconName } from "@publr/ui/Icon.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type KindPanelProps = {
+  title: string;
+  description: string;
+  /** The way back: the fields page, or the parent's page for a field inside a group or
+   * repeater. */
+  back_href: string;
+  back_label: string;
+  kinds: Array<{ href: string; icon: IconName; label: string; description: string }>;
+};
+
+/** The first step of a new field, in a level over the type's fields: pick its kind. Every
+ * card is a link to the field form for that kind, so the form only ever shows the options
+ * that kind has. */
+export function KindPanel({ title, description, back_href, back_label, kinds }: KindPanelProps) {
+  return (
+    <div class="contents" data-part="type-panel-content" data-title={title}>
+      <div class="px-8 py-7">
+        <PageHeader onBack={onBack}
+          title={title}
+          description={description}
+          back_label={back_label}
+          back_href={back_href}
+        />
+        <div class="mt-8 grid gap-3 sm:grid-cols-2">
+          {kinds.map((kind) => (
+            <a onClick={onNavigate}
+              href={kind.href}
+              data-level="replace"
+              class="flex items-start gap-4 rounded-xl border border-border bg-card px-5 py-4 transition-colors hover:border-input hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              <span class="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
+                <Icon name={kind.icon} size="md" />
+              </span>
+              <span class="flex min-w-0 flex-col gap-0.5">
+                <Text as="span" variant="heading-xs">
+                  {kind.label}
+                </Text>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {kind.description}
+                </Text>
+              </span>
+            </a>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

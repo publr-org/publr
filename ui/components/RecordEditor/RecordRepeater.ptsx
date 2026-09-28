@@ -1,0 +1,165 @@
+import { Button } from "@publr/ui/Button.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { RecordValue } from "./RecordValue.ptsx";
+
+export type RecordRepeaterProps = {
+  label: string;
+  required: boolean;
+  collapsed: boolean;
+  entries: Array<{
+    name: string;
+    label: string;
+    remove: string;
+    up: string;
+    down: string;
+    cells: Array<{
+      name: string;
+      conditions: string;
+    value_kind: string;
+      label: string;
+      required: boolean;
+      help: string;
+      control: string;
+      value: string;
+      checked: boolean;
+      readonly: boolean;
+      label_on: string;
+      placeholder: string;
+      rows: number;
+      min: string;
+      max: string;
+      step: string;
+      prefix: string;
+      suffix: string;
+      card_type: string;
+      card_title: string;
+      card_status: string;
+      card_tone: string;
+      card_href: string;
+      remove: string;
+      up: string;
+      down: string;
+      cell_options: Array<{
+        value: string;
+        label: string;
+        selected: boolean;
+      }>;
+    }>;
+  }>;
+  add: string;
+  add_label: string;
+};
+
+export function RecordRepeater({
+  label,
+  required,
+  collapsed,
+  entries,
+  add,
+  add_label,
+}: RecordRepeaterProps) {
+  return (
+    <div class="flex flex-col gap-3">
+      <div class="flex items-baseline gap-1">
+        <Text as="span" variant="heading-xs">
+          {label}
+        </Text>
+        {required && (
+          <Text as="span" variant="heading-xs" tone="error">
+            *
+          </Text>
+        )}
+      </div>
+      {entries.map((entry) => (
+        <details class="rounded-xl border border-border" open={!collapsed}>
+          <summary class="cursor-pointer px-5 py-3">
+            <Text as="span" variant="heading-xs">
+              {entry.label}
+            </Text>
+          </summary>
+          <div class="border-t border-border px-5 py-4">
+            <div class="mb-3 flex items-center justify-end gap-1">
+              <Button
+                type="submit"
+                name="reshape"
+                value={entry.up}
+                hierarchy="tertiary"
+                size="sm"
+                label="Move up"
+                title="Move up"
+              >
+                <Icon name="chevron-up" size="sm" />
+              </Button>
+              <Button
+                type="submit"
+                name="reshape"
+                value={entry.down}
+                hierarchy="tertiary"
+                size="sm"
+                label="Move down"
+                title="Move down"
+              >
+                <Icon name="chevron-down" size="sm" />
+              </Button>
+              <Button
+                type="submit"
+                name="reshape"
+                value={entry.remove}
+                hierarchy="tertiary"
+                size="sm"
+                label="Remove"
+                title="Remove"
+              >
+                <Icon name="x-close" size="sm" />
+              </Button>
+            </div>
+            <div class="flex flex-col gap-5">
+              {entry.cells.map((child) => (
+                <div data-conditions={child.conditions} data-field-path={child.name} data-value-kind={child.value_kind}><Field>
+                  <FieldLabel htmlFor={`field-${child.name}`} required={child.required}>
+                    {child.label}
+                  </FieldLabel>
+                  <RecordValue
+                    name={child.name}
+                    control={child.control}
+                    value={child.value}
+                    checked={child.checked}
+                    readonly={child.readonly}
+                    label_on={child.label_on}
+                    placeholder={child.placeholder}
+                    rows={child.rows}
+                    min={child.min}
+                    max={child.max}
+                    step={child.step}
+                    prefix={child.prefix}
+                    suffix={child.suffix}
+                    card_type={child.card_type}
+                    card_title={child.card_title}
+                    card_status={child.card_status}
+                    card_tone={child.card_tone}
+                    card_href={child.card_href}
+                    remove={child.remove}
+                    up={child.up}
+                    down={child.down}
+                    options={child.cell_options}
+                  />
+                  {child.help !== "" && <FieldDescription>{child.help}</FieldDescription>}
+                </Field></div>
+              ))}
+            </div>
+          </div>
+        </details>
+      ))}
+      <div class="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
+        <Button type="submit" name="reshape" value={add} hierarchy="secondary" size="sm">
+          <Icon name="plus" size="sm" />
+          <span>{add_label}</span>
+        </Button>
+      </div>
+    </div>
+  );
+}

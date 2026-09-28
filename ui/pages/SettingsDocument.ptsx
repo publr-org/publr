@@ -1,0 +1,36 @@
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Layout } from "../layouts/Layout.ptsx";
+import { EditorColumn } from "../components/EditorColumn.ptsx";
+import { ReferenceDrawer } from "../components/ReferenceDrawer.ptsx";
+
+export type SettingsDocumentProps = {
+  user_name: string;
+  user_email: string;
+  csrf: string;
+  title: string;
+  nav: JSX.Element;
+  description: string;
+  has_fields: boolean;
+  schema_href: string;
+  editor: JSX.Element;
+};
+
+export function SettingsDocument({ user_name, user_email, csrf, title, nav, editor, description, has_fields, schema_href }: SettingsDocumentProps) {
+  return (
+    <Layout title={title} section="settings" sidebar={nav}
+      user_name={user_name} user_email={user_email} csrf={csrf}>
+      {has_fields ? editor : (
+        <EditorColumn>
+          <PageHeader title={title} description={description} />
+          <p class="mt-6">
+            <Text variant="body-md" tone="muted">This section has no fields yet. Define its fields in Structure to start configuring it.</Text>
+          </p>
+          <div class="mt-6"><Button href={schema_href}>Define fields</Button></div>
+        </EditorColumn>
+      )}
+      <ReferenceDrawer />
+    </Layout>
+  );
+}

@@ -1,0 +1,167 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+export type FieldSettingsProps = {
+  can_title: boolean;
+  can_be_many: boolean;
+  is_title: boolean;
+  can_search: boolean;
+  searchable: boolean;
+  has_target: boolean;
+  targets: Array<{
+    value: string;
+    label: string;
+    selected: boolean;
+  }>;
+  has_taxonomy: boolean;
+  taxonomies: Array<{
+    value: string;
+    label: string;
+    selected: boolean;
+  }>;
+  has_source: boolean;
+  source: string;
+  on_delete: string;
+  has_choices: boolean;
+  choices: string;
+};
+
+export function FieldSettings({
+  can_title,
+  can_be_many,
+  is_title,
+  can_search,
+  searchable,
+  has_target,
+  targets,
+  has_taxonomy,
+  taxonomies,
+  has_source,
+  source,
+  on_delete,
+  has_choices,
+  choices,
+}: FieldSettingsProps) {
+  return (
+    <section class="border-t border-border pt-6">
+      <Heading level={2} size="md">
+        Settings
+      </Heading>
+      <div class="mt-5 flex flex-col gap-6">
+        {can_title && (
+          <div data-when={can_be_many ? "single" : undefined}>
+            <CheckboxField
+              id="title"
+              name="title"
+              checked={is_title}
+              label="This field represents the record's title"
+              description="The name a record goes by in lists and references. One field of the type; ticking it here moves it."
+            />
+          </div>
+        )}
+        {can_search && (
+          <CheckboxField
+            id="searchable"
+            name="searchable"
+            checked={searchable}
+            label="Searchable"
+            description="Indexed for full-text search in the content list and the API."
+          />
+        )}
+        {has_target && (
+          <fieldset class="m-0 min-w-0 border-0 p-0">
+            <legend class="mb-2 p-0">
+              <Text as="span" variant="body-sm" tone="default">
+                Points at
+              </Text>
+            </legend>
+            <div class="flex flex-col gap-3">
+              {targets.map((target) => (
+                <CheckboxField
+                  id={`to-${target.value}`}
+                  name="to"
+                  value={target.value}
+                  checked={target.selected}
+                  label={target.label}
+                />
+              ))}
+            </div>
+            <div class="mt-2">
+              <FieldDescription>
+                Tick the record types it may point at; none ticked means any record type.
+              </FieldDescription>
+            </div>
+          </fieldset>
+        )}
+        {has_taxonomy && (
+          <Field>
+            <FieldLabel htmlFor="taxonomy" required>
+              Taxonomy
+            </FieldLabel>
+            <NativeSelect id="taxonomy" name="taxonomy">
+              {taxonomies.map((taxonomy) => (
+                <option value={taxonomy.value} selected={taxonomy.selected}>
+                  {taxonomy.label}
+                </option>
+              ))}
+            </NativeSelect>
+            <FieldDescription>
+              Records of this type select terms of the taxonomy in the editor's sidebar: a tree
+              of checkboxes for a hierarchical taxonomy, a combobox for a flat one.
+            </FieldDescription>
+          </Field>
+        )}
+        {has_source && (
+          <Field>
+            <FieldLabel htmlFor="source">Source field</FieldLabel>
+            <Input id="source" name="source" value={source} placeholder="title" />
+            <FieldDescription>
+              The field the slug is made from; the title when left empty.
+            </FieldDescription>
+          </Field>
+        )}
+        {has_target && (
+          <Field>
+            <FieldLabel htmlFor="on_delete">When a linked record is purged</FieldLabel>
+            <NativeSelect id="on_delete" name="on_delete">
+              <option value="keep" selected={on_delete === "keep"}>
+                Keep the link as it is
+              </option>
+              <option value="block" selected={on_delete === "block"}>
+                Refuse to purge while linked here
+              </option>
+              <option value="clear" selected={on_delete === "clear"}>
+                Clear the link
+              </option>
+            </NativeSelect>
+          </Field>
+        )}
+        {has_choices && (
+          <Field>
+            <FieldLabel htmlFor="choices" required>
+              Choices
+            </FieldLabel>
+            <Textarea
+              id="choices"
+              name="choices"
+              value={choices}
+              rows={6}
+              placeholder={"draft\nreview | In review\nfinal"}
+            />
+            <FieldDescription>
+              One per line, in the order they are offered. Write `value | Label` to show a label
+              other than the value.
+            </FieldDescription>
+          </Field>
+        )}
+      </div>
+    </section>
+  );
+}

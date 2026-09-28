@@ -1,0 +1,592 @@
+import { PanelTab } from "@publr/ui/PanelTab.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { ChoiceButton } from "@publr/ui/ChoiceButton.ptsx";
+import { RecordSingle } from "./RecordEditor/RecordSingle.ptsx";
+import { RecordActions } from "./RecordEditor/RecordActions.ptsx";
+import { RecordProblems } from "./RecordEditor/RecordProblems.ptsx";
+import { RecordHeader } from "./RecordEditor/RecordHeader.ptsx";
+import { RecordRepeater } from "./RecordEditor/RecordRepeater.ptsx";
+import { RecordGroup } from "./RecordEditor/RecordGroup.ptsx";
+import { RecordMany } from "./RecordEditor/RecordMany.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { mutation } from "publr";
+import { invalidate } from "publr/query";
+import { Publr } from "publr-jsx";
+import { EditorColumn } from "./EditorColumn.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+/** The editor's client half. The form autosaves: every input marks it dirty and, after a
+ * pause, posts it as JSON, which answers the new version (or why it could not be saved).
+ * Every submit inside the editor (a reshape, a status action) is posted with fetch and
+ * the answer, the editor drawn again, replaces this one in place; a reference card's open
+ * row and the add slot's buttons ask the page's drawer to open instead of navigating. */
+export const tabKeys = (event: KeyboardEvent) => {
+  const tabs = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>("[role=tab]"));
+  const index = tabs.indexOf(event.target as HTMLButtonElement);
+  const next = event.key === "ArrowRight" ? (index + 1) % tabs.length
+    : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+    : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+  if (next < 0) return;
+  event.preventDefault();
+  tabs[next].click();
+  tabs[next].focus();
+};
+
+export const state = Publr.reactive({
+  id: "",
+  version: "",
+  save_url: "",
+  submit_url: "",
+  create_url: "",
+  record_url: "",
+  base_url: "",
+  csrf: "",
+  in_drawer: false,
+  saved_text: "All changes saved",
+  dirty: false,
+  busy: false,
+  submitting: false,
+  refresh_error: false,
+  save_error: false,
+  edit_revision: 0,
+  title: "",
+});
+
+export const form_ref = Publr.ref<HTMLFormElement>();
+export const root_ref = Publr.ref<HTMLElement>((root) => {
+  arrangeLayout(root);
+  refreshConditions(root);
+  return () => { clearTimeout(timer); disposed = true; };
+});
+
+export const onLayoutTab = (event: MouseEvent) => {
+  const button = event.currentTarget as HTMLElement;
+  const root = button.closest<HTMLElement>('[data-part="record-editor"]');
+  if (!root) return;
+  for (const tab of root.querySelectorAll<HTMLElement>('[data-layout-tabs] [role="tab"]')) {
+    const selected = tab === button;
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    const panel = root.querySelector<HTMLElement>(`#${tab.getAttribute("aria-controls")}`);
+    if (panel) panel.hidden = !selected;
+  }
+};
+const arrangeLayout = (root: HTMLElement) => {
+  const form = root.querySelector<HTMLFormElement>('[data-part="record-form"]');
+  if (!form || form.dataset.layoutReady) return;
+  form.dataset.layoutReady = "true";
+  const fields = Array.from(form.children).filter((child) => child.hasAttribute("data-layout-kind")) as HTMLElement[];
+  let panel: HTMLElement = form;
+  let section: HTMLElement = form;
+  let tabs: HTMLElement | null = null;
+  for (const field of fields) {
+    const kind = field.dataset.layoutKind;
+    if (kind === "tab") {
+      if (!tabs) {
+        tabs = document.createElement("div"); tabs.className = "flex flex-wrap gap-1";
+        tabs.setAttribute("role", "tablist"); tabs.addEventListener("keydown", tabKeys); tabs.dataset.layoutTabs = "true";
+        field.before(tabs);
+      }
+      const button = field.querySelector<HTMLButtonElement>('[role="tab"]')!;
+      const first = tabs.children.length === 0;
+      button.setAttribute("aria-selected", String(first)); button.tabIndex = first ? 0 : -1;
+      tabs.append(button);
+      panel = document.createElement("div"); panel.className = "flex flex-col gap-7";
+      panel.id = button.getAttribute("aria-controls")!;
+      panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", button.id);
+      panel.hidden = !first;
+      field.replaceWith(panel); section = panel;
+    } else if (kind === "accordion") {
+      const details = document.createElement("details"); details.open = true;
+      const summary = document.createElement("summary"); summary.className = "cursor-pointer py-3";
+      while (field.firstChild) summary.append(field.firstChild);
+      details.append(summary);
+      section = document.createElement("div"); section.className = "flex flex-col gap-7 py-4";
+      details.append(section);
+      if (panel === form) field.replaceWith(details);
+      else { field.remove(); panel.append(details); }
+    } else if (section !== form) section.append(field);
+  }
+};
+
+const conditionValue = (form: HTMLFormElement, name: string): unknown => {
+  const elements = Array.from(form.elements).filter((entry) =>
+    (entry as HTMLInputElement).name === name || (entry as HTMLInputElement).name?.startsWith(`${name}[`),
+  ) as HTMLInputElement[];
+  const wrapper = Array.from(form.querySelectorAll<HTMLElement>("[data-field-path]"))
+    .find((element) => element.dataset.fieldPath === name);
+  const kind = wrapper?.dataset.valueKind;
+  const many = elements.some((entry) => entry.name !== name);
+  const values = elements.filter((entry) => entry.type !== "checkbox" && entry.type !== "radio" || entry.checked)
+    .map((entry) => kind === "boolean" ? entry.value === "1" || entry.value === "true"
+      : kind === "integer" || kind === "number" || entry.type === "number"
+        ? (entry.value === "" ? null : Number(entry.value)) : entry.value);
+  if (!many && elements.length === 1 && elements[0].type === "checkbox") return elements[0].checked;
+  if (!many && kind === "boolean") return values[0] ?? false;
+  return many ? values : values[0];
+};
+const refreshConditions = (root: HTMLElement) => {
+  const form = root.querySelector<HTMLFormElement>('[data-part="record-form"]');
+  if (!form) return;
+  for (const element of root.querySelectorAll<HTMLElement>("[data-conditions]")) {
+    const groups = JSON.parse(element.dataset.conditions ?? "[]") as Array<{
+      rules: Array<{ field: string; operator: string; value: string }>
+    }>;
+    const path = element.dataset.fieldPath ?? "";
+    const prefix = path.includes(".") ? path.slice(0, path.lastIndexOf(".") + 1) : "";
+    element.hidden = element.dataset.groupActive === "false" || groups.length > 0 && !groups.some((group) => group.rules.every((rule) => {
+      const value = conditionValue(form, prefix + rule.field);
+      const empty = value == null || value === "" || Array.isArray(value) && value.length === 0;
+      const expected = typeof value === "number" ? Number(rule.value) : rule.value;
+      const equal = typeof value === "boolean" ? String(value) === rule.value : value === expected;
+      if (rule.operator === "empty") return empty;
+      if (rule.operator === "not_empty") return !empty;
+      if (rule.operator === "not_equal") return !equal;
+      if (rule.operator === "contains") return typeof value === "string" ? value.includes(rule.value) : Array.isArray(value) && value.some((item) => String(item) === rule.value);
+      return equal;
+    }));
+  }
+};
+
+const root_of = () => root_ref.current;
+
+let timer: number | undefined = undefined;
+let inflight: Promise<boolean> | null = null;
+let disposed = false;
+let refresh_after_create = false;
+
+const form_of = () => (form_ref.current as HTMLFormElement | null) ?? null;
+
+const body_of = (form: HTMLFormElement, extra: Record<string, string>) => {
+  const params = new URLSearchParams();
+  for (const [key, value] of new FormData(form).entries()) {
+    if (typeof value === "string") params.append(key, value);
+  }
+  for (const [key, value] of Object.entries(extra)) params.set(key, value);
+  if (state.version !== "") params.set("expected_version", state.version);
+  return params;
+};
+
+const focused = () => {
+  const active = document.activeElement as HTMLInputElement | null;
+  if (!active || !root_of()?.contains(active)) return null;
+  return { name: active.getAttribute("name") ?? "", at: active.selectionStart ?? null };
+};
+
+/** Focus returns to the field it was in; when there was none and it fell to the body (the
+ * editor drawn again inside a drawer level, whose Link button is gone), it lands on Back. */
+const refocus = (memo: { name: string; at: number | null } | null, root: Element) => {
+  const again =
+    memo && memo.name !== "" ? root.querySelector<HTMLInputElement>(`[name="${memo.name}"]`) : null;
+  if (!again) {
+    if (state.in_drawer && document.activeElement === document.body) {
+      root.querySelector<HTMLElement>('[data-part="drawer-back"]')?.focus();
+    }
+    return;
+  }
+  again.focus();
+  if (memo && memo.at !== null && typeof again.setSelectionRange === "function") {
+    try {
+      again.setSelectionRange(memo.at, memo.at);
+    } catch {
+      // not every input type takes a caret
+    }
+  }
+};
+
+/** The answer to a fetched submit: the editor drawn again, put in this one's place. A
+ * reshape changed the document without saving it, so the new editor is told it is dirty
+ * and autosaves. */
+const replace = (
+  html: string,
+  memo: { name: string; at: number | null } | null,
+  then_save: boolean,
+) => {
+  const element = root_of();
+  if (!element) return;
+  const fragment = document.createRange().createContextualFragment(html);
+  const next = fragment.firstElementChild;
+  Publr.destroy(element);
+  element.replaceWith(fragment);
+  if (!next) return;
+  Publr.hydrate(next);
+  const form = next.querySelector<HTMLFormElement>('form[data-part="record-form"]');
+  if (!form) return;
+  queueMicrotask(() => {
+    refocus(memo, next);
+    if (then_save) form.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+};
+
+/** Inside the drawer every answer is asked for as a drawer fragment, so the editor drawn
+ * again keeps its Back and Close. */
+const headers_of = (answer: string) => {
+  const headers: Record<string, string> = { "Publr-Fragment": answer };
+  if (state.in_drawer) headers["Publr-Drawer"] = "1";
+  return headers;
+};
+
+const post = async (url: string, params: URLSearchParams, answer: "editor" | "json") =>
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", ...headers_of(answer) },
+    body: params.toString(),
+    credentials: "same-origin",
+  });
+
+const save = mutation(async () => {
+  const form = form_of();
+  if (!form || disposed) return false;
+  const revision = state.edit_revision;
+  const creating = state.id === "";
+  state.saved_text = "Saving…";
+  const response = await post(
+    creating ? state.create_url : state.save_url,
+    body_of(form, {}),
+    "json",
+  );
+  if (!response.ok || response.redirected) throw new Error("Could not save");
+  const answer = await response.json() as {
+    saved: boolean; id?: string; version?: number; title?: string; reason?: string;
+  };
+  if (!answer.saved) throw new Error(answer.reason ?? "Cannot save yet");
+  if (disposed) return false;
+  state.version = String(answer.version ?? "");
+  state.dirty = state.edit_revision !== revision;
+  state.saved_text = state.dirty ? "Unsaved changes" : "All changes saved";
+  invalidate("content");
+  invalidate(`record:${answer.id ?? state.id}`);
+  if (creating && answer.id) {
+    state.id = answer.id;
+    state.save_url = `${state.base_url}/${answer.id}/save`;
+    state.submit_url = state.save_url;
+    state.record_url = `${state.base_url}/${answer.id}`;
+    refresh_after_create = true;
+    if (!state.in_drawer) history.replaceState(null, "", state.record_url);
+    Publr.stores.navigation.created(root_ref.current, answer.id, answer.title ?? "");
+  }
+  return true;
+});
+
+const drain = async () => {
+  while (!disposed) {
+    if (state.dirty) {
+      if (!await save()) return false;
+      continue;
+    }
+    if (!refresh_after_create) return true;
+    const revision = state.edit_revision;
+    const memo = focused();
+    const fresh = await fetch(`${state.record_url}/editor`, {
+      credentials: "same-origin", headers: headers_of("editor"),
+    });
+    if (!fresh.ok || fresh.redirected) throw new Error("Could not refresh the editor");
+    const html = await fresh.text();
+    if (disposed) return false;
+    if (state.edit_revision !== revision) continue;
+    refresh_after_create = false;
+    replace(html, memo, false);
+    return true;
+  }
+  return false;
+};
+
+const flush = () => {
+  clearTimeout(timer);
+  if (!inflight) {
+    state.refresh_error = false;
+    inflight = drain().catch((error: unknown) => {
+      if (!disposed) {
+        state.refresh_error = true;
+        state.saved_text = error instanceof Error ? error.message : "Could not save";
+      }
+      return false;
+    }).finally(() => { inflight = null; });
+  }
+  return inflight;
+};
+
+export const retrySave = () => { void flush(); };
+
+/** An edit anywhere in the record's form: the form itself, or a control in the aside
+ * that posts with it (`form="record"`). The autosave follows after a pause. */
+export const markDirty = () => {
+  state.edit_revision++;
+  state.dirty = true;
+  state.saved_text = "Unsaved changes";
+  clearTimeout(timer);
+  timer = window.setTimeout(() => { void flush(); }, 800);
+};
+
+/** The combobox of a flat taxonomy (RecordTerms) writes hidden inputs without an input
+ * event; its own change event bubbles here instead. */
+export const onPicked = () => {
+  markDirty();
+};
+
+export const onInput = (event: Event) => {
+  if (root_of()) refreshConditions(root_of()!);
+  const target = event.target as HTMLInputElement | null;
+  const form = form_ref.current as HTMLFormElement | null;
+  if (!target || !form || target.name === "type-search") return;
+  if (!form.contains(target) && target.form !== form) return;
+  markDirty();
+};
+
+/** A named submit (reshape, status action) posted with fetch; the editor comes back. */
+export const onSubmit = async (event: Event) => {
+  const form = event.target as HTMLFormElement | null;
+  if (!(form instanceof HTMLFormElement) || event.defaultPrevented) return;
+  event.preventDefault();
+  if (state.submitting) return;
+  const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
+  const memo = focused();
+  if (!await flush() || disposed) return;
+  const extra: Record<string, string> = {};
+  if (submitter && submitter.name) extra[submitter.name] = submitter.value;
+  const reshaping = submitter !== null && submitter.name === "reshape";
+  await submit(
+    form.getAttribute("action") ?? state.save_url,
+    body_of(form, extra),
+    memo,
+    reshaping,
+  );
+};
+
+const submit = mutation(async (
+  url: string,
+  params: URLSearchParams,
+  memo: { name: string; at: number | null } | null,
+  then_save: boolean,
+) => {
+  const response = await post(url, params, "editor");
+  if (!response.ok || response.redirected) throw new Error("Could not complete the action. Try again.");
+  const html = await response.text();
+  if (disposed) return;
+  const location = response.headers.get("Publr-Location");
+  if (html.trim() === "") {
+    if (location) window.location.assign(location);
+    return;
+  }
+  if (location && !state.in_drawer) history.replaceState(null, "", location);
+  replace(html, memo, then_save);
+});
+
+Publr.effect(() => {
+  state.submitting = submit.isPending;
+  state.busy = save.isPending || submit.isPending;
+  state.save_error = save.isError || state.refresh_error;
+  const error = submit.isError ? submit.error : save.isError ? save.error : null;
+  if (error) state.saved_text = error instanceof Error ? error.message : "Could not save";
+});
+
+export const onOpenReference = (event: Event) => {
+  if (event.defaultPrevented) return;
+  if (
+    event instanceof MouseEvent &&
+    (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+  )
+    return;
+  const anchor = event.currentTarget as HTMLAnchorElement;
+  event.preventDefault();
+  Publr.stores.navigation.openReference({
+    url: `${anchor.href}/editor`,
+    field: "",
+    opener: anchor,
+    deliver: () => {},
+  });
+};
+
+export const onReference = (event: Event) => {
+  const button = event.currentTarget as HTMLElement;
+  const { field = "", type = "", verb = "", live = "", reshape = "" } = button.dataset;
+  const url =
+    verb === "link"
+      ? `/admin/content/pick?type=${encodeURIComponent(type)}&field=${encodeURIComponent(field)}${live === ":live" ? "&live=1" : ""}`
+      : `/admin/content/new/editor?type=${encodeURIComponent(type)}&in_drawer=1`;
+  Publr.stores.navigation.openReference({
+    url,
+    field,
+    opener: button,
+    deliver: (id: string) => onLinked(id, field, reshape),
+  });
+};
+
+const onLinked = async (id: string, field: string, reshape: string) => {
+  const form = form_of();
+  if (!form || !field) return;
+  const memo = focused();
+  if (!await flush() || disposed) return;
+  await submit(
+    form.action,
+    body_of(form, {
+      [`pick:${field}`]: id,
+      reshape: reshape || `set:${field}`,
+    }),
+    memo,
+    true,
+  );
+};
+
+Publr.effect(() => {
+  const title = state.title;
+  Publr.stores.navigation.rename(root_ref.current, title);
+});
+
+export type RecordEditorProps = {
+  group_position?: string;
+  csrf: string;
+  /** The record's page, its own fragment, and where the form posts. */
+  id: string;
+  record_url: string;
+  save_url: string;
+  create_url: string;
+  /** `/admin/content` or `/admin/terms`: where a record made by the autosave lives. */
+  base_url: string;
+  is_new: boolean;
+  /** Drawn inside the drawer: Back and Close beside the title, no address to update. */
+  in_drawer: boolean;
+  /** Where the status actions post; empty for a new record. */
+  action_route: string;
+  type: string;
+  type_name: string;
+  title: string;
+  expected_version: string;
+  status: string;
+  status_label: string;
+  changed: boolean;
+  versions_href: string;
+  /** What was refused, by path, when the last post did not go through. */
+  problems: Array<{ path: string; message: string }>;
+  /** The status actions, each its own form to the record's action route; the primary one
+   * is the split button's face, the rest its menu. */
+  actions: Array<{
+    name: string;
+    value: string;
+    label: string;
+    destructive: boolean;
+    primary: boolean;
+  }>;
+  has_destructive: boolean;
+  /** The field rows (RecordFields), drawn by the adapter. */
+  fields: JSX.Element;
+  /** Saving parks the edit as pending changes while the record is live. */
+  parks: boolean;
+  /** Drawn as a preview of the type on its fields page: the form alone, no title band,
+   * no status strip, no aside; the host makes it inert. */
+  preview: boolean;
+  /** Sections of the aside the adapter draws: the record's terms, a term's parent. */
+  aside?: JSX.Element;
+  /** The dependency dialog for the aside, rendered by the adapter under `serve --dev`. */
+  impact?: JSX.Element;
+};
+
+export function RecordEditor({
+  group_position = "main",
+  csrf,
+  id,
+  record_url,
+  save_url,
+  create_url,
+  base_url,
+  is_new,
+  in_drawer,
+  action_route,
+  type,
+  type_name,
+  title,
+  expected_version,
+  status,
+  status_label,
+  changed,
+  versions_href,
+  problems,
+  actions,
+  has_destructive,
+  fields,
+  parks,
+  preview,
+  aside,
+  impact,
+}: RecordEditorProps) {
+  state.id = id;
+  state.title = title;
+  state.version = expected_version;
+  state.save_url = save_url;
+  state.submit_url = is_new ? create_url : save_url;
+  state.create_url = create_url;
+  state.record_url = record_url;
+  state.base_url = base_url;
+  state.csrf = csrf;
+  state.in_drawer = in_drawer;
+
+  return (
+    <div
+      class="flex grow items-stretch"
+      onInput={onInput}
+      onSubmit={onSubmit}
+      onMultiSelectChange={onPicked}
+      ref={root_ref}
+      data-title={title}
+      data-part="record-editor"
+      aria-busy={state.busy}
+    >
+      <EditorColumn wide>
+        {!preview && <RecordHeader in_drawer={in_drawer} title={title} type_name={type_name} />}
+        {!preview && (
+          <div class="mt-5 flex h-10 items-center gap-3 border-y border-border px-8">
+            {is_new && <Status tone="neutral">New</Status>}
+            {!is_new && status === "published" && <Status tone="success">{status_label}</Status>}
+            {!is_new && status !== "published" && <Status tone="neutral">{status_label}</Status>}
+            {changed && <Status tone="warning">unpublished changes</Status>}
+            <span aria-hidden="true" class="h-4 w-px bg-border"></span>
+            <Text as="span" variant="body-xs" tone="muted">
+              {state.saved_text}
+            </Text>
+            <Button hierarchy="tertiary" size="sm" hidden={!state.save_error} onClick={retrySave}>Retry save</Button>
+          </div>
+        )}
+        <div class="mx-auto w-full max-w-4xl px-8">
+          {problems.length > 0 && <RecordProblems problems={problems} />}
+          <form
+            id="record"
+            method="post"
+            action={state.submit_url}
+            class="mt-6 flex flex-col gap-7"
+            data-group-position={group_position}
+            data-part="record-form"
+            ref={form_ref}
+            inert={state.submitting}
+          >
+            <input type="hidden" name="csrf" value={csrf} />
+            {is_new && <input type="hidden" name="type" value={type} />}
+            {!is_new && <input type="hidden" name="expected_version" value={state.version} />}
+            {fields}
+          </form>
+        </div>
+      </EditorColumn>
+      {!preview && (
+        <RecordActions
+          in_drawer={in_drawer}
+          is_new={is_new}
+          actions={actions}
+          action_route={action_route}
+          csrf={csrf}
+          expected_version={expected_version}
+          has_destructive={has_destructive}
+          id={id}
+          parks={parks}
+          versions_href={versions_href}
+          aside={aside}
+          impact={impact}
+        />
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,83 @@
+import { onNavigate, submitted } from "../TypeColumns.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
+
+export type FieldPanelFooterProps = {
+  delete_action?: string;
+  label: string;
+  csrf: string;
+  type_href: string;
+  is_new: boolean;
+  is_container: boolean;
+  form_id: string;
+};
+
+export function FieldPanelFooter({
+  delete_action,
+  label,
+  csrf,
+  type_href,
+  is_new,
+  is_container,
+  form_id,
+}: FieldPanelFooterProps) {
+  return (
+    <div class="sticky bottom-0 mt-auto flex items-center justify-between gap-3 border-t border-border bg-card/95 px-8 py-4 backdrop-blur">
+      <div class="flex items-center gap-2">
+        {delete_action && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button hierarchy="secondary" intent="destructive">
+                Delete field
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogTitle>Delete {label}?</DialogTitle>
+              <DialogDescription>
+                The field leaves the type for good. Records keep their values unless you delete them
+                too; while values are kept, the field cannot be deleted.
+              </DialogDescription>
+              <form onSubmit={submitted} method="post" action={delete_action ?? "#"} class="mt-5 space-y-5">
+                <input type="hidden" name="csrf" value={csrf} />
+                <CheckboxField
+                  id="drop_content"
+                  name="drop_content"
+                  label="Also delete its values in every record"
+                />
+                <div class="flex justify-end gap-2">
+                  <DialogClose asChild>
+                    <Button hierarchy="secondary">Cancel</Button>
+                  </DialogClose>
+                  <Button type="submit" intent="destructive">
+                    Delete field
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+      <div class="flex items-center gap-2">
+        <Button onClick={onNavigate} href={type_href} hierarchy="tertiary">
+          Cancel
+        </Button>
+        {is_new && !is_container && (
+          <Button type="submit" form={form_id} name="next" value="another" hierarchy="secondary">
+            <Icon name="plus" size="sm" />
+            <span>Add another field</span>
+          </Button>
+        )}
+        <Button type="submit" form={form_id} name="next" value="finish">
+          {is_new ? (is_container ? "Create and add its fields" : "Finish") : "Save field"}
+        </Button>
+      </div>
+    </div>
+  );
+}

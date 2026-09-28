@@ -1,0 +1,46 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+
+export type UrlSchemesRuleProps = {
+  limit_schemes?: boolean;
+  schemes: Array<{
+    value: string;
+    label: string;
+    selected: boolean;
+  }>;
+  scheme_message?: string;
+};
+
+export function UrlSchemesRule({
+  limit_schemes = false,
+  schemes,
+  scheme_message = "",
+}: UrlSchemesRuleProps) {
+  return (
+    <CheckboxField
+      id="limit_schemes"
+      name="limit_schemes"
+      checked={limit_schemes}
+      label="Accept only specified schemes"
+      description="Without this rule, http and https links are accepted"
+    >
+      <div class="flex flex-wrap gap-x-6 gap-y-3">
+        {schemes.map((scheme) => (
+          <CheckboxField
+            id={`scheme-${scheme.value}`}
+            name="schemes"
+            value={scheme.value}
+            checked={scheme.selected}
+            label={scheme.label}
+          />
+        ))}
+      </div>
+      <Field>
+        <FieldLabel htmlFor="scheme_message">Custom error message</FieldLabel>
+        <Input id="scheme_message" name="scheme_message" value={scheme_message} maxLength={255} />
+      </Field>
+    </CheckboxField>
+  );
+}

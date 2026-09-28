@@ -1,0 +1,28 @@
+import { Layout } from "../layouts/Layout.ptsx";
+import { EditorColumn } from "../components/EditorColumn.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SettingsSystemProps = {
+  user_name: string;
+  user_email: string;
+  csrf: string;
+  nav: JSX.Element;
+};
+
+/** The system's own settings: a placeholder until there is something to configure. */
+export function SettingsSystem({ user_name, user_email, csrf, nav }: SettingsSystemProps) {
+  return (
+    <Layout title="System settings" section="settings" sidebar={nav}
+      user_name={user_name} user_email={user_email} csrf={csrf}>
+      <EditorColumn>
+        <PageHeader title="System settings" description="How this Publr runs." />
+        <p class="mt-6">
+          <Text variant="body-md" tone="muted">
+            Nothing to configure yet. The site's own settings live in the sections below Users.
+          </Text>
+        </p>
+      </EditorColumn>
+    </Layout>
+  );
+}

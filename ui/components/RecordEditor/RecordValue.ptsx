@@ -1,0 +1,103 @@
+import { ChoiceButton } from "@publr/ui/ChoiceButton.ptsx";
+import { FieldControl } from "../FieldControl.ptsx";
+import { Radio } from "@publr/ui/Radio.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type RecordValueProps = {
+  name: string;
+  control: string;
+  value: string;
+  checked: boolean;
+  readonly: boolean;
+  label_on: string;
+  placeholder: string;
+  rows: number;
+  min: string;
+  max: string;
+  step: string;
+  prefix: string;
+  suffix: string;
+  card_type: string;
+  card_title: string;
+  card_status: string;
+  card_tone: string;
+  card_href: string;
+  remove: string;
+  up: string;
+  down: string;
+  options: Array<{
+    value: string;
+    label: string;
+    selected: boolean;
+  }>;
+};
+
+export function RecordValue({
+  name,
+  control,
+  value,
+  checked,
+  readonly,
+  label_on,
+  placeholder,
+  rows,
+  min,
+  max,
+  step,
+  prefix,
+  suffix,
+  card_type,
+  card_title,
+  card_status,
+  card_tone,
+  card_href,
+  remove,
+  up,
+  down,
+  options,
+}: RecordValueProps) {
+  return (
+    <FieldControl
+      name={name}
+      control={control}
+      value={value}
+      checked={checked}
+      readonly={readonly}
+      label_on={label_on}
+      placeholder={placeholder}
+      rows={rows}
+      min={min}
+      max={max}
+      step={step}
+      prefix={prefix}
+      suffix={suffix}
+      card_type={card_type}
+      card_title={card_title}
+      card_status={card_status}
+      card_tone={card_tone}
+      card_href={card_href}
+      remove={remove}
+      up={up}
+      down={down}
+    >
+      {control === "buttons"
+        ? options.map((option) => (
+            <ChoiceButton name={name} value={option.value} label={option.label} checked={option.selected} />
+          ))
+        : control === "radios"
+        ? options.map((option) => (
+            <label class="flex items-center gap-2">
+              <Radio name={name} value={option.value} checked={option.selected} />
+              <Text as="span" variant="body-sm">
+                {option.label}
+              </Text>
+            </label>
+          ))
+        : options.map((option) => (
+            <option value={option.value} selected={option.selected}>
+              {option.label}
+            </option>
+          ))}
+    </FieldControl>
+  );
+}

@@ -1,0 +1,72 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+
+export type ContainerAppearanceProps = {
+  has_container?: boolean;
+  collapsed?: boolean;
+  has_label_field?: boolean;
+  label_field_none?: boolean;
+  label_fields: Array<{
+    value: string;
+    label: string;
+    selected: boolean;
+  }>;
+  add_label?: string;
+};
+
+export function ContainerAppearance({
+  has_container = false,
+  collapsed = false,
+  has_label_field = false,
+  label_field_none = true,
+  label_fields,
+  add_label = "",
+}: ContainerAppearanceProps) {
+  return (
+    <>
+      {has_container && (
+        <CheckboxField
+          id="collapsed"
+          name="collapsed"
+          checked={collapsed}
+          label="Collapsed by default"
+          description="The fields inside are folded away until opened."
+        />
+      )}
+      {has_label_field && (
+        <Field>
+          <FieldLabel htmlFor="label_field">Item label</FieldLabel>
+          <NativeSelect id="label_field" name="label_field">
+            <option value="" selected={label_field_none}>
+              Item number
+            </option>
+            {label_fields.map((entry) => (
+              <option value={entry.value} selected={entry.selected}>
+                {entry.label}
+              </option>
+            ))}
+          </NativeSelect>
+          <FieldDescription>
+            The field inside whose value names each item in its header
+          </FieldDescription>
+        </Field>
+      )}
+      {has_container && (
+        <Field>
+          <FieldLabel htmlFor="add_label">Add button label</FieldLabel>
+          <Input
+            id="add_label"
+            name="add_label"
+            value={add_label}
+            placeholder="Add item"
+            maxLength={64}
+          />
+        </Field>
+      )}
+    </>
+  );
+}

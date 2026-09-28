@@ -1,0 +1,45 @@
+import { onBack, onClose } from "../ReferenceDrawer.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+
+export type RecordHeaderProps = {
+  in_drawer: boolean;
+  title: string;
+  type_name: string;
+};
+
+export function RecordHeader({ in_drawer, title, type_name }: RecordHeaderProps) {
+  return (
+    <div class="flex items-center gap-4 px-8">
+      {in_drawer && (
+        <Button
+          type="button"
+          hierarchy="secondary"
+          size="md"
+          label="Back"
+          title="Back"
+          data-part="drawer-back"
+          onClick={onBack}
+        >
+          <Icon name="arrow-left" size="sm" />
+        </Button>
+      )}
+      <PageHeader title={title} description={type_name} classes="min-w-0 flex-1">
+        {in_drawer && (
+          <Button
+            type="button"
+            hierarchy="tertiary"
+            size="sm"
+            label="Close"
+            title="Close"
+            data-part="drawer-close"
+            onClick={onClose}
+          >
+            <Icon name="x-close" size="sm" />
+          </Button>
+        )}
+      </PageHeader>
+    </div>
+  );
+}

@@ -1,0 +1,95 @@
+import { Layout } from "../layouts/Layout.ptsx";
+import { EditorColumn } from "../components/EditorColumn.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { CodeBlock } from "@publr/ui/CodeBlock.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+/** One kept version, field by field, with a way to bring it back. */
+export type RevisionProps = {
+  user_name: string;
+  user_email: string;
+  csrf: string;
+  nav: JSX.Element;
+  title: string;
+  versions_title: string;
+  versions_href: string;
+  record_href: string;
+  kind: string;
+  at: string;
+  by: string;
+  fields: Array<{ label: string; value: string }>;
+  restore_action: string;
+  seq: string;
+  expected_version: string;
+};
+
+export function Revision({
+  user_name,
+  user_email,
+  csrf,
+  nav,
+  title,
+  versions_title,
+  versions_href,
+  record_href,
+  kind,
+  at,
+  by,
+  fields,
+  restore_action,
+  seq,
+  expected_version,
+}: RevisionProps) {
+  return (
+    <Layout
+      title={title}
+      section="content"
+      crumb_label={versions_title}
+      crumb_href={versions_href}
+      user_name={user_name}
+      user_email={user_email}
+      csrf={csrf}
+      sidebar={nav}
+    >
+      <EditorColumn>
+        <PageHeader title={title} description={`${kind}, taken ${at} by ${by}`}>
+          <form method="post" action={restore_action} class="inline">
+            <input type="hidden" name="csrf" value={csrf} />
+            <input type="hidden" name="seq" value={seq} />
+            <input type="hidden" name="expected_version" value={expected_version} />
+            <Button type="submit">
+              <Icon name="clock-rewind" size="sm" />
+              <span>Restore this version</span>
+            </Button>
+          </form>
+          <Button href={record_href} hierarchy="secondary">
+            The record
+          </Button>
+        </PageHeader>
+        <p class="mt-4">
+          <Text variant="body-sm" tone="muted">
+            Restoring is a normal save: parked as pending changes when the record is live.
+          </Text>
+        </p>
+        <dl class="mt-6 divide-y divide-border border-t border-border">
+          {fields.map((field) => (
+            <div class="grid gap-1 py-4 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-8">
+              <Text as="dt" variant="body-md" tone="muted">
+                {field.label}
+              </Text>
+              <dd class="m-0 min-w-0">
+                <CodeBlock>{field.value}</CodeBlock>
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <p class="mt-6">
+          <Link href={versions_href}>All versions</Link>
+        </p>
+      </EditorColumn>
+    </Layout>
+  );
+}

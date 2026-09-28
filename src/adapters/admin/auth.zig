@@ -1,9 +1,9 @@
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../app/registry.zig");
-const auth = @import("../../lib/auth.zig");
 const site_operations = @import("../../operations/site.zig");
 const sign_in_operations = @import("../../operations/sign_in.zig");
+const sign_on_operations = @import("../../operations/sign_on.zig");
 const identity_module = @import("../rest/identity.zig");
 
 const Request = admin.Request;
@@ -11,8 +11,8 @@ const Response = admin.Response;
 const Context = admin.Context;
 const Error = admin.Error;
 const Session = admin.Session;
-const Page = admin.Page;
 const Form = admin.Form;
+const views = admin.views;
 
 pub fn home(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .get or request.method() == .head);
@@ -28,7 +28,13 @@ pub fn home(request: *Request, response: *Response, ctx: *Context) Error!void {
         return response.redirect(.see_other, "/admin/login");
     }
 
-    try response.redirect(.see_other, "/admin/content");
+    const shell = admin.shell_of(&session);
+
+    try admin.render.page(response, session.arena, .ok, views.Dashboard, .{
+        .user_name = shell.user_name,
+        .user_email = shell.user_email,
+        .csrf = shell.csrf,
+    });
 }
 
 fn initialised(session: *Session) Error!bool {
@@ -59,23 +65,7 @@ fn render_setup(response: *Response, arena: std.mem.Allocator, problem: ?[]const
     std.debug.assert(response.body.len == 0);
     std.debug.assert(problem == null or problem.?.len > 0);
 
-    var page = try Page.begin(arena, "Set up Publr", null);
-
-    try page.raw("<p>Create the first administrator.</p>\n");
-
-    if (problem) |text| {
-        try page.raw("<p><strong>");
-        try page.text(text);
-        try page.raw("</strong></p>\n");
-    }
-
-    try page.raw("<form method=\"post\" action=\"/admin/setup\">\n" ++
-        "<p><label>Email <input name=\"email\" type=\"email\" required></label></p>\n" ++
-        "<p><label>Name <input name=\"display_name\" required></label></p>\n" ++
-        "<p><label>Password <input name=\"password\" type=\"password\" required " ++
-        "minlength=\"12\"></label></p>\n" ++
-        "<p><button>Create administrator</button></p>\n</form>\n");
-    try page.send(response, .ok);
+    try admin.render.page(response, arena, .ok, views.Setup, .{ .notice = problem });
 }
 
 pub fn setup(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -115,32 +105,50 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
     std.debug.assert(request.method() == .get or request.method() == .head);
     std.debug.assert(ctx.user_data != null);
 
-    const session = Session.open(request, response, ctx);
+    var session = Session.open(request, response, ctx);
 
     if (session.signed_in()) {
         return response.redirect(.see_other, "/admin/content");
     }
 
-    try render_login(response, ctx.arena, null);
+    // A site that trusts an issuer sends you there first; it sends you back signed in, or
+    // with `sign_on` set when it could not, and then the form is the way in.
+    if (admin.query_param(&session, "sign_on") == null) {
+        if (try issuer_login(&session)) |location| {
+            return response.redirect(.see_other, location);
+        }
+    }
+
+    const declined = admin.query_param(&session, "sign_on") != null;
+
+    try render_login(response, ctx.arena, if (declined) "Sign in with your password." else null);
+}
+
+/// `<issuer>/sign-on?site=<audience>&return=/admin`, when an issuer is trusted.
+fn issuer_login(session: *Session) Error!?[]const u8 {
+    std.debug.assert(session.ctx.now_ms > 0);
+
+    const status = registry.SDK.dispatch(&session.ctx, sign_on_operations.Status, .{}) catch {
+        return error.OutOfMemory;
+    };
+
+    if (!status.configured) {
+        return null;
+    }
+
+    std.debug.assert(sign_on_operations.valid_issuer(status.issuer));
+
+    return std.fmt.allocPrint(session.arena, "{s}/sign-on?site={s}&return=/admin", .{
+        status.issuer,
+        status.audience,
+    }) catch error.OutOfMemory;
 }
 
 fn render_login(response: *Response, arena: std.mem.Allocator, problem: ?[]const u8) Error!void {
     std.debug.assert(response.body.len == 0);
     std.debug.assert(problem == null or problem.?.len > 0);
 
-    var page = try Page.begin(arena, "Log in", null);
-
-    if (problem) |text| {
-        try page.raw("<p><strong>");
-        try page.text(text);
-        try page.raw("</strong></p>\n");
-    }
-
-    try page.raw("<form method=\"post\" action=\"/admin/login\">\n" ++
-        "<p><label>Email <input name=\"email\" type=\"email\" required></label></p>\n" ++
-        "<p><label>Password <input name=\"password\" type=\"password\" required></label></p>\n" ++
-        "<p><button>Log in</button></p>\n</form>\n");
-    try page.send(response, .ok);
+    try admin.render.page(response, arena, .ok, views.Login, .{ .notice = problem });
 }
 
 pub fn login(request: *Request, response: *Response, ctx: *Context) Error!void {

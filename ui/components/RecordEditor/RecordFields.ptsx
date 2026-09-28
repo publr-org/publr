@@ -1,0 +1,256 @@
+import { ChoiceButton } from "@publr/ui/ChoiceButton.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { PanelTab } from "@publr/ui/PanelTab.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+import { onLayoutTab } from "../RecordEditor.ptsx";
+import { RecordGroup } from "./RecordGroup.ptsx";
+import { RecordMany } from "./RecordMany.ptsx";
+import { RecordRepeater } from "./RecordRepeater.ptsx";
+import { RecordSingle } from "./RecordSingle.ptsx";
+
+export type RecordFieldsProps = {
+  /** The field group's presentation: whether it applies here, and how labels and
+   * instructions sit. */
+  group_visible?: boolean;
+  group_labels?: string;
+  group_instructions?: string;
+  fields: Array<{
+    name: string;
+    conditions: string;
+    value_kind: string;
+    label: string;
+    required: boolean;
+    /** The line shown under the control, from the field's definition; empty for none. */
+    help: string;
+    /** A group or repeater folded away until opened. */
+    collapsed: boolean;
+    /** A reference: which of the two ways of adding a record the field offers, and
+     * `:live` on the link button's id when only live records may be picked. */
+    can_create: boolean;
+    can_link: boolean;
+    live_suffix: string;
+    /** single, many, checks, group, repeater, json */
+    shape: string;
+    /** A select drawn as checkboxes: one per choice, named by the choice's index. */
+    choices: Array<{ name: string; value: string; label: string; selected: boolean }>;
+    json_value: string;
+    json_rows: number;
+    /** The reshape action that appends a value or an item, and its button's label. */
+    add: string;
+    add_label: string;
+    /** A list of references: the record to add is picked from the target type's records. */
+    has_pick: boolean;
+    /** The type a reference field points at, by handle. */
+    /** The record types a reference may point at: one gives plain buttons, more a
+     * dropdown each, more than eight a search box in it. */
+    targets: Array<{ handle: string; name: string }>;
+    any_type: boolean;
+    pick_search: boolean;
+    first_handle: string;
+    items: Array<{
+      name: string;
+      label: string;
+      required: boolean;
+      control: string;
+      value: string;
+      checked: boolean;
+      readonly: boolean;
+      label_on: string;
+      placeholder: string;
+      rows: number;
+      min: string;
+      max: string;
+      step: string;
+      prefix: string;
+      suffix: string;
+      card_type: string;
+      card_title: string;
+      card_status: string;
+      card_tone: string;
+      card_href: string;
+      remove: string;
+      up: string;
+      down: string;
+      options: Array<{ value: string; label: string; selected: boolean }>;
+    }>;
+    parts: Array<{
+      name: string;
+      conditions: string;
+    value_kind: string;
+      label: string;
+      required: boolean;
+      help: string;
+      control: string;
+      value: string;
+      checked: boolean;
+      readonly: boolean;
+      label_on: string;
+      placeholder: string;
+      rows: number;
+      min: string;
+      max: string;
+      step: string;
+      prefix: string;
+      suffix: string;
+      card_type: string;
+      card_title: string;
+      card_status: string;
+      card_tone: string;
+      card_href: string;
+      remove: string;
+      up: string;
+      down: string;
+      part_options: Array<{ value: string; label: string; selected: boolean }>;
+    }>;
+    entries: Array<{
+      name: string;
+      /** What names the item in its header: the label field's value, or its number. */
+      label: string;
+      remove: string;
+      up: string;
+      down: string;
+      cells: Array<{
+        name: string;
+        conditions: string;
+    value_kind: string;
+        label: string;
+        required: boolean;
+        help: string;
+        control: string;
+        value: string;
+        checked: boolean;
+        readonly: boolean;
+        label_on: string;
+        placeholder: string;
+        rows: number;
+        min: string;
+        max: string;
+        step: string;
+        prefix: string;
+        suffix: string;
+        card_type: string;
+        card_title: string;
+        card_status: string;
+        card_tone: string;
+        card_href: string;
+        remove: string;
+        up: string;
+        down: string;
+        cell_options: Array<{ value: string; label: string; selected: boolean }>;
+      }>;
+    }>;
+  }>;
+};
+
+/** The rows of a document's form, one per top-level field: the control for the field's
+ * shape (a single value, a list, a group, a repeater, raw JSON), its label and help.
+ * Drawn inside the record editor's form and inside any other form that edits a document
+ * (a user's custom fields). */
+export function RecordFields({
+  group_visible = true,
+  group_labels = "above",
+  group_instructions = "below_input",
+  fields,
+}: RecordFieldsProps) {
+  return (
+    <>
+    {fields.map((field) => (
+      <div data-conditions={field.conditions} data-field-path={field.name} data-value-kind={field.value_kind}
+        data-layout-kind={field.shape}
+        data-group-active={group_visible ? "true" : "false"} hidden={!group_visible}
+        data-labels={group_labels} data-instructions={group_instructions}><Field>
+        {field.shape !== "group" && field.shape !== "repeater" && field.shape !== "tab" && field.shape !== "accordion" && field.shape !== "message" && (
+          <FieldLabel htmlFor={`field-${field.name}`} required={field.required}>
+            {field.label}
+          </FieldLabel>
+        )}
+        {field.shape === "tab" && <PanelTab id={`layout-tab-${field.name}`}
+          panel={`layout-panel-${field.name}`} selected={false} label={field.label} onClick={onLayoutTab} />}
+        {(field.shape === "accordion" || field.shape === "message") && <Heading level={3} size="sm">{field.label}</Heading>}
+        {field.shape === "buttons" && (
+          <div class="flex flex-wrap gap-2">
+            {field.choices.map((choice) => (
+              <ChoiceButton name={choice.name} value={choice.value} label={choice.label}
+                checked={choice.selected} multiple />
+            ))}
+          </div>
+        )}
+        {field.shape === "checks" && (
+          <div class="flex flex-wrap gap-x-6 gap-y-3 pt-1" id={`field-${field.name}`}>
+            {field.choices.map((choice) => (
+              <CheckboxField
+                id={`field-${choice.name}-${choice.value}`}
+                name={choice.name}
+                value={choice.value}
+                checked={choice.selected}
+                label={choice.label}
+              />
+            ))}
+          </div>
+        )}
+        {field.shape === "json" && (
+          <Textarea
+            id={`field-${field.name}`}
+            name={field.name}
+            value={field.json_value}
+            rows={field.json_rows}
+            placeholder="JSON"
+            mono
+          />
+        )}
+        {field.shape === "json" && <FieldDescription>Edited as JSON.</FieldDescription>}
+        {field.shape === "single" && (
+          <RecordSingle
+            name={field.name}
+            items={field.items}
+            can_link={field.can_link}
+            can_create={field.can_create}
+            first_handle={field.first_handle}
+            live_suffix={field.live_suffix}
+            pick_search={field.pick_search}
+            targets={field.targets}
+          />
+        )}
+        {field.shape === "many" && (
+          <RecordMany
+            name={field.name}
+            items={field.items}
+            add={field.add}
+            add_label={field.add_label}
+            has_pick={field.has_pick}
+            can_link={field.can_link}
+            can_create={field.can_create}
+            first_handle={field.first_handle}
+            live_suffix={field.live_suffix}
+            pick_search={field.pick_search}
+            targets={field.targets}
+          />
+        )}
+        {field.shape === "group" && (
+          <RecordGroup
+            label={field.label}
+            required={field.required}
+            collapsed={field.collapsed}
+            parts={field.parts}
+          />
+        )}
+        {field.shape === "repeater" && (
+          <RecordRepeater
+            label={field.label}
+            required={field.required}
+            collapsed={field.collapsed}
+            entries={field.entries}
+            add={field.add}
+            add_label={field.add_label}
+          />
+        )}
+        {field.help !== "" && <FieldDescription>{field.help}</FieldDescription>}
+      </Field></div>
+    ))}
+    </>
+  );
+}

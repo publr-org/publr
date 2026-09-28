@@ -1,0 +1,72 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type ItemsRuleProps = {
+  many_choice?: boolean;
+  min?: string;
+  limit_items?: boolean;
+  items_min?: string;
+  items_max?: string;
+  distinct?: boolean;
+  items_message?: string;
+};
+
+export function ItemsRule({
+  many_choice = false,
+  min = "",
+  limit_items = false,
+  items_min = "",
+  items_max = "",
+  distinct = false,
+  items_message = "",
+}: ItemsRuleProps) {
+  return (
+    <div class="flex flex-col gap-6" data-when={many_choice ? "many" : undefined}>
+      <CheckboxField
+        id="limit_items"
+        name="limit_items"
+        checked={limit_items}
+        label="Limit the number of values"
+        description="Specify a minimum and/or maximum allowed number of values"
+      >
+        <div class="flex flex-wrap items-center gap-3">
+          <Input
+            id="items_min"
+            name="items_min"
+            type="number"
+            min="0"
+            value={items_min}
+            placeholder="Min"
+            classes="w-32"
+          />
+          <Text as="span" variant="body-md">
+            and
+          </Text>
+          <Input
+            id="items_max"
+            name="items_max"
+            type="number"
+            min="0"
+            value={items_max}
+            placeholder="Max"
+            classes="w-32"
+          />
+        </div>
+        <Field>
+          <FieldLabel htmlFor="items_message">Custom error message</FieldLabel>
+          <Input id="items_message" name="items_message" value={items_message} maxLength={255} />
+        </Field>
+      </CheckboxField>
+      <CheckboxField
+        id="distinct"
+        name="distinct"
+        checked={distinct}
+        label="No value twice"
+        description="Refuse a list that holds the same value more than once"
+      />
+    </div>
+  );
+}
