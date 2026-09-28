@@ -37,6 +37,8 @@ async function forward(request, url) {
   await ensure_ready();
 
   const headers = [...request.headers].map(([name, value]) => ({ name, value }));
+  // Host is a forbidden header too; the same-origin check needs the one the page was served at.
+  headers.push({ name: "host", value: url.host });
   if (cookies.size > 0) headers.push({ name: "cookie", value: [...cookies].map(([name, value]) => `${name}=${value}`).join("; ") });
   if (request.referrer) headers.push({ name: "referer", value: request.referrer });
 
