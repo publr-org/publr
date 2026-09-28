@@ -415,7 +415,7 @@ test "pages that read the type themselves or through an embed, islands with thei
     defer destroy(theme);
 
     // Repeated classification must release traversal memory to the fixed request pool.
-    var buffer: [32 << 10]u8 = undefined;
+    var buffer: [32 << 10]u8 align(16) = undefined;
     var fixed = std.heap.FixedBufferAllocator.init(&buffer);
 
     for (0..64) |_| {
