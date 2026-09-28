@@ -197,6 +197,43 @@ pub fn find_by_id(
     return try read_credentials(&select, arena);
 }
 
+pub fn rename(
+    connection: *db.Db,
+    user_id: []const u8,
+    display_name: []const u8,
+    role: Role,
+    now_ms: i64,
+) db.Error!bool {
+    std.debug.assert(user_id.len > 0);
+    std.debug.assert(display_name.len <= display_name_len_max);
+
+    var statement = try connection.prepare(
+        "UPDATE users SET display_name = ?1, role = ?2, updated_at = ?3 WHERE id = ?4",
+    );
+    defer statement.finalize();
+
+    try statement.bind_text(1, display_name);
+    try statement.bind_text(2, @tagName(role));
+    try statement.bind_int(3, now_ms);
+    try statement.bind_text(4, user_id);
+    try statement.exec();
+
+    return connection.changes() == 1;
+}
+
+pub fn delete(connection: *db.Db, user_id: []const u8) db.Error!bool {
+    std.debug.assert(user_id.len > 0);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var statement = try connection.prepare("DELETE FROM users WHERE id = ?1");
+    defer statement.finalize();
+
+    try statement.bind_text(1, user_id);
+    try statement.exec();
+
+    return connection.changes() == 1;
+}
+
 pub fn list(connection: *db.Db, arena: std.mem.Allocator) db.Error![]User {
     std.debug.assert(list_max > 0);
 
@@ -240,7 +277,7 @@ fn read_credentials(select: *db.Statement, arena: std.mem.Allocator) db.Error!?C
 
 fn read_row(select: *db.Statement, arena: std.mem.Allocator) db.Error!Credentials {
     const columns = try select.read(Columns, arena);
-    const role = Role.parse(columns.role) orelse unreachable;
+    const role = Role.parse(columns.role) orelse return error.Sqlite;
 
     std.debug.assert(columns.id.len > 0);
     std.debug.assert(columns.role.len > 0);
@@ -336,4 +373,33 @@ test "pending user: no password, token lookup honours expiry, set_password activ
     try std.testing.expect(active.user.active);
     const consumed = try find_by_password_token(connection, arena, token_hash, 4_999);
     try std.testing.expect(consumed == null);
+}
+
+test "rename changes name and role; delete answers whether a row went" {
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const id = try insert(&fixture.connection, std.testing.io, arena, .{
+        .email = "ada@example.com",
+        .display_name = "Ada",
+        .password_hash = "$argon2id$x",
+        .role = .editor,
+        .now_ms = 1_000,
+    });
+
+    try std.testing.expect(try rename(&fixture.connection, id, "Ada L.", .admin, 2_000));
+    const changed = (try find_by_id(&fixture.connection, arena, id)).?;
+    try std.testing.expectEqualStrings("Ada L.", changed.user.display_name);
+    try std.testing.expectEqual(Role.admin, changed.user.role);
+    try std.testing.expectEqual(@as(u32, 1), try count_admins(&fixture.connection));
+    try std.testing.expect(!try rename(&fixture.connection, "missing", "X", .editor, 2_000));
+
+    try std.testing.expect(try delete(&fixture.connection, id));
+    try std.testing.expect(!try delete(&fixture.connection, id));
+    try std.testing.expectEqual(@as(u32, 0), try count(&fixture.connection));
 }

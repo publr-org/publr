@@ -205,6 +205,35 @@ pub const SetPassword = struct {
     }
 };
 
+pub const Options = struct {
+    pub const name = "user.options";
+    pub const description = "User ids and display names for reference pickers";
+    pub const details = "Signed-in editors and administrators can select users without reading " ++
+        "their email addresses or account credentials.";
+    pub const kind: sdk.operation.Kind = .read;
+    pub const In = struct {};
+    pub const Option = struct { id: []const u8, label: []const u8 };
+    pub const Out = struct { users: []const Option };
+    pub const example: In = .{};
+    pub const example_out: Out = .{ .users = &.{
+        .{ .id = "3f9c1e0a5b7d2c4e6f8a9b0c", .label = "Ada" },
+        .{ .id = "9b1e7c3d5a2f4e6b8d0c1a3f", .label = "Editor" },
+        .{ .id = "7d1e7c3d5a2f4e6b8d0c1a3f", .label = "Invited" },
+    } };
+
+    pub fn run(ctx: *Ctx, _: In, granted: *const sdk.Grant) sdk.Error!Out {
+        std.debug.assert(granted.allows());
+        const rows = try store.users.list(ctx.db, ctx.arena);
+        const users = try ctx.arena.alloc(Option, rows.len);
+
+        for (rows, 0..) |row, index| {
+            users[index] = .{ .id = row.id, .label = row.display_name };
+        }
+
+        return .{ .users = users };
+    }
+};
+
 pub const List = struct {
     pub const name = "user.list";
     pub const description = "List users (id, email, display name, role, active)";
@@ -246,14 +275,7 @@ pub const List = struct {
         const users = try ctx.arena.alloc(Summary, rows.len);
 
         for (rows, 0..) |row, index| {
-            users[index] = .{
-                .id = row.id,
-                .email = row.email,
-                .display_name = row.display_name,
-                .role = row.role,
-                .created_at = row.created_at,
-                .active = row.active,
-            };
+            users[index] = summary_of(row);
         }
 
         return .{ .users = users };
@@ -419,7 +441,7 @@ pub fn hash_token(token: []const u8) ?[store.users.token_hash_len]u8 {
     return digest;
 }
 
-fn find_user(ctx: *Ctx, id_or_email: []const u8) Error!?store.users.Credentials {
+pub fn find_user(ctx: *Ctx, id_or_email: []const u8) Error!?store.users.Credentials {
     std.debug.assert(id_or_email.len <= 64 << 10);
     std.debug.assert(ctx.now_ms >= 0);
 
@@ -436,7 +458,30 @@ fn find_user(ctx: *Ctx, id_or_email: []const u8) Error!?store.users.Credentials 
     return store.users.find_by_id(ctx.db, ctx.arena, id_or_email);
 }
 
-pub const operations = [_]type{ Create, List, PasswordLink, SetPassword };
+const manage = @import("user/manage.zig");
+pub const fields = @import("user/fields.zig");
+pub const Update = manage.Update;
+pub const Delete = manage.Delete;
+pub const Get = fields.Get;
+pub const Validate = fields.Validate;
+
+pub const operations = [_]type{
+    Create, List, Get, Options, PasswordLink, SetPassword, Update, Delete, Validate,
+};
+
+pub fn summary_of(user: store.users.User) Summary {
+    std.debug.assert(user.id.len > 0);
+    std.debug.assert(user.email.len > 0);
+
+    return .{
+        .id = user.id,
+        .email = user.email,
+        .display_name = user.display_name,
+        .role = user.role,
+        .created_at = user.created_at,
+        .active = user.active,
+    };
+}
 
 const TestSDK = sdk.SDK(.{ .operations = &operations });
 
@@ -537,4 +582,20 @@ test "password link: pending user cannot sign in, link activates once, new link 
 
     const ghost = FullSDK.dispatch(&admin, PasswordLink, .{ .user = "ghost@example.com" });
     try std.testing.expectError(error.NotFound, ghost);
+}
+
+test "user field options are available to editors without account details" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .role = .editor } });
+    var anon = harness.ctx(.anonymous);
+    const created = try TestSDK.dispatch(&admin, Create, Create.example);
+    const options = try TestSDK.dispatch(&editor, Options, .{});
+    try std.testing.expectEqual(@as(usize, 1), options.users.len);
+    try std.testing.expectEqualStrings(created.user_id, options.users[0].id);
+    const output_fields = @typeInfo(@TypeOf(options.users[0])).@"struct".fields;
+    try std.testing.expectEqual(@as(usize, 2), output_fields.len);
+    try std.testing.expectError(error.Denied, TestSDK.dispatch(&anon, Options, .{}));
 }

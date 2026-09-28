@@ -3,8 +3,10 @@ const sdk = @import("../sdk.zig");
 const plugin_context = @import("plugin/context.zig");
 const plugin_types = @import("plugin/types.zig");
 const status_module = @import("../model/status.zig");
+const filter_module = @import("../model/filter.zig");
 const content_type = @import("../model/content_type.zig");
 const field = @import("../model/field.zig");
+const kinds = @import("../model/kinds.zig");
 
 pub const PluginCtx = plugin_context.PluginCtx;
 pub const types = plugin_types;
@@ -69,9 +71,11 @@ pub fn validate(comptime Plugin: type) void {
             @compileError("plugin " ++ manifest.name ++ ": own tables need compiled_in_only");
         }
 
+        const known: []const kinds.Kind = &kinds.core ++ field_kinds_of(Plugin);
+
         for (content_types_of(Plugin)) |def| {
             var problems: field.Problems = .{};
-            content_type.validate_def(def, &problems);
+            content_type.validate_def(known, def, &problems);
 
             if (!problems.is_empty()) {
                 @compileError("plugin " ++ manifest.name ++ ": content type " ++ def.handle ++
@@ -82,6 +86,31 @@ pub fn validate(comptime Plugin: type) void {
 }
 
 /// The content types a plugin declares; created or updated when the database opens.
+/// The field kinds a plugin brings, each named under the plugin (`geo.point`).
+pub fn field_kinds_of(comptime Plugin: type) []const kinds.Kind {
+    comptime {
+        std.debug.assert(@hasDecl(Plugin, "manifest"));
+
+        if (!@hasDecl(Plugin, "field_kinds")) {
+            return &.{};
+        }
+
+        const list: []const kinds.Kind = &Plugin.field_kinds;
+        const prefix = Plugin.manifest.name ++ ".";
+
+        std.debug.assert(list.len <= kinds.kinds_max);
+
+        for (list) |kind| {
+            if (!std.mem.startsWith(u8, kind.id, prefix)) {
+                @compileError("plugin " ++ Plugin.manifest.name ++ ": field kind " ++ kind.id ++
+                    " must be named " ++ prefix ++ "<name>");
+            }
+        }
+
+        return list;
+    }
+}
+
 pub fn content_types_of(comptime Plugin: type) []const ContentTypeDef {
     comptime {
         std.debug.assert(@hasDecl(Plugin, "manifest"));
@@ -93,6 +122,31 @@ pub fn content_types_of(comptime Plugin: type) []const ContentTypeDef {
         const list: []const ContentTypeDef = &Plugin.content_types;
 
         std.debug.assert(list.len <= content_types_max);
+
+        return list;
+    }
+}
+
+/// The custom field groups a plugin declares on users or media, each with its location
+/// rules (`destination`); created or updated when the database opens, fields locked.
+pub fn custom_fields_of(comptime Plugin: type) []const ContentTypeDef {
+    comptime {
+        std.debug.assert(@hasDecl(Plugin, "manifest"));
+
+        if (!@hasDecl(Plugin, "custom_fields")) {
+            return &.{};
+        }
+
+        const list: []const ContentTypeDef = &Plugin.custom_fields;
+
+        std.debug.assert(list.len <= content_types_max);
+
+        for (list) |def| {
+            if (def.group.location.len == 0) {
+                @compileError("plugin " ++ Plugin.manifest.name ++ ": custom field group " ++
+                    def.handle ++ " needs its location (destination user or media)");
+            }
+        }
 
         return list;
     }
@@ -208,7 +262,11 @@ pub fn Merged(comptime plugins: anytype) type {
         var schemas: []const [:0]const u8 = &.{};
         var statuses: []const status_module.Status = &.{};
         var transitions: []const status_module.Transition = &.{};
+        var field_kinds: []const kinds.Kind = &.{};
         var content_types: []const DeclaredType = &.{};
+        var custom_fields: []const DeclaredType = &.{};
+        var filters: []const filter_module.Definition = &.{};
+        var delivery_gates: []const sdk.delivery.Gate = &.{};
 
         std.debug.assert(plugins.len <= plugins_max);
 
@@ -218,8 +276,16 @@ pub fn Merged(comptime plugins: anytype) type {
             namespaces = namespaces ++ namespaces_of(Plugin);
             policies = policies ++ policies_of(Plugin);
             middleware = middleware ++ middleware_of(Plugin);
+            field_kinds = field_kinds ++ field_kinds_of(Plugin);
             for (content_types_of(Plugin)) |def| {
                 content_types = content_types ++ &[_]DeclaredType{.{
+                    .owner = Plugin.manifest.name,
+                    .def = def,
+                }};
+            }
+
+            for (custom_fields_of(Plugin)) |def| {
+                custom_fields = custom_fields ++ &[_]DeclaredType{.{
                     .owner = Plugin.manifest.name,
                     .def = def,
                 }};
@@ -233,12 +299,26 @@ pub fn Merged(comptime plugins: anytype) type {
                 statuses = statuses ++ @as([]const status_module.Status, &Plugin.statuses);
             }
 
+            if (@hasDecl(Plugin, "filters")) {
+                filters = filters ++ @as([]const filter_module.Definition, &Plugin.filters);
+            }
+
+            if (@hasDecl(Plugin, "delivery_gates")) {
+                delivery_gates = delivery_gates ++
+                    @as([]const sdk.delivery.Gate, &Plugin.delivery_gates);
+            }
+
             if (@hasDecl(Plugin, "transitions")) {
                 transitions = transitions ++ @as(
                     []const status_module.Transition,
                     &Plugin.transitions,
                 );
             }
+        }
+
+        if (delivery_gates.len > sdk.delivery.gates_max) {
+            @compileError("more delivery gates than a site asks: " ++
+                std.fmt.comptimePrint("{d}", .{sdk.delivery.gates_max}));
         }
 
         for (plugins, 0..) |Plugin, index| {
@@ -259,6 +339,15 @@ pub fn Merged(comptime plugins: anytype) type {
             }
         }
 
+        for (custom_fields, 0..) |declared, index| {
+            for (custom_fields[index + 1 ..]) |other| {
+                if (std.mem.eql(u8, declared.def.handle, other.def.handle)) {
+                    @compileError("two plugins declare the custom field group " ++
+                        declared.def.handle);
+                }
+            }
+        }
+
         return struct {
             pub const all = plugins;
             pub const merged_operations = operations;
@@ -268,7 +357,11 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_schemas = schemas;
             pub const merged_statuses = statuses;
             pub const merged_transitions = transitions;
+            pub const merged_field_kinds = field_kinds;
             pub const merged_content_types = content_types;
+            pub const merged_custom_fields = custom_fields;
+            pub const merged_filters = filters;
+            pub const merged_delivery_gates = delivery_gates;
         };
     }
 }
@@ -283,9 +376,16 @@ pub const testing = struct {
         pub const content_types = [_]ContentTypeDef{.{
             .handle = "greeting",
             .name = "Greeting",
-            .name_plural = "Greetings",
             .title_field = "note",
-            .fields = &.{.{ .name = "note", .label = "Note", .kind = .string, .required = true }},
+            .fields = &.{.{ .name = "note", .label = "Note", .kind = "string", .required = true }},
+        }};
+        pub const field_kinds = [_]kinds.Kind{.{
+            .id = "hello.mood",
+            .label = "Mood",
+            .description = "How the greeter felt",
+            .icon = "user",
+            .storage = .text,
+            .convert_from = &.{"string"},
         }};
         pub const namespaces = [_]sdk.operation.Namespace{.{
             .name = "hello",
@@ -371,4 +471,6 @@ test "the test plugin passes the contract and merges into a registry" {
     try std.testing.expectEqual(@as(u32, 2), second.rows);
     try std.testing.expect(TestSDK.namespace_of("hello") != null);
     try std.testing.expectEqual(@as(usize, 1), Bundle.merged_policies.len);
+    try std.testing.expectEqual(@as(usize, 1), Bundle.merged_field_kinds.len);
+    try std.testing.expectEqualStrings("hello.mood", Bundle.merged_field_kinds[0].id);
 }

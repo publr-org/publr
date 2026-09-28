@@ -114,7 +114,10 @@ pub const SignOut = struct {
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
-        std.debug.assert(in.token.len <= 64 << 10);
+
+        if (in.token.len > 64 << 10) {
+            return error.Invalid;
+        }
 
         const lookup = store.sessions.validate(ctx.db, ctx.arena, in.token, ctx.now_ms);
         const validated = lookup catch |err| switch (err) {

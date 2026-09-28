@@ -4,8 +4,9 @@ const registry = @import("../app/registry.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
 const types = @import("content_type.zig");
-const access = @import("record/access.zig");
-const document_module = @import("record/document.zig");
+const taxonomies = @import("taxonomy.zig");
+const document_domain = @import("document.zig");
+const crud_module = @import("document/crud.zig");
 pub const fixture = @import("record/fixture.zig");
 const lifecycle = @import("record/lifecycle.zig");
 
@@ -13,19 +14,6 @@ const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 const records = store.records;
-const values = store.values;
-const Def = store.content_types.Def;
-
-const load = access.load;
-const parse_document = document_module.parse_document;
-const title_of = model.document.title_of;
-const unique_slug = document_module.unique_slug;
-const slug_of = model.document.slug_of;
-const document_of = document_module.document_of;
-const check_status = access.check_status;
-const allowed_statuses = access.allowed_statuses;
-const filter_of = document_module.filter_of;
-const copy_problems = document_module.copy_problems;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "record",
@@ -47,10 +35,176 @@ pub const namespace: sdk.operation.Namespace = .{
     ,
 };
 
-pub const Purpose = enum { delivery, edit };
+/// The record domain: the shared document machinery over the record tables. A component
+/// has no records of its own; a settings type has exactly one.
+pub const domain = document_domain.Domain(.{
+    .namespace = "record",
+    .definition_namespace = "content_type",
+    .noun = "record",
+    .documents = store.records,
+    .values = store.values,
+    .definitions = store.content_types,
+    .check_create = check_kind,
+    .check_def = check_content_type,
+    .check_document = check_record_document,
+    .expand_def = with_taxonomies,
+    .prepare_def = without_taxonomies,
+});
+
+/// A content type as read: its own fields, then the implicit `terms` field of every
+/// taxonomy that applies to it.
+fn with_taxonomies(ctx: *Ctx, row: store.content_types.Row) Error!store.content_types.Row {
+    std.debug.assert(row.id.len > 0);
+    std.debug.assert(row.def.fields.len <= model.field.fields_max);
+
+    const applying = try store.taxonomies.list(ctx.db, ctx.arena);
+    var fields: std.ArrayList(model.field.Def) = .empty;
+
+    try fields.appendSlice(ctx.arena, row.def.fields);
+
+    for (applying) |taxonomy| {
+        if (!model.taxonomy.applies(taxonomy.def, row.def.handle)) {
+            continue;
+        }
+
+        if (fields.items.len == model.field.fields_max) {
+            break;
+        }
+
+        try fields.append(ctx.arena, model.taxonomy.implicit_field(taxonomy.def));
+    }
+
+    var expanded = row;
+
+    expanded.def.fields = fields.items;
+
+    return expanded;
+}
+
+/// A content type as given: the implicit fields, if the caller sent them back, are dropped;
+/// they are the taxonomy's, never stored on the type.
+fn without_taxonomies(ctx: *Ctx, def: store.content_types.Def) Error!store.content_types.Def {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    if (def.fields.len > model.field.fields_max) {
+        return error.Invalid;
+    }
+
+    var fields: std.ArrayList(model.field.Def) = .empty;
+
+    for (def.fields) |candidate| {
+        const implicit = candidate.locked and std.mem.eql(u8, candidate.kind, "terms") and
+            std.mem.eql(u8, candidate.name, candidate.options.taxonomy);
+
+        if (!implicit) {
+            try fields.append(ctx.arena, candidate);
+        }
+    }
+
+    var own = def;
+
+    own.fields = fields.items;
+
+    return own;
+}
+pub const access = domain.access;
+pub const document = domain.document;
+const crud = domain.crud;
+
+fn check_kind(ctx: *Ctx, row: store.content_types.Row) Error!void {
+    std.debug.assert(row.id.len > 0);
+    std.debug.assert(ctx.db.transaction_depth >= 1);
+
+    switch (row.def.kind) {
+        .record => {},
+        .component => return error.Invalid,
+        .settings => {
+            if (ctx.caller.role() == .editor) return error.Denied;
+
+            if (try records.count_by_type(ctx.db, row.id) > 0) {
+                return error.Conflict;
+            }
+        },
+    }
+}
+
+/// What a content type may not be: hierarchical is for taxonomies, and every `terms`
+/// field names a taxonomy that exists.
+fn check_content_type(
+    ctx: *Ctx,
+    def: store.content_types.Def,
+    problems: *model.field.Problems,
+) Error!void {
+    std.debug.assert(problems.len <= model.field.problems_max);
+    std.debug.assert(def.fields.len <= model.field.fields_max);
+
+    if (def.hierarchical) {
+        problems.add("hierarchical", "only a taxonomy is hierarchical");
+    }
+
+    if (def.applies_to.len > 0 or def.single) {
+        problems.add("applies_to", "only a taxonomy applies to content types");
+    }
+
+    var buffer: [model.field.fields_max]model.field.Def = undefined;
+
+    for (model.taxonomy.terms_fields(def.fields, &buffer)) |assigned| {
+        if (try taxonomies.find(ctx, assigned.options.taxonomy) == null) {
+            problems.add(assigned.name, "unknown taxonomy");
+        }
+    }
+}
+
+/// Every term a document assigns exists and belongs to the field's taxonomy.
+fn check_record_document(
+    ctx: *Ctx,
+    def: store.content_types.Def,
+    parsed: std.json.Value,
+) Error!void {
+    std.debug.assert(parsed == .object);
+    std.debug.assert(def.fields.len <= model.field.fields_max);
+
+    var buffer: [model.field.fields_max]model.field.Def = undefined;
+
+    for (model.taxonomy.terms_fields(def.fields, &buffer)) |assigned| {
+        const chosen = parsed.object.get(assigned.name) orelse continue;
+
+        switch (chosen) {
+            .string => |id| try check_term(ctx, assigned, id),
+            .array => |items| {
+                if (items.items.len > store.record_terms.ids_max) {
+                    return error.Invalid;
+                }
+
+                for (items.items) |item| {
+                    if (item == .string) {
+                        try check_term(ctx, assigned, item.string);
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+}
+
+fn check_term(ctx: *Ctx, assigned: model.field.Def, id: []const u8) Error!void {
+    std.debug.assert(assigned.options.taxonomy.len > 0);
+
+    if (id.len > model.validate.id_len_max) {
+        return error.Invalid;
+    }
+
+    const term = try store.terms.get(ctx.db, ctx.arena, id) orelse return error.Invalid;
+
+    if (!std.mem.eql(u8, term.type, assigned.options.taxonomy)) {
+        return error.Invalid;
+    }
+}
+
+pub const Purpose = crud_module.Purpose;
 pub const Order = records.Order;
 pub const list_max = records.list_max;
-pub const Problem = document_module.Problem;
+pub const Problem = crud_module.Problem;
 pub const Record = records.Record;
 pub const Transition = lifecycle.Transition;
 pub const Publish = lifecycle.Publish;
@@ -89,7 +243,7 @@ pub const Create = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct { type: []const u8, document: []const u8, status: ?[]const u8 = null };
-    pub const Out = struct { id: []const u8, status: []const u8, slug: ?[]const u8, version: i64 };
+    pub const Out = crud_module.Created;
     pub const example: In = .{ .type = "post", .document = example_document };
     pub const example_out: Out = .{
         .id = example_id,
@@ -105,34 +259,12 @@ pub const Create = struct {
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
-        std.debug.assert(in.type.len <= 64 << 10);
 
-        const row = try types.find(ctx, in.type) orelse return error.NotFound;
-
-        if (!granted.allows_type(row.def.handle)) {
-            return error.Denied;
+        if (in.type.len > 64 << 10) {
+            return error.Invalid;
         }
 
-        const status = in.status orelse registry.Statuses.initial().id;
-        try check_status(row.def, status, granted);
-
-        var document = try parse_document(ctx, row.def, in.document);
-        const title = try title_of(row.def, document);
-        const slug = try unique_slug(ctx, row.id, row.def, &document, title, null);
-        const id = try records.insert(ctx.db, ctx.io, ctx.arena, .{
-            .type_id = row.id,
-            .created_by = ctx.caller.user_id(),
-            .status = status,
-        }, ctx.now_ms);
-
-        try values.write(ctx.db, id, values.live, row.id, row.def.fields, document);
-        ctx.notice("record.created", id);
-
-        if (registry.Statuses.is_live(status)) {
-            ctx.notice("record.published", id);
-        }
-
-        return .{ .id = id, .status = status, .slug = slug, .version = 1 };
+        return crud.create(ctx, granted, in.type, in.document, in.status);
     }
 };
 
@@ -152,7 +284,7 @@ pub const Get = struct {
         purpose: Purpose = .delivery,
         slot: ?[]const u8 = null,
     };
-    pub const Out = struct { record: Record, slot: []const u8, document: []const u8 };
+    pub const Out = crud_module.Got;
     pub const example: In = .{ .id = example_id };
     pub const example_out: Out = .{
         .record = example_record,
@@ -168,42 +300,11 @@ pub const Get = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const record = try load(ctx, in.id, granted) orelse return error.NotFound;
-        const type_row = try types.find(ctx, record.type_id) orelse return error.NotFound;
-        const slot = try slot_for(ctx, record, in);
-
-        std.debug.assert(slot.len > 0);
-        const document = try document_of(ctx, record.id, slot, type_row.def);
-        const text = try std.json.Stringify.valueAlloc(ctx.arena, document, .{});
-        var shown = record;
-
-        if (!std.mem.eql(u8, slot, values.live)) {
-            shown.title = title_of(type_row.def, document) catch "";
-            shown.slug = slug_of(type_row.def, document);
+        if (in.id.len > 64 << 10) {
+            return error.Invalid;
         }
 
-        return .{ .record = shown, .slot = slot, .document = text };
-    }
-
-    fn slot_for(ctx: *Ctx, row: records.Record, in: In) Error![]const u8 {
-        std.debug.assert(row.id.len > 0);
-        std.debug.assert(ctx.now_ms >= 0);
-
-        if (in.slot) |wanted| {
-            if (ctx.caller == .anonymous and !std.mem.eql(u8, wanted, values.live)) {
-                return error.NotFound;
-            }
-
-            const present = try values.has_slot(ctx.db, row.id, wanted);
-
-            return if (present) wanted else error.NotFound;
-        }
-
-        if (in.purpose == .edit and row.changed and ctx.caller != .anonymous) {
-            return values.pending;
-        }
-
-        return values.live;
+        return crud.get(ctx, granted, in.id, in.purpose, in.slot);
     }
 };
 
@@ -221,7 +322,7 @@ pub const Save = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct { id: []const u8, document: []const u8, expected_version: ?i64 = null };
-    pub const Out = struct { version: i64, slug: ?[]const u8, changed: bool };
+    pub const Out = crud_module.Saved;
     pub const example: In = .{ .id = example_id, .document = example_document };
     pub const example_out: Out = .{ .version = 3, .slug = "hello-world", .changed = true };
     pub const field_docs: sdk.operation.Docs(In) = .{
@@ -233,52 +334,40 @@ pub const Save = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const row = try load(ctx, in.id, granted) orelse return error.NotFound;
-        const type_row = try types.find(ctx, row.type_id) orelse return error.NotFound;
-        var document = try parse_document(ctx, type_row.def, in.document);
-        const title = try title_of(type_row.def, document);
-        const slug = try unique_slug(ctx, row.type_id, type_row.def, &document, title, row.id);
-        const park = row.changed or registry.Statuses.is_live(row.status);
-        const actor = ctx.caller.user_id();
-        const expected = in.expected_version;
-        const now = ctx.now_ms;
-        const version = try records.save(ctx.db, row.id, actor, expected, now, park);
-        const slot = if (park) values.pending else values.live;
-
-        if (!park) {
-            try document_module.snapshot_live(ctx, row, type_row.def);
+        if (in.id.len > 64 << 10) {
+            return error.Invalid;
         }
 
-        try values.write(ctx.db, row.id, slot, row.type_id, type_row.def.fields, document);
-
-        if (!park) {
-            ctx.notice("record.saved", row.id);
-        } else if (!row.changed) {
-            ctx.notice("record.changed", row.id);
-        } else {
-            ctx.notice("record.changes_saved", row.id);
-        }
-
-        return .{ .version = version, .slug = slug, .changed = park };
+        return crud.save(ctx, granted, in.id, in.document, in.expected_version);
     }
 };
 
 pub const List = struct {
     pub const name = "record.list";
-    pub const description = "List records of a type, with status, filter, search, order and paging";
+    pub const description = "List records, of one type or across the content, with status, " ++
+        "author, time, filter, search, order and paging";
     pub const details =
-        \\Filter on any field by its path (`filter_field` + `filter_value`; `seo.title`,
-        \\`faq.question` for nested ones; numbers and booleans compare as numbers, `true`
-        \\= 1; references and images by the target id); search uses fields marked
-        \\`searchable` (full text). Filters, search and order look at live values only.
-        \\Anonymous callers get live records of public types only.
+        \\With no `type` (nor `types`) the list spans regular content types the caller may read.
+        \\Settings require an explicit `type` or `types` selection.
+        \\`filters` are clauses, `key:operator:value` each, of the filters the registry
+        \\knows (the core ones, and a plugin's): `status:is:draft`, `status:not:archived`,
+        \\`changed:is:pending` (or `none`), `created:by:me` (a user id or `me`; `updated`
+        \\the same), `updated:within:7d` (`24h`, `7d`, `30d`, `90d`),
+        \\`created:after:2026-01-01`, `created:before:2026-02-01`. An
+        \\empty value asks nothing. Within one type, filter on any field by its path
+        \\(`filter_field` + `filter_value`; `seo.title`, `faq.question` for nested ones;
+        \\numbers and booleans compare as numbers, `true` = 1; references and images by
+        \\the target id); search uses fields marked `searchable` (full text). Filters,
+        \\search and order look at live values only. Anonymous callers get live records of
+        \\public types only.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
-        type: []const u8,
-        status: ?[]const u8 = null,
-        changed: ?bool = null,
+        type: ?[]const u8 = null,
+        types: []const []const u8 = &.{},
+        filters: []const []const u8 = &.{},
         search: ?[]const u8 = null,
+        slug: ?[]const u8 = null,
         filter_field: ?[]const u8 = null,
         filter_value: ?[]const u8 = null,
         order: Order = .updated_desc,
@@ -286,14 +375,16 @@ pub const List = struct {
         offset: u32 = 0,
     };
     pub const Out = struct { records: []const Record };
-    pub const example: In = .{ .type = "post", .status = "published", .limit = 20 };
+    pub const example: In = .{ .type = "post", .filters = &.{"status:is:published"}, .limit = 20 };
     pub const example_out: Out = .{ .records = &.{example_record} };
     pub const field_docs: sdk.operation.Docs(In) = .{
-        .type = "The content type, by handle or id",
-        .status = "Only this status; without it, listed statuses only (no archived, no deleted)",
-        .changed = "Only records with (`true`) or without (`false`) pending edits",
+        .type = "One content type, by handle or id",
+        .types = "Several content types, by handle or id; " ++
+            "neither: every readable regular content type",
+        .filters = "Clauses, `key:operator:value` each: `status:is:draft`, `updated:within:7d`",
         .search = "Full-text query over searchable fields",
-        .filter_field = "A field path (`views`, `seo.title`, `tags`)",
+        .slug = "Only the record whose slug field holds this value (a type with a slug field)",
+        .filter_field = "A field path (`views`, `seo.title`, `tags`); one type only",
         .filter_value = "The value to match (text, number, true/false, or an id for references)",
         .order = "`updated_desc` (default), `created_desc` or `title_asc`",
         .limit = "Page size, up to 200",
@@ -301,49 +392,26 @@ pub const List = struct {
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
-        std.debug.assert(in.type.len <= 64 << 10);
-        std.debug.assert(granted.allows());
-
-        const row = try types.find(ctx, in.type) orelse return error.NotFound;
-
-        if (!types.visible(granted, row.def)) {
-            return error.NotFound;
-        }
-
-        if (in.limit == 0 or in.limit > records.list_max) {
+        if (in.types.len > 64 << 10) {
             return error.Invalid;
         }
 
-        var statuses_buffer: [model.status.statuses_max][]const u8 = undefined;
-        const query: records.Query = .{
-            .type_id = row.id,
-            .statuses = allowed_statuses(granted, in.status, &statuses_buffer),
-            .changed = in.changed,
+        std.debug.assert(granted.allows());
+
+        const listed = try crud.list(ctx, granted, .{
+            .definition = in.type,
+            .definitions = in.types,
+            .filters = in.filters,
             .search = in.search,
-            .filter = try filter_of(row.def, in.filter_field, in.filter_value),
+            .slug = in.slug,
+            .filter_field = in.filter_field,
+            .filter_value = in.filter_value,
             .order = in.order,
             .limit = in.limit,
             .offset = in.offset,
-        };
-        const rows = try records.list(ctx.db, ctx.arena, query);
-        var visible: std.ArrayList(Record) = .empty;
+        });
 
-        for (rows) |record| {
-            const grant_row: sdk.grant.Row = .{
-                .record_id = record.id,
-                .type_id = record.type_id,
-                .status = record.status,
-                .owner_id = record.created_by,
-            };
-
-            if (!granted.record_filter.accepts(ctx, grant_row)) {
-                continue;
-            }
-
-            try visible.append(ctx.arena, record);
-        }
-
-        return .{ .records = visible.items };
+        return .{ .records = listed };
     }
 };
 
@@ -371,38 +439,22 @@ pub const Referrers = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        if (in.id.len == 0 or in.id.len > 128) {
+        if (in.id.len > 64 << 10) {
             return error.Invalid;
         }
 
-        const found = try values.referrers(
-            ctx.db,
-            ctx.arena,
-            in.id,
-        );
-        var visible: std.ArrayList(Referrer) = .empty;
-
-        for (found) |item| {
-            if (try load(ctx, item.record_id, granted) != null) {
-                const referrer: Referrer = .{ .record_id = item.record_id, .field = item.field };
-                try visible.append(ctx.arena, referrer);
-            }
-        }
-
-        std.debug.assert(visible.items.len <= found.len);
-
-        return .{ .referrers = visible.items };
+        return .{ .referrers = try crud.referrers(ctx, granted, in.id) };
     }
 };
 
-pub const Referrer = struct { record_id: []const u8, field: []const u8 };
+pub const Referrer = crud_module.Referrer;
 
 pub const Validate = struct {
     pub const name = "record.validate";
     pub const description = "Check a document against a type and list every problem without saving";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct { type: []const u8, document: []const u8 };
-    pub const Out = struct { valid: bool, problems: []const Problem };
+    pub const Out = crud_module.Report;
     pub const example: In = .{ .type = "post", .document = "{\"body\":\"no title\",\"extra\":1}" };
     pub const example_out: Out = .{ .valid = false, .problems = &.{
         .{ .path = "title", .message = "required" },
@@ -410,30 +462,13 @@ pub const Validate = struct {
     } };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
-        std.debug.assert(in.type.len <= 64 << 10);
-        std.debug.assert(granted.allows());
-
-        const row = try types.find(ctx, in.type) orelse return error.NotFound;
-
-        if (!types.visible(granted, row.def)) {
-            return error.NotFound;
+        if (in.type.len > 64 << 10) {
+            return error.Invalid;
         }
 
-        var problems: model.field.Problems = .{};
-        const parsed = std.json.parseFromSliceLeaky(
-            std.json.Value,
-            ctx.arena,
-            in.document,
-            .{},
-        ) catch {
-            problems.add("", "document is not valid JSON");
+        std.debug.assert(granted.allows());
 
-            return .{ .valid = false, .problems = try copy_problems(ctx, &problems) };
-        };
-
-        model.validate.validate_document(row.def.fields, parsed, &problems);
-
-        return .{ .valid = problems.is_empty(), .problems = try copy_problems(ctx, &problems) };
+        return crud.validate(ctx, granted, in.type, in.document);
     }
 };
 
@@ -509,11 +544,157 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
     const bad_move = SDK.dispatch(&editor, Transition, .{ .id = first.id, .to = "nope" });
     try std.testing.expectError(error.Invalid, bad_move);
 
-    const drafts = try SDK.dispatch(&editor, List, .{ .type = "post", .status = "draft" });
+    const drafts = try SDK.dispatch(&editor, List, .{
+        .type = "post",
+        .filters = &.{"status:is:draft"},
+    });
     try std.testing.expectEqual(@as(usize, 1), drafts.records.len);
     const everything = try SDK.dispatch(&editor, List, .{ .type = "post", .order = .title_asc });
     try std.testing.expectEqual(@as(usize, 2), everything.records.len);
     try std.testing.expectEqualStrings("Hello again", everything.records[0].title);
+
+    const by_slug = try SDK.dispatch(&editor, List, .{ .type = "post", .slug = "hello-world-2" });
+    try std.testing.expectEqual(@as(usize, 1), by_slug.records.len);
+    try std.testing.expectEqualStrings(second.id, by_slug.records[0].id);
+    const no_slug = try SDK.dispatch(&editor, List, .{ .type = "post", .slug = "nope" });
+    try std.testing.expectEqual(@as(usize, 0), no_slug.records.len);
+    const both = SDK.dispatch(&editor, List, .{
+        .type = "post",
+        .slug = "x",
+        .filter_field = "views",
+    });
+    try std.testing.expectError(error.Invalid, both);
+}
+
+test "a unique field refuses a value another record holds; a new record takes defaults" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try SDK.bootstrap(&system);
+    _ = try SDK.dispatch(&system, types.Create, .{ .definition =
+        \\{"handle":"product","name":"Product","public":true,"title_field":"title","fields":[
+        \\{"name":"title","label":"Title","kind":"string","default":"Untitled"},
+        \\{"name":"sku","label":"SKU","kind":"string","unique":true},
+        \\{"name":"stock","label":"Stock","kind":"integer","default":"5"}]}
+    });
+
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    const first = try SDK.dispatch(&editor, Create, .{
+        .type = "product",
+        .document = "{\"sku\":\"A-1\"}",
+    });
+    const got = try SDK.dispatch(&editor, Get, .{ .id = first.id });
+    try std.testing.expectEqualStrings("Untitled", got.record.title);
+    try std.testing.expect(std.mem.indexOf(u8, got.document, "\"stock\":5") != null);
+
+    const taken = SDK.dispatch(&editor, Create, .{
+        .type = "product",
+        .document = "{\"title\":\"Other\",\"sku\":\"A-1\"}",
+    });
+    try std.testing.expectError(error.Conflict, taken);
+
+    const second = try SDK.dispatch(&editor, Create, .{
+        .type = "product",
+        .document = "{\"title\":\"Other\",\"sku\":\"A-2\"}",
+    });
+    const kept = try SDK.dispatch(&editor, Save, .{
+        .id = second.id,
+        .document = "{\"title\":\"Other\",\"sku\":\"A-2\"}",
+    });
+    try std.testing.expectEqual(@as(i64, 2), kept.version);
+    const collides = SDK.dispatch(&editor, Save, .{
+        .id = second.id,
+        .document = "{\"title\":\"Other\",\"sku\":\"A-1\"}",
+    });
+    try std.testing.expectError(error.Conflict, collides);
+}
+
+test "a grant for the caller's own records pages over those alone" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    try seed_admin_type(&harness);
+
+    var ada = harness.ctx(.{ .user = .{ .id = "u_ada", .role = .editor } });
+    var bob = harness.ctx(.{ .user = .{ .id = "u_bob", .role = .editor } });
+    const own: sdk.Grant = .{ .record_filter = .{ .flags = .{ .own_only = true } } };
+
+    ada.parent = ada.allocate_operation_id();
+    bob.parent = bob.allocate_operation_id();
+
+    const mine = try SDK.dispatch(&ada, Create, .{ .type = "post", .document = example_document });
+    // Bob's is the newest: a filter applied after the limit would leave Ada with nothing.
+    _ = try SDK.dispatch(&bob, Create, .{
+        .type = "post",
+        .document = "{\"title\":\"Bob's\",\"body\":\"b\"}",
+    });
+
+    const first = try List.run(&ada, .{ .type = "post", .order = .created_desc, .limit = 1 }, &own);
+    try std.testing.expectEqual(@as(usize, 1), first.records.len);
+    try std.testing.expectEqualStrings(mine.id, first.records[0].id);
+
+    const theirs = try List.run(&ada, .{
+        .type = "post",
+        .filters = &.{"created:by:u_bob"},
+    }, &own);
+    try std.testing.expectEqual(@as(usize, 0), theirs.records.len);
+}
+
+test "a slug field that refuses taken slugs: a given one conflicts, a derived one is numbered" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    try seed_admin_type(&harness);
+
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var strict = model.content_type.test_post;
+    strict.handle = "address";
+    strict.name = "Address";
+    strict.fields = &.{
+        .{ .name = "title", .label = "Title", .kind = "string", .required = true },
+        .{
+            .name = "slug",
+            .label = "Slug",
+            .kind = "slug",
+            .options = .{
+                .source = "title",
+                .slug = .{ .refuse_taken = true, .reserved = &.{"admin"} },
+            },
+        },
+    };
+    const definition = try model.content_type.encode(harness.fixed.allocator(), strict);
+    _ = try SDK.dispatch(&admin, types.Create, .{ .definition = definition });
+
+    const first = try SDK.dispatch(&admin, Create, .{
+        .type = "address",
+        .document = "{\"title\":\"Home\",\"slug\":\"home\"}",
+    });
+    const typed = SDK.dispatch(&admin, Create, .{
+        .type = "address",
+        .document = "{\"title\":\"Other\",\"slug\":\"home\"}",
+    });
+    const derived = try SDK.dispatch(&admin, Create, .{
+        .type = "address",
+        .document = "{\"title\":\"Home\"}",
+    });
+
+    try std.testing.expectEqualStrings("home", first.slug.?);
+    try std.testing.expectError(error.Conflict, typed);
+    try std.testing.expectEqualStrings("home-2", derived.slug.?);
+
+    const kept = try SDK.dispatch(&admin, Create, .{
+        .type = "address",
+        .document = "{\"title\":\"Admin\"}",
+    });
+    const typed_kept = SDK.dispatch(&admin, Create, .{
+        .type = "address",
+        .document = "{\"title\":\"X\",\"slug\":\"admin\"}",
+    });
+
+    try std.testing.expectEqualStrings("admin-2", kept.slug.?);
+    try std.testing.expectError(error.Invalid, typed_kept);
 }
 
 test "anonymous callers see live records of public types only; private types are invisible" {
@@ -527,7 +708,6 @@ test "anonymous callers see live records of public types only; private types are
     var private = model.content_type.test_post;
     private.handle = "note";
     private.name = "Note";
-    private.name_plural = "Notes";
     private.public = false;
     const private_definition = try model.content_type.encode(harness.fixed.allocator(), private);
     _ = try SDK.dispatch(&admin, types.Create, .{ .definition = private_definition });
@@ -585,6 +765,98 @@ test "anonymous callers see live records of public types only; private types are
     }
 
     try std.testing.expect(seen_post and seen_note);
+}
+
+test "list across types: every readable type, the ones named, exclusions, one-type filters" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    try seed_admin_type(&harness);
+
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var anon = harness.ctx(.anonymous);
+    var private = model.content_type.test_post;
+    private.handle = "note";
+    private.name = "Note";
+    private.public = false;
+    const private_definition = try model.content_type.encode(harness.fixed.allocator(), private);
+    _ = try SDK.dispatch(&admin, types.Create, .{ .definition = private_definition });
+    _ = try SDK.dispatch(&admin, Create, .{ .type = "post", .document = example_document });
+    _ = try SDK.dispatch(&admin, Create, .{
+        .type = "post",
+        .document = "{\"title\":\"Live one\",\"body\":\"y\"}",
+        .status = "published",
+    });
+    _ = try SDK.dispatch(&admin, Create, .{
+        .type = "note",
+        .document = "{\"title\":\"Secret\",\"body\":\"z\"}",
+        .status = "published",
+    });
+    _ = try SDK.dispatch(&editor, Create, .{
+        .type = "note",
+        .document = "{\"title\":\"Mine\",\"body\":\"m\",\"views\":7}",
+    });
+
+    const everything = try SDK.dispatch(&editor, List, .{ .order = .title_asc });
+    try std.testing.expectEqual(@as(usize, 4), everything.records.len);
+    try std.testing.expectEqualStrings("Hello, world", everything.records[0].title);
+    try std.testing.expectEqualStrings("note", everything.records[2].type);
+    const public_live = try SDK.dispatch(&anon, List, .{});
+    try std.testing.expectEqual(@as(usize, 1), public_live.records.len);
+    try std.testing.expectEqualStrings("Live one", public_live.records[0].title);
+
+    const named = try SDK.dispatch(&editor, List, .{ .types = &.{ "post", "note" } });
+    try std.testing.expectEqual(@as(usize, 4), named.records.len);
+    try std.testing.expectError(
+        error.NotFound,
+        SDK.dispatch(&anon, List, .{ .types = &.{ "post", "note" } }),
+    );
+    try std.testing.expectError(
+        error.Invalid,
+        SDK.dispatch(&editor, List, .{ .type = "post", .types = &.{"note"} }),
+    );
+
+    const not_drafts = try SDK.dispatch(&editor, List, .{ .filters = &.{"status:not:draft"} });
+    try std.testing.expectEqual(@as(usize, 2), not_drafts.records.len);
+    const by_admin = try SDK.dispatch(&editor, List, .{ .filters = &.{"created:by:u_admin"} });
+    try std.testing.expectEqual(@as(usize, 3), by_admin.records.len);
+    const saved_by_editor = try SDK.dispatch(&editor, List, .{ .filters = &.{"updated:by:u_ed"} });
+    try std.testing.expectEqual(@as(usize, 1), saved_by_editor.records.len);
+    try std.testing.expectEqualStrings("Mine", saved_by_editor.records[0].title);
+    const mine = try SDK.dispatch(&editor, List, .{ .filters = &.{"created:by:me"} });
+    try std.testing.expectEqual(@as(usize, 1), mine.records.len);
+    const later = try SDK.dispatch(&editor, List, .{ .filters = &.{"updated:after:2100-01-01"} });
+    try std.testing.expectEqual(@as(usize, 0), later.records.len);
+    const lately = try SDK.dispatch(&editor, List, .{
+        .filters = &.{ "updated:within:24h", "changed:is:none" },
+    });
+    try std.testing.expectEqual(@as(usize, 4), lately.records.len);
+    const mine_lately = try SDK.dispatch(&editor, List, .{
+        .filters = &.{ "created:by:me", "created:within:24h" },
+    });
+    try std.testing.expectEqual(@as(usize, 1), mine_lately.records.len);
+    const twice_since: List.In = .{
+        .filters = &.{ "created:within:24h", "created:after:2020-01-01" },
+    };
+    try std.testing.expectError(error.Invalid, SDK.dispatch(&editor, List, twice_since));
+    const unknown_filter: List.In = .{ .filters = &.{"nope:is:x"} };
+    try std.testing.expectError(error.Invalid, SDK.dispatch(&editor, List, unknown_filter));
+    const wrong_operator: List.In = .{ .filters = &.{"status:within:7d"} };
+    try std.testing.expectError(error.Invalid, SDK.dispatch(&editor, List, wrong_operator));
+    const nobody_me: List.In = .{ .filters = &.{"created:by:me"} };
+    try std.testing.expectError(error.Invalid, SDK.dispatch(&anon, List, nobody_me));
+
+    try std.testing.expectError(
+        error.Invalid,
+        SDK.dispatch(&editor, List, .{ .filter_field = "views", .filter_value = "7" }),
+    );
+    const sevens = try SDK.dispatch(&editor, List, .{
+        .type = "note",
+        .filter_field = "views",
+        .filter_value = "7",
+    });
+    try std.testing.expectEqual(@as(usize, 1), sevens.records.len);
 }
 
 test "validate reports problems; filters and search go through the projection" {
@@ -646,7 +918,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
 
     var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
     const definition =
-        \\{"handle":"person","name":"Person","name_plural":"People","title_field":"name",
+        \\{"handle":"person","name":"Person","title_field":"name",
         \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
         \\ {"name":"handle","label":"Handle","kind":"slug","options":{"source":"name"}},
         \\ {"name":"age","label":"Age","kind":"integer"}]}
@@ -669,7 +941,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
     try std.testing.expectEqualStrings("Ada L.", thirty_six.records[0].title);
 
     const widened =
-        \\{"handle":"person","name":"Person","name_plural":"People","title_field":"name",
+        \\{"handle":"person","name":"Person","title_field":"name",
         \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
         \\ {"name":"handle","label":"Handle","kind":"slug","options":{"source":"name"}},
         \\ {"name":"age","label":"Age","kind":"number"}]}
@@ -688,7 +960,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
     );
 
     const narrowed =
-        \\{"handle":"person","name":"Person","name_plural":"People","title_field":"name",
+        \\{"handle":"person","name":"Person","title_field":"name",
         \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
         \\ {"name":"handle","label":"Handle","kind":"slug","options":{"source":"name"}}]}
     ;
@@ -707,8 +979,8 @@ test "slug comes from the slug field's source; type update re-indexes existing r
     try std.testing.expectEqual(@as(u32, 2), dropped.values_dropped);
 
     const shape =
-        \\{"handle":"person","name":"Person","name_plural":"People","title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"reference","options":{"to":"x"}},
+        \\{"handle":"person","name":"Person","title_field":"name",
+        \\ "fields":[{"name":"name","label":"Name","kind":"reference","options":{"to":["x"]}},
         \\ {"name":"handle","label":"Handle","kind":"slug","options":{"source":"name"}}]}
     ;
     const invalid = SDK.dispatch(&admin, types.Update, .{ .type = "person", .definition = shape });
@@ -755,7 +1027,7 @@ test "adding a slug field to a type backfills existing records, duplicates get s
 
     var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
     const without =
-        \\{"handle":"hotel","name":"Hotel","name_plural":"Hotels","title_field":"name",
+        \\{"handle":"hotel","name":"Hotel","title_field":"name",
         \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
     ;
     _ = try SDK.dispatch(&admin, types.Create, .{ .definition = without });
@@ -765,7 +1037,7 @@ test "adding a slug field to a type backfills existing records, duplicates get s
     try std.testing.expect(first.slug == null);
 
     const with_slug =
-        \\{"handle":"hotel","name":"Hotel","name_plural":"Hotels","title_field":"name",
+        \\{"handle":"hotel","name":"Hotel","title_field":"name",
         \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
         \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
     ;
@@ -781,4 +1053,182 @@ test "adding a slug field to a type backfills existing records, duplicates get s
     const has_plain = std.mem.eql(u8, slugs[0], "abc") or std.mem.eql(u8, slugs[1], "abc");
     const has_suffixed = std.mem.eql(u8, slugs[0], "abc-2") or std.mem.eql(u8, slugs[1], "abc-2");
     try std.testing.expect(has_plain and has_suffixed);
+}
+
+test "terms fields: a type opts into a taxonomy, records file under terms, ancestors count" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    try seed_admin_type(&harness);
+
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    const term_operations = @import("term.zig");
+    const unknown_taxonomy = SDK.dispatch(&admin, types.Create, .{ .definition =
+        \\{"handle":"article","name":"Article","fields":[
+        \\{"name":"title","label":"Title","kind":"string","required":true},
+        \\{"name":"topics","label":"Topics","kind":"terms","many":true,
+        \\"options":{"taxonomy":"topics"}}]}
+    });
+    try std.testing.expectError(error.Invalid, unknown_taxonomy);
+
+    _ = try SDK.dispatch(&admin, taxonomies.Create, .{
+        .definition = taxonomies.example_definition,
+    });
+    _ = try SDK.dispatch(&admin, types.Create, .{ .definition =
+        \\{"handle":"article","name":"Article","public":true,"fields":[
+        \\{"name":"title","label":"Title","kind":"string","required":true},
+        \\{"name":"topics","label":"Topics","kind":"terms","many":true,
+        \\"options":{"taxonomy":"topics"}}]}
+    });
+    const tech = try SDK.dispatch(&admin, term_operations.Create, .{
+        .taxonomy = "topics",
+        .document = "{\"name\":\"Technology\"}",
+        .status = "published",
+    });
+    const engineering = try SDK.dispatch(&admin, term_operations.Create, .{
+        .taxonomy = "topics",
+        .document = "{\"name\":\"Engineering\"}",
+        .status = "published",
+        .parent = tech.id,
+    });
+    const art = try SDK.dispatch(&admin, term_operations.Create, .{
+        .taxonomy = "topics",
+        .document = "{\"name\":\"Art\"}",
+        .status = "published",
+    });
+
+    const filed = try std.fmt.allocPrint(
+        harness.fixed.allocator(),
+        "{{\"title\":\"Filed\",\"topics\":[\"{s}\"]}}",
+        .{engineering.id},
+    );
+    const record = try SDK.dispatch(&admin, Create, .{
+        .type = "article",
+        .document = filed,
+        .status = "published",
+    });
+    const painted = try std.fmt.allocPrint(
+        harness.fixed.allocator(),
+        "{{\"title\":\"Painted\",\"topics\":[\"{s}\"]}}",
+        .{art.id},
+    );
+    _ = try SDK.dispatch(&admin, Create, .{
+        .type = "article",
+        .document = painted,
+        .status = "published",
+    });
+
+    const under_tech = try SDK.dispatch(&admin, List, .{
+        .type = "article",
+        .filter_field = "topics",
+        .filter_value = tech.id,
+    });
+    try std.testing.expectEqual(@as(usize, 1), under_tech.records.len);
+    try std.testing.expectEqualStrings("Filed", under_tech.records[0].title);
+    const under_art = try SDK.dispatch(&admin, List, .{
+        .type = "article",
+        .filter_field = "topics",
+        .filter_value = art.id,
+    });
+    try std.testing.expectEqual(@as(usize, 1), under_art.records.len);
+
+    const got = try SDK.dispatch(&admin, Get, .{ .id = record.id });
+    try std.testing.expect(std.mem.indexOf(u8, got.document, engineering.id) != null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document, tech.id) == null);
+
+    const missing = SDK.dispatch(&admin, Create, .{
+        .type = "article",
+        .document = "{\"title\":\"Lost\",\"topics\":[\"nope\"]}",
+    });
+    try std.testing.expectError(error.Invalid, missing);
+    try std.testing.expectError(
+        error.Conflict,
+        SDK.dispatch(&admin, term_operations.Purge, .{ .id = tech.id }),
+    );
+
+    const moved = try SDK.dispatch(&admin, term_operations.Save, .{
+        .id = engineering.id,
+        .document = "{\"name\":\"Engineering\"}",
+        .parent = art.id,
+    });
+    try std.testing.expectEqualStrings(art.id, moved.parent.?);
+    const under_tech_after = try SDK.dispatch(&admin, List, .{
+        .type = "article",
+        .filter_field = "topics",
+        .filter_value = tech.id,
+    });
+    try std.testing.expectEqual(@as(usize, 0), under_tech_after.records.len);
+    const under_art_after = try SDK.dispatch(&admin, List, .{
+        .type = "article",
+        .filter_field = "topics",
+        .filter_value = art.id,
+    });
+    try std.testing.expectEqual(@as(usize, 2), under_art_after.records.len);
+    const purged = try SDK.dispatch(&admin, term_operations.Purge, .{ .id = tech.id });
+    try std.testing.expect(purged.purged);
+}
+
+test "a taxonomy applying to a type gives it an implicit terms field; detaching drops values" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    try seed_admin_type(&harness);
+
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    const term_operations = @import("term.zig");
+    const applying =
+        \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
+        \\ "applies_to":["post"],
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
+    ;
+    _ = try SDK.dispatch(&admin, taxonomies.Create, .{ .definition = applying });
+    const unknown_type = SDK.dispatch(&admin, taxonomies.Create, .{ .definition =
+        \\{"handle":"tags","name":"Tags","applies_to":["nope"],
+        \\ "fields":[{"name":"name","label":"Name","kind":"string"}]}
+    });
+    try std.testing.expectError(error.Invalid, unknown_type);
+
+    const post = try SDK.dispatch(&admin, types.Get, .{ .type = "post" });
+    const last = post.definition.fields[post.definition.fields.len - 1];
+    try std.testing.expectEqualStrings("topics", last.name);
+    try std.testing.expect(last.locked and last.many);
+    try std.testing.expectEqualStrings("topics", last.options.taxonomy);
+
+    const tech = try SDK.dispatch(&admin, term_operations.Create, .{
+        .taxonomy = "topics",
+        .document = "{\"name\":\"Technology\"}",
+        .status = "published",
+    });
+    const filed = try std.fmt.allocPrint(
+        harness.fixed.allocator(),
+        "{{\"title\":\"Filed\",\"body\":\"x\",\"topics\":[\"{s}\"]}}",
+        .{tech.id},
+    );
+    const record = try SDK.dispatch(&admin, Create, .{ .type = "post", .document = filed });
+    const got = try SDK.dispatch(&admin, Get, .{ .id = record.id });
+    try std.testing.expect(std.mem.indexOf(u8, got.document, tech.id) != null);
+
+    const sent_back = try model.content_type.encode(harness.fixed.allocator(), post.definition);
+    const kept = try SDK.dispatch(&admin, types.Update, .{
+        .type = "post",
+        .definition = sent_back,
+    });
+    try std.testing.expectEqual(@as(u32, 0), kept.values_dropped);
+    const stored = try SDK.dispatch(&admin, types.Get, .{ .type = "post" });
+    try std.testing.expectEqual(post.definition.fields.len, stored.definition.fields.len);
+
+    const detached =
+        \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
+    ;
+    _ = try SDK.dispatch(&admin, taxonomies.Update, .{
+        .taxonomy = "topics",
+        .definition = detached,
+    });
+    const bare = try SDK.dispatch(&admin, types.Get, .{ .type = "post" });
+    try std.testing.expectEqual(post.definition.fields.len - 1, bare.definition.fields.len);
+    const after = try SDK.dispatch(&admin, Get, .{ .id = record.id });
+    try std.testing.expect(std.mem.indexOf(u8, after.document, tech.id) == null);
+    const purged = try SDK.dispatch(&admin, term_operations.Purge, .{ .id = tech.id });
+    try std.testing.expect(purged.purged);
 }

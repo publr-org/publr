@@ -1,9 +1,11 @@
 const std = @import("std");
 const field = @import("field.zig");
+const kinds = @import("kinds.zig");
 const convert = @import("convert.zig");
 const document_module = @import("document.zig");
 
 const Def = field.Def;
+const Kind = kinds.Kind;
 const Value = std.json.Value;
 
 pub const paths_max: u32 = 1024;
@@ -18,7 +20,12 @@ pub const Plan = struct {
 
 const Leaf = struct { path: []const u8, def: Def };
 
-pub fn plan(arena: std.mem.Allocator, old: []const Def, new: []const Def) !Plan {
+pub fn plan(
+    known: []const Kind,
+    arena: std.mem.Allocator,
+    old: []const Def,
+    new: []const Def,
+) !Plan {
     std.debug.assert(old.len <= field.fields_max);
     std.debug.assert(new.len <= field.fields_max);
 
@@ -38,11 +45,11 @@ pub fn plan(arena: std.mem.Allocator, old: []const Def, new: []const Def) !Plan 
 
             continue;
         };
-        const same_kind = before.def.kind == after.def.kind;
+        const same_kind = std.mem.eql(u8, before.def.kind, after.def.kind);
         const same_many = before.def.many == after.def.many;
         const same_search = before.def.searchable == after.def.searchable;
 
-        if (!same_kind and !convert.allowed(before.def.kind, after.def.kind)) {
+        if (!same_kind and !convert.allowed(known, before.def.kind, after.def.kind)) {
             allowed = false;
         }
 
@@ -90,6 +97,7 @@ fn find_leaf(leaves: []const Leaf, path: []const u8) ?Leaf {
 }
 
 pub fn convert_document(
+    known: []const Kind,
     arena: std.mem.Allocator,
     old: []const Def,
     new: []const Def,
@@ -108,7 +116,7 @@ pub fn convert_document(
             continue;
         }
 
-        const converted = try convert_value(arena, before, after, value);
+        const converted = try convert_value(known, arena, before, after, value);
         try object.put(arena, try arena.dupe(u8, after.name), converted);
     }
 
@@ -116,6 +124,7 @@ pub fn convert_document(
 }
 
 fn convert_value(
+    known: []const Kind,
     arena: std.mem.Allocator,
     before: Def,
     after: Def,
@@ -125,18 +134,18 @@ fn convert_value(
     std.debug.assert(value != .null);
 
     if (field.is_leaf(after.kind) and field.is_leaf(before.kind)) {
-        if (!convert.allowed(before.kind, after.kind)) {
+        if (!convert.allowed(known, before.kind, after.kind)) {
             return error.NotConvertible;
         }
 
-        return convert.convert(arena, before, after, value);
+        return convert.convert(known, arena, before, after, value);
     }
 
-    if (after.kind == .group and before.kind == .group) {
-        return convert_document(arena, before.fields, after.fields, value);
+    if (field.is_group(after.kind) and field.is_group(before.kind)) {
+        return convert_document(known, arena, before.fields, after.fields, value);
     }
 
-    if (after.kind == .repeater and before.kind == .repeater) {
+    if (field.is_repeater(after.kind) and field.is_repeater(before.kind)) {
         if (value != .array) {
             return error.DataDoesNotFit;
         }
@@ -144,7 +153,9 @@ fn convert_value(
         var array = std.json.Array.init(arena);
 
         for (value.array.items) |item| {
-            try array.append(try convert_document(arena, before.fields, after.fields, item));
+            const converted = try convert_document(known, arena, before.fields, after.fields, item);
+
+            try array.append(converted);
         }
 
         return .{ .array = array };
@@ -170,22 +181,23 @@ test "plan: removed leaves, allowed and refused kind changes, rewrite when neede
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
+    const known = &kinds.core;
 
     const old = [_]Def{
-        .{ .name = "title", .label = "T", .kind = .string },
-        .{ .name = "views", .label = "V", .kind = .integer },
-        .{ .name = "seo", .label = "S", .kind = .group, .fields = &.{
-            .{ .name = "description", .label = "D", .kind = .text },
+        .{ .name = "title", .label = "T", .kind = "string" },
+        .{ .name = "views", .label = "V", .kind = "integer" },
+        .{ .name = "seo", .label = "S", .kind = "group", .fields = &.{
+            .{ .name = "description", .label = "D", .kind = "text" },
         } },
     };
-    const same = try plan(arena, &old, &old);
+    const same = try plan(known, arena, &old, &old);
     try std.testing.expect(same.allowed and !same.needs_rewrite and same.removed.len == 0);
 
     const widened = [_]Def{
-        .{ .name = "title", .label = "T", .kind = .text },
-        .{ .name = "views", .label = "V", .kind = .number },
+        .{ .name = "title", .label = "T", .kind = "text" },
+        .{ .name = "views", .label = "V", .kind = "number" },
     };
-    const widen = try plan(arena, &old, &widened);
+    const widen = try plan(known, arena, &old, &widened);
     try std.testing.expect(widen.allowed and widen.needs_rewrite);
     try std.testing.expectEqual(@as(usize, 1), widen.removed.len);
     try std.testing.expectEqualStrings("seo.description", widen.removed[0]);
@@ -193,8 +205,8 @@ test "plan: removed leaves, allowed and refused kind changes, rewrite when neede
     const shape = [_]Def{.{
         .name = "title",
         .label = "T",
-        .kind = .reference,
-        .options = .{ .to = "x" },
+        .kind = "reference",
+        .options = .{ .to = &.{"x"} },
     }};
-    try std.testing.expect(!(try plan(arena, &old, &shape)).allowed);
+    try std.testing.expect(!(try plan(known, arena, &old, &shape)).allowed);
 }

@@ -79,6 +79,19 @@ the local operator (`system`), or a plugin with a set of permission scopes.
 Policies use this to decide the grant. The CLI runs as anonymous unless told
 otherwise (`--as <user id or email>`, `--as-admin`).
 
+A policy also knows where a call comes from. A call an adapter makes (the CLI,
+REST, the admin) comes from outside; a call an operation makes while it runs
+comes from inside that operation, and the policy sees its name. So a plugin can
+let its own operations write records on the caller's behalf while refusing the
+same caller writing them directly. A grant limited to the caller's own records
+is asked of the database as such, so a list's limit and offset count only those.
+
+An operation may declare `open` (anyone may call it, like signing in) and
+`allow_frontmatter_calls` (a dynamic page may run it when it is opened,
+`Publr.request.call()`; see [The site](site.md)). The second is a promise that being
+triggered by a visit, with no form and no CSRF token, is harmless: marking something
+seen, counting a view.
+
 Users and sessions are ordinary operations: `site.init` (first admin,
 exactly once), `user.create` (with a password, a generated one, or a
 set-password link), `users.password_link`, `users.set_password`,
@@ -123,6 +136,26 @@ output structs, one example call with the answer it gives, and `run`. Optional:
 `details`, `field_docs`, `output_docs` for richer help. What a call touches, for
 policies, is read from the input by field name (`type`, `id`, `to`).
 
+An operation fails with the core's errors (`error.Denied`, `error.NotFound`,
+`error.Conflict`, ...) or with a failure its plugin declares, for what the core has no
+word for:
+
+```zig
+pub const unverified: sdk.operation.Failure = .{
+    .name = "Unverified",
+    .status = 403,
+    .message = "Verify your email to create more sites",
+};
+
+pub const failures = [_]sdk.operation.Failure{unverified};   // in the operation: for --help
+
+return ctx.fail(unverified);                                   // in run
+```
+
+`ctx.fail` rolls the write back like any error; REST answers
+`{ "error": "Unverified", "message": "…" }` with the status, the CLI prints the message,
+and `--help` lists the operation's `failures`.
+
 The example is not decoration. `--help` prints it, and `zig build parity` runs
 it: every operation's printed command line is executed against a database built
 for it, and the answer is checked against the printed `example_out`. An example
@@ -152,9 +185,11 @@ document was written), `record.changed` (first pending edit on a live record),
 version, whether from a draft or from pending edits: one listener for "on
 publish"), `record.unpublished`, `record.archived`, `record.deleted`,
 `record.restored`, `record.purged`, plus `record.transitioned` for every status
-move and `content_type.created|updated|deleted`.
+move and `content_type.created|updated|deleted`; the term domain raises the
+same set under `term.*` and `taxonomy.*`.
 
-Beyond hooks, a plugin registers its own **operations**, **statuses** and
+Beyond hooks, a plugin registers its own **operations**, **statuses**, **field
+kinds** (a descriptor each: storage class, controls, its own value check) and
 **content types** (created when the database opens; the plugin's own records
 live in the same tables as everything else). Drafts, revisions, workflows,
 activity logs, notifications and live updates are all built from these

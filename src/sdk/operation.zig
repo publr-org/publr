@@ -12,10 +12,53 @@ pub const Error = db.Error || error{
     Conflict,
     Vetoed,
     Throttled,
+    /// The operation's own failure, one the core does not name: `ctx.failure` says which
+    /// (a `Failure` its plugin declares), and the adapters answer with its status and name.
+    Failed,
+    /// A service the operation depends on could not be reached; nothing was changed.
+    Unavailable,
     BadCredentials,
+    InvalidationFailed,
 };
 
 pub const Kind = enum { read, write };
+
+/// A way an operation fails that the core's errors do not name, declared by the plugin that
+/// owns the operation and raised with `ctx.fail`: "your email is not verified", "the plan's
+/// limit is reached". An operation lists the ones it can end with in `failures`, for its
+/// documentation.
+pub const Failure = struct {
+    /// What REST answers (`{ "error": "Unverified" }`): letters only, starting upper-case.
+    name: []const u8,
+    /// An HTTP status from 400 to 599.
+    status: u16,
+    /// For people: the CLI prints it, REST sends it as `message`.
+    message: []const u8,
+};
+
+pub const failure_name_len_max: u32 = 64;
+pub const failure_message_len_max: u32 = 200;
+
+/// A failure as declared: a name of letters starting upper-case, a 4xx or 5xx status, and
+/// a message of 1 to 200 characters.
+pub fn valid_failure(failure: Failure) bool {
+    std.debug.assert(failure_name_len_max > 0);
+
+    const name = failure.name;
+    const name_ok = name.len > 0 and name.len <= failure_name_len_max and
+        std.ascii.isUpper(name[0]);
+    const status_ok = failure.status >= 400 and failure.status <= 599;
+    const message_ok = failure.message.len > 0 and
+        failure.message.len <= failure_message_len_max;
+
+    for (name) |char| {
+        if (!std.ascii.isAlphabetic(char)) {
+            return false;
+        }
+    }
+
+    return name_ok and status_ok and message_ok;
+}
 
 pub const Namespace = struct {
     name: []const u8,
@@ -106,6 +149,16 @@ pub fn validate(comptime Operation: type) void {
 
         if (@hasDecl(Operation, "details")) {
             assert_decl(Operation, "details", []const u8);
+        }
+
+        if (@hasDecl(Operation, "failures")) {
+            for (Operation.failures) |failure| {
+                if (!valid_failure(failure)) {
+                    @compileError(Operation.name ++ ": failure `" ++ failure.name ++ "` needs " ++
+                        "a name of letters starting upper-case, a 4xx or 5xx status and a " ++
+                        "message of 1 to 200 characters");
+                }
+            }
         }
 
         const gone = @hasDecl(Operation, "resource") or @hasDecl(Operation, "seed") or
@@ -246,4 +299,23 @@ test "serialisable types are accepted, pointers to single items rejected at comp
     };
     comptime assert_serialisable(Good, 0);
     comptime assert_name("hello.record");
+}
+
+test "a failure is a name of letters, a 4xx or 5xx status and a short message" {
+    const good: Failure = .{ .name = "Unverified", .status = 403, .message = "Verify first" };
+
+    try std.testing.expect(valid_failure(good));
+
+    var lower = good;
+    lower.name = "unverified";
+    var spaced = good;
+    spaced.name = "Not Verified";
+    var success = good;
+    success.status = 200;
+    var silent = good;
+    silent.message = "";
+
+    for ([_]Failure{ lower, spaced, success, silent }) |bad| {
+        try std.testing.expect(!valid_failure(bad));
+    }
 }

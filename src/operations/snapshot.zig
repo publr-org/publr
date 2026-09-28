@@ -3,8 +3,9 @@ const sdk = @import("../sdk.zig");
 const registry = @import("../app/registry.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
-const access = @import("record/access.zig");
-const document_module = @import("record/document.zig");
+const record = @import("record.zig");
+const access = record.access;
+const document_module = record.document;
 const types = @import("content_type.zig");
 
 const Ctx = sdk.Ctx;

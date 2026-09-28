@@ -1,27 +1,41 @@
-//! The `record_values` rows (and the `record_search` index): one row per field value per
-//! slot. What a document becomes in rows, and back, is `model/document.zig`; this file
-//! only stores, promotes, looks up and deletes them.
+//! The `record_values` rows (and the `record_search` index): `store/document_values.zig`
+//! over the record domain's tables.
 
 const std = @import("std");
 const db = @import("../lib/db.zig");
 const field = @import("../model/field.zig");
+const kinds = @import("../model/kinds.zig");
 const document = @import("../model/document.zig");
+const document_values = @import("document_values.zig");
+const tables = @import("tables.zig");
 
+const Store = document_values.Store(tables.records);
 const Def = field.Def;
 const Value = std.json.Value;
-const Row = document.Row;
-const Stored = document.Stored;
-const rows_max = document.rows_max;
 
-pub const Error = db.Error || error{Invalid};
+pub const Error = document_values.Error;
+pub const live = document_values.live;
+pub const pending = document_values.pending;
+pub const slot_len_max = document_values.slot_len_max;
+pub const Referrer = document_values.Referrer;
+pub const slots_of = Store.slots_of;
+pub const has_slot = Store.has_slot;
+pub const read = Store.read;
+pub const referrers = Store.referrers;
+pub const find_by_text = Store.find_by_text;
+pub const find_by_integer = Store.find_by_integer;
+pub const read_integer = Store.read_integer;
+pub const delete_references = Store.delete_references;
+pub const read_text = Store.read_text;
+pub const delete_field = Store.delete_field;
+pub const count_field = Store.count_field;
 
-/// The slot of the document everyone reads; other slots (`pending`, a plugin's own) are
-/// copies edited aside and never indexed.
-pub const live = "live";
-pub const pending = "pending";
-pub const slot_len_max: u32 = 64;
+const record_terms = @import("record_terms.zig");
+const taxonomy = @import("../model/taxonomy.zig");
 
+/// The values, and, for every `terms` field, the assignments in `record_terms`.
 pub fn write(
+    known: []const kinds.Kind,
     connection: *db.Db,
     record_id: []const u8,
     slot: []const u8,
@@ -30,75 +44,60 @@ pub fn write(
     value: Value,
 ) Error!void {
     std.debug.assert(record_id.len > 0);
-    std.debug.assert(slot.len > 0 and slot.len <= slot_len_max);
+    std.debug.assert(slot.len > 0);
 
-    var buffer: [document.flat_max]document.Flat = undefined;
-    const flat = try document.flatten(fields, value, &buffer);
+    try Store.write(known, connection, record_id, slot, type_id, fields, value);
 
-    try clear(connection, record_id, slot);
+    var buffer: [field.fields_max]Def = undefined;
 
-    var insert = try connection.prepare(
-        "INSERT INTO record_values (record, slot, type_id, field, ordinal, kind, value) " ++
-            "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-    );
-    defer insert.finalize();
+    for (taxonomy.terms_fields(fields, &buffer)) |assigned| {
+        var ids: [record_terms.ids_max][]const u8 = undefined;
+        const chosen = if (value == .object) value.object.get(assigned.name) else null;
+        const assignment: record_terms.Assignment = .{
+            .record = record_id,
+            .slot = slot,
+            .field = assigned.name,
+        };
 
-    var fts = try connection.prepare(
-        "INSERT INTO record_search (text, record, slot, type_id, field) " ++
-            "VALUES (?1, ?2, ?3, ?4, ?5)",
-    );
-    defer fts.finalize();
-
-    for (flat) |row| {
-        insert.reset();
-        try insert.bind_text(1, record_id);
-        try insert.bind_text(2, slot);
-        try insert.bind_text(3, type_id);
-        try insert.bind_text(4, row.field);
-        try insert.bind_int(5, row.ordinal);
-        try insert.bind_text(6, @tagName(row.column));
-
-        switch (row.value) {
-            .text => |text| try insert.bind_text(7, text),
-            .integer => |number| try insert.bind_int(7, number),
-            .real => |number| try insert.bind_real(7, number),
-        }
-
-        try insert.exec();
-
-        if (row.searchable) {
-            fts.reset();
-            try fts.bind_text(1, row.value.text);
-            try fts.bind_text(2, record_id);
-            try fts.bind_text(3, slot);
-            try fts.bind_text(4, type_id);
-            try fts.bind_text(5, row.field);
-            try fts.exec();
-        }
+        try record_terms.write(connection, assignment, ids_of(chosen, &ids));
     }
+}
+
+/// The term ids a document holds under a terms field: one, many, or none.
+fn ids_of(value: ?Value, buffer: *[record_terms.ids_max][]const u8) []const []const u8 {
+    std.debug.assert(buffer.len == record_terms.ids_max);
+    std.debug.assert(record_terms.ids_max > 0);
+
+    const chosen = value orelse return &.{};
+    var count: u32 = 0;
+
+    switch (chosen) {
+        .string => |id| {
+            buffer[0] = id;
+            count = 1;
+        },
+        .array => |items| {
+            for (items.items) |item| {
+                if (item == .string and count < record_terms.ids_max) {
+                    buffer[count] = item.string;
+                    count += 1;
+                }
+            }
+        },
+        else => {},
+    }
+
+    return buffer[0..count];
 }
 
 pub fn clear(connection: *db.Db, record_id: []const u8, slot: ?[]const u8) db.Error!void {
     std.debug.assert(record_id.len > 0);
     std.debug.assert(connection.transaction_depth <= 8);
 
-    const statements = [_][:0]const u8{
-        "DELETE FROM record_values WHERE record = ?1 AND (?2 IS NULL OR slot = ?2)",
-        "DELETE FROM record_search WHERE record = ?1 AND (?2 IS NULL OR slot = ?2)",
-    };
-
-    inline for (statements) |sql| {
-        var statement = try connection.prepare(sql);
-        defer statement.finalize();
-
-        try statement.bind_text(1, record_id);
-        try statement.bind_optional_text(2, slot);
-        try statement.exec();
-    }
+    try Store.clear(connection, record_id, slot);
+    try record_terms.clear(connection, record_id, slot);
 }
 
-/// Make one slot the other: the target's rows go, the source's rows take its name.
-/// Nothing happens when the source slot is empty; answers whether it did.
 pub fn promote(
     connection: *db.Db,
     record_id: []const u8,
@@ -108,265 +107,36 @@ pub fn promote(
     std.debug.assert(record_id.len > 0);
     std.debug.assert(!std.mem.eql(u8, from, to));
 
-    if (!try has_slot(connection, record_id, from)) {
-        return false;
+    const promoted = try Store.promote(connection, record_id, from, to);
+
+    if (promoted) {
+        try record_terms.promote(connection, record_id, from, to);
     }
 
-    try clear(connection, record_id, to);
-
-    const statements = [_][:0]const u8{
-        "UPDATE record_values SET slot = ?3 WHERE record = ?1 AND slot = ?2",
-        "UPDATE record_search SET slot = ?3 WHERE record = ?1 AND slot = ?2",
-    };
-
-    inline for (statements) |sql| {
-        var statement = try connection.prepare(sql);
-        defer statement.finalize();
-
-        try statement.bind_text(1, record_id);
-        try statement.bind_text(2, from);
-        try statement.bind_text(3, to);
-        try statement.exec();
-    }
-
-    return true;
-}
-
-/// Every slot a record has values in.
-pub fn slots_of(
-    connection: *db.Db,
-    arena: std.mem.Allocator,
-    record_id: []const u8,
-) db.Error![][]const u8 {
-    std.debug.assert(record_id.len > 0);
-    std.debug.assert(slot_len_max > 0);
-
-    var select = try connection.prepare(
-        "SELECT DISTINCT slot FROM record_values WHERE record = ?1 ORDER BY slot",
-    );
-    defer select.finalize();
-
-    try select.bind_text(1, record_id);
-
-    const Slot = struct { slot: []const u8 };
-    var slots: std.ArrayList([]const u8) = .empty;
-
-    while (try select.step()) {
-        std.debug.assert(slots.items.len < 1000);
-
-        const found = try select.read(Slot, arena);
-        slots.append(arena, found.slot) catch return error.OutOfMemory;
-    }
-
-    return slots.items;
-}
-
-pub fn has_slot(connection: *db.Db, record_id: []const u8, slot: []const u8) db.Error!bool {
-    std.debug.assert(record_id.len > 0);
-    std.debug.assert(slot.len > 0);
-
-    var select = try connection.prepare(
-        "SELECT 1 FROM record_values WHERE record = ?1 AND slot = ?2 LIMIT 1",
-    );
-    defer select.finalize();
-
-    try select.bind_text(1, record_id);
-    try select.bind_text(2, slot);
-
-    return try select.step();
-}
-
-pub fn read(
-    connection: *db.Db,
-    arena: std.mem.Allocator,
-    record_id: []const u8,
-    slot: []const u8,
-) db.Error![]Row {
-    std.debug.assert(record_id.len > 0);
-    std.debug.assert(slot.len > 0);
-
-    var select = try connection.prepare(
-        "SELECT field, ordinal, value FROM record_values WHERE record = ?1 AND slot = ?2 " ++
-            "ORDER BY field, ordinal",
-    );
-    defer select.finalize();
-
-    try select.bind_text(1, record_id);
-    try select.bind_text(2, slot);
-
-    const Cell = struct { field: []const u8, ordinal: i64, value: db.Any };
-    var rows: std.ArrayList(Row) = .empty;
-
-    while (try select.step()) {
-        std.debug.assert(rows.items.len < rows_max);
-
-        const cell = try select.read(Cell, arena);
-        const stored: Stored = switch (cell.value) {
-            .integer => |number| .{ .integer = number },
-            .real => |number| .{ .real = number },
-            .text => |text| .{ .text = text },
-            .blob, .null => unreachable,
-        };
-
-        rows.append(arena, .{
-            .field = cell.field,
-            .ordinal = cell.ordinal,
-            .value = stored,
-        }) catch return error.OutOfMemory;
-    }
-
-    return rows.items;
-}
-
-pub const Referrer = struct { record_id: []const u8, field: []const u8 };
-
-pub fn referrers(
-    connection: *db.Db,
-    arena: std.mem.Allocator,
-    target_id: []const u8,
-) db.Error![]Referrer {
-    std.debug.assert(target_id.len > 0);
-    std.debug.assert(rows_max > 0);
-
-    var select = try connection.prepare(
-        "SELECT DISTINCT record, field FROM record_values " ++
-            "WHERE slot = 'live' AND kind = 'ref' AND value = ?1 ORDER BY record, field",
-    );
-    defer select.finalize();
-
-    try select.bind_text(1, target_id);
-
-    var found: std.ArrayList(Referrer) = .empty;
-
-    while (try select.step()) {
-        std.debug.assert(found.items.len < rows_max);
-        found.append(arena, try select.read(Referrer, arena)) catch return error.OutOfMemory;
-    }
-
-    return found.items;
-}
-
-/// The record of a type holding a text value in a field, if any (unique lookups).
-pub fn find_by_text(
-    connection: *db.Db,
-    arena: std.mem.Allocator,
-    type_id: []const u8,
-    path: []const u8,
-    text: []const u8,
-) db.Error!?[]const u8 {
-    std.debug.assert(type_id.len > 0);
-    std.debug.assert(path.len > 0);
-
-    var select = try connection.prepare(
-        "SELECT record FROM record_values WHERE type_id = ?1 AND field = ?2 AND value = ?3 " ++
-            "AND slot = 'live' AND kind <> 'long' LIMIT 1",
-    );
-    defer select.finalize();
-
-    try select.bind_text(1, type_id);
-    try select.bind_text(2, path);
-    try select.bind_text(3, text);
-
-    if (!try select.step()) {
-        return null;
-    }
-
-    const Found = struct { record: []const u8 };
-    return (try select.read(Found, arena)).record;
-}
-
-/// One text value of a record's slot (ordinal 0), or null when absent.
-pub fn read_text(
-    connection: *db.Db,
-    arena: std.mem.Allocator,
-    record_id: []const u8,
-    slot: []const u8,
-    path: []const u8,
-) db.Error!?[]const u8 {
-    std.debug.assert(record_id.len > 0);
-    std.debug.assert(path.len > 0);
-
-    var select = try connection.prepare(
-        "SELECT value FROM record_values WHERE record = ?1 AND slot = ?2 AND field = ?3 " ++
-            "AND ordinal = 0 AND kind <> 'int' AND kind <> 'real'",
-    );
-    defer select.finalize();
-
-    try select.bind_text(1, record_id);
-    try select.bind_text(2, slot);
-    try select.bind_text(3, path);
-
-    if (!try select.step()) {
-        return null;
-    }
-
-    const Found = struct { value: []const u8 };
-    return (try select.read(Found, arena)).value;
-}
-
-const field_scope = "type_id = ?1 AND (field = ?2 OR substr(field, 1, length(?2) + 1) = ?2 || '.')";
-
-pub fn delete_field(connection: *db.Db, type_id: []const u8, path: []const u8) db.Error!u32 {
-    std.debug.assert(type_id.len > 0);
-    std.debug.assert(path.len > 0);
-
-    var removed: u32 = 0;
-    const statements = [_][:0]const u8{
-        "DELETE FROM record_values WHERE " ++ field_scope,
-        "DELETE FROM record_search WHERE " ++ field_scope,
-    };
-
-    inline for (statements) |sql| {
-        var statement = try connection.prepare(sql);
-        defer statement.finalize();
-
-        try statement.bind_text(1, type_id);
-        try statement.bind_text(2, path);
-        try statement.exec();
-        removed += connection.changes();
-    }
-
-    return removed;
-}
-
-pub fn count_field(connection: *db.Db, type_id: []const u8, path: []const u8) db.Error!u32 {
-    std.debug.assert(type_id.len > 0);
-    std.debug.assert(path.len > 0);
-
-    var select = try connection.prepare(
-        "SELECT count(*) FROM record_values WHERE " ++ field_scope,
-    );
-    defer select.finalize();
-
-    try select.bind_text(1, type_id);
-    try select.bind_text(2, path);
-
-    std.debug.assert(try select.step());
-
-    return @intCast(select.read_int());
+    return promoted;
 }
 
 const test_fields = [_]Def{
-    .{ .name = "title", .label = "Title", .kind = .string, .searchable = true },
-    .{ .name = "views", .label = "Views", .kind = .integer },
-    .{ .name = "score", .label = "Score", .kind = .number },
-    .{ .name = "live", .label = "Live", .kind = .boolean },
-    .{ .name = "body", .label = "Body", .kind = .richtext },
-    .{ .name = "cover", .label = "Cover", .kind = .image },
+    .{ .name = "title", .label = "Title", .kind = "string", .searchable = true },
+    .{ .name = "views", .label = "Views", .kind = "integer" },
+    .{ .name = "score", .label = "Score", .kind = "number" },
+    .{ .name = "live", .label = "Live", .kind = "boolean" },
+    .{ .name = "body", .label = "Body", .kind = "richtext" },
+    .{ .name = "cover", .label = "Cover", .kind = "media" },
     .{
         .name = "tags",
         .label = "Tags",
-        .kind = .reference,
+        .kind = "reference",
         .many = true,
-        .options = .{ .to = "tag" },
+        .options = .{ .to = &.{"tag"} },
     },
-    .{ .name = "seo", .label = "SEO", .kind = .group, .fields = &.{
-        .{ .name = "description", .label = "Description", .kind = .text },
+    .{ .name = "seo", .label = "SEO", .kind = "group", .fields = &.{
+        .{ .name = "description", .label = "Description", .kind = "text" },
     } },
-    .{ .name = "faq", .label = "FAQ", .kind = .repeater, .fields = &.{
-        .{ .name = "question", .label = "Q", .kind = .string },
-        .{ .name = "answer", .label = "A", .kind = .text },
-        .{ .name = "link", .label = "Link", .kind = .reference, .options = .{ .to = "post" } },
+    .{ .name = "faq", .label = "FAQ", .kind = "repeater", .fields = &.{
+        .{ .name = "question", .label = "Q", .kind = "string" },
+        .{ .name = "answer", .label = "A", .kind = "text" },
+        .{ .name = "link", .label = "Link", .kind = "reference", .options = .{ .to = &.{"post"} } },
     } },
 };
 
@@ -382,7 +152,6 @@ fn seed_record(
     const type_id = try content_type.insert(&fixture.connection, arena, .{
         .handle = "page",
         .name = "Page",
-        .name_plural = "Pages",
         .fields = &test_fields,
     }, 0);
     var insert = try fixture.connection.prepare(
@@ -417,12 +186,12 @@ test "write then assemble round-trips every kind, groups, repeaters and many ref
     ;
     const parsed = try std.json.parseFromSliceLeaky(Value, arena, text, .{});
 
-    try write(connection, "e1", live, type_id, &test_fields, parsed);
+    try write(&kinds.core, connection, "e1", live, type_id, &test_fields, parsed);
 
     const rows = try read(connection, arena, "e1", live);
     try std.testing.expectEqual(@as(usize, 13), rows.len);
 
-    const back = try document.assemble(arena, &test_fields, rows);
+    const back = try document.assemble(&kinds.core, arena, &test_fields, rows);
     var out: std.Io.Writer.Allocating = .init(arena);
     try std.json.Stringify.value(back, .{}, &out.writer);
 
@@ -472,14 +241,14 @@ test "a second write replaces everything; delete_field removes a field's rows in
         "{\"title\":\"A\",\"tags\":[\"t1\",\"t2\",\"t3\"]}",
         .{},
     );
-    try write(connection, "e1", live, type_id, &test_fields, first);
+    try write(&kinds.core, connection, "e1", live, type_id, &test_fields, first);
     const second = try std.json.parseFromSliceLeaky(
         Value,
         arena,
         "{\"title\":\"B\",\"tags\":[\"t9\"],\"faq\":[{\"question\":\"q\"}]}",
         .{},
     );
-    try write(connection, "e1", live, type_id, &test_fields, second);
+    try write(&kinds.core, connection, "e1", live, type_id, &test_fields, second);
 
     const rows = try read(connection, arena, "e1", live);
     try std.testing.expectEqual(@as(usize, 3), rows.len);
@@ -502,9 +271,9 @@ test "slots: a pending copy is invisible to lookups until promoted to live" {
     const type_id = try seed_record(&fixture, arena, "e1");
 
     const first = try std.json.parseFromSliceLeaky(Value, arena, "{\"title\":\"Live\"}", .{});
-    try write(connection, "e1", live, type_id, &test_fields, first);
+    try write(&kinds.core, connection, "e1", live, type_id, &test_fields, first);
     const second = try std.json.parseFromSliceLeaky(Value, arena, "{\"title\":\"Edited\"}", .{});
-    try write(connection, "e1", pending, type_id, &test_fields, second);
+    try write(&kinds.core, connection, "e1", pending, type_id, &test_fields, second);
 
     try std.testing.expect(try has_slot(connection, "e1", pending));
     const live_title = (try read_text(connection, arena, "e1", live, "title")).?;

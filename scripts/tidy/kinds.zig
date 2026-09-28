@@ -54,6 +54,12 @@ const rules = [_]Rule{
         .what = "an adapter calls operations, never the store",
     },
     .{
+        .prefix = "adapters/site",
+        .banned_imports = &.{"/store/"},
+        .no_sql = true,
+        .what = "an adapter calls operations, never the store",
+    },
+    .{
         .prefix = "adapters/rest",
         .banned_imports = &.{"/store/"},
         .no_sql = true,

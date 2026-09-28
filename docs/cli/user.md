@@ -47,6 +47,59 @@ previous link stops working. Admins only.
 
 Output: `{ "user_id", "link": { "path", "expires_at" } }`.
 
+## `user get`
+
+One account with its custom fields: `fields` holds one group per custom
+field group that applies to the account (destination `user`, role rules
+matching), each with its fields; `document` holds the values as JSON, one
+object per group, so a value's path is `<group handle>.<field>`. Admins only.
+
+| Field | Type | Default |
+|---|---|---|
+| `--user` | text | required: id or email |
+
+Output: `{ "user": { "id", "email", "display_name", "role", "created_at", "active" }, "fields", "document" }`.
+
+## `user update`
+
+Rename a user or change their role; the email and password stay. With
+`--document`, replace the custom field values too, validated against the
+groups that apply to the account's new role. Admins only. The last admin
+cannot be made an editor, and you cannot change your own role.
+
+| Field | Type | Default |
+|---|---|---|
+| `--user` | text | required: id or email |
+| `--display_name` | text | required |
+| `--role` | `admin|editor` | required |
+| `--document` | JSON text | omitted: the values stay |
+
+Output: `{ "user_id", "role" }`.
+
+## `user validate`
+
+Check custom field values for an account without saving, with the rules
+`user update --document` applies. Admins only.
+
+| Field | Type | Default |
+|---|---|---|
+| `--user` | text | required: id or email |
+| `--document` | JSON text | required |
+
+Output: `{ "valid", "problems": [{ "path", "message" }] }`.
+
+## `user delete`
+
+Delete a user and sign out every session they have; what they created
+stays, attributed to their id. Admins only. You cannot delete yourself or
+the last admin.
+
+| Field | Type | Default |
+|---|---|---|
+| `--user` | text | required: id or email |
+
+Output: `{ "user_id", "sessions_revoked" }`.
+
 ## `user set_password`
 
 Redeem a set-password link: sets the password, activates the account and

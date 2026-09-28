@@ -40,7 +40,12 @@ pub const Check = struct {
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
-        std.debug.assert(in.echo.len <= echo_len_max);
+        std.debug.assert(echo_len_max > 0);
+
+        if (in.echo.len > echo_len_max) {
+            return error.Invalid;
+        }
+
         return .{ .version = version, .echo = in.echo, .caller = ctx.caller.label() };
     }
 };

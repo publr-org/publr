@@ -1,12 +1,14 @@
 const std = @import("std");
 pub const db = @import("lib/db.zig");
 
+pub const dependencies = @import("sdk/dependencies.zig");
 pub const caller = @import("sdk/caller.zig");
 pub const context = @import("sdk/context.zig");
 pub const operation = @import("sdk/operation.zig");
 pub const grant = @import("sdk/grant.zig");
 pub const authorize = @import("sdk/authorize.zig");
 pub const middleware = @import("sdk/middleware.zig");
+pub const delivery = @import("sdk/delivery.zig");
 
 pub const Caller = caller.Caller;
 pub const Ctx = context.Ctx;
@@ -102,6 +104,11 @@ pub fn SDK(comptime registry: Registry) type {
                 return err;
             };
 
+            const within = ctx.within;
+
+            ctx.within = Operation.name;
+            defer ctx.within = within;
+
             const result = run(ctx, Operation, in, &granted);
 
             if (result) |_| {
@@ -134,6 +141,7 @@ pub fn SDK(comptime registry: Registry) type {
                 .operation_name = Operation.name,
                 .kind = Operation.kind,
                 .resource = operation.resource_of(in),
+                .open = @hasDecl(Operation, "open") and Operation.open,
             };
             const granted = try authorize.authorize(ctx, request, registry.policies);
 
@@ -198,6 +206,9 @@ pub fn SDK(comptime registry: Registry) type {
                 return invoke_run(ctx, Operation, in, granted);
             }
 
+            const previous_failure = ctx.dependency_failure;
+            ctx.dependency_failure = false;
+            defer ctx.dependency_failure = previous_failure;
             var transaction = try ctx.db.transaction();
             errdefer transaction.rollback();
 
@@ -205,6 +216,7 @@ pub fn SDK(comptime registry: Registry) type {
 
             const out = try invoke_run(ctx, Operation, in, granted);
 
+            if (ctx.dependency_failure) return error.InvalidationFailed;
             try transaction.commit();
             std.debug.assert(ctx.db.transaction_depth == transaction.depth - 1);
 

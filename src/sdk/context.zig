@@ -10,7 +10,18 @@ pub const request_id_len_max: u32 = 64;
 pub const Notify = *const fn (ctx: *Ctx, notice: Notice) void;
 
 pub const Ctx = struct {
+    dependencies: ?*@import("dependencies.zig").Collector = null,
+    dependency_failure: bool = false,
+    /// Why the last operation ended with `error.Failed`: set by `fail`, read by adapters.
+    failure: ?@import("operation.zig").Failure = null,
+    publish_policy: ?*const fn (*Ctx, OperationPolicy) anyerror!void = null,
     caller: Caller,
+    /// Reads made to render a page for a visitor: live records only and never a write,
+    /// whoever the caller is, so a signed-in visitor never sees a draft on the site.
+    delivery: bool = false,
+    /// The operation whose run made this call, empty for a call an adapter made: a policy
+    /// tells a plugin operation's own writes from the same caller writing directly.
+    within: []const u8 = "",
     db: *db.Db,
     io: std.Io,
     arena: std.mem.Allocator,
@@ -34,6 +45,41 @@ pub const Ctx = struct {
             .request_id = options.request_id,
             .now_ms = options.now_ms,
         };
+    }
+
+    pub const OperationPolicy = struct {
+        revision: u64,
+        no_store: bool,
+        revalidate: bool,
+        expires: ?i64,
+        tags: []const []const u8,
+    };
+
+    pub fn publrPolicy(ctx: *Ctx, policy: anytype) !void {
+        if (ctx.publish_policy) |publish| return publish(ctx, .{ .revision = policy.revision, .no_store = policy.no_store, .revalidate = policy.revalidate, .expires = policy.expires, .tags = policy.tags });
+        if (policy.no_store or policy.revalidate or policy.expires != null or policy.tags.len > 0) return error.PolicyHeadersRequired;
+    }
+
+    pub fn collecting(ctx: *Ctx, collector: *@import("dependencies.zig").Collector) Ctx {
+        var owned = ctx.*;
+        collector.parent = ctx.dependencies;
+        owned.dependencies = collector;
+        return owned;
+    }
+
+    pub fn depend(ctx: *Ctx, prefix: []const u8, id: []const u8) void {
+        if (ctx.dependencies) |collector| collector.depend(prefix, id);
+    }
+
+    /// Ends the operation with a failure its plugin declares: `return ctx.fail(unverified);`.
+    /// The write is rolled back like any other error's.
+    pub fn fail(ctx: *Ctx, failure: @import("operation.zig").Failure) error{Failed} {
+        std.debug.assert(failure.name.len > 0);
+        std.debug.assert(failure.status >= 400 and failure.status <= 599);
+
+        ctx.failure = failure;
+
+        return error.Failed;
     }
 
     pub fn notice(ctx: *Ctx, name: []const u8, subject: []const u8) void {

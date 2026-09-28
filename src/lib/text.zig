@@ -11,9 +11,22 @@ pub fn slugify(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
 
     var out: std.ArrayList(u8) = .empty;
     var pending_hyphen = false;
+    var index: u32 = 0;
 
-    for (text) |char| {
+    while (index < text.len) : (index += 1) {
+        const char = text[index];
         const lower = std.ascii.toLower(char);
+
+        // An apostrophe joins its word (`Dawid's` is `dawids`), straight or curly (U+2019).
+        if (char == '\'') {
+            continue;
+        }
+
+        if (std.mem.startsWith(u8, text[index..], "\u{2019}")) {
+            index += @intCast("\u{2019}".len - 1);
+            continue;
+        }
+
         const keep = (lower >= 'a' and lower <= 'z') or (lower >= '0' and lower <= '9');
 
         if (keep) {
@@ -54,5 +67,7 @@ test "slugify lowers, collapses separators, trims, and never returns empty" {
     try std.testing.expectEqualStrings("hello-world", try slugify(arena, "  Hello,   World! "));
     try std.testing.expectEqualStrings("caf-2024", try slugify(arena, "Café 2024"));
     try std.testing.expectEqualStrings("record", try slugify(arena, "!!!"));
+    try std.testing.expectEqualStrings("dawids-app", try slugify(arena, "Dawid's App"));
+    try std.testing.expectEqualStrings("dawids-app", try slugify(arena, "Dawid\u{2019}s App"));
     try std.testing.expectEqualStrings("hello-world-2", try with_suffix(arena, "hello-world", 2));
 }

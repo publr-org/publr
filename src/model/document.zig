@@ -5,12 +5,14 @@
 
 const std = @import("std");
 const field = @import("field.zig");
-const validate_module = @import("validate.zig");
+const kinds = @import("kinds.zig");
 
 const Def = field.Def;
+const Kind = kinds.Kind;
 const Value = std.json.Value;
-const TypeDef = @import("content_type.zig").Def;
-const find_field = @import("content_type.zig").find_field;
+const content_type_rules = @import("content_type.zig");
+const TypeDef = content_type_rules.Def;
+const find_field = content_type_rules.find_field;
 
 pub const path_len_max: u32 = 256;
 pub const items_max: u32 = 1000;
@@ -36,9 +38,14 @@ pub const Flat = struct {
     searchable: bool,
 };
 
-/// The document as rows. Field paths are written into `buffer`'s items' memory? No: paths
-/// point into `path_storage` owned by the flattener, valid as long as it is.
-pub fn flatten(fields: []const Def, value: Value, buffer: *[flat_max]Flat) Error![]const Flat {
+/// The document as rows. Field paths point into memory owned by the flattener, valid as
+/// long as it is.
+pub fn flatten(
+    known: []const Kind,
+    fields: []const Def,
+    value: Value,
+    buffer: *[flat_max]Flat,
+) Error![]const Flat {
     std.debug.assert(fields.len <= field.fields_max);
     std.debug.assert(buffer.len == flat_max);
 
@@ -46,7 +53,7 @@ pub fn flatten(fields: []const Def, value: Value, buffer: *[flat_max]Flat) Error
         return error.Invalid;
     }
 
-    var flattener: Flattener = .{ .out = buffer };
+    var flattener: Flattener = .{ .known = known, .out = buffer };
 
     try flattener.walk(fields, value.object, "", 0);
 
@@ -54,6 +61,7 @@ pub fn flatten(fields: []const Def, value: Value, buffer: *[flat_max]Flat) Error
 }
 
 const Flattener = struct {
+    known: []const Kind,
     out: *[flat_max]Flat,
     len: u32 = 0,
     paths: [flat_max][path_len_max]u8 = undefined,
@@ -77,16 +85,14 @@ const Flattener = struct {
             var path_buffer: [path_len_max]u8 = undefined;
             const path = try join(&path_buffer, prefix, def.name);
 
-            switch (def.kind) {
-                .group => try flattener.walk_group(def, value, path, ordinal),
-                .repeater => try flattener.walk_repeater(def, value, path),
-                else => {
-                    if (def.many) {
-                        try flattener.walk_many(def, value, path);
-                    } else {
-                        try flattener.leaf(def, value, path, ordinal);
-                    }
-                },
+            if (field.is_group(def.kind)) {
+                try flattener.walk_group(def, value, path, ordinal);
+            } else if (field.is_repeater(def.kind)) {
+                try flattener.walk_repeater(def, value, path);
+            } else if (def.many) {
+                try flattener.walk_many(def, value, path);
+            } else {
+                try flattener.leaf(def, value, path, ordinal);
             }
         }
     }
@@ -98,7 +104,7 @@ const Flattener = struct {
         path: []const u8,
         ordinal: u32,
     ) Error!void {
-        std.debug.assert(def.kind == .group);
+        std.debug.assert(field.is_group(def.kind));
         std.debug.assert(path.len > 0);
 
         if (value != .object) {
@@ -109,7 +115,7 @@ const Flattener = struct {
     }
 
     fn walk_repeater(flattener: *Flattener, def: Def, value: Value, path: []const u8) Error!void {
-        std.debug.assert(def.kind == .repeater);
+        std.debug.assert(field.is_repeater(def.kind));
         std.debug.assert(path.len > 0);
 
         if (value != .array or value.array.items.len > items_max) {
@@ -152,11 +158,12 @@ const Flattener = struct {
             return error.Invalid;
         }
 
-        const column = field.column_of(def.kind);
-        const stored: Stored = switch (column) {
+        const kind = kinds.find(flattener.known, def.kind) orelse return error.Invalid;
+        const stored: Stored = switch (kind.storage) {
             .text, .ref, .long => .{ .text = try expect_string(value) },
-            .int => .{ .integer = try expect_int(def.kind, value) },
+            .int, .bool => .{ .integer = try expect_int(kind.storage, value) },
             .real => .{ .real = try expect_real(value) },
+            .none => unreachable,
         };
         const kept = flattener.paths[flattener.len][0..path.len];
 
@@ -164,7 +171,7 @@ const Flattener = struct {
         flattener.out[flattener.len] = .{
             .field = kept,
             .ordinal = ordinal,
-            .column = column,
+            .column = kinds.column_of(kind.storage),
             .value = stored,
             .searchable = def.searchable and value == .string,
         };
@@ -182,13 +189,13 @@ fn expect_string(value: Value) Error![]const u8 {
     };
 }
 
-fn expect_int(kind: field.Kind, value: Value) Error!i64 {
-    std.debug.assert(field.column_of(kind) == .int);
+fn expect_int(storage: kinds.Storage, value: Value) Error!i64 {
+    std.debug.assert(storage == .int or storage == .bool);
     std.debug.assert(value != .null);
 
     return switch (value) {
         .integer => |number| number,
-        .bool => |flag| if (kind == .boolean) @as(i64, if (flag) 1 else 0) else error.Invalid,
+        .bool => |flag| if (storage == .bool) @as(i64, if (flag) 1 else 0) else error.Invalid,
         else => error.Invalid,
     };
 }
@@ -221,14 +228,20 @@ pub fn join(buffer: *[path_len_max]u8, prefix: []const u8, name: []const u8) Err
     return std.fmt.bufPrint(buffer, "{s}.{s}", .{ prefix, name }) catch error.Invalid;
 }
 
-pub fn assemble(arena: std.mem.Allocator, fields: []const Def, rows: []const Row) Error!Value {
+pub fn assemble(
+    known: []const Kind,
+    arena: std.mem.Allocator,
+    fields: []const Def,
+    rows: []const Row,
+) Error!Value {
     std.debug.assert(fields.len <= field.fields_max);
     std.debug.assert(rows.len <= rows_max);
 
-    return assemble_fields(arena, fields, rows, "", 0);
+    return assemble_fields(known, arena, fields, rows, "", 0);
 }
 
 fn assemble_fields(
+    known: []const Kind,
     arena: std.mem.Allocator,
     fields: []const Def,
     rows: []const Row,
@@ -243,16 +256,14 @@ fn assemble_fields(
     for (fields) |def| {
         var path_buffer: [path_len_max]u8 = undefined;
         const path = try join(&path_buffer, prefix, def.name);
-        const value: ?Value = switch (def.kind) {
-            .group => try assemble_group(arena, def, rows, path, ordinal),
-            .repeater => try assemble_repeater(arena, def, rows, path),
-            else => if (def.many) try assemble_many(arena, def, rows, path) else assemble_leaf(
-                def,
-                rows,
-                path,
-                ordinal,
-            ),
-        };
+        const value: ?Value = if (field.is_group(def.kind))
+            try assemble_group(known, arena, def, rows, path, ordinal)
+        else if (field.is_repeater(def.kind))
+            try assemble_repeater(known, arena, def, rows, path)
+        else if (def.many)
+            try assemble_many(known, arena, def, rows, path)
+        else
+            assemble_leaf(known, def, rows, path, ordinal);
 
         if (value) |present| {
             const key = arena.dupe(u8, def.name) catch return error.OutOfMemory;
@@ -264,29 +275,31 @@ fn assemble_fields(
 }
 
 fn assemble_group(
+    known: []const Kind,
     arena: std.mem.Allocator,
     def: Def,
     rows: []const Row,
     path: []const u8,
     ordinal: i64,
 ) Error!?Value {
-    std.debug.assert(def.kind == .group);
+    std.debug.assert(field.is_group(def.kind));
     std.debug.assert(path.len > 0);
 
     if (!has_prefix(rows, path)) {
         return null;
     }
 
-    return try assemble_fields(arena, def.fields, rows, path, ordinal);
+    return try assemble_fields(known, arena, def.fields, rows, path, ordinal);
 }
 
 fn assemble_repeater(
+    known: []const Kind,
     arena: std.mem.Allocator,
     def: Def,
     rows: []const Row,
     path: []const u8,
 ) Error!?Value {
-    std.debug.assert(def.kind == .repeater);
+    std.debug.assert(field.is_repeater(def.kind));
     std.debug.assert(path.len > 0);
 
     const count = item_count(rows, path);
@@ -299,7 +312,7 @@ fn assemble_repeater(
     var index: i64 = 0;
 
     while (index < count) : (index += 1) {
-        const item = try assemble_fields(arena, def.fields, rows, path, index);
+        const item = try assemble_fields(known, arena, def.fields, rows, path, index);
         array.append(item) catch return error.OutOfMemory;
     }
 
@@ -307,6 +320,7 @@ fn assemble_repeater(
 }
 
 fn assemble_many(
+    known: []const Kind,
     arena: std.mem.Allocator,
     def: Def,
     rows: []const Row,
@@ -315,11 +329,12 @@ fn assemble_many(
     std.debug.assert(def.many);
     std.debug.assert(path.len > 0);
 
+    const storage = kinds.lookup(known, def.kind).storage;
     var array = std.json.Array.init(arena);
 
     for (rows) |row| {
         if (std.mem.eql(u8, row.field, path)) {
-            array.append(leaf_value(def, row)) catch return error.OutOfMemory;
+            array.append(leaf_value(storage, row)) catch return error.OutOfMemory;
         }
     }
 
@@ -330,27 +345,35 @@ fn assemble_many(
     return .{ .array = array };
 }
 
-fn assemble_leaf(def: Def, rows: []const Row, path: []const u8, ordinal: i64) ?Value {
+fn assemble_leaf(
+    known: []const Kind,
+    def: Def,
+    rows: []const Row,
+    path: []const u8,
+    ordinal: i64,
+) ?Value {
     std.debug.assert(field.is_leaf(def.kind));
     std.debug.assert(path.len > 0);
 
+    const storage = kinds.lookup(known, def.kind).storage;
+
     for (rows) |row| {
         if (row.ordinal == ordinal and std.mem.eql(u8, row.field, path)) {
-            return leaf_value(def, row);
+            return leaf_value(storage, row);
         }
     }
 
     return null;
 }
 
-fn leaf_value(def: Def, row: Row) Value {
-    std.debug.assert(field.is_leaf(def.kind));
+fn leaf_value(storage: kinds.Storage, row: Row) Value {
+    std.debug.assert(storage != .none);
     std.debug.assert(row.field.len > 0);
 
     return switch (row.value) {
         .text => |text| .{ .string = text },
         .real => |number| .{ .float = number },
-        .integer => |number| if (def.kind == .boolean)
+        .integer => |number| if (storage == .bool)
             .{ .bool = number != 0 }
         else
             .{ .integer = number },
@@ -390,11 +413,14 @@ fn item_count(rows: []const Row, path: []const u8) i64 {
     return highest + 1;
 }
 
+/// The record's title: the value of the type's title field, which must be a non-empty
+/// string; empty when the type has no title field.
 pub fn title_of(def: TypeDef, document: std.json.Value) Error![]const u8 {
     std.debug.assert(document == .object);
-    std.debug.assert(def.title_field.len > 0);
+    std.debug.assert(def.fields.len <= field.fields_max);
 
-    const value = document.object.get(def.title_field) orelse return error.Invalid;
+    const title_field = content_type_rules.title_field_of(def) orelse return "";
+    const value = document.object.get(title_field.name) orelse return error.Invalid;
 
     return switch (value) {
         .string => |text| if (text.len == 0) error.Invalid else text,
@@ -404,7 +430,7 @@ pub fn title_of(def: TypeDef, document: std.json.Value) Error![]const u8 {
 
 pub fn slug_of(def: TypeDef, document: std.json.Value) ?[]const u8 {
     std.debug.assert(document == .object);
-    std.debug.assert(def.fields.len > 0);
+    std.debug.assert(def.fields.len <= field.fields_max);
 
     const slug_field = slug_field_of(def) orelse return null;
     const value = document.object.get(slug_field.name) orelse return null;
@@ -416,11 +442,11 @@ pub fn slug_of(def: TypeDef, document: std.json.Value) ?[]const u8 {
 }
 
 pub fn slug_field_of(def: TypeDef) ?*const field.Def {
-    std.debug.assert(def.fields.len > 0);
+    std.debug.assert(def.handle.len > 0);
     std.debug.assert(def.fields.len <= field.fields_max);
 
     for (def.fields) |*candidate| {
-        if (candidate.kind == .slug) {
+        if (field.is_slug(candidate.kind)) {
             return candidate;
         }
     }
@@ -435,7 +461,7 @@ pub fn slug_source(
     title: []const u8,
 ) []const u8 {
     std.debug.assert(document == .object);
-    std.debug.assert(title.len > 0);
+    std.debug.assert(def.fields.len <= field.fields_max);
 
     const found = slug_field orelse return title;
 
@@ -443,7 +469,7 @@ pub fn slug_source(
         return title;
     }
 
-    std.debug.assert(def.fields.len > 0);
+    std.debug.assert(field.is_slug(found.kind));
 
     const source = document.object.get(found.options.source) orelse return title;
 

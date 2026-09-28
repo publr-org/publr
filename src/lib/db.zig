@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const sqlite = @import("publr_sqlite");
+const deps = @import("deps.zig");
 
 pub const schema = @import("db/schema.zig");
 
@@ -50,6 +51,7 @@ pub const testing = struct {
             errdefer fixture.connection.close();
 
             try schema.apply(&fixture.connection);
+            _ = try deps.Index.open(&fixture.connection, .{ .quiet_ms = deps.quiet_ms });
         }
 
         pub fn deinit(fixture: *Fixture) void {

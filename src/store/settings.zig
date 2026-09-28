@@ -38,6 +38,14 @@ pub fn set(connection: *db.Db, key: []const u8, value: []const u8, now_ms: i64) 
     try upsert.exec();
 }
 
+pub fn delete(connection: *db.Db, key: []const u8) db.Error!void {
+    std.debug.assert(key.len > 0 and key.len <= key_len_max);
+    var statement = try connection.prepare("DELETE FROM settings WHERE key = ?1");
+    defer statement.finalize();
+    try statement.bind_text(1, key);
+    try statement.exec();
+}
+
 test "get returns null until set; set upserts" {
     var fixture: db.testing.Fixture = undefined;
     try fixture.init();

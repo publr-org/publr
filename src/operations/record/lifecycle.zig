@@ -1,90 +1,16 @@
+//! The record's status moves, declared; the bodies are the domain's `lifecycle`.
+
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../app/registry.zig");
-const model = @import("../../model.zig");
 const store = @import("../../store.zig");
-const types = @import("../content_type.zig");
-const access = @import("access.zig");
-const document_module = @import("document.zig");
+const record_operations = @import("../record.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
-const records = store.records;
-const values = store.values;
-const load = access.load;
-const check_status = access.check_status;
-
+const lifecycle = record_operations.domain.lifecycle;
 const example_id = "a1b2c3d4e5f60718293a4b5c";
-const record_operations = @import("../record.zig");
-
-/// Make the pending copy the live document (if there is one) and drop the mark.
-fn apply_pending(ctx: *Ctx, row: records.Record) Error!bool {
-    std.debug.assert(row.id.len > 0);
-    std.debug.assert(ctx.db.transaction_depth >= 1);
-
-    if (!row.changed) {
-        return false;
-    }
-
-    const type_row = try types.find(ctx, row.type_id) orelse return error.NotFound;
-    const slug_field = model.document.slug_field_of(type_row.def);
-
-    if (slug_field) |found| {
-        try refuse_taken_slug(ctx, row, found.name);
-    }
-
-    try document_module.snapshot_live(ctx, row, type_row.def);
-
-    const promoted = try values.promote(ctx.db, row.id, values.pending, values.live);
-
-    if (promoted) {
-        ctx.notice("record.saved", row.id);
-    }
-
-    return true;
-}
-
-/// A parked slug was checked against live values when it was typed; check again now.
-fn refuse_taken_slug(ctx: *Ctx, row: records.Record, slug_field: []const u8) Error!void {
-    std.debug.assert(row.id.len > 0);
-    std.debug.assert(slug_field.len > 0);
-
-    const slot = values.pending;
-    const slug = try values.read_text(ctx.db, ctx.arena, row.id, slot, slug_field);
-    const wanted = slug orelse return;
-    const type_id = row.type_id;
-    const holder = try values.find_by_text(ctx.db, ctx.arena, type_id, slug_field, wanted);
-
-    if (holder != null and !std.mem.eql(u8, holder.?, row.id)) {
-        return error.Conflict;
-    }
-}
-
-/// The outcome notice of a status move, if the move has a name of its own.
-fn notify_transition(ctx: *Ctx, id: []const u8, from: []const u8, to: []const u8) void {
-    std.debug.assert(id.len > 0);
-    std.debug.assert(!std.mem.eql(u8, from, to) or from.len > 0);
-
-    ctx.notice("record.transitioned", id);
-
-    const from_live = registry.Statuses.is_live(from);
-    const to_live = registry.Statuses.is_live(to);
-
-    if (to_live and !from_live) {
-        ctx.notice("record.published", id);
-    } else if (from_live and !to_live) {
-        ctx.notice("record.unpublished", id);
-    }
-
-    if (std.mem.eql(u8, to, "archived")) {
-        ctx.notice("record.archived", id);
-    } else if (std.mem.eql(u8, to, "deleted")) {
-        ctx.notice("record.deleted", id);
-    } else if (std.mem.eql(u8, from, "archived") or std.mem.eql(u8, from, "deleted")) {
-        ctx.notice("record.restored", id);
-    }
-}
 
 pub const Transition = struct {
     pub const name = "record.transition";
@@ -109,50 +35,19 @@ pub const Transition = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const row = try load(ctx, in.id, granted) orelse return error.NotFound;
+        if (in.id.len > 64 << 10) {
+            return error.Invalid;
+        }
 
-        return move(ctx, row, in.to, in.expected_version, granted);
+        return moved_out(try lifecycle.transition(ctx, granted, in.id, in.to, in.expected_version));
     }
 };
 
-fn move(
-    ctx: *Ctx,
-    row: records.Record,
-    to: []const u8,
-    expected: ?i64,
-    granted: *const Grant,
-) Error!Transition.Out {
-    std.debug.assert(row.id.len > 0);
-    std.debug.assert(to.len > 0);
+fn moved_out(moved: @import("../document/lifecycle.zig").Moved) Transition.Out {
+    std.debug.assert(moved.status.len > 0);
+    std.debug.assert(moved.version >= 1);
 
-    const type_row = try types.find(ctx, row.type_id) orelse return error.NotFound;
-
-    if (!registry.Statuses.allows(row.status, to)) {
-        return error.Invalid;
-    }
-
-    try check_status(type_row.def, to, granted);
-
-    if (!granted.allows_transition(row.status, to)) {
-        return error.Denied;
-    }
-
-    const applied = if (registry.Statuses.is_live(to)) try apply_pending(ctx, row) else false;
-    const changed = row.changed and !applied;
-    const actor = ctx.caller.user_id();
-    const version = try records.set_status(
-        ctx.db,
-        row.id,
-        to,
-        expected,
-        ctx.now_ms,
-        actor,
-        changed,
-    );
-
-    notify_transition(ctx, row.id, row.status, to);
-
-    return .{ .status = to, .changed = changed, .version = version };
+    return .{ .status = moved.status, .changed = moved.changed, .version = moved.version };
 }
 
 pub const Publish = struct {
@@ -177,30 +72,11 @@ pub const Publish = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const row = try load(ctx, in.id, granted) orelse return error.NotFound;
-
-        if (!registry.Statuses.is_live(row.status)) {
-            return move(ctx, row, "published", in.expected_version, granted);
-        }
-
-        if (!row.changed) {
+        if (in.id.len > 64 << 10) {
             return error.Invalid;
         }
 
-        if (!granted.allows_transition(row.status, row.status)) {
-            return error.Denied;
-        }
-
-        _ = try apply_pending(ctx, row);
-
-        const actor = ctx.caller.user_id();
-        const expected = in.expected_version;
-        const now = ctx.now_ms;
-        const version = try records.save(ctx.db, row.id, actor, expected, now, false);
-
-        ctx.notice("record.published", row.id);
-
-        return .{ .status = row.status, .changed = false, .version = version };
+        return moved_out(try lifecycle.publish(ctx, granted, in.id, in.expected_version));
     }
 };
 
@@ -216,22 +92,11 @@ pub const DiscardChanges = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const row = try load(ctx, in.id, granted) orelse return error.NotFound;
-
-        if (!row.changed) {
+        if (in.id.len > 64 << 10) {
             return error.Invalid;
         }
 
-        try values.clear(ctx.db, row.id, values.pending);
-
-        const actor = ctx.caller.user_id();
-        const expected = in.expected_version;
-        const now = ctx.now_ms;
-        const version = try records.save(ctx.db, row.id, actor, expected, now, false);
-
-        ctx.notice("record.changes_discarded", row.id);
-
-        return .{ .version = version };
+        return .{ .version = try lifecycle.discard(ctx, granted, in.id, in.expected_version) };
     }
 };
 
@@ -247,9 +112,11 @@ pub const Delete = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const row = try load(ctx, in.id, granted) orelse return error.NotFound;
+        if (in.id.len > 64 << 10) {
+            return error.Invalid;
+        }
 
-        return move(ctx, row, "deleted", in.expected_version, granted);
+        return moved_out(try lifecycle.delete(ctx, granted, in.id, in.expected_version));
     }
 };
 
@@ -265,15 +132,11 @@ pub const Purge = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const row = try load(ctx, in.id, granted) orelse return error.NotFound;
+        if (in.id.len > 64 << 10) {
+            return error.Invalid;
+        }
 
-        _ = try store.snapshots.delete_all(ctx.db, row.id);
-
-        const purged = try records.delete(ctx.db, row.id);
-
-        ctx.notice("record.purged", row.id);
-
-        return .{ .purged = purged };
+        return .{ .purged = try lifecycle.purge(ctx, granted, in.id) };
     }
 };
 
@@ -318,7 +181,7 @@ test "pending edits: save on a live record parks, publish applies, discard drops
     try std.testing.expectEqual(@as(usize, 0), live_only.records.len);
     const flagged = try SDK.dispatch(&editor, record_operations.List, .{
         .type = "post",
-        .changed = true,
+        .filters = &.{"changed:is:pending"},
     });
     try std.testing.expectEqual(@as(usize, 1), flagged.records.len);
 
@@ -376,4 +239,41 @@ test "pending edits: save on a live record parks, publish applies, discard drops
     try std.testing.expect((try SDK.dispatch(&admin, Purge, .{ .id = created.id })).purged);
     const gone_for_good = SDK.dispatch(&admin, record_operations.Get, .{ .id = created.id });
     try std.testing.expectError(error.NotFound, gone_for_good);
+}
+
+test "SDK rejects oversized ids and invalid statuses without leaving a transaction open" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    var ctx = harness.ctx(.system);
+    const long = "x" ** 129;
+
+    inline for (.{ Publish, DiscardChanges, Delete, Purge }) |Operation| {
+        try std.testing.expectError(
+            error.Invalid,
+            registry.SDK.dispatch(
+                &ctx,
+                Operation,
+                .{
+                    .id = long,
+                },
+            ),
+        );
+        try std.testing.expectEqual(@as(u32, 0), ctx.db.transaction_depth);
+    }
+
+    for ([_][]const u8{ "", "x" ** 33 }) |status| {
+        try std.testing.expectError(
+            error.Invalid,
+            registry.SDK.dispatch(
+                &ctx,
+                Transition,
+                .{
+                    .id = example_id,
+                    .to = status,
+                },
+            ),
+        );
+        try std.testing.expectEqual(@as(u32, 0), ctx.db.transaction_depth);
+    }
 }

@@ -26,7 +26,7 @@ change what their role allows. Back to the [CLI reference](../cli.md).
 | `record publish --id <id> [--expected_version <n>]` | Make the latest document live: draft → published, or apply pending edits; one `record.published` either way |
 | `record discard_changes --id <id>` | Drop pending edits, keep the document |
 | `record transition --id <id> --to <status> [--expected_version <n>]` | Move between statuses (see `status list`); into a live status applies pending edits, out of one keeps them |
-| `record list --type <t> [--status] [--changed true\|false] [--search] [--filter_field --filter_value] [--order] [--limit] [--offset]` | List; filter on any field by path (`views`, `seo.title`, `tags` by target id), full text over `searchable` ones; live values only |
+| `record list [--type <t>] [--types a,b] [--filters k:op:v,...] [--search] [--slug] [--filter_field --filter_value] [--order] [--limit] [--offset]` | List one type's records, several types', or, with no type, every readable regular content type's. Settings require an explicit type selection. `--filters` are clauses of the registered filters, `key:operator:value` each: `status:is:draft`, `status:not:archived`, `changed:is:pending` (or `none`), `created:by:me` (a user id or `me`; `updated:by` alike), `updated:within:7d` (`24h`, `7d`, `30d`, `90d`), `created:after:2026-01-01`, `created:before:2026-02-01`; a plugin's filters take the same shape. Filter on any field by path within one type (`views`, `seo.title`, `tags` by target id), full text over `searchable` ones, `--slug` the one record with that slug; live values only |
 | `record delete --id <id>` | Move to `deleted` (reversible: `record transition --to draft`) |
 | `record purge --id <id>` | Remove for good, snapshots included (admins) |
 | `record referrers --id <id>` | Who points at this record (or media item), and through which field |
@@ -43,4 +43,5 @@ $ publr --as ada@example.com record save --id a1b2… --document '{"title":"Hell
 $ publr --as ada@example.com record publish --id a1b2…
 { "status": "published", "changed": false, "version": 4 }    # now it says "Hello again"
 $ publr record list --type post            # anonymous: live records of public types
+$ publr --as ada@example.com record list --filters status:is:draft,created:by:me   # every type, Ada's drafts
 ```

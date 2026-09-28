@@ -3,8 +3,24 @@ const db = @import("../db.zig");
 
 pub const sql: [:0]const u8 = @embedFile("schema.sql");
 pub const tables = [_][]const u8{
-    "settings", "users",         "sessions",      "content_types",
-    "records",  "record_values", "record_search", "snapshots",
+    "settings",
+    "users",
+    "sessions",
+    "sign_on_tokens",
+    "content_types",
+    "records",
+    "record_values",
+    "record_search",
+    "taxonomies",
+    "terms",
+    "term_values",
+    "term_search",
+    "user_values",
+    "user_search",
+    "record_terms",
+    "snapshots",
+    "views",
+    "field_groups",
 };
 
 pub fn apply(connection: *db.Db) db.Error!void {
@@ -12,6 +28,23 @@ pub fn apply(connection: *db.Db) db.Error!void {
     std.debug.assert(connection.transaction_depth == 0);
 
     try connection.exec(sql);
+    try register_field_groups(connection);
+}
+
+fn register_field_groups(connection: *db.Db) db.Error!void {
+    std.debug.assert(connection.transaction_depth == 0);
+    var transaction = try connection.transaction();
+    defer transaction.rollback();
+    var marker = try connection.prepare(
+        "SELECT 1 FROM settings WHERE key = 'schema.field_groups'",
+    );
+    defer marker.finalize();
+
+    if (!try marker.step()) {
+        try connection.exec(@embedFile("field_groups.sql"));
+    }
+
+    try transaction.commit();
 }
 
 pub fn has_table(connection: *db.Db, table: []const u8) db.Error!bool {

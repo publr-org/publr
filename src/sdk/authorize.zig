@@ -13,6 +13,9 @@ pub const Request = struct {
     operation_name: []const u8,
     kind: operation.Kind,
     resource: operation.Resource,
+    /// The operation says anyone may call it (`pub const open = true`), like signing in:
+    /// a plugin's own open door, such as creating an account. Policies still narrow it.
+    open: bool = false,
 };
 
 pub const Policy = *const fn (ctx: *const Ctx, request: Request) Grant;
@@ -24,14 +27,23 @@ pub const open_operations = [_][]const u8{
     "user.sign_in",
     "user.sign_out",
 };
-pub const admin_namespaces = [_][]const u8{ "user", "settings" };
-pub const admin_write_namespaces = [_][]const u8{"content_type"};
-pub const admin_operations = [_][]const u8{"record.purge"};
-pub const public_read_namespaces = [_][]const u8{ "heartbeat", "record" };
+pub const admin_namespaces = [_][]const u8{ "user", "settings", "custom_fields", "sign_on" };
+pub const admin_write_namespaces = [_][]const u8{ "content_type", "taxonomy" };
+pub const admin_operations = [_][]const u8{ "record.purge", "term.purge" };
+pub const public_read_namespaces = [_][]const u8{ "heartbeat", "record", "term" };
+
+const delivery_grant: Grant = .{
+    .read_only = true,
+    .record_filter = .{ .flags = .{ .live_only = true } },
+};
 
 pub fn core_policy(ctx: *const Ctx, request: Request) Grant {
     std.debug.assert(request.operation_name.len > 0);
     std.debug.assert(std.mem.indexOfScalar(u8, request.operation_name, '.') != null);
+
+    if (request.open) {
+        return Grant.allow_all;
+    }
 
     return switch (ctx.caller) {
         .anonymous => anonymous_grant(request),
@@ -44,12 +56,16 @@ pub fn core_policy(ctx: *const Ctx, request: Request) Grant {
 
 fn role_grant(role: caller_module.Role, request: Request) Grant {
     std.debug.assert(request.operation_name.len > 0);
-    std.debug.assert(admin_namespaces.len == 2);
+    std.debug.assert(admin_namespaces.len == 4);
 
     switch (role) {
         .admin => return Grant.allow_all,
         .editor => {
             if (is_open_operation(request.operation_name)) {
+                return Grant.allow_all;
+            }
+
+            if (std.mem.eql(u8, request.operation_name, "user.options") and request.kind == .read) {
                 return Grant.allow_all;
             }
 
@@ -85,7 +101,7 @@ pub fn is_open_operation(operation_name: []const u8) bool {
 
 pub fn is_public_read_namespace(operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
-    std.debug.assert(public_read_namespaces.len == 2);
+    std.debug.assert(public_read_namespaces.len == 3);
 
     for (public_read_namespaces) |namespace| {
         if (std.mem.eql(u8, operation.namespace(operation_name), namespace)) {
@@ -98,7 +114,7 @@ pub fn is_public_read_namespace(operation_name: []const u8) bool {
 
 fn is_admin_operation(operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
-    std.debug.assert(admin_operations.len == 1);
+    std.debug.assert(admin_operations.len == 2);
 
     for (admin_operations) |name| {
         if (std.mem.eql(u8, operation_name, name)) {
@@ -111,7 +127,7 @@ fn is_admin_operation(operation_name: []const u8) bool {
 
 fn is_admin_write_namespace(operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
-    std.debug.assert(admin_write_namespaces.len == 1);
+    std.debug.assert(admin_write_namespaces.len == 2);
 
     for (admin_write_namespaces) |namespace| {
         if (std.mem.eql(u8, operation.namespace(operation_name), namespace)) {
@@ -124,7 +140,7 @@ fn is_admin_write_namespace(operation_name: []const u8) bool {
 
 fn is_admin_namespace(operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
-    std.debug.assert(admin_namespaces.len == 2);
+    std.debug.assert(admin_namespaces.len == 4);
 
     for (admin_namespaces) |namespace| {
         if (std.mem.eql(u8, operation.namespace(operation_name), namespace)) {
@@ -191,6 +207,10 @@ pub fn authorize(
         result = try Grant.intersect(result, policy(ctx, request), ctx.arena);
     }
 
+    if (ctx.delivery and result.allows()) {
+        result = try Grant.intersect(result, delivery_grant, ctx.arena);
+    }
+
     if (!result.allows()) {
         return error.Denied;
     }
@@ -231,6 +251,21 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
     try std.testing.expect(!(try authorize(&anon, setup, &.{})).read_only);
     try std.testing.expect(!(try authorize(&anon, login, &.{})).read_only);
 
+    const signup: Request = .{
+        .operation_name = "plugin.sign_up",
+        .kind = .write,
+        .resource = .{},
+        .open = true,
+    };
+    const closed: Request = .{
+        .operation_name = "plugin.sign_up",
+        .kind = .write,
+        .resource = .{},
+    };
+    try std.testing.expect(!(try authorize(&anon, signup, &.{})).read_only);
+    try std.testing.expectError(error.Denied, authorize(&anon, closed, &.{}));
+    try std.testing.expectError(error.Denied, authorize(&anon, signup, &.{&deny_all}));
+
     var editor = harness.ctx(.{ .user = .{ .id = "u_2", .role = .editor } });
     const sign_out: Request = .{
         .operation_name = "user.sign_out",
@@ -238,6 +273,34 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
         .resource = .{},
     };
     try std.testing.expect((try authorize(&editor, sign_out, &.{})).allows());
+}
+
+test "delivery narrows any caller to live, read-only records and keeps the caller's own limits" {
+    var harness: Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    const read: Request = .{ .operation_name = "record.list", .kind = .read, .resource = .{} };
+    const write: Request = .{ .operation_name = "record.save", .kind = .write, .resource = .{} };
+    const users_list: Request = .{ .operation_name = "user.list", .kind = .read, .resource = .{} };
+
+    var admin = harness.ctx(.{ .user = .{ .id = "u_1", .role = .admin } });
+    admin.delivery = true;
+    const granted = try authorize(&admin, read, &.{});
+    try std.testing.expect(granted.read_only);
+    try std.testing.expect(granted.record_filter.flags.live_only);
+    try std.testing.expect(!granted.record_filter.flags.public_types_only);
+    try std.testing.expectError(error.Denied, authorize(&admin, write, &.{}));
+
+    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .role = .editor } });
+    editor.delivery = true;
+    try std.testing.expectError(error.Denied, authorize(&editor, users_list, &.{}));
+    try std.testing.expect(!(try authorize(&editor, read, &.{&only_posts})).allows_type("page"));
+
+    var anon = harness.ctx(.anonymous);
+    anon.delivery = true;
+    const anonymous = try authorize(&anon, read, &.{});
+    try std.testing.expect(anonymous.record_filter.flags.public_types_only);
 }
 
 test "roles: editors are denied the users and settings namespaces, admins are not" {
