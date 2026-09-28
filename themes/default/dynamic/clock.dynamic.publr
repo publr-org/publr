@@ -1,0 +1,5 @@
+---
+// Dynamic: the clock is read per request.
+const served = Publr.request.now();
+---
+served at <strong class="font-medium text-ink">{served}</strong>

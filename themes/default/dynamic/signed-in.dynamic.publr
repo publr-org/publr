@@ -1,0 +1,10 @@
+---
+// Dynamic, because it reads Publr.request; nothing declares it. A static page
+// can only place it as <SignedIn dynamic />; a dynamic page may embed it.
+const session = Publr.request.session;
+---
+{session ? (
+  <span class="text-sm">Signed in as <strong class="font-medium text-ink">{session.email ?? ""}</strong> · <a href="/admin" class="underline hover:text-accent">Admin</a></span>
+) : (
+  <a href="/admin" class="text-sm underline hover:text-accent">Sign in</a>
+)}

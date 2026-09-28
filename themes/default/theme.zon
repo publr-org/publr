@@ -1,0 +1,19 @@
+// The site's design tokens, layered over the JIT's Tailwind-v4 defaults at build
+// time — the same `theme.zon` cms v1 compiles for `/theme/theme.css`. Every
+// `color-*` token is a utility family: `bg-canvas`, `text-ink`, `border-line`…
+.{
+    .tokens = .{
+        .{ .name = "font-sans", .value = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" },
+        .{ .name = "font-serif", .value = "'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif" },
+        .{ .name = "color-canvas", .value = "#f7f4ec" },
+        .{ .name = "color-ink", .value = "#1f2a26" },
+        .{ .name = "color-muted", .value = "#6b7571" },
+        .{ .name = "color-line", .value = "#d9d2c3" },
+        .{ .name = "color-card", .value = "#fffdf7" },
+        .{ .name = "color-accent", .value = "#2f5d54" },
+        .{ .name = "color-accent-ink", .value = "#fbf8ef" },
+        .{ .name = "color-amber", .value = "#e9c46a" },
+        .{ .name = "container-prose", .value = "44rem" },
+        .{ .name = "container-wide", .value = "64rem" },
+    },
+}

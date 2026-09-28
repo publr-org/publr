@@ -1,0 +1,25 @@
+---
+// A live page: it reads Publr.request itself, so it is never built and renders
+// per request — its dynamic islands are rendered into it rather than fetched.
+import Base from '../layouts/base.publr';
+import SignedIn from '../dynamic/signed-in.dynamic.publr';
+import LatestGreetings from '../components/latest-greetings.publr';
+const now = Publr.request.now();
+const agent = Publr.request.header('user-agent');
+const lucky = Publr.request.random(100);
+---
+<Base title="Your visit · Publr">
+  <section class="mx-auto max-w-prose px-6 pt-16 pb-16">
+    <p class="mb-3 text-xs font-semibold tracking-[0.18em] uppercase text-accent">A live page</p>
+    <h1 class="font-serif text-4xl font-semibold tracking-tight">This one is rendered for you.</h1>
+    <p class="mt-5 leading-relaxed text-muted"><code>content/visit.dynamic.publr</code> reads <code>Publr.request</code> in its own frontmatter — and says so in its name, which the build insists on: <code>build</code> skips it and <code>serve</code> never looks for a file.</p>
+    <dl class="mt-8 grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
+      <dt class="text-muted">Rendered at</dt><dd><strong class="font-medium">{now}</strong></dd>
+      <dt class="text-muted">Your browser</dt><dd>{agent ?? "unknown"}</dd>
+      <dt class="text-muted">Lucky number</dt><dd>{lucky}</dd>
+      <dt class="text-muted">You are</dt><dd><SignedIn dynamic /></dd>
+    </dl>
+    <p class="mt-10 mb-3 text-sm text-muted">The list below is a <em>prerendered static island</em> on this live page: the greeting and clock above were flattened into this render, but a fragment the build wrote is still the cheaper thing — it is fetched from the island route, cached by you for a minute, and shared with every greeting page. <code>prerender</code> renders it here too, so what you are reading is already the list; the fetch replaces it with the same markup, and on a built page it does that without ever subscribing the page to the greetings.</p>
+    <LatestGreetings heading="More greetings" island prerender eager />
+  </section>
+</Base>

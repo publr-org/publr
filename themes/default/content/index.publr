@@ -1,0 +1,53 @@
+---
+import Base from '../layouts/base.publr';
+import Disclosure from '../components/disclosure.publr';
+const greetings = Publr.build.getCollection({ type: 'greeting', limit: 9 });
+---
+<Base>
+  <section class="mx-auto max-w-wide px-6 pt-20 pb-12">
+    <p class="mb-5 text-xs font-semibold tracking-[0.18em] uppercase text-accent">Static first, islands where it matters</p>
+    <h1 class="max-w-3xl font-serif text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">Everyone who said hello.</h1>
+    <p class="mt-7 max-w-xl text-lg leading-relaxed text-muted">This page was built to a file from the greetings the <code>hello</code> plugin records. Record one more and this page is rebuilt. The greeting in the header is a <em>dynamic island</em> fetched only for someone signed in; everyone else gets the build's own copy, and no request.</p>
+    <div class="mt-10 flex flex-wrap items-center gap-4">
+      <a href="/greetings" class="rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-ink no-underline hover:opacity-90">All greetings →</a>
+      <a href="/visit" class="px-2 py-3 text-sm font-semibold text-ink underline underline-offset-4 hover:text-accent">See a live page</a>
+      <a href="/dynamic-islands" class="px-2 py-3 text-sm font-semibold text-ink underline underline-offset-4 hover:text-accent">Rendered on every view</a>
+      <a href="/nested" class="px-2 py-3 text-sm font-semibold text-ink underline underline-offset-4 hover:text-accent">Islands all the way down</a>
+      <a href="/interactive" class="px-2 py-3 text-sm font-semibold text-ink underline underline-offset-4 hover:text-accent">Interactive, inside islands</a>
+    </div>
+  </section>
+  <section class="mx-auto max-w-wide px-6 pb-16">
+    <h2 class="mb-4 text-xs font-semibold tracking-[0.18em] uppercase text-accent">Greetings</h2>
+    {greetings.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-line bg-card px-6 py-10 text-center text-muted">Nobody has said hello yet. <code>publr --as you@example.com hello record --note "Hello"</code> adds the first one.</p>
+    ) : null}
+    <ul class="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+      {greetings.map((greeting) => (
+        <li class="rounded-lg border border-line bg-card px-5 py-4">
+          <a href={`/greetings/${greeting.slug ?? ""}`} class="font-serif text-xl font-semibold hover:text-accent">{greeting.title}</a>
+          <p class="mt-1 text-xs text-muted">{greeting.created_at}</p>
+        </li>
+      ))}
+    </ul>
+  </section>
+  <section class="mx-auto max-w-wide px-6 pb-16">
+    <p class="mb-4 text-xs font-semibold tracking-[0.18em] uppercase text-accent">Embedded in this page</p>
+    <Disclosure label="How can a built file be interactive?" body="It is a static component: it reads neither the request nor anything else, so the build wrote this markup, closed, into index.html. It carries PublrJS wire attributes and, beside them, the module that reads them; that module registers one store per root and the toggle becomes live. Interactivity is a client concern and says nothing about when a component renders. The same component inside a static and a dynamic island: see /interactive." />
+  </section>
+  <section class="border-t border-line bg-card">
+    <div class="mx-auto grid max-w-wide gap-10 px-6 py-16 md:grid-cols-3">
+      <div class="border-t-2 border-amber pt-5">
+        <h2 class="font-serif text-xl font-semibold">One rule, everywhere</h2>
+        <p class="mt-2 text-sm leading-relaxed text-muted">Anything that reads <code>Publr.request</code> is dynamic and its name says so, <code>.dynamic.publr</code>, whether it is a page, a layout or a component. Everything else is static. The build refuses the mismatch.</p>
+      </div>
+      <div class="border-t-2 border-amber pt-5">
+        <h2 class="font-serif text-xl font-semibold">One word at the call site</h2>
+        <p class="mt-2 text-sm leading-relaxed text-muted"><code>&lt;X /&gt;</code> embeds here, now. <code>&lt;X island /&gt;</code> is a fragment loaded later. Embedding a dynamic component in a static page is a build error that names the fix.</p>
+      </div>
+      <div class="border-t-2 border-amber pt-5">
+        <h2 class="font-serif text-xl font-semibold">Patches, not scripts</h2>
+        <p class="mt-2 text-sm leading-relaxed text-muted">A fragment is <code>&lt;template patchfor&gt;</code>, the placeholder a <code>&lt;publr-island src&gt;</code>; children stay in the page and move into the fragment's <code>&lt;slot&gt;</code>.</p>
+      </div>
+    </div>
+  </section>
+</Base>

@@ -4,6 +4,8 @@ const auth = @import("../lib/auth.zig");
 const settings = @import("../store/settings.zig");
 const user = @import("user.zig");
 const store = @import("../store.zig");
+pub const changes = @import("site/changes.zig");
+pub const impact = @import("site/impact.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -62,7 +64,10 @@ pub const Init = struct {
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
-        std.debug.assert(in.email.len <= 64 << 10);
+
+        if (in.email.len > 64 << 10) {
+            return error.Invalid;
+        }
 
         if (try settings.get(ctx.db, ctx.arena, setup_key) != null) {
             return error.Conflict;
@@ -104,7 +109,8 @@ pub const Status = struct {
     }
 };
 
-pub const operations = [_]type{ Init, Status };
+pub const operations = [_]type{ Init, Status, impact.Impact };
+pub const middleware = [_]type{changes.RecordChanged};
 
 const TestSDK = sdk.SDK(.{ .operations = &operations });
 const UserSDK = sdk.SDK(.{ .operations = &user.operations });

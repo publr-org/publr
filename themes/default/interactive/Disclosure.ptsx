@@ -1,0 +1,51 @@
+import { Publr } from "publr-jsx";
+
+export type DisclosureProps = {
+  label?: string;
+  body?: string;
+  classes?: string;
+};
+
+export function Disclosure({
+  label = "What is this?",
+  body = "Nothing to say yet.",
+  classes = "",
+}: DisclosureProps) {
+  const state = Publr.reactive({
+    open: false,
+    busy: false,
+  });
+
+  const toggle = () => {
+    state.open = !state.open;
+  };
+
+  return (
+    <div
+      class={["rounded-lg border border-line bg-card", classes]}
+      inert={state.busy}
+      aria-busy={state.busy}
+    >
+      <button
+        type="button"
+        class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-sm font-semibold"
+        onClick={toggle}
+        aria-expanded={state.open}
+      >
+        <span>{label}</span>
+        <span class="text-lg leading-none text-accent" hidden={state.open}>
+          +
+        </span>
+        <span class="text-lg leading-none text-accent" hidden={!state.open}>
+          −
+        </span>
+      </button>
+      <div
+        class="hidden border-t border-line px-5 py-4 text-sm leading-relaxed text-muted"
+        hidden={!state.open}
+      >
+        {body}
+      </div>
+    </div>
+  );
+}

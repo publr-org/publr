@@ -1,7 +1,7 @@
 const std = @import("std");
 const core = @import("core.zig");
 
-pub fn add_step(builder: *std.Build) *std.Build.Step {
+pub fn add_step(builder: *std.Build, from: core.Sources) *std.Build.Step {
     const target = builder.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
 
     std.debug.assert(target.result.cpu.arch == .wasm32);
@@ -9,7 +9,7 @@ pub fn add_step(builder: *std.Build) *std.Build.Step {
 
     const debug = builder.option(bool, "browser-debug", "Build the wasm in Debug mode") orelse
         false;
-    const library = core.add_module(builder, target, if (debug) .Debug else .ReleaseSmall);
+    const library = core.add_module(builder, target, if (debug) .Debug else .ReleaseSmall, from);
     const module = core.add_entry(builder, "src/app/wasm.zig", library);
     const wasm = builder.addExecutable(.{ .name = "publr", .root_module = module });
 

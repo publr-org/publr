@@ -1,0 +1,12 @@
+---
+// Dynamic (reads the request). Inside it, a static island — and inside
+// that, another dynamic one. Every level is its own fragment.
+import Middle from '../components/middle.publr';
+const agent = Publr.request.header('user-agent');
+---
+<div class="rounded-lg border-2 border-dashed border-accent p-4">
+  <p class="text-sm">Outer — <em>dynamic</em>, rendered for <strong class="font-medium text-ink">{agent ?? "an unknown browser"}</strong></p>
+  <Middle island eager>
+    <p class="mt-3 text-xs text-muted">Loading the middle…</p>
+  </Middle>
+</div>

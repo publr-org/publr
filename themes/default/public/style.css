@@ -1,0 +1,32 @@
+p {
+    margin-bottom: 1rem;
+}
+
+[data-island="outer"] [data-island] {
+    padding: 10px;
+}
+
+/* Any interactive root the runtime has not wired yet — whatever is inside it.
+   The rule names the root and nothing else: a component that is a button, a
+   form, a tab strip or a whole panel all get the same treatment, and the
+   stylesheet does not have to know which.
+
+   Keeping hands off the control is already handled in the markup, by `inert`,
+   which is the platform's own answer and covers pointer and keyboard alike.
+   All that is left for CSS is saying so.
+
+   And it is delayed, which is the point. The markup is already correct — a
+   disclosure renders closed, its panel hidden — so there is nothing to hide
+   behind a spinner, and a wait too short to notice should not be announced
+   either: for the first 300ms nothing changes at all, so a fast connection
+   (17ms here) shows no flash. Past that the wait is real, and the root fades
+   back to say it is not ready yet. It snaps to full when the store lands,
+   which reads as "now". */
+[data-p-store][aria-busy="true"] {
+    animation: publr-pending 200ms ease-out 300ms both;
+}
+
+@keyframes publr-pending {
+    from { opacity: 1; }
+    to { opacity: 0.6; }
+}

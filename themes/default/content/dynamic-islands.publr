@@ -1,0 +1,18 @@
+---
+// Dynamic islands, each one a request to the server on every view: here only, so the
+// site's other pages cost nothing but the file.
+import Base from '../layouts/base.publr';
+import Welcome from '../dynamic/welcome.dynamic.publr';
+import Clock from '../dynamic/clock.dynamic.publr';
+---
+<Base title="Rendered on every view · Publr">
+  <section class="mx-auto max-w-prose px-6 pt-16 pb-16">
+    <p class="mb-3 text-xs font-semibold tracking-[0.18em] uppercase text-accent">Dynamic islands</p>
+    <h1 class="font-serif text-4xl font-semibold tracking-tight">Rendered on every view.</h1>
+    <p class="mt-5 leading-relaxed text-muted">This page is a built file. The two parts below are <em>dynamic islands</em>: each is a request to the server on every view, rendered for whoever asks. Place one where a part is truly per visitor or per request; a site's other pages stay files that any cache can serve.</p>
+    <div class="mt-8 space-y-4">
+      <Welcome dynamic prerender eager fallbackWho="whoever is reading" />
+      <p class="text-sm text-muted">Served at <Clock dynamic eager>…</Clock></p>
+    </div>
+  </section>
+</Base>

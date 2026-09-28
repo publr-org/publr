@@ -1,0 +1,9 @@
+---
+// Dynamic: reads the session, and the newest greeting through the dynamic API.
+// With `prerender`, the build renders this as a visitor nobody knows: the
+// greetings resolve (the store is there at build), the session is null, and a
+// prop from the call site stands in for what the build cannot know.
+const session = Publr.request.session;
+const latest = Publr.request.getCollection({ type: 'greeting', limit: 1 });
+---
+<p class="text-sm text-muted">Tailored for <strong class="font-medium text-ink">{session.email ?? props.fallbackWho ?? "a guest"}</strong> · the newest greeting: {latest.map((greeting) => (<a href={`/greetings/${greeting.slug ?? ""}`} class="underline hover:text-accent">{greeting.title}</a>))}</p>

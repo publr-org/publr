@@ -1,0 +1,11 @@
+---
+import Base from '../layouts/base.publr';
+---
+<Base title="Not found · Publr">
+  <section class="mx-auto max-w-prose px-6 pt-24 pb-16 text-center">
+    <p class="mb-4 text-xs font-semibold tracking-[0.18em] uppercase text-accent">404</p>
+    <h1 class="font-serif text-4xl font-semibold tracking-tight">Nothing lives at this address.</h1>
+    <p class="mt-5 text-muted">The page may have been deleted, or the link was never right.</p>
+    <p class="mt-8"><a href="/" class="rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-ink no-underline hover:opacity-90">Back home</a></p>
+  </section>
+</Base>

@@ -1,0 +1,5 @@
+---
+// Static, and as small as an island gets: a few words, built to a file,
+// fetched into a dynamic island's sentence.
+---
+<span>Inner — <em>dynamic</em>, for a visitor at</span>

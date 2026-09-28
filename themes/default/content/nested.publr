@@ -1,0 +1,16 @@
+---
+import Base from '../layouts/base.publr';
+import Outer from '../dynamic/outer.dynamic.publr';
+---
+<Base title="Nested islands · Publr">
+  <section class="mx-auto max-w-prose px-6 pt-16 pb-16">
+    <p class="mb-3 text-xs font-semibold tracking-[0.18em] uppercase text-accent">A stress test</p>
+    <h1 class="font-serif text-4xl font-semibold tracking-tight">Islands all the way down.</h1>
+    <p class="mt-5 leading-relaxed text-muted">This page is static. It holds a dynamic island, which holds a static island, which holds another dynamic island. Each one is its own fragment, with its own delivery: the page and the middle are files; the outer and the inner are renders.</p>
+    <div class="mt-8">
+      <Outer dynamic eager>
+        <p class="text-xs text-muted">Loading the outer…</p>
+      </Outer>
+    </div>
+  </section>
+</Base>

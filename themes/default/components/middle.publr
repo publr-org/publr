@@ -1,0 +1,12 @@
+---
+// Static (reads only the store): built to a file once, fetched by the outer
+// island on every view. Its own dynamic island is a placeholder in that file.
+import Inner from '../dynamic/inner.dynamic.publr';
+const greetings = Publr.build.getCollection({ type: 'greeting' });
+---
+<div class="mt-3 rounded-lg border-2 border-dashed border-amber p-4">
+  <p class="text-sm">Middle — <em>static</em>, built with <strong class="font-medium text-ink">{greetings.length}</strong> greetings recorded</p>
+  <Inner dynamic eager>
+    <p class="mt-3 text-xs text-muted">Loading the inner…</p>
+  </Inner>
+</div>

@@ -1,15 +1,15 @@
 const std = @import("std");
 
-pub const dir = "plugins";
+pub const dir_default = "plugins";
 pub const plugins_max: u32 = 64;
 pub const name_len_max: u32 = 32;
 
-pub fn add(builder: *std.Build, library: *std.Build.Module) void {
+pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8) void {
     std.debug.assert(builder.build_root.path != null);
     std.debug.assert(library.root_source_file != null);
 
     var names_storage: [plugins_max][]const u8 = undefined;
-    const names = discover(builder, &names_storage);
+    const names = discover(builder, dir, &names_storage);
     const listing = builder.addWriteFiles();
     var source: std.ArrayList(u8) = .empty;
 
@@ -43,14 +43,19 @@ pub fn add(builder: *std.Build, library: *std.Build.Module) void {
     library.addImport("plugins", plugins);
 }
 
-pub fn add_tests(builder: *std.Build, library: *std.Build.Module, test_step: *std.Build.Step) void {
+pub fn add_tests(
+    builder: *std.Build,
+    library: *std.Build.Module,
+    dir: []const u8,
+    test_step: *std.Build.Step,
+) void {
     std.debug.assert(library.root_source_file != null);
     std.debug.assert(plugins_max > 0);
 
     const listing = library.import_table.get("plugins") orelse @panic("plugins not added");
     var names_storage: [plugins_max][]const u8 = undefined;
 
-    for (discover(builder, &names_storage)) |name| {
+    for (discover(builder, dir, &names_storage)) |name| {
         const module = listing.import_table.get(name) orelse @panic("plugin module missing");
         const tests = builder.addTest(.{ .root_module = module });
 
@@ -58,19 +63,33 @@ pub fn add_tests(builder: *std.Build, library: *std.Build.Module, test_step: *st
     }
 }
 
-fn discover(builder: *std.Build, storage: *[plugins_max][]const u8) []const []const u8 {
+fn discover(
+    builder: *std.Build,
+    dir: []const u8,
+    storage: *[plugins_max][]const u8,
+) []const []const u8 {
     std.debug.assert(storage.len == plugins_max);
     std.debug.assert(dir.len > 0);
 
     const io = builder.graph.io;
-    var root = builder.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch return &.{};
+    var root = builder.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch {
+        if (!std.mem.eql(u8, dir, dir_default)) {
+            @import("diagnostic.zig").fail("-Dplugins: no folder at {s}", .{dir});
+        }
+
+        return &.{};
+    };
     defer root.close(io);
 
     var iterator = root.iterate();
     var count: u32 = 0;
 
     while (iterator.next(io) catch null) |entry| {
-        if (entry.kind != .directory or !valid_name(entry.name)) {
+        // A link counts: a plugins folder may gather plugins kept elsewhere. The main.zig
+        // check below follows it, and skips a link to anything but a plugin's folder.
+        const folder = entry.kind == .directory or entry.kind == .sym_link;
+
+        if (!folder or !valid_name(entry.name)) {
             continue;
         }
 

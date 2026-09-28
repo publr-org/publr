@@ -11,17 +11,30 @@ let ready = null;
 let cookies = new Map();
 
 self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (event) => event.waitUntil(Promise.all([self.clients.claim(), (ready ??= boot())])));
+self.addEventListener("activate", (event) => event.waitUntil(Promise.all([self.clients.claim(), ensure_ready()])));
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   if (passthrough.includes(url.pathname)) return;
-  event.respondWith(forward(event.request, url));
+  event.respondWith(forward(event.request, url).catch((error) => {
+    console.error("publr:", error);
+    return new Response(error.message || "Publr could not handle this request", {
+      status: error.status || 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+    });
+  }));
 });
 
+function ensure_ready() {
+  return ready ??= boot().catch((error) => {
+    ready = null;
+    throw error;
+  });
+}
+
 async function forward(request, url) {
-  await (ready ??= boot());
+  await ensure_ready();
 
   const headers = [...request.headers].map(([name, value]) => ({ name, value }));
   if (cookies.size > 0) headers.push({ name: "cookie", value: [...cookies].map(([name, value]) => `${name}=${value}`).join("; ") });
@@ -56,20 +69,40 @@ async function boot() {
   instance.exports._initialize?.();
 
   const code = instance.exports.publr_init();
-  if (code !== 0) throw new Error("publr_init failed: " + code);
+  if (code !== 0) {
+    ready = null;
+    throw new Error("publr_init failed: " + code);
+  }
 
-  await restore();
+  try {
+    await restore();
+  } catch (error) {
+    instance.exports.publr_deinit();
+    ready = null;
+    throw error;
+  }
   console.log("publr: wasm ready");
 }
 
 function call(name, text) {
   const encoded = new TextEncoder().encode(text);
   const ptr = instance.exports.publr_alloc(encoded.length);
-  new Uint8Array(instance.exports.memory.buffer, ptr, encoded.length).set(encoded);
-
-  const code = instance.exports[name](ptr, encoded.length);
-  instance.exports.publr_free(ptr, encoded.length);
-  if (code !== 0) throw new Error(name + " failed: " + code);
+  if (!ptr) {
+    const error = new Error("Request is too large or Publr has no memory available");
+    error.status = encoded.length > 8 * 1024 * 1024 ? 413 : 503;
+    throw error;
+  }
+  try {
+    new Uint8Array(instance.exports.memory.buffer, ptr, encoded.length).set(encoded);
+    const code = instance.exports[name](ptr, encoded.length);
+    if (code !== 0) {
+      const error = new Error(name + " failed: " + code);
+      error.status = code >= 2 && code <= 4 ? 400 : 503;
+      throw error;
+    }
+  } finally {
+    instance.exports.publr_free(ptr, encoded.length);
+  }
 
   return new TextDecoder().decode(response_bytes());
 }
@@ -117,9 +150,14 @@ async function restore() {
   const bytes = await read_file(db_file);
   if (!bytes || bytes.length === 0) return;
   const ptr = instance.exports.publr_alloc(bytes.length);
-  new Uint8Array(instance.exports.memory.buffer, ptr, bytes.length).set(bytes);
-  instance.exports.publr_import(ptr, bytes.length);
-  instance.exports.publr_free(ptr, bytes.length);
+  if (!ptr) throw new Error("Saved database is too large or Publr has no memory available");
+  try {
+    new Uint8Array(instance.exports.memory.buffer, ptr, bytes.length).set(bytes);
+    const code = instance.exports.publr_import(ptr, bytes.length);
+    if (code !== 0) throw new Error("Saved database could not be restored: " + code);
+  } finally {
+    instance.exports.publr_free(ptr, bytes.length);
+  }
 }
 
 const wasi_stubs = {

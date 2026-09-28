@@ -1,0 +1,9 @@
+---
+// Dynamic: the clock, per request — and, nested inside, a static island for
+// the words around it.
+import Label from '../components/label.publr';
+const now = Publr.request.now();
+---
+<div class="mt-3 rounded-lg border-2 border-dashed border-line p-4">
+  <p class="text-sm"><Label island eager><span class="text-muted">…</span></Label> <strong class="font-medium text-ink">{now}</strong></p>
+</div>

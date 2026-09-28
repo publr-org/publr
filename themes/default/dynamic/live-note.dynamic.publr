@@ -1,0 +1,13 @@
+---
+// Dynamic — it reads `Publr.request`, so it can only ever be an island on a
+// static page. What it is here for is what it *contains*: an ordinary
+// Disclosure, embedded. The interactive component knows nothing about islands;
+// it is rendered into this fragment per request, script tag and all.
+import Disclosure from '../components/disclosure.publr';
+const served = Publr.request.now();
+const agent = Publr.request.header('user-agent');
+---
+<div class="rounded-lg border-2 border-dashed border-accent p-4">
+  <p class="mb-3 text-sm text-muted">Rendered for you at <strong class="font-medium text-ink">{served}</strong> — no file holds this.</p>
+  <Disclosure label="Inside a dynamic island" body={`This markup was rendered per request and patched in by the loader; the toggle you just used was wired after it landed. Your browser, for proof it was rendered for you: ${agent ?? "unknown"}.`} />
+</div>
