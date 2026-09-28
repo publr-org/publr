@@ -1,0 +1,45 @@
+name: Publr workspace
+description: >
+  The sibling repositories Publr builds against, checked out beside the caller's own
+  (latest main of each), the PublrJS runtime built with Vite+, and Zig. The caller checks
+  out its own repository, and publr when it builds on it, into $GITHUB_WORKSPACE/<name>.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with: { repository: publr-org/lib, path: lib }
+    - uses: actions/checkout@v4
+      with: { repository: publr-org/pjsx, path: pjsx }
+    - uses: actions/checkout@v4
+      with: { repository: publr-org/jit, path: jit }
+    - uses: actions/checkout@v4
+      with: { repository: publr-org/ui, path: ui }
+    - uses: actions/checkout@v4
+      with: { repository: publr-org/icons, path: icons }
+    - uses: actions/checkout@v4
+      with: { repository: publr-org/publrjs, path: publr-js }
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: publr-js/package-lock.json
+    - name: Build the PublrJS runtime
+      shell: bash
+      working-directory: publr-js
+      run: npm ci && npx vp build
+
+    - uses: mlugg/setup-zig@v2
+      with: { version: 0.16.0 }
+
+    - name: Record what was built
+      shell: bash
+      run: |
+        echo "| repository | commit |" >> "$GITHUB_STEP_SUMMARY"
+        echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        for dir in */; do
+          if [ -d "$dir/.git" ]; then
+            echo "| ${dir%/} | \`$(git -C "$dir" rev-parse --short HEAD)\` |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        done

@@ -1,0 +1,18 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: publr }
+      - uses: ./publr/.github/actions/workspace
+
+      - name: zig build verify
+        working-directory: publr
+        run: zig build verify --summary all

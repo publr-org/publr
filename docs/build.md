@@ -78,9 +78,11 @@ registered operation it makes a directory of its own, seeds a database with
 what the examples name (`scripts/parity/world.zig`: an admin to pass to `--as`,
 an editor who can sign in, an invited account holding the documented token, the
 `post` and `page` types, a live record with a revision behind it, one with
-parked changes, and a draft), then asks the built binary for
+parked changes, a draft, and a trusted sign-on issuer), then asks the built binary for
 `<namespace> <verb> --help`, takes the example command line out of what it
-printed, and runs exactly that.
+printed, and runs exactly that. The one exception is `sign_on redeem`: a
+sign-on token is good for a minute, so no printed one can work, and parity
+signs a fresh one with the seeded issuer's key in its place.
 
 The answer is parsed into the operation's `Out` and compared with the
 `example_out` printed beside it: the same fields, the same optionals set or
@@ -91,6 +93,17 @@ documented list is a sample rather than a census.
 It fails when an example names something that does not exist, when the printed
 command cannot run as printed, and when an operation's real answer stops
 matching its documented one.
+
+## Continuous integration
+
+`.github/workflows/verify.yml` runs `zig build verify` on every push to `main`
+and every pull request. The browser smoke is agent-only, so it is skipped there.
+The sibling repositories come from `.github/actions/workspace`, which checks
+out the latest `main` of `lib`, `pjsx`, `jit`, `ui`, `icons` and `publrjs`
+beside this one, builds `publrjs` with Vite+ into `../publr-js/dist`, and
+installs Zig. Each run's summary lists the commit of every repository it built.
+Another repository building on Publr uses the same action after checking out
+itself and `publr`.
 
 ## `tidy` rules
 
