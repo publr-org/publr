@@ -10,6 +10,8 @@ const terms = publr.operations.term;
 const sites = publr.operations.site;
 const users = publr.operations.user;
 const saved_views = publr.operations.view;
+const sign_on = publr.operations.sign_on;
+const sign_on_token = publr.model.sign_on_token;
 const SDK = publr.registry.SDK;
 
 const Ctx = sdk.Ctx;
@@ -17,6 +19,10 @@ const Error = sdk.Error;
 
 pub const admin_email = "ada@example.com";
 pub const shared_password = "correct horse battery";
+
+/// The parity site's issuer. A sign-on token is good for a minute, so no printed one ever
+/// redeems: parity signs a fresh one with this seed when it runs the example.
+const issuer_seed = [_]u8{7} ** 32;
 
 const page_definition =
     \\{"handle":"page","name":"Page","public":true,
@@ -33,8 +39,9 @@ const tags_definition =
 
 /// Everything the printed examples name: Ada, the admin every `--as` points at; an editor
 /// who can sign in; an invited account holding the documented token; the `post` and `page`
-/// types; a live record that anyone may read and that has a revision behind it, a second
-/// live record with edits parked in `pending`, and a draft still waiting to be published.
+/// types; the issuer `sign_on` trusts; a live record that anyone may read and that has a
+/// revision behind it, a second live record with edits parked in `pending`, and a draft
+/// still waiting to be published.
 pub fn fill(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.caller == .system);
     std.debug.assert(ctx.db.transaction_depth == 0);
@@ -49,6 +56,8 @@ pub fn fill(ctx: *Ctx) Error!void {
     try fill_records(ctx);
     try fill_taxonomies(ctx);
     try fill_views(ctx);
+    try fill_sign_on(ctx);
+
     const custom = publr.operations.custom_fields;
     _ = try SDK.dispatch(ctx, custom.Update, .{
         .group = "user",
@@ -196,4 +205,47 @@ fn record_with_id(ctx: *Ctx, id: []const u8) Error!void {
     });
 
     try store.records.rename(ctx.db, created.id, id);
+}
+
+/// The issuer the `sign_on` examples name, holding the parity key instead of the printed one.
+fn fill_sign_on(ctx: *Ctx) Error!void {
+    std.debug.assert(ctx.caller == .user);
+    std.debug.assert(sign_on.Configure.example.audience.len > 0);
+
+    const public_hex = sign_on_token.public_key_hex(issuer_seed) catch return error.Invalid;
+
+    _ = try SDK.dispatch(ctx, sign_on.Configure, .{
+        .issuer = sign_on.Configure.example.issuer,
+        .public_key = &public_hex,
+        .audience = sign_on.Configure.example.audience,
+    });
+}
+
+/// The printed `sign_on redeem` command with its token replaced by one the parity issuer
+/// signed just now for Ada.
+pub fn fresh_sign_on(
+    arena: std.mem.Allocator,
+    printed: []const []const u8,
+    now_ms: i64,
+) ![]const []const u8 {
+    std.debug.assert(printed.len > 1);
+    std.debug.assert(now_ms > 0);
+
+    const arguments = try arena.dupe([]const u8, printed);
+    const token = try sign_on_token.sign(arena, issuer_seed, .{
+        .aud = sign_on.Configure.example.audience,
+        .sub = admin_email,
+        .exp = now_ms + @divTrunc(sign_on_token.lifetime_ms, 2),
+        .jti = "parity",
+    });
+
+    for (arguments[0 .. arguments.len - 1], 0..) |argument, index| {
+        if (std.mem.eql(u8, argument, "--token")) {
+            arguments[index + 1] = token;
+
+            return arguments;
+        }
+    }
+
+    return error.MissingToken;
 }

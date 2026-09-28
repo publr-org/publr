@@ -66,7 +66,11 @@ fn check(
 
     var storage: [command.args_max][]const u8 = undefined;
     const printed = try command.parse(help, &storage);
-    const answer = try capture(init, binary, dir, printed, Operation);
+    const arguments = if (comptime std.mem.eql(u8, Operation.name, "sign_on.redeem"))
+        try world.fresh_sign_on(arena, printed, publr.sdk.context.wall_clock_ms(init.io))
+    else
+        printed;
+    const answer = try capture(init, binary, dir, arguments, Operation);
 
     const parsed = std.json.parseFromSliceLeaky(Operation.Out, arena, answer, .{}) catch {
         return fail(Operation, "answer is not the documented output shape", answer);
