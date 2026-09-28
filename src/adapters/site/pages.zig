@@ -108,6 +108,11 @@ pub fn dispatch(request: *Request, response: *Response, ctx: *HttpContext) anyer
             return unavailable(response);
         }
 
+        // A Publr with no public site at all (the browser build) opens on its admin.
+        if (std.mem.eql(u8, request.path(), "/")) {
+            return response.redirect(.see_other, "/admin");
+        }
+
         return response.text(.not_found, "Not Found");
     };
 

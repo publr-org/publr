@@ -136,3 +136,31 @@ pub const testing = struct {
         }
     };
 };
+
+test "with no public site, / opens the admin and every other page is not found" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    var flow: testing.Flow = undefined;
+    flow.init(.{
+        .connection = &harness.fixture.connection,
+        .auth = &harness.auth,
+        .io = std.testing.io,
+    }, arena_state.allocator());
+
+    const root = try flow.call("GET / HTTP/1.1\r\nHost: h\r\n\r\n", "");
+    try std.testing.expectEqual(@as(u16, 303), root.status.code());
+    try std.testing.expectEqualStrings("/admin", root.header("Location").?);
+
+    const other = try flow.call("GET /about HTTP/1.1\r\nHost: h\r\n\r\n", "");
+    try std.testing.expectEqual(@as(u16, 404), other.status.code());
+
+    flow.site.public_failed = true;
+
+    const failed = try flow.call("GET / HTTP/1.1\r\nHost: h\r\n\r\n", "");
+    try std.testing.expectEqual(@as(u16, 503), failed.status.code());
+}

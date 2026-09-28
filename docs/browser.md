@@ -40,7 +40,8 @@ zig build run -- serve --browser   # http://127.0.0.1:8081/
 
 `serve --browser [<dir>]` serves that directory as static files (`/` is
 `index.html`); after the first load, everything under `/` is answered by the
-module in the tab. Native and browser servers run side by side on `8080` and
+module in the tab. The module builds no public site, so `/` opens the admin, which
+asks for the first administrator on a fresh database. Native and browser servers run side by side on `8080` and
 `8081`. `-Dbrowser-debug=true` builds the module in Debug mode with panic
 messages.
 
