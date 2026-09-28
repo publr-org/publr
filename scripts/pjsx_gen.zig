@@ -467,7 +467,10 @@ fn write_symbol(set: *Set, icons_dir: std.Io.Dir, name: []const u8, out: *std.Io
     const close = std.mem.lastIndexOf(u8, svg, "</svg>") orelse return error.MalformedSvg;
     const body = std.mem.trim(u8, svg[open_end + 1 .. close], " \t\r\n");
 
-    try out.print("      <symbol id=\"publr-icon-{s}\" viewBox=\"0 0 24 24\" fill=\"none\">", .{name});
+    try out.print(
+        "      <symbol id=\"publr-icon-{s}\" viewBox=\"0 0 24 24\" fill=\"none\">",
+        .{name},
+    );
     var lines = std.mem.tokenizeAny(u8, body, "\r\n");
 
     while (lines.next()) |line| {

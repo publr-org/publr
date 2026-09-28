@@ -283,7 +283,8 @@ test "per-user answers are never cacheable by a shared cache, signed in or not" 
     const paths = [_][]const u8{ "/api/auth/session", "/api/health", "/admin", "/admin/settings" };
 
     for (paths) |path| {
-        const anonymous = try flow.call(try flow.head("GET {s} HTTP/1.1\r\nHost: h\r\n\r\n", .{path}), "");
+        const request = try flow.head("GET {s} HTTP/1.1\r\nHost: h\r\n\r\n", .{path});
+        const anonymous = try flow.call(request, "");
         const signed_in = try flow.call(try flow.head(
             "GET {s} HTTP/1.1\r\nHost: h\r\nCookie: {s}\r\n\r\n",
             .{ path, cookie_pair },

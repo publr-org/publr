@@ -1611,7 +1611,12 @@ test "conditions: `!`, `&&` and `||` read truthiness and give true or false" {
     defer destroy(theme);
 
     const index = theme.find("content/who.dynamic.publr").?;
-    const full: TestContext = .{ .arena = arena, .live = true, .email = "a@b.c", .user_agent = "x" };
+    const full: TestContext = .{
+        .arena = arena,
+        .live = true,
+        .email = "a@b.c",
+        .user_agent = "x",
+    };
     const half: TestContext = .{ .arena = arena, .live = true, .user_agent = "x" };
 
     try testing.expect(contains(try render_test(arena, theme, index, &full), "[both|none]"));

@@ -78,6 +78,23 @@ pub fn island(request: *Request, response: *Response, ctx: *HttpContext) anyerro
         return dynamic_island(public, site, request, response, ctx, found);
     }
 
+    return static_island(public, site, request, response, ctx, found);
+}
+
+/// A public, static island: the built file when the last build wrote it, else rendered now.
+fn static_island(
+    public: *Public,
+    site: *const Site,
+    request: *Request,
+    response: *Response,
+    ctx: *HttpContext,
+    found: *const Island,
+) anyerror!void {
+    std.debug.assert(!found.dynamic);
+    std.debug.assert(public.build_ready);
+
+    const key = request.path()[islands_prefix.len..];
+
     try response.set_header("Access-Control-Allow-Origin", "*");
 
     if (build.built_island(public, ctx.arena, key)) |html| {

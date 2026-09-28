@@ -216,7 +216,10 @@ pub fn SDK(comptime registry: Registry) type {
 
             const out = try invoke_run(ctx, Operation, in, granted);
 
-            if (ctx.dependency_failure) return error.InvalidationFailed;
+            if (ctx.dependency_failure) {
+                return error.InvalidationFailed;
+            }
+
             try transaction.commit();
             std.debug.assert(ctx.db.transaction_depth == transaction.depth - 1);
 

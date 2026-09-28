@@ -55,20 +55,46 @@ pub const Ctx = struct {
         tags: []const []const u8,
     };
 
+    /// Called by name from the PJSX runtime, hence the name.
     pub fn publrPolicy(ctx: *Ctx, policy: anytype) !void {
-        if (ctx.publish_policy) |publish| return publish(ctx, .{ .revision = policy.revision, .no_store = policy.no_store, .revalidate = policy.revalidate, .expires = policy.expires, .tags = policy.tags });
-        if (policy.no_store or policy.revalidate or policy.expires != null or policy.tags.len > 0) return error.PolicyHeadersRequired;
+        std.debug.assert(policy.expires == null or policy.expires.? >= 0);
+
+        const restricted = policy.no_store or policy.revalidate or
+            policy.expires != null or policy.tags.len > 0;
+
+        if (ctx.publish_policy) |publish| {
+            return publish(ctx, .{
+                .revision = policy.revision,
+                .no_store = policy.no_store,
+                .revalidate = policy.revalidate,
+                .expires = policy.expires,
+                .tags = policy.tags,
+            });
+        }
+
+        if (restricted) {
+            return error.PolicyHeadersRequired;
+        }
     }
 
     pub fn collecting(ctx: *Ctx, collector: *@import("dependencies.zig").Collector) Ctx {
+        std.debug.assert(collector != ctx.dependencies);
+        std.debug.assert(collector.keys.items.len == 0);
+
         var owned = ctx.*;
+
         collector.parent = ctx.dependencies;
         owned.dependencies = collector;
+
         return owned;
     }
 
     pub fn depend(ctx: *Ctx, prefix: []const u8, id: []const u8) void {
-        if (ctx.dependencies) |collector| collector.depend(prefix, id);
+        std.debug.assert(prefix.len + id.len > 0);
+
+        if (ctx.dependencies) |collector| {
+            collector.depend(prefix, id);
+        }
     }
 
     /// Ends the operation with a failure its plugin declares: `return ctx.fail(unverified);`.

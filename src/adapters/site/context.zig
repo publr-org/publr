@@ -849,7 +849,6 @@ fn local_path(path: []const u8) bool {
     return true;
 }
 
-
 /// A user's custom field (`<group>.<field>`) as text, read as the system; null when the
 /// field is empty or not there. What templates' `userField` and middleware's `user_field`
 /// both read.
