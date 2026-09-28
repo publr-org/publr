@@ -3,46 +3,46 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const user_operations = @import("../user.zig");
+const role = @import("../../model/role.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
-const Role = sdk.caller.Role;
 const example_id = "9b1e7c3d5a2f4e6b8d0c1a3f";
 
 pub const Update = struct {
     pub const name = "user.update";
-    pub const description = "Rename a user or change their role";
+    pub const description = "Rename a user or change their roles";
     pub const details =
-        \\Admins only. The display name and the role are replaced together; the email
-        \\and the password stay. The last admin cannot be made an editor, and no admin
-        \\can change their own role. Every session of the account stays open. With
-        \\`document`, the custom field values are replaced too, validated against the
-        \\groups that apply to the account's new role (`user get` shows them).
+        \\Admins only. The display name and the roles are replaced together; the email
+        \\and the password stay. The last admin cannot lose the `admin` role, and no
+        \\admin can take it from themselves. Every session of the account stays open.
+        \\With `document`, the custom field values are replaced too, validated against
+        \\the groups that apply to the account's new roles (`user get` shows them).
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         user: []const u8,
         display_name: []const u8,
-        role: Role,
+        roles: []const []const u8,
         document: ?[]const u8 = null,
     };
-    pub const Out = struct { user_id: []const u8, role: Role };
+    pub const Out = struct { user_id: []const u8, roles: []const []const u8 };
     pub const example: In = .{
         .user = "editor@example.com",
         .display_name = "Editor",
-        .role = .admin,
+        .roles = &.{"admin"},
     };
-    pub const example_out: Out = .{ .user_id = example_id, .role = .admin };
+    pub const example_out: Out = .{ .user_id = example_id, .roles = &.{"admin"} };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The user's id or email",
         .display_name = "Name shown in the admin, 1 to 80 characters",
-        .role = "`admin` or `editor`",
+        .roles = "The roles the account holds from now on, comma-separated (`role list`)",
         .document = "The custom field values as JSON, one object per group; omitted, they stay",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .user_id = "The user's id",
-        .role = "The role the account has now",
+        .roles = "The roles the account holds now",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
@@ -53,35 +53,40 @@ pub const Update = struct {
         const display_name = store.users.validate_display_name(in.display_name) catch {
             return error.Invalid;
         };
-        const demoted = found.user.role == .admin and in.role == .editor;
+
+        if (!user_operations.valid_roles(in.roles)) {
+            return error.Invalid;
+        }
+
+        const demoted = holds(found.user.roles, role.admin) and !holds(in.roles, role.admin);
 
         if (demoted and is_self(ctx, found.user.id)) {
             return error.Invalid;
         }
 
-        if (demoted and try store.users.count_admins(ctx.db) <= 1) {
+        if (demoted and try store.users.count_holding(ctx.db, role.admin) <= 1) {
             return error.Conflict;
         }
 
-        const changed = try store.users.rename(
+        const changed = try store.users.update(
             ctx.db,
             found.user.id,
             display_name,
-            in.role,
+            in.roles,
             ctx.now_ms,
         );
 
         std.debug.assert(changed);
 
         if (in.document) |text| {
-            const defs = try user_operations.fields.definition(ctx, in.role);
+            const defs = try user_operations.fields.definition(ctx, in.roles);
 
             try user_operations.fields.write(ctx, found.user.id, defs, text);
         }
 
         ctx.notice("auth.user_updated", found.user.id);
 
-        return .{ .user_id = found.user.id, .role = in.role };
+        return .{ .user_id = found.user.id, .roles = in.roles };
     }
 };
 
@@ -116,7 +121,9 @@ pub const Delete = struct {
             return error.Invalid;
         }
 
-        if (found.user.role == .admin and try store.users.count_admins(ctx.db) <= 1) {
+        const admin = holds(found.user.roles, role.admin);
+
+        if (admin and try store.users.count_holding(ctx.db, role.admin) <= 1) {
             return error.Conflict;
         }
 
@@ -133,6 +140,19 @@ pub const Delete = struct {
         return .{ .user_id = found.user.id, .sessions_revoked = revoked };
     }
 };
+
+fn holds(roles: []const []const u8, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(roles.len <= role.user_roles_max);
+
+    for (roles) |held| {
+        if (std.mem.eql(u8, held, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 fn is_self(ctx: *const Ctx, user_id: []const u8) bool {
     std.debug.assert(user_id.len > 0);
@@ -153,30 +173,50 @@ test "update: renames and changes role; the last admin stays an admin" {
     var system = harness.ctx(.system);
     try user_operations.seed_admin(&system);
     const admin_id = (try user_operations.find_user(&system, "admin@example.com")).?.user.id;
-    var admin = harness.ctx(.{ .user = .{ .id = admin_id, .role = .admin } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .role = .editor } });
+    var admin = harness.ctx(.{ .user = .{ .id = admin_id, .roles = &.{"admin"} } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .roles = &.{"editor"} } });
     const Create = user_operations.Create;
 
     const created = try TestSDK.dispatch(&admin, Create, Create.example);
-    const promote: Update.In = .{ .user = created.user_id, .display_name = "Lead", .role = .admin };
+    const promote: Update.In = .{
+        .user = created.user_id,
+        .display_name = "Lead",
+        .roles = &.{"admin"},
+    };
     const promoted = try TestSDK.dispatch(&admin, Update, promote);
-    try std.testing.expectEqual(Role.admin, promoted.role);
+    try std.testing.expectEqualStrings("admin", promoted.roles[0]);
     try std.testing.expectError(error.Denied, TestSDK.dispatch(&editor, Update, promote));
 
     const listed = try TestSDK.dispatch(&admin, user_operations.List, .{});
     try std.testing.expectEqualStrings("Lead", listed.users[1].display_name);
 
-    const self_demote: Update.In = .{ .user = admin_id, .display_name = "Admin", .role = .editor };
+    const self_demote: Update.In = .{
+        .user = admin_id,
+        .display_name = "Admin",
+        .roles = &.{"editor"},
+    };
     try std.testing.expectError(error.Invalid, TestSDK.dispatch(&admin, Update, self_demote));
 
-    const demote: Update.In = .{ .user = created.user_id, .display_name = "Lead", .role = .editor };
+    const demote: Update.In = .{
+        .user = created.user_id,
+        .display_name = "Lead",
+        .roles = &.{"editor"},
+    };
     _ = try TestSDK.dispatch(&admin, Update, demote);
-    var lead = harness.ctx(.{ .user = .{ .id = created.user_id, .role = .admin } });
+    var lead = harness.ctx(.{ .user = .{ .id = created.user_id, .roles = &.{"admin"} } });
     try std.testing.expectError(error.Conflict, TestSDK.dispatch(&lead, Update, self_demote));
 
-    const blank: Update.In = .{ .user = created.user_id, .display_name = " ", .role = .editor };
+    const blank: Update.In = .{
+        .user = created.user_id,
+        .display_name = " ",
+        .roles = &.{"editor"},
+    };
     try std.testing.expectError(error.Invalid, TestSDK.dispatch(&admin, Update, blank));
-    const ghost: Update.In = .{ .user = "ghost@example.com", .display_name = "G", .role = .editor };
+    const ghost: Update.In = .{
+        .user = "ghost@example.com",
+        .display_name = "G",
+        .roles = &.{"editor"},
+    };
     try std.testing.expectError(error.NotFound, TestSDK.dispatch(&admin, Update, ghost));
 }
 
@@ -188,8 +228,8 @@ test "delete: signs the account out; never yourself, never the last admin" {
     var system = harness.ctx(.system);
     try user_operations.seed_admin(&system);
     const admin_id = (try user_operations.find_user(&system, "admin@example.com")).?.user.id;
-    var admin = harness.ctx(.{ .user = .{ .id = admin_id, .role = .admin } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .role = .editor } });
+    var admin = harness.ctx(.{ .user = .{ .id = admin_id, .roles = &.{"admin"} } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .roles = &.{"editor"} } });
     const Create = user_operations.Create;
     const connection = &harness.fixture.connection;
 
@@ -206,7 +246,7 @@ test "delete: signs the account out; never yourself, never the last admin" {
     const gone = TestSDK.dispatch(&admin, Delete, .{ .user = created.user_id });
     try std.testing.expectError(error.NotFound, gone);
 
-    var other = harness.ctx(.{ .user = .{ .id = "u_other", .role = .admin } });
+    var other = harness.ctx(.{ .user = .{ .id = "u_other", .roles = &.{"admin"} } });
     const last_admin = TestSDK.dispatch(&other, Delete, .{ .user = admin_id });
     try std.testing.expectError(error.Conflict, last_admin);
 }

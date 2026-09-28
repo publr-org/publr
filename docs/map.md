@@ -58,7 +58,7 @@ them; the API and the admin offer the same list.
 
 ```mermaid
 flowchart TB
-    root[operations] --> site[site<br/>init]
+    root[operations] --> project[project<br/>init, impact]
     root --> user[user<br/>create, list, sign_in, ...]
     root --> type[content_type<br/>create, update, list, ...]
     root --> record[record<br/>create, save, publish, list, ...]
@@ -78,15 +78,16 @@ command line) before anything else happens.
 flowchart LR
     subgraph callers [the caller is one of]
         N[nobody<br/>anonymous]
-        U[a signed-in user<br/>admin or editor]
+        U[a signed-in user<br/>holding roles]
         S[the system itself]
     end
 ```
 
 ### Step 2: may they
 
-A few rules decide what this caller may do with this operation. Plugins can
-add rules of their own.
+A few rules decide what this caller may do with this operation. A signed-in user
+may call what one of its roles grants; roles are data, core's and the plugins'.
+Plugins can add rules of their own.
 
 ```mermaid
 flowchart LR
@@ -242,29 +243,28 @@ The directory tells you what a file is, what it may import, and how it is tested
 | model | `model/` | pure rules: data in, data out. No database, no HTTP | `std`, other model files | unit tests, table-driven |
 | store | `store/` | one table per file; functions are statements | `lib/db/`, `model/` | against a fixture database |
 | operation | `operations/` | orchestration: grant, store, model, notices; never SQL | `sdk/`, `store/`, `model/` | scenarios through `dispatch` |
-| adapter | `adapters/{cli,rest,admin,site}/` | outside format in, operation call, outside format out; never the store | `sdk/`, operations | request in, response out |
-| engine | `theme/` | the `.publr` template language: read into a tree, typed, rendered against a context the site adapter supplies. No database, no HTTP | `std` | unit tests against a stand-in context |
+| adapter | `adapters/{cli,rest,admin,apps}/` | outside format in, operation call, outside format out; never the store | `sdk/`, operations | request in, response out |
+| engine | `template/` | the `.publr` template language: read into a tree, typed, rendered against a context the apps adapter supplies. No database, no HTTP | `std` | unit tests against a stand-in context |
 | pipeline | `sdk/` (+ `sdk/plugin/`) | dispatch, callers, grants, hooks, the plugin contract | `lib/`, `model/` | unit tests |
-| wiring | `app/` | starting up: open the database, the registry of everything, the route table, `serve`, wasm | everything | the http flow tests |
+| wiring | `server/` | starting up: open the database, the registry of everything, the route table, the project handle, `serve`, `build`, wasm | everything | the http flow tests |
 | library | `lib/{db,http,auth}/` | mechanisms that know nothing about content: SQLite, an HTTP server, password hashing | each other, `std` | unit tests |
 
 Two adapters are allowed to read the store, because they are where a request
 becomes a caller: `adapters/rest/identity.zig` (cookie to caller) and `adapters/cli.zig`
 (`--as` to caller).
 
-The fourth door faces the other way: `adapters/site/` is what readers get, the
-theme's templates rendered through `record` operations (anonymous when shared, as
-the signed-in visitor per request),
-built to files and rebuilt from the dependency index (`lib/deps/`) when a
-`record.*` notice raises a key (`operations/site/changes.zig`). See
-[The site](site.md).
+The fourth door faces the other way: `adapters/apps/` is what readers get, each app's
+templates rendered through `record` operations (anonymous when shared, as the
+signed-in visitor per request), built to files and rebuilt from the dependency index
+(`lib/deps/`) when a `record.*` notice raises a key (`operations/project/changes.zig`).
+A request goes to the app mounted where it asked. See [Apps](apps.md).
 
 ### Beside the layers
 
 `lib/auth/` is used by the doors to work out who is asking; `lib/http/`
 carries the API and admin doors; `sdk/plugin/` feeds rules, listeners and
-types into the pipeline. Starting up lives in `main.zig`, `app/serve.zig`, `app.zig`
-(`app/wasm.zig` is the same program as WebAssembly).
+types into the pipeline. Starting up lives in `main.zig`, `server/serve.zig`, `server.zig`
+(`server/wasm.zig` is the same program as WebAssembly).
 
 ```mermaid
 flowchart LR
@@ -324,42 +324,50 @@ Grouped by kind. Lines are the whole file, tests included.
 #### Entry points
 | File | Lines | What |
 |---|---|---|
-| `main.zig` | 95 | `publr [--db] <cmd>`: `serve`, `build` or the CLI |
-| `app/serve.zig` | 309 | `publr serve`: open the app and the site, run the HTTP server loop with the rebuild queue between ticks |
-| `app/build.zig` | 134 | `publr build`: the site as files |
-| `app.zig` | 89 | Open the database, apply schema and plugin bootstrap, open the dependency index, hold auth state |
-| `app/wasm.zig` | 255 | The same app as a wasm reactor: init, import a db, answer one request |
-| `publr.zig` | 53 | The library root: re-exports every module (what plugins import as `publr`) |
-| `app/registry.zig` | 43 | Core + plugin operations/namespaces/policies/hooks/types, the `SDK`, the status registry, bootstrap |
-| `app/routes.zig` | 113 | The route table (`/api/auth/*`, `/api/health`, admin, rest, the site as the fallback) and a `testing.Flow` that drives the full router |
-| `app/site.zig` | 26 | The per-process handle handlers get (`connection`, `auth`, static dir, the public site) |
+| `main.zig` | 158 | `publr [--db] <cmd>`: `serve`, `build`, `check-apps` or the CLI |
+| `server/serve.zig` | 509 | `publr serve`: open the database and the apps, run the HTTP server loop with the rebuild queue between ticks |
+| `server/build.zig` | 207 | `publr build`: every app as files |
+| `server.zig` | 111 | `Server`: open the database, apply schema and plugin bootstrap, open the dependency index, hold auth state |
+| `server/wasm.zig` | 325 | The same program as a wasm reactor: init, import a db, answer one request |
+| `publr.zig` | 62 | The library root: re-exports every module (what plugins import as `publr`) |
+| `server/registry.zig` | 74 | Core + plugin operations/namespaces/policies/hooks/types/roles, the `SDK`, the status and role registries, bootstrap |
+| `server/routes.zig` | 231 | The route table (`/api/auth/*`, `/api/health`, admin, rest, the apps as the fallback) and a `testing.Flow` that drives the full router |
+| `server/project.zig` | 123 | `Project`: the per-process handle handlers get (`connection`, `auth`, static dir, the loaded apps, the domain), which app a request is for, the session cookie's domain |
 
-#### theme/ (the template engine)
+#### template/ (the template engine)
 | File | Lines | What |
 |---|---|---|
-| `theme.zig` | 1194 | `Theme`: every template read, the route and island tables, the classes; `load` with its limits and diagnostics; the engine's tests against a stand-in context |
-| `theme/ast.zig` | 283 | What a template is once read: typed expressions, nodes, the template's facts |
-| `theme/routes.zig` | 198 | `content/` paths to route patterns, matching, substitution |
-| `theme/compile.zig` | 610 | The compiler's context and driver: names, paths, island keys, node lists |
-| `theme/frontmatter.zig` | 587 | Imports and the Publr API reads, with the static/dynamic inference |
-| `theme/markup.zig` | 614 | Tags, attributes, children, `/theme/` URLs, minifying |
-| `theme/blocks.zig` | 164 | `{...}` in child position: loops, conditionals, values |
-| `theme/components.zig` | 596 | Component call sites: embed, island, PJSX |
-| `theme/expression.zig` | 873 | The typed expression parser and the text helpers |
-| `theme/render.zig` | 634 | `Renderer(Ctx)`: the tree evaluated against a context |
+| `template.zig` | 1897 | `Program`: every template read, the route and island tables, the classes; `load` with its limits and diagnostics; the engine's tests against a stand-in context |
+| `template/ast.zig` | 338 | What a template is once read: typed expressions, nodes, the template's facts |
+| `template/routes.zig` | 198 | `content/` paths to route patterns, matching, substitution |
+| `template/compile.zig` | 623 | The compiler's context and driver: names, paths, island keys, node lists |
+| `template/frontmatter.zig` | 1094 | Imports and the Publr API reads, with the static/dynamic inference |
+| `template/markup.zig` | 615 | Tags, attributes, children, `/_app/` URLs, minifying |
+| `template/blocks.zig` | 165 | `{...}` in child position: loops, conditionals, values |
+| `template/components.zig` | 745 | Component call sites: embed, island, PJSX |
+| `template/expression.zig` | 946 | The typed expression parser and the text helpers |
+| `template/render.zig` | 779 | `Renderer(Ctx)`: the tree evaluated against a context |
+| `template/impact.zig` | 484 | Which pages and fragments of a program read a type |
 
-#### adapters/site/ (the fourth door: readers)
+#### adapters/apps/ (the fourth door: readers)
 | File | Lines | What |
 |---|---|---|
-| `adapters/site.zig` | 370 | Routes (`/_islands/*`, `/theme/*`, the fallback), the caching policy, `ETag`/304; the site's integration tests |
-| `adapters/site/state.zig` | 496 | The embedded theme loaded, the stylesheet from the JIT, the fingerprint, the assets, the interactive components' render table |
-| `adapters/site/context.zig` | 497 | The Publr API a template reads, over `record.list|get` (anonymous when shared, the visitor per request); `Deps` recording |
-| `adapters/site/pages.zig` | 175 | A page served from the build or rendered now; the theme's 404 |
-| `adapters/site/islands.zig` | 144 | One fragment, or a batch of dynamic ones |
-| `adapters/site/assets.zig` | 36 | `/theme/<path>` from memory |
-| `adapters/site/build.zig` | 636 | The static build, the surgical rebuild from the index, the sitemap |
-| `adapters/site/islands.js` | | The island loader: `<publr-island>` fetches its fragment and replaces itself |
-| `operations/site/changes.zig` | 89 | The `on` middleware: every `record.*` notice raises the record's keys in the index |
+| `adapters/apps.zig` | 1047 | The dispatcher (the app mounted where a request asked, then its assets, islands or pages), the caching policy, `ETag`/304; the apps' integration tests |
+| `adapters/apps/spec.zig` | 351 | Every compiled-in app as data, read off the generated `apps` module at compile time: name, mount, roles, templates, assets, tokens, interactive components, middleware |
+| `adapters/apps/state.zig` | 428 | `App`: one app loaded, its stylesheet from the JIT, its fingerprint and assets, its address and output folder; `check_apps` |
+| `adapters/apps/load.zig` | 47 | Every app loaded into the project, and released |
+| `adapters/apps/fingerprint.zig` | 263 | The generated assets' fingerprint and the build stamp |
+| `adapters/apps/context.zig` | 1027 | The Publr API a template reads, over `record.list|get` (anonymous when shared, the visitor per request, nobody to an app whose roles it lacks); `Deps` recording |
+| `adapters/apps/pages.zig` | 266 | A page served from the build or rendered now; the app's 404 |
+| `adapters/apps/islands.zig` | 268 | One fragment, or a batch of dynamic ones |
+| `adapters/apps/assets.zig` | 100 | `<mount>/_app/<path>`: generated code and the stylesheet from memory, public files from disk |
+| `adapters/apps/build.zig` | 444 | The static build of one app or all, the sitemap |
+| `adapters/apps/artifacts.zig` | 127 | Built files: their names in the index (`<app>:<url>`), their paths, reading and writing them |
+| `adapters/apps/rebuild.zig` | 314 | The project's rebuild: `refresh` at startup, `flush` between ticks, each batch's artifacts sent to their app |
+| `adapters/apps/rerender.zig` | 233 | One artifact rendered again, removed or forgotten; a changed record's own pages |
+| `adapters/apps/middleware.zig` | 278 | An app's `middleware.zig`: the request it sees (the path inside the app) and the answer it gives |
+| `adapters/apps/islands.js` | | The island loader: `<publr-island>` fetches its fragment and replaces itself |
+| `operations/project/changes.zig` | 91 | The `on` middleware: every `record.*` notice raises the record's keys in the index |
 | `lib/deps.zig` | 16 | The face on `publr_deps` |
 | `lib/time.zig` | 32 | Dates as text |
 
@@ -373,7 +381,9 @@ Grouped by kind. Lines are the whole file, tests included.
 | `model/status.zig` | 189 | The status registry (`draft/published/archived/deleted`, transitions), extensible by plugins |
 | `model/convert.zig` | 159 | Value conversion when a field changes kind |
 | `model/evolution.zig` | 200 | Diff two type definitions into a plan (removed, converted, needs rewrite) |
-| `model/account.zig` | 77 | Roles, email normalisation, display-name rule |
+| `model/account.zig` | 65 | Email normalisation, display-name rule |
+| `model/role.zig` | 373 | A role (name, label, grants), grant matching (`record.*`, `!record.purge`), the core roles, merging the plugins' |
+| `model/app.zig` | 433 | An app's `app.zon`: mounts, their validation, which app a host and path go to, an app's address |
 | `model/view.zig` | 204 | A saved view's filters: the JSON shape, its bounds, `me` and relative days |
 | `model/filter.zig` | 473 | The filter registry: keys, labels, operators, what each takes, how a clause constrains the list |
 
@@ -389,7 +399,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `store/record_terms.zig` | 380 | `record_terms`: a record's membership per slot and field, ancestors included; promote, rebuild after a move |
 | `store/snapshots.zig` | 182 | `snapshots` table: take/get/list/prune |
 | `store/views.zig` | 226 | `views` table: a user's saved views, insert/get/list/update/delete |
-| `store/users.zig` | 343 | `users` table: insert/find/list/tokens/password |
+| `store/users.zig` | 414 | `users` table: insert/find/list/tokens/password, the account's roles read with it |
+| `store/user_roles.zig` | 106 | `user_roles` table: the roles an account holds, set whole; how many hold one |
 | `store/sessions.zig` | 324 | `sessions` table: create/validate/slide/destroy, per-user cap |
 | `store/settings.zig` | 54 | `settings` key/value get/set |
 
@@ -397,7 +408,9 @@ Grouped by kind. Lines are the whole file, tests included.
 | File | Lines | What |
 |---|---|---|
 | `operations/heartbeat.zig` | 63 | `heartbeat check` |
-| `operations/site.zig` | 148 | `site init` (first admin), `site status` |
+| `operations/project.zig` | 159 | `project init` (first admin), `project status` |
+| `operations/project/impact.zig` | 213 | `project impact`: what the index holds for a record or its type |
+| `operations/role.zig` | 48 | `role list` |
 | `operations/user.zig` | 540 | `user create/list/password_link/set_password` |
 | `operations/sign_in.zig` | 188 | `user sign_in/sign_out`: throttle, session |
 | `operations/status.zig` | 51 | `status list` |
@@ -440,12 +453,12 @@ Grouped by kind. Lines are the whole file, tests included.
 #### Infrastructure
 | File | Lines | What |
 |---|---|---|
-| `sdk.zig` | 583 | `Registry`, `SDK(registry)`: `dispatch`, `admit`, `run` in a tx, one error boundary (`as_outcome`), hooks, events |
-| `sdk/operation.zig` | 249 | What an operation type must declare; `resource_of(in)`; `Docs(In)`; name helpers |
+| `sdk.zig` | 700 | `Registry`, `SDK(registry)`: `dispatch`, `admit`, `run` in a tx, one error boundary (`as_outcome`), hooks, events; `may` (whether a caller may call an operation) and `reaches_admin` (whether it may use the admin) |
+| `sdk/operation.zig` | 330 | What an operation type must declare; `resource_of(in)`; `Docs(In)`; name helpers (`namespace.verb`, `app.<feature>.verb`) |
 | `sdk/context.zig` | 104 | `Ctx`: caller, db, io, arena, auth, clock, notices |
-| `sdk/caller.zig` | 155 | `Caller` union (anonymous, user, system, token, machine, plugin) |
+| `sdk/caller.zig` | 174 | `Caller` union (anonymous, user with its roles, system, token, machine, plugin) |
 | `sdk/grant.zig` | 267 | `Grant`: allow/deny, type and status filters, transitions, row filter |
-| `sdk/authorize.zig` | 286 | The core policy (anonymous reads live+public, editors write content, admins everything); runs plugin policies |
+| `sdk/authorize.zig` | 318 | The core policy (anonymous reads live+public, a user what its roles grant); runs plugin policies |
 | `sdk/middleware.zig` | 89 | Hook stages (`pre`, `before`, `after`, `on`) and event shapes |
 | `sdk/plugin.zig` | 374 | What a plugin module may export; `Merged(plugins)`; compile-time validation |
 | `sdk/plugin/context.zig` | 56 | `PluginCtx`: the narrowed ctx a plugin operation receives |
@@ -478,7 +491,7 @@ Grouped by kind. Lines are the whole file, tests included.
 3. ~~Operation ceremony~~ done: an operation is `name`, `description` (+ `details`, `field_docs`, `output_docs`), `kind`, `In`, `Out`, `example`, `example_out`, `run`. `resource` is read from `In` by field name (`sdk/operation.zig:resource_of`); `seed` became one example world, which then left `src/` entirely (`scripts/parity.zig`); `volatile_fields` went because parity compares the shape of outputs, not values; `example_caller` is derived from what the policy lets an anonymous caller do.
 4. ~~Asserts that restate the compiler~~ done: `tidy` now rejects tautologies, `or true`, type and size restatements (28 removed), fails a non-trivial function only when it asserts nothing, and reports how many functions have a single assertion (two stays the aim: 22 today). Asserts that restate a non-empty argument stay where they say something.
 5. ~~Dead weight~~ done: `sdk/queue.zig` and `enqueue`/`drain` are gone (there is no deferred form of an operation; a plugin that wants "later" keeps the intent as a record).
-6. ~~Mixed files~~ done: `app/routes.zig` is the table (tests moved next to what they test: `lib/auth/http.zig`, `adapters/rest.zig`); `lib/auth/identity.zig` split out of `lib/auth/http.zig`; `record/common.zig` dissolved into `record/access.zig` (who may touch what), `record/document.zig` (the document), the notices into `record/lifecycle.zig`, the test fixture into `record/fixture.zig`.
+6. ~~Mixed files~~ done: `server/routes.zig` is the table (tests moved next to what they test: `lib/auth/http.zig`, `adapters/rest.zig`); `lib/auth/identity.zig` split out of `lib/auth/http.zig`; `record/common.zig` dissolved into `record/access.zig` (who may touch what), `record/document.zig` (the document), the notices into `record/lifecycle.zig`, the test fixture into `record/fixture.zig`.
 7. ~~Admin handler skeleton~~ done: `admin.accept(exchange, back)` is the one place a POST is admitted (signed in, parseable form, same origin + CSRF) and `admin.param` the one place a missing route parameter answers not found; handlers start with one line each.
 
 Each item is one reviewable diff. The map is updated with each.

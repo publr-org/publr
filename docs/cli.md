@@ -21,6 +21,7 @@ The database is `data/publr.db` by default and is created on first use.
 
 ```
 publr [--db <path>] serve [--port <n>] [--static [--full]] [--dev] [--out <dir>] [--url <base>]
+                          [--apps <dir>]
 ```
 
 Starts the HTTP server on `127.0.0.1` and runs until the process is stopped.
@@ -28,32 +29,34 @@ Without `--port` it starts at `8080` and, if that port is taken, walks up to
 the next free one (at most 20 tries) and prints the port it took. With
 `--port <n>` it uses exactly that port or fails with a one-line message;
 `--port 0` picks any free port. The routes it serves are in
-[REST API](rest.md); the public site it serves from the theme is in
-[The site](site.md).
+[REST API](rest.md); the apps it serves are in [Apps](apps.md).
 
 | Flag | Meaning |
 |---|---|
-| `--static` | Bring the built site under `--out` up to date at startup, then serve the files: nothing when nothing changed, the changed pages when some did, everything when there is no build or another theme made it (see [`build`](cli/build.md)). |
+| `--static` | Bring every app's build under `--out` up to date at startup, then serve the files: nothing when nothing changed, the changed pages when some did, the whole app when there is no build or another version of it made it (see [`build`](cli/build.md)). |
 | `--full` | With `--static`: build every page again. |
 | `--dev` | Render every page on request, cache nothing, tint every island. |
-| `--out <dir>` | The built site to serve when it exists (default `output`). |
-| `--url <base>` | The site's public address, for the sitemap. |
+| `--out <dir>` | The built apps to serve when they exist, one folder each (default `output`). |
+| `--url <base>` | The project's public address: the apps' sitemaps, and the domain subdomain apps hang from (default `http://127.0.0.1:8080`). |
+| `--apps <dir>` | Where each app's public files are read from, `<dir>/<app>/public` (default `apps`). |
 
 ## Building
 
 ```
-publr [--db <path>] build [--full] [--out <dir>] [--url <base>]
+publr [--db <path>] build [--full] [--out <dir>] [--url <base>] [--apps <dir>]
+publr check-apps
 ```
 
-Writes the site as files, only what changed since the last build unless
-`--full`; see [`build`](cli/build.md).
+Writes every app as files, one folder each, only what changed since the last build
+unless `--full`; see [`build`](cli/build.md). `check-apps` compiles every app the binary
+carries and exits 1 naming the one that does not load; `zig build` runs it.
 
 ## Global flags
 
 | Flag | Meaning |
 |---|---|
 | `--db <path>` | Use this database file. Must come first. |
-| `--as <user>` | Run as that user, by id or email; the user's role applies. |
+| `--as <user>` | Run as that user, by id or email; the user's roles apply. |
 | `--as-admin` | Run as the local operator (`system`), unrestricted. |
 | `-h`, `--help` | Print usage, options and every command. After a namespace (`publr user --help`, or just `publr user`), explain the namespace and list its commands. After a command, print its explanation, every field with its meaning, the output shape, and a runnable example with its output. |
 | `--version` | Print the version and exit. |
@@ -95,17 +98,19 @@ runnable example.
 
 | Namespace | What it covers |
 |---|---|
-| [`heartbeat`](adapters/cli/heartbeat.md) | Liveness and version checks |
-| [`site`](adapters/cli/site.md) | The installation itself: `publr init` |
-| [`user`](adapters/cli/user.md) | Accounts, roles, passwords and signing in |
-| [`content_type`](adapters/cli/content_type.md) | Content types: the shapes records are made of |
-| [`record`](adapters/cli/record.md) | The content itself: documents, statuses, lists |
-| [`taxonomy`](adapters/cli/taxonomy.md) | Taxonomies: the classifications records are filed under |
-| [`term`](adapters/cli/term.md) | The terms of the taxonomies, with a record's lifecycle and a parent |
-| [`status`](adapters/cli/status.md) | The lifecycle states a record can be in |
-| [`snapshot`](adapters/cli/snapshot.md) | Frozen copies of records: revisions and other archives |
-| [`view`](adapters/cli/view.md) | Saved views: the content list's filters, named and kept per user |
+| [`heartbeat`](cli/heartbeat.md) | Liveness and version checks |
+| [`project`](cli/project.md) | The installation itself: `publr init`, and what a change rebuilds |
+| [`user`](cli/user.md) | Accounts, roles, passwords and signing in |
+| [`role`](cli/role.md) | What each role lets its accounts call |
+| [`content_type`](cli/content_type.md) | Content types: the shapes records are made of |
+| [`record`](cli/record.md) | The content itself: documents, statuses, lists |
+| [`taxonomy`](cli/taxonomy.md) | Taxonomies: the classifications records are filed under |
+| [`term`](cli/term.md) | The terms of the taxonomies, with a record's lifecycle and a parent |
+| [`status`](cli/status.md) | The lifecycle states a record can be in |
+| [`snapshot`](cli/snapshot.md) | Frozen copies of records: revisions and other archives |
+| [`view`](cli/view.md) | Saved views: the content list's filters, named and kept per user |
 
 Plugins add namespaces of their own (for example `revisions`), listed by
-`publr --help` and documented by `publr <namespace> --help` like the core.
+`publr --help` and documented by `publr <namespace> --help` like the core. What an app
+calls is namespaced `app.<feature>`: `publr app.newsletter subscribe`.
 

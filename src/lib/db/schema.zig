@@ -5,6 +5,7 @@ pub const sql: [:0]const u8 = @embedFile("schema.sql");
 pub const tables = [_][]const u8{
     "settings",
     "users",
+    "user_roles",
     "sessions",
     "sign_on_tokens",
     "content_types",

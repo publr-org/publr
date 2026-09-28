@@ -34,7 +34,7 @@ test "user values live under the user, apart from record and term values" {
         .email = "ada@example.com",
         .display_name = "Ada",
         .password_hash = "$argon2id$x",
-        .role = .admin,
+        .roles = &.{"admin"},
         .now_ms = 1_000,
     });
     const fields = [_]@import("../model/field.zig").Def{.{

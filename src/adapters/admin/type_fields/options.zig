@@ -4,7 +4,7 @@
 //! the kind are read by `settings.zig`.
 const std = @import("std");
 const admin = @import("../../admin.zig");
-const registry = @import("../../../app/registry.zig");
+const registry = @import("../../../server/registry.zig");
 const model = @import("../../../model.zig");
 const type_pages = @import("../types.zig");
 const field_pages = @import("../type_fields.zig");

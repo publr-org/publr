@@ -4,6 +4,10 @@ import { TypeColumns } from "../components/TypeColumns.ptsx";
 export type TypeFieldsProps = {
   user_name: string;
   user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf: string;
   title: string;
   crumb_label: string;
@@ -23,7 +27,7 @@ export type TypeFieldsProps = {
  * there, to the records, and to a new field. */
 export function TypeFields({
   user_name,
-  user_email,
+  user_email, can_structure = true, can_settings = true,
   csrf,
   title,
   crumb_label,
@@ -42,6 +46,8 @@ export function TypeFields({
       crumb_href={crumb_href}
       user_name={user_name}
       user_email={user_email}
+      can_structure={can_structure}
+      can_settings={can_settings}
       csrf={csrf}
       fill
     >

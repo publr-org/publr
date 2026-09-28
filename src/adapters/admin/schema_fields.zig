@@ -1,7 +1,7 @@
 //! Dispatch the common field editor to its schema owner.
 const std = @import("std");
 const admin = @import("../admin.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const types = @import("../../operations/content_type.zig");
 const custom = @import("../../operations/custom_fields.zig");
 const model = @import("../../model.zig");

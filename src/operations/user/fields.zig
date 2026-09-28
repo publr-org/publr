@@ -5,7 +5,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const custom_fields = @import("../custom_fields.zig");
 const document_module = @import("../document/document.zig");
 const user_operations = @import("../user.zig");
@@ -13,16 +13,16 @@ const user_operations = @import("../user.zig");
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
-const Role = sdk.caller.Role;
 const Def = model.field.Def;
 const Value = std.json.Value;
 const Problem = model.field.Problem;
 
 pub const document_bytes_max: u32 = 64 << 10;
 
-/// The fields of an account with this role: one group per custom field group that
-/// applies, named by its handle, labelled by its name, in the order the groups list.
-pub fn definition(ctx: *Ctx, role: Role) Error![]const Def {
+/// The fields of an account holding these roles: one group per custom field group that
+/// applies to any of them, named by its handle, labelled by its name, in the order the
+/// groups list.
+pub fn definition(ctx: *Ctx, roles: []const []const u8) Error![]const Def {
     std.debug.assert(ctx.caller != .anonymous);
     std.debug.assert(model.field.fields_max > 0);
 
@@ -35,10 +35,7 @@ pub fn definition(ctx: *Ctx, role: Role) Error![]const Def {
         }
 
         const got = try registry.SDK.dispatch(ctx, custom_fields.Get, .{ .group = item.handle });
-        const applies = model.field_group.applies(got.definition.group, .{
-            .destination = .user,
-            .role = @tagName(role),
-        });
+        const applies = applies_to_any(got.definition.group, roles);
 
         if (!applies or got.definition.fields.len == 0) {
             continue;
@@ -53,6 +50,21 @@ pub fn definition(ctx: *Ctx, role: Role) Error![]const Def {
     }
 
     return groups.items;
+}
+
+fn applies_to_any(group: model.field_group.Options, roles: []const []const u8) bool {
+    std.debug.assert(roles.len <= model.role.user_roles_max);
+    std.debug.assert(model.role.user_roles_max > 0);
+
+    for (roles) |name| {
+        const context: model.field_group.Context = .{ .destination = .user, .role = name };
+
+        if (model.field_group.applies(group, context)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// The account's document, assembled from its value rows.
@@ -141,7 +153,7 @@ pub const Get = struct {
             .id = "9b1e7c3d5a2f4e6b8d0c1a3f",
             .email = "editor@example.com",
             .display_name = "Editor",
-            .role = .editor,
+            .roles = &.{"editor"},
             .created_at = 1789646400000,
             .active = true,
         },
@@ -160,7 +172,7 @@ pub const Get = struct {
         std.debug.assert(in.user.len <= 64 << 10);
 
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
-        const defs = try definition(ctx, found.user.role);
+        const defs = try definition(ctx, found.user.roles);
         const document = try read(ctx, found.user.id, defs);
         const text = std.json.Stringify.valueAlloc(ctx.arena, document, .{}) catch {
             return error.OutOfMemory;
@@ -197,7 +209,7 @@ pub const Validate = struct {
         std.debug.assert(in.document.len <= 64 << 10);
 
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
-        const defs = try definition(ctx, found.user.role);
+        const defs = try definition(ctx, found.user.roles);
         const checked = try check(ctx, defs, in.document);
 
         return .{ .valid = checked.document != null, .problems = checked.problems };
@@ -238,7 +250,7 @@ test "get: one namespaced group per applicable custom field group; update writes
     var system = harness.ctx(.system);
     try user_operations.seed_admin(&system);
     const admin_id = (try user_operations.find_user(&system, "admin@example.com")).?.user.id;
-    var admin = harness.ctx(.{ .user = .{ .id = admin_id, .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = admin_id, .roles = &.{"admin"} } });
     try seed_group(&admin, "basic", "");
     try seed_group(&admin, "staff", "editor");
     const Create = user_operations.Create;
@@ -263,7 +275,7 @@ test "get: one namespaced group per applicable custom field group; update writes
     const update: user_operations.Update.In = .{
         .user = created.user_id,
         .display_name = "Writer",
-        .role = .editor,
+        .roles = &.{"editor"},
         .document = filled,
     };
     _ = try TestSDK.dispatch(&admin, user_operations.Update, update);
@@ -279,7 +291,7 @@ test "get: one namespaced group per applicable custom field group; update writes
     try std.testing.expectEqualStrings(after.document, kept.document);
 
     var promoted = update;
-    promoted.role = .admin;
+    promoted.roles = &.{"admin"};
     promoted.document = "{\"basic\":{\"bio\":\"Leads\"}}";
     _ = try TestSDK.dispatch(&admin, user_operations.Update, promoted);
     const as_admin = try TestSDK.dispatch(&admin, Get, .{ .user = created.user_id });

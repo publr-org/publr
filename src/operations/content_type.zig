@@ -264,7 +264,7 @@ pub const Validate = struct {
 pub const operations = [_]type{ Create, Update, Get, List, Delete, Validate };
 
 test "definition input limits are checked before preparation and domain checks" {
-    const registry = @import("../app/registry.zig");
+    const registry = @import("../server/registry.zig");
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();

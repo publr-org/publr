@@ -7,9 +7,9 @@ each concern lives in `build/<topic>.zig`.
 
 | Step | What it does |
 |---|---|
-| `zig build` | Build `zig-out/bin/publr`. |
+| `zig build` | Build `zig-out/bin/publr` with the apps under `apps/` (none in this repository) and check they compile (`publr check-apps`). |
 | `zig build run -- <args>` | Build and run. |
-| `zig build test` | Run all tests: the core (`src/publr.zig`), every plugin under `plugins/`, and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
+| `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every plugin under `plugins/`, and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
 | `zig build verify` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `browser`. Run before calling anything done. |
 | `zig build parity` | Run the example every `--help` prints and check its answer. |
 | `zig build browser` | Build the browser target into `zig-out/browser/` (`publr.wasm`, `index.html`, `publr-worker.js`); see [Publr in the browser](browser.md). |
@@ -23,7 +23,9 @@ each concern lives in `build/<topic>.zig`.
 | `-Dtarget`, `-Doptimize` | native, Debug | all |
 | `-Darchives=<dir>` | `.vendor-archives` | `vendor-import` |
 | `-Dbrowser-debug=true` | `false` | `browser` (Debug wasm with panic messages) |
-| `-Dtheme=<name>` | `default` | the folder under `themes/` embedded as the site's theme (`build/theme.zig`) |
+| `-Dapps=<dir>` | `apps` | the folder of apps compiled in, relative to this repository; absent is none (`build/apps.zig`) |
+| `-Dapps-max=<n>` | `32` | how many apps one project may compile in, 1 to 1024 |
+| `-Dplugins=<dir>` | `plugins` | the folder of compiled-in plugins, relative to this repository |
 
 ## Vendors and libraries
 
@@ -42,25 +44,34 @@ as Publr's own libraries from the sibling repos (`../lib/{sqlite,http,auth,deps}
 `build.zig` builds it for whatever target the core asks for, wasm32-wasi
 included (the browser build drives `publr_http` offline, with no socket).
 
-## The theme
+## The apps
 
-`build/theme.zig` embeds `themes/<name>/` (`-Dtheme`): every `.publr` as text
-for the engine to read at startup, `public/*` with the island loader
-(`src/adapters/site/islands.js`) and the PublrJS runtime (`../publr-js/dist`)
-as the `/theme/*` assets, `theme.zon`, `public/style.css` and the JIT's
-preflight as the run-time stylesheet's inputs, and `interactive/*.ptsx`
-lowered by `pjsx_gen` like the admin's views. A theme without `theme.zon`,
-`style.css` or `interactive/` gets empty placeholders. Nothing generated is
-committed.
+`build/apps.zig` compiles in every folder under `-Dapps` (`apps/` by default); each must
+carry its `app.zon`, and its folder name (`[a-z][a-z0-9_]*`) is the app's name. For
+each app it generates one module: its templates as text for the engine to read at
+startup, its generated client code (the island loader `src/adapters/apps/islands.js`, the
+toolbar, the PublrJS runtime from `../publr-js/dist` and the stores of its interactive
+components) as its `/_app/*` assets, `app.zon`, `public/style.css` and the JIT's
+preflight as its run-time stylesheet's inputs, `interactive/*.ptsx` lowered by
+`pjsx_gen` like the admin's views (`build/apps/embed.zig`), and its `middleware.zig`,
+which imports `publr` and every compiled-in plugin. An app without `style.css`,
+`interactive/` or `middleware.zig` gets empty placeholders. The generated `apps` module
+lists them all; `src/adapters/apps/spec.zig` reads it at compile time, and a name, a
+mount or a role that is not valid fails the build there. Nothing generated is committed.
+
+Core ships no app. Its own tests and the smoke build a second binary, `publr-fixture`,
+with the fixture apps under `fixtures/apps/`: `www` at the root, `docs` under `/docs`
+and `portal`, which has no pages, on a subdomain.
 
 ## Smoke test
 
-`smoke` (`scripts/smoke.zig`) runs the built binary from a fresh directory:
+`smoke` (`scripts/smoke.zig`) runs the fixture binary from a fresh directory:
 `--version`, `heartbeat check`, `--help`, `init`, `user sign_in`,
 `--as` role checks, generated passwords, set-password links, `serve` + a
-real `GET /api/health` and `POST /api/auth/sign-in`, then the site: a
-published post, `build` into a folder, and `serve` answering the home page,
-the post's page, a fragment and the stylesheet.
+real `GET /api/health` and `POST /api/auth/sign-in`, then the apps: a
+published post, `build` into a folder per app, and `serve` answering the home page,
+the post's page, a fragment, the stylesheet, a page of the app under `/docs` and the app
+on a subdomain. Then the plain binary, with no apps, answers `/` with the admin.
 It listens on port 8090, away from the dev default (8080), so it never
 collides with a running `serve`.
 

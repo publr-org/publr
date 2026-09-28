@@ -29,16 +29,20 @@ export const selectTab = (event: MouseEvent) => {
 };
 export type FieldGroupProps = {
   user_name: string; user_email: string; csrf: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   title: string; name: string; handle: string; fresh: boolean;
   back: string; action: string; delete_action: string; fields: JSX.Element;
   active: boolean; position: string; labels: string; instructions: string;
   rules: JSX.Element;
 };
-export function FieldGroup({ user_name, user_email, csrf, title, name, handle, fresh, back, action, delete_action, fields,
+export function FieldGroup({ user_name, user_email, can_structure = true, can_settings = true, csrf, title, name, handle, fresh, back, action, delete_action, fields,
   active, position, labels, instructions, rules }: FieldGroupProps) {
   return (
     <div class="contents"><Editor title={title} section="types" crumb_label="Custom Fields" crumb_href={back}
-      user_name={user_name} user_email={user_email} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
       <EditorColumn>
         <div class="flex flex-col gap-8">
         <PageHeader title={title} back_href={back} back_label="Custom Fields" />

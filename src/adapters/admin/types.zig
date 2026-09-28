@@ -26,7 +26,7 @@ pub const create = Pages.create;
 pub const update = Pages.update;
 pub const delete = Pages.delete;
 pub const problems_of = Pages.problems_of;
-pub const site_url_of = definitions.site_url_of;
+pub const host_url_of = definitions.host_url_of;
 pub const handle_of = definitions.handle_of;
 pub const print = definitions.print;
 

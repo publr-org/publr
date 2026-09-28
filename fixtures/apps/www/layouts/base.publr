@@ -1,0 +1,37 @@
+---
+import SignedIn from '../dynamic/signed-in.dynamic.publr';
+const builtAt = Publr.build.now();
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{props.title ?? "Publr"}</title>
+</head>
+<body class="min-h-screen bg-canvas font-sans text-ink antialiased">
+  <header class="border-b border-line">
+    <nav class="mx-auto flex max-w-wide items-center justify-between px-6 py-5">
+      <a href="/" class="flex items-center gap-3 font-serif text-xl font-semibold tracking-tight no-underline">
+        <img src="/_app/logo.svg" alt="" width="28" height="28" />
+        Publr
+      </a>
+      <div class="flex items-center gap-6 text-sm font-medium">
+        <a href="/" class="hover:text-accent">Home</a>
+        <a href="/posts" class="hover:text-accent">Posts</a>
+        <a href="/visit" class="hover:text-accent">Your visit</a>
+        <SignedIn dynamic-if="signedIn" prerender eager />
+      </div>
+    </nav>
+  </header>
+  <main>
+    <slot />
+  </main>
+  <footer class="mt-20 border-t border-line">
+    <div class="mx-auto flex max-w-wide flex-wrap items-center justify-between gap-4 px-6 py-8 text-xs text-muted">
+      <span>Powered by Publr · built at <strong class="font-medium text-ink">{builtAt}</strong></span>
+      <a href="/admin" class="underline hover:text-accent">Admin</a>
+    </div>
+  </footer>
+</body>
+</html>

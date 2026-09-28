@@ -38,13 +38,13 @@ publr serve --port 8080      # then open http://127.0.0.1:8080/admin
 | Path | What |
 |---|---|
 | `/admin` | Setup or login when needed; otherwise the overview (a placeholder for the dashboard) |
-| `/admin/setup` | First run: create the administrator (`site init`) and sign in |
-| `/admin/login`, `/admin/logout` | Session cookie in, session cookie out (the rail's avatar menu posts the latter) |
+| `/admin/setup` | First run: create the administrator (`project init`) and sign in |
+| `/admin/login`, `/admin/logout` | Session cookie in, session cookie out (the rail's avatar menu posts the latter). An account whose roles reach none of the admin's operations (an app's visitor) is refused here, and every other admin URL sends it back here, saying so |
 | `/admin/settings` | The settings area, opening on System settings. Its sidebar lists System settings, Users, then every settings section defined under Structure |
 | `/admin/settings/system` | The system's own settings: a placeholder until there is something to configure |
-| `/admin/settings/users` | Every account, oldest first: name (yours marked), email, role, Active or Invited; "Add user" |
-| `/admin/settings/users/new` | Create an account: name, email, role, and a password. Left empty, the account is created invited and the page shows its one-hour set-password link, once, to send to the person |
-| `/admin/settings/users/<id>` | One account: rename it, change its role (never your own), and fill its custom fields: every custom field group whose location rules match (destination User, and the account's role when a rule names one) is drawn as its own group under the account's own fields, each field named `<group handle>.<field>`, with the record editor's controls; repeaters and lists reshape through the same form. "New set-password link" or "Reset password by link" shows a fresh link once; "Delete user" asks first, in a dialog. Deleting yourself, demoting or deleting the last admin, a taken email, and values the fields refuse (listed by path) keep the form up |
+| `/admin/settings/users` | Every account, oldest first: name (yours marked), email, roles, Active or Invited; "Add user" |
+| `/admin/settings/users/new` | Create an account: name, email, its roles (a checkbox per role the project has, core's and the plugins', with what each lets it do), and a password. Left empty, the account is created invited and the page shows its one-hour set-password link, once, to send to the person |
+| `/admin/settings/users/<id>` | One account: rename it, change its roles (never your own), and fill its custom fields: every custom field group whose location rules match (destination User, and one of the account's roles when a rule names one) is drawn as its own group under the account's own fields, each field named `<group handle>.<field>`, with the record editor's controls; repeaters and lists reshape through the same form. "New set-password link" or "Reset password by link" shows a fresh link once; "Delete user" asks first, in a dialog. Deleting yourself, demoting or deleting the last admin, a taken email, and values the fields refuse (listed by path) keep the form up |
 | `/admin/structure` | Structure hub: large links to Content Types and Taxonomies, with smaller Components and Custom Fields links under Advanced. The rail and Structure breadcrumbs lead here. Components and Custom Fields open placeholder pages until implemented |
 | `/admin/types` | The content types: name, handle, kind, visibility, owner, field count; links to each type's fields and content |
 | `/admin/types/new` | Create a type from its head alone: name (up to 50 characters), handle (made from the name as it is typed, until edited; up to 64) and description (up to 500), each with a live count of the room used and its own error under it when refused; and, for a record type, "Accessible via URL": a switch; on, an address under the site's own (`<site>/posts/{slug}`) where each record has its page, the type is public and starts with a slug field; off, an internal type read by signed-in users only, starting with no fields. Settings schemas and components have their own authoring destinations. Continues to the fields page |
@@ -53,7 +53,7 @@ publr serve --port 8080      # then open http://127.0.0.1:8080/admin
 | `/admin/types/<handle>/fields/new` | Add a field in two steps, each a page of its own drawn as a level over the fields, on the type's page (the list dims behind it and leads back; the preview stays on the right and follows the form as it is typed): pick the kind from a grid of cards, then the form, in sections. Label and name (the name follows the label as it is typed, until edited; both with a live count); Single or Multiple values (any kind but slug, group and repeater); Settings: "This field represents the record's title" (a top-level text field; one per type, ticking it moves it), searchable, the record types a reference points at (none for any) and what purging a linked record does to the pointer (keep, block, clear), a slug's source field, a select's choices (`value | Label` per line); Validation: each rule a checkbox that reveals its bounds and a custom error message while ticked (required, not on a group or a boolean; unique, for a single text, email, url or integer field; the number of values and "no value twice" on any list or repeater; character count, word count and a shape (a preset or a `*` `?` `#` `@` pattern) on text; a number range with a step, or only listed values; a date range as days and "not before today"; reserved slugs; email domains; url schemes and hosts; only published records for a reference; for a media field the file size with a unit, the accepted file families, the image dimensions); Default value: the kind's own control, the moment of creation for a date, or a note when the kind (media, reference, slug, rich text) or the unique rule allows none; Appearance: help text shown under the control (up to 255), a placeholder, rows and plain or Markdown for long text, the date format, a boolean's labels and control (switch, checkbox, radios), a number's unit, decimal places and control (input, slider, rating), a select as a dropdown or radios and checkboxes, a slug locked once published, an email lowercased on save, whether a reference or media field lets editors create new items and link existing ones, and for a group or repeater "collapsed by default", the item label field and the add button's label. Rules that depend on another choice on the form follow it as it is made: the number of values and "no value twice" appear for Multiple, unique and the title for Single, the default control gives way to a note while Unique is ticked or the date takes the moment of creation. The actions sit in the panel's footer: "Finish" returns to the fields page, "Add another field" to the picker, Cancel leaves. A group or repeater continues to its own page to take the fields inside it |
 | `/admin/types/<handle>/fields/<path>` | Edit one field in the same kind of level, the preview following: Single or Multiple is fixed after creation; a group or repeater lists the fields inside it here, with add, move and edit. A field inside one (`gallery.caption`) opened from the parent's own page stacks one level deeper: the parent stays under it, dimmed, one small step less inset, and Back (or the dimmed strip) returns to the parent; opened from the fields list or by its address it is one level, and Back returns to the list. The picker for a field inside opens the same way. A change inside a group or repeater lands one level back, on the parent when it is open. "Delete field", in the footer, asks first, in a dialog with "also delete its values in every record". A refused post comes back to the same form with what was wrong listed above it, the values kept |
 | `/admin/taxonomies` | The taxonomies, as the content types are listed: name, handle, visibility, owner, field count; each links to its terms |
-| `/admin/taxonomies/new` | Create a taxonomy from its head: name, handle, description as for a type, then "Hierarchical" (terms may have a parent), "One term per record", "Assign taxonomy to content types" (the record types it classifies, ticked: the types whose records have pages of their own, read from the loaded theme's `content/` tree, are listed under Content types; "Show all types" reveals the others) and "Public" (anyone may read its live terms). A new taxonomy starts with a name, a slug and a description field for its terms. Continues to its terms page |
+| `/admin/taxonomies/new` | Create a taxonomy from its head: name, handle, description as for a type, then "Hierarchical" (terms may have a parent), "One term per record", "Assign taxonomy to content types" (the record types it classifies, ticked: the types whose records have pages of their own, read from the loaded apps' `content/` trees, are listed under Content types; "Show all types" reveals the others) and "Public" (anyone may read its live terms). A new taxonomy starts with a name, a slug and a description field for its terms. Continues to its terms page |
 | `/admin/taxonomies/<handle>` | The taxonomy's terms as a tree: parents before children, each row indented by its depth with title, slug and status; "New term" at the root, "Add child" on every term of a hierarchical taxonomy; "Settings" leads to the head |
 | `/admin/taxonomies/<handle>/settings` | The head again; "Delete taxonomy" asks first, in a dialog with "also delete its terms" |
 | `/admin/terms/new?type=<handle>[&parent=<id>]`, `/admin/terms/<id>` | Create or edit a term in the record editor: one input per term field, the same status actions and pending-edit behaviour as a record; in a hierarchical taxonomy the aside holds "Parent", a dropdown over the other terms (never the term itself nor what is below it), and moving a term there re-files every record under it |
@@ -73,7 +73,7 @@ fragment the index recorded that no template explains is listed too, since the
 plan over-approximates and never misses. "Rendered per request": the live pages
 and dynamic fragments that read the type, shown for the whole picture, with
 nothing to rebuild. Each row is the route or fragment address (a page's is a
-link that opens it on the site in a new tab, when there is one to open: a route
+link that opens it in its app in a new tab, when there is one to open: a route
 with a parameter in it, `/posts/:slug`, is not, except as the record's own
 page, shown beside it; a fragment's address only ever serves bare HTML, so it
 is never a link), its kind, and its status (in the last build, not built yet,
@@ -84,7 +84,8 @@ template and how it reads (renders the record, or lists the type's records),
 the template it embeds when the read is one step down, for a fragment the
 pages that place it (marked when the placeholder is a prerender, which stays a
 stale copy until that page is next built) and the fragments it sits inside,
-and what the last build recorded it reading (`site impact`). A new record shows
+and what the last build recorded it reading (`project impact`). With several apps, each
+app's pages and fragments are listed, addressed under its own mount. A new record shows
 the same for its type, without a `record:` key. Outside `--dev` the section
 does not exist.
 
@@ -221,12 +222,11 @@ administrators may read or modify them. A user's page under Settings draws every
 applies to the account and stores the values in `user_values`, one document per account with
 one object per group (`user get`, `user update --document`). Media management remains to be done. Onboarding recipes are outside this change.
 
-Website is a private singleton declared by Publr. Its fields are the homepage's content: every
-text, link, image and list the theme's `content/index.publr` renders, in page order (hero,
-feature sections, customer stories, product cards, fee rows, testimonials, closing band).
-Lists are repeaters. Save creates a draft or pending edit; Publish makes the document the
-homepage. Editors cannot read or modify singleton settings values. There is no reference to a
-page: pages have page fields, the homepage has these.
+Settings sections are singletons: an app's settings (its homepage's content, its
+navigation) are a settings type its plugin declares or an administrator creates under
+Structure, one record edited under Settings. Save creates a draft or pending edit; Publish
+makes the document the one templates read. Editors cannot read or modify singleton
+settings values; a role needs `settings.edit`.
 
 Field authoring has General, Validation, Presentation and Conditional Logic tabs. Conditional
 rules use AND within a group and OR between groups, with at most eight groups of eight rules.
@@ -237,7 +237,7 @@ only applies while a field's condition matches.
 Custom field groups combine their fields with Location Rules, Presentation and Group Settings
 on one builder page. Content Types, Taxonomies, Settings and Components keep their dedicated
 authoring UI and do not expose a separate Field group page. Custom locations can match User,
-Media, user role or media type. Presentation controls position, label alignment and instruction placement. Disabling
+Media, user role (any role the project has) or media type. Presentation controls position, label alignment and instruction placement. Disabling
 a group preserves values. User/media destination rules are ready for their future entity editors.
 
 The shared catalogue includes color, time, masked text, user references, links, locations, embed

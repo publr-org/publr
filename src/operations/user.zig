@@ -2,11 +2,12 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const auth = @import("../lib/auth.zig");
 const store = @import("../store.zig");
+const role = @import("../model/role.zig");
+const registry = @import("../server/registry.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
-const Role = sdk.caller.Role;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "user",
@@ -14,8 +15,10 @@ pub const namespace: sdk.operation.Namespace = .{
     .details =
     \\Everything about who may use Publr. The first admin comes from `publr init`;
     \\after that, create accounts with `user create` (with a password, a generated
-    \\one, or a set-password link). Two roles exist: `admin` may do everything,
-    \\`editor` may manage content but not users or settings.
+    \\one, or a set-password link). An account holds one or more roles, and may call
+    \\what any of them grants. Core has `admin` (everything) and `editor` (content,
+    \\not users, structure or settings); plugins add their own, such as the visitors
+    \\of an app, whose grants reach only that app's operations (`app.<feature>.*`).
     \\
     \\`sign_in`, `sign_out` and `set_password` are open to anyone; the rest
     \\needs an admin (`--as <admin>` or `--as-admin`). Over HTTP the same operations
@@ -35,7 +38,8 @@ pub const Summary = struct {
     id: []const u8,
     email: []const u8,
     display_name: []const u8,
-    role: Role,
+    /// The roles the account holds, by name.
+    roles: []const []const u8,
     created_at: i64,
     active: bool,
 };
@@ -56,18 +60,24 @@ pub const Create = struct {
         \\     person; prefix it with your site URL. Until they use it the account
         \\     cannot sign in. `user password_link` issues a new one at any time.
         \\
-        \\`admin` may do everything; `editor` may manage content but not users or
-        \\settings.
+        \\`--roles` names the roles the account holds, one or more (`admin,editor`);
+        \\`publr role list` lists the ones this project has. Fails as invalid for a role
+        \\no compiled-in code declares.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         email: []const u8,
         display_name: []const u8,
-        role: Role = .editor,
+        roles: []const []const u8 = &.{role.editor},
         password: ?[]const u8 = null,
         password_link: bool = false,
     };
-    pub const Out = struct { user_id: []const u8, role: Role, password: ?[]const u8, link: ?Link };
+    pub const Out = struct {
+        user_id: []const u8,
+        roles: []const []const u8,
+        password: ?[]const u8,
+        link: ?Link,
+    };
     pub const example: In = .{
         .email = "writer@example.com",
         .display_name = "Writer",
@@ -75,20 +85,21 @@ pub const Create = struct {
     };
     pub const example_out: Out = .{
         .user_id = "9b1e7c3d5a2f4e6b8d0c1a3f",
-        .role = .editor,
+        .roles = &.{"editor"},
         .password = null,
         .link = .{ .path = "/auth/set-password?token=6f3a...", .expires_at = 1789650000000 },
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .email = "Sign-in email; must be unique, stored lowercased and trimmed",
         .display_name = "Name shown in the admin",
-        .role = "`admin` or `editor`",
+        .roles = "The roles the account holds, comma-separated: `admin`, `editor` or one a " ++
+            "plugin declares",
         .password = "8 to 256 characters; generated when omitted; not allowed with password_link",
         .password_link = "Create the account inactive and return a set-password link instead",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .user_id = "The new account's id",
-        .role = "The role given",
+        .roles = "The roles given",
         .password = "The generated password, only when none was passed; shown exactly once",
         .link = "The set-password link (path + expiry, one hour), only with password_link",
     };
@@ -102,20 +113,20 @@ pub const Create = struct {
         }
 
         if (in.password_link) {
-            const created = try create_pending_user(ctx, in.email, in.display_name, in.role);
+            const created = try create_pending_user(ctx, in.email, in.display_name, in.roles);
             const link = try issue_link(ctx, created);
 
             ctx.notice("auth.user_created", created);
 
-            return .{ .user_id = created, .role = in.role, .password = null, .link = link };
+            return .{ .user_id = created, .roles = in.roles, .password = null, .link = link };
         }
 
-        const created = try create_user(ctx, in.email, in.display_name, in.password, in.role);
+        const created = try create_user(ctx, in.email, in.display_name, in.password, in.roles);
         ctx.notice("auth.user_created", created.user_id);
 
         return .{
             .user_id = created.user_id,
-            .role = in.role,
+            .roles = in.roles,
             .password = created.password,
             .link = null,
         };
@@ -236,7 +247,7 @@ pub const Options = struct {
 
 pub const List = struct {
     pub const name = "user.list";
-    pub const description = "List users (id, email, display name, role, active)";
+    pub const description = "List users (id, email, display name, roles, active)";
     pub const details =
         \\Admins only. `active` is false for accounts created with a set-password link
         \\that has not been redeemed yet; such accounts cannot sign in.
@@ -250,7 +261,7 @@ pub const List = struct {
             .id = "3f9c1e0a5b7d2c4e6f8a9b0c",
             .email = "ada@example.com",
             .display_name = "Ada",
-            .role = .admin,
+            .roles = &.{"admin"},
             .created_at = 1789640000000,
             .active = true,
         },
@@ -258,7 +269,7 @@ pub const List = struct {
             .id = "9b1e7c3d5a2f4e6b8d0c1a3f",
             .email = "editor@example.com",
             .display_name = "Editor",
-            .role = .editor,
+            .roles = &.{"editor"},
             .created_at = 1789646400000,
             .active = false,
         },
@@ -289,7 +300,7 @@ pub fn create_user(
     raw_email: []const u8,
     raw_display_name: []const u8,
     given_password: ?[]const u8,
-    role: Role,
+    roles: []const []const u8,
 ) Error!CreatedUser {
     std.debug.assert(ctx.db.transaction_depth >= 1);
     std.debug.assert(ctx.now_ms >= 0);
@@ -297,7 +308,7 @@ pub fn create_user(
     const generated = if (given_password == null) try generate_password(ctx) else null;
     const password = given_password orelse generated.?;
     const password_hash = try hash_password(ctx, password);
-    const user_id = try insert_user(ctx, raw_email, raw_display_name, password_hash, role);
+    const user_id = try insert_user(ctx, raw_email, raw_display_name, password_hash, roles);
 
     return .{ .user_id = user_id, .password = generated };
 }
@@ -310,7 +321,7 @@ pub fn seed_editor(ctx: *Ctx) Error!void {
     var hash_buffer: [auth.password.hash_len_max]u8 = undefined;
     const password_hash = try example_password_hash(ctx, &hash_buffer);
 
-    _ = try insert_user(ctx, "editor@example.com", "Editor", password_hash, .editor);
+    _ = try insert_user(ctx, "editor@example.com", "Editor", password_hash, &.{role.editor});
 }
 
 fn example_password_hash(ctx: *Ctx, buffer: *[auth.password.hash_len_max]u8) Error![]const u8 {
@@ -328,19 +339,44 @@ pub fn seed_admin(ctx: *Ctx) Error!void {
     var hash_buffer: [auth.password.hash_len_max]u8 = undefined;
     const password_hash = try example_password_hash(ctx, &hash_buffer);
 
-    _ = try insert_user(ctx, "admin@example.com", "Admin", password_hash, .admin);
+    _ = try insert_user(ctx, "admin@example.com", "Admin", password_hash, &.{role.admin});
 }
 
 fn create_pending_user(
     ctx: *Ctx,
     raw_email: []const u8,
     raw_display_name: []const u8,
-    role: Role,
+    roles: []const []const u8,
 ) Error![]const u8 {
     std.debug.assert(ctx.now_ms >= 0);
     std.debug.assert(raw_email.len > 0);
 
-    return insert_user(ctx, raw_email, raw_display_name, null, role);
+    return insert_user(ctx, raw_email, raw_display_name, null, roles);
+}
+
+/// Roles an account may be given: one to sixteen, each once, each declared by core or a
+/// compiled-in plugin.
+pub fn valid_roles(roles: []const []const u8) bool {
+    std.debug.assert(role.user_roles_max > 0);
+    std.debug.assert(registry.Roles.all.len > 0);
+
+    if (roles.len == 0 or roles.len > role.user_roles_max) {
+        return false;
+    }
+
+    for (roles, 0..) |name, index| {
+        if (registry.Roles.get(name) == null) {
+            return false;
+        }
+
+        for (roles[index + 1 ..]) |other| {
+            if (std.mem.eql(u8, name, other)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 fn insert_user(
@@ -348,10 +384,14 @@ fn insert_user(
     raw_email: []const u8,
     raw_display_name: []const u8,
     password_hash: ?[]const u8,
-    role: Role,
+    roles: []const []const u8,
 ) Error![]const u8 {
     std.debug.assert(ctx.now_ms >= 0);
     std.debug.assert(password_hash == null or password_hash.?.len > 0);
+
+    if (!valid_roles(roles)) {
+        return error.Invalid;
+    }
 
     const email = store.users.normalize_email(ctx.arena, raw_email) catch |err| switch (err) {
         error.InvalidEmail => return error.Invalid,
@@ -365,7 +405,7 @@ fn insert_user(
         .email = email,
         .display_name = display_name,
         .password_hash = password_hash,
-        .role = role,
+        .roles = roles,
         .now_ms = ctx.now_ms,
     });
 }
@@ -477,7 +517,7 @@ pub fn summary_of(user: store.users.User) Summary {
         .id = user.id,
         .email = user.email,
         .display_name = user.display_name,
-        .role = user.role,
+        .roles = user.roles,
         .created_at = user.created_at,
         .active = user.active,
     };
@@ -490,12 +530,12 @@ test "create: admins only, duplicates conflict, weak input invalid, generated pa
     try harness.init();
     defer harness.deinit();
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .role = .editor } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .roles = &.{"editor"} } });
     var anon = harness.ctx(.anonymous);
 
     const created = try TestSDK.dispatch(&admin, Create, Create.example);
-    try std.testing.expectEqual(Role.editor, created.role);
+    try std.testing.expectEqualStrings("editor", created.roles[0]);
     try std.testing.expect(created.password == null);
     try std.testing.expectError(error.Conflict, TestSDK.dispatch(&admin, Create, Create.example));
     try std.testing.expectError(error.Denied, TestSDK.dispatch(&editor, Create, Create.example));
@@ -523,7 +563,7 @@ test "password link: pending user cannot sign in, link activates once, new link 
 
     const sign_in = @import("sign_in.zig");
     const FullSDK = sdk.SDK(.{ .operations = &(operations ++ sign_in.operations) });
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
     var anon = harness.ctx(.anonymous);
 
     const invited = try FullSDK.dispatch(&admin, Create, .{
@@ -588,8 +628,8 @@ test "user field options are available to editors without account details" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .role = .editor } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .roles = &.{"editor"} } });
     var anon = harness.ctx(.anonymous);
     const created = try TestSDK.dispatch(&admin, Create, Create.example);
     const options = try TestSDK.dispatch(&editor, Options, .{});

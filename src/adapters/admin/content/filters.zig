@@ -5,7 +5,7 @@
 //! them.
 const std = @import("std");
 const model = @import("../../../model.zig");
-const registry = @import("../../../app/registry.zig");
+const registry = @import("../../../server/registry.zig");
 const record_operations = @import("../../../operations/record.zig");
 
 const Filters = model.view.Filters;

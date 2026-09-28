@@ -111,8 +111,8 @@ proxy, which dispatches through the same operation pipeline everything else uses
 A plugin is one directory under `plugins/` with a `main.zig`. It imports one
 thing, `publr`, and declares what it brings: a manifest (name, version,
 summary), documented namespaces, operations exactly like the core's, policies,
-hooks, statuses, field kinds, content types, delivery gates (who sees the public
-site, see [Site](site.md#delivery-gates)) and filters (a `filters` array of
+hooks, statuses, field kinds, content types, roles (see below), delivery gates (who
+sees the apps, see [Apps](apps.md#delivery-gates)) and filters (a `filters` array of
 `model.filter.Definition`: a key, a label, operators, and how a clause constrains the
 list; the admin's content list grows a pill for each). `zig build` finds it, compiles it in and
 wires it up; nothing is registered anywhere else. Its operations appear in the
@@ -130,6 +130,13 @@ snapshots (`snapshot take/list/prune`, kinds of the plugin's own); parked
 copies of a document go into slots (`record get --slot`), like the core's
 `pending`. Only a compiled-in plugin that truly needs its own table
 (`compiled_in_only`) may ship `schema_sql`.
+
+A plugin can declare roles (`pub const roles = [_]publr.plugin.Role{...}`): a name, a
+label and grants, each an operation or a namespace ending in `.*`. A name of its own is
+a new role, such as the visitors of an app, granted `app.<feature>.*`; the name of one
+there already adds grants to it, so a plugin whose operations editors should call
+declares `editor` with `<feature>.*`. Only an admin gives an account a role; a plugin's
+open sign-up creates accounts with its own. See [Auth](auth.md#roles).
 
 A plugin can also keep values on the accounts themselves: `custom_fields` declares
 custom field groups the way `content_types` declares types, each with its location

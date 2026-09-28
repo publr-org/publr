@@ -6,15 +6,19 @@ import { Text } from "@publr/ui/Text.ptsx";
 export type SettingsSystemProps = {
   user_name: string;
   user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf: string;
   nav: JSX.Element;
 };
 
 /** The system's own settings: a placeholder until there is something to configure. */
-export function SettingsSystem({ user_name, user_email, csrf, nav }: SettingsSystemProps) {
+export function SettingsSystem({ user_name, user_email, can_structure = true, can_settings = true, csrf, nav }: SettingsSystemProps) {
   return (
     <Layout title="System settings" section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
       <EditorColumn>
         <PageHeader title="System settings" description="How this Publr runs." />
         <p class="mt-6">

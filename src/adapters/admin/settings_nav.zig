@@ -2,7 +2,7 @@
 //! definition as a value-editing destination. `current` is the fixed page or the handle shown.
 const std = @import("std");
 const admin = @import("../admin.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const types = @import("../../operations/content_type.zig");
 
 pub fn node(session: *admin.Session, current: []const u8) admin.Error!admin.render.Node {

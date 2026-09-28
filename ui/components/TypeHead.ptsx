@@ -94,10 +94,11 @@ export type TypeHeadProps = {
   name_error: string;
   handle_error: string;
   description_error: string;
-  /** The type's place on the site: records live at `<site_url>/<url>/<slug>`. */
+  /** The type's address: its records live at `<base_url>/<url>/<slug>` in the app that
+   * routes them. */
   url: string;
   has_url: boolean;
-  site_url: string;
+  base_url: string;
   /** A new type: the handle and the URL follow the name until edited by hand. */
   is_new: boolean;
   choose_kind: boolean;
@@ -130,7 +131,7 @@ export function TypeHead({
   description_error,
   url,
   has_url,
-  site_url,
+  base_url,
   is_new,
   choose_kind,
   is_taxonomy,
@@ -377,7 +378,7 @@ export function TypeHead({
             <FieldLabel htmlFor="has_url">Accessible via URL</FieldLabel>
           </div>
           <div class="hidden" hidden={!state.has_url}>
-            <InputGroup leading={`${site_url}/`} trailing="/{slug}">
+            <InputGroup leading={`${base_url}/`} trailing="/{slug}">
               <Input
                 id="url"
                 name="url"

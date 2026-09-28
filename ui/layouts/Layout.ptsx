@@ -22,6 +22,10 @@ export type LayoutProps = {
   /** The signed-in user; absent on the setup and login pages, which get no chrome. */
   user_name?: string;
   user_email?: string;
+  /** The rail sections the viewer may open besides Content: the server sets each from
+   * what the viewer's roles grant (changing structure; managing users). */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf?: string;
   /** The section's own sidebar (the views of the content, from ContentNav); absent on pages
    * whose section has no second level: the overview and the content types. */
@@ -48,6 +52,8 @@ export function Layout({
   crumb_href,
   user_name,
   user_email,
+  can_structure = true,
+  can_settings = true,
   csrf,
   sidebar,
   children,
@@ -103,20 +109,22 @@ export function Layout({
                   >
                     <Icon name="file" size="md" />
                   </a>
-                  <a
-                    href="/admin/structure"
-                    aria-label="Structure"
-                    title="Structure"
-                    aria-current={(section === "types" || section === "structure") ? "page" : undefined}
-                    class={[
-                      "inline-flex size-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground",
-                      (section === "types" || section === "structure")
-                        ? "bg-rail-accent text-rail-foreground"
-                        : "text-rail-muted hover:bg-rail-accent/60 hover:text-rail-foreground",
-                    ]}
-                  >
-                    <Icon name="components" size="md" />
-                  </a>
+                  {can_structure && (
+                    <a
+                      href="/admin/structure"
+                      aria-label="Structure"
+                      title="Structure"
+                      aria-current={(section === "types" || section === "structure") ? "page" : undefined}
+                      class={[
+                        "inline-flex size-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground",
+                        (section === "types" || section === "structure")
+                          ? "bg-rail-accent text-rail-foreground"
+                          : "text-rail-muted hover:bg-rail-accent/60 hover:text-rail-foreground",
+                      ]}
+                    >
+                      <Icon name="components" size="md" />
+                    </a>
+                  )}
                 </nav>
                 <div class="mt-auto flex flex-col items-center gap-1 pb-3">
                   <DropdownMenu>
@@ -144,20 +152,22 @@ export function Layout({
                       </form>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <a
-                    href="/admin/settings"
-                    aria-label="Settings"
-                    title="Settings"
-                    aria-current={section === "settings" ? "page" : undefined}
-                    class={[
-                      "inline-flex size-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground",
-                      section === "settings"
-                        ? "bg-rail-accent text-rail-foreground"
-                        : "text-rail-muted hover:bg-rail-accent/60 hover:text-rail-foreground",
-                    ]}
-                  >
-                    <Icon name="settings" size="md" />
-                  </a>
+                  {can_settings && (
+                    <a
+                      href="/admin/settings"
+                      aria-label="Settings"
+                      title="Settings"
+                      aria-current={section === "settings" ? "page" : undefined}
+                      class={[
+                        "inline-flex size-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground",
+                        section === "settings"
+                          ? "bg-rail-accent text-rail-foreground"
+                          : "text-rail-muted hover:bg-rail-accent/60 hover:text-rail-foreground",
+                      ]}
+                    >
+                      <Icon name="settings" size="md" />
+                    </a>
+                  )}
                 </div>
               </div>
               {sidebar && (

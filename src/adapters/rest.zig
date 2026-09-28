@@ -1,10 +1,10 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
-const registry = @import("../app/registry.zig");
+const registry = @import("../server/registry.zig");
 const auth_http = @import("rest/auth.zig");
 const identity_module = @import("rest/identity.zig");
 const http = @import("../lib/http.zig");
-const Site = @import("../app/site.zig").Site;
+const Project = @import("../server/project.zig").Project;
 
 const Error = http.Error;
 const Request = http.Request;
@@ -27,13 +27,13 @@ fn call(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(ctx.user_data != null);
     std.debug.assert(request.path().len > 0);
 
-    const site = Site.of(ctx);
+    const project = Project.of(ctx);
     const namespace = request.param("namespace") orelse return not_found(response);
     const verb = request.param("verb") orelse return not_found(response);
-    const identity = identity_module.identify(request, ctx.arena, site);
+    const identity = identity_module.identify(request, ctx.arena, project);
     const is_read = request.method() == .get or request.method() == .head;
 
-    if (!is_read and !try identity_module.guard(request, response, site, &identity)) {
+    if (!is_read and !try identity_module.guard(request, response, project, &identity)) {
         return;
     }
 
@@ -75,7 +75,7 @@ fn invoke(
     const in = parsed orelse {
         return response.json(.bad_request, .{ .@"error" = "invalid_input" });
     };
-    var sdk_ctx = identity_module.context(Site.of(ctx), ctx.arena, caller);
+    var sdk_ctx = identity_module.context(Project.of(ctx), ctx.arena, caller);
     const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch |err| {
         return auth_http.respond_error(response, err, &sdk_ctx);
     };
@@ -142,7 +142,7 @@ fn not_found(response: *Response) Error!void {
     return response.json(.not_found, .{ .@"error" = "unknown_operation" });
 }
 
-const routes = @import("../app/routes.zig");
+const routes = @import("../server/routes.zig");
 
 test "rest: every operation is reachable under /api/<namespace>/<verb>, with the same rules" {
     var harness: sdk.testing.Harness = undefined;

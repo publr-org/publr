@@ -6,13 +6,17 @@ import { PageHeader } from "@publr/ui/PageHeader.ptsx";
 export type StructureProps = {
   user_name: string;
   user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf: string;
 };
 
-export function Structure({ user_name, user_email, csrf }: StructureProps) {
+export function Structure({ user_name, user_email, can_structure = true, can_settings = true, csrf }: StructureProps) {
   return (
     <Layout title="Structure" section="structure"
-      user_name={user_name} user_email={user_email} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
       <div class="flex flex-col gap-8 px-8 py-7">
         <PageHeader title="Structure" description="Define your content and how it fits together." />
         <div class="grid gap-5 sm:grid-cols-3">

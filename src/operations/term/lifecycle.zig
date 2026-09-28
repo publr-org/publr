@@ -3,7 +3,7 @@
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const store = @import("../../store.zig");
 const term_operations = @import("../term.zig");
 
@@ -160,7 +160,7 @@ test "term lifecycle: pending edits, publish, delete; purge refuses children and
     defer harness.deinit();
     try term_operations.seed_topics(&harness);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
     var anon = harness.ctx(.anonymous);
     const created = try SDK.dispatch(&admin, term_operations.Create, .{
         .taxonomy = "topics",
@@ -204,7 +204,7 @@ test "term lifecycle: pending edits, publish, delete; purge refuses children and
     const restored = try SDK.dispatch(&admin, Transition, .{ .id = created.id, .to = "draft" });
     try std.testing.expectEqualStrings("draft", restored.status);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
     try std.testing.expectError(error.Denied, SDK.dispatch(&editor, Purge, .{ .id = created.id }));
     try std.testing.expect((try SDK.dispatch(&admin, Purge, .{ .id = created.id })).purged);
     try std.testing.expectError(

@@ -71,19 +71,22 @@ only ever narrow a grant, and any deny wins. Who gets what:
 - **Anonymous visitors** can only read live records of public types, and sign
   in (see [Authentication](auth.md)). Nothing else: no types, no statuses, no
   private records. When in doubt, Publr does not allow.
-- **Signed-in users** can do what their assigned role allows. Two roles
-  ship with the core: `admin` (everything) and `editor` (all content, no
-  user or settings management).
+- **Signed-in users** can do what their roles grant. A role is data: a name
+  and grants, each naming an operation or a namespace (`record.*`). Two roles
+  ship with the core, `admin` (everything) and `editor` (all content, no
+  structure, user or settings management); plugins declare their own, such as
+  an app's visitors, whose grants reach only that app's operations
+  (`app.<feature>.*`) and so never the admin. See [Auth](auth.md#roles).
 - **API tokens** come in two kinds. A user token acts as the user it belongs
-  to, within that user's role. A machine token belongs to no user and carries
+  to, within that user's roles. A machine token belongs to no user and carries
   its own policy (what it may read and write); that policy becomes its grant.
 - **Plugins** can do what their permission scopes allow. A plugin compiled
   into the binary is trusted and has full access. See [Plugins](plugins.md).
 - **The CLI** has complete control. Run with `--as <user>` it has exactly what
-  that user's role allows, nothing more.
+  that user's roles allow, nothing more.
 
 Plugins add policies for finer rules: per-type access, "editors see only their
-own drafts", custom roles.
+own drafts".
 
 ## Content
 
@@ -92,20 +95,22 @@ field value is its own row. Everything with fields is a record in the same
 two tables, plugins included; statuses are a registry. See
 [Content](content.md).
 
-## The site
+## The apps
 
-Readers never meet an operation. They get the public site: a theme of
+Readers never meet an operation. They get the project's apps: each a folder of
 templates rendered into files ahead of time, served as files, with the parts
 that must be fresher than a file fetched by the page as fragments. The
 templates read live content through the same `record` operations: as nobody
 for anything shared by every visitor, as the signed-in visitor for a render
 made for one request, so a page only ever shows what its visitor may see. Every render
 writes down what it read; when a record changes, the pages that read it are
-the ones rewritten. See [The site](site.md).
+the ones rewritten. A project holds any number of apps, each mounted at a
+path or a subdomain of its one domain, all over the same plugins. See
+[Apps](apps.md).
 
 ```mermaid
 flowchart LR
-    T[theme templates] --> B[build] --> F[files]
+    T[app templates] --> B[build] --> F[files]
     F --> R[Readers]
     O[record publish] -->|record.published| I[dependency index] --> B
 ```

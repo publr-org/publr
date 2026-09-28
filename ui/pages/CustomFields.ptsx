@@ -11,12 +11,16 @@ import { TableRow } from "@publr/ui/TableRow.ptsx";
 import { TableCell } from "@publr/ui/TableCell.ptsx";
 export type CustomFieldsProps = {
   user_name: string; user_email: string; csrf: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   groups: Array<{ name: string; handle: string; href: string; status: string }>;
 };
-export function CustomFields({ user_name, user_email, csrf, groups }: CustomFieldsProps) {
+export function CustomFields({ user_name, user_email, can_structure = true, can_settings = true, csrf, groups }: CustomFieldsProps) {
   return (
     <Layout title="Custom Fields" section="structure"
-      user_name={user_name} user_email={user_email} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
       <div class="px-8 pt-7 pb-6">
         <PageHeader title="Custom Fields" description="Create field groups and choose where they appear.">
           <Button href="/admin/custom-fields/new">Add field group</Button>

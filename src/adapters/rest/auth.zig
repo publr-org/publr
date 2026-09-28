@@ -2,14 +2,14 @@
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const sign_in_operations = @import("../../operations/sign_in.zig");
 const sign_on_operations = @import("../../operations/sign_on.zig");
 const user_operations = @import("../../operations/user.zig");
 const csrf = @import("../../lib/auth.zig").csrf;
 const identity_module = @import("identity.zig");
 const http = @import("../../lib/http.zig");
-const Site = @import("../../app/site.zig").Site;
+const Project = @import("../../server/project.zig").Project;
 
 const Error = http.Error;
 const Request = http.Request;
@@ -27,22 +27,26 @@ pub fn sign_in(request: *Request, response: *Response, ctx: *Context) Error!void
     std.debug.assert(request.method() == .post);
     std.debug.assert(ctx.user_data != null);
 
-    const site = Site.of(ctx);
-    const identity = identify(request, ctx.arena, site);
+    const project = Project.of(ctx);
+    const identity = identify(request, ctx.arena, project);
 
-    if (!try guard(request, response, site, &identity)) {
+    if (!try guard(request, response, project, &identity)) {
         return;
     }
 
     const in = parse_body(sign_in_operations.SignIn.In, ctx.arena, request.body) orelse {
         return response.json(.bad_request, .{ .@"error" = "invalid_body" });
     };
-    var sdk_ctx = context(site, ctx.arena, .anonymous);
+    var sdk_ctx = context(project, ctx.arena, .anonymous);
     const out = registry.SDK.dispatch(&sdk_ctx, sign_in_operations.SignIn, in) catch |err| {
         return respond_error(response, err, &sdk_ctx);
     };
 
-    try set_session_cookie(request, response, ctx.arena, out.token, out.expires_at, sdk_ctx.now_ms);
+    const now_ms = sdk_ctx.now_ms;
+
+    const expires_at = out.expires_at;
+
+    try set_session_cookie(project, request, response, ctx.arena, out.token, expires_at, now_ms);
 
     var csrf_buffer: [csrf.token_len]u8 = undefined;
     const session_id = out.token[0..sign_in_operations.session_id_len];
@@ -50,7 +54,7 @@ pub fn sign_in(request: *Request, response: *Response, ctx: *Context) Error!void
     try response.json(.ok, .{
         .user_id = out.user_id,
         .expires_at = out.expires_at,
-        .csrf = csrf.token(site.auth.secret, session_id, &csrf_buffer),
+        .csrf = csrf.token(project.auth.secret, session_id, &csrf_buffer),
     });
 }
 
@@ -62,19 +66,23 @@ pub fn sign_on(request: *Request, response: *Response, ctx: *Context) Error!void
     std.debug.assert(ctx.user_data != null);
     std.debug.assert(request.path().len > 0);
 
-    const site = Site.of(ctx);
+    const project = Project.of(ctx);
     const source = if (request.method() == .post) request.body else request.query();
     const token = http.Form.query_param(ctx.arena, source, "token") orelse "";
     const wanted = http.Form.query_param(ctx.arena, source, "return") orelse "/admin";
     const back = if (local_path(wanted)) wanted else "/admin";
-    var sdk_ctx = context(site, ctx.arena, .anonymous);
+    var sdk_ctx = context(project, ctx.arena, .anonymous);
     const redeem = sign_on_operations.Redeem;
     const out = registry.SDK.dispatch(&sdk_ctx, redeem, .{ .token = token }) catch {
         try response.set_header("Cache-Control", "no-store");
         return response.redirect(.see_other, "/admin/login?sign_on=refused");
     };
 
-    try set_session_cookie(request, response, ctx.arena, out.token, out.expires_at, sdk_ctx.now_ms);
+    const now_ms = sdk_ctx.now_ms;
+
+    const expires_at = out.expires_at;
+
+    try set_session_cookie(project, request, response, ctx.arena, out.token, expires_at, now_ms);
     try response.set_header("Cache-Control", "no-store");
     try response.redirect(.see_other, back);
 }
@@ -105,17 +113,17 @@ pub fn set_password(request: *Request, response: *Response, ctx: *Context) Error
     std.debug.assert(request.method() == .post);
     std.debug.assert(ctx.user_data != null);
 
-    const site = Site.of(ctx);
-    const identity = identify(request, ctx.arena, site);
+    const project = Project.of(ctx);
+    const identity = identify(request, ctx.arena, project);
 
-    if (!try guard(request, response, site, &identity)) {
+    if (!try guard(request, response, project, &identity)) {
         return;
     }
 
     const in = parse_body(user_operations.SetPassword.In, ctx.arena, request.body) orelse {
         return response.json(.bad_request, .{ .@"error" = "invalid_body" });
     };
-    var sdk_ctx = context(site, ctx.arena, .anonymous);
+    var sdk_ctx = context(project, ctx.arena, .anonymous);
     const out = registry.SDK.dispatch(&sdk_ctx, user_operations.SetPassword, in) catch |err| {
         return respond_error(response, err, &sdk_ctx);
     };
@@ -127,22 +135,22 @@ pub fn sign_out(request: *Request, response: *Response, ctx: *Context) Error!voi
     std.debug.assert(request.method() == .post);
     std.debug.assert(ctx.user_data != null);
 
-    const site = Site.of(ctx);
-    const identity = identify(request, ctx.arena, site);
+    const project = Project.of(ctx);
+    const identity = identify(request, ctx.arena, project);
 
-    if (!try guard(request, response, site, &identity)) {
+    if (!try guard(request, response, project, &identity)) {
         return;
     }
 
     if (identity.token) |token| {
-        var sdk_ctx = context(site, ctx.arena, identity.caller);
+        var sdk_ctx = context(project, ctx.arena, identity.caller);
         const sign_out_operation = sign_in_operations.SignOut;
         _ = registry.SDK.dispatch(&sdk_ctx, sign_out_operation, .{ .token = token }) catch |err| {
             return respond_error(response, err, &sdk_ctx);
         };
     }
 
-    try clear_session_cookie(request, response, ctx.arena);
+    try clear_session_cookie(project, request, response, ctx.arena);
     try response.json(.ok, .{ .signed_out = identity.token != null });
 }
 
@@ -150,19 +158,19 @@ pub fn whoami(request: *Request, response: *Response, ctx: *Context) Error!void 
     std.debug.assert(request.method() == .get or request.method() == .head);
     std.debug.assert(ctx.user_data != null);
 
-    const site = Site.of(ctx);
-    const identity = identify(request, ctx.arena, site);
+    const project = Project.of(ctx);
+    const identity = identify(request, ctx.arena, project);
     var csrf_buffer: [csrf.token_len]u8 = undefined;
 
-    const now_ms = sdk.context.wall_clock_ms(site.io);
+    const now_ms = sdk.context.wall_clock_ms(project.io);
 
-    identity_module.repair_hint(request, response, ctx.arena, &identity, now_ms);
+    identity_module.repair_hint(project, request, response, ctx.arena, &identity, now_ms);
 
     try response.json(.ok, .{
         .authenticated = identity.session != null,
         .user_id = identity.caller.user_id(),
-        .role = identity.caller.role(),
-        .csrf = identity.csrf_token(site, &csrf_buffer),
+        .roles = identity.caller.roles(),
+        .csrf = identity.csrf_token(project, &csrf_buffer),
     });
 }
 
@@ -223,7 +231,7 @@ pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) E
     try response.json(status, .{ .@"error" = @errorName(err) });
 }
 
-const routes = @import("../../app/routes.zig");
+const routes = @import("../../server/routes.zig");
 
 test "a plugin's failure answers with its declared status, name and message" {
     var harness: sdk.testing.Harness = undefined;
@@ -348,7 +356,7 @@ test "auth over http: login sets the cookie, session reports the user, csrf guar
     const whoami_head = try flow.head(whoami_template, .{cookie_pair});
     const me = try flow.call(whoami_head, "");
     try std.testing.expect(std.mem.indexOf(u8, me.body, "\"authenticated\":true") != null);
-    try std.testing.expect(std.mem.indexOf(u8, me.body, "\"role\":\"admin\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, me.body, "\"roles\":[\"admin\"]") != null);
     try std.testing.expect(std.mem.indexOf(u8, me.body, csrf_token) != null);
 
     const health_template = "GET /api/health HTTP/1.1\r\nHost: h\r\nCookie: {s}\r\n\r\n";

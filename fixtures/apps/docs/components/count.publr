@@ -1,0 +1,4 @@
+---
+const posts = Publr.build.getCollection({ type: 'post' });
+---
+<p class="text-sm">{posts.length} posts on the site</p>

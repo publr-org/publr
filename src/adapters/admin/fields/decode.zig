@@ -4,7 +4,7 @@
 //! group or repeater arrives as JSON text.
 const std = @import("std");
 const admin = @import("../../admin.zig");
-const registry = @import("../../../app/registry.zig");
+const registry = @import("../../../server/registry.zig");
 const model = @import("../../../model.zig");
 const time = @import("../../../lib/time.zig");
 

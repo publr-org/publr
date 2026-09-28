@@ -1,0 +1,32 @@
+---
+// A static page with no Disclosure in its own payload: both of the ones below
+// arrive inside a fragment. That is deliberate — it is what makes the claim
+// checkable. Open the network panel and load this page: `/_app/disclosure.js`
+// and `/_app/publr.js` are not in the document's own requests. They are
+// fetched when the first island lands, because the fragment carries the
+// <script> tag and the loader inserts it.
+import Base from '../layouts/base.publr';
+import Disclosure from '../components/disclosure.publr';
+import LiveNote from '../dynamic/live-note.dynamic.publr';
+---
+<Base title="Interactive · Publr">
+  <section class="mx-auto max-w-prose px-6 pt-16 pb-16">
+    <p class="mb-3 text-xs font-semibold tracking-[0.18em] uppercase text-accent">Interactive, inside islands</p>
+    <h1 class="font-serif text-4xl font-semibold tracking-tight">Nothing on this page is interactive until an island lands.</h1>
+    <p class="mt-5 leading-relaxed text-muted">The <a href="/" class="underline hover:text-accent">home page</a> embeds the same Disclosure component directly — it is in the HTML the server sent, working before anything else finishes. Here it appears only inside fragments: one built to a file, one rendered per request. Both carry <code>&lt;script type="module" src="/_app/disclosure.js"&gt;</code>, so the component's client half is fetched by the island that needs it and by nothing else.</p>
+
+    <h2 class="mt-12 font-serif text-2xl font-semibold">Inside a static island</h2>
+    <p class="mt-3 mb-4 text-sm text-muted"><code>&lt;Disclosure island /&gt;</code> — built once to <code>/_islands/disclosure-*</code>, cacheable, shared by every page that places it. The fallback below is what stands until the fragment arrives.</p>
+    <Disclosure island eager label="Inside a static island" body="This came from a file the build wrote. The loader replaced the fallback with it, the script tag inside the fragment started on the way in, and PublrJS wired this toggle to a store instantiated for this root alone.">
+      <p class="rounded-lg border border-dashed border-line px-5 py-4 text-sm text-muted">Loading the disclosure…</p>
+    </Disclosure>
+
+    <h2 class="mt-12 font-serif text-2xl font-semibold">Inside a dynamic island</h2>
+    <p class="mt-3 mb-4 text-sm text-muted"><code>&lt;LiveNote dynamic /&gt;</code> — never built, rendered per request, <code>no-store</code>. The Disclosure inside it is the same component; it does not know where it is.</p>
+    <LiveNote dynamic eager>
+      <p class="rounded-lg border border-dashed border-line px-5 py-4 text-sm text-muted">Loading the live note…</p>
+    </LiveNote>
+
+    <p class="mt-12 text-sm leading-relaxed text-muted">Each toggle is its own store: <code>Publr.createLocalStore</code> registers a factory, and PublrJS instantiates it once per <code>data-p-store="disclosure"</code> root. Opening one leaves the other closed. The module itself is fetched once — the second island's <code>&lt;script&gt;</code> resolves to a module already in the map — and the toggle still works, because the loader announces each patch with <code>publr:patched</code> and the component hydrates that subtree.</p>
+  </section>
+</Base>

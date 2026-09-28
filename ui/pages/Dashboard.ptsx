@@ -6,16 +6,22 @@ import { PageHeader } from "@publr/ui/PageHeader.ptsx";
 export type DashboardProps = {
   user_name: string;
   user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf: string;
 };
 
-export function Dashboard({ user_name, user_email, csrf }: DashboardProps) {
+export function Dashboard({ user_name, user_email, can_structure = true, can_settings = true, csrf }: DashboardProps) {
   return (
     <Layout
       title="Overview"
       section="dashboard"
       user_name={user_name}
       user_email={user_email}
+      can_structure={can_structure}
+      can_settings={can_settings}
       csrf={csrf}
     >
       <div class="px-8 py-7">

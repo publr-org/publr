@@ -89,5 +89,5 @@ test "the printed example splits into arguments, quotes grouping words" {
 test "help without an example line is an error" {
     var storage: [args_max][]const u8 = undefined;
 
-    try std.testing.expectError(Error.NoExample, parse("Usage: publr site status\n", &storage));
+    try std.testing.expectError(Error.NoExample, parse("Usage: publr project status\n", &storage));
 }

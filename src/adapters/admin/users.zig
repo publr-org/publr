@@ -1,7 +1,7 @@
 //! Accounts in the admin: the list under Settings, and one account's form.
 const std = @import("std");
 const admin = @import("../admin.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const user_operations = @import("../../operations/user.zig");
 const settings_nav = @import("settings_nav.zig");
 const fields = @import("fields.zig");
@@ -14,7 +14,6 @@ const Context = admin.Context;
 const Error = admin.Error;
 const Session = admin.Session;
 const views = admin.views;
-const Role = @import("../../sdk.zig").caller.Role;
 const Def = model.field.Def;
 const Value = std.json.Value;
 const Problem = views.UserForm.ProblemsItem;
@@ -26,8 +25,8 @@ const Shape = struct {
     id: []const u8 = "",
     name: []const u8 = "",
     email: []const u8 = "",
-    role: Role = .editor,
-    is_admin: bool = false,
+    /// The roles the account holds, by name.
+    roles: []const []const u8 = &.{model.role.editor},
     invited: bool = false,
     link: []const u8 = "",
     problem: []const u8 = "",
@@ -54,7 +53,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             .href = try std.fmt.allocPrint(arena, "{s}/{s}", .{ back, user.id }),
             .name = user.display_name,
             .email = user.email,
-            .role = role_label(user.role),
+            .roles = try labels_of(arena, user.roles),
             .active = user.active,
             .me = std.mem.eql(u8, user.id, me),
         };
@@ -65,6 +64,8 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     try admin.render.page(response, arena, .ok, views.Users, .{
         .user_name = shell.user_name,
         .user_email = shell.user_email,
+        .can_structure = shell.can_structure,
+        .can_settings = shell.can_settings,
         .csrf = shell.csrf,
         .nav = try settings_nav.node(&session, "users"),
         .users = rows,
@@ -90,12 +91,12 @@ pub fn create(request: *Request, response: *Response, ctx: *Context) Error!void 
     var shape: Shape = .{
         .name = post.form.text("display_name") orelse "",
         .email = post.form.text("email") orelse "",
-        .is_admin = role_of(&post.form) == .admin,
+        .roles = try roles_of(session.arena, &post.form),
     };
     const created = registry.SDK.dispatch(&session.ctx, user_operations.Create, .{
         .email = shape.email,
         .display_name = shape.name,
-        .role = role_of(&post.form),
+        .roles = shape.roles,
         .password = password,
         .password_link = password == null,
     }) catch |err| {
@@ -138,11 +139,14 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
     const form = &post.form;
     const id = try admin.param(session, "id", back) orelse return;
     var shape = try load(session, id) orelse return;
-    // The signed-in user's own role is fixed on the form, so it is not posted.
-    const role = if (form.get("role") == null) shape.role else role_of(form);
+    const me = session.ctx.caller.user_id() orelse "";
+
+    // The signed-in user's own roles are fixed on the form, so they are not posted.
+    if (!std.mem.eql(u8, id, me)) {
+        shape.roles = try roles_of(session.arena, form);
+    }
 
     shape.name = form.text("display_name") orelse "";
-    shape.is_admin = role == .admin;
 
     if (try reshaped(session, &shape, form)) {
         return;
@@ -154,7 +158,7 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
     _ = registry.SDK.dispatch(&session.ctx, user_operations.Update, .{
         .user = id,
         .display_name = shape.name,
-        .role = role,
+        .roles = shape.roles,
         .document = document,
     }) catch |err| {
         shape.problem = reason(err, .update) orelse return admin.fail(session, err, back);
@@ -223,8 +227,7 @@ fn load(session: *Session, id: []const u8) Error!?Shape {
         .id = user.id,
         .name = user.display_name,
         .email = user.email,
-        .role = user.role,
-        .is_admin = user.role == .admin,
+        .roles = user.roles,
         .invited = !user.active,
         .defs = got.fields,
         .document = parse(session.arena, got.document),
@@ -324,6 +327,8 @@ fn render_form(session: *Session, status: admin.Status, shape: Shape) Error!void
     try admin.render.page(session.response, arena, status, views.UserForm, .{
         .user_name = shell.user_name,
         .user_email = shell.user_email,
+        .can_structure = shell.can_structure,
+        .can_settings = shell.can_settings,
         .csrf = shell.csrf,
         .nav = try settings_nav.node(session, "users"),
         .title = if (is_new) "New user" else shape.name,
@@ -335,7 +340,7 @@ fn render_form(session: *Session, status: admin.Status, shape: Shape) Error!void
         .is_me = !is_new and std.mem.eql(u8, shape.id, me),
         .name = shape.name,
         .email = shape.email,
-        .is_admin = shape.is_admin,
+        .roles = try choices_of(arena, shape.roles),
         .invited = shape.invited,
         .link = shape.link,
         .link_action = try std.mem.concat(arena, u8, &.{ own, "/password-link" }),
@@ -356,9 +361,9 @@ fn reason(err: anyerror, verb: Verb) ?[]const u8 {
 
     return switch (err) {
         error.Invalid => switch (verb) {
-            .create => "the name or the email is not valid, or the password is shorter " ++
-                "than 8 characters",
-            .update => "the name is not valid, and your own role cannot be changed by you",
+            .create => "the name or the email is not valid, no role is ticked, or the " ++
+                "password is shorter than 8 characters",
+            .update => "the name is not valid, or no role is ticked",
             .delete => "you cannot delete yourself",
         },
         error.Conflict => switch (verb) {
@@ -370,23 +375,81 @@ fn reason(err: anyerror, verb: Verb) ?[]const u8 {
     };
 }
 
-fn role_of(form: *const admin.Form) Role {
+/// The roles ticked on the form, each once, in the order the project declares them.
+fn roles_of(arena: std.mem.Allocator, form: *const admin.Form) Error![]const []const u8 {
     std.debug.assert(form.len <= admin.form_pairs_max);
-    std.debug.assert(@typeInfo(Role).@"enum".fields.len == 2);
+    std.debug.assert(registry.Roles.all.len > 0);
 
-    const text = form.text("role") orelse "editor";
+    var ticked: std.ArrayList([]const u8) = .empty;
 
-    return if (std.mem.eql(u8, text, "admin")) .admin else .editor;
+    for (registry.Roles.all) |role| {
+        for (form.pairs[0..form.len]) |pair| {
+            if (std.mem.eql(u8, pair.name, "roles") and std.mem.eql(u8, pair.value, role.name)) {
+                ticked.append(arena, role.name) catch return error.OutOfMemory;
+
+                break;
+            }
+        }
+    }
+
+    return ticked.items;
 }
 
-fn role_label(role: Role) []const u8 {
-    std.debug.assert(@typeInfo(Role).@"enum".fields.len == 2);
-    std.debug.assert(@intFromEnum(role) < 2);
+/// Every role the project has, ticked when the account holds it.
+fn choices_of(
+    arena: std.mem.Allocator,
+    held: []const []const u8,
+) Error![]const views.UserForm.RolesItem {
+    std.debug.assert(held.len <= model.role.user_roles_max);
+    std.debug.assert(registry.Roles.all.len > 0);
 
-    return switch (role) {
-        .admin => "Admin",
-        .editor => "Editor",
-    };
+    const roles = registry.Roles.all;
+    const choices = arena.alloc(views.UserForm.RolesItem, roles.len) catch
+        return error.OutOfMemory;
+
+    for (roles, choices) |role, *choice| {
+        choice.* = .{
+            .name = role.name,
+            .label = role.label,
+            .description = role.description,
+            .checked = contains(held, role.name),
+        };
+    }
+
+    return choices;
+}
+
+/// The roles' labels, comma-separated; a name no compiled-in code declares shows as is.
+fn labels_of(arena: std.mem.Allocator, held: []const []const u8) Error![]const u8 {
+    std.debug.assert(held.len <= model.role.user_roles_max);
+    std.debug.assert(registry.Roles.all.len > 0);
+
+    var text: std.ArrayList(u8) = .empty;
+
+    for (held, 0..) |name, index| {
+        const label = if (registry.Roles.get(name)) |role| role.label else name;
+
+        if (index > 0) {
+            text.appendSlice(arena, ", ") catch return error.OutOfMemory;
+        }
+
+        text.appendSlice(arena, label) catch return error.OutOfMemory;
+    }
+
+    return text.items;
+}
+
+fn contains(names: []const []const u8, wanted: []const u8) bool {
+    std.debug.assert(wanted.len > 0);
+    std.debug.assert(names.len <= model.role.user_roles_max);
+
+    for (names) |name| {
+        if (std.mem.eql(u8, name, wanted)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 test "users under settings: invite by link, rename, reissue, delete; the rail signs out" {
@@ -429,7 +492,7 @@ test "users under settings: invite by link, rename, reissue, delete; the rail si
 
     const invite = try std.fmt.allocPrint(
         arena,
-        "csrf={s}&display_name=Writer&email=writer%40example.com&role=editor&password=",
+        "csrf={s}&display_name=Writer&email=writer%40example.com&roles=editor&password=",
         .{csrf},
     );
     const invited = try flow.call("POST", back ++ "/create", invite);
@@ -448,7 +511,7 @@ test "users under settings: invite by link, rename, reissue, delete; the rail si
     try std.testing.expectEqual(.ok, page.status);
     try std.testing.expect(std.mem.indexOf(u8, page.body, "value=\"Writer\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, page.body, "New set-password link") != null);
-    const rename = try std.fmt.allocPrint(arena, "csrf={s}&display_name=Author&role=admin", .{
+    const rename = try std.fmt.allocPrint(arena, "csrf={s}&display_name=Author&roles=admin", .{
         csrf,
     });
     const update_path = try std.mem.concat(arena, u8, &.{ own, "/update" });
@@ -493,7 +556,7 @@ test "users under settings: invite by link, rename, reissue, delete; the rail si
     try std.testing.expect(std.mem.indexOf(u8, with_fields.body, ">Basic<") != null);
     const filled = try std.fmt.allocPrint(
         arena,
-        "csrf={s}&display_name=Author&role=admin&basic.mail=ada%40example.org",
+        "csrf={s}&display_name=Author&roles=admin&basic.mail=ada%40example.org",
         .{csrf},
     );
     const saved = try flow.call("POST", update_path, filled);
@@ -502,7 +565,7 @@ test "users under settings: invite by link, rename, reissue, delete; the rail si
     try std.testing.expect(std.mem.indexOf(u8, shown.body, "value=\"ada@example.org\"") != null);
     const blank_bio = try std.fmt.allocPrint(
         arena,
-        "csrf={s}&display_name=Author&role=admin&basic.mail=nope",
+        "csrf={s}&display_name=Author&roles=admin&basic.mail=nope",
         .{csrf},
     );
     const refused_bio = try flow.call("POST", update_path, blank_bio);

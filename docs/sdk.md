@@ -14,7 +14,9 @@ reserved for the core.
 
 An operation has a **name** (`namespace.verb`, e.g. `heartbeat.check`), a
 one-line **description**, an **input**, an **output**, and a **kind**: it
-either reads or it writes.
+either reads or it writes. What apps call is named `app.<feature>.<verb>`
+(`app.newsletter.subscribe`): a role for an app's visitors grants those and never
+the admin's (see [Auth](auth.md#roles)).
 
 Inputs and outputs are plain data: text, numbers, booleans, lists, small
 records. No pointers, no callbacks, nothing that cannot be written down as
@@ -73,8 +75,8 @@ restrictive grant to make sure it does.
 
 ### Callers
 
-The pipeline always knows who is calling: an anonymous visitor, a user (with a
-role, `admin` or `editor`), a user token, a machine token with its own policy,
+The pipeline always knows who is calling: an anonymous visitor, a user (with the
+roles it holds), a user token, a machine token with its own policy,
 the local operator (`system`), or a plugin with a set of permission scopes.
 Policies use this to decide the grant. The CLI runs as anonymous unless told
 otherwise (`--as <user id or email>`, `--as-admin`).
@@ -88,11 +90,11 @@ is asked of the database as such, so a list's limit and offset count only those.
 
 An operation may declare `open` (anyone may call it, like signing in) and
 `allow_frontmatter_calls` (a dynamic page may run it when it is opened,
-`Publr.request.call()`; see [The site](site.md)). The second is a promise that being
+`Publr.request.call()`; see [Apps](apps.md)). The second is a promise that being
 triggered by a visit, with no form and no CSRF token, is harmless: marking something
 seen, counting a view.
 
-Users and sessions are ordinary operations: `site.init` (first admin,
+Users and sessions are ordinary operations: `project.init` (first admin,
 exactly once), `user.create` (with a password, a generated one, or a
 set-password link), `users.password_link`, `users.set_password`,
 `user.list`, `user.sign_in` (sign in: email + password to token) and
@@ -178,7 +180,8 @@ An operation can raise a **notice** while it runs (`ctx.notice(name, subject)`),
 a named event with a subject that reaches every event hook. The core raises
 `auth.user_created`, `auth.sign_in_succeeded`, `auth.sign_in_failed`,
 `auth.sign_in_throttled`, `auth.sign_in_locked`, `auth.sign_out`,
-`site.initialised`, `auth.password_link_issued` and `auth.password_set`; for
+`project.initialised`, `auth.password_link_issued` and
+`auth.password_set`; for
 content, outcomes rather than mechanics: `record.created`, `record.saved` (a
 document was written), `record.changed` (first pending edit on a live record),
 `record.changes_saved`, `record.changes_discarded`, `record.published` (a new live

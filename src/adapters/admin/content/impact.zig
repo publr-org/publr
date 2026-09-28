@@ -1,16 +1,18 @@
 //! The editor's dependency dialog, drawn under `serve --dev` only: every page and fragment
 //! a change to the record reaches, those built to a file first, each with the chain that
-//! explains it (the theme's templates) and whether the last build recorded it (the index).
+//! explains it (the apps' templates) and whether the last build recorded it (the index).
 
 const std = @import("std");
 const admin = @import("../../admin.zig");
-const registry = @import("../../../app/registry.zig");
+const registry = @import("../../../server/registry.zig");
 const model = @import("../../../model.zig");
-const theme_module = @import("../../../theme.zig");
-const site_operations = @import("../../../operations/site.zig");
+const template_module = @import("../../../template.zig");
+const project_operations = @import("../../../operations/project.zig");
 const fields = @import("../fields.zig");
 const type_pages = @import("../types.zig");
 const rows_module = @import("impact/rows.zig");
+const apps_state = @import("../../apps/state.zig");
+const apps_artifacts = @import("../../apps/artifacts.zig");
 
 const Session = admin.Session;
 const Error = admin.Error;
@@ -19,12 +21,12 @@ const Dialog = views.RecordImpact;
 const Row = rows_module.Row;
 const Source = rows_module.Source;
 const Def = model.content_type.Def;
-const Impact = site_operations.impact.Impact;
+const Impact = project_operations.impact.Impact;
 
 const islands_prefix = rows_module.islands_prefix;
 
 /// The dialog as a node for the editor's aside; null unless the server runs `--dev` with
-/// a theme loaded.
+/// its apps loaded.
 pub fn node_of(
     session: *Session,
     def: Def,
@@ -33,26 +35,14 @@ pub fn node_of(
     std.debug.assert(def.handle.len > 0);
     std.debug.assert(session.signed_in());
 
-    const public = session.site.public orelse return null;
+    const apps = session.project.apps;
 
-    if (!public.options.dev) {
+    if (apps.len == 0 or !apps[0].options.dev) {
         return null;
     }
 
     const arena = session.arena;
     const record_id: ?[]const u8 = if (full) |got| got.id else null;
-    const slug: ?[]const u8 = if (full) |got| got.slug else null;
-    var failed = false;
-    const empty: theme_module.impact.Impact = .{ .pages = &.{}, .islands = &.{} };
-    const found = theme_module.impact.of(arena, public.theme, def.handle) catch |err| blk: {
-        if (err == error.OutOfMemory) {
-            return error.OutOfMemory;
-        }
-
-        failed = true;
-
-        break :blk empty;
-    };
     const recorded = registry.SDK.dispatch(&session.ctx, Impact, .{
         .type = def.handle,
         .id = record_id,
@@ -60,13 +50,83 @@ pub fn node_of(
         error.OutOfMemory => return error.OutOfMemory,
         else => Impact.Out{ .keys = &.{}, .artifacts = &.{} },
     };
-    const source: Source = .{
-        .arena = arena,
-        .def = def,
-        .site_url = try type_pages.site_url_of(session),
-        .artifacts = recorded.artifacts,
-    };
-    const rows = try rows_of(source, found, slug);
+    var rows: std.ArrayList(Row) = .empty;
+    var failed = false;
+
+    for (apps) |*app| {
+        const program = app.program orelse continue;
+        const found = template_module.impact.of(arena, program, def.handle) catch |err| {
+            if (err == error.OutOfMemory) {
+                return error.OutOfMemory;
+            }
+
+            failed = true;
+
+            continue;
+        };
+        const source: Source = .{
+            .arena = arena,
+            .def = def,
+            .base_url = try url_of(session, app),
+            .artifacts = try artifacts_of(arena, recorded.artifacts, app.spec.name),
+        };
+        const slug: ?[]const u8 = if (full) |got| got.slug else null;
+
+        rows.appendSlice(arena, try rows_of(source, found, slug)) catch
+            return error.OutOfMemory;
+    }
+
+    return try dialog(session, def, full, recorded.keys, rows.items, failed);
+}
+
+/// Where the app's pages open from the admin: under this host for a path mount, at the
+/// app's own address for a subdomain.
+fn url_of(session: *const Session, app: *const apps_state.App) Error![]const u8 {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(app.url.len > 0);
+
+    if (app.spec.mount == .subdomain) {
+        return app.url;
+    }
+
+    return print(session.arena, "{s}{s}", .{ try type_pages.host_url_of(session), app.base() });
+}
+
+/// The index's artifacts that `app` built, named by their URL inside it.
+fn artifacts_of(
+    arena: std.mem.Allocator,
+    recorded: []const project_operations.impact.Artifact,
+    app: []const u8,
+) Error![]const project_operations.impact.Artifact {
+    std.debug.assert(app.len > 0);
+    std.debug.assert(recorded.len <= project_operations.impact.artifacts_max);
+
+    var own: std.ArrayList(project_operations.impact.Artifact) = .empty;
+
+    for (recorded) |artifact| {
+        const parts = apps_artifacts.split(artifact.name) orelse continue;
+
+        if (std.mem.eql(u8, parts.app, app)) {
+            own.append(arena, .{ .name = parts.url, .keys = artifact.keys }) catch
+                return error.OutOfMemory;
+        }
+    }
+
+    return own.items;
+}
+
+fn dialog(
+    session: *const Session,
+    def: Def,
+    full: ?fields.Record,
+    keys: []const []const u8,
+    rows: []const Row,
+    failed: bool,
+) Error!admin.render.Node {
+    std.debug.assert(def.handle.len > 0);
+    std.debug.assert(keys.len <= 3);
+
+    const arena = session.arena;
     const title = if (full) |got|
         (if (got.title.len > 0) got.title else got.id)
     else
@@ -74,7 +134,7 @@ pub fn node_of(
 
     return try admin.render.view(arena, Dialog, .{
         .title = title,
-        .keys = try keys_of(arena, recorded.keys),
+        .keys = try keys_of(arena, keys),
         .rows = rows,
         .has_rebuild = count(rows, true) > 0,
         .has_live = count(rows, false) > 0,
@@ -86,18 +146,18 @@ pub fn node_of(
 /// did not explain (the plan over-approximates and must never miss).
 fn rows_of(
     source: Source,
-    found: theme_module.impact.Impact,
+    found: template_module.impact.Impact,
     slug: ?[]const u8,
 ) Error![]const Row {
-    std.debug.assert(source.site_url.len > 0);
-    std.debug.assert(found.pages.len <= theme_module.templates_max);
+    std.debug.assert(source.base_url.len > 0);
+    std.debug.assert(found.pages.len <= template_module.templates_max);
 
     var rows: std.ArrayList(Row) = .empty;
     var names: std.ArrayList([]const u8) = .empty;
 
     for (found.pages) |page| {
         const own = if (page.reads == .entry and slug != null)
-            theme_module.substitute(source.arena, page.route, slug.?) catch {
+            template_module.substitute(source.arena, page.route, slug.?) catch {
                 return error.OutOfMemory;
             }
         else
@@ -148,7 +208,7 @@ fn append(
 
 fn contains(names: []const []const u8, name: []const u8) bool {
     std.debug.assert(name.len > 0);
-    std.debug.assert(names.len <= theme_module.templates_max + theme_module.islands_max);
+    std.debug.assert(names.len <= template_module.templates_max + template_module.islands_max);
 
     for (names) |known| {
         if (std.mem.eql(u8, known, name)) {
@@ -194,7 +254,7 @@ fn print(arena: std.mem.Allocator, comptime template: []const u8, args: anytype)
     return std.fmt.allocPrint(arena, template, args) catch error.OutOfMemory;
 }
 
-const test_pages = [_]theme_module.impact.Page{
+const test_pages = [_]template_module.impact.Page{
     .{
         .route = "/",
         .template = "content/index.publr",
@@ -218,7 +278,7 @@ const test_pages = [_]theme_module.impact.Page{
     },
 };
 
-const test_islands = [_]theme_module.impact.Island{.{
+const test_islands = [_]template_module.impact.Island{.{
     .key = "latest",
     .template = "components/latest.publr",
     .dynamic = false,
@@ -237,14 +297,17 @@ test "rows: the theme's pages, then its fragments, then what only the index know
     const source: Source = .{
         .arena = arena_state.allocator(),
         .def = .{ .handle = "post", .name = "Post", .fields = &.{} },
-        .site_url = "http://h",
+        .base_url = "http://h",
         .artifacts = &.{
             .{ .name = "/", .keys = &.{ "type:post", "records" } },
             .{ .name = "/posts/hello", .keys = &.{"record:abc"} },
             .{ .name = "/tags", .keys = &.{"records"} },
         },
     };
-    const found: theme_module.impact.Impact = .{ .pages = &test_pages, .islands = &test_islands };
+    const found: template_module.impact.Impact = .{
+        .pages = &test_pages,
+        .islands = &test_islands,
+    };
 
     const rows = try rows_of(source, found, "hello");
     try std.testing.expectEqual(@as(usize, 5), rows.len);

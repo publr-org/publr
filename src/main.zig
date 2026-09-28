@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const publr = @import("publr");
 
-const app = publr.app;
+const server = publr.server;
 const cli = publr.cli;
 const registry = publr.registry;
 const report = publr.report;
@@ -61,11 +61,11 @@ fn run(init: std.process.Init) !u8 {
         return if (rest.len == 0) 2 else 0;
     }
 
-    var application: app.App = undefined;
+    var application: server.Server = undefined;
     try application.init(init, db_path);
     defer application.deinit();
 
-    const arena_bytes = try init.gpa.alloc(u8, app.request_arena_bytes);
+    const arena_bytes = try init.gpa.alloc(u8, server.request_arena_bytes);
     defer init.gpa.free(arena_bytes);
 
     var fixed = std.heap.FixedBufferAllocator.init(arena_bytes);
@@ -102,7 +102,7 @@ fn collect_args(init: std.process.Init, storage: *[args_max][]const u8) ![]const
     return storage[0..count];
 }
 
-/// The commands that are not operations: `serve`, `build` and `check-theme`. Null for
+/// The commands that are not operations: `serve`, `build` and `check-apps`. Null for
 /// anything else, which the CLI answers.
 fn tool(
     init: std.process.Init,
@@ -134,25 +134,25 @@ fn tool(
         }
     }
 
-    if (rest.len == 1 and std.mem.eql(u8, rest[0], "check-theme")) {
-        return try check_theme(init, out);
+    if (rest.len == 1 and std.mem.eql(u8, rest[0], "check-apps")) {
+        return try check_apps(init, out);
     }
 
     return null;
 }
 
-/// `publr check-theme`: 0 when the embedded theme compiles, else 1 and the reason, the way
-/// `serve` would report it at start.
-fn check_theme(init: std.process.Init, out: *std.Io.Writer) !u8 {
+/// `publr check-apps`: 0 when every compiled-in app compiles, else 1 and the reason, the
+/// way `serve` would report it at start.
+fn check_apps(init: std.process.Init, out: *std.Io.Writer) !u8 {
     std.debug.assert(args_max > 0);
 
-    const problem = try publr.public_site.check_theme(init.gpa, init.arena.allocator());
+    const problem = try publr.apps.check_apps(init.gpa, init.arena.allocator());
 
     if (problem) |reason| {
-        report.err("[theme] {s}", .{reason});
+        report.err("{s}", .{reason});
         return 1;
     }
 
-    try out.print("theme {s}: compiles\n", .{publr.public_site.theme_name});
+    try out.print("{d} apps: compile\n", .{publr.apps.spec.all.len});
     return 0;
 }

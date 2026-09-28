@@ -10,9 +10,11 @@ pub fn main(init: std.process.Init) !u8 {
     _ = iterator.next();
 
     const binary_arg = iterator.next() orelse return error.MissingBinaryPath;
+    const bare_arg = iterator.next() orelse return error.MissingBinaryPath;
     const work_dir = iterator.next() orelse return error.MissingWorkDir;
     const arena = init.arena.allocator();
     const binary = try std.Io.Dir.cwd().realPathFileAlloc(init.io, binary_arg, arena);
+    const bare = try std.Io.Dir.cwd().realPathFileAlloc(init.io, bare_arg, arena);
 
     std.debug.assert(std.fs.path.isAbsolute(binary));
     std.debug.assert(std.fs.path.isAbsolute(work_dir));
@@ -31,6 +33,7 @@ pub fn main(init: std.process.Init) !u8 {
     try expect_auth(init, binary, work_dir);
     try expect_build(init, binary, work_dir, "smoke@example.com");
     try expect_serve(init, binary, work_dir);
+    try expect_bare(init, bare, work_dir);
 
     std.debug.print("smoke: ok\n", .{});
 
@@ -115,7 +118,8 @@ fn expect_auth(init: std.process.Init, binary: []const u8, work_dir: []const u8)
         "init", "--email", email, "--display_name", "Smoke", "--password", password,
     };
     const setup_again = [_][]const u8{
-        "site", "init", "--email", "x@example.com", "--display_name", "X", "--password", password,
+        "project",        "init", "--email",    "x@example.com",
+        "--display_name", "X",    "--password", password,
     };
     const login = [_][]const u8{ "user", "sign_in", "--email", email, "--password", password };
     const wrong = [_][]const u8{
@@ -140,7 +144,7 @@ fn expect_auth(init: std.process.Init, binary: []const u8, work_dir: []const u8)
         "user", "set_password", "--token", "0" ** 64, "--password", password,
     };
 
-    try expect_contains(init, binary, work_dir, &setup, "\"role\": \"admin\"");
+    try expect_contains(init, binary, work_dir, &setup, "\"roles\": [\n    \"admin\"");
     try expect_failure(init, binary, work_dir, &setup_again, "conflict");
     try expect_contains(init, binary, work_dir, &login, "\"token\": \"");
     try expect_failure(init, binary, work_dir, &wrong, "wrong email or password");
@@ -223,7 +227,7 @@ fn expect_taxonomies(
     try expect_contains(init, binary, work_dir, &listed_taxonomies, "\"handle\": \"topics\"");
 }
 
-/// A post published, the site built from it, and the files the build promises.
+/// A post published, every app built from it, and the files the build promises.
 fn expect_build(
     init: std.process.Init,
     binary: []const u8,
@@ -239,13 +243,15 @@ fn expect_build(
     };
     const build = [_][]const u8{"build"};
     const files = [_][]const u8{
-        "output/index.html",
-        "output/posts/index.html",
-        "output/posts/hello-site/index.html",
-        "output/404.html",
-        "output/sitemap.xml",
-        "output/theme/theme.css",
-        "output/theme/islands.js",
+        "output/www/index.html",
+        "output/www/posts/index.html",
+        "output/www/posts/hello-site/index.html",
+        "output/www/404.html",
+        "output/www/sitemap.xml",
+        "output/www/_app/app.css",
+        "output/www/_app/islands.js",
+        "output/docs/index.html",
+        "output/docs/guide/index.html",
     };
 
     try expect_contains(init, binary, work_dir, &publish, "\"slug\": \"hello-site\"");
@@ -396,25 +402,28 @@ fn expect_serve(init: std.process.Init, binary: []const u8, work_dir: []const u8
     try expect_site(init, port);
 }
 
-/// The public site: the built home page, the post's page, a fragment, the stylesheet,
-/// and the theme's 404 for a path nothing owns.
+/// The apps: the root app's built home page, the post's page, a fragment, the stylesheet
+/// and its 404 for a path nothing owns; the app under `/docs`; the app on a subdomain.
 fn expect_site(init: std.process.Init, port: u16) !void {
     std.debug.assert(port > 0);
     std.debug.assert(output_bytes_max > 0);
 
-    const checks = [_]struct { path: []const u8, needle: []const u8 }{
+    const checks = [_]struct { path: []const u8, needle: []const u8, host: []const u8 = "smoke" }{
         .{ .path = "/", .needle = "X-Publr-Served: file" },
         .{ .path = "/", .needle = "<title>Publr</title>" },
         .{ .path = "/posts/hello-site", .needle = "<code>hello-site</code>" },
         .{ .path = "/posts", .needle = "Hello site" },
         .{ .path = "/_islands/signed-in", .needle = "<template patchfor=\"signed-in\">" },
-        .{ .path = "/theme/theme.css", .needle = ".bg-canvas" },
+        .{ .path = "/_app/app.css", .needle = ".bg-canvas" },
         .{ .path = "/nowhere", .needle = "404 Not Found" },
         .{ .path = "/nowhere", .needle = "Nothing lives at this address." },
+        .{ .path = "/docs/guide", .needle = "The guide" },
+        .{ .path = "/docs/_app/app.css", .needle = ".bg-paper" },
+        .{ .path = "/x", .needle = "\"app\":\"portal\"", .host = "portal.127.0.0.1" },
     };
 
     for (checks) |check| {
-        const body = try http_get(init, port, check.path);
+        const body = try http_get_host(init, port, check.host, check.path);
 
         if (std.mem.indexOf(u8, body, check.needle) == null) {
             std.debug.print("smoke: site: {s} lacks {s}: {s}\n", .{
@@ -424,6 +433,39 @@ fn expect_site(init: std.process.Init, port: u16) !void {
             });
             return error.SmokeFailed;
         }
+    }
+}
+
+/// A Publr with no apps: its `serve` opens the admin at `/`.
+fn expect_bare(init: std.process.Init, binary: []const u8, work_dir: []const u8) !void {
+    std.debug.assert(binary.len > 0);
+    std.debug.assert(work_dir.len > 0);
+
+    const bare_dir = try std.fmt.allocPrint(init.arena.allocator(), "{s}/bare", .{work_dir});
+
+    try std.Io.Dir.cwd().createDirPath(init.io, bare_dir);
+
+    var child = try std.process.spawn(init.io, .{
+        .argv = &.{ binary, "serve", "--port", "8090" },
+        .cwd = .{ .path = bare_dir },
+        .stdout = .ignore,
+        .stderr = .pipe,
+    });
+    defer child.kill(init.io);
+
+    const port = try read_port(init, child.stderr.?);
+    const root = try http_get(init, port, "/");
+
+    if (std.mem.indexOf(u8, root, "Location: /admin") == null) {
+        std.debug.print("smoke: bare: / does not open the admin: {s}\n", .{root});
+        return error.SmokeFailed;
+    }
+
+    const apps = try run_publr(init, binary, bare_dir, &.{"check-apps"});
+
+    if (std.mem.indexOf(u8, apps.stdout, "0 apps: compile") == null) {
+        std.debug.print("smoke: bare: check-apps: {s}{s}\n", .{ apps.stdout, apps.stderr });
+        return error.SmokeFailed;
     }
 }
 
@@ -464,10 +506,22 @@ fn http_get(init: std.process.Init, port: u16, path: []const u8) ![]const u8 {
     std.debug.assert(port > 0);
     std.debug.assert(path.len > 0);
 
+    return http_get_host(init, port, "smoke", path);
+}
+
+fn http_get_host(
+    init: std.process.Init,
+    port: u16,
+    host: []const u8,
+    path: []const u8,
+) ![]const u8 {
+    std.debug.assert(port > 0);
+    std.debug.assert(host.len > 0);
+
     const request = try std.fmt.allocPrint(
         init.arena.allocator(),
-        "GET {s} HTTP/1.1\r\nHost: smoke\r\nConnection: close\r\n\r\n",
-        .{path},
+        "GET {s} HTTP/1.1\r\nHost: {s}\r\nConnection: close\r\n\r\n",
+        .{ path, host },
     );
 
     return http_exchange(init, port, request);

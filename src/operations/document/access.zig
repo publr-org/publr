@@ -3,7 +3,7 @@
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 
@@ -24,6 +24,17 @@ pub const Span = struct {
     single: ?Def,
 };
 
+/// Whether a signed-in account's roles keep it from settings singletons: none grants
+/// `settings.edit`. Any other caller is limited by its grant alone.
+pub fn settings_denied(ctx: *const Ctx) bool {
+    std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(model.role.settings_grant.len > 0);
+
+    const held = ctx.caller.roles() orelse return false;
+
+    return !registry.Roles.allows(held, model.role.settings_grant);
+}
+
 pub fn Of(comptime Domain: type) type {
     return struct {
         const documents = Domain.documents;
@@ -41,7 +52,7 @@ pub fn Of(comptime Domain: type) type {
             const found = row orelse return null;
             const type_row = try definitions.find(ctx, found.type_id) orelse return null;
 
-            if (type_row.def.kind == .settings and ctx.caller.role() == .editor) {
+            if (type_row.def.kind == .settings and settings_denied(ctx)) {
                 return error.Denied;
             }
 
@@ -115,7 +126,7 @@ pub fn Of(comptime Domain: type) type {
                         return error.NotFound;
                     };
 
-                    if (row.def.kind == .settings and ctx.caller.role() == .editor) {
+                    if (row.def.kind == .settings and settings_denied(ctx)) {
                         return error.Denied;
                     }
 

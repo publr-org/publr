@@ -5,18 +5,6 @@ const std = @import("std");
 
 pub const id_len_max: u32 = 64;
 
-/// What a signed-in account may do: `admin` everything, `editor` the content.
-pub const Role = enum {
-    admin,
-    editor,
-
-    pub fn parse(text: []const u8) ?Role {
-        std.debug.assert(@typeInfo(Role).@"enum".fields.len == 2);
-
-        return std.meta.stringToEnum(Role, text);
-    }
-};
-
 pub const email_len_max: u32 = 254;
 pub const display_name_len_max: u32 = 128;
 pub const EmailError = error{ InvalidEmail, OutOfMemory };

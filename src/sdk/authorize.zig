@@ -4,8 +4,10 @@ const caller_module = @import("caller.zig");
 const operation = @import("operation.zig");
 const Harness = @import("../sdk.zig").testing.Harness;
 const grant = @import("grant.zig");
+const role = @import("../model/role.zig");
 
 const Grant = grant.Grant;
+const Role = role.Role;
 
 pub const policies_max: u32 = 64;
 
@@ -21,15 +23,20 @@ pub const Request = struct {
 pub const Policy = *const fn (ctx: *const Ctx, request: Request) Grant;
 
 pub const open_operations = [_][]const u8{
-    "site.init",
-    "site.status",
+    "project.init",
+    "project.status",
     "user.set_password",
     "user.sign_in",
     "user.sign_out",
 };
-pub const admin_namespaces = [_][]const u8{ "user", "settings", "custom_fields", "sign_on" };
-pub const admin_write_namespaces = [_][]const u8{ "content_type", "taxonomy" };
-pub const admin_operations = [_][]const u8{ "record.purge", "term.purge" };
+pub const admin_namespaces = [_][]const u8{
+    "user",
+    "settings",
+    "custom_fields",
+    "sign_on",
+    "identity",
+    "role",
+};
 pub const public_read_namespaces = [_][]const u8{ "heartbeat", "record", "term" };
 
 const delivery_grant: Grant = .{
@@ -37,7 +44,10 @@ const delivery_grant: Grant = .{
     .record_filter = .{ .flags = .{ .live_only = true } },
 };
 
-pub fn core_policy(ctx: *const Ctx, request: Request) Grant {
+/// What the core allows before any plugin narrows it: anonymous callers read live public
+/// records; a signed-in account what its roles grant; the system everything; a plugin or a
+/// machine token its listed capabilities.
+pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) Grant {
     std.debug.assert(request.operation_name.len > 0);
     std.debug.assert(std.mem.indexOfScalar(u8, request.operation_name, '.') != null);
 
@@ -47,43 +57,29 @@ pub fn core_policy(ctx: *const Ctx, request: Request) Grant {
 
     return switch (ctx.caller) {
         .anonymous => anonymous_grant(request),
-        .user => |user| role_grant(user.role, request),
+        .user => |user| role_grant(roles, user.roles, request),
         .token => Grant.allow_all,
         .machine, .plugin => scoped_grant(ctx, request),
         .system => Grant.allow_all,
     };
 }
 
-fn role_grant(role: caller_module.Role, request: Request) Grant {
+/// Everything one of the account's roles grants, and the doors open to everyone. Short of
+/// a grant, a signed-in account gets what an anonymous visitor gets: live records of public
+/// types, so an app's pages read those for its visitors whatever their roles.
+fn role_grant(roles: []const Role, held: []const []const u8, request: Request) Grant {
     std.debug.assert(request.operation_name.len > 0);
-    std.debug.assert(admin_namespaces.len == 4);
+    std.debug.assert(held.len <= role.user_roles_max);
 
-    switch (role) {
-        .admin => return Grant.allow_all,
-        .editor => {
-            if (is_open_operation(request.operation_name)) {
-                return Grant.allow_all;
-            }
-
-            if (std.mem.eql(u8, request.operation_name, "user.options") and request.kind == .read) {
-                return Grant.allow_all;
-            }
-
-            if (is_admin_namespace(request.operation_name)) {
-                return Grant.deny;
-            }
-
-            if (request.kind == .write and is_admin_write_namespace(request.operation_name)) {
-                return Grant.deny;
-            }
-
-            if (is_admin_operation(request.operation_name)) {
-                return Grant.deny;
-            }
-
-            return Grant.allow_all;
-        },
+    if (is_open_operation(request.operation_name)) {
+        return Grant.allow_all;
     }
+
+    if (role.permit(roles, held, request.operation_name)) {
+        return Grant.allow_all;
+    }
+
+    return anonymous_grant(request);
 }
 
 pub fn is_open_operation(operation_name: []const u8) bool {
@@ -112,35 +108,9 @@ pub fn is_public_read_namespace(operation_name: []const u8) bool {
     return false;
 }
 
-fn is_admin_operation(operation_name: []const u8) bool {
-    std.debug.assert(operation_name.len > 0);
-    std.debug.assert(admin_operations.len == 2);
-
-    for (admin_operations) |name| {
-        if (std.mem.eql(u8, operation_name, name)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-fn is_admin_write_namespace(operation_name: []const u8) bool {
-    std.debug.assert(operation_name.len > 0);
-    std.debug.assert(admin_write_namespaces.len == 2);
-
-    for (admin_write_namespaces) |namespace| {
-        if (std.mem.eql(u8, operation.namespace(operation_name), namespace)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 fn is_admin_namespace(operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
-    std.debug.assert(admin_namespaces.len == 4);
+    std.debug.assert(admin_namespaces.len == 6);
 
     for (admin_namespaces) |namespace| {
         if (std.mem.eql(u8, operation.namespace(operation_name), namespace)) {
@@ -194,11 +164,12 @@ pub fn authorize(
     ctx: *const Ctx,
     request: Request,
     policies: []const Policy,
+    roles: []const Role,
 ) operation.Error!Grant {
     std.debug.assert(policies.len <= policies_max);
     std.debug.assert(request.operation_name.len > 0);
 
-    var result = core_policy(ctx, request);
+    var result = core_policy(ctx, request, roles);
 
     for (policies) |policy| {
         if (!result.allows()) {
@@ -231,25 +202,25 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
     const write: Request = .{ .operation_name = "record.save", .kind = .write, .resource = .{} };
 
     var anon = harness.ctx(.anonymous);
-    const granted = try authorize(&anon, read, &.{});
+    const granted = try authorize(&anon, read, &.{}, &role.core);
     try std.testing.expect(granted.read_only);
     try std.testing.expect(granted.record_filter.flags.live_only);
     try std.testing.expect(granted.record_filter.flags.public_types_only);
-    try std.testing.expectError(error.Denied, authorize(&anon, write, &.{}));
+    try std.testing.expectError(error.Denied, authorize(&anon, write, &.{}, &role.core));
 
     var user = harness.ctx(.{ .user = .{ .id = "u_1" } });
-    const full = try authorize(&user, write, &.{});
+    const full = try authorize(&user, write, &.{}, &role.core);
     try std.testing.expect(!full.read_only);
     try std.testing.expectEqual(@as(?[]const []const u8, null), full.types);
 
-    const setup: Request = .{ .operation_name = "site.init", .kind = .write, .resource = .{} };
+    const setup: Request = .{ .operation_name = "project.init", .kind = .write, .resource = .{} };
     const login: Request = .{
         .operation_name = "user.sign_in",
         .kind = .write,
         .resource = .{},
     };
-    try std.testing.expect(!(try authorize(&anon, setup, &.{})).read_only);
-    try std.testing.expect(!(try authorize(&anon, login, &.{})).read_only);
+    try std.testing.expect(!(try authorize(&anon, setup, &.{}, &role.core)).read_only);
+    try std.testing.expect(!(try authorize(&anon, login, &.{}, &role.core)).read_only);
 
     const signup: Request = .{
         .operation_name = "plugin.sign_up",
@@ -262,17 +233,17 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
         .kind = .write,
         .resource = .{},
     };
-    try std.testing.expect(!(try authorize(&anon, signup, &.{})).read_only);
-    try std.testing.expectError(error.Denied, authorize(&anon, closed, &.{}));
-    try std.testing.expectError(error.Denied, authorize(&anon, signup, &.{&deny_all}));
+    try std.testing.expect(!(try authorize(&anon, signup, &.{}, &role.core)).read_only);
+    try std.testing.expectError(error.Denied, authorize(&anon, closed, &.{}, &role.core));
+    try std.testing.expectError(error.Denied, authorize(&anon, signup, &.{&deny_all}, &role.core));
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .roles = &.{"editor"} } });
     const sign_out: Request = .{
         .operation_name = "user.sign_out",
         .kind = .write,
         .resource = .{},
     };
-    try std.testing.expect((try authorize(&editor, sign_out, &.{})).allows());
+    try std.testing.expect((try authorize(&editor, sign_out, &.{}, &role.core)).allows());
 }
 
 test "delivery narrows any caller to live, read-only records and keeps the caller's own limits" {
@@ -284,22 +255,23 @@ test "delivery narrows any caller to live, read-only records and keeps the calle
     const write: Request = .{ .operation_name = "record.save", .kind = .write, .resource = .{} };
     const users_list: Request = .{ .operation_name = "user.list", .kind = .read, .resource = .{} };
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_1", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_1", .roles = &.{"admin"} } });
     admin.delivery = true;
-    const granted = try authorize(&admin, read, &.{});
+    const granted = try authorize(&admin, read, &.{}, &role.core);
     try std.testing.expect(granted.read_only);
     try std.testing.expect(granted.record_filter.flags.live_only);
     try std.testing.expect(!granted.record_filter.flags.public_types_only);
-    try std.testing.expectError(error.Denied, authorize(&admin, write, &.{}));
+    try std.testing.expectError(error.Denied, authorize(&admin, write, &.{}, &role.core));
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .roles = &.{"editor"} } });
     editor.delivery = true;
-    try std.testing.expectError(error.Denied, authorize(&editor, users_list, &.{}));
-    try std.testing.expect(!(try authorize(&editor, read, &.{&only_posts})).allows_type("page"));
+    try std.testing.expectError(error.Denied, authorize(&editor, users_list, &.{}, &role.core));
+    const posts_only = try authorize(&editor, read, &.{&only_posts}, &role.core);
+    try std.testing.expect(!posts_only.allows_type("page"));
 
     var anon = harness.ctx(.anonymous);
     anon.delivery = true;
-    const anonymous = try authorize(&anon, read, &.{});
+    const anonymous = try authorize(&anon, read, &.{}, &role.core);
     try std.testing.expect(anonymous.record_filter.flags.public_types_only);
 }
 
@@ -308,8 +280,8 @@ test "roles: editors are denied the users and settings namespaces, admins are no
     try harness.init();
     defer harness.deinit();
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .role = .editor } });
-    var admin = harness.ctx(.{ .user = .{ .id = "u_1", .role = .admin } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .roles = &.{"editor"} } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_1", .roles = &.{"admin"} } });
     const users_list: Request = .{ .operation_name = "user.list", .kind = .read, .resource = .{} };
     const entries_save: Request = .{
         .operation_name = "record.save",
@@ -318,10 +290,10 @@ test "roles: editors are denied the users and settings namespaces, admins are no
     };
 
     var anon = harness.ctx(.anonymous);
-    try std.testing.expectError(error.Denied, authorize(&editor, users_list, &.{}));
-    try std.testing.expectError(error.Denied, authorize(&anon, users_list, &.{}));
-    try std.testing.expect((try authorize(&editor, entries_save, &.{})).allows());
-    try std.testing.expect((try authorize(&admin, users_list, &.{})).allows());
+    try std.testing.expectError(error.Denied, authorize(&editor, users_list, &.{}, &role.core));
+    try std.testing.expectError(error.Denied, authorize(&anon, users_list, &.{}, &role.core));
+    try std.testing.expect((try authorize(&editor, entries_save, &.{}, &role.core)).allows());
+    try std.testing.expect((try authorize(&admin, users_list, &.{}, &role.core)).allows());
 }
 
 test "plugin policies intersect and can deny" {
@@ -332,11 +304,11 @@ test "plugin policies intersect and can deny" {
     var user = harness.ctx(.{ .user = .{ .id = "u_1" } });
     const write: Request = .{ .operation_name = "record.save", .kind = .write, .resource = .{} };
 
-    const constrained = try authorize(&user, write, &.{&only_posts});
+    const constrained = try authorize(&user, write, &.{&only_posts}, &role.core);
     try std.testing.expect(constrained.allows_type("post"));
     try std.testing.expect(!constrained.allows_type("page"));
 
-    const denied = authorize(&user, write, &.{ &only_posts, &deny_all });
+    const denied = authorize(&user, write, &.{ &only_posts, &deny_all }, &role.core);
     try std.testing.expectError(error.Denied, denied);
 }
 

@@ -6,7 +6,7 @@
 const std = @import("std");
 const admin = @import("../admin.zig");
 const fields = @import("fields.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const types = @import("../../operations/content_type.zig");
 const record_operations = @import("../../operations/record.zig");
@@ -579,6 +579,8 @@ pub fn Editor(comptime domain: Domain) type {
                 return admin.render.page(session.response, arena, .ok, views.SettingsDocument, .{
                     .user_name = shell.user_name,
                     .user_email = shell.user_email,
+                    .can_structure = shell.can_structure,
+                    .can_settings = shell.can_settings,
                     .csrf = shell.csrf,
                     .title = def.name,
                     .description = def.description,
@@ -597,6 +599,8 @@ pub fn Editor(comptime domain: Domain) type {
             try admin.render.page(session.response, arena, .ok, views.RecordForm, .{
                 .user_name = shell.user_name,
                 .user_email = shell.user_email,
+                .can_structure = shell.can_structure,
+                .can_settings = shell.can_settings,
                 .csrf = shell.csrf,
                 .title = title,
                 .section = domain.section,
@@ -653,7 +657,8 @@ pub fn Editor(comptime domain: Domain) type {
                 const row = full.row;
                 const parks = row.changed or registry.Statuses.is_live(row.status);
                 const status = registry.Statuses.find(row.status);
-                const actions = try actions_of(arena, session, row);
+                const may_purge = registry.SDK.may(&session.ctx, operations.Purge);
+                const actions = try actions_of(arena, row, may_purge);
                 const versions_href = if (domain.versions)
                     try print(arena, "{s}/{s}/revisions", .{ back, row.id })
                 else
@@ -733,12 +738,8 @@ pub fn Editor(comptime domain: Domain) type {
 }
 
 /// The status actions a document offers from where it is: publish, discard, every
-/// transition out of the current status, and purge for administrators.
-pub fn actions_of(
-    arena: std.mem.Allocator,
-    session: *const Session,
-    row: Record,
-) Error![]const Action {
+/// transition out of the current status, and purge for whoever may purge.
+pub fn actions_of(arena: std.mem.Allocator, row: Record, may_purge: bool) Error![]const Action {
     std.debug.assert(row.id.len > 0);
     std.debug.assert(row.status.len > 0);
 
@@ -771,7 +772,7 @@ pub fn actions_of(
         try add_action(arena, &actions, "to", transition.to, transition.label, destructive);
     }
 
-    if (session.identity.caller.role() == .admin) {
+    if (may_purge) {
         try add_action(arena, &actions, "do", "purge", "Purge for good", true);
     }
 
@@ -1121,9 +1122,9 @@ fn slug_prefix_of(session: *Session, def: Def) Error![]const u8 {
         return "";
     }
 
-    const site_url = try definitions.site_url_of(session);
+    const base_url = try definitions.host_url_of(session);
 
-    return print(session.arena, "{s}/{s}/", .{ site_url, def.url });
+    return print(session.arena, "{s}/{s}/", .{ base_url, def.url });
 }
 
 fn parse(arena: std.mem.Allocator, text: []const u8) ?Value {

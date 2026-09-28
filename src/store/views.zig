@@ -184,14 +184,14 @@ test "insert, get, list by user in name order, update, delete" {
         .email = "ada@example.com",
         .display_name = "Ada",
         .password_hash = null,
-        .role = .admin,
+        .roles = &.{"admin"},
         .now_ms = 0,
     });
     const bob = try users.insert(connection, io, arena, .{
         .email = "bob@example.com",
         .display_name = "Bob",
         .password_hash = null,
-        .role = .editor,
+        .roles = &.{"editor"},
         .now_ms = 0,
     });
 

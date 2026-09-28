@@ -1,0 +1,6 @@
+---
+import Page from '../layouts/page.publr';
+---
+<Page title="Guide · Docs">
+  <h1 class="text-3xl">The guide</h1>
+</Page>

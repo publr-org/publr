@@ -5,8 +5,8 @@
 const std = @import("std");
 const admin = @import("../../../admin.zig");
 const model = @import("../../../../model.zig");
-const theme_module = @import("../../../../theme.zig");
-const site_operations = @import("../../../../operations/site.zig");
+const template_module = @import("../../../../template.zig");
+const project_operations = @import("../../../../operations/project.zig");
 
 const Error = admin.Error;
 const views = admin.views;
@@ -14,8 +14,8 @@ const Dialog = views.RecordImpact;
 pub const Row = Dialog.RowsItem;
 pub const Line = Dialog.WhyItem;
 const Def = model.content_type.Def;
-const Artifact = site_operations.impact.Artifact;
-const Reads = theme_module.impact.Reads;
+const Artifact = project_operations.impact.Artifact;
+const Reads = template_module.impact.Reads;
 
 pub const islands_prefix = "/_islands/";
 pub const status_built = "in the last build";
@@ -26,13 +26,13 @@ pub const status_live = "rendered per request";
 pub const Source = struct {
     arena: std.mem.Allocator,
     def: Def,
-    site_url: []const u8,
+    base_url: []const u8,
     artifacts: []const Artifact,
 };
 
 pub fn page_row(
     source: Source,
-    page: theme_module.impact.Page,
+    page: template_module.impact.Page,
     own: []const u8,
     name: []const u8,
 ) Error!Row {
@@ -53,7 +53,7 @@ pub fn page_row(
     return .{
         .address = page.route,
         .href = if (own.len > 0)
-            try print(source.arena, "{s}{s}", .{ source.site_url, own })
+            try print(source.arena, "{s}{s}", .{ source.base_url, own })
         else
             try href_of(source, page.route),
         .own = own,
@@ -64,7 +64,11 @@ pub fn page_row(
     };
 }
 
-pub fn island_row(source: Source, island: theme_module.impact.Island, url: []const u8) Error!Row {
+pub fn island_row(
+    source: Source,
+    island: template_module.impact.Island,
+    url: []const u8,
+) Error!Row {
     std.debug.assert(island.key.len > 0);
     std.debug.assert(std.mem.startsWith(u8, url, islands_prefix));
 
@@ -133,7 +137,7 @@ pub fn index_row(source: Source, artifact: Artifact) Error!Row {
         .href = if (fragment)
             ""
         else
-            try print(source.arena, "{s}{s}", .{ source.site_url, artifact.name }),
+            try print(source.arena, "{s}{s}", .{ source.base_url, artifact.name }),
         .own = "",
         .kind = if (fragment) "fragment" else "page",
         .status = status_built,
@@ -180,7 +184,7 @@ fn line(code: []const u8, tail: []const u8, nested: bool) Line {
 /// The status of a built artifact, and the keys it recorded as a line when it is there.
 fn index_lines(source: Source, why: *std.ArrayList(Line), name: []const u8) Error![]const u8 {
     std.debug.assert(name.len > 0);
-    std.debug.assert(source.artifacts.len <= site_operations.impact.artifacts_max);
+    std.debug.assert(source.artifacts.len <= project_operations.impact.artifacts_max);
 
     for (source.artifacts) |artifact| {
         if (std.mem.eql(u8, artifact.name, name)) {
@@ -210,7 +214,7 @@ fn recorded_line(source: Source, artifact: Artifact) Error!Line {
 
 /// A route is an address only without a parameter in it; a pattern has no page to open.
 fn href_of(source: Source, route: []const u8) Error![]const u8 {
-    std.debug.assert(source.site_url.len > 0);
+    std.debug.assert(source.base_url.len > 0);
     std.debug.assert(route.len > 0);
 
     const parameter = std.mem.indexOfScalar(u8, route, ':') != null;
@@ -220,7 +224,7 @@ fn href_of(source: Source, route: []const u8) Error![]const u8 {
         return "";
     }
 
-    return print(source.arena, "{s}{s}", .{ source.site_url, route });
+    return print(source.arena, "{s}{s}", .{ source.base_url, route });
 }
 
 fn print(arena: std.mem.Allocator, comptime template: []const u8, args: anytype) Error![]const u8 {
@@ -233,7 +237,7 @@ fn print(arena: std.mem.Allocator, comptime template: []const u8, args: anytype)
 const test_source: Source = .{
     .arena = undefined,
     .def = .{ .handle = "post", .name = "Post", .fields = &.{} },
-    .site_url = "http://h",
+    .base_url = "http://h",
     .artifacts = &.{
         .{ .name = "/", .keys = &.{ "type:post", "records" } },
         .{ .name = "/posts/hello", .keys = &.{"record:abc"} },
@@ -261,7 +265,7 @@ test "a page row: the chain through an embed, the index line, a link only where 
     try std.testing.expectEqualStrings("lists Post records", home.why[1].tail);
     try std.testing.expectEqualStrings("type:post, records", home.why[2].code);
 
-    const entry: theme_module.impact.Page = .{
+    const entry: template_module.impact.Page = .{
         .route = "/posts/:slug",
         .template = "content/posts/[slug].publr",
         .live = false,

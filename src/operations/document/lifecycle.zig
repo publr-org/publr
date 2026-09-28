@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 

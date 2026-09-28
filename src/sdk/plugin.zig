@@ -7,11 +7,13 @@ const filter_module = @import("../model/filter.zig");
 const content_type = @import("../model/content_type.zig");
 const field = @import("../model/field.zig");
 const kinds = @import("../model/kinds.zig");
+const role = @import("../model/role.zig");
 
 pub const PluginCtx = plugin_context.PluginCtx;
 pub const types = plugin_types;
 pub const ContentTypeDef = content_type.Def;
 pub const DeclaredType = plugin_types.Declared;
+pub const Role = role.Role;
 pub const content_types_max: u32 = 64;
 
 pub const name_len_max: u32 = 32;
@@ -203,6 +205,39 @@ pub fn namespaces_of(comptime Plugin: type) []const sdk.operation.Namespace {
     }
 }
 
+/// The roles a plugin declares: a new name is a new role; the name of one there already
+/// (`editor`) adds grants to it.
+pub fn roles_of(comptime Plugin: type) []const Role {
+    comptime {
+        std.debug.assert(@hasDecl(Plugin, "manifest"));
+
+        if (!@hasDecl(Plugin, "roles")) {
+            return &.{};
+        }
+
+        const list: []const Role = &Plugin.roles;
+
+        std.debug.assert(list.len <= role.roles_max);
+
+        for (list) |declared| {
+            if (!role.valid_name(declared.name)) {
+                @compileError("plugin " ++ Plugin.manifest.name ++ ": role " ++ declared.name ++
+                    ": a name is [a-z][a-z0-9_]*, 1 to 32 characters");
+            }
+
+            for (declared.grants) |grant| {
+                if (!role.valid_grant(grant)) {
+                    @compileError("plugin " ++ Plugin.manifest.name ++ ": role " ++
+                        declared.name ++ ": grant `" ++ grant ++ "` is `*`, an operation, " ++
+                        "or a namespace ending in `.*`");
+                }
+            }
+        }
+
+        return list;
+    }
+}
+
 pub fn policies_of(comptime Plugin: type) []const sdk.Policy {
     comptime {
         std.debug.assert(@hasDecl(Plugin, "manifest"));
@@ -267,6 +302,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var custom_fields: []const DeclaredType = &.{};
         var filters: []const filter_module.Definition = &.{};
         var delivery_gates: []const sdk.delivery.Gate = &.{};
+        var roles: []const Role = &.{};
 
         std.debug.assert(plugins.len <= plugins_max);
 
@@ -275,6 +311,7 @@ pub fn Merged(comptime plugins: anytype) type {
             operations = operations ++ operations_of(Plugin);
             namespaces = namespaces ++ namespaces_of(Plugin);
             policies = policies ++ policies_of(Plugin);
+            roles = roles ++ roles_of(Plugin);
             middleware = middleware ++ middleware_of(Plugin);
             field_kinds = field_kinds ++ field_kinds_of(Plugin);
             for (content_types_of(Plugin)) |def| {
@@ -362,6 +399,8 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_custom_fields = custom_fields;
             pub const merged_filters = filters;
             pub const merged_delivery_gates = delivery_gates;
+            /// The core roles with every plugin's merged in.
+            pub const merged_roles = role.merge(&role.core, roles);
         };
     }
 }
@@ -395,6 +434,14 @@ pub const testing = struct {
         pub const operations = [_]type{Record};
         pub const middleware = [_]type{Counted};
         pub const policies = [_]sdk.Policy{&no_shouting};
+        pub const roles = [_]Role{
+            .{ .name = "editor", .label = "Editor", .grants = &.{"hello.*"} },
+            .{
+                .name = "greeter",
+                .label = "Greeter",
+                .grants = &.{"hello.record"},
+            },
+        };
 
         pub const Record = struct {
             pub const name = "hello.record";
@@ -452,6 +499,7 @@ test "the test plugin passes the contract and merges into a registry" {
         .policies = Bundle.merged_policies,
         .middleware = Bundle.merged_middleware,
         .schemas = Bundle.merged_schemas,
+        .roles = Bundle.merged_roles,
     });
 
     var harness: sdk.testing.Harness = undefined;
@@ -463,12 +511,22 @@ test "the test plugin passes the contract and merges into a registry" {
     var system = harness.ctx(.system);
     try plugin_types.apply(&system, Bundle.merged_content_types);
 
-    var ctx = harness.ctx(.{ .user = .{ .id = "u_1", .role = .editor } });
+    var ctx = harness.ctx(.{ .user = .{ .id = "u_1", .roles = &.{"editor"} } });
     const first = try TestSDK.dispatch(&ctx, testing.Hello.Record, .{ .note = "hi" });
     const second = try TestSDK.dispatch(&ctx, testing.Hello.Record, .{ .note = "again" });
 
     try std.testing.expectEqual(@as(u32, 1), first.rows);
     try std.testing.expectEqual(@as(u32, 2), second.rows);
+
+    // A plugin's role reaches what it grants; an account holding no role, nothing.
+    var greeter = harness.ctx(.{ .user = .{ .id = "u_2", .roles = &.{"greeter"} } });
+    var nobody = harness.ctx(.{ .user = .{ .id = "u_3", .roles = &.{} } });
+    try std.testing.expect(TestSDK.may(&greeter, testing.Hello.Record));
+    try std.testing.expect(!TestSDK.may(&nobody, testing.Hello.Record));
+    try std.testing.expectError(error.Denied, TestSDK.dispatch(&nobody, testing.Hello.Record, .{
+        .note = "no",
+    }));
+    try std.testing.expectEqual(@as(usize, 3), Bundle.merged_roles.len);
     try std.testing.expect(TestSDK.namespace_of("hello") != null);
     try std.testing.expectEqual(@as(usize, 1), Bundle.merged_policies.len);
     try std.testing.expectEqual(@as(usize, 1), Bundle.merged_field_kinds.len);

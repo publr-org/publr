@@ -135,9 +135,9 @@ and by plugins under their own dotted prefix (`seo.default_image`).
 
 ## `users`
 
-Accounts. Roles are `admin` or `editor`. An account without a password hash
-is inactive: it was created with a set-password link and cannot sign in until
-the link is redeemed.
+Accounts. What an account may do is its roles (`user_roles`). An account
+without a password hash is inactive: it was created with a set-password link
+and cannot sign in until the link is redeemed.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -147,8 +147,22 @@ the link is redeemed.
 | `password_hash` | text, nullable | Argon2id PHC string; null while inactive |
 | `password_token_hash` | blob, nullable | SHA-256 of the current set-password token |
 | `password_token_expires_at` | integer, nullable | When that token stops working |
-| `role` | text | `admin` or `editor` |
 | `created_at`, `updated_at` | integer | Timestamps |
+
+## `user_roles`
+
+The roles an account holds, one row each, at most 16 per account. A role is
+data declared in code (core's `admin` and `editor`, and each plugin's), not a
+row: a name no compiled-in code declares any more grants nothing. Deleting a
+user removes their rows.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `user_id` | text, references `users` | Whose role; cascades on delete |
+| `role` | text | The role's name |
+
+Primary key `(user_id, role)`. Index `user_roles_role (role, user_id)`: how
+many accounts hold `admin` (the last one stays).
 
 ## `sessions`
 
@@ -405,14 +419,15 @@ slot, record)` answers "which records are in this term".
 ## `deps_edges`, `deps_artifacts`, `deps_pending`, `deps_meta`
 
 The dependency index, owned by the `publr_deps` library and created by it in
-the same database (`App.init` opens it). `deps_edges (artifact, key)` is what
+the same database (`Server.init` opens it), shared by every app. `deps_edges (artifact,
+key)` is what
 every built page or fragment read; `deps_artifacts (artifact, hash)` the hash
 of its last bytes, so an unchanged rebuild writes nothing; `deps_pending
 (key, batch)` the changed keys waiting to be planned, `batch` 0 while
 collecting; `deps_meta (name, value)` the batch counter and the time of the
 last change. Keys are `record:<id>`, `type:<handle>`, `records`,
-`template:<path>` and `asset:theme`; artifacts are URLs (`/posts/hello`,
-`/_islands/latest-posts`). See [The site](site.md).
+`template:<app>/<path>` and `asset:<app>`; artifacts are an app and a URL inside it
+(`www:/posts/hello`, `www:/_islands/latest-posts`). See [Apps](apps.md).
 
 ## Coming with later gates
 

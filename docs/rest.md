@@ -38,17 +38,19 @@ GET  /api/term/tree?taxonomy=topics
 POST /api/term/create          {"taxonomy":"topics","document":"{\"name\":\"Engineering\"}","parent":"…"}
 ```
 
-Plugins' operations appear the same way (`POST /api/<namespace>/<verb>`).
+Plugins' operations appear the same way (`POST /api/<namespace>/<verb>`); what an app
+calls has the namespace `app.<feature>` (`POST /api/app.newsletter/subscribe`).
 Unknown operations answer `404 { "error": "unknown_operation" }`; `GET` on a
 write operation answers `405`.
 
-## The site
+## The apps
 
-Everything outside `/api/` and `/admin/` is the public site from the theme
-(see [The site](site.md)): the theme's routes, `/_islands/<key>` and
-`/_islands/?keys=a,b` for fragments, `/theme/<path>` for the stylesheet and
-the theme's assets. A built page answers with an `ETag`, a rendered one with
-`no-store`; `X-Publr-Served` says which (`file`, `memory`, `render`).
+Everything outside `/api/`, `/admin/` and `/auth/` belongs to the app mounted where it
+was asked (see [Apps](apps.md)): its subdomain, else the longest path mount. Under an
+app's mount are its routes, `<mount>/_islands/<key>` and `<mount>/_islands/?keys=a,b` for
+fragments, and `<mount>/_app/<path>` for its stylesheet (`app.css`) and its assets. A built
+page answers with an `ETag`, a rendered one with `no-store`; `X-Publr-Served` says which
+(`file`, `memory`, `render`). With no app there, `/` opens the admin.
 
 ## Health
 
@@ -60,9 +62,9 @@ the theme's assets. A built page answers with an `ETag`, a rendered one with
 
 | Route | What |
 |---|---|
-| `POST /api/auth/sign-in` | body `{ "email", "password" }`; sets the `publr_session` cookie; returns `{ "user_id", "expires_at", "csrf" }` |
+| `POST /api/auth/sign-in` | body `{ "email", "password" }`; sets the `publr_session` cookie (for the whole domain when an app answers on a subdomain); returns `{ "user_id", "expires_at", "csrf" }`. An app's own sign-in form posts here |
 | `POST /api/auth/sign-out` | revokes the cookie's session; needs `X-Csrf-Token`; returns `{ "signed_out" }` |
-| `GET /api/auth/session` | `{ "authenticated", "user_id", "role", "csrf" }` for the cookie |
+| `GET /api/auth/session` | `{ "authenticated", "user_id", "roles", "csrf" }` for the cookie |
 | `POST /api/auth/set-password` | body `{ "token", "password" }` from a set-password link; activates the account, returns `{ "user_id" }`; `404` when the token is wrong, used or expired |
 
 How accounts, sessions and set-password links work is in

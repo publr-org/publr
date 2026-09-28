@@ -56,7 +56,7 @@ pub const Collector = struct {
     }
 };
 
-pub const Scope = struct { site: []const u8, authority: []const u8 };
+pub const Scope = struct { project: []const u8, authority: []const u8 };
 
 /// Opaque tokens never expose record ids or permit reuse across sites/authorities.
 pub fn token(
@@ -67,13 +67,13 @@ pub fn token(
 ) ![]const u8 {
     std.debug.assert(key.len > 0);
 
-    if (secret.len < 32 or scope.site.len == 0 or scope.authority.len == 0) {
+    if (secret.len < 32 or scope.project.len == 0 or scope.authority.len == 0) {
         return error.InvalidDependencyScope;
     }
 
     var mac = std.crypto.auth.hmac.sha2.HmacSha256.init(secret);
 
-    for ([_][]const u8{ scope.site, scope.authority, key }) |part| {
+    for ([_][]const u8{ scope.project, scope.authority, key }) |part| {
         var length: [8]u8 = undefined;
 
         std.mem.writeInt(u64, &length, @intCast(part.len), .big);
@@ -107,17 +107,17 @@ test "nested collection remains complete or explicitly fails closed" {
 
     const secret = "s" ** 32;
     const first = try token(arena.allocator(), secret, .{
-        .site = "one",
+        .project = "one",
         .authority = "public",
     }, "record:one");
     const second = try token(arena.allocator(), secret, .{
-        .site = "two",
+        .project = "two",
         .authority = "public",
     }, "record:one");
 
     try std.testing.expect(!std.mem.eql(u8, first, second));
     try std.testing.expectError(error.InvalidDependencyScope, token(arena.allocator(), "short", .{
-        .site = "one",
+        .project = "one",
         .authority = "public",
     }, "record:one"));
 }

@@ -11,10 +11,17 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash              TEXT,
     password_token_hash        BLOB,
     password_token_expires_at  INTEGER,
-    role                       TEXT NOT NULL,
     created_at                 INTEGER NOT NULL,
     updated_at                 INTEGER NOT NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS user_roles (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role    TEXT NOT NULL,
+    PRIMARY KEY (user_id, role)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS user_roles_role ON user_roles(role, user_id);
 
 CREATE TABLE IF NOT EXISTS sessions (
     id          TEXT PRIMARY KEY,

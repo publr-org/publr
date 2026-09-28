@@ -17,6 +17,10 @@ import { Text } from "@publr/ui/Text.ptsx";
 export type TypesProps = {
   user_name: string;
   user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf: string;
   /** "Content types" or "Taxonomies": the page, its header and its empty state. */
   title: string;
@@ -42,7 +46,7 @@ export type TypesProps = {
 
 export function Types({
   user_name,
-  user_email,
+  user_email, can_structure = true, can_settings = true,
   csrf,
   title,
   new_href,
@@ -59,6 +63,8 @@ export function Types({
       section="types"
       user_name={user_name}
       user_email={user_email}
+      can_structure={can_structure}
+      can_settings={can_settings}
       csrf={csrf}
     >
       <div class="px-8 pt-7 pb-6">

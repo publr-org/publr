@@ -10,9 +10,9 @@ editable at runtime. It has a kind: a **record type** holds any number of
 records (posts, hotels, players); a **settings type** holds exactly one (the
 homepage, the header, general options), created the first time it is opened; a
 **component** holds none, its fields are a set for other types to reuse. (The
-`settings` table is something else: the site's own key/value settings.) A
+`settings` table is something else: the project's own key/value settings.) A
 record type with a `url` (`posts`) is public, must have a slug field, and its records
-live at `/<url>/<slug>` on the site; a type without one is internal, read by
+live at `/<url>/<slug>` in the apps that route them; a type without one is internal, read by
 signed-in users only. A
 type may have no fields yet: it is built up one field at a time. Any field but
 a slug or a group may hold a list of values (`many`), a repeater a list of
@@ -102,7 +102,7 @@ for the records concerned when a term moves under another parent. A term
 with children, or with records filed under it, cannot be purged.
 
 In the admin the taxonomy's settings page ticks the types it applies to (the
-types with an address on the site first, every record type behind a switch).
+types the apps give pages first, every record type behind a switch).
 The terms of a record sit in the editor's sidebar, one section per taxonomy
 that applies: a tree of checkboxes for a hierarchical taxonomy (ticking a
 term ticks its ancestors, unticking one unticks what was filed below it), a

@@ -3,7 +3,7 @@
 const std = @import("std");
 const admin = @import("../admin.zig");
 const fields = @import("fields.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const taxonomy_operations = @import("../../operations/taxonomy.zig");
 const term_operations = @import("../../operations/term.zig");
@@ -177,6 +177,8 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     try admin.render.page(response, arena, .ok, views.Terms, .{
         .user_name = shell.user_name,
         .user_email = shell.user_email,
+        .can_structure = shell.can_structure,
+        .can_settings = shell.can_settings,
         .csrf = shell.csrf,
         .title = def.name,
         .handle = def.handle,

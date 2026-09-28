@@ -46,7 +46,7 @@ SHA-256 next to it, and the installer refuses a mismatch.
 ```
 publr serve                                  # http://127.0.0.1:8080
 publr init --email you@example.com --display_name You   # first admin; the password is generated and shown once
-publr build                                  # the public site as files, into ./output (served by `serve`)
+publr build                                  # the apps as files, into ./output/<app> (served by `serve`)
 publr --help                                 # every command; publr <namespace> <verb> --help for details
 ```
 
@@ -70,7 +70,7 @@ zig build verify                   # tests + wasm check + formatting + tidy rule
 - [Architecture](docs/architecture.md): how Publr works, in plain terms.
 - [Content](docs/content.md): types, records, documents, statuses, media.
 - [Admin](docs/admin.md): the plain HTML admin at `/admin`.
-- [The site](docs/site.md): themes, `.publr` templates, islands, the static build.
+- [Apps](docs/apps.md): the apps of a project, `.publr` templates, islands, the static build.
 - [Streaming islands](docs/streaming.md): a proposal for islands in the page's own response, and hosting it anywhere.
 - [Authentication](docs/auth.md): accounts, sessions, passwords, setup.
 - [SDK](docs/sdk.md): the plugin surface: operations, hooks, UI.

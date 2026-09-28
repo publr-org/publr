@@ -3,62 +3,66 @@ const vendors = @import("vendors.zig");
 const plugins = @import("plugins.zig");
 const gen = @import("gen.zig");
 const jit = @import("jit.zig");
-const theme = @import("theme.zig");
+const apps = @import("apps.zig");
 const diagnostic = @import("diagnostic.zig");
 
-/// Where the embedded theme and the compiled-in plugins come from, as paths relative to
-/// this repository: a site built from another repository (Publr Cloud) names its own.
+/// Where the compiled-in apps and plugins come from, as paths relative to this repository:
+/// a project built from another repository (Publr Cloud) names its own.
 pub const Sources = struct {
-    theme_dir: []const u8,
+    apps_dir: []const u8,
     plugins_dir: []const u8,
+    apps_max: u32,
 };
 
 pub fn sources(builder: *std.Build) Sources {
-    const name = builder.option([]const u8, "theme", "The folder under themes/ to embed");
-    const theme_dir = builder.option(
+    const apps_dir = builder.option(
         []const u8,
-        "theme-dir",
-        "A theme folder anywhere, relative to this repository (instead of -Dtheme)",
-    );
+        "apps",
+        "The folder of compiled-in apps, relative to this repository (default: apps)",
+    ) orelse apps.dir_default;
     const plugins_dir = builder.option(
         []const u8,
         "plugins",
         "The folder of compiled-in plugins, relative to this repository (default: plugins)",
     ) orelse plugins.dir_default;
-
-    if (name != null and theme_dir != null) {
-        diagnostic.fail("-Dtheme and -Dtheme-dir name the same thing; pass one", .{});
-    }
-
-    const named = builder.pathJoin(&.{ "themes", valid_name(name orelse "default") });
-    const chosen: Sources = .{ .theme_dir = theme_dir orelse named, .plugins_dir = plugins_dir };
-
+    const apps_max = builder.option(
+        u32,
+        "apps-max",
+        "How many apps one project may compile in (default: 32)",
+    ) orelse apps.apps_max_default;
+    const chosen: Sources = .{
+        .apps_dir = apps_dir,
+        .plugins_dir = plugins_dir,
+        .apps_max = apps_max,
+    };
     const root = builder.build_root.path.?;
 
-    for ([_][]const u8{ chosen.theme_dir, chosen.plugins_dir }) |dir| {
+    for ([_][]const u8{ chosen.apps_dir, chosen.plugins_dir }) |dir| {
         if (dir.len == 0 or std.fs.path.isAbsolute(dir)) {
             diagnostic.fail("{s}: pass a path relative to {s}", .{ dir, root });
         }
     }
 
-    std.debug.assert(chosen.theme_dir.len > 0);
+    if (apps_max == 0 or apps_max > 1024) {
+        diagnostic.fail("-Dapps-max is 1 to 1024", .{});
+    }
+
+    std.debug.assert(chosen.apps_dir.len > 0);
     std.debug.assert(chosen.plugins_dir.len > 0);
 
     return chosen;
 }
 
-fn valid_name(name: []const u8) []const u8 {
-    const separator = std.mem.indexOfAny(u8, name, "/\\") != null;
-    const dots = std.mem.eql(u8, name, ".") or std.mem.eql(u8, name, "..");
+/// The same sources with the apps from `dir` instead.
+pub fn with_apps(from: Sources, dir: []const u8) Sources {
+    std.debug.assert(dir.len > 0);
+    std.debug.assert(!std.fs.path.isAbsolute(dir));
 
-    if (name.len == 0 or separator or dots) {
-        diagnostic.fail("-Dtheme must name a folder under themes/", .{});
-    }
+    var changed = from;
 
-    std.debug.assert(name.len > 0);
-    std.debug.assert(!separator and !dots);
+    changed.apps_dir = dir;
 
-    return name;
+    return changed;
 }
 
 pub fn add_module(
@@ -108,7 +112,7 @@ pub fn add_module(
     module.addImport("runtime", generated.runtime);
     jit.add(builder, module, generated.classes, optimize);
     add_admin_scripts(builder, module, generated.stores);
-    add_theme(builder, module, generated, optimize, from.theme_dir);
+    add_apps(builder, module, generated, optimize, from);
 
     std.debug.assert(module.link_libc == true);
     std.debug.assert(module.root_source_file != null);
@@ -136,7 +140,7 @@ fn add_admin_scripts(
 }
 
 /// Core's own source, fingerprinted: part of what a built site is stamped with, so a Publr
-/// whose rendering changed builds every page again, though the theme did not change.
+/// whose rendering changed builds every page again, though no app changed.
 fn engine_stamp(builder: *std.Build) []const u8 {
     std.debug.assert(builder.build_root.path != null);
 
@@ -175,35 +179,29 @@ fn engine_stamp(builder: *std.Build) []const u8 {
     return builder.fmt("{x:0>16}", .{hash.final()});
 }
 
-/// The embedded theme and what the site's run-time JIT compiles it with.
-fn add_theme(
+/// The compiled-in apps and what the run-time JIT compiles their stylesheets with.
+fn add_apps(
     builder: *std.Build,
     module: *std.Build.Module,
     generated: gen.Generated,
     optimize: std.builtin.OptimizeMode,
-    theme_dir: []const u8,
+    from: Sources,
 ) void {
     std.debug.assert(module.root_source_file != null);
-    std.debug.assert(theme_dir.len > 0);
+    std.debug.assert(from.apps_max > 0);
 
-    const embedded = theme.add(builder, generated.runtime, generated.tool, theme_dir);
+    const jit_host = builder.dependency("publr_jit", .{ .target = builder.graph.host });
     const options = builder.addOptions();
 
-    options.addOption([]const u8, "theme_name", embedded.name);
+    options.addOption(u32, "apps_max", from.apps_max);
     options.addOption(bool, "minify", optimize != .Debug);
     options.addOption([]const u8, "engine_stamp", engine_stamp(builder));
 
-    module.addImport("theme_options", options.createModule());
-    module.addImport("theme_templates", embedded.templates);
-    module.addImport("theme_assets", embedded.assets);
-    module.addImport("theme_interactive", embedded.interactive);
-    module.addImport("theme_middleware", theme.middleware(builder, module, theme_dir));
-    module.addAnonymousImport("theme_interactive_classes", .{
-        .root_source_file = embedded.interactive_classes,
+    module.addImport("apps_options", options.createModule());
+    module.addAnonymousImport("apps_preflight_css", .{
+        .root_source_file = jit_host.path("src/preflight.css"),
     });
-    module.addAnonymousImport("theme_tokens", .{ .root_source_file = embedded.tokens });
-    module.addAnonymousImport("theme_style_css", .{ .root_source_file = embedded.style });
-    module.addAnonymousImport("theme_preflight_css", .{ .root_source_file = embedded.preflight });
+    apps.add(builder, module, generated.runtime, generated.tool, from.apps_dir, from.apps_max);
 }
 
 pub fn add_entry(

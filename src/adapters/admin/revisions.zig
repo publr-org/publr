@@ -1,7 +1,7 @@
 const std = @import("std");
 const json = @import("../../lib/json.zig");
 const admin = @import("../admin.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const types = @import("../../operations/content_type.zig");
 const record_operations = @import("../../operations/record.zig");
 const snapshots = @import("../../operations/snapshot.zig");
@@ -61,6 +61,8 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     try admin.render.page(response, arena, .ok, views.Revisions, .{
         .user_name = shell.user_name,
         .user_email = shell.user_email,
+        .can_structure = shell.can_structure,
+        .can_settings = shell.can_settings,
         .csrf = shell.csrf,
         .nav = try admin.nav_content(&session, .{
             .filters = .{ .types = &.{full.record.type}, .type_view = true },
@@ -121,6 +123,8 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     try admin.render.page(response, arena, .ok, views.Revision, .{
         .user_name = shell.user_name,
         .user_email = shell.user_email,
+        .can_structure = shell.can_structure,
+        .can_settings = shell.can_settings,
         .csrf = shell.csrf,
         .nav = try admin.nav_content(&session, .{
             .filters = .{ .types = &.{full.record.type}, .type_view = true },

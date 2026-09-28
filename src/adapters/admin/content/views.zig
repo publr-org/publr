@@ -2,7 +2,7 @@
 //! Each is a form on the list page; every one lands back on the list.
 const std = @import("std");
 const admin = @import("../../admin.zig");
-const registry = @import("../../../app/registry.zig");
+const registry = @import("../../../server/registry.zig");
 const model = @import("../../../model.zig");
 const saved_views = @import("../../../operations/view.zig");
 const filters = @import("filters.zig");

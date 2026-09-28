@@ -1,7 +1,7 @@
 //! Named field groups for custom destinations.
 const std = @import("std");
 const admin = @import("../admin.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const operations = @import("../../operations/custom_fields.zig");
 const model = @import("../../model.zig");
 
@@ -36,6 +36,8 @@ pub fn list(
     try admin.render.page(response, session.arena, .ok, admin.views.CustomFields, .{
         .user_name = shell.user_name,
         .user_email = shell.user_email,
+        .can_structure = shell.can_structure,
+        .can_settings = shell.can_settings,
         .csrf = shell.csrf,
         .groups = rows,
     });

@@ -5,7 +5,7 @@
 //! `pick:<field>` select.
 const std = @import("std");
 const admin = @import("../../admin.zig");
-const registry = @import("../../../app/registry.zig");
+const registry = @import("../../../server/registry.zig");
 const model = @import("../../../model.zig");
 
 const Form = admin.Form;

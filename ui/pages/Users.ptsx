@@ -14,13 +14,18 @@ import { TableCell } from "@publr/ui/TableCell.ptsx";
 export type UsersProps = {
   user_name: string;
   user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf: string;
   nav: JSX.Element;
   users: Array<{
     href: string;
     name: string;
     email: string;
-    role: string;
+    /** The labels of the account's roles, comma-separated. */
+    roles: string;
     /** Signed in at least once; an invited account is inactive until its link is used. */
     active: boolean;
     /** The signed-in user's own row. */
@@ -29,10 +34,10 @@ export type UsersProps = {
 };
 
 /** Every account, oldest first, and a way to add one. */
-export function Users({ user_name, user_email, csrf, nav, users }: UsersProps) {
+export function Users({ user_name, user_email, can_structure = true, can_settings = true, csrf, nav, users }: UsersProps) {
   return (
     <Layout title="Users" section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
       <div class="px-8 pt-7 pb-6">
         <PageHeader title="Users" description="Who may sign in, and what they may do.">
           <Button href="/admin/settings/users/new">Add user</Button>
@@ -44,7 +49,7 @@ export function Users({ user_name, user_email, csrf, nav, users }: UsersProps) {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
+              <TableHead>Roles</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
@@ -56,7 +61,7 @@ export function Users({ user_name, user_email, csrf, nav, users }: UsersProps) {
                   {user.me && <Text as="span" variant="body-sm" tone="muted"> (you)</Text>}
                 </TableCell>
                 <TableCell>{user.email}</TableCell>
-                <TableCell>{user.role}</TableCell>
+                <TableCell>{user.roles}</TableCell>
                 <TableCell>
                   {user.active ? (
                     <Status tone="success">Active</Status>

@@ -153,7 +153,7 @@ pub const Redeem = struct {
             return error.BadCredentials;
         };
 
-        if (found.password_hash == null) {
+        if (!found.user.active) {
             return error.BadCredentials;
         }
 
@@ -252,7 +252,7 @@ test "an issuer's token signs its account in once; anything else does not" {
     try harness.init();
     defer harness.deinit();
 
-    const SDK = @import("../app/registry.zig").SDK;
+    const SDK = @import("../server/registry.zig").SDK;
     const user = @import("user.zig");
     const arena = harness.fixed.allocator();
     const seed = [_]u8{3} ** 32;
@@ -264,7 +264,7 @@ test "an issuer's token signs its account in once; anything else does not" {
     _ = try SDK.dispatch(&system, user.Create, .{
         .email = "ada@example.com",
         .display_name = "Ada",
-        .role = .admin,
+        .roles = &.{"admin"},
         .password = "correct horse battery",
     });
     _ = try SDK.dispatch(&system, Configure, .{

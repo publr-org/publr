@@ -3,7 +3,7 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
-const registry = @import("../app/registry.zig");
+const registry = @import("../server/registry.zig");
 const types = @import("content_type.zig");
 
 pub const Destination = enum {
@@ -303,7 +303,7 @@ fn valid_location(groups: model.field.conditions.Set) bool {
             const accepted = if (std.mem.eql(u8, rule.field, "destination"))
                 std.meta.stringToEnum(Destination, rule.value) != null
             else if (std.mem.eql(u8, rule.field, "role"))
-                std.meta.stringToEnum(sdk.caller.Role, rule.value) != null
+                registry.Roles.get(rule.value) != null
             else if (std.mem.eql(u8, rule.field, "media_type"))
                 model.field.options.valid_media_type(rule.value)
             else

@@ -1,9 +1,9 @@
 const std = @import("std");
 const account = @import("../model/account.zig");
+const role = @import("../model/role.zig");
 
 pub const id_len_max: u32 = account.id_len_max;
 pub const capabilities_max: u32 = 64;
-pub const Role = account.Role;
 
 pub const Caller = union(enum) {
     anonymous,
@@ -13,7 +13,8 @@ pub const Caller = union(enum) {
     system,
     plugin: Plugin,
 
-    pub const User = struct { id: []const u8, role: Role = .admin };
+    /// A signed-in account and the names of the roles it holds.
+    pub const User = struct { id: []const u8, roles: []const []const u8 = &.{role.admin} };
     pub const Token = struct { id: []const u8, user_id: []const u8 };
     pub const Machine = struct { id: []const u8, scopes: []const []const u8 };
     pub const Plugin = struct {
@@ -65,16 +66,33 @@ pub const Caller = union(enum) {
         };
     }
 
-    pub fn role(caller: Caller) ?Role {
-        const found: ?Role = switch (caller) {
-            .user => |user| user.role,
+    /// The roles a signed-in account holds; null for any other caller.
+    pub fn roles(caller: Caller) ?[]const []const u8 {
+        const found: ?[]const []const u8 = switch (caller) {
+            .user => |user| user.roles,
             .anonymous, .token, .machine, .system, .plugin => null,
         };
 
         std.debug.assert(found == null or caller == .user);
-        std.debug.assert(found != null or caller != .user);
+        std.debug.assert(found == null or found.?.len <= role.user_roles_max);
 
         return found;
+    }
+
+    /// Whether the caller is a signed-in account holding the role `name`.
+    pub fn holds(caller: Caller, name: []const u8) bool {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(name.len <= role.name_len_max);
+
+        const held = caller.roles() orelse return false;
+
+        for (held) |candidate| {
+            if (std.mem.eql(u8, candidate, name)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     pub fn via(caller: Caller) ?[]const u8 {
@@ -132,10 +150,11 @@ test "authentication and user id per caller kind" {
     try std.testing.expectEqualStrings("u_1", user.user_id().?);
     try std.testing.expectEqualStrings("u_2", token.user_id().?);
     try std.testing.expectEqualStrings("system", system.label());
-    try std.testing.expectEqual(Role.admin, user.role().?);
-    try std.testing.expectEqual(@as(?Role, null), token.role());
-    try std.testing.expectEqual(Role.editor, Role.parse("editor").?);
-    try std.testing.expectEqual(@as(?Role, null), Role.parse("root"));
+    try std.testing.expectEqualStrings("admin", user.roles().?[0]);
+    try std.testing.expect(user.holds("admin"));
+    try std.testing.expect(!user.holds("editor"));
+    try std.testing.expect(token.roles() == null);
+    try std.testing.expect(!token.holds("admin"));
 }
 
 test "capabilities: system has all, plugins and machine tokens only listed ones, users none" {

@@ -317,7 +317,7 @@ pub const Validate = struct {
 
 pub const operations = [_]type{ Create, Update, Get, List, Delete, Validate };
 
-const registry = @import("../app/registry.zig");
+const registry = @import("../server/registry.zig");
 const SDK = registry.SDK;
 
 test "taxonomies: admins create, update and delete; editors read; the rules hold" {
@@ -325,8 +325,8 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     try harness.init();
     defer harness.deinit();
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
     var anon = harness.ctx(.anonymous);
 
     const created = try SDK.dispatch(&admin, Create, .{ .definition = example_definition });

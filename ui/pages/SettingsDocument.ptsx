@@ -8,6 +8,10 @@ import { ReferenceDrawer } from "../components/ReferenceDrawer.ptsx";
 export type SettingsDocumentProps = {
   user_name: string;
   user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf: string;
   title: string;
   nav: JSX.Element;
@@ -17,10 +21,10 @@ export type SettingsDocumentProps = {
   editor: JSX.Element;
 };
 
-export function SettingsDocument({ user_name, user_email, csrf, title, nav, editor, description, has_fields, schema_href }: SettingsDocumentProps) {
+export function SettingsDocument({ user_name, user_email, can_structure = true, can_settings = true, csrf, title, nav, editor, description, has_fields, schema_href }: SettingsDocumentProps) {
   return (
     <Layout title={title} section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
       {has_fields ? editor : (
         <EditorColumn>
           <PageHeader title={title} description={description} />

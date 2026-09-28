@@ -32,6 +32,8 @@ pub fn system(
     try admin.render.page(response, session.arena, .ok, admin.views.SettingsSystem, .{
         .user_name = shell.user_name,
         .user_email = shell.user_email,
+        .can_structure = shell.can_structure,
+        .can_settings = shell.can_settings,
         .csrf = shell.csrf,
         .nav = try settings_nav.node(&session, "system"),
     });

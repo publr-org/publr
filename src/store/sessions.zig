@@ -245,7 +245,7 @@ fn seed_user(
         .email = email,
         .display_name = "Test",
         .password_hash = "$argon2id$x",
-        .role = .admin,
+        .roles = &.{"admin"},
         .now_ms = 0,
     });
 }

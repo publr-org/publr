@@ -1,6 +1,6 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 
 pub const Caller = sdk.Caller;
 pub const Error = sdk.Error;

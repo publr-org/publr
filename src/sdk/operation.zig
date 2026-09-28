@@ -199,6 +199,8 @@ pub fn resource_of(in: anytype) Resource {
     return resource;
 }
 
+/// `namespace.verb`, or `app.<feature>.verb` for what apps call: the grants a role gives
+/// its visitors name those (`app.newsletter.*`), never the admin's (`newsletter.*`).
 pub fn assert_name(comptime name: []const u8) void {
     comptime {
         if (name.len == 0 or name.len > name_len_max) {
@@ -217,14 +219,26 @@ pub fn assert_name(comptime name: []const u8) void {
             }
         }
 
-        if (dots != 1) {
-            @compileError("operation name must be namespace.verb: " ++ name);
+        const dots_wanted: u32 = if (is_app(name)) 2 else 1;
+
+        if (dots != dots_wanted) {
+            @compileError("operation name must be namespace.verb or app.feature.verb: " ++ name);
         }
 
-        if (name[0] == '.' or name[name.len - 1] == '.') {
+        const doubled = std.mem.indexOf(u8, name, "..") != null;
+
+        if (name[0] == '.' or name[name.len - 1] == '.' or doubled) {
             @compileError("operation name: " ++ name);
         }
     }
+}
+
+/// Whether an operation is one apps call: `app.<feature>.<verb>`.
+pub fn is_app(name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(name.len <= name_len_max);
+
+    return std.mem.startsWith(u8, name, "app.");
 }
 
 pub fn assert_serialisable(comptime Type: type, comptime depth: u32) void {
@@ -268,10 +282,12 @@ fn assert_decl(comptime Operation: type, comptime decl: []const u8, comptime Typ
     }
 }
 
+/// Everything before the verb: `record` of `record.create`, `app.newsletter` of
+/// `app.newsletter.subscribe`.
 pub fn namespace(name: []const u8) []const u8 {
     @setEvalBranchQuota(100_000);
 
-    const dot = std.mem.indexOfScalar(u8, name, '.') orelse unreachable;
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse unreachable;
     std.debug.assert(dot > 0);
     return name[0..dot];
 }
@@ -279,7 +295,7 @@ pub fn namespace(name: []const u8) []const u8 {
 pub fn verb(name: []const u8) []const u8 {
     @setEvalBranchQuota(100_000);
 
-    const dot = std.mem.indexOfScalar(u8, name, '.') orelse unreachable;
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse unreachable;
     std.debug.assert(dot + 1 < name.len);
     return name[dot + 1 ..];
 }
@@ -287,6 +303,11 @@ pub fn verb(name: []const u8) []const u8 {
 test "namespace and verb split" {
     try std.testing.expectEqualStrings("record", namespace("record.create"));
     try std.testing.expectEqualStrings("create", verb("record.create"));
+    try std.testing.expectEqualStrings("app.newsletter", namespace("app.newsletter.subscribe"));
+    try std.testing.expectEqualStrings("subscribe", verb("app.newsletter.subscribe"));
+    try std.testing.expect(is_app("app.newsletter.subscribe"));
+    try std.testing.expect(!is_app("newsletter.list"));
+    comptime assert_name("app.newsletter.subscribe");
 }
 
 test "serialisable types are accepted, pointers to single items rejected at comptime" {

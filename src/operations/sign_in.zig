@@ -25,11 +25,17 @@ pub const SignIn = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct { email: []const u8, password: []const u8 };
-    pub const Out = struct { token: []const u8, user_id: []const u8, expires_at: i64 };
+    pub const Out = struct {
+        token: []const u8,
+        user_id: []const u8,
+        roles: []const []const u8,
+        expires_at: i64,
+    };
     pub const example: In = .{ .email = "editor@example.com", .password = "correct horse battery" };
     pub const example_out: Out = .{
         .token = "56a0794f6b1c67062563204a.ea477bba173fbbd2cd5fc9808892da24d65b38...",
         .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
+        .roles = &.{"editor"},
         .expires_at = 1792232000000,
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
@@ -39,6 +45,7 @@ pub const SignIn = struct {
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .token = "The session token, `id.secret`; treat it like a password",
         .user_id = "The signed-in account",
+        .roles = "The roles it holds",
         .expires_at = "When the session expires if unused, Unix milliseconds",
     };
 
@@ -88,7 +95,12 @@ pub const SignIn = struct {
 
         ctx.notice("auth.sign_in_succeeded", user_id);
 
-        return .{ .token = token, .user_id = user_id, .expires_at = created.session.expires_at };
+        return .{
+            .token = token,
+            .user_id = user_id,
+            .roles = found.?.user.roles,
+            .expires_at = created.session.expires_at,
+        };
     }
 };
 

@@ -1,9 +1,10 @@
 # CLI: `user`
 
 Accounts, roles, passwords and signing in. The first admin comes from
-[`publr init`](site.md); after that, create accounts with `user create`. Two
-roles exist: `admin` may do everything, `editor` may manage content but not
-users or settings. `sign_in`, `sign_out` and `set_password` are open to
+[`publr init`](project.md); after that, create accounts with `user create`. An
+account holds one or more roles and may call what any of them grants: core's
+`admin` (everything) and `editor` (content, not users, structure or settings), and
+whatever the plugins declare ([`role list`](role.md)). `sign_in`, `sign_out` and `set_password` are open to
 anyone; the rest needs an admin (`--as <admin>` or `--as-admin`). The design
 behind these commands is in [Authentication](../auth.md); the same operations
 back the `/api/auth/*` routes in [REST API](../rest.md). Back to the
@@ -17,18 +18,18 @@ Create a user. Admins only (`--as <admin>` or `--as-admin`).
 |---|---|---|
 | `--email` | text | required |
 | `--display_name` | text | required |
-| `--role` | `admin|editor` | `editor` |
+| `--roles` | role names, comma-separated | `editor` |
 | `--password` | text | generated when omitted (or `PUBLR_PASSWORD`) |
 | `--password_link` | boolean | `false`: create inactive and return a set-password link instead of a password |
 
-Output: `{ "user_id", "role", "password", "link": { "path", "expires_at" } }`
+Output: `{ "user_id", "roles", "password", "link": { "path", "expires_at" } }`
 (`password` only when generated, `link` only with `--password_link`).
 
 ```
 $ publr --as ada@example.com users create --email new@example.com --display_name New --password_link true
 {
   "user_id": "9b1e...",
-  "role": "editor",
+  "roles": ["editor"],
   "password": null,
   "link": { "path": "/auth/set-password?token=6f3a...", "expires_at": 1789650000000 }
 }
@@ -50,31 +51,31 @@ Output: `{ "user_id", "link": { "path", "expires_at" } }`.
 ## `user get`
 
 One account with its custom fields: `fields` holds one group per custom
-field group that applies to the account (destination `user`, role rules
-matching), each with its fields; `document` holds the values as JSON, one
+field group that applies to the account (destination `user`, a role rule
+matching one of its roles), each with its fields; `document` holds the values as JSON, one
 object per group, so a value's path is `<group handle>.<field>`. Admins only.
 
 | Field | Type | Default |
 |---|---|---|
 | `--user` | text | required: id or email |
 
-Output: `{ "user": { "id", "email", "display_name", "role", "created_at", "active" }, "fields", "document" }`.
+Output: `{ "user": { "id", "email", "display_name", "roles", "created_at", "active" }, "fields", "document" }`.
 
 ## `user update`
 
-Rename a user or change their role; the email and password stay. With
+Rename a user or change their roles; the email and password stay. With
 `--document`, replace the custom field values too, validated against the
-groups that apply to the account's new role. Admins only. The last admin
-cannot be made an editor, and you cannot change your own role.
+groups that apply to the account's new roles. Admins only. The last admin
+cannot lose the `admin` role, and you cannot take it from yourself.
 
 | Field | Type | Default |
 |---|---|---|
 | `--user` | text | required: id or email |
 | `--display_name` | text | required |
-| `--role` | `admin|editor` | required |
+| `--roles` | role names, comma-separated | required |
 | `--document` | JSON text | omitted: the values stay |
 
-Output: `{ "user_id", "role" }`.
+Output: `{ "user_id", "roles" }`.
 
 ## `user validate`
 
@@ -117,7 +118,7 @@ Output: `{ "user_id" }`.
 
 List users. Admins only.
 
-Output: `{ "users": [ { "id", "email", "display_name", "role", "created_at", "active" } ] }`;
+Output: `{ "users": [ { "id", "email", "display_name", "roles", "created_at", "active" } ] }`;
 `active` is false until a password is set.
 
 ## `user sign_in`

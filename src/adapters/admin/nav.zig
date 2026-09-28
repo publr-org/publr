@@ -2,7 +2,7 @@
 //! page (`views.ContentNav`) and handed to the page as a node.
 const std = @import("std");
 const admin = @import("../admin.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const types = @import("../../operations/content_type.zig");
 const saved_views = @import("../../operations/view.zig");

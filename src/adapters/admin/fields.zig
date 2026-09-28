@@ -5,7 +5,7 @@
 //! without saving is `fields/reshape.zig`.
 const std = @import("std");
 const admin = @import("../admin.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const record_operations = @import("../../operations/record.zig");
 const time = @import("../../lib/time.zig");

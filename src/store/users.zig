@@ -2,9 +2,7 @@ const std = @import("std");
 const ids = @import("../lib/id.zig");
 const account = @import("../model/account.zig");
 const db = @import("../lib/db.zig");
-const caller = @import("../model/account.zig");
-
-pub const Role = caller.Role;
+const user_roles = @import("user_roles.zig");
 
 pub const id_len = ids.len;
 pub const email_len_max = account.email_len_max;
@@ -21,7 +19,8 @@ pub const User = struct {
     id: []const u8,
     email: []const u8,
     display_name: []const u8,
-    role: Role,
+    /// The names of the roles the account holds.
+    roles: []const []const u8,
     created_at: i64,
     active: bool,
 };
@@ -35,7 +34,7 @@ pub const Insert = struct {
     email: []const u8,
     display_name: []const u8,
     password_hash: ?[]const u8,
-    role: Role,
+    roles: []const []const u8,
     now_ms: i64,
 };
 
@@ -60,15 +59,12 @@ pub fn count(connection: *db.Db) db.Error!u32 {
     return @intCast(select.read_int());
 }
 
-pub fn count_admins(connection: *db.Db) db.Error!u32 {
+/// How many accounts hold the role `name`.
+pub fn count_holding(connection: *db.Db, name: []const u8) db.Error!u32 {
+    std.debug.assert(name.len > 0);
     std.debug.assert(connection.transaction_depth <= 8);
 
-    var select = try connection.prepare("SELECT count(*) FROM users WHERE role = 'admin'");
-    defer select.finalize();
-
-    std.debug.assert(try select.step());
-
-    return @intCast(select.read_int());
+    return user_roles.holders(connection, name);
 }
 
 pub fn insert(
@@ -85,8 +81,8 @@ pub fn insert(
 
     var statement = try connection.prepare(
         "INSERT INTO users " ++
-            "(id, email, display_name, password_hash, role, created_at, updated_at) " ++
-            "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            "(id, email, display_name, password_hash, created_at, updated_at) " ++
+            "VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
     );
     defer statement.finalize();
 
@@ -94,14 +90,14 @@ pub fn insert(
     try statement.bind_text(2, row.email);
     try statement.bind_text(3, row.display_name);
     try statement.bind_optional_text(4, row.password_hash);
-    try statement.bind_text(5, @tagName(row.role));
-    try statement.bind_int(6, row.now_ms);
+    try statement.bind_int(5, row.now_ms);
     try statement.exec();
+    try user_roles.set(connection, id, row.roles);
 
     return id;
 }
 
-const select_columns = "id, email, display_name, role, created_at, password_hash FROM users";
+const select_columns = "id, email, display_name, created_at, password_hash FROM users";
 
 pub fn set_password_token(
     connection: *db.Db,
@@ -112,15 +108,15 @@ pub fn set_password_token(
     std.debug.assert(user_id.len > 0);
     std.debug.assert(expires_at > 0);
 
-    var update = try connection.prepare(
+    var statement = try connection.prepare(
         "UPDATE users SET password_token_hash = ?1, password_token_expires_at = ?2 WHERE id = ?3",
     );
-    defer update.finalize();
+    defer statement.finalize();
 
-    try update.bind_blob(1, &token_hash);
-    try update.bind_int(2, expires_at);
-    try update.bind_text(3, user_id);
-    try update.exec();
+    try statement.bind_blob(1, &token_hash);
+    try statement.bind_int(2, expires_at);
+    try statement.bind_text(3, user_id);
+    try statement.exec();
 }
 
 pub fn find_by_password_token(
@@ -141,7 +137,7 @@ pub fn find_by_password_token(
     try select.bind_blob(1, &token_hash);
     try select.bind_int(2, now_ms);
 
-    return try read_credentials(&select, arena);
+    return try read_credentials(connection, &select, arena);
 }
 
 pub fn set_password(
@@ -153,16 +149,16 @@ pub fn set_password(
     std.debug.assert(user_id.len > 0);
     std.debug.assert(password_hash.len > 0);
 
-    var update = try connection.prepare(
+    var statement = try connection.prepare(
         "UPDATE users SET password_hash = ?1, password_token_hash = NULL, " ++
             "password_token_expires_at = NULL, updated_at = ?2 WHERE id = ?3",
     );
-    defer update.finalize();
+    defer statement.finalize();
 
-    try update.bind_text(1, password_hash);
-    try update.bind_int(2, now_ms);
-    try update.bind_text(3, user_id);
-    try update.exec();
+    try statement.bind_text(1, password_hash);
+    try statement.bind_int(2, now_ms);
+    try statement.bind_text(3, user_id);
+    try statement.exec();
 }
 
 pub fn find_by_email(
@@ -178,7 +174,7 @@ pub fn find_by_email(
 
     try select.bind_text(1, email);
 
-    return try read_credentials(&select, arena);
+    return try read_credentials(connection, &select, arena);
 }
 
 pub fn find_by_id(
@@ -187,38 +183,44 @@ pub fn find_by_id(
     id: []const u8,
 ) db.Error!?Credentials {
     std.debug.assert(id.len > 0);
-    std.debug.assert(id.len <= caller.id_len_max);
+    std.debug.assert(id.len <= account.id_len_max);
 
     var select = try connection.prepare("SELECT " ++ select_columns ++ " WHERE id = ?1");
     defer select.finalize();
 
     try select.bind_text(1, id);
 
-    return try read_credentials(&select, arena);
+    return try read_credentials(connection, &select, arena);
 }
 
-pub fn rename(
+/// The account's name and roles, replaced together; false when there is no such account.
+pub fn update(
     connection: *db.Db,
     user_id: []const u8,
     display_name: []const u8,
-    role: Role,
+    roles: []const []const u8,
     now_ms: i64,
 ) db.Error!bool {
     std.debug.assert(user_id.len > 0);
     std.debug.assert(display_name.len <= display_name_len_max);
 
     var statement = try connection.prepare(
-        "UPDATE users SET display_name = ?1, role = ?2, updated_at = ?3 WHERE id = ?4",
+        "UPDATE users SET display_name = ?1, updated_at = ?2 WHERE id = ?3",
     );
     defer statement.finalize();
 
     try statement.bind_text(1, display_name);
-    try statement.bind_text(2, @tagName(role));
-    try statement.bind_int(3, now_ms);
-    try statement.bind_text(4, user_id);
+    try statement.bind_int(2, now_ms);
+    try statement.bind_text(3, user_id);
     try statement.exec();
 
-    return connection.changes() == 1;
+    if (connection.changes() != 1) {
+        return false;
+    }
+
+    try user_roles.set(connection, user_id, roles);
+
+    return true;
 }
 
 pub fn delete(connection: *db.Db, user_id: []const u8) db.Error!bool {
@@ -247,7 +249,7 @@ pub fn list(connection: *db.Db, arena: std.mem.Allocator) db.Error![]User {
 
     while (try select.step()) {
         std.debug.assert(users.items.len < list_max);
-        const credentials = try read_row(&select, arena);
+        const credentials = try read_row(connection, &select, arena);
         users.append(arena, credentials.user) catch return error.OutOfMemory;
     }
 
@@ -259,12 +261,15 @@ const Columns = struct {
     id: []const u8,
     email: []const u8,
     display_name: []const u8,
-    role: []const u8,
     created_at: i64,
     password_hash: ?[]const u8,
 };
 
-fn read_credentials(select: *db.Statement, arena: std.mem.Allocator) db.Error!?Credentials {
+fn read_credentials(
+    connection: *db.Db,
+    select: *db.Statement,
+    arena: std.mem.Allocator,
+) db.Error!?Credentials {
     std.debug.assert(id_len > 0);
     std.debug.assert(email_len_max > 0);
 
@@ -272,22 +277,25 @@ fn read_credentials(select: *db.Statement, arena: std.mem.Allocator) db.Error!?C
         return null;
     }
 
-    return try read_row(select, arena);
+    return try read_row(connection, select, arena);
 }
 
-fn read_row(select: *db.Statement, arena: std.mem.Allocator) db.Error!Credentials {
+fn read_row(
+    connection: *db.Db,
+    select: *db.Statement,
+    arena: std.mem.Allocator,
+) db.Error!Credentials {
     const columns = try select.read(Columns, arena);
-    const role = Role.parse(columns.role) orelse return error.Sqlite;
 
     std.debug.assert(columns.id.len > 0);
-    std.debug.assert(columns.role.len > 0);
+    std.debug.assert(columns.email.len > 0);
 
     return .{
         .user = .{
             .id = columns.id,
             .email = columns.email,
             .display_name = columns.display_name,
-            .role = role,
+            .roles = try user_roles.of(connection, arena, columns.id),
             .created_at = columns.created_at,
             .active = columns.password_hash != null,
         },
@@ -310,7 +318,7 @@ test "insert, count, find by email/id, list; emails are unique" {
         .email = "ada@example.com",
         .display_name = "Ada",
         .password_hash = "$argon2id$x",
-        .role = .admin,
+        .roles = &.{"admin"},
         .now_ms = 1_000,
     });
 
@@ -321,7 +329,7 @@ test "insert, count, find by email/id, list; emails are unique" {
     try std.testing.expectEqualStrings(id, by_email.user.id);
     try std.testing.expectEqualStrings("$argon2id$x", by_email.password_hash.?);
     try std.testing.expect(by_email.user.active);
-    try std.testing.expectEqual(Role.admin, by_email.user.role);
+    try std.testing.expectEqualStrings("admin", by_email.user.roles[0]);
 
     const by_id = (try find_by_id(&fixture.connection, arena, id)).?;
     try std.testing.expectEqualStrings("Ada", by_id.user.display_name);
@@ -331,7 +339,7 @@ test "insert, count, find by email/id, list; emails are unique" {
         .email = "ada@example.com",
         .display_name = "Ada 2",
         .password_hash = "$argon2id$y",
-        .role = .editor,
+        .roles = &.{"editor"},
         .now_ms = 2_000,
     });
     try std.testing.expectError(error.Constraint, duplicate);
@@ -353,7 +361,7 @@ test "pending user: no password, token lookup honours expiry, set_password activ
         .email = "pending@example.com",
         .display_name = "Pending",
         .password_hash = null,
-        .role = .editor,
+        .roles = &.{"editor"},
         .now_ms = 1_000,
     });
     const pending = (try find_by_id(&fixture.connection, arena, id)).?;
@@ -375,7 +383,7 @@ test "pending user: no password, token lookup honours expiry, set_password activ
     try std.testing.expect(consumed == null);
 }
 
-test "rename changes name and role; delete answers whether a row went" {
+test "update changes name and roles; delete answers whether a row went" {
     var fixture: db.testing.Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -388,16 +396,17 @@ test "rename changes name and role; delete answers whether a row went" {
         .email = "ada@example.com",
         .display_name = "Ada",
         .password_hash = "$argon2id$x",
-        .role = .editor,
+        .roles = &.{"editor"},
         .now_ms = 1_000,
     });
 
-    try std.testing.expect(try rename(&fixture.connection, id, "Ada L.", .admin, 2_000));
+    const promoted = &.{ "admin", "editor" };
+    try std.testing.expect(try update(&fixture.connection, id, "Ada L.", promoted, 2_000));
     const changed = (try find_by_id(&fixture.connection, arena, id)).?;
     try std.testing.expectEqualStrings("Ada L.", changed.user.display_name);
-    try std.testing.expectEqual(Role.admin, changed.user.role);
-    try std.testing.expectEqual(@as(u32, 1), try count_admins(&fixture.connection));
-    try std.testing.expect(!try rename(&fixture.connection, "missing", "X", .editor, 2_000));
+    try std.testing.expectEqual(@as(usize, 2), changed.user.roles.len);
+    try std.testing.expectEqual(@as(u32, 1), try count_holding(&fixture.connection, "admin"));
+    try std.testing.expect(!try update(&fixture.connection, "missing", "X", &.{}, 2_000));
 
     try std.testing.expect(try delete(&fixture.connection, id));
     try std.testing.expect(!try delete(&fixture.connection, id));

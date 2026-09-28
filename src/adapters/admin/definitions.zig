@@ -4,7 +4,7 @@
 //! addresses differ.
 const std = @import("std");
 const admin = @import("../admin.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const slugs = @import("../../lib/text.zig");
 
@@ -20,7 +20,7 @@ const Kind = model.content_type.Kind;
 const room_text = @import("type_fields/rules.zig").room_text;
 const values_of = @import("type_fields/settings.zig").values_of;
 const content_types = @import("../../operations/content_type.zig");
-const theme_module = @import("../../theme.zig");
+const template_module = @import("../../template.zig");
 const Routed = views.TypeForm.Applies_routedItem;
 const Other = views.TypeForm.Applies_otherItem;
 
@@ -163,6 +163,8 @@ pub fn Pages(comptime domain: Domain) type {
             try admin.render.page(response, session.arena, .ok, views.Types, .{
                 .user_name = shell.user_name,
                 .user_email = shell.user_email,
+                .can_structure = shell.can_structure,
+                .can_settings = shell.can_settings,
                 .csrf = shell.csrf,
                 .title = domain.title,
                 .new_href = back ++ "/new",
@@ -272,6 +274,8 @@ pub fn Pages(comptime domain: Domain) type {
             try admin.render.page(session.response, arena, .ok, views.TypeForm, .{
                 .user_name = shell.user_name,
                 .user_email = shell.user_email,
+                .can_structure = shell.can_structure,
+                .can_settings = shell.can_settings,
                 .csrf = shell.csrf,
                 .title = if (is_new) "New " ++ domain.noun else def.name,
                 .crumb_label = domain.title,
@@ -309,7 +313,7 @@ pub fn Pages(comptime domain: Domain) type {
                 .is_record = def.kind == .record,
                 .is_settings = def.kind == .settings,
                 .is_component = def.kind == .component,
-                .site_url = try site_url_of(session),
+                .base_url = try host_url_of(session),
                 .visibility = if (def.public) "public" else "private",
                 .is_public = def.public,
                 .delete_action = delete_action,
@@ -487,14 +491,14 @@ fn any_selected(items: []const Other) bool {
     return false;
 }
 
-/// Whether records of a type have pages of their own: a page template of the loaded
-/// theme reads the type's entry (`posts/[slug].publr`); without a theme, whether the
-/// definition claims an address.
+/// Whether records of a type have pages of their own: a page template of a loaded app reads
+/// the type's entry (`posts/[slug].publr`); without apps, whether the definition claims an
+/// address.
 fn has_pages(session: *Session, handle: []const u8) !bool {
     std.debug.assert(handle.len > 0);
     std.debug.assert(session.signed_in());
 
-    const public = session.site.public orelse {
+    if (session.project.apps.len == 0) {
         var scratch = std.heap.ArenaAllocator.init(session.arena);
         defer scratch.deinit();
         var ctx = session.ctx;
@@ -502,8 +506,17 @@ fn has_pages(session: *Session, handle: []const u8) !bool {
         const row = try content_types.find_raw(&ctx, handle);
 
         return row != null and row.?.def.url.len > 0;
-    };
-    return theme_module.impact.has_entry_page(session.arena, public.theme, handle);
+    }
+
+    for (session.project.apps) |*app| {
+        const program = app.program orelse continue;
+
+        if (try template_module.impact.has_entry_page(session.arena, program, handle)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// The record types a taxonomy may apply to, the chosen ones ticked: the ones with pages
@@ -585,9 +598,9 @@ fn problem_items(
     return items;
 }
 
-/// Where the site is, as the browser reached it: the scheme a proxy reports, else plain
+/// Where the admin is, as the browser reached it: the scheme a proxy reports, else plain
 /// http, and the host the request named.
-pub fn site_url_of(session: *const Session) Error![]const u8 {
+pub fn host_url_of(session: *const Session) Error![]const u8 {
     std.debug.assert(session.signed_in());
     std.debug.assert(slug_field.len == 1);
 

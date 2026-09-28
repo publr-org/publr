@@ -2,6 +2,7 @@ import { Layout } from "../layouts/Layout.ptsx";
 import { EditorColumn } from "../components/EditorColumn.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Code } from "@publr/ui/Code.ptsx";
 import { RecordProblems } from "../components/RecordEditor/RecordProblems.ptsx";
 import { Dialog } from "@publr/ui/Dialog.ptsx";
@@ -14,24 +15,28 @@ import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
-import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
 import { PageHeader } from "@publr/ui/PageHeader.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 export type UserFormProps = {
   user_name: string;
   user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf: string;
   nav: JSX.Element;
   title: string;
   /** Where the form posts: create, or update of an existing account. */
   action: string;
   is_new: boolean;
-  /** The account being edited is the signed-in user's own: the role is fixed. */
+  /** The account being edited is the signed-in user's own: its roles are fixed. */
   is_me: boolean;
   name: string;
   email: string;
-  is_admin: boolean;
+  /** Every role the project has, ticked when the account holds it. */
+  roles: Array<{ name: string; label: string; description: string; checked: boolean }>;
   /** An existing account that has not set its password yet. */
   invited: boolean;
   /** A set-password link just issued, shown exactly once; empty otherwise. */
@@ -42,22 +47,22 @@ export type UserFormProps = {
   problem: string;
   /** The custom field rows (RecordFields): one group per custom field group that applies
    * to the account, each field named `<group>.<field>`; absent for a new account, whose
-   * role is not known yet. */
+   * roles are not known yet. */
   fields?: JSX.Element;
   /** The custom field values refused, by path, when the last post did not go through. */
   problems: Array<{ path: string; message: string }>;
 };
 
-/** One account: its name, email and role. A new account is invited with a set-password
- * link unless a password is typed; an existing one can be renamed, given another role,
+/** One account: its name, email and roles. A new account is invited with a set-password
+ * link unless a password is typed; an existing one can be renamed, given other roles,
  * sent a fresh link, or deleted. */
 export function UserForm({
-  user_name, user_email, csrf, nav, title, action, is_new, is_me, name, email, is_admin,
+  user_name, user_email, can_structure = true, can_settings = true, csrf, nav, title, action, is_new, is_me, name, email, roles,
   invited, link, link_action, delete_action, problem, fields, problems,
 }: UserFormProps) {
   return (
     <Layout title={title} section="settings" crumb_label="Users" crumb_href="/admin/settings/users"
-      sidebar={nav} user_name={user_name} user_email={user_email} csrf={csrf}>
+      sidebar={nav} user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
       <EditorColumn>
         <PageHeader title={title} back_label="Users" back_href="/admin/settings/users" />
         {problem !== "" && (
@@ -87,14 +92,17 @@ export function UserForm({
               readOnly={!is_new} autocomplete="off" />
             {!is_new && <FieldDescription>The email an account signs in with cannot change.</FieldDescription>}
           </Field>
-          <Field>
-            <FieldLabel htmlFor="role">Role</FieldLabel>
-            <NativeSelect id="role" name="role" disabled={is_me}>
-              <option value="editor" selected={!is_admin}>Editor: manages the content</option>
-              <option value="admin" selected={is_admin}>Admin: everything, users and settings too</option>
-            </NativeSelect>
-            {is_me && <FieldDescription>Your own role is changed by another admin.</FieldDescription>}
-          </Field>
+          <fieldset class="m-0 min-w-0 space-y-3 border-0 p-0" data-part="user-roles">
+            <legend class="mb-2 p-0">
+              <Text as="span" variant="body-sm" tone="default">Roles</Text>
+            </legend>
+            {roles.map((role) => (
+              <CheckboxField id={`role-${role.name}`} name="roles" value={role.name}
+                checked={role.checked} disabled={is_me} label={role.label}
+                description={role.description} />
+            ))}
+            {is_me && <FieldDescription>Your own roles are changed by another admin.</FieldDescription>}
+          </fieldset>
           {is_new && (
             <Field>
               <FieldLabel htmlFor="password">Password</FieldLabel>

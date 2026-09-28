@@ -1,6 +1,6 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
-const registry = @import("../app/registry.zig");
+const registry = @import("../server/registry.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
 const document_domain = @import("document.zig");
@@ -587,7 +587,7 @@ test "terms: create with a parent, tree order, save moves, get shows the parent"
     defer harness.deinit();
     try seed_topics(&harness);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
     const tech = try SDK.dispatch(&editor, Create, .{
         .taxonomy = "topics",
         .document = "{\"name\":\"Technology\"}",
@@ -669,7 +669,7 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
     defer harness.deinit();
     try seed_topics(&harness);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
     _ = try SDK.dispatch(&admin, taxonomy_operations.Create, .{ .definition =
         \\{"handle":"tags","name":"Tags","title_field":"name",
         \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}

@@ -1,6 +1,6 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
-const registry = @import("../app/registry.zig");
+const registry = @import("../server/registry.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
 
@@ -305,7 +305,7 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
     var system = harness.ctx(.system);
     try SDK.bootstrap(&system);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
     const users = @import("user.zig");
     const ada_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "ada@example.com",
@@ -315,8 +315,8 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
         .email = "bob@example.com",
         .display_name = "Bob",
     });
-    var ada = harness.ctx(.{ .user = .{ .id = ada_account.user_id, .role = .editor } });
-    var bob = harness.ctx(.{ .user = .{ .id = bob_account.user_id, .role = .editor } });
+    var ada = harness.ctx(.{ .user = .{ .id = ada_account.user_id, .roles = &.{"editor"} } });
+    var bob = harness.ctx(.{ .user = .{ .id = bob_account.user_id, .roles = &.{"editor"} } });
     var anon = harness.ctx(.anonymous);
 
     const drafts_query = "{\"clauses\":[" ++

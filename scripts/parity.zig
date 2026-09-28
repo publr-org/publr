@@ -56,7 +56,7 @@ fn check(
 
     try std.Io.Dir.cwd().createDirPath(init.io, dir);
 
-    if (comptime !std.mem.eql(u8, Operation.name, "site.init")) {
+    if (comptime !std.mem.eql(u8, Operation.name, "project.init")) {
         try seed(init, dir);
     }
 
@@ -87,7 +87,7 @@ fn seed(init: std.process.Init, dir: []const u8) !void {
     std.debug.assert(std.fs.path.isAbsolute(db_path));
     std.debug.assert(db_path.len > dir.len);
 
-    var application: publr.app.App = undefined;
+    var application: publr.server.Server = undefined;
     try application.init(init, db_path);
     defer application.deinit();
 

@@ -18,6 +18,10 @@ import { Text } from "@publr/ui/Text.ptsx";
 export type TermsProps = {
   user_name: string;
   user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf: string;
   /** The taxonomy: its name, handle, whether terms nest, and where its head is edited. */
   title: string;
@@ -42,7 +46,7 @@ export type TermsProps = {
  * root or under any term of a hierarchical taxonomy. */
 export function Terms({
   user_name,
-  user_email,
+  user_email, can_structure = true, can_settings = true,
   csrf,
   title,
   handle,
@@ -59,6 +63,8 @@ export function Terms({
       crumb_href="/admin/taxonomies"
       user_name={user_name}
       user_email={user_email}
+      can_structure={can_structure}
+      can_settings={can_settings}
       csrf={csrf}
     >
       <div class="px-8 pt-7 pb-6">

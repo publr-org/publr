@@ -1,0 +1,14 @@
+---
+// The Disclosure, as the app places it. There is no markup here — the
+// component is `interactive/Disclosure.ptsx`, a fifth folder of this app
+// beside content/, layouts/, components/ and public/, compiled by the PJSX
+// toolchain into a Zig render function this file calls. Nothing in this app
+// writes a `data-p-*` attribute or links a script: the store root, the wires,
+// the client store registration and the tag that loads it are all derived.
+//
+// What is left is what an app actually decides — that the component is static
+// (it reads neither `Publr.request` nor `Publr.build`), which is what lets a
+// call site embed it or ask for it as a static island.
+import Disclosure from '../interactive/Disclosure.ptsx';
+---
+<Disclosure label={props.label} body={props.body} />

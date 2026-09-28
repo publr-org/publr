@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const store = @import("../../store.zig");
 const record_operations = @import("../record.zig");
 
@@ -151,7 +151,7 @@ test "pending edits: save on a live record parks, publish applies, discard drops
     try SDK.bootstrap(&system);
     try record_operations.fixture.post_type(&system);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
     var anon = harness.ctx(.anonymous);
     const created = try SDK.dispatch(&editor, record_operations.Create, .{
         .type = "post",
@@ -235,7 +235,7 @@ test "pending edits: save on a live record parks, publish applies, discard drops
     try std.testing.expectEqualStrings("draft", restored.status);
     try std.testing.expectError(error.Denied, SDK.dispatch(&editor, Purge, .{ .id = created.id }));
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_ad", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_ad", .roles = &.{"admin"} } });
     try std.testing.expect((try SDK.dispatch(&admin, Purge, .{ .id = created.id })).purged);
     const gone_for_good = SDK.dispatch(&admin, record_operations.Get, .{ .id = created.id });
     try std.testing.expectError(error.NotFound, gone_for_good);

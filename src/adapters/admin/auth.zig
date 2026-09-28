@@ -1,7 +1,7 @@
 const std = @import("std");
 const admin = @import("../admin.zig");
-const registry = @import("../../app/registry.zig");
-const site_operations = @import("../../operations/site.zig");
+const registry = @import("../../server/registry.zig");
+const project_operations = @import("../../operations/project.zig");
 const sign_in_operations = @import("../../operations/sign_in.zig");
 const sign_on_operations = @import("../../operations/sign_on.zig");
 const identity_module = @import("../rest/identity.zig");
@@ -24,7 +24,7 @@ pub fn home(request: *Request, response: *Response, ctx: *Context) Error!void {
         return response.redirect(.see_other, "/admin/setup");
     }
 
-    if (!session.signed_in()) {
+    if (!session.signed_in() or !registry.SDK.reaches_admin(&session.ctx)) {
         return response.redirect(.see_other, "/admin/login");
     }
 
@@ -33,15 +33,17 @@ pub fn home(request: *Request, response: *Response, ctx: *Context) Error!void {
     try admin.render.page(response, session.arena, .ok, views.Dashboard, .{
         .user_name = shell.user_name,
         .user_email = shell.user_email,
+        .can_structure = shell.can_structure,
+        .can_settings = shell.can_settings,
         .csrf = shell.csrf,
     });
 }
 
 fn initialised(session: *Session) Error!bool {
     std.debug.assert(session.ctx.now_ms > 0);
-    std.debug.assert(site_operations.setup_key.len > 0);
+    std.debug.assert(project_operations.setup_key.len > 0);
 
-    const status = registry.SDK.dispatch(&session.ctx, site_operations.Status, .{}) catch {
+    const status = registry.SDK.dispatch(&session.ctx, project_operations.Status, .{}) catch {
         return error.OutOfMemory;
     };
 
@@ -92,7 +94,7 @@ pub fn setup(request: *Request, response: *Response, ctx: *Context) Error!void {
         return render_setup(response, arena, "password is required");
     };
 
-    _ = registry.SDK.dispatch(&session.ctx, site_operations.Init, .{
+    _ = registry.SDK.dispatch(&session.ctx, project_operations.Init, .{
         .email = email,
         .display_name = name,
         .password = password,
@@ -108,7 +110,11 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
     var session = Session.open(request, response, ctx);
 
     if (session.signed_in()) {
-        return response.redirect(.see_other, "/admin/content");
+        if (registry.SDK.reaches_admin(&session.ctx)) {
+            return response.redirect(.see_other, "/admin/content");
+        }
+
+        return render_login(response, ctx.arena, no_access);
     }
 
     // A site that trusts an issuer sends you there first; it sends you back signed in, or
@@ -143,6 +149,10 @@ fn issuer_login(session: *Session) Error!?[]const u8 {
         status.audience,
     }) catch error.OutOfMemory;
 }
+
+/// What an account whose roles reach none of the admin's operations is told: an app's
+/// visitor, whose own sign-in is the app's.
+pub const no_access = "This account has no access to the admin.";
 
 fn render_login(response: *Response, arena: std.mem.Allocator, problem: ?[]const u8) Error!void {
     std.debug.assert(response.body.len == 0);
@@ -185,7 +195,7 @@ fn start_session(
     std.debug.assert(email.len > 0);
     std.debug.assert(back.len > 0);
 
-    var anonymous = identity_module.context(session.site, session.arena, .anonymous);
+    var anonymous = identity_module.context(session.project, session.arena, .anonymous);
     const out = registry.SDK.dispatch(&anonymous, sign_in_operations.SignIn, .{
         .email = email,
         .password = password,
@@ -200,8 +210,22 @@ fn start_session(
         else
             render_setup(session.response, session.arena, problem);
     };
+    var signed_in = anonymous;
+
+    signed_in.caller = .{ .user = .{ .id = out.user_id, .roles = out.roles } };
+
+    // The admin's door: an account that may call none of its operations gets no session
+    // here; the one just made is ended at once.
+    if (!registry.SDK.reaches_admin(&signed_in)) {
+        _ = registry.SDK.dispatch(&anonymous, sign_in_operations.SignOut, .{
+            .token = out.token,
+        }) catch |err| return admin.fail(session, err, back);
+
+        return render_login(session.response, session.arena, no_access);
+    }
 
     try identity_module.set_session_cookie(
+        session.project,
         session.request,
         session.response,
         session.arena,
@@ -231,6 +255,6 @@ pub fn logout(request: *Request, response: *Response, ctx: *Context) Error!void 
         };
     }
 
-    try identity_module.clear_session_cookie(request, response, ctx.arena);
+    try identity_module.clear_session_cookie(session.project, request, response, ctx.arena);
     try response.redirect(.see_other, "/admin/login");
 }

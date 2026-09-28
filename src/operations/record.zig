@@ -1,6 +1,6 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
-const registry = @import("../app/registry.zig");
+const registry = @import("../server/registry.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
 const types = @import("content_type.zig");
@@ -108,6 +108,7 @@ fn without_taxonomies(ctx: *Ctx, def: store.content_types.Def) Error!store.conte
     return own;
 }
 pub const access = domain.access;
+const settings_denied = @import("document/access.zig").settings_denied;
 pub const document = domain.document;
 const crud = domain.crud;
 
@@ -119,7 +120,9 @@ fn check_kind(ctx: *Ctx, row: store.content_types.Row) Error!void {
         .record => {},
         .component => return error.Invalid,
         .settings => {
-            if (ctx.caller.role() == .editor) return error.Denied;
+            if (settings_denied(ctx)) {
+                return error.Denied;
+            }
 
             if (try records.count_by_type(ctx.db, row.id) > 0) {
                 return error.Conflict;
@@ -495,7 +498,7 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
     defer harness.deinit();
     try seed_admin_type(&harness);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
     const first = try SDK.dispatch(
         &editor,
         Create,
@@ -580,7 +583,7 @@ test "a unique field refuses a value another record holds; a new record takes de
         \\{"name":"stock","label":"Stock","kind":"integer","default":"5"}]}
     });
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
     const first = try SDK.dispatch(&editor, Create, .{
         .type = "product",
         .document = "{\"sku\":\"A-1\"}",
@@ -617,8 +620,8 @@ test "a grant for the caller's own records pages over those alone" {
     defer harness.deinit();
     try seed_admin_type(&harness);
 
-    var ada = harness.ctx(.{ .user = .{ .id = "u_ada", .role = .editor } });
-    var bob = harness.ctx(.{ .user = .{ .id = "u_bob", .role = .editor } });
+    var ada = harness.ctx(.{ .user = .{ .id = "u_ada", .roles = &.{"editor"} } });
+    var bob = harness.ctx(.{ .user = .{ .id = "u_bob", .roles = &.{"editor"} } });
     const own: sdk.Grant = .{ .record_filter = .{ .flags = .{ .own_only = true } } };
 
     ada.parent = ada.allocate_operation_id();
@@ -648,7 +651,7 @@ test "a slug field that refuses taken slugs: a given one conflicts, a derived on
     defer harness.deinit();
     try seed_admin_type(&harness);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
     var strict = model.content_type.test_post;
     strict.handle = "address";
     strict.name = "Address";
@@ -703,7 +706,7 @@ test "anonymous callers see live records of public types only; private types are
     defer harness.deinit();
     try seed_admin_type(&harness);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
     var anon = harness.ctx(.anonymous);
     var private = model.content_type.test_post;
     private.handle = "note";
@@ -749,7 +752,7 @@ test "anonymous callers see live records of public types only; private types are
         SDK.dispatch(&anon, types.Create, .{ .definition = private_definition }),
     );
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
     try std.testing.expectError(
         error.Denied,
         SDK.dispatch(&editor, types.Create, .{ .definition = private_definition }),
@@ -773,8 +776,8 @@ test "list across types: every readable type, the ones named, exclusions, one-ty
     defer harness.deinit();
     try seed_admin_type(&harness);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
     var anon = harness.ctx(.anonymous);
     var private = model.content_type.test_post;
     private.handle = "note";
@@ -865,7 +868,7 @@ test "validate reports problems; filters and search go through the projection" {
     defer harness.deinit();
     try seed_admin_type(&harness);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
     const report = try SDK.dispatch(
         &editor,
         Validate,
@@ -916,7 +919,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
     try harness.init();
     defer harness.deinit();
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
     const definition =
         \\{"handle":"person","name":"Person","title_field":"name",
         \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
@@ -993,7 +996,7 @@ test "referrers: reverse index of reference values, filtered by what the caller 
     defer harness.deinit();
     try seed_admin_type(&harness);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
     const target = try SDK.dispatch(
         &editor,
         Create,
@@ -1025,7 +1028,7 @@ test "adding a slug field to a type backfills existing records, duplicates get s
     try harness.init();
     defer harness.deinit();
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
     const without =
         \\{"handle":"hotel","name":"Hotel","title_field":"name",
         \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
@@ -1061,7 +1064,7 @@ test "terms fields: a type opts into a taxonomy, records file under terms, ances
     defer harness.deinit();
     try seed_admin_type(&harness);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
     const term_operations = @import("term.zig");
     const unknown_taxonomy = SDK.dispatch(&admin, types.Create, .{ .definition =
         \\{"handle":"article","name":"Article","fields":[
@@ -1174,7 +1177,7 @@ test "a taxonomy applying to a type gives it an implicit terms field; detaching 
     defer harness.deinit();
     try seed_admin_type(&harness);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
     const term_operations = @import("term.zig");
     const applying =
         \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",

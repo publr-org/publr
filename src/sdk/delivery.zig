@@ -101,7 +101,7 @@ test "the first refusal wins, a private say keeps it private, silence changes no
     var ctx: context.Ctx = undefined;
     const anonymous: Delivery = .{ .ctx = &ctx, .visitor = .anonymous, .path = "/", .kind = .page };
     var member = anonymous;
-    member.visitor = .{ .user = .{ .id = "ada", .role = .editor } };
+    member.visitor = .{ .user = .{ .id = "ada", .roles = &.{"editor"} } };
 
     try std.testing.expectEqual(Verdict.open, try decide(&.{}, &anonymous));
     try std.testing.expectEqual(Verdict.open, try decide(&.{testing.silent}, &anonymous));

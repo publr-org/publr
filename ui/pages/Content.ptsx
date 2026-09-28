@@ -3,6 +3,10 @@ import { Layout } from "../layouts/Layout.ptsx";
 export type ContentProps = {
   user_name: string;
   user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
   csrf: string;
   nav: JSX.Element;
   /** The view's name, for the window and the breadcrumb. */
@@ -12,13 +16,15 @@ export type ContentProps = {
   list: JSX.Element;
 };
 
-export function Content({ user_name, user_email, csrf, nav, title, list }: ContentProps) {
+export function Content({ user_name, user_email, can_structure = true, can_settings = true, csrf, nav, title, list }: ContentProps) {
   return (
     <Layout
       title={title}
       section="content"
       user_name={user_name}
       user_email={user_email}
+      can_structure={can_structure}
+      can_settings={can_settings}
       csrf={csrf}
       sidebar={nav}
     >

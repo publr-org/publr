@@ -21,6 +21,7 @@ pub const operations_max: u32 = 1024;
 pub const in_bytes_max: u32 = 64 << 10;
 
 const AuthState = @import("lib/auth.zig").State;
+const role = @import("model/role.zig");
 const plugin_context = @import("sdk/plugin/context.zig");
 const PluginCtx = plugin_context.PluginCtx;
 
@@ -30,6 +31,8 @@ pub const Registry = struct {
     policies: []const Policy = &.{},
     middleware: []const type = &.{},
     schemas: []const [:0]const u8 = &.{},
+    /// What a signed-in account's roles grant: the core's, with the plugins' merged in.
+    roles: []const role.Role = &role.core,
     /// Runs as the system once the schema is applied: declared content types and the like.
     bootstrap: ?*const fn (*Ctx) Error!void = null,
 };
@@ -43,6 +46,7 @@ pub fn SDK(comptime registry: Registry) type {
         pub const operations = registry.operations;
         pub const namespaces = registry.namespaces;
         pub const schemas = registry.schemas;
+        pub const roles = registry.roles;
 
         pub fn apply_schemas(connection: *db.Db) db.Error!void {
             std.debug.assert(connection.transaction_depth == 0);
@@ -143,12 +147,83 @@ pub fn SDK(comptime registry: Registry) type {
                 .resource = operation.resource_of(in),
                 .open = @hasDecl(Operation, "open") and Operation.open,
             };
-            const granted = try authorize.authorize(ctx, request, registry.policies);
+            const granted = try authorize.authorize(
+                ctx,
+                request,
+                registry.policies,
+                registry.roles,
+            );
 
             std.debug.assert(granted.allows());
             std.debug.assert(!(granted.read_only and Operation.kind == .write));
 
             return granted;
+        }
+
+        /// Whether the caller may call `Operation` at all, whatever the input: what a page
+        /// asks before it offers the action, never instead of the call's own check.
+        pub fn may(ctx: *const Ctx, comptime Operation: type) bool {
+            comptime std.debug.assert(find(Operation.name) == Operation);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            const request: authorize.Request = .{
+                .operation_name = Operation.name,
+                .kind = Operation.kind,
+                .resource = .{},
+                .open = @hasDecl(Operation, "open") and Operation.open,
+            };
+            const granted = authorize.authorize(ctx, request, registry.policies, registry.roles);
+
+            return if (granted) |_| true else |_| false;
+        }
+
+        /// Whether the caller may use the admin: its roles grant some operation of the
+        /// admin's, neither an app's (`app.*`) nor one open to everyone. What an anonymous
+        /// visitor may read (live public records) does not count: an account whose roles
+        /// grant only what apps call never gets in.
+        pub fn reaches_admin(ctx: *const Ctx) bool {
+            std.debug.assert(ctx.now_ms >= 0);
+            comptime std.debug.assert(registry.operations.len > 0);
+
+            if (ctx.caller == .anonymous) {
+                return false;
+            }
+
+            inline for (registry.operations) |Operation| {
+                const app_only = comptime operation.is_app(Operation.name);
+                const open = @hasDecl(Operation, "open") and Operation.open;
+
+                if (!app_only and !open and !authorize.is_open_operation(Operation.name)) {
+                    if (granted_by_role(ctx, Operation.name)) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// Whether a role the caller holds names the operation: what the admin's door asks,
+        /// never the whole policy (which also lets anyone read live public records).
+        fn granted_by_role(ctx: *const Ctx, name: []const u8) bool {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.caller != .anonymous);
+
+            const held = ctx.caller.roles() orelse return may_any(ctx);
+
+            return role.permit(registry.roles, held, name);
+        }
+
+        /// A caller that is not an account (the system, a plugin, a machine token) may use
+        /// the admin when the core policy lets it list the content types.
+        fn may_any(ctx: *const Ctx) bool {
+            std.debug.assert(ctx.caller != .user);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            return switch (ctx.caller) {
+                .system, .token => true,
+                .anonymous, .user, .machine, .plugin => false,
+            };
         }
 
         pub fn find(comptime name: []const u8) ?type {
@@ -312,6 +387,10 @@ fn validate_registry(comptime registry: Registry) void {
 
         if (registry.policies.len > authorize.policies_max) {
             @compileError("too many policies");
+        }
+
+        if (role.problem(registry.roles)) |message| {
+            @compileError("roles: " ++ message);
         }
 
         for (registry.namespaces) |namespace| {
@@ -592,6 +671,77 @@ test "write operation failure rolls back and journals a failed event" {
     defer select.finalize();
     try std.testing.expect(try select.step());
     try std.testing.expectEqual(@as(i64, 1), select.read_int());
+}
+
+const Subscribe = struct {
+    pub const name = "app.news.subscribe";
+    pub const description = "Test operation an app calls";
+    pub const kind: operation.Kind = .read;
+    pub const In = struct {};
+    pub const Out = struct { ok: bool };
+    pub const example: In = .{};
+    pub const example_out: Out = .{ .ok = true };
+
+    pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(ctx.now_ms >= 0);
+
+        return .{ .ok = true };
+    }
+};
+
+/// A read an app's pages render with, standing in for the real one.
+const ListRecords = struct {
+    pub const name = "record.list";
+    pub const description = "Test operation: the read app pages make";
+    pub const kind: operation.Kind = .read;
+    pub const In = struct {};
+    pub const Out = struct { count: u32 };
+    pub const example: In = .{};
+    pub const example_out: Out = .{ .count = 0 };
+
+    pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(ctx.now_ms >= 0);
+
+        return .{ .count = 0 };
+    }
+};
+
+const RolesSDK = SDK(.{
+    .operations = &.{ testing.Record, Subscribe, ListRecords },
+    .roles = &(role.core ++ [_]role.Role{
+        .{ .name = "subscriber", .label = "Subscriber", .grants = &.{"app.news.*"} },
+    }),
+});
+
+test "roles: an account calls what its roles grant; one granted only apps never gets in" {
+    var harness: testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var subscriber = harness.ctx(.{ .user = .{ .id = "u_1", .roles = &.{"subscriber"} } });
+    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .roles = &.{"editor"} } });
+    var both = harness.ctx(.{ .user = .{ .id = "u_3", .roles = &.{ "subscriber", "admin" } } });
+    var ghost = harness.ctx(.{ .user = .{ .id = "u_4", .roles = &.{"unknown"} } });
+
+    try std.testing.expect((try RolesSDK.dispatch(&subscriber, Subscribe, .{})).ok);
+    try std.testing.expectError(error.Denied, RolesSDK.dispatch(&subscriber, testing.Record, .{
+        .note = "x",
+    }));
+    try std.testing.expectError(error.Denied, RolesSDK.dispatch(&editor, Subscribe, .{}));
+    try std.testing.expect(RolesSDK.may(&both, Subscribe));
+    try std.testing.expect(RolesSDK.may(&both, testing.Record));
+    try std.testing.expect(!RolesSDK.may(&ghost, Subscribe));
+
+    // Reading live public records, as any visitor may, is not the admin.
+    try std.testing.expect(RolesSDK.may(&subscriber, ListRecords));
+    try std.testing.expect(!RolesSDK.reaches_admin(&subscriber));
+    try std.testing.expect(!RolesSDK.reaches_admin(&ghost));
+    try std.testing.expect(RolesSDK.reaches_admin(&both));
+
+    var anonymous = harness.ctx(.anonymous);
+    try std.testing.expect(!RolesSDK.reaches_admin(&anonymous));
 }
 
 test {

@@ -2,7 +2,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const types = @import("../content_type.zig");
 const custom = @import("../custom_fields.zig");
 const Get = custom.Get;
@@ -19,7 +19,7 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
     defer harness.deinit();
     var system = harness.ctx(.system);
     var visitor = harness.ctx(.anonymous);
-    var editor = harness.ctx(.{ .user = .{ .id = "editor", .role = .editor } });
+    var editor = harness.ctx(.{ .user = .{ .id = "editor", .roles = &.{"editor"} } });
     try std.testing.expectError(error.Denied, registry.SDK.dispatch(&visitor, Get, Get.example));
     try std.testing.expectError(
         error.Denied,

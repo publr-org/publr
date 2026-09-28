@@ -73,7 +73,7 @@ pub fn CLI(comptime SDK: type) type {
                 const rest = args[index + 1 ..];
                 if (rest.len > args_max - 2) return fail(options, "too many arguments");
 
-                aliased[0] = "site";
+                aliased[0] = "project";
                 aliased[1] = "init";
                 @memcpy(aliased[2 .. 2 + rest.len], rest);
 
@@ -765,7 +765,7 @@ fn resolve_user(options: Options, id_or_email: []const u8) Error!?sdk.Caller {
 
     const credentials = found orelse return null;
 
-    return .{ .user = .{ .id = credentials.user.id, .role = credentials.user.role } };
+    return .{ .user = .{ .id = credentials.user.id, .roles = credentials.user.roles } };
 }
 
 fn parse_value(comptime Value: type, arena: std.mem.Allocator, text: []const u8) Error!Value {
@@ -893,7 +893,7 @@ test "run: --help lists operations, unknown operation, --as sets the caller, out
         .email = "ed@example.com",
         .display_name = "Ed",
         .password_hash = "$argon2id$x",
-        .role = .editor,
+        .roles = &.{"editor"},
         .now_ms = 0,
     });
     const args = [_][]const u8{ "--as", "ed@example.com", "heartbeat", "check", "--echo", "x" };

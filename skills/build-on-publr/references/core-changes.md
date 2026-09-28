@@ -1,6 +1,6 @@
 # Changing Publr core
 
-Core may change only to become more generic: a capability every kind of site could use,
+Core may change only to become more generic: a capability every kind of project could use,
 or an extension point that lets a plugin do what it could not. Every change is a pull
 request to `publr-org/publr`. The app never depends on a core it edited in place.
 
@@ -41,10 +41,10 @@ Red flags that mean the change belongs in a plugin:
 Most needs have a generic half and an app half. Core gets the smallest generic half,
 usually a hook; the plugin gets the rest.
 
-**Worked example.** An app wants unverified accounts' sites visible only to signed-in
-people ("preview mode").
+**Worked example.** A project wants unverified accounts' projects visible only to
+signed-in people ("preview mode").
 
-- Wrong: a `site.set_preview` operation, a preview setting and a "This site is in
+- Wrong: a `project.set_preview` operation, a preview setting and a "This project is in
   preview" page in core. Preview is the app's product rule.
 - Right: core offers one hook, "before delivering a page or island, ask the plugins
   whether this visitor may see it". The app's plugin implements preview on top: its
@@ -112,10 +112,10 @@ and never send their code or data anywhere else.
 
 ## On Publr Cloud
 
-A Publr Cloud site is its own Publr instance, the same as a self-hosted one: its owner may
-add compiled-in plugins and change core. Every rule above applies unchanged, for the same
-reason: a site whose core is edited in place stops taking Publr's updates. What Cloud
-keeps out of the instance's reach is the platform around it (routing, isolation from other
-sites, resource limits, the rules of the owner's plan), so nothing inside the site needs
-to be protected from the site's own owner. Never try to work around those limits from
-inside the site.
+A Publr Cloud project is its own Publr instance, the same as a self-hosted one: its owner
+may add compiled-in plugins and change core. Every rule above applies unchanged, for the
+same reason: a project whose core is edited in place stops taking Publr's updates. What
+Cloud keeps out of the instance's reach is the platform around it (routing, isolation
+from other projects, resource limits, the rules of the owner's plan), so nothing inside
+the project needs to be protected from its own owner. Never try to work around those
+limits from inside the project.

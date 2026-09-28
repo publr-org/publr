@@ -4,6 +4,7 @@ const schemas = @import("schema_fields.zig");
 const spaces = @import("schema_space.zig");
 const rules = @import("field_conditions.zig");
 const model = @import("../../model.zig");
+const registry = @import("../../server/registry.zig");
 
 pub fn show(
     request: *admin.Request,
@@ -38,6 +39,8 @@ pub fn render(
     try admin.render.page(response, session.arena, .ok, admin.views.FieldGroup, .{
         .user_name = shell.user_name,
         .user_email = shell.user_email,
+        .can_structure = shell.can_structure,
+        .can_settings = shell.can_settings,
         .csrf = shell.csrf,
         .title = if (fresh) "New field group" else def.name,
         .name = def.name,
@@ -127,14 +130,23 @@ fn subjects_of(session: *admin.Session) ![]const admin.views.RuleBuilder.Subject
         labels[index] = kind.label;
     }
 
+    const roles = registry.Roles.all;
+    const role_names = try session.arena.alloc([]const u8, roles.len);
+    const role_labels = try session.arena.alloc([]const u8, roles.len);
+
+    for (roles, 0..) |role, index| {
+        role_names[index] = role.name;
+        role_labels[index] = role.label;
+    }
+
     const defs = [_]model.field.Def{
         .{ .name = "destination", .label = "Location", .kind = "select", .options = .{
             .choices = &.{ "user", "media" },
             .labels = &.{ "User", "Media" },
         } },
         .{ .name = "role", .label = "User role", .kind = "select", .options = .{
-            .choices = &.{ "admin", "editor" },
-            .labels = &.{ "Administrator", "Editor" },
+            .choices = role_names,
+            .labels = role_labels,
         } },
         .{ .name = "media_type", .label = "Media type", .kind = "select", .options = .{
             .choices = values,

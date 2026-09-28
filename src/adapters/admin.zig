@@ -3,10 +3,11 @@ const sdk = @import("../sdk.zig");
 const auth = @import("../lib/auth.zig");
 const identity_module = @import("rest/identity.zig");
 const http = @import("../lib/http.zig");
-const Site = @import("../app/site.zig").Site;
-const registry = @import("../app/registry.zig");
+const Project = @import("../server/project.zig").Project;
+const registry = @import("../server/registry.zig");
 const types = @import("../operations/content_type.zig");
-const auth_pages = @import("admin/auth.zig");
+const users = @import("../operations/user.zig");
+pub const auth_pages = @import("admin/auth.zig");
 const settings_pages = @import("admin/settings.zig");
 const user_pages = @import("admin/users.zig");
 const structure_pages = @import("admin/structure.zig");
@@ -224,7 +225,7 @@ pub const Session = struct {
     request: *Request,
     response: *Response,
     arena: std.mem.Allocator,
-    site: *Site,
+    project: *Project,
     identity: identity_module.Identity,
     ctx: sdk.Ctx,
     csrf: [auth.csrf.token_len]u8 = undefined,
@@ -232,29 +233,31 @@ pub const Session = struct {
     pub fn open(request: *Request, response: *Response, ctx: *Context) Session {
         std.debug.assert(ctx.user_data != null);
 
-        const site = Site.of(ctx);
-        const identity = identity_module.identify(request, ctx.arena, site);
+        const project = Project.of(ctx);
+        const identity = identity_module.identify(request, ctx.arena, project);
         var session: Session = .{
             .request = request,
             .response = response,
             .arena = ctx.arena,
-            .site = site,
+            .project = project,
             .identity = identity,
-            .ctx = identity_module.context(site, ctx.arena, identity.caller),
+            .ctx = identity_module.context(project, ctx.arena, identity.caller),
         };
 
-        _ = identity.csrf_token(site, &session.csrf);
+        _ = identity.csrf_token(project, &session.csrf);
 
         std.debug.assert(session.ctx.now_ms > 0);
 
-        identity_module.repair_hint(request, response, ctx.arena, &identity, session.ctx.now_ms);
+        const now_ms = session.ctx.now_ms;
+
+        identity_module.repair_hint(project, request, response, ctx.arena, &identity, now_ms);
 
         return session;
     }
 
     pub fn signed_in(session: *const Session) bool {
         std.debug.assert(session.ctx.now_ms > 0);
-        std.debug.assert(session.site.connection.transaction_depth == 0);
+        std.debug.assert(session.project.connection.transaction_depth == 0);
 
         return session.identity.session != null;
     }
@@ -280,13 +283,22 @@ pub const Session = struct {
 
         const provided = form.get("csrf") orelse "";
 
-        return auth.csrf.verify(session.site.auth.secret, identity_session.id, provided);
+        return auth.csrf.verify(session.project.auth.secret, identity_session.id, provided);
     }
 };
 
-/// What every signed-in page's chrome needs: who is signed in and the CSRF token for the
-/// sign-out form. The content types go through `nav_items`, typed per view.
-pub const Shell = struct { user_name: []const u8, user_email: []const u8, csrf: []const u8 };
+/// What every signed-in page's chrome needs: who is signed in, the CSRF token for the
+/// sign-out form, and the rail sections the viewer's roles open besides Content. The
+/// content types go through `nav_items`, typed per view.
+pub const Shell = struct {
+    user_name: []const u8,
+    user_email: []const u8,
+    csrf: []const u8,
+    /// Structure, for whoever may change a content type.
+    can_structure: bool,
+    /// Settings, for whoever may manage the accounts.
+    can_settings: bool,
+};
 
 pub fn shell_of(session: *const Session) Shell {
     std.debug.assert(session.signed_in());
@@ -296,13 +308,16 @@ pub fn shell_of(session: *const Session) Shell {
         .user_name = session.identity.display_name,
         .user_email = session.identity.email,
         .csrf = session.csrf_token(),
+        .can_structure = registry.SDK.may(&session.ctx, types.Create),
+        .can_settings = registry.SDK.may(&session.ctx, users.List),
     };
 }
 
 pub const nav = @import("admin/nav.zig");
 pub const nav_content = nav.nav_content;
 
-/// Sign-in required: answers null after redirecting to the login page.
+/// Sign-in required, by an account that may use the admin: answers null after
+/// redirecting to the login page otherwise.
 pub fn require(request: *Request, response: *Response, ctx: *Context) Error!?Session {
     std.debug.assert(ctx.user_data != null);
     std.debug.assert(response.headers_len == 0);
@@ -310,6 +325,14 @@ pub fn require(request: *Request, response: *Response, ctx: *Context) Error!?Ses
     const session = Session.open(request, response, ctx);
 
     if (!session.signed_in()) {
+        try response.redirect(.see_other, "/admin/login");
+
+        return null;
+    }
+
+    // An account whose roles reach none of the admin's operations (an app's visitor) is
+    // turned back at every admin URL, to the login page that says so.
+    if (!registry.SDK.reaches_admin(&session.ctx)) {
         try response.redirect(.see_other, "/admin/login");
 
         return null;
@@ -370,6 +393,8 @@ pub fn message(
 
         props.user_name = shell.user_name;
         props.user_email = shell.user_email;
+        props.can_structure = shell.can_structure;
+        props.can_settings = shell.can_settings;
         props.csrf = shell.csrf;
         if (!in_types) {
             props.nav = try nav_content(&listing, .{});
@@ -398,7 +423,7 @@ pub fn time_text(arena: std.mem.Allocator, ms: i64) []const u8 {
     }) catch "";
 }
 
-const routes = @import("../app/routes.zig");
+const routes = @import("../server/routes.zig");
 
 pub const Flow = struct {
     inner: routes.testing.Flow,
@@ -985,7 +1010,7 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expectEqualStrings("/admin/login", after.header("Location").?);
 }
 
-test "homepage settings use the shared editor and publish only after a guarded write" {
+test "a settings type uses the shared editor and publishes only after a guarded write" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -1008,8 +1033,23 @@ test "homepage settings use the shared editor and publish only after a guarded w
     var system = harness.ctx(.system);
     try registry.SDK.bootstrap(&system);
     const records = @import("../operations/record.zig");
-    const settings = @import("../operations/settings.zig");
+    const content_type = @import("../model/content_type.zig");
+    const website: content_type.Def = .{
+        .handle = "website",
+        .name = "Website",
+        .kind = .settings,
+        .title_field = "",
+        .fields = &.{
+            .{ .name = "hero_title", .label = "Hero title", .kind = "text" },
+            .{ .name = "fees", .label = "Fee rows", .kind = "repeater", .fields = &.{
+                .{ .name = "label", .label = "Label", .kind = "string" },
+            } },
+        },
+    };
     try records.fixture.post_type(&system);
+    _ = try registry.SDK.dispatch(&system, types.Create, .{
+        .definition = try content_type.encode(arena, website),
+    });
     const record = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "post",
         .document = "{\"title\":\"A post\"}",
@@ -1036,13 +1076,10 @@ test "homepage settings use the shared editor and publish only after a guarded w
     );
     const after = try registry.SDK.dispatch(&system, records.List, .{ .type = "website" });
     try std.testing.expectEqual(@as(usize, 1), after.records.len);
-    try std.testing.expectError(error.HomepageNotSet, settings.homepage(&system));
+    try std.testing.expectEqualStrings("draft", after.records[0].status);
     _ = try registry.SDK.dispatch(&system, records.Publish, .{ .id = after.records[0].id });
-    const home = try settings.homepage(&system);
-    try std.testing.expectEqualStrings(
-        "Welcome home",
-        home.document.object.get("hero_title").?.string,
-    );
+    const home = try registry.SDK.dispatch(&system, records.Get, .{ .id = after.records[0].id });
+    try std.testing.expect(std.mem.indexOf(u8, home.document, "Welcome home") != null);
     const content = try registry.SDK.dispatch(&system, records.List, .{});
     try std.testing.expectEqual(@as(usize, 1), content.records.len);
     try std.testing.expectEqualStrings(record.id, content.records[0].id);

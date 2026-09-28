@@ -1,0 +1,7 @@
+// An app under a path of the domain: its pages, islands and assets all live below /docs.
+.{
+    .mount = .{ .path = "/docs" },
+    .tokens = .{
+        .{ .name = "color-paper", .value = "#fbfbf8" },
+    },
+}

@@ -7,7 +7,7 @@ const content_types = publr.operations.content_type;
 const records = publr.operations.record;
 const taxonomies = publr.operations.taxonomy;
 const terms = publr.operations.term;
-const sites = publr.operations.site;
+const projects = publr.operations.project;
 const users = publr.operations.user;
 const saved_views = publr.operations.view;
 const sign_on = publr.operations.sign_on;
@@ -50,7 +50,7 @@ pub fn fill(ctx: *Ctx) Error!void {
 
     try fill_users(ctx);
 
-    ctx.caller = .{ .user = .{ .id = admin_id, .role = .admin } };
+    ctx.caller = .{ .user = .{ .id = admin_id, .roles = &.{"admin"} } };
 
     try fill_types(ctx);
     try fill_records(ctx);
@@ -122,7 +122,7 @@ fn fill_site(ctx: *Ctx) Error![]const u8 {
     std.debug.assert(ctx.caller == .system);
     std.debug.assert(admin_email.len > 0);
 
-    const created = try SDK.dispatch(ctx, sites.Init, .{
+    const created = try SDK.dispatch(ctx, projects.Init, .{
         .email = admin_email,
         .display_name = "Ada",
         .password = shared_password,

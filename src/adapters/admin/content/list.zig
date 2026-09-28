@@ -2,7 +2,7 @@
 //! saved view names, with the filter bar and the view menu around them.
 const std = @import("std");
 const admin = @import("../../admin.zig");
-const registry = @import("../../../app/registry.zig");
+const registry = @import("../../../server/registry.zig");
 const model = @import("../../../model.zig");
 const types = @import("../../../operations/content_type.zig");
 const record_operations = @import("../../../operations/record.zig");
@@ -121,6 +121,8 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     try admin.render.page(response, arena, .ok, views.Content, .{
         .user_name = shell.user_name,
         .user_email = shell.user_email,
+        .can_structure = shell.can_structure,
+        .can_settings = shell.can_settings,
         .csrf = shell.csrf,
         .nav = try admin.nav_content(&session, .{ .view_id = view_id, .filters = effective }),
         .title = props.title,

@@ -1,6 +1,6 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const registry = @import("../../app/registry.zig");
+const registry = @import("../../server/registry.zig");
 const content_type = @import("../../model/content_type.zig");
 const field = @import("../../model/field.zig");
 const types = @import("../../operations/content_type.zig");
@@ -158,7 +158,7 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
     try registry.SDK.bootstrap(&system);
     try apply(&system, &declared_greeting);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_ad", .role = .admin } });
+    var admin = harness.ctx(.{ .user = .{ .id = "u_ad", .roles = &.{"admin"} } });
     const greeting = try registry.SDK.dispatch(&admin, types.Get, .{ .type = "greeting" });
     try std.testing.expect(greeting.definition.system);
     try std.testing.expectEqualStrings("greeter", greeting.definition.owner);

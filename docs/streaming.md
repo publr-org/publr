@@ -3,7 +3,7 @@
 A design for delivering islands in the page's own response, with no second
 round trip, and for running that delivery on Publr's servers or on someone
 else's. Status: proposal. Nothing here is built yet. How islands work today
-is in [The site](site.md); what a publish rebuilds is there too.
+is in [Apps](apps.md); what a publish rebuilds is there too.
 
 ## The problem
 
@@ -138,7 +138,7 @@ What a replica needs, in order of difficulty:
    Dynamic islands are read-mostly, so a read replica of the SQLite file is
    enough; the session store must be replicated the same way. This is the
    design risk of the whole proposal and the first thing to prototype.
-3. **Consistent fingerprints.** Every region must agree on the theme
+3. **Consistent fingerprints.** Every region must agree on the app
    `?v=` token, or a page from one region references assets another has not
    received. Follows from ordering the push.
 
@@ -201,6 +201,6 @@ the reference. Cloudflare and AWS adapters are community or later work.
 
 - Streaming the admin. It is a per-request app and gains nothing here.
 - Partial hydration or client rendering of islands. Islands are HTML
-  fragments; interactivity stays with the theme's PJSX components and says
+  fragments; interactivity stays with the app's PJSX components and says
   nothing about when a fragment renders.
 - Changing `<head>` after the shell.
