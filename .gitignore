@@ -2,3 +2,5 @@
 .vendor-archives/
 zig-out/
 data/
+output/
+.DS_Store
