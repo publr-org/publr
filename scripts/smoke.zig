@@ -223,8 +223,7 @@ fn expect_taxonomies(
     try expect_contains(init, binary, work_dir, &listed_taxonomies, "\"handle\": \"topics\"");
 }
 
-/// A greeting recorded through the hello plugin, the site built from it, and the files
-/// the build promises.
+/// A post published, the site built from it, and the files the build promises.
 fn expect_build(
     init: std.process.Init,
     binary: []const u8,
@@ -234,19 +233,22 @@ fn expect_build(
     std.debug.assert(binary.len > 0);
     std.debug.assert(admin.len > 0);
 
-    const publish = [_][]const u8{ "--as", admin, "hello", "record", "--note", "Hello site" };
+    const publish = [_][]const u8{
+        "--as", admin,        "record",                     "create",   "--type",
+        "post", "--document", "{\"title\":\"Hello site\"}", "--status", "published",
+    };
     const build = [_][]const u8{"build"};
     const files = [_][]const u8{
         "output/index.html",
-        "output/greetings/index.html",
-        "output/greetings/hello-site/index.html",
+        "output/posts/index.html",
+        "output/posts/hello-site/index.html",
         "output/404.html",
         "output/sitemap.xml",
         "output/theme/theme.css",
         "output/theme/islands.js",
     };
 
-    try expect_contains(init, binary, work_dir, &publish, "\"rows\": 1");
+    try expect_contains(init, binary, work_dir, &publish, "\"slug\": \"hello-site\"");
 
     const result = try run_publr(init, binary, work_dir, &build);
 
@@ -269,7 +271,7 @@ fn expect_build(
     const page = try dir.readFileAlloc(init.io, files[2], arena, .limited(output_bytes_max));
 
     if (std.mem.indexOf(u8, page, "<code>hello-site</code>") == null) {
-        std.debug.print("smoke: build: the greeting page is not its own: {s}\n", .{page});
+        std.debug.print("smoke: build: the post page is not its own: {s}\n", .{page});
         return error.SmokeFailed;
     }
 
@@ -368,8 +370,11 @@ fn expect_serve(init: std.process.Init, binary: []const u8, work_dir: []const u8
     }
 
     const listed = try http_get(init, port, "/api/record/list?type=post");
+    const published = std.mem.indexOf(u8, listed, "\"title\":\"Hello site\"") != null;
+    const draft = std.mem.indexOf(u8, listed, "\"title\":\"Smoke\"") != null;
 
-    if (std.mem.indexOf(u8, listed, "\"records\":[]") == null) {
+    // A visitor sees the published post and never the draft.
+    if (!published or draft) {
         std.debug.print("smoke: serve: unexpected /api/record/list body: {s}\n", .{listed});
         return error.SmokeFailed;
     }
@@ -391,7 +396,7 @@ fn expect_serve(init: std.process.Init, binary: []const u8, work_dir: []const u8
     try expect_site(init, port);
 }
 
-/// The public site: the built home page, the greeting's page, a fragment, the stylesheet,
+/// The public site: the built home page, the post's page, a fragment, the stylesheet,
 /// and the theme's 404 for a path nothing owns.
 fn expect_site(init: std.process.Init, port: u16) !void {
     std.debug.assert(port > 0);
@@ -400,8 +405,8 @@ fn expect_site(init: std.process.Init, port: u16) !void {
     const checks = [_]struct { path: []const u8, needle: []const u8 }{
         .{ .path = "/", .needle = "X-Publr-Served: file" },
         .{ .path = "/", .needle = "<title>Publr</title>" },
-        .{ .path = "/greetings/hello-site", .needle = "<code>hello-site</code>" },
-        .{ .path = "/greetings", .needle = "Hello site" },
+        .{ .path = "/posts/hello-site", .needle = "<code>hello-site</code>" },
+        .{ .path = "/posts", .needle = "Hello site" },
         .{ .path = "/_islands/signed-in", .needle = "<template patchfor=\"signed-in\">" },
         .{ .path = "/theme/theme.css", .needle = ".bg-canvas" },
         .{ .path = "/nowhere", .needle = "404 Not Found" },

@@ -1,0 +1,23 @@
+---
+import Base from '../../layouts/base.publr';
+const posts = Publr.build.getCollection({ limit: 100 });
+---
+<Base title="Posts · Publr">
+  <section class="mx-auto max-w-wide px-6 pt-16 pb-8">
+    <p class="mb-3 text-xs font-semibold tracking-[0.18em] uppercase text-accent">Everything published</p>
+    <h1 class="font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Posts</h1>
+  </section>
+  <section class="mx-auto max-w-wide px-6 pb-16">
+    {posts.length === 0 ? (
+      <p class="rounded-lg border border-dashed border-line bg-card px-6 py-10 text-center text-muted">No posts yet. Add a public <code>post</code> type with a slug in the admin and publish the first one.</p>
+    ) : null}
+    <ul class="divide-y divide-line border-t border-line">
+      {posts.map((post) => (
+        <li class="grid gap-2 py-7 sm:grid-cols-[10rem_1fr] sm:gap-8">
+          <time class="text-sm text-muted">{post.created_at}</time>
+          <h2 class="font-serif text-2xl font-semibold leading-snug"><a href={`/posts/${post.slug ?? ""}`} class="hover:text-accent">{post.title}</a></h2>
+        </li>
+      ))}
+    </ul>
+  </section>
+</Base>

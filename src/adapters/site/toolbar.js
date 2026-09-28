@@ -1,6 +1,6 @@
 // The toolbar, linked from the `<head>` of every page: for someone signed in to this
 // site, a small bar in the admin's rail colours with the way into the admin and to the
-// editor of what the page shows ("Edit Greeting"). It can be dragged anywhere by the mark
+// editor of what the page shows ("Edit Post"). It can be dragged anywhere by the mark
 // (the place is remembered) and hidden; hidden, it leaves a small triangle that shows
 // when the pointer reaches the page's bottom-right corner, and brings the bar back.
 //

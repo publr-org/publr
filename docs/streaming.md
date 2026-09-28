@@ -100,7 +100,7 @@ should not oversell it.
 ### Opt-in
 
 ```
-<LatestGreetings island stream />     spliced into the response when the host can
+<LatestPosts island stream />         spliced into the response when the host can
 <Greeting dynamic stream />           rendered from the request into the response when the host can
 ```
 

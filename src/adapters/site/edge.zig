@@ -123,11 +123,11 @@ test "keys become tags, the same way every time" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const keys = [_][]const u8{ "record:9f2c", "type:greeting", "template:content/my page.publr" };
+    const keys = [_][]const u8{ "record:9f2c", "type:post", "template:content/my page.publr" };
     const value = (try joined(arena, &keys, 1000)).?;
 
     try std.testing.expectEqualStrings(
-        "record:9f2c,type:greeting,template:content/my%20page.publr",
+        "record:9f2c,type:post,template:content/my%20page.publr",
         value,
     );
     try std.testing.expectEqualStrings("", (try joined(arena, &.{}, 1000)).?);

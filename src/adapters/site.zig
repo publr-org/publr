@@ -148,9 +148,11 @@ const registry = @import("../app/registry.zig");
 const routes = @import("../app/routes.zig");
 const deps = @import("../lib/deps.zig");
 const record_operations = @import("../operations/record.zig");
+const content_type_operations = @import("../operations/content_type.zig");
+const content_type = @import("../model/content_type.zig");
 
-/// A database with the declared types (the hello plugin's public `greeting`), the embedded
-/// theme loaded over it, and an offline app with every route mounted.
+/// A database holding the default theme's public `post` type, the embedded theme loaded
+/// over it, and an offline app with every route mounted.
 const Harness = struct {
     inner: sdk.testing.Harness,
     index: deps.Index,
@@ -188,9 +190,15 @@ const Harness = struct {
         }, harness.arena_state.allocator());
         harness.flow.site.public = &harness.public;
 
+        const arena = harness.arena_state.allocator();
+        const post = try content_type.encode(arena, content_type.test_post);
         var system = harness.inner.ctx(.system);
+
         system.now_ms = now_ms;
         try registry.SDK.bootstrap(&system);
+        _ = try registry.SDK.dispatch(&system, content_type_operations.Create, .{
+            .definition = post,
+        });
     }
 
     fn deinit(harness: *Harness) void {
@@ -205,21 +213,21 @@ const Harness = struct {
         return harness.flow.call(head, "");
     }
 
-    /// A live greeting; its slug comes from the note.
-    fn publish(harness: *Harness, note: []const u8) ![]const u8 {
-        std.debug.assert(note.len > 0);
-        std.debug.assert(note.len < 200);
+    /// A live post; its slug comes from the title.
+    fn publish(harness: *Harness, title: []const u8) ![]const u8 {
+        std.debug.assert(title.len > 0);
+        std.debug.assert(title.len < 200);
 
         var system = harness.inner.ctx(.system);
         system.now_ms = sdk.context.wall_clock_ms(std.testing.io);
 
         const document = try std.fmt.allocPrint(
             harness.arena_state.allocator(),
-            "{{\"note\":\"{s}\"}}",
-            .{note},
+            "{{\"title\":\"{s}\"}}",
+            .{title},
         );
         const created = try registry.SDK.dispatch(&system, record_operations.Create, .{
-            .type = "greeting",
+            .type = "post",
             .document = document,
             .status = "published",
         });
@@ -253,12 +261,12 @@ test "unbuilt: the theme's routes render now, and the theme's 404 page answers t
     try std.testing.expect(contains(home.body, "islands.condition('signedIn'"));
     try std.testing.expect(contains(home.body, "Hello &lt;site&gt;"));
 
-    const page = try harness.get("/greetings/hello-site");
+    const page = try harness.get("/posts/hello-site");
     try std.testing.expectEqual(@as(u16, 200), page.status.code());
     try std.testing.expect(contains(page.body, "sm:text-5xl\">Hello &lt;site&gt;</h1>"));
     try std.testing.expect(contains(page.body, "<code>hello-site</code>"));
 
-    const missing = try harness.get("/greetings/nope");
+    const missing = try harness.get("/posts/nope");
     try std.testing.expectEqual(@as(u16, 404), missing.status.code());
     try std.testing.expect(contains(missing.body, "Nothing lives at this address."));
 
@@ -287,11 +295,11 @@ const middleware_testing = struct {
         }
 
         if (std.mem.eql(u8, request.path(), "/count")) {
-            const listed = try request.call(record_operations.List, .{ .type = "greeting" });
+            const listed = try request.call(record_operations.List, .{ .type = "post" });
 
             return request.json(.{
                 .method = request.method(),
-                .greetings = listed.records.len,
+                .posts = listed.records.len,
                 .nickname = try request.user_field("profile.nickname"),
             });
         }
@@ -319,7 +327,7 @@ test "middleware answers before the site, or lets the request through" {
     // It runs operations as the visitor, and sees every method, not only GET.
     const head = try harness.flow.head("POST /count HTTP/1.1\r\nHost: h\r\n\r\n", .{});
     const counted = try harness.flow.call(head, "");
-    const expected = "{\"method\":\"POST\",\"greetings\":1,\"nickname\":null}";
+    const expected = "{\"method\":\"POST\",\"posts\":1,\"nickname\":null}";
 
     try std.testing.expectEqualStrings(expected, counted.body);
 
@@ -407,7 +415,7 @@ test "islands: a dynamic fragment is rendered per request and never kept, a stat
     var key: []const u8 = "";
 
     for (harness.public.theme.islands) |island| {
-        if (!island.dynamic and std.mem.startsWith(u8, island.key, "latest-greetings")) {
+        if (!island.dynamic and std.mem.startsWith(u8, island.key, "latest-posts")) {
             key = island.key;
         }
     }
@@ -458,7 +466,7 @@ test "delivery gates: members see the site, privately; everyone else the gate's 
     _ = try harness.publish("Hidden");
     harness.flow.site.delivery_gates = &.{members_only};
 
-    for ([_][]const u8{ "/", "/greetings/hidden", "/nope", "/_islands/signed-in" }) |path| {
+    for ([_][]const u8{ "/", "/posts/hidden", "/nope", "/_islands/signed-in" }) |path| {
         const refused = try harness.get(path);
         try std.testing.expectEqual(@as(u16, 403), refused.status.code());
         try std.testing.expect(contains(refused.body, "Members only"));
@@ -478,14 +486,14 @@ test "delivery gates: members see the site, privately; everyone else the gate's 
     );
     const cookie = signed.header("Set-Cookie").?;
     const pair = cookie[0..std.mem.indexOfScalar(u8, cookie, ';').?];
-    const template = "GET /greetings/hidden HTTP/1.1\r\nHost: h\r\nCookie: {s}\r\n\r\n";
+    const template = "GET /posts/hidden HTTP/1.1\r\nHost: h\r\nCookie: {s}\r\n\r\n";
     const member = try harness.flow.call(try harness.flow.head(template, .{pair}), "");
     try std.testing.expectEqual(@as(u16, 200), member.status.code());
     try std.testing.expect(contains(member.body, "Hidden"));
     try std.testing.expectEqualStrings("private, no-store", member.header("Cache-Control").?);
 
     harness.flow.site.delivery_gates = &.{};
-    const open = try harness.get("/greetings/hidden");
+    const open = try harness.get("/posts/hidden");
     try std.testing.expectEqual(@as(u16, 200), open.status.code());
 }
 
@@ -536,7 +544,7 @@ test "a CDN keeps built pages and static islands longer, never what a gate made 
     _ = try harness.publish("Edge");
     _ = try build.build(&harness.public, &harness.flow.site);
 
-    const page = try harness.get("/greetings/edge");
+    const page = try harness.get("/posts/edge");
     try std.testing.expectEqualStrings("file", page.header("X-Publr-Served").?);
     try std.testing.expectEqualStrings("max-age=86400", page.header("CDN-Cache-Control").?);
 
@@ -558,7 +566,7 @@ test "a CDN keeps built pages and static islands longer, never what a gate made 
 
     // Made private by a gate: kept by nobody, the CDN included.
     harness.flow.site.delivery_gates = &.{edge_testing.private_gate};
-    const gated = try harness.get("/greetings/edge");
+    const gated = try harness.get("/posts/edge");
     try std.testing.expectEqualStrings("private, no-store", gated.header("Cache-Control").?);
     try std.testing.expectEqualStrings("no-store", gated.header("CDN-Cache-Control").?);
 }
@@ -578,7 +586,7 @@ test "behind a CDN: built files carry their keys, a write answers with the keys 
     _ = try build.build(&harness.public, &harness.flow.site);
 
     const arena = harness.arena_state.allocator();
-    const page = try harness.get(try std.fmt.allocPrint(arena, "/greetings/{s}", .{slug}));
+    const page = try harness.get(try std.fmt.allocPrint(arena, "/posts/{s}", .{slug}));
     const tags = page.header("Cache-Tag").?;
     try std.testing.expect(contains(tags, "record:"));
     try std.testing.expect(contains(tags, "template:"));
@@ -599,7 +607,7 @@ test "behind a CDN: built files carry their keys, a write answers with the keys 
     );
     try std.testing.expectEqualStrings("", signed.header(edge.changed_header).?);
 
-    // A greeting created through the API: exactly the keys it raised.
+    // A post created through the API: exactly the keys it raised.
     const cookie = signed.header("Set-Cookie").?;
     const pair = cookie[0..std.mem.indexOfScalar(u8, cookie, ';').?];
     const csrf_at = std.mem.indexOf(u8, signed.body, "\"csrf\":\"").? + 8;
@@ -609,14 +617,14 @@ test "behind a CDN: built files carry their keys, a write answers with the keys 
         pair,
         csrf,
     });
-    const document = "{\"type\":\"greeting\",\"document\":\"{\\\"note\\\":\\\"More\\\"}\"," ++
+    const document = "{\"type\":\"post\",\"document\":\"{\\\"title\\\":\\\"More\\\"}\"," ++
         "\"status\":\"published\"}";
     const created = try harness.flow.call(create, document);
     try std.testing.expectEqual(@as(u16, 200), created.status.code());
 
     const changed = created.header(edge.changed_header).?;
     try std.testing.expect(contains(changed, "record:"));
-    try std.testing.expect(contains(changed, "type:greeting"));
+    try std.testing.expect(contains(changed, "type:post"));
 
     // A read never answers with it.
     try std.testing.expect(page.header(edge.changed_header) == null);
@@ -645,23 +653,23 @@ test "build writes the site, serve prefers the files, a publish rewrites what re
     const io = std.testing.io;
     const home = try scratch.dir.readFileAlloc(io, "index.html", arena, .limited(1 << 20));
     try std.testing.expect(contains(home, ">First</a>"));
-    try std.testing.expect(build.built_page(&harness.public, arena, "/greetings/first") != null);
+    try std.testing.expect(build.built_page(&harness.public, arena, "/posts/first") != null);
     try std.testing.expect(build.built_page(&harness.public, arena, "/visit") == null);
     try std.testing.expect(build.built_404(&harness.public, arena) != null);
 
-    const served = try harness.get("/greetings/first");
+    const served = try harness.get("/posts/first");
     try std.testing.expectEqualStrings("file", served.header("X-Publr-Served").?);
     try std.testing.expect(served.header("ETag") != null);
 
     const tag = served.header("ETag").?;
     const revalidate = try harness.flow.head(
-        "GET /greetings/first HTTP/1.1\r\nHost: h\r\nIf-None-Match: {s}\r\n\r\n",
+        "GET /posts/first HTTP/1.1\r\nHost: h\r\nIf-None-Match: {s}\r\n\r\n",
         .{tag},
     );
     const not_modified = try harness.flow.call(revalidate, "");
     try std.testing.expectEqual(@as(u16, 304), not_modified.status.code());
 
-    // A second greeting: the queue holds its keys; after the quiet period the flush
+    // A second post: the queue holds its keys; after the quiet period the flush
     // builds its page and rewrites the listing and the home page.
     _ = try harness.publish("Second");
 
@@ -670,10 +678,10 @@ test "build writes the site, serve prefers the files, a publish rewrites what re
     rebuild.flush(&harness.public, site, later);
     try std.testing.expect(!rebuild.due(&harness.public, later));
 
-    const second = build.built_page(&harness.public, arena, "/greetings/second").?;
+    const second = build.built_page(&harness.public, arena, "/posts/second").?;
     try std.testing.expect(contains(second, "<code>second</code>"));
 
-    const listing = build.built_page(&harness.public, arena, "/greetings").?;
+    const listing = build.built_page(&harness.public, arena, "/posts").?;
     try std.testing.expect(contains(listing, "Second"));
     try std.testing.expect(contains(listing, "First"));
 }
@@ -715,7 +723,7 @@ test "refresh: a current build is left alone, a publish rebuilds its pages, anot
     try std.testing.expectEqual(@as(u32, 0), after.removed);
 
     const arena = harness.arena_state.allocator();
-    const second = build.built_page(&harness.public, arena, "/greetings/second").?;
+    const second = build.built_page(&harness.public, arena, "/posts/second").?;
     try std.testing.expect(contains(second, "<code>second</code>"));
     const settled = try rebuild.refresh(&harness.public, site);
     try std.testing.expectEqual(rebuild.Outcome.current, settled.outcome);
@@ -730,8 +738,8 @@ test "refresh: a current build is left alone, a publish rebuilds its pages, anot
     try std.testing.expect(rebuild.marker_matches(&harness.public));
 }
 
-fn queryGreetings(ctx: *sdk.Ctx) !record_operations.List.Out {
-    return registry.SDK.dispatch(ctx, record_operations.List, .{ .type = "greeting" });
+fn query_posts(ctx: *sdk.Ctx) !record_operations.List.Out {
+    return registry.SDK.dispatch(ctx, record_operations.List, .{ .type = "post" });
 }
 
 test "operation results collect empty membership and replay only committed scoped tokens" {
@@ -741,7 +749,7 @@ test "operation results collect empty membership and replay only committed scope
     var system = harness.inner.ctx(.system);
     const secret = "test-secret-" ** 4;
     const scope: sdk.dependencies.Scope = .{ .site = "example", .authority = "public" };
-    const initial = try query.execute(queryGreetings, &system, .{}, secret, scope, 60000);
+    const initial = try query.execute(query_posts, &system, .{}, secret, scope, 60000);
     try std.testing.expectEqual(@as(usize, 0), initial.value.records.len);
     try std.testing.expect(!initial.policy.no_store);
     try std.testing.expect(initial.policy.tags.len > 0);
@@ -758,7 +766,7 @@ test "operation results collect empty membership and replay only committed scope
     };
 
     try std.testing.expect(matched);
-    const updated = try query.execute(queryGreetings, &system, .{}, secret, scope, 60000);
+    const updated = try query.execute(query_posts, &system, .{}, secret, scope, 60000);
     try std.testing.expectEqual(@as(usize, 1), updated.value.records.len);
     const other = try query.replay(
         &system,
@@ -775,7 +783,7 @@ test "operation results collect empty membership and replay only committed scope
     };
 
     var transaction = try system.db.transaction();
-    try harness.index.invalidate(&.{"type:greeting"}, system.now_ms);
+    try harness.index.invalidate(&.{"type:post"}, system.now_ms);
     try std.testing.expectError(
         error.UncommittedRead,
         query.replay(

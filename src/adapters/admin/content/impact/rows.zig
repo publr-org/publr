@@ -142,7 +142,7 @@ pub fn index_row(source: Source, artifact: Artifact) Error!Row {
     };
 }
 
-/// "content/index.publr lists Greeting records", or the embed and, one step in, the
+/// "content/index.publr lists Post records", or the embed and, one step in, the
 /// template that does the reading.
 fn read_lines(
     source: Source,
@@ -232,11 +232,11 @@ fn print(arena: std.mem.Allocator, comptime template: []const u8, args: anytype)
 
 const test_source: Source = .{
     .arena = undefined,
-    .def = .{ .handle = "greeting", .name = "Greeting", .fields = &.{} },
+    .def = .{ .handle = "post", .name = "Post", .fields = &.{} },
     .site_url = "http://h",
     .artifacts = &.{
-        .{ .name = "/", .keys = &.{ "type:greeting", "records" } },
-        .{ .name = "/greetings/hello", .keys = &.{"record:abc"} },
+        .{ .name = "/", .keys = &.{ "type:post", "records" } },
+        .{ .name = "/posts/hello", .keys = &.{"record:abc"} },
     },
 };
 
@@ -258,21 +258,21 @@ test "a page row: the chain through an embed, the index line, a link only where 
     try std.testing.expectEqualStrings(status_built, home.status);
     try std.testing.expectEqualStrings("embeds", home.why[0].tail);
     try std.testing.expect(home.why[1].nested);
-    try std.testing.expectEqualStrings("lists Greeting records", home.why[1].tail);
-    try std.testing.expectEqualStrings("type:greeting, records", home.why[2].code);
+    try std.testing.expectEqualStrings("lists Post records", home.why[1].tail);
+    try std.testing.expectEqualStrings("type:post, records", home.why[2].code);
 
     const entry: theme_module.impact.Page = .{
-        .route = "/greetings/:slug",
-        .template = "content/greetings/[slug].publr",
+        .route = "/posts/:slug",
+        .template = "content/posts/[slug].publr",
         .live = false,
         .reads = .entry,
         .via = "",
     };
-    const saved = try page_row(source, entry, "/greetings/hello", "/greetings/hello");
-    try std.testing.expectEqualStrings("http://h/greetings/hello", saved.href);
+    const saved = try page_row(source, entry, "/posts/hello", "/posts/hello");
+    try std.testing.expectEqualStrings("http://h/posts/hello", saved.href);
     try std.testing.expectEqualStrings("renders the record", saved.why[0].tail);
     try std.testing.expectEqualStrings(status_built, saved.status);
-    const unsaved = try page_row(source, entry, "", "/greetings/:slug");
+    const unsaved = try page_row(source, entry, "", "/posts/:slug");
     try std.testing.expectEqualStrings("", unsaved.href);
     try std.testing.expectEqualStrings("its page, once the record has a slug", unsaved.status);
 
@@ -302,7 +302,7 @@ test "a fragment row: placements with the prerender note, parents, the index; an
         .via = "",
         .placed = &.{
             .{ .route = "/visit", .prerendered = true },
-            .{ .route = "/greetings/:slug", .prerendered = false },
+            .{ .route = "/posts/:slug", .prerendered = false },
         },
         .inside = &.{"outer"},
     }, "/_islands/latest");

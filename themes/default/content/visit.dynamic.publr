@@ -3,7 +3,7 @@
 // per request — its dynamic islands are rendered into it rather than fetched.
 import Base from '../layouts/base.publr';
 import SignedIn from '../dynamic/signed-in.dynamic.publr';
-import LatestGreetings from '../components/latest-greetings.publr';
+import LatestPosts from '../components/latest-posts.publr';
 const now = Publr.request.now();
 const agent = Publr.request.header('user-agent');
 const lucky = Publr.request.random(100);
@@ -19,7 +19,7 @@ const lucky = Publr.request.random(100);
       <dt class="text-muted">Lucky number</dt><dd>{lucky}</dd>
       <dt class="text-muted">You are</dt><dd><SignedIn dynamic /></dd>
     </dl>
-    <p class="mt-10 mb-3 text-sm text-muted">The list below is a <em>prerendered static island</em> on this live page: the greeting and clock above were flattened into this render, but a fragment the build wrote is still the cheaper thing — it is fetched from the island route, cached by you for a minute, and shared with every greeting page. <code>prerender</code> renders it here too, so what you are reading is already the list; the fetch replaces it with the same markup, and on a built page it does that without ever subscribing the page to the greetings.</p>
-    <LatestGreetings heading="More greetings" island prerender eager />
+    <p class="mt-10 mb-3 text-sm text-muted">The list below is a <em>prerendered static island</em> on this live page: the greeting and clock above were flattened into this render, but a fragment the build wrote is still the cheaper thing — it is fetched from the island route, cached by you for a minute, and shared with every post page. <code>prerender</code> renders it here too, so what you are reading is already the list; the fetch replaces it with the same markup, and on a built page it does that without ever subscribing the page to the posts.</p>
+    <LatestPosts heading="More posts" island prerender eager />
   </section>
 </Base>

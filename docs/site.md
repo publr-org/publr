@@ -14,8 +14,8 @@ site build copies `themes/<name>/public/` into `output/theme/` unchanged.
 themes/default/
   content/                 the routes: one page per file
     index.publr            /
-    greetings/index.publr  /greetings
-    greetings/[slug].publr /greetings/<slug>, one page per live greeting
+    posts/index.publr      /posts
+    posts/[slug].publr     /posts/<slug>, one page per live post
     visit.dynamic.publr    /visit, rendered per request
     404.publr              every unmatched path
   layouts/, components/, dynamic/   templates the pages import; the names are the theme's own
@@ -40,15 +40,15 @@ A `.publr` file is JS frontmatter over an HTML body with JSX constructs:
 ```astro
 ---
 import Base from '../../layouts/base.publr';
-import LatestGreetings from '../../components/latest-greetings.publr';
-const greeting = Publr.build.getEntry();
+import LatestPosts from '../../components/latest-posts.publr';
+const post = Publr.build.getEntry();
 ---
-<Base title={greeting.title}>
+<Base title={post.title}>
   <article>
-    <h1>{greeting.title}</h1>
-    <time>{greeting.created_at}</time>
+    <h1>{post.title}</h1>
+    <time>{post.created_at}</time>
   </article>
-  <LatestGreetings heading="More greetings" island prerender eager />
+  <LatestPosts heading="More posts" island prerender eager />
 </Base>
 ```
 
@@ -178,14 +178,13 @@ shared chrome (a header and footer read from the site's settings) is a static
 island, built once. Rendering the same page live, under `--dev` or before a
 build, fails with an out-of-memory response.
 The type of `getEntry()` and of a bare `getCollection()` comes from the
-template's place in `content/` (`greetings/[slug].publr` reads `greeting`); a
-component names it (`{ type: 'greeting' }`). The default theme reads the
-`greeting` type the hello plugin declares: public, titled by `note`, with a
-slug from it, so a fresh install has a site the moment someone says hello
-(`publr --as you@example.com hello record --note "Hello"`). A type the site does not have yet
-(a fresh install, or one that is not public) is an empty collection, and its
-entries are not found: the site builds before the content exists, and the
-type's arrival rebuilds what read it.
+template's place in `content/` (`posts/[slug].publr` reads `post`); a
+component names it (`{ type: 'post' }`). The default theme reads a public `post`
+type with a `slug` field. It brings no type of its own, so a fresh install shows
+an empty site until someone adds that type and publishes a post. A type the site
+does not have yet (a fresh install, or one that is not public) is an empty
+collection, and its entries are not found: the site builds before the content
+exists, and the type's arrival rebuilds what read it.
 
 **A template that reads `Publr.request` is dynamic; one that reads only
 `Publr.build` is static.** Nothing is declared. A dynamic template's name
@@ -268,7 +267,7 @@ theme still decides whether it is embedded or an island.
 Every page links `/theme/toolbar.js`. For someone signed in to the site it shows a small bar
 with a link to the admin and, on a page that renders one record (a route whose
 `Publr.build.getEntry()` reads it by slug, or the homepage), a link to that record's editor
-named by its type ("Edit Greeting"). It wears the admin rail's colours and mark, whatever
+named by its type ("Edit Post"). It wears the admin rail's colours and mark, whatever
 the site looks like. The bar can be dragged by the mark, and the browser remembers where.
 Hiding it is remembered too; a small triangle then appears when the pointer reaches the
 page's bottom-right corner, and clicking it brings the bar back.
@@ -313,7 +312,7 @@ long as the request. The answers are `redirect(url)` (a `303` to a path on the s
 any URL), `respond(status, html)` and `json(value)`.
 
 The file is Zig, compiled into the binary with the theme: it imports `publr` and every
-compiled-in plugin by name (`@import("hello")`). A theme without one builds as before,
+compiled-in plugin by its name (`@import("<name>")`). A theme without one builds as before,
 and nothing runs. A built site served as files elsewhere (`publr build` to a CDN) has no
 middleware.
 
@@ -384,9 +383,9 @@ notice raises the record's keys, from whichever door the change came (admin,
 API, CLI). The server takes the batch once it has been quiet for a quarter
 second and rebuilds exactly the artifacts the index names: a changed post
 rewrites its own page and whatever lists it; a rebuild that produces the same
-bytes is not written; a page whose record is gone is removed. Record a
-greeting and the home page, the listing, the shared fragment and the
-greeting's own page change; no other greeting page is touched.
+bytes is not written; a page whose record is gone is removed. Publish a
+post and the home page, the listing, the shared fragment and the post's own
+page change; no other post page is touched.
 
 The queue lives in the database, so a change made while no server ran (a CLI
 publish, a migration script) waits there. The next `publr build` or

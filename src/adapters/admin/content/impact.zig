@@ -210,8 +210,8 @@ const test_pages = [_]theme_module.impact.Page{
         .via = "",
     },
     .{
-        .route = "/greetings/:slug",
-        .template = "content/greetings/[slug].publr",
+        .route = "/posts/:slug",
+        .template = "content/posts/[slug].publr",
         .live = false,
         .reads = .entry,
         .via = "",
@@ -226,7 +226,7 @@ const test_islands = [_]theme_module.impact.Island{.{
     .via = "",
     .placed = &.{
         .{ .route = "/visit", .prerendered = true },
-        .{ .route = "/greetings/:slug", .prerendered = false },
+        .{ .route = "/posts/:slug", .prerendered = false },
     },
     .inside = &.{"outer"},
 }};
@@ -236,11 +236,11 @@ test "rows: the theme's pages, then its fragments, then what only the index know
     defer arena_state.deinit();
     const source: Source = .{
         .arena = arena_state.allocator(),
-        .def = .{ .handle = "greeting", .name = "Greeting", .fields = &.{} },
+        .def = .{ .handle = "post", .name = "Post", .fields = &.{} },
         .site_url = "http://h",
         .artifacts = &.{
-            .{ .name = "/", .keys = &.{ "type:greeting", "records" } },
-            .{ .name = "/greetings/hello", .keys = &.{"record:abc"} },
+            .{ .name = "/", .keys = &.{ "type:post", "records" } },
+            .{ .name = "/posts/hello", .keys = &.{"record:abc"} },
             .{ .name = "/tags", .keys = &.{"records"} },
         },
     };
@@ -250,7 +250,7 @@ test "rows: the theme's pages, then its fragments, then what only the index know
     try std.testing.expectEqual(@as(usize, 5), rows.len);
     try std.testing.expectEqualStrings("/", rows[0].address);
     try std.testing.expectEqualStrings("/fresh", rows[1].address);
-    try std.testing.expectEqualStrings("/greetings/hello", rows[2].own);
+    try std.testing.expectEqualStrings("/posts/hello", rows[2].own);
     try std.testing.expectEqualStrings("/_islands/latest", rows[3].address);
     try std.testing.expectEqualStrings("/tags", rows[4].address);
     try std.testing.expectEqual(@as(u32, 4), count(rows, true));
@@ -260,7 +260,7 @@ test "rows: the theme's pages, then its fragments, then what only the index know
     try std.testing.expectEqualStrings("", unsaved[2].own);
     try std.testing.expectEqual(@as(usize, 6), unsaved.len);
 
-    const keys = try keys_of(source.arena, &.{ "type:greeting", "records" });
+    const keys = try keys_of(source.arena, &.{ "type:post", "records" });
     try std.testing.expectEqualStrings("records", keys[1].key);
     try std.testing.expect(contains(&.{ "/", "/x" }, "/x"));
     try std.testing.expect(!contains(&.{"/"}, "/x"));

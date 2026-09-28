@@ -18,7 +18,7 @@ const builtAt = Publr.build.now();
       </a>
       <div class="flex items-center gap-6 text-sm font-medium">
         <a href="/" class="hover:text-accent">Home</a>
-        <a href="/greetings" class="hover:text-accent">Greetings</a>
+        <a href="/posts" class="hover:text-accent">Posts</a>
         <a href="/visit" class="hover:text-accent">Your visit</a>
         <SignedIn dynamic-if="signedIn" prerender eager />
       </div>

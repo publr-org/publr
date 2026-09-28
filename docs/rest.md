@@ -38,7 +38,7 @@ GET  /api/term/tree?taxonomy=topics
 POST /api/term/create          {"taxonomy":"topics","document":"{\"name\":\"Engineering\"}","parent":"…"}
 ```
 
-Plugins' operations appear the same way (`POST /api/hello/record`).
+Plugins' operations appear the same way (`POST /api/<namespace>/<verb>`).
 Unknown operations answer `404 { "error": "unknown_operation" }`; `GET` on a
 write operation answers `405`.
 

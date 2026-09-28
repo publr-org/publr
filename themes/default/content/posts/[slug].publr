@@ -1,0 +1,17 @@
+---
+import Base from '../../layouts/base.publr';
+import LatestPosts from '../../components/latest-posts.publr';
+const post = Publr.build.getEntry();
+---
+<Base title={post.title}>
+  <article class="mx-auto max-w-prose px-6 pt-16 pb-8">
+    <p class="mb-6 text-sm"><a href="/posts" class="text-muted hover:text-accent">← All posts</a></p>
+    <p class="mb-3 text-xs font-semibold tracking-[0.18em] uppercase text-accent">A post</p>
+    <h1 class="font-serif text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">{post.title}</h1>
+    <time class="mt-4 block text-sm text-muted">Published {post.created_at}</time>
+    <p class="mt-10 text-lg leading-relaxed text-muted">This page was built to a file for <code>{post.slug ?? ""}</code>. Publish another post and only the pages that list them are rebuilt; this one is left alone.</p>
+  </article>
+  <aside class="mx-auto max-w-prose px-6 pb-16">
+    <LatestPosts heading="More posts" island />
+  </aside>
+</Base>

@@ -4,12 +4,12 @@
 // no matter what". The route is still /fresh; the marker says when, not where.
 import Base from '../layouts/base.publr';
 import SignedIn from '../dynamic/signed-in.dynamic.publr';
-const greetings = Publr.build.getCollection({ type: 'greeting' });
+const posts = Publr.build.getCollection({ type: 'post' });
 ---
 <Base title="Fresh · Publr">
   <section class="mx-auto max-w-prose px-6 pt-16 pb-16">
     <p class="mb-3 text-xs font-semibold tracking-[0.18em] uppercase text-accent">A forced-dynamic page</p>
-    <h1 class="font-serif text-4xl font-semibold tracking-tight">Counted just now: {greetings.length} greetings.</h1>
+    <h1 class="font-serif text-4xl font-semibold tracking-tight">Counted just now: {posts.length} posts.</h1>
     <p class="mt-5 leading-relaxed text-muted">This is <code>content/fresh.dynamic.publr</code>. It reads only <code>Publr.build</code>, so Publr would happily build it — the <code>.dynamic</code> in its name overrides that, and the route renders on every request. The greeting is a dynamic island, written <code>&lt;SignedIn dynamic /&gt;</code> as always; on a dynamic page it is rendered into the response rather than fetched: <SignedIn dynamic /></p>
   </section>
 </Base>

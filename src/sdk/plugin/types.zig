@@ -137,6 +137,18 @@ pub fn unlocked_of(def: Def) []const field.Def {
     return def.fields[first..];
 }
 
+/// A type as a plugin declares it: public, with a slug from its note.
+const declared_greeting = [_]Declared{.{ .owner = "greeter", .def = .{
+    .handle = "greeting",
+    .name = "Greeting",
+    .public = true,
+    .title_field = "note",
+    .fields = &.{
+        .{ .name = "note", .label = "Note", .kind = "string", .required = true },
+        .{ .name = "slug", .label = "Slug", .kind = "slug", .options = .{ .source = "note" } },
+    },
+} }};
+
 test "declared types: locked fields stay, hand-added fields survive a redeclaration" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
@@ -144,11 +156,12 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
 
     var system = harness.ctx(.system);
     try registry.SDK.bootstrap(&system);
+    try apply(&system, &declared_greeting);
 
     var admin = harness.ctx(.{ .user = .{ .id = "u_ad", .role = .admin } });
     const greeting = try registry.SDK.dispatch(&admin, types.Get, .{ .type = "greeting" });
     try std.testing.expect(greeting.definition.system);
-    try std.testing.expectEqualStrings("hello", greeting.definition.owner);
+    try std.testing.expectEqualStrings("greeter", greeting.definition.owner);
     try std.testing.expect(greeting.definition.fields[0].locked);
     try std.testing.expect(greeting.definition.fields[1].locked);
     try std.testing.expect(greeting.definition.public);
@@ -189,7 +202,7 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
         .definition = try content_type.encode(admin.arena, arranged),
     });
 
-    try registry.SDK.bootstrap(&system);
+    try apply(&system, &declared_greeting);
     const after = try registry.SDK.dispatch(&admin, types.Get, .{ .type = "greeting" });
     try std.testing.expectEqual(@as(usize, 3), after.definition.fields.len);
     try std.testing.expectEqualStrings("mood", after.definition.fields[2].name);

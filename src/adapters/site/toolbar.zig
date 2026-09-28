@@ -1,6 +1,6 @@
 //! `/_publr/toolbar?path=<page>`: what the toolbar a signed-in person sees on the site
 //! offers for that page. The admin, always; the editor of the record the page renders, named
-//! by its type ("Edit Greeting"), when the route reads one by its slug and the caller can
+//! by its type ("Edit Post"), when the route reads one by its slug and the caller can
 //! read it. Nobody signed in: nothing.
 
 const std = @import("std");
