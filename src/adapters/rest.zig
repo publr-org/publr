@@ -77,7 +77,7 @@ fn invoke(
     };
     var sdk_ctx = identity_module.context(Site.of(ctx), ctx.arena, caller);
     const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch |err| {
-        return auth_http.respond_error(response, err);
+        return auth_http.respond_error(response, err, &sdk_ctx);
     };
 
     try response.json(.ok, out);
@@ -97,7 +97,7 @@ fn parse_body(comptime In: type, arena: std.mem.Allocator, body: []const u8) ?In
         .ignore_unknown_fields = false,
     };
 
-    return std.json.parseFromSliceLeaky(In, arena, text, options) catch null;
+    return @import("../lib/json.zig").parse(In, arena, text, options) catch null;
 }
 
 fn parse_query(comptime In: type, arena: std.mem.Allocator, query: []const u8) ?In {
@@ -212,4 +212,41 @@ test "rest: every operation is reachable under /api/<namespace>/<verb>, with the
         "",
     );
     try std.testing.expectEqual(@as(u16, 405), wrong_method.status.code());
+
+    // The session without its signed-in hint (removed outside Publr): the hint comes back;
+    // with the hint there, nothing is set.
+    const session_template = "GET /api/auth/session HTTP/1.1\r\nHost: h\r\nCookie: {s}\r\n\r\n";
+    const bare = try flow.call(try flow.head(session_template, .{cookie_pair}), "");
+    const repaired = bare.header("Set-Cookie").?;
+    try std.testing.expect(std.mem.startsWith(u8, repaired, "publr_signed_in=1; Path=/;"));
+
+    const both = try std.fmt.allocPrint(std.testing.allocator, "{s}; publr_signed_in=1", .{
+        cookie_pair,
+    });
+    defer std.testing.allocator.free(both);
+    const whole = try flow.call(try flow.head(session_template, .{both}), "");
+    try std.testing.expect(whole.header("Set-Cookie") == null);
+}
+
+test "oversized health echo returns HTTP 422 and subsequent requests still work" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    var flow: routes.testing.Flow = undefined;
+    flow.init(
+        .{
+            .connection = &harness.fixture.connection,
+            .auth = &harness.auth,
+            .io = std.testing.io,
+        },
+        arena_state.allocator(),
+    );
+    const oversized = "GET /api/heartbeat/check?echo=" ++ "x" ** 257 ++
+        " HTTP/1.1\r\nHost: h\r\n\r\n";
+    const refused = try flow.call(oversized, "");
+    try std.testing.expectEqual(@as(u16, 422), refused.status.code());
+    const healthy = try flow.call("GET /api/heartbeat/check HTTP/1.1\r\nHost: h\r\n\r\n", "");
+    try std.testing.expectEqual(@as(u16, 200), healthy.status.code());
 }

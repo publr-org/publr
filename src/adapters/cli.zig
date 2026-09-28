@@ -27,7 +27,14 @@ pub fn CLI(comptime SDK: type) type {
         pub fn run(options: Options, args: []const []const u8, out: *std.Io.Writer) Error!u8 {
             @setEvalBranchQuota(100_000);
 
-            std.debug.assert(args.len <= args_max);
+            if (args.len > args_max) {
+                return fail(options, "too many arguments");
+            }
+
+            for (args) |arg| {
+                if (arg.len > value_len_max) return fail(options, "argument is too long");
+            }
+
             std.debug.assert(options.db.transaction_depth == 0);
 
             var caller: sdk.Caller = .anonymous;
@@ -64,6 +71,7 @@ pub fn CLI(comptime SDK: type) type {
             if (std.mem.eql(u8, args[index], "init")) {
                 var aliased: [args_max + 1][]const u8 = undefined;
                 const rest = args[index + 1 ..];
+                if (rest.len > args_max - 2) return fail(options, "too many arguments");
 
                 aliased[0] = "site";
                 aliased[1] = "init";
@@ -85,6 +93,10 @@ pub fn CLI(comptime SDK: type) type {
 
             std.debug.assert(args.len > 0);
             std.debug.assert(args.len <= args_max);
+
+            if (args[0].len == 0) {
+                return fail(options, "command must not be empty");
+            }
 
             const index: u32 = 0;
             const bare_namespace = std.mem.indexOfScalar(u8, args[index], '.') == null and
@@ -217,7 +229,7 @@ pub fn CLI(comptime SDK: type) type {
                 return failf(options, "{s} {s}: {s}", .{
                     comptime sdk.operation.namespace(Operation.name),
                     comptime sdk.operation.verb(Operation.name),
-                    describe(err, ctx.caller),
+                    describe(err, ctx),
                 });
             };
 
@@ -291,7 +303,27 @@ pub fn CLI(comptime SDK: type) type {
 
             write(out, "\nOutput:\n") catch return error.WriteFailed;
             try print_field_docs(Operation, Operation.Out, "output_docs", false, out);
+            try print_failures(Operation, out);
             try print_example(Operation, out);
+        }
+
+        /// The failures the operation declares beyond the core's errors, as REST names them.
+        fn print_failures(comptime Operation: type, out: *std.Io.Writer) Error!void {
+            comptime std.debug.assert(Operation.name.len > 0);
+
+            if (!@hasDecl(Operation, "failures") or Operation.failures.len == 0) {
+                return;
+            }
+
+            write(out, "\nFails with:\n") catch return error.WriteFailed;
+
+            for (Operation.failures) |failure| {
+                out.print("\n  {s} ({d})  {s}\n", .{
+                    failure.name,
+                    failure.status,
+                    failure.message,
+                }) catch return error.WriteFailed;
+            }
         }
 
         fn print_field_docs(
@@ -373,10 +405,19 @@ pub fn CLI(comptime SDK: type) type {
         }
 
         /// A value as you would type it: JSON and anything with a space or a quote in it
-        /// goes on one line inside single quotes, so the printed line can be pasted.
+        /// goes on one line inside single quotes, so the printed line can be pasted; text
+        /// with an apostrophe (`Ada's App`) goes inside double quotes instead. An example
+        /// with both an apostrophe and a character double quotes would expand is refused.
         fn print_example_text(text: []const u8, out: *std.Io.Writer) Error!void {
-            std.debug.assert(std.mem.indexOfScalar(u8, text, '\'') == null);
             std.debug.assert(text.len <= value_len_max);
+
+            if (std.mem.indexOfScalar(u8, text, '\'') != null) {
+                std.debug.assert(std.mem.indexOfAny(u8, text, "\"$`\\\n") == null);
+
+                out.print("\"{s}\"", .{text}) catch return error.WriteFailed;
+
+                return;
+            }
 
             if (std.mem.indexOfAny(u8, text, " \"\n") == null) {
                 write(out, text) catch return error.WriteFailed;
@@ -395,6 +436,20 @@ pub fn CLI(comptime SDK: type) type {
             write(out, "'") catch return error.WriteFailed;
         }
 
+        /// A list as you would type it: its items with commas between, no spaces.
+        fn print_example_list(items: anytype, out: *std.Io.Writer) Error!void {
+            std.debug.assert(items.len <= 64);
+            std.debug.assert(items.len > 0);
+
+            for (items, 0..) |item, index| {
+                if (index > 0) {
+                    write(out, ",") catch return error.WriteFailed;
+                }
+
+                try print_example_value(item, out);
+            }
+        }
+
         fn print_example_value(value: anytype, out: *std.Io.Writer) Error!void {
             const Value = @TypeOf(value);
 
@@ -405,7 +460,10 @@ pub fn CLI(comptime SDK: type) type {
                 .int, .float => out.print("{d}", .{value}) catch return error.WriteFailed,
                 .@"enum" => write(out, @tagName(value)) catch return error.WriteFailed,
                 .optional => try print_example_value(value.?, out),
-                .pointer => try print_example_text(value, out),
+                .pointer => |pointer| if (pointer.child == u8)
+                    try print_example_text(value, out)
+                else
+                    try print_example_list(value, out),
                 else => @compileError("example value: unsupported"),
             }
         }
@@ -453,7 +511,7 @@ pub const Problem = struct {
     len: u32 = 0,
 
     pub fn set(problem: *Problem, comptime format: []const u8, args: anytype) void {
-        const written = std.fmt.bufPrint(&problem.buffer, format, args) catch &problem.buffer;
+        const written = report.format_bounded(&problem.buffer, format, args);
         problem.len = @intCast(written.len);
 
         std.debug.assert(problem.len <= message_len_max);
@@ -483,7 +541,7 @@ fn fail(options: Options, message: []const u8) u8 {
 
 fn failf(options: Options, comptime format: []const u8, args: anytype) u8 {
     var buffer: [message_len_max]u8 = undefined;
-    const message = std.fmt.bufPrint(&buffer, format, args) catch &buffer;
+    const message = report.format_bounded(&buffer, format, args);
 
     std.debug.assert(message.len > 0);
     std.debug.assert(message.len <= message_len_max);
@@ -491,8 +549,10 @@ fn failf(options: Options, comptime format: []const u8, args: anytype) u8 {
     return fail(options, message);
 }
 
-fn describe(err: sdk.Error, caller: sdk.Caller) []const u8 {
+fn describe(err: sdk.Error, ctx: *const sdk.Ctx) []const u8 {
     std.debug.assert(@errorName(err).len > 0);
+
+    const caller = ctx.caller;
 
     const text: []const u8 = switch (err) {
         error.Denied => if (caller == .anonymous)
@@ -504,7 +564,10 @@ fn describe(err: sdk.Error, caller: sdk.Caller) []const u8 {
         error.Conflict => "conflict: it already exists or was already done",
         error.Vetoed => "vetoed by a plugin",
         error.Throttled => "too many failed attempts; wait before trying again",
+        error.Failed => if (ctx.failure) |failure| failure.message else "failed",
+        error.Unavailable => "a service it needs is unavailable; nothing changed, try again",
         error.BadCredentials => "wrong email or password",
+        error.InvalidationFailed => "dependency invalidation failed; write rolled back",
         error.OutOfMemory => "out of memory",
         error.Busy => "database is busy, try again",
         error.Constraint => "database constraint violated",
@@ -571,7 +634,7 @@ fn type_label_depth(comptime Type: type, comptime depth: u32) []const u8 {
     };
 
     comptime std.debug.assert(label.len > 0);
-    comptime std.debug.assert(label.len < 1024);
+    comptime std.debug.assert(label.len < 4096);
 
     return label;
 }
@@ -589,7 +652,10 @@ fn operation_name_args(args: []const []const u8) u32 {
 
 fn operation_name(arena: std.mem.Allocator, args: []const []const u8) Error![]const u8 {
     std.debug.assert(args.len > 0);
-    std.debug.assert(args[0].len > 0);
+
+    if (args[0].len == 0) {
+        return error.UnknownOp;
+    }
 
     if (operation_name_args(args) == 1) {
         return args[0];
@@ -611,7 +677,10 @@ pub fn parse_in(
     password_env: ?[]const u8,
 ) Error!In {
     comptime std.debug.assert(std.meta.fields(In).len <= sdk.operation.fields_max);
-    std.debug.assert(args.len <= args_max);
+
+    if (args.len > args_max) {
+        return error.Invalid;
+    }
 
     var in: In = undefined;
     var seen: [std.meta.fields(In).len]bool = @splat(false);
@@ -700,12 +769,25 @@ fn resolve_user(options: Options, id_or_email: []const u8) Error!?sdk.Caller {
 }
 
 fn parse_value(comptime Value: type, arena: std.mem.Allocator, text: []const u8) Error!Value {
-    std.debug.assert(text.len <= value_len_max);
+    if (text.len > value_len_max) {
+        return error.Invalid;
+    }
 
     return switch (@typeInfo(Value)) {
-        .bool => std.mem.eql(u8, text, "true"),
+        .bool => if (std.mem.eql(
+            u8,
+            text,
+            "true",
+        )) true else if (std.mem.eql(
+            u8,
+            text,
+            "false",
+        )) false else error.Invalid,
         .int => std.fmt.parseInt(Value, text, 10) catch return error.Invalid,
-        .float => std.fmt.parseFloat(Value, text) catch return error.Invalid,
+        .float => blk: {
+            const number = std.fmt.parseFloat(Value, text) catch return error.Invalid;
+            break :blk if (std.math.isFinite(number)) number else error.Invalid;
+        },
         .@"enum" => std.meta.stringToEnum(Value, text) orelse return error.Invalid,
         .optional => |optional| blk: {
             if (std.mem.eql(u8, text, "null")) {
@@ -835,4 +917,112 @@ test "run: --help lists operations, unknown operation, --as sets the caller, out
     try std.testing.expectEqual(@as(u8, 0), command_help);
     try std.testing.expect(std.mem.indexOf(u8, out.buffered(), "--echo") != null);
     try std.testing.expect(std.mem.indexOf(u8, out.buffered(), "optional") != null);
+}
+
+test "malformed CLI scalars and oversized input are validation errors" {
+    const arena = std.testing.allocator;
+    var problem: Problem = .{};
+    const In = struct { flag: bool = false, number: f64 = 0, text: []const u8 = "" };
+
+    for ([_][]const u8{ "yes", "1", "FALSE", "" }) |value| {
+        try std.testing.expectError(
+            error.Invalid,
+            parse_in(
+                In,
+                arena,
+                &.{
+                    "--flag",
+                    value,
+                },
+                &problem,
+                null,
+            ),
+        );
+    }
+
+    for ([_][]const u8{ "nan", "inf", "-inf", "1e999" }) |value| {
+        try std.testing.expectError(
+            error.Invalid,
+            parse_in(
+                In,
+                arena,
+                &.{
+                    "--number",
+                    value,
+                },
+                &problem,
+                null,
+            ),
+        );
+    }
+
+    const long = "x" ** (value_len_max + 1);
+    try std.testing.expectError(
+        error.Invalid,
+        parse_in(
+            In,
+            arena,
+            &.{
+                "--text",
+                long,
+            },
+            &problem,
+            null,
+        ),
+    );
+    const many = [_][]const u8{"--flag"} ** (args_max + 1);
+    try std.testing.expectError(error.Invalid, parse_in(In, arena, &many, &problem, null));
+    const valid = try parse_in(
+        In,
+        arena,
+        &.{
+            "--flag",
+            "false",
+            "--number",
+            "1.5",
+        },
+        &problem,
+        null,
+    );
+    try std.testing.expect(!valid.flag);
+    try std.testing.expectEqual(@as(f64, 1.5), valid.number);
+}
+
+test "empty commands, oversized caller names and a full init alias fail gracefully" {
+    const heartbeat = @import("../operations/heartbeat.zig");
+    const Command = CLI(sdk.SDK(.{ .operations = &heartbeat.operations }));
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    var output_buffer: [4096]u8 = undefined;
+    var error_buffer: [4096]u8 = undefined;
+    var output: std.Io.Writer = .fixed(&output_buffer);
+    var errors: std.Io.Writer = .fixed(&error_buffer);
+    const options: Options = .{
+        .db = &harness.fixture.connection,
+        .io = std.testing.io,
+        .arena = harness.fixed.allocator(),
+        .auth = &harness.auth,
+        .err = &errors,
+    };
+    try std.testing.expectEqual(@as(u8, 2), try Command.run(options, &.{""}, &output));
+    const long = "x" ** (value_len_max + 1);
+    try std.testing.expectEqual(@as(u8, 2), try Command.run(options, &.{ "--as", long }, &output));
+    var alias: [args_max][]const u8 = @splat("--help");
+    alias[0] = "init";
+    try std.testing.expectEqual(@as(u8, 2), try Command.run(options, &alias, &output));
+}
+
+test "an example value prints the way a shell reads it, apostrophes inside double quotes" {
+    const heartbeat = @import("../operations/heartbeat.zig");
+    const Command = CLI(sdk.SDK(.{ .operations = &heartbeat.operations }));
+    var buffer: [256]u8 = undefined;
+    var out: std.Io.Writer = .fixed(&buffer);
+
+    try Command.print_example_text("plain", &out);
+    try out.writeByte(' ');
+    try Command.print_example_text("two words", &out);
+    try out.writeByte(' ');
+    try Command.print_example_text("Ada's App", &out);
+    try std.testing.expectEqualStrings("plain 'two words' \"Ada's App\"", out.buffered());
 }

@@ -111,7 +111,10 @@ proxy, which dispatches through the same operation pipeline everything else uses
 A plugin is one directory under `plugins/` with a `main.zig`. It imports one
 thing, `publr`, and declares what it brings: a manifest (name, version,
 summary), documented namespaces, operations exactly like the core's, policies,
-hooks, statuses and content types. `zig build` finds it, compiles it in and
+hooks, statuses, field kinds, content types, delivery gates (who sees the public
+site, see [Site](site.md#delivery-gates)) and filters (a `filters` array of
+`model.filter.Definition`: a key, a label, operators, and how a clause constrains the
+list; the admin's content list grows a pill for each). `zig build` finds it, compiles it in and
 wires it up; nothing is registered anywhere else. Its operations appear in the
 CLI and every other adapter, documented like the core's.
 
@@ -128,10 +131,17 @@ copies of a document go into slots (`record get --slot`), like the core's
 `pending`. Only a compiled-in plugin that truly needs its own table
 (`compiled_in_only`) may ship `schema_sql`.
 
+A plugin can also keep values on the accounts themselves: `custom_fields` declares
+custom field groups the way `content_types` declares types, each with its location
+(`destination` user or media). They are created or brought up to date when the database
+opens, their fields locked; a template reads the signed-in user's with
+`Publr.request.userField('<group>.<field>')`.
+
 The contract is checked when the binary compiles: a missing manifest, a bad
 name, an undocumented operation, a hook on an operation that does not exist,
 two plugins with the same name, all stop the build with a message naming the
 plugin. Plugins are applied in name order, always. Tests live next to the code
 and run with `zig build test`. The `plugins/` directory is yours: Publr's own
 repository does not track it, so a fork can commit its plugins alongside the
-core.
+core. `-Dplugins=<dir>` builds from another folder instead; a link in it counts,
+so one folder can gather plugins kept elsewhere.

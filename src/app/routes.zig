@@ -8,6 +8,7 @@ const http = @import("../lib/http.zig");
 const admin = @import("../adapters/admin.zig");
 const identity_module = @import("../adapters/rest/identity.zig");
 const rest_auth = @import("../adapters/rest/auth.zig");
+const site_adapter = @import("../adapters/site.zig");
 
 const Error = http.Error;
 const Request = http.Request;
@@ -19,16 +20,41 @@ pub const Site = @import("site.zig").Site;
 pub fn register(router: *http.Router) void {
     std.debug.assert(router.routes_len == 0);
 
-    router.get("/", &home);
+    // First, so it runs last: whatever the rest leaves without a cache policy is private.
+    router.use(&private_by_default);
+    // Behind a CDN that purges: every write answers with the dependency keys it raised.
+    router.use(&site_adapter.edge.changes);
     router.get("/api/health", &health);
     router.post("/api/auth/sign-in", &rest_auth.sign_in);
     router.post("/api/auth/sign-out", &rest_auth.sign_out);
     router.post("/api/auth/set-password", &rest_auth.set_password);
     router.get("/api/auth/session", &rest_auth.whoami);
+    router.get("/auth/sign-on", &rest_auth.sign_on);
+    router.post("/auth/sign-on", &rest_auth.sign_on);
     admin.register(router);
     rest.register(router);
+    site_adapter.register(router);
 
-    std.debug.assert(router.routes_len == 8 + admin.routes_count);
+    std.debug.assert(router.routes_len == 9 + admin.routes_count + site_adapter.routes_count);
+}
+
+/// Router middleware: a response that did not choose a cache policy gets `private, no-store`,
+/// so no shared cache (a CDN, a proxy) ever keeps it. Only what says it is public (built
+/// pages, static islands, theme assets) is cacheable; a response that forgets is per-user
+/// by default, not everyone's, whatever the cache in front is configured to do.
+pub fn private_by_default(
+    request: *Request,
+    response: *Response,
+    ctx: *Context,
+    next: http.Router.Next,
+) anyerror!void {
+    try next.run(request, response, ctx);
+
+    if (response.header("Cache-Control") == null) {
+        try response.set_header("Cache-Control", "private, no-store");
+    }
+
+    std.debug.assert(response.header("Cache-Control") != null);
 }
 
 pub fn register_static(router: *http.Router) void {
@@ -55,13 +81,6 @@ fn static_file(request: *Request, response: *Response, ctx: *Context) Error!void
         .not_found => try response.text(.not_found, "Not Found"),
         .too_large => try response.text(.internal_server_error, "file too large for this server"),
     }
-}
-
-fn home(request: *Request, response: *Response, ctx: *Context) Error!void {
-    std.debug.assert(request.method() == .get or request.method() == .head);
-    std.debug.assert(ctx.user_data != null);
-
-    try response.text(.ok, "publr " ++ heartbeat.version ++ "\n");
 }
 
 fn health(request: *Request, response: *Response, ctx: *Context) Error!void {

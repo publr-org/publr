@@ -4,6 +4,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../app/registry.zig");
 const sign_in_operations = @import("../../operations/sign_in.zig");
+const sign_on_operations = @import("../../operations/sign_on.zig");
 const user_operations = @import("../../operations/user.zig");
 const csrf = @import("../../lib/auth.zig").csrf;
 const identity_module = @import("identity.zig");
@@ -38,7 +39,7 @@ pub fn sign_in(request: *Request, response: *Response, ctx: *Context) Error!void
     };
     var sdk_ctx = context(site, ctx.arena, .anonymous);
     const out = registry.SDK.dispatch(&sdk_ctx, sign_in_operations.SignIn, in) catch |err| {
-        return respond_error(response, err);
+        return respond_error(response, err, &sdk_ctx);
     };
 
     try set_session_cookie(request, response, ctx.arena, out.token, out.expires_at, sdk_ctx.now_ms);
@@ -51,6 +52,53 @@ pub fn sign_in(request: *Request, response: *Response, ctx: *Context) Error!void
         .expires_at = out.expires_at,
         .csrf = csrf.token(site.auth.secret, session_id, &csrf_buffer),
     });
+}
+
+/// `/auth/sign-on`: a token from the trusted issuer, in the query (a redirect back) or a
+/// posted form (a frame the dashboard fills), becomes the session cookie; then on to
+/// `return`, a path on this site. No same-origin check: the issuer is another origin, and
+/// the token itself is the credential. A token refused sends you to the login form.
+pub fn sign_on(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(ctx.user_data != null);
+    std.debug.assert(request.path().len > 0);
+
+    const site = Site.of(ctx);
+    const source = if (request.method() == .post) request.body else request.query();
+    const token = http.Form.query_param(ctx.arena, source, "token") orelse "";
+    const wanted = http.Form.query_param(ctx.arena, source, "return") orelse "/admin";
+    const back = if (local_path(wanted)) wanted else "/admin";
+    var sdk_ctx = context(site, ctx.arena, .anonymous);
+    const redeem = sign_on_operations.Redeem;
+    const out = registry.SDK.dispatch(&sdk_ctx, redeem, .{ .token = token }) catch {
+        try response.set_header("Cache-Control", "no-store");
+        return response.redirect(.see_other, "/admin/login?sign_on=refused");
+    };
+
+    try set_session_cookie(request, response, ctx.arena, out.token, out.expires_at, sdk_ctx.now_ms);
+    try response.set_header("Cache-Control", "no-store");
+    try response.redirect(.see_other, back);
+}
+
+/// A path on this site: one leading slash, not `//` or `/\` (another host), no control
+/// characters.
+fn local_path(path: []const u8) bool {
+    std.debug.assert(path.len <= 1 << 16);
+
+    if (path.len == 0 or path[0] != '/') {
+        return false;
+    }
+
+    if (path.len > 1 and (path[1] == '/' or path[1] == '\\')) {
+        return false;
+    }
+
+    for (path) |char| {
+        if (char < 0x20 or char == 0x7f) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 pub fn set_password(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -69,7 +117,7 @@ pub fn set_password(request: *Request, response: *Response, ctx: *Context) Error
     };
     var sdk_ctx = context(site, ctx.arena, .anonymous);
     const out = registry.SDK.dispatch(&sdk_ctx, user_operations.SetPassword, in) catch |err| {
-        return respond_error(response, err);
+        return respond_error(response, err, &sdk_ctx);
     };
 
     try response.json(.ok, .{ .user_id = out.user_id });
@@ -90,7 +138,7 @@ pub fn sign_out(request: *Request, response: *Response, ctx: *Context) Error!voi
         var sdk_ctx = context(site, ctx.arena, identity.caller);
         const sign_out_operation = sign_in_operations.SignOut;
         _ = registry.SDK.dispatch(&sdk_ctx, sign_out_operation, .{ .token = token }) catch |err| {
-            return respond_error(response, err);
+            return respond_error(response, err, &sdk_ctx);
         };
     }
 
@@ -105,6 +153,10 @@ pub fn whoami(request: *Request, response: *Response, ctx: *Context) Error!void 
     const site = Site.of(ctx);
     const identity = identify(request, ctx.arena, site);
     var csrf_buffer: [csrf.token_len]u8 = undefined;
+
+    const now_ms = sdk.context.wall_clock_ms(site.io);
+
+    identity_module.repair_hint(request, response, ctx.arena, &identity, now_ms);
 
     try response.json(.ok, .{
         .authenticated = identity.session != null,
@@ -127,21 +179,39 @@ fn parse_body(comptime In: type, arena: std.mem.Allocator, body: []const u8) ?In
         .ignore_unknown_fields = true,
     };
 
-    return std.json.parseFromSliceLeaky(In, arena, body, options) catch null;
+    return @import("../../lib/json.zig").parse(In, arena, body, options) catch null;
 }
 
-pub fn respond_error(response: *Response, err: sdk.Error) Error!void {
+/// The operation's error as JSON: `{ "error": "<name>" }` with a matching status. A
+/// plugin's own failure (`error.Failed`) answers with its declared name, status and message.
+pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) Error!void {
     std.debug.assert(@errorName(err).len > 0);
     std.debug.assert(response.headers_len <= 32);
+
+    if (err == error.Failed) {
+        const failure = ctx.failure orelse {
+            return response.json(.internal_server_error, .{ .@"error" = "Failed" });
+        };
+        const declared = std.enums.fromInt(http.Status, failure.status) orelse
+            .unprocessable_content;
+
+        return response.json(declared, .{
+            .@"error" = failure.name,
+            .message = failure.message,
+        });
+    }
 
     const status: http.Status = switch (err) {
         error.BadCredentials => .unauthorized,
         error.Throttled => .too_many_requests,
+        error.Failed => unreachable,
+        error.Unavailable => .service_unavailable,
         error.Denied => .forbidden,
         error.Invalid => .unprocessable_content,
         error.NotFound => .not_found,
         error.Conflict => .conflict,
         error.Vetoed => .forbidden,
+        error.InvalidationFailed,
         error.OutOfMemory,
         error.Busy,
         error.Constraint,
@@ -154,6 +224,79 @@ pub fn respond_error(response: *Response, err: sdk.Error) Error!void {
 }
 
 const routes = @import("../../app/routes.zig");
+
+test "a plugin's failure answers with its declared status, name and message" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.anonymous);
+    const unverified: sdk.operation.Failure = .{
+        .name = "Unverified",
+        .status = 403,
+        .message = "Verify your email first",
+    };
+
+    try std.testing.expectError(error.Failed, @as(sdk.Error!void, ctx.fail(unverified)));
+
+    var response: Response = .{ .arena = ctx.arena };
+    try respond_error(&response, error.Failed, &ctx);
+    try std.testing.expectEqual(@as(u16, 403), response.status.code());
+    try std.testing.expectEqualStrings(
+        "{\"error\":\"Unverified\",\"message\":\"Verify your email first\"}",
+        response.body,
+    );
+
+    // Failed with nothing declared is the operation's bug: a server error, never a guess.
+    var bare = harness.ctx(.anonymous);
+    var unknown: Response = .{ .arena = bare.arena };
+    try respond_error(&unknown, error.Failed, &bare);
+    try std.testing.expectEqual(@as(u16, 500), unknown.status.code());
+}
+
+test "per-user answers are never cacheable by a shared cache, signed in or not" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    var flow: routes.testing.Flow = undefined;
+    flow.init(.{
+        .connection = &harness.fixture.connection,
+        .auth = &harness.auth,
+        .io = std.testing.io,
+    }, arena_state.allocator());
+
+    var system = harness.ctx(.system);
+    try user_operations.seed_admin(&system);
+
+    const login_head = "POST /api/auth/sign-in HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
+        "Content-Length: 0\r\n\r\n";
+    const login_body = "{\"email\":\"admin@example.com\",\"password\":\"correct horse battery\"}";
+    const login = try flow.call(login_head, login_body);
+    try std.testing.expectEqual(@as(u16, 200), login.status.code());
+    const cookie = login.header("Set-Cookie").?;
+    const cookie_pair = cookie[0..std.mem.indexOfScalar(u8, cookie, ';').?];
+
+    const paths = [_][]const u8{ "/api/auth/session", "/api/health", "/admin", "/admin/settings" };
+
+    for (paths) |path| {
+        const anonymous = try flow.call(try flow.head("GET {s} HTTP/1.1\r\nHost: h\r\n\r\n", .{path}), "");
+        const signed_in = try flow.call(try flow.head(
+            "GET {s} HTTP/1.1\r\nHost: h\r\nCookie: {s}\r\n\r\n",
+            .{ path, cookie_pair },
+        ), "");
+
+        for ([_]http.Response{ anonymous, signed_in }) |response| {
+            const policy = response.header("Cache-Control") orelse return error.NoCachePolicy;
+
+            try std.testing.expect(std.mem.startsWith(u8, policy, "private") or
+                std.mem.eql(u8, policy, "no-store"));
+        }
+    }
+}
 
 test "auth over http: login sets the cookie, session reports the user, csrf guards logout" {
     var harness: sdk.testing.Harness = undefined;

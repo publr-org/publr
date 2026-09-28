@@ -13,12 +13,18 @@ const Error = http.Error;
 const Caller = sdk.Caller;
 
 pub const cookie_name = "publr_session";
+/// A readable hint beside the session: no secret, only that someone signed in here, so the
+/// page's toolbar script stays idle for everyone else without asking the server.
+pub const hint_cookie_name = "publr_signed_in";
 pub const csrf_header = "x-csrf-token";
 
 pub const Identity = struct {
     caller: Caller = .anonymous,
     session: ?session_module.Session = null,
     token: ?[]const u8 = null,
+    /// The signed-in user's name and email, for the admin's chrome; empty when anonymous.
+    display_name: []const u8 = "",
+    email: []const u8 = "",
 
     pub fn csrf_token(
         identity: *const Identity,
@@ -56,6 +62,8 @@ pub fn identify(
         .caller = .{ .user = .{ .id = credentials.user.id, .role = credentials.user.role } },
         .session = session,
         .token = token,
+        .display_name = credentials.user.display_name,
+        .email = credentials.user.email,
     };
 }
 
@@ -142,8 +150,44 @@ pub fn set_session_cookie(
         max_age,
         secure_suffix(request),
     }) catch return error.OutOfMemory;
+    const hint = std.fmt.allocPrint(arena, "{s}=1; Path=/; SameSite=Lax; Max-Age={d}{s}", .{
+        hint_cookie_name,
+        max_age,
+        secure_suffix(request),
+    }) catch return error.OutOfMemory;
 
     try response.set_header("Set-Cookie", value);
+    try response.add_header("Set-Cookie", hint);
+}
+
+/// The signed-in hint set again when a valid session arrives without it: something outside
+/// Publr removed it (an extension, cookies partly cleared), and islands fetched only for
+/// signed-in visitors (`dynamic-if="signedIn"`) would show this visitor the anonymous
+/// version. Best effort: a hint that cannot be added now is added on the next request.
+pub fn repair_hint(
+    request: *const http.Request,
+    response: *http.Response,
+    arena: std.mem.Allocator,
+    identity: *const Identity,
+    now_ms: i64,
+) void {
+    std.debug.assert(now_ms > 0);
+
+    const session = identity.session orelse return;
+    const cookies = request.header("cookie") orelse "";
+
+    if (cookie_value(cookies, hint_cookie_name) != null or session.expires_at <= now_ms) {
+        return;
+    }
+
+    const max_age = @divTrunc(session.expires_at - now_ms, std.time.ms_per_s);
+    const hint = std.fmt.allocPrint(arena, "{s}=1; Path=/; SameSite=Lax; Max-Age={d}{s}", .{
+        hint_cookie_name,
+        max_age,
+        secure_suffix(request),
+    }) catch return;
+
+    response.add_header("Set-Cookie", hint) catch return;
 }
 
 pub fn clear_session_cookie(
@@ -159,8 +203,13 @@ pub fn clear_session_cookie(
         cookie_name,
         secure_suffix(request),
     }) catch return error.OutOfMemory;
+    const hint = std.fmt.allocPrint(arena, "{s}=; Path=/; SameSite=Lax; Max-Age=0{s}", .{
+        hint_cookie_name,
+        secure_suffix(request),
+    }) catch return error.OutOfMemory;
 
     try response.set_header("Set-Cookie", value);
+    try response.add_header("Set-Cookie", hint);
 }
 
 fn secure_suffix(request: *const http.Request) []const u8 {

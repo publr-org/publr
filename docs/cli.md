@@ -20,7 +20,7 @@ The database is `data/publr.db` by default and is created on first use.
 ## Serving
 
 ```
-publr [--db <path>] serve [--port <n>]
+publr [--db <path>] serve [--port <n>] [--static [--full]] [--dev] [--out <dir>] [--url <base>]
 ```
 
 Starts the HTTP server on `127.0.0.1` and runs until the process is stopped.
@@ -28,7 +28,25 @@ Without `--port` it starts at `8080` and, if that port is taken, walks up to
 the next free one (at most 20 tries) and prints the port it took. With
 `--port <n>` it uses exactly that port or fails with a one-line message;
 `--port 0` picks any free port. The routes it serves are in
-[REST API](rest.md).
+[REST API](rest.md); the public site it serves from the theme is in
+[The site](site.md).
+
+| Flag | Meaning |
+|---|---|
+| `--static` | Bring the built site under `--out` up to date at startup, then serve the files: nothing when nothing changed, the changed pages when some did, everything when there is no build or another theme made it (see [`build`](cli/build.md)). |
+| `--full` | With `--static`: build every page again. |
+| `--dev` | Render every page on request, cache nothing, tint every island. |
+| `--out <dir>` | The built site to serve when it exists (default `output`). |
+| `--url <base>` | The site's public address, for the sitemap. |
+
+## Building
+
+```
+publr [--db <path>] build [--full] [--out <dir>] [--url <base>]
+```
+
+Writes the site as files, only what changed since the last build unless
+`--full`; see [`build`](cli/build.md).
 
 ## Global flags
 
@@ -82,8 +100,11 @@ runnable example.
 | [`user`](adapters/cli/user.md) | Accounts, roles, passwords and signing in |
 | [`content_type`](adapters/cli/content_type.md) | Content types: the shapes records are made of |
 | [`record`](adapters/cli/record.md) | The content itself: documents, statuses, lists |
+| [`taxonomy`](adapters/cli/taxonomy.md) | Taxonomies: the classifications records are filed under |
+| [`term`](adapters/cli/term.md) | The terms of the taxonomies, with a record's lifecycle and a parent |
 | [`status`](adapters/cli/status.md) | The lifecycle states a record can be in |
 | [`snapshot`](adapters/cli/snapshot.md) | Frozen copies of records: revisions and other archives |
+| [`view`](adapters/cli/view.md) | Saved views: the content list's filters, named and kept per user |
 
 Plugins add namespaces of their own (for example `revisions`), listed by
 `publr --help` and documented by `publr <namespace> --help` like the core.

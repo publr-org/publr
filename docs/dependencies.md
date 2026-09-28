@@ -9,19 +9,24 @@ dependency-free C. Ours to keep: vendored as-is in this repository, compiled by
 
 | Where | What | Version | License | Why it exists |
 |---|---|---|---|---|
-| `publr_sqlite` (`../demos/cmsv2/lib/sqlite`) | Our own binding, with the SQLite amalgamation inside it | 3.53.4 | Public domain | Storage. The one piece of infrastructure nobody should rewrite. |
-| `publr_http` (`../demos/cmsv2/lib/http-server`) | Our own HTTP/1.1 server: fixed capacity, one thread, composed at compile time | sibling checkout | Ours | Every door but the CLI. |
-| `publr_auth` (`../demos/cmsv2/lib/auth`) | Our own argon2id hashing, sign-in throttle, CSRF tokens, origin check | sibling checkout | Ours | Signing in, and nothing about users. |
+| `publr_sqlite` (`../lib/sqlite`) | Our own binding, with the SQLite amalgamation inside it | 3.53.4 | Public domain | Storage. The one piece of infrastructure nobody should rewrite. |
+| `publr_http` (`../lib/http`) | Our own HTTP/1.1 server: fixed capacity, one thread, composed at compile time | sibling checkout | Ours | Every door but the CLI. |
+| `publr_auth` (`../lib/auth`) | Our own argon2id hashing, sign-in throttle, CSRF tokens, origin check | sibling checkout | Ours | Signing in, and nothing about users. |
+| `publr_deps` (`../lib/deps`) | Our own dependency index: what each built artifact read, and the queue of changes to rebuild from | sibling checkout | Ours | Publishing rewrites only the pages that changed. |
+| `../publr-js/dist` | PublrJS, the client runtime behind the `data-p-*` wires, read by the build as-is | sibling checkout | Ours | The interactive half of the site's components. |
+| `pjsx` (`../pjsx`) | Our own PJSX compiler and its render runtime; build-time, plus the runtime the generated views call | sibling checkout | Ours | The admin's pages, from `.ptsx` to Zig. |
+| `publr_jit` (`../jit`) | Our own class-to-CSS compiler; build-time for the stylesheet, in the binary for class merging | sibling checkout | Ours | The admin's stylesheet, and stacked class attributes merged at render. |
+| `../ui/src/components`, `../icons/icons` | The design system's PTSX components and the icon artwork, read by the build | sibling checkout | Ours | What the admin's pages are made of. |
 | `vendor/stb/` | `stb_image.h`, `stb_image_resize2.h`, `stb_image_write.h` | 2c980bb | MIT / public domain | Decode, resize and encode images for media. |
 | `vendor/libwebp/` | libwebp | 1.6.0 | BSD-3-Clause | WebP encoding for optimized media. |
 
 That is the whole list. Everything else in the binary is Zig, either the
 standard library or code in this repository.
 
-The three `publr_*` entries are Publr's own libraries in a sibling checkout,
+The four `publr_*` entries are Publr's own libraries in a sibling checkout,
 wired in as *path* dependencies in `build.zig.zon`: nothing is fetched, and a
 fix lands in the library once, for every consumer. `src/lib/db.zig`,
-`src/lib/http.zig` and `src/lib/auth.zig` are this app's faces on them: the
+`src/lib/http.zig`, `src/lib/auth.zig` and `src/lib/deps.zig` are this app's faces on them: the
 PRAGMAs, the app type, the re-exports. The line for what goes into a library is
 the one in the workspace README: a mechanism whose first example needs no Publr
 noun. The C libraries that stay here (`vendor/stb`, `vendor/libwebp`)

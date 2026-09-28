@@ -1,6 +1,7 @@
 const std = @import("std");
 const db = @import("lib/db.zig");
 const auth = @import("lib/auth.zig");
+const deps = @import("lib/deps.zig");
 const registry = @import("app/registry.zig");
 const sdk = @import("sdk.zig");
 
@@ -13,6 +14,7 @@ pub const App = struct {
     runtime: db.Runtime,
     connection: db.Db,
     auth: auth.State,
+    index: deps.Index,
 
     pub fn init(app: *App, process: std.process.Init, db_path: [:0]const u8) !void {
         std.debug.assert(db_path.len > 0);
@@ -21,8 +23,8 @@ pub const App = struct {
         try ensure_parent_dir(process.io, db_path);
 
         app.gpa = process.gpa;
-        app.heap = try process.gpa.alignedAlloc(u8, .@"8", db_heap_bytes);
-        errdefer process.gpa.free(app.heap);
+        app.heap = try reserve_heap(process.gpa);
+        errdefer release_heap(process.gpa, app.heap);
 
         app.runtime = try db.Runtime.init(.{ .heap = app.heap });
         errdefer app.runtime.deinit();
@@ -32,6 +34,7 @@ pub const App = struct {
 
         try db.schema.apply(&app.connection);
         try registry.SDK.apply_schemas(&app.connection);
+        app.index = try deps.Index.open(&app.connection, .{ .quiet_ms = deps.quiet_ms });
         try app.auth.init(process.gpa, process.io, .{});
         errdefer app.auth.deinit();
 
@@ -66,10 +69,32 @@ pub const App = struct {
         app.auth.deinit();
         app.connection.close();
         app.runtime.deinit();
-        app.gpa.free(app.heap);
+        release_heap(app.gpa, app.heap);
         app.* = undefined;
     }
 };
+
+/// SQLite's heap, reserved but not written: the generic `alloc` fills new memory with
+/// `undefined`, which safe builds write out, and 64 MiB would be resident from the first
+/// second whatever the database needs. The raw path commits pages as SQLite touches them.
+fn reserve_heap(gpa: std.mem.Allocator) error{OutOfMemory}![]align(8) u8 {
+    std.debug.assert(db_heap_bytes >= db.heap_bytes_min);
+    std.debug.assert(std.math.isPowerOfTwo(db_heap_bytes));
+
+    const ptr = gpa.rawAlloc(db_heap_bytes, heap_alignment, @returnAddress()) orelse
+        return error.OutOfMemory;
+
+    return @alignCast(ptr[0..db_heap_bytes]);
+}
+
+fn release_heap(gpa: std.mem.Allocator, heap: []align(8) u8) void {
+    std.debug.assert(heap.len == db_heap_bytes);
+    std.debug.assert(db_heap_bytes > 0);
+
+    gpa.rawFree(heap, heap_alignment, @returnAddress());
+}
+
+const heap_alignment: std.mem.Alignment = .@"8";
 
 fn ensure_parent_dir(io: std.Io, path: []const u8) !void {
     std.debug.assert(path.len > 0);

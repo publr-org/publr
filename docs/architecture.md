@@ -92,9 +92,28 @@ field value is its own row. Everything with fields is a record in the same
 two tables, plugins included; statuses are a registry. See
 [Content](content.md).
 
+## The site
+
+Readers never meet an operation. They get the public site: a theme of
+templates rendered into files ahead of time, served as files, with the parts
+that must be fresher than a file fetched by the page as fragments. The
+templates read live content through the same `record` operations: as nobody
+for anything shared by every visitor, as the signed-in visitor for a render
+made for one request, so a page only ever shows what its visitor may see. Every render
+writes down what it read; when a record changes, the pages that read it are
+the ones rewritten. See [The site](site.md).
+
+```mermaid
+flowchart LR
+    T[theme templates] --> B[build] --> F[files]
+    F --> R[Readers]
+    O[record publish] -->|record.published| I[dependency index] --> B
+```
+
 ## Plugins
 
-A plugin can add operations, policies, hooks, statuses and content types, and
+A plugin can add operations, policies, hooks, statuses, field kinds and content
+types, and
 its operations appear in the CLI and the REST API automatically. It
 cannot reach around the pipeline: whatever it does, it does through the same
 operations, judged by the same policies. See [SDK](sdk.md) and

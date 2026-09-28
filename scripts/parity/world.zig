@@ -5,8 +5,11 @@ const sdk = publr.sdk;
 const store = publr.store;
 const content_types = publr.operations.content_type;
 const records = publr.operations.record;
+const taxonomies = publr.operations.taxonomy;
+const terms = publr.operations.term;
 const sites = publr.operations.site;
 const users = publr.operations.user;
+const saved_views = publr.operations.view;
 const SDK = publr.registry.SDK;
 
 const Ctx = sdk.Ctx;
@@ -16,13 +19,17 @@ pub const admin_email = "ada@example.com";
 pub const shared_password = "correct horse battery";
 
 const page_definition =
-    \\{"handle":"page","name":"Page","name_plural":"Pages","public":true,
+    \\{"handle":"page","name":"Page","public":true,
     \\ "fields":[{"name":"title","label":"Title","kind":"string","required":true}]}
 ;
 const second_document = "{\"title\":\"Hello, world\",\"body\":\"<p>Second.</p>\"}";
 const edited_document = "{\"title\":\"Hello, world\",\"body\":\"<p>Edited.</p>\"}";
 const referring_document = "{\"title\":\"See also\",\"related\":[\"" ++
     records.example_id ++ "\"]}";
+const tags_definition =
+    \\{"handle":"tags","name":"Tags","title_field":"name",
+    \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
+;
 
 /// Everything the printed examples name: Ada, the admin every `--as` points at; an editor
 /// who can sign in; an invited account holding the documented token; the `post` and `page`
@@ -40,6 +47,66 @@ pub fn fill(ctx: *Ctx) Error!void {
 
     try fill_types(ctx);
     try fill_records(ctx);
+    try fill_taxonomies(ctx);
+    try fill_views(ctx);
+    const custom = publr.operations.custom_fields;
+    _ = try SDK.dispatch(ctx, custom.Update, .{
+        .group = "user",
+        .definition = try publr.model.content_type.encode(
+            ctx.arena,
+            custom.Destination.user.definition(),
+        ),
+    });
+}
+
+/// The taxonomies the examples name: `topics` (hierarchical, with a published root, a
+/// published child of it, a published term with pending edits and a draft, under the ids
+/// the examples print) and `tags`, flat and empty, for the delete example.
+fn fill_taxonomies(ctx: *Ctx) Error!void {
+    std.debug.assert(ctx.caller == .user);
+    std.debug.assert(terms.example_parent_id.len == store.terms.id_len);
+
+    _ = try SDK.dispatch(ctx, taxonomies.Create, .{ .definition = taxonomies.example_definition });
+    _ = try SDK.dispatch(ctx, taxonomies.Create, .{ .definition = tags_definition });
+
+    try term_with_id(ctx, terms.example_parent_id, "Technology", null);
+    _ = try SDK.dispatch(ctx, terms.Publish, .{ .id = terms.example_parent_id });
+    try term_with_id(ctx, terms.example_id, "Engineering", terms.example_parent_id);
+    _ = try SDK.dispatch(ctx, terms.Publish, .{ .id = terms.example_id });
+    try term_with_id(ctx, terms.example_changed_id, "Design", null);
+    _ = try SDK.dispatch(ctx, terms.Publish, .{ .id = terms.example_changed_id });
+    _ = try SDK.dispatch(ctx, terms.Save, .{
+        .id = terms.example_changed_id,
+        .document = "{\"name\":\"Product design\"}",
+    });
+    try term_with_id(ctx, terms.example_draft_id, "Drafted", null);
+}
+
+/// Create a term and give it the id the examples name.
+fn term_with_id(ctx: *Ctx, id: []const u8, name: []const u8, parent: ?[]const u8) Error!void {
+    std.debug.assert(ctx.caller == .user);
+    std.debug.assert(id.len == store.terms.id_len);
+
+    const document = std.fmt.allocPrint(ctx.arena, "{{\"name\":\"{s}\"}}", .{name}) catch {
+        return error.OutOfMemory;
+    };
+    const created = try SDK.dispatch(ctx, terms.Create, .{
+        .taxonomy = "topics",
+        .document = document,
+        .parent = parent,
+    });
+
+    try store.terms.rename(ctx.db, created.id, id);
+}
+
+/// The view the examples name, Ada's.
+fn fill_views(ctx: *Ctx) Error!void {
+    std.debug.assert(ctx.caller == .user);
+    std.debug.assert(saved_views.example_id.len == store.views.id_len);
+
+    const created = try SDK.dispatch(ctx, saved_views.Create, saved_views.Create.example);
+
+    try store.views.rename(ctx.db, created.id, saved_views.example_id);
 }
 
 fn fill_site(ctx: *Ctx) Error![]const u8 {

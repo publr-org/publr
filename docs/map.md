@@ -242,7 +242,8 @@ The directory tells you what a file is, what it may import, and how it is tested
 | model | `model/` | pure rules: data in, data out. No database, no HTTP | `std`, other model files | unit tests, table-driven |
 | store | `store/` | one table per file; functions are statements | `lib/db/`, `model/` | against a fixture database |
 | operation | `operations/` | orchestration: grant, store, model, notices; never SQL | `sdk/`, `store/`, `model/` | scenarios through `dispatch` |
-| adapter | `adapters/{cli,rest,admin}/` | outside format in, operation call, outside format out; never the store | `sdk/`, operations | request in, response out |
+| adapter | `adapters/{cli,rest,admin,site}/` | outside format in, operation call, outside format out; never the store | `sdk/`, operations | request in, response out |
+| engine | `theme/` | the `.publr` template language: read into a tree, typed, rendered against a context the site adapter supplies. No database, no HTTP | `std` | unit tests against a stand-in context |
 | pipeline | `sdk/` (+ `sdk/plugin/`) | dispatch, callers, grants, hooks, the plugin contract | `lib/`, `model/` | unit tests |
 | wiring | `app/` | starting up: open the database, the registry of everything, the route table, `serve`, wasm | everything | the http flow tests |
 | library | `lib/{db,http,auth}/` | mechanisms that know nothing about content: SQLite, an HTTP server, password hashing | each other, `std` | unit tests |
@@ -250,6 +251,13 @@ The directory tells you what a file is, what it may import, and how it is tested
 Two adapters are allowed to read the store, because they are where a request
 becomes a caller: `adapters/rest/identity.zig` (cookie to caller) and `adapters/cli.zig`
 (`--as` to caller).
+
+The fourth door faces the other way: `adapters/site/` is what readers get, the
+theme's templates rendered through `record` operations (anonymous when shared, as
+the signed-in visitor per request),
+built to files and rebuilt from the dependency index (`lib/deps/`) when a
+`record.*` notice raises a key (`operations/site/changes.zig`). See
+[The site](site.md).
 
 ### Beside the layers
 
@@ -316,14 +324,44 @@ Grouped by kind. Lines are the whole file, tests included.
 #### Entry points
 | File | Lines | What |
 |---|---|---|
-| `main.zig` | 87 | `publr [--db] <cmd>`: `serve` or the CLI |
-| `app/serve.zig` | 189 | `publr serve`: open the app, run the HTTP server loop |
-| `app.zig` | 86 | Open the database, apply schema and plugin bootstrap, hold auth state |
+| `main.zig` | 95 | `publr [--db] <cmd>`: `serve`, `build` or the CLI |
+| `app/serve.zig` | 309 | `publr serve`: open the app and the site, run the HTTP server loop with the rebuild queue between ticks |
+| `app/build.zig` | 134 | `publr build`: the site as files |
+| `app.zig` | 89 | Open the database, apply schema and plugin bootstrap, open the dependency index, hold auth state |
 | `app/wasm.zig` | 255 | The same app as a wasm reactor: init, import a db, answer one request |
-| `publr.zig` | 56 | The library root: re-exports every module (what plugins import as `publr`) |
+| `publr.zig` | 53 | The library root: re-exports every module (what plugins import as `publr`) |
 | `app/registry.zig` | 43 | Core + plugin operations/namespaces/policies/hooks/types, the `SDK`, the status registry, bootstrap |
-| `app/routes.zig` | 110 | The route table (`/`, `/api/auth/*`, `/api/health`, admin, rest) and a `testing.Flow` that drives the full router |
-| `app/site.zig` | 8 | The per-process handle handlers get (`connection`, `auth`, static dir) |
+| `app/routes.zig` | 113 | The route table (`/api/auth/*`, `/api/health`, admin, rest, the site as the fallback) and a `testing.Flow` that drives the full router |
+| `app/site.zig` | 26 | The per-process handle handlers get (`connection`, `auth`, static dir, the public site) |
+
+#### theme/ (the template engine)
+| File | Lines | What |
+|---|---|---|
+| `theme.zig` | 1194 | `Theme`: every template read, the route and island tables, the classes; `load` with its limits and diagnostics; the engine's tests against a stand-in context |
+| `theme/ast.zig` | 283 | What a template is once read: typed expressions, nodes, the template's facts |
+| `theme/routes.zig` | 198 | `content/` paths to route patterns, matching, substitution |
+| `theme/compile.zig` | 610 | The compiler's context and driver: names, paths, island keys, node lists |
+| `theme/frontmatter.zig` | 587 | Imports and the Publr API reads, with the static/dynamic inference |
+| `theme/markup.zig` | 614 | Tags, attributes, children, `/theme/` URLs, minifying |
+| `theme/blocks.zig` | 164 | `{...}` in child position: loops, conditionals, values |
+| `theme/components.zig` | 596 | Component call sites: embed, island, PJSX |
+| `theme/expression.zig` | 873 | The typed expression parser and the text helpers |
+| `theme/render.zig` | 634 | `Renderer(Ctx)`: the tree evaluated against a context |
+
+#### adapters/site/ (the fourth door: readers)
+| File | Lines | What |
+|---|---|---|
+| `adapters/site.zig` | 370 | Routes (`/_islands/*`, `/theme/*`, the fallback), the caching policy, `ETag`/304; the site's integration tests |
+| `adapters/site/state.zig` | 496 | The embedded theme loaded, the stylesheet from the JIT, the fingerprint, the assets, the interactive components' render table |
+| `adapters/site/context.zig` | 497 | The Publr API a template reads, over `record.list|get` (anonymous when shared, the visitor per request); `Deps` recording |
+| `adapters/site/pages.zig` | 175 | A page served from the build or rendered now; the theme's 404 |
+| `adapters/site/islands.zig` | 144 | One fragment, or a batch of dynamic ones |
+| `adapters/site/assets.zig` | 36 | `/theme/<path>` from memory |
+| `adapters/site/build.zig` | 636 | The static build, the surgical rebuild from the index, the sitemap |
+| `adapters/site/islands.js` | | The island loader: `<publr-island>` fetches its fragment and replaces itself |
+| `operations/site/changes.zig` | 89 | The `on` middleware: every `record.*` notice raises the record's keys in the index |
+| `lib/deps.zig` | 16 | The face on `publr_deps` |
+| `lib/time.zig` | 32 | Dates as text |
 
 #### model/ (pure)
 | File | Lines | What |
@@ -336,14 +374,21 @@ Grouped by kind. Lines are the whole file, tests included.
 | `model/convert.zig` | 159 | Value conversion when a field changes kind |
 | `model/evolution.zig` | 200 | Diff two type definitions into a plan (removed, converted, needs rewrite) |
 | `model/account.zig` | 77 | Roles, email normalisation, display-name rule |
+| `model/view.zig` | 204 | A saved view's filters: the JSON shape, its bounds, `me` and relative days |
+| `model/filter.zig` | 473 | The filter registry: keys, labels, operators, what each takes, how a clause constrains the list |
 
 #### store/ (SQL only)
 | File | Lines | What |
 |---|---|---|
-| `store/content_types.zig` | 213 | `content_types` table: insert/update/get/list/delete |
-| `store/records.zig` | 530 | `records` table: `Record` (with type handle, title, slug joined in), insert/get/save/set_status/list/delete/rename |
-| `store/values.zig` | 525 | `record_values` + `record_search`: write flattened rows per slot, read, promote, lookups, delete by field |
+| `store/tables.zig` | 40 | The two document domains and the tables each owns (`records`, `terms`) |
+| `store/definitions.zig` | 280 | A definitions table (`content_types`, `taxonomies`), generic over the domain: insert/update/get/list/delete |
+| `store/documents.zig` + `documents/list.zig` | 260 + 330 | A documents table (`records`, `terms`): the `Record` row, insert/get/save/set_status/delete/rename, and the composed list query |
+| `store/document_values.zig` | 400 | A values table + its search index: write flattened rows per slot, read, promote, lookups, delete by field |
+| `store/content_types.zig`, `store/records.zig`, `store/values.zig` | 60, 230, 350 | The record domain's instantiations, with their tests; `values.zig` also writes the assignments of `terms` fields |
+| `store/taxonomies.zig`, `store/terms.zig`, `store/term_values.zig` | 50, 250, 60 | The term domain's instantiations; `terms.zig` adds the parent: `parent_of`, `set_parent`, `ancestors`, `nodes` |
+| `store/record_terms.zig` | 380 | `record_terms`: a record's membership per slot and field, ancestors included; promote, rebuild after a move |
 | `store/snapshots.zig` | 182 | `snapshots` table: take/get/list/prune |
+| `store/views.zig` | 226 | `views` table: a user's saved views, insert/get/list/update/delete |
 | `store/users.zig` | 343 | `users` table: insert/find/list/tokens/password |
 | `store/sessions.zig` | 324 | `sessions` table: create/validate/slide/destroy, per-user cap |
 | `store/settings.zig` | 54 | `settings` key/value get/set |
@@ -356,13 +401,15 @@ Grouped by kind. Lines are the whole file, tests included.
 | `operations/user.zig` | 540 | `user create/list/password_link/set_password` |
 | `operations/sign_in.zig` | 188 | `user sign_in/sign_out`: throttle, session |
 | `operations/status.zig` | 51 | `status list` |
-| `operations/content_type.zig` | 571 | `content_type create/update/get/list/delete/validate`: evolution (rewrite values, drop removed fields, backfill slugs), locked fields of system types |
-| `operations/record.zig` | 784 | `record create/get/save/list/referrers/validate` + their tests |
-| `operations/record/access.zig` | 110 | Which records a caller may touch: `load` (grant-checked read), allowed statuses |
-| `operations/record/document.zig` | 207 | Helpers that need the store and the model together: read + assemble a slot, unique slug, keep the old live copy as a revision, filters |
-| `operations/record/lifecycle.zig` | 379 | `record transition/publish/discard_changes/delete/purge` and the outcome notices |
+| `operations/document.zig` + `document/*.zig` | 60 + 1600 | One implementation of document CRUD for both domains: `access` (grant-checked load, statuses), `document` (parse, assemble, unique slug, revisions), `crud` (create/get/save/list/referrers/validate), `lifecycle` (transition/publish/discard/delete/purge), `definition` (find, create/update/get/list/delete/validate with evolution) |
+| `operations/content_type.zig` | 250 | `content_type create/update/get/list/delete/validate`, declared over the record domain |
+| `operations/record.zig` | 900 | The record domain (`document.Domain`), `record create/get/save/list/referrers/validate` declared over it, the record rules (kinds, `terms` fields name a taxonomy, assigned terms exist) + the tests |
+| `operations/record/lifecycle.zig` | 227 | `record transition/publish/discard_changes/delete/purge`, declared |
+| `operations/taxonomy.zig` | 330 | `taxonomy create/update/get/list/delete/validate`, declared over the term domain |
+| `operations/term.zig` + `term/lifecycle.zig` | 560 + 230 | The term domain, `term create/get/save/list/tree/validate` with the parent rules, and the lifecycle with purge refusing children and members |
 | `operations/record/fixture.zig` | 18 | The `post` type the record tests write against |
 | `operations/snapshot.zig` | 211 | `snapshot list/get/take/restore/prune` |
+| `operations/view.zig` | 339 | `view list/get/create/update/delete`: private, owner-bound |
 
 #### Adapters
 | File | Lines | What |
@@ -375,8 +422,19 @@ Grouped by kind. Lines are the whole file, tests included.
 | `adapters/admin/page.zig` | 113 | Plain HTML page writer with escaping |
 | `adapters/admin/fields.zig` | 190 | Field defs to form inputs to JSON document |
 | `adapters/admin/auth.zig` | 212 | Setup, login, logout pages |
-| `adapters/admin/types.zig` | 406 | Content types list + editor |
-| `adapters/admin/content.zig` | 420 | Records list, new, edit, actions |
+| `adapters/admin/definitions.zig` | 430 | A definitions list and head, generic over the domain: create, settings, delete |
+| `adapters/admin/types.zig`, `adapters/admin/taxonomies.zig` | 70, 30 | The content type and taxonomy instantiations |
+| `adapters/admin/editor.zig` | 700 | The document editor, generic over the domain: pages, fragments, autosave verdicts, reshapes, status actions |
+| `adapters/admin/terms.zig` | 220 | A taxonomy's terms page (the tree) and the term editor with its Parent aside |
+| `adapters/admin/type_fields.zig` | 400 | A type's fields page, the kind picker, the field form |
+| `adapters/admin/type_fields/write.zig` | 350 | A field added, changed, removed or moved: the definition posted back through `content_type update` |
+| `adapters/admin/content.zig` | 25 | Records: the entry |
+| `adapters/admin/content/form.zig` | 280 | The record editor instantiation: the terms aside (RecordTerms), the dependency dialog, the drawer's picker |
+| `adapters/admin/content/list.zig` | 475 | The content list: the view shown, its filters, the rows |
+| `adapters/admin/content/pills.zig` | 502 | The filter bar: the type pill, one pill per filter, the Filter menu |
+| `adapters/admin/content/filters.zig` | 453 | Filters between the address, the saved view's JSON and the list input |
+| `adapters/admin/content/views.zig` | 108 | Saving the filters as a view: create, save, rename, delete |
+| `adapters/admin/nav.zig` | 158 | The Content sidebar: recent, private and saved views, by status, by type |
 | `adapters/admin/revisions.zig` | 214 | Versions explorer + restore |
 
 #### Infrastructure

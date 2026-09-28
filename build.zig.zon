@@ -8,11 +8,19 @@
         .publr_sqlite = .{ .path = "../lib/sqlite" },
         .publr_http = .{ .path = "../lib/http" },
         .publr_auth = .{ .path = "../lib/auth" },
+        .publr_deps = .{ .path = "../lib/deps" },
+        // Build-time: the PJSX compiler lowers ui/ and the design system to Zig; the JIT
+        // compiles their classes to the admin stylesheet and merges class stacks at render.
+        .pjsx = .{ .path = "../pjsx" },
+        .publr_jit = .{ .path = "../jit" },
     },
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "build",
         "src",
+        "ui",
+        "themes",
         "scripts",
         "vendor",
         "LICENSE",

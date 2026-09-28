@@ -9,8 +9,10 @@ one.
 
 - Requests and responses are JSON (`Content-Type: application/json`).
 - Errors are JSON too: `{ "error": "<name>" }` with a matching status
-  (`401` wrong credentials, `403` denied or cross-origin, `404` not found,
-  `409` conflict, `422` invalid input, `429` too many attempts).
+  (`401` wrong credentials, `403` denied or cross-origin, `404` not found, `409` conflict,
+  `422` invalid input, `429` too many attempts, `503` a service it needs is down: try
+  again). A failure a plugin declares answers with its own status and name, and a
+  `message`: `{ "error": "Unverified", "message": "…" }`.
 - Requests that change something must be same-origin (`Origin` or `Referer`
   matches `Host`) and, when a session cookie is present, carry the session's
   CSRF token in `X-Csrf-Token` (you get it from sign-in or `/api/auth/session`).
@@ -32,11 +34,21 @@ POST /api/record/create        {"type":"post","document":"{\"title\":\"Hello\"}"
 POST /api/record/transition    {"id":"…","to":"published"}
 GET  /api/content_type/get?type=post
 GET  /api/record/referrers?id=…
+GET  /api/term/tree?taxonomy=topics
+POST /api/term/create          {"taxonomy":"topics","document":"{\"name\":\"Engineering\"}","parent":"…"}
 ```
 
 Plugins' operations appear the same way (`POST /api/hello/record`).
 Unknown operations answer `404 { "error": "unknown_operation" }`; `GET` on a
 write operation answers `405`.
+
+## The site
+
+Everything outside `/api/` and `/admin/` is the public site from the theme
+(see [The site](site.md)): the theme's routes, `/_islands/<key>` and
+`/_islands/?keys=a,b` for fragments, `/theme/<path>` for the stylesheet and
+the theme's assets. A built page answers with an `ETag`, a rendered one with
+`no-store`; `X-Publr-Served` says which (`file`, `memory`, `render`).
 
 ## Health
 

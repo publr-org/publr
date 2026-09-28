@@ -23,6 +23,7 @@ each concern lives in `build/<topic>.zig`.
 | `-Dtarget`, `-Doptimize` | native, Debug | all |
 | `-Darchives=<dir>` | `.vendor-archives` | `vendor-import` |
 | `-Dbrowser-debug=true` | `false` | `browser` (Debug wasm with panic messages) |
+| `-Dtheme=<name>` | `default` | the folder under `themes/` embedded as the site's theme (`build/theme.zig`) |
 
 ## Vendors and libraries
 
@@ -33,19 +34,33 @@ upstream archive, verify its checksum or signature by hand, place it in
 `.vendor-archives/`, run `zig build vendor-import`, review the diff. Each
 `vendor/<name>/VERSION.zon` records the upstream, archive name and SHA-256.
 
-SQLite, the HTTP server and the auth primitives come in as Publr's own
-libraries from the sibling workspace (`../demos/cmsv2/lib/{sqlite,http-server,auth}`,
-path dependencies in `build.zig.zon`; see [Dependencies](dependencies.md)).
+SQLite, the HTTP server, the auth primitives and the dependency index come in
+as Publr's own libraries from the sibling repos (`../lib/{sqlite,http,auth,deps}`,
+`../pjsx`, `../jit`, path dependencies in `build.zig.zon`; see
+[Dependencies](dependencies.md)).
 `build/core.zig` imports their modules into the core; each library's own
 `build.zig` builds it for whatever target the core asks for, wasm32-wasi
 included (the browser build drives `publr_http` offline, with no socket).
+
+## The theme
+
+`build/theme.zig` embeds `themes/<name>/` (`-Dtheme`): every `.publr` as text
+for the engine to read at startup, `public/*` with the island loader
+(`src/adapters/site/islands.js`) and the PublrJS runtime (`../publr-js/dist`)
+as the `/theme/*` assets, `theme.zon`, `public/style.css` and the JIT's
+preflight as the run-time stylesheet's inputs, and `interactive/*.ptsx`
+lowered by `pjsx_gen` like the admin's views. A theme without `theme.zon`,
+`style.css` or `interactive/` gets empty placeholders. Nothing generated is
+committed.
 
 ## Smoke test
 
 `smoke` (`scripts/smoke.zig`) runs the built binary from a fresh directory:
 `--version`, `heartbeat check`, `--help`, `init`, `user sign_in`,
 `--as` role checks, generated passwords, set-password links, `serve` + a
-real `GET /api/health` and `POST /api/auth/sign-in`.
+real `GET /api/health` and `POST /api/auth/sign-in`, then the site: a
+published post, `build` into a folder, and `serve` answering the home page,
+the post's page, a fragment and the stylesheet.
 It listens on port 8090, away from the dev default (8080), so it never
 collides with a running `serve`.
 
