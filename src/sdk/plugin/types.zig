@@ -24,16 +24,16 @@ pub fn apply_all(ctx: *sdk.Ctx) sdk.Error!void {
     std.debug.assert(ctx.caller == .system);
     std.debug.assert(ctx.now_ms >= 0);
 
-    try apply(ctx, registry.plugins.merged_content_types);
+    try apply(ctx, registry.native_plugins.merged_content_types);
 
-    inline for (registry.plugins.merged_custom_fields) |declared| {
+    inline for (registry.native_plugins.merged_custom_fields) |declared| {
         try apply_group(ctx, declared);
     }
 }
 
 /// Create or update a declared custom field group, its fields locked and owned by the
 /// plugin, as a declared content type is.
-fn apply_group(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
+pub fn apply_group(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
     std.debug.assert(declared.def.handle.len > 0);
     std.debug.assert(declared.def.group.location.len > 0);
 
@@ -78,7 +78,7 @@ fn apply_group(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
 
 /// Create or update a declared type. Declared fields are locked and owned by the plugin;
 /// fields added by hand on top of them are kept across redeclarations.
-fn apply_one(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
+pub fn apply_one(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
     std.debug.assert(declared.def.handle.len > 0);
     std.debug.assert(declared.def.fields.len > 0);
 

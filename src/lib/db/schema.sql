@@ -235,3 +235,22 @@ CREATE TABLE IF NOT EXISTS field_groups (
     definition TEXT NOT NULL,
     PRIMARY KEY (scope, owner)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS sandboxed_plugins (
+    name              TEXT PRIMARY KEY,
+    version           TEXT NOT NULL,
+    hash              TEXT NOT NULL,
+    manifest          TEXT NOT NULL,
+    enabled            INTEGER NOT NULL,
+    granted           TEXT NOT NULL,
+    denied            TEXT NOT NULL,
+    content_access    TEXT NOT NULL,
+    next_version      TEXT,
+    next_hash         TEXT,
+    next_manifest     TEXT,
+    previous_version  TEXT,
+    previous_hash     TEXT,
+    previous_manifest TEXT,
+    installed_at      INTEGER NOT NULL,
+    updated_at        INTEGER NOT NULL
+) STRICT;

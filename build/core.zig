@@ -1,30 +1,66 @@
 const std = @import("std");
 const vendors = @import("vendors.zig");
-const plugins = @import("plugins.zig");
+const native_plugins = @import("native_plugins.zig");
 const gen = @import("gen.zig");
 const jit = @import("jit.zig");
 const apps = @import("apps.zig");
 const diagnostic = @import("diagnostic.zig");
 
-/// Where the compiled-in apps and plugins come from, as paths relative to this repository:
+/// Where the compiled-in apps and native plugins come from, relative to this repository:
 /// a project built from another repository (Publr Cloud) names its own.
 pub const Sources = struct {
     apps_dir: []const u8,
-    plugins_dir: []const u8,
+    native_plugins_dir: []const u8,
     apps_max: u32,
+    /// The sandboxed plugins `zig build sandboxed-plugins` builds.
+    sandboxed_plugins_dir: []const u8 = "sandboxed-plugins",
+    /// Where `serve` reads each app's `public/` files by default: `apps`, relative to where
+    /// it runs, or (built with `-Dpreset`) the preset's apps folder, wherever it runs.
+    public_dir: []const u8 = "apps",
 };
 
+/// `-Dpreset=<dir>`: a project's parts kept together, `<dir>/apps`, `<dir>/native-plugins`
+/// and `<dir>/sandboxed-plugins`, for developing against locally. Null without it.
+pub fn preset(builder: *std.Build) ?[]const u8 {
+    std.debug.assert(builder.build_root.path != null);
+
+    const dir = builder.option(
+        []const u8,
+        "preset",
+        "A preset folder, relative to this repository: its apps, native and sandboxed plugins",
+    ) orelse return null;
+
+    if (dir.len == 0 or std.fs.path.isAbsolute(dir)) {
+        diagnostic.fail("-Dpreset: pass a path relative to {s}", .{builder.build_root.path.?});
+    }
+
+    return dir;
+}
+
 pub fn sources(builder: *std.Build) Sources {
+    const from_preset = preset(builder);
     const apps_dir = builder.option(
         []const u8,
         "apps",
         "The folder of compiled-in apps, relative to this repository (default: apps)",
-    ) orelse apps.dir_default;
-    const plugins_dir = builder.option(
+    ) orelse if (from_preset) |dir| builder.pathJoin(&.{ dir, "apps" }) else apps.dir_default;
+    const native_plugins_dir = builder.option(
         []const u8,
-        "plugins",
-        "The folder of compiled-in plugins, relative to this repository (default: plugins)",
-    ) orelse plugins.dir_default;
+        "native-plugins",
+        "The folder of native plugins, relative to this repository (default: native-plugins)",
+    ) orelse if (from_preset) |dir|
+        builder.pathJoin(&.{ dir, "native-plugins" })
+    else
+        native_plugins.dir_default;
+    const sandboxed_plugins_dir = builder.option(
+        []const u8,
+        "sandboxed-plugins",
+        "The folder of sandboxed plugins `zig build sandboxed-plugins` builds " ++
+            "(default: sandboxed-plugins)",
+    ) orelse if (from_preset) |dir|
+        builder.pathJoin(&.{ dir, "sandboxed-plugins" })
+    else
+        "sandboxed-plugins";
     const apps_max = builder.option(
         u32,
         "apps-max",
@@ -32,12 +68,14 @@ pub fn sources(builder: *std.Build) Sources {
     ) orelse apps.apps_max_default;
     const chosen: Sources = .{
         .apps_dir = apps_dir,
-        .plugins_dir = plugins_dir,
+        .native_plugins_dir = native_plugins_dir,
         .apps_max = apps_max,
+        .sandboxed_plugins_dir = sandboxed_plugins_dir,
+        .public_dir = if (from_preset != null) builder.pathFromRoot(apps_dir) else "apps",
     };
     const root = builder.build_root.path.?;
 
-    for ([_][]const u8{ chosen.apps_dir, chosen.plugins_dir }) |dir| {
+    for ([_][]const u8{ chosen.apps_dir, chosen.native_plugins_dir }) |dir| {
         if (dir.len == 0 or std.fs.path.isAbsolute(dir)) {
             diagnostic.fail("{s}: pass a path relative to {s}", .{ dir, root });
         }
@@ -48,7 +86,7 @@ pub fn sources(builder: *std.Build) Sources {
     }
 
     std.debug.assert(chosen.apps_dir.len > 0);
-    std.debug.assert(chosen.plugins_dir.len > 0);
+    std.debug.assert(chosen.native_plugins_dir.len > 0);
 
     return chosen;
 }
@@ -102,9 +140,19 @@ pub fn add_module(
         },
     });
 
+    // The sandbox runs plugins natively; the browser build has none yet.
+    if (target.result.os.tag != .wasi) {
+        const publr_wasm = builder.dependency("publr_wasm", .{
+            .target = target,
+            .release = optimize != .Debug,
+        });
+
+        module.addImport("publr_wasm", publr_wasm.module("publr_wasm"));
+    }
+
     vendors.add_include_paths(builder, module);
     module.linkLibrary(vendors.add_library(builder, target));
-    plugins.add(builder, module, from.plugins_dir);
+    native_plugins.add(builder, module, from.native_plugins_dir);
 
     const generated = gen.add(builder, target, optimize);
 
@@ -196,6 +244,7 @@ fn add_apps(
     options.addOption(u32, "apps_max", from.apps_max);
     options.addOption(bool, "minify", optimize != .Debug);
     options.addOption([]const u8, "engine_stamp", engine_stamp(builder));
+    options.addOption([]const u8, "public_dir", from.public_dir);
 
     module.addImport("apps_options", options.createModule());
     module.addAnonymousImport("apps_preflight_css", .{

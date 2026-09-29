@@ -5,6 +5,7 @@ const operation = @import("operation.zig");
 const Harness = @import("../sdk.zig").testing.Harness;
 const grant = @import("grant.zig");
 const role = @import("../model/role.zig");
+const plugin_access = @import("plugin_access.zig");
 
 const Grant = grant.Grant;
 const Role = role.Role;
@@ -36,6 +37,7 @@ pub const admin_namespaces = [_][]const u8{
     "sign_on",
     "identity",
     "role",
+    "plugin",
 };
 pub const public_read_namespaces = [_][]const u8{ "heartbeat", "record", "term" };
 
@@ -47,7 +49,7 @@ const delivery_grant: Grant = .{
 /// What the core allows before any plugin narrows it: anonymous callers read live public
 /// records; a signed-in account what its roles grant; the system everything; a plugin or a
 /// machine token its listed capabilities.
-pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) Grant {
+pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) operation.Error!Grant {
     std.debug.assert(request.operation_name.len > 0);
     std.debug.assert(std.mem.indexOfScalar(u8, request.operation_name, '.') != null);
 
@@ -59,7 +61,11 @@ pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) Grant
         .anonymous => anonymous_grant(request),
         .user => |user| role_grant(roles, user.roles, request),
         .token => Grant.allow_all,
-        .machine, .plugin => scoped_grant(ctx, request),
+        .machine => scoped_grant(ctx, request),
+        .plugin => |plugin| if (plugin.access != null)
+            try plugin_grant(ctx, request, roles)
+        else
+            scoped_grant(ctx, request),
         .system => Grant.allow_all,
     };
 }
@@ -110,7 +116,7 @@ pub fn is_public_read_namespace(operation_name: []const u8) bool {
 
 fn is_admin_namespace(operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
-    std.debug.assert(admin_namespaces.len == 6);
+    std.debug.assert(admin_namespaces.len == 7);
 
     for (admin_namespaces) |namespace| {
         if (std.mem.eql(u8, operation.namespace(operation_name), namespace)) {
@@ -145,6 +151,24 @@ fn anonymous_grant(request: Request) Grant {
     return granted;
 }
 
+/// An installed plugin's grant, narrowed to the roles of the account it acts for, if any.
+fn plugin_grant(ctx: *const Ctx, request: Request, roles: []const Role) operation.Error!Grant {
+    const plugin = ctx.caller.plugin;
+    const access = plugin.access.?;
+
+    std.debug.assert(request.operation_name.len > 0);
+    std.debug.assert(plugin.name.len > 0);
+
+    const granted = plugin_access.grant(plugin.name, access, .{
+        .operation_name = request.operation_name,
+        .kind = request.kind,
+        .type_id = request.resource.type_id,
+    });
+    const held = plugin.roles orelse return granted;
+
+    return Grant.intersect(granted, role_grant(roles, held, request), ctx.arena);
+}
+
 fn scoped_grant(ctx: *const Ctx, request: Request) Grant {
     std.debug.assert(ctx.caller == .machine or ctx.caller == .plugin);
     std.debug.assert(request.operation_name.len > 0);
@@ -169,7 +193,7 @@ pub fn authorize(
     std.debug.assert(policies.len <= policies_max);
     std.debug.assert(request.operation_name.len > 0);
 
-    var result = core_policy(ctx, request, roles);
+    var result = try core_policy(ctx, request, roles);
 
     for (policies) |policy| {
         if (!result.allows()) {

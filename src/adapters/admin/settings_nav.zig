@@ -26,6 +26,7 @@ pub fn node(session: *admin.Session, current: []const u8) admin.Error!admin.rend
     return admin.render.view(session.arena, admin.views.SettingsNav, .{
         .system_active = std.mem.eql(u8, current, "system"),
         .users_active = std.mem.eql(u8, current, "users"),
+        .plugins_active = std.mem.eql(u8, current, "plugins"),
         .sections = items.items,
     });
 }

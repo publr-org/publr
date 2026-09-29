@@ -103,7 +103,10 @@ fn seed(init: std.process.Init, dir: []const u8) !void {
         .now_ms = publr.sdk.context.wall_clock_ms(init.io),
     });
 
-    try world.fill(&ctx);
+    ctx.sandboxed_plugins = application.sandboxed();
+
+    try world.upload_plugins(init.io, dir);
+    try world.fill(&ctx, dir);
 }
 
 fn capture(

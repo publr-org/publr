@@ -258,7 +258,7 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
     std.debug.assert(project.connection.transaction_depth == 0);
     std.debug.assert(project.auth.secret.len == csrf.secret_len);
 
-    return sdk.Ctx.init(.{
+    var ctx = sdk.Ctx.init(.{
         .caller = caller,
         .db = project.connection,
         .io = project.io,
@@ -266,6 +266,10 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
         .auth = project.auth,
         .now_ms = sdk.context.wall_clock_ms(project.io),
     });
+
+    ctx.sandboxed_plugins = project.sandboxed_plugins;
+
+    return ctx;
 }
 
 test "cookie parsing" {

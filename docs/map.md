@@ -263,7 +263,9 @@ A request goes to the app mounted where it asked. See [Apps](apps.md).
 
 `lib/auth/` is used by the doors to work out who is asking; `lib/http/`
 carries the API and admin doors; `sdk/plugin/` feeds rules, listeners and
-types into the pipeline. Starting up lives in `main.zig`, `server/serve.zig`, `server.zig`
+types into the pipeline. Installed plugins reach it at run time instead:
+`server/sandboxed_plugins/` runs them in the sandbox (`lib/wasm/`) behind `sdk/sandboxed_plugins.zig`, and
+their calls come back through the same dispatch. Starting up lives in `main.zig`, `server/serve.zig`, `server.zig`
 (`server/wasm.zig` is the same program as WebAssembly).
 
 ```mermaid
@@ -333,6 +335,12 @@ Grouped by kind. Lines are the whole file, tests included.
 | `server/registry.zig` | 74 | Core + plugin operations/namespaces/policies/hooks/types/roles, the `SDK`, the status and role registries, bootstrap |
 | `server/routes.zig` | 231 | The route table (`/api/auth/*`, `/api/health`, admin, rest, the apps as the fallback) and a `testing.Flow` that drives the full router |
 | `server/project.zig` | 123 | `Project`: the per-process handle handlers get (`connection`, `auth`, static dir, the loaded apps, the domain), which app a request is for, the session cookie's domain |
+| `server/sandboxed_plugins.zig` | 232 | The installed plugins the server holds: the sandbox's runtime, every plugin loaded from its row and file, the hook and operation index, the roles plugins declare |
+| `server/sandboxed_plugins/interface.zig` | 329 | The `sdk.plugins.Plugins` every context carries: find and run a plugin's operation, run its hooks, read a module to install, reload after a change |
+| `server/sandboxed_plugins/invoke.zig` | 298 | One call into a plugin, as itself and within its limits; the host functions it may call (`publr_call`, `publr_notice`, `publr_log`) |
+| `server/sandboxed_plugins/loaded.zig` | 179 | One installed plugin: its module, manifest, grants, own types, content access, limits, and its disposable instance |
+| `server/sandboxed_plugins/files.zig` | 224 | Modules on the data drive by their hash, uploads arriving in pieces, the sweep of files no row names |
+| `server/sandboxed_plugins/scenarios.zig` | 373 | The sandbox end to end on the fixture plugins: install, call, revoke, update, remove, the admin's pages |
 
 #### template/ (the template engine)
 | File | Lines | What |
@@ -383,6 +391,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `model/evolution.zig` | 200 | Diff two type definitions into a plan (removed, converted, needs rewrite) |
 | `model/account.zig` | 65 | Email normalisation, display-name rule |
 | `model/role.zig` | 373 | A role (name, label, grants), grant matching (`record.*`, `!record.purge`), the core roles, merging the plugins' |
+| `model/permission.zig` | 310 | The permission catalog: keys, sentences, tiers and the operations each stands for; what every plugin gets and what none ever does |
+| `model/sandboxed_plugin.zig` | 376 | A plugin's manifest as data; what it asks for and at which tier, what installing grants, when an update waits, its limits |
 | `model/app.zig` | 433 | An app's `app.zon`: mounts, their validation, which app a host and path go to, an app's address |
 | `model/view.zig` | 204 | A saved view's filters: the JSON shape, its bounds, `me` and relative days |
 | `model/filter.zig` | 473 | The filter registry: keys, labels, operators, what each takes, how a clause constrains the list |
@@ -399,6 +409,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `store/record_terms.zig` | 380 | `record_terms`: a record's membership per slot and field, ancestors included; promote, rebuild after a move |
 | `store/snapshots.zig` | 182 | `snapshots` table: take/get/list/prune |
 | `store/views.zig` | 226 | `views` table: a user's saved views, insert/get/list/update/delete |
+| `store/sandboxed_plugins.zig` | 161 | `sandboxed_plugins` table: one row per installed plugin, get/list/count/put/delete |
 | `store/users.zig` | 414 | `users` table: insert/find/list/tokens/password, the account's roles read with it |
 | `store/user_roles.zig` | 106 | `user_roles` table: the roles an account holds, set whole; how many hold one |
 | `store/sessions.zig` | 324 | `sessions` table: create/validate/slide/destroy, per-user cap |
@@ -424,11 +435,17 @@ Grouped by kind. Lines are the whole file, tests included.
 | `operations/record/fixture.zig` | 18 | The `post` type the record tests write against |
 | `operations/snapshot.zig` | 211 | `snapshot list/get/take/restore/prune` |
 | `operations/view.zig` | 339 | `view list/get/create/update/delete`: private, owner-bound |
+| `operations/plugin.zig` | 402 | `plugin list/get/upload/add/enable/disable/update/rollback/cancel_update/grant/revoke/deny/set_content_access/remove`: administrators only |
+| `operations/plugin/lifecycle.zig` | 303 | The checks before a module is taken; add, enable, disable, remove, grant and revoke |
+| `operations/plugin/versions.zig` | 132 | The next version applied, the previous one kept and rolled back to, the grants a version carries over |
+| `operations/plugin/state.zig` | 216 | A plugin's row read and written as data; its requests with where each stands |
+| `operations/plugin/detail.zig` | 152 | What the plugin operations answer, and their documented examples |
 
 #### Adapters
 | File | Lines | What |
 |---|---|---|
 | `adapters/cli.zig` | 838 | Args to `In`, dispatch, print `Out`, `--help` from the op docs, `--as` to caller |
+| `adapters/cli/sandboxed_plugins.zig` | 167 | An installed plugin's commands: flags to JSON by its manifest's field shapes, `--help` from its manifest |
 | `adapters/rest.zig` | 256 | `GET/POST /api/:namespace/:verb` to the op; query/body to `In`; its http test |
 | `adapters/rest/identity.zig` | 173 | Who is making an HTTP request: cookie to caller, CSRF guard for writes, the `Ctx` a handler dispatches with |
 | `adapters/rest/auth.zig` | 247 | `/api/auth/*` handlers (sign-in, sign-out, set-password, session) and their http test |
@@ -450,6 +467,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `adapters/admin/content/views.zig` | 108 | Saving the filters as a view: create, save, rename, delete |
 | `adapters/admin/nav.zig` | 158 | The Content sidebar: recent, private and saved views, by status, by type |
 | `adapters/admin/revisions.zig` | 214 | Versions explorer + restore |
+| `adapters/admin/plugins.zig` | 378 | Settings > Plugins: one list with enable, disable, update and remove; the enabling and update reviews; a plugin's page with grant, revoke and roll back |
+| `adapters/admin/plugins/rows.zig` | 146 | Plugin requests as rows low to high, with the buttons each state allows; the content access choice |
 
 #### Infrastructure
 | File | Lines | What |
@@ -462,6 +481,13 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/authorize.zig` | 318 | The core policy (anonymous reads live+public, a user what its roles grant); runs plugin policies |
 | `sdk/middleware.zig` | 89 | Hook stages (`pre`, `before`, `after`, `on`) and event shapes |
 | `sdk/plugin.zig` | 374 | What a plugin module may export; `Merged(plugins)`; compile-time validation |
+| `sdk/plugin/sandboxed.zig` | 179 | What a plugin declares to run in the sandbox (permissions, limits, content access), its entries, what may not be sandboxed |
+| `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |
+| `sdk/plugin/guest.zig` | 331 | The SDK inside the sandbox: `PluginCtx` proxied to the host as JSON, the exports generated for a plugin |
+| `sdk/plugin/wire.zig` | 107 | What crosses the sandbox's boundary: error codes, the result cell, the envelopes |
+| `sdk/sandboxed_plugins.zig` | 168 | The `Plugins` interface through which dispatch reaches installed plugins' operations and hooks |
+| `sdk/plugin_access.zig` | 188 | A plugin's granted permissions turned into the grant for one request |
+| `sdk/call_json.zig` | 189 | Calling an operation by name with JSON in and out, a built-in one or a plugin's, through the same steps |
 | `sdk/plugin/context.zig` | 56 | `PluginCtx`: the narrowed ctx a plugin operation receives |
 | `sdk/plugin/types.zig` | 139 | Content types declared by plugins: create/update on bootstrap, lock declared fields, keep hand-added ones |
 | `lib/auth/password.zig` | 110 | Argon2id hashing and checking |

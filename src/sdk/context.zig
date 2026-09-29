@@ -31,6 +31,10 @@ pub const Ctx = struct {
     now_ms: i64,
     next_operation_id: OperationId = 1,
     notify: ?Notify = null,
+    /// The installed plugins installed in the project: their operations and hooks.
+    sandboxed_plugins: ?*const @import("sandboxed_plugins.zig").SandboxedPlugins = null,
+    /// How deep calls nest through installed plugins, bounded by `plugins.depth_max`.
+    plugin_depth: u32 = 0,
 
     pub fn init(options: Options) Ctx {
         std.debug.assert(options.request_id.len <= request_id_len_max);

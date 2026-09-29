@@ -40,6 +40,7 @@ pub const operations = struct {
     pub const term = @import("operations/term.zig");
     pub const snapshot = @import("operations/snapshot.zig");
     pub const view = @import("operations/view.zig");
+    pub const plugin = @import("operations/plugin.zig");
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");

@@ -2,7 +2,7 @@
 //! kept in the database or the repository. Read-only, read when needed, so a restart is
 //! all a new value takes.
 //!
-//! The core's own, and compiled-in plugins' (they are the core, and reach whatever it
+//! The core's own, and native plugins' (they are the core, and reach whatever it
 //! can). Deliberately not in `sdk`, the surface sandboxed plugins will code against: a
 //! WASM plugin never reads the environment; it will declare the secret it needs and be
 //! handed it through the gateway, only once the core allows it.

@@ -194,7 +194,7 @@ test "the admin's door: an account whose roles reach none of its operations stay
         .{flow.csrf_of((try flow.call("GET", "/admin/content", "")).body)},
     ));
 
-    // A role no compiled-in code declares grants nothing: the account is an app's visitor.
+    // A role no native code declares grants nothing: the account is an app's visitor.
     var system = harness.ctx(.system);
     const users = @import("../operations/user.zig");
     const visitor = try registry.SDK.dispatch(&system, users.Create, .{

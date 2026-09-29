@@ -9,6 +9,7 @@ const field = @import("../model/field.zig");
 const kinds = @import("../model/kinds.zig");
 const role = @import("../model/role.zig");
 const provider = @import("provider.zig");
+const runtime = @import("plugin/sandboxed.zig");
 
 pub const PluginCtx = plugin_context.PluginCtx;
 pub const types = plugin_types;
@@ -16,6 +17,17 @@ pub const ContentTypeDef = content_type.Def;
 pub const DeclaredType = plugin_types.Declared;
 pub const Role = role.Role;
 pub const SignInProvider = provider.SignInProvider;
+/// What a plugin declares to run in the sandbox: see `plugin/sandboxed.zig`.
+pub const Permission = runtime.Permission;
+pub const Limits = runtime.Limits;
+pub const ContentAccess = runtime.ContentAccess;
+pub const Entry = runtime.Entry;
+pub const runtime_entries = runtime.runtime_entries;
+pub const HookIn = runtime.HookIn;
+pub const HookOut = runtime.HookOut;
+pub const plugin_manifest = @import("plugin/manifest.zig");
+pub const wire = @import("plugin/wire.zig");
+pub const guest = @import("plugin/guest.zig");
 pub const content_types_max: u32 = 64;
 
 pub const name_len_max: u32 = 32;
@@ -27,7 +39,7 @@ pub const Manifest = struct {
     name: []const u8,
     version: []const u8,
     summary: []const u8,
-    compiled_in_only: bool = false,
+    native_only: bool = false,
 };
 
 pub fn validate(comptime Plugin: type) void {
@@ -52,18 +64,18 @@ pub fn validate(comptime Plugin: type) void {
         for (operations_of(Plugin)) |Operation| {
             sdk.operation.validate(Operation);
 
-            if (!manifest.compiled_in_only and !plugin_context.takes_plugin_ctx(Operation.run)) {
+            if (!manifest.native_only and !plugin_context.takes_plugin_ctx(Operation.run)) {
                 @compileError("plugin " ++ manifest.name ++ ": " ++ Operation.name ++
-                    " must take *PluginCtx (or set manifest.compiled_in_only)");
+                    " must take *PluginCtx (or set manifest.native_only)");
             }
         }
 
         for (middleware_of(Plugin)) |Middleware| {
             sdk.middleware.validate(Middleware);
 
-            if (!manifest.compiled_in_only and !plugin_context.takes_plugin_ctx(Middleware.run)) {
+            if (!manifest.native_only and !plugin_context.takes_plugin_ctx(Middleware.run)) {
                 @compileError("plugin " ++ manifest.name ++ ": a hook must take *PluginCtx " ++
-                    "(or set manifest.compiled_in_only)");
+                    "(or set manifest.native_only)");
             }
         }
 
@@ -71,8 +83,8 @@ pub fn validate(comptime Plugin: type) void {
             @compileError("plugin " ++ manifest.name ++ ": `schema_sql` is empty");
         }
 
-        if (@hasDecl(Plugin, "schema_sql") and !manifest.compiled_in_only) {
-            @compileError("plugin " ++ manifest.name ++ ": own tables need compiled_in_only");
+        if (@hasDecl(Plugin, "schema_sql") and !manifest.native_only) {
+            @compileError("plugin " ++ manifest.name ++ ": own tables need native_only");
         }
 
         validate_entries(Plugin, manifest.name);
@@ -456,6 +468,66 @@ pub fn Merged(comptime plugins: anytype) type {
 }
 
 pub const testing = struct {
+    /// A plugin that can run in the sandbox: an operation, a hook asked for with a reason,
+    /// and the permission it needs.
+    pub const Greeter = struct {
+        pub const manifest: Manifest = .{
+            .name = "greeter",
+            .version = "0.1.0",
+            .summary = "Test plugin: greets, and counts the greetings as records",
+        };
+        pub const namespaces = [_]sdk.operation.Namespace{.{
+            .name = "greeter",
+            .summary = "Greetings",
+            .details = "A test namespace for the sandbox.",
+        }};
+        pub const content_types = [_]ContentTypeDef{.{
+            .handle = "greeting",
+            .name = "Greeting",
+            .title_field = "note",
+            .fields = &.{.{ .name = "note", .label = "Note", .kind = "string", .required = true }},
+        }};
+        pub const permissions = [_]Permission{.{
+            .key = "content.write",
+            .reason = "Keeps every greeting as a record",
+        }};
+        pub const operations = [_]type{Greet};
+        pub const middleware = [_]type{Counted};
+
+        pub const Greet = struct {
+            pub const name = "greeter.greet";
+            pub const description = "Greet someone";
+            pub const kind: sdk.operation.Kind = .write;
+            pub const In = struct { who: []const u8, times: u32 = 1 };
+            pub const Out = struct { text: []const u8 };
+            pub const example: In = .{ .who = "world" };
+            pub const example_out: Out = .{ .text = "hello, world" };
+            pub const field_docs: sdk.operation.Docs(In) = .{ .who = "Whom to greet" };
+
+            pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
+                std.debug.assert(in.who.len > 0);
+                std.debug.assert(ctx.now_ms() >= 0);
+
+                const text = std.fmt.allocPrint(ctx.arena(), "hello, {s}", .{in.who}) catch {
+                    return error.OutOfMemory;
+                };
+
+                return .{ .text = text };
+            }
+        };
+
+        pub const Counted = struct {
+            pub const stage: sdk.middleware.Stage = .after;
+            pub const operation = "greeter.greet";
+            pub const reason = "Says when someone was greeted";
+
+            pub fn run(ctx: *PluginCtx, in: *Greet.In, out: *const Greet.Out) sdk.Error!void {
+                std.debug.assert(out.text.len > 0);
+                ctx.notice("greeter.greeted", in.who);
+            }
+        };
+    };
+
     pub const Hello = struct {
         pub const manifest: Manifest = .{
             .name = "hello",
@@ -581,4 +653,10 @@ test "the test plugin passes the contract and merges into a registry" {
     try std.testing.expectEqual(@as(usize, 1), Bundle.merged_policies.len);
     try std.testing.expectEqual(@as(usize, 1), Bundle.merged_field_kinds.len);
     try std.testing.expectEqualStrings("hello.mood", Bundle.merged_field_kinds[0].id);
+}
+
+test {
+    _ = plugin_manifest;
+    _ = wire;
+    _ = runtime;
 }

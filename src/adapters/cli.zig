@@ -8,6 +8,8 @@ pub const value_len_max: u32 = 64 << 10;
 
 pub const Error = sdk.Error || error{ UnknownOp, UnknownFlag, MissingValue, WriteFailed };
 
+const runtime_cli = @import("cli/sandboxed_plugins.zig");
+
 pub const Options = struct {
     db: *db.Db,
     io: std.Io,
@@ -16,6 +18,8 @@ pub const Options = struct {
     now_ms: i64 = 0,
     err: ?*std.Io.Writer = null,
     password_env: ?[]const u8 = null,
+    /// The installed plugins installed: their operations are commands too.
+    sandboxed_plugins: ?*const sdk.sandboxed_plugins.SandboxedPlugins = null,
 };
 
 const AuthState = @import("../lib/auth.zig").State;
@@ -137,6 +141,8 @@ pub fn CLI(comptime SDK: type) type {
                 .now_ms = options.now_ms,
             });
 
+            ctx.sandboxed_plugins = options.sandboxed_plugins;
+
             inline for (SDK.operations) |Operation| {
                 if (std.mem.eql(u8, Operation.name, name)) {
                     if (rest.len == 1 and is_help_flag(rest[0])) {
@@ -144,6 +150,12 @@ pub fn CLI(comptime SDK: type) type {
                         return 0;
                     }
                     return invoke(&ctx, Operation, rest, out, options);
+                }
+            }
+
+            if (options.sandboxed_plugins) |sandboxed| {
+                if (sandboxed.find(name)) |found| {
+                    return invoke_runtime(&ctx, found, rest, out, options);
                 }
             }
 
@@ -236,6 +248,39 @@ pub fn CLI(comptime SDK: type) type {
             std.json.Stringify.value(result, .{ .whitespace = .indent_2 }, out) catch
                 return error.WriteFailed;
             out.writeByte('\n') catch return error.WriteFailed;
+
+            return 0;
+        }
+
+        /// An operation an installed plugin brings: flags read by its manifest's field shapes.
+        fn invoke_runtime(
+            ctx: *sdk.Ctx,
+            found: sdk.sandboxed_plugins.Operation,
+            args: []const []const u8,
+            out: *std.Io.Writer,
+            options: Options,
+        ) Error!u8 {
+            const namespace = sdk.operation.namespace(found.name);
+            const verb = sdk.operation.verb(found.name);
+
+            std.debug.assert(found.name.len > 0);
+
+            if (args.len == 1 and is_help_flag(args[0])) {
+                try runtime_cli.print_help(found, out);
+                return 0;
+            }
+
+            var problem: Problem = .{};
+            const input = runtime_cli.parse(ctx.arena, found, args, &problem) catch {
+                return failf(options, "{s} {s}: {s}; run \"publr {s} {s} --help\"", .{
+                    namespace, verb, problem.text(), namespace, verb,
+                });
+            };
+            const result = SDK.call_json(ctx, found.name, input) catch |err| {
+                return failf(options, "{s} {s}: {s}", .{ namespace, verb, describe(err, ctx) });
+            };
+
+            try runtime_cli.print_json(ctx.arena, result, out);
 
             return 0;
         }
@@ -367,7 +412,13 @@ pub fn CLI(comptime SDK: type) type {
             const anonymous_ok = sdk.authorize.is_open_operation(Operation.name) or
                 (Operation.kind == .read and
                     sdk.authorize.is_public_read_namespace(Operation.name));
-            const as: []const u8 = if (anonymous_ok) "" else "--as ada@example.com ";
+            const operator = @hasDecl(Operation, "operator_only") and Operation.operator_only;
+            const as: []const u8 = if (operator)
+                "--as-admin "
+            else if (anonymous_ok)
+                ""
+            else
+                "--as ada@example.com ";
 
             comptime std.debug.assert(namespace.len > 0);
             comptime std.debug.assert(verb.len > 0);

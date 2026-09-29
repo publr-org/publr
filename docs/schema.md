@@ -154,7 +154,7 @@ redeemed.
 
 The roles an account holds, one row each, at most 16 per account. A role is
 data declared in code (core's `admin` and `editor`, and each plugin's), not a
-row: a name no compiled-in code declares any more grants nothing. Deleting a
+row: a name no built-in plugin declares any more grants nothing. Deleting a
 user removes their rows.
 
 | Column | Type | Meaning |
@@ -228,6 +228,28 @@ never on the email, which is only what the provider last said.
 | `last_used_at` | integer | The last sign-in through it |
 
 Primary key `(provider, provider_id)`; index `identities_user_id` on `user_id`.
+
+## `sandboxed_plugins`
+
+The installed plugins added to the project, one row each: whether it runs, what the
+administrator granted and denied, which content it may reach, a newer version waiting to
+be applied, and the version the last update replaced, kept to roll back to. Each module
+is a file on the data drive named by its hash (`plugins/<hash>.wasm` beside the
+database), swept once no row names it; the manifests are kept here as the modules
+carried them, so listing plugins never reads a module. Reloading, updating or waking a
+project reads this table again. See [Plugins](plugins.md#installed-plugins-dlp).
+
+| Column | Type | Meaning |
+|---|---|---|
+| `name` | text, primary key | The plugin's name, from its manifest |
+| `version`, `hash`, `manifest` | text | The current version: its version, the SHA-256 of its module, its manifest as JSON |
+| `enabled` | integer | 1 while it runs; 0 when added and not yet enabled, or disabled |
+| `granted` | text | The permission keys granted, as a JSON array; kept while it is disabled |
+| `denied` | text | The keys an administrator refused, as a JSON array |
+| `content_access` | text | `{"scope":"public"}`, `{"scope":"all"}` or `{"scope":"specific","types":[...]}` |
+| `next_version`, `next_hash`, `next_manifest` | text, nullable | A newer module uploaded for it, waiting to be applied |
+| `previous_version`, `previous_hash`, `previous_manifest` | text, nullable | The version the last update replaced |
+| `installed_at`, `updated_at` | integer | Timestamps |
 
 ## `content_types`
 
@@ -452,7 +474,7 @@ last change. Keys are `record:<id>`, `type:<handle>`, `records`,
 
 `media` (files: name, mime type, size, dimensions, storage key, hash) joins as
 a record type with the media gate; API token tables come with the tokens
-gate. A compiled-in plugin that truly needs its own table names it
+gate. A built-in plugin that truly needs its own table names it
 `<plugin>_<table>` and creates it from `schema_sql` when the database opens;
 the default, for every plugin, is a declared content type.
 

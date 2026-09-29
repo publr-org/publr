@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const dir_default = "plugins";
+pub const dir_default = "native-plugins";
 pub const plugins_max: u32 = 64;
 pub const name_len_max: u32 = 32;
 
@@ -40,7 +40,7 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8) voi
         plugins.addImport(name, plugin);
     }
 
-    library.addImport("plugins", plugins);
+    library.addImport("native_plugins", plugins);
 }
 
 pub fn add_tests(
@@ -52,7 +52,8 @@ pub fn add_tests(
     std.debug.assert(library.root_source_file != null);
     std.debug.assert(plugins_max > 0);
 
-    const listing = library.import_table.get("plugins") orelse @panic("plugins not added");
+    const listing = library.import_table.get("native_plugins") orelse
+        @panic("native plugins not added");
     var names_storage: [plugins_max][]const u8 = undefined;
 
     for (discover(builder, dir, &names_storage)) |name| {
@@ -74,7 +75,7 @@ fn discover(
     const io = builder.graph.io;
     var root = builder.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch {
         if (!std.mem.eql(u8, dir, dir_default)) {
-            @import("diagnostic.zig").fail("-Dplugins: no folder at {s}", .{dir});
+            @import("diagnostic.zig").fail("-Dnative-plugins: no folder at {s}", .{dir});
         }
 
         return &.{};
@@ -85,7 +86,7 @@ fn discover(
     var count: u32 = 0;
 
     while (iterator.next(io) catch null) |entry| {
-        // A link counts: a plugins folder may gather plugins kept elsewhere. The main.zig
+        // A link counts: a native plugins folder may gather plugins kept elsewhere. The main.zig
         // check below follows it, and skips a link to anything but a plugin's folder.
         const folder = entry.kind == .directory or entry.kind == .sym_link;
 
@@ -97,7 +98,7 @@ fn discover(
         root.access(io, main_path, .{}) catch continue;
 
         if (count == plugins_max) {
-            @panic("too many plugins");
+            @panic("too many native plugins");
         }
 
         storage[count] = builder.dupe(entry.name);

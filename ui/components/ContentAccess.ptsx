@@ -1,0 +1,46 @@
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Radio } from "@publr/ui/Radio.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type ContentAccessProps = {
+  /** `public`, `all` or `specific`. */
+  scope: string;
+  /** What the plugin recommends, and its note on why; empty when it says nothing. */
+  recommend: string;
+  note: string;
+  /** Every content type, ticked when the plugin may reach it with `specific`. */
+  types: Array<{ handle: string; name: string; checked: boolean }>;
+};
+
+/** Which content a plugin's content permissions reach: its own types always, and the public
+ * ones, every one, or the ones ticked. Posted as `scope` and `types`. */
+export function ContentAccess({ scope, recommend, note, types }: ContentAccessProps) {
+  return (
+    <fieldset class="m-0 min-w-0 space-y-3 border-0 p-0" data-part="content-access">
+      <legend class="mb-2 p-0">
+        <Text as="span" variant="body-sm">Content access</Text>
+      </legend>
+      {note !== "" && (
+        <Text as="p" variant="body-sm" tone="muted">The plugin recommends {recommend}: {note}</Text>
+      )}
+      <label class="flex items-center gap-2">
+        <Radio name="scope" value="public" checked={scope === "public"} />
+        <Text as="span" variant="body-sm">All public content types</Text>
+      </label>
+      <label class="flex items-center gap-2">
+        <Radio name="scope" value="all" checked={scope === "all"} />
+        <Text as="span" variant="body-sm">All content types, public and private, including ones added later</Text>
+      </label>
+      <label class="flex items-center gap-2">
+        <Radio name="scope" value="specific" checked={scope === "specific"} />
+        <Text as="span" variant="body-sm">Only these content types</Text>
+      </label>
+      <div class="space-y-2 pl-6">
+        {types.map((choice) => (
+          <CheckboxField id={`type-${choice.handle}`} name="types" value={choice.handle}
+            checked={choice.checked} label={choice.name} />
+        ))}
+      </div>
+    </fieldset>
+  );
+}

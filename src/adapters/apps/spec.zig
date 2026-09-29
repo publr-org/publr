@@ -11,6 +11,8 @@ const registry = @import("../../server/registry.zig");
 pub const apps_max: u32 = apps_options.apps_max;
 pub const minify: bool = apps_options.minify;
 pub const engine_stamp: []const u8 = apps_options.engine_stamp;
+/// Where `serve` reads each app's `public/` files unless told: `apps`, or the preset's.
+pub const public_dir: []const u8 = apps_options.public_dir;
 pub const assets_max: u32 = 256;
 
 pub const File = struct { path: []const u8, data: []const u8 };
@@ -115,7 +117,7 @@ fn validate(comptime specs: []const Spec) void {
             for (spec.roles) |name| {
                 if (registry.Roles.get(name) == null) {
                     @compileError(label ++ "`.roles` names " ++ name ++ ", a role neither " ++
-                        "core nor a compiled-in plugin declares");
+                        "core nor a native plugin declares");
                 }
             }
 

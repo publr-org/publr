@@ -5,7 +5,20 @@ const registry = @import("../../server/registry.zig");
 pub const Caller = sdk.Caller;
 pub const Error = sdk.Error;
 
-pub const PluginCtx = struct {
+/// What a plugin's operations and hooks take: `SandboxApi` when the plugin is loaded into
+/// the sandbox (every call proxied to the host), `HostApi` when it is built in (direct calls,
+/// full access). The same source compiles either way.
+pub const PluginCtx = switch (guest.mode) {
+    .sandboxed => guest.SandboxApi,
+    .native => HostApi,
+};
+
+pub const Mode = guest.Mode;
+
+const guest = @import("guest.zig");
+
+/// A native plugin's way into Publr: direct calls through the SDK, full access.
+pub const HostApi = struct {
     inner: *sdk.Ctx,
 
     pub fn caller(self: *const PluginCtx) Caller {
@@ -41,6 +54,14 @@ pub const PluginCtx = struct {
         std.debug.assert(self.inner.parent != null);
 
         self.inner.notice(name, subject);
+    }
+
+    /// A line in the log, attributed to the plugin.
+    pub fn log(self: *PluginCtx, line: []const u8) void {
+        std.debug.assert(line.len > 0);
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        std.log.info("plugin: {s}", .{line});
     }
 };
 

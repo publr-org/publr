@@ -9,6 +9,7 @@
         .publr_http = .{ .path = "../lib/http" },
         .publr_auth = .{ .path = "../lib/auth" },
         .publr_deps = .{ .path = "../lib/deps" },
+        .publr_wasm = .{ .path = "../lib/wasm" },
         // Build-time: the PJSX compiler lowers ui/ and the design system to Zig; the JIT
         // compiles their classes to the admin stylesheet and merges class stacks at render.
         .pjsx = .{ .path = "../pjsx" },

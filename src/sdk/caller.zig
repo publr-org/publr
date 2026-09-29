@@ -21,6 +21,11 @@ pub const Caller = union(enum) {
         name: []const u8,
         capabilities: []const []const u8,
         on_behalf_of: ?[]const u8 = null,
+        /// An installed plugin: what its granted permissions allow, instead of `capabilities`.
+        access: ?*const @import("plugin_access.zig").Access = null,
+        /// The roles of the account an installed plugin acts for: each call gets the narrower
+        /// of the plugin's grant and theirs.
+        roles: ?[]const []const u8 = null,
     };
 
     pub fn is_authenticated(caller: Caller) bool {

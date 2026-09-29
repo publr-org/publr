@@ -77,6 +77,7 @@ fn run(init: std.process.Init) !u8 {
         .auth = &application.auth,
         .now_ms = sdk.context.wall_clock_ms(init.io),
         .password_env = init.environ_map.get("PUBLR_PASSWORD"),
+        .sandboxed_plugins = application.sandboxed(),
     }, rest, out) catch |err| {
         report.err("publr: {s}", .{@errorName(err)});
         return 1;

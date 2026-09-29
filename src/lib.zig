@@ -11,7 +11,7 @@ pub const time = @import("lib/time.zig");
 pub const json = @import("lib/json.zig");
 pub const html = @import("lib/html.zig");
 pub const report = @import("lib/report.zig");
-/// Compiled-in code only: never part of the plugin SDK.
+/// Native code only: never part of the plugin SDK.
 pub const environment = @import("lib/environment.zig");
 
 test {

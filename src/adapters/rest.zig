@@ -54,7 +54,66 @@ fn call(request: *Request, response: *Response, ctx: *Context) Error!void {
         }
     }
 
-    return not_found(response);
+    return invoke_runtime(request, response, ctx, identity.caller, namespace, verb, is_read);
+}
+
+/// An operation an installed plugin brings: JSON in the body, or flags in the query for a read.
+fn invoke_runtime(
+    request: *Request,
+    response: *Response,
+    ctx: *Context,
+    caller: sdk.Caller,
+    namespace: []const u8,
+    verb: []const u8,
+    is_read: bool,
+) Error!void {
+    std.debug.assert(namespace.len > 0);
+    std.debug.assert(verb.len > 0);
+
+    const project = Project.of(ctx);
+    const sandboxed = project.sandboxed_plugins orelse return not_found(response);
+    const name = std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{ namespace, verb }) catch {
+        return error.OutOfMemory;
+    };
+    const found = sandboxed.find(name) orelse return not_found(response);
+
+    if (is_read and found.kind != .read) {
+        return response.json(.method_not_allowed, .{ .@"error" = "use POST" });
+    }
+
+    const input = runtime_input(request, ctx.arena, found, is_read) orelse {
+        return response.json(.bad_request, .{ .@"error" = "invalid_input" });
+    };
+    var sdk_ctx = identity_module.context(project, ctx.arena, caller);
+    const output = registry.SDK.call_json(&sdk_ctx, name, input) catch |err| {
+        return auth_http.respond_error(response, err, &sdk_ctx);
+    };
+
+    try response.set_body(.ok, "application/json", output);
+}
+
+fn runtime_input(
+    request: *Request,
+    arena: std.mem.Allocator,
+    found: sdk.sandboxed_plugins.Operation,
+    from_query: bool,
+) ?[]const u8 {
+    std.debug.assert(found.name.len > 0);
+    std.debug.assert(query_pairs_max > 0);
+
+    if (!from_query) {
+        if (request.body.len > body_bytes_max) {
+            return null;
+        }
+
+        return if (request.body.len == 0) "{}" else request.body;
+    }
+
+    var args_storage: [query_pairs_max * 2][]const u8 = undefined;
+    const args = query_args(arena, request.query(), &args_storage) orelse return null;
+    var problem: @import("cli.zig").Problem = .{};
+
+    return @import("cli/sandboxed_plugins.zig").parse(arena, found, args, &problem) catch null;
 }
 
 fn invoke(
@@ -106,6 +165,20 @@ fn parse_query(comptime In: type, arena: std.mem.Allocator, query: []const u8) ?
 
     const cli = @import("cli.zig");
     var args_storage: [query_pairs_max * 2][]const u8 = undefined;
+    const args = query_args(arena, query, &args_storage) orelse return null;
+    var problem: cli.Problem = .{};
+
+    return cli.parse_in(In, arena, args, &problem, null) catch null;
+}
+
+/// A query string as flags: `a=1&b=2` is `--a 1 --b 2`.
+fn query_args(
+    arena: std.mem.Allocator,
+    query: []const u8,
+    args_storage: *[query_pairs_max * 2][]const u8,
+) ?[]const []const u8 {
+    std.debug.assert(args_storage.len == query_pairs_max * 2);
+
     var count: u32 = 0;
     var pairs = std.mem.splitScalar(u8, query, '&');
 
@@ -130,9 +203,7 @@ fn parse_query(comptime In: type, arena: std.mem.Allocator, query: []const u8) ?
         count += 2;
     }
 
-    var problem: cli.Problem = .{};
-
-    return cli.parse_in(In, arena, args_storage[0..count], &problem, null) catch null;
+    return args_storage[0..count];
 }
 
 fn not_found(response: *Response) Error!void {

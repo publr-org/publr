@@ -19,9 +19,10 @@ const taxonomy = @import("../operations/taxonomy.zig");
 const term = @import("../operations/term.zig");
 const snapshot = @import("../operations/snapshot.zig");
 const view = @import("../operations/view.zig");
+const plugin_operations = @import("../operations/plugin.zig");
 const plugin_types = @import("../sdk/plugin/types.zig");
 
-pub const plugins = contract.Merged(@import("plugins").all);
+pub const native_plugins = contract.Merged(@import("native_plugins").all);
 
 const core_operations = heartbeat.operations ++ project.operations ++ custom_fields.operations ++
     user.operations ++
@@ -29,7 +30,7 @@ const core_operations = heartbeat.operations ++ project.operations ++ custom_fie
     role.operations ++
     content_type.operations ++
     record.operations ++ taxonomy.operations ++ term.operations ++ snapshot.operations ++
-    view.operations;
+    view.operations ++ plugin_operations.operations;
 const core_namespaces = [_]sdk.operation.Namespace{
     heartbeat.namespace,
     project.namespace,
@@ -45,33 +46,36 @@ const core_namespaces = [_]sdk.operation.Namespace{
     term.namespace,
     snapshot.namespace,
     view.namespace,
+    plugin_operations.namespace,
 };
 
 pub const registry: sdk.Registry = .{
-    .operations = &core_operations ++ plugins.merged_operations,
-    .namespaces = &core_namespaces ++ plugins.merged_namespaces,
-    .policies = plugins.merged_policies,
-    .middleware = &project.middleware ++ plugins.merged_middleware,
-    .schemas = plugins.merged_schemas,
-    .roles = plugins.merged_roles,
+    .operations = &core_operations ++ native_plugins.merged_operations,
+    .namespaces = &core_namespaces ++ native_plugins.merged_namespaces,
+    .policies = native_plugins.merged_policies,
+    .middleware = &project.middleware ++ native_plugins.merged_middleware,
+    .schemas = native_plugins.merged_schemas,
+    .roles = native_plugins.merged_roles,
     .bootstrap = &bootstrap,
 };
 
 pub const SDK = sdk.SDK(registry);
 
 pub const Statuses = status_registry.Registry(
-    &status_registry.core_statuses ++ plugins.merged_statuses,
-    &status_registry.core_transitions ++ plugins.merged_transitions,
+    &status_registry.core_statuses ++ native_plugins.merged_statuses,
+    &status_registry.core_transitions ++ native_plugins.merged_transitions,
 );
 
-pub const Kinds = kind_registry.Registry(&kind_registry.core ++ plugins.merged_field_kinds);
+pub const Kinds = kind_registry.Registry(&kind_registry.core ++ native_plugins.merged_field_kinds);
 
-pub const Filters = filter_registry.Registry(&filter_registry.core ++ plugins.merged_filters);
+pub const Filters = filter_registry.Registry(
+    &filter_registry.core ++ native_plugins.merged_filters,
+);
 
-pub const Roles = role_registry.Registry(plugins.merged_roles);
+pub const Roles = role_registry.Registry(native_plugins.merged_roles);
 
-/// The sign-in providers the compiled-in plugins declare, offered or not.
-pub const sign_in_providers = plugins.merged_sign_in_providers;
+/// The sign-in providers the native plugins declare, offered or not.
+pub const sign_in_providers = native_plugins.merged_sign_in_providers;
 
 /// Once the schema is applied: the declared types and fields, then each plugin's own
 /// `bootstrap`, as the system, in name order.
@@ -80,7 +84,7 @@ fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
     @import("std").debug.assert(ctx.db.transaction_depth == 0);
     try plugin_types.apply_all(ctx);
 
-    inline for (plugins.all) |Plugin| {
+    inline for (native_plugins.all) |Plugin| {
         if (@hasDecl(Plugin, "bootstrap")) {
             try Plugin.bootstrap(ctx);
         }

@@ -97,7 +97,7 @@ middleware (`request.user()`).
 }
 ```
 
-A role named there that neither core nor a compiled-in plugin declares fails the build.
+A role named there that neither core nor a built-in plugin declares fails the build.
 
 ## A template
 
@@ -358,7 +358,7 @@ long as the request. The answers are `redirect(url)` (a `303` to a path on the d
 any URL), `respond(status, html)` and `json(value)`.
 
 The file is Zig, compiled into the binary with the app: it imports `publr` and every
-compiled-in plugin by its name (`@import("<name>")`). An app without one builds as before,
+built-in plugin by its name (`@import("<name>")`). An app without one builds as before,
 and nothing runs. An app built to files and served elsewhere (`publr build` to a CDN) has
 no middleware.
 

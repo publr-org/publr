@@ -48,6 +48,7 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         .auth = &application.auth,
         .io = init.io,
         .static_dir = browser_dir,
+        .sandboxed_plugins = application.sandboxed(),
     };
     const first_port = port orelse if (browser_dir != null) browser_port_default else port_default;
     const search_span: u16 = if (port == null) port_search_max else 0;

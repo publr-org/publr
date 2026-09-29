@@ -14,7 +14,7 @@ pub const version_len = fingerprint.version_len;
 pub const assets_max = fingerprint.assets_max;
 pub const minify = spec_module.minify;
 pub const output_dir_default = "output";
-pub const apps_dir_default = "apps";
+pub const apps_dir_default = spec_module.public_dir;
 pub const base_url_default = "http://127.0.0.1:8080";
 pub const url_len_max: u32 = 2048;
 

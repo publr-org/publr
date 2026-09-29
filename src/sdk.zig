@@ -10,6 +10,9 @@ pub const authorize = @import("sdk/authorize.zig");
 pub const middleware = @import("sdk/middleware.zig");
 pub const delivery = @import("sdk/delivery.zig");
 pub const provider = @import("sdk/provider.zig");
+pub const sandboxed_plugins = @import("sdk/sandboxed_plugins.zig");
+pub const plugin_access = @import("sdk/plugin_access.zig");
+pub const call_json = @import("sdk/call_json.zig");
 
 pub const Caller = caller.Caller;
 pub const Ctx = context.Ctx;
@@ -136,29 +139,65 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         fn admit(ctx: *Ctx, comptime Operation: type, in: Operation.In) Error!Grant {
-            inline for (registry.middleware) |Middleware| {
-                if (Middleware.stage == .pre) {
-                    try invoke_hook(ctx, Middleware, .{Operation.name});
-                }
-            }
+            std.debug.assert(ctx.parent != null);
+            std.debug.assert(ctx.now_ms >= 0);
 
-            const request: authorize.Request = .{
+            try run_pre_hooks(ctx, Operation.name);
+
+            return authorize_request(ctx, .{
                 .operation_name = Operation.name,
                 .kind = Operation.kind,
                 .resource = operation.resource_of(in),
                 .open = @hasDecl(Operation, "open") and Operation.open,
-            };
+            });
+        }
+
+        /// The core policy, every plugin's policy, and the roles, for one request.
+        pub fn authorize_request(ctx: *Ctx, request: authorize.Request) Error!Grant {
+            std.debug.assert(request.operation_name.len > 0);
+            std.debug.assert(registry.policies.len <= authorize.policies_max);
+
             const granted = try authorize.authorize(
                 ctx,
                 request,
                 registry.policies,
-                registry.roles,
+                roles_in_force(ctx),
             );
 
             std.debug.assert(granted.allows());
-            std.debug.assert(!(granted.read_only and Operation.kind == .write));
+            std.debug.assert(!(granted.read_only and request.kind == .write));
 
             return granted;
+        }
+
+        /// The build's roles, with what installed plugins declare merged in.
+        fn roles_in_force(ctx: *const Ctx) []const role.Role {
+            std.debug.assert(registry.roles.len > 0);
+
+            const sandboxed = ctx.sandboxed_plugins orelse return registry.roles;
+            const merged = sandboxed.roles() orelse return registry.roles;
+
+            std.debug.assert(merged.len >= registry.roles.len);
+
+            return merged;
+        }
+
+        /// Runs the pre hooks every native plugin holds, before authorization.
+        pub fn run_pre_hooks(ctx: *Ctx, name: []const u8) Error!void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.parent != null);
+
+            inline for (registry.middleware) |Middleware| {
+                if (Middleware.stage == .pre) {
+                    try invoke_hook(ctx, Middleware, .{name});
+                }
+            }
+        }
+
+        /// Calls an operation by name with JSON in and out: a built-in one, or one a
+        /// installed plugin brings. What a sandboxed plugin's `publr_call` reaches.
+        pub fn call_json(ctx: *Ctx, name: []const u8, input: []const u8) Error![]const u8 {
+            return @import("sdk/call_json.zig").call(@This(), ctx, name, input);
         }
 
         /// Whether the caller may call `Operation` at all, whatever the input: what a page
@@ -259,6 +298,12 @@ pub fn SDK(comptime registry: Registry) type {
                 }
             }
 
+            if (ctx.sandboxed_plugins) |sandboxed| {
+                if (sandboxed.hooked(.before, Operation.name)) {
+                    input = try runtime_before(ctx, sandboxed, Operation, input);
+                }
+            }
+
             const out = try execute(ctx, Operation, input, granted);
 
             inline for (registry.middleware) |Middleware| {
@@ -266,6 +311,12 @@ pub fn SDK(comptime registry: Registry) type {
 
                 if (applies and Middleware.stage == .after) {
                     try invoke_hook(ctx, Middleware, .{ &input, &out });
+                }
+            }
+
+            if (ctx.sandboxed_plugins) |sandboxed| {
+                if (sandboxed.hooked(.after, Operation.name)) {
+                    try runtime_after(ctx, sandboxed, Operation, input, out);
                 }
             }
 
@@ -348,15 +399,53 @@ pub fn SDK(comptime registry: Registry) type {
             return @call(.auto, Middleware.run, .{ctx} ++ args);
         }
 
-        fn emit_notice(ctx: *Ctx, notice: Event.Notice) void {
+        /// An installed plugin's `before` hook sees the input as JSON and may hand back another.
+        fn runtime_before(
+            ctx: *Ctx,
+            sandboxed: *const sandboxed_plugins.SandboxedPlugins,
+            comptime Operation: type,
+            in: Operation.In,
+        ) Error!Operation.In {
+            std.debug.assert(ctx.parent != null);
+            std.debug.assert(Operation.name.len > 0);
+
+            const input = try stringify(ctx.arena, in);
+            const changed = try sandboxed.before(ctx, Operation.name, input);
+
+            return json_module.parse(Operation.In, ctx.arena, changed, .{
+                .allocate = .alloc_always,
+            }) catch error.Invalid;
+        }
+
+        fn runtime_after(
+            ctx: *Ctx,
+            sandboxed: *const sandboxed_plugins.SandboxedPlugins,
+            comptime Operation: type,
+            in: Operation.In,
+            out: Operation.Out,
+        ) Error!void {
+            std.debug.assert(ctx.parent != null);
+            std.debug.assert(Operation.name.len > 0);
+
+            const input = try stringify(ctx.arena, in);
+            const output = try stringify(ctx.arena, out);
+
+            try sandboxed.after(ctx, Operation.name, input, output);
+        }
+
+        pub fn emit_notice(ctx: *Ctx, notice: Event.Notice) void {
             std.debug.assert(notice.name.len > 0);
             std.debug.assert(notice.operation_id != 0);
             emit(ctx, .{ .notice = notice });
         }
 
-        fn emit(ctx: *Ctx, event: Event) void {
+        pub fn emit(ctx: *Ctx, event: Event) void {
             std.debug.assert(ctx.next_operation_id > 1);
             std.debug.assert(registry.middleware.len <= middleware.middleware_max);
+
+            if (ctx.sandboxed_plugins) |sandboxed| {
+                sandboxed.event(ctx, event);
+            }
 
             inline for (registry.middleware) |Middleware| {
                 if (Middleware.stage == .on) {
@@ -370,6 +459,16 @@ pub fn SDK(comptime registry: Registry) type {
             }
         }
     };
+}
+
+const json_module = @import("lib/json.zig");
+
+pub fn stringify(arena: std.mem.Allocator, value: anytype) Error![]const u8 {
+    const text = std.json.Stringify.valueAlloc(arena, value, .{}) catch return error.OutOfMemory;
+
+    std.debug.assert(text.len > 0);
+
+    return text;
 }
 
 fn validate_registry(comptime registry: Registry) void {

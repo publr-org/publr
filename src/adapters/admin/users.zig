@@ -419,7 +419,7 @@ fn choices_of(
     return choices;
 }
 
-/// The roles' labels, comma-separated; a name no compiled-in code declares shows as is.
+/// The roles' labels, comma-separated; a name no native code declares shows as is.
 fn labels_of(arena: std.mem.Allocator, held: []const []const u8) Error![]const u8 {
     std.debug.assert(held.len <= model.role.user_roles_max);
     std.debug.assert(registry.Roles.all.len > 0);

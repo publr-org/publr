@@ -1,24 +1,29 @@
 # Plugins
 
 Publr has two ways to run a plugin. Both use the same SDK. The difference is
-where the plugin lives and who decides that it is there.
+where the plugin lives and who decides that it is there: every plugin is either
+**built-in** (compiled into the binary, locked: it cannot be disabled) or **installed**
+(loaded at runtime into the sandbox: enabled, disabled and removed from the admin). The same
+source builds either way. In the code a plugin's mode is `native` or `sandboxed`, and what
+its operations and hooks take (`*PluginCtx`) is `HostApi` for a native one (direct calls,
+full access) or `SandboxApi` for a sandboxed one (every call a message to the host).
 
 ```mermaid
 flowchart LR
     subgraph Binary["Publr binary"]
         Core[Publr core]
-        CI1[Compiled-in plugin]
-        CI2[Compiled-in plugin]
+        CI1[Built-in plugin]
+        CI2[Built-in plugin]
     end
     subgraph Sandboxes["WebAssembly sandboxes"]
         subgraph S0["sandbox"]
             SDK[SDK proxy]
         end
         subgraph S1["sandbox"]
-            RP1[Runtime plugin]
+            RP1[Installed plugin]
         end
         subgraph S2["sandbox"]
-            RP2[Runtime plugin]
+            RP2[Installed plugin]
         end
     end
     Core --- CI1
@@ -28,9 +33,9 @@ flowchart LR
     SDK <--> RP2
 ```
 
-## Compiled-in plugins
+## Built-in plugins
 
-A compiled-in plugin is placed into the Publr binary by a developer or a
+A built-in plugin is placed into the Publr binary by a developer or a
 build tool. The result is a tailored Publr: one binary with every battery
 someone decided to put inside.
 
@@ -45,7 +50,7 @@ makes this setup very safe and resilient.
 
 Two things follow from being inside the binary:
 
-- **Full access.** A compiled-in plugin can reach the whole Publr API and any
+- **Full access.** A built-in plugin can reach the whole Publr API and any
   internals. Whoever builds the binary is responsible for checking it.
 - **Deep integrations are possible.** Some plugins must be compiled in because
   they need things the SDK does not expose to the outside: swapping the
@@ -53,11 +58,11 @@ Two things follow from being inside the binary:
   advanced hooks.
 
 A plugin that uses only the public SDK can be shipped both ways: compiled in,
-or as a runtime plugin.
+or as an installed plugin.
 
-## Runtime plugins (DLP)
+## Installed plugins (DLP)
 
-Runtime plugins are the opposite. They are added from the admin, without
+Installed plugins are the opposite. They are added from the admin, without
 recompiling anything. Think of them as dynamically linked plugins, in the
 spirit of DLLs, hence DLP.
 
@@ -82,33 +87,103 @@ flowchart LR
     Proxy <--> P3
 ```
 
-Each runtime plugin is a precompiled WebAssembly module running in its own
+Each installed plugin is a precompiled WebAssembly module running in its own
 sandbox. It never touches Publr directly: every call goes through the SDK
 proxy, which dispatches through the same operation pipeline everything else uses. That gives:
 
 - **An enforced boundary.** The plugin can only do what the SDK exposes and
-  what its permission scopes allow.
+  what an administrator granted it.
 - **Isolation.** A buggy plugin cannot crash Publr or read another plugin's
-  memory.
-- **No recompilation.** Install, update or remove a plugin from the admin,
-  from a marketplace or a repository, and it just works. Publr stays one
-  binary.
+  memory. A call that loops or grows past its limits stops, and only that call fails.
+- **No recompilation.** Install, update or remove a plugin from the admin or
+  the CLI, and it just works. Publr stays one binary.
+
+Installed plugins are managed under Settings > Plugins in the admin, and with `publr plugin`
+([CLI](cli/plugin.md)). The Built-in tab lists the built-in plugins beside them, read
+only: a build puts those there, and only a new build changes them. Added, an installed plugin
+is listed and runs nothing; **enabling** it shows what it asks
+for and starts it; disabling stops it and keeps what it was granted. What it does, it
+does as itself: every call it makes is authorized as the plugin, with the permissions it
+holds now. When it acts for someone (an editor calling its operation, a hook on their
+save), each call gets the narrower of its permissions and that person's roles.
+
+A newer module for a plugin already there does not replace it: it waits as the
+plugin's next version. **Updating** shows what the new version asks for beside what the
+plugin holds, then runs it; the version it replaces is kept, and **rolling back** returns
+to it (and keeps the other in turn). A module that does not load in the sandbox is never
+added.
+
+### Permissions
+
+A plugin asks for permissions by key, each with its own reason. The administrator sees
+the sentence, the reason, the key and a tier before enabling it:
+
+| Tier | On enabling | Examples |
+|---|---|---|
+| Low | granted | `content.read`, `schema.read`, `users.names`, a hook that sees an event |
+| Medium | granted, listed | `content.write`, `content.drafts`, `release.manage`, a hook that changes an input |
+| High | pending until approved | `users.read`, `users.write`, `content.purge`, `settings.global`, a raised limit |
+
+Some operations no permission names, so no plugin ever reaches them: signing in and out,
+passwords and set-password links, who may sign people in, setup, roles, saved views. A
+plugin always reaches its own operations (`<name>.*`, `app.<name>.*`) and its own content
+types' records without asking. Content permissions are held to its **content access**:
+public types (the default), every type, or the ones the administrator ticks.
+
+Anything granted can be revoked at any time, one at a time; the plugin's next call
+answers `Denied` and it must carry on without. A key nothing installed provides is shown
+as unavailable: the plugin runs without it.
+
+### Limits
+
+Every call into a plugin runs within limits: 100 ms of CPU (counted in instructions),
+16 MiB of memory, 1,000 calls of its own, 1 MiB of output. A plugin that needs more asks
+in its manifest, with a reason; each raised limit is a high-tier request.
+
+## Writing an installed plugin
+
+An installed plugin is written exactly like a built-in one, against the same SDK, with
+`*PluginCtx` operations and hooks. On top, it declares what it asks for:
+
+```zig
+pub const permissions = [_]publr.plugin.Permission{
+    .{ .key = "users.names", .reason = "Greets the people on the site by name" },
+};
+pub const limits: publr.plugin.Limits = .{ .cpu_ms = 2000, .reason = "Resizes images" };
+pub const content_access: publr.plugin.ContentAccess = .{
+    .recommend = .all,
+    .note = "Indexes every type for search",
+};
+pub const requires = [_][]const u8{"newsletter"};
+```
+
+Each hook carries its reason (`pub const reason = "..."`); an event hook names the event
+it sees (`pub const event = "record.published"`), an operation or a notice. `zig build
+plugins` builds every plugin under `plugins/` (`-Dsandboxed-plugins` names another folder) into
+`zig-out/sandboxed-plugins/<name>.wasm`, its manifest written into the module; see
+[Build](build.md#the-plugins). A plugin never writes `export fn`.
+
+Not everything a built-in plugin declares runs in the sandbox yet: operations,
+before, after and event hooks, content types, custom fields and roles do; a role from a
+plugin grants only its own operations. Policies, pre hooks, field kinds, statuses,
+filters and delivery gates come later; `schema_sql`, `bootstrap`, sign-in providers and
+`native_only` never do. The build says which one stops it.
 
 ## Which one to pick
 
-| | Compiled-in | Runtime (DLP) |
+| | Built-in | Installed (DLP) |
 |---|---|---|
 | Added by | developer or build tool | admin, marketplace, repository |
 | Needs a rebuild | yes | no |
-| Access | full, trusted | SDK only, within its scopes |
+| Access | full, trusted | SDK only, within its permissions |
 | Isolation | none, it is part of the binary | sandboxed |
-| Can be removed by the user | no | yes |
+| Can be disabled or removed by the user | no | yes |
 | Deep integrations (database, cache, ...) | yes | no |
 | Uses only the public SDK | works | works |
 
-## Writing a compiled-in plugin
+## Writing a built-in plugin
 
-A plugin is one directory under `plugins/` with a `main.zig`. It imports one
+A plugin is one directory under `native-plugins/` with a `main.zig`. It imports one
 thing, `publr`, and declares what it brings: a manifest (name, version,
 summary), documented namespaces, operations exactly like the core's, policies,
 hooks, statuses, field kinds, content types, roles (see below), delivery gates (who
@@ -128,8 +203,8 @@ redeclaration. Its records get validation, permissions, listing, filtering
 and the admin for free. History goes into
 snapshots (`snapshot take/list/prune`, kinds of the plugin's own); parked
 copies of a document go into slots (`record get --slot`), like the core's
-`pending`. Only a compiled-in plugin that truly needs its own table
-(`compiled_in_only`) may ship `schema_sql`.
+`pending`. Only a built-in plugin that truly needs its own table
+(`native_only`) may ship `schema_sql`.
 
 A plugin can declare roles (`pub const roles = [_]publr.plugin.Role{...}`): a name, a
 label and grants, each an operation or a namespace ending in `.*`. A name of its own is
@@ -163,7 +238,7 @@ The contract is checked when the binary compiles: a missing manifest, a bad
 name, an undocumented operation, a hook on an operation that does not exist,
 two plugins with the same name, all stop the build with a message naming the
 plugin. Plugins are applied in name order, always. Tests live next to the code
-and run with `zig build test`. The `plugins/` directory is yours: Publr's own
+and run with `zig build test`. The `native-plugins/` directory is yours: Publr's own
 repository does not track it, so a fork can commit its plugins alongside the
-core. `-Dplugins=<dir>` builds from another folder instead; a link in it counts,
+core. `-Dnative-plugins=<dir>` builds from another folder instead; a link in it counts,
 so one folder can gather plugins kept elsewhere.

@@ -43,7 +43,7 @@ const tags_definition =
 /// types; the issuer `sign_on` trusts; a live record that anyone may read and that has a
 /// revision behind it, a second live record with edits parked in `pending`, and a draft
 /// still waiting to be published.
-pub fn fill(ctx: *Ctx) Error!void {
+pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     std.debug.assert(ctx.caller == .system);
     std.debug.assert(ctx.db.transaction_depth == 0);
 
@@ -59,6 +59,7 @@ pub fn fill(ctx: *Ctx) Error!void {
     try fill_views(ctx);
     try fill_sign_on(ctx);
     try fill_identities(ctx);
+    try fill_plugins(ctx, dir);
 
     const custom = publr.operations.custom_fields;
     _ = try SDK.dispatch(ctx, custom.Update, .{
@@ -68,6 +69,62 @@ pub fn fill(ctx: *Ctx) Error!void {
             custom.Destination.user.definition(),
         ),
     });
+}
+
+/// The modules the plugin examples and the world add, beside the database's folder:
+/// `greeter-0.2.0.wasm` for `plugin add`, and the copies the world adds from.
+pub fn upload_plugins(io: std.Io, dir: []const u8) !void {
+    std.debug.assert(dir.len > 0);
+    std.debug.assert(std.fs.path.isAbsolute(dir));
+
+    var folder = try std.Io.Dir.cwd().openDir(io, dir, .{});
+    defer folder.close(io);
+
+    const files = [_]struct { name: []const u8, bytes: []const u8 }{
+        .{ .name = "greeter-0.2.0.wasm", .bytes = @embedFile("sandboxed_plugin_greeter_next") },
+        .{ .name = "world-greeter.wasm", .bytes = @embedFile("sandboxed_plugin_greeter") },
+        .{
+            .name = "world-greeter-next.wasm",
+            .bytes = @embedFile("sandboxed_plugin_greeter_next"),
+        },
+        .{ .name = "world-farewell.wasm", .bytes = @embedFile("sandboxed_plugin_farewell") },
+    };
+
+    for (files) |file| {
+        try folder.writeFile(io, .{ .sub_path = file.name, .data = file.bytes });
+    }
+}
+
+/// `greeter` enabled, updated to 0.2.0 and rolled back, with 0.2.0 offered again; `farewell`
+/// added and disabled. Adding from a path is the local operator's.
+fn fill_plugins(ctx: *Ctx, dir: []const u8) Error!void {
+    std.debug.assert(ctx.caller == .user);
+    std.debug.assert(ctx.sandboxed_plugins != null);
+
+    const plugin_operations = publr.operations.plugin;
+    const admin = ctx.caller;
+    const greeter = try path_in(ctx, dir, "world-greeter.wasm");
+    const next = try path_in(ctx, dir, "world-greeter-next.wasm");
+
+    ctx.caller = .system;
+    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{ .file = greeter });
+    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{ .file = next });
+    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{
+        .file = try path_in(ctx, dir, "world-farewell.wasm"),
+    });
+    ctx.caller = admin;
+    _ = try SDK.dispatch(ctx, plugin_operations.Enable, .{ .name = "greeter" });
+    _ = try SDK.dispatch(ctx, plugin_operations.Update, .{ .name = "greeter" });
+    _ = try SDK.dispatch(ctx, plugin_operations.Rollback, .{ .name = "greeter" });
+    ctx.caller = .system;
+    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{ .file = next });
+    ctx.caller = admin;
+}
+
+fn path_in(ctx: *Ctx, dir: []const u8, name: []const u8) Error![]const u8 {
+    std.debug.assert(name.len > 0);
+
+    return std.fs.path.join(ctx.arena, &.{ dir, name }) catch error.OutOfMemory;
 }
 
 /// The taxonomies the examples name: `topics` (hierarchical, with a published root, a

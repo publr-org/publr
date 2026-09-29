@@ -14,7 +14,7 @@ pub const namespace: sdk.operation.Namespace = .{
     \\A role is data: a name, a label and grants. A grant names an operation
     \\(`record.save`), a namespace and everything under it (`record.*`,
     \\`app.newsletter.*`) or everything (`*`); a grant starting with `!` takes names
-    \\back from the role. Core declares `admin` and `editor`; each compiled-in plugin
+    \\back from the role. Core declares `admin` and `editor`; each built-in plugin
     \\declares its own, or adds grants to one that exists. An account holds one or more
     \\roles and may call what any of them grants. Only an account that may call one of
     \\the admin's operations (anything outside `app.*`) gets into the admin.

@@ -9,6 +9,7 @@ const tidy = @import("build/tidy.zig");
 const wasm = @import("build/wasm.zig");
 const apps = @import("build/apps.zig");
 const tests = @import("build/tests.zig");
+const sandboxed_plugins = @import("build/sandboxed_plugins.zig");
 
 pub fn build(builder: *std.Build) void {
     const target = builder.standardTargetOptions(.{});
@@ -24,7 +25,9 @@ pub fn build(builder: *std.Build) void {
         .root_module = core.add_entry(builder, "src/main.zig", library),
     });
     const run_cmd = builder.addRunArtifact(exe);
-    const checks = tests.add(builder, target, optimize, from, library);
+    const stubs = sandboxed_plugins.stubs_of(builder, builder.dependency("publr_wasm", .{}));
+    const fixture_plugins = sandboxed_plugins.add(builder, sandboxed_plugins.fixture_dir, stubs);
+    const checks = tests.add(builder, target, optimize, from, library, fixture_plugins);
     const fmt_check = builder.addFmt(.{
         .paths = &.{ "build.zig", "build", "src", "scripts" },
         .check = true,
@@ -47,9 +50,14 @@ pub fn build(builder: *std.Build) void {
     verify_step.dependOn(wasm.add_check(builder, from));
     verify_step.dependOn(&fmt_check.step);
     verify_step.dependOn(tidy.add_check(builder));
-    verify_step.dependOn(smoke.add_check(builder, checks.fixture_exe, exe));
+    verify_step.dependOn(smoke.add_check(
+        builder,
+        checks.fixture_exe,
+        exe,
+        fixture_plugins.file_of("greeter"),
+    ));
 
-    const parity_step = parity.add_check(builder, exe, library);
+    const parity_step = parity.add_check(builder, exe, library, fixture_plugins);
 
     verify_step.dependOn(parity_step);
 
@@ -64,6 +72,7 @@ pub fn build(builder: *std.Build) void {
         verify_step.dependOn(local_hook);
     }
 
+    sandboxed_plugins.add_step(builder, stubs, from.sandboxed_plugins_dir);
     vendors.add_import_step(builder);
     vendors.add_cache_check_step(builder);
 }

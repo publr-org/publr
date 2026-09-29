@@ -1,0 +1,101 @@
+import { Layout } from "../layouts/Layout.ptsx";
+import { EditorColumn } from "../components/EditorColumn.ptsx";
+import { PluginRequests } from "../components/PluginRequests.ptsx";
+import { ContentAccess } from "../components/ContentAccess.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type PluginReviewProps = {
+  user_name: string;
+  user_email: string;
+  can_structure?: boolean;
+  can_settings?: boolean;
+  csrf: string;
+  nav: JSX.Element;
+  title: string;
+  summary: string;
+  /** Where Allow posts, and what it says: Allow & Enable, or Allow & Update. */
+  action: string;
+  allow_label: string;
+  /** Where Cancel goes, leaving everything as it is. */
+  cancel_href: string;
+  /** On an update: a post that drops the newer version; empty otherwise. */
+  discard_action: string;
+  /** The heading over `requests`: what installing asks, or an update's new permissions. */
+  requests_title: string;
+  /** What the plugin asks for that it does not hold, low to high. */
+  requests: Array<{
+    key: string;
+    sentence: string;
+    reason: string;
+    tier: string;
+    state: string;
+    note: string;
+    can_grant: boolean;
+    can_revoke: boolean;
+    can_deny: boolean;
+  }>;
+  /** On an update, what it holds already. */
+  granted: Array<{
+    key: string;
+    sentence: string;
+    reason: string;
+    tier: string;
+    state: string;
+    note: string;
+    can_grant: boolean;
+    can_revoke: boolean;
+    can_deny: boolean;
+  }>;
+  /** What allowing grants, in a sentence. */
+  note_text: string;
+  /** Whether it asks for content: then the content access choice comes with enabling. */
+  show_access: boolean;
+  scope: string;
+  recommend: string;
+  note: string;
+  types: Array<{ handle: string; name: string; checked: boolean }>;
+};
+
+/** What enabling or updating a plugin grants, before it is done: every request with the
+ * plugin's reason and tier, low to high. */
+export function PluginReview({
+  user_name, user_email, can_structure = true, can_settings = true, csrf, nav, title, summary, action, allow_label,
+  cancel_href, discard_action, requests_title, requests, granted, note_text, show_access, scope, recommend, note, types,
+}: PluginReviewProps) {
+  return (
+    <Layout title={title} section="settings" crumb_label="Plugins" crumb_href="/admin/settings/plugins"
+      sidebar={nav} user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
+      <EditorColumn>
+        <PageHeader title={title} description={summary} back_label="Plugins" back_href="/admin/settings/plugins" />
+        <div class="mt-6 space-y-6">
+          <SectionTitle title={requests_title} />
+          {requests.length > 0 ? (
+            <PluginRequests csrf={csrf} action="" requests={requests} />
+          ) : (
+            <Text as="p" variant="body-sm" tone="muted">Nothing beyond its own operations and content types.</Text>
+          )}
+          {granted.length > 0 && <SectionTitle title="Already granted" />}
+          {granted.length > 0 && <PluginRequests csrf={csrf} action="" requests={granted} />}
+          <Text as="p" variant="body-sm" tone="muted">{note_text}</Text>
+          <form method="post" action={action} class="space-y-5">
+            <input type="hidden" name="csrf" value={csrf} />
+            {show_access && <ContentAccess scope={scope} recommend={recommend} note={note} types={types} />}
+            <div class="flex flex-wrap items-center gap-2">
+              <Button type="submit">{allow_label}</Button>
+              {cancel_href !== "" && <Button href={cancel_href} hierarchy="tertiary">Cancel</Button>}
+            </div>
+          </form>
+          {discard_action !== "" && (
+            <form method="post" action={discard_action}>
+              <input type="hidden" name="csrf" value={csrf} />
+              <Button type="submit" hierarchy="secondary" intent="destructive">Discard this version</Button>
+            </form>
+          )}
+        </div>
+      </EditorColumn>
+    </Layout>
+  );
+}

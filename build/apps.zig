@@ -104,7 +104,7 @@ fn app_module(
     return module;
 }
 
-/// The app's `middleware.zig`, compiled in: it imports `publr` and every compiled-in plugin
+/// The app's `middleware.zig`, compiled in: it imports `publr` and every native plugin
 /// by name. An app without one gets an empty stand-in, and nothing runs.
 fn middleware(
     builder: *std.Build,
@@ -127,7 +127,8 @@ fn middleware(
         .target = library.resolved_target,
         .optimize = library.optimize,
     });
-    const plugins = library.import_table.get("plugins") orelse @panic("plugins not added");
+    const plugins = library.import_table.get("native_plugins") orelse
+        @panic("native plugins not added");
 
     module.addImport("publr", library);
 

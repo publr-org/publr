@@ -23,6 +23,7 @@ pub const tables = [_][]const u8{
     "snapshots",
     "views",
     "field_groups",
+    "sandboxed_plugins",
 };
 
 pub fn apply(connection: *db.Db) db.Error!void {

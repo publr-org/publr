@@ -110,8 +110,12 @@ runnable example.
 | [`status`](cli/status.md) | The lifecycle states a record can be in |
 | [`snapshot`](cli/snapshot.md) | Frozen copies of records: revisions and other archives |
 | [`view`](cli/view.md) | Saved views: the content list's filters, named and kept per user |
+| [`plugin`](cli/plugin.md) | Installed plugins: install from a file, grant, update, remove |
 
 Plugins add namespaces of their own (for example `revisions`), listed by
-`publr --help` and documented by `publr <namespace> --help` like the core. What an app
+`publr --help` and documented by `publr <namespace> --help` like the core. A runtime
+plugin's operations are commands too once it is installed (`publr greeter greet --note
+hi`), their flags read by the field shapes in its manifest; `publr greeter greet --help`
+lists them. What an app
 calls is namespaced `app.<feature>`: `publr app.newsletter subscribe`.
 

@@ -1,0 +1,71 @@
+import { Button } from "@publr/ui/Button.ptsx";
+import { Publr } from "publr-jsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export const state = Publr.reactive({ busy: false, note: "", csrf: "" });
+export const input_ref = Publr.ref<HTMLInputElement>();
+
+export function base64_of(bytes: Uint8Array): string {
+  let text = "";
+  for (let index = 0; index < bytes.length; index += 1) text += String.fromCharCode(bytes[index]);
+  return btoa(text);
+}
+
+export async function send(file: File, csrf: string): Promise<{ name: string; update: boolean }> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  // A piece small enough that it, base64, and its request fit the server's request size.
+  const piece_bytes = 32 * 1024;
+  let offset = 0;
+  do {
+    const piece = bytes.subarray(offset, offset + piece_bytes);
+    const last = offset + piece.length >= bytes.length;
+    const response = await fetch("/api/plugin/upload", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf },
+      body: JSON.stringify({ file: file.name, offset, data: base64_of(piece), last }),
+    });
+    if (!response.ok) {
+      const answer = await response.json().catch(() => ({ error: "" }));
+      throw new Error(answer.message ?? answer.error ?? `stopped at ${offset} bytes`);
+    }
+    offset += piece.length;
+    state.note = `Uploading… ${Math.round((offset / bytes.length) * 100)}%`;
+    if (last) return (await response.json()).added;
+  } while (offset < bytes.length);
+  throw new Error("the file is empty");
+}
+
+export const choose = () => input_ref.current?.click();
+
+export const upload = async (event: Event) => {
+  const file = (event.currentTarget as HTMLInputElement).files?.[0];
+  if (!file) return;
+  state.busy = true;
+  state.note = "Uploading…";
+  try {
+    const added = await send(file, state.csrf);
+    const page = added.update ? "update" : "enable";
+    window.location.href = `/admin/settings/plugins/${added.name}/${page}`;
+  } catch (error) {
+    state.note = `Not uploaded: ${(error as Error).message}`;
+  } finally {
+    state.busy = false;
+  }
+};
+
+export type UploadPluginProps = { csrf: string };
+
+/** Sends a plugin's .wasm file in pieces, then opens its enabling, or the review of the
+ * update when the plugin is already there. */
+export function UploadPlugin({ csrf }: UploadPluginProps) {
+  state.csrf = csrf;
+
+  return (
+    <div class="flex items-center gap-3" data-part="upload-plugin">
+      <input type="file" accept=".wasm" class="hidden" ref={input_ref} onChange={upload} />
+      <Button onClick={choose} disabled={state.busy}>Upload plugin</Button>
+      <Text as="span" variant="body-sm" tone="muted">{state.note}</Text>
+    </div>
+  );
+}

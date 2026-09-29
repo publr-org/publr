@@ -9,9 +9,10 @@ each concern lives in `build/<topic>.zig`.
 |---|---|
 | `zig build` | Build `zig-out/bin/publr` with the apps under `apps/` (none in this repository) and check they compile (`publr check-apps`). |
 | `zig build run -- <args>` | Build and run. |
-| `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every plugin under `plugins/`, and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
+| `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every native plugin under `native-plugins/`, and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
 | `zig build verify` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `browser`. Run before calling anything done. |
 | `zig build parity` | Run the example every `--help` prints and check its answer. |
+| `zig build sandboxed-plugins` | Build the plugins under `-Dsandboxed-plugins` as installed plugins into `zig-out/plugins/<name>.wasm`; see [The plugins](#the-plugins). |
 | `zig build browser` | Build the browser target into `zig-out/browser/` (`publr.wasm`, `index.html`, `publr-worker.js`); see [Publr in the browser](browser.md). |
 | `zig build vendor-import` | Re-import `vendor/` from local upstream archives (`-Darchives=<dir>`, default `.vendor-archives/`). |
 | `zig build vendor-cache-check` | Prove a no-op build recompiles no vendor C. |
@@ -25,13 +26,15 @@ each concern lives in `build/<topic>.zig`.
 | `-Dbrowser-debug=true` | `false` | `browser` (Debug wasm with panic messages) |
 | `-Dapps=<dir>` | `apps` | the folder of apps compiled in, relative to this repository; absent is none (`build/apps.zig`) |
 | `-Dapps-max=<n>` | `32` | how many apps one project may compile in, 1 to 1024 |
-| `-Dplugins=<dir>` | `plugins` | the folder of compiled-in plugins, relative to this repository |
+| `-Dnative-plugins=<dir>` | `native-plugins` | the folder of native plugins (built-in, in the admin), relative to this repository |
+| `-Dsandboxed-plugins=<dir>` | `plugins` | the folder of plugins `zig build sandboxed-plugins` builds for the sandbox, relative to this repository |
+| `-Dpreset=<dir>` | none | a project's parts at once: `<dir>/apps`, `<dir>/native-plugins` and `<dir>/sandboxed-plugins` (each option above still wins); the binary reads the apps' `public/` files from `<dir>/apps` wherever it runs, instead of `./apps` |
 
 ## Vendors and libraries
 
 stb and libwebp are vendored **as-is** under `vendor/` and compiled once into
 a static library per target (`ReleaseFast`, always). Zig's cache keeps it
-built between runs. There is no package manager: to update, download the
+built between runs. There is no plugin manager: to update, download the
 upstream archive, verify its checksum or signature by hand, place it in
 `.vendor-archives/`, run `zig build vendor-import`, review the diff. Each
 `vendor/<name>/VERSION.zon` records the upstream, archive name and SHA-256.
@@ -54,7 +57,7 @@ toolbar, the PublrJS runtime from `../publr-js/dist` and the stores of its inter
 components) as its `/_app/*` assets, `app.zon`, `public/style.css` and the JIT's
 preflight as its run-time stylesheet's inputs, `interactive/*.ptsx` lowered by
 `pjsx_gen` like the admin's views (`build/apps/embed.zig`), and its `middleware.zig`,
-which imports `publr` and every compiled-in plugin. An app without `style.css`,
+which imports `publr` and every built-in plugin. An app without `style.css`,
 `interactive/` or `middleware.zig` gets empty placeholders. The generated `apps` module
 lists them all; `src/adapters/apps/spec.zig` reads it at compile time, and a name, a
 mount or a role that is not valid fails the build there. Nothing generated is committed.
@@ -63,11 +66,28 @@ Core ships no app. Its own tests and the smoke build a second binary, `publr-fix
 with the fixture apps under `fixtures/apps/`: `www` at the root, `docs` under `/docs`
 and `portal`, which has no pages, on a subdomain.
 
+## The plugins
+
+`build/sandboxed_plugins.zig` builds a plugin for the sandbox from the same `main.zig` a
+built-in plugin has: the plugin, the `publr` module and a generated root that exports
+the module's entry points (`publr_alloc`, `publr_free`, `publr_invoke`) are compiled for
+`wasm32-freestanding`, `ReleaseSmall`, with a 256 KiB stack. The `publr` module is the
+core's own source; what the sandbox never reaches (SQLite, the HTTP server, the apps) is
+an empty module in its place, so a plugin that reaches for them fails to compile. A small
+native tool built from the same source then writes the plugin's manifest (see
+[Plugins](plugins.md#installed-plugins-dlp)) into the module's `publr` custom section. The
+WebAssembly runtime itself is `../lib/wasm` (WAMR's fast interpreter, vendored), a path
+dependency like SQLite.
+
+Core's tests, parity and smoke add the fixture plugins under `fixtures/sandboxed-plugins/`:
+`greeter`, its next version `greeter_next`, which asks for more, and `farewell`.
+
 ## Smoke test
 
 `smoke` (`scripts/smoke.zig`) runs the fixture binary from a fresh directory:
 `--version`, `heartbeat check`, `--help`, `init`, `user sign_in`,
-`--as` role checks, generated passwords, set-password links, `serve` + a
+`--as` role checks, generated passwords, set-password links, the fixture plugin
+added and enabled with `plugin add` and `enable`, its operation called (and refused to nobody), `serve` + a
 real `GET /api/health` and `POST /api/auth/sign-in`, then the apps: a
 published post, `build` into a folder per app, and `serve` answering the home page,
 the post's page, a fragment, the stylesheet, a page of the app under `/docs` and the app

@@ -20,6 +20,8 @@ pub const sign_on_token = @import("model/sign_on_token.zig");
 pub const view = @import("model/view.zig");
 pub const filter = @import("model/filter.zig");
 pub const query = @import("model/query.zig");
+pub const permission = @import("model/permission.zig");
+pub const sandboxed_plugin = @import("model/sandboxed_plugin.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

@@ -104,9 +104,9 @@ their history, reading the types and taxonomies, but not changing structure, use
 settings, and not purging. Settings singletons need `settings.edit`, a grant that names
 no operation; `admin` holds it through `*`.
 
-Every compiled-in plugin may declare roles of its own, or add grants to one that exists
+Every built-in plugin may declare roles of its own, or add grants to one that exists
 (a plugin giving editors its operations declares `editor` with those grants). A role
-stored on an account that no compiled-in code declares any more grants nothing.
+stored on an account that no built-in plugin declares any more grants nothing.
 
 Operations an app calls are named `app.<feature>.<verb>` (`app.newsletter.subscribe`),
 the feature's own namespace: any app may call them. A role for an app's visitors grants

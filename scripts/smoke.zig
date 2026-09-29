@@ -12,7 +12,9 @@ pub fn main(init: std.process.Init) !u8 {
     const binary_arg = iterator.next() orelse return error.MissingBinaryPath;
     const bare_arg = iterator.next() orelse return error.MissingBinaryPath;
     const work_dir = iterator.next() orelse return error.MissingWorkDir;
+    const module_arg = iterator.next() orelse return error.MissingPlugin;
     const arena = init.arena.allocator();
+    const module = try std.Io.Dir.cwd().realPathFileAlloc(init.io, module_arg, arena);
     const binary = try std.Io.Dir.cwd().realPathFileAlloc(init.io, binary_arg, arena);
     const bare = try std.Io.Dir.cwd().realPathFileAlloc(init.io, bare_arg, arena);
 
@@ -31,6 +33,9 @@ pub fn main(init: std.process.Init) !u8 {
     try expect_contains(init, binary, work_dir, &.{"--help"}, "heartbeat check");
     try expect_contains(init, binary, work_dir, &.{ "user", "--help" }, "user password_link");
     try expect_auth(init, binary, work_dir);
+    const sandboxed = @import("smoke/sandboxed_plugins.zig");
+
+    try sandboxed.expect_sandboxed_plugins(init, binary, work_dir, module);
     try expect_build(init, binary, work_dir, "smoke@example.com");
     try expect_serve(init, binary, work_dir);
     try expect_bare(init, bare, work_dir);
@@ -85,7 +90,7 @@ fn expect_output(
     }
 }
 
-fn expect_contains(
+pub fn expect_contains(
     init: std.process.Init,
     binary: []const u8,
     work_dir: []const u8,
@@ -306,7 +311,7 @@ fn expect_build_again(init: std.process.Init, binary: []const u8, work_dir: []co
     }
 }
 
-fn expect_failure(
+pub fn expect_failure(
     init: std.process.Init,
     binary: []const u8,
     work_dir: []const u8,

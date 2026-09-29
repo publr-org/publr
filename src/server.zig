@@ -4,6 +4,14 @@ const auth = @import("lib/auth.zig");
 const deps = @import("lib/deps.zig");
 const registry = @import("server/registry.zig");
 const sdk = @import("sdk.zig");
+const builtin = @import("builtin");
+
+/// The sandbox runs plugins natively; the browser build has none yet.
+pub const sandboxed_plugins = if (builtin.os.tag == .wasi)
+    void
+else
+    @import("server/sandboxed_plugins.zig");
+const SandboxHost = if (builtin.os.tag == .wasi) void else sandboxed_plugins.Host;
 
 pub const db_heap_bytes: u32 = 64 << 20;
 pub const request_arena_bytes: u32 = 4 << 20;
@@ -15,6 +23,7 @@ pub const Server = struct {
     connection: db.Db,
     auth: auth.State,
     index: deps.Index,
+    sandboxed_plugins: SandboxHost,
 
     pub fn init(server: *Server, process: std.process.Init, db_path: [:0]const u8) !void {
         std.debug.assert(db_path.len > 0);
@@ -40,7 +49,27 @@ pub const Server = struct {
 
         try server.apply_declared_types(process);
 
+        if (SandboxHost != void) {
+            const dir = try sandboxed_plugins_dir(process.arena.allocator(), db_path);
+
+            try server.sandboxed_plugins.init(process.gpa, process.io, dir);
+            errdefer server.sandboxed_plugins.deinit();
+
+            try server.sandboxed_plugins.load_all(&server.connection);
+        }
+
         std.debug.assert(server.runtime.open_count == 1);
+    }
+
+    /// What every context this server makes carries: the installed plugins, or none.
+    pub fn sandboxed(server: *Server) ?*const sdk.sandboxed_plugins.SandboxedPlugins {
+        std.debug.assert(server.runtime.open_count == 1);
+
+        if (SandboxHost == void) {
+            return null;
+        }
+
+        return server.sandboxed_plugins.sandboxed_plugins();
     }
 
     fn apply_declared_types(server: *Server, process: std.process.Init) !void {
@@ -65,6 +94,10 @@ pub const Server = struct {
     pub fn deinit(server: *Server) void {
         std.debug.assert(server.runtime.open_count == 1);
         std.debug.assert(server.connection.transaction_depth == 0);
+
+        if (SandboxHost != void) {
+            server.sandboxed_plugins.deinit();
+        }
 
         server.auth.deinit();
         server.connection.close();
@@ -96,6 +129,15 @@ fn release_heap(gpa: std.mem.Allocator, heap: []align(8) u8) void {
 
 const heap_alignment: std.mem.Alignment = .@"8";
 
+/// `plugins/` beside the database file.
+fn sandboxed_plugins_dir(arena: std.mem.Allocator, db_path: []const u8) ![]const u8 {
+    std.debug.assert(db_path.len > 0);
+
+    const parent = std.fs.path.dirname(db_path) orelse ".";
+
+    return std.fs.path.join(arena, &.{ if (parent.len == 0) "." else parent, "plugins" });
+}
+
 fn ensure_parent_dir(io: std.Io, path: []const u8) !void {
     std.debug.assert(path.len > 0);
 
@@ -108,4 +150,10 @@ fn ensure_parent_dir(io: std.Io, path: []const u8) !void {
     std.debug.assert(parent.len < path.len);
 
     try std.Io.Dir.cwd().createDirPath(io, parent);
+}
+
+test {
+    if (SandboxHost != void) {
+        _ = sandboxed_plugins;
+    }
 }

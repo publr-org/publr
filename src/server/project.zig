@@ -26,8 +26,10 @@ pub const Project = struct {
     apps_failed: bool = false,
     /// The host the apps' subdomains hang from: the project's address without its port.
     domain: []const u8 = "",
+    /// The installed plugins installed, which every context made for a request carries.
+    sandboxed_plugins: ?*const sdk.sandboxed_plugins.SandboxedPlugins = null,
     /// Asked before an app delivers a page or an island: the plugins' gates.
-    delivery_gates: []const sdk.delivery.Gate = registry.plugins.merged_delivery_gates,
+    delivery_gates: []const sdk.delivery.Gate = registry.native_plugins.merged_delivery_gates,
 
     pub fn of(ctx: *const http.Context) *Project {
         std.debug.assert(ctx.user_data != null);

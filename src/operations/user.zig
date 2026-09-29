@@ -355,7 +355,7 @@ fn create_pending_user(
 }
 
 /// Roles an account may be given: one to sixteen, each once, each declared by core or a
-/// compiled-in plugin.
+/// native plugin.
 pub fn valid_roles(roles: []const []const u8) bool {
     std.debug.assert(role.user_roles_max > 0);
     std.debug.assert(registry.Roles.all.len > 0);

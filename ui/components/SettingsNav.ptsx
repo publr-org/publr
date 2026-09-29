@@ -6,11 +6,12 @@ export type SettingsNavProps = {
   /** The fixed pages first: the system's own settings, then the users. */
   system_active: boolean;
   users_active: boolean;
+  plugins_active: boolean;
   /** The settings sections defined under Structure, in their order. */
   sections: Array<{ label: string; href: string; active: boolean }>;
 };
 
-export function SettingsNav({ system_active, users_active, sections }: SettingsNavProps) {
+export function SettingsNav({ system_active, users_active, plugins_active, sections }: SettingsNavProps) {
   return (
     <div class="flex flex-col gap-0.5 pt-2">
       <SidebarNavItem href="/admin/settings/system" active={system_active}>
@@ -20,6 +21,10 @@ export function SettingsNav({ system_active, users_active, sections }: SettingsN
       <SidebarNavItem href="/admin/settings/users" active={users_active}>
         <Icon name="users" size="sm" classes="shrink-0" />
         <Text as="span" variant="body-md">Users</Text>
+      </SidebarNavItem>
+      <SidebarNavItem href="/admin/settings/plugins" active={plugins_active}>
+        <Icon name="package" size="sm" classes="shrink-0" />
+        <Text as="span" variant="body-md">Plugins</Text>
       </SidebarNavItem>
       {sections.map((section) => (
         <SidebarNavItem href={section.href} active={section.active}>

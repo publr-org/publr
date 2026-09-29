@@ -74,7 +74,7 @@ zig build verify                   # tests + wasm check + formatting + tidy rule
 - [Streaming islands](docs/streaming.md): a proposal for islands in the page's own response, and hosting it anywhere.
 - [Authentication](docs/auth.md): accounts, sessions, passwords, setup.
 - [SDK](docs/sdk.md): the plugin surface: operations, hooks, UI.
-- [Plugins](docs/plugins.md): compiled-in plugins and runtime (WebAssembly) plugins.
+- [Plugins](docs/plugins.md): built-in plugins, compiled in, and installed ones, run in a WebAssembly sandbox.
 - [CLI reference](docs/cli.md): flags and every command, one page per namespace.
 - [REST API](docs/rest.md): the server and the `/api/` routes.
 - [Publr in the browser](docs/browser.md): the same binary as WebAssembly, no server.

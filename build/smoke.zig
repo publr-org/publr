@@ -1,11 +1,12 @@
 const std = @import("std");
 
 /// The smoke drives `exe` (with apps to serve) through every entry point, and `bare` (with
-/// none) through what a project without apps answers.
+/// none) through what a project without apps answers; `plugin` is the module it installs.
 pub fn add_check(
     builder: *std.Build,
     exe: *std.Build.Step.Compile,
     bare: *std.Build.Step.Compile,
+    sandboxed_plugin: std.Build.LazyPath,
 ) *std.Build.Step {
     std.debug.assert(builder.build_root.path != null);
 
@@ -23,9 +24,10 @@ pub fn add_check(
     run.addArtifactArg(exe);
     run.addArtifactArg(bare);
     run.addArg(builder.pathFromRoot(".zig-cache/smoke"));
+    run.addFileArg(sandboxed_plugin);
     run.has_side_effects = true;
 
-    std.debug.assert(run.argv.items.len == 4);
+    std.debug.assert(run.argv.items.len == 5);
 
     return &run.step;
 }
