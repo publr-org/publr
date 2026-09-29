@@ -89,7 +89,7 @@ pub fn sign_on(request: *Request, response: *Response, ctx: *Context) Error!void
 
 /// A path on this site: one leading slash, not `//` or `/\` (another host), no control
 /// characters.
-fn local_path(path: []const u8) bool {
+pub fn local_path(path: []const u8) bool {
     std.debug.assert(path.len <= 1 << 16);
 
     if (path.len == 0 or path[0] != '/') {

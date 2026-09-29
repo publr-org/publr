@@ -31,6 +31,7 @@ pub const operations = struct {
     pub const user = @import("operations/user.zig");
     pub const sign_in = @import("operations/sign_in.zig");
     pub const sign_on = @import("operations/sign_on.zig");
+    pub const identity = @import("operations/identity.zig");
     pub const status = @import("operations/status.zig");
     pub const role = @import("operations/role.zig");
     pub const content_type = @import("operations/content_type.zig");

@@ -180,7 +180,8 @@ An operation can raise a **notice** while it runs (`ctx.notice(name, subject)`),
 a named event with a subject that reaches every event hook. The core raises
 `auth.user_created`, `auth.sign_in_succeeded`, `auth.sign_in_failed`,
 `auth.sign_in_throttled`, `auth.sign_in_locked`, `auth.sign_out`,
-`project.initialised`, `auth.password_link_issued` and
+`auth.identity_signed_in`, `auth.identity_linked`, `auth.identity_refused`,
+`auth.identity_unlinked`, `project.initialised`, `auth.password_link_issued` and
 `auth.password_set`; for
 content, outcomes rather than mechanics: `record.created`, `record.saved` (a
 document was written), `record.changed` (first pending edit on a live record),

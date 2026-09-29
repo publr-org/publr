@@ -244,7 +244,7 @@ fn domain_of(project: *const Project) []const u8 {
     return project.cookie_domain() orelse "";
 }
 
-fn secure_suffix(request: *const http.Request) []const u8 {
+pub fn secure_suffix(request: *const http.Request) []const u8 {
     const proto = request.header("x-forwarded-proto") orelse "";
     const secure = std.ascii.eqlIgnoreCase(proto, "https");
 

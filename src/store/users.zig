@@ -97,7 +97,8 @@ pub fn insert(
     return id;
 }
 
-const select_columns = "id, email, display_name, created_at, password_hash FROM users";
+const select_columns = "id, email, display_name, created_at, password_hash, " ++
+    "EXISTS (SELECT 1 FROM identities WHERE identities.user_id = users.id) AS linked FROM users";
 
 pub fn set_password_token(
     connection: *db.Db,
@@ -263,6 +264,8 @@ const Columns = struct {
     display_name: []const u8,
     created_at: i64,
     password_hash: ?[]const u8,
+    /// A sign-in provider vouches for the account: it may sign in without a password.
+    linked: i64,
 };
 
 fn read_credentials(
@@ -297,7 +300,7 @@ fn read_row(
             .display_name = columns.display_name,
             .roles = try user_roles.of(connection, arena, columns.id),
             .created_at = columns.created_at,
-            .active = columns.password_hash != null,
+            .active = columns.password_hash != null or columns.linked == 1,
         },
         .password_hash = columns.password_hash,
     };

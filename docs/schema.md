@@ -136,15 +136,16 @@ and by plugins under their own dotted prefix (`seo.default_image`).
 ## `users`
 
 Accounts. What an account may do is its roles (`user_roles`). An account
-without a password hash is inactive: it was created with a set-password link
-and cannot sign in until the link is redeemed.
+without a password hash and without an identity (`identities`) is inactive: it
+was created with a set-password link and cannot sign in until the link is
+redeemed.
 
 | Column | Type | Meaning |
 |---|---|---|
 | `id` | text, primary key | Account id |
 | `email` | text, unique | Sign-in email, lowercased and trimmed |
 | `display_name` | text | Name shown in the admin |
-| `password_hash` | text, nullable | Argon2id PHC string; null while inactive |
+| `password_hash` | text, nullable | Argon2id PHC string; null while inactive, or when a provider is the only way in |
 | `password_token_hash` | blob, nullable | SHA-256 of the current set-password token |
 | `password_token_expires_at` | integer, nullable | When that token stops working |
 | `created_at`, `updated_at` | integer | Timestamps |
@@ -209,6 +210,24 @@ and the row is removed.
 |---|---|---|
 | `id` | text, primary key | The token's `jti`, as the issuer set it |
 | `expires_at` | integer | The token's expiry, Unix milliseconds |
+
+## `identities`
+
+Who a sign-in provider says an account is (`identity.sign_in`, `identity.link`).
+An account may hold up to 16, a provider's user belongs to one account. Deleting
+a user removes their rows. The account is keyed on the provider and its id,
+never on the email, which is only what the provider last said.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `provider` | text | The provider's name, as its plugin declares it (`github`) |
+| `provider_id` | text | The provider's stable id for the person |
+| `user_id` | text, references `users` | Whose identity; cascades on delete |
+| `email` | text, nullable | The email the provider last reported |
+| `created_at` | integer | When it was linked |
+| `last_used_at` | integer | The last sign-in through it |
+
+Primary key `(provider, provider_id)`; index `identities_user_id` on `user_id`.
 
 ## `content_types`
 

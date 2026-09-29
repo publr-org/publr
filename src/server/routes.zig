@@ -8,6 +8,7 @@ const http = @import("../lib/http.zig");
 const admin = @import("../adapters/admin.zig");
 const identity_module = @import("../adapters/rest/identity.zig");
 const rest_auth = @import("../adapters/rest/auth.zig");
+const rest_providers = @import("../adapters/rest/providers.zig");
 const apps_adapter = @import("../adapters/apps.zig");
 
 const Error = http.Error;
@@ -16,6 +17,8 @@ const Response = http.Response;
 const Context = http.Context;
 
 pub const Project = @import("project.zig").Project;
+/// `/auth/<provider>` and its callback, for every provider a plugin declares.
+pub const provider_routes = rest_providers.Routes(registry.sign_in_providers);
 
 pub fn register(router: *http.Router) void {
     std.debug.assert(router.routes_len == 0);
@@ -31,11 +34,14 @@ pub fn register(router: *http.Router) void {
     router.get("/api/auth/session", &rest_auth.whoami);
     router.get("/auth/sign-on", &rest_auth.sign_on);
     router.post("/auth/sign-on", &rest_auth.sign_on);
+    provider_routes.register(router);
     admin.register(router);
     rest.register(router);
     apps_adapter.register(router);
 
-    std.debug.assert(router.routes_len == 9 + admin.routes_count + apps_adapter.routes_count);
+    const fixed = 9 + provider_routes.routes_count;
+
+    std.debug.assert(router.routes_len == fixed + admin.routes_count + apps_adapter.routes_count);
 }
 
 /// Router middleware: a response that did not choose a cache policy gets `private, no-store`,

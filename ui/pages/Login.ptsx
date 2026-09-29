@@ -11,9 +11,16 @@ import { Text } from "@publr/ui/Text.ptsx";
 export type LoginProps = {
   /** A failed attempt, a throttle delay: shown above the form. */
   notice?: string;
+  /** The sign-in providers the site offers, one button each, under the form. */
+  providers?: Array<{
+    label: string;
+    /** The provider's mark: one SVG path on a 24 by 24 canvas, drawn in the text colour. */
+    icon: string;
+    href: string;
+  }>;
 };
 
-export function Login({ notice }: LoginProps) {
+export function Login({ notice, providers = [] }: LoginProps) {
   return (
     <Layout title="Log in" section="">
       <div class="w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-sheet">
@@ -52,6 +59,18 @@ export function Login({ notice }: LoginProps) {
             Log in
           </Button>
         </form>
+        {providers.length > 0 && (
+          <div class="mt-6 space-y-2 border-t border-border pt-6">
+            {providers.map((provider) => (
+              <Button href={provider.href} hierarchy="secondary" size="lg" classes="w-full">
+                <svg viewBox="0 0 24 24" class="size-4 shrink-0" fill="currentColor" aria-hidden="true">
+                  <path d={provider.icon} />
+                </svg>
+                Continue with {provider.label}
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
     </Layout>
   );

@@ -41,6 +41,18 @@ CREATE TABLE IF NOT EXISTS sign_on_tokens (
 
 CREATE INDEX IF NOT EXISTS sign_on_tokens_expires_at ON sign_on_tokens(expires_at);
 
+CREATE TABLE IF NOT EXISTS identities (
+    provider     TEXT NOT NULL,
+    provider_id  TEXT NOT NULL,
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    email        TEXT,
+    created_at   INTEGER NOT NULL,
+    last_used_at INTEGER NOT NULL,
+    PRIMARY KEY (provider, provider_id)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS identities_user_id ON identities(user_id);
+
 CREATE TABLE IF NOT EXISTS content_types (
     id            TEXT PRIMARY KEY,
     handle        TEXT NOT NULL UNIQUE,

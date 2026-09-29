@@ -9,6 +9,7 @@ pub const grant = @import("sdk/grant.zig");
 pub const authorize = @import("sdk/authorize.zig");
 pub const middleware = @import("sdk/middleware.zig");
 pub const delivery = @import("sdk/delivery.zig");
+pub const provider = @import("sdk/provider.zig");
 
 pub const Caller = caller.Caller;
 pub const Ctx = context.Ctx;

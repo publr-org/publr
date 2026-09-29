@@ -52,6 +52,45 @@ app answers on a subdomain ([Apps](apps.md#where-an-app-answers)), the session c
 set for the project's whole domain, so one sign-in holds everywhere. Two separate sets
 of accounts are two projects.
 
+## Signing in with a provider
+
+A provider plugin (GitHub, Google, one folder each, compiled in) proves who someone is
+and hands the core an identity: the provider's name, its stable id for the person, and
+the email it reports, with whether it vouches for that email. The core keeps which
+account each identity belongs to and never the provider's tokens: Publr signs people in,
+it does not act on GitHub for them.
+
+A button sends the browser to `/auth/<provider>`, which makes a `state` and a PKCE pair,
+keeps them in a ten-minute cookie and redirects to the provider; the provider sends the
+browser back to `/auth/<provider>/callback`, which checks the state and asks the plugin
+who the code stands for. Every offered provider is listed by `identity.providers`, which
+the admin's login page uses and an app's may. The callback is the request's own origin;
+`PUBLR_AUTH_CALLBACK_ORIGIN` advertises another (a public host that sends the browser on to
+a machine the providers cannot reach, during development).
+
+`identity.sign_in`, called as the system by the provider's callback (an administrator may
+call it too, and could sign in as anyone anyway), decides whose identity it is, in this
+order:
+
+1. The account it is linked to, by provider and id. Email is never the key: emails
+   change and providers reuse them.
+2. Otherwise, the active account with that email, which is linked on the way, but only
+   when the provider vouches for the email. An unverified email links nothing.
+3. Otherwise, nobody: `wrong email or password`, the same answer as a wrong password.
+4. Unless an administrator opened sign-up (`identity configure --open_sign_up <role>`):
+   then a new account with that role, still only from a verified email. The role is any
+   declared one but `admin`. Sign-up is closed by default.
+
+An account made this way has no password and may add one later; an account with a
+password may link identities (`identity link`, by the system for a signed-in person) and
+list or drop its own (`identity list`, `identity unlink`, which `editor` grants; an
+administrator names any account). Someone signed in who goes through a provider button
+links that identity to their account instead of starting a session. The last identity of an account
+without a password cannot be dropped: that would lock the account out. Signing in through
+a provider opens an ordinary session, with the same cookie, CSRF token, expiry and
+sign-out; and it raises events like password sign-in (`auth.identity_signed_in`,
+`auth.identity_linked`, `auth.identity_refused`, `auth.identity_unlinked`).
+
 ## Roles
 
 A role is data: a name, a label and **grants**. A grant names an operation
@@ -101,5 +140,6 @@ right away.
 
 IP-based limits (the address is whatever a proxy says), CAPTCHA, second
 factors, passkeys, SSO, breached-password checks, password expiry, permanent
-lockouts, audit persistence. Every sign-in raises an event, so all of these are
-plugins on `users.sign_in`, not core features.
+lockouts, audit persistence, and the providers themselves. Every sign-in raises
+an event, so all of these are plugins on `users.sign_in`, not core features; a
+provider is a plugin that hands `identity.sign_in` an identity.

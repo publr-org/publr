@@ -102,6 +102,7 @@ runnable example.
 | [`project`](cli/project.md) | The installation itself: `publr init`, and what a change rebuilds |
 | [`user`](cli/user.md) | Accounts, roles, passwords and signing in |
 | [`role`](cli/role.md) | What each role lets its accounts call |
+| [`identity`](cli/identity.md) | Signing in with a provider: which accounts, and whether sign-up is open |
 | [`content_type`](cli/content_type.md) | Content types: the shapes records are made of |
 | [`record`](cli/record.md) | The content itself: documents, statuses, lists |
 | [`taxonomy`](cli/taxonomy.md) | Taxonomies: the classifications records are filed under |

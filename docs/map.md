@@ -402,6 +402,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `store/users.zig` | 414 | `users` table: insert/find/list/tokens/password, the account's roles read with it |
 | `store/user_roles.zig` | 106 | `user_roles` table: the roles an account holds, set whole; how many hold one |
 | `store/sessions.zig` | 324 | `sessions` table: create/validate/slide/destroy, per-user cap |
+| `store/identities.zig` | 220 | `identities` table: a provider's user linked to an account; find/insert/touch/of_user/delete |
 | `store/settings.zig` | 54 | `settings` key/value get/set |
 
 #### operations/ (the features)

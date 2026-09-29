@@ -4,6 +4,7 @@ const registry = @import("../../server/registry.zig");
 const project_operations = @import("../../operations/project.zig");
 const sign_in_operations = @import("../../operations/sign_in.zig");
 const sign_on_operations = @import("../../operations/sign_on.zig");
+const identity_operations = @import("../../operations/identity.zig");
 const identity_module = @import("../rest/identity.zig");
 
 const Request = admin.Request;
@@ -126,8 +127,15 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
     }
 
     const declined = admin.query_param(&session, "sign_on") != null;
+    const refused = admin.query_param(&session, "identity") != null;
+    const notice: ?[]const u8 = if (declined)
+        "Sign in with your password."
+    else if (refused)
+        "That account could not be signed in. Try your password."
+    else
+        null;
 
-    try render_login(response, ctx.arena, if (declined) "Sign in with your password." else null);
+    try render_login(response, ctx.arena, notice);
 }
 
 /// `<issuer>/sign-on?site=<audience>&return=/admin`, when an issuer is trusted.
@@ -158,7 +166,23 @@ fn render_login(response: *Response, arena: std.mem.Allocator, problem: ?[]const
     std.debug.assert(response.body.len == 0);
     std.debug.assert(problem == null or problem.?.len > 0);
 
-    try admin.render.page(response, arena, .ok, views.Login, .{ .notice = problem });
+    const offered = identity_operations.providers.offered(arena, registry.sign_in_providers) catch {
+        return error.OutOfMemory;
+    };
+    const buttons = try arena.alloc(views.Login.ProvidersItem, offered.len);
+
+    for (offered, buttons) |provider, *button| {
+        button.* = .{
+            .label = provider.label,
+            .icon = provider.icon,
+            .href = try std.fmt.allocPrint(arena, "{s}?next=/admin", .{provider.path}),
+        };
+    }
+
+    try admin.render.page(response, arena, .ok, views.Login, .{
+        .notice = problem,
+        .providers = buttons,
+    });
 }
 
 pub fn login(request: *Request, response: *Response, ctx: *Context) Error!void {

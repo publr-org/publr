@@ -65,6 +65,8 @@ page answers with an `ETag`, a rendered one with `no-store`; `X-Publr-Served` sa
 | `POST /api/auth/sign-in` | body `{ "email", "password" }`; sets the `publr_session` cookie (for the whole domain when an app answers on a subdomain); returns `{ "user_id", "expires_at", "csrf" }`. An app's own sign-in form posts here |
 | `POST /api/auth/sign-out` | revokes the cookie's session; needs `X-Csrf-Token`; returns `{ "signed_out" }` |
 | `GET /api/auth/session` | `{ "authenticated", "user_id", "roles", "csrf" }` for the cookie |
+| `GET /auth/<provider>` | starts signing in with a provider a plugin declares (`?next=` a path on this site to land on): keeps `state` and a PKCE verifier in the `publr_auth` cookie for ten minutes and redirects to the provider; `404` for a provider not offered |
+| `GET /auth/<provider>/callback` | where the provider sends the browser back: checks `state` against the cookie, asks the plugin who the code stands for, signs that account in (`identity.sign_in`) or links the identity to the signed-in account (`identity.link`), and redirects to `next`; anything refused lands on `/admin/login?identity=refused` |
 | `POST /api/auth/set-password` | body `{ "token", "password" }` from a set-password link; activates the account, returns `{ "user_id" }`; `404` when the token is wrong, used or expired |
 
 How accounts, sessions and set-password links work is in

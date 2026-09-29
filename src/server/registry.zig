@@ -10,6 +10,7 @@ const custom_fields = @import("../operations/custom_fields.zig");
 const user = @import("../operations/user.zig");
 const sign_in = @import("../operations/sign_in.zig");
 const sign_on = @import("../operations/sign_on.zig");
+const identity = @import("../operations/identity.zig");
 const status = @import("../operations/status.zig");
 const role = @import("../operations/role.zig");
 const content_type = @import("../operations/content_type.zig");
@@ -24,7 +25,7 @@ pub const plugins = contract.Merged(@import("plugins").all);
 
 const core_operations = heartbeat.operations ++ project.operations ++ custom_fields.operations ++
     user.operations ++
-    sign_in.operations ++ sign_on.operations ++ status.operations ++
+    sign_in.operations ++ sign_on.operations ++ identity.operations ++ status.operations ++
     role.operations ++
     content_type.operations ++
     record.operations ++ taxonomy.operations ++ term.operations ++ snapshot.operations ++
@@ -35,6 +36,7 @@ const core_namespaces = [_]sdk.operation.Namespace{
     custom_fields.namespace,
     user.namespace,
     sign_on.namespace,
+    identity.namespace,
     status.namespace,
     role.namespace,
     content_type.namespace,
@@ -68,8 +70,19 @@ pub const Filters = filter_registry.Registry(&filter_registry.core ++ plugins.me
 
 pub const Roles = role_registry.Registry(plugins.merged_roles);
 
+/// The sign-in providers the compiled-in plugins declare, offered or not.
+pub const sign_in_providers = plugins.merged_sign_in_providers;
+
+/// Once the schema is applied: the declared types and fields, then each plugin's own
+/// `bootstrap`, as the system, in name order.
 fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
     @import("std").debug.assert(ctx.caller == .system);
     @import("std").debug.assert(ctx.db.transaction_depth == 0);
     try plugin_types.apply_all(ctx);
+
+    inline for (plugins.all) |Plugin| {
+        if (@hasDecl(Plugin, "bootstrap")) {
+            try Plugin.bootstrap(ctx);
+        }
+    }
 }

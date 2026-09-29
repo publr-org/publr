@@ -11,6 +11,7 @@ const projects = publr.operations.project;
 const users = publr.operations.user;
 const saved_views = publr.operations.view;
 const sign_on = publr.operations.sign_on;
+const identities = publr.operations.identity;
 const sign_on_token = publr.model.sign_on_token;
 const SDK = publr.registry.SDK;
 
@@ -57,6 +58,7 @@ pub fn fill(ctx: *Ctx) Error!void {
     try fill_taxonomies(ctx);
     try fill_views(ctx);
     try fill_sign_on(ctx);
+    try fill_identities(ctx);
 
     const custom = publr.operations.custom_fields;
     _ = try SDK.dispatch(ctx, custom.Update, .{
@@ -218,6 +220,22 @@ fn fill_sign_on(ctx: *Ctx) Error!void {
         .issuer = sign_on.Configure.example.issuer,
         .public_key = &public_hex,
         .audience = sign_on.Configure.example.audience,
+    });
+}
+
+/// The identity the `identity` examples name, linked to Ada; `identity link` names another.
+fn fill_identities(ctx: *Ctx) Error!void {
+    std.debug.assert(ctx.caller == .user);
+    std.debug.assert(identities.example_in.verified);
+
+    const example = identities.example_in;
+
+    _ = try SDK.dispatch(ctx, identities.Link, .{
+        .user = admin_email,
+        .provider = example.provider,
+        .id = example.id,
+        .email = example.email,
+        .verified = example.verified,
     });
 }
 

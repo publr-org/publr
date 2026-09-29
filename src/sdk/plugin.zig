@@ -8,12 +8,14 @@ const content_type = @import("../model/content_type.zig");
 const field = @import("../model/field.zig");
 const kinds = @import("../model/kinds.zig");
 const role = @import("../model/role.zig");
+const provider = @import("provider.zig");
 
 pub const PluginCtx = plugin_context.PluginCtx;
 pub const types = plugin_types;
 pub const ContentTypeDef = content_type.Def;
 pub const DeclaredType = plugin_types.Declared;
 pub const Role = role.Role;
+pub const SignInProvider = provider.SignInProvider;
 pub const content_types_max: u32 = 64;
 
 pub const name_len_max: u32 = 32;
@@ -73,6 +75,8 @@ pub fn validate(comptime Plugin: type) void {
             @compileError("plugin " ++ manifest.name ++ ": own tables need compiled_in_only");
         }
 
+        validate_entries(Plugin, manifest.name);
+
         const known: []const kinds.Kind = &kinds.core ++ field_kinds_of(Plugin);
 
         for (content_types_of(Plugin)) |def| {
@@ -82,6 +86,32 @@ pub fn validate(comptime Plugin: type) void {
             if (!problems.is_empty()) {
                 @compileError("plugin " ++ manifest.name ++ ": content type " ++ def.handle ++
                     ": " ++ problems.items[0].message);
+            }
+        }
+    }
+}
+
+/// The optional single declarations: `bootstrap` and `sign_in_provider`.
+fn validate_entries(comptime Plugin: type, comptime name: []const u8) void {
+    comptime {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(@hasDecl(Plugin, "manifest"));
+
+        if (@hasDecl(Plugin, "bootstrap")) {
+            const Bootstrap = @TypeOf(Plugin.bootstrap);
+            const expected = fn (*sdk.Ctx) sdk.Error!void;
+
+            if (Bootstrap != expected) {
+                @compileError("plugin " ++ name ++ ": `bootstrap` is " ++
+                    "`pub fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void`");
+            }
+        }
+
+        if (@hasDecl(Plugin, "sign_in_provider")) {
+            const declared: SignInProvider = Plugin.sign_in_provider;
+
+            if (provider.problem(declared)) |message| {
+                @compileError("plugin " ++ name ++ ": sign_in_provider: " ++ message);
             }
         }
     }
@@ -303,6 +333,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var filters: []const filter_module.Definition = &.{};
         var delivery_gates: []const sdk.delivery.Gate = &.{};
         var roles: []const Role = &.{};
+        var sign_in_providers: []const SignInProvider = &.{};
 
         std.debug.assert(plugins.len <= plugins_max);
 
@@ -345,6 +376,11 @@ pub fn Merged(comptime plugins: anytype) type {
                     @as([]const sdk.delivery.Gate, &Plugin.delivery_gates);
             }
 
+            if (@hasDecl(Plugin, "sign_in_provider")) {
+                sign_in_providers = sign_in_providers ++
+                    &[_]SignInProvider{Plugin.sign_in_provider};
+            }
+
             if (@hasDecl(Plugin, "transitions")) {
                 transitions = transitions ++ @as(
                     []const status_module.Transition,
@@ -356,6 +392,19 @@ pub fn Merged(comptime plugins: anytype) type {
         if (delivery_gates.len > sdk.delivery.gates_max) {
             @compileError("more delivery gates than a site asks: " ++
                 std.fmt.comptimePrint("{d}", .{sdk.delivery.gates_max}));
+        }
+
+        if (sign_in_providers.len > provider.providers_max) {
+            @compileError("more sign-in providers than the login page holds: " ++
+                std.fmt.comptimePrint("{d}", .{provider.providers_max}));
+        }
+
+        for (sign_in_providers, 0..) |declared, index| {
+            for (sign_in_providers[index + 1 ..]) |other| {
+                if (std.mem.eql(u8, declared.name, other.name)) {
+                    @compileError("two plugins declare the sign-in provider " ++ declared.name);
+                }
+            }
         }
 
         for (plugins, 0..) |Plugin, index| {
@@ -399,6 +448,7 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_custom_fields = custom_fields;
             pub const merged_filters = filters;
             pub const merged_delivery_gates = delivery_gates;
+            pub const merged_sign_in_providers = sign_in_providers;
             /// The core roles with every plugin's merged in.
             pub const merged_roles = role.merge(&role.core, roles);
         };

@@ -21,6 +21,7 @@ pub const users = @import("store/users.zig");
 pub const user_values = @import("store/user_values.zig");
 pub const sessions = @import("store/sessions.zig");
 pub const sign_on_tokens = @import("store/sign_on_tokens.zig");
+pub const identities = @import("store/identities.zig");
 pub const views = @import("store/views.zig");
 
 test {
