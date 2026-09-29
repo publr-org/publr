@@ -51,6 +51,14 @@ pub const all: []const Spec = blk: {
     break :blk &final;
 };
 
+/// The generated client code (the island loader, the toolbar, PublrJS, no stores) an app
+/// read from a project's folder serves when nothing of its own is compiled in.
+pub const common_assets: []const File = blk: {
+    @setEvalBranchQuota(100_000);
+
+    break :blk files_of(apps_module.common_assets);
+};
+
 pub fn find(name: []const u8) ?*const Spec {
     std.debug.assert(name.len > 0);
     std.debug.assert(all.len <= apps_max);

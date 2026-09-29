@@ -309,10 +309,21 @@ pub fn engine_options(spec: *const Spec) engine.Options {
 /// it (`publr check-apps`), so a template the engine refuses fails the build rather than
 /// the first start. Null when all compile; else why not, in `arena`.
 pub fn check_apps(gpa: std.mem.Allocator, arena: std.mem.Allocator) !?[]const u8 {
-    std.debug.assert(engine.templates_max > 0);
     std.debug.assert(spec_module.all.len <= spec_module.apps_max);
 
-    for (spec_module.all) |*spec| {
+    return check_specs(gpa, arena, spec_module.all);
+}
+
+/// `check_apps` for any apps: the ones a project's folder holds (`publr apps load`).
+pub fn check_specs(
+    gpa: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    specs: []const Spec,
+) !?[]const u8 {
+    std.debug.assert(engine.templates_max > 0);
+    std.debug.assert(specs.len <= spec_module.apps_max);
+
+    for (specs) |*spec| {
         if (try check_app(gpa, arena, spec)) |problem| {
             return try std.fmt.allocPrint(arena, "[{s}] {s}", .{ spec.name, problem });
         }

@@ -84,7 +84,6 @@ fn invoke_shaped(
             loaded.drop_instance();
             return error.Unavailable;
         },
-        error.NotFound => error.Unavailable,
         else => |other| other,
     };
 }
@@ -104,7 +103,7 @@ fn run(invocation: *Invocation, entry: u32, envelope: []const u8) RunError![]con
     std.debug.assert(loaded.result_offset != 0);
 
     const input_offset = try write_guest(instance, envelope, &problem);
-    const status = instance.call("publr_invoke", &.{
+    const status = call_guest(instance, "publr_invoke", &.{
         entry,
         input_offset,
         @intCast(envelope.len),
@@ -116,7 +115,7 @@ fn run(invocation: *Invocation, entry: u32, envelope: []const u8) RunError![]con
 
     const input_len: u32 = @intCast(envelope.len);
 
-    _ = try instance.call("publr_free", &.{ input_offset, input_len }, budget, &problem);
+    _ = try call_guest(instance, "publr_free", &.{ input_offset, input_len }, budget, &problem);
 
     if (status != wire.ok) {
         return wire.error_of(status);
@@ -148,7 +147,7 @@ fn read_result(
     const output = instance.bytes(result.ptr, result.len) orelse return error.Trap;
     const copy = invocation.ctx.arena.dupe(u8, output) catch return error.OutOfMemory;
 
-    _ = try instance.call("publr_free", &.{ result.ptr, result.len }, .{
+    _ = try call_guest(instance, "publr_free", &.{ result.ptr, result.len }, .{
         .instructions_max = 100_000,
     }, problem);
 
@@ -156,11 +155,11 @@ fn read_result(
 }
 
 /// Copies `bytes` into memory the guest allocates, and answers where.
-fn write_guest(instance: *wasm.Instance, bytes: []const u8, problem: *wasm.Problem) wasm.Error!u32 {
+fn write_guest(instance: *wasm.Instance, bytes: []const u8, problem: *wasm.Problem) RunError!u32 {
     std.debug.assert(bytes.len > 0);
     std.debug.assert(bytes.len <= std.math.maxInt(u32));
 
-    const offset = try instance.call("publr_alloc", &.{@intCast(bytes.len)}, .{
+    const offset = try call_guest(instance, "publr_alloc", &.{@intCast(bytes.len)}, .{
         .instructions_max = 100_000,
     }, problem);
 
@@ -173,6 +172,25 @@ fn write_guest(instance: *wasm.Instance, bytes: []const u8, problem: *wasm.Probl
     @memcpy(target, bytes);
 
     return offset;
+}
+
+/// A call into the guest. The module lacking the export (the sandbox's own `NotFound`)
+/// means the plugin cannot be run: `Unavailable`, never the SDK's `NotFound`, which is what a
+/// plugin's own operation answers for something it does not have.
+fn call_guest(
+    instance: *wasm.Instance,
+    name: [:0]const u8,
+    params: []const u32,
+    options: wasm.Instance.CallOptions,
+    problem: *wasm.Problem,
+) RunError!u32 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(options.instructions_max > 0);
+
+    return instance.call(name, params, options, problem) catch |err| switch (err) {
+        error.NotFound => error.Unavailable,
+        else => |other| other,
+    };
 }
 
 fn envelope_of(ctx: *const sdk.Ctx, input: []const u8, shape: Shape) sdk.Error![]const u8 {

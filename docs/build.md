@@ -7,12 +7,12 @@ each concern lives in `build/<topic>.zig`.
 
 | Step | What it does |
 |---|---|
-| `zig build` | Build `zig-out/bin/publr` with the apps under `apps/` (none in this repository) and check they compile (`publr check-apps`). |
+| `zig build` | Build `zig-out/bin/publr` with the apps under `apps/` (none in this repository) and check they compile (`publr check-apps`). The first build also compiles the Zig compiler the binary carries (`../lib/zig`, about two minutes); the cache keeps it after that. |
 | `zig build run -- <args>` | Build and run. |
 | `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every native plugin under `native-plugins/`, and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
 | `zig build verify` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `browser`. Run before calling anything done. |
 | `zig build parity` | Run the example every `--help` prints and check its answer. |
-| `zig build sandboxed-plugins` | Build the plugins under `-Dsandboxed-plugins` as installed plugins into `zig-out/plugins/<name>.wasm`; see [The plugins](#the-plugins). |
+| `zig build sandboxed-plugins` | Build the plugins under `-Dsandboxed-plugins` as installed plugins into `zig-out/sandboxed-plugins/<name>.wasm`, with the `publr` just built; see [The plugins](#the-plugins). |
 | `zig build browser` | Build the browser target into `zig-out/browser/` (`publr.wasm`, `index.html`, `publr-worker.js`); see [Publr in the browser](browser.md). |
 | `zig build vendor-import` | Re-import `vendor/` from local upstream archives (`-Darchives=<dir>`, default `.vendor-archives/`). |
 | `zig build vendor-cache-check` | Prove a no-op build recompiles no vendor C. |
@@ -26,8 +26,9 @@ each concern lives in `build/<topic>.zig`.
 | `-Dbrowser-debug=true` | `false` | `browser` (Debug wasm with panic messages) |
 | `-Dapps=<dir>` | `apps` | the folder of apps compiled in, relative to this repository; absent is none (`build/apps.zig`) |
 | `-Dapps-max=<n>` | `32` | how many apps one project may compile in, 1 to 1024 |
+| `-Dcompiler=false` | `true` | leave out the compiler for sandboxed plugins (`publr zig`, about 8 MB); the test fixture is built without it |
 | `-Dnative-plugins=<dir>` | `native-plugins` | the folder of native plugins (built-in, in the admin), relative to this repository |
-| `-Dsandboxed-plugins=<dir>` | `plugins` | the folder of plugins `zig build sandboxed-plugins` builds for the sandbox, relative to this repository |
+| `-Dsandboxed-plugins=<dir>` | `sandboxed-plugins` | the folder of plugins `zig build sandboxed-plugins` builds for the sandbox, relative to this repository |
 | `-Dpreset=<dir>` | none | a project's parts at once: `<dir>/apps`, `<dir>/native-plugins` and `<dir>/sandboxed-plugins` (each option above still wins); the binary reads the apps' `public/` files from `<dir>/apps` wherever it runs, instead of `./apps` |
 
 ## Vendors and libraries
@@ -68,16 +69,21 @@ and `portal`, which has no pages, on a subdomain.
 
 ## The plugins
 
-`build/sandboxed_plugins.zig` builds a plugin for the sandbox from the same `main.zig` a
-built-in plugin has: the plugin, the `publr` module and a generated root that exports
-the module's entry points (`publr_alloc`, `publr_free`, `publr_invoke`) are compiled for
-`wasm32-freestanding`, `ReleaseSmall`, with a 256 KiB stack. The `publr` module is the
-core's own source; what the sandbox never reaches (SQLite, the HTTP server, the apps) is
-an empty module in its place, so a plugin that reaches for them fails to compile. A small
-native tool built from the same source then writes the plugin's manifest (see
-[Plugins](plugins.md#installed-plugins-dlp)) into the module's `publr` custom section. The
-WebAssembly runtime itself is `../lib/wasm` (WAMR's fast interpreter, vendored), a path
-dependency like SQLite.
+`build/sandboxed_plugins.zig` builds each plugin for the sandbox the way its users do:
+it runs the `publr` just built, `publr plugin build --name <name> --dir <folder> --out
+<file>`, with the toolchain written out under `.zig-cache/publr-toolchain` rather than
+the user's cache. That compiles the plugin, the `publr` module and a generated root that
+exports the module's entry points (`publr_alloc`, `publr_free`, `publr_invoke`,
+`publr_manifest`) for `wasm32-freestanding` with a 256 KiB stack, by the compiler Publr
+carries (`../lib/zig`: no LLVM, so modules are larger than an LLVM build's). The `publr`
+module is the core's own source, packed into the binary with the build (`sdk_archive`);
+what the sandbox never reaches (SQLite, the HTTP server, the apps) is an empty module in
+its place, so a plugin that reaches for them fails to compile. The manifest (see
+[Plugins](plugins.md#installed-plugins-dlp)) is read by running `publr_manifest` in the
+sandbox and written into the module's `publr` custom section. The WebAssembly runtime
+itself is `../lib/wasm` (WAMR's fast interpreter, vendored), a path dependency like
+SQLite. Each folder the build packs lists its files as inputs, so a change to `src/`
+packs the SDK again.
 
 Core's tests, parity and smoke add the fixture plugins under `fixtures/sandboxed-plugins/`:
 `greeter`, its next version `greeter_next`, which asks for more, and `farewell`.

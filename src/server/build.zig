@@ -30,7 +30,16 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         return code;
     }
 
-    if (apps_adapter.spec.all.len == 0) {
+    flags.options.apps_dir = apps_adapter.folder.resolve_dir(init.io, flags.options.apps_dir);
+
+    const dir = flags.options.apps_dir;
+    var source = apps_adapter.folder.project_apps(init.gpa, init.io, dir, &reason) catch |err| {
+        report.err_reason(reason.text(), "publr build: the apps do not load: {t}", .{err});
+        return 1;
+    };
+    defer source.deinit();
+
+    if (source.specs.len == 0) {
         std.debug.print("publr build: this project has no apps to build\n", .{});
 
         return 0;
@@ -46,13 +55,17 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         .io = init.io,
         .sandboxed_plugins = application.sandboxed(),
     };
-    const apps = try init.gpa.alloc(apps_adapter.App, apps_adapter.spec.all.len);
+    const apps = try init.gpa.alloc(apps_adapter.App, source.specs.len);
     defer init.gpa.free(apps);
     const now_ms = sdk.context.wall_clock_ms(init.io);
 
     const index = &application.index;
 
-    apps_adapter.load.open(&project, apps, init.gpa, index, flags.options, now_ms) catch |err| {
+    const specs = source.specs;
+
+    const options = flags.options;
+
+    apps_adapter.load.open(&project, specs, apps, init.gpa, index, options, now_ms) catch |err| {
         report.err_reason(reason.text(), "publr build: the apps do not load: {s}", .{
             @errorName(err),
         });

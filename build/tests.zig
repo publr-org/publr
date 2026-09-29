@@ -27,7 +27,11 @@ pub fn add(
     std.debug.assert(builder.build_root.path != null);
     std.debug.assert(library.root_source_file != null);
 
-    const fixture_from = core.with_apps(from, fixture_apps_dir);
+    var fixture_from = core.with_apps(from, fixture_apps_dir);
+
+    // Smoke drives this binary as one built without the compiler, and the tests need none.
+    fixture_from.compiler = false;
+
     const fixture = core.add_module(builder, target, optimize, fixture_from);
     const fixture_exe = builder.addExecutable(.{
         .name = "publr-fixture",

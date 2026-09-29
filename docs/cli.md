@@ -51,6 +51,67 @@ Writes every app as files, one folder each, only what changed since the last bui
 unless `--full`; see [`build`](cli/build.md). `check-apps` compiles every app the binary
 carries and exits 1 naming the one that does not load; `zig build` runs it.
 
+## Apps
+
+```
+publr apps load [--apps <dir>]
+```
+
+Reads the project's apps again from the folder the running server was started with and
+swaps them in, so a changed template is live when it returns, and says which folder; a
+template that does not load is named with the reason, and the apps answer 503 until a load
+succeeds. With no server running, it only checks the apps: those in `--apps <dir>`, else
+the project's own `apps/`, else the build's folder. `--apps` is refused while a server
+runs, since the server reads only its own folder. See [Apps](apps.md).
+
+## The compiler
+
+```
+publr [--db <path>] zig <args>
+```
+
+Zig 0.16.0, carried in the binary, with the arguments as given and its exit code. It builds
+WebAssembly only, the way sandboxed plugins are built (it has no LLVM), so no Zig needs to
+be installed.
+
+```
+publr [--db <path>] plugin build --name <name> [--dir <folder>] [--out <file>]
+```
+
+Builds the plugin whose source is `<folder>/main.zig` (default
+`sandboxed-plugins/<name>`) with that compiler, reads its manifest from the module and
+writes it in, then adds and enables it, or applies it as the next version of the one
+already there. The compiler's messages print as they are; built again unchanged, it says
+the plugin is up to date. `--out <file>` only builds it, into that file, and installs
+nothing. See [Plugins](plugins.md).
+
+`init` and `serve` write the compiler and the SDK plugins build against out once per
+machine (about 35 MB), into `$PUBLR_CACHE_DIR`, else `$XDG_CACHE_HOME/publr`, else
+`~/.cache/publr`; every project on the machine shares them. When they cannot be written,
+they warn and carry on: only compiling needs them. A binary built with `-Dcompiler=false`
+carries neither, and `publr zig` and `plugin build` say so.
+
+## For agents
+
+```
+publr agents
+```
+
+Prints the guide for an agent building on this Publr ([Agents](agents.md), built into the
+binary so it always matches it), then where the SDK's source is on this machine and every
+permission a plugin may ask for, with its tier. `publr --help` points agents to it.
+
+## While a server runs
+
+`publr serve` owns its project while it runs. It writes its port and a fresh key beside the
+database (`<db>.serve`, readable by its user only), and removes them when it stops. Every
+other command then goes to it and runs there, as the admin's changes do: a plugin added,
+enabled or updated from the CLI is live when the command returns, and its hooks and events
+fire in the server. Output, errors and the exit code are the same as run here; a file named
+with `--file` is sent as an absolute path. A second `serve` for the same database is
+refused. When the file is there but nothing answers (the server was killed), the command
+removes it and runs here.
+
 ## Global flags
 
 | Flag | Meaning |

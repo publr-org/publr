@@ -2,8 +2,9 @@
 
 A Publr project is one binary, one database and one domain. What visitors see comes
 from its **apps**: a marketing site, a newsletter, a members area, a product people
-pay for. Each app is a folder of templates and code, compiled into the binary, and each
-is a frontend over the same plugins, which hold the data and the operations. Two
+pay for. Each app is a folder of templates, read by the running server from the project's
+`apps/` folder, and each is a frontend over the same plugins, which hold the data and the
+operations. Two
 domains, or two separate sets of accounts, are two projects.
 
 An app is static first: `publr build` writes every page to a file, `publr serve` serves
@@ -37,9 +38,15 @@ name is a route parameter. Every other folder holds templates a page imports.
 `public/` and `interactive/` are not templates. An app with no templates at all is
 valid: its `middleware.zig` answers every request (a webhook receiver, an API facade).
 
-Every folder under `apps/` is compiled in; nothing is chosen at build time. A project
-built from another repository names its folder with `-Dapps=<dir>`; `-Dapps-max` (32 by
-default) bounds how many it may hold. A template that does not load fails
+`serve` reads every folder under `apps/` that has an `app.zon`: `--apps <dir>` when named,
+else the project's own `apps/` beside where Publr runs, else where the build's apps came from
+(a binary built from a preset reads the preset's), checking what the build used to check (names, mounts, roles, templates), and
+`publr apps load` reads them again into the running server: a changed or new template is
+served when the command returns, never after a rebuild. What still needs compiling comes
+from a build of Publr: `-Dapps=<dir>` compiles that folder's apps in, and an app of the
+same name takes its interactive components and middleware from there; an app the build
+does not have may have neither. With no `apps/` folder, `serve` serves the build's own.
+`-Dapps-max` (32 by default) bounds how many apps a project holds. A template that does not load fails
 `publr build`, naming the app, the template and the construct. `publr serve` keeps the
 admin and the API available even when the apps cannot load or build; their pages then
 answer a non-cacheable 503.

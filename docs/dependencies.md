@@ -13,6 +13,8 @@ dependency-free C. Ours to keep: vendored as-is in this repository, compiled by
 | `publr_http` (`../lib/http`) | Our own HTTP/1.1 server: fixed capacity, one thread, composed at compile time | sibling checkout | Ours | Every door but the CLI. |
 | `publr_auth` (`../lib/auth`) | Our own argon2id hashing, sign-in throttle, CSRF tokens, origin check | sibling checkout | Ours | Signing in, and nothing about users. |
 | `publr_deps` (`../lib/deps`) | Our own dependency index: what each built artifact read, and the queue of changes to rebuild from | sibling checkout | Ours | Publishing rewrites only the pages that changed. |
+| `publr_wasm` (`../lib/wasm`) | Our own sandbox, with WAMR's fast interpreter inside it | WAMR 2.4.5 | Apache-2.0 WITH LLVM-exception | Running installed plugins nobody vouched for. |
+| `publr_zig` (`../lib/zig`) | Zig's compiler, built without LLVM, packed with its standard library and a prebuilt compiler_rt into the binary | Zig 0.16.0 | MIT | Building sandboxed plugins where no Zig is installed (`publr zig`). |
 | `../publr-js/dist` | PublrJS, the client runtime behind the `data-p-*` wires, read by the build as-is | sibling checkout | Ours | The interactive half of the site's components. |
 | `pjsx` (`../pjsx`) | Our own PJSX compiler and its render runtime; build-time, plus the runtime the generated views call | sibling checkout | Ours | The admin's pages, from `.ptsx` to Zig. |
 | `publr_jit` (`../jit`) | Our own class-to-CSS compiler; build-time for the stylesheet, in the binary for class merging | sibling checkout | Ours | The admin's stylesheet, and stacked class attributes merged at render. |
@@ -23,7 +25,7 @@ dependency-free C. Ours to keep: vendored as-is in this repository, compiled by
 That is the whole list. Everything else in the binary is Zig, either the
 standard library or code in this repository.
 
-The four `publr_*` entries are Publr's own libraries in a sibling checkout,
+The `publr_*` entries are Publr's own libraries in a sibling checkout,
 wired in as *path* dependencies in `build.zig.zon`: nothing is fetched, and a
 fix lands in the library once, for every consumer. `src/lib/db.zig`,
 `src/lib/http.zig`, `src/lib/auth.zig` and `src/lib/deps.zig` are this app's faces on them: the
@@ -38,7 +40,9 @@ See [Build](build.md) for the import procedure.
 
 ## Not dependencies
 
-- **Zig itself**, pinned by `.zigversion`. There is no package manager use:
+- **Zig itself**, pinned by `.zigversion`, builds Publr. The compiler inside the binary
+  (`publr_zig`) is the same version, vendored as released, and only ever builds plugins.
+  There is no package manager use:
   the only `build.zig.zon` dependencies are Publr's own libraries by path, no
   URLs, no lazy fetches.
 - **`std`**: JSON, HTTP parsing helpers, crypto (Argon2id, SHA-256, HMAC),

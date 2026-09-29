@@ -150,6 +150,12 @@ test "installed, a plugin's operations run in the sandbox through the one dispat
     try std.testing.expectError(error.Invalid, scenario.call(admin, "greeter.greet", "{"));
     try std.testing.expectError(error.NotFound, scenario.call(admin, "greeter.nope", "{}"));
 
+    // What the plugin itself does not find reaches the caller as not found, never as the
+    // sandbox being unavailable.
+    const nobody_note = "{\"note\":\"nobody\"}";
+
+    try std.testing.expectError(error.NotFound, scenario.call(admin, greet, nobody_note));
+
     // The records it keeps are records like any other, of the type it declared.
     var system = scenario.ctx(.system);
     const records = @import("../../operations/record.zig");
@@ -480,4 +486,33 @@ test "an upload arrives in pieces, in order, and is added with the last" {
     });
 
     try std.testing.expectError(error.Invalid, refused);
+}
+
+test "a plugin that inserts at the front of a list keeps every entry" {
+    var scenario: Scenario = undefined;
+    try scenario.init();
+    defer scenario.deinit();
+
+    try scenario.temporary.dir.writeFile(std.testing.io, .{
+        .sub_path = "farewell.wasm",
+        .data = @embedFile("sandboxed_plugin_farewell"),
+    });
+
+    const farewell = try std.mem.concat(std.testing.allocator, u8, &.{
+        scenario.path[0 .. scenario.path.len - "greeter.wasm".len],
+        "farewell.wasm",
+    });
+    defer std.testing.allocator.free(farewell);
+
+    const added = try scenario.add(farewell);
+    var enabling = scenario.ctx(.system);
+
+    std.debug.assert(!added.update);
+    _ = try registry.SDK.dispatch(&enabling, plugin_operations.Enable, .{ .name = added.name });
+
+    // The rest move up with an overlapping copy: without `bulk_memory` the plugin build got
+    // it wrong, and "carol, alice, alice" came back.
+    const answer = try scenario.call(admin, "farewell.last", "{}");
+
+    try std.testing.expect(std.mem.indexOf(u8, answer, "carol, alice, bob") != null);
 }

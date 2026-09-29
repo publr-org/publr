@@ -9,6 +9,8 @@ const Caller = @import("../caller.zig").Caller;
 const Grant = @import("../grant.zig").Grant;
 const middleware = @import("../middleware.zig");
 const contract = @import("../plugin.zig");
+const plugin_manifest = @import("manifest.zig");
+const runtime = @import("sandboxed.zig");
 
 pub const Error = wire.Error;
 
@@ -79,6 +81,7 @@ pub const SandboxApi = struct {
     /// Runs `Operation` in the host as this plugin, with its grants: `error.Denied` when an
     /// administrator has not granted (or has revoked) what it needs.
     pub fn call(self: *SandboxApi, comptime Operation: type, in: Operation.In) Error!Operation.Out {
+        comptime runtime.check_call(Operation.name);
         std.debug.assert(Operation.name.len > 0);
         std.debug.assert(self.name.len > 0);
 
@@ -145,6 +148,7 @@ pub fn export_all(comptime Plugin: type) void {
         @export(&Generated.alloc, .{ .name = "publr_alloc" });
         @export(&Generated.free, .{ .name = "publr_free" });
         @export(&Generated.invoke, .{ .name = "publr_invoke" });
+        @export(&Generated.manifest, .{ .name = "publr_manifest" });
     }
 }
 
@@ -170,6 +174,27 @@ pub fn Exports(comptime Plugin: type) type {
             const start: [*]u8 = @ptrFromInt(ptr);
 
             allocator.free(start[0..@max(len, 1)]);
+        }
+
+        /// The plugin's manifest as JSON, for building it into the module's `publr` section:
+        /// read by running the module, since only a native build could print it otherwise.
+        /// The host frees it with `publr_free`.
+        pub fn manifest(result_ptr: u32) callconv(.c) u32 {
+            std.debug.assert(result_ptr != 0);
+
+            const result: *wire.Result = @ptrFromInt(result_ptr);
+            var output: std.Io.Writer.Allocating = .init(allocator);
+
+            plugin_manifest.write(Plugin, &output.writer) catch {
+                return wire.code_of(error.OutOfMemory);
+            };
+
+            const bytes = output.toOwnedSlice() catch return wire.code_of(error.OutOfMemory);
+
+            std.debug.assert(bytes.len > 0);
+            result.* = .{ .ptr = @intCast(@intFromPtr(bytes.ptr)), .len = @intCast(bytes.len) };
+
+            return wire.ok;
         }
 
         pub fn invoke(entry: u32, in_ptr: u32, in_len: u32, result_ptr: u32) callconv(.c) u32 {

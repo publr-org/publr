@@ -48,6 +48,7 @@ publr serve                                  # http://127.0.0.1:8080
 publr init --email you@example.com --display_name You   # first admin; the password is generated and shown once
 publr build                                  # the apps as files, into ./output/<app> (served by `serve`)
 publr --help                                 # every command; publr <namespace> <verb> --help for details
+publr agents                                 # for an agent building plugins on this Publr
 ```
 
 The database lives in `data/publr.db` next to where you run it (`--db <path>`
@@ -75,6 +76,7 @@ zig build verify                   # tests + wasm check + formatting + tidy rule
 - [Authentication](docs/auth.md): accounts, sessions, passwords, setup.
 - [SDK](docs/sdk.md): the plugin surface: operations, hooks, UI.
 - [Plugins](docs/plugins.md): built-in plugins, compiled in, and installed ones, run in a WebAssembly sandbox.
+- [Agents](docs/agents.md): building on Publr with an agent; the guide `publr agents` prints.
 - [CLI reference](docs/cli.md): flags and every command, one page per namespace.
 - [REST API](docs/rest.md): the server and the `/api/` routes.
 - [Publr in the browser](docs/browser.md): the same binary as WebAssembly, no server.

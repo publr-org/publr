@@ -14,6 +14,8 @@ pub const depth_max: u32 = 8;
 
 pub const Stage = enum { before, after, event };
 
+pub const Manifest = @import("../model/sandboxed_plugin.zig").Manifest;
+
 /// An operation an installed plugin brings, as the SDK authorizes and runs it.
 pub const Operation = struct {
     name: []const u8,
@@ -54,6 +56,8 @@ pub const SandboxedPlugins = struct {
             anywhere: bool,
         ) Error!Staged,
         find: *const fn (context: *anyopaque, name: []const u8) ?Operation,
+        /// Every loaded plugin's manifest: its namespaces and operations, for help.
+        manifests: *const fn (context: *anyopaque) []const Manifest,
         run: *const fn (
             context: *anyopaque,
             ctx: *Ctx,
@@ -113,6 +117,14 @@ pub const SandboxedPlugins = struct {
         std.debug.assert(file.len <= std.fs.max_path_bytes);
 
         return sandboxed.vtable.stage(sandboxed.context, arena, file, anywhere);
+    }
+
+    pub fn manifests(sandboxed: *const SandboxedPlugins) []const Manifest {
+        const found = sandboxed.vtable.manifests(sandboxed.context);
+
+        std.debug.assert(found.len <= 1 << 16);
+
+        return found;
     }
 
     pub fn find(sandboxed: *const SandboxedPlugins, name: []const u8) ?Operation {

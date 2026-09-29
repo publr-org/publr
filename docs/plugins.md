@@ -158,10 +158,25 @@ pub const requires = [_][]const u8{"newsletter"};
 ```
 
 Each hook carries its reason (`pub const reason = "..."`); an event hook names the event
-it sees (`pub const event = "record.published"`), an operation or a notice. `zig build
-plugins` builds every plugin under `plugins/` (`-Dsandboxed-plugins` names another folder) into
-`zig-out/sandboxed-plugins/<name>.wasm`, its manifest written into the module; see
-[Build](build.md#the-plugins). A plugin never writes `export fn`.
+it sees (`pub const event = "record.published"`), an operation or a notice. A plugin never
+writes `export fn`.
+
+In a project, a plugin's source is `sandboxed-plugins/<name>/main.zig`, and
+`publr plugin build --name <name>` builds it with the compiler Publr carries, so no Zig is
+needed: its manifest is read from the module itself and written into it, then it is added
+and enabled (a new plugin) or applied as its next version (one already there, the previous
+kept to roll back to). What it asks for is granted by tier; high requests wait for an
+administrator. Built again unchanged, it is up to date. `zig build sandboxed-plugins` builds
+every plugin under `-Dsandboxed-plugins` with the same command into
+`zig-out/sandboxed-plugins/<name>.wasm`, as the tests build the fixture plugins; see
+[Build](build.md#the-plugins).
+
+What a plugin calls is checked as it compiles: a `ctx.call` of an operation that none of
+its declared permissions opens fails the build, naming the permission to add ("plugin
+peek calls `user.list`, which needs `users.read`"). Its own namespace, the harmless
+operations and record operations pass: a record operation may reach its own types, which
+need nothing, and one that names another type without a permission is refused when it
+runs, as `Denied`.
 
 Not everything a built-in plugin declares runs in the sandbox yet: operations,
 before, after and event hooks, content types, custom fields and roles do; a role from a

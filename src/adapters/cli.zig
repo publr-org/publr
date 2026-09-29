@@ -108,6 +108,12 @@ pub fn CLI(comptime SDK: type) type {
 
             if (bare_namespace) {
                 if (!namespace_known(args[index])) {
+                    if (options.sandboxed_plugins) |sandboxed| {
+                        if (try runtime_cli.print_namespace_help(sandboxed, args[index], out)) {
+                            return if (index + 1 == args.len) 2 else 0;
+                        }
+                    }
+
                     return failf(
                         options,
                         "unknown command \"{s}\"; commands are <namespace> <verb>, " ++
@@ -536,6 +542,11 @@ const help_header =
     \\Usage: publr [--db <path>] [options] <namespace> <verb> [--field value ...]
     \\       publr init --email <email> --display_name <name>   first run: create the admin
     \\       publr serve [--port <n>]                            start the server
+    \\       publr plugin build --name <name>                    build and install a plugin
+    \\       publr apps load                                     load the apps' changes
+    \\       publr zig <args>                                    the compiler for plugins
+    \\
+    \\An agent building on Publr: run `publr agents` first, and read all of it.
     \\
     \\Options:
     \\
@@ -553,7 +564,8 @@ const help_header =
 const help_footer =
     \\
     \\Run `publr <namespace> --help` to list a namespace, `publr <namespace> <verb> --help`
-    \\for the fields of a command.
+    \\for the fields of a command. Installed plugins bring namespaces of their own, not listed
+    \\here: `publr --as-admin plugin list` names them, then `publr <namespace> --help`.
     \\
 ;
 

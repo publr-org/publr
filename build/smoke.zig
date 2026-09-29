@@ -1,7 +1,8 @@
 const std = @import("std");
 
 /// The smoke drives `exe` (with apps to serve) through every entry point, and `bare` (with
-/// none) through what a project without apps answers; `plugin` is the module it installs.
+/// none) through what a project without apps answers; `plugin` is the module it installs,
+/// and the fixture plugins' sources are what `plugin build` builds.
 pub fn add_check(
     builder: *std.Build,
     exe: *std.Build.Step.Compile,
@@ -25,9 +26,10 @@ pub fn add_check(
     run.addArtifactArg(bare);
     run.addArg(builder.pathFromRoot(".zig-cache/smoke"));
     run.addFileArg(sandboxed_plugin);
+    run.addDirectoryArg(builder.path("fixtures/sandboxed-plugins"));
     run.has_side_effects = true;
 
-    std.debug.assert(run.argv.items.len == 5);
+    std.debug.assert(run.argv.items.len == 6);
 
     return &run.step;
 }

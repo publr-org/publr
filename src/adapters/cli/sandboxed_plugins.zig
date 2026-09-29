@@ -135,6 +135,62 @@ pub fn print_help(found: sdk.sandboxed_plugins.Operation, out: *std.Io.Writer) E
     }
 }
 
+/// `publr <namespace> --help` for a namespace an installed plugin brings: its summary and
+/// details, then its commands. False when no loaded plugin declares it.
+pub fn print_namespace_help(
+    sandboxed: *const sdk.sandboxed_plugins.SandboxedPlugins,
+    namespace: []const u8,
+    out: *std.Io.Writer,
+) Error!bool {
+    std.debug.assert(namespace.len > 0);
+
+    for (sandboxed.manifests()) |manifest| {
+        for (manifest.namespaces) |documented| {
+            if (!std.mem.eql(u8, documented.name, namespace)) {
+                continue;
+            }
+
+            out.print("Usage: publr {s} <verb> [--field value ...]\n\n{s}\n\n{s}\n", .{
+                namespace,
+                documented.summary,
+                documented.details,
+            }) catch return error.WriteFailed;
+            try print_commands(manifest, namespace, out);
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn print_commands(
+    manifest: sandboxed_plugin.Manifest,
+    namespace: []const u8,
+    out: *std.Io.Writer,
+) Error!void {
+    std.debug.assert(namespace.len > 0);
+    std.debug.assert(manifest.name.len > 0);
+
+    out.print("\nCommands (installed plugin {s} {s}):\n\n", .{
+        manifest.name,
+        manifest.version,
+    }) catch return error.WriteFailed;
+
+    for (manifest.operations) |operation| {
+        if (std.mem.eql(u8, sdk.operation.namespace(operation.name), namespace)) {
+            out.print("  {s} {s:<20} {s}\n", .{
+                namespace,
+                sdk.operation.verb(operation.name),
+                operation.description,
+            }) catch return error.WriteFailed;
+        }
+    }
+
+    out.print("\nRun `publr {s} <verb> --help` for the fields of a command.\n", .{namespace}) catch
+        return error.WriteFailed;
+}
+
 test "flags become JSON by the field shapes; unknown and missing flags are named" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();

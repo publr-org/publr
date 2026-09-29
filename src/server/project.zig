@@ -26,6 +26,11 @@ pub const Project = struct {
     apps_failed: bool = false,
     /// The host the apps' subdomains hang from: the project's address without its port.
     domain: []const u8 = "",
+    /// The apps as `serve` holds them, to load again when asked; null outside `serve`.
+    apps_host: ?*@import("apps_host.zig").AppsHost = null,
+    /// The key the CLI next to this server sends a command with (`operator.zig`); null when
+    /// it takes none.
+    operator_key: ?[]const u8 = null,
     /// The installed plugins installed, which every context made for a request carries.
     sandboxed_plugins: ?*const sdk.sandboxed_plugins.SandboxedPlugins = null,
     /// Asked before an app delivers a page or an island: the plugins' gates.

@@ -1,11 +1,14 @@
 const std = @import("std");
 const server = @import("../server.zig");
 const report = @import("../lib/report.zig");
+const toolchain = @import("toolchain.zig");
+const operator = @import("operator.zig");
 const routes = @import("routes.zig");
 const http = @import("../lib/http.zig");
 const apps_adapter = @import("../adapters/apps.zig");
 const sdk = @import("../sdk.zig");
 const build_command = @import("build.zig");
+const apps_host = @import("apps_host.zig");
 
 const port_default: u16 = 8080;
 const browser_port_default: u16 = 8081;
@@ -30,7 +33,7 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     std.debug.assert(db_path.len > 0);
     std.debug.assert(port_default > 0);
 
-    var flags = parse_flags(args);
+    const flags = parse_flags(args);
 
     if (flags.exit) |code| {
         return code;
@@ -38,6 +41,11 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
 
     const port = flags.port;
     const browser_dir = flags.browser_dir;
+
+    // The browser build's server only hands out files: it owns no project.
+    if (browser_dir == null and try another_server(init, db_path)) {
+        return 1;
+    }
 
     var application: server.Server = undefined;
     try application.init(init, db_path);
@@ -64,21 +72,28 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
 
     listener.user_data = &project;
 
-    var reason: report.Reason = .{};
-    var apps: []apps_adapter.App = &.{};
-    defer if (apps.len > 0) init.gpa.free(apps);
-    defer apps_adapter.load.close(&project);
+    var apps: apps_host.AppsHost = .{
+        .gpa = init.gpa,
+        .index = &application.index,
+        .project = &project,
+        .mode = .{ .options = flags.apps, .static = flags.static, .full = flags.full },
+    };
+    defer apps.close();
 
     if (browser_dir != null) {
         routes.register_static(listener.router());
     } else {
-        flags.apps.diagnostic = &reason;
-        apps = try init.gpa.alloc(apps_adapter.App, apps_adapter.spec.all.len);
-        start_apps(init.gpa, &application.index, &project, apps, flags);
+        apps.start();
+        project.apps_host = &apps;
         routes.register(listener.router());
     }
 
-    announce(try listener.bound_port(), browser_dir);
+    const bound = try listener.bound_port();
+    const session = try claim(init, db_path, bound, browser_dir == null);
+    defer if (session != null) operator.close(init.io, init.arena.allocator(), db_path);
+
+    project.operator_key = if (session) |*owned| &owned.key else null;
+    announce(bound, browser_dir);
     try listener.enable_shutdown_signals();
 
     try run_loop(&listener, &project);
@@ -86,30 +101,41 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     return 0;
 }
 
-/// An app that does not load affects the apps, never the CMS or its repair tools.
-fn start_apps(
-    gpa: std.mem.Allocator,
-    index: *@import("../lib/deps.zig").Index,
-    project: *routes.Project,
-    apps: []apps_adapter.App,
-    flags: Flags,
-) void {
-    std.debug.assert(project.apps.len == 0);
-    std.debug.assert(apps.len == apps_adapter.spec.all.len);
+/// Whether a server already runs for this database, said when it does: one project, one
+/// owner. When none does, the compiler for plugins is made ready before serving.
+fn another_server(init: std.process.Init, db_path: [:0]const u8) !bool {
+    std.debug.assert(db_path.len > 0);
 
-    if (apps.len == 0) {
-        return;
+    const running = try operator.find(init.io, init.arena.allocator(), db_path) orelse {
+        toolchain.prepare(init);
+        return false;
+    };
+
+    std.debug.assert(running.port > 0);
+    report.err("publr serve: a server already runs for {s} on port {d}", .{
+        db_path,
+        running.port,
+    });
+
+    return true;
+}
+
+/// This server's session beside the database, which the CLI sends its commands through;
+/// none for the browser build's server, which owns no project.
+fn claim(
+    init: std.process.Init,
+    db_path: [:0]const u8,
+    port: u16,
+    owns_project: bool,
+) !?operator.Session {
+    std.debug.assert(port > 0);
+    std.debug.assert(db_path.len > 0);
+
+    if (!owns_project) {
+        return null;
     }
 
-    open_apps(gpa, index, project, apps, flags) catch |err| {
-        project.apps_failed = true;
-        const cause = if (flags.apps.diagnostic) |reason| reason.text() else "";
-        report.warn_reason(
-            cause,
-            "publr serve: the apps are unavailable: {s}; the admin stays up at /admin",
-            .{@errorName(err)},
-        );
-    };
+    return try operator.open(init.io, init.arena.allocator(), db_path, port);
 }
 
 fn run_loop(listener: *http.App, project: *routes.Project) !void {
@@ -122,47 +148,6 @@ fn run_loop(listener: *http.App, project: *routes.Project) !void {
 
         if (project.apps.len > 0) {
             tick_apps(project);
-        }
-    }
-}
-
-/// Every app loaded and validated, then: `--static` brings each app's build up to date now
-/// (or builds it whole under `--full`), `--dev` serves nothing from a build, and otherwise
-/// an existing build under `--out` is what is served.
-fn open_apps(
-    gpa: std.mem.Allocator,
-    index: *@import("../lib/deps.zig").Index,
-    project: *routes.Project,
-    apps: []apps_adapter.App,
-    flags: Flags,
-) !void {
-    std.debug.assert(project.apps.len == 0);
-    std.debug.assert(flags.browser_dir == null);
-
-    const now_ms = sdk.context.wall_clock_ms(project.io);
-
-    try apps_adapter.load.open(project, apps, gpa, index, flags.apps, now_ms);
-
-    if (flags.static) {
-        const refreshed = try build_command.bring_up_to_date(project, flags.full);
-
-        build_command.announce(refreshed, flags.apps.output_dir);
-    } else if (flags.apps.dev) {
-        std.debug.print("publr: --dev: rendering every page live, nothing cached\n", .{});
-    } else {
-        var served: u32 = 0;
-
-        for (project.apps) |*app| {
-            app.open_existing_output();
-
-            if (app.output != null) {
-                served += 1;
-            }
-        }
-
-        if (served == 0) {
-            std.debug.print("publr: no ./{s}/, rendering the apps on request; " ++
-                "`publr build` makes them static\n", .{flags.apps.output_dir});
         }
     }
 }
@@ -427,13 +412,18 @@ test "a failed static build keeps the apps for recovery and releases them on shu
     try scratch.dir.writeFile(std.testing.io, .{ .sub_path = "file", .data = "occupied" });
     const path = try scratch.dir.realPathFileAlloc(std.testing.io, "file", std.testing.allocator);
     defer std.testing.allocator.free(path);
-    var apps: [apps_adapter.spec.all.len]apps_adapter.App = undefined;
-    try open_apps(std.testing.allocator, &index, &project, &apps, .{
-        .static = true,
-        .apps = .{ .output_dir = path, .apps_dir = "fixtures/apps" },
-    });
-    defer apps_adapter.load.close(&project);
-    try std.testing.expectEqual(@as(usize, apps.len), project.apps.len);
+    var host: apps_host.AppsHost = .{
+        .gpa = std.testing.allocator,
+        .index = &index,
+        .project = &project,
+        .mode = .{
+            .static = true,
+            .options = .{ .output_dir = path, .apps_dir = "fixtures/apps" },
+        },
+    };
+    try host.reload();
+    defer host.close();
+    try std.testing.expectEqual(@as(usize, host.apps.len), project.apps.len);
 
     for (project.apps) |*app| {
         try std.testing.expect(app.build_ready == (app.program == null));

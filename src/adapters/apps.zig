@@ -20,10 +20,12 @@ pub const middleware = @import("apps/middleware.zig");
 pub const edge = @import("apps/edge.zig");
 pub const artifacts = @import("apps/artifacts.zig");
 pub const load = @import("apps/load.zig");
+pub const folder = @import("apps/folder.zig");
 pub const App = state.App;
 pub const Options = state.Options;
 pub const valid_options = state.valid_options;
 pub const check_apps = state.check_apps;
+pub const check_specs = state.check_specs;
 pub const routes_count: u32 = 1;
 
 const Request = http.Request;

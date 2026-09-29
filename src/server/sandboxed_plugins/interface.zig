@@ -21,6 +21,7 @@ pub const vtable: sdk.sandboxed_plugins.SandboxedPlugins.VTable = .{
     .stage = &stage,
     .roles = &roles_of,
     .find = &find,
+    .manifests = &manifests,
     .run = &run,
     .hooked = &hooked,
     .before = &before,
@@ -126,6 +127,14 @@ fn check_loads(host: *Host, bytes: []const u8) sdk.Error!void {
     };
 
     module.unload();
+}
+
+fn manifests(context: *anyopaque) []const sdk.sandboxed_plugins.Manifest {
+    const host = host_of(context);
+
+    std.debug.assert(host.manifests.len <= host.loaded.items.len);
+
+    return host.manifests;
 }
 
 fn find(context: *anyopaque, name: []const u8) ?sdk.sandboxed_plugins.Operation {

@@ -3,6 +3,27 @@
 const std = @import("std");
 const smoke = @import("../smoke.zig");
 
+/// A plugin built from its source by the compiler the binary carries, added and enabled;
+/// built again unchanged, it is up to date.
+pub fn expect_plugin_build(
+    init: std.process.Init,
+    binary: []const u8,
+    work_dir: []const u8,
+    fixtures: []const u8,
+) !void {
+    std.debug.assert(binary.len > 0);
+    std.debug.assert(std.fs.path.isAbsolute(fixtures));
+
+    const arena = init.arena.allocator();
+    const dir = try std.fmt.allocPrint(arena, "{s}/plugin-build", .{work_dir});
+    const source = try std.fmt.allocPrint(arena, "{s}/greeter", .{fixtures});
+    const build = [_][]const u8{ "plugin", "build", "--name", "greeter", "--dir", source };
+
+    try std.Io.Dir.cwd().createDirPath(init.io, dir);
+    try smoke.expect_contains(init, binary, dir, &build, "\"enabled\": true");
+    try smoke.expect_contains(init, binary, dir, &build, "greeter is up to date");
+}
+
 pub fn expect_sandboxed_plugins(
     init: std.process.Init,
     binary: []const u8,

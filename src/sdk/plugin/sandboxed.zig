@@ -12,6 +12,7 @@ pub const reason_len_max: u32 = 200;
 pub const entries_max: u32 = 256;
 
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
+const catalog = @import("../../model/permission.zig");
 
 /// A permission a plugin asks for, by the key the administrator sees (`content.write`), and
 /// the plugin's own sentence on why it needs it.
@@ -176,4 +177,73 @@ test "entries number operations first, then hooks, and read a hook's shapes from
     try std.testing.expect(HookOut(Hook) == Plugin.Record.Out);
     try std.testing.expectEqual(0, comptime permissions_of(Plugin).len);
     try std.testing.expectEqual(0, comptime strings_of(Plugin, "allowed_domains").len);
+}
+
+/// Checked where a sandboxed plugin calls `operation_name`, as that call compiles: a call no
+/// declared permission covers fails the build, naming the permission to ask for. Its own
+/// namespace, the harmless operations and record operations (they may reach its own types,
+/// which need nothing; another type is refused when the call runs) pass. The plugin is the
+/// module's root's `Plugin`; a build without one (Publr itself, its tests) checks nothing.
+pub fn check_call(comptime operation_name: []const u8) void {
+    comptime {
+        const root = @import("root");
+
+        if (!@hasDecl(root, "Plugin")) {
+            return;
+        }
+
+        const Plugin = root.Plugin;
+        const name = Plugin.manifest.name;
+        const label = "plugin " ++ name ++ " calls `" ++ operation_name ++ "`, ";
+
+        std.debug.assert(operation_name.len > 0);
+
+        if (catalog.contains(&catalog.never, operation_name)) {
+            @compileError(label ++ "which no plugin may call");
+        }
+
+        const own = @import("../plugin_access.zig").own(name, operation_name);
+        const free = catalog.contains(&catalog.always, operation_name) or
+            catalog.contains(&catalog.own_records, operation_name);
+
+        if (own or free) {
+            return;
+        }
+
+        var needed: []const u8 = "";
+
+        for (catalog.core) |candidate| {
+            if (!catalog.contains(candidate.operations, operation_name)) {
+                continue;
+            }
+
+            if (asks_for(Plugin, candidate.key)) {
+                return;
+            }
+
+            needed = candidate.key;
+        }
+
+        if (needed.len == 0) {
+            @compileError(label ++ "which no permission opens to a plugin");
+        }
+
+        @compileError(label ++ "which needs `" ++ needed ++ "`: add " ++
+            "`.{ .key = \"" ++ needed ++ "\", .reason = \"<why it needs it>\" }` to its " ++
+            "`permissions`");
+    }
+}
+
+fn asks_for(comptime Plugin: type, comptime key: []const u8) bool {
+    comptime {
+        std.debug.assert(key.len > 0);
+
+        for (permissions_of(Plugin)) |asked| {
+            if (std.mem.eql(u8, asked.key, key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

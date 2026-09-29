@@ -205,7 +205,7 @@ fn module_of(
 
 /// Every file with `extension` under `dir`, as build-root-relative paths with forward
 /// slashes, sorted; none when the folder does not exist.
-fn files_under(builder: *std.Build, dir: []const u8, extension: []const u8) []const []const u8 {
+pub fn files_under(builder: *std.Build, dir: []const u8, extension: []const u8) []const []const u8 {
     std.debug.assert(dir.len > 0);
     std.debug.assert(extension.len > 0);
 

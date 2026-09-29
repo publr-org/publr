@@ -326,21 +326,27 @@ Grouped by kind. Lines are the whole file, tests included.
 #### Entry points
 | File | Lines | What |
 |---|---|---|
-| `main.zig` | 158 | `publr [--db] <cmd>`: `serve`, `build`, `check-apps` or the CLI |
-| `server/serve.zig` | 509 | `publr serve`: open the database and the apps, run the HTTP server loop with the rebuild queue between ticks |
-| `server/build.zig` | 207 | `publr build`: every app as files |
+| `main.zig` | 228 | `publr [--db] <cmd>`: `serve`, `build`, `zig`, `plugin build`, `agents`, `check-apps` or the CLI |
+| `server/serve.zig` | 510 | `publr serve`: open the database and the apps, run the HTTP server loop with the rebuild queue between ticks; refuse to run beside another server, leave the session the CLI finds |
+| `server/build.zig` | 221 | `publr build`: every app as files |
+| `server/toolchain.zig` | 124 | `publr zig`: the compiler and the SDK plugins build against, written out once per machine at `init` and `serve` (a warning when they cannot be), run as a child process |
+| `server/agents.zig` | 37 | `publr agents`: the guide for agents (`docs/agents.md`), this machine's SDK path, the permission catalog |
+| `server/apps_host.zig` | 135 | The apps `serve` holds: read from the folder (or the build's own), opened, loaded again on `apps load` |
+| `server/apps_load.zig` | 126 | `publr apps load` and `/_publr/apps/load`: the apps swapped into the running server, or checked here |
+| `server/operator.zig` | 304 | While `serve` runs: its session beside the database, the CLI sending it commands (`/_publr/cli`), and running a command there or here (`Commands`) |
+| `server/plugin_build.zig` | 336 | `publr plugin build`: a plugin's source compiled, its manifest read from the module in the sandbox and written in, then added and enabled or applied as its next version |
 | `server.zig` | 111 | `Server`: open the database, apply schema and plugin bootstrap, open the dependency index, hold auth state |
 | `server/wasm.zig` | 325 | The same program as a wasm reactor: init, import a db, answer one request |
-| `publr.zig` | 62 | The library root: re-exports every module (what plugins import as `publr`) |
+| `publr.zig` | 69 | The library root: re-exports every module (what plugins import as `publr`) |
 | `server/registry.zig` | 74 | Core + plugin operations/namespaces/policies/hooks/types/roles, the `SDK`, the status and role registries, bootstrap |
-| `server/routes.zig` | 231 | The route table (`/api/auth/*`, `/api/health`, admin, rest, the apps as the fallback) and a `testing.Flow` that drives the full router |
-| `server/project.zig` | 123 | `Project`: the per-process handle handlers get (`connection`, `auth`, static dir, the loaded apps, the domain), which app a request is for, the session cookie's domain |
-| `server/sandboxed_plugins.zig` | 232 | The installed plugins the server holds: the sandbox's runtime, every plugin loaded from its row and file, the hook and operation index, the roles plugins declare |
-| `server/sandboxed_plugins/interface.zig` | 329 | The `sdk.plugins.Plugins` every context carries: find and run a plugin's operation, run its hooks, read a module to install, reload after a change |
-| `server/sandboxed_plugins/invoke.zig` | 298 | One call into a plugin, as itself and within its limits; the host functions it may call (`publr_call`, `publr_notice`, `publr_log`) |
+| `server/routes.zig` | 288 | The route table (`/api/auth/*`, `/api/health`, admin, rest, the apps as the fallback) and a `testing.Flow` that drives the full router |
+| `server/project.zig` | 130 | `Project`: the per-process handle handlers get (`connection`, `auth`, static dir, the loaded apps, the domain), which app a request is for, the session cookie's domain |
+| `server/sandboxed_plugins.zig` | 248 | The installed plugins the server holds: the sandbox's runtime, every plugin loaded from its row and file, the hook and operation index, the roles plugins declare |
+| `server/sandboxed_plugins/interface.zig` | 375 | The `sdk.plugins.Plugins` every context carries: find and run a plugin's operation, run its hooks, read a module to install, reload after a change |
+| `server/sandboxed_plugins/invoke.zig` | 316 | One call into a plugin, as itself and within its limits; the host functions it may call (`publr_call`, `publr_notice`, `publr_log`) |
 | `server/sandboxed_plugins/loaded.zig` | 179 | One installed plugin: its module, manifest, grants, own types, content access, limits, and its disposable instance |
 | `server/sandboxed_plugins/files.zig` | 224 | Modules on the data drive by their hash, uploads arriving in pieces, the sweep of files no row names |
-| `server/sandboxed_plugins/scenarios.zig` | 373 | The sandbox end to end on the fixture plugins: install, call, revoke, update, remove, the admin's pages |
+| `server/sandboxed_plugins/scenarios.zig` | 518 | The sandbox end to end on the fixture plugins: install, call, revoke, update, remove, the admin's pages |
 
 #### template/ (the template engine)
 | File | Lines | What |
@@ -360,9 +366,10 @@ Grouped by kind. Lines are the whole file, tests included.
 #### adapters/apps/ (the fourth door: readers)
 | File | Lines | What |
 |---|---|---|
-| `adapters/apps.zig` | 1047 | The dispatcher (the app mounted where a request asked, then its assets, islands or pages), the caching policy, `ETag`/304; the apps' integration tests |
-| `adapters/apps/spec.zig` | 351 | Every compiled-in app as data, read off the generated `apps` module at compile time: name, mount, roles, templates, assets, tokens, interactive components, middleware |
-| `adapters/apps/state.zig` | 428 | `App`: one app loaded, its stylesheet from the JIT, its fingerprint and assets, its address and output folder; `check_apps` |
+| `adapters/apps.zig` | 1049 | The dispatcher (the app mounted where a request asked, then its assets, islands or pages), the caching policy, `ETag`/304; the apps' integration tests |
+| `adapters/apps/spec.zig` | 361 | Every compiled-in app as data, read off the generated `apps` module at compile time: name, mount, roles, templates, assets, tokens, interactive components, middleware |
+| `adapters/apps/state.zig` | 439 | `App`: one app loaded, its stylesheet from the JIT, its fingerprint and assets, its address and output folder; `check_apps` |
+| `adapters/apps/folder.zig` | 318 | Apps read from a project's folder at runtime: `app.zon`, templates, the build's checks; compiled parts from the build's app of the same name |
 | `adapters/apps/load.zig` | 47 | Every app loaded into the project, and released |
 | `adapters/apps/fingerprint.zig` | 263 | The generated assets' fingerprint and the build stamp |
 | `adapters/apps/context.zig` | 1027 | The Publr API a template reads, over `record.list|get` (anonymous when shared, the visitor per request, nobody to an app whose roles it lacks); `Deps` recording |
@@ -444,8 +451,8 @@ Grouped by kind. Lines are the whole file, tests included.
 #### Adapters
 | File | Lines | What |
 |---|---|---|
-| `adapters/cli.zig` | 838 | Args to `In`, dispatch, print `Out`, `--help` from the op docs, `--as` to caller |
-| `adapters/cli/sandboxed_plugins.zig` | 167 | An installed plugin's commands: flags to JSON by its manifest's field shapes, `--help` from its manifest |
+| `adapters/cli.zig` | 1091 | Args to `In`, dispatch, print `Out`, `--help` from the op docs, `--as` to caller |
+| `adapters/cli/sandboxed_plugins.zig` | 223 | An installed plugin's commands: flags to JSON by its manifest's field shapes, `--help` from its manifest |
 | `adapters/rest.zig` | 256 | `GET/POST /api/:namespace/:verb` to the op; query/body to `In`; its http test |
 | `adapters/rest/identity.zig` | 173 | Who is making an HTTP request: cookie to caller, CSRF guard for writes, the `Ctx` a handler dispatches with |
 | `adapters/rest/auth.zig` | 247 | `/api/auth/*` handlers (sign-in, sign-out, set-password, session) and their http test |
@@ -481,11 +488,11 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/authorize.zig` | 318 | The core policy (anonymous reads live+public, a user what its roles grant); runs plugin policies |
 | `sdk/middleware.zig` | 89 | Hook stages (`pre`, `before`, `after`, `on`) and event shapes |
 | `sdk/plugin.zig` | 374 | What a plugin module may export; `Merged(plugins)`; compile-time validation |
-| `sdk/plugin/sandboxed.zig` | 179 | What a plugin declares to run in the sandbox (permissions, limits, content access), its entries, what may not be sandboxed |
+| `sdk/plugin/sandboxed.zig` | 249 | What a plugin declares to run in the sandbox (permissions, limits, content access), its entries, what may not be sandboxed |
 | `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |
-| `sdk/plugin/guest.zig` | 331 | The SDK inside the sandbox: `PluginCtx` proxied to the host as JSON, the exports generated for a plugin |
+| `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `PluginCtx` proxied to the host as JSON, the exports generated for a plugin, its manifest among them |
 | `sdk/plugin/wire.zig` | 107 | What crosses the sandbox's boundary: error codes, the result cell, the envelopes |
-| `sdk/sandboxed_plugins.zig` | 168 | The `Plugins` interface through which dispatch reaches installed plugins' operations and hooks |
+| `sdk/sandboxed_plugins.zig` | 195 | The `Plugins` interface through which dispatch reaches installed plugins' operations and hooks |
 | `sdk/plugin_access.zig` | 188 | A plugin's granted permissions turned into the grant for one request |
 | `sdk/call_json.zig` | 189 | Calling an operation by name with JSON in and out, a built-in one or a plugin's, through the same steps |
 | `sdk/plugin/context.zig` | 56 | `PluginCtx`: the narrowed ctx a plugin operation receives |

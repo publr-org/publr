@@ -25,8 +25,7 @@ pub fn build(builder: *std.Build) void {
         .root_module = core.add_entry(builder, "src/main.zig", library),
     });
     const run_cmd = builder.addRunArtifact(exe);
-    const stubs = sandboxed_plugins.stubs_of(builder, builder.dependency("publr_wasm", .{}));
-    const fixture_plugins = sandboxed_plugins.add(builder, sandboxed_plugins.fixture_dir, stubs);
+    const fixture_plugins = sandboxed_plugins.add(builder, exe, sandboxed_plugins.fixture_dir);
     const checks = tests.add(builder, target, optimize, from, library, fixture_plugins);
     const fmt_check = builder.addFmt(.{
         .paths = &.{ "build.zig", "build", "src", "scripts" },
@@ -72,7 +71,7 @@ pub fn build(builder: *std.Build) void {
         verify_step.dependOn(local_hook);
     }
 
-    sandboxed_plugins.add_step(builder, stubs, from.sandboxed_plugins_dir);
+    sandboxed_plugins.add_step(builder, exe, from.sandboxed_plugins_dir);
     vendors.add_import_step(builder);
     vendors.add_cache_check_step(builder);
 }

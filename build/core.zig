@@ -5,6 +5,7 @@ const gen = @import("gen.zig");
 const jit = @import("jit.zig");
 const apps = @import("apps.zig");
 const diagnostic = @import("diagnostic.zig");
+const sandboxed_plugins = @import("sandboxed_plugins.zig");
 
 /// Where the compiled-in apps and native plugins come from, relative to this repository:
 /// a project built from another repository (Publr Cloud) names its own.
@@ -17,6 +18,8 @@ pub const Sources = struct {
     /// Where `serve` reads each app's `public/` files by default: `apps`, relative to where
     /// it runs, or (built with `-Dpreset`) the preset's apps folder, wherever it runs.
     public_dir: []const u8 = "apps",
+    /// Whether the binary carries the compiler for sandboxed plugins (`publr zig`).
+    compiler: bool = true,
 };
 
 /// `-Dpreset=<dir>`: a project's parts kept together, `<dir>/apps`, `<dir>/native-plugins`
@@ -66,12 +69,18 @@ pub fn sources(builder: *std.Build) Sources {
         "apps-max",
         "How many apps one project may compile in (default: 32)",
     ) orelse apps.apps_max_default;
+    const compiler = builder.option(
+        bool,
+        "compiler",
+        "Carry the compiler for sandboxed plugins, `publr zig` (default: true)",
+    ) orelse true;
     const chosen: Sources = .{
         .apps_dir = apps_dir,
         .native_plugins_dir = native_plugins_dir,
         .apps_max = apps_max,
         .sandboxed_plugins_dir = sandboxed_plugins_dir,
         .public_dir = if (from_preset != null) builder.pathFromRoot(apps_dir) else "apps",
+        .compiler = compiler,
     };
     const root = builder.build_root.path.?;
 
@@ -140,7 +149,7 @@ pub fn add_module(
         },
     });
 
-    // The sandbox runs plugins natively; the browser build has none yet.
+    // The sandbox runs plugins natively; the browser build has none yet, nor a compiler.
     if (target.result.os.tag != .wasi) {
         const publr_wasm = builder.dependency("publr_wasm", .{
             .target = target,
@@ -148,7 +157,12 @@ pub fn add_module(
         });
 
         module.addImport("publr_wasm", publr_wasm.module("publr_wasm"));
+        module.addAnonymousImport("agents_guide", .{
+            .root_source_file = builder.path("docs/agents.md"),
+        });
     }
+
+    add_compiler(builder, module, target, optimize, from.compiler);
 
     vendors.add_include_paths(builder, module);
     module.linkLibrary(vendors.add_library(builder, target));
@@ -166,6 +180,38 @@ pub fn add_module(
     std.debug.assert(module.root_source_file != null);
 
     return module;
+}
+
+/// The compiler for sandboxed plugins, built for `target` without LLVM, unless the binary is
+/// built without it (`-Dcompiler=false`) or for the browser. `toolchain_options.compiler`
+/// says which.
+fn add_compiler(
+    builder: *std.Build,
+    module: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    wanted: bool,
+) void {
+    std.debug.assert(module.root_source_file != null);
+    std.debug.assert(builder.build_root.path != null);
+
+    const carried = wanted and target.result.os.tag != .wasi;
+    const options = builder.addOptions();
+
+    options.addOption(bool, "compiler", carried);
+    module.addImport("toolchain_options", options.createModule());
+
+    if (carried) {
+        const publr_zig = builder.dependency("publr_zig", .{
+            .target = target,
+            .release = optimize != .Debug,
+        });
+
+        module.addImport("publr_zig", publr_zig.module("publr_zig"));
+        module.addAnonymousImport("sdk_archive", .{
+            .root_source_file = sandboxed_plugins.sdk_archive(builder, publr_zig.artifact("pack")),
+        });
+    }
 }
 
 /// What the admin's pages run in the browser: the PublrJS runtime from the sibling

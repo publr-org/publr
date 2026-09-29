@@ -44,6 +44,11 @@ pub const operations = struct {
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");
+pub const toolchain = if (builtin.os.tag == .wasi) void else @import("server/toolchain.zig");
+pub const plugin_build = if (builtin.os.tag == .wasi) void else @import("server/plugin_build.zig");
+pub const operator = if (builtin.os.tag == .wasi) void else @import("server/operator.zig");
+pub const agents = if (builtin.os.tag == .wasi) void else @import("server/agents.zig");
+pub const apps_load = if (builtin.os.tag == .wasi) void else @import("server/apps_load.zig");
 
 test {
     std.testing.refAllDecls(@This());

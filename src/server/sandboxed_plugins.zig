@@ -34,6 +34,8 @@ pub const Host = struct {
     index_arena: std.heap.ArenaAllocator,
     /// The build's roles with every plugin's merged in, while any plugin declares one.
     roles: ?[]const model.role.Role = null,
+    /// Every loaded plugin's manifest, in load order: what help lists.
+    manifests: []const model.sandboxed_plugin.Manifest = &.{},
     interface: sdk.sandboxed_plugins.SandboxedPlugins,
 
     pub fn init(host: *Host, gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !void {
@@ -136,13 +138,17 @@ pub const Host = struct {
         host.hooks = .empty;
         host.operations = .empty;
         host.roles = null;
+        host.manifests = &.{};
 
         const arena = host.index_arena.allocator();
         var roles: std.ArrayList(model.role.Role) = .empty;
+        const manifests = try arena.alloc(model.sandboxed_plugin.Manifest, host.loaded.items.len);
 
         for (host.loaded.items, 0..) |*loaded, plugin_index| {
             const manifest = &loaded.manifest;
             const index: u32 = @intCast(plugin_index);
+
+            manifests[plugin_index] = manifest.*;
 
             for (manifest.operations, 0..) |operation, entry| {
                 const target: Target = .{ .sandboxed_plugin = index, .entry = @intCast(entry) };
@@ -167,6 +173,8 @@ pub const Host = struct {
         if (roles.items.len > 0) {
             host.roles = try merge_roles(arena, registry.SDK.roles, roles.items);
         }
+
+        host.manifests = manifests;
     }
 
     /// The loaded plugin called `name`.

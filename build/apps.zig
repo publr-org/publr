@@ -30,6 +30,9 @@ pub fn add(
     }
 
     append(builder, &source, "};\n");
+    // The generated client code every app serves, for an app read from a project's folder
+    // with nothing of its own compiled: no interactive components, so no stores.
+    append(builder, &source, "pub const common_assets = @import(\"app_common_assets\").files;\n");
 
     const listing = builder.addWriteFiles().add("apps.zig", source.items);
     const module = builder.createModule(.{
@@ -44,6 +47,9 @@ pub fn add(
         module.addImport(builder.fmt("app_{s}", .{name}), app);
     }
 
+    const no_stores = builder.addWriteFiles().add("stores.js", "");
+
+    module.addImport("app_common_assets", embed.assets(builder, "common", no_stores));
     library.addImport("apps", module);
 }
 

@@ -10,6 +10,9 @@ const identity_module = @import("../adapters/rest/identity.zig");
 const rest_auth = @import("../adapters/rest/auth.zig");
 const rest_providers = @import("../adapters/rest/providers.zig");
 const apps_adapter = @import("../adapters/apps.zig");
+const builtin = @import("builtin");
+const operator = @import("operator.zig");
+const apps_load = @import("apps_load.zig");
 
 const Error = http.Error;
 const Request = http.Request;
@@ -34,12 +37,19 @@ pub fn register(router: *http.Router) void {
     router.get("/api/auth/session", &rest_auth.whoami);
     router.get("/auth/sign-on", &rest_auth.sign_on);
     router.post("/auth/sign-on", &rest_auth.sign_on);
+    // A CLI runs beside a native server only; the browser build carries no CLI.
+    if (builtin.os.tag != .wasi) {
+        router.post(operator.route, &operator.handle);
+        router.post(apps_load.route, &apps_load.handle);
+    }
+
     provider_routes.register(router);
     admin.register(router);
     rest.register(router);
     apps_adapter.register(router);
 
-    const fixed = 9 + provider_routes.routes_count;
+    const operator_routes: u32 = if (builtin.os.tag == .wasi) 0 else 2;
+    const fixed = 9 + operator_routes + provider_routes.routes_count;
 
     std.debug.assert(router.routes_len == fixed + admin.routes_count + apps_adapter.routes_count);
 }

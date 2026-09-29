@@ -58,6 +58,13 @@ page answers with an `ETag`, a rendered one with `no-store`; `X-Publr-Served` sa
 |---|---|
 | `GET /api/health` | `{ "version", "echo", "caller" }`; `caller` is who you are (`anonymous`, or a user id) |
 
+## The CLI next to the server
+
+| Route | What |
+|---|---|
+| `POST /_publr/apps/load` | from `publr apps load`, with the same key: the apps read from their folder again and swapped in; answers `{ "loaded" }` or `{ "error" }` |
+| `POST /_publr/cli` | body `{ "args", "password" }`: a command the CLI sends the server running for its database, run as the CLI would run it; answers `{ "code", "out", "err" }`. Only with the key this run of `serve` wrote beside the database (`X-Publr-Operator`), else `403`; see [CLI](cli.md#while-a-server-runs) |
+
 ## Authentication
 
 | Route | What |

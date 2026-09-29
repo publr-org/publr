@@ -13,10 +13,12 @@ pub fn main(init: std.process.Init) !u8 {
     const bare_arg = iterator.next() orelse return error.MissingBinaryPath;
     const work_dir = iterator.next() orelse return error.MissingWorkDir;
     const module_arg = iterator.next() orelse return error.MissingPlugin;
+    const fixtures_arg = iterator.next() orelse return error.MissingPlugin;
     const arena = init.arena.allocator();
     const module = try std.Io.Dir.cwd().realPathFileAlloc(init.io, module_arg, arena);
     const binary = try std.Io.Dir.cwd().realPathFileAlloc(init.io, binary_arg, arena);
     const bare = try std.Io.Dir.cwd().realPathFileAlloc(init.io, bare_arg, arena);
+    const fixtures = try std.Io.Dir.cwd().realPathFileAlloc(init.io, fixtures_arg, arena);
 
     std.debug.assert(std.fs.path.isAbsolute(binary));
     std.debug.assert(std.fs.path.isAbsolute(work_dir));
@@ -32,13 +34,18 @@ pub fn main(init: std.process.Init) !u8 {
     try expect_contains(init, binary, work_dir, &admin_check, "\"caller\": \"system\"");
     try expect_contains(init, binary, work_dir, &.{"--help"}, "heartbeat check");
     try expect_contains(init, binary, work_dir, &.{ "user", "--help" }, "user password_link");
+    try expect_compiler(init, binary, bare, work_dir);
+    try expect_contains(init, bare, work_dir, &.{"agents"}, "publr plugin build --name");
+    try expect_contains(init, bare, work_dir, &.{"--help"}, "run `publr agents` first");
     try expect_auth(init, binary, work_dir);
     const sandboxed = @import("smoke/sandboxed_plugins.zig");
 
     try sandboxed.expect_sandboxed_plugins(init, binary, work_dir, module);
+    try sandboxed.expect_plugin_build(init, bare, work_dir, fixtures);
     try expect_build(init, binary, work_dir, "smoke@example.com");
     try expect_serve(init, binary, work_dir);
     try expect_bare(init, bare, work_dir);
+    try expect_apps_folder(init, bare, work_dir);
 
     std.debug.print("smoke: ok\n", .{});
 
@@ -358,6 +365,8 @@ fn expect_serve(init: std.process.Init, binary: []const u8, work_dir: []const u8
         return error.SmokeFailed;
     }
 
+    try expect_operator(init, binary, work_dir);
+
     const login_page = try http_get(init, port, "/admin/login");
 
     if (std.mem.indexOf(u8, login_page, "<title>Log in · Publr</title>") == null) {
@@ -439,6 +448,73 @@ fn expect_site(init: std.process.Init, port: u16) !void {
             return error.SmokeFailed;
         }
     }
+}
+
+/// The real binary carries the compiler; the fixture, built with `-Dcompiler=false`, says it
+/// does not and fails, and nothing else about it changes.
+fn expect_compiler(
+    init: std.process.Init,
+    without: []const u8,
+    with: []const u8,
+    work_dir: []const u8,
+) !void {
+    std.debug.assert(!std.mem.eql(u8, without, with));
+    std.debug.assert(work_dir.len > 0);
+
+    try expect_output(init, with, work_dir, &.{ "zig", "version" }, "0.16.0\n");
+
+    const refused = try run_publr(init, without, work_dir, &.{ "zig", "version" });
+    const failed = refused.term != .exited or refused.term.exited != 1;
+
+    if (failed or std.mem.indexOf(u8, refused.stderr, "without the compiler") == null) {
+        std.debug.print("smoke: zig: a binary without the compiler: {s}\n", .{refused.stderr});
+        return error.SmokeFailed;
+    }
+}
+
+/// While `serve` runs it owns the project: it leaves its session beside the database, the
+/// CLI sends it its commands, and a second server for the same database is refused.
+fn expect_operator(init: std.process.Init, binary: []const u8, work_dir: []const u8) !void {
+    std.debug.assert(binary.len > 0);
+    std.debug.assert(work_dir.len > 0);
+
+    const session = try std.fmt.allocPrint(init.arena.allocator(), "{s}/data/publr.db.serve", .{
+        work_dir,
+    });
+    const echo = [_][]const u8{ "heartbeat", "check", "--echo", "forwarded" };
+    const second = [_][]const u8{ "serve", "--port", "8093" };
+
+    std.Io.Dir.cwd().access(init.io, session, .{}) catch {
+        std.debug.print("smoke: serve: no session at {s}\n", .{session});
+        return error.SmokeFailed;
+    };
+
+    try expect_contains(init, binary, work_dir, &echo, "\"echo\": \"forwarded\"");
+    try expect_failure(init, binary, work_dir, &second, "already runs");
+    try expect_contains(init, binary, work_dir, &.{ "apps", "load" }, "loaded in the running");
+}
+
+/// Apps read from a folder, with no server: one that loads is counted, a template the engine
+/// refuses is named.
+fn expect_apps_folder(init: std.process.Init, binary: []const u8, work_dir: []const u8) !void {
+    std.debug.assert(binary.len > 0);
+    std.debug.assert(work_dir.len > 0);
+
+    const arena = init.arena.allocator();
+    const dir = try std.fmt.allocPrint(arena, "{s}/apps-folder", .{work_dir});
+    const cwd = std.Io.Dir.cwd();
+    const content = try std.fmt.allocPrint(arena, "{s}/apps/site/content", .{dir});
+    const zon = try std.fmt.allocPrint(arena, "{s}/apps/site/app.zon", .{dir});
+    const page = try std.fmt.allocPrint(arena, "{s}/index.publr", .{content});
+    const broken = try std.fmt.allocPrint(arena, "{s}/broken.publr", .{content});
+    const load = [_][]const u8{ "apps", "load", "--apps", "apps" };
+
+    try cwd.createDirPath(init.io, content);
+    try cwd.writeFile(init.io, .{ .sub_path = zon, .data = ".{ .mount = .{ .path = \"/\" } }\n" });
+    try cwd.writeFile(init.io, .{ .sub_path = page, .data = "<html><body>Hi</body></html>\n" });
+    try expect_contains(init, binary, dir, &load, "1 apps load from apps");
+    try cwd.writeFile(init.io, .{ .sub_path = broken, .data = "<p>{oops(</p>\n" });
+    try expect_failure(init, binary, dir, &load, "content/broken.publr");
 }
 
 /// A Publr with no apps: its `serve` opens the admin at `/`.
