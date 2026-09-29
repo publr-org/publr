@@ -26,7 +26,7 @@ pub fn add_check(
     run.addArtifactArg(bare);
     run.addArg(builder.pathFromRoot(".zig-cache/smoke"));
     run.addFileArg(sandboxed_plugin);
-    run.addDirectoryArg(builder.path("fixtures/sandboxed-plugins"));
+    run.addDirectoryArg(builder.path(@import("sandboxed_plugins.zig").fixture_dir));
     run.has_side_effects = true;
 
     std.debug.assert(run.argv.items.len == 6);

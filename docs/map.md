@@ -334,7 +334,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `server/apps_host.zig` | 135 | The apps `serve` holds: read from the folder (or the build's own), opened, loaded again on `apps load` |
 | `server/apps_load.zig` | 126 | `publr apps load` and `/_publr/apps/load`: the apps swapped into the running server, or checked here |
 | `server/operator.zig` | 304 | While `serve` runs: its session beside the database, the CLI sending it commands (`/_publr/cli`), and running a command there or here (`Commands`) |
-| `server/plugin_build.zig` | 336 | `publr plugin build`: a plugin's source compiled, its manifest read from the module in the sandbox and written in, then added and enabled or applied as its next version |
+| `server/plugin_build.zig` | 365 | `publr plugin build`: a plugin's source compiled, its manifest read from the module in the sandbox and written in, then added and enabled or applied as its next version |
 | `server.zig` | 111 | `Server`: open the database, apply schema and plugin bootstrap, open the dependency index, hold auth state |
 | `server/wasm.zig` | 325 | The same program as a wasm reactor: init, import a db, answer one request |
 | `publr.zig` | 69 | The library root: re-exports every module (what plugins import as `publr`) |
@@ -446,7 +446,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `operations/plugin/lifecycle.zig` | 303 | The checks before a module is taken; add, enable, disable, remove, grant and revoke |
 | `operations/plugin/versions.zig` | 132 | The next version applied, the previous one kept and rolled back to, the grants a version carries over |
 | `operations/plugin/state.zig` | 216 | A plugin's row read and written as data; its requests with where each stands |
-| `operations/plugin/detail.zig` | 152 | What the plugin operations answer, and their documented examples |
+| `operations/plugin/detail.zig` | 243 | What the plugin operations answer, and their documented examples |
 
 #### Adapters
 | File | Lines | What |
@@ -487,8 +487,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/grant.zig` | 267 | `Grant`: allow/deny, type and status filters, transitions, row filter |
 | `sdk/authorize.zig` | 318 | The core policy (anonymous reads live+public, a user what its roles grant); runs plugin policies |
 | `sdk/middleware.zig` | 89 | Hook stages (`pre`, `before`, `after`, `on`) and event shapes |
-| `sdk/plugin.zig` | 374 | What a plugin module may export; `Merged(plugins)`; compile-time validation |
-| `sdk/plugin/sandboxed.zig` | 249 | What a plugin declares to run in the sandbox (permissions, limits, content access), its entries, what may not be sandboxed |
+| `sdk/plugin.zig` | 647 | What a plugin module may export; `Merged(plugins)`; compile-time validation |
+| `sdk/plugin/sandboxed.zig` | 320 | What a plugin declares to run in the sandbox (permissions, limits, content access), its entries, what may not be sandboxed |
 | `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |
 | `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `PluginCtx` proxied to the host as JSON, the exports generated for a plugin, its manifest among them |
 | `sdk/plugin/wire.zig` | 107 | What crosses the sandbox's boundary: error codes, the result cell, the envelopes |

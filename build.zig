@@ -71,7 +71,7 @@ pub fn build(builder: *std.Build) void {
         verify_step.dependOn(local_hook);
     }
 
-    sandboxed_plugins.add_step(builder, exe, from.sandboxed_plugins_dir);
+    sandboxed_plugins.add_step(builder, exe, from.plugins_dir, from.native);
     vendors.add_import_step(builder);
     vendors.add_cache_check_step(builder);
 }

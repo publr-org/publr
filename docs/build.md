@@ -9,7 +9,7 @@ each concern lives in `build/<topic>.zig`.
 |---|---|
 | `zig build` | Build `zig-out/bin/publr` with the apps under `apps/` (none in this repository) and check they compile (`publr check-apps`). The first build also compiles the Zig compiler the binary carries (`../lib/zig`, about two minutes); the cache keeps it after that. |
 | `zig build run -- <args>` | Build and run. |
-| `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every native plugin under `native-plugins/`, and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
+| `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every plugin compiled in from `plugins/` (`publr.zon`), and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
 | `zig build verify` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `browser`. Run before calling anything done. |
 | `zig build parity` | Run the example every `--help` prints and check its answer. |
 | `zig build sandboxed-plugins` | Build the plugins under `-Dsandboxed-plugins` as installed plugins into `zig-out/sandboxed-plugins/<name>.wasm`, with the `publr` just built; see [The plugins](#the-plugins). |
@@ -27,9 +27,8 @@ each concern lives in `build/<topic>.zig`.
 | `-Dapps=<dir>` | `apps` | the folder of apps compiled in, relative to this repository; absent is none (`build/apps.zig`) |
 | `-Dapps-max=<n>` | `32` | how many apps one project may compile in, 1 to 1024 |
 | `-Dcompiler=false` | `true` | leave out the compiler for sandboxed plugins (`publr zig`, about 8 MB); the test fixture is built without it |
-| `-Dnative-plugins=<dir>` | `native-plugins` | the folder of native plugins (built-in, in the admin), relative to this repository |
-| `-Dsandboxed-plugins=<dir>` | `sandboxed-plugins` | the folder of plugins `zig build sandboxed-plugins` builds for the sandbox, relative to this repository |
-| `-Dpreset=<dir>` | none | a project's parts at once: `<dir>/apps`, `<dir>/native-plugins` and `<dir>/sandboxed-plugins` (each option above still wins); the binary reads the apps' `public/` files from `<dir>/apps` wherever it runs, instead of `./apps` |
+| `-Dplugins=<dir>` | `plugins` | the folder of plugins, one each, relative to this repository; `publr.zon` beside it names the ones compiled in (`.plugins = .{ .native = ... }`), the rest are built for the sandbox |
+| `-Dpreset=<dir>` | none | a project's parts at once: `<dir>/apps`, `<dir>/plugins` and `<dir>/publr.zon` (each option above still wins); the binary reads the preset's apps wherever it runs when the project has no `apps/` of its own |
 
 ## Vendors and libraries
 
@@ -85,7 +84,7 @@ itself is `../lib/wasm` (WAMR's fast interpreter, vendored), a path dependency l
 SQLite. Each folder the build packs lists its files as inputs, so a change to `src/`
 packs the SDK again.
 
-Core's tests, parity and smoke add the fixture plugins under `fixtures/sandboxed-plugins/`:
+Core's tests, parity and smoke add the test plugins under `src/server/sandboxed_plugins/testdata/` (test inputs, not plugins of the product):
 `greeter`, its next version `greeter_next`, which asks for more, and `farewell`.
 
 ## Smoke test

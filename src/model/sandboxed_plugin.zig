@@ -57,6 +57,8 @@ pub const Manifest = struct {
     content_types: []const content_type.Def = &.{},
     custom_fields: []const content_type.Def = &.{},
     roles: []const role.Role = &.{},
+    /// What the plugin brings that its sandboxed build left out, each with why.
+    left_out: []const []const u8 = &.{},
 };
 
 /// An operation a plugin brings; its entry in the module is its position here.

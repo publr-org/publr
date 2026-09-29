@@ -55,7 +55,7 @@ pub fn add(
     test_step.dependOn(&builder.addRunArtifact(tests).step);
     test_step.dependOn(plugins_step);
     scripts.add_tests(builder, test_step);
-    native_plugins.add_tests(builder, library, from.native_plugins_dir, plugins_step);
+    native_plugins.add_tests(builder, library, plugins_step);
     parity.add_tests(builder, library, test_step, fixture_plugins);
 
     return .{ .step = test_step, .fixture_exe = fixture_exe };

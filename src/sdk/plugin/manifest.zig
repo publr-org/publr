@@ -42,6 +42,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .content_types = contract.content_types_of(Plugin),
             .custom_fields = contract.custom_fields_of(Plugin),
             .roles = contract.roles_of(Plugin),
+            .left_out = runtime.left_out(Plugin),
         };
     }
 }

@@ -57,7 +57,9 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         return 1;
     }
 
-    try write_manifest(init, built);
+    const manifest = try write_manifest(init, built);
+
+    try warn_left_out(init, request.name, manifest);
 
     if (request.out != null) {
         return 0;
@@ -66,7 +68,7 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     return install(init, db_path, request.name, built);
 }
 
-/// `--name <name>`, `--dir <folder>` (default `sandboxed-plugins/<name>`), whose `main.zig`
+/// `--name <name>`, `--dir <folder>` (default `plugins/<name>`), whose `main.zig`
 /// is the plugin, and `--out <file>` to only build it.
 fn parse(arena: std.mem.Allocator, args: []const []const u8) ?Request {
     std.debug.assert(args.len < 1 << 16);
@@ -92,7 +94,7 @@ fn parse(arena: std.mem.Allocator, args: []const []const u8) ?Request {
         return null;
     }
 
-    const folder = dir orelse std.fmt.allocPrint(arena, "sandboxed-plugins/{s}", .{name.?}) catch {
+    const folder = dir orelse std.fmt.allocPrint(arena, "plugins/{s}", .{name.?}) catch {
         return null;
     };
 
@@ -210,7 +212,7 @@ fn stub_names(init: std.process.Init, sdk_dir: []const u8) ![]const []const u8 {
 
 /// Reads the manifest by running the module's `publr_manifest` in the sandbox, with no
 /// grants and nothing it could call, and writes it into the module's `publr` section.
-fn write_manifest(init: std.process.Init, path: []const u8) !void {
+fn write_manifest(init: std.process.Init, path: []const u8) ![]const u8 {
     std.debug.assert(path.len > 0);
 
     const cwd = std.Io.Dir.cwd();
@@ -225,6 +227,33 @@ fn write_manifest(init: std.process.Init, path: []const u8) !void {
     try output.writer.writeAll(module);
     try wasm.section.write(&output.writer, plugin_manifest.section_name, manifest);
     try cwd.writeFile(init.io, .{ .sub_path = path, .data = output.written() });
+
+    return manifest;
+}
+
+/// What the plugin brings that its sandboxed build left out, said on stderr: it builds, and
+/// runs without them.
+fn warn_left_out(init: std.process.Init, name: []const u8, manifest: []const u8) !void {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(manifest.len > 0);
+
+    const Declared = struct { left_out: []const []const u8 = &.{} };
+    const declared = try std.json.parseFromSliceLeaky(Declared, init.arena.allocator(), manifest, .{
+        .ignore_unknown_fields = true,
+    });
+
+    if (declared.left_out.len == 0) {
+        return;
+    }
+
+    std.debug.print("publr plugin build: {s} builds for the sandbox without:\n", .{name});
+
+    for (declared.left_out) |item| {
+        std.debug.print("  - {s}\n", .{item});
+    }
+
+    std.debug.print("Calls to what is left out answer unavailable; list the plugin in " ++
+        "publr.zon's `.plugins.native` to compile it in with everything.\n", .{});
 }
 
 fn manifest_of(gpa: std.mem.Allocator, arena: std.mem.Allocator, module_bytes: []u8) ![]u8 {

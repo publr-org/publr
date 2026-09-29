@@ -1,10 +1,12 @@
 const std = @import("std");
 const diagnostic = @import("diagnostic.zig");
 const embed = @import("apps/embed.zig");
+const native_plugins = @import("native_plugins.zig");
 
-pub const dir_default = "sandboxed-plugins";
-/// The plugins core's tests and smoke install.
-pub const fixture_dir = "fixtures/sandboxed-plugins";
+pub const dir_default = "plugins";
+/// The test inputs core's tests, parity and smoke build and install: not plugins of the
+/// product, the modules the sandbox is tested with.
+pub const fixture_dir = "src/server/sandboxed_plugins/testdata";
 pub const sandboxed_plugins_max: u32 = 64;
 pub const name_len_max: u32 = 32;
 
@@ -40,19 +42,28 @@ pub const SandboxedPlugins = struct {
     }
 };
 
-/// `zig build sandboxed-plugins`: the plugins under `-Dsandboxed-plugins` (default
-/// `sandboxed-plugins/`) built into `zig-out/sandboxed-plugins/<name>.wasm`.
-pub fn add_step(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8) void {
+/// `zig build sandboxed-plugins`: the plugins under `-Dplugins` that are not compiled in,
+/// built into `zig-out/sandboxed-plugins/<name>.wasm`.
+pub fn add_step(
+    builder: *std.Build,
+    publr: *std.Build.Step.Compile,
+    dir: []const u8,
+    native: native_plugins.Native,
+) void {
     std.debug.assert(builder.build_root.path != null);
     std.debug.assert(dir.len > 0);
 
     const step = builder.step(
         "sandboxed-plugins",
-        "Build the plugins under -Dsandboxed-plugins for the sandbox",
+        "Build the plugins under -Dplugins that are not compiled in, for the sandbox",
     );
     const built = add(builder, publr, dir);
 
     for (built.names, built.files) |name, file| {
+        if (native_plugins.is_native(native, name)) {
+            continue;
+        }
+
         const install = builder.addInstallFileWithDir(
             file,
             .{ .custom = "sandboxed-plugins" },
@@ -151,7 +162,7 @@ fn discover(builder: *std.Build, dir: []const u8) []const []const u8 {
             std.mem.endsWith(u8, dir, "/" ++ dir_default);
 
         if (!optional) {
-            diagnostic.fail("-Dsandboxed-plugins: no folder at {s}", .{dir});
+            diagnostic.fail("-Dplugins: no folder at {s}", .{dir});
         }
 
         return &.{};
@@ -171,7 +182,7 @@ fn discover(builder: *std.Build, dir: []const u8) []const []const u8 {
         root.access(io, builder.fmt("{s}/main.zig", .{entry.name}), .{}) catch continue;
 
         if (names.items.len == sandboxed_plugins_max) {
-            diagnostic.fail("-Dsandboxed-plugins: more than {d} plugins", .{sandboxed_plugins_max});
+            diagnostic.fail("-Dplugins: more than {d} plugins", .{sandboxed_plugins_max});
         }
 
         names.append(builder.allocator, builder.dupe(entry.name)) catch @panic("OOM");

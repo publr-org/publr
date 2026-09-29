@@ -1,15 +1,54 @@
 const std = @import("std");
+const diagnostic = @import("diagnostic.zig");
 
-pub const dir_default = "native-plugins";
+pub const dir_default = "plugins";
 pub const plugins_max: u32 = 64;
 pub const name_len_max: u32 = 32;
 
-pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8) void {
+/// Which plugins are compiled in: every one (`.native = .all`) or those `publr.zon` names.
+/// The rest are built for the sandbox. With no `publr.zon`, none are compiled in.
+pub const Native = union(enum) {
+    all,
+    names: []const []const u8,
+};
+
+/// `publr.zon` beside the plugins folder, at the project's root:
+/// `.plugins = .{ .native = .{ "blog" } }` or `.plugins = .{ .native = .all }`.
+pub fn native_of(builder: *std.Build, plugins_dir: []const u8) Native {
+    std.debug.assert(plugins_dir.len > 0);
+
+    const root = std.fs.path.dirname(plugins_dir) orelse ".";
+    const path = builder.pathJoin(&.{ root, "publr.zon" });
+    const io = builder.graph.io;
+    const limit: std.Io.Limit = .limited(1 << 16);
+    const handle = builder.build_root.handle;
+    const text = handle.readFileAllocOptions(io, path, builder.allocator, limit, .of(u8), 0) catch {
+        return .{ .names = &.{} };
+    };
+    const Listed = struct { plugins: struct { native: []const []const u8 = &.{} } = .{} };
+    const Every = struct { plugins: struct { native: enum { all } } };
+    // Strict: a misspelt field fails the build rather than compiling nothing in.
+    const options: std.zon.parse.Options = .{};
+
+    if (std.zon.parse.fromSliceAlloc(Listed, builder.allocator, text, null, options)) |listed| {
+        return .{ .names = listed.plugins.native };
+    } else |_| {}
+
+    _ = std.zon.parse.fromSliceAlloc(Every, builder.allocator, text, null, options) catch {
+        diagnostic.fail("{s}: `.plugins.native` is a list of plugin names, or `.all`", .{path});
+    };
+
+    return .all;
+}
+
+/// The plugins under `dir` that `native` compiles in, as the `native_plugins` module the
+/// library imports. A name `publr.zon` lists that `dir` lacks fails the build.
+pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, native: Native) void {
     std.debug.assert(builder.build_root.path != null);
     std.debug.assert(library.root_source_file != null);
 
     var names_storage: [plugins_max][]const u8 = undefined;
-    const names = discover(builder, dir, &names_storage);
+    const names = compiled_in(builder, dir, native, &names_storage);
     const listing = builder.addWriteFiles();
     var source: std.ArrayList(u8) = .empty;
 
@@ -43,28 +82,71 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8) voi
     library.addImport("native_plugins", plugins);
 }
 
-pub fn add_tests(
+/// Whether `name` is compiled in.
+pub fn is_native(native: Native, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    return switch (native) {
+        .all => true,
+        .names => |names| for (names) |listed| {
+            if (std.mem.eql(u8, listed, name)) {
+                break true;
+            }
+        } else false,
+    };
+}
+
+fn compiled_in(
     builder: *std.Build,
-    library: *std.Build.Module,
     dir: []const u8,
-    test_step: *std.Build.Step,
-) void {
+    native: Native,
+    storage: *[plugins_max][]const u8,
+) []const []const u8 {
+    std.debug.assert(dir.len > 0);
+
+    const found = discover(builder, dir, storage);
+
+    if (native == .names) {
+        for (native.names) |listed| {
+            const present = for (found) |name| {
+                if (std.mem.eql(u8, name, listed)) {
+                    break true;
+                }
+            } else false;
+
+            if (!present) {
+                diagnostic.fail("publr.zon lists {s}, which {s} does not have", .{ listed, dir });
+            }
+        }
+    }
+
+    var count: u32 = 0;
+
+    for (found) |name| {
+        if (is_native(native, name)) {
+            storage[count] = name;
+            count += 1;
+        }
+    }
+
+    return storage[0..count];
+}
+
+pub fn add_tests(builder: *std.Build, library: *std.Build.Module, test_step: *std.Build.Step) void {
     std.debug.assert(library.root_source_file != null);
     std.debug.assert(plugins_max > 0);
 
     const listing = library.import_table.get("native_plugins") orelse
         @panic("native plugins not added");
-    var names_storage: [plugins_max][]const u8 = undefined;
 
-    for (discover(builder, dir, &names_storage)) |name| {
-        const module = listing.import_table.get(name) orelse @panic("plugin module missing");
+    for (listing.import_table.values()) |module| {
         const tests = builder.addTest(.{ .root_module = module });
 
         test_step.dependOn(&builder.addRunArtifact(tests).step);
     }
 }
 
-fn discover(
+pub fn discover(
     builder: *std.Build,
     dir: []const u8,
     storage: *[plugins_max][]const u8,
@@ -75,7 +157,7 @@ fn discover(
     const io = builder.graph.io;
     var root = builder.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch {
         if (!std.mem.eql(u8, dir, dir_default)) {
-            @import("diagnostic.zig").fail("-Dnative-plugins: no folder at {s}", .{dir});
+            diagnostic.fail("-Dplugins: no folder at {s}", .{dir});
         }
 
         return &.{};

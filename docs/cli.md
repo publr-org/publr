@@ -79,7 +79,7 @@ publr [--db <path>] plugin build --name <name> [--dir <folder>] [--out <file>]
 ```
 
 Builds the plugin whose source is `<folder>/main.zig` (default
-`sandboxed-plugins/<name>`) with that compiler, reads its manifest from the module and
+`plugins/<name>`) with that compiler, reads its manifest from the module and
 writes it in, then adds and enables it, or applies it as the next version of the one
 already there. The compiler's messages print as they are; built again unchanged, it says
 the plugin is up to date. `--out <file>` only builds it, into that file, and installs

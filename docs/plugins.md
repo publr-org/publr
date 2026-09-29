@@ -161,15 +161,52 @@ Each hook carries its reason (`pub const reason = "..."`); an event hook names t
 it sees (`pub const event = "record.published"`), an operation or a notice. A plugin never
 writes `export fn`.
 
-In a project, a plugin's source is `sandboxed-plugins/<name>/main.zig`, and
-`publr plugin build --name <name>` builds it with the compiler Publr carries, so no Zig is
-needed: its manifest is read from the module itself and written into it, then it is added
+## One folder, and which are compiled in
+
+Every plugin of a project is a folder under `plugins/`, `plugins/<name>/main.zig`, the
+same source whichever way it runs. Which are compiled in is the project's decision, in
+`publr.zon` beside that folder, and nothing else's:
+
+```zig
+.{
+    .plugins = .{
+        .native = .{ "blog", "hello" },   // compiled into publr: Built-in in the admin
+    },
+}
+```
+
+or every plugin under `plugins/`:
+
+```zig
+.{
+    .plugins = .{
+        .native = .all,
+    },
+}
+```
+
+With no `publr.zon`, or no `.plugins.native`, none is: every plugin is built for the sandbox and
+installed at runtime. A plugin never says which it is: trusting code with everything is
+its owner's choice, never its author's. `zig build` compiles in the ones listed (a name
+`plugins/` lacks fails the build).
+
+`publr plugin build --name <name>` builds `plugins/<name>/main.zig` for the sandbox with the
+compiler Publr carries, so no Zig is needed: its manifest is read from the module itself and written into it, then it is added
 and enabled (a new plugin) or applied as its next version (one already there, the previous
 kept to roll back to). What it asks for is granted by tier; high requests wait for an
 administrator. Built again unchanged, it is up to date. `zig build sandboxed-plugins` builds
-every plugin under `-Dsandboxed-plugins` with the same command into
-`zig-out/sandboxed-plugins/<name>.wasm`, as the tests build the fixture plugins; see
+every plugin under `plugins/` that is not compiled in with the same command into
+`zig-out/sandboxed-plugins/<name>.wasm`, as the tests build theirs; see
 [Build](build.md#the-plugins).
+
+**Every plugin builds for the sandbox.** What cannot run there is left out of that build,
+never a reason to refuse it: `schema_sql`, `bootstrap` and a sign-in provider (they need
+the host), an operation or hook that takes the host's context (`*sdk.Ctx`) rather than
+`*PluginCtx`, and, until the sandbox runs them, policies, pre hooks, field kinds,
+statuses, transitions, filters and delivery gates. The build names each (`publr plugin
+build` prints them; the manifest's `left_out` keeps them, and `plugin get` shows them;
+the admin's plugin page does not yet).
+Calling an operation left out answers `unavailable`; a hook left out never runs.
 
 What a plugin calls is checked as it compiles: a `ctx.call` of an operation that none of
 its declared permissions opens fails the build, naming the permission to add ("plugin
@@ -178,11 +215,8 @@ operations and record operations pass: a record operation may reach its own type
 need nothing, and one that names another type without a permission is refused when it
 runs, as `Denied`.
 
-Not everything a built-in plugin declares runs in the sandbox yet: operations,
-before, after and event hooks, content types, custom fields and roles do; a role from a
-plugin grants only its own operations. Policies, pre hooks, field kinds, statuses,
-filters and delivery gates come later; `schema_sql`, `bootstrap`, sign-in providers and
-`native_only` never do. The build says which one stops it.
+In the sandbox, operations, before, after and event hooks, content types, custom fields
+and roles run; a role from a plugin grants only its own operations.
 
 ## Which one to pick
 
@@ -198,7 +232,8 @@ filters and delivery gates come later; `schema_sql`, `bootstrap`, sign-in provid
 
 ## Writing a built-in plugin
 
-A plugin is one directory under `native-plugins/` with a `main.zig`. It imports one
+A plugin is one directory under `plugins/` with a `main.zig`, listed in `publr.zon`'s
+`.plugins.native` to be compiled in. It imports one
 thing, `publr`, and declares what it brings: a manifest (name, version,
 summary), documented namespaces, operations exactly like the core's, policies,
 hooks, statuses, field kinds, content types, roles (see below), delivery gates (who
@@ -218,8 +253,8 @@ redeclaration. Its records get validation, permissions, listing, filtering
 and the admin for free. History goes into
 snapshots (`snapshot take/list/prune`, kinds of the plugin's own); parked
 copies of a document go into slots (`record get --slot`), like the core's
-`pending`. Only a built-in plugin that truly needs its own table
-(`native_only`) may ship `schema_sql`.
+`pending`. A plugin that truly needs its own table ships `schema_sql`; it runs only when
+the plugin is compiled in.
 
 A plugin can declare roles (`pub const roles = [_]publr.plugin.Role{...}`): a name, a
 label and grants, each an operation or a namespace ending in `.*`. A name of its own is
@@ -253,7 +288,7 @@ The contract is checked when the binary compiles: a missing manifest, a bad
 name, an undocumented operation, a hook on an operation that does not exist,
 two plugins with the same name, all stop the build with a message naming the
 plugin. Plugins are applied in name order, always. Tests live next to the code
-and run with `zig build test`. The `native-plugins/` directory is yours: Publr's own
-repository does not track it, so a fork can commit its plugins alongside the
-core. `-Dnative-plugins=<dir>` builds from another folder instead; a link in it counts,
-so one folder can gather plugins kept elsewhere.
+and run with `zig build test`. The `plugins/` directory and `publr.zon` are yours:
+Publr's own repository does not track them, so a fork can commit its plugins alongside
+the core. `-Dplugins=<dir>` builds from another folder instead, with the `publr.zon`
+beside it; a link in it counts, so one folder can gather plugins kept elsewhere.

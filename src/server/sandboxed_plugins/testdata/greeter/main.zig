@@ -55,7 +55,9 @@ pub const Greet = struct {
     pub const Out = struct { total: u32 };
     pub const example: In = .{ .note = "hello from the sandbox" };
     pub const example_out: Out = .{ .total = 1 };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .note = "The greeting, up to 280 characters" };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .note = "The greeting, up to 280 characters",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{ .total = "How many greetings exist now" };
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
@@ -69,7 +71,8 @@ pub const Greet = struct {
             return error.NotFound;
         }
 
-        const document = std.json.Stringify.valueAlloc(ctx.arena(), .{ .note = in.note }, .{}) catch {
+        const note = .{ .note = in.note };
+        const document = std.json.Stringify.valueAlloc(ctx.arena(), note, .{}) catch {
             return error.OutOfMemory;
         };
 
@@ -113,7 +116,10 @@ pub const People = struct {
         std.debug.assert(ctx.now_ms() >= 0);
 
         const people = try ctx.call(publr.operations.user.Options, .{});
-        const greetings = ctx.arena().alloc([]const u8, people.users.len) catch return error.OutOfMemory;
+        const count_of_people = people.users.len;
+        const greetings = ctx.arena().alloc([]const u8, count_of_people) catch {
+            return error.OutOfMemory;
+        };
 
         for (people.users, greetings) |person, *greeting| {
             greeting.* = std.fmt.allocPrint(ctx.arena(), "hello, {s}", .{person.label}) catch {

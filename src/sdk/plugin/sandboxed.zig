@@ -13,6 +13,7 @@ pub const entries_max: u32 = 256;
 
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 const catalog = @import("../../model/permission.zig");
+const context = @import("context.zig");
 
 /// A permission a plugin asks for, by the key the administrator sees (`content.write`), and
 /// the plugin's own sentence on why it needs it.
@@ -30,18 +31,27 @@ pub const Entry = struct {
     pub const Stage = enum { operation, before, after, event };
 };
 
-/// Every operation, then every hook, in declaration order: the numbering the module's
-/// `publr_invoke` and the manifest share.
+/// Every operation, then every hook, in declaration order, that runs in the sandbox: the
+/// numbering the module's `publr_invoke` and the manifest share. What does not run there is
+/// left out (`left_out`), never an error: every plugin builds for the sandbox.
 pub fn runtime_entries(comptime Plugin: type) []const Entry {
     comptime {
         const contract = @import("../plugin.zig");
         var entries: []const Entry = &.{};
 
         for (contract.operations_of(Plugin)) |Operation| {
+            if (!context.takes_plugin_ctx(Operation.run)) {
+                continue;
+            }
+
             entries = entries ++ &[_]Entry{.{ .stage = .operation, .declaration = Operation }};
         }
 
         for (contract.middleware_of(Plugin)) |Middleware| {
+            if (hook_left_out(Middleware) != null) {
+                continue;
+            }
+
             entries = entries ++ &[_]Entry{.{
                 .stage = hook_stage(Plugin, Middleware),
                 .declaration = Middleware,
@@ -58,26 +68,95 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
 
 fn hook_stage(comptime Plugin: type, comptime Middleware: type) Entry.Stage {
     comptime {
-        const name = Plugin.manifest.name;
-
-        if (!@hasDecl(Middleware, "reason")) {
-            @compileError("plugin " ++ name ++ ": a hook in the sandbox is asked for like a " ++
-                "permission: give it `pub const reason = \"...\"`");
-        }
+        std.debug.assert(hook_left_out(Middleware) == null);
+        std.debug.assert(Plugin.manifest.name.len > 0);
 
         return switch (Middleware.stage) {
             .before => .before,
             .after => .after,
-            .on => on: {
-                if (!@hasDecl(Middleware, "event")) {
-                    @compileError("plugin " ++ name ++ ": an event hook in the sandbox names " ++
-                        "its event: `pub const event = \"record.published\"`");
-                }
-
-                break :on .event;
-            },
-            .pre => @compileError("plugin " ++ name ++ ": pre hooks do not run in the sandbox yet"),
+            .on => .event,
+            .pre => unreachable,
         };
+    }
+}
+
+/// Why a hook does not run in the sandbox, or null when it does.
+fn hook_left_out(comptime Middleware: type) ?[]const u8 {
+    comptime {
+        std.debug.assert(@hasDecl(Middleware, "run"));
+
+        if (!context.takes_plugin_ctx(Middleware.run)) {
+            return "it takes the host's context";
+        }
+
+        if (!@hasDecl(Middleware, "reason")) {
+            return "it has no `reason` (a hook is asked for like a permission)";
+        }
+
+        if (Middleware.stage == .pre) {
+            return "pre hooks do not run in the sandbox yet";
+        }
+
+        if (Middleware.stage == .on and !@hasDecl(Middleware, "event")) {
+            return "an event hook names its `event`";
+        }
+
+        return null;
+    }
+}
+
+/// What a plugin brings that does not run in the sandbox, each with why: left out of its
+/// sandboxed build, which says so, rather than refused. Calls to what is left out answer
+/// `Unavailable`; hooks left out never run.
+pub fn left_out(comptime Plugin: type) []const []const u8 {
+    comptime {
+        const contract = @import("../plugin.zig");
+        const never = [_][]const u8{ "schema_sql", "bootstrap", "sign_in_provider" };
+        const later = [_][]const u8{
+            "policies", "field_kinds", "delivery_gates", "statuses", "transitions", "filters",
+        };
+        var list: []const []const u8 = &.{};
+
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        for (never) |declaration| {
+            if (@hasDecl(Plugin, declaration)) {
+                list = list ++ &[_][]const u8{"`" ++ declaration ++ "`: needs a native plugin"};
+            }
+        }
+
+        for (later) |declaration| {
+            if (@hasDecl(Plugin, declaration)) {
+                list = list ++ &[_][]const u8{"`" ++ declaration ++ "`: not in the sandbox yet"};
+            }
+        }
+
+        for (contract.operations_of(Plugin)) |Operation| {
+            if (!context.takes_plugin_ctx(Operation.run)) {
+                list = list ++ &[_][]const u8{"operation " ++ Operation.name ++
+                    ": it takes the host's context"};
+            }
+        }
+
+        for (contract.middleware_of(Plugin)) |Middleware| {
+            if (hook_left_out(Middleware)) |why| {
+                list = list ++ &[_][]const u8{"hook on " ++ hook_target(Middleware) ++ ": " ++ why};
+            }
+        }
+
+        return list;
+    }
+}
+
+fn hook_target(comptime Middleware: type) []const u8 {
+    comptime {
+        std.debug.assert(@hasDecl(Middleware, "stage"));
+
+        if (@hasDecl(Middleware, "operation")) {
+            return Middleware.operation;
+        }
+
+        return if (@hasDecl(Middleware, "event")) Middleware.event else "an event";
     }
 }
 
@@ -95,32 +174,11 @@ pub fn HookOut(comptime Middleware: type) type {
     return @typeInfo(params[2].type.?).pointer.child;
 }
 
-/// What a plugin may not bring into the sandbox: each needs trust or machinery it lacks.
+/// What a plugin must get right to be built for the sandbox at all: a reason for each
+/// permission it asks for. What cannot run there is left out instead (`left_out`).
 pub fn assert_sandboxable(comptime Plugin: type) void {
     comptime {
         const name = Plugin.manifest.name;
-        const never = [_][]const u8{ "schema_sql", "bootstrap", "sign_in_provider" };
-        const later = [_][]const u8{
-            "policies", "field_kinds", "delivery_gates", "statuses", "transitions", "filters",
-        };
-
-        if (Plugin.manifest.native_only) {
-            @compileError("plugin " ++ name ++ ": `native_only` cannot be sandboxed");
-        }
-
-        for (never) |declaration| {
-            if (@hasDecl(Plugin, declaration)) {
-                @compileError("plugin " ++ name ++ ": `" ++ declaration ++ "` needs a " ++
-                    "native plugin");
-            }
-        }
-
-        for (later) |declaration| {
-            if (@hasDecl(Plugin, declaration)) {
-                @compileError("plugin " ++ name ++ ": `" ++ declaration ++ "` does not run " ++
-                    "in the sandbox yet");
-            }
-        }
 
         for (permissions_of(Plugin)) |permission| {
             if (permission.reason.len == 0 or permission.reason.len > reason_len_max) {
@@ -246,4 +304,17 @@ fn asks_for(comptime Plugin: type, comptime key: []const u8) bool {
 
         return false;
     }
+}
+
+test "what the sandbox cannot run is left out and named, never refused" {
+    const Plugin = struct {
+        pub const manifest = .{ .name = "tables", .version = "0.1.0", .summary = "Own tables" };
+        pub const schema_sql = "CREATE TABLE tables_rows (id INTEGER PRIMARY KEY)";
+        pub const policies = [_]type{};
+    };
+    const list = comptime left_out(Plugin);
+
+    try std.testing.expectEqual(@as(usize, 2), list.len);
+    try std.testing.expectEqualStrings("`schema_sql`: needs a native plugin", list[0]);
+    try std.testing.expectEqualStrings("`policies`: not in the sandbox yet", list[1]);
 }

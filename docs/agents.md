@@ -10,7 +10,7 @@ A project is the folder `publr` runs in:
 
 ```
 data/publr.db                       the database: content, users, installed plugins
-sandboxed-plugins/<name>/main.zig   the source of each plugin you write
+plugins/<name>/main.zig             the source of each plugin you write
 apps/<name>/                        each app: the pages people see (see Pages); the
                                     project's own `apps/` is read when it has one
 ```
@@ -117,11 +117,13 @@ pub const Sign = struct {
 publr plugin build --name guestbook
 ```
 
-This compiles `sandboxed-plugins/guestbook/main.zig` with the compiler inside `publr` (no
+This compiles `plugins/guestbook/main.zig` with the compiler inside `publr` (no
 Zig needed), then installs it: a new plugin is added and enabled, one already there gets
 this as its next version, the previous kept to roll back to. When the compiler reports an
 error, fix the source and run it again. To change a plugin, edit it, raise `.version`, and
-build again. Built again unchanged, it says it is up to date.
+build again. Built again unchanged, it says it is up to date. When it says it builds
+"without" something (a `schema_sql`, an operation that takes the host's context), that part
+does not run in the sandbox; calls to it answer unavailable.
 
 Check it:
 

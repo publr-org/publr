@@ -39,7 +39,6 @@ pub const Manifest = struct {
     name: []const u8,
     version: []const u8,
     summary: []const u8,
-    native_only: bool = false,
 };
 
 pub fn validate(comptime Plugin: type) void {
@@ -63,28 +62,14 @@ pub fn validate(comptime Plugin: type) void {
 
         for (operations_of(Plugin)) |Operation| {
             sdk.operation.validate(Operation);
-
-            if (!manifest.native_only and !plugin_context.takes_plugin_ctx(Operation.run)) {
-                @compileError("plugin " ++ manifest.name ++ ": " ++ Operation.name ++
-                    " must take *PluginCtx (or set manifest.native_only)");
-            }
         }
 
         for (middleware_of(Plugin)) |Middleware| {
             sdk.middleware.validate(Middleware);
-
-            if (!manifest.native_only and !plugin_context.takes_plugin_ctx(Middleware.run)) {
-                @compileError("plugin " ++ manifest.name ++ ": a hook must take *PluginCtx " ++
-                    "(or set manifest.native_only)");
-            }
         }
 
         if (@hasDecl(Plugin, "schema_sql") and Plugin.schema_sql.len == 0) {
             @compileError("plugin " ++ manifest.name ++ ": `schema_sql` is empty");
-        }
-
-        if (@hasDecl(Plugin, "schema_sql") and !manifest.native_only) {
-            @compileError("plugin " ++ manifest.name ++ ": own tables need native_only");
         }
 
         validate_entries(Plugin, manifest.name);

@@ -1,4 +1,4 @@
-//! The sandbox end to end, on the fixture plugins (`fixtures/sandboxed-plugins/`, built for
+//! The sandbox end to end, on the test plugins (`testdata/`, built for
 //! the sandbox by the build): added and enabled, called through the one
 //! dispatch as different callers, its grants revoked and given back, removed.
 const std = @import("std");

@@ -11,10 +11,12 @@ const sandboxed_plugins = @import("sandboxed_plugins.zig");
 /// a project built from another repository (Publr Cloud) names its own.
 pub const Sources = struct {
     apps_dir: []const u8,
-    native_plugins_dir: []const u8,
+    /// Every plugin, one folder each: `<dir>/<name>/main.zig`.
+    plugins_dir: []const u8,
+    /// Which of them are compiled in, from `publr.zon` beside the folder; the rest are
+    /// built for the sandbox.
+    native: native_plugins.Native,
     apps_max: u32,
-    /// The sandboxed plugins `zig build sandboxed-plugins` builds.
-    sandboxed_plugins_dir: []const u8 = "sandboxed-plugins",
     /// Where `serve` reads each app's `public/` files by default: `apps`, relative to where
     /// it runs, or (built with `-Dpreset`) the preset's apps folder, wherever it runs.
     public_dir: []const u8 = "apps",
@@ -22,8 +24,8 @@ pub const Sources = struct {
     compiler: bool = true,
 };
 
-/// `-Dpreset=<dir>`: a project's parts kept together, `<dir>/apps`, `<dir>/native-plugins`
-/// and `<dir>/sandboxed-plugins`, for developing against locally. Null without it.
+/// `-Dpreset=<dir>`: a project's parts kept together, `<dir>/apps`, `<dir>/plugins` and
+/// `<dir>/publr.zon`, for developing against locally. Null without it.
 pub fn preset(builder: *std.Build) ?[]const u8 {
     std.debug.assert(builder.build_root.path != null);
 
@@ -47,23 +49,15 @@ pub fn sources(builder: *std.Build) Sources {
         "apps",
         "The folder of compiled-in apps, relative to this repository (default: apps)",
     ) orelse if (from_preset) |dir| builder.pathJoin(&.{ dir, "apps" }) else apps.dir_default;
-    const native_plugins_dir = builder.option(
+    const plugins_dir = builder.option(
         []const u8,
-        "native-plugins",
-        "The folder of native plugins, relative to this repository (default: native-plugins)",
+        "plugins",
+        "The folder of plugins, relative to this repository (default: plugins); " ++
+            "`publr.zon` beside it says which are compiled in",
     ) orelse if (from_preset) |dir|
-        builder.pathJoin(&.{ dir, "native-plugins" })
+        builder.pathJoin(&.{ dir, "plugins" })
     else
         native_plugins.dir_default;
-    const sandboxed_plugins_dir = builder.option(
-        []const u8,
-        "sandboxed-plugins",
-        "The folder of sandboxed plugins `zig build sandboxed-plugins` builds " ++
-            "(default: sandboxed-plugins)",
-    ) orelse if (from_preset) |dir|
-        builder.pathJoin(&.{ dir, "sandboxed-plugins" })
-    else
-        "sandboxed-plugins";
     const apps_max = builder.option(
         u32,
         "apps-max",
@@ -76,15 +70,15 @@ pub fn sources(builder: *std.Build) Sources {
     ) orelse true;
     const chosen: Sources = .{
         .apps_dir = apps_dir,
-        .native_plugins_dir = native_plugins_dir,
+        .plugins_dir = plugins_dir,
+        .native = native_plugins.native_of(builder, plugins_dir),
         .apps_max = apps_max,
-        .sandboxed_plugins_dir = sandboxed_plugins_dir,
         .public_dir = if (from_preset != null) builder.pathFromRoot(apps_dir) else "apps",
         .compiler = compiler,
     };
     const root = builder.build_root.path.?;
 
-    for ([_][]const u8{ chosen.apps_dir, chosen.native_plugins_dir }) |dir| {
+    for ([_][]const u8{ chosen.apps_dir, chosen.plugins_dir }) |dir| {
         if (dir.len == 0 or std.fs.path.isAbsolute(dir)) {
             diagnostic.fail("{s}: pass a path relative to {s}", .{ dir, root });
         }
@@ -95,7 +89,7 @@ pub fn sources(builder: *std.Build) Sources {
     }
 
     std.debug.assert(chosen.apps_dir.len > 0);
-    std.debug.assert(chosen.native_plugins_dir.len > 0);
+    std.debug.assert(chosen.plugins_dir.len > 0);
 
     return chosen;
 }
@@ -166,7 +160,7 @@ pub fn add_module(
 
     vendors.add_include_paths(builder, module);
     module.linkLibrary(vendors.add_library(builder, target));
-    native_plugins.add(builder, module, from.native_plugins_dir);
+    native_plugins.add(builder, module, from.plugins_dir, from.native);
 
     const generated = gen.add(builder, target, optimize);
 
