@@ -98,7 +98,9 @@ pub fn Routes(comptime providers: []const SignInProvider) type {
 
             try response.set_header("Cache-Control", "no-store");
 
-            const kept = pending(request, arena) orelse return refuse(response, cleared);
+            const kept = pending(request, arena) orelse {
+                return refuse(response, cleared, "no sign-in cookie came back", null);
+            };
             const query = request.query();
             const state = http.Form.query_param(arena, query, "state") orelse "";
             const code = http.Form.query_param(arena, query, "code") orelse "";
@@ -106,14 +108,18 @@ pub fn Routes(comptime providers: []const SignInProvider) type {
             const failed = http.Form.query_param(arena, query, "error") != null;
 
             if (!same_state or code.len == 0 or failed) {
-                return refuse(response, cleared);
+                const why = if (failed)
+                    "the provider answered with an error"
+                else if (!same_state) "the state did not match" else "no code came back";
+
+                return refuse(response, cleared, why, null);
             }
 
             const identity = provider.identity(project.io, arena, .{
                 .callback_url = try callback_url(arena, request, provider.name),
                 .code = code,
                 .code_verifier = kept.verifier,
-            }) catch return refuse(response, cleared);
+            }) catch |err| return refuse(response, cleared, "the provider's identity", err);
             const in: identity_operations.Input = .{
                 .provider = provider.name,
                 .id = identity.id,
@@ -166,15 +172,15 @@ fn settle(
             .verified = in.verified,
             .name = in.name,
             .avatar = in.avatar,
-        }) catch return refuse(response, cleared);
+        }) catch |err| return refuse(response, cleared, "linking the identity", err);
 
         try response.set_header("Set-Cookie", cleared);
 
         return response.redirect(.see_other, next);
     }
 
-    const out = registry.SDK.dispatch(&system, identity_operations.SignIn, in) catch {
-        return refuse(response, cleared);
+    const out = registry.SDK.dispatch(&system, identity_operations.SignIn, in) catch |err| {
+        return refuse(response, cleared, "signing the identity in", err);
     };
 
     try identity_module.set_session_cookie(
@@ -224,9 +230,16 @@ fn unknown(response: *Response) Error!void {
     try response.text(.not_found, "no such provider");
 }
 
-fn refuse(response: *Response, cleared: []const u8) Error!void {
+/// Back to the login form; the server's log says why, as the browser is never told.
+fn refuse(response: *Response, cleared: []const u8, why: []const u8, err: ?anyerror) Error!void {
     std.debug.assert(cleared.len > cookie_name.len);
     std.debug.assert(refused_path[0] == '/');
+
+    if (err) |failure| {
+        std.log.warn("sign-in with a provider refused: {s}: {t}", .{ why, failure });
+    } else {
+        std.log.warn("sign-in with a provider refused: {s}", .{why});
+    }
 
     try response.set_header("Set-Cookie", cleared);
     try response.redirect(.see_other, refused_path);
