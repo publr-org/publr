@@ -33,6 +33,8 @@
   --warning-foreground: oklch(0.21 0.034 46);
   --review: oklch(0.55 0.19 292);
   --review-foreground: oklch(0.985 0 0);
+  --info: oklch(0.55 0.15 250);
+  --info-foreground: oklch(0.985 0 0);
 
   --border: oklch(0.915 0.004 250);
   --input: oklch(0.87 0.005 250);

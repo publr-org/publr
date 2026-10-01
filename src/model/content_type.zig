@@ -213,7 +213,7 @@ pub fn decode(arena: std.mem.Allocator, text: []const u8) Error!Def {
 }
 
 /// A type's id is derived from its handle, so the same declared type gets the same id
-/// in every database (environments, parity harnesses); a renamed type keeps its id.
+/// in every database (copies of a project, parity harnesses); a renamed type keeps its id.
 pub const id_of = ids.derived;
 
 pub const test_post: Def = .{

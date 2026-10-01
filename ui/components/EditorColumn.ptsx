@@ -10,7 +10,7 @@ export type EditorColumnProps = {
 export function EditorColumn({ wide = false, children }: EditorColumnProps) {
   return (
     <div class={["min-w-0 flex-1 py-7", wide ? "" : "px-8"]}>
-      <div class={["w-full", wide ? "" : "mx-auto max-w-2xl"]}>{children}</div>
+      <div class={["w-full", wide ? "" : "max-w-2xl"]}>{children}</div>
     </div>
   );
 }

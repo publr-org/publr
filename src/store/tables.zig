@@ -41,6 +41,15 @@ pub const users: Tables = .{
     .search = "user_search",
 };
 
+/// A project's structure, as against its content: its types, fields, taxonomies and plugins,
+/// what a copy of the structure alone takes.
+pub const structure = [_][]const u8{
+    "content_types",
+    "taxonomies",
+    "field_groups",
+    "sandboxed_plugins",
+};
+
 test "the two domains name four distinct tables each" {
     inline for ([_]Tables{ records, terms, users }) |tables| {
         try std.testing.expect(tables.definitions.len > 0);

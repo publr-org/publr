@@ -35,6 +35,48 @@ pub fn open(runtime: *Runtime, path: [*:0]const u8) Error!Db {
     return connection;
 }
 
+/// The whole database written to a new file at `path`: one read transaction, so the copy
+/// is consistent while another process writes.
+pub fn copy_to(connection: *Db, path: []const u8) Error!void {
+    std.debug.assert(path.len > 0);
+    std.debug.assert(connection.transaction_depth == 0);
+
+    var statement = try connection.prepare("VACUUM INTO ?1");
+    defer statement.finalize();
+
+    try statement.bind_text(1, path);
+    // SQLite counts VACUUM and ATTACH as read-only statements, which `exec` refuses.
+    const row = try statement.step();
+
+    std.debug.assert(!row);
+}
+
+/// These tables, with their rows, written to a new database at `path`.
+pub fn copy_tables_to(
+    connection: *Db,
+    path: []const u8,
+    comptime tables: []const []const u8,
+) Error!void {
+    std.debug.assert(path.len > 0);
+    comptime std.debug.assert(tables.len > 0);
+
+    var attach = try connection.prepare("ATTACH DATABASE ?1 AS copy");
+    defer attach.finalize();
+
+    try attach.bind_text(1, path);
+
+    const row = try attach.step();
+
+    std.debug.assert(!row);
+    defer connection.exec("DETACH DATABASE copy") catch |err| {
+        std.log.warn("detach {s}: {t}", .{ path, err });
+    };
+
+    inline for (tables) |table| {
+        try connection.exec("CREATE TABLE copy." ++ table ++ " AS SELECT * FROM main." ++ table);
+    }
+}
+
 pub const testing = struct {
     pub const Fixture = struct {
         runtime: Runtime,
@@ -88,6 +130,50 @@ test "open enforces foreign keys and journals in WAL" {
     try std.testing.expect(try select.step());
     const journal = try select.read(Mode, arena_state.allocator());
     try std.testing.expectEqualStrings("memory", journal.mode);
+}
+
+test "a copy holds every row, and a table copy only the tables named" {
+    var fixture: testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var scratch = std.testing.tmpDir(.{});
+    defer scratch.cleanup();
+    const dir = try scratch.dir.realPathFileAlloc(std.testing.io, ".", arena);
+    const whole = try std.fs.path.joinZ(arena, &.{ dir, "whole.db" });
+    const some = try std.fs.path.joinZ(arena, &.{ dir, "some.db" });
+    const connection = &fixture.connection;
+
+    try connection.exec("CREATE TABLE kept (id INTEGER PRIMARY KEY)");
+    try connection.exec("CREATE TABLE left (id INTEGER PRIMARY KEY)");
+    try connection.exec("INSERT INTO kept (id) VALUES (1), (2)");
+    try connection.exec("INSERT INTO left (id) VALUES (3)");
+    try copy_to(connection, whole);
+    try copy_tables_to(connection, some, &.{"kept"});
+
+    var whole_copy = try open(&fixture.runtime, whole);
+    defer whole_copy.close();
+    try std.testing.expectEqual(@as(i64, 1), try count(&whole_copy, "SELECT count(*) FROM left"));
+
+    var some_copy = try open(&fixture.runtime, some);
+    defer some_copy.close();
+    try std.testing.expectEqual(@as(i64, 2), try count(&some_copy, "SELECT count(*) FROM kept"));
+    const tables = "SELECT count(*) FROM sqlite_master WHERE type = 'table'";
+    try std.testing.expectEqual(@as(i64, 1), try count(&some_copy, tables));
+}
+
+fn count(connection: *Db, comptime sql: []const u8) !i64 {
+    std.debug.assert(sql.len > 0);
+    std.debug.assert(connection.transaction_depth == 0);
+
+    var statement = try connection.prepare(sql);
+    defer statement.finalize();
+
+    try std.testing.expect(try statement.step());
+
+    return statement.read_int();
 }
 
 test {

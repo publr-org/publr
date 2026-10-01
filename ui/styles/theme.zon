@@ -33,6 +33,8 @@
         .{ .name = "color-warning-foreground", .value = "var(--warning-foreground)" },
         .{ .name = "color-review", .value = "var(--review)" },
         .{ .name = "color-review-foreground", .value = "var(--review-foreground)" },
+        .{ .name = "color-info", .value = "var(--info)" },
+        .{ .name = "color-info-foreground", .value = "var(--info-foreground)" },
 
         // Borders and focus rings
         .{ .name = "color-border", .value = "var(--border)" },
