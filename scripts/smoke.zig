@@ -438,6 +438,7 @@ fn expect_site(init: std.process.Init, port: u16) !void {
         .{ .path = "/posts", .needle = "Hello site" },
         .{ .path = "/_islands/signed-in", .needle = "<template patchfor=\"signed-in\">" },
         .{ .path = "/_app/app.css", .needle = ".bg-canvas" },
+        .{ .path = "/sitemap.xml", .needle = "<urlset" },
         .{ .path = "/nowhere", .needle = "404 Not Found" },
         .{ .path = "/nowhere", .needle = "Nothing lives at this address." },
         .{ .path = "/docs/guide", .needle = "The guide" },

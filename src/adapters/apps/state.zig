@@ -302,7 +302,12 @@ pub fn engine_options(spec: *const Spec) engine.Options {
     std.debug.assert(spec.name.len > 0);
     std.debug.assert(spec.pjsx_components.len == spec.pjsx_renders.len);
 
-    return .{ .minify = minify, .pjsx = spec.pjsx_components };
+    return .{
+        .minify = minify,
+        .pjsx = spec.pjsx_components,
+        .assets = spec.assets,
+        .folder = spec.folder,
+    };
 }
 
 /// Compiles every app and its stylesheet as `serve` would, with no database: the build runs

@@ -110,7 +110,7 @@ pub fn validate_def(known: []const kinds.Kind, def: Def, problems: *field.Proble
 
     if (title_field_of(def)) |title| {
         if (!kinds.lookup(known, title.kind).title_allowed) {
-            problems.add("title_field", "title_field must be a text field");
+            problems.add("title_field", "title_field must be a field whose kind allows titles");
         }
     }
 }
@@ -250,6 +250,26 @@ test "definition validation" {
     };
     validate_def(&kinds.core, wrong, &bad);
     try std.testing.expectEqual(@as(u32, 4), bad.len);
+}
+
+test "an email field may title a record, a long text field may not" {
+    var problems: field.Problems = .{};
+    const signup: Def = .{
+        .handle = "signup",
+        .name = "Signup",
+        .title_field = "email",
+        .fields = &.{.{ .name = "email", .label = "Email", .kind = "email", .unique = true }},
+    };
+    validate_def(&kinds.core, signup, &problems);
+    try std.testing.expect(problems.is_empty());
+
+    var refused: field.Problems = .{};
+    var untitled = signup;
+    untitled.title_field = "note";
+    untitled.fields = &.{.{ .name = "note", .label = "Note", .kind = "text" }};
+    validate_def(&kinds.core, untitled, &refused);
+    try std.testing.expectEqual(@as(u32, 1), refused.len);
+    try std.testing.expectEqualStrings("title_field", refused.items[0].path);
 }
 
 test "a type may start empty, and its title field is whichever field the name finds" {

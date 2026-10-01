@@ -6,6 +6,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const compile = @import("compile.zig");
 const time = @import("../lib/time.zig");
+const javascript = @import("javascript/vm.zig");
 
 const Expr = ast.Expr;
 const Node = ast.Node;
@@ -30,7 +31,11 @@ pub fn escape(writer: *std.Io.Writer, text: []const u8) !void {
 }
 
 /// A prop as a call site supplies it: by name, a string or null.
-pub const Prop = struct { name: []const u8, value: ?[]const u8 };
+pub const Prop = struct {
+    name: []const u8,
+    value: ?[]const u8,
+    kind: enum { string, number, boolean } = .string,
+};
 
 /// A PJSX component the renderer can call: the lowered module's `render`, wrapped to
 /// take props by name.
@@ -44,8 +49,17 @@ pub const PjsxRender = *const fn (
 pub fn Renderer(comptime Ctx: type) type {
     return struct {
         const Self = @This();
+        const Bridge = @import("javascript/render.zig").Bridge(Self, Ctx);
+
+        pub const Execution = struct {
+            templates: []const Template,
+            vm: ?*javascript.VM = null,
+            entries: std.ArrayList(Ctx.Entry) = .empty,
+        };
+        pub const JavaScriptProp = struct { name: []const u8, value: javascript.Value };
 
         pub const Value = union(enum) {
+            javascript: javascript.Value,
             string: []const u8,
             opt_string: ?[]const u8,
             int: i64,
@@ -69,6 +83,7 @@ pub fn Renderer(comptime Ctx: type) type {
             values: []const Prop = &.{},
             entries: []const EntryProp = &.{},
             children: []const u8 = "",
+            javascript: []const JavaScriptProp = &.{},
 
             fn get(props: Props, name: []const u8) ?[]const u8 {
                 std.debug.assert(name.len > 0);
@@ -96,7 +111,11 @@ pub fn Renderer(comptime Ctx: type) type {
         };
 
         /// A call site's props, split by what they carry.
-        const Split = struct { values: []const Prop, entries: []const EntryProp };
+        const Split = struct {
+            values: []const Prop,
+            entries: []const EntryProp,
+            javascript: []const JavaScriptProp = &.{},
+        };
 
         templates: []const Template,
         pjsx: []const PjsxRender,
@@ -106,7 +125,7 @@ pub fn Renderer(comptime Ctx: type) type {
         base: []const u8 = "",
 
         /// One template's evaluation: its locals and props.
-        const Frame = struct {
+        pub const Frame = struct {
             template: *const Template,
             ctx: *const Ctx,
             props: Props,
@@ -114,6 +133,8 @@ pub fn Renderer(comptime Ctx: type) type {
             depth: u32,
             expression_depth: u32 = 0,
             locals: std.ArrayList(Binding) = .empty,
+            execution: *Execution,
+            js_scope: ?javascript.Value = null,
 
             fn lookup(frame: *const Frame, name: []const u8) Value {
                 std.debug.assert(name.len > 0);
@@ -145,16 +166,27 @@ pub fn Renderer(comptime Ctx: type) type {
                 return error.InvalidTemplate;
             }
 
-            return renderer.render_at(writer, index, ctx, props, 0);
+            var execution: Execution = .{ .templates = renderer.templates };
+            defer if (execution.vm) |vm| vm.deinit();
+            return renderer.render_at(writer, index, ctx, props, 0, &execution) catch |err| {
+                if (execution.vm) |vm| {
+                    if (@hasDecl(Ctx, "report_javascript_error") and vm.failure.len > 0) {
+                        ctx.report_javascript_error(vm.failure);
+                    }
+                }
+
+                return err;
+            };
         }
 
-        fn render_at(
+        pub fn render_at(
             renderer: *const Self,
             writer: *std.Io.Writer,
             index: u32,
             ctx: *const Ctx,
             props: Props,
             depth: u32,
+            execution: *Execution,
         ) anyerror!void {
             const page = &renderer.templates[index];
 
@@ -168,7 +200,17 @@ pub fn Renderer(comptime Ctx: type) type {
                 ctx.record_template(page.rel);
             }
 
-            var frame: Frame = .{ .template = page, .ctx = ctx, .props = props, .depth = depth };
+            var frame: Frame = .{
+                .template = page,
+                .ctx = ctx,
+                .props = props,
+                .depth = depth,
+                .execution = execution,
+            };
+
+            if (page.javascript != null) {
+                try Bridge.begin(renderer, &frame);
+            } else try Bridge.native_props(renderer, &frame);
 
             for (page.decls) |decl| {
                 if (decl.when) |when| {
@@ -183,6 +225,7 @@ pub fn Renderer(comptime Ctx: type) type {
                     if (err != error.Redirect and @hasDecl(Ctx, "report_declaration_error")) {
                         ctx.report_declaration_error(page.rel, decl, err);
                     }
+
                     return err;
                 };
 
@@ -351,6 +394,11 @@ pub fn Renderer(comptime Ctx: type) type {
             frame: *Frame,
             expr: Expr,
         ) anyerror!void {
+            if (expr.type == .javascript) {
+                const value = try Bridge.eval(renderer, frame, expr.node.javascript);
+                return Bridge.write_raw(frame.execution.vm.?, writer, value);
+            }
+
             std.debug.assert(expr.type == .string or expr.type == .opt_string);
 
             switch (try renderer.eval(frame, expr)) {
@@ -371,6 +419,12 @@ pub fn Renderer(comptime Ctx: type) type {
             std.debug.assert(attr.name.len > 0);
 
             switch (try renderer.eval(frame, attr.expr)) {
+                .javascript => |value| try Bridge.attribute(
+                    frame.execution.vm.?,
+                    writer,
+                    attr.name,
+                    value,
+                ),
                 .boolean => |flag| if (flag) {
                     try writer.writeAll(" ");
                     try writer.writeAll(attr.name);
@@ -423,9 +477,20 @@ pub fn Renderer(comptime Ctx: type) type {
             const props = try renderer.props_of(frame, embed.props);
             const inner = frame.depth + 1;
             const children = embed.children orelse {
-                const only: Props = .{ .values = props.values, .entries = props.entries };
+                const only: Props = .{
+                    .values = props.values,
+                    .entries = props.entries,
+                    .javascript = props.javascript,
+                };
 
-                return renderer.render_at(writer, embed.callee, frame.ctx, only, inner);
+                return renderer.render_at(
+                    writer,
+                    embed.callee,
+                    frame.ctx,
+                    only,
+                    inner,
+                    frame.execution,
+                );
             };
             var buffer: std.Io.Writer.Allocating = .init(renderer.arena);
 
@@ -434,7 +499,8 @@ pub fn Renderer(comptime Ctx: type) type {
                 .values = props.values,
                 .entries = props.entries,
                 .children = buffer.written(),
-            }, inner);
+                .javascript = props.javascript,
+            }, inner, frame.execution);
         }
 
         fn write_pjsx(
@@ -445,7 +511,15 @@ pub fn Renderer(comptime Ctx: type) type {
         ) anyerror!void {
             std.debug.assert(call.component < renderer.pjsx.len);
 
-            const props = try renderer.props_of(frame, call.props);
+            const evaluated = try renderer.props_of(frame, call.props);
+            var bridge_frame = frame.*;
+            bridge_frame.props = .{
+                .values = evaluated.values,
+                .entries = evaluated.entries,
+                .javascript = evaluated.javascript,
+            };
+            try Bridge.native_props(renderer, &bridge_frame);
+            const props = bridge_frame.props;
             const children = call.children orelse {
                 return renderer.pjsx[call.component](writer, renderer.arena, props.values, null);
             };
@@ -478,7 +552,14 @@ pub fn Renderer(comptime Ctx: type) type {
 
                 const only: Props = .{ .values = props };
 
-                return renderer.render_at(writer, use.callee, frame.ctx, only, inner);
+                return renderer.render_at(
+                    writer,
+                    use.callee,
+                    frame.ctx,
+                    only,
+                    inner,
+                    frame.execution,
+                );
             }
 
             try writer.print("<publr-island src=\"{s}/_islands/{s}\"", .{
@@ -491,6 +572,7 @@ pub fn Renderer(comptime Ctx: type) type {
             }
 
             // A letter, then letters, digits or _: checked when the app compiled.
+
             if (use.condition.len > 0) {
                 try writer.print(" if=\"{s}\"", .{use.condition});
             }
@@ -525,7 +607,14 @@ pub fn Renderer(comptime Ctx: type) type {
 
             const ctx = if (use.dynamic) frame.ctx.prerender() else frame.ctx.stale();
 
-            try renderer.render_at(writer, use.callee, &ctx, .{ .values = props }, frame.depth + 1);
+            try renderer.render_at(
+                writer,
+                use.callee,
+                &ctx,
+                .{ .values = props },
+                frame.depth + 1,
+                frame.execution,
+            );
         }
 
         fn props_of(
@@ -537,6 +626,7 @@ pub fn Renderer(comptime Ctx: type) type {
 
             var values: std.ArrayList(Prop) = .empty;
             var entries: std.ArrayList(EntryProp) = .empty;
+            var js_values: std.ArrayList(JavaScriptProp) = .empty;
 
             for (args) |arg| {
                 switch (arg.value) {
@@ -545,6 +635,20 @@ pub fn Renderer(comptime Ctx: type) type {
                         .value = text,
                     }),
                     .expr => |expr| switch (try renderer.eval(frame, expr)) {
+                        .javascript => |value| try js_values.append(
+                            renderer.arena,
+                            .{ .name = arg.name, .value = value },
+                        ),
+                        .int => |value| try values.append(renderer.arena, .{
+                            .name = arg.name,
+                            .value = try std.fmt.allocPrint(renderer.arena, "{d}", .{value}),
+                            .kind = .number,
+                        }),
+                        .boolean => |value| try values.append(renderer.arena, .{
+                            .name = arg.name,
+                            .value = if (value) "true" else "false",
+                            .kind = .boolean,
+                        }),
                         .string => |text| try values.append(renderer.arena, .{
                             .name = arg.name,
                             .value = text,
@@ -562,9 +666,14 @@ pub fn Renderer(comptime Ctx: type) type {
                 }
             }
 
-            std.debug.assert(values.items.len + entries.items.len == args.len);
+            const props_count = values.items.len + entries.items.len + js_values.items.len;
+            std.debug.assert(props_count == args.len);
 
-            return .{ .values = values.items, .entries = entries.items };
+            return .{
+                .values = values.items,
+                .entries = entries.items,
+                .javascript = js_values.items,
+            };
         }
 
         fn write_value(
@@ -576,6 +685,7 @@ pub fn Renderer(comptime Ctx: type) type {
             std.debug.assert(expr.type != .entry);
 
             switch (try renderer.eval(frame, expr)) {
+                .javascript => |value| try Bridge.write(renderer, frame, writer, value),
                 .string => |text| try escape(writer, text),
                 .opt_string => |text| if (text) |present| {
                     try escape(writer, present);
@@ -590,6 +700,7 @@ pub fn Renderer(comptime Ctx: type) type {
         /// JavaScript truthiness.
         fn truthy(value: Value) bool {
             return switch (value) {
+                .javascript => unreachable,
                 .boolean => |flag| flag,
                 .opt_string => |text| text != null,
                 .int => |number| number != 0,
@@ -611,6 +722,7 @@ pub fn Renderer(comptime Ctx: type) type {
             std.debug.assert(frame.depth < compile.nesting_max);
 
             return switch (expr.node) {
+                .javascript => |index| .{ .javascript = try Bridge.eval(renderer, frame, index) },
                 .string => |text| .{ .string = text },
                 .int => |number| .{ .int = number },
                 .boolean => |flag| .{ .boolean = flag },
@@ -650,6 +762,7 @@ pub fn Renderer(comptime Ctx: type) type {
 
             // The chain's type is the right side's: a string ends it, an optional keeps
             // it optional.
+
             if (binary.right.type == .string) {
                 return .{ .string = present };
             }
@@ -672,6 +785,7 @@ pub fn Renderer(comptime Ctx: type) type {
             std.debug.assert(kind != .entry);
 
             // A branch mixing null with a string is an optional string.
+
             if (kind != .opt_string) {
                 return value;
             }

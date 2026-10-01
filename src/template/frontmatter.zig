@@ -5,6 +5,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const compile = @import("compile.zig");
 const expression = @import("expression.zig");
+const imports = @import("imports.zig");
 
 const Compiler = compile.Compiler;
 const Error = compile.Error;
@@ -31,6 +32,12 @@ pub fn read(compiler: *Compiler, text: []const u8) Error!void {
             continue;
         }
 
+        if (expression.top_level(line, ';')) |end| {
+            if (std.mem.trim(u8, line[end + 1 ..], " \t").len > 0) {
+                return compiler.script("JavaScript statements share a line", .{});
+            }
+        }
+
         if (try branch(compiler, line, &block)) {
             continue;
         }
@@ -54,7 +61,7 @@ fn branch(compiler: *Compiler, line: []const u8, block: *?ast.Decl.When) Error!b
 
     if (std.mem.startsWith(u8, line, "if ") or std.mem.startsWith(u8, line, "if(")) {
         if (block.* != null) {
-            return compiler.fail("frontmatter `if` blocks do not nest: {s}", .{line});
+            return compiler.script("nested JavaScript conditionals: {s}", .{line});
         }
 
         const open = std.mem.indexOfScalar(u8, line, '(') orelse line.len;
@@ -62,7 +69,7 @@ fn branch(compiler: *Compiler, line: []const u8, block: *?ast.Decl.When) Error!b
         const tail = std.mem.trim(u8, line[@min(close + 1, line.len)..], " \t");
 
         if (close <= open or !std.mem.eql(u8, tail, "{")) {
-            return compiler.fail("write a frontmatter `if` as `if (<condition>) {{`: {s}", .{line});
+            return compiler.script("JavaScript conditional: {s}", .{line});
         }
 
         const condition = try expression.expression(compiler, line[open + 1 .. close]);
@@ -104,7 +111,7 @@ fn guarded(compiler: *Compiler, line: []const u8, when: ast.Decl.When) Error!voi
     std.debug.assert(line.len > 0);
 
     if (!std.mem.startsWith(u8, line, "Publr.")) {
-        return compiler.fail(
+        return compiler.script(
             "an `if` block holds actions (Publr.request.redirect, Publr.request.call), " ++
                 "not {s}",
             .{line},
@@ -141,7 +148,7 @@ fn statement(compiler: *Compiler, line: []const u8) Error!void {
     }
 
     if (!std.mem.startsWith(u8, line, "const ")) {
-        return compiler.fail("unsupported frontmatter statement: {s}", .{line});
+        return compiler.script("unsupported frontmatter statement: {s}", .{line});
     }
 
     return declaration(compiler, line);
@@ -153,7 +160,7 @@ fn declaration(compiler: *Compiler, line: []const u8) Error!void {
     std.debug.assert(compiler.template.compiling);
 
     const equals = std.mem.indexOf(u8, line, " = ") orelse {
-        return compiler.fail("unsupported frontmatter statement: {s}", .{line});
+        return compiler.script("unsupported frontmatter statement: {s}", .{line});
     };
     const name = std.mem.trim(u8, line["const ".len..equals], " \t");
     var rhs = std.mem.trim(u8, line[equals + " = ".len ..], " \t");
@@ -163,7 +170,7 @@ fn declaration(compiler: *Compiler, line: []const u8) Error!void {
     }
 
     if (!expression.is_identifier(name)) {
-        return compiler.fail("`{s}` is not a plain identifier", .{name});
+        return compiler.script("`{s}` is not a plain identifier", .{name});
     }
 
     if (std.mem.eql(u8, rhs, "Date.now()")) {
@@ -200,7 +207,7 @@ fn declaration(compiler: *Compiler, line: []const u8) Error!void {
         return data_access(compiler, name, line, rhs, @intCast(at));
     }
 
-    return compiler.fail("unsupported frontmatter statement: {s}", .{line});
+    return compiler.script("unsupported frontmatter statement: {s}", .{line});
 }
 
 /// `const section = props.entry.section;`: a prop that is an entry, which every call
@@ -242,7 +249,7 @@ fn prop_text(compiler: *Compiler, name: []const u8, line: []const u8, rest: []co
     }
 
     const nullish = std.mem.indexOf(u8, rest, "??") orelse {
-        return compiler.fail("a prop in the frontmatter needs a ?? fallback: {s}", .{line});
+        return compiler.script("a prop in the frontmatter needs a ?? fallback: {s}", .{line});
     };
     const key = std.mem.trim(u8, rest[0..nullish], " \t");
 
@@ -1006,23 +1013,17 @@ fn collection_option(compiler: *Compiler, query: *ast.Decl.Query, pair: []const 
 
 /// `import Base from '../layouts/base.publr';`: resolved against this template's
 /// directory to another template, called as `<Base>`.
-fn import_line(compiler: *Compiler, line: []const u8) Error!void {
+pub fn import_line(compiler: *Compiler, line: []const u8) Error!void {
     std.debug.assert(std.mem.startsWith(u8, line, "import "));
 
     const from = std.mem.indexOf(u8, line, " from ") orelse {
-        return compiler.fail("unsupported import: {s}", .{line});
+        return compiler.script("unsupported import: {s}", .{line});
     };
     const local_name = std.mem.trim(u8, line["import ".len..from], " \t");
     var spec = std.mem.trim(u8, line[from + " from ".len ..], " \t");
 
     if (std.mem.endsWith(u8, spec, ";")) {
         spec = std.mem.trim(u8, spec[0 .. spec.len - 1], " \t");
-    }
-
-    const capitalized = expression.is_identifier(local_name) and std.ascii.isUpper(local_name[0]);
-
-    if (!capitalized) {
-        return compiler.fail("imports bind a capitalized component name: {s}", .{line});
     }
 
     const quoted = spec.len >= 2 and (spec[0] == '\'' or spec[0] == '"') and
@@ -1034,20 +1035,36 @@ fn import_line(compiler: *Compiler, line: []const u8) Error!void {
 
     const path = spec[1 .. spec.len - 1];
 
+    if (std.mem.endsWith(u8, path, ".js") or std.mem.endsWith(u8, path, ".ts")) {
+        return compiler.script("JavaScript module import", .{});
+    }
+
+    const capitalized = expression.is_identifier(local_name) and std.ascii.isUpper(local_name[0]);
+
+    if (!capitalized) {
+        return compiler.fail("imports bind a capitalized component name: {s}", .{line});
+    }
+
     if (std.mem.endsWith(u8, path, ".ptsx") or std.mem.endsWith(u8, path, ".pjsx")) {
         return import_pjsx(compiler, local_name, path);
     }
 
     if (!std.mem.endsWith(u8, path, ".publr")) {
+        if (std.mem.endsWith(u8, path, ".js") or std.mem.endsWith(u8, path, ".ts")) {
+            return compiler.script("JavaScript module import", .{});
+        }
+
         return compiler.fail(
             "only .publr templates and .ptsx components are importable: {s}",
             .{path},
         );
     }
 
-    const resolved = compile.resolve_path(compiler.arena, compiler.template.rel, path) catch |err| {
+    const folder = compiler.context.options.folder;
+    const importer = compiler.template.rel;
+    const resolved = imports.resolve(compiler.arena, importer, path, folder) catch |err| {
         if (err == error.Unsupported) {
-            return compiler.fail("import of {s} leaves the app", .{path});
+            return compiler.fail("import of {s} leaves the project's apps folder", .{path});
         }
 
         return err;

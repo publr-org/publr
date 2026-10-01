@@ -174,6 +174,10 @@ fn direct(template: *const Template, type_id: []const u8) Reads {
 
     var reads: Reads = .none;
 
+    if (template.javascript_reads) {
+        return .entry;
+    }
+
     for (template.decls) |decl| {
         const own: Reads = switch (decl.value) {
             .entry => |entry| if (std.mem.eql(u8, entry.type_id, type_id)) .entry else .none,
@@ -197,6 +201,10 @@ fn embeds_of(arena: std.mem.Allocator, template: *const Template) Error![]const 
 
     var pending: std.ArrayList([]const ast.Node) = .empty;
     var callees: std.ArrayList(u32) = .empty;
+
+    for (template.javascript_embeds) |callee| {
+        try note(arena, &callees, callee);
+    }
 
     try pending.append(arena, template.body);
 

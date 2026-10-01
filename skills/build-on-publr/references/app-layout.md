@@ -43,7 +43,7 @@ pub fn build(builder: *std.Build) void {
 
     // The plugins' tests, run inside Publr's test harness.
     const test_step = builder.step("test", "Run the project's tests");
-    test_step.dependOn(&core.builder.top_level_steps.get("test-plugins").?.step);
+    test_step.dependOn(&core.builder.top_level_steps.get("test-native-plugins").?.step);
 
     // The built binary compiles its own apps, so a template error fails the build.
     if (target.query.isNative()) {
@@ -141,7 +141,7 @@ pub const delivery_gates = [_]sdk.delivery.Gate{ ... };             // who sees 
 ```
 apps/members/
   app.zon               where it is mounted, its design tokens, the roles it signs in
-  public/               files served as they are under /_app/ (style.css feeds the stylesheet)
+  public/               files served as they are at the mount (style.css feeds the stylesheet)
   layouts/base.publr    the page shell; places global stores and the icon sprite once
   components/*.publr    server components (cards, headers)
   content/              one template per route: index.publr, posts/[slug].publr,
@@ -162,9 +162,12 @@ apps/members/
 
 - Inside an app everything starts at `/`: `content/index.publr` is the app's home
   whether it is mounted at `/`, `/members` or `members.example.com`, and middleware's
-  `request.path()` is the path inside the app. Assets are written `/_app/logo.svg` and
-  land under the mount. Links a template writes by hand include the mount
-  (`/members/account`).
+  `request.path()` is the path inside the app. Links a template writes by hand include
+  the mount, public files too (`/members/account`, `/members/logo.svg`); `/_app/` is only
+  what Publr generates.
+- Templates the apps share sit in a folder of the apps folder with no `app.zon`
+  (`apps/shared/`), imported by path (`'../../shared/components/navbar.publr'`); an app
+  may import another app's templates the same way.
 - An app with no templates is valid: its `middleware.zig` answers everything (a webhook,
   an API facade).
 - A template that reads only `Publr.build.*` is static and built to a file. One that reads

@@ -14,7 +14,7 @@ const engine = @import("../../template.zig");
 const context_module = @import("context.zig");
 const pages = @import("pages.zig");
 const rebuild = @import("rebuild.zig");
-const passthrough = @import("passthrough.zig");
+const public = @import("public.zig");
 const artifacts = @import("artifacts.zig");
 const Project = @import("../../server/project.zig").Project;
 const App = @import("state.zig").App;
@@ -129,7 +129,7 @@ pub fn build(app: *App, project: *const Project) !Summary {
         }
     }
 
-    const copied = try passthrough.sync(app);
+    const copied = try public.sync(app);
 
     summary.assets += copied.files;
     summary.bytes += copied.bytes;

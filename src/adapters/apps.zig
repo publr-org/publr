@@ -176,6 +176,8 @@ test {
     std.testing.refAllDecls(rebuild);
     std.testing.refAllDecls(middleware);
     std.testing.refAllDecls(edge);
+    std.testing.refAllDecls(@import("apps/public.zig"));
+    std.testing.refAllDecls(@import("apps/imported.zig"));
 }
 
 const sdk = @import("../sdk.zig");
@@ -555,9 +557,11 @@ test "delivery gates: members see the site, privately; everyone else the gate's 
         try std.testing.expectEqualStrings("private, no-store", refused.header("Cache-Control").?);
     }
 
-    // The app's assets are never gated.
+    // The app's assets and public files are never gated.
     const style = try harness.get("/_app/app.css");
     try std.testing.expectEqual(@as(u16, 200), style.status.code());
+    const logo = try harness.get("/logo.svg");
+    try std.testing.expectEqual(@as(u16, 200), logo.status.code());
 
     const login_head = "POST /api/auth/sign-in HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
         "Content-Length: 0\r\n\r\n";
@@ -830,7 +834,7 @@ test "a path mount answers below its path, with its own islands, assets and 404"
     try std.testing.expectEqual(@as(u16, 200), docs.status.code());
     try std.testing.expect(contains(docs.body, "The docs"));
     try std.testing.expect(contains(docs.body, "<publr-island src=\"/docs/_islands/count\""));
-    try std.testing.expect(contains(docs.body, "href=\"/docs/_app/mark.svg\""));
+    try std.testing.expect(contains(docs.body, "href=\"/docs/mark.svg\""));
     try std.testing.expect(contains(docs.body, "src=\"/docs/_app/toolbar.js?v="));
 
     const guide = try harness.get("/docs/guide");
@@ -847,8 +851,16 @@ test "a path mount answers below its path, with its own islands, assets and 404"
     try std.testing.expect(contains(sheet.body, ".bg-paper"));
     try std.testing.expect(!contains(sheet.body, ".bg-canvas"));
 
-    const mark = try harness.get("/docs/_app/mark.svg");
+    // A template from a shared folder, and what it imports, are the importing app's own.
+    try std.testing.expect(contains(docs.body, "Made with <span class=\"tracking-widest\">Publr"));
+    try std.testing.expect(contains(sheet.body, ".italic"));
+    try std.testing.expect(contains(sheet.body, ".tracking-widest"));
+
+    // A public file is at its own path under the mount; /_app/ is only what Publr generates.
+    const mark = try harness.get("/docs/mark.svg");
     try std.testing.expectEqual(@as(u16, 200), mark.status.code());
+    const moved = try harness.get("/docs/_app/mark.svg");
+    try std.testing.expectEqual(@as(u16, 404), moved.status.code());
 
     // A path that only starts like the mount is the root app's.
     const near = try harness.get("/docsx");
@@ -974,12 +986,16 @@ test "every app builds into its own folder, its sitemap at its own address" {
     const out = harness.scratch.dir;
     const docs = try out.readFileAlloc(io, "docs/index.html", arena, .limited(1 << 20));
     try std.testing.expect(contains(docs, "The docs"));
-    _ = try out.readFileAlloc(io, "docs/_app/mark.svg", arena, .limited(1 << 10));
+    _ = try out.readFileAlloc(io, "docs/mark.svg", arena, .limited(1 << 10));
     _ = try out.readFileAlloc(io, "docs/_app/app.css", arena, .limited(1 << 20));
     _ = try out.readFileAlloc(io, "www/posts/built/index.html", arena, .limited(1 << 20));
 
     const sitemap = try out.readFileAlloc(io, "docs/sitemap.xml", arena, .limited(1 << 20));
     try std.testing.expect(contains(sitemap, "<loc>https://example.test/docs/guide</loc>"));
+    const sitemap_served = try harness.get("/docs/sitemap.xml");
+    try std.testing.expectEqual(@as(u16, 200), sitemap_served.status.code());
+    const listed = "<loc>https://example.test/docs/guide</loc>";
+    try std.testing.expect(contains(sitemap_served.body, listed));
 
     // The app with no pages has no folder.
     try std.testing.expectError(error.FileNotFound, out.openDir(io, "portal", .{}));

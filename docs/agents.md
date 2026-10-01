@@ -147,10 +147,11 @@ apps/courses/layouts/base.publr           the page around every page
 apps/courses/content/index.publr          /learn
 apps/courses/content/lessons/[slug].publr /learn/lessons/<slug>, one per lesson
 apps/courses/components/*.publr           parts pages import
-apps/courses/public/                      files served as they are, at /learn/_app/
+apps/courses/public/                      files served as they are, at /learn/<file>
 ```
 
-A template is frontmatter (imports and reads through `Publr`, nothing else) over HTML:
+A template is synchronous JavaScript frontmatter over HTML. Imports, Publr reads,
+functions, arrays and seeded computations share scope with the body:
 
 ```astro
 ---
@@ -176,12 +177,12 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
   fields (`lesson.data.body`).
 - **The body** takes `{value}` (escaped), `set:html={value}` (raw), `{items.map((item) =>
   (...))}`, `{test ? (...) : null}`, and `<Component prop="..." />` with `<slot />`. A
-  layout or component reads `props.name`. Anything else is refused, naming the template
-  and the construct.
-- **Two rules that trip people up.** `a ?? b` falls back to a string only
-  (`{lesson.data.body ?? ""}`). Each branch of a conditional is `null` or one element in
-  parentheses, never a bare `.map`: wrap it, `{items.length === 0 ? null :
-  (<ul>{items.map((item) => (<li>{item.title}</li>))}</ul>)}`.
+  layout or component reads `props.name`. Keep island directives and PJSX component
+  calls in the outer markup; computed JSX can embed static `.publr` components.
+- **Computed markup.** JavaScript expressions can generate arrays of JSX elements,
+  including SVG patterns. Relative `.js` and `.ts` helpers use ES module imports.
+  Static pages save the HTML; no browser JavaScript or Node installation is needed.
+  Use seeded randomness. There is no filesystem, network or asynchronous rendering.
 - **Per request.** A page named `<name>.dynamic.publr` renders for each visitor and may
   read `Publr.request` (`session`, `getCollection`, `call('app.<plugin>.<verb>')` for an
   operation that allows it). A form posts to the plugin's `app.*` operations through

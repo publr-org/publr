@@ -27,10 +27,10 @@ pub const keys_max: u32 = 16384;
 pub const template_key_prefix = "template:";
 pub const asset_key_prefix = "asset:";
 pub const islands_prefix = "/_islands/";
-/// Where an app's assets are, in its templates and under its mount: `/_app/logo.svg`.
+/// Where an app's generated assets are, under its mount: `/_app/islands.js`.
 pub const assets_prefix = "/_app/";
 /// The app's compiled stylesheet, among its assets.
-pub const stylesheet = "app.css";
+pub const stylesheet = engine.compile.stylesheet;
 
 /// What a render read, as the index's keys. Bounded: a render past `keys_max` distinct
 /// reads marks the set incomplete; callers must not certify it as fresh.
@@ -80,20 +80,26 @@ pub const Deps = struct {
         deps.add(changes.all_records_key);
     }
 
+    /// `template:<app>/<path>`; a template imported from outside the app is keyed by the
+    /// folder it lives in, `../shared/nav.publr` as `template:shared/nav.publr`.
     pub fn record_template(deps: *Deps, rel: []const u8) void {
         std.debug.assert(rel.len > 0);
         std.debug.assert(deps.keys.items.len <= keys_max);
 
-        const key = std.fmt.allocPrint(deps.arena, "{s}{s}/{s}", .{
-            template_key_prefix,
-            deps.app,
-            rel,
-        }) catch {
+        const outside = std.mem.startsWith(u8, rel, engine.imports.outside_prefix);
+        const key = if (outside)
+            std.fmt.allocPrint(deps.arena, "{s}{s}", .{
+                template_key_prefix,
+                rel[engine.imports.outside_prefix.len..],
+            })
+        else
+            std.fmt.allocPrint(deps.arena, "{s}{s}/{s}", .{ template_key_prefix, deps.app, rel });
+        const recorded = key catch {
             deps.complete = false;
             return;
         };
 
-        deps.add(key);
+        deps.add(recorded);
     }
 
     pub fn record_asset(deps: *Deps) void {
@@ -166,6 +172,11 @@ pub const Context = struct {
     pub const Data = struct {
         arena: std.mem.Allocator,
         document: std.json.Value,
+
+        pub fn javascript_value(data: Data, _: std.mem.Allocator) !std.json.Value {
+            std.debug.assert(data.document == .object);
+            return data.document;
+        }
 
         pub fn getText(data: Data, key: []const u8) ?[]const u8 {
             std.debug.assert(key.len > 0);
@@ -356,8 +367,8 @@ pub const Context = struct {
         });
     }
 
-    /// An `/_app/...` URL under the app's mount. Generated assets carry a fingerprint;
-    /// public files keep their literal URLs.
+    /// An `/_app/...` URL under the app's mount, with the fingerprint of the build. The
+    /// compiler refused any other, so only a query or fragment makes one unknown here.
     pub fn asset_url(ctx: *const Context, writer: *std.Io.Writer, path: []const u8) !void {
         std.debug.assert(std.mem.startsWith(u8, path, assets_prefix));
         std.debug.assert(ctx.app.version.len == 16);
@@ -424,6 +435,12 @@ pub const Context = struct {
             },
             else => {},
         }
+    }
+
+    pub fn report_javascript_error(ctx: *const Context, message: []const u8) void {
+        std.debug.assert(message.len > 0);
+        const reason = ctx.app.options.diagnostic orelse return;
+        reason.set("[{s}] template JavaScript: {s}", .{ ctx.app.spec.name, message });
     }
 
     /// `Publr.build.getEntry()`: the live record of `type_id` whose slug is `slug`. A type

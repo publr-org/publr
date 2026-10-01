@@ -1,0 +1,42 @@
+---
+/**
+ * The Publr mark's geometry at hero scale: rings of 4 / 8 / 16 / 24 dots,
+ * shrinking and fading outward, each ring slowly rotating.
+ */
+interface Props {
+	class?: string;
+}
+
+const { class: className } = props;
+
+const C = 300;
+const rings = [
+	{ count: 4, radius: 58, dot: 7, opacity: 1, phase: 0, anim: 'spin-cw 40s linear infinite' },
+	{ count: 8, radius: 128, dot: 5.5, opacity: 0.85, phase: Math.PI / 8, anim: 'spin-ccw 70s linear infinite' },
+	{ count: 16, radius: 206, dot: 4, opacity: 0.6, phase: 0, anim: 'spin-cw 110s linear infinite' },
+	{ count: 24, radius: 282, dot: 3, opacity: 0.38, phase: Math.PI / 24, anim: 'spin-ccw 160s linear infinite' },
+].map((r) => ({
+	...r,
+	dots: Array.from({ length: r.count }, (_, i) => {
+		const a = r.phase + (2 * Math.PI * i) / r.count;
+		return {
+			x: +(C + r.radius * Math.cos(a)).toFixed(2),
+			y: +(C + r.radius * Math.sin(a)).toFixed(2),
+		};
+	}),
+}));
+---
+
+<svg viewBox="0 0 600 600" fill="currentColor" aria-hidden="true" class={className}>
+	{
+		rings.map((ring, i) => (
+			<g style={`transform-origin: ${C}px ${C}px; animation: ${ring.anim};`}>
+				{ring.dots.map((d) => (
+					<circle cx={d.x} cy={d.y} r={ring.dot} opacity={ring.opacity} />
+				))}
+				{i === rings.length - 1 && <circle cx={C + ring.radius} cy={C} r="4.5" class="text-ember" />}
+			</g>
+		))
+	}
+	<circle cx={C} cy={C} r="12" />
+</svg>

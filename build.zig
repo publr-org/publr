@@ -15,6 +15,7 @@ const two_mode = @import("build/two_mode.zig");
 pub fn build(builder: *std.Build) void {
     const target = builder.standardTargetOptions(.{});
     const optimize = builder.standardOptimizeOption(.{});
+    @import("build/javascript.zig").tests(builder, target, optimize);
     const from = core.sources(builder);
 
     std.debug.assert(builder.build_root.path != null);

@@ -13,7 +13,7 @@ const builtAt = Publr.build.now();
   <header class="border-b border-line">
     <nav class="mx-auto flex max-w-wide items-center justify-between px-6 py-5">
       <a href="/" class="flex items-center gap-3 font-serif text-xl font-semibold tracking-tight no-underline">
-        <img src="/_app/logo.svg" alt="" width="28" height="28" />
+        <img src="/logo.svg" alt="" width="28" height="28" />
         Publr
       </a>
       <div class="flex items-center gap-6 text-sm font-medium">

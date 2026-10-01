@@ -9,6 +9,7 @@ const model_app = @import("../../model/app.zig");
 const registry = @import("../../server/registry.zig");
 const report = @import("../../lib/report.zig");
 const spec_module = @import("spec.zig");
+const imported = @import("imported.zig");
 
 const Spec = spec_module.Spec;
 const File = spec_module.File;
@@ -180,7 +181,14 @@ fn read_app(
         .mount = config.mount,
         .roles = config.roles,
         .plugins = config.plugins,
-        .templates = try read_templates(arena, io, app_dir),
+        .templates = try imported.with_imported(
+            arena,
+            io,
+            dir,
+            folder,
+            try read_templates(arena, io, app_dir),
+            templates_max,
+        ),
         .assets = if (compiled) |built| built.assets else spec_module.common_assets,
         .tokens = try jit.extendThemeRuntime(arena, jit.default_theme, .{ .tokens = tokens }),
         .style_css = style_css,
@@ -255,7 +263,9 @@ fn read_templates(arena: std.mem.Allocator, io: std.Io, app_dir: []const u8) ![]
             continue;
         }
 
-        if (!std.mem.endsWith(u8, entry.basename, ".publr") or files.items.len == templates_max) {
+        const is_template = @import("../../template.zig").is_source(entry.basename);
+
+        if (!is_template or files.items.len == templates_max) {
             continue;
         }
 

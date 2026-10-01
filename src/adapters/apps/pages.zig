@@ -12,6 +12,7 @@ const apps_adapter = @import("../apps.zig");
 const context_module = @import("context.zig");
 const Memo = @import("context.zig").Memo;
 const build = @import("build.zig");
+const public = @import("public.zig");
 const Project = @import("../../server/project.zig").Project;
 const Target = Project.Target;
 const App = @import("state.zig").App;
@@ -121,20 +122,29 @@ pub fn dispatch(
         return response.text(.not_found, "Not Found");
     }
 
+    const matched = if (app.program) |program| program.match(target.path) else null;
+    const fixed_page = if (matched) |found| found.slug == null else false;
+
+    // A page at a fixed path wins; anywhere else a public file comes before a `[slug]`
+    // page and the 404, and, like every asset, is never gated.
+    if (!fixed_page and try public.serve(app, target.path, request, response, ctx)) {
+        return;
+    }
+
     const door = try delivery.door(project, ctx.arena, request, response, .page);
 
     if (door == .refused) {
         return;
     }
 
-    const program = app.program orelse {
+    if (app.program == null) {
         try apps_adapter.serve_as(response, app, .memory);
 
         return response.text(.not_found, "Not Found");
-    };
+    }
 
-    if (program.match(target.path)) |matched| {
-        try render(project, target, matched, .ok, request, response, ctx);
+    if (matched) |found| {
+        try render(project, target, found, .ok, request, response, ctx);
     } else {
         try not_found(project, target, request, response, ctx);
     }

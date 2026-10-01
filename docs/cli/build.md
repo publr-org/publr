@@ -15,8 +15,9 @@ with the least work:
 - **No build there, or one another version of the app made:** renders every static
   route to `<app>/<url>/index.html`, every static island to
   `<app>/_islands/<key>.html`, writes the app's assets and its compiled stylesheet under
-  `<app>/_app/`, the 404 page, `sitemap.xml` and a marker (`.publr-build`, the stamp of
-  the app's templates, stylesheet, generated client code and address). Records what every
+  `<app>/_app/`, the app's public files at `<app>/`, the 404 page, `sitemap.xml` and a
+  marker (`.publr-build`, the stamp of the app's templates, stylesheet, generated client
+  code and address). Records what every
   page read in the dependency index. While it renders, one line per route on stderr says
   how far it is (`publr: building /products/fry-pan (120/300)`).
 - **A build by this version, changes since:** every publish, from whichever door

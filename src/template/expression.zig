@@ -13,12 +13,16 @@ const Expr = ast.Expr;
 pub fn expression(compiler: *Compiler, text: []const u8) Error!Expr {
     std.debug.assert(text.len < 1 << 20);
 
+    if (compiler.javascript) {
+        return @import("javascript/compile.zig").expression(compiler, text);
+    }
+
     var parser: Parser = .{ .compiler = compiler, .text = std.mem.trim(u8, text, " \t\r\n") };
     const value = try parser.ternary();
     parser.skip_whitespace();
 
     if (parser.position != parser.text.len) {
-        return compiler.fail(
+        return compiler.script(
             "unsupported expression syntax at `{s}`",
             .{compiler.excerpt(parser.text[parser.position..])},
         );
@@ -35,7 +39,7 @@ pub fn check_truthy(compiler: *Compiler, value: Expr) Error!void {
     std.debug.assert(compiler.template.compiling);
 
     switch (value.type) {
-        .boolean, .opt_string, .int, .string, .collection, .session, .null => {},
+        .javascript, .boolean, .opt_string, .int, .string, .collection, .session, .null => {},
         else => return compiler.fail("a {s} has no truthiness", .{@tagName(value.type)}),
     }
 }
@@ -46,7 +50,7 @@ pub fn write_value(compiler: *Compiler, value: Expr) Error!void {
     std.debug.assert(compiler.template.compiling);
 
     switch (value.type) {
-        .string, .opt_string, .int, .boolean => try compiler.push(.{ .value = value }),
+        .javascript, .string, .opt_string, .int, .boolean => try compiler.push(.{ .value = value }),
         .null => {},
         else => return compiler.fail(
             "a {s} cannot be written as text",
@@ -73,6 +77,21 @@ pub fn js_string(compiler: *Compiler, text: []const u8) Error![]const u8 {
 pub fn expression_end(compiler: *Compiler, text: []const u8, start: u32) Error!u32 {
     std.debug.assert(start < text.len);
     std.debug.assert(text[start] == '{');
+
+    if (compiler.javascript) {
+        const syntax = @import("pjsx_syntax").template_syntax;
+        return start + (syntax.syntax.expressionEnd(
+            compiler.arena,
+            text[start..],
+            compiler.template.rel,
+        ) catch |err| {
+            if (err == error.OutOfMemory) {
+                return error.OutOfMemory;
+            }
+
+            return compiler.fail("JavaScript syntax: {s}", .{syntax.lastError()});
+        });
+    }
 
     var depth: u32 = 0;
     var quote: u8 = 0;
@@ -108,6 +127,33 @@ pub fn expression_end(compiler: *Compiler, text: []const u8, start: u32) Error!u
     return compiler.fail("unterminated expression: {s}", .{compiler.excerpt(text[start..])});
 }
 
+const globals = [_][]const u8{
+    "Math",
+    "Number",
+    "String",
+    "Array",
+    "Object",
+    "JSON",
+    "Set",
+    "Map",
+    "Date",
+    "RegExp",
+    "BigInt",
+    "Infinity",
+    "NaN",
+    "undefined",
+    "globalThis",
+    "new",
+    "typeof",
+    "void",
+    "parseInt",
+    "parseFloat",
+    "isNaN",
+    "isFinite",
+    "encodeURIComponent",
+    "decodeURIComponent",
+};
+
 const Parser = struct {
     compiler: *Compiler,
     text: []const u8,
@@ -116,7 +162,9 @@ const Parser = struct {
     fn skip_whitespace(parser: *Parser) void {
         std.debug.assert(parser.position <= parser.text.len);
 
-        while (parser.at(std.ascii.isWhitespace)) parser.position += 1;
+        while (parser.at(std.ascii.isWhitespace)) {
+            parser.position += 1;
+        }
     }
 
     /// Whether the byte at the position satisfies `predicate`; false at the end.
@@ -234,6 +282,10 @@ const Parser = struct {
         while (parser.take(token)) {
             const right = try parser.logical_operand(operator);
 
+            if (left.type != .boolean or right.type != .boolean) {
+                return compiler.script("logical operators return JavaScript operands", .{});
+            }
+
             try check_truthy(compiler, left);
             try check_truthy(compiler, right);
 
@@ -263,6 +315,7 @@ const Parser = struct {
 
             // `a ?? b ?? c`: an optional fallback keeps the chain optional until a string
             // ends it.
+
             if (right.type != .string and right.type != .opt_string) {
                 return compiler.fail(
                     "`??` needs a string fallback; got a {s}",
@@ -492,12 +545,14 @@ const Parser = struct {
 
         const start = parser.position;
 
-        while (parser.at(is_identifier_char)) parser.position += 1;
+        while (parser.at(is_identifier_char)) {
+            parser.position += 1;
+        }
 
         std.debug.assert(parser.position >= start);
 
         if (parser.position == start or std.ascii.isDigit(parser.text[start])) {
-            return parser.compiler.fail(
+            return parser.compiler.script(
                 "expected a name at `{s}`",
                 .{parser.compiler.excerpt(parser.text[start..])},
             );
@@ -549,6 +604,10 @@ const Parser = struct {
         std.debug.assert(quote == '\'' or quote == '"');
         std.debug.assert(parser.text[parser.position] == quote);
 
+        if (std.mem.indexOfScalar(u8, parser.text[parser.position..], '\\') != null) {
+            return parser.compiler.script("escaped JavaScript string", .{});
+        }
+
         const end = std.mem.indexOfScalarPos(u8, parser.text, parser.position + 1, quote) orelse {
             return parser.compiler.fail("unterminated string", .{});
         };
@@ -563,12 +622,18 @@ const Parser = struct {
 
         std.debug.assert(std.ascii.isDigit(parser.text[start]));
 
-        while (parser.at(std.ascii.isDigit)) parser.position += 1;
+        while (parser.at(std.ascii.isDigit)) {
+            parser.position += 1;
+        }
 
         const digits = parser.text[start..parser.position];
         const value = std.fmt.parseInt(i64, digits, 10) catch {
-            return parser.compiler.fail("number out of range: {s}", .{digits});
+            return parser.compiler.script("JavaScript number: {s}", .{digits});
         };
+
+        if (value > 9007199254740991) {
+            return parser.compiler.script("JavaScript number rounding", .{});
+        }
 
         std.debug.assert(digits.len > 0);
 
@@ -606,6 +671,12 @@ const Parser = struct {
         }
 
         const found = compiler.find_local(word) orelse {
+            for (globals) |name| {
+                if (std.mem.eql(u8, word, name)) {
+                    return compiler.script("JavaScript global {s}", .{word});
+                }
+            }
+
             return compiler.fail("`{s}` is not declared", .{word});
         };
 
@@ -738,10 +809,14 @@ fn length_member(compiler: *Compiler, boxed: *const Expr, kind: Type, name: []co
     std.debug.assert(kind == .collection or kind == .string);
 
     if (std.mem.eql(u8, name, "length")) {
+        if (kind == .string) {
+            return compiler.script("JavaScript UTF-16 string length", .{});
+        }
+
         return .{ .type = .int, .node = .{ .member = .{ .object = boxed, .kind = .length } } };
     }
 
-    return compiler.fail("`.{s}` of a {s}", .{ name, @tagName(kind) });
+    return compiler.script("`.{s}` of a {s}", .{ name, @tagName(kind) });
 }
 
 // ---- text helpers ------------------------------------------------------------------

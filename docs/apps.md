@@ -29,7 +29,8 @@ apps/www/
     404.publr              every unmatched path
   layouts/, components/, dynamic/   templates the pages import; the names are the app's own
   interactive/*.ptsx       PJSX components with client state (optional)
-  public/                  served as-is under /_app/ (style.css is prepended to the stylesheet)
+  public/                  served as-is at the mount: public/robots.txt is /robots.txt
+                           (style.css is prepended to the stylesheet instead)
   middleware.zig           runs before every request for the app (optional; see Middleware)
 ```
 
@@ -37,6 +38,22 @@ Only `content/` means anything to the engine: its files are pages, and `[slug]` 
 name is a route parameter. Every other folder holds templates a page imports.
 `public/` and `interactive/` are not templates. An app with no templates at all is
 valid: its `middleware.zig` answers every request (a webhook receiver, an API facade).
+
+### Templates the apps share
+
+An import may leave the app, by `../`, to any template in the project's apps folder:
+another app's, or one in a folder of shared templates, a folder there with no `app.zon`.
+
+```
+apps/
+  shared/components/navbar.publr      no app.zon: templates any app imports
+  www/layouts/base.publr              import Navbar from '../../shared/components/navbar.publr'
+  waitlist/layouts/base.publr         import Base from '../../www/layouts/base.publr'
+```
+
+What an app imports from outside joins it, with what that imports in turn: its classes
+reach the app's stylesheet, and changing it rebuilds every app that imports it. An
+import never leaves the apps folder.
 
 `serve` reads every folder under `apps/` that has an `app.zon`: `--apps <dir>` when named,
 else the project's own `apps/` beside where Publr runs, else where the build's apps came from
@@ -93,10 +110,11 @@ project's address (`--url`, `http://127.0.0.1:8080` by default); in development
 Inside an app everything is seen from its mount. Its routes, `content/` and its
 middleware's `request.path()` start at `/` whether the app answers at the root, under
 `/newsletter` or on `app.example.com`. What the engine writes follows the mount: an
-island is fetched from `<mount>/_islands/<key>`, a generated asset or a public file from
-`<mount>/_app/<file>`, and a template writes `/_app/logo.svg` wherever the app is. Links
-a template writes by hand are its own: an app under `/newsletter` writes
-`/newsletter/issues`.
+island is fetched from `<mount>/_islands/<key>` and a generated asset from
+`<mount>/_app/<file>`. Links a template writes by hand are its own, public files
+included: an app under `/newsletter` writes `/newsletter/issues` and
+`/newsletter/logo.svg`. `/_app/` holds only what Publr generates; a template naming
+anything else there fails the build.
 
 `.tokens` are the app's design tokens, layered over the stylesheet's defaults: every
 `color-*` token is a utility family (`bg-canvas`, `text-ink`, `border-line`).
@@ -151,20 +169,49 @@ const post = Publr.build.getEntry();
 </Base>
 ```
 
-The frontmatter is declarative: imports, and constants read through the
-Publr API. The body may use `{value}` (escaped by type), `set:html={value}`
-(raw), `{items.map((item) => (...))}`, `{test ? (...) : (...)}`, template
-literals, and `<Component prop="..." />` with children filling the
-component's `<slot />`. A layout or component reads its props as
-`props.name`, or in the frontmatter with a fallback, `const mode = props.mode
-?? 'card';`. A component that takes a record declares it in the
-frontmatter, `const section = props.entry.section;`, and every call site
-passes one, `<Section section={item} />`; from there it follows the record's
-own references one level down, so a page, its sections and their blocks are
-one component per level, never a recursion. In a `{...}` block a conditional
-comes first: `{items.length === 0 ? null : (<ul>{items.map(...)}</ul>)}` is a
-conditional whose branch loops. Anything outside that subset fails the build
-with a message naming the template and the construct.
+Frontmatter supports synchronous JavaScript: functions, destructuring, arrays,
+objects, `Math`, `Set`, loops, and seeded generators. TypeScript annotations are
+stripped using the same parser as PJSX; no type checking runs during rendering.
+Frontmatter and body expressions share one lexical scope:
+
+```astro
+---
+const { seed = 7919 } = props;
+let state = seed;
+const random = () => ((state = (state * 16807) % 2147483647) - 1) / 2147483646;
+const dots = Array.from({ length: 20 }, () => ({ x: random() * 100, y: random() * 100 }));
+---
+<svg viewBox="0 0 100 100">
+  {dots.map(dot => <circle cx={dot.x} cy={dot.y} r="1" />)}
+</svg>
+```
+
+Imports may name a `.publr` component or a relative `.js` / `.ts` helper. Helpers
+use ES module imports and exports, including live bindings and reexports. Imports
+stay inside the project's apps folder and participate in dependency tracking.
+Named npm packages, Node APIs, filesystem access, network access, dynamic imports,
+and asynchronous rendering are not available.
+
+Simple templates keep the native Zig renderer. A template needing JavaScript is
+compiled to embedded QuickJS-NG bytecode when the app loads; it runs once per
+component invocation in a fresh, bounded JavaScript heap for each page render.
+Nested components share that heap and its module instances. Static pages save the
+resulting HTML/SVG, so serving them adds no JavaScript execution or client script.
+JavaScript computation has an interpreter cost during rebuilding or live rendering.
+
+Zig writes the output: interpolated text and attributes are escaped, arrays flatten,
+and computed `null`, `undefined`, and boolean children emit nothing. `set:html` is
+an explicit raw HTML boundary. Components receive `props`; children fill `<slot />`.
+Data reads use the existing `Publr.build` / `Publr.request` context and permissions.
+Request access requires a dynamic template, including when reached through an alias.
+Use a seeded generator for repeatable patterns and `Publr.build.now()` or
+`Publr.request.now()` for tracked time; ambient time and `Math.random()` are disabled.
+
+The engine bounds its heap to 32 MiB and stack to 512 KiB, interrupts runaway
+execution, and limits each computed output block to 8 MiB and 64 nested levels.
+Errors retain the template or helper filename. Keep PJSX components and island
+directives in the outer template markup; computed JSX may embed static `.publr`
+components. JSX-bearing helper modules are not supported; put JSX in `.publr` files.
 
 ## Settings an app reads
 
@@ -426,19 +473,23 @@ refuses fails the build with the engine's message instead of the first `serve`. 
 built for another machine is checked where it runs.
 
 An app's build is a folder of its own: `output/www/index.html`, its islands under
-`_islands/`, its generated assets, compiled stylesheet (`_app/app.css`) and copied public
-files under `_app/`, its `sitemap.xml` at its own address, and the marker that says what
-built it. Deployed alone, `output/www/` is a static site for the root; `output/docs/`
+`_islands/`, its generated assets and compiled stylesheet (`_app/app.css`), its public
+files copied to the folder's root, its `sitemap.xml` at its own address (served by
+`serve` too), and the marker that says what built it. A public file may not take a path
+the build writes itself: `index.html` in any folder, `404.html`, `sitemap.xml`, `_app/`
+or `_islands/`. Deployed alone, `output/www/` is a static site for the root; `output/docs/`
 belongs under `/docs`. An app whose build fails answers 503 until a build after the next
 publish succeeds; the other apps and the admin stay up.
 
 `serve` prefers built files over rendering: a page or static island that has a file is
 served with an `ETag` (`public, max-age=60, stale-while-revalidate`), a dynamic island or a
 live page is rendered per request (`no-store`), assets generated by Publr under `/_app/`
-carry a fingerprint (`?v=<token>`) and are immutable for a year. Public files retain
-their literal URLs and are served from disk with revalidation, without content hashes.
-Every build copies public files and removes stale copies independently of page
-generation; changing an image or a public script requires no Zig compilation and does
+carry a fingerprint (`?v=<token>`) and are immutable for a year. Public files keep
+their literal URLs and are served from disk with revalidation, without content hashes,
+and are never gated. A page at a fixed path wins over a public file of the same path;
+any other path is a public file before it is a `[slug]` page or the 404. Every build
+copies public files and removes the copies it made of files since deleted, independently
+of page generation; changing an image or a public script requires no Zig compilation and does
 not invalidate generated pages. `public/style.css` is the exception: it is an input to
 the app's compiled stylesheet. Without a build everything renders on request, which is
 what development wants. A running server reads an app's public files from

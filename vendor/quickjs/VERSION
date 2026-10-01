@@ -1,0 +1,4 @@
+QuickJS-NG v0.17.0
+https://github.com/quickjs-ng/quickjs/releases/download/v0.17.0/quickjs-amalgam.zip
+SHA256 a0955463c74809173a253ff87365095e6972e8b171cfb6aa8a1e781adf35cfeb
+Engine only; QJS_BUILD_LIBC is not defined. No std/os modules or CLI.

@@ -15,8 +15,12 @@ pub fn child(compiler: *Compiler, inner: []const u8) Error!void {
 
     const trimmed = std.mem.trim(u8, inner, " \t\r\n");
 
-    if (trimmed.len == 0) {
+    if (trimmed.len == 0 or comments_only(trimmed)) {
         return;
+    }
+
+    if (compiler.javascript) {
+        return expression.write_value(compiler, try expression.expression(compiler, trimmed));
     }
 
     // A conditional first: only a top-level `?` makes one, and its branches may loop.
@@ -31,6 +35,27 @@ pub fn child(compiler: *Compiler, inner: []const u8) Error!void {
     try expression.write_value(compiler, try expression.expression(compiler, trimmed));
 }
 
+fn comments_only(text: []const u8) bool {
+    std.debug.assert(text.len < 1 << 20);
+    var rest = text;
+
+    while (rest.len > 0) {
+        if (std.mem.startsWith(u8, rest, "/*")) {
+            const end = std.mem.indexOf(u8, rest[2..], "*/") orelse return false;
+            rest = rest[end + 4 ..];
+        } else if (std.mem.startsWith(u8, rest, "//")) {
+            const end = std.mem.indexOfScalar(u8, rest, '\n') orelse return true;
+            rest = rest[end..];
+        } else {
+            return false;
+        }
+
+        rest = std.mem.trim(u8, rest, " \t\r\n");
+    }
+
+    return true;
+}
+
 /// `items.map((item) => ( ... ))`
 fn map_loop(compiler: *Compiler, text: []const u8) Error!bool {
     std.debug.assert(text.len > 0);
@@ -39,7 +64,7 @@ fn map_loop(compiler: *Compiler, text: []const u8) Error!bool {
     const collection = text[0..map_at];
 
     if (!expression.is_identifier(collection)) {
-        return compiler.fail(
+        return compiler.script(
             "map loops need a plain collection identifier: {s}",
             .{compiler.excerpt(text)},
         );
@@ -52,7 +77,7 @@ fn map_loop(compiler: *Compiler, text: []const u8) Error!bool {
     const param = std.mem.trim(u8, after[0..param_end], " \t");
 
     if (!expression.is_identifier(param)) {
-        return compiler.fail(
+        return compiler.script(
             "map callbacks take one item parameter: {s}",
             .{compiler.excerpt(text)},
         );
@@ -96,7 +121,7 @@ fn loop_body(compiler: *Compiler, text: []const u8, after_param: []const u8) Err
     rest = std.mem.trim(u8, rest[2..], " \t\r\n");
 
     if (!std.mem.startsWith(u8, rest, "(") or !std.mem.endsWith(u8, rest, "))")) {
-        return compiler.fail(
+        return compiler.script(
             "map callbacks need a parenthesized JSX body: {s}",
             .{compiler.excerpt(text)},
         );

@@ -154,6 +154,9 @@ fn read_attribute(
     }
 
     if (attr.literal) |text| {
+        if (std.mem.eql(u8, attr.name, "class") or std.mem.eql(u8, attr.name, "classes")) {
+            try markup.collect_classes(compiler, text);
+        }
         if (is_entry_prop(callee, attr.name)) {
             return compiler.fail(
                 "<{s} {s}=\"…\"> — {s} takes an entry, not a string: {s}={{…}}",
@@ -198,13 +201,17 @@ fn expression_prop(
     const takes_entry = is_entry_prop(callee, prop_name);
 
     switch (value.type) {
+        .javascript => {},
+        .int, .boolean => if (callee.javascript == null) {
+            return compiler.fail("<{s}> expects a string prop", .{name});
+        },
         .string, .opt_string => if (takes_entry) {
             return compiler.fail(
                 "<{s} {s}={{…}}> passes a {s}; {s} takes an entry",
                 .{ name, prop_name, @tagName(value.type), prop_name },
             );
         },
-        .entry => if (!takes_entry) {
+        .entry => if (!takes_entry and callee.javascript == null) {
             return compiler.fail(
                 "<{s} {s}={{…}}> passes an entry; {s} is a string prop (a component " ++
                     "declares an entry prop as const {s} = props.entry.{s};)",
@@ -325,6 +332,10 @@ fn is_island_attribute(name: []const u8) bool {
 fn reads_prop(callee: *const Template, name: []const u8) bool {
     std.debug.assert(callee.compiled);
 
+    if (callee.javascript != null) {
+        return true;
+    }
+
     for (callee.props.?) |prop| {
         if (std.mem.eql(u8, prop, name)) {
             return true;
@@ -442,7 +453,7 @@ fn embed(
 }
 
 /// The islands a nested template will place, on this template's lists.
-fn note_nested(compiler: *Compiler, callee: *const Template, with_dynamic: bool) Error!void {
+pub fn note_nested(compiler: *Compiler, callee: *const Template, with_dynamic: bool) Error!void {
     std.debug.assert(callee.compiled);
 
     for (callee.static_island_keys) |nested| {
@@ -725,6 +736,7 @@ fn pjsx_attribute(
     const computed: ast.PropArg = .{ .name = attr.name, .value = .{ .expr = value } };
 
     switch (value.type) {
+        .javascript => try props.append(compiler.arena, computed),
         .string => try props.append(compiler.arena, computed),
         // A value that may be null, for a prop the component has a default for: the
         // default stands.

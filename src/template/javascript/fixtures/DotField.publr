@@ -1,0 +1,54 @@
+---
+/**
+ * Background texture for a visual panel: a field of small dots that gathers
+ * in one bottom corner and thins out toward the opposite side. Deterministic
+ * per `seed` so every section gets its own arrangement.
+ */
+interface Props {
+	seed: number;
+	/** Which bottom corner the dots gather in. */
+	corner?: 'left' | 'right';
+}
+
+const { seed, corner = 'right' } = props;
+
+// Small seeded PRNG (mulberry32) — no Math.random, so builds are stable.
+let t = seed >>> 0;
+const rand = () => {
+	t = (t + 0x6d2b79f5) >>> 0;
+	let r = Math.imul(t ^ (t >>> 15), 1 | t);
+	r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+	return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+};
+
+// Shape varies per seed: how sharply the mound gathers horizontally /
+// vertically, and how much it spills.
+const px = 1.6 + rand() * 2.0;
+const py = 1.8 + rand() * 2.2;
+const spill = 1.2 + rand() * 0.9;
+
+const COLS = 48, ROWS = 24, STEP = 14;
+const W = COLS * STEP, H = ROWS * STEP;
+const dots: { x: number; y: number; r: number; o: number; hot: boolean }[] = [];
+for (let row = 0; row < ROWS; row++) {
+	for (let col = 0; col < COLS; col++) {
+		const fx = corner === 'right' ? col / (COLS - 1) : 1 - col / (COLS - 1);
+		const fy = row / (ROWS - 1);
+		// Probability rises toward the chosen bottom corner.
+		const p = Math.min(1, spill * Math.pow(fx, px) * Math.pow(fy, py));
+		if (rand() < p) {
+			dots.push({
+				x: col * STEP + STEP / 2,
+				y: row * STEP + STEP / 2,
+				r: 1.2 + rand() * 1.3,
+				o: 0.25 + rand() * 0.5,
+				hot: rand() < 0.03,
+			});
+		}
+	}
+}
+---
+
+<svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" class="pointer-events-none absolute inset-0 size-full text-paper" aria-hidden="true">
+	{dots.map((d) => <circle cx={d.x} cy={d.y} r={d.r} fill={d.hot ? '#f0a35a' : 'currentColor'} opacity={d.hot ? 0.9 : d.o * 0.35} />)}
+</svg>

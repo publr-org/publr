@@ -1,13 +1,17 @@
+---
+import Credit from '../../shared/components/credit.publr';
+---
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>{props.title ?? "Docs"}</title>
-  <link rel="icon" href="/_app/mark.svg" />
+  <link rel="icon" href="/docs/mark.svg" />
 </head>
 <body class="bg-paper">
   <main class="mx-auto max-w-2xl p-8">
     <slot />
   </main>
+  <Credit />
 </body>
 </html>

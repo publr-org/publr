@@ -112,8 +112,3 @@ form:not(:has(#default_now:checked)) [data-when="not-now"] {
     grid-column: 2;
   }
 }
-
-/* Layout utilities must not override native hidden state. */
-[hidden] {
-  display: none !important;
-}

@@ -17,11 +17,12 @@ signed-in users only. A
 type may have no fields yet: it is built up one field at a time. Any field but
 a slug or a group may hold a list of values (`many`), a repeater a list of
 field sets. Records take their title from the type's `title_field` when a
-field of that name exists; without one they are listed by id.
+field of that name exists (a string, slug or email field, or a plugin kind that
+allows titles); without one they are listed by id.
 
 Field kinds are a registry, not a closed list: each kind is a descriptor (its
 label and icon, the storage class its values take, which validation and
-option controls it has, whether a field of it may be unique or start records
+option controls it has, whether a field of it may be unique, title records or start records
 with a default, its own check over a value, which kinds it converts from).
 The core brings sixteen; a plugin adds its own (`pub const
 field_kinds`, named `<plugin>.<kind>`), and the validator, the store, the

@@ -6,6 +6,7 @@ const std = @import("std");
 /// The static type every expression carries: a string is written escaped, a number
 /// printed, and `??` needs an optional on its left.
 pub const Type = enum {
+    javascript,
     string,
     opt_string,
     int,
@@ -32,6 +33,7 @@ pub const Expr = struct {
     node: Form,
 
     pub const Form = union(enum) {
+        javascript: u32,
         /// The characters between the quotes, exactly as written.
         string: []const u8,
         int: i64,
@@ -259,7 +261,7 @@ pub const Node = union(enum) {
     };
 };
 
-pub const Kind = enum { page, layout };
+pub const Kind = enum { page, layout, module };
 
 /// One template, with everything the compiler learned about it: the route table, the
 /// islands table, and what a page's `<head>` owes it, kept beside the template.
@@ -272,6 +274,12 @@ pub const Template = struct {
     origin: Origin,
     decls: []const Decl = &.{},
     body: []const Node = &.{},
+    /// Compiler-produced bytecode; its closures share frontmatter's lexical scope.
+    javascript: ?[]const u8 = null,
+    javascript_embeds: []const u32 = &.{},
+    javascript_modules: []const u32 = &.{},
+    /// Computed data queries have conservative pre-build impact; actual reads are tracked.
+    javascript_reads: bool = false,
     /// A layout's props besides `children`, discovered from `props.<name>` references
     /// in its body. Null until compiled.
     props: ?[]const []const u8 = null,

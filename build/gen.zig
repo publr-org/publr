@@ -101,7 +101,7 @@ fn add_runtime(
     });
 
     const runtime = builder.createModule(.{
-        .root_source_file = pjsx_host.path("src/runtime/server.zig"),
+        .root_source_file = pjsx_host.path("src/template_runtime.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{.{ .name = "class_merge", .module = class_merge }},

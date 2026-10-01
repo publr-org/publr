@@ -51,6 +51,12 @@ pub const IslandUse = struct {
 /// The default `cache` of a static island, in seconds.
 pub const static_island_max_age: u32 = 60;
 
+/// A named run of bytes: a template's text, a generated asset.
+pub const File = struct { path: []const u8, data: []const u8 };
+
+/// The compiled stylesheet's name under `/_app/`, beside the generated assets.
+pub const stylesheet = "app.css";
+
 pub const Options = struct {
     /// The whole site renders per request: every template dynamic, nothing built,
     /// `island` ignored.
@@ -58,6 +64,10 @@ pub const Options = struct {
     /// Markup collapsed as it is read: every run of whitespace to one space.
     minify: bool = false,
     pjsx: []const PjsxComponent = &.{},
+    /// What Publr generates for the app, the only files an `/_app/...` URL may name.
+    assets: []const File = &.{},
+    /// The app's folder in the apps folder: an import that leads back into it is the app's.
+    folder: []const u8 = "",
 };
 
 /// What `Compiler.run` works on and adds to: the app's templates and the islands its
@@ -88,13 +98,27 @@ pub const Context = struct {
         context.nesting_depth += 1;
         defer context.nesting_depth -= 1;
         var compiler: Compiler = .init(context, index);
-
-        compiler.run() catch |err| {
-            if (err == error.Unsupported and context.failure.len == 0) {
-                context.failure = try context.named_failure(index, compiler.failure);
+        const original = context.templates[index];
+        compiler.run() catch |native_error| {
+            if (native_error != error.Unsupported or context.failure.len > 0) {
+                return native_error;
             }
 
-            return err;
+            if (!compiler.needs_javascript) {
+                context.failure = try context.named_failure(index, compiler.failure);
+                return native_error;
+            }
+
+            context.templates[index] = original;
+            compiler = .init(context, index);
+            compiler.javascript = true;
+            compiler.run() catch |err| {
+                if (err == error.Unsupported and context.failure.len == 0) {
+                    context.failure = try context.named_failure(index, compiler.failure);
+                }
+
+                return err;
+            };
         };
     }
 
@@ -206,54 +230,6 @@ pub fn string_less_than(_: void, left: []const u8, right: []const u8) bool {
     return std.mem.lessThan(u8, left, right);
 }
 
-/// `../../layouts/base.publr` against `content/posts/[slug].publr` becomes
-/// `layouts/base.publr`. Escaping the app is an error.
-pub fn resolve_path(arena: std.mem.Allocator, from: []const u8, spec: []const u8) Error![]const u8 {
-    std.debug.assert(from.len > 0);
-    std.debug.assert(spec.len > 0);
-
-    var segments: std.ArrayList([]const u8) = .empty;
-    const dir = from[0 .. std.mem.lastIndexOfScalar(u8, from, '/') orelse 0];
-    var base = std.mem.splitScalar(u8, dir, '/');
-
-    while (base.next()) |segment| {
-        if (segment.len > 0) {
-            try segments.append(arena, segment);
-        }
-    }
-
-    var parts = std.mem.splitScalar(u8, spec, '/');
-
-    while (parts.next()) |segment| {
-        if (segment.len == 0 or std.mem.eql(u8, segment, ".")) {
-            continue;
-        }
-
-        if (std.mem.eql(u8, segment, "..")) {
-            if (segments.items.len == 0) {
-                return error.Unsupported;
-            }
-
-            _ = segments.pop();
-            continue;
-        }
-
-        try segments.append(arena, segment);
-    }
-
-    var out: std.Io.Writer.Allocating = .init(arena);
-
-    for (segments.items, 0..) |segment, index| {
-        if (index > 0) {
-            try out.writer.writeByte('/');
-        }
-
-        try out.writer.writeAll(segment);
-    }
-
-    return out.written();
-}
-
 /// `./components/Disclosure.ptsx` becomes `Disclosure`.
 pub fn file_stem(path: []const u8) []const u8 {
     std.debug.assert(path.len > 0);
@@ -306,6 +282,13 @@ pub const Compiler = struct {
     failure: []const u8 = "",
     source: []const u8 = "",
     position: u32 = 0,
+    javascript: bool = false,
+    needs_javascript: bool = false,
+    js_frontmatter: []const u8 = "",
+    js_expressions: std.ArrayList([]const u8) = .empty,
+    js_embeds: std.ArrayList(u32) = .empty,
+    js_imports: std.ArrayList([]const u8) = .empty,
+    js_modules: std.ArrayList(u32) = .empty,
 
     pub fn init(context: *Context, index: u32) Compiler {
         std.debug.assert(index < context.templates.len);
@@ -342,6 +325,12 @@ pub const Compiler = struct {
         return error.Unsupported;
     }
 
+    /// A language construct outside the native optimizer, rather than a policy error.
+    pub fn script(compiler: *Compiler, comptime format: []const u8, args: anytype) Error {
+        compiler.needs_javascript = true;
+        return compiler.fail(format, args);
+    }
+
     /// A short, single-line excerpt of source for a message.
     pub fn excerpt(compiler: *Compiler, text: []const u8) []const u8 {
         const trimmed = std.mem.trim(u8, text, " \t\r\n");
@@ -365,6 +354,10 @@ pub const Compiler = struct {
 
         template.compiling = true;
 
+        if (template.kind == .module) {
+            return @import("javascript/compile.zig").module(compiler);
+        }
+
         if (compiler.context.forced_dynamic(template.rel)) {
             template.dynamic = true;
         }
@@ -373,12 +366,22 @@ pub const Compiler = struct {
         compiler.out = &body;
 
         const parts = split_template(template.source);
-        try frontmatter.read(compiler, parts.frontmatter);
+
+        if (compiler.javascript) {
+            try @import("javascript/compile.zig").frontmatter(compiler, parts.frontmatter);
+        } else {
+            try frontmatter.read(compiler, parts.frontmatter);
+        }
 
         compiler.source = parts.body;
         compiler.position = 0;
         try markup.parse(compiler, null);
         try compiler.flush();
+
+        if (compiler.javascript) {
+            try @import("javascript/compile.zig").finish(compiler);
+        }
+
         try compiler.check_whole();
 
         template.decls = compiler.decls.items;
@@ -415,6 +418,7 @@ pub const Compiler = struct {
         // renders could differ: a template that reads nothing is a pure function of its
         // props, so rendering it per request would serve identical bytes under
         // `no-store` forever.
+
         if (named_dynamic(template.rel) and !template.reads_data) {
             return compiler.fail(
                 "{s} reads nothing, so every render is the same bytes — `.dynamic` would " ++
@@ -599,11 +603,6 @@ test "island keys, dynamic names and import paths" {
     try expect("pure.publr", try static_name(arena, "components/pure.dynamic.publr"));
     try expect("content/posts/index", stem_of("content/posts/index.dynamic.publr"));
     try expect("Disclosure", file_stem("../interactive/Disclosure.ptsx"));
-
-    const from = "content/posts/[slug].publr";
-    try expect("layouts/base.publr", try resolve_path(arena, from, "../../layouts/base.publr"));
-    try expect("content/posts/x.publr", try resolve_path(arena, from, "./x.publr"));
-    try std.testing.expectError(error.Unsupported, resolve_path(arena, from, "../../../x.publr"));
 }
 
 test "note keeps a sorted set of keys, once each" {

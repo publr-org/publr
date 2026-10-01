@@ -48,7 +48,8 @@ write operation answers `405`.
 Everything outside `/api/`, `/admin/` and `/auth/` belongs to the app mounted where it
 was asked (see [Apps](apps.md)): its subdomain, else the longest path mount. Under an
 app's mount are its routes, `<mount>/_islands/<key>` and `<mount>/_islands/?keys=a,b` for
-fragments, and `<mount>/_app/<path>` for its stylesheet (`app.css`) and its assets. A built
+fragments, `<mount>/_app/<path>` for its stylesheet (`app.css`) and generated assets, and
+its `public/` files at their own paths (`<mount>/robots.txt`). A built
 page answers with an `ETag`, a rendered one with `no-store`; `X-Publr-Served` says which
 (`file`, `memory`, `render`). With no app there, `/` opens the admin.
 

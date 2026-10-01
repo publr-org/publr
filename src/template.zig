@@ -8,9 +8,11 @@ pub const compile = @import("template/compile.zig");
 pub const render = @import("template/render.zig");
 pub const routes = @import("template/routes.zig");
 pub const impact = @import("template/impact.zig");
+pub const imports = @import("template/imports.zig");
 
 pub const Template = ast.Template;
 pub const Options = compile.Options;
+pub const File = compile.File;
 pub const PjsxComponent = compile.PjsxComponent;
 pub const PjsxProp = compile.PjsxProp;
 pub const Prop = render.Prop;
@@ -29,6 +31,11 @@ pub const source_bytes_max: u32 = 1 << 20;
 pub const islands_max: u32 = compile.islands_max;
 pub const props_max: u32 = compile.props_max;
 pub const nesting_max: u32 = compile.nesting_max;
+
+pub fn is_source(path: []const u8) bool {
+    return std.mem.endsWith(u8, path, ".publr") or std.mem.endsWith(u8, path, ".js") or
+        (std.mem.endsWith(u8, path, ".ts") and !std.mem.endsWith(u8, path, ".d.ts"));
+}
 
 /// One template as the app provides it, before it is read.
 pub const Source = struct {
@@ -195,19 +202,23 @@ fn copy_sources(
 
     for (sources, templates) |item, *template| {
         if (item.rel.len == 0 or item.rel.len > routes.pattern_len_max - 32 or
-            !std.mem.endsWith(u8, item.rel, ".publr") or item.rel[0] == '/')
+            !is_source(item.rel) or item.rel[0] == '/')
         {
             diagnostic.message = "template paths must be relative .publr paths " ++
                 "within the route limit";
             return error.Unsupported;
         }
-        var segments = std.mem.splitScalar(u8, item.rel, '/');
+        // One leading `../` names a template outside the app, by its folder and path.
+        const outside = std.mem.startsWith(u8, item.rel, imports.outside_prefix);
+        const inside = if (outside) item.rel[imports.outside_prefix.len..] else item.rel;
+        var segments = std.mem.splitScalar(u8, inside, '/');
         while (segments.next()) |segment| {
             if (segment.len == 0 or std.mem.eql(u8, segment, ".") or
-                std.mem.eql(u8, segment, "..") or std.mem.eql(u8, segment, ".publr"))
+                std.mem.eql(u8, segment, "..") or std.mem.eql(u8, segment, ".publr") or
+                (outside and std.mem.indexOfScalar(u8, inside, '/') == null))
             {
                 diagnostic.message = "template paths must have nonempty names " ++
-                    "without . or .. segments";
+                    "without . or .. segments, but for one leading ../<folder>/";
                 return error.Unsupported;
             }
         }
@@ -221,12 +232,13 @@ fn copy_sources(
             return error.SourceTooLong;
         }
 
-        const is_page = std.mem.startsWith(u8, item.rel, "content/");
+        const is_module = !std.mem.endsWith(u8, item.rel, ".publr");
+        const is_page = !is_module and std.mem.startsWith(u8, item.rel, "content/");
         has_page = has_page or is_page;
         template.* = .{
             .rel = try arena.dupe(u8, item.rel),
             .source = try arena.dupe(u8, item.source),
-            .kind = if (is_page) .page else .layout,
+            .kind = if (is_module) .module else if (is_page) .page else .layout,
             .origin = item.origin,
         };
     }
@@ -354,6 +366,257 @@ test {
     _ = @import("template/expression.zig");
     _ = @import("template/frontmatter.zig");
     _ = @import("template/markup.zig");
+    _ = @import("template/javascript/vm.zig");
+}
+
+test "JavaScript renders the seeded marketing components without client code" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try load_test(&.{
+        source("components/dots.publr", @embedFile("template/javascript/fixtures/DotField.publr")),
+        source("components/orbit.publr", @embedFile("template/javascript/fixtures/Orbit.publr")),
+        source(
+            "components/graph.publr",
+            @embedFile("template/javascript/fixtures/DependencyGraph.publr"),
+        ),
+        source("content/index.publr",
+            \\---
+            \\import Dots from '../components/dots.publr';
+            \\import Orbit from '../components/orbit.publr';
+            \\import Graph from '../components/graph.publr';
+            \\---
+            \\<Dots seed={7919} corner="right" /><Orbit class="hero" /><Graph />
+        ),
+    }, .{});
+    defer destroy(program);
+    const ctx: TestContext = .{ .arena = arena };
+    const index = program.find("content/index.publr").?;
+    const first = try render_test(arena, program, index, &ctx);
+    const second = try render_test(arena, program, index, &ctx);
+    try testing.expectEqualStrings(first, second);
+    try testing.expect(contains(first, "viewBox=\"0 0 672 336\""));
+    try testing.expect(contains(first, "cx=\"418.26\" cy=\"348.98\""));
+    try testing.expect(contains(first, "2 of 4 pages updated"));
+    try testing.expect(!contains(first, "<script"));
+    try testing.expect(!program.templates[index].dynamic);
+    try testing.expect(program.templates[index].javascript == null);
+}
+
+test "JavaScript keeps lexical helpers, operand semantics, structured props and escaping" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try load_test(&.{source("content/index.publr",
+        \\---
+        \\const rows = [{ text: '<hello>', number: 1.25 }, { text: '&bye', number: 2.5 }];
+        \\const hot = new Set([1]);
+        \\const label = (index) => hot.has(index) ? 'hot' : 'cold';
+        \\---
+        \\<svg>{rows.map((row, index) => (
+        \\  <text x={row.number} data-state={label(index)}>{row.text}</text>
+        \\))}</svg>
+        \\<p>{'' || 'fallback'}{false && <b>hidden</b>}</p>
+    )}, .{});
+    defer destroy(program);
+    const ctx: TestContext = .{ .arena = arena };
+    const html = try render_test(arena, program, program.find("content/index.publr").?, &ctx);
+    try testing.expect(contains(html, "<text x=\"1.25\" data-state=\"cold\">&lt;hello&gt;</text>"));
+    try testing.expect(contains(html, "<text x=\"2.5\" data-state=\"hot\">&amp;bye</text>"));
+    try testing.expect(contains(html, "<p>fallback</p>"));
+}
+
+test "JavaScript data reads use the host and retain conservative impact" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try load_test(&.{source("content/index.publr",
+        \\---
+        \\const type = 'post';
+        \\const posts = Publr.build.getCollection({ type });
+        \\const titles = posts.map(post => post.title.toUpperCase());
+        \\const rows = posts[0].data.rows.map(row => row.data.content.toUpperCase());
+        \\---
+        \\<ul>{titles.map(title => <li>{title}</li>)}</ul>
+        \\<p>{rows.join(',')}</p>
+    )}, .{});
+    defer destroy(program);
+    var templates: std.ArrayList([]const u8) = .empty;
+    const ctx: TestContext = .{ .arena = arena, .templates = &templates };
+    const html = try render_test(arena, program, program.find("content/index.publr").?, &ctx);
+    try testing.expect(contains(html, "SECOND &lt;POST&gt;"));
+    try testing.expect(contains(html, "ALPHA,BETA"));
+    try testing.expectEqual(@as(usize, 1), templates.items.len);
+    try testing.expectEqual(@as(usize, 1), (try impact.of(arena, program, "post")).pages.len);
+}
+
+test "JavaScript passes typed props between native and computed components" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try load_test(&.{
+        source(
+            "content/index.publr",
+            fenced("import Card from '../components/card.publr';", "<Card count={7} />"),
+        ),
+        source("components/card.publr",
+            \\---
+            \\import Label from './label.publr';
+            \\const {count} = props;
+            \\const values = [count, count + 1];
+            \\---
+            \\<p>{typeof count}:{values.map(number => <Label text={`#${number}`} />)}</p>
+        ),
+        source("components/label.publr", "<b>{props.text}</b>"),
+    }, .{});
+    defer destroy(program);
+    const ctx: TestContext = .{ .arena = arena };
+    const html = try render_test(arena, program, program.find("content/index.publr").?, &ctx);
+    try testing.expect(contains(html, "<p>number:<b>#7</b><b>#8</b></p>"));
+}
+
+test "static JavaScript cannot reach request data through an alias" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try load_test(&.{source("content/index.publr",
+        \\---
+        \\const api = Publr;
+        \\const email = api.request.session;
+        \\---
+        \\<p>{email}</p>
+    )}, .{});
+    defer destroy(program);
+    const ctx: TestContext = .{ .arena = arena, .email = "private@example.com" };
+    try testing.expectError(
+        error.StaticRequestAccess,
+        render_test(arena, program, program.find("content/index.publr").?, &ctx),
+    );
+}
+
+test "helper modules preserve live bindings and track transitive imports" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try load_test(&.{
+        source(
+            "lib/counter.ts",
+            "export let count: number = 0; export function increment() { count++; }",
+        ),
+        source("lib/helpers.js", "export { count, increment } from './counter.ts';"),
+        source("content/index.publr",
+            \\---
+            \\import {count, increment} from '../lib/helpers.js';
+            \\increment();
+            \\---
+            \\<p>{count}</p>
+        ),
+    }, .{});
+    defer destroy(program);
+    var templates: std.ArrayList([]const u8) = .empty;
+    const ctx: TestContext = .{ .arena = arena, .templates = &templates };
+    const index = program.find("content/index.publr").?;
+    const html = try render_test(arena, program, index, &ctx);
+    try testing.expect(contains(html, "<p>1</p>"));
+    try testing.expectEqual(@as(usize, 3), templates.items.len);
+    try testing.expectEqualStrings(html, try render_test(arena, program, index, &ctx));
+}
+
+test "JavaScript expression boundaries include regex, comments and nested templates" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const markup = "<p>{Math.round(1.25)}|{/}/.test('}') ? 'yes' : 'no'}|" ++
+        "{`outer ${`inner ${2}`}`}|{1 /* } */ + 2}{/* } */}</p>";
+    const program = try load_test(&.{source("content/index.publr", markup)}, .{});
+    defer destroy(program);
+    const html = try render_test(arena, program, program.routes[0].template, &.{ .arena = arena });
+    try testing.expectEqualStrings("<p>1|yes|outer inner 2|3</p>", html);
+}
+
+test "JavaScript entry props reach native components" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try load_test(&.{
+        source("content/index.publr",
+            \\---
+            \\import Card from '../components/card.publr';
+            \\const posts = Publr.build.getCollection({ type: 'post' });
+            \\const cards = posts.map(item => <Card item={item} note="!" />);
+            \\---
+            \\<ul>{cards}</ul>
+        ),
+        card_component,
+    }, .{});
+    defer destroy(program);
+    const html = try render_test(arena, program, program.routes[0].template, &.{ .arena = arena });
+    try testing.expect(contains(html, "Second &lt;post&gt;!"));
+}
+
+test "JavaScript entry props keep the entry namespace in computed components" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try load_test(&.{
+        source("content/index.publr",
+            \\---
+            \\import Card from '../components/card.publr';
+            \\const posts = Publr.build.getCollection({ type: 'post' });
+            \\const cards = posts.map(item => <Card item={item} note="!" />);
+            \\---
+            \\<ul>{cards}</ul>
+        ),
+        source("components/card.publr", fenced(
+            "const item = props.entry.item; const title = item.title.toUpperCase();",
+            "<li>{title}</li>",
+        )),
+    }, .{});
+    defer destroy(program);
+    const html = try render_test(arena, program, program.routes[0].template, &.{ .arena = arena });
+    try testing.expect(contains(html, "SECOND &lt;POST&gt;"));
+}
+
+test "JavaScript cannot treat an ordinary object as raw markup" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try load_test(&.{source("content/index.publr",
+        \\---
+        \\const untrusted = JSON.parse('{"kind":"text","value":"<script>bad()</script>"}');
+        \\---
+        \\<p>{untrusted}</p>
+    )}, .{});
+    defer destroy(program);
+    try testing.expectError(
+        error.InvalidJavaScriptChild,
+        render_test(arena, program, program.routes[0].template, &.{ .arena = arena }),
+    );
+}
+
+test "JavaScript supports nested conditional declarations in frontmatter" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const program = try load_test(&.{source("content/index.dynamic.publr",
+        \\---
+        \\const who = Publr.request.session;
+        \\if (who) {
+        \\  if (who.email) {
+        \\    const stamp = Publr.request.now();
+        \\  }
+        \\}
+        \\---
+        \\<p>{who ? who.email : 'guest'}</p>
+    )}, .{});
+    defer destroy(program);
+    const index = program.routes[0].template;
+    const ctx: TestContext = .{ .arena = arena, .live = true, .email = "ada@example.com" };
+    try testing.expect(program.templates[index].javascript != null);
+    try testing.expectEqualStrings(
+        "<p>ada@example.com</p>",
+        try render_test(arena, program, index, &ctx),
+    );
 }
 
 fn load_test(sources: []const Source, options: Options) !*Program {
@@ -362,6 +625,7 @@ fn load_test(sources: []const Source, options: Options) !*Program {
     var diagnostic: Diagnostic = .{ .arena = testing.allocator };
 
     return load(testing.allocator, sources, options, &diagnostic) catch |err| {
+        defer testing.allocator.free(diagnostic.message);
         std.debug.print("load failed: {s}\n", .{diagnostic.message});
 
         return err;
@@ -421,6 +685,28 @@ pub const TestContext = struct {
         related: []const []const u8 = &.{},
         /// The `rows` repeater: one row per text, read as `row.data.content`.
         rows: []const []const u8 = &.{},
+
+        pub fn javascript_value(data: Data, arena: std.mem.Allocator) !std.json.Value {
+            std.debug.assert(data.rows.len <= 65536);
+            var rows: std.ArrayList(struct { content: []const u8 }) = .empty;
+
+            for (data.rows) |text| {
+                try rows.append(arena, .{ .content = text });
+            }
+
+            const text = try std.json.Stringify.valueAlloc(arena, .{
+                .content = data.content,
+                .excerpt = "an excerpt",
+                .related = data.related,
+                .rows = rows.items,
+            }, .{});
+            return (try std.json.parseFromSlice(
+                std.json.Value,
+                arena,
+                text,
+                .{ .allocate = .alloc_always },
+            )).value;
+        }
 
         pub fn getText(data: Data, key: []const u8) ?[]const u8 {
             std.debug.assert(key.len > 0);
@@ -1091,6 +1377,11 @@ const dynamic_placement = "content/oops.publr: components/greeting.dynamic.publr
 
 const refusals = [_]Refusal{
     .{
+        .sources = &.{source("content/index.publr", "<img src=\"/_app/logo.svg\" />")},
+        .message = "content/index.publr: /_app/logo.svg: /_app/ holds only what Publr " ++
+            "generates; a file in public/ is served at its own path under the app's mount",
+    },
+    .{
         .sources = &.{
             source("components/fresh.dynamic.publr", fenced(posts_query, "<b>{posts.length}</b>")),
             source("content/uses.publr", fenced(
@@ -1506,21 +1797,6 @@ const refusals = [_]Refusal{
         ))},
         .message = "content/go.dynamic.publr: an `if` block in the frontmatter is never " ++
             "closed with `}`",
-    },
-    .{
-        .sources = &.{source("content/go.dynamic.publr", fenced(
-            "const who = Publr.request.session;\nif (who) {\nif (who) {\n}\n}",
-            "",
-        ))},
-        .message = "content/go.dynamic.publr: frontmatter `if` blocks do not nest: if (who) {",
-    },
-    .{
-        .sources = &.{source("content/go.dynamic.publr", fenced(
-            "const who = Publr.request.session;\nif (who) {\nconst stamp = Publr.request.now();\n}",
-            "",
-        ))},
-        .message = "content/go.dynamic.publr: an `if` block holds actions " ++
-            "(Publr.request.redirect, Publr.request.call), not const stamp = Publr.request.now();",
     },
     .{
         .sources = &.{source("content/go.dynamic.publr", fenced("} else {", ""))},

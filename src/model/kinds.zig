@@ -123,6 +123,7 @@ pub const core = [_]Kind{
         .control = .input,
         .has = .{ .length = true },
         .unique_allowed = true,
+        .title_allowed = true,
         .default_allowed = true,
         .check = &checks.email,
         .convert_from = &.{"string"},

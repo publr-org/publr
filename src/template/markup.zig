@@ -13,6 +13,8 @@ const Error = compile.Error;
 const Node = ast.Node;
 
 pub const attributes_max: u32 = 128;
+/// Where an app's generated assets are, in its templates and under its mount.
+const assets_prefix = "/_app/";
 
 const void_elements = [_][]const u8{
     "area",  "base", "br",   "col",    "embed", "hr",  "img",
@@ -154,7 +156,9 @@ fn text_run(compiler: *Compiler, rest: []const u8) Error!void {
 
     var len: u32 = 1;
 
-    while (len < rest.len and rest[len] != '<' and rest[len] != '{') len += 1;
+    while (len < rest.len and rest[len] != '<' and rest[len] != '{') {
+        len += 1;
+    }
 
     std.debug.assert(len <= rest.len);
 
@@ -312,7 +316,9 @@ fn tag(compiler: *Compiler) Error!void {
 
     std.debug.assert(source[start] == '<');
 
-    while (index < source.len and is_tag_char(source[index])) index += 1;
+    while (index < source.len and is_tag_char(source[index])) {
+        index += 1;
+    }
 
     const name = source[start + 1 .. index];
     compiler.position = index;
@@ -523,7 +529,12 @@ fn write_literal_attribute(compiler: *Compiler, attr: Attr, verbatim: []const u8
     std.debug.assert(attr.expression == null);
 
     if (attr.literal) |value| {
-        if (std.mem.startsWith(u8, value, "/_app/")) {
+        if (std.mem.startsWith(u8, value, assets_prefix)) {
+            if (!generated_asset(compiler, value[assets_prefix.len..])) {
+                return compiler.fail("{s}: /_app/ holds only what Publr generates; a file " ++
+                    "in public/ is served at its own path under the app's mount", .{value});
+            }
+
             try compiler.static(" ");
             try compiler.static(attr.name);
             try compiler.static("=\"");
@@ -544,6 +555,26 @@ fn write_literal_attribute(compiler: *Compiler, attr: Attr, verbatim: []const u8
     }
 }
 
+fn generated_asset(compiler: *const Compiler, url: []const u8) bool {
+    std.debug.assert(compiler.template.compiling);
+    std.debug.assert(compiler.context.options.assets.len <= 1 << 16);
+
+    const end = std.mem.indexOfAny(u8, url, "?#") orelse url.len;
+    const path = url[0..end];
+
+    if (std.mem.eql(u8, path, compile.stylesheet)) {
+        return true;
+    }
+
+    for (compiler.context.options.assets) |asset| {
+        if (std.mem.eql(u8, asset.path, path)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub fn collect_classes(compiler: *Compiler, classes: []const u8) Error!void {
     std.debug.assert(compiler.template.compiling);
 
@@ -562,7 +593,7 @@ fn attribute_expression(compiler: *Compiler, name: []const u8, text: []const u8)
     const value = try expression.expression(compiler, text);
 
     switch (value.type) {
-        .boolean, .opt_string, .string, .int => {
+        .javascript, .boolean, .opt_string, .string, .int => {
             try compiler.push(.{ .attr = .{ .name = name, .expr = value } });
         },
         else => return compiler.fail(
@@ -579,7 +610,7 @@ fn write_raw(compiler: *Compiler, text: []const u8) Error!void {
     const value = try expression.expression(compiler, text);
 
     switch (value.type) {
-        .string, .opt_string => try compiler.push(.{ .raw = value }),
+        .javascript, .string, .opt_string => try compiler.push(.{ .raw = value }),
         else => return compiler.fail(
             "set:html needs a string; got a {s}",
             .{@tagName(value.type)},

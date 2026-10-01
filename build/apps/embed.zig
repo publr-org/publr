@@ -1,11 +1,17 @@
 const std = @import("std");
 const diagnostic = @import("../diagnostic.zig");
 const client_files = @import("../../src/ui/client_files.zig");
+const imports = @import("../../src/template/imports.zig");
 
 const publr_js_dir = "../publr-js/dist";
 const loader_source = "src/adapters/apps/islands.js";
 const toolbar_source = "src/adapters/apps/toolbar.js";
 const entry_format = "    .{{ .path = \"{s}\", .data = @embedFile(\"{s}\") }},\n";
+const templates_max: u32 = 4096;
+const template_bytes_max: u32 = 4 << 20;
+
+/// A template to embed: its name in the app and where it is, from the build root.
+const Embedded = struct { rel: []const u8, path: []const u8 };
 
 pub const Interactive = struct {
     module: *std.Build.Module,
@@ -83,19 +89,21 @@ pub fn optional_file(
 }
 
 /// `<app>/**/*.publr` as one generated module: a `File` per template with its app-relative
-/// path and text. `public/` and `interactive/` are not templates. An app with none (only
-/// middleware) has an empty table.
+/// path and text, then what they import from outside the app (`imported.zig`). `public/`
+/// and `interactive/` are not templates. An app with none (only middleware) has an empty
+/// table.
 pub fn templates(builder: *std.Build, app_dir: []const u8) *std.Build.Module {
     std.debug.assert(app_dir.len > 0);
 
     var source: std.Io.Writer.Allocating = .init(builder.allocator);
     const writer = &source.writer;
     const files = builder.addWriteFiles();
-    var count: u32 = 0;
+    var own: std.ArrayList(Embedded) = .empty;
 
     write_header(writer, app_dir);
 
-    for (files_under(builder, app_dir, ".publr")) |path| {
+    for (files_under(builder, app_dir, "")) |path| {
+        if (!source_extension(path)) continue;
         const rel = path[app_dir.len + 1 ..];
         const top = rel[0 .. std.mem.indexOfScalar(u8, rel, '/') orelse 0];
 
@@ -107,13 +115,90 @@ pub fn templates(builder: *std.Build, app_dir: []const u8) *std.Build.Module {
             continue;
         }
 
-        write_entry(builder, writer, files, rel, path, count);
-        count += 1;
+        write_entry(builder, writer, files, rel, path, @intCast(own.items.len));
+        own.append(builder.allocator, .{ .rel = rel, .path = path }) catch
+            diagnostic.fail("build input: out of memory", .{});
     }
 
+    write_imported(builder, writer, files, app_dir, &own);
     writer.writeAll("};\n") catch diagnostic.fail("build input: out of memory", .{});
 
     return module_of(builder, files, source.written());
+}
+
+fn source_extension(path: []const u8) bool {
+    return std.mem.endsWith(u8, path, ".publr") or std.mem.endsWith(u8, path, ".js") or
+        (std.mem.endsWith(u8, path, ".ts") and !std.mem.endsWith(u8, path, ".d.ts"));
+}
+
+/// Every template `queue` imports from outside the app, transitively, each once, named
+/// `../<folder>/<path>` as the server names them when it reads the apps folder.
+fn write_imported(
+    builder: *std.Build,
+    writer: *std.Io.Writer,
+    files: *std.Build.Step.WriteFile,
+    app_dir: []const u8,
+    queue: *std.ArrayList(Embedded),
+) void {
+    std.debug.assert(app_dir.len > 0);
+    std.debug.assert(queue.items.len <= templates_max);
+
+    const io = builder.graph.io;
+    const apps_dir = std.fs.path.dirname(app_dir) orelse ".";
+    const folder = std.fs.path.basename(app_dir);
+    var index: u32 = 0;
+
+    while (index < queue.items.len) : (index += 1) {
+        const importer = queue.items[index];
+
+        for (specs_of(builder, importer.path)) |spec| {
+            const target = imports.resolve(builder.allocator, importer.rel, spec, folder) catch
+                continue;
+            const outside = std.mem.startsWith(u8, target, imports.outside_prefix);
+
+            if (!outside or queued(queue.items, target)) {
+                continue;
+            }
+
+            const inside = target[imports.outside_prefix.len..];
+            const path = builder.pathJoin(&.{ apps_dir, inside });
+
+            builder.build_root.handle.access(io, path, .{}) catch continue;
+
+            if (queue.items.len == templates_max) {
+                diagnostic.fail("{s} imports more than {d} templates", .{ app_dir, templates_max });
+            }
+
+            write_entry(builder, writer, files, target, path, @intCast(queue.items.len));
+            queue.append(builder.allocator, .{ .rel = target, .path = path }) catch
+                diagnostic.fail("build input: out of memory", .{});
+        }
+    }
+}
+
+fn specs_of(builder: *std.Build, path: []const u8) []const []const u8 {
+    std.debug.assert(path.len > 0);
+    std.debug.assert(template_bytes_max > 0);
+
+    const io = builder.graph.io;
+    const limit: std.Io.Limit = .limited(template_bytes_max);
+    const data = builder.build_root.handle.readFileAlloc(io, path, builder.allocator, limit) catch
+        diagnostic.fail("cannot read {s}", .{path});
+
+    return imports.specs(@import("pjsx").template_syntax, builder.allocator, data, path) catch
+        diagnostic.fail("{s}: invalid module syntax or too many imports", .{path});
+}
+
+fn queued(queue: []const Embedded, rel: []const u8) bool {
+    std.debug.assert(rel.len > 0);
+
+    for (queue) |entry| {
+        if (std.mem.eql(u8, entry.rel, rel)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Only generated client code is embedded. Public files are copied at build time of the
@@ -207,7 +292,8 @@ fn module_of(
 /// slashes, sorted; none when the folder does not exist.
 pub fn files_under(builder: *std.Build, dir: []const u8, extension: []const u8) []const []const u8 {
     std.debug.assert(dir.len > 0);
-    std.debug.assert(extension.len > 0);
+    // Empty selects every file; the caller then selects the template source extensions.
+    std.debug.assert(extension.len <= 16);
 
     const io = builder.graph.io;
     const opened = builder.build_root.handle.openDir(io, dir, .{ .iterate = true });

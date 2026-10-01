@@ -160,6 +160,7 @@ pub fn add_module(
 
     vendors.add_include_paths(builder, module);
     module.linkLibrary(vendors.add_library(builder, target));
+    @import("javascript.zig").add(builder, module);
     native_plugins.add(builder, module, from.plugins_dir, from.native);
 
     const plugin_ui = native_plugins.ui_dirs(builder, from.plugins_dir, from.native);
@@ -167,6 +168,7 @@ pub fn add_module(
 
     module.addImport("views", generated.views);
     module.addImport("runtime", generated.runtime);
+    module.addImport("pjsx_syntax", generated.runtime);
     jit.add(builder, module, generated.classes, optimize);
     add_admin_scripts(builder, module, generated.stores);
     add_apps(builder, module, generated, optimize, from);
@@ -256,6 +258,14 @@ fn engine_stamp(builder: *std.Build) []const u8 {
     }.less);
 
     var hash = std.hash.Fnv1a_64.init();
+    const javascript_version = builder.build_root.handle.readFileAlloc(
+        io,
+        "vendor/quickjs/VERSION",
+        builder.allocator,
+        .limited(4096),
+    ) catch
+        @panic("reading JavaScript engine version");
+    hash.update(javascript_version);
 
     for (paths.items) |path| {
         const data = dir.readFileAlloc(io, path, builder.allocator, .limited(64 << 20)) catch

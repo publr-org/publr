@@ -365,6 +365,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `template/expression.zig` | 946 | The typed expression parser and the text helpers |
 | `template/render.zig` | 779 | `Renderer(Ctx)`: the tree evaluated against a context |
 | `template/impact.zig` | 484 | Which pages and fragments of a program read a type |
+| `template/imports.zig` | 234 | A template's `.publr` imports, and where one leads: inside the app, or out to the apps folder |
 
 #### adapters/apps/ (the fourth door: readers)
 | File | Lines | What |
@@ -373,12 +374,14 @@ Grouped by kind. Lines are the whole file, tests included.
 | `adapters/apps/spec.zig` | 361 | Every compiled-in app as data, read off the generated `apps` module at compile time: name, mount, roles, templates, assets, tokens, interactive components, middleware |
 | `adapters/apps/state.zig` | 439 | `App`: one app loaded, its stylesheet from the JIT, its fingerprint and assets, its address and output folder; `check_apps` |
 | `adapters/apps/folder.zig` | 318 | Apps read from a project's folder at runtime: `app.zon`, templates, the build's checks; compiled parts from the build's app of the same name |
+| `adapters/apps/imported.zig` | 116 | The templates an app imports from outside its folder, joined to its own |
 | `adapters/apps/load.zig` | 47 | Every app loaded into the project, and released |
 | `adapters/apps/fingerprint.zig` | 263 | The generated assets' fingerprint and the build stamp |
 | `adapters/apps/context.zig` | 1027 | The Publr API a template reads, over `record.list|get` (anonymous when shared, the visitor per request, nobody to an app whose roles it lacks); `Deps` recording |
 | `adapters/apps/pages.zig` | 266 | A page served from the build or rendered now; the app's 404 |
 | `adapters/apps/islands.zig` | 268 | One fragment, or a batch of dynamic ones |
-| `adapters/apps/assets.zig` | 100 | `<mount>/_app/<path>`: generated code and the stylesheet from memory, public files from disk |
+| `adapters/apps/assets.zig` | 55 | `<mount>/_app/<path>`: generated code and the stylesheet, from memory |
+| `adapters/apps/public.zig` | 302 | `public/` at the mount: copied to the build's root, served from disk, the sitemap |
 | `adapters/apps/build.zig` | 444 | The static build of one app or all, the sitemap |
 | `adapters/apps/artifacts.zig` | 127 | Built files: their names in the index (`<app>:<url>`), their paths, reading and writing them |
 | `adapters/apps/rebuild.zig` | 314 | The project's rebuild: `refresh` at startup, `flush` between ticks, each batch's artifacts sent to their app |

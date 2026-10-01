@@ -146,8 +146,9 @@ fn middleware(
     return module;
 }
 
-/// The apps under `dir`, sorted: every folder (or link to one) not starting with a dot.
-/// Each must carry its `app.zon`, which names the app and says where it is mounted.
+/// The apps under `dir`, sorted: every folder (or link to one) not starting with a dot
+/// that carries an `app.zon`, which names the app and says where it is mounted. A folder
+/// without one holds templates the apps share, imported by path.
 fn discover(builder: *std.Build, dir: []const u8, apps_max: u32) []const []const u8 {
     std.debug.assert(dir.len > 0);
     std.debug.assert(apps_max > 0);
@@ -172,11 +173,7 @@ fn discover(builder: *std.Build, dir: []const u8, apps_max: u32) []const []const
             continue;
         }
 
-        root.access(io, builder.fmt("{s}/app.zon", .{entry.name}), .{}) catch
-            diagnostic.fail("{s}/{s}: no app.zon; it says where the app is mounted", .{
-                dir,
-                entry.name,
-            });
+        root.access(io, builder.fmt("{s}/app.zon", .{entry.name}), .{}) catch continue;
 
         if (found.items.len == apps_max) {
             diagnostic.fail("{s}: more than {d} apps; raise -Dapps-max", .{ dir, apps_max });

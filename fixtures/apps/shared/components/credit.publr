@@ -1,0 +1,4 @@
+---
+import Maker from './maker.publr';
+---
+<footer class="italic">Made with <Maker /></footer>

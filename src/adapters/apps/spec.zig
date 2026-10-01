@@ -15,7 +15,7 @@ pub const engine_stamp: []const u8 = apps_options.engine_stamp;
 pub const public_dir: []const u8 = apps_options.public_dir;
 pub const assets_max: u32 = 256;
 
-pub const File = struct { path: []const u8, data: []const u8 };
+pub const File = engine.File;
 
 /// One compiled-in app as data: its name and mount, its templates, its generated client
 /// code, its stylesheet's inputs, its interactive components and its middleware.

@@ -7,7 +7,7 @@ const report = @import("../../lib/report.zig");
 const sdk = @import("../../sdk.zig");
 const deps = @import("../../lib/deps.zig");
 const build = @import("build.zig");
-const passthrough = @import("passthrough.zig");
+const public = @import("public.zig");
 const artifacts = @import("artifacts.zig");
 const rerender = @import("rerender.zig");
 const Project = @import("../../server/project.zig").Project;
@@ -61,7 +61,7 @@ pub fn refresh(project: *const Project) !Refreshed {
             add(&result.full, build.build_or_fail(app, project));
             stale += 1;
         } else {
-            result.copied += (try passthrough.sync(app)).files;
+            result.copied += (try public.sync(app)).files;
         }
     }
 
