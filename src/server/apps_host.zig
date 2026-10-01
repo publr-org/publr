@@ -8,6 +8,8 @@ const apps_adapter = @import("../adapters/apps.zig");
 const sdk = @import("../sdk.zig");
 const build_command = @import("build.zig");
 const Index = @import("../lib/deps.zig").Index;
+const identity = @import("../adapters/rest/identity.zig");
+const registry = @import("registry.zig");
 
 /// How the apps are served: their options, and `--static` (with `--full`).
 pub const Mode = struct {
@@ -88,6 +90,22 @@ pub const AppsHost = struct {
 
         try apps_adapter.load.open(project, specs, apps, host.gpa, host.index, options, now_ms);
         try host.serve_builds();
+        host.announce(specs);
+    }
+
+    /// `apps.loaded` for each app, as the system: what a plugin recording structure changes
+    /// sees when the folder's apps went live.
+    fn announce(host: *AppsHost, specs: []const apps_adapter.spec.Spec) void {
+        std.debug.assert(specs.len == host.apps.len);
+
+        var arena_state = std.heap.ArenaAllocator.init(host.gpa);
+        defer arena_state.deinit();
+
+        var ctx = identity.context(host.project, arena_state.allocator(), .system);
+
+        for (specs) |spec| {
+            registry.SDK.announce(&ctx, "apps.loaded", spec.name);
+        }
     }
 
     fn serve_builds(host: *AppsHost) !void {

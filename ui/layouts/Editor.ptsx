@@ -13,6 +13,7 @@ export type EditorProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   /** The page scrolls inside its own columns (TypeColumns): the row takes the sheet's
    * remaining height instead of growing with its content. */
@@ -31,7 +32,7 @@ export function Editor({
   crumb_label,
   crumb_href,
   user_name,
-  user_email, can_structure = true, can_settings = true,
+  user_email, can_structure = true, can_settings = true, top_bar,
   csrf,
   fill = false,
   children,
@@ -45,7 +46,7 @@ export function Editor({
       user_name={user_name}
       user_email={user_email}
       can_structure={can_structure}
-      can_settings={can_settings}
+      can_settings={can_settings} top_bar={top_bar}
       csrf={csrf}
     >
       <div class={["flex grow items-stretch", fill ? "min-h-0" : ""]}>{children}</div>

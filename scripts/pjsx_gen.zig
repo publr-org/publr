@@ -1,7 +1,7 @@
 //! The admin's `.ptsx → Zig` build, on the PJSX compiler's `zig` target. Run by
 //! `zig build` as a host tool:
 //!
-//!     pjsx_gen <ui_dir> <components_dir> <icons_dir> <out_dir>
+//!     pjsx_gen <ui_dir> <components_dir> <icons_dir> <out_dir> [<plugin_ui_dir> ...]
 //!
 //! Compiles every `.ptsx` under `<ui_dir>` (`layouts/`, `pages/`, `components/`),
 //! then every design-system component those reach through their imports
@@ -18,6 +18,7 @@ const Module = pjsx.compiler.ModuleIR;
 const file_bytes_max = 4 << 20;
 const modules_max: u32 = 512;
 const icons_max: u32 = 64;
+const plugin_dirs_max: u32 = 64;
 const runtime_import = "publr-jsx";
 /// The design-system Button's loading spinner: always in the sprite.
 const icon_always = "sync";
@@ -33,6 +34,9 @@ const Set = struct {
     components: std.StringHashMapUnmanaged([]const u8) = .empty,
     components_dir: std.Io.Dir,
     components_dir_path: []const u8,
+    /// The admin's views as a compiled-in plugin's views import them:
+    /// `@publr/admin/Layout.ptsx`.
+    admin_views: std.ArrayList(pjsx.FileResolver.Import) = .empty,
 
     fn compile(set: *Set, source: []const u8, label: []const u8) !void {
         std.debug.assert(label.len > 0);
@@ -55,6 +59,8 @@ const Set = struct {
                 }),
             });
         }
+
+        try imports.appendSlice(set.arena, set.admin_views.items);
 
         var resolver = pjsx.FileResolver{ .io = set.io, .imports = imports.items };
         const module = pjsx.compiler.createPjsxModuleWithResolver(
@@ -108,9 +114,14 @@ fn run(init: std.process.Init) !u8 {
     const components_dir_path = args.next() orelse return usage();
     const icons_dir_path = args.next() orelse return usage();
     const out_dir_path = args.next() orelse return usage();
+    var plugin_dirs: std.ArrayList([]const u8) = .empty;
 
-    if (args.next() != null) {
-        return usage();
+    while (args.next()) |plugin_dir| {
+        if (plugin_dirs.items.len == plugin_dirs_max or plugin_dir.len == 0) {
+            return usage();
+        }
+
+        try plugin_dirs.append(arena, plugin_dir);
     }
 
     for ([_][]const u8{ ui_dir_path, components_dir_path, icons_dir_path, out_dir_path }) |path| {
@@ -129,14 +140,21 @@ fn run(init: std.process.Init) !u8 {
     defer set.components_dir.close(io);
 
     try index_components(&set);
-    try compile_ui(&set, ui_dir_path);
+    try compile_ui(&set, ui_dir_path, .admin);
 
     if (set.modules.items.len == 0) {
         return report(error.NoModules, ui_dir_path);
     }
 
+    for (plugin_dirs.items) |plugin_dir| {
+        try compile_ui(&set, plugin_dir, .plugin);
+    }
+
     try compile_imports(&set);
-    try compile_sprite(&set, ui_dir_path, icons_dir_path);
+
+    const ui_dirs = try std.mem.concat(arena, []const u8, &.{ &.{ui_dir_path}, plugin_dirs.items });
+
+    try compile_sprite(&set, ui_dirs, icons_dir_path);
     try cwd.createDirPath(io, out_dir_path);
     var out_dir = try cwd.openDir(io, out_dir_path, .{});
     defer out_dir.close(io);
@@ -213,12 +231,13 @@ fn exported_component(source: []const u8) ?[]const u8 {
     return if (end > 0) rest[0..end] else null;
 }
 
-/// The admin's own views: every `.ptsx` under `ui_dir` (`layouts/`, `pages/`,
-/// `components/`), in path order so the output is deterministic. A module is named by
-/// its file stem, so the folder is organisation only.
-fn compile_ui(set: *Set, ui_dir_path: []const u8) !void {
+/// The admin's own views, or a compiled-in plugin's: every `.ptsx` under `ui_dir`, in path
+/// order so the output is deterministic. A module is named by its file stem, so the folder
+/// is organisation only, and a plugin's stem may not be one the admin or another plugin
+/// has. The admin's are what plugins import as `@publr/admin/<Stem>.ptsx`.
+fn compile_ui(set: *Set, ui_dir_path: []const u8, owner: enum { admin, plugin }) !void {
     std.debug.assert(ui_dir_path.len > 0);
-    std.debug.assert(set.modules.items.len == 0);
+    std.debug.assert((owner == .admin) == (set.modules.items.len == 0));
 
     var ui_dir = try std.Io.Dir.cwd().openDir(set.io, ui_dir_path, .{ .iterate = true });
     defer ui_dir.close(set.io);
@@ -237,7 +256,24 @@ fn compile_ui(set: *Set, ui_dir_path: []const u8) !void {
 
     for (paths.items) |path| {
         const source = try ui_dir.readFileAlloc(set.io, path, set.arena, .limited(file_bytes_max));
-        try set.compile(source, try std.fs.path.join(set.arena, &.{ ui_dir_path, path }));
+        const label = try std.fs.path.join(set.arena, &.{ ui_dir_path, path });
+        const stem = stem_of(path);
+
+        if (owner == .plugin and (set.has(stem) or set.components.contains(stem))) {
+            std.debug.print("pjsx_gen: {s}: the view {s} is already the admin's or the " ++
+                "design system's; name it after the plugin\n", .{ label, stem });
+
+            return error.Failed;
+        }
+
+        if (owner == .admin) {
+            try set.admin_views.append(set.arena, .{
+                .specifier = try std.fmt.allocPrint(set.arena, "@publr/admin/{s}.ptsx", .{stem}),
+                .filename = label,
+            });
+        }
+
+        try set.compile(source, label);
     }
 }
 
@@ -345,7 +381,7 @@ fn imports_values(import: anytype) bool {
 }
 
 /// One `<symbol>` per icon the compiled set names, as a component the shell renders once.
-fn compile_sprite(set: *Set, ui_dir_path: []const u8, icons_dir_path: []const u8) !void {
+fn compile_sprite(set: *Set, ui_dirs: []const []const u8, icons_dir_path: []const u8) !void {
     std.debug.assert(icons_dir_path.len > 0);
     std.debug.assert(set.modules.items.len > 0);
 
@@ -359,13 +395,18 @@ fn compile_sprite(set: *Set, ui_dir_path: []const u8, icons_dir_path: []const u8
         try collect_icon_names(set.arena, source, &names);
     }
 
-    try collect_runtime_icons(set, ui_dir_path, &names);
+    for (ui_dirs) |ui_dir_path| {
+        try collect_runtime_icons(set, ui_dir_path, &names);
+    }
 
     std.mem.sort([]const u8, names.items, {}, less_than);
 
     var out: std.Io.Writer.Allocating = .init(set.arena);
     try out.writer.writeAll("export function IconSprite() {\n  return (\n" ++
-        "    <svg id=\"publr-icon-sprite\" style=\"display:none\" aria-hidden=\"true\">\n");
+        "    <svg id=\"publr-icon-sprite\" " ++
+        // Hidden by size, never `display:none`: an icon's clip paths and masks would not
+        // render from a sprite that is not displayed.
+        "style=\"position:absolute;width:0;height:0;overflow:hidden\" aria-hidden=\"true\">\n");
 
     for (names.items) |name| {
         try write_symbol(set, icons_dir, name, &out.writer);
@@ -561,7 +602,8 @@ fn browser_imports(set: *Set, writer: *std.Io.Writer) !void {
 }
 
 fn usage() u8 {
-    std.debug.print("usage: pjsx_gen <ui_dir> <components_dir> <icons_dir> <out_dir>\n", .{});
+    std.debug.print("usage: pjsx_gen <ui_dir> <components_dir> <icons_dir> <out_dir> " ++
+        "[<plugin_ui_dir> ...]\n", .{});
 
     return 2;
 }

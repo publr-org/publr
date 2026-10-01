@@ -15,6 +15,7 @@ export type RevisionProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   nav: JSX.Element;
   title: string;
@@ -32,7 +33,7 @@ export type RevisionProps = {
 
 export function Revision({
   user_name,
-  user_email, can_structure = true, can_settings = true,
+  user_email, can_structure = true, can_settings = true, top_bar,
   csrf,
   nav,
   title,
@@ -56,7 +57,7 @@ export function Revision({
       user_name={user_name}
       user_email={user_email}
       can_structure={can_structure}
-      can_settings={can_settings}
+      can_settings={can_settings} top_bar={top_bar}
       csrf={csrf}
       sidebar={nav}
     >

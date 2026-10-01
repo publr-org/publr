@@ -41,6 +41,7 @@ pub fn render(
         .user_email = shell.user_email,
         .can_structure = shell.can_structure,
         .can_settings = shell.can_settings,
+        .top_bar = shell.top_bar,
         .csrf = shell.csrf,
         .title = if (fresh) "New field group" else def.name,
         .name = def.name,

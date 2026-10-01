@@ -160,6 +160,10 @@ pub fn Editor(comptime domain: Domain) type {
                 in.parent = form.get("parent");
             }
 
+            if (@hasField(operations.Create.In, "app")) {
+                in.app = admin.app_scope.of(session).app_name();
+            }
+
             const created = registry.SDK.dispatch(&session.ctx, operations.Create, in) catch |err| {
                 return refused(session, shape, err, document);
             };
@@ -581,6 +585,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .user_email = shell.user_email,
                     .can_structure = shell.can_structure,
                     .can_settings = shell.can_settings,
+                    .top_bar = shell.top_bar,
                     .csrf = shell.csrf,
                     .title = def.name,
                     .description = def.description,
@@ -601,6 +606,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .user_email = shell.user_email,
                 .can_structure = shell.can_structure,
                 .can_settings = shell.can_settings,
+                .top_bar = shell.top_bar,
                 .csrf = shell.csrf,
                 .title = title,
                 .section = domain.section,

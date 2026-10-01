@@ -113,7 +113,19 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
         const contract = @import("../plugin.zig");
         const never = [_][]const u8{ "schema_sql", "bootstrap", "sign_in_provider" };
         const later = [_][]const u8{
-            "policies", "field_kinds", "delivery_gates", "statuses", "transitions", "filters",
+            "policies",
+            "field_kinds",
+            "delivery_gates",
+            "statuses",
+            "transitions",
+            "filters",
+            "routes",
+            "settings_pages",
+            "top_bar",
+            "State",
+            "operator_commands",
+            "before_command",
+            "serving",
         };
         var list: []const []const u8 = &.{};
 

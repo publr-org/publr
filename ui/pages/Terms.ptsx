@@ -22,6 +22,7 @@ export type TermsProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   /** The taxonomy: its name, handle, whether terms nest, and where its head is edited. */
   title: string;
@@ -46,7 +47,7 @@ export type TermsProps = {
  * root or under any term of a hierarchical taxonomy. */
 export function Terms({
   user_name,
-  user_email, can_structure = true, can_settings = true,
+  user_email, can_structure = true, can_settings = true, top_bar,
   csrf,
   title,
   handle,
@@ -64,7 +65,7 @@ export function Terms({
       user_name={user_name}
       user_email={user_email}
       can_structure={can_structure}
-      can_settings={can_settings}
+      can_settings={can_settings} top_bar={top_bar}
       csrf={csrf}
     >
       <div class="px-8 pt-7 pb-6">

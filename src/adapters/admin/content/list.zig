@@ -98,10 +98,11 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .changed = !(try filters.same(arena, effective, resting)),
         .types = listed_types.types,
     };
+    const scope = admin.app_scope.of(&session);
     const listed = registry.SDK.dispatch(
         &session.ctx,
         record_operations.List,
-        try filters.list_in(arena, effective),
+        try admin.app_scope.narrow(arena, scope, try filters.list_in(arena, effective)),
     ) catch |err| return admin.fail(&session, err, back);
     const shell = admin.shell_of(&session);
     var props = try base_props(&page, @intCast(listed.records.len));
@@ -123,6 +124,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .user_email = shell.user_email,
         .can_structure = shell.can_structure,
         .can_settings = shell.can_settings,
+        .top_bar = shell.top_bar,
         .csrf = shell.csrf,
         .nav = try admin.nav_content(&session, .{ .view_id = view_id, .filters = effective }),
         .title = props.title,

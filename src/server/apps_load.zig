@@ -28,7 +28,7 @@ pub fn run(init: std.process.Init, db_path: []const u8, args: []const []const u8
             return 2;
         }
 
-        const body = try operator.post(init, session, route, "{}");
+        const body = try operator.post(init.io, arena, session, route, "{}");
         const answer = try std.json.parseFromSliceLeaky(Answer, arena, body, .{});
 
         return print(init, answer, "the running server");

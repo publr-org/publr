@@ -40,6 +40,29 @@ pub fn view(arena: std.mem.Allocator, comptime View: type, props: View.Props) Er
     return runtime.block(kept, Body);
 }
 
+/// Several nodes as one, rendered one after another.
+pub fn all(arena: std.mem.Allocator, nodes: []const Node) Error!Node {
+    std.debug.assert(nodes.len <= 64);
+
+    const Capture = struct { nodes: []const Node };
+    const Body = struct {
+        pub fn render(
+            capture: Capture,
+            writer: *std.Io.Writer,
+            inner: std.mem.Allocator,
+        ) anyerror!void {
+            for (capture.nodes) |node| {
+                try node.render(writer, inner);
+            }
+        }
+    };
+    const kept = arena.create(Capture) catch return error.OutOfMemory;
+
+    kept.* = .{ .nodes = nodes };
+
+    return runtime.block(kept, Body);
+}
+
 /// A node as a string: the answer to a request for the fragment alone.
 pub fn to_html(arena: std.mem.Allocator, node: Node) Error![]const u8 {
     std.debug.assert(page_bytes_max > 0);

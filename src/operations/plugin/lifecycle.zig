@@ -168,6 +168,7 @@ pub fn add(ctx: *Ctx, checked: Checked) Error!Added {
         decoded.row.next_hash = checked.staged.hash;
         decoded.row.next_manifest = checked.staged.manifest;
         try state.save(ctx, decoded);
+        ctx.notice("plugin.update_added", added.name);
 
         return .{ .name = added.name, .version = added.version, .update = true };
     }
@@ -200,6 +201,7 @@ pub fn add(ctx: *Ctx, checked: Checked) Error!Added {
         .denied = &.{},
         .content_access = .{ .scope = manifest.content_access.recommend },
     });
+    ctx.notice("plugin.added", added.name);
 
     return added;
 }

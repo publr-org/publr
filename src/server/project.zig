@@ -31,8 +31,17 @@ pub const Project = struct {
     /// The key the CLI next to this server sends a command with (`operator.zig`); null when
     /// it takes none.
     operator_key: ?[]const u8 = null,
+    /// Set when an operator command asked this server to stop; `serve` stops at its next
+    /// tick.
+    stop_requested: bool = false,
     /// The installed plugins installed, which every context made for a request carries.
     sandboxed_plugins: ?*const sdk.sandboxed_plugins.SandboxedPlugins = null,
+    /// Every compiled-in plugin's `State` (`publr.plugin_states.from`), which every context
+    /// made for a request carries.
+    plugin_states: ?*anyopaque = null,
+    /// The session cookie's name; a plugin's `serving` may name another, so several servers
+    /// on one host keep their sign-ins apart.
+    session_cookie: []const u8 = @import("../adapters/rest/identity.zig").cookie_name,
     /// Asked before an app delivers a page or an island: the plugins' gates.
     delivery_gates: []const sdk.delivery.Gate = registry.native_plugins.merged_delivery_gates,
 

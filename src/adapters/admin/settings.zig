@@ -34,6 +34,7 @@ pub fn system(
         .user_email = shell.user_email,
         .can_structure = shell.can_structure,
         .can_settings = shell.can_settings,
+        .top_bar = shell.top_bar,
         .csrf = shell.csrf,
         .nav = try settings_nav.node(&session, "system"),
     });

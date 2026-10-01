@@ -21,10 +21,12 @@ pub const Generated = struct {
     tool: *std.Build.Step.Compile,
 };
 
+/// `plugin_ui` is the compiled-in plugins' `ui/` folders, relative to this repository.
 pub fn add(
     builder: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    plugin_ui: []const []const u8,
 ) Generated {
     std.debug.assert(builder.build_root.path != null);
 
@@ -46,6 +48,12 @@ pub fn add(
     run.addArg(components);
     run.addArg(icons);
     const out = run.addOutputDirectoryArg("gen");
+
+    for (plugin_ui) |dir| {
+        run.addDirectoryArg(builder.path(dir));
+        declare_inputs(builder, run, builder.build_root.path.?, dir, ".ptsx");
+        declare_inputs(builder, run, builder.build_root.path.?, dir, ".txt");
+    }
 
     // A directory argument is hashed by path: every file that feeds the run is declared
     // so an edit anywhere re-runs it.

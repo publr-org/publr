@@ -167,7 +167,10 @@ pub const Update = struct {
             .fields = canonical.fields,
             .options = canonical.group,
         });
-        ctx.notice("custom_fields.updated", in.group);
+        const created = std.mem.eql(u8, ctx.within, Create.name);
+
+        ctx.notice(if (created) "custom_fields.created" else "custom_fields.updated", in.group);
+
         return .{ .definition = canonical };
     }
 };

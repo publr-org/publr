@@ -1,4 +1,5 @@
 const std = @import("std");
+const plugin_hooks = @import("plugin_hooks.zig");
 const server = @import("../server.zig");
 const report = @import("../lib/report.zig");
 const toolchain = @import("toolchain.zig");
@@ -26,12 +27,13 @@ const Flags = struct {
     static: bool = false,
     /// With `--static`: build everything again, whatever the marker and the queue say.
     full: bool = false,
+    /// `--url` was given; without it the apps' address is this server's own.
+    url_given: bool = false,
     exit: ?u8 = null,
 };
 
 pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const u8) !u8 {
     std.debug.assert(db_path.len > 0);
-    std.debug.assert(port_default > 0);
 
     const flags = parse_flags(args);
 
@@ -39,7 +41,6 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         return code;
     }
 
-    const port = flags.port;
     const browser_dir = flags.browser_dir;
 
     // The browser build's server only hands out files: it owns no project.
@@ -51,15 +52,9 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     try application.init(init, db_path);
     defer application.deinit();
 
-    var project: routes.Project = .{
-        .connection = &application.connection,
-        .auth = &application.auth,
-        .io = init.io,
-        .static_dir = browser_dir,
-        .sandboxed_plugins = application.sandboxed(),
-    };
-    const first_port = port orelse if (browser_dir != null) browser_port_default else port_default;
-    const search_span: u16 = if (port == null) port_search_max else 0;
+    var project = project_of(init.io, &application, browser_dir);
+    const first_port = flags.port orelse default_port(browser_dir != null);
+    const search_span: u16 = if (flags.port == null) port_search_max else 0;
     var options = server_options(first_port, browser_dir != null);
 
     var listener = start_server(init.gpa, &options, search_span) catch |err| {
@@ -72,11 +67,13 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
 
     listener.user_data = &project;
 
+    const bound = try listener.bound_port();
+
     var apps: apps_host.AppsHost = .{
         .gpa = init.gpa,
         .index = &application.index,
         .project = &project,
-        .mode = .{ .options = flags.apps, .static = flags.static, .full = flags.full },
+        .mode = try apps_mode(init.arena.allocator(), flags, bound),
     };
     defer apps.close();
 
@@ -88,17 +85,65 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         routes.register(listener.router());
     }
 
-    const bound = try listener.bound_port();
     const session = try claim(init, db_path, bound, browser_dir == null);
     defer if (session != null) operator.close(init.io, init.arena.allocator(), db_path);
 
     project.operator_key = if (session) |*owned| &owned.key else null;
     announce(bound, browser_dir);
+
+    if (browser_dir == null) {
+        try started(init, &project, bound);
+    }
+
     try listener.enable_shutdown_signals();
 
     try run_loop(&listener, &project);
 
     return 0;
+}
+
+/// The project served: the plugins told where.
+fn started(init: std.process.Init, project: *routes.Project, port: u16) !void {
+    std.debug.assert(port > 0);
+    std.debug.assert(project.static_dir == null);
+
+    const arena = init.arena.allocator();
+
+    try plugin_hooks.serving(.{ .io = init.io, .arena = arena, .project = project, .port = port });
+}
+
+fn project_of(io: std.Io, application: *server.Server, browser_dir: ?[]const u8) routes.Project {
+    std.debug.assert(application.runtime.open_count == 1);
+    std.debug.assert(browser_dir == null or browser_dir.?.len > 0);
+
+    return .{
+        .connection = &application.connection,
+        .auth = &application.auth,
+        .io = io,
+        .static_dir = browser_dir,
+        .sandboxed_plugins = application.sandboxed(),
+        .plugin_states = &application.plugin_states,
+    };
+}
+
+fn default_port(browser: bool) u16 {
+    std.debug.assert(browser_port_default != port_default);
+
+    return if (browser) browser_port_default else port_default;
+}
+
+/// How the apps are served, their address this server's own unless `--url` named one.
+fn apps_mode(arena: std.mem.Allocator, flags: Flags, bound: u16) !apps_host.Mode {
+    std.debug.assert(bound > 0);
+    std.debug.assert(flags.exit == null);
+
+    var options = flags.apps;
+
+    if (!flags.url_given) {
+        options.base_url = try std.fmt.allocPrint(arena, "http://127.0.0.1:{d}", .{bound});
+    }
+
+    return .{ .options = options, .static = flags.static, .full = flags.full };
 }
 
 /// Whether a server already runs for this database, said when it does: one project, one
@@ -145,6 +190,10 @@ fn run_loop(listener: *http.App, project: *routes.Project) !void {
     // one.
     while (listener.engine.phase != .stopped) {
         try listener.engine.tick(tick_ms);
+
+        if (project.stop_requested and listener.engine.phase == .running) {
+            listener.engine.stop();
+        }
 
         if (project.apps.len > 0) {
             tick_apps(project);
@@ -217,7 +266,8 @@ fn server_options(first_port: u16, browser: bool) http.Options {
             .port = first_port,
             .connections_max = 8,
             .request_bytes_max = 64 << 10,
-            .response_bytes_max = 4 << 20,
+            // The whole browser build's module in one response.
+            .response_bytes_max = 6 << 20,
         };
     }
 
@@ -243,8 +293,8 @@ const help =
     \\  --dev             Render every page live, cache nothing, tint the islands
     \\  --out <dir>       The built apps to serve from, one folder each (default: output)
     \\  --url <base>      The project's public address: the apps' sitemaps, and the domain
-    \\                    their subdomains hang from (default: http://127.0.0.1:8080)
-    \\  --apps <dir>      Where each app's public files are read from, <dir>/<app>/public
+    \\                    their subdomains hang from (default: this server's own address)
+    \\  --apps <dir>      Where each app's public files are read from, <dir>/<folder>/public
     \\                    (default: apps)
     \\  --edge-max-age <s>
     \\                    How long a CDN in front may keep built pages and static islands
@@ -284,6 +334,7 @@ fn parse_flags(args: []const []const u8) Flags {
                 return .{ .exit = usage("--out, --url and --apps need a value") };
             }
             option.* = args[index];
+            flags.url_given = flags.url_given or std.mem.eql(u8, arg, "--url");
         } else if (std.mem.eql(u8, arg, "--edge-max-age")) {
             index += 1;
             const text = if (index < args.len) args[index] else "";

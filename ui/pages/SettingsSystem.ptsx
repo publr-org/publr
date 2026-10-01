@@ -10,15 +10,16 @@ export type SettingsSystemProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   nav: JSX.Element;
 };
 
 /** The system's own settings: a placeholder until there is something to configure. */
-export function SettingsSystem({ user_name, user_email, can_structure = true, can_settings = true, csrf, nav }: SettingsSystemProps) {
+export function SettingsSystem({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav }: SettingsSystemProps) {
   return (
     <Layout title="System settings" section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
       <EditorColumn>
         <PageHeader title="System settings" description="How this Publr runs." />
         <p class="mt-6">

@@ -14,6 +14,7 @@ export type MessageProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf?: string;
   /** The section the refused page belonged to, so the chrome stays where the user was. */
   section: string;
@@ -27,7 +28,7 @@ export type MessageProps = {
 
 export function Message({
   user_name,
-  user_email, can_structure = true, can_settings = true,
+  user_email, can_structure = true, can_settings = true, top_bar,
   csrf,
   section,
   nav,
@@ -44,7 +45,7 @@ export function Message({
       user_name={user_name}
       user_email={user_email}
       can_structure={can_structure}
-      can_settings={can_settings}
+      can_settings={can_settings} top_bar={top_bar}
       csrf={csrf}
       sidebar={nav}
     >

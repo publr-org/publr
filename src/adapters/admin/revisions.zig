@@ -63,6 +63,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .user_email = shell.user_email,
         .can_structure = shell.can_structure,
         .can_settings = shell.can_settings,
+        .top_bar = shell.top_bar,
         .csrf = shell.csrf,
         .nav = try admin.nav_content(&session, .{
             .filters = .{ .types = &.{full.record.type}, .type_view = true },
@@ -102,21 +103,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     const document = snapshot_object(arena, item.document) catch |err| {
         return admin.fail(&session, err, back);
     };
-    var fields: std.ArrayList(views.Revision.FieldsItem) = .empty;
-
-    for (got.definition.fields) |def| {
-        const value: []const u8 = if (document.get(def.name)) |present|
-            std.json.Stringify.valueAlloc(arena, present, .{ .whitespace = .indent_2 }) catch {
-                return error.OutOfMemory;
-            }
-        else
-            "";
-
-        fields.append(arena, .{ .label = def.label, .value = value }) catch {
-            return error.OutOfMemory;
-        };
-    }
-
+    const fields = try fields_of(arena, got.definition.fields, document);
     const record_title = if (full.record.title.len > 0) full.record.title else full.record.id;
     const shell = admin.shell_of(&session);
 
@@ -125,6 +112,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .user_email = shell.user_email,
         .can_structure = shell.can_structure,
         .can_settings = shell.can_settings,
+        .top_bar = shell.top_bar,
         .csrf = shell.csrf,
         .nav = try admin.nav_content(&session, .{
             .filters = .{ .types = &.{full.record.type}, .type_view = true },
@@ -142,7 +130,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .kind = item.kind,
         .at = admin.time_text(arena, item.at),
         .by = item.by orelse "nobody",
-        .fields = fields.items,
+        .fields = fields,
         .restore_action = std.fmt.allocPrint(arena, "/admin/content/{s}/restore", .{
             full.record.id,
         }) catch return error.OutOfMemory,
@@ -151,6 +139,35 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
             return error.OutOfMemory;
         },
     });
+}
+
+/// Each field of the type with its value in the snapshot, as indented JSON; empty when the
+/// snapshot has none.
+fn fields_of(
+    arena: std.mem.Allocator,
+    definitions: anytype,
+    document: std.json.ObjectMap,
+) Error![]const views.Revision.FieldsItem {
+    std.debug.assert(definitions.len <= 1 << 16);
+
+    var fields: std.ArrayList(views.Revision.FieldsItem) = .empty;
+
+    for (definitions) |def| {
+        const value: []const u8 = if (document.get(def.name)) |present|
+            std.json.Stringify.valueAlloc(arena, present, .{ .whitespace = .indent_2 }) catch {
+                return error.OutOfMemory;
+            }
+        else
+            "";
+
+        fields.append(arena, .{ .label = def.label, .value = value }) catch {
+            return error.OutOfMemory;
+        };
+    }
+
+    std.debug.assert(fields.items.len == definitions.len);
+
+    return fields.items;
 }
 
 /// Restore = the snapshot's document written back through `record save`.

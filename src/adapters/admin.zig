@@ -7,6 +7,8 @@ const Project = @import("../server/project.zig").Project;
 const registry = @import("../server/registry.zig");
 const types = @import("../operations/content_type.zig");
 const users = @import("../operations/user.zig");
+const top_bar = @import("admin/top_bar.zig");
+pub const app_scope = @import("admin/app_scope.zig");
 pub const auth_pages = @import("admin/auth.zig");
 const settings_pages = @import("admin/settings.zig");
 const user_pages = @import("admin/users.zig");
@@ -74,7 +76,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 126 + client_files.names.len;
+pub const routes_count: u32 = 128 + client_files.names.len;
 const client_files = @import("../ui/client_files.zig");
 
 const styles_css = @embedFile("styles_css");
@@ -129,6 +131,8 @@ pub fn register(router: *http.Router) void {
     router.get("/admin/content/:id/editor", &content_pages.editor_fragment);
     router.post("/admin/content/:id/save", &content_pages.save);
     router.post("/admin/content/:id/action", &content_pages.action);
+    router.post("/admin/content/:id/app", &app_scope.move);
+    router.post("/admin/app", &app_scope.choose);
     router.post("/admin/views/create", &content_pages.view_pages.create);
     router.post("/admin/views/:id/save", &content_pages.view_pages.save);
     router.post("/admin/views/:id/rename", &content_pages.view_pages.rename);
@@ -247,6 +251,12 @@ pub const Session = struct {
 
         _ = identity.csrf_token(project, &session.csrf);
 
+        // Narrowed to an app, the admin reaches the project's own types and its plugins'.
+        switch (app_scope.of(&session)) {
+            .app => |app| session.ctx.app_plugins = app.spec.plugins,
+            .all, .project => {},
+        }
+
         std.debug.assert(session.ctx.now_ms > 0);
 
         const now_ms = session.ctx.now_ms;
@@ -299,6 +309,8 @@ pub const Shell = struct {
     can_structure: bool,
     /// Settings, for whoever may manage the accounts.
     can_settings: bool,
+    /// What compiled-in plugins put in the top bar for this viewer; null when nothing.
+    top_bar: ?render.Node,
 };
 
 pub fn shell_of(session: *const Session) Shell {
@@ -311,10 +323,13 @@ pub fn shell_of(session: *const Session) Shell {
         .csrf = session.csrf_token(),
         .can_structure = registry.SDK.may(&session.ctx, types.Create),
         .can_settings = registry.SDK.may(&session.ctx, users.List),
+        .top_bar = top_bar.of(session),
     };
 }
 
 pub const nav = @import("admin/nav.zig");
+/// The Settings sidebar, for a plugin's settings page to show like the core's.
+pub const settings_nav = @import("admin/settings_nav.zig");
 pub const nav_content = nav.nav_content;
 
 /// Sign-in required, by an account that may use the admin: answers null after
@@ -396,6 +411,7 @@ pub fn message(
         props.user_email = shell.user_email;
         props.can_structure = shell.can_structure;
         props.can_settings = shell.can_settings;
+        props.top_bar = shell.top_bar;
         props.csrf = shell.csrf;
         if (!in_types) {
             props.nav = try nav_content(&listing, .{});

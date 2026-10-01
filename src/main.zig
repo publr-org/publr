@@ -43,6 +43,13 @@ fn run(init: std.process.Init) !u8 {
     var db_path: [:0]const u8 = db_path_default;
     var rest = args;
 
+    if (builtin.os.tag != .wasi) {
+        const command = try before_command(init, rest, db_path);
+
+        rest = command.args;
+        db_path = command.db_path;
+    }
+
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "--db")) {
         if (rest.len < 2 or rest[1].len == 0) return error.InvalidArguments;
         db_path = try init.arena.allocator().dupeZ(u8, rest[1]);
@@ -72,6 +79,28 @@ fn run(init: std.process.Init) !u8 {
     }
 
     return code;
+}
+
+/// The command as the plugins' pre-command hooks leave it.
+fn before_command(
+    init: std.process.Init,
+    args: []const []const u8,
+    db_path: [:0]const u8,
+) !publr.plugin_hooks.Command {
+    std.debug.assert(db_path.len > 0);
+
+    var command: publr.plugin_hooks.Command = .{
+        .io = init.io,
+        .arena = init.arena.allocator(),
+        .args = args,
+        .db_path = db_path,
+    };
+
+    try publr.plugin_hooks.before_command(&command);
+
+    std.debug.assert(command.args.len <= args.len);
+
+    return command;
 }
 
 /// A command, run by the server when one runs for this database (`server/operator.zig`),

@@ -12,6 +12,7 @@ pub const sandboxed_plugins = if (builtin.os.tag == .wasi)
 else
     @import("server/sandboxed_plugins.zig");
 const SandboxHost = if (builtin.os.tag == .wasi) void else sandboxed_plugins.Host;
+const PluginStates = @import("server/plugin_states.zig").States;
 
 pub const db_heap_bytes: u32 = 64 << 20;
 pub const request_arena_bytes: u32 = 4 << 20;
@@ -24,6 +25,8 @@ pub const Server = struct {
     auth: auth.State,
     index: deps.Index,
     sandboxed_plugins: SandboxHost,
+    /// Every compiled-in plugin's `State`.
+    plugin_states: PluginStates,
 
     pub fn init(server: *Server, process: std.process.Init, db_path: [:0]const u8) !void {
         std.debug.assert(db_path.len > 0);
@@ -57,6 +60,14 @@ pub const Server = struct {
 
             try server.sandboxed_plugins.load_all(&server.connection);
         }
+
+        try server.plugin_states.init(.{
+            .io = process.io,
+            .gpa = process.gpa,
+            .arena = process.arena.allocator(),
+            .db_path = db_path,
+            .runtime = &server.runtime,
+        });
 
         std.debug.assert(server.runtime.open_count == 1);
     }
@@ -94,6 +105,8 @@ pub const Server = struct {
     pub fn deinit(server: *Server) void {
         std.debug.assert(server.runtime.open_count == 1);
         std.debug.assert(server.connection.transaction_depth == 0);
+
+        server.plugin_states.deinit();
 
         if (SandboxHost != void) {
             server.sandboxed_plugins.deinit();

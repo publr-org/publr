@@ -65,6 +65,7 @@ Authorization returns a grant, not a boolean. A grant can say:
 - allowed or denied;
 - read-only;
 - only these content types, only these statuses;
+- only the content types of these plugins, beside the project's own (an app's `.plugins`);
 - only records the caller owns, or only records a plugin-supplied check accepts;
 - hide or refuse these fields;
 - only these status transitions.
@@ -191,6 +192,15 @@ publish"), `record.unpublished`, `record.archived`, `record.deleted`,
 `record.restored`, `record.purged`, plus `record.transitioned` for every status
 move and `content_type.created|updated|deleted`; the term domain raises the
 same set under `term.*` and `taxonomy.*`.
+
+Every change to the project's **structure** raises a notice too, with what changed as
+its subject: `content_type.*` and `taxonomy.*` above, `custom_fields.created|updated|
+deleted` (a field group's handle), `plugin.added|update_added|enabled|disabled|updated|
+update_cancelled|rolled_back|granted|revoked|denied|content_access_set|removed` (the
+plugin's name), and `apps.loaded` (an app's name, each time `serve` loads the apps from
+the folder, at start and on `publr apps load`). `apps.loaded` is raised by the server
+itself, as the system, outside any operation (`SDK.announce`). `sdk.structure.is_change`
+tells these from content: what a plugin recording deployments listens for.
 
 Beyond hooks, a plugin registers its own **operations**, **statuses**, **field
 kinds** (a descriptor each: storage class, controls, its own value check) and

@@ -10,6 +10,7 @@ export type RecordFormProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   title: string;
   /** "content" for a record, "types" for a term. */
@@ -21,7 +22,7 @@ export type RecordFormProps = {
 
 export function RecordForm({
   user_name,
-  user_email, can_structure = true, can_settings = true,
+  user_email, can_structure = true, can_settings = true, top_bar,
   csrf,
   title,
   section,
@@ -38,7 +39,7 @@ export function RecordForm({
       user_name={user_name}
       user_email={user_email}
       can_structure={can_structure}
-      can_settings={can_settings}
+      can_settings={can_settings} top_bar={top_bar}
       csrf={csrf}
     >
       {editor}

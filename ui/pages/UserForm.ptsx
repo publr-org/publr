@@ -25,6 +25,7 @@ export type UserFormProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   nav: JSX.Element;
   title: string;
@@ -57,12 +58,12 @@ export type UserFormProps = {
  * link unless a password is typed; an existing one can be renamed, given other roles,
  * sent a fresh link, or deleted. */
 export function UserForm({
-  user_name, user_email, can_structure = true, can_settings = true, csrf, nav, title, action, is_new, is_me, name, email, roles,
+  user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, title, action, is_new, is_me, name, email, roles,
   invited, link, link_action, delete_action, problem, fields, problems,
 }: UserFormProps) {
   return (
     <Layout title={title} section="settings" crumb_label="Users" crumb_href="/admin/settings/users"
-      sidebar={nav} user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
+      sidebar={nav} user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
       <EditorColumn>
         <PageHeader title={title} back_label="Users" back_href="/admin/settings/users" />
         {problem !== "" && (

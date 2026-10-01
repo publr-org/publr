@@ -27,6 +27,9 @@ export type LayoutProps = {
   can_structure?: boolean;
   can_settings?: boolean;
   csrf?: string;
+  /** What compiled-in plugins put in the top bar, before "View site"; the server renders
+   * each plugin's item for the viewer and passes them here. */
+  top_bar?: JSX.Element;
   /** The section's own sidebar (the views of the content, from ContentNav); absent on pages
    * whose section has no second level: the overview and the content types. */
   sidebar?: JSX.Element;
@@ -54,6 +57,7 @@ export function Layout({
   user_email,
   can_structure = true,
   can_settings = true,
+  top_bar,
   csrf,
   sidebar,
   children,
@@ -208,10 +212,13 @@ export function Layout({
                     crumb_href={crumb_href}
                     title={title}
                   />
-                  <Link href="/" tone="quiet" classes="inline-flex shrink-0 items-center gap-1.5">
-                    View site
-                    <Icon name="external" size="xs" />
-                  </Link>
+                  <div class="flex shrink-0 items-center gap-4">
+                    {top_bar}
+                    <Link href="/" tone="quiet" classes="inline-flex shrink-0 items-center gap-1.5">
+                      View site
+                      <Icon name="external" size="xs" />
+                    </Link>
+                  </div>
                 </div>
                 {children}
               </main>

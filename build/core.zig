@@ -162,7 +162,8 @@ pub fn add_module(
     module.linkLibrary(vendors.add_library(builder, target));
     native_plugins.add(builder, module, from.plugins_dir, from.native);
 
-    const generated = gen.add(builder, target, optimize);
+    const plugin_ui = native_plugins.ui_dirs(builder, from.plugins_dir, from.native);
+    const generated = gen.add(builder, target, optimize, plugin_ui);
 
     module.addImport("views", generated.views);
     module.addImport("runtime", generated.runtime);

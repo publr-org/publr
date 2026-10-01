@@ -335,6 +335,9 @@ Grouped by kind. Lines are the whole file, tests included.
 | `server/apps_load.zig` | 126 | `publr apps load` and `/_publr/apps/load`: the apps swapped into the running server, or checked here |
 | `server/operator.zig` | 304 | While `serve` runs: its session beside the database, the CLI sending it commands (`/_publr/cli`), and running a command there or here (`Commands`) |
 | `server/plugin_build.zig` | 365 | `publr plugin build`: a plugin's source compiled, its manifest read from the module in the sandbox and written in, then added and enabled or applied as its next version |
+| `server/plugin_routes.zig` | 191 | Compiled-in plugins' routes, registered before the core's and refused when a prefix covers a core route; the sender's context, a plugin's own sign-in |
+| `server/plugin_states.zig` | 90 | Every compiled-in plugin's `State`, made when the server opens the project, freed when it closes |
+| `server/plugin_hooks.zig` | 99 | Compiled-in plugins around the process: `before_command`, `serving`, operator commands behind the operator key |
 | `server.zig` | 111 | `Server`: open the database, apply schema and plugin bootstrap, open the dependency index, hold auth state |
 | `server/wasm.zig` | 325 | The same program as a wasm reactor: init, import a db, answer one request |
 | `publr.zig` | 69 | The library root: re-exports every module (what plugins import as `publr`) |
@@ -400,7 +403,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `model/role.zig` | 373 | A role (name, label, grants), grant matching (`record.*`, `!record.purge`), the core roles, merging the plugins' |
 | `model/permission.zig` | 310 | The permission catalog: keys, sentences, tiers and the operations each stands for; what every plugin gets and what none ever does |
 | `model/sandboxed_plugin.zig` | 376 | A plugin's manifest as data; what it asks for and at which tier, what installing grants, when an update waits, its limits |
-| `model/app.zig` | 433 | An app's `app.zon`: mounts, their validation, which app a host and path go to, an app's address |
+| `model/app.zig` | 312 | An app's `app.zon`: its name and label, its plugins, mounts, their validation, which app a host and path go to, an app's address |
 | `model/view.zig` | 204 | A saved view's filters: the JSON shape, its bounds, `me` and relative days |
 | `model/filter.zig` | 473 | The filter registry: keys, labels, operators, what each takes, how a clause constrains the list |
 
@@ -429,6 +432,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `operations/heartbeat.zig` | 63 | `heartbeat check` |
 | `operations/project.zig` | 159 | `project init` (first admin), `project status` |
 | `operations/project/impact.zig` | 213 | `project impact`: what the index holds for a record or its type |
+| `operations/project/move_app.zig` | 76 | `project move_app`: every record of a renamed app handed to its new name, or to the project |
 | `operations/role.zig` | 48 | `role list` |
 | `operations/user.zig` | 540 | `user create/list/password_link/set_password` |
 | `operations/sign_in.zig` | 188 | `user sign_in/sign_out`: throttle, session |
@@ -437,6 +441,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `operations/content_type.zig` | 250 | `content_type create/update/get/list/delete/validate`, declared over the record domain |
 | `operations/record.zig` | 900 | The record domain (`document.Domain`), `record create/get/save/list/referrers/validate` declared over it, the record rules (kinds, `terms` fields name a taxonomy, assigned terms exist) + the tests |
 | `operations/record/lifecycle.zig` | 227 | `record transition/publish/discard_changes/delete/purge`, declared |
+| `operations/record/app.zig` | 204 | `record set_app`: which app a record belongs to; the tests of an app's records and its plugins' reach |
 | `operations/taxonomy.zig` | 330 | `taxonomy create/update/get/list/delete/validate`, declared over the term domain |
 | `operations/term.zig` + `term/lifecycle.zig` | 560 + 230 | The term domain, `term create/get/save/list/tree/validate` with the parent rules, and the lifecycle with purge refusing children and members |
 | `operations/record/fixture.zig` | 18 | The `post` type the record tests write against |
@@ -472,6 +477,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `adapters/admin/content/pills.zig` | 502 | The filter bar: the type pill, one pill per filter, the Filter menu |
 | `adapters/admin/content/filters.zig` | 453 | Filters between the address, the saved view's JSON and the list input |
 | `adapters/admin/content/views.zig` | 108 | Saving the filters as a view: create, save, rename, delete |
+| `adapters/admin/app_scope.zig` | 378 | Which app the admin shows: the viewer's choice in a cookie, the switcher, the list narrowed, a record's App section and its move |
+| `adapters/admin/top_bar.zig` | 44 | The top bar's items: each compiled-in plugin's, then the app switcher |
 | `adapters/admin/nav.zig` | 158 | The Content sidebar: recent, private and saved views, by status, by type |
 | `adapters/admin/revisions.zig` | 214 | Versions explorer + restore |
 | `adapters/admin/plugins.zig` | 378 | Settings > Plugins: one list with enable, disable, update and remove; the enabling and update reviews; a plugin's page with grant, revoke and roll back |
@@ -491,6 +498,11 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/plugin/sandboxed.zig` | 320 | What a plugin declares to run in the sandbox (permissions, limits, content access), its entries, what may not be sandboxed |
 | `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |
 | `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `PluginCtx` proxied to the host as JSON, the exports generated for a plugin, its manifest among them |
+| `sdk/plugin/route.zig` | 211 | What a compiled-in plugin's routes and operator commands may be: under prefixes it owns, at most 16 and 8 |
+| `sdk/plugin/admin_slots.zig` | 66 | A compiled-in plugin in the admin: settings pages listed in the sidebar, a top bar item |
+| `sdk/plugin/state.zig` | 71 | A compiled-in plugin's `State` and the process it is made from |
+| `sdk/structure.zig` | 34 | Which notices change a project's structure |
+| `sdk/help.zig` | 311 | An operation's `--help`: its fields, output, failures and example, for core and installed plugins alike |
 | `sdk/plugin/wire.zig` | 107 | What crosses the sandbox's boundary: error codes, the result cell, the envelopes |
 | `sdk/sandboxed_plugins.zig` | 195 | The `Plugins` interface through which dispatch reaches installed plugins' operations and hooks |
 | `sdk/plugin_access.zig` | 188 | A plugin's granted permissions turned into the grant for one request |

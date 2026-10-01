@@ -26,6 +26,13 @@ pub const runtime_entries = runtime.runtime_entries;
 pub const HookIn = runtime.HookIn;
 pub const HookOut = runtime.HookOut;
 pub const plugin_manifest = @import("plugin/manifest.zig");
+pub const route = @import("plugin/route.zig");
+pub const Route = route.Route;
+pub const OperatorCommand = route.OperatorCommand;
+pub const admin_slots = @import("plugin/admin_slots.zig");
+pub const SettingsPage = admin_slots.SettingsPage;
+pub const state = @import("plugin/state.zig");
+pub const Process = state.Process;
 pub const wire = @import("plugin/wire.zig");
 pub const guest = @import("plugin/guest.zig");
 pub const content_types_max: u32 = 64;
@@ -313,6 +320,21 @@ pub fn schema_of(comptime Plugin: type) ?[:0]const u8 {
     }
 }
 
+/// What a plugin's routes may live under: its name and its namespaces.
+fn owned_of(comptime Plugin: type) []const []const u8 {
+    comptime {
+        var owned: []const []const u8 = &.{Plugin.manifest.name};
+
+        for (namespaces_of(Plugin)) |namespace| {
+            owned = owned ++ &[_][]const u8{namespace.name};
+        }
+
+        std.debug.assert(owned.len > 0);
+
+        return owned;
+    }
+}
+
 pub fn Merged(comptime plugins: anytype) type {
     comptime {
         @setEvalBranchQuota(100_000);
@@ -331,6 +353,12 @@ pub fn Merged(comptime plugins: anytype) type {
         var delivery_gates: []const sdk.delivery.Gate = &.{};
         var roles: []const Role = &.{};
         var sign_in_providers: []const SignInProvider = &.{};
+        var routes: []const route.Declared = &.{};
+        var settings_pages: []const SettingsPage = &.{};
+        var top_bar: []const type = &.{};
+        var operator_commands: []const route.DeclaredCommand = &.{};
+        var before_command: []const type = &.{};
+        var serving: []const type = &.{};
 
         std.debug.assert(plugins.len <= plugins_max);
 
@@ -342,6 +370,24 @@ pub fn Merged(comptime plugins: anytype) type {
             roles = roles ++ roles_of(Plugin);
             middleware = middleware ++ middleware_of(Plugin);
             field_kinds = field_kinds ++ field_kinds_of(Plugin);
+            const own_routes = route.routes_of(Plugin, owned_of(Plugin));
+
+            routes = routes ++ own_routes;
+            settings_pages = settings_pages ++ admin_slots.settings_pages_of(Plugin, own_routes);
+
+            if (@hasDecl(Plugin, "top_bar")) {
+                top_bar = top_bar ++ &[_]type{Plugin};
+            }
+
+            operator_commands = operator_commands ++ route.operator_commands_of(Plugin);
+
+            if (@hasDecl(Plugin, "before_command")) {
+                before_command = before_command ++ &[_]type{Plugin};
+            }
+
+            if (@hasDecl(Plugin, "serving")) {
+                serving = serving ++ &[_]type{Plugin};
+            }
             for (content_types_of(Plugin)) |def| {
                 content_types = content_types ++ &[_]DeclaredType{.{
                     .owner = Plugin.manifest.name,
@@ -414,6 +460,8 @@ pub fn Merged(comptime plugins: anytype) type {
             }
         }
 
+        route.assert_distinct(routes);
+
         for (content_types, 0..) |declared, index| {
             for (content_types[index + 1 ..]) |other| {
                 if (std.mem.eql(u8, declared.def.handle, other.def.handle)) {
@@ -446,6 +494,17 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_filters = filters;
             pub const merged_delivery_gates = delivery_gates;
             pub const merged_sign_in_providers = sign_in_providers;
+            pub const merged_routes = routes;
+            pub const merged_settings_pages = settings_pages;
+            /// The plugins with a top bar item, in name order.
+            pub const merged_top_bar = top_bar;
+            /// The plugins that keep a `State`, in name order.
+            pub const merged_stateful = state.stateful(plugins);
+            pub const merged_operator_commands = operator_commands;
+            /// The plugins with a CLI pre-command hook, in name order.
+            pub const merged_before_command = before_command;
+            /// The plugins with a hook for when `serve` listens, in name order.
+            pub const merged_serving = serving;
             /// The core roles with every plugin's merged in.
             pub const merged_roles = role.merge(&role.core, roles);
         };
@@ -541,6 +600,24 @@ pub const testing = struct {
         pub const operations = [_]type{Record};
         pub const middleware = [_]type{Counted};
         pub const policies = [_]sdk.Policy{&no_shouting};
+        pub const routes = [_]Route{
+            .{ .path = "/api/hello/greeting", .handler = &greeting },
+            .{ .method = .post, .path = "/api/hello/greeting", .handler = &greeting },
+        };
+
+        /// Who is asking, as the route sees them.
+        fn greeting(
+            request: *route.http.Request,
+            response: *route.http.Response,
+            ctx: *route.http.Context,
+        ) route.http.Error!void {
+            const plugin_routes = @import("../server/plugin_routes.zig");
+            const found = try plugin_routes.caller_context(request, response, ctx) orelse return;
+
+            std.debug.assert(request.path().len > 0);
+
+            try response.json(.ok, .{ .caller = @tagName(found.caller) });
+        }
         pub const roles = [_]Role{
             .{ .name = "editor", .label = "Editor", .grants = &.{"hello.*"} },
             .{

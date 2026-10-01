@@ -58,7 +58,9 @@ Two things follow from being inside the binary:
   advanced hooks.
 
 A plugin that uses only the public SDK can be shipped both ways: compiled in,
-or as an installed plugin.
+or as an installed plugin. Whatever it does installed, it does the same compiled in, and
+`zig build verify` proves it for every test plugin (see
+[Build: Two-mode check](build.md#two-mode-check)).
 
 ## Installed plugins (DLP)
 
@@ -158,8 +160,8 @@ pub const requires = [_][]const u8{"newsletter"};
 ```
 
 Each hook carries its reason (`pub const reason = "..."`); an event hook names the event
-it sees (`pub const event = "record.published"`), an operation or a notice. A plugin never
-writes `export fn`.
+it sees (`pub const event = "record.published"`), an operation or a notice, and sees only
+that one, compiled in or installed. A plugin never writes `export fn`.
 
 ## One folder, and which are compiled in
 
@@ -228,6 +230,9 @@ and roles run; a role from a plugin grants only its own operations.
 | Isolation | none, it is part of the binary | sandboxed |
 | Can be disabled or removed by the user | no | yes |
 | Deep integrations (database, cache, ...) | yes | no |
+| HTTP routes of its own | yes | not yet |
+| Admin pages and a top bar item | yes | not yet |
+| State, process hooks, operator commands | yes | not yet |
 | Uses only the public SDK | works | works |
 
 ## Writing a built-in plugin
@@ -273,6 +278,60 @@ and the PKCE challenge the core made; and `identity`, which exchanges the callba
 code for who the person is (their stable id at the provider, their email and whether the
 provider vouches for it, a name, an avatar). The core does the rest: the routes, the
 cookie, the buttons, and whose account it is ([Auth](auth.md#signing-in-with-a-provider)).
+
+A plugin can answer **HTTP routes** (`pub const routes = [_]publr.plugin.Route{...}`): a
+method (`get` or `post`), a path and a handler, `fn (request, response, ctx)` like the
+core's. Every path lives under a prefix the plugin owns, `/admin/<own>`, `/api/<own>` or
+`/auth/<own>`, where `<own>` is its name or one of its namespaces; after the prefix a
+segment may be a parameter (`/api/shop/orders/:id`). A plugin has at most 16. Its routes
+come before the core's, and the server refuses to start when a prefix covers a core route
+(a plugin named `content` would take `/admin/content`). A handler that calls operations
+does it as whoever sent the request: `publr.plugin_routes.caller_context` gives the SDK
+context, refusing a write that does not come from this site with the session's CSRF
+token, as the REST API does. A route that signs someone in its own way (a token another
+server made, say) gets a session from an operation and hands it to
+`publr.plugin_routes.set_session`, which sets this site's session cookie as the core's
+sign-in does. Routes run only compiled in; an installed build leaves them
+out and says so.
+
+A plugin can show in the **admin**. Its views are PTSX files in `ui/` beside its
+`main.zig`, lowered with the admin's own when it is compiled in: they import the design
+system as `@publr/ui/<Name>.ptsx` and the admin's views as `@publr/admin/<Name>.ptsx`
+(`Layout`, `EditorColumn`), and are rendered as `publr.admin.views.<Name>`. A view's name
+may not be one the admin or the design system has, so name it after the plugin. An icon
+it names only at runtime goes in its `ui/icons.txt`, one per line, as the admin's do.
+
+- A settings page (`pub const settings_pages = [_]publr.plugin.SettingsPage{...}`): a
+  label, an icon and the path of one of its own `get` routes, listed in the Settings
+  sidebar for whoever may call the operation it names. The route's handler draws the page
+  in the admin's chrome: `publr.admin.require` for the signed-in session,
+  `publr.admin.shell_of` for the chrome's props, `publr.admin.settings_nav.node` for the
+  sidebar with the page marked.
+- A top bar item (`pub fn top_bar(session: *const publr.admin.Session)
+  publr.admin.Error!?publr.admin.render.Node`): called for every signed-in page, before
+  "View site"; null shows nothing. An item that fails is left out and logged.
+
+A plugin can **keep state** for as long as the process runs: one `pub const State =
+struct {...}`, made when the server opens the project (with `pub fn init(state: *State,
+process: publr.plugin.Process) !void` when its fields need more than defaults; `deinit`
+if it holds something to free) and never in a top-level `var`. An operation, a route or a
+hook reaches it with `publr.plugin_states.of(ctx, @This())` from a context, or
+`publr.plugin_states.from(project.plugin_states.?, @This())` from the project.
+
+A plugin can also act on the process around the operations:
+
+- `pub fn before_command(command: *publr.plugin_hooks.Command) !void` runs before any
+  command, in name order: it may move the process into another folder
+  (`std.process.setCurrentDir`) and take its own arguments off `command.args`, or change
+  `command.db_path`. What is left runs as the command.
+- `pub fn serving(serve: publr.plugin_hooks.Serving) !void` runs once `serve` listens, with
+  the project and the port it got, before the first request. It may name the session
+  cookie (`serve.project.session_cookie`), so two servers on one host keep their sign-ins
+  apart. One that fails stops `serve`.
+- `pub const operator_commands = [_]publr.plugin.OperatorCommand{...}`: a name and a
+  handler, answered at `POST /_publr/<plugin>/<name>` only with the running server's
+  operator key, which only processes of the same user on the machine can read
+  (`<db>.serve`). `publr.operator.find` and `publr.operator.post` send one.
 
 A plugin can run once the database opens (`pub fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void`),
 as the system, after every declared type and field is in place: a setting the product

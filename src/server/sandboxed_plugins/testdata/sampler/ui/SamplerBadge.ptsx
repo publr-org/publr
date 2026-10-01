@@ -1,0 +1,11 @@
+import { Status } from "@publr/ui/Status.ptsx";
+
+export type SamplerBadgeProps = {
+  /** How many notes there are. */
+  count: string;
+};
+
+/** The sampler's item in the top bar. */
+export function SamplerBadge({ count }: SamplerBadgeProps) {
+  return <Status tone="info">{`Sampler: ${count}`}</Status>;
+}

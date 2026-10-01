@@ -120,7 +120,7 @@ pub fn forward(
         .password = init.environ_map.get("PUBLR_PASSWORD"),
     };
     const payload = try std.json.Stringify.valueAlloc(arena, envelope, .{});
-    const body = try post(init, session, route, payload);
+    const body = try post(init.io, arena, session, route, payload);
     const answer = try std.json.parseFromSliceLeaky(Answer, arena, body, .{});
 
     try out.writeAll(answer.out);
@@ -131,7 +131,8 @@ pub fn forward(
 
 /// `payload` posted to the running server at `path` with its key; the answer's body.
 pub fn post(
-    init: std.process.Init,
+    io: std.Io,
+    arena: std.mem.Allocator,
     session: Session,
     path: []const u8,
     payload: []const u8,
@@ -139,10 +140,9 @@ pub fn post(
     std.debug.assert(path.len > 0);
     std.debug.assert(session.port > 0);
 
-    const arena = init.arena.allocator();
     const url = try std.fmt.allocPrint(arena, "http://127.0.0.1:{d}{s}", .{ session.port, path });
     var body: std.Io.Writer.Allocating = .init(arena);
-    var client: std.http.Client = .{ .allocator = arena, .io = init.io };
+    var client: std.http.Client = .{ .allocator = arena, .io = io };
     defer client.deinit();
 
     const result = try client.fetch(.{
@@ -217,6 +217,7 @@ pub fn handle(
         .err = &err.writer,
         .password_env = envelope.password,
         .sandboxed_plugins = project.sandboxed_plugins,
+        .plugin_states = project.plugin_states,
     }, envelope.args, &out.writer) catch |failure| blk: {
         err.writer.print("publr: {s}\n", .{@errorName(failure)}) catch {
             return response.text(.internal_server_error, @errorName(failure));
@@ -265,6 +266,7 @@ pub const Commands = struct {
             .now_ms = sdk.context.wall_clock_ms(commands.init.io),
             .password_env = commands.init.environ_map.get("PUBLR_PASSWORD"),
             .sandboxed_plugins = application.sandboxed(),
+            .plugin_states = &application.plugin_states,
         }, args, out);
     }
 

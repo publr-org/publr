@@ -13,6 +13,8 @@ const apps_adapter = @import("../adapters/apps.zig");
 const builtin = @import("builtin");
 const operator = @import("operator.zig");
 const apps_load = @import("apps_load.zig");
+const plugin_routes = @import("plugin_routes.zig");
+const plugin_hooks = @import("plugin_hooks.zig");
 
 const Error = http.Error;
 const Request = http.Request;
@@ -22,6 +24,10 @@ const Context = http.Context;
 pub const Project = @import("project.zig").Project;
 /// `/auth/<provider>` and its callback, for every provider a plugin declares.
 pub const provider_routes = rest_providers.Routes(registry.sign_in_providers);
+/// What compiled-in plugins answer, under the prefixes they own.
+pub const native_plugin_routes = plugin_routes.Routes(registry.plugin_routes);
+/// What compiled-in plugins answer the CLI next to the server, behind the operator key.
+pub const plugin_operator_commands = plugin_hooks.OperatorCommands(registry.operator_commands);
 
 pub fn register(router: *http.Router) void {
     std.debug.assert(router.routes_len == 0);
@@ -30,6 +36,10 @@ pub fn register(router: *http.Router) void {
     router.use(&private_by_default);
     // Behind a CDN that purges: every write answers with the dependency keys it raised.
     router.use(&apps_adapter.edge.changes);
+    native_plugin_routes.register(router);
+
+    const first_core = router.routes_len;
+
     router.get("/api/health", &health);
     router.post("/api/auth/sign-in", &rest_auth.sign_in);
     router.post("/api/auth/sign-out", &rest_auth.sign_out);
@@ -41,6 +51,7 @@ pub fn register(router: *http.Router) void {
     if (builtin.os.tag != .wasi) {
         router.post(operator.route, &operator.handle);
         router.post(apps_load.route, &apps_load.handle);
+        plugin_operator_commands.register(router);
     }
 
     provider_routes.register(router);
@@ -48,10 +59,15 @@ pub fn register(router: *http.Router) void {
     rest.register(router);
     apps_adapter.register(router);
 
-    const operator_routes: u32 = if (builtin.os.tag == .wasi) 0 else 2;
-    const fixed = 9 + operator_routes + provider_routes.routes_count;
+    const operator_routes: u32 = if (builtin.os.tag == .wasi)
+        0
+    else
+        2 + plugin_operator_commands.routes_count;
+    const fixed = 9 + operator_routes + provider_routes.routes_count +
+        native_plugin_routes.routes_count;
 
     std.debug.assert(router.routes_len == fixed + admin.routes_count + apps_adapter.routes_count);
+    plugin_routes.assert_unshadowed(native_plugin_routes.shadowed(router, first_core));
 }
 
 /// Router middleware: a response that did not choose a cache policy gets `private, no-store`,

@@ -15,12 +15,13 @@ export type CustomFieldsProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   groups: Array<{ name: string; handle: string; href: string; status: string }>;
 };
-export function CustomFields({ user_name, user_email, can_structure = true, can_settings = true, csrf, groups }: CustomFieldsProps) {
+export function CustomFields({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, groups }: CustomFieldsProps) {
   return (
     <Layout title="Custom Fields" section="structure"
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
       <div class="px-8 pt-7 pb-6">
         <PageHeader title="Custom Fields" description="Create field groups and choose where they appear.">
           <Button href="/admin/custom-fields/new">Add field group</Button>

@@ -224,7 +224,11 @@ pub const Enable = struct {
 
         const access: ContentAccess = .{ .scope = in.content_access, .types = in.types };
 
-        return detail_of(ctx, try lifecycle.enable(ctx, in.name, access));
+        const enabled = try lifecycle.enable(ctx, in.name, access);
+
+        ctx.notice("plugin.enabled", in.name);
+
+        return detail_of(ctx, enabled);
     }
 };
 
@@ -236,6 +240,8 @@ fn ByName(
     comptime operation_kind: sdk.operation.Kind,
     comptime documented: Detail,
     comptime act: fn (*Ctx, []const u8) Error!state.Decoded,
+    /// What it raises when it changed the plugin; null for a read.
+    comptime notice: ?[]const u8,
 ) type {
     return struct {
         pub const name = operation_name;
@@ -252,7 +258,13 @@ fn ByName(
             std.debug.assert(granted.allows());
             std.debug.assert(ctx.now_ms >= 0);
 
-            return detail_of(ctx, try act(ctx, in.name));
+            const acted = try act(ctx, in.name);
+
+            if (notice) |notice_name| {
+                ctx.notice(notice_name, in.name);
+            }
+
+            return detail_of(ctx, acted);
         }
     };
 }
@@ -267,6 +279,7 @@ pub const Get = ByName(
     .read,
     views.example_detail,
     state.load,
+    null,
 );
 
 pub const Disable = ByName(
@@ -276,6 +289,7 @@ pub const Disable = ByName(
     .write,
     views.example_disabled,
     lifecycle.disable,
+    "plugin.disabled",
 );
 
 pub const Update = ByName(
@@ -286,6 +300,7 @@ pub const Update = ByName(
     .write,
     views.example_updated,
     versions.update,
+    "plugin.updated",
 );
 
 pub const CancelUpdate = ByName(
@@ -295,6 +310,7 @@ pub const CancelUpdate = ByName(
     .write,
     views.example_cancelled,
     versions.cancel_update,
+    "plugin.update_cancelled",
 );
 
 pub const Rollback = ByName(
@@ -305,6 +321,7 @@ pub const Rollback = ByName(
     .write,
     views.example_rolled_back,
     versions.rollback,
+    "plugin.rolled_back",
 );
 
 /// Grant, revoke or deny one request: the same shape, a different change.
@@ -312,6 +329,7 @@ fn Decision(
     comptime operation_name: []const u8,
     comptime text: []const u8,
     comptime change: lifecycle.Change,
+    comptime notice: []const u8,
 ) type {
     return struct {
         pub const name = operation_name;
@@ -335,14 +353,33 @@ fn Decision(
             std.debug.assert(granted.allows());
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
-            return detail_of(ctx, try lifecycle.decide(ctx, in.name, in.key, change));
+            const decided = try lifecycle.decide(ctx, in.name, in.key, change);
+
+            ctx.notice(notice, in.name);
+
+            return detail_of(ctx, decided);
         }
     };
 }
 
-pub const GrantRequest = Decision("plugin.grant", "Grant one request a plugin makes", .grant);
-pub const Revoke = Decision("plugin.revoke", "Take back one thing granted to a plugin", .revoke);
-pub const Deny = Decision("plugin.deny", "Refuse one request a plugin makes", .deny);
+pub const GrantRequest = Decision(
+    "plugin.grant",
+    "Grant one request a plugin makes",
+    .grant,
+    "plugin.granted",
+);
+pub const Revoke = Decision(
+    "plugin.revoke",
+    "Take back one thing granted to a plugin",
+    .revoke,
+    "plugin.revoked",
+);
+pub const Deny = Decision(
+    "plugin.deny",
+    "Refuse one request a plugin makes",
+    .deny,
+    "plugin.denied",
+);
 
 pub const SetContentAccess = struct {
     pub const name = "plugin.set_content_access";
@@ -384,6 +421,7 @@ pub const SetContentAccess = struct {
 
         decoded.content_access = .{ .scope = in.scope, .types = in.types };
         try state.save(ctx, decoded);
+        ctx.notice("plugin.content_access_set", in.name);
 
         return detail_of(ctx, decoded);
     }
@@ -408,6 +446,7 @@ pub const Remove = struct {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
         try lifecycle.remove(ctx, in.name);
+        ctx.notice("plugin.removed", in.name);
 
         return .{ .removed = in.name };
     }

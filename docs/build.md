@@ -10,8 +10,9 @@ each concern lives in `build/<topic>.zig`.
 | `zig build` | Build `zig-out/bin/publr` with the apps under `apps/` (none in this repository) and check they compile (`publr check-apps`). The first build also compiles the Zig compiler the binary carries (`../lib/zig`, about two minutes); the cache keeps it after that. |
 | `zig build run -- <args>` | Build and run. |
 | `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every plugin compiled in from `plugins/` (`publr.zon`), and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
-| `zig build verify` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `browser`. Run before calling anything done. |
+| `zig build verify` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `two-mode` + `browser`. Run before calling anything done. |
 | `zig build parity` | Run the example every `--help` prints and check its answer. |
+| `zig build two-mode` | Run every test plugin installed and compiled in, and compare the answers. |
 | `zig build sandboxed-plugins` | Build the plugins under `-Dsandboxed-plugins` as installed plugins into `zig-out/sandboxed-plugins/<name>.wasm`, with the `publr` just built; see [The plugins](#the-plugins). |
 | `zig build browser` | Build the browser target into `zig-out/browser/` (`publr.wasm`, `index.html`, `publr-worker.js`); see [Publr in the browser](browser.md). |
 | `zig build vendor-import` | Re-import `vendor/` from local upstream archives (`-Darchives=<dir>`, default `.vendor-archives/`). |
@@ -50,8 +51,8 @@ included (the browser build drives `publr_http` offline, with no socket).
 ## The apps
 
 `build/apps.zig` compiles in every folder under `-Dapps` (`apps/` by default); each must
-carry its `app.zon`, and its folder name (`[a-z][a-z0-9_]*`) is the app's name. For
-each app it generates one module: its templates as text for the engine to read at
+carry its `app.zon`, whose `.name` (`[a-z][a-z0-9_]*`) is the app's id, whatever its
+folder. For each app it generates one module: its templates as text for the engine to read at
 startup, its generated client code (the island loader `src/adapters/apps/islands.js`, the
 toolbar, the PublrJS runtime from `../publr-js/dist` and the stores of its interactive
 components) as its `/_app/*` assets, `app.zon`, `public/style.css` and the JIT's
@@ -85,7 +86,10 @@ SQLite. Each folder the build packs lists its files as inputs, so a change to `s
 packs the SDK again.
 
 Core's tests, parity and smoke add the test plugins under `src/server/sandboxed_plugins/testdata/` (test inputs, not plugins of the product):
-`greeter`, its next version `greeter_next`, which asks for more, and `farewell`.
+`greeter`, its next version `greeter_next`, which asks for more, `farewell`, and
+`sampler`, which declares every part of the plugin contract once; `recorder`, compiled
+into the two-mode check's native binary only, which keeps every structure change it
+hears; and `postcard`, which the smoke installs in that binary.
 
 ## Smoke test
 
@@ -96,8 +100,14 @@ added and enabled with `plugin add` and `enable`, its operation called (and refu
 real `GET /api/health` and `POST /api/auth/sign-in`, then the apps: a
 published post, `build` into a folder per app, and `serve` answering the home page,
 the post's page, a fragment, the stylesheet, a page of the app under `/docs` and the app
-on a subdomain. Then the plain binary, with no apps, answers `/` with the admin.
-It listens on port 8090, away from the dev default (8080), so it never
+on a subdomain. Then the plain binary, with no apps, answers `/` with the admin. Last,
+the binary with the test plugins compiled in (the two-mode check's) serves the admin on
+port 8092: `sampler`'s settings page at its own route, its entry in the Settings sidebar
+and its item in the top bar, the page reading the port from the plugin's state; its
+operator command refused without the key and answered with it; and `--sampler-in`, its
+CLI pre-command hook, running a command in another folder; then a content type, a
+taxonomy, a field group and `postcard` added and enabled through the running server,
+each heard by `recorder`, as the apps loaded at start were. It listens on port 8090, away from the dev default (8080), so it never
 collides with a running `serve`.
 
 `verify` can also run one local hook: when `PUBLR_VERIFY_HOOK=<executable>`
@@ -106,6 +116,23 @@ is set, the executable runs after the browser build with the arguments
 Nothing in the repo depends on it; it exists so a machine can add its own
 checks (for example a headless-browser smoke of the wasm build) without
 adding tools or scripts to the codebase.
+
+## Two-mode check
+
+`two-mode` (`scripts/two_mode.zig`) proves that a plugin does the same whichever way it
+runs. It builds Publr twice from the same sources, with the fixture apps: once with
+`greeter`, `farewell` and `sampler` compiled in, once with none. In a fresh project for
+each it creates the same admin and editor, adds, enables and grants the three modules in
+the second, then makes the same calls of both (`scripts/two_mode/scenario.zig`): every
+operation as the admin, the editor, nobody and the operator, the refusals, bad flags and
+failures included, the hooks' effects, the records, types, field group and roles the
+plugins leave, and every `--help`. Exit code, output and error must match, ids and times
+masked; any difference fails `verify` and prints both answers.
+
+Every field of the manifest is placed in `scripts/two_mode/coverage.zig`: exercised by a
+test plugin and a call, or named as the sandbox's own (its limits, the content it may
+reach, the domains, `requires`). A field added to the manifest fails the build there
+until it is placed, and so does a hook stage or field shape no test plugin uses.
 
 ## Parity check
 

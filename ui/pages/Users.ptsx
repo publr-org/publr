@@ -18,6 +18,7 @@ export type UsersProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   nav: JSX.Element;
   users: Array<{
@@ -34,10 +35,10 @@ export type UsersProps = {
 };
 
 /** Every account, oldest first, and a way to add one. */
-export function Users({ user_name, user_email, can_structure = true, can_settings = true, csrf, nav, users }: UsersProps) {
+export function Users({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, users }: UsersProps) {
   return (
     <Layout title="Users" section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
       <div class="px-8 pt-7 pb-6">
         <PageHeader title="Users" description="Who may sign in, and what they may do.">
           <Button href="/admin/settings/users/new">Add user</Button>

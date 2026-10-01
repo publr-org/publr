@@ -17,6 +17,7 @@ pub fn show(
         .user_email = shell.user_email,
         .can_structure = shell.can_structure,
         .can_settings = shell.can_settings,
+        .top_bar = shell.top_bar,
         .csrf = shell.csrf,
     });
 }

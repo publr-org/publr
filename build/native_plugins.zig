@@ -96,6 +96,28 @@ pub fn is_native(native: Native, name: []const u8) bool {
     };
 }
 
+/// The `ui/` folders of the plugins `native` compiles in, relative to this repository:
+/// their views lower with the admin's.
+pub fn ui_dirs(builder: *std.Build, dir: []const u8, native: Native) []const []const u8 {
+    std.debug.assert(dir.len > 0);
+
+    var names_storage: [plugins_max][]const u8 = undefined;
+    const names = compiled_in(builder, dir, native, &names_storage);
+    var found: std.ArrayList([]const u8) = .empty;
+
+    for (names) |name| {
+        const ui = builder.pathJoin(&.{ dir, name, "ui" });
+        var handle = builder.build_root.handle.openDir(builder.graph.io, ui, .{}) catch continue;
+
+        handle.close(builder.graph.io);
+        found.append(builder.allocator, ui) catch @panic("OOM");
+    }
+
+    std.debug.assert(found.items.len <= names.len);
+
+    return found.items;
+}
+
 fn compiled_in(
     builder: *std.Build,
     dir: []const u8,

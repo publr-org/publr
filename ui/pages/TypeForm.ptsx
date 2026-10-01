@@ -22,6 +22,7 @@ export type TypeFormProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   title: string;
   /** The list the page belongs to: "Content types" at /admin/types, or "Taxonomies". */
@@ -81,7 +82,7 @@ export type TypeFormProps = {
  * type is created here and continues to its fields; an existing one edits its settings. */
 export function TypeForm({
   user_name,
-  user_email, can_structure = true, can_settings = true,
+  user_email, can_structure = true, can_settings = true, top_bar,
   csrf,
   title,
   crumb_label,
@@ -129,7 +130,7 @@ export function TypeForm({
       user_name={user_name}
       user_email={user_email}
       can_structure={can_structure}
-      can_settings={can_settings}
+      can_settings={can_settings} top_bar={top_bar}
       csrf={csrf}
     >
       <EditorColumn>

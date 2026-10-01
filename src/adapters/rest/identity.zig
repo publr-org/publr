@@ -12,6 +12,7 @@ const Project = @import("../../server/project.zig").Project;
 const Error = http.Error;
 const Caller = sdk.Caller;
 
+/// The session cookie's name unless a plugin names another (`Project.session_cookie`).
 pub const cookie_name = "publr_session";
 /// A readable hint beside the session: no secret, only that someone signed in here, so the
 /// page's toolbar script stays idle for everyone else without asking the server.
@@ -48,7 +49,7 @@ pub fn identify(
     std.debug.assert(project.connection.transaction_depth == 0);
 
     const cookie_header = request.header("cookie") orelse return .{};
-    const token = cookie_value(cookie_header, cookie_name) orelse return .{};
+    const token = cookie_value(cookie_header, project.session_cookie) orelse return .{};
     const now_ms = sdk.context.wall_clock_ms(project.io);
 
     std.debug.assert(now_ms > 0);
@@ -146,7 +147,7 @@ pub fn set_session_cookie(
     const max_age = @divTrunc(expires_at - now_ms, std.time.ms_per_s);
     const template = "{s}={s}; Path=/; HttpOnly; SameSite=Lax; Max-Age={d}{s}{s}{s}";
     const value = std.fmt.allocPrint(arena, template, .{
-        cookie_name,
+        project.session_cookie,
         token,
         max_age,
         domain_label(project),
@@ -206,12 +207,12 @@ pub fn clear_session_cookie(
     response: *http.Response,
     arena: std.mem.Allocator,
 ) Error!void {
-    std.debug.assert(cookie_name.len > 0);
+    std.debug.assert(project.session_cookie.len > 0);
     std.debug.assert(request.path().len > 0);
 
     const template = "{s}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{s}{s}{s}";
     const value = std.fmt.allocPrint(arena, template, .{
-        cookie_name,
+        project.session_cookie,
         domain_label(project),
         domain_of(project),
         secure_suffix(request),
@@ -268,6 +269,7 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
     });
 
     ctx.sandboxed_plugins = project.sandboxed_plugins;
+    ctx.plugin_states = project.plugin_states;
 
     return ctx;
 }

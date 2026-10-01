@@ -12,6 +12,7 @@ export type SettingsDocumentProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   title: string;
   nav: JSX.Element;
@@ -21,10 +22,10 @@ export type SettingsDocumentProps = {
   editor: JSX.Element;
 };
 
-export function SettingsDocument({ user_name, user_email, can_structure = true, can_settings = true, csrf, title, nav, editor, description, has_fields, schema_href }: SettingsDocumentProps) {
+export function SettingsDocument({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, title, nav, editor, description, has_fields, schema_href }: SettingsDocumentProps) {
   return (
     <Layout title={title} section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
       {has_fields ? editor : (
         <EditorColumn>
           <PageHeader title={title} description={description} />

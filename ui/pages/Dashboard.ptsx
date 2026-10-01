@@ -10,10 +10,11 @@ export type DashboardProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
 };
 
-export function Dashboard({ user_name, user_email, can_structure = true, can_settings = true, csrf }: DashboardProps) {
+export function Dashboard({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf }: DashboardProps) {
   return (
     <Layout
       title="Overview"
@@ -21,7 +22,7 @@ export function Dashboard({ user_name, user_email, can_structure = true, can_set
       user_name={user_name}
       user_email={user_email}
       can_structure={can_structure}
-      can_settings={can_settings}
+      can_settings={can_settings} top_bar={top_bar}
       csrf={csrf}
     >
       <div class="px-8 py-7">

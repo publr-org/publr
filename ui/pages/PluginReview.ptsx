@@ -12,6 +12,7 @@ export type PluginReviewProps = {
   user_email: string;
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   nav: JSX.Element;
   title: string;
@@ -62,12 +63,12 @@ export type PluginReviewProps = {
 /** What enabling or updating a plugin grants, before it is done: every request with the
  * plugin's reason and tier, low to high. */
 export function PluginReview({
-  user_name, user_email, can_structure = true, can_settings = true, csrf, nav, title, summary, action, allow_label,
+  user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, title, summary, action, allow_label,
   cancel_href, discard_action, requests_title, requests, granted, note_text, show_access, scope, recommend, note, types,
 }: PluginReviewProps) {
   return (
     <Layout title={title} section="settings" crumb_label="Plugins" crumb_href="/admin/settings/plugins"
-      sidebar={nav} user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
+      sidebar={nav} user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
       <EditorColumn>
         <PageHeader title={title} description={summary} back_label="Plugins" back_href="/admin/settings/plugins" />
         <div class="mt-6 space-y-6">

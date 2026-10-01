@@ -1,6 +1,8 @@
 const std = @import("std");
 
 const output_bytes_max: u32 = 64 << 10;
+/// An admin page, sprite included.
+const page_bytes_max: u32 = 1 << 20;
 const startup_attempts_max: u32 = 50;
 const startup_wait_ms: u32 = 100;
 
@@ -14,11 +16,15 @@ pub fn main(init: std.process.Init) !u8 {
     const work_dir = iterator.next() orelse return error.MissingWorkDir;
     const module_arg = iterator.next() orelse return error.MissingPlugin;
     const fixtures_arg = iterator.next() orelse return error.MissingPlugin;
+    const native_arg = iterator.next() orelse return error.MissingBinaryPath;
+    const installable_arg = iterator.next() orelse return error.MissingPlugin;
     const arena = init.arena.allocator();
     const module = try std.Io.Dir.cwd().realPathFileAlloc(init.io, module_arg, arena);
     const binary = try std.Io.Dir.cwd().realPathFileAlloc(init.io, binary_arg, arena);
     const bare = try std.Io.Dir.cwd().realPathFileAlloc(init.io, bare_arg, arena);
     const fixtures = try std.Io.Dir.cwd().realPathFileAlloc(init.io, fixtures_arg, arena);
+    const native = try std.Io.Dir.cwd().realPathFileAlloc(init.io, native_arg, arena);
+    const installable = try std.Io.Dir.cwd().realPathFileAlloc(init.io, installable_arg, arena);
 
     std.debug.assert(std.fs.path.isAbsolute(binary));
     std.debug.assert(std.fs.path.isAbsolute(work_dir));
@@ -46,13 +52,16 @@ pub fn main(init: std.process.Init) !u8 {
     try expect_serve(init, binary, work_dir);
     try expect_bare(init, bare, work_dir);
     try expect_apps_folder(init, bare, work_dir);
+    const native_plugins = @import("smoke/native_plugins.zig");
+
+    try native_plugins.expect_native_admin(init, native, work_dir, installable);
 
     std.debug.print("smoke: ok\n", .{});
 
     return 0;
 }
 
-fn run_publr(
+pub fn run_publr(
     init: std.process.Init,
     binary: []const u8,
     work_dir: []const u8,
@@ -508,9 +517,10 @@ fn expect_apps_folder(init: std.process.Init, binary: []const u8, work_dir: []co
     const page = try std.fmt.allocPrint(arena, "{s}/index.publr", .{content});
     const broken = try std.fmt.allocPrint(arena, "{s}/broken.publr", .{content});
     const load = [_][]const u8{ "apps", "load", "--apps", "apps" };
+    const site = ".{ .name = \"site\", .mount = .{ .path = \"/\" } }\n";
 
     try cwd.createDirPath(init.io, content);
-    try cwd.writeFile(init.io, .{ .sub_path = zon, .data = ".{ .mount = .{ .path = \"/\" } }\n" });
+    try cwd.writeFile(init.io, .{ .sub_path = zon, .data = site });
     try cwd.writeFile(init.io, .{ .sub_path = page, .data = "<html><body>Hi</body></html>\n" });
     try expect_contains(init, binary, dir, &load, "1 apps load from apps");
     try cwd.writeFile(init.io, .{ .sub_path = broken, .data = "<p>{oops(</p>\n" });
@@ -550,15 +560,26 @@ fn expect_bare(init: std.process.Init, binary: []const u8, work_dir: []const u8)
     }
 }
 
-fn read_port(init: std.process.Init, stderr: std.Io.File) !u16 {
+/// The port `serve` announces, past the notices it may print first.
+pub fn read_port(init: std.process.Init, stderr: std.Io.File) !u16 {
     var buffer: [256]u8 = undefined;
     var reader = stderr.reader(init.io, &buffer);
-    const line = try reader.interface.takeDelimiterExclusive('\n');
+    var lines: u32 = 0;
 
-    std.debug.assert(line.len < buffer.len);
     std.debug.assert(buffer.len == 256);
 
-    return parse_announced_port(line);
+    while (lines < 8) : (lines += 1) {
+        const line = try reader.interface.takeDelimiterInclusive('\n');
+
+        std.debug.assert(line.len <= buffer.len);
+
+        return parse_announced_port(std.mem.trimEnd(u8, line, "\n")) catch |err| switch (err) {
+            error.NoPortAnnounced => continue,
+            else => err,
+        };
+    }
+
+    return error.NoPortAnnounced;
 }
 
 fn parse_announced_port(line: []const u8) !u16 {
@@ -583,7 +604,7 @@ test "the announced port is parsed from the serve banner" {
     try std.testing.expectError(error.InvalidCharacter, garbage);
 }
 
-fn http_get(init: std.process.Init, port: u16, path: []const u8) ![]const u8 {
+pub fn http_get(init: std.process.Init, port: u16, path: []const u8) ![]const u8 {
     std.debug.assert(port > 0);
     std.debug.assert(path.len > 0);
 
@@ -608,7 +629,12 @@ fn http_get_host(
     return http_exchange(init, port, request);
 }
 
-fn http_post(init: std.process.Init, port: u16, path: []const u8, body: []const u8) ![]const u8 {
+pub fn http_post(
+    init: std.process.Init,
+    port: u16,
+    path: []const u8,
+    body: []const u8,
+) ![]const u8 {
     std.debug.assert(port > 0);
     std.debug.assert(path.len > 0);
 
@@ -617,6 +643,46 @@ fn http_post(init: std.process.Init, port: u16, path: []const u8, body: []const 
         "POST {s} HTTP/1.1\r\nHost: smoke\r\nOrigin: http://smoke\r\n" ++
             "Content-Type: application/json\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n{s}",
         .{ path, body.len, body },
+    );
+
+    return http_exchange(init, port, request);
+}
+
+/// A POST with extra header lines (`Name: value\r\n` each).
+pub fn http_post_headers(
+    init: std.process.Init,
+    port: u16,
+    path: []const u8,
+    headers: []const u8,
+    body: []const u8,
+) ![]const u8 {
+    std.debug.assert(port > 0);
+    std.debug.assert(path.len > 0);
+
+    const request = try std.fmt.allocPrint(
+        init.arena.allocator(),
+        "POST {s} HTTP/1.1\r\nHost: smoke\r\n{s}Content-Type: application/json\r\n" ++
+            "Content-Length: {d}\r\nConnection: close\r\n\r\n{s}",
+        .{ path, headers, body.len, body },
+    );
+
+    return http_exchange(init, port, request);
+}
+
+/// A page as a signed-in browser asks for it: `cookie` is the session pair.
+pub fn http_get_cookie(
+    init: std.process.Init,
+    port: u16,
+    path: []const u8,
+    cookie: []const u8,
+) ![]const u8 {
+    std.debug.assert(port > 0);
+    std.debug.assert(cookie.len > 0);
+
+    const request = try std.fmt.allocPrint(
+        init.arena.allocator(),
+        "GET {s} HTTP/1.1\r\nHost: smoke\r\nCookie: {s}\r\nConnection: close\r\n\r\n",
+        .{ path, cookie },
     );
 
     return http_exchange(init, port, request);
@@ -638,7 +704,7 @@ fn http_exchange(init: std.process.Init, port: u16, request: []const u8) ![]cons
     // of it; a page carries its stylesheet inline, so the room is generous.
     var read_buffer: [4096]u8 = undefined;
     var reader = stream.reader(init.io, &read_buffer);
-    const response = try init.arena.allocator().alloc(u8, output_bytes_max);
+    const response = try init.arena.allocator().alloc(u8, page_bytes_max);
     const len = try reader.interface.readSliceShort(response);
 
     std.debug.assert(len <= response.len);

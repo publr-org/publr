@@ -19,6 +19,7 @@ export type PluginsProps = {
   user_email: string;
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   nav: JSX.Element;
   /** `installed`: the ones loaded at runtime into the sandbox; `built_in`: the ones built
@@ -45,10 +46,10 @@ export type PluginsProps = {
 
 /** Every plugin added, running or not: enable one to review what it asks for, update one
  * a newer module was uploaded for, stop or remove one. */
-export function Plugins({ user_name, user_email, can_structure = true, can_settings = true, csrf, nav, tab, built_in, plugins }: PluginsProps) {
+export function Plugins({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, tab, built_in, plugins }: PluginsProps) {
   return (
     <Layout title="Plugins" section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} csrf={csrf}>
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
       <div class="px-8 pt-7 pb-6">
         <PageHeader title="Plugins"
           description={tab === "installed"

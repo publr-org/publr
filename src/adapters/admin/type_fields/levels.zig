@@ -110,6 +110,7 @@ pub fn page(session: *Session, handle: []const u8, def: Def, top: ?Level) Error!
         .user_email = shell.user_email,
         .can_structure = shell.can_structure,
         .can_settings = shell.can_settings,
+        .top_bar = shell.top_bar,
         .csrf = shell.csrf,
         .title = def.name,
         .crumb_label = spaces.of(session).title(),

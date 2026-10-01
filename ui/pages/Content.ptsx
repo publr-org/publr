@@ -7,6 +7,7 @@ export type ContentProps = {
    * the viewer's roles grant. */
   can_structure?: boolean;
   can_settings?: boolean;
+  top_bar?: JSX.Element;
   csrf: string;
   nav: JSX.Element;
   /** The view's name, for the window and the breadcrumb. */
@@ -16,7 +17,7 @@ export type ContentProps = {
   list: JSX.Element;
 };
 
-export function Content({ user_name, user_email, can_structure = true, can_settings = true, csrf, nav, title, list }: ContentProps) {
+export function Content({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, title, list }: ContentProps) {
   return (
     <Layout
       title={title}
@@ -24,7 +25,7 @@ export function Content({ user_name, user_email, can_structure = true, can_setti
       user_name={user_name}
       user_email={user_email}
       can_structure={can_structure}
-      can_settings={can_settings}
+      can_settings={can_settings} top_bar={top_bar}
       csrf={csrf}
       sidebar={nav}
     >
