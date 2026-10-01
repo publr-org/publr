@@ -202,6 +202,22 @@ pub fn SDK(comptime registry: Registry) type {
             return @import("sdk/call_json.zig").call(@This(), ctx, name, input);
         }
 
+        /// Calls another plugin's operation through what that plugin publishes: `Call`
+        /// names the operation and gives its `In` and `Out` (the plugin's `interface.zig`),
+        /// never its code. It goes by name, so it reaches the operation whether its plugin
+        /// is compiled in or installed, through the same checks as any call.
+        pub fn call(ctx: *Ctx, comptime Call: type, in: Call.In) Error!Call.Out {
+            comptime std.debug.assert(Call.name.len > 0);
+
+            const input = try stringify(ctx.arena, in);
+            const output = try @import("sdk/call_json.zig").call(@This(), ctx, Call.name, input);
+
+            return json_module.parse(Call.Out, ctx.arena, output, .{
+                .allocate = .alloc_always,
+                .ignore_unknown_fields = true,
+            }) catch error.Invalid;
+        }
+
         /// Whether the caller may call `Operation` at all, whatever the input: what a page
         /// asks before it offers the action, never instead of the call's own check.
         pub fn may(ctx: *const Ctx, comptime Operation: type) bool {
@@ -806,6 +822,31 @@ test "write operation failure rolls back and journals a failed event" {
     defer select.finalize();
     try std.testing.expect(try select.step());
     try std.testing.expectEqual(@as(i64, 1), select.read_int());
+}
+
+test "an operation called through what its plugin publishes: by name, the same checks" {
+    var harness: testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    const Published = struct {
+        pub const name = testing.Record.name;
+        pub const In = struct { note: []const u8 };
+        pub const Out = struct { rows: u32 };
+    };
+    const Missing = struct {
+        pub const name = "nobody.nothing";
+        pub const In = struct {};
+        pub const Out = struct {};
+    };
+
+    var admin = harness.ctx(.system);
+    const out = try TestSDK.call(&admin, Published, .{ .note = "kept" });
+    try std.testing.expectEqual(@as(u32, 1), out.rows);
+    try std.testing.expectError(error.NotFound, TestSDK.call(&admin, Missing, .{}));
+
+    var anon = harness.ctx(.anonymous);
+    try std.testing.expectError(error.Denied, TestSDK.call(&anon, Published, .{ .note = "x" }));
 }
 
 const Subscribe = struct {

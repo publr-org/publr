@@ -9,6 +9,7 @@ const state = @import("state.zig");
 const plugin_types = @import("../../sdk/plugin/types.zig");
 const types = @import("../content_type.zig");
 const versions = @import("versions.zig");
+const requires = @import("../../sdk/plugin/requires.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -100,12 +101,15 @@ fn taken(name: []const u8) bool {
 }
 
 /// Whether a plugin or a native plugin called `name` is there.
-fn provided(ctx: *Ctx, name: []const u8) bool {
-    std.debug.assert(name.len > 0);
+fn provided(ctx: *Ctx, text: []const u8) bool {
+    std.debug.assert(text.len > 0);
+
+    const wanted = requires.parse(text);
+    const name = wanted.name;
 
     inline for (registry.native_plugins.all) |Plugin| {
         if (std.mem.eql(u8, Plugin.manifest.name, name)) {
-            return true;
+            return requires.satisfies(Plugin.manifest.version, wanted.range);
         }
     }
 
@@ -114,8 +118,9 @@ fn provided(ctx: *Ctx, name: []const u8) bool {
     }
 
     const found = store.sandboxed_plugins.get(ctx.db, ctx.arena, name) catch return false;
+    const row = found orelse return false;
 
-    return found != null;
+    return requires.satisfies(row.version, wanted.range);
 }
 
 /// Creates or brings up to date the content types and custom fields the plugin declares,

@@ -327,6 +327,36 @@ pub fn shell_of(session: *const Session) Shell {
     };
 }
 
+/// One row action, resolved for a row: what the menu item says and where it goes.
+pub const RowLink = struct { label: []const u8, href: []const u8 };
+
+/// The actions compiled-in plugins put on the rows of `slot`, for a row named `name` of
+/// `kind`: those whose operation the viewer may call, `{name}` in their paths filled in.
+pub fn row_actions(
+    session: *const Session,
+    comptime slot: []const u8,
+    kind: []const u8,
+    name: []const u8,
+) Error![]const RowLink {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(name.len > 0);
+
+    var links: std.ArrayList(RowLink) = .empty;
+
+    inline for (registry.row_actions) |action| {
+        const here = comptime std.mem.eql(u8, action.slot, slot);
+        const fits = action.kind.len == 0 or std.mem.eql(u8, action.kind, kind);
+
+        if (here and fits and registry.SDK.may(&session.ctx, action.operation)) {
+            const href = try std.mem.replaceOwned(u8, session.arena, action.path, "{name}", name);
+
+            try links.append(session.arena, .{ .label = action.label, .href = href });
+        }
+    }
+
+    return links.items;
+}
+
 pub const nav = @import("admin/nav.zig");
 /// The Settings sidebar, for a plugin's settings page to show like the core's.
 pub const settings_nav = @import("admin/settings_nav.zig");

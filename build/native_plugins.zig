@@ -68,7 +68,9 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
         .optimize = library.optimize,
     });
 
-    for (names) |name| {
+    var modules: [plugins_max]*std.Build.Module = undefined;
+
+    for (names, 0..) |name, index| {
         const plugin = builder.createModule(.{
             .root_source_file = builder.path(builder.fmt("{s}/{s}/main.zig", .{ dir, name })),
             .target = library.resolved_target,
@@ -77,9 +79,43 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
 
         plugin.addImport("publr", library);
         plugins.addImport(name, plugin);
+        modules[index] = plugin;
     }
 
+    add_interfaces(builder, library, dir, names, modules[0..names.len]);
     library.addImport("native_plugins", plugins);
+}
+
+/// What a plugin publishes for others to build on, its `interface.zig` (its operations'
+/// names, inputs and outputs, never its code), imported under the plugin's name by every
+/// compiled-in plugin, itself included: `@import("newsletter")`. Which of them a plugin
+/// may use is its `requires`, checked when the binary is built.
+fn add_interfaces(
+    builder: *std.Build,
+    library: *std.Build.Module,
+    dir: []const u8,
+    names: []const []const u8,
+    modules: []const *std.Build.Module,
+) void {
+    std.debug.assert(names.len == modules.len);
+
+    for (names) |name| {
+        const path = builder.fmt("{s}/{s}/interface.zig", .{ dir, name });
+
+        builder.build_root.handle.access(builder.graph.io, path, .{}) catch continue;
+
+        const interface = builder.createModule(.{
+            .root_source_file = builder.path(path),
+            .target = library.resolved_target,
+            .optimize = library.optimize,
+        });
+
+        interface.addImport("publr", library);
+
+        for (modules) |module| {
+            module.addImport(name, interface);
+        }
+    }
 }
 
 /// Whether `name` is compiled in.

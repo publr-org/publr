@@ -156,7 +156,7 @@ pub const content_access: publr.plugin.ContentAccess = .{
     .recommend = .all,
     .note = "Indexes every type for search",
 };
-pub const requires = [_][]const u8{"newsletter"};
+pub const requires = [_][]const u8{"newsletter@^1"};
 ```
 
 Each hook carries its reason (`pub const reason = "..."`); an event hook names the event
@@ -310,6 +310,12 @@ it names only at runtime goes in its `ui/icons.txt`, one per line, as the admin'
 - A top bar item (`pub fn top_bar(session: *const publr.admin.Session)
   publr.admin.Error!?publr.admin.render.Node`): called for every signed-in page, before
   "View site"; null shows nothing. An item that fails is left out and logged.
+- Actions on the rows of another plugin's page (`pub const row_actions =
+  [_]publr.plugin.RowAction{...}`): the page's slot as its owner names it, a label, a path
+  where `{name}` stands for the row's name, a row kind (every row when empty) and the
+  operation whoever sees it may call. The page's owner reads them for each row with
+  `publr.admin.row_actions(session, slot, kind, name)`; neither plugin knows the other's
+  code.
 
 A plugin can **keep state** for as long as the process runs: one `pub const State =
 struct {...}`, made when the server opens the project (with `pub fn init(state: *State,
@@ -332,6 +338,18 @@ A plugin can also act on the process around the operations:
   handler, answered at `POST /_publr/<plugin>/<name>` only with the running server's
   operator key, which only processes of the same user on the machine can read
   (`<db>.serve`). `publr.operator.find` and `publr.operator.post` send one.
+
+A plugin can **build on another**. It names what it requires, each another plugin and,
+after `@`, the versions it works with (exact, `1.2.3`, or caret, `^0.2`: the same leftmost
+non-zero part, no older): `pub const requires = [_][]const u8{"newsletter@^1.2"}`.
+A compiled-in plugin's requirements are checked when the binary is built (present, in
+range, never round a loop); an installed one's when it is enabled. What a plugin
+publishes for others is its `interface.zig` beside its `main.zig`: its operations' names,
+inputs and outputs, and the slots it reads as data, never its code or its state. Every
+compiled-in plugin imports another's interface by that plugin's name
+(`const newsletter = @import("newsletter");`), and its own the same way, and calls
+an operation through it with `publr.registry.SDK.call(ctx, newsletter.Subscribe, .{ .email = email })`: by
+name, through the same checks as any call, whichever way the plugin runs.
 
 A plugin can run once the database opens (`pub fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void`),
 as the system, after every declared type and field is in place: a setting the product

@@ -78,6 +78,7 @@ pub const Roles = role_registry.Registry(native_plugins.merged_roles);
 pub const sign_in_providers = native_plugins.merged_sign_in_providers;
 pub const plugin_routes = native_plugins.merged_routes;
 pub const settings_pages = native_plugins.merged_settings_pages;
+pub const row_actions = native_plugins.merged_row_actions;
 pub const top_bar = native_plugins.merged_top_bar;
 pub const stateful_plugins = native_plugins.merged_stateful;
 pub const operator_commands = native_plugins.merged_operator_commands;

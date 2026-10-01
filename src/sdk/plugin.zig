@@ -31,7 +31,9 @@ pub const Route = route.Route;
 pub const OperatorCommand = route.OperatorCommand;
 pub const admin_slots = @import("plugin/admin_slots.zig");
 pub const SettingsPage = admin_slots.SettingsPage;
+pub const RowAction = admin_slots.RowAction;
 pub const state = @import("plugin/state.zig");
+pub const requires = @import("plugin/requires.zig");
 pub const Process = state.Process;
 pub const wire = @import("plugin/wire.zig");
 pub const guest = @import("plugin/guest.zig");
@@ -355,12 +357,15 @@ pub fn Merged(comptime plugins: anytype) type {
         var sign_in_providers: []const SignInProvider = &.{};
         var routes: []const route.Declared = &.{};
         var settings_pages: []const SettingsPage = &.{};
+        var row_actions: []const RowAction = &.{};
         var top_bar: []const type = &.{};
         var operator_commands: []const route.DeclaredCommand = &.{};
         var before_command: []const type = &.{};
         var serving: []const type = &.{};
 
         std.debug.assert(plugins.len <= plugins_max);
+
+        requires.check(plugins);
 
         for (plugins) |Plugin| {
             validate(Plugin);
@@ -374,6 +379,7 @@ pub fn Merged(comptime plugins: anytype) type {
 
             routes = routes ++ own_routes;
             settings_pages = settings_pages ++ admin_slots.settings_pages_of(Plugin, own_routes);
+            row_actions = row_actions ++ admin_slots.row_actions_of(Plugin);
 
             if (@hasDecl(Plugin, "top_bar")) {
                 top_bar = top_bar ++ &[_]type{Plugin};
@@ -496,6 +502,8 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_sign_in_providers = sign_in_providers;
             pub const merged_routes = routes;
             pub const merged_settings_pages = settings_pages;
+            /// Every plugin's actions on other pages' rows, in name order.
+            pub const merged_row_actions = row_actions;
             /// The plugins with a top bar item, in name order.
             pub const merged_top_bar = top_bar;
             /// The plugins that keep a `State`, in name order.
