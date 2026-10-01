@@ -13,6 +13,8 @@ pub const provider = @import("sdk/provider.zig");
 pub const sandboxed_plugins = @import("sdk/sandboxed_plugins.zig");
 pub const plugin_access = @import("sdk/plugin_access.zig");
 pub const call_json = @import("sdk/call_json.zig");
+pub const help = @import("sdk/help.zig");
+pub const structure = @import("sdk/structure.zig");
 
 pub const Caller = caller.Caller;
 pub const Ctx = context.Ctx;
@@ -171,7 +173,7 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// The build's roles, with what installed plugins declare merged in.
-        fn roles_in_force(ctx: *const Ctx) []const role.Role {
+        pub fn roles_in_force(ctx: *const Ctx) []const role.Role {
             std.debug.assert(registry.roles.len > 0);
 
             const sandboxed = ctx.sandboxed_plugins orelse return registry.roles;
@@ -433,6 +435,19 @@ pub fn SDK(comptime registry: Registry) type {
             try sandboxed.after(ctx, Operation.name, input, output);
         }
 
+        /// A notice raised outside any operation: what the server itself did (the apps
+        /// loaded from the folder). Event hooks see it as they see any other.
+        pub fn announce(ctx: *Ctx, name: []const u8, subject: []const u8) void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.parent == null);
+
+            emit_notice(ctx, .{
+                .operation_id = ctx.allocate_operation_id(),
+                .name = name,
+                .subject = subject,
+            });
+        }
+
         pub fn emit_notice(ctx: *Ctx, notice: Event.Notice) void {
             std.debug.assert(notice.name.len > 0);
             std.debug.assert(notice.operation_id != 0);
@@ -448,7 +463,7 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             inline for (registry.middleware) |Middleware| {
-                if (Middleware.stage == .on) {
+                if (Middleware.stage == .on and hears(Middleware, event)) {
                     if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
                         var wrapped: PluginCtx = .{ .inner = ctx };
                         Middleware.run(&wrapped, event);
@@ -462,6 +477,26 @@ pub fn SDK(comptime registry: Registry) type {
 }
 
 const json_module = @import("lib/json.zig");
+
+/// Whether an event hook sees this event: every one, or only the one it names (`event`),
+/// by the operation's name or the notice's, as an installed plugin's hook does.
+fn hears(comptime Middleware: type, event: Event) bool {
+    std.debug.assert(Middleware.stage == .on);
+
+    if (!@hasDecl(Middleware, "event")) {
+        return true;
+    }
+
+    comptime std.debug.assert(Middleware.event.len > 0);
+
+    const name = switch (event) {
+        .completed => |completed| completed.operation_name,
+        .rejected, .failed => |failed| failed.operation_name,
+        .notice => |notice| notice.name,
+    };
+
+    return std.mem.eql(u8, name, Middleware.event);
+}
 
 pub fn stringify(arena: std.mem.Allocator, value: anytype) Error![]const u8 {
     const text = std.json.Stringify.valueAlloc(arena, value, .{}) catch return error.OutOfMemory;

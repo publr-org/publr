@@ -10,6 +10,7 @@ const wasm = @import("build/wasm.zig");
 const apps = @import("build/apps.zig");
 const tests = @import("build/tests.zig");
 const sandboxed_plugins = @import("build/sandboxed_plugins.zig");
+const two_mode = @import("build/two_mode.zig");
 
 pub fn build(builder: *std.Build) void {
     const target = builder.standardTargetOptions(.{});
@@ -49,14 +50,20 @@ pub fn build(builder: *std.Build) void {
     verify_step.dependOn(wasm.add_check(builder, from));
     verify_step.dependOn(&fmt_check.step);
     verify_step.dependOn(tidy.add_check(builder));
+
+    const both_ways = two_mode.add_check(builder, target, optimize, from, fixture_plugins);
+
+    verify_step.dependOn(both_ways.step);
     verify_step.dependOn(smoke.add_check(
         builder,
         checks.fixture_exe,
         exe,
         fixture_plugins.file_of("greeter"),
+        both_ways.native,
+        fixture_plugins.file_of("postcard"),
     ));
 
-    const parity_step = parity.add_check(builder, exe, library, fixture_plugins);
+    const parity_step = parity.add_check(builder, checks, fixture_plugins);
 
     verify_step.dependOn(parity_step);
 

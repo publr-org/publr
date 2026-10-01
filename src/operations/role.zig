@@ -26,7 +26,7 @@ pub const List = struct {
     pub const description = "List every role, core and plugins together, with its grants";
     pub const details =
         \\Administrators only: what `user create --roles` and `user update --roles`
-        \\accept. Nothing is written.
+        \\accept, with the grants installed plugins add. Nothing is written.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
@@ -41,7 +41,7 @@ pub const List = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.now_ms >= 0);
 
-        return .{ .roles = registry.Roles.all };
+        return .{ .roles = registry.SDK.roles_in_force(ctx) };
     }
 };
 

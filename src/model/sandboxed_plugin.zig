@@ -69,6 +69,8 @@ pub const Operation = struct {
     details: []const u8 = "",
     open: bool = false,
     fields: []const Field = &.{},
+    /// Its `--help`, rendered by the build as a compiled-in operation's is.
+    help: []const u8 = "",
 };
 
 pub const Field = struct {
@@ -76,6 +78,10 @@ pub const Field = struct {
     shape: Shape,
     required: bool,
     doc: []const u8 = "",
+    /// What a value looks like (`integer`, `calm|loud`, `list of text`), as errors say it.
+    label: []const u8 = "",
+    /// The names a value may be, when it is one of a set.
+    values: []const []const u8 = &.{},
 
     pub const Shape = enum { string, integer, number, boolean, strings, json };
 };

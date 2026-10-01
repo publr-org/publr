@@ -185,7 +185,10 @@ pub fn Exports(comptime Plugin: type) type {
             const result: *wire.Result = @ptrFromInt(result_ptr);
             var output: std.Io.Writer.Allocating = .init(allocator);
 
-            plugin_manifest.write(Plugin, &output.writer) catch {
+            var arena_state = std.heap.ArenaAllocator.init(allocator);
+            defer arena_state.deinit();
+
+            plugin_manifest.write(Plugin, arena_state.allocator(), &output.writer) catch {
                 return wire.code_of(error.OutOfMemory);
             };
 

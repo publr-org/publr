@@ -9,6 +9,7 @@ pub const value_len_max: u32 = 64 << 10;
 pub const Error = sdk.Error || error{ UnknownOp, UnknownFlag, MissingValue, WriteFailed };
 
 const runtime_cli = @import("cli/sandboxed_plugins.zig");
+const help = sdk.help;
 
 pub const Options = struct {
     db: *db.Db,
@@ -20,6 +21,8 @@ pub const Options = struct {
     password_env: ?[]const u8 = null,
     /// The installed plugins installed: their operations are commands too.
     sandboxed_plugins: ?*const sdk.sandboxed_plugins.SandboxedPlugins = null,
+    /// Every compiled-in plugin's `State`, where a server made them.
+    plugin_states: ?*anyopaque = null,
 };
 
 const AuthState = @import("../lib/auth.zig").State;
@@ -148,11 +151,12 @@ pub fn CLI(comptime SDK: type) type {
             });
 
             ctx.sandboxed_plugins = options.sandboxed_plugins;
+            ctx.plugin_states = options.plugin_states;
 
             inline for (SDK.operations) |Operation| {
                 if (std.mem.eql(u8, Operation.name, name)) {
                     if (rest.len == 1 and is_help_flag(rest[0])) {
-                        try print_command_help(Operation, out);
+                        try help.command(Operation, out);
                         return 0;
                     }
                     return invoke(&ctx, Operation, rest, out, options);
@@ -324,217 +328,6 @@ pub fn CLI(comptime SDK: type) type {
 
             write(out, help_footer) catch return error.WriteFailed;
         }
-
-        fn print_command_help(comptime Operation: type, out: *std.Io.Writer) Error!void {
-            @setEvalBranchQuota(100_000);
-
-            const namespace = comptime sdk.operation.namespace(Operation.name);
-            const verb = comptime sdk.operation.verb(Operation.name);
-            const fields = std.meta.fields(Operation.In);
-            const signature = if (fields.len == 0) "" else " [--field value ...]";
-
-            comptime std.debug.assert(namespace.len > 0);
-            comptime std.debug.assert(verb.len > 0);
-
-            out.print("Usage: publr {s} {s}{s}\n\n{s}\n", .{
-                namespace,
-                verb,
-                signature,
-                Operation.description,
-            }) catch return error.WriteFailed;
-
-            if (@hasDecl(Operation, "details")) {
-                out.print("\n{s}\n", .{Operation.details}) catch return error.WriteFailed;
-            }
-
-            if (fields.len > 0) {
-                write(out, "\nFields:\n") catch return error.WriteFailed;
-                try print_field_docs(Operation, Operation.In, "field_docs", true, out);
-            }
-
-            write(out, "\nOutput:\n") catch return error.WriteFailed;
-            try print_field_docs(Operation, Operation.Out, "output_docs", false, out);
-            try print_failures(Operation, out);
-            try print_example(Operation, out);
-        }
-
-        /// The failures the operation declares beyond the core's errors, as REST names them.
-        fn print_failures(comptime Operation: type, out: *std.Io.Writer) Error!void {
-            comptime std.debug.assert(Operation.name.len > 0);
-
-            if (!@hasDecl(Operation, "failures") or Operation.failures.len == 0) {
-                return;
-            }
-
-            write(out, "\nFails with:\n") catch return error.WriteFailed;
-
-            for (Operation.failures) |failure| {
-                out.print("\n  {s} ({d})  {s}\n", .{
-                    failure.name,
-                    failure.status,
-                    failure.message,
-                }) catch return error.WriteFailed;
-            }
-        }
-
-        fn print_field_docs(
-            comptime Operation: type,
-            comptime Shape: type,
-            comptime docs_name: []const u8,
-            comptime is_input: bool,
-            out: *std.Io.Writer,
-        ) Error!void {
-            comptime std.debug.assert(docs_name.len > 0);
-            comptime std.debug.assert(@typeInfo(Shape) == .@"struct");
-
-            inline for (std.meta.fields(Shape)) |field| {
-                const doc = comptime sdk.operation.field_doc(Operation, docs_name, field.name);
-                const prefix = if (is_input) "--" else "";
-                const presence = if (!is_input)
-                    ""
-                else if (field.defaultValue() == null)
-                    "  (required)"
-                else
-                    "  (optional)";
-
-                out.print("\n  {s}{s}  {s}{s}\n", .{
-                    prefix,
-                    field.name,
-                    type_label(field.type),
-                    presence,
-                }) catch return error.WriteFailed;
-
-                if (doc.len > 0) {
-                    out.print("      {s}\n", .{doc}) catch return error.WriteFailed;
-                }
-            }
-        }
-
-        fn print_example(comptime Operation: type, out: *std.Io.Writer) Error!void {
-            @setEvalBranchQuota(100_000);
-
-            const namespace = comptime sdk.operation.namespace(Operation.name);
-            const verb = comptime sdk.operation.verb(Operation.name);
-            const anonymous_ok = sdk.authorize.is_open_operation(Operation.name) or
-                (Operation.kind == .read and
-                    sdk.authorize.is_public_read_namespace(Operation.name));
-            const operator = @hasDecl(Operation, "operator_only") and Operation.operator_only;
-            const as: []const u8 = if (operator)
-                "--as-admin "
-            else if (anonymous_ok)
-                ""
-            else
-                "--as ada@example.com ";
-
-            comptime std.debug.assert(namespace.len > 0);
-            comptime std.debug.assert(verb.len > 0);
-
-            out.print("\nExample:\n\n  $ publr {s}{s} {s}", .{ as, namespace, verb }) catch
-                return error.WriteFailed;
-
-            inline for (std.meta.fields(Operation.In)) |field| {
-                const value = @field(Operation.example, field.name);
-                const is_default = comptime blk: {
-                    const default = field.defaultValue() orelse break :blk false;
-                    break :blk std.meta.eql(default, value);
-                };
-
-                if (!is_default and !is_null(value)) {
-                    out.print(" --{s} ", .{field.name}) catch return error.WriteFailed;
-                    try print_example_value(value, out);
-                }
-            }
-
-            write(out, "\n") catch return error.WriteFailed;
-
-            var buffer: [8 << 10]u8 = undefined;
-            var json: std.Io.Writer = .fixed(&buffer);
-            const options: std.json.Stringify.Options = .{ .whitespace = .indent_2 };
-
-            std.json.Stringify.value(Operation.example_out, options, &json) catch
-                return error.WriteFailed;
-
-            var lines = std.mem.splitScalar(u8, json.buffered(), '\n');
-
-            while (lines.next()) |line| {
-                out.print("  {s}\n", .{line}) catch return error.WriteFailed;
-            }
-        }
-
-        /// A value as you would type it: JSON and anything with a space or a quote in it
-        /// goes on one line inside single quotes, so the printed line can be pasted; text
-        /// with an apostrophe (`Ada's App`) goes inside double quotes instead. An example
-        /// with both an apostrophe and a character double quotes would expand is refused.
-        fn print_example_text(text: []const u8, out: *std.Io.Writer) Error!void {
-            std.debug.assert(text.len <= value_len_max);
-
-            if (std.mem.indexOfScalar(u8, text, '\'') != null) {
-                std.debug.assert(std.mem.indexOfAny(u8, text, "\"$`\\\n") == null);
-
-                out.print("\"{s}\"", .{text}) catch return error.WriteFailed;
-
-                return;
-            }
-
-            if (std.mem.indexOfAny(u8, text, " \"\n") == null) {
-                write(out, text) catch return error.WriteFailed;
-
-                return;
-            }
-
-            write(out, "'") catch return error.WriteFailed;
-
-            var lines = std.mem.splitScalar(u8, text, '\n');
-
-            while (lines.next()) |line| {
-                write(out, line) catch return error.WriteFailed;
-            }
-
-            write(out, "'") catch return error.WriteFailed;
-        }
-
-        /// A list as you would type it: its items with commas between, no spaces.
-        fn print_example_list(items: anytype, out: *std.Io.Writer) Error!void {
-            std.debug.assert(items.len <= 64);
-            std.debug.assert(items.len > 0);
-
-            for (items, 0..) |item, index| {
-                if (index > 0) {
-                    write(out, ",") catch return error.WriteFailed;
-                }
-
-                try print_example_value(item, out);
-            }
-        }
-
-        fn print_example_value(value: anytype, out: *std.Io.Writer) Error!void {
-            const Value = @TypeOf(value);
-
-            comptime std.debug.assert(@typeInfo(Value) != .void);
-
-            switch (@typeInfo(Value)) {
-                .bool => write(out, if (value) "true" else "false") catch return error.WriteFailed,
-                .int, .float => out.print("{d}", .{value}) catch return error.WriteFailed,
-                .@"enum" => write(out, @tagName(value)) catch return error.WriteFailed,
-                .optional => try print_example_value(value.?, out),
-                .pointer => |pointer| if (pointer.child == u8)
-                    try print_example_text(value, out)
-                else
-                    try print_example_list(value, out),
-                else => @compileError("example value: unsupported"),
-            }
-        }
-    };
-}
-
-fn is_null(value: anytype) bool {
-    const Value = @TypeOf(value);
-
-    comptime std.debug.assert(@typeInfo(Value) != .void);
-
-    return switch (@typeInfo(Value)) {
-        .optional => value == null,
-        else => false,
     };
 }
 
@@ -651,57 +444,6 @@ fn write(out: *std.Io.Writer, text: []const u8) !void {
     try out.writeAll(text);
 }
 
-fn type_label(comptime Type: type) []const u8 {
-    return type_label_depth(Type, 0);
-}
-
-fn type_label_depth(comptime Type: type, comptime depth: u32) []const u8 {
-    @setEvalBranchQuota(100_000);
-
-    if (depth > 3) {
-        return "object";
-    }
-
-    const label: []const u8 = comptime switch (@typeInfo(Type)) {
-        .bool => "true|false",
-        .int => "integer",
-        .float => "number",
-        .@"enum" => |info| blk: {
-            var joined: []const u8 = "";
-
-            for (info.fields, 0..) |field, index| {
-                joined = joined ++ (if (index == 0) "" else "|") ++ field.name;
-            }
-
-            break :blk joined;
-        },
-        .optional => |optional| type_label_depth(optional.child, depth + 1) ++ "|null",
-        .pointer => |pointer| if (pointer.child == u8)
-            "text"
-        else
-            "list of " ++ type_label_depth(pointer.child, depth + 1),
-        .@"struct" => |info| blk: {
-            var joined: []const u8 = "{ ";
-
-            for (info.fields, 0..) |field, index| {
-                const separator = if (index == 0) "" else ", ";
-                joined = joined ++ separator ++ field.name ++ ": " ++ type_label_depth(
-                    field.type,
-                    depth + 1,
-                );
-            }
-
-            break :blk joined ++ " }";
-        },
-        else => "value",
-    };
-
-    comptime std.debug.assert(label.len > 0);
-    comptime std.debug.assert(label.len < 4096);
-
-    return label;
-}
-
 fn operation_name_args(args: []const []const u8) u32 {
     std.debug.assert(args.len > 0);
     std.debug.assert(args.len <= args_max);
@@ -770,7 +512,7 @@ pub fn parse_in(
                     problem.set("invalid value \"{s}\" for --{s} (expected {s})", .{
                         value,
                         field.name,
-                        type_label(field.type),
+                        help.type_label(field.type),
                     });
                     return error.Invalid;
                 };
@@ -796,7 +538,7 @@ pub fn parse_in(
                 const default = field.defaultValue() orelse {
                     problem.set("missing required --{s} ({s}){s}", .{
                         field.name,
-                        type_label(field.type),
+                        help.type_label(field.type),
                         if (from_env) "; or set PUBLR_PASSWORD" else "",
                     });
 
@@ -864,9 +606,23 @@ fn parse_value(comptime Value: type, arena: std.mem.Allocator, text: []const u8)
                 break :blk text;
             }
 
-            break :blk try parse_list(pointer.child, arena, text);
+            if (comptime help.listable(pointer.child)) {
+                break :blk try parse_list(pointer.child, arena, text);
+            }
+
+            break :blk try parse_json(Value, arena, text);
         },
+        .@"struct", .@"union" => try parse_json(Value, arena, text),
         else => @compileError("CLI cannot parse " ++ @typeName(Value)),
+    };
+}
+
+fn parse_json(comptime Value: type, arena: std.mem.Allocator, text: []const u8) Error!Value {
+    std.debug.assert(text.len <= value_len_max);
+
+    return std.json.parseFromSliceLeaky(Value, arena, text, .{}) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.Invalid,
     };
 }
 
@@ -1074,18 +830,4 @@ test "empty commands, oversized caller names and a full init alias fail graceful
     var alias: [args_max][]const u8 = @splat("--help");
     alias[0] = "init";
     try std.testing.expectEqual(@as(u8, 2), try Command.run(options, &alias, &output));
-}
-
-test "an example value prints the way a shell reads it, apostrophes inside double quotes" {
-    const heartbeat = @import("../operations/heartbeat.zig");
-    const Command = CLI(sdk.SDK(.{ .operations = &heartbeat.operations }));
-    var buffer: [256]u8 = undefined;
-    var out: std.Io.Writer = .fixed(&buffer);
-
-    try Command.print_example_text("plain", &out);
-    try out.writeByte(' ');
-    try Command.print_example_text("two words", &out);
-    try out.writeByte(' ');
-    try Command.print_example_text("Ada's App", &out);
-    try std.testing.expectEqualStrings("plain 'two words' \"Ada's App\"", out.buffered());
 }

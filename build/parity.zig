@@ -2,12 +2,15 @@ const std = @import("std");
 const core = @import("core.zig");
 const sandboxed_plugins = @import("sandboxed_plugins.zig");
 
+/// Parity over the fixture build: core's operations, whatever the project compiles in.
 pub fn add_check(
     builder: *std.Build,
-    exe: *std.Build.Step.Compile,
-    library: *std.Build.Module,
+    checks: @import("tests.zig").Tests,
     fixture_plugins: sandboxed_plugins.SandboxedPlugins,
 ) *std.Build.Step {
+    const exe = checks.fixture_exe;
+    const library = checks.fixture;
+
     std.debug.assert(builder.build_root.path != null);
     std.debug.assert(library.root_source_file != null);
 

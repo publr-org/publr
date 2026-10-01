@@ -8,6 +8,8 @@ const cli = @import("../cli.zig");
 const Error = cli.Error;
 const Field = sandboxed_plugin.Field;
 
+/// The flags read into JSON by the manifest's fields, refused with the words a compiled-in
+/// operation's are.
 pub fn parse(
     arena: std.mem.Allocator,
     found: sdk.sandboxed_plugins.Operation,
@@ -23,17 +25,27 @@ pub fn parse(
     while (index < args.len) : (index += 2) {
         const flag = args[index];
 
-        if (!std.mem.startsWith(u8, flag, "--") or index + 1 == args.len) {
+        if (!std.mem.startsWith(u8, flag, "--")) {
+            problem.set("unexpected argument \"{s}\"", .{flag});
+            return error.UnknownFlag;
+        }
+
+        if (index + 1 == args.len) {
             problem.set("flag \"{s}\" needs a value", .{flag});
             return error.MissingValue;
         }
 
+        const text = args[index + 1];
         const field = field_named(found.fields, flag[2..]) orelse {
             problem.set("unknown flag \"{s}\"", .{flag});
             return error.UnknownFlag;
         };
-        const value = value_of(arena, field, args[index + 1]) catch {
-            problem.set("\"{s}\" is not a {t}", .{ args[index + 1], field.shape });
+        const value = value_of(arena, field, text) catch {
+            problem.set("invalid value \"{s}\" for --{s} (expected {s})", .{
+                text,
+                field.name,
+                field.label,
+            });
             return error.Invalid;
         };
 
@@ -42,8 +54,8 @@ pub fn parse(
 
     for (found.fields) |field| {
         if (field.required and !object.contains(field.name)) {
-            problem.set("missing --{s}", .{field.name});
-            return error.MissingValue;
+            problem.set("missing required --{s} ({s})", .{ field.name, field.label });
+            return error.Invalid;
         }
     }
 
@@ -68,6 +80,20 @@ fn value_of(arena: std.mem.Allocator, field: Field, text: []const u8) !std.json.
     std.debug.assert(field.name.len > 0);
     std.debug.assert(text.len <= cli.value_len_max);
 
+    if (field.values.len > 0 and std.mem.startsWith(u8, field.label, "list of ")) {
+        var parts = std.mem.splitScalar(u8, text, ',');
+
+        while (parts.next()) |part| {
+            try one_of(field.values, part);
+        }
+    } else if (field.values.len > 0 and !(is_null(field, text))) {
+        try one_of(field.values, text);
+    }
+
+    if (is_null(field, text)) {
+        return .null;
+    }
+
     return switch (field.shape) {
         .string => .{ .string = text },
         .integer => .{ .integer = try std.fmt.parseInt(i64, text, 10) },
@@ -85,6 +111,25 @@ fn value_of(arena: std.mem.Allocator, field: Field, text: []const u8) !std.json.
         },
         .json => try std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}),
     };
+}
+
+/// An optional field given `null`, as a compiled-in operation reads it.
+fn is_null(field: Field, text: []const u8) bool {
+    std.debug.assert(field.name.len > 0);
+
+    return std.mem.endsWith(u8, field.label, "|null") and std.mem.eql(u8, text, "null");
+}
+
+fn one_of(values: []const []const u8, text: []const u8) !void {
+    std.debug.assert(values.len > 0);
+
+    for (values) |value| {
+        if (std.mem.eql(u8, value, text)) {
+            return;
+        }
+    }
+
+    return error.Invalid;
 }
 
 fn parse_bool(text: []const u8) !bool {
@@ -116,23 +161,9 @@ pub fn print_json(arena: std.mem.Allocator, text: []const u8, out: *std.Io.Write
 
 pub fn print_help(found: sdk.sandboxed_plugins.Operation, out: *std.Io.Writer) Error!void {
     std.debug.assert(found.name.len > 0);
+    std.debug.assert(found.help.len > 0);
 
-    const namespace = sdk.operation.namespace(found.name);
-    const verb = sdk.operation.verb(found.name);
-
-    out.print("publr {s} {s}: {s}\n\nFields:\n\n", .{ namespace, verb, found.description }) catch
-        return error.WriteFailed;
-
-    for (found.fields) |field| {
-        const presence = if (field.required) "required" else "optional";
-
-        out.print("  --{s:<20} {t}, {s}  {s}\n", .{
-            field.name,
-            field.shape,
-            presence,
-            field.doc,
-        }) catch return error.WriteFailed;
-    }
+    out.writeAll(found.help) catch return error.WriteFailed;
 }
 
 /// `publr <namespace> --help` for a namespace an installed plugin brings: its summary and
@@ -172,10 +203,7 @@ fn print_commands(
     std.debug.assert(namespace.len > 0);
     std.debug.assert(manifest.name.len > 0);
 
-    out.print("\nCommands (installed plugin {s} {s}):\n\n", .{
-        manifest.name,
-        manifest.version,
-    }) catch return error.WriteFailed;
+    out.writeAll("\nCommands:\n\n") catch return error.WriteFailed;
 
     for (manifest.operations) |operation| {
         if (std.mem.eql(u8, sdk.operation.namespace(operation.name), namespace)) {
@@ -202,9 +230,9 @@ test "flags become JSON by the field shapes; unknown and missing flags are named
         .sandboxed_plugin = 0,
         .entry = 0,
         .fields = &.{
-            .{ .name = "note", .shape = .string, .required = true },
-            .{ .name = "times", .shape = .integer, .required = false },
-            .{ .name = "tags", .shape = .strings, .required = false },
+            .{ .name = "note", .shape = .string, .required = true, .label = "text" },
+            .{ .name = "times", .shape = .integer, .required = false, .label = "integer" },
+            .{ .name = "tags", .shape = .strings, .required = false, .label = "list of text" },
         },
     };
     var problem: cli.Problem = .{};
@@ -214,8 +242,8 @@ test "flags become JSON by the field shapes; unknown and missing flags are named
     const expected = "{\"note\":\"hi\",\"times\":3,\"tags\":[\"a\",\"b\"]}";
 
     try std.testing.expectEqualStrings(expected, text);
-    try std.testing.expectError(error.MissingValue, parse(arena, found, &.{}, &problem));
-    try std.testing.expectEqualStrings("missing --note", problem.text());
+    try std.testing.expectError(error.Invalid, parse(arena, found, &.{}, &problem));
+    try std.testing.expectEqualStrings("missing required --note (text)", problem.text());
     const unknown = parse(arena, found, &.{ "--nope", "x" }, &problem);
 
     try std.testing.expectError(error.UnknownFlag, unknown);

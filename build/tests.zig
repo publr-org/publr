@@ -10,8 +10,10 @@ pub const fixture_apps_dir = "fixtures/apps";
 
 pub const Tests = struct {
     step: *std.Build.Step,
-    /// Publr with the fixture apps compiled in, for the smoke.
+    /// Publr with the fixture apps compiled in, for the smoke and parity.
     fixture_exe: *std.Build.Step.Compile,
+    /// Its library, which parity lists the operations of.
+    fixture: *std.Build.Module,
 };
 
 /// `test` (core against the fixture apps, the scripts, the printed examples and the
@@ -31,6 +33,10 @@ pub fn add(
 
     // Smoke drives this binary as one built without the compiler, and the tests need none.
     fixture_from.compiler = false;
+    // Whatever the project compiles in (`plugins/`, `publr.zon`) never reaches the checks:
+    // core is tested with none, the test plugins being installed where a check wants them.
+    fixture_from.plugins_dir = sandboxed_plugins.fixture_dir;
+    fixture_from.native = .{ .names = &.{} };
 
     const fixture = core.add_module(builder, target, optimize, fixture_from);
     const fixture_exe = builder.addExecutable(.{
@@ -56,7 +62,7 @@ pub fn add(
     test_step.dependOn(plugins_step);
     scripts.add_tests(builder, test_step);
     native_plugins.add_tests(builder, library, plugins_step);
-    parity.add_tests(builder, library, test_step, fixture_plugins);
+    parity.add_tests(builder, fixture, test_step, fixture_plugins);
 
-    return .{ .step = test_step, .fixture_exe = fixture_exe };
+    return .{ .step = test_step, .fixture_exe = fixture_exe, .fixture = fixture };
 }

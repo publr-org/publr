@@ -5,6 +5,7 @@ const std = @import("std");
 const runtime = @import("sandboxed.zig");
 const sdk_operation = @import("../operation.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
+const help = @import("../help.zig");
 
 /// The name of the custom section the manifest travels in.
 pub const section_name = "publr";
@@ -129,9 +130,10 @@ fn fields_of(comptime Declared: type) []const Field {
             list = list ++ &[_]Field{.{
                 .name = field.name,
                 .shape = shape_of(field.type),
-                .required = field.defaultValue() == null and
-                    @typeInfo(field.type) != .optional,
+                .required = field.defaultValue() == null,
                 .doc = sdk_operation.field_doc(Declared, "field_docs", field.name),
+                .label = help.type_label(field.type),
+                .values = values_of(field.type),
             }};
         }
 
@@ -151,7 +153,7 @@ fn shape_of(comptime Type: type) Field.Shape {
             .@"enum" => .string,
             .pointer => |pointer| if (pointer.child == u8)
                 .string
-            else if (pointer.child == []const u8)
+            else if (help.listable(pointer.child))
                 .strings
             else
                 .json,
@@ -160,23 +162,85 @@ fn shape_of(comptime Type: type) Field.Shape {
     }
 }
 
-/// Writes the manifest as JSON: what the build puts in the module's custom section.
-pub fn write(comptime Plugin: type, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    const manifest = comptime of(Plugin);
+/// The names a value may take: an enum's, or a list of them's; none for anything else.
+fn values_of(comptime Type: type) []const []const u8 {
+    comptime {
+        std.debug.assert(@typeInfo(Type) != .@"fn");
 
-    comptime std.debug.assert(manifest.name.len > 0);
+        const Named = switch (@typeInfo(Type)) {
+            .optional => |optional| optional.child,
+            .pointer => |pointer| if (pointer.child == u8) return &.{} else pointer.child,
+            else => Type,
+        };
+
+        if (@typeInfo(Named) != .@"enum") {
+            return &.{};
+        }
+
+        var names: []const []const u8 = &.{};
+
+        for (std.meta.fieldNames(Named)) |name| {
+            names = names ++ &[_][]const u8{name};
+        }
+
+        return names;
+    }
+}
+
+/// Writes the manifest as JSON: what the build puts in the module's custom section, each
+/// operation's `--help` rendered into it.
+pub fn write(
+    comptime Plugin: type,
+    arena: std.mem.Allocator,
+    writer: *std.Io.Writer,
+) std.Io.Writer.Error!void {
+    const manifest = comptime of(Plugin);
+    const declared = comptime operation_types(Plugin);
+    var operations: [declared.len]Operation = manifest.operations[0..declared.len].*;
+
+    comptime std.debug.assert(manifest.operations.len == declared.len);
     std.debug.assert(manifest.format == format);
 
-    try std.json.Stringify.value(manifest, .{ .emit_null_optional_fields = false }, writer);
+    inline for (declared, &operations) |Declared, *described| {
+        var text: std.Io.Writer.Allocating = .init(arena);
+
+        help.command(Declared, &text.writer) catch return error.WriteFailed;
+        described.help = text.written();
+    }
+
+    var complete = manifest;
+
+    complete.operations = &operations;
+
+    try std.json.Stringify.value(complete, .{ .emit_null_optional_fields = false }, writer);
+}
+
+/// The operations' declarations, in the manifest's order.
+fn operation_types(comptime Plugin: type) []const type {
+    comptime {
+        var list: []const type = &.{};
+
+        for (runtime.runtime_entries(Plugin)) |entry| {
+            if (entry.stage == .operation) {
+                list = list ++ &[_]type{entry.declaration};
+            }
+        }
+
+        std.debug.assert(list.len <= runtime.runtime_entries(Plugin).len);
+
+        return list;
+    }
 }
 
 test "the test plugin's manifest names its operation, fields and content type" {
     const Greeter = @import("../plugin.zig").testing.Greeter;
     const manifest = comptime of(Greeter);
-    var buffer: [8192]u8 = undefined;
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    var buffer: [16384]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
 
-    try write(Greeter, &writer);
+    try write(Greeter, arena_state.allocator(), &writer);
 
     const text = writer.buffered();
 
@@ -188,4 +252,5 @@ test "the test plugin's manifest names its operation, fields and content type" {
     try std.testing.expect(manifest.operations[0].fields[0].required);
     try std.testing.expect(std.mem.indexOf(u8, text, "\"content.write\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "\"greeting\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "Usage: publr greeter") != null);
 }

@@ -66,11 +66,7 @@ fn check(
 
     var storage: [command.args_max][]const u8 = undefined;
     const printed = try command.parse(help, &storage);
-    const arguments = if (comptime std.mem.eql(u8, Operation.name, "sign_on.redeem"))
-        try world.fresh_sign_on(arena, printed, publr.sdk.context.wall_clock_ms(init.io))
-    else
-        printed;
-    const answer = try capture(init, binary, dir, arguments, Operation);
+    const answer = try run_example(init, binary, dir, printed, Operation);
 
     const parsed = std.json.parseFromSliceLeaky(Operation.Out, arena, answer, .{}) catch {
         return fail(Operation, "answer is not the documented output shape", answer);
@@ -79,6 +75,27 @@ fn check(
     shape.same(Operation.example_out, parsed) catch {
         return fail(Operation, "answer does not match its `example_out`", answer);
     };
+}
+
+/// The printed example run; a sign-on token is made fresh, as a printed one is long spent.
+fn run_example(
+    init: std.process.Init,
+    binary: []const u8,
+    dir: []const u8,
+    printed: []const []const u8,
+    comptime Operation: type,
+) ![]const u8 {
+    std.debug.assert(printed.len > 0);
+    std.debug.assert(dir.len > 0);
+
+    const arena = init.arena.allocator();
+
+    const arguments = if (comptime std.mem.eql(u8, Operation.name, "sign_on.redeem"))
+        try world.fresh_sign_on(arena, printed, publr.sdk.context.wall_clock_ms(init.io))
+    else
+        printed;
+
+    return capture(init, binary, dir, arguments, Operation);
 }
 
 fn seed(init: std.process.Init, dir: []const u8) !void {

@@ -24,6 +24,8 @@ pub const Operation = struct {
     open: bool = false,
     /// Its input's fields, for an adapter that reads flags or a form into JSON.
     fields: []const @import("../model/sandboxed_plugin.zig").Field = &.{},
+    /// Its `--help`, as the build rendered it.
+    help: []const u8 = "",
     /// Which plugin, and which of its entries, runs it: the host's own numbering.
     sandboxed_plugin: u32,
     entry: u32,
