@@ -28,7 +28,12 @@ pub const Record = struct {
     updated_by: ?[]const u8,
     created_at: i64,
     updated_at: i64,
+    /// The app it belongs to (`app.zon`'s `.name`); null for the project's own.
+    app: ?[]const u8 = null,
 };
+
+/// Which app's documents a list keeps: one app's, or the project's own (no app).
+pub const App = union(enum) { none, name: []const u8 };
 
 pub const Order = enum { updated_desc, created_desc, title_asc };
 
@@ -61,6 +66,7 @@ pub const Query = struct {
     created_before_ms: ?i64 = null,
     updated_after_ms: ?i64 = null,
     updated_before_ms: ?i64 = null,
+    app: ?App = null,
     order: Order = .updated_desc,
     limit: u32 = 50,
     offset: u32 = 0,
@@ -89,7 +95,8 @@ pub fn List(comptime tables: tables_module.Tables) type {
         /// The columns of a Record, in order, from the documents table `r` joined with
         /// its definition `t` and its live title `title` and slug `slug` values.
         const record_columns = "r.id, r.type_id, t.handle, r.status, r.changed, r.version, " ++
-            "title.value, slug.value, r.created_by, r.updated_by, r.created_at, r.updated_at";
+            "title.value, slug.value, r.created_by, r.updated_by, r.created_at, r.updated_at, " ++
+            "r.app";
         const record_joins = "JOIN " ++ tables.definitions ++ " t ON t.id = r.type_id " ++
             "LEFT JOIN " ++ values ++ " title ON title.record = r.id AND title.slot = 'live' " ++
             "AND title.ordinal = 0 " ++
@@ -228,6 +235,17 @@ pub fn List(comptime tables: tables_module.Tables) type {
                     bind_index += 1;
                 }
             }
+
+            if (query.app) |app| {
+                switch (app) {
+                    .none => writer.writeAll(" AND r.app IS NULL") catch {
+                        return error.OutOfMemory;
+                    },
+                    .name => writer.print(" AND r.app = ?{d}", .{bind_index}) catch {
+                        return error.OutOfMemory;
+                    },
+                }
+            }
         }
     };
 }
@@ -318,6 +336,12 @@ fn bind_query(select: *db.Statement, query: Query) Error!void {
         if (bound.value) |value| {
             try select.bind_int(bind_index, value);
             bind_index += 1;
+        }
+    }
+
+    if (query.app) |app| {
+        if (app == .name) {
+            try select.bind_text(bind_index, app.name);
         }
     }
 }

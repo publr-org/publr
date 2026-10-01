@@ -160,7 +160,7 @@ pub const Request = struct {
     }
 
     /// Runs an operation as the visitor, through the same pipeline and policies as the API:
-    /// middleware can do nothing its visitor could not.
+    /// middleware can do nothing its visitor could not. What it creates belongs to the app.
     pub fn call(
         request: *const Request,
         comptime Operation: type,
@@ -169,6 +169,9 @@ pub const Request = struct {
         std.debug.assert(Operation.name.len > 0);
 
         var ctx = identity_module.context(request.project, request.arena, request.identity.caller);
+
+        ctx.app = request.app.spec.name;
+        ctx.app_plugins = request.app.spec.plugins;
 
         return registry.SDK.dispatch(&ctx, Operation, in);
     }

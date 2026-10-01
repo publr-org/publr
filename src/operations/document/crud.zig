@@ -55,12 +55,15 @@ pub fn Of(comptime Domain: type) type {
             definition: []const u8,
             text: []const u8,
             wanted_status: ?[]const u8,
+            wanted_app: ?[]const u8,
         ) Error!Created {
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
             if (definition.len > 64 << 10) {
                 return error.Invalid;
             }
+
+            const app = try app_of(ctx, wanted_app);
 
             const row = try definitions.find(ctx, definition) orelse return error.NotFound;
 
@@ -86,6 +89,7 @@ pub fn Of(comptime Domain: type) type {
                 .type_id = row.id,
                 .created_by = ctx.caller.user_id(),
                 .status = status,
+                .app = app,
             }, ctx.now_ms);
 
             const known = registry.Kinds.all;
@@ -98,6 +102,26 @@ pub fn Of(comptime Domain: type) type {
             }
 
             return .{ .id = id, .status = status, .slug = slug, .version = 1 };
+        }
+
+        /// The app a new document belongs to: the one asked for (empty: the project's own),
+        /// else the app the request came through.
+        fn app_of(ctx: *const Ctx, wanted: ?[]const u8) Error!?[]const u8 {
+            std.debug.assert(ctx.app.len == 0 or model.app.valid_name(ctx.app));
+
+            const app = wanted orelse ctx.app;
+
+            if (app.len == 0) {
+                return null;
+            }
+
+            if (!model.app.valid_name(app)) {
+                return error.Invalid;
+            }
+
+            std.debug.assert(app.len <= model.app.name_len_max);
+
+            return app;
         }
 
         pub fn get(
@@ -324,6 +348,10 @@ pub fn Of(comptime Domain: type) type {
                 .created_before_ms = constraints.created_before_ms,
                 .updated_after_ms = constraints.updated_after_ms,
                 .updated_before_ms = constraints.updated_before_ms,
+                .app = if (constraints.app) |app| switch (app) {
+                    .none => .none,
+                    .name => |name| .{ .name = name },
+                } else null,
                 .order = in.order,
                 .limit = in.limit,
                 .offset = in.offset,

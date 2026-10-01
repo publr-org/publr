@@ -76,10 +76,12 @@ CREATE TABLE IF NOT EXISTS records (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     created_by TEXT,
-    updated_by TEXT
+    updated_by TEXT,
+    app        TEXT
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS records_list ON records(type_id, status, updated_at);
+CREATE INDEX IF NOT EXISTS records_app ON records(app, updated_at);
 CREATE INDEX IF NOT EXISTS records_changed ON records(type_id, updated_at) WHERE changed = 1;
 
 CREATE TABLE IF NOT EXISTS record_values (
@@ -133,7 +135,8 @@ CREATE TABLE IF NOT EXISTS terms (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     created_by TEXT,
-    updated_by TEXT
+    updated_by TEXT,
+    app        TEXT
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS terms_list ON terms(type_id, status, updated_at);

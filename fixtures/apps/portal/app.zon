@@ -1,6 +1,8 @@
 // An app with no pages on a subdomain: its middleware answers everything, and only an
 // account holding the editor role is signed in to it.
 .{
+    .name = "portal",
+    .label = "Portal",
     .mount = .{ .subdomain = "portal" },
     .roles = .{"editor"},
 }

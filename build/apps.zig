@@ -4,7 +4,6 @@ const embed = @import("apps/embed.zig");
 
 pub const dir_default = "apps";
 pub const apps_max_default: u32 = 32;
-pub const name_len_max: u32 = 32;
 
 /// Every app under `dir`, compiled in as the `apps` module the library imports: its
 /// templates as text, its generated client code, its interactive components lowered to Zig,
@@ -25,8 +24,8 @@ pub fn add(
 
     append(builder, &source, "pub const all = .{\n");
 
-    for (names) |name| {
-        append(builder, &source, builder.fmt("    @import(\"app_{s}\"),\n", .{name}));
+    for (0..names.len) |index| {
+        append(builder, &source, builder.fmt("    @import(\"app_{d}\"),\n", .{index}));
     }
 
     append(builder, &source, "};\n");
@@ -41,10 +40,10 @@ pub fn add(
         .optimize = library.optimize,
     });
 
-    for (names) |name| {
+    for (names, 0..) |name, index| {
         const app = app_module(builder, library, runtime, pjsx_gen, dir, name);
 
-        module.addImport(builder.fmt("app_{s}", .{name}), app);
+        module.addImport(builder.fmt("app_{d}", .{index}), app);
     }
 
     const no_stores = builder.addWriteFiles().add("stores.js", "");
@@ -56,7 +55,7 @@ pub fn add(
 const root_format =
     \\const publr = @import("publr");
     \\
-    \\pub const name = "{s}";
+    \\pub const folder = "{f}";
     \\pub const config: publr.model.app.Config = @import("app_zon");
     \\pub const templates = @import("app_templates").files;
     \\pub const assets = @import("app_assets").files;
@@ -78,7 +77,7 @@ fn app_module(
     name: []const u8,
 ) *std.Build.Module {
     std.debug.assert(name.len > 0);
-    std.debug.assert(name.len <= name_len_max);
+    std.debug.assert(name[0] != '.');
 
     const app_dir = builder.pathJoin(&.{ dir, name });
     const placeholders = builder.addWriteFiles();
@@ -87,7 +86,9 @@ fn app_module(
     _ = placeholders.add("app.txt", app_dir);
     const interactive = embed.interactive(builder, runtime, pjsx_gen, app_dir, placeholders);
     const style = embed.optional_file(builder, placeholders, app_dir, "public/style.css", "");
-    const root = builder.addWriteFiles().add("app.zig", builder.fmt(root_format, .{name}));
+    const root = builder.addWriteFiles().add("app.zig", builder.fmt(root_format, .{
+        std.zig.fmtString(name),
+    }));
     const module = builder.createModule(.{
         .root_source_file = root,
         .target = library.resolved_target,
@@ -145,8 +146,8 @@ fn middleware(
     return module;
 }
 
-/// The apps under `dir`, sorted: every folder (or link to one) with a valid name. Each
-/// must carry its `app.zon`, which says where it is mounted.
+/// The apps under `dir`, sorted: every folder (or link to one) not starting with a dot.
+/// Each must carry its `app.zon`, which names the app and says where it is mounted.
 fn discover(builder: *std.Build, dir: []const u8, apps_max: u32) []const []const u8 {
     std.debug.assert(dir.len > 0);
     std.debug.assert(apps_max > 0);
@@ -171,13 +172,6 @@ fn discover(builder: *std.Build, dir: []const u8, apps_max: u32) []const []const
             continue;
         }
 
-        if (!valid_name(entry.name)) {
-            diagnostic.fail("{s}/{s}: an app's folder is [a-z][a-z0-9_]*, 1 to 32 characters", .{
-                dir,
-                entry.name,
-            });
-        }
-
         root.access(io, builder.fmt("{s}/app.zon", .{entry.name}), .{}) catch
             diagnostic.fail("{s}/{s}: no app.zon; it says where the app is mounted", .{
                 dir,
@@ -194,24 +188,6 @@ fn discover(builder: *std.Build, dir: []const u8, apps_max: u32) []const []const
     std.mem.sort([]const u8, found.items, {}, less_than);
 
     return found.items;
-}
-
-fn valid_name(name: []const u8) bool {
-    std.debug.assert(name_len_max > 0);
-
-    if (name.len == 0 or name.len > name_len_max or name[0] < 'a' or name[0] > 'z') {
-        return false;
-    }
-
-    for (name) |char| {
-        const ok = (char >= 'a' and char <= 'z') or (char >= '0' and char <= '9') or char == '_';
-
-        if (!ok) {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 /// The built binary compiles its own apps (`publr check-apps`), so a template the engine

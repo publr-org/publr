@@ -187,8 +187,9 @@ const content_type_operations = @import("../operations/content_type.zig");
 const content_type = @import("../model/content_type.zig");
 
 /// A database holding the fixture apps' public `post` type, every fixture app loaded over
-/// it, and an offline server with every route mounted. `app` is the one at the root.
-const Harness = struct {
+/// it, and an offline server with every route mounted. `app` is the one at the root. Other
+/// adapters' tests that need the fixture apps use it too.
+pub const Harness = struct {
     inner: sdk.testing.Harness,
     index: deps.Index,
     apps: [spec.all.len]App,
@@ -198,7 +199,7 @@ const Harness = struct {
     /// Where the apps build unless a test names a folder: never the repository's `output/`.
     scratch: std.testing.TmpDir,
 
-    fn init(harness: *Harness, given: Options) !void {
+    pub fn init(harness: *Harness, given: Options) !void {
         std.debug.assert(given.output_dir.len > 0);
         std.debug.assert(given.base_url.len > 0);
 
@@ -278,7 +279,7 @@ const Harness = struct {
         }
     }
 
-    fn deinit(harness: *Harness) void {
+    pub fn deinit(harness: *Harness) void {
         std.debug.assert(harness.flow.project.apps.len == spec.all.len);
 
         harness.unload();

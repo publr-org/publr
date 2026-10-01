@@ -146,7 +146,14 @@ pub fn Of(comptime Domain: type) type {
             for (try Domain.definitions.list_briefs(ctx.db, ctx.arena)) |brief| {
                 const listed = brief.kind == .record;
 
-                if (listed and definitions.visible_type(granted, brief.handle, brief.public)) {
+                const visible = definitions.visible_type(
+                    granted,
+                    brief.handle,
+                    brief.public,
+                    brief.owner,
+                );
+
+                if (listed and visible) {
                     briefs.append(ctx.arena, brief) catch return error.OutOfMemory;
                 }
             }

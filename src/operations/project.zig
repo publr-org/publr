@@ -6,6 +6,7 @@ const user = @import("user.zig");
 const store = @import("../store.zig");
 pub const changes = @import("project/changes.zig");
 pub const impact = @import("project/impact.zig");
+pub const move_app = @import("project/move_app.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -114,7 +115,7 @@ pub const Status = struct {
     }
 };
 
-pub const operations = [_]type{ Init, Status, impact.Impact };
+pub const operations = [_]type{ Init, Status, impact.Impact, move_app.MoveApp };
 pub const middleware = [_]type{changes.RecordChanged};
 
 const TestSDK = sdk.SDK(.{ .operations = &operations });

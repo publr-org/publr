@@ -38,7 +38,7 @@ the next free one (at most 20 tries) and prints the port it took. With
 | `--dev` | Render every page on request, cache nothing, tint every island. |
 | `--out <dir>` | The built apps to serve when they exist, one folder each (default `output`). |
 | `--url <base>` | The project's public address: the apps' sitemaps, and the domain subdomain apps hang from (default `http://127.0.0.1:8080`). |
-| `--apps <dir>` | Where each app's public files are read from, `<dir>/<app>/public` (default `apps`). |
+| `--apps <dir>` | Where each app's public files are read from, `<dir>/<folder>/public` (default `apps`). |
 
 ## Building
 
@@ -148,7 +148,11 @@ default are required.
 | boolean | `true` / `false` |
 | choice (enum) | one of the listed names (help shows them, e.g. `admin\|editor`) |
 | optional | the value, or `null` |
-| list | comma-separated: `a,b,c` |
+| list of text or of names | comma-separated: `a,b,c` |
+| any other list, a structure | JSON, in quotes: `'[{"x":1}]'` |
+
+An installed plugin's commands read their flags the same way, answer `--help` the same
+way and refuse a wrong value with the same words as a built-in one's.
 
 ## Commands
 

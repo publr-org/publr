@@ -19,6 +19,12 @@ pub const Ctx = struct {
     /// Reads made to render a page for a visitor: live records only and never a write,
     /// whoever the caller is, so a signed-in visitor never sees a draft on the site.
     delivery: bool = false,
+    /// The app a request came through (`app.zon`'s `.name`), empty for the admin, the CLI and
+    /// the API: a document created on the way belongs to it.
+    app: []const u8 = "",
+    /// The plugins whose content types the caller may reach here: an app's `.plugins`, or
+    /// the admin narrowed to that app. Null: every plugin's.
+    app_plugins: ?[]const []const u8 = null,
     /// The operation whose run made this call, empty for a call an adapter made: a policy
     /// tells a plugin operation's own writes from the same caller writing directly.
     within: []const u8 = "",
@@ -33,6 +39,8 @@ pub const Ctx = struct {
     notify: ?Notify = null,
     /// The installed plugins installed in the project: their operations and hooks.
     sandboxed_plugins: ?*const @import("sandboxed_plugins.zig").SandboxedPlugins = null,
+    /// Every compiled-in plugin's `State` (`publr.plugin_states.of`), where a server made them.
+    plugin_states: ?*anyopaque = null,
     /// How deep calls nest through installed plugins, bounded by `plugins.depth_max`.
     plugin_depth: u32 = 0,
 

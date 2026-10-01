@@ -75,6 +75,9 @@ pub const Grant = struct {
     decision: Decision = .allow,
     read_only: bool = false,
     types: ?[]const []const u8 = null,
+    /// The plugins whose content types are in reach: a type a plugin outside this list owns
+    /// is not, one no plugin owns always is. Null: every plugin's.
+    plugins: ?[]const []const u8 = null,
     statuses: ?[]const []const u8 = null,
     field_mask: []const []const u8 = &.{},
     transitions: ?[]const Transition = null,
@@ -90,6 +93,19 @@ pub const Grant = struct {
     pub fn allows_type(grant: *const Grant, type_id: []const u8) bool {
         const list = grant.types orelse return true;
         return contains(list, type_id);
+    }
+
+    /// Whether a type owned by `owner` (empty: no plugin, the project's own) is in reach.
+    pub fn allows_owner(grant: *const Grant, owner: []const u8) bool {
+        std.debug.assert(owner.len <= 64);
+
+        const list = grant.plugins orelse return true;
+
+        if (owner.len == 0) {
+            return true;
+        }
+
+        return contains(list, owner);
     }
 
     pub fn allows_status(grant: *const Grant, status: []const u8) bool {
@@ -129,6 +145,7 @@ pub const Grant = struct {
         return .{
             .read_only = left.read_only or right.read_only,
             .types = try intersect_lists(left.types, right.types, arena),
+            .plugins = try intersect_lists(left.plugins, right.plugins, arena),
             .statuses = try intersect_lists(left.statuses, right.statuses, arena),
             .field_mask = try union_lists(left.field_mask, right.field_mask, arena),
             .transitions = if (left.transitions != null) left.transitions else right.transitions,
@@ -232,6 +249,24 @@ test "intersect: deny wins, lists intersect, masks union, flags or" {
 
     const denied = try Grant.intersect(left, Grant.deny, arena);
     try std.testing.expect(!denied.allows());
+}
+
+test "plugins: the project's own types always, a plugin's only when listed" {
+    var buffer: [1024]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&buffer);
+    const arena = fixed.allocator();
+    const every: Grant = .{};
+    const site: Grant = .{ .plugins = &.{ "newsletter", "seo" } };
+
+    try std.testing.expect(every.allows_owner("shop"));
+    try std.testing.expect(site.allows_owner(""));
+    try std.testing.expect(site.allows_owner("seo"));
+    try std.testing.expect(!site.allows_owner("shop"));
+
+    const narrowed = try Grant.intersect(site, .{ .plugins = &.{"seo"} }, arena);
+    try std.testing.expect(narrowed.allows_owner("seo"));
+    try std.testing.expect(!narrowed.allows_owner("newsletter"));
+    try std.testing.expect((try Grant.intersect(every, site, arena)).allows_owner("newsletter"));
 }
 
 test "record filter: own_only and resolver chain" {

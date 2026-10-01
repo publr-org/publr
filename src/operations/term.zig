@@ -181,7 +181,7 @@ pub const Create = struct {
             return error.Invalid;
         }
 
-        const created = try crud.create(ctx, granted, in.taxonomy, in.document, in.status);
+        const created = try crud.create(ctx, granted, in.taxonomy, in.document, in.status, null);
 
         if (in.parent) |parent| {
             try place(ctx, created.id, if (parent.len == 0) null else parent);

@@ -40,7 +40,7 @@ when a file under the output folder was removed by hand.
 | `--full` | Render and write every page again, whatever the marker and the queue say. |
 | `--out <dir>` | Where to write, one folder per app (default `output`, the folder `serve` reads). |
 | `--url <base>` | The project's public address, for the sitemaps (default `http://127.0.0.1:8080`). An app's own is derived from it and its mount. Part of the marker: a build for another address is a full build. |
-| `--apps <dir>` | Where each app's public files are read from, `<dir>/<app>/public` (default `apps`). |
+| `--apps <dir>` | Where each app's public files are read from, `<dir>/<folder>/public` (default `apps`). |
 
 ```
 $ publr build

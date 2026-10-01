@@ -1,4 +1,6 @@
 export type RecordAsideProps = {
+  /** Which app the record belongs to (RecordApp), when the project has apps. */
+  app?: JSX.Element;
   /** The record's terms (RecordTerms), when its type has `terms` fields. */
   terms?: JSX.Element;
   /** The dependency dialog (RecordImpact), under `serve --dev` only. */
@@ -6,9 +8,10 @@ export type RecordAsideProps = {
 };
 
 /** What a record adds to the editor's aside under the actions. */
-export function RecordAside({ terms, impact }: RecordAsideProps) {
+export function RecordAside({ app, terms, impact }: RecordAsideProps) {
   return (
     <div class="contents" data-part="record-aside">
+      {app}
       {terms}
       {impact}
     </div>

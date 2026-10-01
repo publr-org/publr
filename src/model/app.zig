@@ -7,12 +7,14 @@ pub const url = address.url;
 pub const domain_of = address.domain_of;
 
 pub const name_len_max: u32 = 32;
+pub const label_len_max: u32 = 64;
 /// A DNS label.
 pub const subdomain_len_max: u32 = 63;
 pub const path_len_max: u32 = 128;
 pub const segments_max: u32 = 8;
 pub const tokens_max: u32 = 1024;
 pub const roles_max: u32 = 16;
+pub const plugins_max: u32 = 64;
 pub const host_len_max = address.host_len_max;
 
 /// Where an app answers, on the project's one domain.
@@ -28,16 +30,23 @@ pub const Token = struct { name: []const u8, value: []const u8 };
 
 /// What `app.zon` declares.
 pub const Config = struct {
+    /// The app's id: what records, built pages and the CLI know it by, whatever its folder.
+    name: []const u8,
+    /// What the admin shows; the name when empty.
+    label: []const u8 = "",
     mount: Mount,
     tokens: []const Token = &.{},
     /// The roles a signed-in visitor needs to be signed in to this app; empty for any role.
     roles: []const []const u8 = &.{},
+    /// The plugins the app uses: it never reaches a content type another plugin owns, and
+    /// the admin narrowed to it shows only theirs beside the project's own. Null: every one.
+    plugins: ?[]const []const u8 = null,
 };
 
 /// The paths that are core's on every host: the admin, the API, the sign-on and the toolbar.
 pub const reserved_segments = [_][]const u8{ "admin", "api", "auth", "_publr" };
 
-/// An app's folder name: `[a-z][a-z0-9_]*`, 1 to 32 characters.
+/// An app's name: `[a-z][a-z0-9_]*`, 1 to 32 characters.
 pub fn valid_name(name: []const u8) bool {
     std.debug.assert(name_len_max > 0);
 
@@ -61,6 +70,59 @@ pub fn valid_name(name: []const u8) bool {
     std.debug.assert(name.len <= name_len_max);
 
     return true;
+}
+
+/// What is wrong with an app's `.plugins`, or null: at most 64, each a plugin's name
+/// (`[a-z][a-z0-9_]*`), none twice. A plugin not there yet is no error: it may be installed.
+pub fn plugins_problem(plugins: ?[]const []const u8) ?[]const u8 {
+    std.debug.assert(plugins_max > 0);
+
+    const names = plugins orelse return null;
+
+    if (names.len > plugins_max) {
+        return "`.plugins` names at most 64 plugins";
+    }
+
+    for (names, 0..) |name, index| {
+        if (!valid_name(name)) {
+            return "`.plugins` names plugins, each [a-z][a-z0-9_]*";
+        }
+
+        for (names[index + 1 ..]) |other| {
+            if (std.mem.eql(u8, name, other)) {
+                return "`.plugins` names a plugin twice";
+            }
+        }
+    }
+
+    std.debug.assert(names.len <= plugins_max);
+
+    return null;
+}
+
+/// A label is shown as text: any characters but control ones, at most 64 bytes.
+pub fn valid_label(label: []const u8) bool {
+    std.debug.assert(label_len_max > 0);
+
+    if (label.len > label_len_max) {
+        return false;
+    }
+
+    for (label) |char| {
+        if (char < 0x20 or char == 0x7f) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// What the admin calls an app: its label, else its name.
+pub fn label_of(name: []const u8, label: []const u8) []const u8 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(label.len <= label_len_max);
+
+    return if (label.len > 0) label else name;
 }
 
 pub fn valid_mount(mount: Mount) bool {
@@ -187,6 +249,23 @@ test "names are lower-case words" {
     for ([_][]const u8{ "", "Www", "2www", "w-w", "w.w", "a" ** 33 }) |bad| {
         try std.testing.expect(!valid_name(bad));
     }
+}
+
+test "labels are one line of text; an app without one goes by its name" {
+    try std.testing.expect(valid_label(""));
+    try std.testing.expect(valid_label("Website – café"));
+    try std.testing.expect(!valid_label("two\nlines"));
+    try std.testing.expect(!valid_label("a" ** 65));
+    try std.testing.expectEqualStrings("www", label_of("www", ""));
+    try std.testing.expectEqualStrings("Website", label_of("www", "Website"));
+}
+
+test "an app's plugins: names, none twice; null for every plugin" {
+    try std.testing.expect(plugins_problem(null) == null);
+    try std.testing.expect(plugins_problem(&.{}) == null);
+    try std.testing.expect(plugins_problem(&.{ "shop", "newsletter" }) == null);
+    try std.testing.expect(plugins_problem(&.{"Shop"}) != null);
+    try std.testing.expect(plugins_problem(&.{ "shop", "shop" }) != null);
 }
 
 test "mounts: the root, plain paths and plain subdomains; never core's own paths" {

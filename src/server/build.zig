@@ -132,7 +132,7 @@ const help =
     \\  --out <dir>   Where the apps are written, one folder each (default: output)
     \\  --url <base>  The project's public address, for the sitemaps
     \\                (default: http://127.0.0.1:8080)
-    \\  --apps <dir> Where each app's public files are read from, <dir>/<app>/public
+    \\  --apps <dir> Where each app's public files are read from, <dir>/<folder>/public
     \\                (default: apps)
     \\  -h, --help    Print this help
     \\

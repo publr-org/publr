@@ -2,6 +2,8 @@
 // Tailwind-v4 defaults at build time: every `color-*` token is a utility family
 // (`bg-canvas`, `text-ink`, `border-line`).
 .{
+    .name = "www",
+    .label = "Website",
     .mount = .{ .path = "/" },
     .tokens = .{
         .{ .name = "font-sans", .value = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" },

@@ -25,7 +25,7 @@ pub const Options = struct {
     output_dir: []const u8 = output_dir_default,
     /// The project's public address; an app's own is derived from it and its mount.
     base_url: []const u8 = base_url_default,
-    /// Where each app's `public/` files are read from, `<apps_dir>/<app>/public`.
+    /// Where each app's `public/` files are read from, `<apps_dir>/<folder>/public`.
     apps_dir: []const u8 = apps_dir_default,
     /// Nothing cached anywhere, every placed island tinted, nothing served from a build.
     dev: bool = false,
@@ -259,14 +259,14 @@ pub const App = struct {
         return std.fmt.bufPrint(buffer, "{s}/{s}", .{ app.options.output_dir, app.spec.name });
     }
 
-    /// `<apps_dir>/<app>/public`, where the app's public files are read from.
+    /// `<apps_dir>/<folder>/public`, where the app's public files are read from.
     pub fn public_dir(app: *const App, arena: std.mem.Allocator) ![]const u8 {
         std.debug.assert(app.options.apps_dir.len > 0);
-        std.debug.assert(app.spec.name.len > 0);
+        std.debug.assert(app.spec.folder.len > 0);
 
         return std.fmt.allocPrint(arena, "{s}/{s}/public", .{
             app.options.apps_dir,
-            app.spec.name,
+            app.spec.folder,
         });
     }
 

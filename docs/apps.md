@@ -20,7 +20,7 @@ from a preset (a website, a SaaS, a multi-tenant product) or from scratch.
 
 ```
 apps/www/
-  app.zon                  where the app is mounted, its design tokens, who may sign in
+  app.zon                  its name, where it is mounted, its design tokens, who may sign in
   content/                 the routes: one page per file
     index.publr            /
     posts/index.publr      /posts
@@ -53,10 +53,13 @@ answer a non-cacheable 503.
 
 ## Where an app answers
 
-`app.zon` says where the app is mounted, on the project's one domain:
+`app.zon` names the app and says where it is mounted, on the project's one domain:
 
 ```zig
 .{
+    .name = "www",                      // the app's id
+    .label = "Website",                 // what the admin shows; the name when left out
+    .plugins = .{ "newsletter" },       // whose content types it reaches; every plugin's when left out
     .mount = .{ .path = "/" },          // the root of the domain
     // .mount = .{ .path = "/newsletter" },   everything below /newsletter
     // .mount = .{ .subdomain = "app" },      app.example.com
@@ -65,6 +68,19 @@ answer a non-cacheable 503.
     },
 }
 ```
+
+`.plugins` names the plugins the app uses. Every read and call the app makes (its
+templates, islands, frontmatter calls and middleware) reaches the project's own content
+types and those plugins' types, never a type another plugin owns: a site that names
+`.{ "newsletter" }` cannot list the shop's orders, whoever is signed in. Left out, the app
+reaches every plugin's types. A name is `[a-z][a-z0-9_]*`, at most 64 of them; a plugin not
+installed yet is no error.
+
+`.name` is the app's id: what its records, its built pages (`www:/posts/hello`), its
+build folder (`output/www/`) and the CLI know it by. The folder the app sits in is only
+where it is read from, and may be renamed at will; two apps of one name fail the load.
+Renaming the app itself is changing `.name`, and `publr project move_app --from www --to
+site` hands its records to the new name.
 
 A request goes to the app mounted on its subdomain, else to the path mount with the
 longest prefix; with nothing there, `/` opens the admin and anything else is not found.
@@ -105,6 +121,16 @@ middleware (`request.user()`).
 ```
 
 A role named there that neither core nor a built-in plugin declares fails the build.
+
+## Which records are an app's
+
+Every record belongs to one app or to none: the project's own. A record made through
+an app (its middleware's `call`, a page's `Publr.request.call`) belongs to that app;
+one made anywhere else belongs to the app it names (`record create --app`), else to
+the project. `record set_app` changes it. It decides where the admin shows the record,
+never who may read it: every app still reads every record its access allows, so a site
+can list what the newsletter published. `record list` narrows to one app with
+`app:is:<name>` and to the project's own with `app:none`.
 
 ## A template
 
@@ -416,7 +442,7 @@ generation; changing an image or a public script requires no Zig compilation and
 not invalidate generated pages. `public/style.css` is the exception: it is an input to
 the app's compiled stylesheet. Without a build everything renders on request, which is
 what development wants. A running server reads an app's public files from
-`apps/<app>/public` beside it (`--apps <dir>` names another folder).
+`apps/<folder>/public` beside it (`--apps <dir>` names another folder).
 
 Behind a CDN that is purged whenever the project changes, `--edge-max-age <s>` lets it keep
 built pages and static islands far longer than browsers do: they also carry

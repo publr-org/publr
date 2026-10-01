@@ -81,10 +81,17 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(granted.allows());
             std.debug.assert(def.handle.len > 0);
 
-            return visible_type(granted, def.handle, def.public);
+            return visible_type(granted, def.handle, def.public, def.owner);
         }
 
-        pub fn visible_type(granted: *const Grant, handle: []const u8, public: bool) bool {
+        /// A type in the grant's reach: public when only public ones are, one of its types,
+        /// and no plugin's outside its plugins.
+        pub fn visible_type(
+            granted: *const Grant,
+            handle: []const u8,
+            public: bool,
+            owner: []const u8,
+        ) bool {
             std.debug.assert(granted.allows());
             std.debug.assert(handle.len > 0);
 
@@ -92,7 +99,7 @@ pub fn Of(comptime Domain: type) type {
                 return false;
             }
 
-            return granted.allows_type(handle);
+            return granted.allows_type(handle) and granted.allows_owner(owner);
         }
 
         /// A loaded definition as the list sees it.
@@ -206,7 +213,7 @@ pub fn Of(comptime Domain: type) type {
             var summaries: std.ArrayList(Summary) = .empty;
 
             for (briefs) |brief| {
-                if (!visible_type(granted, brief.handle, brief.public)) {
+                if (!visible_type(granted, brief.handle, brief.public, brief.owner)) {
                     continue;
                 }
 

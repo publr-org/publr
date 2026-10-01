@@ -64,3 +64,14 @@ After a build the artifacts are what the index holds:
     { "name": "www:/posts/hello", "keys": ["record:a1b2c3d4e5f60718293a4b5c", "type:post", "records"] }
   ]
 ```
+
+## `move_app`
+
+Every record of one app handed to another, after the app's `.name` changed in its
+`app.zon`; with no `--to`, they become the project's own. Every record, whatever its
+type or status. Administrators only.
+
+```
+$ publr --as-admin project move_app --from www --to site
+{ "moved": 42 }
+```

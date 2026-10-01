@@ -21,12 +21,15 @@ pub const Order = documents.Order;
 pub const Filter = documents.Filter;
 pub const Author = documents.Author;
 pub const Query = documents.Query;
+pub const App = documents.App;
 pub const new_id = documents.new_id;
 pub const insert = Store.insert;
 pub const get = Store.get;
 pub const save = Store.save;
 pub const set_status = Store.set_status;
 pub const delete = Store.delete;
+pub const set_app = Store.set_app;
+pub const move_app = Store.move_app;
 
 /// Every table that names the record, the assignments included.
 pub fn rename(connection: *db.Db, from: []const u8, to: []const u8) Error!void {
@@ -229,4 +232,44 @@ test "list: across types, by author and excluded author, within time bounds" {
         .filter = .{ .field = "views", .int = 3 },
     });
     try std.testing.expectEqual(@as(usize, 1), filtered_by_field.len);
+}
+
+test "an app's records: set, cleared, listed by app or as the project's own, moved on" {
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const connection = &fixture.connection;
+    const type_id = try seed_type(&fixture, arena);
+    const site = try seed_record(&fixture, arena, type_id, "Site", "draft", 1);
+    const shop = try seed_record(&fixture, arena, type_id, "Shop", "draft", 2);
+    const own = try seed_record(&fixture, arena, type_id, "Own", "draft", 3);
+
+    try std.testing.expect((try get(connection, arena, own)).?.app == null);
+    try set_app(connection, site, "www");
+    try set_app(connection, shop, "saas");
+    try std.testing.expectError(error.NotFound, set_app(connection, "missing", "www"));
+    try std.testing.expectEqualStrings("www", (try get(connection, arena, site)).?.app.?);
+    try std.testing.expectEqual(1, (try get(connection, arena, site)).?.version);
+
+    const in_www: documents.App = .{ .name = "www" };
+    const www = try list(connection, arena, .{ .type_ids = &.{type_id}, .app = in_www });
+    try std.testing.expectEqual(1, www.len);
+    try std.testing.expectEqualStrings("Site", www[0].title);
+    const project = try list(connection, arena, .{ .type_ids = &.{type_id}, .app = .none });
+    try std.testing.expectEqual(1, project.len);
+    try std.testing.expectEqualStrings("Own", project[0].title);
+    try std.testing.expectEqual(3, (try list(connection, arena, .{ .type_ids = &.{type_id} })).len);
+
+    try std.testing.expectEqual(1, try move_app(connection, "www", "site"));
+    try std.testing.expectEqual(0, try move_app(connection, "www", "site"));
+    try std.testing.expectEqualStrings("site", (try get(connection, arena, site)).?.app.?);
+    try set_app(connection, shop, null);
+    try std.testing.expectEqual(2, (try list(connection, arena, .{
+        .type_ids = &.{type_id},
+        .app = .none,
+    })).len);
 }

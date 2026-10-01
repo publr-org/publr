@@ -207,8 +207,11 @@ const test_files = [_]File{
 
 const test_spec: Spec = .{
     .name = "test",
+    .label = "test",
+    .folder = "test",
     .mount = .{ .path = "/" },
     .roles = &.{},
+    .plugins = null,
     .templates = &.{.{ .path = "content/index.publr", .data = "<p>hi</p>" }},
     .assets = &test_files,
     .tokens = .{ .tokens = &.{} },

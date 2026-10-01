@@ -1,0 +1,40 @@
+import { Button } from "@publr/ui/Button.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { EditorAsideSection } from "../EditorAsideSection.ptsx";
+
+type Choice = {
+  /** Empty for the project's own, else an app's name. */
+  value: string;
+  label: string;
+  current: boolean;
+};
+
+export type RecordAppProps = {
+  /** Where the form goes: `/admin/content/<id>/app`. */
+  action: string;
+  csrf: string;
+  /** The project's own first, then each app. */
+  choices: Choice[];
+};
+
+/** Which app the record belongs to: where the admin shows it, never who may read it. Saved
+ * on its own, as no new version of the record. */
+export function RecordApp({ action, csrf, choices }: RecordAppProps) {
+  return (
+    <EditorAsideSection title="App">
+      <form method="post" action={action} class="flex flex-col gap-3" data-part="record-app">
+        <input type="hidden" name="csrf" value={csrf} />
+        <NativeSelect name="app" label="App">
+          {choices.map((choice) => (
+            <option key={choice.value} value={choice.value} selected={choice.current}>
+              {choice.label}
+            </option>
+          ))}
+        </NativeSelect>
+        <Button type="submit" hierarchy="secondary" size="sm">
+          Move
+        </Button>
+      </form>
+    </EditorAsideSection>
+  );
+}

@@ -1,0 +1,58 @@
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { StatusButton } from "@publr/ui/StatusButton.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+type Choice = {
+  /** What the form sends: empty for everything, `_project` for the project's own, else an
+   * app's name. */
+  value: string;
+  label: string;
+  current: boolean;
+};
+
+export type AppSwitcherProps = {
+  /** What the admin shows now: "All apps", "Project only" or an app's label. */
+  current: string;
+  /** Everything, the project's own, then each app. */
+  choices: Choice[];
+  csrf: string;
+  /** The page to come back to, narrowed. */
+  back: string;
+};
+
+/** Which app the admin shows, top right: every record, the project's own, or one app's.
+ * It only narrows what is listed; picking one reloads the page. */
+export function AppSwitcher({ current, choices, csrf, back }: AppSwitcherProps) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <StatusButton tone="neutral" icon_name="stack" label={`Showing: ${current}. Switch app`}>
+          {current}
+        </StatusButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="right" classes="min-w-56">
+        {choices.map((choice) => (
+          <div class="contents" key={choice.value}>
+            <form method="post" action="/admin/app" data-part="app-choice">
+              <input type="hidden" name="csrf" value={csrf} />
+              <input type="hidden" name="app" value={choice.value} />
+              <input type="hidden" name="back" value={back} />
+              <DropdownMenuItem type="submit">
+                <Text as="span" variant="body-md" classes="flex-1 truncate">
+                  {choice.label}
+                </Text>
+                {choice.current && <Icon name="check" size="sm" />}
+              </DropdownMenuItem>
+            </form>
+            {choice.value === "_project" && <DropdownMenuSeparator />}
+          </div>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

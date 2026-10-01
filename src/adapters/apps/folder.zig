@@ -1,7 +1,7 @@
-//! A project's apps read from its folder (`<apps_dir>/<name>/app.zon` and the templates
+//! A project's apps read from its folder (`<apps_dir>/<folder>/app.zon` and the templates
 //! beside it) when `serve` starts and whenever it is told to load them again, so changing an
 //! app never needs a rebuild. What still needs compiling comes from the build's app of the
-//! same name: its interactive components, its middleware and the client code they bring. An
+//! same `.name`: its interactive components, its middleware and the client code they bring. An
 //! app with none compiled in serves the common client code and may have neither.
 const std = @import("std");
 const jit = @import("publr_jit");
@@ -91,14 +91,14 @@ pub fn read(
     errdefer loaded.arena.deinit();
 
     const arena = loaded.arena.allocator();
-    const names = try app_names(arena, io, dir) orelse {
+    const folders = try app_folders(arena, io, dir) orelse {
         loaded.arena.deinit();
         return null;
     };
-    const specs = try arena.alloc(Spec, names.len);
+    const specs = try arena.alloc(Spec, folders.len);
 
-    for (names, specs) |name, *spec| {
-        spec.* = try read_app(arena, io, dir, name, reason);
+    for (folders, specs) |folder, *spec| {
+        spec.* = try read_app(arena, io, dir, folder, reason);
     }
 
     try check_all(specs, reason);
@@ -110,7 +110,7 @@ pub fn read(
 }
 
 /// Every folder under `dir` with an `app.zon`, sorted; null when there is none.
-fn app_names(arena: std.mem.Allocator, io: std.Io, dir: []const u8) !?[]const []const u8 {
+fn app_folders(arena: std.mem.Allocator, io: std.Io, dir: []const u8) !?[]const []const u8 {
     var root = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return null;
     defer root.close(io);
 
@@ -143,13 +143,21 @@ fn read_app(
     arena: std.mem.Allocator,
     io: std.Io,
     dir: []const u8,
-    name: []const u8,
+    folder: []const u8,
     reason: *report.Reason,
 ) !Spec {
-    std.debug.assert(name.len > 0);
+    std.debug.assert(folder.len > 0);
 
-    const app_dir = try std.fs.path.join(arena, &.{ dir, name });
-    const config = try read_config(arena, io, app_dir, name, reason);
+    const app_dir = try std.fs.path.join(arena, &.{ dir, folder });
+    const config = try read_config(arena, io, app_dir, folder, reason);
+    const name = config.name;
+
+    if (!model_app.valid_name(name) or !model_app.valid_label(config.label)) {
+        reason.set("[{s}] app.zon: `.name` is [a-z][a-z0-9_]*, 1 to 32 characters; " ++
+            "`.label` one line of at most 64 bytes", .{folder});
+        return error.InvalidApp;
+    }
+
     const compiled = spec_module.find(name);
     const style_path = try std.fs.path.join(arena, &.{ app_dir, "public", "style.css" });
     const limit: std.Io.Limit = .limited(zon_bytes_max);
@@ -167,8 +175,11 @@ fn read_app(
 
     return .{
         .name = name,
+        .label = model_app.label_of(name, config.label),
+        .folder = folder,
         .mount = config.mount,
         .roles = config.roles,
+        .plugins = config.plugins,
         .templates = try read_templates(arena, io, app_dir),
         .assets = if (compiled) |built| built.assets else spec_module.common_assets,
         .tokens = try jit.extendThemeRuntime(arena, jit.default_theme, .{ .tokens = tokens }),
@@ -184,7 +195,7 @@ fn read_config(
     arena: std.mem.Allocator,
     io: std.Io,
     app_dir: []const u8,
-    name: []const u8,
+    folder: []const u8,
     reason: *report.Reason,
 ) !model_app.Config {
     std.debug.assert(app_dir.len > 0);
@@ -195,7 +206,7 @@ fn read_config(
     var diagnostics: std.zon.parse.Diagnostics = .{};
 
     return std.zon.parse.fromSliceAlloc(model_app.Config, arena, text, &diagnostics, .{}) catch {
-        reason.set("[{s}] app.zon: {f}", .{ name, diagnostics });
+        reason.set("[{s}] app.zon: {f}", .{ folder, diagnostics });
         return error.InvalidApp;
     };
 }
@@ -274,6 +285,12 @@ fn check_all(specs: []const Spec, reason: *report.Reason) !void {
         try check_one(spec, reason);
 
         for (specs[index + 1 ..]) |other| {
+            if (std.mem.eql(u8, spec.name, other.name)) {
+                reason.set("[{s}] named in {s} and {s}; an app's `.name` is its id, one per " ++
+                    "project", .{ spec.name, spec.folder, other.folder });
+                return error.InvalidApp;
+            }
+
             if (model_app.same_place(spec.mount, other.mount)) {
                 reason.set("[{s}] mounted where app {s} is", .{ spec.name, other.name });
                 return error.InvalidApp;
@@ -301,6 +318,11 @@ fn check_one(spec: Spec, reason: *report.Reason) !void {
         return error.InvalidApp;
     }
 
+    if (model_app.plugins_problem(spec.plugins)) |problem| {
+        reason.set("[{s}] {s}", .{ spec.name, problem });
+        return error.InvalidApp;
+    }
+
     for (spec.roles) |role| {
         if (registry.Roles.get(role) == null) {
             reason.set("[{s}] `.roles` names {s}, a role no plugin declares", .{ spec.name, role });
@@ -315,4 +337,32 @@ fn less_than(_: void, left: []const u8, right: []const u8) bool {
 
 fn file_less_than(_: void, left: File, right: File) bool {
     return std.mem.lessThan(u8, left.path, right.path);
+}
+
+test "an app is known by its `.name`, whatever its folder; two of one name are refused" {
+    var scratch = std.testing.tmpDir(.{});
+    defer scratch.cleanup();
+    const io = std.testing.io;
+    const gpa = std.testing.allocator;
+    const zon = ".{ .name = \"www\", .label = \"Website\", .mount = .{ .path = \"/\" } }";
+    const again = ".{ .name = \"www\", .mount = .{ .path = \"/other\" } }";
+    var reason: report.Reason = .{};
+
+    try scratch.dir.createDirPath(io, "apps/site-2024/content");
+    try scratch.dir.writeFile(io, .{ .sub_path = "apps/site-2024/app.zon", .data = zon });
+
+    const root = try scratch.dir.realPathFileAlloc(io, "apps", gpa);
+    defer gpa.free(root);
+    var loaded = (try read(gpa, io, root, &reason)).?;
+
+    try std.testing.expectEqual(1, loaded.specs.len);
+    try std.testing.expectEqualStrings("www", loaded.specs[0].name);
+    try std.testing.expectEqualStrings("Website", loaded.specs[0].label);
+    try std.testing.expectEqualStrings("site-2024", loaded.specs[0].folder);
+    loaded.deinit();
+
+    try scratch.dir.createDirPath(io, "apps/copy/content");
+    try scratch.dir.writeFile(io, .{ .sub_path = "apps/copy/app.zon", .data = again });
+    try std.testing.expectError(error.InvalidApp, read(gpa, io, root, &reason));
+    try std.testing.expect(std.mem.indexOf(u8, reason.text(), "copy and site-2024") != null);
 }

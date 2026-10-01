@@ -58,7 +58,8 @@ fn crumb_of(arena: std.mem.Allocator, def: Def) Error![]const u8 {
     return print(arena, "{s}?type={s}", .{ back, def.handle });
 }
 
-/// The record's aside: its terms, then the dependency dialog when the server runs `--dev`.
+/// The record's aside: its app, its terms, then the dependency dialog when the server runs
+/// `--dev`.
 fn aside_of(
     session: *Session,
     def: Def,
@@ -69,14 +70,16 @@ fn aside_of(
     std.debug.assert(session.signed_in());
 
     const row: ?fields.Record = if (shape.loaded) |full| full.row else null;
+    const app = if (row) |found| try admin.app_scope.aside(session, found.id, found.app) else null;
     const terms_node = try terms_of(session, def, document);
     const impact = try impact_dialog.node_of(session, def, row);
 
-    if (terms_node == null and impact == null) {
+    if (app == null and terms_node == null and impact == null) {
         return null;
     }
 
     return try admin.render.view(session.arena, views.RecordAside, .{
+        .app = app,
         .terms = terms_node,
         .impact = impact,
     });

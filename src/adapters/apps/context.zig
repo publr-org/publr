@@ -716,6 +716,10 @@ pub const Context = struct {
             return error.FrontmatterCallNeedsInput;
         };
         var sdk_ctx = identity_module.context(ctx.project, ctx.arena, ctx.caller);
+
+        sdk_ctx.app = ctx.app.spec.name;
+        sdk_ctx.app_plugins = ctx.app.spec.plugins;
+
         const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch return blank;
         const text = try std.json.Stringify.valueAlloc(ctx.arena, out, .{});
         const document = json.parse(std.json.Value, ctx.arena, text, .{}) catch return blank;
@@ -792,6 +796,8 @@ pub const Context = struct {
 
         var sdk_ctx = identity_module.context(ctx.project, ctx.arena, ctx.caller);
         sdk_ctx.delivery = true;
+        sdk_ctx.app = ctx.app.spec.name;
+        sdk_ctx.app_plugins = ctx.app.spec.plugins;
 
         return sdk_ctx;
     }

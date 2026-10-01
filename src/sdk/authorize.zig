@@ -206,6 +206,12 @@ pub fn authorize(
         result = try Grant.intersect(result, delivery_grant, ctx.arena);
     }
 
+    if (ctx.app_plugins) |plugins| {
+        if (result.allows()) {
+            result = try Grant.intersect(result, .{ .plugins = plugins }, ctx.arena);
+        }
+    }
+
     if (!result.allows()) {
         return error.Denied;
     }

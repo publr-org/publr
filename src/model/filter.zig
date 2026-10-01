@@ -5,6 +5,7 @@
 //! the admin draws its pills from and `record.list` filters by.
 const std = @import("std");
 const time = @import("../lib/time.zig");
+const model_app = @import("app.zig");
 
 pub const Error = error{Invalid};
 
@@ -22,6 +23,9 @@ pub const Context = struct { user_id: ?[]const u8, now_ms: i64 };
 /// Who created or last saved a record: this user, or (`exclude`) anyone but this user.
 pub const Author = struct { id: []const u8, exclude: bool = false };
 
+/// Which app's records: one app's (by its `.name`), or the project's own.
+pub const App = union(enum) { none, name: []const u8 };
+
 /// What the clauses of a list add up to: everything the store can be asked beyond the
 /// types and the search. A plugin's filter sets these too; a constraint the store cannot
 /// take yet is a constraint to add here first.
@@ -35,6 +39,7 @@ pub const Constraints = struct {
     created_before_ms: ?i64 = null,
     updated_after_ms: ?i64 = null,
     updated_before_ms: ?i64 = null,
+    app: ?App = null,
 };
 
 /// How a filter constrains the list: its clause, resolved against the context, written
@@ -51,7 +56,7 @@ pub const operators_max: u32 = 8;
 pub const Takes = enum { choice, duration, day, nothing };
 
 /// Where a `choice` operator's choices come from.
-pub const Source = enum { none, statuses, users, changes };
+pub const Source = enum { none, statuses, users, changes, apps };
 
 pub const Operator = struct {
     id: []const u8,
@@ -101,6 +106,7 @@ pub const within: Operator = .{
 };
 pub const after: Operator = .{ .id = "after", .label = "after", .takes = .day, .slot = "since" };
 pub const before: Operator = .{ .id = "before", .label = "before", .takes = .day, .slot = "until" };
+pub const project_own: Operator = .{ .id = "none", .label = "is none", .takes = .nothing };
 
 pub const core = [_]Definition{
     .{
@@ -133,6 +139,13 @@ pub const core = [_]Definition{
         .source = .users,
         .default_value = "me",
         .apply = &apply_updated,
+    },
+    .{
+        .key = "app",
+        .label = "App",
+        .operators = &.{ is, project_own },
+        .source = .apps,
+        .apply = &apply_app,
     },
 };
 
@@ -203,6 +216,27 @@ fn apply_updated(clause: Clause, context: Context, out: *Constraints) Error!void
     if (moment.before_ms) |before_ms| {
         out.updated_before_ms = before_ms;
     }
+}
+
+/// `app:is:www`, one app's records; `app:none`, the project's own.
+fn apply_app(clause: Clause, context: Context, out: *Constraints) Error!void {
+    std.debug.assert(std.mem.eql(u8, clause.key, "app"));
+    std.debug.assert(context.now_ms >= 0);
+
+    if (std.mem.eql(u8, clause.operator, project_own.id)) {
+        out.app = .none;
+        return;
+    }
+
+    if (clause.value.len == 0) {
+        return;
+    }
+
+    if (!model_app.valid_name(clause.value)) {
+        return error.Invalid;
+    }
+
+    out.app = .{ .name = clause.value };
 }
 
 const Moment = struct { author: ?Author = null, after_ms: ?i64 = null, before_ms: ?i64 = null };
@@ -519,6 +553,22 @@ test "clauses parse from text and constrain the list through the registry" {
     try std.testing.expect(parse_clause(":is:x") == null);
     const dated = parse_clause("created:after:2026-01-01").?;
     try std.testing.expectEqualStrings("2026-01-01", dated.value);
+}
+
+test "app: one app's records by name, or the project's own" {
+    const Core = Registry(&core);
+    const context: Context = .{ .user_id = "u_1", .now_ms = 0 };
+    var out: Constraints = .{};
+
+    try Core.apply(parse_clause("app:is:").?, context, &out);
+    try std.testing.expect(out.app == null);
+    try Core.apply(parse_clause("app:is:www").?, context, &out);
+    try std.testing.expectEqualStrings("www", out.app.?.name);
+    try Core.apply(parse_clause("app:none").?, context, &out);
+    try std.testing.expect(out.app.? == .none);
+    try std.testing.expect(Core.clash(parse_clause("app:is:www").?, parse_clause("app:none").?));
+    const capital = Core.apply(parse_clause("app:is:No").?, context, &out);
+    try std.testing.expectError(error.Invalid, capital);
 }
 
 test "durations, days, and what fits an operator" {

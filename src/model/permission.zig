@@ -28,7 +28,7 @@ pub const own_records = [_][]const u8{
     "record.get",      "record.list",    "record.create",     "record.save",
     "record.delete",   "record.publish", "record.transition", "record.discard_changes",
     "record.purge",    "snapshot.list",  "snapshot.get",      "snapshot.take",
-    "record.validate",
+    "record.validate", "record.set_app",
 };
 
 pub const core = [_]Permission{
@@ -111,6 +111,7 @@ pub const core = [_]Permission{
         .operations = &.{
             "record.create",
             "record.save",
+            "record.set_app",
             "record.delete",
             "record.discard_changes",
             "snapshot.take",
@@ -209,14 +210,15 @@ pub const core = [_]Permission{
 };
 
 /// The operations no permission names: sessions and passwords, who may sign people in,
-/// setup, who holds what, one person's saved views. No grant reaches them.
+/// setup, who holds what, one person's saved views, an app's records handed to another.
+/// No grant reaches them.
 pub const never = [_][]const u8{
     "user.sign_in",       "user.sign_out",      "user.set_password", "user.password_link",
     "sign_on.configure",  "sign_on.status",     "sign_on.redeem",    "identity.sign_in",
     "identity.configure", "identity.status",    "identity.link",     "identity.unlink",
     "identity.list",      "identity.providers", "project.init",      "role.list",
     "view.list",          "view.get",           "view.create",       "view.update",
-    "view.delete",
+    "view.delete",        "project.move_app",
 };
 
 /// A secret a plugin names is its own permission, `secret.<NAME>`, always high.

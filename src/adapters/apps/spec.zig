@@ -20,10 +20,17 @@ pub const File = struct { path: []const u8, data: []const u8 };
 /// One compiled-in app as data: its name and mount, its templates, its generated client
 /// code, its stylesheet's inputs, its interactive components and its middleware.
 pub const Spec = struct {
+    /// The app's id, from `app.zon`.
     name: []const u8,
+    /// What the admin shows: `app.zon`'s label, else the name.
+    label: []const u8,
+    /// Its folder under the apps' folder, where its public files are read from.
+    folder: []const u8,
     mount: model_app.Mount,
     /// The roles a visitor needs to be signed in to this app; empty for any.
     roles: []const []const u8,
+    /// The plugins whose content types it reaches; null for every plugin's.
+    plugins: ?[]const []const u8,
     templates: []const File,
     assets: []const File,
     tokens: jit.Theme,
@@ -74,15 +81,22 @@ pub fn find(name: []const u8) ?*const Spec {
 
 fn spec_of(comptime App: type) Spec {
     comptime {
-        std.debug.assert(@hasDecl(App, "name"));
+        std.debug.assert(@hasDecl(App, "folder"));
         std.debug.assert(@hasDecl(App, "config"));
 
         const config: model_app.Config = App.config;
 
+        if (config.name.len == 0 or config.label.len > model_app.label_len_max) {
+            @compileError(App.folder ++ "/app.zon: `.name` is required, `.label` 64 bytes");
+        }
+
         return .{
-            .name = App.name,
+            .name = config.name,
+            .label = model_app.label_of(config.name, config.label),
+            .folder = App.folder,
             .mount = config.mount,
             .roles = config.roles,
+            .plugins = config.plugins,
             .templates = files_of(App.templates),
             .assets = files_of(App.assets),
             .tokens = jit.extendTheme(jit.default_theme, .{ .tokens = tokens_of(config.tokens) }),
@@ -112,6 +126,10 @@ fn validate(comptime specs: []const Spec) void {
                 @compileError(label ++ "a name is [a-z][a-z0-9_]*, 1 to 32 characters");
             }
 
+            if (!model_app.valid_label(spec.label)) {
+                @compileError(label ++ "`.label` is one line of text, at most 64 bytes");
+            }
+
             if (!model_app.valid_mount(spec.mount)) {
                 @compileError(label ++ "`.mount` is `.{ .path = \"/\" }`, a path of " ++
                     "lower-case segments under it (not /admin, /api, /auth or /_...), or " ++
@@ -120,6 +138,10 @@ fn validate(comptime specs: []const Spec) void {
 
             if (spec.roles.len > model_app.roles_max) {
                 @compileError(label ++ "`.roles` names at most 16 roles");
+            }
+
+            if (model_app.plugins_problem(spec.plugins)) |problem| {
+                @compileError(label ++ problem);
             }
 
             for (spec.roles) |name| {
@@ -134,6 +156,11 @@ fn validate(comptime specs: []const Spec) void {
             }
 
             for (specs[index + 1 ..]) |other| {
+                if (std.mem.eql(u8, spec.name, other.name)) {
+                    @compileError(label ++ "named in " ++ spec.folder ++ " and " ++
+                        other.folder ++ "; an app's `.name` is its id, one per project");
+                }
+
                 if (model_app.same_place(spec.mount, other.mount)) {
                     @compileError(label ++ "mounted where app " ++ other.name ++ " is");
                 }

@@ -219,6 +219,13 @@ fn choices_of(
             }
         },
         .users => try append_users(page, &out),
+        .apps => {
+            for (page.session.project.apps) |*app| {
+                out.append(arena, .{ .id = app.spec.name, .label = app.spec.label }) catch {
+                    return error.OutOfMemory;
+                };
+            }
+        },
     }
 
     return out.items;

@@ -22,10 +22,14 @@ pub const Query = list_module.Query;
 pub const Record = list_module.Record;
 pub const new_id = ids.random;
 
+pub const App = list_module.App;
+
 pub const Insert = struct {
     type_id: []const u8,
     created_by: ?[]const u8,
     status: []const u8,
+    /// The app it belongs to; null for the project's own.
+    app: ?[]const u8 = null,
 };
 
 pub fn Store(comptime tables: tables_module.Tables) type {
@@ -51,8 +55,8 @@ pub fn Store(comptime tables: tables_module.Tables) type {
 
             var statement = try connection.prepare(
                 "INSERT INTO " ++ table ++ " (id, type_id, created_by, updated_by, status, " ++
-                    "changed, version, created_at, updated_at) " ++
-                    "VALUES (?1, ?2, ?3, ?3, ?4, 0, 1, ?5, ?5)",
+                    "changed, version, created_at, updated_at, app) " ++
+                    "VALUES (?1, ?2, ?3, ?3, ?4, 0, 1, ?5, ?5, ?6)",
             );
             defer statement.finalize();
 
@@ -61,6 +65,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             try statement.bind_optional_text(3, row.created_by);
             try statement.bind_text(4, row.status);
             try statement.bind_int(5, now_ms);
+            try statement.bind_optional_text(6, row.app);
             try statement.exec();
 
             return id;
@@ -153,6 +158,44 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             try statement.exec();
 
             return current + 1;
+        }
+
+        /// Which app a document belongs to, null for the project's own. Not a version of
+        /// the document: an editor's open copy stays current.
+        pub fn set_app(connection: *db.Db, id: []const u8, app: ?[]const u8) Error!void {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(app == null or app.?.len > 0);
+
+            var statement = try connection.prepare(
+                "UPDATE " ++ table ++ " SET app = ?2 WHERE id = ?1",
+            );
+            defer statement.finalize();
+
+            try statement.bind_text(1, id);
+            try statement.bind_optional_text(2, app);
+            try statement.exec();
+
+            if (connection.changes() == 0) {
+                return error.NotFound;
+            }
+        }
+
+        /// Every document of one app handed to another (an app renamed), or to the project
+        /// (`to` null): how many moved.
+        pub fn move_app(connection: *db.Db, from: []const u8, to: ?[]const u8) Error!u32 {
+            std.debug.assert(from.len > 0);
+            std.debug.assert(to == null or to.?.len > 0);
+
+            var statement = try connection.prepare(
+                "UPDATE " ++ table ++ " SET app = ?2 WHERE app = ?1",
+            );
+            defer statement.finalize();
+
+            try statement.bind_text(1, from);
+            try statement.bind_optional_text(2, to);
+            try statement.exec();
+
+            return @intCast(connection.changes());
         }
 
         fn current_version(connection: *db.Db, id: []const u8) Error!i64 {

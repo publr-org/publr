@@ -9,6 +9,7 @@ const document_domain = @import("document.zig");
 const crud_module = @import("document/crud.zig");
 pub const fixture = @import("record/fixture.zig");
 const lifecycle = @import("record/lifecycle.zig");
+const app_module = @import("record/app.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -214,6 +215,7 @@ pub const Publish = lifecycle.Publish;
 pub const DiscardChanges = lifecycle.DiscardChanges;
 pub const Delete = lifecycle.Delete;
 pub const Purge = lifecycle.Purge;
+pub const SetApp = app_module.SetApp;
 
 pub const example_id = "a1b2c3d4e5f60718293a4b5c";
 pub const example_changed_id = "b2c3d4e5f60718293a4b5c6d";
@@ -242,10 +244,17 @@ pub const Create = struct {
         \\the type's `title_field`. When the type has a `slug` field it is filled from
         \\its source (or the title) when the document leaves it empty, and made unique
         \\per type. The status defaults to the initial status (`draft`); a type may
-        \\restrict which statuses it accepts.
+        \\restrict which statuses it accepts. `app` says which app the record belongs to
+        \\(an app's `.name`); a record made through an app belongs to it unless told,
+        \\anything else to the project.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { type: []const u8, document: []const u8, status: ?[]const u8 = null };
+    pub const In = struct {
+        type: []const u8,
+        document: []const u8,
+        status: ?[]const u8 = null,
+        app: ?[]const u8 = null,
+    };
     pub const Out = crud_module.Created;
     pub const example: In = .{ .type = "post", .document = example_document };
     pub const example_out: Out = .{
@@ -258,6 +267,7 @@ pub const Create = struct {
         .type = "The content type, by handle or id",
         .document = "The document as a JSON object",
         .status = "Initial status; the registry's initial status when omitted",
+        .app = "The app it belongs to, by `.name`; empty for the project's own",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -267,7 +277,7 @@ pub const Create = struct {
             return error.Invalid;
         }
 
-        return crud.create(ctx, granted, in.type, in.document, in.status);
+        return crud.create(ctx, granted, in.type, in.document, in.status, in.app);
     }
 };
 
@@ -477,7 +487,7 @@ pub const Validate = struct {
 
 pub const operations = [_]type{
     Create,    Get,    Save,           Transition, Publish,  List,
-    Referrers, Delete, DiscardChanges, Purge,      Validate,
+    Referrers, Delete, DiscardChanges, Purge,      Validate, SetApp,
 };
 
 const SDK = registry.SDK;

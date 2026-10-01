@@ -297,9 +297,10 @@ archive and delete leave `changed` and the pending copy alone.
 | `created_at`, `updated_at` | integer | Timestamps |
 | `created_by` | text, nullable | The user who created it (a fact, not a byline) |
 | `updated_by` | text, nullable | The user of the last save or transition |
+| `app` | text, nullable | The app it belongs to, by the `.name` in its `app.zon`; null for the project's own. Where the admin shows it, never who may read it; not a version change |
 
 Indexes: `records_list (type_id, status, updated_at)`; `records_changed
-(type_id, updated_at) WHERE changed = 1`.
+(type_id, updated_at) WHERE changed = 1`; `records_app (app, updated_at)`.
 
 ## `record_values`
 
@@ -405,6 +406,7 @@ record: status, pending edits (`changed`), version, revisions in `snapshots`
 | `version` | integer | Version, starts at 1 |
 | `created_at`, `updated_at` | integer | Timestamps |
 | `created_by`, `updated_by` | text, nullable | The acting users |
+| `app` | text, nullable | The app it belongs to, as on `records` |
 
 Indexes: `terms_list (type_id, status, updated_at)`; `terms_changed (type_id,
 updated_at) WHERE changed = 1`; `terms_parent (parent_id)`.
