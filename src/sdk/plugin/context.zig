@@ -46,7 +46,7 @@ pub const HostApi = struct {
         std.debug.assert(self.inner.parent != null);
         std.debug.assert(Operation.name.len > 0);
 
-        return registry.SDK.dispatch(self.inner, Operation, in);
+        return registry.SDK.call(self.inner, Operation, in);
     }
 
     pub fn notice(self: *PluginCtx, name: []const u8, subject: []const u8) void {

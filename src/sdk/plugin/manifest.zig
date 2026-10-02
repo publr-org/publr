@@ -34,7 +34,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .hooks = hooks_of(Plugin),
             .permissions = runtime.permissions_of(Plugin),
             .allowed_domains = runtime.strings_of(Plugin, "allowed_domains"),
-            .requires = runtime.strings_of(Plugin, "requires"),
+            .depends_on = @import("depends_on.zig").of(Plugin),
             .limits = if (@hasDecl(Plugin, "limits")) Plugin.limits else .{},
             .content_access = if (@hasDecl(Plugin, "content_access"))
                 Plugin.content_access
@@ -43,6 +43,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .content_types = contract.content_types_of(Plugin),
             .custom_fields = contract.custom_fields_of(Plugin),
             .roles = contract.roles_of(Plugin),
+            .internal_records = contract.internal_records_of(Plugin),
             .left_out = runtime.left_out(Plugin),
         };
     }

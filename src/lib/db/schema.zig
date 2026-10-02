@@ -22,6 +22,8 @@ pub const tables = [_][]const u8{
     "record_terms",
     "snapshots",
     "views",
+    "internal_records",
+    "internal_record_values",
     "field_groups",
     "sandboxed_plugins",
 };

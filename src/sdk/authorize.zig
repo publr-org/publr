@@ -57,6 +57,12 @@ pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) opera
         return Grant.allow_all;
     }
 
+    // A plugin's code reaches its own internal records whoever it runs for: the operations
+    // scope every call to `ctx.plugin`, so nothing else is reachable this way.
+    if (ctx.plugin.len > 0 and std.mem.startsWith(u8, request.operation_name, "internal.")) {
+        return Grant.allow_all;
+    }
+
     return switch (ctx.caller) {
         .anonymous => anonymous_grant(request),
         .user => |user| role_grant(roles, user.roles, request),

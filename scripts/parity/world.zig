@@ -60,6 +60,7 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     try fill_sign_on(ctx);
     try fill_identities(ctx);
     try fill_plugins(ctx, dir);
+    try fill_internal(ctx);
 
     const custom = publr.operations.custom_fields;
     _ = try SDK.dispatch(ctx, custom.Update, .{
@@ -175,6 +176,30 @@ fn fill_views(ctx: *Ctx) Error!void {
     const created = try SDK.dispatch(ctx, saved_views.Create, saved_views.Create.example);
 
     try store.views.rename(ctx.db, created.id, saved_views.example_id);
+}
+
+/// Greeter's visit the internal examples name.
+fn fill_internal(ctx: *Ctx) Error!void {
+    const internal = publr.operations.internal;
+    const scope: store.internal_records.Scope = .{
+        .plugin = "greeter",
+        .app = "",
+        .kind = "visit",
+    };
+
+    std.debug.assert(internal.example_id.len == store.internal_records.id_len);
+    std.debug.assert(ctx.db.transaction_depth == 0);
+
+    try store.internal_records.insert_as(
+        ctx.db,
+        scope,
+        internal.example_id,
+        internal.example_document,
+        ctx.now_ms,
+    );
+    try store.internal_record_values.replace(ctx.db, internal.example_id, &.{
+        .{ .field = "name", .value = "Ada" },
+    });
 }
 
 fn fill_site(ctx: *Ctx) Error![]const u8 {

@@ -19,7 +19,7 @@ pub const Purpose = enum { delivery, edit };
 pub const Problem = document_module.Problem;
 pub const Created = struct { id: []const u8, status: []const u8, slug: ?[]const u8, version: i64 };
 pub const Got = struct { record: Record, slot: []const u8, document: []const u8 };
-pub const Saved = struct { version: i64, slug: ?[]const u8, changed: bool };
+pub const Saved = @import("save.zig").Saved;
 pub const Referrer = struct { record_id: []const u8, field: []const u8 };
 pub const Report = struct { valid: bool, problems: []const Problem };
 
@@ -181,55 +181,7 @@ pub fn Of(comptime Domain: type) type {
             return values.live;
         }
 
-        pub fn save(
-            ctx: *Ctx,
-            granted: *const Grant,
-            id: []const u8,
-            text: []const u8,
-            expected: ?i64,
-        ) Error!Saved {
-            std.debug.assert(ctx.db.transaction_depth >= 1);
-
-            if (id.len > 64 << 10) {
-                return error.Invalid;
-            }
-
-            const row = try load(ctx, id, granted) orelse return error.NotFound;
-            const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
-            const def = type_row.def;
-            var parsed = try document.parse_document(ctx, def, text, false);
-            const title = try title_of(def, parsed);
-            const live = registry.Statuses.is_live(row.status);
-            const type_id = row.type_id;
-            const slug = try document.unique_slug(ctx, type_id, def, &parsed, title, row.id, live);
-
-            try document.refuse_taken_values(ctx, row.type_id, def, parsed, row.id);
-            try document.refuse_unpublished_targets(ctx, def, parsed);
-            try Domain.config.check_document(ctx, def, parsed);
-
-            const park = row.changed or live;
-            const actor = ctx.caller.user_id();
-            const version = try documents.save(ctx.db, row.id, actor, expected, ctx.now_ms, park);
-            const slot = if (park) values.pending else values.live;
-
-            if (!park) {
-                try document.snapshot_live(ctx, row, def);
-            }
-
-            const known = registry.Kinds.all;
-
-            try values.write(known, ctx.db, row.id, slot, row.type_id, def.fields, parsed);
-
-            if (!park) {
-                ctx.notice(notice_name("saved"), row.id);
-            } else if (!row.changed) {
-                ctx.notice(notice_name("changed"), row.id);
-            } else {
-                ctx.notice(notice_name("changes_saved"), row.id);
-            }
-
-            return .{ .version = version, .slug = slug, .changed = park };
-        }
+        pub const save = @import("save.zig").Of(Domain).save;
 
         pub fn list(ctx: *Ctx, granted: *const Grant, in: ListInput) Error![]const Record {
             if (in.definitions.len > 64 << 10) {

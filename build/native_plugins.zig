@@ -89,7 +89,7 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
 /// What a plugin publishes for others to build on, its `interface.zig` (its operations'
 /// names, inputs and outputs, never its code), imported under the plugin's name by every
 /// compiled-in plugin, itself included: `@import("newsletter")`. Which of them a plugin
-/// may use is its `requires`, checked when the binary is built.
+/// may use is its `depends_on`, checked when the binary is built.
 fn add_interfaces(
     builder: *std.Build,
     library: *std.Build.Module,

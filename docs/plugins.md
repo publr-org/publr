@@ -1,5 +1,7 @@
 # Plugins
 
+Plugins and apps follow [How to build well](agents.md#how-to-build-well).
+
 Publr has two ways to run a plugin. Both use the same SDK. The difference is
 where the plugin lives and who decides that it is there: every plugin is either
 **built-in** (compiled into the binary, locked: it cannot be disabled) or **installed**
@@ -156,7 +158,7 @@ pub const content_access: publr.plugin.ContentAccess = .{
     .recommend = .all,
     .note = "Indexes every type for search",
 };
-pub const requires = [_][]const u8{"newsletter@^1"};
+pub const depends_on = [_][]const u8{"newsletter@^1"};
 ```
 
 Each hook carries its reason (`pub const reason = "..."`); an event hook names the event
@@ -240,7 +242,9 @@ and roles run; a role from a plugin grants only its own operations.
 A plugin is one directory under `plugins/` with a `main.zig`, listed in `publr.zon`'s
 `.plugins.native` to be compiled in. It imports one
 thing, `publr`, and declares what it brings: a manifest (name, version,
-summary), documented namespaces, operations exactly like the core's, policies,
+summary), documented namespaces, operations exactly like the core's, each named
+`<plugin>.<verb>` or `app.<plugin>.<verb>` (anything else fails the build; a plugin
+cannot take a core namespace's name, or `app`), policies,
 hooks, statuses, field kinds, content types, roles (see below), delivery gates (who
 sees the apps, see [Apps](apps.md#delivery-gates)), filters (a `filters` array of
 `model.filter.Definition`: a key, a label, operators, and how a clause constrains the
@@ -339,9 +343,9 @@ A plugin can also act on the process around the operations:
   operator key, which only processes of the same user on the machine can read
   (`<db>.serve`). `publr.operator.find` and `publr.operator.post` send one.
 
-A plugin can **build on another**. It names what it requires, each another plugin and,
+A plugin can **build on another**. It names what it depends on, each another plugin and,
 after `@`, the versions it works with (exact, `1.2.3`, or caret, `^0.2`: the same leftmost
-non-zero part, no older): `pub const requires = [_][]const u8{"newsletter@^1.2"}`.
+non-zero part, no older): `pub const depends_on = [_][]const u8{"newsletter@^1.2"}`.
 A compiled-in plugin's requirements are checked when the binary is built (present, in
 range, never round a loop); an installed one's when it is enabled. What a plugin
 publishes for others is its `interface.zig` beside its `main.zig`: its operations' names,
@@ -354,6 +358,13 @@ name, through the same checks as any call, whichever way the plugin runs.
 A plugin can run once the database opens (`pub fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void`),
 as the system, after every declared type and field is in place: a setting the product
 needs, a record that must exist. It runs at every start, so it checks before it writes.
+
+What a plugin keeps for itself and nobody edits (carts, reservations, stock movements,
+logs) is not content: it declares each kind as an internal record collection,
+`pub const internal_records = [_]publr.plugin.InternalCollection{ .{ .kind = "movement",
+.indexed = &.{"stock"}, .append_only = true } }`, and reaches them through the `internal`
+operations (see [the CLI page](cli/internal.md)): its own records only, in the request's
+app, with no permission to ask for. They never appear in the admin's content list.
 
 A plugin can also keep values on the accounts themselves: `custom_fields` declares
 custom field groups the way `content_types` declares types, each with its location

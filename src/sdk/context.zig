@@ -12,6 +12,7 @@ pub const Notify = *const fn (ctx: *Ctx, notice: Notice) void;
 pub const Ctx = struct {
     dependencies: ?*@import("dependencies.zig").Collector = null,
     dependency_failure: bool = false,
+
     /// Why the last operation ended with `error.Failed`: set by `fail`, read by adapters.
     failure: ?@import("operation.zig").Failure = null,
     publish_policy: ?*const fn (*Ctx, OperationPolicy) anyerror!void = null,
@@ -28,6 +29,9 @@ pub const Ctx = struct {
     /// The operation whose run made this call, empty for a call an adapter made: a policy
     /// tells a plugin operation's own writes from the same caller writing directly.
     within: []const u8 = "",
+    /// The plugin whose code is running: its operation or one of its hooks, compiled in or
+    /// installed. Empty for the core's own code; a core operation a plugin calls keeps it.
+    plugin: []const u8 = "",
     db: *db.Db,
     io: std.Io,
     arena: std.mem.Allocator,

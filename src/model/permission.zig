@@ -21,7 +21,11 @@ pub const Permission = struct {
 };
 
 /// Granted to every plugin without asking: harmless, and needed to run at all.
-pub const always = [_][]const u8{ "heartbeat.check", "project.status", "status.list" };
+pub const always = [_][]const u8{
+    "heartbeat.check",   "project.status", "status.list",
+    "internal.create",   "internal.get",   "internal.save",
+    "internal.find_one", "internal.find",  "internal.delete",
+};
 
 /// The record operations a plugin reaches on its own content types without asking.
 pub const own_records = [_][]const u8{
@@ -238,8 +242,9 @@ pub fn find(catalog: []const Permission, key: []const u8) ?*const Permission {
     return null;
 }
 
-/// How a key a plugin asks for is tiered: its catalog entry's, `high` for a secret, and null
-/// for a key nothing provides (the plugin installs without it).
+/// How a key a plugin asks for is tiered: its catalog entry's, `high` for a secret, `medium`
+/// for a call to a plugin it depends on, and null for a key nothing provides (the plugin
+/// installs without it).
 pub fn tier_of(catalog: []const Permission, key: []const u8) ?Tier {
     std.debug.assert(key.len > 0);
     std.debug.assert(key.len <= key_len_max);
@@ -248,9 +253,48 @@ pub fn tier_of(catalog: []const Permission, key: []const u8) ?Tier {
         return .high;
     }
 
+    if (called_operation(key) != null) {
+        return .medium;
+    }
+
     const permission = find(catalog, key) orelse return null;
 
     return permission.tier;
+}
+
+/// The operation a `call:<plugin>.<verb>` or `call:app.<plugin>.<verb>` key names: exactly
+/// one operation, never a namespace. That it is a plugin's, one the caller depends on, is
+/// checked where the plugin is known.
+pub fn called_operation(key: []const u8) ?[]const u8 {
+    const prefix = "call:";
+
+    std.debug.assert(key_len_max > prefix.len);
+
+    if (key.len > key_len_max or !std.mem.startsWith(u8, key, prefix)) {
+        return null;
+    }
+
+    const name = key[prefix.len..];
+    const tail = if (std.mem.startsWith(u8, name, "app.")) name["app.".len..] else name;
+    const dot = std.mem.indexOfScalar(u8, tail, '.') orelse return null;
+
+    if (dot == 0 or dot + 1 == tail.len) {
+        return null;
+    }
+
+    for (tail, 0..) |char, index| {
+        if (index == dot) {
+            continue;
+        }
+
+        if (!std.ascii.isLower(char) and !std.ascii.isDigit(char) and char != '_') {
+            return null;
+        }
+    }
+
+    std.debug.assert(tail.len >= 3);
+
+    return name;
 }
 
 pub fn is_secret(key: []const u8) bool {
@@ -309,4 +353,24 @@ test "tiers: catalog keys by their entry, secrets high, unknown keys unavailable
     try std.testing.expect(tier_of(&core, "secret.lower") == null);
     try std.testing.expect(tier_of(&core, "secret.") == null);
     try std.testing.expect(tier_of(&core, "newsletter.send") == null);
+}
+
+test "a call permission names exactly one plugin operation, at the medium tier" {
+    const target = called_operation("call:app.provider.adjust").?;
+    try std.testing.expectEqualStrings("app.provider.adjust", target);
+    try std.testing.expectEqualStrings(
+        "provider.adjust",
+        called_operation("call:provider.adjust").?,
+    );
+
+    const invalid = [_][]const u8{
+        "call:app.provider.*",   "call:app..adjust", "call:app.provider.",
+        "call:app.provider.a.b", "call:provider",    "call:provider.*",
+    };
+
+    for (invalid) |key| {
+        try std.testing.expect(called_operation(key) == null);
+    }
+
+    try std.testing.expectEqual(Tier.medium, tier_of(&core, "call:app.provider.adjust").?);
 }

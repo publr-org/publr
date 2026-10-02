@@ -7,7 +7,6 @@ const middleware = @import("../middleware.zig");
 
 pub const permissions_max: u32 = 64;
 pub const domains_max: u32 = 32;
-pub const requires_max: u32 = 16;
 pub const reason_len_max: u32 = 200;
 pub const entries_max: u32 = 256;
 
@@ -278,6 +277,22 @@ pub fn check_call(comptime operation_name: []const u8) void {
 
         if (own or free) {
             return;
+        }
+
+        const call_key = "call:" ++ operation_name;
+
+        if (catalog.called_operation(call_key) != null and asks_for(Plugin, call_key)) {
+            const depends_on = @import("depends_on.zig");
+
+            for (depends_on.of(Plugin)) |text| {
+                const target = depends_on.parse(text).name;
+
+                if (@import("../plugin_access.zig").own(target, operation_name)) {
+                    return;
+                }
+            }
+
+            @compileError(label ++ "but the plugin it belongs to is not in `depends_on`");
         }
 
         var needed: []const u8 = "";

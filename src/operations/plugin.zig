@@ -194,7 +194,7 @@ pub const Enable = struct {
     pub const name = "plugin.enable";
     pub const description = "Start a plugin: low and medium granted, high pending";
     pub const details =
-        \\Refused while a plugin it requires is missing, or when a content type it declares
+        \\Refused while a plugin it depends on is missing, or when a content type it declares
         \\belongs to someone else. Its content types are created; it is granted what it asks
         \\for at the low and medium tiers (what it held before, if disabled, stays).
         \\`content_access` is `public` (the default), `all`, or `specific` with `types`.

@@ -18,6 +18,7 @@ pub const app = @import("model/app.zig");
 pub const role = @import("model/role.zig");
 pub const sign_on_token = @import("model/sign_on_token.zig");
 pub const view = @import("model/view.zig");
+pub const internal_record = @import("model/internal_record.zig");
 pub const filter = @import("model/filter.zig");
 pub const query = @import("model/query.zig");
 pub const permission = @import("model/permission.zig");

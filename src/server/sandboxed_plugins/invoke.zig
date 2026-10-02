@@ -62,6 +62,10 @@ fn invoke_shaped(
 
     const envelope = try envelope_of(ctx, input, shape);
     const saved = ctx.caller;
+    const running = ctx.plugin;
+
+    ctx.plugin = loaded.name();
+    defer ctx.plugin = running;
 
     ctx.caller = .{ .plugin = .{
         .name = loaded.name(),

@@ -9,18 +9,11 @@ const state = @import("state.zig");
 const plugin_types = @import("../../sdk/plugin/types.zig");
 const types = @import("../content_type.zig");
 const versions = @import("versions.zig");
-const requires = @import("../../sdk/plugin/requires.zig");
+const depends_on = @import("../../sdk/plugin/depends_on.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 const sandboxed_plugin = model.sandboxed_plugin;
-
-/// Core's namespaces, which no plugin may take for its own.
-const core_namespaces = [_][]const u8{
-    "heartbeat", "project",  "custom_fields", "user",     "sign_on", "identity", "status",
-    "role",      "record",   "content_type",  "taxonomy", "term",    "snapshot", "view",
-    "plugin",    "settings",
-};
 
 pub fn sandboxed(ctx: *Ctx) Error!*const sdk.sandboxed_plugins.SandboxedPlugins {
     std.debug.assert(ctx.now_ms >= 0);
@@ -78,15 +71,48 @@ fn check(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!void {
         return error.Invalid;
     }
 
+    if (model.internal_record.problem(manifest.internal_records) != null) {
+        return error.Invalid;
+    }
+
+    for (manifest.permissions) |ask| {
+        const target = model.permission.called_operation(ask.key) orelse continue;
+
+        if (!depended_on(manifest, target)) {
+            return error.Invalid;
+        }
+    }
+
     std.debug.assert(ctx.now_ms >= 0);
 }
 
-/// Whether a name is core's or a native plugin's: a plugin cannot take it.
+/// Whether an operation belongs to a plugin the manifest depends on: the only kind a `call:`
+/// permission may name.
+fn depended_on(manifest: *const sandboxed_plugin.Manifest, operation_name: []const u8) bool {
+    std.debug.assert(operation_name.len > 0);
+    std.debug.assert(manifest.name.len > 0);
+
+    if (manifest.depends_on.len > depends_on.depends_on_max) {
+        return false;
+    }
+
+    for (manifest.depends_on) |text| {
+        const parent = if (text.len > 0) depends_on.parse(text).name else "";
+
+        if (parent.len > 0 and sdk.plugin_access.own(parent, operation_name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Whether a name is reserved by core or taken by a native plugin: a plugin cannot take it.
 fn taken(name: []const u8) bool {
     std.debug.assert(name.len > 0);
 
-    for (core_namespaces) |namespace| {
-        if (std.mem.eql(u8, namespace, name)) {
+    for (registry.reserved_names) |reserved| {
+        if (std.mem.eql(u8, reserved, name)) {
             return true;
         }
     }
@@ -104,12 +130,12 @@ fn taken(name: []const u8) bool {
 fn provided(ctx: *Ctx, text: []const u8) bool {
     std.debug.assert(text.len > 0);
 
-    const wanted = requires.parse(text);
+    const wanted = depends_on.parse(text);
     const name = wanted.name;
 
     inline for (registry.native_plugins.all) |Plugin| {
         if (std.mem.eql(u8, Plugin.manifest.name, name)) {
-            return requires.satisfies(Plugin.manifest.version, wanted.range);
+            return depends_on.satisfies(Plugin.manifest.version, wanted.range);
         }
     }
 
@@ -120,7 +146,7 @@ fn provided(ctx: *Ctx, text: []const u8) bool {
     const found = store.sandboxed_plugins.get(ctx.db, ctx.arena, name) catch return false;
     const row = found orelse return false;
 
-    return requires.satisfies(row.version, wanted.range);
+    return depends_on.satisfies(row.version, wanted.range);
 }
 
 /// Creates or brings up to date the content types and custom fields the plugin declares,
@@ -211,7 +237,7 @@ pub fn add(ctx: *Ctx, checked: Checked) Error!Added {
     return added;
 }
 
-/// Starts it: the plugins it requires must be there, its content types are created, and
+/// Starts it: the plugins it depends on must be there, its content types are created, and
 /// it is granted what enabling grants (see `versions.carried`), with the content access
 /// chosen. A plugin disabled before keeps what it held.
 pub fn enable(ctx: *Ctx, name: []const u8, access: state.ContentAccess) Error!state.Decoded {
@@ -219,7 +245,7 @@ pub fn enable(ctx: *Ctx, name: []const u8, access: state.ContentAccess) Error!st
 
     var decoded = try state.load(ctx, name);
 
-    for (decoded.manifest.requires) |required| {
+    for (decoded.manifest.depends_on) |required| {
         if (!provided(ctx, required)) {
             return error.Invalid;
         }

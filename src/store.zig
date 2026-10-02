@@ -23,6 +23,8 @@ pub const sessions = @import("store/sessions.zig");
 pub const sign_on_tokens = @import("store/sign_on_tokens.zig");
 pub const identities = @import("store/identities.zig");
 pub const views = @import("store/views.zig");
+pub const internal_records = @import("store/internal_records.zig");
+pub const internal_record_values = @import("store/internal_record_values.zig");
 pub const sandboxed_plugins = @import("store/sandboxed_plugins.zig");
 
 test {

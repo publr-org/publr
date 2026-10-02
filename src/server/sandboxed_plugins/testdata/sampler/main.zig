@@ -12,6 +12,9 @@ const publr = @import("publr");
 const sdk = publr.sdk;
 const PluginCtx = publr.plugin.PluginCtx;
 const record = publr.operations.record;
+const notes = publr.records.of(struct { note: []const u8 }, "sample_note");
+const logs = publr.records.of(struct { line: []const u8 }, "sample_log");
+const tallies = publr.internal.of(struct { word: []const u8 }, "tally");
 
 pub const manifest: publr.plugin.Manifest = .{
     .name = "sampler",
@@ -48,6 +51,10 @@ pub const custom_fields = [_]publr.plugin.ContentTypeDef{.{
 }};
 
 pub const operations = [_]type{ Hello, Echo, Note, Logs };
+
+pub const internal_records = [_]publr.plugin.InternalCollection{
+    .{ .kind = "tally", .indexed = &.{"word"}, .append_only = true },
+};
 
 pub const routes = [_]publr.plugin.Route{.{ .path = "/admin/sampler", .handler = &settings }};
 
@@ -241,12 +248,12 @@ pub const Note = struct {
             return error.Invalid;
         }
 
-        const note = .{ .note = in.note };
-        const document = std.json.Stringify.valueAlloc(ctx.arena(), note, .{}) catch {
-            return error.OutOfMemory;
-        };
+        _ = try notes.create(ctx, .{ .note = in.note }, .{});
+        _ = try tallies.create(ctx, .{ .word = in.note });
 
-        _ = try ctx.call(record.Create, .{ .type = "sample_note", .document = document });
+        const counted = try tallies.find(ctx, .{ .word = in.note }, .{});
+
+        std.debug.assert(counted.len > 0);
 
         const all = try ctx.call(record.List, .{ .type = "sample_note", .limit = 200 });
 
@@ -266,13 +273,13 @@ pub const Logs = struct {
     pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
 
-        const all = try ctx.call(record.List, .{ .type = "sample_log", .limit = 200 });
-        const lines = ctx.arena().alloc([]const u8, all.records.len) catch {
+        const all = try logs.find(ctx, .{}, .{ .limit = 200 });
+        const lines = ctx.arena().alloc([]const u8, all.len) catch {
             return error.OutOfMemory;
         };
 
-        for (all.records, lines) |item, *line| {
-            line.* = item.title;
+        for (all, lines) |item, *line| {
+            line.* = item.value.line;
         }
 
         std.mem.sort([]const u8, lines, {}, before);
@@ -327,11 +334,8 @@ pub const Log = struct {
             else => return,
         };
         const line = std.fmt.allocPrint(ctx.arena(), "noted {s}", .{subject}) catch return;
-        const document = std.json.Stringify.valueAlloc(ctx.arena(), .{ .line = line }, .{}) catch {
-            return;
-        };
 
-        _ = ctx.call(record.Create, .{ .type = "sample_log", .document = document }) catch |err| {
+        _ = logs.create(ctx, .{ .line = line }, .{}) catch |err| {
             ctx.log(@errorName(err));
         };
     }

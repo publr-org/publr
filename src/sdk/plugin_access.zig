@@ -5,6 +5,7 @@ const std = @import("std");
 const permission = @import("../model/permission.zig");
 const operation = @import("operation.zig");
 const Grant = @import("grant.zig").Grant;
+const plugin_depends_on = @import("plugin/depends_on.zig");
 
 pub const Access = struct {
     /// The permission keys granted now; revoking one takes effect on the next call.
@@ -14,6 +15,9 @@ pub const Access = struct {
     /// The content types its content permissions reach besides its own: null for every type.
     types: ?[]const []const u8,
     catalog: []const permission.Permission = &permission.core,
+    /// The plugins it declares it depends on: the only ones whose operations a `call:`
+    /// grant reaches.
+    depends_on: []const []const u8 = &.{},
 
     pub fn has(access: *const Access, key: []const u8) bool {
         std.debug.assert(key.len > 0);
@@ -43,6 +47,10 @@ pub fn grant(name: []const u8, access: *const Access, request: Request) Grant {
     }
 
     if (permission.contains(&permission.always, operation_name) or own(name, operation_name)) {
+        return Grant.allow_all;
+    }
+
+    if (calls_dependency(access, operation_name)) {
         return Grant.allow_all;
     }
 
@@ -87,6 +95,31 @@ pub fn own(name: []const u8, operation_name: []const u8) bool {
         std.mem.eql(u8, namespace[4..], name);
 
     return std.mem.eql(u8, namespace, name) or app_namespace;
+}
+
+/// Whether a granted `call:` permission names exactly this operation of a plugin it depends
+/// on. A dependency alone grants nothing, and neither does a grant without one.
+fn calls_dependency(access: *const Access, operation_name: []const u8) bool {
+    std.debug.assert(operation_name.len > 0);
+    std.debug.assert(access.depends_on.len <= plugin_depends_on.depends_on_max);
+
+    for (access.granted) |key| {
+        const target = permission.called_operation(key) orelse continue;
+
+        if (!std.mem.eql(u8, target, operation_name)) {
+            continue;
+        }
+
+        for (access.depends_on) |text| {
+            const parent = if (text.len > 0) plugin_depends_on.parse(text).name else "";
+
+            if (parent.len > 0 and own(parent, operation_name)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 /// The granted permission that names the operation, if any.
@@ -185,4 +218,30 @@ test "records: own types without asking, others through content permissions and 
         .kind = .write,
         .type_id = "post",
     }).allows());
+}
+
+test "an exact plugin call needs both its grant and a declared parent" {
+    var access: Access = .{
+        .granted = &.{"call:app.provider.adjust"},
+        .own_types = &.{},
+        .types = &.{},
+    };
+    const request: Request = .{ .operation_name = "app.provider.adjust", .kind = .write };
+    try std.testing.expect(!grant("child", &access, request).allows());
+    access.depends_on = &.{"provider@^0.3"};
+    try std.testing.expect(grant("child", &access, request).allows());
+    try std.testing.expect(!grant("child", &access, .{
+        .operation_name = "app.provider.purge",
+        .kind = .write,
+    }).allows());
+
+    access.granted = &.{"call:provider.adjust"};
+    try std.testing.expect(grant("child", &access, .{
+        .operation_name = "provider.adjust",
+        .kind = .write,
+    }).allows());
+    try std.testing.expect(!grant("child", &access, request).allows());
+
+    access.granted = &.{};
+    try std.testing.expect(!grant("child", &access, request).allows());
 }

@@ -220,6 +220,30 @@ CREATE TABLE IF NOT EXISTS views (
 
 CREATE INDEX IF NOT EXISTS views_user ON views(user_id, name);
 
+CREATE TABLE IF NOT EXISTS internal_records (
+    id         TEXT PRIMARY KEY,
+    plugin     TEXT NOT NULL,
+    app        TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    document   TEXT NOT NULL,
+    version    INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS internal_records_scope
+    ON internal_records(plugin, app, kind, created_at);
+
+CREATE TABLE IF NOT EXISTS internal_record_values (
+    record TEXT NOT NULL REFERENCES internal_records(id) ON DELETE CASCADE,
+    field  TEXT NOT NULL,
+    value  TEXT NOT NULL,
+    PRIMARY KEY (record, field)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS internal_record_values_lookup
+    ON internal_record_values(field, value, record);
+
 CREATE TABLE IF NOT EXISTS snapshots (
     record   TEXT NOT NULL,
     seq      INTEGER NOT NULL,

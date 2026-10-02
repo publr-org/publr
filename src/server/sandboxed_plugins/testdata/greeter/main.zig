@@ -22,6 +22,10 @@ pub const namespaces = [_]sdk.operation.Namespace{.{
     ,
 }};
 
+pub const internal_records = [_]publr.plugin.InternalCollection{
+    .{ .kind = "visit", .indexed = &.{"name"} },
+};
+
 pub const content_types = [_]publr.plugin.ContentTypeDef{.{
     .handle = "salutation",
     .name = "Salutation",

@@ -54,10 +54,11 @@ pub fn Of(comptime Domain: type) type {
             return true;
         }
 
-        fn check_references(ctx: *Ctx, row: Record) Error!void {
+        fn check_references(ctx: *Ctx, row: Record, slot: []const u8) Error!void {
             std.debug.assert(row.id.len > 0);
+            std.debug.assert(slot.len > 0);
+
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
-            const slot = if (row.changed) values.pending else values.live;
             const parsed = try document.document_of(ctx, row.id, slot, type_row.def);
             try document.refuse_unpublished_targets(ctx, type_row.def, parsed);
         }
@@ -132,8 +133,48 @@ pub fn Of(comptime Domain: type) type {
 
             const row = try load(ctx, id, granted) orelse return error.NotFound;
 
-            return move(ctx, row, to, expected, granted);
+            return move(ctx, row, to, expected, granted, .apply_pending);
         }
+
+        /// Whether `row` may end in status `to`: its own status again, or a registered move
+        /// the type accepts and the grant allows. Refused before anything is written.
+        pub fn check_move(
+            row: Record,
+            def: store.definitions.Def,
+            to: []const u8,
+            granted: *const Grant,
+        ) Error!void {
+            std.debug.assert(row.id.len > 0);
+            std.debug.assert(to.len > 0);
+
+            const staying = std.mem.eql(u8, row.status, to);
+
+            if (!staying and !registry.Statuses.allows(row.status, to)) {
+                return error.Invalid;
+            }
+
+            try check_status(def, to, granted);
+
+            if (!granted.allows_transition(row.status, to)) {
+                return error.Denied;
+            }
+        }
+
+        /// Moves a record that was just saved straight into its live document: its pending
+        /// copy, if any, stays pending.
+        pub fn settle(
+            ctx: *Ctx,
+            row: Record,
+            to: []const u8,
+            granted: *const Grant,
+        ) Error!Moved {
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+            std.debug.assert(!std.mem.eql(u8, row.status, to));
+
+            return move(ctx, row, to, null, granted, .keep_pending);
+        }
+
+        const Pending = enum { apply_pending, keep_pending };
 
         fn move(
             ctx: *Ctx,
@@ -141,27 +182,25 @@ pub fn Of(comptime Domain: type) type {
             to: []const u8,
             expected: ?i64,
             granted: *const Grant,
+            pending: Pending,
         ) Error!Moved {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(to.len > 0);
 
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
+            const applying = pending == .apply_pending and row.changed;
 
-            if (!registry.Statuses.allows(row.status, to)) {
+            try check_move(row, type_row.def, to, granted);
+
+            if (std.mem.eql(u8, row.status, to)) {
                 return error.Invalid;
             }
 
-            try check_status(type_row.def, to, granted);
-
-            if (!granted.allows_transition(row.status, to)) {
-                return error.Denied;
-            }
-
             if (registry.Statuses.is_live(to)) {
-                try check_references(ctx, row);
+                try check_references(ctx, row, if (applying) values.pending else values.live);
             }
 
-            const applied = if (registry.Statuses.is_live(to))
+            const applied = if (registry.Statuses.is_live(to) and applying)
                 try apply_pending(ctx, row)
             else
                 false;
@@ -197,7 +236,7 @@ pub fn Of(comptime Domain: type) type {
             const row = try load(ctx, id, granted) orelse return error.NotFound;
 
             if (!registry.Statuses.is_live(row.status)) {
-                return move(ctx, row, "published", expected, granted);
+                return move(ctx, row, "published", expected, granted, .apply_pending);
             }
 
             if (!row.changed) {
@@ -208,7 +247,7 @@ pub fn Of(comptime Domain: type) type {
                 return error.Denied;
             }
 
-            try check_references(ctx, row);
+            try check_references(ctx, row, values.pending);
             _ = try apply_pending(ctx, row);
 
             const actor = ctx.caller.user_id();
@@ -256,7 +295,7 @@ pub fn Of(comptime Domain: type) type {
 
             const row = try load(ctx, id, granted) orelse return error.NotFound;
 
-            return move(ctx, row, "deleted", expected, granted);
+            return move(ctx, row, "deleted", expected, granted, .apply_pending);
         }
 
         pub fn purge(ctx: *Ctx, granted: *const Grant, id: []const u8) Error!bool {

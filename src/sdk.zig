@@ -36,6 +36,10 @@ pub const Registry = struct {
     namespaces: []const operation.Namespace = &.{},
     policies: []const Policy = &.{},
     middleware: []const type = &.{},
+    /// The plugin each operation and middleware belongs to, by position; empty for the
+    /// core's. Left empty, nothing belongs to a plugin.
+    operation_owners: []const []const u8 = &.{},
+    middleware_owners: []const []const u8 = &.{},
     schemas: []const [:0]const u8 = &.{},
     /// What a signed-in account's roles grant: the core's, with the plugins' merged in.
     roles: []const role.Role = &role.core,
@@ -115,9 +119,18 @@ pub fn SDK(comptime registry: Registry) type {
             };
 
             const within = ctx.within;
+            const running = ctx.plugin;
+            const owners = registry.operation_owners;
+            const owner = comptime owner_of(registry.operations, owners, Operation);
 
             ctx.within = Operation.name;
             defer ctx.within = within;
+
+            if (owner.len > 0) {
+                ctx.plugin = owner;
+            }
+
+            defer ctx.plugin = running;
 
             const result = run(ctx, Operation, in, &granted);
 
@@ -306,6 +319,42 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(granted.allows());
             std.debug.assert(ctx.parent != null);
 
+            if (Operation.kind == .read) {
+                return run_pipeline(ctx, Operation, in, granted);
+            }
+
+            // Hooks run inside the write's transaction, so a failing hook rolls back the
+            // operation it hooks. A nested write is a savepoint: its failure undoes only
+            // itself, and the caller decides what happens next.
+            const previous_failure = ctx.dependency_failure;
+
+            ctx.dependency_failure = false;
+            defer ctx.dependency_failure = previous_failure;
+
+            var transaction = try ctx.db.transaction();
+            errdefer transaction.rollback();
+
+            const out = try run_pipeline(ctx, Operation, in, granted);
+
+            if (ctx.dependency_failure) {
+                return error.InvalidationFailed;
+            }
+
+            try transaction.commit();
+            std.debug.assert(ctx.db.transaction_depth == transaction.depth - 1);
+
+            return out;
+        }
+
+        fn run_pipeline(
+            ctx: *Ctx,
+            comptime Operation: type,
+            in: Operation.In,
+            granted: *const Grant,
+        ) Error!Operation.Out {
+            std.debug.assert(granted.allows());
+            std.debug.assert(ctx.parent != null);
+
             var input = in;
 
             inline for (registry.middleware) |Middleware| {
@@ -322,7 +371,7 @@ pub fn SDK(comptime registry: Registry) type {
                 }
             }
 
-            const out = try execute(ctx, Operation, input, granted);
+            const out = try invoke_run(ctx, Operation, input, granted);
 
             inline for (registry.middleware) |Middleware| {
                 const applies = comptime middleware.applies(Middleware, Operation);
@@ -337,36 +386,6 @@ pub fn SDK(comptime registry: Registry) type {
                     try runtime_after(ctx, sandboxed, Operation, input, out);
                 }
             }
-
-            return out;
-        }
-
-        fn execute(
-            ctx: *Ctx,
-            comptime Operation: type,
-            in: Operation.In,
-            granted: *const Grant,
-        ) Error!Operation.Out {
-            if (Operation.kind == .read) {
-                return invoke_run(ctx, Operation, in, granted);
-            }
-
-            const previous_failure = ctx.dependency_failure;
-            ctx.dependency_failure = false;
-            defer ctx.dependency_failure = previous_failure;
-            var transaction = try ctx.db.transaction();
-            errdefer transaction.rollback();
-
-            std.debug.assert(ctx.db.transaction_depth >= 1);
-
-            const out = try invoke_run(ctx, Operation, in, granted);
-
-            if (ctx.dependency_failure) {
-                return error.InvalidationFailed;
-            }
-
-            try transaction.commit();
-            std.debug.assert(ctx.db.transaction_depth == transaction.depth - 1);
 
             return out;
         }
@@ -407,6 +426,16 @@ pub fn SDK(comptime registry: Registry) type {
         fn invoke_hook(ctx: *Ctx, comptime Middleware: type, args: anytype) Error!void {
             std.debug.assert(ctx.parent != null);
             std.debug.assert(args.len <= 2);
+
+            const running = ctx.plugin;
+            const owners = registry.middleware_owners;
+            const owner = comptime owner_of(registry.middleware, owners, Middleware);
+
+            if (owner.len > 0) {
+                ctx.plugin = owner;
+            }
+
+            defer ctx.plugin = running;
 
             if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
                 var wrapped: PluginCtx = .{ .inner = ctx };
@@ -522,9 +551,41 @@ pub fn stringify(arena: std.mem.Allocator, value: anytype) Error![]const u8 {
     return text;
 }
 
+/// The plugin `Item` belongs to, from a list and its owners by position; empty for the core's.
+fn owner_of(
+    comptime items: []const type,
+    comptime owners: []const []const u8,
+    comptime Item: type,
+) []const u8 {
+    comptime {
+        if (owners.len == 0) {
+            return "";
+        }
+
+        for (items, owners) |candidate, owner| {
+            if (candidate == Item) {
+                return owner;
+            }
+        }
+
+        return "";
+    }
+}
+
 fn validate_registry(comptime registry: Registry) void {
     comptime {
         @setEvalBranchQuota(100_000);
+
+        const owned_operations = registry.operation_owners.len;
+        const owned_middleware = registry.middleware_owners.len;
+
+        if (owned_operations > 0 and owned_operations != registry.operations.len) {
+            @compileError("operation_owners names one owner per operation");
+        }
+
+        if (owned_middleware > 0 and owned_middleware != registry.middleware.len) {
+            @compileError("middleware_owners names one owner per middleware");
+        }
 
         if (registry.operations.len > operations_max) {
             @compileError("too many operations");
@@ -922,4 +983,143 @@ test "roles: an account calls what its roles grant; one granted only apps never 
 
 test {
     std.testing.refAllDecls(@This());
+}
+
+test "a failing after hook rolls back the operation body and earlier hooks" {
+    const After = struct {
+        pub const stage: middleware.Stage = .after;
+        pub const operation = testing.Record.name;
+        pub fn run(ctx: *Ctx, _: *testing.Record.In, _: *const testing.Record.Out) Error!void {
+            try ctx.db.exec("INSERT INTO notes (note) VALUES ('hook')");
+            return error.Conflict;
+        }
+    };
+    const Checked = SDK(.{ .operations = &.{testing.Record}, .middleware = &.{After} });
+    var harness: testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    var ctx = harness.ctx(.system);
+    try ctx.db.exec("CREATE TABLE notes (note TEXT NOT NULL)");
+    try std.testing.expectError(error.Conflict, Checked.dispatch(&ctx, testing.Record, .{
+        .note = "body",
+    }));
+    try std.testing.expectEqual(@as(u32, 0), try testing.count(&ctx, "notes"));
+}
+
+test "a caught nested write failure undoes only itself" {
+    const Outer = struct {
+        pub const name = "atomic.outer";
+        pub const kind: operation.Kind = .write;
+        pub const description = "Write, then catch a nested write's failure";
+        pub const In = struct {};
+        pub const Out = struct {};
+        pub const example: In = .{};
+        pub const example_out: Out = .{};
+        pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
+            std.debug.assert(ctx.db.transaction_depth > 0);
+            std.debug.assert(ctx.parent != null);
+
+            const Nested = SDK(.{ .operations = &.{testing.Record} });
+            _ = try Nested.dispatch(ctx, testing.Record, .{ .note = "earlier" });
+            var copied = ctx.*;
+            _ = Nested.dispatch(&copied, testing.Record, .{
+                .note = "failure",
+                .fail_after_insert = true,
+            }) catch |err| {
+                std.debug.assert(err == error.Invalid);
+            };
+            return .{};
+        }
+    };
+    const Checked = SDK(.{ .operations = &.{Outer} });
+    var harness: testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    var ctx = harness.ctx(.system);
+    try ctx.db.exec("CREATE TABLE notes (note TEXT NOT NULL)");
+    _ = try Checked.dispatch(&ctx, Outer, .{});
+    try std.testing.expectEqual(@as(u32, 1), try testing.count(&ctx, "notes"));
+    try std.testing.expectEqual(@as(u32, 0), ctx.db.transaction_depth);
+}
+
+test "ctx.plugin: an operation's plugin, a hook's own, kept by a core call" {
+    const Seen = struct {
+        fn note(ctx: *Ctx) Error!void {
+            std.debug.assert(ctx.parent != null);
+
+            try ctx.db.exec("CREATE TABLE IF NOT EXISTS seen (who TEXT NOT NULL)");
+
+            var insert = try ctx.db.prepare("INSERT INTO seen (who) VALUES (?1)");
+            defer insert.finalize();
+
+            try insert.bind_text(1, ctx.plugin);
+            try insert.exec();
+        }
+    };
+    const Peek = struct {
+        pub const name = "core.peek";
+        pub const description = "Test operation: note who runs";
+        pub const kind: operation.Kind = .write;
+        pub const In = struct {};
+        pub const Out = struct {};
+        pub const example: In = .{};
+        pub const example_out: Out = .{};
+
+        pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
+            try Seen.note(ctx);
+
+            return .{};
+        }
+    };
+    const Act = struct {
+        pub const name = "alpha.act";
+        pub const description = "Test operation: note who runs, then call the core";
+        pub const kind: operation.Kind = .write;
+        pub const In = struct {};
+        pub const Out = struct {};
+        pub const example: In = .{};
+        pub const example_out: Out = .{};
+
+        pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
+            try Seen.note(ctx);
+            _ = try SDK(.{ .operations = &.{Peek} }).dispatch(ctx, Peek, .{});
+
+            return .{};
+        }
+    };
+    const Watch = struct {
+        pub const stage: middleware.Stage = .before;
+        pub const operation = "alpha.act";
+
+        pub fn run(ctx: *Ctx, _: *Act.In) Error!void {
+            try Seen.note(ctx);
+        }
+    };
+    const Checked = SDK(.{
+        .operations = &.{Act},
+        .middleware = &.{Watch},
+        .operation_owners = &.{"alpha"},
+        .middleware_owners = &.{"beta"},
+    });
+    var harness: testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.system);
+    _ = try Checked.dispatch(&ctx, Act, .{});
+    try std.testing.expectEqualStrings("", ctx.plugin);
+
+    var select = try ctx.db.prepare("SELECT who FROM seen ORDER BY rowid");
+    defer select.finalize();
+
+    const expected = [_][]const u8{ "beta", "alpha", "alpha" };
+
+    for (expected) |who| {
+        try std.testing.expect(try select.step());
+        const row = try select.read(struct { who: []const u8 }, harness.fixed.allocator());
+
+        try std.testing.expectEqualStrings(who, row.who);
+    }
+
+    try std.testing.expect(!try select.step());
 }

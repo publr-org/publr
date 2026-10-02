@@ -1,3 +1,4 @@
+const std = @import("std");
 const sdk = @import("../sdk.zig");
 const contract = @import("../sdk/plugin.zig");
 const status_registry = @import("../model/status.zig");
@@ -19,6 +20,7 @@ const taxonomy = @import("../operations/taxonomy.zig");
 const term = @import("../operations/term.zig");
 const snapshot = @import("../operations/snapshot.zig");
 const view = @import("../operations/view.zig");
+const internal = @import("../operations/internal.zig");
 const plugin_operations = @import("../operations/plugin.zig");
 const plugin_types = @import("../sdk/plugin/types.zig");
 
@@ -30,7 +32,7 @@ const core_operations = heartbeat.operations ++ project.operations ++ custom_fie
     role.operations ++
     content_type.operations ++
     record.operations ++ taxonomy.operations ++ term.operations ++ snapshot.operations ++
-    view.operations ++ plugin_operations.operations;
+    view.operations ++ plugin_operations.operations ++ internal.operations;
 const core_namespaces = [_]sdk.operation.Namespace{
     heartbeat.namespace,
     project.namespace,
@@ -47,13 +49,76 @@ const core_namespaces = [_]sdk.operation.Namespace{
     snapshot.namespace,
     view.namespace,
     plugin_operations.namespace,
+    internal.namespace,
 };
+
+/// The names no plugin may take: every core namespace, `app` (what an app's users call is
+/// `app.<plugin>.<verb>`) and `settings`.
+pub const reserved_names = [_][]const u8{ "app", "settings" } ++ core_namespace_names;
+
+const core_namespace_names = names: {
+    var names: [core_namespaces.len][]const u8 = undefined;
+
+    for (core_namespaces, &names) |namespace, *name| {
+        name.* = namespace.name;
+    }
+
+    break :names names;
+};
+
+comptime {
+    for (@import("native_plugins").all) |Plugin| {
+        for (reserved_names) |reserved| {
+            if (std.mem.eql(u8, Plugin.manifest.name, reserved)) {
+                @compileError("plugin " ++ reserved ++ ": the name is core's");
+            }
+        }
+    }
+}
+
+/// The internal record collection `kind` of plugin `plugin`, compiled in or installed, if
+/// it declared one.
+pub fn internal_collection(
+    ctx: *const sdk.Ctx,
+    plugin: []const u8,
+    kind: []const u8,
+) ?contract.InternalCollection {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(kind.len > 0);
+
+    for (native_plugins.merged_internal_collections) |owned| {
+        const named = std.mem.eql(u8, owned.collection.kind, kind);
+
+        if (named and std.mem.eql(u8, owned.owner, plugin)) {
+            return owned.collection;
+        }
+    }
+
+    const sandboxed = ctx.sandboxed_plugins orelse return null;
+
+    for (sandboxed.manifests()) |manifest| {
+        if (std.mem.eql(u8, manifest.name, plugin)) {
+            return @import("../model/internal_record.zig").find(manifest.internal_records, kind);
+        }
+    }
+
+    return null;
+}
+
+/// The core's operations and middleware belong to no plugin.
+fn core_owners(comptime count: u32) [count][]const u8 {
+    return @splat("");
+}
 
 pub const registry: sdk.Registry = .{
     .operations = &core_operations ++ native_plugins.merged_operations,
     .namespaces = &core_namespaces ++ native_plugins.merged_namespaces,
     .policies = native_plugins.merged_policies,
     .middleware = &project.middleware ++ native_plugins.merged_middleware,
+    .operation_owners = &core_owners(core_operations.len) ++
+        native_plugins.merged_operation_owners,
+    .middleware_owners = &core_owners(project.middleware.len) ++
+        native_plugins.merged_middleware_owners,
     .schemas = native_plugins.merged_schemas,
     .roles = native_plugins.merged_roles,
     .bootstrap = &bootstrap,

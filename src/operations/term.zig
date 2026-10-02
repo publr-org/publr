@@ -307,8 +307,9 @@ pub const Save = struct {
     pub const name = "term.save";
     pub const description = "Write a term's document, and move it in the hierarchy";
     pub const details =
-        \\As `record save`: straight in for drafts, parked as pending edits on a live
-        \\term, `expected_version` refuses a stale write. `parent` moves the term under
+        \\As `record save`: the fields given, straight in for drafts, parked as pending
+        \\edits on a live term, straight into the live term with `status`;
+        \\`expected_version` refuses a stale write. `parent` moves the term under
         \\another term (an empty string makes it a root); left out, it stays where it is.
         \\Moving a term rewrites the assignments of every record filed under it or a
         \\descendant, so their ancestors follow; refused while more than 10 000
@@ -319,6 +320,7 @@ pub const Save = struct {
         id: []const u8,
         document: []const u8,
         expected_version: ?i64 = null,
+        status: ?[]const u8 = null,
         parent: ?[]const u8 = null,
     };
     pub const Out = struct { version: i64, slug: ?[]const u8, changed: bool, parent: ?[]const u8 };
@@ -331,8 +333,9 @@ pub const Save = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The term id",
-        .document = "The full new document as a JSON object",
+        .document = "The fields to write, as a JSON object; the others keep their values",
         .expected_version = "The `version` you read; refuse if it changed",
+        .status = "Write straight into the live term and end in this status",
         .parent = "The new parent term's id, or empty for none; omit to keep the parent",
     };
 
@@ -343,7 +346,8 @@ pub const Save = struct {
             return error.Invalid;
         }
 
-        const saved = try crud.save(ctx, granted, in.id, in.document, in.expected_version);
+        const expected = in.expected_version;
+        const saved = try crud.save(ctx, granted, in.id, in.document, expected, in.status);
 
         if (in.parent) |parent| {
             try place(ctx, in.id, if (parent.len == 0) null else parent);

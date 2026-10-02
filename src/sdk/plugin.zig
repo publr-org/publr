@@ -15,6 +15,9 @@ pub const PluginCtx = plugin_context.PluginCtx;
 pub const types = plugin_types;
 pub const ContentTypeDef = content_type.Def;
 pub const DeclaredType = plugin_types.Declared;
+pub const InternalCollection = @import("../model/internal_record.zig").Collection;
+/// An internal record collection with the plugin that declared it.
+pub const OwnedCollection = struct { owner: []const u8, collection: InternalCollection };
 pub const Role = role.Role;
 pub const SignInProvider = provider.SignInProvider;
 /// What a plugin declares to run in the sandbox: see `plugin/sandboxed.zig`.
@@ -33,7 +36,7 @@ pub const admin_slots = @import("plugin/admin_slots.zig");
 pub const SettingsPage = admin_slots.SettingsPage;
 pub const RowAction = admin_slots.RowAction;
 pub const state = @import("plugin/state.zig");
-pub const requires = @import("plugin/requires.zig");
+pub const depends_on = @import("plugin/depends_on.zig");
 pub const Process = state.Process;
 pub const wire = @import("plugin/wire.zig");
 pub const guest = @import("plugin/guest.zig");
@@ -71,10 +74,22 @@ pub fn validate(comptime Plugin: type) void {
 
         for (operations_of(Plugin)) |Operation| {
             sdk.operation.validate(Operation);
+
+            if (!@import("plugin_access.zig").own(manifest.name, Operation.name)) {
+                @compileError("plugin " ++ manifest.name ++ ": operation " ++ Operation.name ++
+                    " is outside its namespaces, `" ++ manifest.name ++ ".<verb>` and `app." ++
+                    manifest.name ++ ".<verb>`");
+            }
         }
 
         for (middleware_of(Plugin)) |Middleware| {
             sdk.middleware.validate(Middleware);
+        }
+
+        const internal_record = @import("../model/internal_record.zig");
+
+        if (internal_record.problem(internal_records_of(Plugin))) |message| {
+            @compileError("plugin " ++ manifest.name ++ ": " ++ message);
         }
 
         if (@hasDecl(Plugin, "schema_sql") and Plugin.schema_sql.len == 0) {
@@ -167,6 +182,18 @@ pub fn content_types_of(comptime Plugin: type) []const ContentTypeDef {
 
 /// The custom field groups a plugin declares on users or media, each with its location
 /// rules (`destination`); created or updated when the database opens, fields locked.
+pub fn internal_records_of(comptime Plugin: type) []const InternalCollection {
+    comptime {
+        std.debug.assert(@hasDecl(Plugin, "manifest"));
+
+        if (!@hasDecl(Plugin, "internal_records")) {
+            return &.{};
+        }
+
+        return &Plugin.internal_records;
+    }
+}
+
 pub fn custom_fields_of(comptime Plugin: type) []const ContentTypeDef {
     comptime {
         std.debug.assert(@hasDecl(Plugin, "manifest"));
@@ -290,6 +317,21 @@ pub fn policies_of(comptime Plugin: type) []const sdk.Policy {
     }
 }
 
+/// The plugin's name `count` times: the owner of each of its operations or middlewares.
+fn owners(comptime Plugin: type, comptime count: u32) []const []const u8 {
+    comptime {
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        var names: []const []const u8 = &.{};
+
+        for (0..count) |_| {
+            names = names ++ &[_][]const u8{Plugin.manifest.name};
+        }
+
+        return names;
+    }
+}
+
 pub fn middleware_of(comptime Plugin: type) []const type {
     comptime {
         std.debug.assert(@hasDecl(Plugin, "manifest"));
@@ -345,6 +387,9 @@ pub fn Merged(comptime plugins: anytype) type {
         var namespaces: []const sdk.operation.Namespace = &.{};
         var policies: []const sdk.Policy = &.{};
         var middleware: []const type = &.{};
+        var operation_owners: []const []const u8 = &.{};
+        var middleware_owners: []const []const u8 = &.{};
+        var internal_collections: []const OwnedCollection = &.{};
         var schemas: []const [:0]const u8 = &.{};
         var statuses: []const status_module.Status = &.{};
         var transitions: []const status_module.Transition = &.{};
@@ -365,15 +410,25 @@ pub fn Merged(comptime plugins: anytype) type {
 
         std.debug.assert(plugins.len <= plugins_max);
 
-        requires.check(plugins);
+        depends_on.check(plugins);
 
         for (plugins) |Plugin| {
             validate(Plugin);
             operations = operations ++ operations_of(Plugin);
+            operation_owners = operation_owners ++ owners(Plugin, operations_of(Plugin).len);
             namespaces = namespaces ++ namespaces_of(Plugin);
             policies = policies ++ policies_of(Plugin);
             roles = roles ++ roles_of(Plugin);
             middleware = middleware ++ middleware_of(Plugin);
+            middleware_owners = middleware_owners ++ owners(Plugin, middleware_of(Plugin).len);
+
+            for (internal_records_of(Plugin)) |collection| {
+                internal_collections = internal_collections ++ &[_]OwnedCollection{.{
+                    .owner = Plugin.manifest.name,
+                    .collection = collection,
+                }};
+            }
+
             field_kinds = field_kinds ++ field_kinds_of(Plugin);
             const own_routes = route.routes_of(Plugin, owned_of(Plugin));
 
@@ -491,6 +546,9 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_namespaces = namespaces;
             pub const merged_policies = policies;
             pub const merged_middleware = middleware;
+            pub const merged_operation_owners = operation_owners;
+            pub const merged_middleware_owners = middleware_owners;
+            pub const merged_internal_collections = internal_collections;
             pub const merged_schemas = schemas;
             pub const merged_statuses = statuses;
             pub const merged_transitions = transitions;

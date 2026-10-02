@@ -340,6 +340,7 @@ fn access_of(loaded: *Loaded, ctx: *sdk.Ctx) sdk.Error!sdk.plugin_access.Access 
 
     var access: sdk.plugin_access.Access = .{
         .granted = loaded.granted,
+        .depends_on = loaded.manifest.depends_on,
         .own_types = loaded.own_types,
         .types = null,
     };

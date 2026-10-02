@@ -323,25 +323,35 @@ pub const Get = struct {
 
 pub const Save = struct {
     pub const name = "record.save";
-    pub const description = "Write a record's document: straight in for drafts, parked when live";
+    pub const description = "Write a record's fields: straight in for drafts, parked when live";
     pub const details =
-        \\Validates the document, keeps the slug unless the document sets one, bumps
-        \\`version`. Pass the `version` you last read as `expected_version` and the save is
-        \\refused (`conflict`) if someone saved in between. On a live record (or one that
-        \\already has pending edits) the document is parked as the pending copy and the
-        \\record is marked `changed`; the live document is untouched until `record publish`.
-        \\Otherwise the document replaces the record's own, and the old one is kept as a
-        \\revision snapshot.
+        \\Writes the fields the document gives over the copy it changes; a field left out
+        \\keeps its value. Validates the whole, keeps the slug unless the document sets one,
+        \\bumps `version`. Pass the `version` you last read as `expected_version` and the
+        \\save is refused (`conflict`) if someone saved in between. Without `status`: on a
+        \\live record (or one that already has pending edits) the fields are parked in the
+        \\pending copy and the record is marked `changed`; the live document is untouched
+        \\until `record publish`. Otherwise they go into the record's own document, the old
+        \\one kept as a revision snapshot. With `status`, the record's current one or one a
+        \\registered transition reaches: the fields go straight into the live document (and
+        \\into the pending copy, which stays pending), then the record moves to `status`.
+        \\The type must accept the status and the grant allow it, as for `record create`.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8, document: []const u8, expected_version: ?i64 = null };
+    pub const In = struct {
+        id: []const u8,
+        document: []const u8,
+        expected_version: ?i64 = null,
+        status: ?[]const u8 = null,
+    };
     pub const Out = crud_module.Saved;
     pub const example: In = .{ .id = example_id, .document = example_document };
     pub const example_out: Out = .{ .version = 3, .slug = "hello-world", .changed = true };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The record id",
-        .document = "The full new document as a JSON object",
+        .document = "The fields to write, as a JSON object; the others keep their values",
         .expected_version = "The `version` you read; refuse if it changed",
+        .status = "Write straight into the live document and end in this status",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -351,7 +361,7 @@ pub const Save = struct {
             return error.Invalid;
         }
 
-        return crud.save(ctx, granted, in.id, in.document, in.expected_version);
+        return crud.save(ctx, granted, in.id, in.document, in.expected_version, in.status);
     }
 };
 
@@ -547,7 +557,7 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
     const invalid = SDK.dispatch(
         &editor,
         Save,
-        .{ .id = first.id, .document = "{\"body\":\"no title\"}" },
+        .{ .id = first.id, .document = "{\"title\":\"\",\"body\":\"no title\"}" },
     );
     try std.testing.expectError(error.Invalid, invalid);
 

@@ -131,7 +131,7 @@ masked; any difference fails `verify` and prints both answers.
 
 Every field of the manifest is placed in `scripts/two_mode/coverage.zig`: exercised by a
 test plugin and a call, or named as the sandbox's own (its limits, the content it may
-reach, the domains, `requires`). A field added to the manifest fails the build there
+reach, the domains, `depends_on`). A field added to the manifest fails the build there
 until it is placed, and so does a hook stage or field shape no test plugin uses.
 
 ## Parity check

@@ -135,22 +135,33 @@ fn run(
     input: []const u8,
 ) Error![]const u8 {
     std.debug.assert(ctx.parent != null);
-    std.debug.assert(found.name.len > 0);
+    std.debug.assert(input.len > 0);
 
-    const changed = if (sandboxed.hooked(.before, found.name))
-        try sandboxed.before(ctx, found.name, input)
-    else
-        input;
-    const output = try execute(ctx, sandboxed, found, changed);
-
-    if (sandboxed.hooked(.after, found.name)) {
-        try sandboxed.after(ctx, found.name, changed, output);
+    if (found.kind == .read) {
+        return run_pipeline(ctx, sandboxed, found, input);
     }
+
+    // As `SDK.run`: hooks inside the write's transaction, nested writes as savepoints.
+    const previous_failure = ctx.dependency_failure;
+
+    ctx.dependency_failure = false;
+    defer ctx.dependency_failure = previous_failure;
+
+    var transaction = try ctx.db.transaction();
+    errdefer transaction.rollback();
+
+    const output = try run_pipeline(ctx, sandboxed, found, input);
+
+    if (ctx.dependency_failure) {
+        return error.InvalidationFailed;
+    }
+
+    try transaction.commit();
 
     return output;
 }
 
-fn execute(
+fn run_pipeline(
     ctx: *Ctx,
     sandboxed: *const sandboxed_plugins.SandboxedPlugins,
     found: sandboxed_plugins.Operation,
@@ -159,18 +170,15 @@ fn execute(
     std.debug.assert(ctx.parent != null);
     std.debug.assert(found.name.len > 0);
 
-    if (found.kind == .read) {
-        return sandboxed.run(ctx, found, input);
+    const changed = if (sandboxed.hooked(.before, found.name))
+        try sandboxed.before(ctx, found.name, input)
+    else
+        input;
+    const output = try sandboxed.run(ctx, found, changed);
+
+    if (sandboxed.hooked(.after, found.name)) {
+        try sandboxed.after(ctx, found.name, changed, output);
     }
-
-    var transaction = try ctx.db.transaction();
-    errdefer transaction.rollback();
-
-    const output = try sandboxed.run(ctx, found, input);
-
-    try transaction.commit();
-
-    std.debug.assert(output.len > 0);
 
     return output;
 }

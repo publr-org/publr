@@ -10,10 +10,13 @@ overwrite a change you have not seen.
 Two axes. **Status** is publication: `draft`, `published`, `archived`,
 `deleted`, moved by `record transition` (and `publish`/`delete` as shortcuts);
 every move is reversible, `record purge` is the only thing that removes. **Changed**
-is editing: `record save` on a live record (or one that already has pending edits)
-parks the document as a *pending copy* and sets `changed`; the live document is
-untouched until `record publish` applies the copy or `record discard_changes` drops
-it. Unpublish, archive and delete keep pending edits as they are. Whenever a live
+is editing: `record save` writes the fields its document gives (the others keep their
+values); on a live record (or one that already has pending edits) it parks them in a
+*pending copy* and sets `changed`; the live document is untouched until `record publish`
+applies the copy or `record discard_changes` drops it. With `--status`, the fields go
+straight into the live document (and into the pending copy, which stays pending) and the
+record ends in that status: what a plugin does to cancel an order without publishing an
+editor's draft. Unpublish, archive and delete keep pending edits as they are. Whenever a live
 document is replaced, the old one is kept as a revision (`snapshot list`).
 Anonymous callers see live records of public types; signed-in users see and
 change what their role allows. Back to the [CLI reference](../cli.md).
@@ -23,7 +26,7 @@ change what their role allows. Back to the [CLI reference](../cli.md).
 | `record create --type <t> --document <json> [--status <s>] [--app <name>]` | Create; title from the type's `title_field`; when the type has a `slug` field it is taken from the document or generated from the field's `source` (or the title), unique per type. `--app` names the app it belongs to; made through an app, it belongs to that app unless told (`--app ""` for the project's own) |
 | `record set_app --id <id> [--app <name>]` | Say which app the record belongs to, or with no `--app` that it is the project's own; not a new version |
 | `record get --id <id> [--purpose delivery\|edit] [--slot <s>]` | Read one record: the live document (`delivery`), the pending copy when changed (`edit`), or a named slot for previews |
-| `record save --id <id> --document <json> [--expected_version <n>]` | Write the document: straight in for drafts, parked as pending edits on live records; `conflict` if `version` moved |
+| `record save --id <id> --document <json> [--expected_version <n>] [--status <s>]` | Write the fields given: straight in for drafts, parked as pending edits on live records; with `--status` (the current one, or one a transition reaches) straight into the live document, then to that status; `conflict` if `version` moved |
 | `record publish --id <id> [--expected_version <n>]` | Make the latest document live: draft → published, or apply pending edits; one `record.published` either way |
 | `record discard_changes --id <id>` | Drop pending edits, keep the document |
 | `record transition --id <id> --to <status> [--expected_version <n>]` | Move between statuses (see `status list`); into a live status applies pending edits, out of one keeps them |

@@ -37,13 +37,16 @@ const exercised = [_]Part{
     .{ .name = "help", .where = "greeter greet --help, sampler note --help" },
     .{ .name = "label", .where = "sampler echo's refusals" },
     .{ .name = "values", .where = "sampler echo --mood angry" },
+    .{ .name = "internal_records", .where = "greeter's visits, sampler's tallies" },
+    .{ .name = "indexed", .where = "greeter's visits by name" },
+    .{ .name = "append_only", .where = "sampler's tallies" },
 };
 
 /// What only the sandbox has: a compiled-in plugin runs with everything, unlimited.
 const sandbox_only = [_]Part{
     .{ .name = "format", .where = "the module's own format number" },
     .{ .name = "allowed_domains", .where = "what the sandbox lets it reach" },
-    .{ .name = "requires", .where = "checked when an installed plugin starts" },
+    .{ .name = "depends_on", .where = "checked when an installed plugin starts" },
     .{ .name = "limits", .where = "the sandbox's CPU, memory and call limits" },
     .{ .name = "content_access", .where = "what the sandbox lets it read" },
     .{ .name = "left_out", .where = "what its sandboxed build could not carry" },

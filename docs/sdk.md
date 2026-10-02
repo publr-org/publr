@@ -1,5 +1,7 @@
 # SDK
 
+Plugins and apps follow [How to build well](agents.md#how-to-build-well).
+
 The SDK is everything a plugin, an admin page or an integration needs to
 extend Publr. It has three parts:
 
@@ -57,6 +59,24 @@ dispatches another operation runs it immediately, inside its own transaction,
 and remembers that it caused it. There is no deferred or background form: if
 something should happen later (a scheduled publish, a notification), a plugin
 keeps that intent as a record and runs the operation when the time comes.
+
+### Calls to parent plugin operations
+
+A child declares `pub const depends_on = .{ "parent@^0.4" };` and imports only
+that parent's public interface types. `PluginCtx.call(Parent.Operation, input)`
+uses the core gateway by operation name in both native and installed execution.
+An installed child also requests an exact permission such as
+`.{ .key = "call:app.parent.adjust", .reason = "<why this child needs it>" }`, or
+`call:parent.adjust` for one of its operations that is not an app's.
+These grants are medium tier: granted when the child is installed and listed on its
+page. A grant reaches only a plugin named in `depends_on`, and a dependency alone grants
+nothing. The caller's roles still apply. The compiler checks the declaration, and every
+call is authorized when it runs.
+
+A write and the before and after hooks on it share one transaction, so a failing hook
+rolls back the operation it hooks. A write made inside another is a savepoint: if it fails,
+only its own changes are undone, and the caller decides what happens next. An error nobody
+catches rolls back the whole write.
 
 ### The grant
 

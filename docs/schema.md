@@ -200,6 +200,43 @@ their views. Up to 64 per user.
 
 Indexes: `views_user (user_id, name)`.
 
+## `internal_records`
+
+What a plugin keeps for itself and nobody edits (carts, reservations, stock movements,
+logs), one JSON document per row, in collections the plugin declares
+(`internal_records`). Never content: no statuses, drafts, revisions or search. Every read
+and write is held to one plugin, one app and one collection: from a plugin's code, its own
+and the request's app; with no plugin running, an administrator names them. Up to 64 KiB
+per document.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text, primary key | Record id |
+| `plugin` | text | Whose: the plugin that keeps it |
+| `app` | text | The app it belongs to (`app.zon`'s `.name`); empty for the project's own |
+| `kind` | text | The collection, as the plugin declares it |
+| `document` | text | The record, a JSON object |
+| `version` | integer | Bumped on every write; `expected_version` refuses a stale one |
+| `created_at`, `updated_at` | integer | Timestamps |
+
+Indexes: `internal_records_scope (plugin, app, kind, created_at)`: a collection's records,
+newest first.
+
+## `internal_record_values`
+
+The fields an internal record is found by: each field its collection declares as indexed
+that the record holds as text, an integer or a flag, kept as text (`42`, `true`). Written
+with the record; deleting the record deletes them.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `record` | text, references `internal_records` | The record; cascades on delete |
+| `field` | text | The indexed field |
+| `value` | text | Its value, as text |
+
+Primary key `(record, field)`. Indexes: `internal_record_values_lookup (field, value,
+record)`: the records whose field holds a value.
+
 ## `sign_on_tokens`
 
 Sign-on tokens already redeemed (`sign_on.redeem`), so each works once. A row

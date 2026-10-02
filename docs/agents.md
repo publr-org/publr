@@ -11,12 +11,14 @@ A project is the folder `publr` runs in:
 ```
 data/publr.db                       the database: content, users, installed plugins
 plugins/<name>/main.zig             the source of each plugin you write
-apps/<name>/                        each app: the pages people see (see Pages); the
+apps/<name>/                        each app: what people use at an address (see Pages); the
                                     project's own `apps/` is read when it has one
 ```
 
-A feature is usually both: a **plugin** for what is stored and done, and pages in an
-**app** that show it.
+A **plugin** is what is stored and done: content types and operations. An **app** is what
+people use at an address: a website, a shop, or a whole product with its own sign-in,
+dashboards and forms for its users, separate from Publr's admin. An app that needs logic
+of its own brings a plugin for it.
 
 `publr serve` runs the site and the admin (`http://127.0.0.1:8080/admin`). While it runs,
 every other `publr` command is sent to it and takes effect at once: you never restart it.
@@ -31,12 +33,13 @@ content types (what is stored). It runs in a sandbox and can only do what the pr
 administrator allowed. This one is complete:
 
 ```zig
-const std = @import("std");
 const publr = @import("publr");
 
 const sdk = publr.sdk;
 const PluginCtx = publr.plugin.PluginCtx;
-const record = publr.operations.record;
+
+const Entry = struct { name: []const u8, message: []const u8 };
+const entries = publr.records.of(Entry, "guestbook_entry");
 
 pub const manifest: publr.plugin.Manifest = .{
     .name = "guestbook",
@@ -83,33 +86,108 @@ pub const Sign = struct {
             return error.Invalid;
         }
 
-        const document = std.json.Stringify.valueAlloc(ctx.arena(), .{
-            .name = in.name,
-            .message = in.message,
-        }, .{}) catch return error.OutOfMemory;
-        const created = try ctx.call(record.Create, .{
-            .type = "guestbook_entry",
-            .document = document,
-            .status = "published",
-        });
+        const entry: Entry = .{ .name = in.name, .message = in.message };
+        const id = try entries.create(ctx, entry, .{ .status = "published" });
 
-        return .{ .id = created.id };
+        return .{ .id = id };
     }
 };
 ```
 
-- **Names.** An operation is `<namespace>.<verb>`. Use the plugin's name as its namespace
-  (`notes.add`) for what the site's people do from the admin or the command line, and
-  `app.<name>` (`app.guestbook.sign`) for what the site's visitors call from its pages.
+- **Names.** Every operation is `<plugin>.<verb>` (`notes.add`), for the people running
+  the site from the admin or the command line, or `app.<plugin>.<verb>`
+  (`app.guestbook.sign`), for an app's users. Anything else fails the build. A plugin
+  cannot be named after one of Publr's own namespaces, or `app`. `app.` says an
+  operation is safe to give an app's users, not who may call it: administrators call
+  `app.*` operations too. Never give one operation two names; if the admin needs
+  different behaviour, that is a second operation.
 - **Document everything.** Every namespace, operation and field gets its text: an
   operation its `description`, `details` (who may call it, what it changes, how it fails),
   `example`, `example_out` and `field_docs`. `publr <namespace> --help` shows them to the
   people who use the plugin, and to the next agent.
 - **State lives in records.** The plugin's instance may be dropped and made again at any
   time; keep nothing in globals.
-- **Reach Publr through `ctx.call`,** with an operation's type (`record.Create`,
-  `record.List`, `record.Get`, ...): every one `publr --help` lists is there, under
-  `publr.operations`. The plugin's own content types and operations need no permission.
+- **Records are typed values.** `publr.records.of(Entry, "guestbook_entry")` gives
+  `get` (by id), `find_one` (by a unique field), `find` (many, filtered on at most one
+  field), `create` and `save` (only the fields you give; with `.status = "published"`
+  straight into the live record, publishing nothing else). Never build JSON text by hand.
+  There is no query language: anything a read by identity or one field cannot say is an
+  operation of your plugin.
+- **Reach the rest of Publr through `ctx.call`,** with an operation's type: every one
+  `publr --help` lists is there, under `publr.operations`. The plugin's own content types
+  and operations need no permission.
+
+## How to build well
+
+Follow these. A plugin or app that breaks one is not done.
+
+**Plan first.** Before writing code, say what the people running the site will see in the
+admin (which content types, which fields, what they edit) and what visitors will see
+(which pages, what is static, what changes per visitor). Agree it with the person you
+work for.
+
+**Plugins**
+
+- **One capability per plugin, generic.** Inventory counts stock of any record it is
+  pointed at; it knows nothing about products. A plugin may have no pages or admin
+  screens at all.
+- **Require what you extend.** A plugin that hooks into another's operations or calls them
+  names it in `depends_on` and needs it installed. A hook on an operation that is not there
+  fails the build, so there are no optional hooks yet. Do not make a plugin whose only job
+  is to connect two others; one of them owns the connection.
+- **Parents never know their children.** A plugin others extend exposes documented
+  operations and accepts hooks on them; it never names, imports or checks for the plugins
+  that extend it.
+- **A plugin is its own folder.** Import `publr`, your own files and other plugins'
+  `interface.zig` by name. Never import or copy another plugin's code, never share a
+  folder of helpers between plugins.
+- **When Publr cannot do something, say so.** Tell the person what is missing. Do not
+  build a workaround that hides it.
+
+**Authority**
+
+- **The server owns the facts and the rules.** An operation reads what it decides on from
+  storage. Its input is the request: a query, answers, a selection, quantities, record
+  IDs. Never records' contents, prices, rules or policies sent by the caller: a visitor can
+  send anything.
+- **Pages show and collect.** A page never gathers data to send to an operation for it to
+  trust, and never calls an operation only so a check appears to happen.
+- **One transaction.** A write, the hooks it runs and the calls it makes commit or roll
+  back together. A call you catch an error from undoes only its own changes. Do not call outside services from a write: nothing undoes them if it
+  rolls back.
+
+**Data**
+
+- **Content is what people manage.** Model it as content types they edit: products,
+  variants, orders, methods.
+- **What only your plugin keeps is internal records.** Carts, holds, ledgers, logs:
+  declare each kind (`pub const internal_records = [_]publr.plugin.InternalCollection{
+  .{ .kind = "movement", .indexed = &.{"stock"}, .append_only = true } }`) and use
+  `publr.internal.of(Movement, "movement")`: `get`, `find_one`, `find`, `create`, `save`,
+  `delete`. They never show in the admin's Content, reach only your plugin's records in
+  the request's app, and need no permission.
+- **Use the field kinds.** A record pointing at another is a `reference` field
+  (`.options = .{ .to = &.{"product"} }`), a time is `datetime`, a choice is `select`.
+  Never a record ID in a `string`, never JSON in a `text`, never a time as a number.
+- **What is pointed at is a record.** If anything refers to a part of a record (a
+  product's variants), make the part its own content type with a reference to the whole.
+- **History keeps a copy.** An order copies what was bought (name, variant, price,
+  options) when it is placed, and keeps a reference to the variant that may stop
+  resolving (`.reference = .{ .on_delete = .keep }` in its `.options`).
+
+**Pages**
+
+- **Build with Publr only.** Pages are `.publr` templates, styled with classes. No
+  JavaScript app, no React or other framework, no npm, no bundler, no scripts of your own
+  in `public/`. The one script a page may carry is `Publr.islands.condition`.
+- **Static first.** A page is built once unless it must know the visitor; a part that does
+  (a cart, stock left) is a dynamic island. Forms post to the plugin's `app.*` operations.
+- **Use the patterns people expect.** For a shop: product pages, a cart, a separate
+  checkout, a confirmation. Internal documents (packing slips) belong in the admin.
+
+**Before calling it done,** check: the plugin works with nothing but what it requires; a
+call without permission is denied and changes nothing; a failing hook rolls back the whole
+write; and the admin and the pages match what you agreed.
 
 ## Build, install, change
 
@@ -139,7 +217,7 @@ curl -X POST http://127.0.0.1:8080/api/app.guestbook/sign \
 ## Pages: apps
 
 The site people visit is made of apps: folders of templates, never compiled. An app
-answers at a mount and shows what the plugins store.
+answers at a mount and works with what its plugins store and do.
 
 ```
 apps/courses/app.zon                      .{ .mount = .{ .path = "/learn" } }

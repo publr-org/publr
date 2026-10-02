@@ -5,6 +5,7 @@ const std = @import("std");
 const permission = @import("permission.zig");
 const content_type = @import("content_type.zig");
 const role = @import("role.zig");
+const internal_record = @import("internal_record.zig");
 
 pub const name_len_max: u32 = 32;
 pub const version_len_max: u32 = 32;
@@ -51,12 +52,13 @@ pub const Manifest = struct {
     hooks: []const Hook = &.{},
     permissions: []const Ask = &.{},
     allowed_domains: []const []const u8 = &.{},
-    requires: []const []const u8 = &.{},
+    depends_on: []const []const u8 = &.{},
     limits: Limits = .{},
     content_access: ContentAccess = .{},
     content_types: []const content_type.Def = &.{},
     custom_fields: []const content_type.Def = &.{},
     roles: []const role.Role = &.{},
+    internal_records: []const internal_record.Collection = &.{},
     /// What the plugin brings that its sandboxed build left out, each with why.
     left_out: []const []const u8 = &.{},
 };
