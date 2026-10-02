@@ -163,8 +163,27 @@ fn compile_argv(
     const publr_module = try std.fmt.allocPrint(arena, "-Mpublr={s}/src/publr.zig", .{tools.sdk});
 
     try argv.append(arena, publr_module);
+
+    // The plugin's own `interface.zig`, under its own name, for its own files: another
+    // plugin's is never wired in (it declares the contract it uses instead).
+    const interface = try std.fmt.allocPrint(arena, "{s}/interface.zig", .{request.dir});
+    const has_interface = if (std.Io.Dir.cwd().access(init.io, interface, .{})) true else |_| false;
+
+    if (has_interface) {
+        try argv.appendSlice(arena, &target);
+        try argv.appendSlice(arena, &.{ "--dep", "publr" });
+        const module = try std.fmt.allocPrint(arena, "-M{s}={s}", .{ request.name, interface });
+
+        try argv.append(arena, module);
+    }
+
     try argv.appendSlice(arena, &target);
     try argv.appendSlice(arena, &.{ "--dep", "publr" });
+
+    if (has_interface) {
+        try argv.appendSlice(arena, &.{ "--dep", request.name });
+    }
+
     try argv.append(arena, try std.fmt.allocPrint(arena, "-Mplugin={s}/main.zig", .{request.dir}));
 
     for (stubs) |stub| {

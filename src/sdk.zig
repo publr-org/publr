@@ -632,7 +632,9 @@ fn validate_registry(comptime registry: Registry) void {
         for (registry.middleware) |Middleware| {
             middleware.validate(Middleware);
             const targets_operation = Middleware.stage == .before or Middleware.stage == .after;
-            if (targets_operation and find_name(registry, Middleware.operation) == null) {
+            const unknown = targets_operation and find_name(registry, Middleware.operation) == null;
+
+            if (unknown and !absent_plugin(registry, Middleware.operation)) {
                 @compileError("middleware targets unknown operation: " ++ Middleware.operation);
             }
         }
@@ -655,6 +657,45 @@ fn has_namespace(comptime registry: Registry, comptime name: []const u8) bool {
     }
 
     return false;
+}
+
+/// Whether operation `name` belongs to a plugin this build does not compile in: a hook on
+/// it runs once that plugin is installed. Known only when the registry names its owners;
+/// a core namespace or a compiled-in plugin's is never absent.
+fn absent_plugin(comptime registry: Registry, comptime name: []const u8) bool {
+    comptime {
+        std.debug.assert(name.len > 0);
+
+        if (registry.operation_owners.len == 0) {
+            return false;
+        }
+
+        const target = plugin_of(name);
+
+        for (registry.operations, registry.operation_owners) |Operation, owner| {
+            const namespace = operation.namespace(Operation.name);
+            const core = owner.len == 0 and std.mem.eql(u8, namespace, target);
+
+            if (core or std.mem.eql(u8, owner, target)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+/// The plugin an operation name belongs to: `inventory` for `inventory.adjust` and for
+/// `app.inventory.reserve`.
+pub fn plugin_of(comptime name: []const u8) []const u8 {
+    comptime {
+        std.debug.assert(std.mem.indexOfScalar(u8, name, '.') != null);
+
+        const rest = if (std.mem.startsWith(u8, name, "app.")) name["app.".len..] else name;
+        const dot = std.mem.indexOfScalar(u8, rest, '.') orelse rest.len;
+
+        return rest[0..dot];
+    }
 }
 
 fn find_name(comptime registry: Registry, comptime name: []const u8) ?type {

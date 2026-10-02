@@ -347,13 +347,27 @@ A plugin can **build on another**. It names what it depends on, each another plu
 after `@`, the versions it works with (exact, `1.2.3`, or caret, `^0.2`: the same leftmost
 non-zero part, no older): `pub const depends_on = [_][]const u8{"newsletter@^1.2"}`.
 A compiled-in plugin's requirements are checked when the binary is built (present, in
-range, never round a loop); an installed one's when it is enabled. What a plugin
-publishes for others is its `interface.zig` beside its `main.zig`: its operations' names,
-inputs and outputs, and the slots it reads as data, never its code or its state. Every
-compiled-in plugin imports another's interface by that plugin's name
-(`const newsletter = @import("newsletter");`), and its own the same way, and calls
-an operation through it with `publr.registry.SDK.call(ctx, newsletter.Subscribe, .{ .email = email })`: by
-name, through the same checks as any call, whichever way the plugin runs.
+range, never round a loop); an installed one's when it is enabled. A plugin it only works
+with when present goes in `compatible_with`, with the same ranges.
+
+A plugin never imports another. It declares, in its own words, each operation of another
+plugin it uses: the name, what it sends and the part of the answer it reads, listed in
+`remotes`:
+
+```zig
+pub const remotes = [_]type{Subscribe};
+pub const Subscribe = publr.plugin.Remote(
+    "newsletter.subscribe",
+    struct { email: []const u8 },
+    struct { subscribed: bool },
+);
+// ctx.call(Subscribe, .{ .email = email }), or a hook on `Subscribe.name`
+```
+
+Every plugin's manifest carries the shapes of its own operations and the remote ones it
+uses. When both plugins are compiled in, a remote shape that does not fit the real one is
+a compile error naming the field. A plugin's own `interface.zig`, beside its `main.zig`,
+is for its own files: `@import("newsletter")` inside newsletter.
 
 A plugin can run once the database opens (`pub fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void`),
 as the system, after every declared type and field is in place: a setting the product

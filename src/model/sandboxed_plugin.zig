@@ -6,6 +6,8 @@ const permission = @import("permission.zig");
 const content_type = @import("content_type.zig");
 const role = @import("role.zig");
 const internal_record = @import("internal_record.zig");
+const contract = @import("contract.zig");
+const plugin_contracts = @import("plugin_contracts.zig");
 
 pub const name_len_max: u32 = 32;
 pub const version_len_max: u32 = 32;
@@ -59,6 +61,8 @@ pub const Manifest = struct {
     custom_fields: []const content_type.Def = &.{},
     roles: []const role.Role = &.{},
     internal_records: []const internal_record.Collection = &.{},
+    remotes: []const RemoteUse = &.{},
+    compatible_with: []const []const u8 = &.{},
     /// What the plugin brings that its sandboxed build left out, each with why.
     left_out: []const []const u8 = &.{},
 };
@@ -73,7 +77,46 @@ pub const Operation = struct {
     fields: []const Field = &.{},
     /// Its `--help`, rendered by the build as a compiled-in operation's is.
     help: []const u8 = "",
+    /// The shapes it takes and answers: its published contract.
+    input: []const contract.Node = &.{},
+    output: []const contract.Node = &.{},
 };
+
+/// Another plugin's operation as this plugin uses it: what it sends and what it reads.
+pub const RemoteUse = plugin_contracts.Used;
+
+/// The plugin as a user of others' operations.
+pub fn contract_user(manifest: *const Manifest) plugin_contracts.User {
+    std.debug.assert(manifest.name.len > 0);
+    std.debug.assert(manifest.remotes.len <= plugin_contracts.findings_max);
+
+    return .{
+        .plugin = manifest.name,
+        .depends_on = manifest.depends_on,
+        .compatible_with = manifest.compatible_with,
+        .remotes = manifest.remotes,
+    };
+}
+
+/// The plugin as a provider of its operations' shapes.
+pub fn contract_provider(
+    arena: std.mem.Allocator,
+    manifest: *const Manifest,
+) error{OutOfMemory}!plugin_contracts.Provider {
+    std.debug.assert(manifest.name.len > 0);
+
+    const operations = try arena.alloc(plugin_contracts.Provided, manifest.operations.len);
+
+    for (manifest.operations, operations) |operation, *provided| {
+        provided.* = .{
+            .name = operation.name,
+            .input = operation.input,
+            .output = operation.output,
+        };
+    }
+
+    return .{ .plugin = manifest.name, .version = manifest.version, .operations = operations };
+}
 
 pub const Field = struct {
     name: []const u8,

@@ -284,7 +284,10 @@ pub fn check_call(comptime operation_name: []const u8) void {
         if (catalog.called_operation(call_key) != null and asks_for(Plugin, call_key)) {
             const depends_on = @import("depends_on.zig");
 
-            for (depends_on.of(Plugin)) |text| {
+            const optional = @import("../plugin.zig").compatible_with_of(Plugin);
+            const declared = depends_on.of(Plugin) ++ optional;
+
+            for (declared) |text| {
                 const target = depends_on.parse(text).name;
 
                 if (@import("../plugin_access.zig").own(target, operation_name)) {
@@ -292,7 +295,8 @@ pub fn check_call(comptime operation_name: []const u8) void {
                 }
             }
 
-            @compileError(label ++ "but the plugin it belongs to is not in `depends_on`");
+            @compileError(label ++
+                "but the plugin it belongs to is in neither `depends_on` nor `compatible_with`");
         }
 
         var needed: []const u8 = "";

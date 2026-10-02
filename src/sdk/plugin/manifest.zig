@@ -6,6 +6,7 @@ const runtime = @import("sandboxed.zig");
 const sdk_operation = @import("../operation.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 const help = @import("../help.zig");
+const shapes = @import("../../model/contract.zig");
 
 /// The name of the custom section the manifest travels in.
 pub const section_name = "publr";
@@ -16,6 +17,7 @@ pub const Manifest = sandboxed_plugin.Manifest;
 pub const Operation = sandboxed_plugin.Operation;
 pub const Field = sandboxed_plugin.Field;
 pub const Hook = sandboxed_plugin.Hook;
+pub const RemoteUse = sandboxed_plugin.RemoteUse;
 
 pub fn of(comptime Plugin: type) Manifest {
     comptime {
@@ -44,6 +46,8 @@ pub fn of(comptime Plugin: type) Manifest {
             .custom_fields = contract.custom_fields_of(Plugin),
             .roles = contract.roles_of(Plugin),
             .internal_records = contract.internal_records_of(Plugin),
+            .remotes = remotes_of(Plugin),
+            .compatible_with = contract.compatible_with_of(Plugin),
             .left_out = runtime.left_out(Plugin),
         };
     }
@@ -69,6 +73,26 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 .details = if (@hasDecl(Declared, "details")) Declared.details else "",
                 .open = @hasDecl(Declared, "open") and Declared.open,
                 .fields = fields_of(Declared),
+                .input = shapes.describe(Declared.In),
+                .output = shapes.describe(Declared.Out),
+            }};
+        }
+
+        return list;
+    }
+}
+
+fn remotes_of(comptime Plugin: type) []const RemoteUse {
+    comptime {
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        var list: []const RemoteUse = &.{};
+
+        for (@import("../plugin.zig").remotes_of(Plugin)) |Used| {
+            list = list ++ &[_]RemoteUse{.{
+                .operation = Used.name,
+                .input = shapes.describe(Used.In),
+                .output = shapes.describe(Used.Out),
             }};
         }
 

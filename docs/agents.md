@@ -131,10 +131,12 @@ work for.
 - **One capability per plugin, generic.** Inventory counts stock of any record it is
   pointed at; it knows nothing about products. A plugin may have no pages or admin
   screens at all.
-- **Require what you extend.** A plugin that hooks into another's operations or calls them
-  names it in `depends_on` and needs it installed. A hook on an operation that is not there
-  fails the build, so there are no optional hooks yet. Do not make a plugin whose only job
-  is to connect two others; one of them owns the connection.
+- **Name what you build on.** A plugin that needs another names it in `depends_on`; one
+  it only uses when present goes in `compatible_with`. Each operation of theirs you call
+  or hook is a `publr.plugin.Remote("inventory.reserve", Sends, Reads)` in your
+  `remotes`, in your own words, with only the fields you use. Never import another
+  plugin. Do not make a plugin whose only job is to connect two others; one of them owns
+  the connection.
 - **Parents never know their children.** A plugin others extend exposes documented
   operations and accepts hooks on them; it never names, imports or checks for the plugins
   that extend it.

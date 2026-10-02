@@ -40,6 +40,13 @@ const exercised = [_]Part{
     .{ .name = "internal_records", .where = "greeter's visits, sampler's tallies" },
     .{ .name = "indexed", .where = "greeter's visits by name" },
     .{ .name = "append_only", .where = "sampler's tallies" },
+    .{ .name = "input", .where = "every operation's contract, and greeter's remote" },
+    .{ .name = "output", .where = "every operation's contract, and greeter's remote" },
+    .{ .name = "parent", .where = "every contract node" },
+    .{ .name = "optional", .where = "sampler echo's contract" },
+    .{ .name = "remotes", .where = "greeter's use of sampler hello" },
+    .{ .name = "operation", .where = "greeter's use of sampler hello" },
+    .{ .name = "compatible_with", .where = "greeter, with sampler" },
 };
 
 /// What only the sandbox has: a compiled-in plugin runs with everything, unlimited.

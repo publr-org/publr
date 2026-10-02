@@ -18,6 +18,8 @@ pub const Access = struct {
     /// The plugins it declares it depends on: the only ones whose operations a `call:`
     /// grant reaches.
     depends_on: []const []const u8 = &.{},
+    /// The plugins it works with when present: a `call:` grant reaches these too.
+    compatible_with: []const []const u8 = &.{},
 
     pub fn has(access: *const Access, key: []const u8) bool {
         std.debug.assert(key.len > 0);
@@ -110,12 +112,25 @@ fn calls_dependency(access: *const Access, operation_name: []const u8) bool {
             continue;
         }
 
-        for (access.depends_on) |text| {
-            const parent = if (text.len > 0) plugin_depends_on.parse(text).name else "";
-
-            if (parent.len > 0 and own(parent, operation_name)) {
+        for ([_][]const []const u8{ access.depends_on, access.compatible_with }) |list| {
+            if (names_owner(list, operation_name)) {
                 return true;
             }
+        }
+    }
+
+    return false;
+}
+
+fn names_owner(list: []const []const u8, operation_name: []const u8) bool {
+    std.debug.assert(operation_name.len > 0);
+    std.debug.assert(list.len <= plugin_depends_on.depends_on_max * 2);
+
+    for (list) |text| {
+        const parent = if (text.len > 0) plugin_depends_on.parse(text).name else "";
+
+        if (parent.len > 0 and own(parent, operation_name)) {
+            return true;
         }
     }
 

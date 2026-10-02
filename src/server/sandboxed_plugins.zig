@@ -143,6 +143,7 @@ pub const Host = struct {
         const arena = host.index_arena.allocator();
         var roles: std.ArrayList(model.role.Role) = .empty;
         const manifests = try arena.alloc(model.sandboxed_plugin.Manifest, host.loaded.items.len);
+        const there = try providers_of(arena, host.loaded.items);
 
         for (host.loaded.items, 0..) |*loaded, plugin_index| {
             const manifest = &loaded.manifest;
@@ -159,7 +160,14 @@ pub const Host = struct {
             for (manifest.hooks, 0..) |hook, position| {
                 const key = try model.sandboxed_plugin.hook_key(arena, hook);
 
-                if (loaded.holds(key)) {
+                const user = model.sandboxed_plugin.contract_user(manifest);
+
+                if (!model.plugin_contracts.hook_fits(user, there, hook.target)) {
+                    std.log.warn("plugin {s}: hook on {s} is off: its contract does not fit", .{
+                        manifest.name,
+                        hook.target,
+                    });
+                } else if (loaded.holds(key)) {
                     const entry: u32 = @intCast(manifest.operations.len + position);
                     const target: Target = .{ .sandboxed_plugin = index, .entry = entry };
 
@@ -191,6 +199,25 @@ pub const Host = struct {
         return null;
     }
 };
+
+/// The compiled-in plugins and the loaded ones, as providers of operations' shapes.
+fn providers_of(
+    arena: std.mem.Allocator,
+    loaded: []const Loaded,
+) ![]const model.plugin_contracts.Provider {
+    std.debug.assert(loaded.len <= sandboxed_plugins_max);
+
+    const natives = try registry.native_providers(arena);
+    const list = try arena.alloc(model.plugin_contracts.Provider, natives.len + loaded.len);
+
+    @memcpy(list[0..natives.len], natives);
+
+    for (loaded, list[natives.len..]) |*one, *provider| {
+        provider.* = try model.sandboxed_plugin.contract_provider(arena, &one.manifest);
+    }
+
+    return list;
+}
 
 fn add_hook(
     hooks: *std.StringHashMapUnmanaged([]const Target),

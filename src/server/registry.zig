@@ -23,6 +23,8 @@ const view = @import("../operations/view.zig");
 const internal = @import("../operations/internal.zig");
 const plugin_operations = @import("../operations/plugin.zig");
 const plugin_types = @import("../sdk/plugin/types.zig");
+const plugin_contracts = @import("../model/plugin_contracts.zig");
+const shapes = @import("../model/contract.zig");
 
 pub const native_plugins = contract.Merged(@import("native_plugins").all);
 
@@ -103,6 +105,39 @@ pub fn internal_collection(
     }
 
     return null;
+}
+
+/// The compiled-in plugins as providers: each operation's shapes, for the contracts of the
+/// installed plugins that use them. Each shape is described when the binary compiles, one
+/// operation at a time.
+pub fn native_providers(
+    arena: std.mem.Allocator,
+) error{OutOfMemory}![]const plugin_contracts.Provider {
+    const plugins = @import("native_plugins").all;
+    const list = try arena.alloc(plugin_contracts.Provider, plugins.len);
+
+    std.debug.assert(plugins.len <= 64);
+
+    inline for (plugins, list) |Plugin, *provider| {
+        const operations = comptime contract.operations_of(Plugin);
+        const provided = try arena.alloc(plugin_contracts.Provided, operations.len);
+
+        inline for (operations, 0..) |Operation, index| {
+            provided[index] = .{
+                .name = Operation.name,
+                .input = comptime shapes.describe(Operation.In),
+                .output = comptime shapes.describe(Operation.Out),
+            };
+        }
+
+        provider.* = .{
+            .plugin = Plugin.manifest.name,
+            .version = Plugin.manifest.version,
+            .operations = provided,
+        };
+    }
+
+    return list;
 }
 
 /// The core's operations and middleware belong to no plugin.

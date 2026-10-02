@@ -10,6 +10,7 @@ const plugin_types = @import("../../sdk/plugin/types.zig");
 const types = @import("../content_type.zig");
 const versions = @import("versions.zig");
 const depends_on = @import("../../sdk/plugin/depends_on.zig");
+const contracts = @import("contracts.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -96,7 +97,24 @@ fn depended_on(manifest: *const sandboxed_plugin.Manifest, operation_name: []con
         return false;
     }
 
-    for (manifest.depends_on) |text| {
+    if (manifest.compatible_with.len > depends_on.depends_on_max) {
+        return false;
+    }
+
+    for ([_][]const []const u8{ manifest.depends_on, manifest.compatible_with }) |list| {
+        if (in_list(list, operation_name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn in_list(list: []const []const u8, operation_name: []const u8) bool {
+    std.debug.assert(operation_name.len > 0);
+    std.debug.assert(list.len <= depends_on.depends_on_max);
+
+    for (list) |text| {
         const parent = if (text.len > 0) depends_on.parse(text).name else "";
 
         if (parent.len > 0 and sdk.plugin_access.own(parent, operation_name)) {
@@ -251,6 +269,7 @@ pub fn enable(ctx: *Ctx, name: []const u8, access: state.ContentAccess) Error!st
         }
     }
 
+    try contracts.check_user(ctx, &decoded.manifest, try contracts.providers(ctx, null));
     try apply_types(ctx, &decoded.manifest);
 
     const asked = try requests(ctx, &decoded.manifest);

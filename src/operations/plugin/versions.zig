@@ -119,6 +119,7 @@ fn take_over(
     var decoded = old;
 
     if (old.row.enabled) {
+        try @import("contracts.zig").check_update(ctx, &manifest);
         try lifecycle.apply_types(ctx, &manifest);
     }
 

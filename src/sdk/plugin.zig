@@ -182,6 +182,61 @@ pub fn content_types_of(comptime Plugin: type) []const ContentTypeDef {
 
 /// The custom field groups a plugin declares on users or media, each with its location
 /// rules (`destination`); created or updated when the database opens, fields locked.
+/// Another plugin's operation, as this plugin uses it: its name, what this plugin sends and
+/// the part of the answer it reads. Listed in the plugin's `remotes`, it is called
+/// (`ctx.call(Reserve, ...)`) and hooked like any operation; its plugin must be named in
+/// `depends_on` or `compatible_with`. Checked against the real operation when both are
+/// compiled in, and when either is installed.
+pub fn Remote(
+    comptime operation_name: []const u8,
+    comptime Input: type,
+    comptime Output: type,
+) type {
+    comptime sdk.operation.assert_name(operation_name);
+
+    return struct {
+        pub const name = operation_name;
+        pub const In = Input;
+        pub const Out = Output;
+        pub const remote = true;
+    };
+}
+
+/// The other plugins' operations a plugin uses: `pub const remotes = [_]type{ Reserve }`.
+pub fn remotes_of(comptime Plugin: type) []const type {
+    comptime {
+        std.debug.assert(@hasDecl(Plugin, "manifest"));
+
+        if (!@hasDecl(Plugin, "remotes")) {
+            return &.{};
+        }
+
+        const list: []const type = &Plugin.remotes;
+
+        for (list) |Used| {
+            if (!@hasDecl(Used, "remote")) {
+                @compileError("plugin " ++ Plugin.manifest.name ++
+                    ": `remotes` lists only `publr.plugin.Remote(...)` operations");
+            }
+        }
+
+        return list;
+    }
+}
+
+/// The plugins it works with when present, without needing them: `name` or `name@range`.
+pub fn compatible_with_of(comptime Plugin: type) []const []const u8 {
+    comptime {
+        std.debug.assert(@hasDecl(Plugin, "manifest"));
+
+        if (!@hasDecl(Plugin, "compatible_with")) {
+            return &.{};
+        }
+
+        return &Plugin.compatible_with;
+    }
+}
+
 pub fn internal_records_of(comptime Plugin: type) []const InternalCollection {
     comptime {
         std.debug.assert(@hasDecl(Plugin, "manifest"));
@@ -317,6 +372,107 @@ pub fn policies_of(comptime Plugin: type) []const sdk.Policy {
     }
 }
 
+/// Every remote operation a plugin declares names a plugin it depends on or works with;
+/// when that plugin is compiled in too, the operation is there and the shapes fit.
+fn check_remotes(comptime plugins: anytype) void {
+    comptime {
+        for (plugins) |Plugin| {
+            for (compatible_with_of(Plugin)) |text| {
+                const wanted = depends_on.parse(text);
+
+                for (plugins) |Provider| {
+                    const found = std.mem.eql(u8, Provider.manifest.name, wanted.name);
+
+                    if (found and !depends_on.satisfies(Provider.manifest.version, wanted.range)) {
+                        @compileError("plugin " ++ Plugin.manifest.name ++ " works with " ++ text ++
+                            "; " ++ wanted.name ++ " is " ++ Provider.manifest.version);
+                    }
+                }
+            }
+
+            for (remotes_of(Plugin)) |Used| {
+                const target = sdk.plugin_of(Used.name);
+                const label = "plugin " ++ Plugin.manifest.name ++ ": " ++ Used.name ++ " ";
+
+                const required = lists(depends_on.of(Plugin), target);
+                const optional = lists(compatible_with_of(Plugin), target);
+
+                if (!required and !optional) {
+                    @compileError(label ++ "belongs to " ++ target ++
+                        ", named in neither `depends_on` nor `compatible_with`");
+                }
+
+                for (plugins) |Provider| {
+                    if (std.mem.eql(u8, Provider.manifest.name, target)) {
+                        check_against(label, Used, operations_of(Provider));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn check_against(
+    comptime label: []const u8,
+    comptime Used: type,
+    comptime provided: []const type,
+) void {
+    comptime {
+        const contract = @import("../model/contract.zig");
+
+        for (provided) |Operation| {
+            if (std.mem.eql(u8, Operation.name, Used.name)) {
+                const sent = contract.describe(Used.In);
+                const read = contract.describe(Used.Out);
+                const accepted = contract.describe(Operation.In);
+                const given = contract.describe(Operation.Out);
+
+                if (contract.check_input(sent, accepted)) |problem| {
+                    @compileError(label ++ "sends " ++ described(problem, sent, accepted));
+                }
+
+                if (contract.check_output(read, given)) |problem| {
+                    @compileError(label ++ "reads " ++ described(problem, read, given));
+                }
+
+                return;
+            }
+        }
+
+        @compileError(label ++ "is not an operation of its plugin");
+    }
+}
+
+fn described(
+    comptime problem: @import("../model/contract.zig").Problem,
+    comptime user: []const @import("../model/contract.zig").Node,
+    comptime providing: []const @import("../model/contract.zig").Node,
+) []const u8 {
+    comptime {
+        const contract = @import("../model/contract.zig");
+        var buffer: [256]u8 = undefined;
+        const nodes = if (problem.on_user_side) user else providing;
+        const path = contract.path_of(nodes, problem.node, &buffer);
+        const shown = if (path.len == 0) "its whole value" else path;
+
+        return shown ++ " in a way that does not fit: it " ++ contract.reason_text(problem.reason);
+    }
+}
+
+fn lists(comptime list: []const []const u8, comptime name: []const u8) bool {
+    comptime {
+        std.debug.assert(name.len > 0);
+
+        for (list) |text| {
+            if (std.mem.eql(u8, depends_on.parse(text).name, name)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
 /// The plugin's name `count` times: the owner of each of its operations or middlewares.
 fn owners(comptime Plugin: type, comptime count: u32) []const []const u8 {
     comptime {
@@ -411,6 +567,7 @@ pub fn Merged(comptime plugins: anytype) type {
         std.debug.assert(plugins.len <= plugins_max);
 
         depends_on.check(plugins);
+        check_remotes(plugins);
 
         for (plugins) |Plugin| {
             validate(Plugin);
@@ -787,4 +944,57 @@ test {
     _ = plugin_manifest;
     _ = wire;
     _ = runtime;
+}
+
+test "a remote operation that fits the compiled-in one it names; the manifest carries both" {
+    const Provider = struct {
+        pub const manifest: Manifest = .{
+            .name = "provider",
+            .version = "1.2.0",
+            .summary = "Provides an operation",
+        };
+        pub const namespaces = [_]sdk.operation.Namespace{.{
+            .name = "provider",
+            .summary = "Its operations",
+            .details = "One operation.",
+        }};
+        pub const operations = [_]type{Adjust};
+        pub const Adjust = struct {
+            pub const name = "provider.adjust";
+            pub const description = "Adjust a count";
+            pub const kind: sdk.operation.Kind = .write;
+            pub const In = struct { sku: []const u8, delta: i64, note: ?[]const u8 = null };
+            pub const Out = struct { total: i64, sku: []const u8 };
+            pub const example: In = .{ .sku = "a", .delta = 1 };
+            pub const example_out: Out = .{ .total = 1, .sku = "a" };
+
+            pub fn run(_: *sdk.Ctx, in: In, _: *const sdk.Grant) sdk.Error!Out {
+                return .{ .total = in.delta, .sku = in.sku };
+            }
+        };
+    };
+    const User = struct {
+        pub const manifest: Manifest = .{
+            .name = "user_side",
+            .version = "0.1.0",
+            .summary = "Uses the provider",
+        };
+        pub const compatible_with = .{"provider@^1.0"};
+        pub const remotes = [_]type{Adjust};
+        pub const Adjust = Remote(
+            "provider.adjust",
+            struct { sku: []const u8, delta: i64 },
+            struct { total: i64 },
+        );
+    };
+    const Bundle = Merged(.{ Provider, User });
+
+    try std.testing.expectEqual(@as(usize, 1), Bundle.merged_operations.len);
+    try std.testing.expectEqual(@as(usize, 1), comptime remotes_of(User).len);
+
+    const written = comptime @import("plugin/manifest.zig").of(User);
+
+    try std.testing.expectEqualStrings("provider.adjust", written.remotes[0].operation);
+    try std.testing.expectEqualStrings("provider@^1.0", written.compatible_with[0]);
+    try std.testing.expectEqual(@as(usize, 3), written.remotes[0].input.len);
 }

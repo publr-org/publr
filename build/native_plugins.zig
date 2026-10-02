@@ -86,10 +86,10 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
     library.addImport("native_plugins", plugins);
 }
 
-/// What a plugin publishes for others to build on, its `interface.zig` (its operations'
-/// names, inputs and outputs, never its code), imported under the plugin's name by every
-/// compiled-in plugin, itself included: `@import("newsletter")`. Which of them a plugin
-/// may use is its `depends_on`, checked when the binary is built.
+/// A plugin's own `interface.zig`, its operations' names and shapes, imported under its
+/// name by its own files: `@import("newsletter")` inside newsletter. Another plugin never
+/// imports it: it declares the contract it uses (`publr.plugin.Remote`), checked against
+/// this one when both are compiled in, and when they are installed.
 fn add_interfaces(
     builder: *std.Build,
     library: *std.Build.Module,
@@ -99,7 +99,7 @@ fn add_interfaces(
 ) void {
     std.debug.assert(names.len == modules.len);
 
-    for (names) |name| {
+    for (names, 0..) |name, index| {
         const path = builder.fmt("{s}/{s}/interface.zig", .{ dir, name });
 
         builder.build_root.handle.access(builder.graph.io, path, .{}) catch continue;
@@ -112,9 +112,7 @@ fn add_interfaces(
 
         interface.addImport("publr", library);
 
-        for (modules) |module| {
-            module.addImport(name, interface);
-        }
+        modules[index].addImport(name, interface);
     }
 }
 

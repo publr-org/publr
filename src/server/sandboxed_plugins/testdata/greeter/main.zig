@@ -22,6 +22,15 @@ pub const namespaces = [_]sdk.operation.Namespace{.{
     ,
 }};
 
+/// Greeter works with sampler when it is there: it says hello through it.
+pub const compatible_with = .{"sampler@^0.1"};
+pub const remotes = [_]type{SamplerHello};
+pub const SamplerHello = publr.plugin.Remote(
+    "sampler.hello",
+    struct { who: []const u8 },
+    struct { text: []const u8 },
+);
+
 pub const internal_records = [_]publr.plugin.InternalCollection{
     .{ .kind = "visit", .indexed = &.{"name"} },
 };
