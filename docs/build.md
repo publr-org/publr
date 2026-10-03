@@ -10,7 +10,8 @@ each concern lives in `build/<topic>.zig`.
 | `zig build` | Build `zig-out/bin/publr` with the apps under `apps/` (none in this repository) and check they compile (`publr check-apps`). The first build also compiles the Zig compiler the binary carries (`../lib/zig`, about two minutes); the cache keeps it after that. |
 | `zig build run -- <args>` | Build and run. |
 | `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every plugin compiled in from `plugins/` (`publr.zon`), and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
-| `zig build verify` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `two-mode` + `browser`. Run before calling anything done. |
+| `zig build verify` | The core's tests + `zig fmt --check` + `tidy`: one compile of the core, the check to run after every change. |
+| `zig build verify-full` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `two-mode` + `browser`. Each builds Publr its own way, so it takes minutes; run it before a commit. |
 | `zig build parity` | Run the example every `--help` prints and check its answer. |
 | `zig build two-mode` | Run every test plugin installed and compiled in, and compare the answers. |
 | `zig build sandboxed-plugins` | Build the plugins under `-Dsandboxed-plugins` as installed plugins into `zig-out/sandboxed-plugins/<name>.wasm`, with the `publr` just built; see [The plugins](#the-plugins). |
@@ -110,9 +111,9 @@ taxonomy, a field group and `postcard` added and enabled through the running ser
 each heard by `recorder`, as the apps loaded at start were. It listens on port 8090, away from the dev default (8080), so it never
 collides with a running `serve`.
 
-`verify` can also run one local hook: when `PUBLR_VERIFY_HOOK=<executable>`
+`verify-full` can also run one local hook: when `PUBLR_VERIFY_HOOK=<executable>`
 is set, the executable runs after the browser build with the arguments
-`<publr binary> <browser dir> <work dir>` and its exit code gates `verify`.
+`<publr binary> <browser dir> <work dir>` and its exit code gates `verify-full`.
 Nothing in the repo depends on it; it exists so a machine can add its own
 checks (for example a headless-browser smoke of the wasm build) without
 adding tools or scripts to the codebase.
@@ -127,7 +128,7 @@ the second, then makes the same calls of both (`scripts/two_mode/scenario.zig`):
 operation as the admin, the editor, nobody and the operator, the refusals, bad flags and
 failures included, the hooks' effects, the records, types, field group and roles the
 plugins leave, and every `--help`. Exit code, output and error must match, ids and times
-masked; any difference fails `verify` and prints both answers.
+masked; any difference fails `verify-full` and prints both answers.
 
 Every field of the manifest is placed in `scripts/two_mode/coverage.zig`: exercised by a
 test plugin and a call, or named as the sandbox's own (its limits, the content it may
@@ -159,7 +160,7 @@ matching its documented one.
 
 ## Continuous integration
 
-`.github/workflows/verify.yml` runs `zig build verify` on every push to `main`
+`.github/workflows/verify.yml` runs `zig build verify-full` on every push to `main`
 and every pull request. The browser smoke is agent-only, so it is skipped there.
 The sibling repositories come from `.github/actions/workspace`, which checks
 out the latest `main` of `lib`, `pjsx`, `jit`, `ui`, `icons` and `publrjs`

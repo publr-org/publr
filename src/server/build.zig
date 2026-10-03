@@ -102,7 +102,7 @@ pub fn announce(refreshed: Refreshed, output_dir: []const u8) void {
     std.debug.assert(output_dir.len > 0);
 
     switch (refreshed.outcome) {
-        .built => std.debug.print("publr: built {d} pages, {d} static islands and {d} assets " ++
+        .built => report.info("publr: built {d} pages, {d} static islands and {d} assets " ++
             "({d} bytes) into {s}/\n", .{
             refreshed.full.pages,
             refreshed.full.islands,
@@ -110,13 +110,13 @@ pub fn announce(refreshed: Refreshed, output_dir: []const u8) void {
             refreshed.full.bytes,
             output_dir,
         }),
-        .refreshed => std.debug.print("publr: {s}/ brought up to date: {d} pages and islands " ++
+        .refreshed => report.info("publr: {s}/ brought up to date: {d} pages and islands " ++
             "rewritten, {d} removed, the rest unchanged\n", .{
             output_dir,
             refreshed.written,
             refreshed.removed,
         }),
-        .current => std.debug.print(
+        .current => report.info(
             "publr: {s}/ is current: nothing changed in generated pages; " ++
                 "{d} public files copied unchanged\n",
             .{ output_dir, refreshed.copied },

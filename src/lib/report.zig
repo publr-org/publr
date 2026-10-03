@@ -31,6 +31,20 @@ pub fn format_bounded(buffer: []u8, comptime format: []const u8, args: anytype) 
     return writer.buffered();
 }
 
+/// What a command is doing or did, printed as is: build progress, a summary line. Quiet
+/// under test, like an info log.
+pub fn info(comptime format: []const u8, args: anytype) void {
+    std.debug.assert(format.len > 0);
+
+    const quiet = @intFromEnum(std.log.Level.info) > @intFromEnum(std.testing.log_level);
+
+    if (builtin.is_test and quiet) {
+        return;
+    }
+
+    std.debug.print(format, args);
+}
+
 pub fn err(comptime format: []const u8, args: anytype) void {
     err_reason("", format, args);
 }
@@ -50,6 +64,15 @@ fn report_reason(
     args: anytype,
 ) void {
     std.debug.assert(message_len_max > fence.len);
+
+    // Under test, a report is a log line like any other: a test that provokes one on
+    // purpose lowers `std.testing.log_level` so the run stays quiet.
+    const as_log: std.log.Level = if (level == .warn) .warn else .err;
+
+    if (builtin.is_test and @intFromEnum(as_log) > @intFromEnum(std.testing.log_level)) {
+        return;
+    }
+
     var buffer: [message_len_max]u8 = undefined;
     const message = format_bounded(&buffer, format, args);
     const colored = stderr_is_terminal();

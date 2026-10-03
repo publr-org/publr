@@ -29,7 +29,11 @@ const Flags = struct {
     full: bool = false,
     /// `--url` was given; without it the apps' address is this server's own.
     url_given: bool = false,
-    exit: ?u8 = null,
+    /// Why the flags were refused, printed with the help by `run`; parsing prints nothing.
+    refused: []const u8 = "",
+    /// A flag `serve` does not know.
+    unknown: []const u8 = "",
+    help: bool = false,
 };
 
 pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const u8) !u8 {
@@ -37,7 +41,7 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
 
     const flags = parse_flags(args);
 
-    if (flags.exit) |code| {
+    if (exit_of(flags)) |code| {
         return code;
     }
 
@@ -135,7 +139,7 @@ fn default_port(browser: bool) u16 {
 /// How the apps are served, their address this server's own unless `--url` named one.
 fn apps_mode(arena: std.mem.Allocator, flags: Flags, bound: u16) !apps_host.Mode {
     std.debug.assert(bound > 0);
-    std.debug.assert(flags.exit == null);
+    std.debug.assert(flags.refused.len == 0);
 
     var options = flags.apps;
 
@@ -306,7 +310,7 @@ const help =
 
 fn parse_flags(args: []const []const u8) Flags {
     if (args.len >= 64) {
-        return .{ .exit = usage("too many arguments") };
+        return .{ .refused = "too many arguments" };
     }
 
     var flags: Flags = .{};
@@ -318,10 +322,10 @@ fn parse_flags(args: []const []const u8) Flags {
         if (std.mem.eql(u8, arg, "--port")) {
             index += 1;
             if (index == args.len) {
-                return .{ .exit = usage("--port needs a value") };
+                return .{ .refused = "--port needs a value" };
             }
             flags.port = std.fmt.parseInt(u16, args[index], 10) catch
-                return .{ .exit = usage("--port must be a number (0 picks a free port)") };
+                return .{ .refused = "--port must be a number (0 picks a free port)" };
         } else if (std.mem.eql(u8, arg, "--static")) {
             flags.static = true;
         } else if (std.mem.eql(u8, arg, "--full")) {
@@ -331,7 +335,7 @@ fn parse_flags(args: []const []const u8) Flags {
         } else if (text_option(&flags, arg)) |option| {
             index += 1;
             if (index == args.len) {
-                return .{ .exit = usage("--out, --url and --apps need a value") };
+                return .{ .refused = "--out, --url and --apps need a value" };
             }
             option.* = args[index];
             flags.url_given = flags.url_given or std.mem.eql(u8, arg, "--url");
@@ -339,7 +343,7 @@ fn parse_flags(args: []const []const u8) Flags {
             index += 1;
             const text = if (index < args.len) args[index] else "";
             flags.apps.edge_max_age = std.fmt.parseInt(u32, text, 10) catch
-                return .{ .exit = usage("--edge-max-age needs a number of seconds") };
+                return .{ .refused = "--edge-max-age needs a number of seconds" };
         } else if (std.mem.eql(u8, arg, "--browser")) {
             flags.browser_dir = browser_dir_default;
             if (index + 1 < args.len and !std.mem.startsWith(u8, args[index + 1], "--")) {
@@ -347,24 +351,23 @@ fn parse_flags(args: []const []const u8) Flags {
                 flags.browser_dir = args[index];
             }
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            std.debug.print("{s}", .{help});
-            return .{ .exit = 0 };
+            return .{ .help = true };
         } else {
-            report.err("publr serve: unknown flag \"{s}\"", .{arg});
-            std.debug.print("{s}", .{help});
-            return .{ .exit = 2 };
+            return .{ .unknown = arg };
         }
     }
 
     flags.apps.base_url = std.mem.trimEnd(u8, flags.apps.base_url, "/");
 
     if (!apps_adapter.valid_options(flags.apps)) {
-        return .{ .exit = usage("--out and --apps need a directory, --url an absolute HTTP(S) " ++
-            "address") };
+        return .{ .refused = "--out and --apps need a directory, --url an absolute HTTP(S) " ++
+            "address" };
     }
 
     if (flags.browser_dir) |dir| {
-        if (dir.len == 0) return .{ .exit = usage("--browser needs a nonempty directory") };
+        if (dir.len == 0) {
+            return .{ .refused = "--browser needs a nonempty directory" };
+        }
     }
 
     std.debug.assert(index == args.len);
@@ -375,7 +378,7 @@ fn parse_flags(args: []const []const u8) Flags {
 /// Where a flag that takes text puts it; null for any other flag.
 fn text_option(flags: *Flags, arg: []const u8) ?*[]const u8 {
     std.debug.assert(arg.len > 0);
-    std.debug.assert(flags.exit == null);
+    std.debug.assert(flags.refused.len == 0);
 
     if (std.mem.eql(u8, arg, "--out")) {
         return &flags.apps.output_dir;
@@ -438,6 +441,29 @@ fn usage_port_in_use(first_port: u16, search_span: u16) u8 {
     return 1;
 }
 
+/// The help, or why the flags were refused, printed; null when `serve` should start.
+fn exit_of(flags: Flags) ?u8 {
+    std.debug.assert(flags.refused.len < 200);
+    std.debug.assert(flags.unknown.len < 4096);
+
+    if (flags.help) {
+        std.debug.print("{s}", .{help});
+        return 0;
+    }
+
+    if (flags.unknown.len > 0) {
+        report.err("publr serve: unknown flag \"{s}\"", .{flags.unknown});
+        std.debug.print("{s}", .{help});
+        return 2;
+    }
+
+    if (flags.refused.len > 0) {
+        return usage(flags.refused);
+    }
+
+    return null;
+}
+
 fn usage(message: []const u8) u8 {
     std.debug.assert(message.len > 0);
     std.debug.assert(message.len < 200);
@@ -449,6 +475,9 @@ fn usage(message: []const u8) u8 {
 }
 
 test "a failed static build keeps the apps for recovery and releases them on shutdown" {
+    // A failed build is what this checks: its warning is expected.
+    std.testing.log_level = .err;
+
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -483,13 +512,16 @@ test "a failed static build keeps the apps for recovery and releases them on shu
 
 test "serve flags validate counts and paths before startup" {
     const many = [_][]const u8{"--static"} ** 64;
-    try std.testing.expectEqual(@as(?u8, 2), parse_flags(&many).exit);
-    try std.testing.expectEqual(@as(?u8, 2), parse_flags(&.{ "--out", "" }).exit);
-    try std.testing.expectEqual(@as(?u8, 2), parse_flags(&.{ "--url", "///" }).exit);
-    try std.testing.expectEqual(@as(?u8, 2), parse_flags(&.{ "--browser", "" }).exit);
+    try std.testing.expect(parse_flags(&many).refused.len > 0);
+    try std.testing.expect(parse_flags(&.{ "--out", "" }).refused.len > 0);
+    try std.testing.expect(parse_flags(&.{ "--url", "///" }).refused.len > 0);
+    try std.testing.expect(parse_flags(&.{ "--browser", "" }).refused.len > 0);
 }
 
 test "an app whose build fails answers 503 until a publish lets it build" {
+    // A failed build is what this checks: its warning is expected.
+    std.testing.log_level = .err;
+
     const engine = @import("../template.zig");
     const registry = @import("registry.zig");
     const records = @import("../operations/record.zig");

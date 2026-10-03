@@ -28,7 +28,7 @@ target converts arrays into the receiving component's item types using the rende
 arena, including nested arrays. Reducing those copies and consolidating the
 schemas can be a separate optimization.
 
-`zig build verify` in `publr/` checks generated Zig, tests, formatting, tidy rules,
+`zig build verify-full` in `publr/` checks generated Zig, tests, formatting, tidy rules,
 HTTP smoke and operation parity. Its configured `PUBLR_VERIFY_HOOK` also runs the
 browser smoke. PTSX files must also compile with `pjsx dom` for the SPA target.
 

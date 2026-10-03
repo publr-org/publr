@@ -10,6 +10,8 @@ pub const fixture_apps_dir = "fixtures/apps";
 
 pub const Tests = struct {
     step: *std.Build.Step,
+    /// Core's own tests alone: what the slim `verify` runs.
+    core: *std.Build.Step,
     /// Publr with the fixture apps compiled in, for the smoke and parity.
     fixture_exe: *std.Build.Step.Compile,
     /// Its library, which parity lists the operations of.
@@ -58,11 +60,18 @@ pub fn add(
     test_exe_step.dependOn(&builder.addInstallArtifact(tests, .{
         .dest_sub_path = "publr-tests",
     }).step);
-    test_step.dependOn(&builder.addRunArtifact(tests).step);
+    const core_run = builder.addRunArtifact(tests);
+
+    test_step.dependOn(&core_run.step);
     test_step.dependOn(plugins_step);
     scripts.add_tests(builder, test_step);
     native_plugins.add_tests(builder, library, plugins_step);
     parity.add_tests(builder, fixture, test_step, fixture_plugins);
 
-    return .{ .step = test_step, .fixture_exe = fixture_exe, .fixture = fixture };
+    return .{
+        .step = test_step,
+        .core = &core_run.step,
+        .fixture_exe = fixture_exe,
+        .fixture = fixture,
+    };
 }

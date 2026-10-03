@@ -62,7 +62,8 @@ Requires Zig 0.16.0.
 zig build run -- serve             # build and serve natively
 zig build run -- serve --browser   # the same, running in your browser tab (after: zig build browser)
 zig build test                     # tests
-zig build verify                   # tests + wasm check + formatting + tidy rules + smoke; run before calling anything done
+zig build verify                   # core tests + formatting + tidy rules; after every change
+zig build verify-full              # every check: wasm, smoke, parity, two-mode, browser; before a commit
 ```
 
 ## Docs

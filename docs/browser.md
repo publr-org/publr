@@ -49,5 +49,5 @@ messages.
 
 Trying Publr without installing anything, demos, offline editing, and one day
 a full local-first workflow. It is not a "lite" version: the test suite and
-the smoke tests run against the same code, and `zig build verify` compiles the
+the smoke tests run against the same code, and `zig build verify-full` compiles the
 WebAssembly target on every run.

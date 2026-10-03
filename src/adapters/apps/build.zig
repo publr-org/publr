@@ -176,7 +176,7 @@ fn build_route(
             }
 
             if (slugs.len > 0) {
-                std.debug.print("\n", .{});
+                report.info("\n", .{});
             }
         },
         .catch_all => {},
@@ -190,10 +190,10 @@ fn report_progress(url: []const u8, done: u32, total: u32) void {
     std.debug.assert(url.len > 0);
     std.debug.assert(done <= total);
 
-    std.debug.print("\rpublr: building {s} ({d}/{d})\x1b[K", .{ url, done, total });
+    report.info("\rpublr: building {s} ({d}/{d})\x1b[K", .{ url, done, total });
 
     if (total == 1) {
-        std.debug.print("\n", .{});
+        report.info("\n", .{});
     }
 }
 

@@ -441,6 +441,9 @@ test "start keeps state and PKCE in a cookie and sends the browser to the provid
 }
 
 test "callback signs in with the right state, refuses everything else, and links when signed in" {
+    // Refusals are what this checks: their warnings are expected.
+    std.testing.log_level = .err;
+
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();

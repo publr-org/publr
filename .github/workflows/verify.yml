@@ -13,6 +13,6 @@ jobs:
         with: { path: publr }
       - uses: ./publr/.github/actions/workspace
 
-      - name: zig build verify
+      - name: zig build verify-full
         working-directory: publr
-        run: zig build verify --summary all
+        run: zig build verify-full --summary all

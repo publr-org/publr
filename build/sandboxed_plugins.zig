@@ -93,6 +93,9 @@ pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8)
         run.addArg("--out");
         files[index] = run.addOutputFileArg(builder.fmt("{s}.wasm", .{name}));
         run.setEnvironmentVariable("PUBLR_CACHE_DIR", cache);
+        // What a fixture leaves out of the sandbox is a notice for plugin authors; these
+        // leave it out on purpose. A failed build still fails the step, on its exit code.
+        _ = run.captureStdErr(.{});
 
         // A folder argument is cached by its path alone: each source file is an input.
         for (embed.files_under(builder, source, ".zig")) |path| {

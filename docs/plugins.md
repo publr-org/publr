@@ -61,7 +61,7 @@ Two things follow from being inside the binary:
 
 A plugin that uses only the public SDK can be shipped both ways: compiled in,
 or as an installed plugin. Whatever it does installed, it does the same compiled in, and
-`zig build verify` proves it for every test plugin (see
+`zig build verify-full` proves it for every test plugin (see
 [Build: Two-mode check](build.md#two-mode-check)).
 
 ## Installed plugins (DLP)

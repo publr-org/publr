@@ -1,16 +1,10 @@
 const std = @import("std");
-const browser = @import("build/browser.zig");
+const verify = @import("build/verify.zig");
 const core = @import("build/core.zig");
 const vendors = @import("build/vendors.zig");
-const smoke = @import("build/smoke.zig");
-const parity = @import("build/parity.zig");
-const hook = @import("build/hook.zig");
-const tidy = @import("build/tidy.zig");
-const wasm = @import("build/wasm.zig");
 const apps = @import("build/apps.zig");
 const tests = @import("build/tests.zig");
 const sandboxed_plugins = @import("build/sandboxed_plugins.zig");
-const two_mode = @import("build/two_mode.zig");
 
 pub fn build(builder: *std.Build) void {
     const target = builder.standardTargetOptions(.{});
@@ -45,39 +39,16 @@ pub fn build(builder: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    const verify_step = builder.step("verify", "Run every gate check");
-
-    verify_step.dependOn(checks.step);
-    verify_step.dependOn(wasm.add_check(builder, from));
-    verify_step.dependOn(&fmt_check.step);
-    verify_step.dependOn(tidy.add_check(builder));
-
-    const both_ways = two_mode.add_check(builder, target, optimize, from, fixture_plugins);
-
-    verify_step.dependOn(both_ways.step);
-    verify_step.dependOn(smoke.add_check(
-        builder,
-        checks.fixture_exe,
-        exe,
-        fixture_plugins.file_of("greeter"),
-        both_ways.native,
-        fixture_plugins.file_of("postcard"),
-    ));
-
-    const parity_step = parity.add_check(builder, checks, fixture_plugins);
-
-    verify_step.dependOn(parity_step);
-
     builder.step("run", "Run publr").dependOn(&run_cmd.step);
-    builder.step("parity", "Run every printed example").dependOn(parity_step);
-
-    const browser_step = browser.add_step(builder, from);
-
-    verify_step.dependOn(browser_step);
-
-    if (hook.add_check(builder, checks.fixture_exe, browser_step)) |local_hook| {
-        verify_step.dependOn(local_hook);
-    }
+    verify.add(builder, .{
+        .target = target,
+        .optimize = optimize,
+        .from = from,
+        .exe = exe,
+        .checks = checks,
+        .fixture_plugins = fixture_plugins,
+        .fmt = &fmt_check.step,
+    });
 
     sandboxed_plugins.add_step(builder, exe, from.plugins_dir, from.native);
     vendors.add_import_step(builder);
