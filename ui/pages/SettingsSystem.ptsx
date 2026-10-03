@@ -6,6 +6,11 @@ import { Button } from "@publr/ui/Button.ptsx";
 import { TabNav } from "@publr/ui/TabNav.ptsx";
 import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
 import { CurrencyTable } from "../components/CurrencyTable.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 
 export type SettingsSystemProps = {
   user_name: string;
@@ -19,6 +24,8 @@ export type SettingsSystemProps = {
   nav: JSX.Element;
   /** The section shown: `general`, or `currencies`. */
   tab: string;
+  /** Whether the viewer may read the activity and error logs: the menu beside the tabs. */
+  can_logs?: boolean;
   /** Where the currencies form posts. */
   action: string;
   /** The site's currencies, the default first. */
@@ -41,18 +48,31 @@ export type SettingsSystemProps = {
 
 /** The system's own settings, a section per tab: general, and the currencies the site
  * prices in and how it writes them. */
-export function SettingsSystem({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, tab, action, currencies, digits, notice = "", problem = "" }: SettingsSystemProps) {
+export function SettingsSystem({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, tab, can_logs = false, action, currencies, digits, notice = "", problem = "" }: SettingsSystemProps) {
   return (
     <Layout title="System settings" section="settings" sidebar={nav}
       user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
       <div class="px-8 pt-7 pb-6">
         <PageHeader title="System settings" description="How this Publr runs, and the conventions the site follows." />
       </div>
-      <div class="border-y border-border px-8 py-2">
+      <div class="flex items-center justify-between gap-4 border-y border-border px-8 py-2">
         <TabNav label="System settings">
           <TabNavLink href="/admin/settings/system" active={tab === "general"}>General</TabNavLink>
           <TabNavLink href="/admin/settings/system/currencies" active={tab === "currencies"}>Currencies</TabNavLink>
         </TabNav>
+        {can_logs && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" hierarchy="tertiary" size="sm" label="More" title="More">
+                <Icon name="more" size="sm" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="right">
+              <DropdownMenuItem href="/admin/settings/system/activity">Activity log</DropdownMenuItem>
+              <DropdownMenuItem href="/admin/settings/system/errors">Error log</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
       {tab === "general" && (
         <div class="px-8 py-6">

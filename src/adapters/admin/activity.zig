@@ -1,5 +1,5 @@
-//! Settings › Activity: the activity and error logs, read only, newest first, a page at a
-//! time (`?before=<id>`).
+//! The two logs, read only, reached from the ⋯ menu beside System settings' tabs:
+//! Activity log and Error log, newest first, a page at a time (`?before=<id>`).
 
 const std = @import("std");
 const admin = @import("../admin.zig");
@@ -12,8 +12,8 @@ const settings_nav = @import("settings_nav.zig");
 const views = admin.views;
 const Entry = views.Activity.EntriesItem;
 const page_size: u32 = 50;
-const activity_path = "/admin/settings/activity";
-const errors_path = activity_path ++ "/errors";
+const activity_path = "/admin/settings/system/activity";
+const errors_path = "/admin/settings/system/errors";
 
 pub fn show_activity(
     request: *admin.Request,
@@ -33,11 +33,13 @@ pub fn show_activity(
 
     for (listed.entries, entries) |item, *entry| {
         entry.* = .{
-            .when = try when_of(session.arena, item.at),
+            .date = (try when_of(session.arena, item.at)).date,
+            .time = (try when_of(session.arena, item.at)).time,
             .who = item.actor,
             .operation = item.operation,
             .what = try changed_text(session.arena, item.units, item.calls),
             .input = item.input,
+            .json = try json_of(session.arena, item),
         };
     }
 
@@ -72,7 +74,8 @@ pub fn show_errors(
             "";
 
         entry.* = .{
-            .when = try when_of(session.arena, item.at),
+            .date = (try when_of(session.arena, item.at)).date,
+            .time = (try when_of(session.arena, item.at)).time,
             .who = item.actor,
             .operation = item.operation,
             .what = try std.fmt.allocPrint(session.arena, "{s}{s}{s}", .{
@@ -81,6 +84,7 @@ pub fn show_errors(
                 said,
             }),
             .input = item.input,
+            .json = try json_of(session.arena, item),
         };
     }
 
@@ -107,7 +111,7 @@ fn render(
         .can_settings = shell.can_settings,
         .top_bar = shell.top_bar,
         .csrf = shell.csrf,
-        .nav = try settings_nav.node(session, "activity"),
+        .nav = try settings_nav.node(session, "system"),
         .tab = tab,
         .entries = entries,
         .older_href = older_href,
@@ -134,13 +138,51 @@ fn changed_text(
     return std.fmt.allocPrint(arena, "{s}{s}set off {s}", .{ changed, gap, set_off });
 }
 
-fn when_of(arena: std.mem.Allocator, at: i64) admin.Error![]const u8 {
+/// The whole entry as indented JSON, its input shown as the object it is.
+fn json_of(arena: std.mem.Allocator, item: anytype) admin.Error![]const u8 {
+    std.debug.assert(item.operation.len > 0);
+
+    var shown: std.json.ObjectMap = .empty;
+    const fields = @typeInfo(@TypeOf(item)).@"struct".fields;
+
+    inline for (fields) |field| {
+        const value = @field(item, field.name);
+        const as_json: std.json.Value = if (comptime std.mem.eql(u8, field.name, "input"))
+            std.json.parseFromSliceLeaky(std.json.Value, arena, value, .{}) catch .{
+                .string = value,
+            }
+        else
+            try value_of(arena, value);
+
+        try shown.put(arena, field.name, as_json);
+    }
+
+    return std.json.Stringify.valueAlloc(arena, std.json.Value{ .object = shown }, .{
+        .whitespace = .indent_2,
+    });
+}
+
+fn value_of(arena: std.mem.Allocator, value: anytype) admin.Error!std.json.Value {
+    const text = try std.json.Stringify.valueAlloc(arena, value, .{});
+
+    std.debug.assert(text.len > 0);
+
+    return std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch .null;
+}
+
+const When = struct { date: []const u8, time: []const u8 };
+
+/// The day and the time of day, UTC, from one stored moment.
+fn when_of(arena: std.mem.Allocator, at: i64) admin.Error!When {
     std.debug.assert(at >= 0);
 
-    return time.datetime_text(arena, at) catch |err| switch (err) {
-        error.OutOfMemory => error.OutOfMemory,
-        else => "",
+    const text = time.datetime_text(arena, at) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return .{ .date = "", .time = "" },
     };
+    const space = std.mem.indexOfScalar(u8, text, ' ') orelse return .{ .date = text, .time = "" };
+
+    return .{ .date = text[0..space], .time = text[space + 1 ..] };
 }
 
 /// `before=<id>` from the query, the page asked for.

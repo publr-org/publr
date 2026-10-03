@@ -8,9 +8,6 @@ export type SettingsNavProps = {
   system_active: boolean;
   users_active: boolean;
   plugins_active: boolean;
-  /** The logs, for whoever may read them. */
-  activity_active: boolean;
-  can_activity: boolean;
   /** The pages compiled-in plugins add, for whoever may use them. */
   pages: Array<{ label: string; href: string; icon: IconName; active: boolean }>;
   /** The settings sections defined under Structure, in their order. */
@@ -21,8 +18,6 @@ export function SettingsNav({
   system_active,
   users_active,
   plugins_active,
-  activity_active,
-  can_activity,
   pages,
   sections,
 }: SettingsNavProps) {
@@ -40,12 +35,7 @@ export function SettingsNav({
         <Icon name="package" size="sm" classes="shrink-0" />
         <Text as="span" variant="body-md">Plugins</Text>
       </SidebarNavItem>
-      {can_activity && (
-        <SidebarNavItem href="/admin/settings/activity" active={activity_active}>
-          <Icon name="clock-rewind" size="sm" classes="shrink-0" />
-          <Text as="span" variant="body-md">Activity</Text>
-        </SidebarNavItem>
-      )}
+
       {pages.map((page) => (
         <SidebarNavItem href={page.href} active={page.active}>
           <Icon name={page.icon} size="sm" classes="shrink-0" />

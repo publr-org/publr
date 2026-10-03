@@ -5,7 +5,6 @@ const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const types = @import("../../operations/content_type.zig");
-const activity = @import("../../operations/activity.zig");
 
 pub fn node(session: *admin.Session, current: []const u8) admin.Error!admin.render.Node {
     std.debug.assert(session.signed_in());
@@ -29,8 +28,6 @@ pub fn node(session: *admin.Session, current: []const u8) admin.Error!admin.rend
         .system_active = std.mem.eql(u8, current, "system"),
         .users_active = std.mem.eql(u8, current, "users"),
         .plugins_active = std.mem.eql(u8, current, "plugins"),
-        .activity_active = std.mem.eql(u8, current, "activity"),
-        .can_activity = registry.SDK.may(&session.ctx, activity.List),
         .pages = try pages_of(session, current),
         .sections = items.items,
     });

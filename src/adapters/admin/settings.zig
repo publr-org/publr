@@ -203,6 +203,7 @@ fn render(session: *admin.Session, status: admin.Status, shown: Shown) admin.Err
         .csrf = shell.csrf,
         .nav = try settings_nav.node(session, "system"),
         .tab = shown.tab,
+        .can_logs = registry.SDK.may(&session.ctx, @import("../../operations/activity.zig").List),
         .action = currencies_path,
         .currencies = rows,
         .digits = if (std.mem.eql(u8, shown.tab, "currencies")) digits else &.{},

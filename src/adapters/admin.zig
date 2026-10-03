@@ -99,8 +99,8 @@ pub fn register(router: *http.Router) void {
     router.get("/admin/settings", &settings_pages.show);
     router.get("/admin/settings/system", &settings_pages.system);
     router.get("/admin/settings/system/currencies", &settings_pages.currencies_tab);
-    router.get("/admin/settings/activity", &activity_pages.show_activity);
-    router.get("/admin/settings/activity/errors", &activity_pages.show_errors);
+    router.get("/admin/settings/system/activity", &activity_pages.show_activity);
+    router.get("/admin/settings/system/errors", &activity_pages.show_errors);
     router.post("/admin/settings/system/currencies", &settings_pages.save_currencies);
     router.get("/admin/settings/users", &user_pages.list);
     router.get("/admin/settings/users/new", &user_pages.new_page);
