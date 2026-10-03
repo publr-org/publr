@@ -171,7 +171,10 @@ pub fn actor_of(ctx: *Ctx) Error![]const u8 {
     std.debug.assert(ctx.now_ms >= 0);
 
     const text = switch (ctx.caller) {
-        .anonymous => return "anonymous",
+        .anonymous => if (ctx.visitor.len > 0)
+            std.fmt.allocPrint(ctx.arena, "visitor:{s}", .{ctx.visitor})
+        else
+            return "anonymous",
         .system => return "system",
         .user => |user| return user.id,
         .token => |token| std.fmt.allocPrint(ctx.arena, "token:{s}", .{token.id}),
@@ -220,6 +223,7 @@ fn unit_prefix(notice: []const u8) ?[]const u8 {
         .{ "custom_fields.", "field_group" },
         .{ "plugin.", "plugin" },
         .{ "view.", "view" },
+        .{ "internal.", "internal" },
         .{ "snapshot.", "record" },
         .{ "auth.user_", "user" },
         .{ "auth.password_set", "user" },

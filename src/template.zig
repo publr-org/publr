@@ -787,7 +787,7 @@ pub const TestContext = struct {
             .title = "First",
             .created_at = "2026-01-01",
             .updated_at = "2026-01-01",
-            .data = .{ .content = "<p>One</p>" },
+            .data = .{ .content = "<p>One</p><script>alert(1)</script>" },
         },
     };
 
@@ -951,6 +951,55 @@ pub const TestContext = struct {
         }
 
         return ctx.reference(&.{});
+    }
+
+    pub fn query_param(ctx: *const TestContext, name: []const u8) !?[]const u8 {
+        _ = ctx;
+
+        return if (std.mem.eql(u8, name, "error")) "NotEnoughStock" else null;
+    }
+
+    pub fn call_with(ctx: *const TestContext, operation: []const u8, input: []const u8) !Entry {
+        std.debug.assert(operation.len > 0);
+        std.debug.assert(input.len <= 1 << 20);
+
+        return ctx.call(operation);
+    }
+
+    /// The posts whose `title` is the value asked for; every post when no field is named.
+    pub fn find_records(
+        ctx: *const TestContext,
+        type_id: []const u8,
+        field: []const u8,
+        value: []const u8,
+        limit: u32,
+        offset: u32,
+    ) ![]const Entry {
+        std.debug.assert(type_id.len > 0);
+        std.debug.assert(limit > 0 or offset == 0);
+
+        const all = try ctx.query(type_id, .{});
+        var kept: std.ArrayList(Entry) = .empty;
+
+        for (all) |item| {
+            if (field.len == 0 or std.mem.eql(u8, item.title, value)) {
+                try kept.append(ctx.arena, item);
+            }
+        }
+
+        return kept.items;
+    }
+
+    pub fn get_record(ctx: *const TestContext, type_id: []const u8, id: []const u8) !?Entry {
+        std.debug.assert(type_id.len > 0);
+
+        for (try ctx.query(type_id, .{})) |item| {
+            if (std.mem.eql(u8, item.id, id)) {
+                return item;
+            }
+        }
+
+        return null;
     }
 
     pub fn user_field(ctx: *const TestContext, path: []const u8) !?[]const u8 {
@@ -1285,6 +1334,78 @@ test "money: a field written as the site writes it, natively and in script" {
     }, .{});
     defer testing.allocator.free(message);
     try testing.expect(contains(message, "money takes a field of an entry"));
+}
+
+test "set:html: whatever a page prints as markup is sanitized, natively and in script" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/posts/[slug].publr",
+            \\---
+            \\const post = Publr.build.getEntry();
+            \\---
+            \\<div set:html={post.data.content} />
+        ),
+        source("content/scripted.publr",
+            \\---
+            \\const parts = ['<b>kept</b>', '<script>alert(1)</script>', '<img src=x onerror=y>'];
+            \\const body = parts.join('');
+            \\---
+            \\<div set:html={body} />
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const ctx: TestContext = .{ .arena = arena, .slug = "first" };
+    const native_index = program.find("content/posts/[slug].publr").?;
+    try testing.expect(program.templates[native_index].javascript == null);
+    const native = try render_test(arena, program, native_index, &ctx);
+    try testing.expect(contains(native, "<div><p>One</p></div>"));
+    try testing.expect(!contains(native, "script"));
+
+    const scripted_index = program.find("content/scripted.publr").?;
+    try testing.expect(program.templates[scripted_index].javascript != null);
+    const scripted = try render_test(arena, program, scripted_index, &ctx);
+    try testing.expect(contains(scripted, "<div><b>kept</b><img src=\"x\"></div>"));
+    try testing.expect(!contains(scripted, "onerror"));
+}
+
+test "reads: get, findOne and find by one field run as script; more than one field is refused" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/index.publr",
+            \\---
+            \\const first = Publr.build.get('post', 'p1');
+            \\const none = Publr.build.get('post', 'nope');
+            \\const named = Publr.build.findOne('post', 'title', 'First');
+            \\const all = Publr.build.find('post');
+            \\const some = Publr.build.find('post', { title: 'First' });
+            \\---
+            \\<p>{first.title}|{none === null ? "none" : "?"}|{named.id}|{all.length}|
+            \\{some.length}</p>
+        ),
+        source("content/two.publr",
+            \\---
+            \\const both = Publr.build.find('post', { title: 'First', slug: 'first' });
+            \\---
+            \\<p>{both.length}</p>
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const ctx: TestContext = .{ .arena = arena };
+    const index = program.find("content/index.publr").?;
+    try testing.expect(program.templates[index].javascript != null);
+    const page = try render_test(arena, program, index, &ctx);
+    try testing.expectEqualStrings("<p>First|none|p1|2|\n1</p>", page);
+
+    const two = program.find("content/two.publr").?;
+    try testing.expectError(error.FindTakesOneField, render_test(arena, program, two, &ctx));
 }
 
 test "islands: dynamic is inferred from Publr.request, `island` defers, dynamic needs dynamic" {

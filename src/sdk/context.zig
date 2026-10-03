@@ -23,6 +23,9 @@ pub const Ctx = struct {
     /// The app a request came through (`app.zon`'s `.name`), empty for the admin, the CLI and
     /// the API: a document created on the way belongs to it.
     app: []const u8 = "",
+    /// The visitor's stable id (the `publr_visitor` cookie) when the call came from an app's
+    /// page, island or `_api`; empty otherwise. Beside the user once they sign in.
+    visitor: []const u8 = "",
     /// The plugins whose content types the caller may reach here: an app's `.plugins`, or
     /// the admin narrowed to that app. Null: every plugin's.
     app_plugins: ?[]const []const u8 = null,
@@ -49,6 +52,8 @@ pub const Ctx = struct {
     plugin_states: ?*anyopaque = null,
     /// How deep calls nest through installed plugins, bounded by `plugins.depth_max`.
     plugin_depth: u32 = 0,
+    /// Set while a display hook runs: it may read what it is granted, never write.
+    reads_only: bool = false,
 
     pub fn init(options: Options) Ctx {
         std.debug.assert(options.request_id.len <= request_id_len_max);

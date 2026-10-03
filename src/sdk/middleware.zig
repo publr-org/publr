@@ -6,7 +6,8 @@ pub const middleware_max: u32 = 256;
 
 const Error = operation.Error;
 
-pub const Stage = enum { pre, before, after, on };
+/// `display` changes how a value is shown (`display.zig`), never what an operation does.
+pub const Stage = enum { pre, before, after, on, display };
 
 pub const Event = union(enum) {
     completed: Completed,
@@ -46,6 +47,7 @@ pub fn validate(comptime Middleware: type) void {
                 }
                 operation.assert_name(Middleware.operation);
             },
+            .display => @import("display.zig").validate(Middleware),
             .pre, .on => {},
         }
     }
@@ -53,7 +55,7 @@ pub fn validate(comptime Middleware: type) void {
 
 pub fn applies(comptime Middleware: type, comptime Operation: type) bool {
     comptime {
-        if (Middleware.stage == .on or Middleware.stage == .pre) {
+        if (Middleware.stage != .before and Middleware.stage != .after) {
             return false;
         }
 

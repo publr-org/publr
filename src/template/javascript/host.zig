@@ -55,6 +55,14 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
                 return money(vm, frame.ctx, args);
             }
 
+            if (std.mem.eql(u8, method, "get") or std.mem.eql(u8, method, "findOne")) {
+                return one_record(vm, frame, method, args);
+            }
+
+            if (std.mem.eql(u8, method, "find")) {
+                return found_records(vm, frame, args);
+            }
+
             if (std.mem.eql(u8, method, "now")) {
                 const stamp = if (request) frame.ctx.now() else frame.ctx.build_time();
                 return vm.string(try time.datetime_text(vm.arena, stamp));
@@ -101,12 +109,20 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
                 return optional(vm, ctx.cookie(text));
             }
 
+            if (std.mem.eql(u8, method, "query")) {
+                return optional(vm, try ctx.query_param(text));
+            }
+
             if (std.mem.eql(u8, method, "userField")) {
                 return optional(vm, try ctx.user_field(text));
             }
 
             if (std.mem.eql(u8, method, "call")) {
-                return entry(vm, frame, try ctx.call(text));
+                const given = try vm.item(args, 1);
+                defer vm.free(given);
+                const input = if (api.JS_IsString(given)) try string(vm, given) else "";
+
+                return answer(vm, try ctx.call_with(text, input));
             }
 
             if (std.mem.eql(u8, method, "redirect")) {
@@ -151,6 +167,73 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
                 frame,
                 try frame.ctx.entry(type_id, frame.ctx.param("slug") orelse "unknown"),
             );
+        }
+
+        /// `get(type, id)`: the live record by id when it is of that type; `findOne(type, field,
+        /// value)`: the one whose field holds the value. Null for none; two for findOne fail.
+        fn one_record(vm: *VM, frame: *Frame, method: []const u8, args: Value) !Value {
+            std.debug.assert(api.JS_IsArray(args));
+            std.debug.assert(method.len > 0);
+
+            const type_value = try vm.item(args, 0);
+            defer vm.free(type_value);
+            const second = try vm.item(args, 1);
+            defer vm.free(second);
+            const type_id = try string(vm, type_value);
+
+            if (std.mem.eql(u8, method, "get")) {
+                const got = try frame.ctx.get_record(type_id, try string(vm, second)) orelse {
+                    return api.publr_js_null();
+                };
+
+                return entry(vm, frame, got);
+            }
+
+            const third = try vm.item(args, 2);
+            defer vm.free(third);
+            const field = try string(vm, second);
+            const wanted = try string(vm, third);
+            const listed = try frame.ctx.find_records(type_id, field, wanted, 2, 0);
+
+            if (listed.len > 1) {
+                return error.FindOneFoundTwo;
+            }
+
+            return if (listed.len == 0) api.publr_js_null() else entry(vm, frame, listed[0]);
+        }
+
+        /// `find(type, { field: value }, { limit, offset })`: live records, newest first; `where`
+        /// names at most one field, matched by equality.
+        fn found_records(vm: *VM, frame: *Frame, args: Value) !Value {
+            std.debug.assert(api.JS_IsArray(args));
+            std.debug.assert(frame.template.rel.len > 0);
+
+            const type_value = try vm.item(args, 0);
+            defer vm.free(type_value);
+            const where_value = try vm.item(args, 1);
+            defer vm.free(where_value);
+            const page_value = try vm.item(args, 2);
+            defer vm.free(page_value);
+            const where = try parsed(vm, where_value);
+            const page = try parsed(vm, page_value);
+
+            if (where != .object or where.object.count() > 1 or page != .object) {
+                return error.FindTakesOneField;
+            }
+
+            var field: []const u8 = "";
+            var wanted: []const u8 = "";
+
+            if (where.object.count() == 1) {
+                field = where.object.keys()[0];
+                wanted = try scalar_text(vm.arena, where.object.values()[0]);
+            }
+
+            const limit = number_of(page, "limit") orelse 50;
+            const offset = number_of(page, "offset") orelse 0;
+            const type_id = try string(vm, type_value);
+            const listed = try frame.ctx.find_records(type_id, field, wanted, limit, offset);
+            return collection(vm, frame, listed);
         }
 
         fn get_collection(vm: *VM, frame: *Frame, args: Value) !Value {
@@ -256,6 +339,20 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
             return object;
         }
 
+        /// An operation's answer as the page reads it: `{ data: <the answer> }`, the answer
+        /// plain JSON as the operation returned it; its lists are not records.
+        fn answer(vm: *VM, value: Ctx.Entry) !Value {
+            const object = try vm.check(api.JS_NewObject(vm.context));
+            errdefer vm.free(object);
+            const document = try value.data.javascript_value(vm.arena);
+
+            std.debug.assert(document == .object);
+
+            try vm.set(object, "data", try json(vm, document));
+
+            return object;
+        }
+
         fn collection(vm: *VM, frame: *Frame, values: []const Ctx.Entry) !Value {
             return collection_at(vm, frame, values, 0);
         }
@@ -288,7 +385,13 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
 
 fn json(vm: *VM, value: std.json.Value) !Value {
     const text = try std.json.Stringify.valueAlloc(vm.arena, value, .{});
-    return vm.check(api.JS_ParseJSON(vm.context, text.ptr, text.len, "publr:data"));
+    // QuickJS reads to a terminating NUL, not to the length given: without one it reads
+    // whatever the arena holds next.
+    const terminated = try vm.arena.dupeZ(u8, text);
+
+    std.debug.assert(terminated.len == text.len);
+
+    return vm.check(api.JS_ParseJSON(vm.context, terminated.ptr, terminated.len, "publr:data"));
 }
 
 fn optional(vm: *VM, text: ?[]const u8) !Value {
@@ -381,6 +484,35 @@ fn money(vm: *VM, ctx: anytype, args: Value) !Value {
     }
 
     return vm.string(try ctx.money(amount, currency));
+}
+
+fn parsed(vm: *VM, value: Value) !std.json.Value {
+    std.debug.assert(!api.JS_IsException(value));
+
+    return std.json.parseFromSliceLeaky(std.json.Value, vm.arena, try string(vm, value), .{});
+}
+
+fn scalar_text(arena: std.mem.Allocator, value: std.json.Value) ![]const u8 {
+    std.debug.assert(@intFromEnum(value) <= 8);
+
+    return switch (value) {
+        .string => |text| text,
+        .integer => |number| std.fmt.allocPrint(arena, "{d}", .{number}),
+        .bool => |flag| if (flag) "true" else "false",
+        else => error.FindTakesOneField,
+    };
+}
+
+fn number_of(object: std.json.Value, key: []const u8) ?u32 {
+    std.debug.assert(key.len > 0);
+
+    const value = object.object.get(key) orelse return null;
+
+    if (value != .integer or value.integer < 0) {
+        return null;
+    }
+
+    return @intCast(@min(value.integer, 200));
 }
 
 fn positive(vm: *VM, value: Value) !u32 {

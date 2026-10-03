@@ -68,6 +68,9 @@ pub const steps = [_][]const []const u8{
     &.{ "--as", admin, "sampler", "note", "--note", "quiet words" },
     &.{ "--as", admin, "sampler", "note", "--note", "more" },
     &.{ "--as", admin, "sampler", "logs" },
+    // A display hook: how people see the notes, never what is stored.
+    &.{ "--as", admin, "record", "shown", "--type", "sample_note" },
+    &.{ "--as", admin, "record", "list", "--type", "sample_note" },
     &.{ "--as", admin, "sampler", "note", "--help" },
     // What the plugins declared, as the project now holds it.
     &.{ "--as", admin, "record", "list", "--type", "salutation" },

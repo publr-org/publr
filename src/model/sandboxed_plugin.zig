@@ -136,11 +136,12 @@ pub const Field = struct {
 /// A hook a plugin asks for; its entry is the number of operations plus its position here.
 pub const Hook = struct {
     stage: Stage,
-    /// The operation a `before` or `after` hook runs on, or the event an event hook sees.
+    /// The operation a `before` or `after` hook runs on, the event an event hook sees, or
+    /// what a display hook changes (`record.title/variant`).
     target: []const u8,
     reason: []const u8,
 
-    pub const Stage = enum { before, after, event };
+    pub const Stage = enum { before, after, event, display };
 };
 
 /// The defaults every call into a plugin runs within.
@@ -206,7 +207,7 @@ pub fn requests(
             .reason = hook.reason,
             .tier = switch (hook.stage) {
                 .event, .after => .low,
-                .before => .medium,
+                .before, .display => .medium,
             },
         });
     }
@@ -252,6 +253,9 @@ fn hook_sentence(arena: std.mem.Allocator, hook: Hook) error{OutOfMemory}![]cons
     return switch (hook.stage) {
         .event, .after => std.fmt.allocPrint(arena, "See when {s} happens", .{hook.target}),
         .before => std.fmt.allocPrint(arena, "Change what is sent to {s}", .{hook.target}),
+        .display => std.fmt.allocPrint(arena, "Change how {s} is shown, as text", .{
+            hook.target,
+        }),
     };
 }
 

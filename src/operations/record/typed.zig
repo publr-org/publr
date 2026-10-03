@@ -213,6 +213,30 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
             return items;
         }
 
+        /// The live records of these ids, in one list; an id with no record readable is
+        /// left out, so the answer may be shorter and is in no promised order.
+        pub fn many(ctx: *PluginCtx, ids: []const []const u8) Error![]const Item {
+            std.debug.assert(ids.len <= record.list_max);
+
+            if (ids.len == 0) {
+                return &.{};
+            }
+
+            const listed = try ctx.call(record.List, .{
+                .type = handle,
+                .ids = ids,
+                .limit = @intCast(ids.len),
+                .documents = true,
+            });
+            const items = try ctx.arena().alloc(Item, listed.records.len);
+
+            for (listed.records, listed.documents, items) |row, document, *target| {
+                target.* = try item(ctx, row, document);
+            }
+
+            return items;
+        }
+
         fn item(ctx: *PluginCtx, row: record.Record, document: []const u8) Error!Item {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(document.len > 0);

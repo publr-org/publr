@@ -12,6 +12,7 @@ const apps_adapter = @import("../apps.zig");
 const context_module = @import("context.zig");
 const Memo = @import("context.zig").Memo;
 const build = @import("build.zig");
+const visitor = @import("visitor.zig");
 const public = @import("public.zig");
 const Project = @import("../../server/project.zig").Project;
 const Target = Project.Target;
@@ -195,6 +196,10 @@ fn render(
         Context.visitor(project, app, ctx.arena, request)
     else
         .anonymous;
+    const visitor_id = if (route.live)
+        try visitor.ensure(project, request, response, ctx.arena)
+    else
+        "";
     var redirect_to: ?[]const u8 = null;
     const html = render_page(ctx.arena, app, route.template, .{
         .arena = ctx.arena,
@@ -204,6 +209,7 @@ fn render(
         .params = .{ .slug = matched.slug },
         .live = route.live,
         .caller = caller,
+        .visitor_id = visitor_id,
         .redirect_to = if (route.live) &redirect_to else null,
     }) catch |err| {
         if (err == error.EntryNotFound) {

@@ -540,6 +540,14 @@ fn data_call(compiler: *Compiler, name: []const u8, rhs: []const u8, call: []con
         return money_call(compiler, name, args);
     }
 
+    const scripted = [_][]const u8{ "get(", "findOne(", "find(", "query(" };
+
+    for (scripted) |prefix| {
+        if (call_of(call, prefix) != null) {
+            return compiler.script("{s} runs as script", .{rhs});
+        }
+    }
+
     return compiler.fail("unsupported Publr call: {s}", .{rhs});
 }
 
@@ -713,6 +721,10 @@ fn operation_call(
                 "Publr.request.call()",
             .{},
         );
+    }
+
+    if (expression.top_level(literal, ',') != null) {
+        return compiler.script("call() with an input runs as script: {s}", .{literal});
     }
 
     const operation = try expression.js_string(compiler, literal);

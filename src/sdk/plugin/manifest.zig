@@ -114,8 +114,13 @@ fn hooks_of(comptime Plugin: type) []const Hook {
                 .before => .before,
                 .after => .after,
                 .event => .event,
+                .display => .display,
             };
-            const target = if (stage == .event) Declared.event else Declared.operation;
+            const target = switch (stage) {
+                .event => Declared.event,
+                .display => @import("../display.zig").target_of(Declared),
+                .before, .after => Declared.operation,
+            };
 
             list = list ++ &[_]Hook{.{
                 .stage = stage,

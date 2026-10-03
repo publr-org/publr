@@ -298,6 +298,8 @@ pub const Context = struct {
     memo: ?*Memo = null,
     /// A per-request render (a live page, a dynamic fragment): dynamic islands flatten.
     live: bool = false,
+    /// The visitor's id (`visitor.zig`) on a per-request render; empty in a build.
+    visitor_id: []const u8 = "",
     /// Who the records are read as in a per-request render (`visitor`); anything else is
     /// shared by every visitor and reads as nobody.
     caller: sdk.Caller = .anonymous,
@@ -593,7 +595,7 @@ pub const Context = struct {
     }
 
     /// The record's document, and the read written down; the memo answers a repeat.
-    fn load(ctx: *const Context, id: []const u8) !Entry {
+    pub fn load(ctx: *const Context, id: []const u8) !Entry {
         std.debug.assert(id.len > 0);
         std.debug.assert(ctx.project.connection.transaction_depth == 0);
 
@@ -654,7 +656,7 @@ pub const Context = struct {
     }
 
     /// A listed record, its document read with its page: remembered like a loaded one.
-    fn adopt(ctx: *const Context, record: record_operations.Record, text: []const u8) !Entry {
+    pub fn adopt(ctx: *const Context, record: record_operations.Record, text: []const u8) !Entry {
         std.debug.assert(record.id.len > 0);
 
         if (ctx.deps) |deps| {
@@ -676,6 +678,9 @@ pub const Context = struct {
         return adopted;
     }
 
+    pub const get_record = @import("reads.zig").get_record;
+    pub const find_records = @import("reads.zig").find_records;
+    pub const call_with = @import("reads.zig").call_with;
     pub const money_code = @import("money.zig").code;
     pub const money = @import("money.zig").write;
 
@@ -723,6 +728,23 @@ pub const Context = struct {
         const identity = identify(ctx.project, ctx.app, ctx.arena, request);
 
         return .{ .email = if (identity.email.len > 0) identity.email else null };
+    }
+
+    /// `Publr.request.query('error')`: a value from the address's query string, decoded;
+    /// null when it is not there.
+    pub fn query_param(ctx: *const Context, name: []const u8) !?[]const u8 {
+        std.debug.assert(name.len > 0);
+
+        const request = ctx.request orelse return null;
+        const query_text = request.query();
+
+        if (query_text.len == 0) {
+            return null;
+        }
+
+        const form = http.Form.parse(ctx.arena, query_text) orelse return null;
+
+        return form.text(name);
     }
 
     /// `Publr.request.header('name')`.
@@ -790,6 +812,7 @@ pub const Context = struct {
 
         sdk_ctx.app = ctx.app.spec.name;
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
+        sdk_ctx.visitor = ctx.visitor_id;
 
         const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch return blank;
         const text = try std.json.Stringify.valueAlloc(ctx.arena, out, .{});
@@ -867,6 +890,7 @@ pub const Context = struct {
 
         var sdk_ctx = identity_module.context(ctx.project, ctx.arena, ctx.caller);
         sdk_ctx.delivery = true;
+        sdk_ctx.visitor = ctx.visitor_id;
         sdk_ctx.app = ctx.app.spec.name;
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
 

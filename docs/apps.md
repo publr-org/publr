@@ -140,10 +140,53 @@ middleware (`request.user()`).
 
 A role named there that neither core nor a built-in plugin declares fails the build.
 
+## Calling operations from a page
+
+An app's pages call what its plugins mark safe for its users, `app.<plugin>.<verb>`, at
+`<mount>/_api/<plugin>/<verb>` (`/_api/cart/add` on the root app, `/shop/_api/cart/add`
+on one mounted at `/shop`). Nothing else is reachable there: core's own operations and a
+plugin's other ones answer not found, and a plugin the app does not list in `.plugins`
+is denied. The call runs as the visitor, for the app, through the same authorization,
+rules, transaction and logs as any other.
+
+- **An island** posts JSON with the header `Publr-Request: 1` and reads the JSON answer.
+- **A plain form** posts its fields, named as the operation's input; it is sent back with
+  a `303` to its `redirect` field (a path on this site), or to the page it came from,
+  with `?error=<name>` added when the call was refused.
+
+```html
+<form method="post" action="/_api/cart/add">
+  <input type="hidden" name="variant" value="{variant.id}">
+  <input type="hidden" name="redirect" value="/cart">
+  <button>Add to cart</button>
+</form>
+```
+
+The request must come from the app's own site (`Origin`); a page elsewhere is refused.
+
+A refused form comes back with the refusal's name, `?error=NotEnoughStock` when the
+plugin refused in its own words, and the page says what it wants to about it:
+
+```
+const refused = Publr.request.query('error');
+```
+
+An island's JSON call gets the plugin's message too: `{ "error": "NotEnoughStock",
+"message": "Only 2 left." }`.
+
+## Visitors
+
+Every visitor has a stable id, the `publr_visitor` cookie (HttpOnly, SameSite=Lax), set
+by the first dynamic page, dynamic island or `_api` call that finds none; a static page
+never sets it, so built pages stay cacheable. Signed in or not, it stays the same.
+Operations read it as the visitor (`ctx.visitor()` in a plugin): what a cart keys on, or
+a segment a page shows. The activity log names an anonymous visitor `visitor:<id>`.
+
 ## Which records are an app's
 
 Every record belongs to one app or to none: the project's own. A record made through
-an app (its middleware's `call`, a page's `Publr.request.call`) belongs to that app;
+an app (its middleware's `call`, a page's `Publr.request.call`, its `_api`) belongs to
+that app;
 one made anywhere else belongs to the app it names (`record create --app`), else to
 the project. `record set_app` changes it. It decides where the admin shows the record,
 never who may read it: every app still reads every record its access allows, so a site
@@ -200,8 +243,13 @@ resulting HTML/SVG, so serving them adds no JavaScript execution or client scrip
 JavaScript computation has an interpreter cost during rebuilding or live rendering.
 
 Zig writes the output: interpolated text and attributes are escaped, arrays flatten,
-and computed `null`, `undefined`, and boolean children emit nothing. `set:html` is
-an explicit raw HTML boundary. Components receive `props`; children fill `<slot />`.
+and computed `null`, `undefined`, and boolean children emit nothing. `set:html` prints
+markup, always sanitized: headings, lists, links, images, tables and inline SVG drawings
+are kept; scripts, styles, frames, embeds, `on…` attributes and `javascript:` or `data:`
+addresses are removed. In an SVG, references point only at its own parts (`#id`,
+`url(#id)`), its ids are prefixed `svg-`, an animation never targets an address, a style or
+a handler, and `<style>` or `style` never reach the page. Nothing skips it. A page that needs a script gets it from an
+island or an approved plugin script, never from printed markup. Components receive `props`; children fill `<slot />`.
 Data reads use the existing `Publr.build` / `Publr.request` context and permissions.
 Request access requires a dynamic template, including when reached through an alias.
 Use a seeded generator for repeatable patterns and `Publr.build.now()` or
@@ -241,6 +289,8 @@ rebuilds what read it through the usual `type:<handle>` dependency.
 | `getCollection({ type, limit, offset })`: live records, newest first | `header('name')`, `cookie('name')` |
 | `getReferences(entry, 'field')`: the live records a reference field points at, in the order stored; `getReference(entry, 'field')` the first as an entry, blank when none; `entry.data.rows` with no fallback: a repeater's rows as entries | `now()`: the clock, per request, the same shape |
 | `now()`: the clock of the build, `YYYY-MM-DD HH:MM:SS` UTC | `random(n)`: a number in `[0, n)` |
+| `get('order', id)`: the live record by id, null when there is none or it is of another type; `findOne('product', 'sku', 'EG-50')` the one whose field holds the value; `find('variant', { product: id }, { limit, offset })` live records, newest first, filtered on at most one field by equality | `query('error')`: a value from the address's query string, null when absent |
+| | `call('app.inventory.levels', { product: id })`: a plugin's `app.*` read, with its input, as the visitor; the answer is `.data`, plain JSON |
 | `money(entry.data.price)`: a money field in the site's default currency as the site writes it (`£9.25`); `money(entry.data.price, 'EUR')` in that one; empty when the field holds none | `money(...)`: the same, per request |
 | | `getCollection(...)`, `getReferences(...)`: records, read per request |
 | | `userField('<group>.<field>')`: a custom field of the signed-in user, as text; null when signed out or empty |

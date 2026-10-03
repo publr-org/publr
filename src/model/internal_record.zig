@@ -20,6 +20,9 @@ pub const Collection = struct {
     indexed: []const []const u8 = &.{},
     /// Written once, never changed or deleted: a ledger.
     append_only: bool = false,
+    /// Kept for the whole project, the same whichever app the call comes through: stock
+    /// two shops sell from. Otherwise each app's records are its own: a visitor's cart.
+    shared: bool = false,
 };
 
 /// Why a plugin's collections cannot be declared, or null.

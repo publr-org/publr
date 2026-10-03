@@ -8,6 +8,7 @@ const sandboxed_plugins = @import("sandboxed_plugins.zig");
 const json = @import("../lib/json.zig");
 const Event = @import("middleware.zig").Event;
 const contract = @import("../model/contract.zig");
+const plugin_names = @import("../model/plugin_contracts.zig");
 const Value = std.json.Value;
 
 const Error = operation.Error;
@@ -117,6 +118,7 @@ fn admit(
     std.debug.assert(ctx.parent != null);
 
     try SDK.run_pre_hooks(ctx, found.name);
+    try SDK.check_fence(ctx, plugin_names.plugin_of(found.name));
 
     const fields = json.parse(ResourceFields, ctx.arena, input, .{
         .ignore_unknown_fields = true,

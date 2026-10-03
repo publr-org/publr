@@ -5,6 +5,7 @@ const model = @import("../../../model.zig");
 const records = @import("../../../operations/record.zig");
 const list = @import("list.zig");
 const filters = @import("filters.zig");
+const display = @import("../display.zig");
 
 const Props = admin.views.ContentList.Props;
 const Cell = admin.views.ContentList.CellsItem;
@@ -17,12 +18,13 @@ pub fn fill(props: *Props, page: *const list.Page, found: []const records.Record
     std.debug.assert(page.session.signed_in());
 
     const arena = page.session.arena;
+    const titles = try display.titles(&page.session.ctx, found);
     var rows: std.ArrayList(Row) = .empty;
 
-    for (found) |record| {
+    for (found, titles) |record, title| {
         try rows.append(arena, .{
             .id = record.id,
-            .cells = try cells_of(page, record, props.show_type),
+            .cells = try cells_of(page, record, title, props.show_type),
         });
     }
 
@@ -34,7 +36,12 @@ pub fn fill(props: *Props, page: *const list.Page, found: []const records.Record
         "No records match these filters.";
 }
 
-fn cells_of(page: *const list.Page, record: records.Record, show_type: bool) Error![]const Cell {
+fn cells_of(
+    page: *const list.Page,
+    record: records.Record,
+    shown_title: []const u8,
+    show_type: bool,
+) Error![]const Cell {
     std.debug.assert(record.id.len > 0);
     std.debug.assert(page.session.signed_in());
 
@@ -43,7 +50,7 @@ fn cells_of(page: *const list.Page, record: records.Record, show_type: bool) Err
     const type_name = if (page.type_named(record.type)) |found| found.name else record.type;
     const status = registry.Statuses.find(record.status);
     var cells: std.ArrayList(Cell) = .empty;
-    var title = cell("title", if (record.title.len > 0) record.title else record.id);
+    var title = cell("title", shown_title);
     title.href = href;
     try cells.append(arena, title);
 

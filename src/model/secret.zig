@@ -1,10 +1,13 @@
-//! Secrets kept out of the logs: an input's fields an operation declares secret, and, as a
-//! net under them, any field at any depth whose name says it holds one. Both are replaced by
-//! a mark, so the log shows that a value was given and never what it was.
+//! What a log keeps of an input: secrets replaced by a mark (the fields an operation
+//! declares secret, and any field whose name says it holds one, at any depth), and text too
+//! long to be worth keeping replaced by its size.
 
 const std = @import("std");
 
 pub const mark = "•";
+/// The longest text a log keeps whole; a longer one (a module's base64, a pasted file) is
+/// kept as its size, so one large call cannot fill the log or the request's memory.
+pub const text_kept_max: u32 = 4096;
 pub const depth_max: u32 = 32;
 pub const nodes_max: u32 = 1 << 16;
 
@@ -89,6 +92,11 @@ fn mask_caught(arena: std.mem.Allocator, root: *std.json.Value) error{OutOfMemor
                     try pending.append(arena, item);
                 }
             },
+            .string => |text| if (text.len > text_kept_max) {
+                const size = try std.fmt.allocPrint(arena, "({d} bytes, not kept)", .{text.len});
+
+                node.* = .{ .string = size };
+            },
             else => {},
         }
     }
@@ -125,6 +133,10 @@ test "secrets: declared ones, caught ones at any depth, the rest kept" {
     try std.testing.expect(std.mem.indexOf(u8, text, "ada@example.com") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "\"name\":\"x\"") != null);
     try std.testing.expectEqualStrings(mark, try masked(arena, "not json", &.{}));
+
+    const big = try std.fmt.allocPrint(arena, "{{\"data\":\"{s}\"}}", .{"x" ** 5000});
+    const summed = try masked(arena, big, &.{});
+    try std.testing.expectEqualStrings("{\"data\":\"(5000 bytes, not kept)\"}", summed);
 
     const flag = try masked(arena, "{\"password_link\":true}", &.{});
     try std.testing.expectEqualStrings("{\"password_link\":true}", flag);

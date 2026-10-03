@@ -32,6 +32,9 @@ pub const Record = struct {
     app: ?[]const u8 = null,
 };
 
+/// Only the documents whose ids a JSON array lists.
+const list_ids = " AND r.id IN (SELECT value FROM json_each(?{d}))";
+
 /// Which app's documents a list keeps: one app's, or the project's own (no app).
 pub const App = union(enum) { none, name: []const u8 };
 
@@ -55,6 +58,8 @@ pub const Query = struct {
     /// the caller may read for a list across the content.
     type_ids: []const []const u8,
     statuses: ?[]const []const u8 = null,
+    /// Only these documents: their ids as a JSON array of strings.
+    ids_json: ?[]const u8 = null,
     changed: ?bool = null,
     search: ?[]const u8 = null,
     /// A value of one field; only meaningful when the list spans one type.
@@ -199,6 +204,11 @@ pub fn List(comptime tables: tables_module.Tables) type {
                 writer.writeAll(")") catch return error.OutOfMemory;
             }
 
+            if (query.ids_json != null) {
+                writer.print(list_ids, .{bind_index}) catch return error.OutOfMemory;
+                bind_index += 1;
+            }
+
             if (query.changed) |changed| {
                 const clause: []const u8 = if (changed)
                     " AND r.changed = 1"
@@ -302,6 +312,11 @@ fn bind_query(select: *db.Statement, query: Query) Error!void {
             try select.bind_text(bind_index, status);
             bind_index += 1;
         }
+    }
+
+    if (query.ids_json) |ids| {
+        try select.bind_text(bind_index, ids);
+        bind_index += 1;
     }
 
     if (query.filter) |filter| {

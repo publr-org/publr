@@ -53,7 +53,7 @@ pub const custom_fields = [_]publr.plugin.ContentTypeDef{.{
 pub const operations = [_]type{ Hello, Echo, Note, Logs };
 
 pub const internal_records = [_]publr.plugin.InternalCollection{
-    .{ .kind = "tally", .indexed = &.{"word"}, .append_only = true },
+    .{ .kind = "tally", .indexed = &.{"word"}, .append_only = true, .shared = true },
 };
 
 pub const routes = [_]publr.plugin.Route{.{ .path = "/admin/sampler", .handler = &settings }};
@@ -173,7 +173,7 @@ fn settings(
         }),
     });
 }
-pub const middleware = [_]type{ Shout, Announce, Log };
+pub const middleware = [_]type{ Shout, Announce, Log, NoteShown };
 
 pub const Hello = struct {
     pub const name = "sampler.hello";
@@ -338,5 +338,28 @@ pub const Log = struct {
         _ = logs.create(ctx, .{ .line = line }, .{}) catch |err| {
             ctx.log(@errorName(err));
         };
+    }
+};
+
+/// How the admin shows a sample note: `Note: <title> (<n> characters)`, the count read from
+/// the record's own fields.
+pub const NoteShown = struct {
+    pub const stage: sdk.middleware.Stage = .display;
+    pub const point = "record.title";
+    pub const content_type = "sample_note";
+    pub const reason = "Shows each sample note with its length";
+
+    pub fn run(ctx: *PluginCtx, in: *sdk.display_hooks.Batch) sdk.Error!void {
+        std.debug.assert(in.items.len <= sdk.display_hooks.batch_items_max);
+
+        for (in.items) |*item| {
+            const note = if (item.fields == .object) item.fields.object.get("note") else null;
+            const length = if (note) |value| (if (value == .string) value.string.len else 0) else 0;
+
+            item.value = std.fmt.allocPrint(ctx.arena(), "Note: {s} ({d} characters)", .{
+                item.value,
+                length,
+            }) catch return error.OutOfMemory;
+        }
     }
 };

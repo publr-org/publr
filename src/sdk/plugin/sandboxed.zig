@@ -27,7 +27,7 @@ pub const Entry = struct {
     stage: Stage,
     declaration: type,
 
-    pub const Stage = enum { operation, before, after, event };
+    pub const Stage = enum { operation, before, after, event, display };
 };
 
 /// Every operation, then every hook, in declaration order, that runs in the sandbox: the
@@ -74,6 +74,7 @@ fn hook_stage(comptime Plugin: type, comptime Middleware: type) Entry.Stage {
             .before => .before,
             .after => .after,
             .on => .event,
+            .display => .display,
             .pre => unreachable,
         };
     }
@@ -162,6 +163,10 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
 fn hook_target(comptime Middleware: type) []const u8 {
     comptime {
         std.debug.assert(@hasDecl(Middleware, "stage"));
+
+        if (Middleware.stage == .display) {
+            return @import("../display.zig").target_of(Middleware);
+        }
 
         if (@hasDecl(Middleware, "operation")) {
             return Middleware.operation;

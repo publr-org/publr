@@ -17,7 +17,7 @@ pub const Result = extern struct { ptr: u32, len: u32 };
 pub const result_bytes: u32 = @sizeOf(Result);
 
 /// The kind of entry a guest's `publr_invoke` runs, in manifest order.
-pub const Stage = enum { operation, before, after, event };
+pub const Stage = enum { operation, before, after, event, display };
 
 /// Every error of the SDK's set, in the order that numbers them on the wire. The order of an
 /// error set's `@typeInfo` differs between two compilations, so it is written out here, once,
@@ -70,6 +70,7 @@ pub fn Envelope(comptime In: type) type {
     return struct {
         now_ms: i64,
         on_behalf_of: ?[]const u8 = null,
+        visitor: []const u8 = "",
         in: In,
     };
 }
@@ -79,6 +80,7 @@ pub fn AfterEnvelope(comptime In: type, comptime Out: type) type {
     return struct {
         now_ms: i64,
         on_behalf_of: ?[]const u8 = null,
+        visitor: []const u8 = "",
         in: In,
         out: Out,
     };

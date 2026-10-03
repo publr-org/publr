@@ -18,7 +18,7 @@ const exercised = [_]Part{
     .{ .name = "summary", .where = "every plugin" },
     .{ .name = "namespaces", .where = "`--help`" },
     .{ .name = "operations", .where = "every plugin" },
-    .{ .name = "hooks", .where = "greeter's after, sampler's before, after and event" },
+    .{ .name = "hooks", .where = "greeter's after, sampler's before, after, event and display" },
     .{ .name = "permissions", .where = "greeter people" },
     .{ .name = "content_types", .where = "salutation, sample_note, sample_log" },
     .{ .name = "custom_fields", .where = "sampler_profile" },
@@ -40,6 +40,7 @@ const exercised = [_]Part{
     .{ .name = "internal_records", .where = "greeter's visits, sampler's tallies" },
     .{ .name = "indexed", .where = "greeter's visits by name" },
     .{ .name = "append_only", .where = "sampler's tallies" },
+    .{ .name = "shared", .where = "sampler's tallies, one count for every app" },
     .{ .name = "input", .where = "every operation's contract, and greeter's remote" },
     .{ .name = "output", .where = "every operation's contract, and greeter's remote" },
     .{ .name = "parent", .where = "every contract node" },
@@ -61,7 +62,7 @@ const sandbox_only = [_]Part{
     .{ .name = "left_out", .where = "what its sandboxed build could not carry" },
 };
 
-const stages_exercised = [_]Hook.Stage{ .before, .after, .event };
+const stages_exercised = [_]Hook.Stage{ .before, .after, .event, .display };
 const shapes_exercised = [_]Field.Shape{ .string, .integer, .number, .boolean, .strings, .json };
 
 pub fn check() void {

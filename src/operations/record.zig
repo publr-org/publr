@@ -393,6 +393,7 @@ pub const List = struct {
         slug: ?[]const u8 = null,
         filter_field: ?[]const u8 = null,
         filter_value: ?[]const u8 = null,
+        ids: []const []const u8 = &.{},
         order: Order = .updated_desc,
         limit: u32 = 50,
         offset: u32 = 0,
@@ -414,6 +415,7 @@ pub const List = struct {
         .slug = "Only the record whose slug field holds this value (a type with a slug field)",
         .filter_field = "A field path (`views`, `seo.title`, `tags`); one type only",
         .filter_value = "The value to match (text, number, true/false, or an id for references)",
+        .ids = "Only these records, by id (up to the page size)",
         .order = "`updated_desc` (default), `created_desc` or `title_asc`",
         .limit = "Page size, up to 200",
         .offset = "Rows to skip",
@@ -435,6 +437,7 @@ pub const List = struct {
             .slug = in.slug,
             .filter_field = in.filter_field,
             .filter_value = in.filter_value,
+            .ids = in.ids,
             .order = in.order,
             .limit = in.limit,
             .offset = in.offset,
@@ -505,9 +508,12 @@ pub const Validate = struct {
     }
 };
 
+pub const Shown = @import("record/shown.zig").Shown(List, example_id);
+
 pub const operations = [_]type{
     Create,    Get,    Save,           Transition, Publish,  List,
     Referrers, Delete, DiscardChanges, Purge,      Validate, SetApp,
+    Shown,
 };
 
 const SDK = registry.SDK;

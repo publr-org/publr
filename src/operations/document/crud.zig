@@ -32,6 +32,8 @@ pub const ListInput = struct {
     slug: ?[]const u8 = null,
     filter_field: ?[]const u8 = null,
     filter_value: ?[]const u8 = null,
+    /// Only these records, by id.
+    ids: []const []const u8 = &.{},
     order: Order = .updated_desc,
     limit: u32 = 50,
     offset: u32 = 0,
@@ -194,7 +196,7 @@ pub fn Of(comptime Domain: type) type {
                 return error.Invalid;
             }
 
-            if (in.definitions.len > documents.type_ids_max) {
+            if (in.definitions.len > documents.type_ids_max or in.ids.len > documents.list_max) {
                 return error.Invalid;
             }
 
@@ -291,6 +293,7 @@ pub fn Of(comptime Domain: type) type {
             return .{
                 .type_ids = type_ids,
                 .statuses = access.allowed_statuses(granted, status, exclude, statuses_buffer),
+                .ids_json = if (in.ids.len == 0) null else try sdk.stringify(ctx.arena, in.ids),
                 .changed = constraints.changed,
                 .search = in.search,
                 .filter = try slug_or_filter(span, in),

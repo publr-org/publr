@@ -199,7 +199,7 @@ that stops being true fails the build.
 ## Hooks
 
 Hooks are how a plugin plugs into behaviour that already exists. There are
-five kinds:
+six kinds:
 
 | Hook | When | Can |
 |---|---|---|
@@ -208,6 +208,17 @@ five kinds:
 | **after** | on a named operation, after it ran | observe input and output |
 | **on event** | for any operation | react to completed, rejected, failed, or a notice an operation raised |
 | **policy** | during authorization | narrow the grant |
+| **display** | when the admin shows a value of a named type | change how it reads, as text |
+
+A display hook changes how a value is shown, never what is stored or what an operation
+answers. The first point is `record.title`: the admin's lists, its reference picker and
+its reference cards call the hooks once per page, per type, with each record's title and
+all of its fields; the hook writes the titles shown instead (products names a variant
+`Earl Grey, 50 g`). It reads anything else through the SDK, as granted, and may not write
+while it runs. What it answers is text: cut to 512 bytes, control characters made spaces,
+escaped where it is shown. A hook that fails, or answers another batch, changes nothing.
+No hook can put markup or a script on a page; printed markup is always sanitized
+(`set:html`), and a script reaches a page only as an island or an approved plugin script.
 
 An operation can raise a **notice** while it runs (`ctx.notice(name, subject)`),
 a named event with a subject that reaches every event hook. The core raises

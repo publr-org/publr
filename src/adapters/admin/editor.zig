@@ -12,6 +12,7 @@ const types = @import("../../operations/content_type.zig");
 const record_operations = @import("../../operations/record.zig");
 const term_operations = @import("../../operations/term.zig");
 const definitions = @import("definitions.zig");
+const display = @import("display.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -911,23 +912,27 @@ pub fn referenced_of(
         }
     }
 
-    const names = try type_names(session);
-    var seen: std.ArrayList(fields.Referenced) = .empty;
-
-    for (ids.items) |id| {
-        const full = registry.SDK.dispatch(&session.ctx, record_operations.Get, .{
-            .id = id,
-            .purpose = .edit,
-        }) catch continue;
-
-        seen.append(session.arena, .{
-            .id = id,
-            .record = full.record,
-            .type_name = name_of(names, full.record.type),
-        }) catch return error.OutOfMemory;
+    if (ids.items.len == 0) {
+        return &.{};
     }
 
-    return seen.items;
+    const names = try type_names(session);
+    const wanted = ids.items[0..@min(ids.items.len, record_operations.list_max)];
+    const listed = registry.SDK.dispatch(&session.ctx, record_operations.List, .{
+        .ids = wanted,
+        .limit = @intCast(wanted.len),
+    }) catch return &.{};
+    const titles = try display.titles(&session.ctx, listed.records);
+    const seen = try session.arena.alloc(fields.Referenced, listed.records.len);
+
+    for (listed.records, titles, seen) |record, title, *card| {
+        var shown = record;
+
+        shown.title = title;
+        card.* = .{ .id = record.id, .record = shown, .type_name = name_of(names, record.type) };
+    }
+
+    return seen;
 }
 
 fn collect_ids(

@@ -12,6 +12,7 @@ pub const imports = [_]wasm.Import{
     .{ .name = "publr_call", .signature = "(iiiii)i", .function = &publr_call },
     .{ .name = "publr_notice", .signature = "(iiii)", .function = &publr_notice },
     .{ .name = "publr_log", .signature = "(ii)", .function = &publr_log },
+    .{ .name = "publr_fail", .signature = "(iiii)", .function = &publr_fail },
 };
 
 /// What a host function finds through the call's user data.
@@ -202,7 +203,8 @@ fn envelope_of(ctx: *const sdk.Ctx, input: []const u8, shape: Shape) sdk.Error![
     std.debug.assert(ctx.now_ms >= 0);
 
     const on_behalf_of = try sdk.stringify(ctx.arena, ctx.caller.user_id());
-    const head = "{{\"now_ms\":{d},\"on_behalf_of\":{s},";
+    const visitor = try sdk.stringify(ctx.arena, ctx.visitor);
+    const head = "{{\"now_ms\":{d},\"on_behalf_of\":{s},\"visitor\":{s},";
 
     if (shape == .spread) {
         std.debug.assert(input[0] == '{');
@@ -210,6 +212,7 @@ fn envelope_of(ctx: *const sdk.Ctx, input: []const u8, shape: Shape) sdk.Error![
         return std.fmt.allocPrint(ctx.arena, head ++ "{s}", .{
             ctx.now_ms,
             on_behalf_of,
+            visitor,
             input[1..],
         }) catch error.OutOfMemory;
     }
@@ -217,6 +220,7 @@ fn envelope_of(ctx: *const sdk.Ctx, input: []const u8, shape: Shape) sdk.Error![
     return std.fmt.allocPrint(ctx.arena, head ++ "\"in\":{s}}}", .{
         ctx.now_ms,
         on_behalf_of,
+        visitor,
         input,
     }) catch error.OutOfMemory;
 }
@@ -317,4 +321,28 @@ fn publr_log(env: *wasm.Env, line_ptr: u32, line_len: u32) callconv(.c) void {
 
     std.debug.assert(invocation.loaded.name().len > 0);
     std.log.info("plugin {s}: {s}", .{ invocation.loaded.name(), line });
+}
+
+/// The plugin refusing its call in its own words: kept as the call's failure, which the
+/// error it returns next turns into the answer.
+fn publr_fail(
+    env: *wasm.Env,
+    name_ptr: u32,
+    name_len: u32,
+    message_ptr: u32,
+    message_len: u32,
+) callconv(.c) void {
+    const invocation = invocation_of(env);
+    const ctx = invocation.ctx;
+    const name = copy_guest(env, ctx, name_ptr, @min(name_len, 64)) orelse return;
+    const message = if (message_len == 0)
+        ""
+    else
+        copy_guest(env, ctx, message_ptr, @min(message_len, 1024)) orelse return;
+
+    std.debug.assert(invocation.loaded.name().len > 0);
+
+    if (name.len > 0) {
+        ctx.failure = .{ .name = name, .status = 409, .message = message };
+    }
 }

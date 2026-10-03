@@ -219,8 +219,8 @@ operations and record operations pass: a record operation may reach its own type
 need nothing, and one that names another type without a permission is refused when it
 runs, as `Denied`.
 
-In the sandbox, operations, before, after and event hooks, content types, custom fields
-and roles run; a role from a plugin grants only its own operations.
+In the sandbox, operations, before, after, event and display hooks, content types, custom
+fields and roles run; a role from a plugin grants only its own operations.
 
 ## Which one to pick
 

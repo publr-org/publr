@@ -11,16 +11,26 @@ pub const manifest: publr.plugin.Manifest = .{
     .summary = "An installed plugin core's tests and smoke install: greetings kept as records",
 };
 
-pub const namespaces = [_]sdk.operation.Namespace{.{
-    .name = "greeter",
-    .summary = "Greetings, kept as records of the plugin's own type",
-    .details =
-    \\The plugin the sandbox is tested with: `greeter greet` records a greeting and
-    \\answers how many there are, `greeter count` only counts, `greeter people` greets
-    \\everyone on the site by name. That last one needs a permission, so an
-    \\administrator can take it away and watch it answer denied.
-    ,
-}};
+pub const namespaces = [_]sdk.operation.Namespace{
+    .{
+        .name = "greeter",
+        .summary = "Greetings, kept as records of the plugin's own type",
+        .details =
+        \\The plugin the sandbox is tested with: `greeter greet` records a greeting and
+        \\answers how many there are, `greeter count` only counts, `greeter people` greets
+        \\everyone on the site by name. That last one needs a permission, so an
+        \\administrator can take it away and watch it answer denied.
+        ,
+    },
+    .{
+        .name = "app.greeter",
+        .summary = "What an app's visitors may do with greeter",
+        .details =
+        \\`app.greeter.wave`, called from an app's pages at `/_api/greeter/wave`: each visitor's
+        \\waves are counted apart.
+        ,
+    },
+};
 
 /// Greeter works with sampler when it is there: it says hello through it.
 pub const compatible_with = .{"sampler@^0.1"};
@@ -52,8 +62,8 @@ pub const roles = [_]publr.plugin.Role{.{
     .grants = &.{"greeter.*"},
 }};
 
-pub const operations = [_]type{ Greet, Count, People, Recall };
-pub const middleware = [_]type{Announce};
+pub const operations = [_]type{ Greet, Count, People, Recall, Wave };
+pub const middleware = [_]type{ Announce, Shown };
 
 /// Takes a reference: the caller names a post, the sandbox hands greeter the stored one.
 pub const Recall = struct {
@@ -73,6 +83,46 @@ pub const Recall = struct {
         const post = in.post.value orelse return error.Invalid;
 
         return .{ .title = post.title };
+    }
+};
+
+/// What an app's visitor may do (`app.`): wave, counted per visitor in greeter's internal
+/// `visit` collection. Exercises `<mount>/_api/greeter/wave` and the visitor's id.
+pub const Wave = struct {
+    pub const name = "app.greeter.wave";
+    pub const description = "Wave as a visitor, and hear how many times this visitor has";
+    pub const details =
+        \\Anyone may call it, from an app that lists greeter in its `.plugins`. Each wave is
+        \\kept for the visitor who made it; the answer counts theirs alone.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const open = true;
+    pub const In = struct {};
+    pub const Out = struct { visitor: []const u8, waves: u32 };
+    pub const example: In = .{};
+    pub const example_out: Out = .{ .visitor = "0123456789abcdef01234567", .waves = 1 };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .visitor = "The visitor's id",
+        .waves = "How many times this visitor has waved",
+    };
+
+    const Visit = struct { name: []const u8 };
+    const visits = publr.internal.of(Visit, "visit");
+
+    pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
+        std.debug.assert(ctx.now_ms() >= 0);
+
+        const visitor = ctx.visitor();
+
+        if (visitor.len == 0) {
+            return ctx.fail("NoVisitor", "Wave from an app's page: there is no visitor here.");
+        }
+
+        _ = try visits.create(ctx, .{ .name = visitor });
+
+        const mine = try visits.find(ctx, .{ .name = visitor }, .{ .limit = 200 });
+
+        return .{ .visitor = visitor, .waves = @intCast(mine.len) };
     }
 };
 
@@ -182,5 +232,35 @@ pub const Announce = struct {
     pub fn run(ctx: *PluginCtx, in: *Greet.In, out: *const Greet.Out) sdk.Error!void {
         std.debug.assert(out.total > 0);
         ctx.notice("greeter.greeted", in.note);
+    }
+};
+
+/// A hostile display hook, for the tests: it hands back markup and control characters, and
+/// tries to write while it runs. What it answers is text; the write is refused.
+pub const Shown = struct {
+    pub const stage: sdk.middleware.Stage = .display;
+    pub const point = "record.title";
+    pub const content_type = "salutation";
+    pub const reason = "Shows a salutation the way a test needs to see it";
+
+    const Visit = struct { name: []const u8 };
+    const visits = publr.internal.of(Visit, "visit");
+
+    pub fn run(ctx: *PluginCtx, in: *sdk.display_hooks.Batch) sdk.Error!void {
+        std.debug.assert(in.items.len <= sdk.display_hooks.batch_items_max);
+
+        const created = visits.create(ctx, .{ .name = "display" });
+        const wrote = if (created) |_| "wrote" else |err| @errorName(err);
+
+        for (in.items) |*item| {
+            const note = if (item.fields == .object) item.fields.object.get("note") else null;
+            const text = if (note) |value| (if (value == .string) value.string else "") else "";
+
+            item.value = std.fmt.allocPrint(ctx.arena(), "<script>x</script>{s}|{s}|{s}\x01", .{
+                item.value,
+                text,
+                wrote,
+            }) catch return error.OutOfMemory;
+        }
     }
 };

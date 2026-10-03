@@ -35,6 +35,15 @@ pub const HostApi = struct {
         return self.inner.now_ms;
     }
 
+    /// The visitor's stable id when the call came from an app, signed in or not; empty
+    /// otherwise. What a cart keys on.
+    pub fn visitor(self: *const PluginCtx) []const u8 {
+        std.debug.assert(self.inner.now_ms >= 0);
+        std.debug.assert(self.inner.visitor.len <= 64);
+
+        return self.inner.visitor;
+    }
+
     pub fn arena(self: *const PluginCtx) std.mem.Allocator {
         std.debug.assert(self.inner.now_ms >= 0);
         std.debug.assert(self.inner.next_operation_id > 0);
@@ -54,6 +63,15 @@ pub const HostApi = struct {
         std.debug.assert(self.inner.parent != null);
 
         self.inner.notice(name, subject);
+    }
+
+    /// Refuses the call in the plugin's own words: `return ctx.fail("NotEnoughStock", "Only 2
+    /// left")`. The name is what a form's redirect carries, the message what a person reads.
+    pub fn fail(self: *PluginCtx, name: []const u8, message: []const u8) error{Failed} {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        return self.inner.fail(.{ .name = name, .status = 409, .message = message });
     }
 
     /// A line in the log, attributed to the plugin.

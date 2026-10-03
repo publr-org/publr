@@ -105,6 +105,21 @@ pub const Sign = struct {
   each input field's bounds (`min`/`max`, `min_len`/`max_len`, `items_min`/`items_max`,
   `preset`, `pattern`); core refuses a call that breaks them before your code runs, saying
   which field, and `--help` shows them.
+- **What a site calls is `app.`.** An app's pages reach `app.<plugin>.<verb>` at
+  `<mount>/_api/<plugin>/<verb>` (an island posts JSON with `Publr-Request: 1`, a form
+  posts its fields), as the visitor, only when the app lists the plugin in `.plugins`.
+  `ctx.visitor()` is the visitor's stable id, signed in or not: key carts and the like on
+  it. Never set cookies of your own.
+- **Show, do not store.** How the admin names a record of yours (a variant as `Earl Grey,
+  50 g`) is a display hook (`stage = .display`, `point = "record.title"`,
+  `content_type`), never a title copied into another field. It gets the batch's titles
+  and fields, reads the rest as granted (`publr.records.of(...).many(ctx, ids)`, one
+  call), cannot write, and answers text only.
+- **Refuse in your own words.** `return ctx.fail("NotEnoughStock", "Only 2 left.")`: the
+  name is what a form's redirect carries (`?error=NotEnoughStock`) and a page checks for,
+  the message what an island or the CLI shows. The write rolls back.
+- **Shared or per app.** An internal collection is kept per app unless it says
+  `.shared = true` (stock every shop sells from); a visitor's cart stays per app.
 - **Declare secrets.** `pub const secret = .{"password"}` lists the input fields that
   hold one. Core logs every call's input (`publr activity list`, `publr errors list`)
   with them replaced by `•`; a field named like a secret (`password`, `token`, `secret`,
@@ -267,7 +282,8 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
   `.{ .name = "slug", .label = "Slug", .kind = "slug", .options = .{ .source = "title" } }`.
   An entry is `id`, `type`, `slug`, `title`, `created_at`, `updated_at` and `data`, its
   fields (`lesson.data.body`).
-- **The body** takes `{value}` (escaped), `set:html={value}` (raw), `{items.map((item) =>
+- **The body** takes `{value}` (escaped), `set:html={value}` (markup,
+  sanitized: no scripts, styles, frames or `on…` attributes survive), `{items.map((item) =>
   (...))}`, `{test ? (...) : null}`, and `<Component prop="..." />` with `<slot />`. A
   layout or component reads `props.name`. Keep island directives and PJSX component
   calls in the outer markup; computed JSX can embed static `.publr` components.

@@ -81,6 +81,7 @@ pub const Create = struct {
         const id = try records.insert(ctx.db, ctx.io, ctx.arena, scope, in.document, ctx.now_ms);
 
         try index(ctx, target.collection, id, given);
+        try changed(ctx, "internal.created", scope, id);
 
         return .{ .id = id, .version = 1 };
     }
@@ -183,6 +184,7 @@ pub const Save = struct {
         const version = try records.update(ctx.db, target.scope, in.id, text, expected, ctx.now_ms);
 
         try index(ctx, target.collection, in.id, merged);
+        try changed(ctx, "internal.saved", target.scope, in.id);
 
         return .{ .version = version };
     }
@@ -318,7 +320,11 @@ pub const Delete = struct {
 
         try store.internal_record_values.replace(ctx.db, in.id, &.{});
 
-        return .{ .deleted = try records.delete(ctx.db, target.scope, in.id) };
+        const deleted = try records.delete(ctx.db, target.scope, in.id);
+
+        try changed(ctx, "internal.deleted", target.scope, in.id);
+
+        return .{ .deleted = deleted };
     }
 };
 
@@ -326,6 +332,21 @@ const Target = struct { scope: Scope, collection: Collection };
 
 /// Whose records a call reaches: the running plugin's in the request's app; with no plugin
 /// running, the ones named. Not found when the plugin declares no such collection.
+/// What a write changed, for whoever listens (the activity log names it as a unit):
+/// `internal.saved` with `<plugin>/<kind>/<id>`.
+fn changed(ctx: *Ctx, name: []const u8, scope: Scope, id: []const u8) Error!void {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(id.len > 0);
+
+    const subject = std.fmt.allocPrint(ctx.arena, "{s}/{s}/{s}", .{
+        scope.plugin,
+        scope.kind,
+        id,
+    }) catch return error.OutOfMemory;
+
+    ctx.notice(name, subject);
+}
+
 fn scope_of(ctx: *Ctx, plugin: ?[]const u8, app: ?[]const u8, kind: []const u8) Error!Target {
     std.debug.assert(ctx.now_ms >= 0);
 
@@ -347,13 +368,13 @@ fn scope_of(ctx: *Ctx, plugin: ?[]const u8, app: ?[]const u8, kind: []const u8) 
         return error.Invalid;
     }
 
-    const scope: Scope = .{
-        .plugin = owner,
-        .app = if (running) ctx.app else app orelse ctx.app,
-        .kind = kind,
-    };
     const collection = registry.internal_collection(ctx, owner, kind) orelse {
         return error.NotFound;
+    };
+    const scope: Scope = .{
+        .plugin = owner,
+        .app = if (collection.shared) "" else if (running) ctx.app else app orelse ctx.app,
+        .kind = kind,
     };
 
     return .{ .scope = scope, .collection = collection };

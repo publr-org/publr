@@ -137,7 +137,7 @@ test "installed, a plugin's operations run in the sandbox through the one dispat
     const sandboxed = try scenario.install();
 
     try std.testing.expectEqualStrings("greeter", sandboxed.name);
-    try std.testing.expectEqual(@as(usize, 4), sandboxed.operations.len);
+    try std.testing.expectEqual(@as(usize, 5), sandboxed.operations.len);
     try std.testing.expectEqual(1, try scenario.total(admin, greet, "{\"note\":\"hi\"}"));
     try std.testing.expectEqual(2, try scenario.total(admin, greet, "{\"note\":\"again\"}"));
     try std.testing.expectEqual(2, try scenario.total(admin, "greeter.count", "{}"));

@@ -231,14 +231,14 @@ pub fn clear_session_cookie(
 
 /// `; Domain=` and the project's domain when an app answers on a subdomain: one sign-in
 /// then holds on every app of the project. Nothing otherwise (`Project.cookie_domain`).
-fn domain_label(project: *const Project) []const u8 {
+pub fn domain_label(project: *const Project) []const u8 {
     std.debug.assert(project.domain.len <= 255);
     std.debug.assert(project.apps.len <= 1024);
 
     return if (project.cookie_domain() == null) "" else "; Domain=";
 }
 
-fn domain_of(project: *const Project) []const u8 {
+pub fn domain_of(project: *const Project) []const u8 {
     std.debug.assert(project.domain.len <= 255);
     std.debug.assert(project.apps.len <= 1024);
 

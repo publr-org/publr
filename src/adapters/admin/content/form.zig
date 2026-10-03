@@ -133,6 +133,7 @@ fn terms_of(session: *Session, def: Def, document: ?Value) Error!?admin.render.N
 }
 
 const types_taxonomy = @import("../../../operations/taxonomy.zig");
+const display = @import("../display.zig");
 
 /// Where the script's tokens of every field are gathered.
 const Tokens = struct { selected: *std.Io.Writer.Allocating, tree: *std.Io.Writer.Allocating };
@@ -267,13 +268,14 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
     }) catch |err| return admin.fail(&session, err, back);
     const arena = session.arena;
     const rows = try arena.alloc(views.RecordPick.RowsItem, listed.records.len);
+    const titles = try display.titles(&session.ctx, listed.records);
 
-    for (listed.records, 0..) |record, index| {
+    for (listed.records, titles, 0..) |record, title, index| {
         const status = registry.Statuses.find(record.status);
 
         rows[index] = .{
             .id = record.id,
-            .title = if (record.title.len > 0) record.title else record.id,
+            .title = title,
             .status = if (status) |known| known.label else record.status,
             .published = registry.Statuses.is_live(record.status),
         };

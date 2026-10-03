@@ -12,7 +12,7 @@ const Role = @import("../model/role.zig").Role;
 /// How deep calls may nest through plugins: a plugin's operation calling another's.
 pub const depth_max: u32 = 8;
 
-pub const Stage = enum { before, after, event };
+pub const Stage = enum { before, after, event, display };
 
 pub const Manifest = @import("../model/sandboxed_plugin.zig").Manifest;
 
@@ -87,6 +87,14 @@ pub const SandboxedPlugins = struct {
             output: []const u8,
         ) Error!void,
         event: *const fn (context: *anyopaque, ctx: *Ctx, event: middleware.Event) void,
+        /// Every display hook on `target` (`record.title/variant`) in turn, each handed the
+        /// batch the one before it answered; the last answer, as JSON.
+        display: *const fn (
+            context: *anyopaque,
+            ctx: *Ctx,
+            target: []const u8,
+            input: []const u8,
+        ) Error![]const u8,
     };
 
     /// Writes one piece of an upload into the uploads folder; answers how much it holds.
@@ -177,6 +185,18 @@ pub const SandboxedPlugins = struct {
         std.debug.assert(ctx.parent != null);
 
         return sandboxed.vtable.before(sandboxed.context, ctx, name, input);
+    }
+
+    pub fn display(
+        sandboxed: *const SandboxedPlugins,
+        ctx: *Ctx,
+        target: []const u8,
+        input: []const u8,
+    ) Error![]const u8 {
+        std.debug.assert(target.len > 0);
+        std.debug.assert(input.len > 0);
+
+        return sandboxed.vtable.display(sandboxed.context, ctx, target, input);
     }
 
     pub fn after(

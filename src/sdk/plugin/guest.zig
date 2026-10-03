@@ -39,6 +39,12 @@ extern "env" fn publr_notice(
     subject_len: u32,
 ) void;
 extern "env" fn publr_log(ptr: [*]const u8, len: u32) void;
+extern "env" fn publr_fail(
+    name_ptr: [*]const u8,
+    name_len: u32,
+    message_ptr: [*]const u8,
+    message_len: u32,
+) void;
 
 const parse_options: std.json.ParseOptions = .{
     .ignore_unknown_fields = true,
@@ -51,6 +57,7 @@ pub const SandboxApi = struct {
     now: i64,
     name: []const u8,
     on_behalf_of: ?[]const u8,
+    visitor_id: []const u8 = "",
 
     /// The plugin itself, acting for the account that made the call when there is one.
     pub fn caller(self: *const SandboxApi) Caller {
@@ -69,6 +76,14 @@ pub const SandboxApi = struct {
         std.debug.assert(self.name.len > 0);
 
         return self.now;
+    }
+
+    /// The visitor's stable id when the call came from an app; empty otherwise.
+    pub fn visitor(self: *const SandboxApi) []const u8 {
+        std.debug.assert(self.now >= 0);
+        std.debug.assert(self.visitor_id.len <= 64);
+
+        return self.visitor_id;
     }
 
     pub fn arena(self: *const SandboxApi) std.mem.Allocator {
@@ -117,6 +132,18 @@ pub const SandboxApi = struct {
     }
 
     /// A line in the host's log, attributed to the plugin.
+    /// Refuses the call in the plugin's own words: `return ctx.fail("NotEnoughStock", "Only 2
+    /// left")`. The name is what a form's redirect carries (`?error=NotEnoughStock`), the
+    /// message what a person reads. The write rolls back like any other error's.
+    pub fn fail(self: *SandboxApi, name: []const u8, message: []const u8) error{Failed} {
+        std.debug.assert(self.name.len > 0);
+        std.debug.assert(name.len > 0);
+
+        publr_fail(name.ptr, @intCast(name.len), message.ptr, @intCast(message.len));
+
+        return error.Failed;
+    }
+
     pub fn log(self: *SandboxApi, line: []const u8) void {
         std.debug.assert(self.name.len > 0);
         std.debug.assert(line.len > 0);
@@ -233,13 +260,18 @@ pub fn Exports(comptime Plugin: type) type {
         ) Error!void {
             return switch (item.stage) {
                 .operation => run_operation(item.declaration, input, result, arena),
-                .before => run_before(item.declaration, input, result, arena),
+                .before, .display => run_before(item.declaration, input, result, arena),
                 .after => run_after(item.declaration, input, arena),
                 .event => run_event(item.declaration, input, arena),
             };
         }
 
-        fn context(arena: std.mem.Allocator, now: i64, on_behalf_of: ?[]const u8) SandboxApi {
+        fn context(
+            arena: std.mem.Allocator,
+            now: i64,
+            on_behalf_of: ?[]const u8,
+            visitor: []const u8,
+        ) SandboxApi {
             std.debug.assert(now >= 0);
             std.debug.assert(on_behalf_of == null or on_behalf_of.?.len > 0);
 
@@ -248,6 +280,7 @@ pub fn Exports(comptime Plugin: type) type {
                 .now = now,
                 .name = Plugin.manifest.name,
                 .on_behalf_of = on_behalf_of,
+                .visitor_id = visitor,
             };
         }
 
@@ -261,7 +294,7 @@ pub fn Exports(comptime Plugin: type) type {
             const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
-            var ctx = context(arena, envelope.now_ms, envelope.on_behalf_of);
+            var ctx = context(arena, envelope.now_ms, envelope.on_behalf_of, envelope.visitor);
             const out = try Operation.run(&ctx, envelope.in, &Grant.allow_all);
 
             try reply(out, result);
@@ -277,7 +310,7 @@ pub fn Exports(comptime Plugin: type) type {
             const envelope = json.parse(wire.Envelope(In), arena, input, parse_options) catch {
                 return error.Invalid;
             };
-            var ctx = context(arena, envelope.now_ms, envelope.on_behalf_of);
+            var ctx = context(arena, envelope.now_ms, envelope.on_behalf_of, envelope.visitor);
             var in = envelope.in;
 
             try Middleware.run(&ctx, &in);
@@ -294,7 +327,7 @@ pub fn Exports(comptime Plugin: type) type {
             const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
-            var ctx = context(arena, envelope.now_ms, envelope.on_behalf_of);
+            var ctx = context(arena, envelope.now_ms, envelope.on_behalf_of, envelope.visitor);
             var in = envelope.in;
 
             try Middleware.run(&ctx, &in, &envelope.out);
@@ -309,7 +342,7 @@ pub fn Exports(comptime Plugin: type) type {
             const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
-            var ctx = context(arena, envelope.now_ms, envelope.on_behalf_of);
+            var ctx = context(arena, envelope.now_ms, envelope.on_behalf_of, envelope.visitor);
 
             Middleware.run(&ctx, as_event(envelope.in));
         }

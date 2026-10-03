@@ -1,5 +1,6 @@
 //! JavaScript values cross into the ordinary Zig HTML writer, never raw interpolation.
 const std = @import("std");
+const sanitize = @import("../../lib/sanitize.zig");
 const engine = @import("vm.zig");
 const VM = engine.VM;
 const Value = engine.Value;
@@ -353,7 +354,9 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
                 return error.InvalidRawHTML;
             }
 
-            try writer.writeAll(try vm.text(value));
+            const text = try vm.text(value);
+
+            try writer.writeAll(try sanitize.sanitize(vm.arena, text, .content));
         }
 
         pub fn attribute(vm: *VM, writer: *std.Io.Writer, name: []const u8, value: Value) !void {

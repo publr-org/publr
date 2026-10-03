@@ -10,6 +10,7 @@ pub const operation = @import("sdk/operation.zig");
 pub const grant = @import("sdk/grant.zig");
 pub const authorize = @import("sdk/authorize.zig");
 pub const middleware = @import("sdk/middleware.zig");
+pub const display_hooks = @import("sdk/display.zig");
 pub const delivery = @import("sdk/delivery.zig");
 pub const provider = @import("sdk/provider.zig");
 pub const sandboxed_plugins = @import("sdk/sandboxed_plugins.zig");
@@ -260,7 +261,11 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.parent != null);
             std.debug.assert(ctx.now_ms >= 0);
 
+            const listed = registry.operations;
+            const owner = comptime owner_of(listed, registry.operation_owners, Operation);
+
             try run_pre_hooks(ctx, Operation.name);
+            try check_fence(ctx, owner);
 
             return authorize_request(ctx, .{
                 .operation_name = Operation.name,
@@ -270,10 +275,35 @@ pub fn SDK(comptime registry: Registry) type {
             });
         }
 
+        /// A call made for an app reaches only the plugins the app lists (`.plugins` in its
+        /// `app.zon`): an operation of any other is denied before it runs. Core's own
+        /// operations (no owner) are never fenced here; their grants say what they reach.
+        pub fn check_fence(ctx: *Ctx, owner: []const u8) Error!void {
+            std.debug.assert(owner.len <= 128);
+
+            const plugins = ctx.app_plugins orelse return;
+
+            if (owner.len == 0) {
+                return;
+            }
+
+            for (plugins) |listed| {
+                if (std.mem.eql(u8, listed, owner)) {
+                    return;
+                }
+            }
+
+            return error.Denied;
+        }
+
         /// The core policy, every plugin's policy, and the roles, for one request.
         pub fn authorize_request(ctx: *Ctx, request: authorize.Request) Error!Grant {
             std.debug.assert(request.operation_name.len > 0);
             std.debug.assert(registry.policies.len <= authorize.policies_max);
+
+            if (ctx.reads_only and request.kind == .write) {
+                return error.Denied;
+            }
 
             const granted = try authorize.authorize(
                 ctx,
@@ -664,6 +694,138 @@ pub fn SDK(comptime registry: Registry) type {
             const output = try stringify(ctx.arena, out);
 
             try sandboxed.after(ctx, Operation.name, input, output);
+        }
+
+        /// Whether any display hook on `point` changes `content_type`'s values.
+        pub fn displayed(ctx: *Ctx, comptime point: []const u8, content_type: []const u8) bool {
+            std.debug.assert(content_type.len > 0);
+            std.debug.assert(point.len > 0);
+
+            inline for (registry.middleware) |Middleware| {
+                const on_point = comptime Middleware.stage == .display and
+                    std.mem.eql(u8, Middleware.point, point);
+
+                if (on_point and std.mem.eql(u8, Middleware.content_type, content_type)) {
+                    return true;
+                }
+            }
+
+            const sandboxed = ctx.sandboxed_plugins orelse return false;
+            var buffer: [128]u8 = undefined;
+            const target = display_hooks.target_text(&buffer, point, content_type) catch {
+                return false;
+            };
+
+            return sandboxed.hooked(.display, target);
+        }
+
+        /// Runs every display hook on `point` for records of `content_type`, compiled in,
+        /// then installed, each changing the batch's values in place; what they answer is
+        /// settled as text (`display.zig`). A hook that fails changes nothing; the hooks
+        /// run as their plugins, reading what they are granted, never writing.
+        pub fn display(
+            ctx: *Ctx,
+            comptime point: []const u8,
+            content_type: []const u8,
+            batch: *display_hooks.Batch,
+        ) Error!void {
+            std.debug.assert(content_type.len > 0);
+            std.debug.assert(batch.items.len <= display_hooks.batch_items_max);
+
+            var shown = ctx.*;
+            shown.reads_only = true;
+
+            inline for (registry.middleware) |Middleware| {
+                const on_point = comptime Middleware.stage == .display and
+                    std.mem.eql(u8, Middleware.point, point);
+
+                if (on_point and std.mem.eql(u8, Middleware.content_type, content_type)) {
+                    try display_native(&shown, Middleware, batch);
+                }
+            }
+
+            if (ctx.sandboxed_plugins) |sandboxed| {
+                try display_sandboxed(&shown, sandboxed, point, content_type, batch);
+            }
+
+            try display_hooks.settle(ctx.arena, batch);
+        }
+
+        fn display_native(
+            ctx: *Ctx,
+            comptime Middleware: type,
+            batch: *display_hooks.Batch,
+        ) Error!void {
+            std.debug.assert(ctx.reads_only);
+            std.debug.assert(Middleware.stage == .display);
+
+            const owners = registry.middleware_owners;
+            const owner = comptime owner_of(registry.middleware, owners, Middleware);
+            const before_hook = try copy_values(ctx.arena, batch);
+
+            ctx.plugin = owner;
+
+            var wrapped: PluginCtx = .{ .inner = ctx };
+
+            Middleware.run(&wrapped, batch) catch |err| {
+                const point = Middleware.point;
+
+                std.log.warn("plugin {s}: display hook on {s}: {t}", .{ owner, point, err });
+                restore_values(batch, before_hook);
+            };
+        }
+
+        fn display_sandboxed(
+            ctx: *Ctx,
+            sandboxed: *const sandboxed_plugins.SandboxedPlugins,
+            point: []const u8,
+            content_type: []const u8,
+            batch: *display_hooks.Batch,
+        ) Error!void {
+            std.debug.assert(ctx.reads_only);
+            std.debug.assert(point.len > 0);
+
+            var buffer: [128]u8 = undefined;
+            const target = display_hooks.target_text(&buffer, point, content_type) catch return;
+
+            if (!sandboxed.hooked(.display, target)) {
+                return;
+            }
+
+            const input = try stringify(ctx.arena, batch.*);
+            const answer = sandboxed.display(ctx, target, input) catch |err| {
+                std.log.warn("display hooks on {s}: {t}", .{ target, err });
+                return;
+            };
+            const changed = json_module.parse(display_hooks.Batch, ctx.arena, answer, .{
+                .allocate = .alloc_always,
+                .ignore_unknown_fields = true,
+            }) catch return;
+
+            _ = display_hooks.take(batch, changed);
+        }
+
+        fn copy_values(
+            arena: std.mem.Allocator,
+            batch: *const display_hooks.Batch,
+        ) Error![]const []const u8 {
+            std.debug.assert(batch.items.len <= display_hooks.batch_items_max);
+
+            const values = arena.alloc([]const u8, batch.items.len) catch return error.OutOfMemory;
+
+            for (batch.items, values) |item, *value| {
+                value.* = item.value;
+            }
+
+            return values;
+        }
+
+        fn restore_values(batch: *display_hooks.Batch, values: []const []const u8) void {
+            std.debug.assert(values.len == batch.items.len);
+
+            for (batch.items, values) |*item, value| {
+                item.value = value;
+            }
         }
 
         /// A notice raised outside any operation: what the server itself did (the apps

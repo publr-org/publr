@@ -27,6 +27,7 @@ pub const vtable: sdk.sandboxed_plugins.SandboxedPlugins.VTable = .{
     .before = &before,
     .after = &after,
     .event = &event,
+    .display = &display,
 };
 
 fn host_of(context: *anyopaque) *Host {
@@ -215,6 +216,27 @@ fn before(
         var access = try access_of(loaded, ctx);
 
         current = try invoke_module.invoke(loaded, ctx, &access, target.entry, current);
+    }
+
+    return current;
+}
+
+fn display(
+    context: *anyopaque,
+    ctx: *sdk.Ctx,
+    target: []const u8,
+    input: []const u8,
+) sdk.Error![]const u8 {
+    const host = host_of(context);
+    var current = input;
+
+    std.debug.assert(target.len > 0);
+
+    for (targets_of(host, .display, target)) |found| {
+        const loaded = &host.loaded.items[found.sandboxed_plugin];
+        var access = try access_of(loaded, ctx);
+
+        current = try invoke_module.invoke(loaded, ctx, &access, found.entry, current);
     }
 
     return current;

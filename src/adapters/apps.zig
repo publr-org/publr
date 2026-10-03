@@ -6,6 +6,7 @@ const std = @import("std");
 const http = @import("../lib/http.zig");
 const state = @import("apps/state.zig");
 const pages = @import("apps/pages.zig");
+const api = @import("apps/api.zig");
 const islands = @import("apps/islands.zig");
 const assets = @import("apps/assets.zig");
 const toolbar = @import("apps/toolbar.zig");
@@ -70,6 +71,10 @@ fn dispatch(request: *Request, response: *Response, ctx: *http.Context) anyerror
 
     if (std.mem.startsWith(u8, target.path, islands.islands_prefix)) {
         return islands.island(project, target, request, response, ctx);
+    }
+
+    if (std.mem.startsWith(u8, target.path, api.prefix)) {
+        return api.call(project, target, request, response, ctx);
     }
 
     return pages.dispatch(project, target, request, response, ctx);
@@ -1063,4 +1068,48 @@ test "operation results collect empty membership and replay only committed scope
     const rolled_back = try query.replay(&system, changed.revision, secret, scope);
     try std.testing.expectEqual(changed.revision, rolled_back.revision);
     try std.testing.expectEqual(@as(usize, 0), rolled_back.tags.len);
+}
+
+test "visitors and `_api`: dynamic answers set the visitor, static ones never; calls refused" {
+    var harness: Harness = undefined;
+    try harness.init(.{});
+    defer harness.deinit();
+
+    const island = try harness.get("/_islands/signed-in");
+    const cookie = island.header("Set-Cookie") orelse "";
+    try std.testing.expect(std.mem.startsWith(u8, cookie, "publr_visitor="));
+    try std.testing.expect(contains(cookie, "HttpOnly; SameSite=Lax"));
+
+    const known = try harness.flow.head("GET /_islands/signed-in HTTP/1.1\r\nHost: h\r\n" ++
+        "Cookie: publr_visitor=0123456789abcdef01234567\r\n\r\n", .{});
+    const kept = try harness.flow.call(known, "");
+    try std.testing.expect(kept.header("Set-Cookie") == null);
+
+    const home = try harness.get("/");
+    try std.testing.expect(home.header("Set-Cookie") == null);
+
+    const read = try harness.get("/_api/greeter/wave");
+    try std.testing.expectEqual(@as(u16, 405), read.status.code());
+
+    const json_head = "POST /_api/{s} HTTP/1.1\r\nHost: h\r\nOrigin: {s}\r\n" ++
+        "Content-Type: application/json\r\nContent-Length: 2\r\nPublr-Request: 1\r\n\r\n";
+    const unmarked = "POST /_api/greeter/wave HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
+        "Content-Type: application/json\r\nContent-Length: 2\r\n\r\n";
+    const foreign = try harness.flow.call(try harness.flow.head(json_head, .{
+        "greeter/wave", "http://evil.example",
+    }), "{}");
+    try std.testing.expectEqual(@as(u16, 403), foreign.status.code());
+
+    const bare = try harness.flow.call(try harness.flow.head(unmarked, .{}), "{}");
+    try std.testing.expectEqual(@as(u16, 403), bare.status.code());
+
+    const core = try harness.flow.call(try harness.flow.head(json_head, .{
+        "record/save", "http://h",
+    }), "{}");
+    try std.testing.expectEqual(@as(u16, 404), core.status.code());
+
+    const odd = try harness.flow.call(try harness.flow.head(json_head, .{
+        "../record/save", "http://h",
+    }), "{}");
+    try std.testing.expectEqual(@as(u16, 404), odd.status.code());
 }

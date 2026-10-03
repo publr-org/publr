@@ -4,6 +4,7 @@
 //! `<mount>/_islands/?keys=a,b,c` answers several dynamic fragments in one response.
 
 const std = @import("std");
+const visitor = @import("visitor.zig");
 const http = @import("../../lib/http.zig");
 const sdk = @import("../../sdk.zig");
 const apps_adapter = @import("../apps.zig");
@@ -153,6 +154,7 @@ fn dynamic_island(
         .request = request,
         .live = true,
         .caller = Context.visitor(project, app, ctx.arena, request),
+        .visitor_id = try visitor.ensure(project, request, response, ctx.arena),
     });
 
     return response.set_body(.ok, "text/html; charset=utf-8", html);
@@ -183,6 +185,8 @@ fn batch(
 
     const caller = Context.visitor(project, app, ctx.arena, request);
     var out: std.Io.Writer.Allocating = .init(ctx.arena);
+    // One id for the whole batch: the first dynamic island sets it, the rest reuse it.
+    var visitor_id: []const u8 = "";
     var asked = std.mem.splitScalar(u8, keys, ',');
     var wanted: u32 = 0;
 
@@ -198,6 +202,11 @@ fn batch(
         }
 
         const found = app.pages().find_island(key) orelse continue;
+
+        if (found.dynamic and visitor_id.len == 0) {
+            visitor_id = try visitor.ensure(project, request, response, ctx.arena);
+        }
+
         const built = if (found.dynamic) null else build.built_island(app, ctx.arena, key);
         const html = built orelse try pages.render_fragment(ctx.arena, app, found, .{
             .arena = ctx.arena,
@@ -206,6 +215,7 @@ fn batch(
             .request = request,
             .live = found.dynamic,
             .caller = if (found.dynamic) caller else .anonymous,
+            .visitor_id = if (found.dynamic) visitor_id else "",
         });
 
         try out.writer.writeAll(html);

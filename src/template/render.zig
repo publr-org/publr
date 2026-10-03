@@ -3,6 +3,7 @@
 //! it is a parameter so the engine can be tested against a stand-in.
 
 const std = @import("std");
+const sanitize = @import("../lib/sanitize.zig");
 const ast = @import("ast.zig");
 const compile = @import("compile.zig");
 const time = @import("../lib/time.zig");
@@ -404,13 +405,13 @@ pub fn Renderer(comptime Ctx: type) type {
 
             std.debug.assert(expr.type == .string or expr.type == .opt_string);
 
-            switch (try renderer.eval(frame, expr)) {
-                .string => |text| try writer.writeAll(text),
-                .opt_string => |text| if (text) |present| {
-                    try writer.writeAll(present);
-                },
+            const text = switch (try renderer.eval(frame, expr)) {
+                .string => |present| present,
+                .opt_string => |maybe| maybe orelse return,
                 else => unreachable,
-            }
+            };
+
+            try writer.writeAll(try sanitize.sanitize(renderer.arena, text, .content));
         }
 
         fn write_attr(
