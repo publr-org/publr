@@ -57,6 +57,10 @@ pub const Context = struct {
     live: bool = false,
     /// The site's currencies, the default first: one input each on a money field.
     currencies: []const model.money.Entry = &.{},
+    /// The record edited, empty for a new one: what its virtual fields list for.
+    record_id: []const u8 = "",
+    /// A reference set by the virtual field that opened this new record: posted, not shown.
+    fixed: []const u8 = "",
 };
 
 const Option = struct { value: []const u8, label: []const u8, selected: bool };
@@ -131,6 +135,7 @@ fn row_shell(context: Context, def: Def) Error!Row {
         .can_create = def.options.reference.create,
         .can_link = def.options.reference.link,
         .live_suffix = if (def.options.reference.live_only) ":live" else "",
+        .opener_query = try opener_query_of(context, def),
         .shape = "single",
         .json_value = "",
         .json_rows = json_rows,
@@ -148,14 +153,30 @@ fn row_shell(context: Context, def: Def) Error!Row {
     };
 }
 
+/// What a virtual field's drawers are opened with: its reference field and this record, so
+/// the picker knows where each record sits and a new record starts pointing here.
+fn opener_query_of(context: Context, def: Def) Error![]const u8 {
+    std.debug.assert(def.name.len > 0);
+
+    if (!model.field.is_virtual(def.kind) or context.record_id.len == 0) {
+        return "";
+    }
+
+    return print(context.arena, "&via={s}&parent={s}", .{ def.options.via, context.record_id });
+}
+
 fn row_of(context: Context, def: Def, current: ?Value) Error!Row {
     std.debug.assert(def.name.len > 0);
     std.debug.assert(def.label.len > 0);
 
     const kind = kind_of(def);
     var row = try row_shell(context, def);
+    const fixed = std.mem.eql(u8, def.name, context.fixed) and !def.many;
 
-    if (model.field.is_layout(def.kind)) {
+    if (fixed and current != null and current.? == .string) {
+        row.shape = "fixed";
+        row.json_value = current.?.string;
+    } else if (model.field.is_layout(def.kind)) {
         row.shape = def.kind;
     } else if (model.field.is_group(def.kind)) {
         row.shape = "group";

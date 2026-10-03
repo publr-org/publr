@@ -33,6 +33,8 @@ export type RecordFieldsProps = {
     can_create: boolean;
     can_link: boolean;
     live_suffix: string;
+    /** A virtual field's `&via=..&parent=..`, carried to the drawer it opens. */
+    opener_query: string;
     /** single, many, checks, group, repeater, json */
     shape: string;
     /** A select drawn as checkboxes: one per choice, named by the choice's index. */
@@ -161,9 +163,10 @@ export function RecordFields({
     {fields.map((field) => (
       <div data-conditions={field.conditions} data-field-path={field.name} data-value-kind={field.value_kind}
         data-layout-kind={field.shape}
-        data-group-active={group_visible ? "true" : "false"} hidden={!group_visible}
+        data-group-active={group_visible ? "true" : "false"}
+        hidden={!group_visible || field.shape === "fixed"}
         data-labels={group_labels} data-instructions={group_instructions}><Field>
-        {field.shape !== "group" && field.shape !== "repeater" && field.shape !== "tab" && field.shape !== "accordion" && field.shape !== "message" && (
+        {field.shape !== "group" && field.shape !== "repeater" && field.shape !== "tab" && field.shape !== "accordion" && field.shape !== "message" && field.shape !== "fixed" && (
           <FieldLabel htmlFor={`field-${field.name}`} required={field.required}>
             {field.label}
           </FieldLabel>
@@ -203,6 +206,7 @@ export function RecordFields({
           />
         )}
         {field.shape === "json" && <FieldDescription>Edited as JSON.</FieldDescription>}
+        {field.shape === "fixed" && <input type="hidden" name={field.name} value={field.json_value} />}
         {field.shape === "single" && (
           <RecordSingle
             name={field.name}
@@ -226,6 +230,7 @@ export function RecordFields({
             can_create={field.can_create}
             first_handle={field.first_handle}
             live_suffix={field.live_suffix}
+            opener_query={field.opener_query}
             pick_search={field.pick_search}
             targets={field.targets}
           />

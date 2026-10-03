@@ -203,12 +203,12 @@ test "write then assemble round-trips every kind, groups, repeaters and many ref
         "\"faq\":[{\"question\":\"q1\",\"answer\":\"a1\",\"link\":\"p9\"},{\"question\":\"q2\"}]}";
     try std.testing.expectEqualStrings(expected, out.written());
 
-    const pointing = try referrers(connection, arena, "t2");
+    const pointing = try referrers(connection, arena, "t2", .live);
     try std.testing.expectEqual(@as(usize, 1), pointing.len);
     try std.testing.expectEqualStrings("tags", pointing[0].field);
     try std.testing.expectEqualStrings(
         "faq.link",
-        (try referrers(connection, arena, "p9"))[0].field,
+        (try referrers(connection, arena, "p9", .live))[0].field,
     );
 
     try std.testing.expectEqualStrings(

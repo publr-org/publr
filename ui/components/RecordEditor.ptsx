@@ -405,11 +405,11 @@ export const onOpenReference = (event: Event) => {
 
 export const onReference = (event: Event) => {
   const button = event.currentTarget as HTMLElement;
-  const { field = "", type = "", verb = "", live = "", reshape = "" } = button.dataset;
+  const { field = "", type = "", verb = "", live = "", reshape = "", query = "" } = button.dataset;
   const url =
     verb === "link"
-      ? `/admin/content/pick?type=${encodeURIComponent(type)}&field=${encodeURIComponent(field)}${live === ":live" ? "&live=1" : ""}`
-      : `/admin/content/new/editor?type=${encodeURIComponent(type)}&in_drawer=1`;
+      ? `/admin/content/pick?type=${encodeURIComponent(type)}&field=${encodeURIComponent(field)}${live === ":live" ? "&live=1" : ""}${query}`
+      : `/admin/content/new/editor?type=${encodeURIComponent(type)}&in_drawer=1${query}`;
   Publr.stores.navigation.openReference({
     url,
     field,

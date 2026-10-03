@@ -48,6 +48,8 @@ pub const Filter = struct {
     ref: ?[]const u8 = null,
     /// `ref` is a term: match through the membership index, ancestors included.
     membership: bool = false,
+    /// Any of these values, a JSON array of text: references or text, compared as stored.
+    values_json: ?[]const u8 = null,
 };
 
 /// Who created or last saved a document: this user, or (`exclude`) anyone but this user.
@@ -129,6 +131,9 @@ pub fn List(comptime tables: tables_module.Tables) type {
         const list_filter = " AND EXISTS (SELECT 1 FROM " ++ values ++ " v WHERE " ++
             "v.record = r.id AND v.type_id = r.type_id AND v.field = ?{d} AND v.value = ?{d} " ++
             "AND v.slot = 'live' AND v.kind <> 'long')";
+        const list_filter_any = " AND r.id IN (SELECT v.record FROM " ++ values ++
+            " v WHERE v.type_id = ?1 AND v.field = ?{d} AND v.value IN " ++
+            "(SELECT value FROM json_each(?{d})) AND v.slot = 'live' AND v.kind <> 'long')";
         const list_search = " AND r.id IN (SELECT record FROM " ++ tables.search ++
             " WHERE " ++ tables.search ++ " MATCH ?{d} AND slot = 'live')";
         const list_membership = " AND EXISTS (SELECT 1 FROM " ++ (tables.assignments orelse "") ++
@@ -191,6 +196,32 @@ pub fn List(comptime tables: tables_module.Tables) type {
             return sql.toOwnedSlice() catch return error.OutOfMemory;
         }
 
+        /// One field's value: through the membership index for a term, the lookup index
+        /// over one type, each record checked over several; any of several values (over
+        /// one type only).
+        fn write_filter(
+            writer: *std.Io.Writer,
+            query: Query,
+            filter: Filter,
+            bind_index: u32,
+        ) Error!void {
+            std.debug.assert(bind_index > 1);
+            std.debug.assert(filter.values_json == null or query.type_ids.len == 1);
+
+            const args = .{ bind_index, bind_index + 1 };
+            const has_assignments = comptime (tables.assignments != null);
+            const written = if (filter.values_json != null)
+                writer.print(list_filter_any, args)
+            else if (has_assignments and filter.membership)
+                writer.print(list_membership, args)
+            else if (query.type_ids.len == 1)
+                writer.print(list_filter_one_type, args)
+            else
+                writer.print(list_filter, args);
+
+            written catch return error.OutOfMemory;
+        }
+
         /// Every condition on `r`, with placeholders numbered as `bind_query` binds them.
         fn write_conditions(writer: *std.Io.Writer, query: Query) Error!void {
             std.debug.assert(query.type_ids.len > 0);
@@ -223,17 +254,7 @@ pub fn List(comptime tables: tables_module.Tables) type {
             }
 
             if (query.filter) |filter| {
-                const args = .{ bind_index, bind_index + 1 };
-                const has_assignments = comptime (tables.assignments != null);
-
-                if (has_assignments and filter.membership) {
-                    writer.print(list_membership, args) catch return error.OutOfMemory;
-                } else if (query.type_ids.len == 1) {
-                    writer.print(list_filter_one_type, args) catch return error.OutOfMemory;
-                } else {
-                    writer.print(list_filter, args) catch return error.OutOfMemory;
-                }
-
+                try write_filter(writer, query, filter, bind_index);
                 bind_index += 2;
             }
 
@@ -334,7 +355,9 @@ fn bind_query(select: *db.Statement, query: Query) Error!void {
     if (query.filter) |filter| {
         try select.bind_text(bind_index, filter.field);
 
-        if (filter.text) |text| {
+        if (filter.values_json) |given| {
+            try select.bind_text(bind_index + 1, given);
+        } else if (filter.text) |text| {
             try select.bind_text(bind_index + 1, text);
         } else if (filter.real) |real| {
             try select.bind_real(bind_index + 1, real);

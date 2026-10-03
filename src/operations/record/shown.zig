@@ -62,6 +62,7 @@ pub fn Shown(comptime List: type, comptime example_id: []const u8) type {
                 .ids = in.ids,
                 .type = in.type,
                 .documents = true,
+                .expand = false,
                 .limit = if (by_ids) @intCast(in.ids.len) else in.limit,
             });
             const titles = try ctx.arena.alloc(Title, listed.records.len);

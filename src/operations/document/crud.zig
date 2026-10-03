@@ -32,6 +32,8 @@ pub const ListInput = struct {
     slug: ?[]const u8 = null,
     filter_field: ?[]const u8 = null,
     filter_value: ?[]const u8 = null,
+    /// With `filter_field`: any of these values (references or text).
+    filter_values: []const []const u8 = &.{},
     /// Only these records, by id.
     ids: []const []const u8 = &.{},
     order: Order = .updated_desc,
@@ -296,7 +298,7 @@ pub fn Of(comptime Domain: type) type {
                 .ids_json = if (in.ids.len == 0) null else try sdk.stringify(ctx.arena, in.ids),
                 .changed = constraints.changed,
                 .search = in.search,
-                .filter = try slug_or_filter(span, in),
+                .filter = try slug_or_filter(ctx.arena, span, in),
                 .created_by = created_by_of(ctx, granted, constraints.created_by),
                 .updated_by = author_of(constraints.updated_by),
                 .created_after_ms = constraints.created_after_ms,
@@ -352,7 +354,11 @@ pub fn Of(comptime Domain: type) type {
 
         /// `slug` is a filter on the definition's slug field; it cannot be combined with
         /// another, and neither it nor a field filter has a meaning across definitions.
-        fn slug_or_filter(span: access_module.Span, in: ListInput) Error!?store.documents.Filter {
+        fn slug_or_filter(
+            arena: std.mem.Allocator,
+            span: access_module.Span,
+            in: ListInput,
+        ) Error!?store.documents.Filter {
             std.debug.assert(span.briefs.len > 0);
             std.debug.assert(in.limit > 0);
 
@@ -363,6 +369,21 @@ pub fn Of(comptime Domain: type) type {
 
                 return null;
             };
+
+            if (in.filter_values.len > 0) {
+                const field = in.filter_field orelse return error.Invalid;
+
+                if (in.filter_value != null or in.slug != null or in.filter_values.len > 1024) {
+                    return error.Invalid;
+                }
+
+                const given = sdk.stringify(arena, in.filter_values) catch {
+                    return error.OutOfMemory;
+                };
+
+                return .{ .field = field, .values_json = given };
+            }
+
             const slug = in.slug orelse {
                 return document.filter_of(def, in.filter_field, in.filter_value);
             };
@@ -384,7 +405,7 @@ pub fn Of(comptime Domain: type) type {
                 return error.Invalid;
             }
 
-            const found = try values.referrers(ctx.db, ctx.arena, id);
+            const found = try values.referrers(ctx.db, ctx.arena, id, .live);
             var visible: std.ArrayList(Referrer) = .empty;
 
             for (found) |item| {

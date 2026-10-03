@@ -95,7 +95,8 @@ pub fn Editor(comptime domain: Domain) type {
 
             var session = try admin.require(request, response, ctx) orelse return;
             const shape = try load_definition(&session) orelse return;
-            const document = try seeded(session.arena, shape.def, session.ctx.now_ms);
+            const plain = try seeded(session.arena, shape.def, session.ctx.now_ms);
+            const document = try pointed(&session, shape.def, plain);
 
             try answer(&session, shape, document, &.{}, .fragment);
         }
@@ -640,6 +641,8 @@ pub fn Editor(comptime domain: Domain) type {
                 .slug_prefix = try slug_prefix_of(session, def),
                 .live = live,
                 .currencies = try currencies_of(session),
+                .record_id = if (shape.loaded) |full| full.row.id else "",
+                .fixed = if (shape.loaded == null) fixed_of(session, def) else "",
             };
             const rows = try fields.rows_of(context, def.fields, document);
             const field_rows = try admin.render.view(arena, views.RecordFields, .{
@@ -843,6 +846,43 @@ fn add_action(
         .destructive = destructive,
         .primary = false,
     }) catch return error.OutOfMemory;
+}
+
+/// The reference a virtual field's "Create new item" sets (`via`, `parent`), when the
+/// type has that single reference field.
+fn fixed_of(session: *Session, def: Def) []const u8 {
+    std.debug.assert(def.handle.len > 0);
+
+    const via = admin.query_param(session, "via") orelse return "";
+    const parent = admin.query_param(session, "parent") orelse return "";
+
+    for (def.fields) |field| {
+        const reference = std.mem.eql(u8, field.kind, "reference") and !field.many;
+
+        if (reference and std.mem.eql(u8, field.name, via) and parent.len > 0) {
+            return field.name;
+        }
+    }
+
+    return "";
+}
+
+/// A new document from a virtual field starts pointing at the record that opened it.
+fn pointed(session: *Session, def: Def, document: ?Value) Error!?Value {
+    std.debug.assert(def.handle.len > 0);
+
+    const via = fixed_of(session, def);
+
+    if (via.len == 0) {
+        return document;
+    }
+
+    const parent = admin.query_param(session, "parent") orelse return document;
+    var object: std.json.ObjectMap = if (document) |given| given.object else .empty;
+
+    object.put(session.arena, via, .{ .string = parent }) catch return error.OutOfMemory;
+
+    return .{ .object = object };
 }
 
 /// What a new document starts with: the defaults of the definition's fields, or nothing

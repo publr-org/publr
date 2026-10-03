@@ -12,7 +12,16 @@ const author_type: model.content_type.Def = .{
     .handle = "author",
     .name = "Author",
     .public = true,
-    .fields = &.{.{ .name = "name", .label = "Name", .kind = "string", .required = true }},
+    .fields = &.{
+        .{ .name = "name", .label = "Name", .kind = "string", .required = true },
+        .{
+            .name = "books",
+            .label = "Books",
+            .kind = "virtual",
+            .many = true,
+            .options = .{ .virtual = "referenced_by", .to = &.{"book"}, .via = "author" },
+        },
+    },
 };
 const book_type: model.content_type.Def = .{
     .handle = "book",
@@ -204,4 +213,70 @@ test "query: a hidden field is as if the type had none; own records are the call
     const mine = try Query.run(&bob, .{ .query = "*[_type == \"book\"]{ title }" }, &own);
 
     try std.testing.expectEqualStrings("[{\"title\":\"Bob's\"}]", mine.result.text);
+}
+
+test "virtual: an author's books are the books pointing at it, in the order kept, then made" {
+    var library: Library = .{};
+    try library.init();
+    defer library.deinit();
+
+    var visitor = library.harness.ctx(.anonymous);
+    const titles = "*[_type == \"author\" && name == \"Ada\"][0]{ \"titles\": books[].title }";
+    const made = try ask(&visitor, titles);
+
+    // Live ones only for a visitor, in the order they were made: "Unseen" is a draft.
+    try std.testing.expectEqualStrings("{\"titles\":[\"First\",\"Second\"]}", made.result.text);
+
+    var admin = library.as_admin();
+    const second = try ask(&admin, "*[_type == \"book\" && title == \"Second\"][0]._id");
+    const first = try ask(&admin, "*[_type == \"book\" && title == \"First\"][0]._id");
+    const order = try std.fmt.allocPrint(admin.arena, "{{\"books\":[{s},{s}]}}", .{
+        second.result.text,
+        first.result.text,
+    });
+
+    _ = try SDK.dispatch(&admin, record.Save, .{ .id = library.ada, .document = order });
+    // Ada is published: the new order is a pending change until it is published too.
+    _ = try SDK.dispatch(&admin, record.Publish, .{ .id = library.ada });
+
+    const kept = try ask(&admin, titles);
+
+    try std.testing.expectEqualStrings("{\"titles\":[\"Second\",\"First\"]}", kept.result.text);
+
+    // One level deep: a book's author is its id, not the author with its books again.
+    const nested = try ask(&admin, "*[_type == \"author\" && name == \"Ada\"][0].books[0].author");
+
+    const ada_id = try std.fmt.allocPrint(admin.arena, "\"{s}\"", .{library.ada});
+
+    try std.testing.expectEqualStrings(ada_id, nested.result.text);
+}
+
+test "virtual: saving the list repoints the records it adds and leaves out" {
+    var library: Library = .{};
+    try library.init();
+    defer library.deinit();
+
+    var admin = library.as_admin();
+    const first = try ask(&admin, "*[_type == \"book\" && title == \"First\"][0]._id");
+    const orphan = try ask(&admin, "*[_type == \"book\" && title == \"Orphan\"][0]._id");
+    // Ada keeps First, drops Second and the draft, takes Orphan from Hidden.
+    const list = try std.fmt.allocPrint(admin.arena, "{{\"books\":[{s},{s}]}}", .{
+        orphan.result.text,
+        first.result.text,
+    });
+
+    _ = try SDK.dispatch(&admin, record.Save, .{ .id = library.ada, .document = list });
+
+    const got = try SDK.dispatch(&admin, record.Get, .{ .id = library.ada, .purpose = .edit });
+    const expected = try std.fmt.allocPrint(admin.arena, "\"books\":[{s},{s}]", .{
+        orphan.result.text,
+        first.result.text,
+    });
+
+    try std.testing.expect(contains(got.document, expected));
+
+    // A live book's reference changes live: Second has left Ada for site visitors too.
+    const live = try ask(&admin, "*[_type == \"book\" && title == \"Second\"][0].author");
+
+    try std.testing.expectEqualStrings("null", live.result.text);
 }

@@ -110,6 +110,31 @@ pub fn is_leaf(kind: []const u8) bool {
     return leaf;
 }
 
+/// A virtual field: shown and read as if stored, worked out from other records.
+pub fn is_virtual(kind: []const u8) bool {
+    std.debug.assert(kind.len <= 64 << 10);
+
+    return std.mem.eql(u8, kind, "virtual");
+}
+
+/// `referenced_by`, the one kind so far: the records of one type (`to`) whose reference
+/// field (`via`) points here. It keeps their order, so it holds many.
+fn validate_virtual(def: Def, problems: anytype) void {
+    std.debug.assert(is_virtual(def.kind));
+
+    if (!std.mem.eql(u8, def.options.virtual, "referenced_by")) {
+        problems.add(def.name, "a virtual field says its kind: `.virtual = \"referenced_by\"`");
+    }
+
+    if (def.options.to.len != 1 or !valid_name(def.options.via)) {
+        problems.add(def.name, "a virtual field names one type (`to`) and its reference (`via`)");
+    }
+
+    if (!def.many) {
+        problems.add(def.name, "a virtual field holds many: `.many = true`");
+    }
+}
+
 /// A money field: an amount per currency, `{ "GBP": 850 }`, each in minor units.
 pub fn is_money(kind: []const u8) bool {
     std.debug.assert(kind.len <= 64 << 10);
@@ -302,6 +327,10 @@ fn validate_kind_rules(
 
     if (kind.has.target and def.options.to.len > targets_max) {
         problems.add(def.name, "too many target types");
+    }
+
+    if (is_virtual(def.kind)) {
+        validate_virtual(def, problems);
     }
 
     if (kind.has.taxonomy and !valid_name(def.options.taxonomy)) {

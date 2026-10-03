@@ -15,6 +15,8 @@ export type RecordReferenceAddProps = {
   can_create: boolean;
   first_handle: string;
   live_suffix: string;
+  /** Added to the drawer's address: a virtual field's `&via=..&parent=..`. */
+  opener_query?: string;
   pick_search: boolean;
   targets: Array<{
     handle: string;
@@ -29,6 +31,7 @@ export function RecordReferenceAdd({
   can_create,
   first_handle,
   live_suffix,
+  opener_query = "",
   pick_search,
   targets,
 }: RecordReferenceAddProps) {
@@ -45,6 +48,7 @@ export function RecordReferenceAdd({
             data-field={name}
             data-type={first_handle}
             data-live={live_suffix}
+            data-query={opener_query}
             data-reshape={reshape}
           >
             <Icon name="plus" size="sm" />
@@ -68,6 +72,7 @@ export function RecordReferenceAdd({
                   data-field={name}
                   data-type={target.handle}
                   data-live={live_suffix}
+                  data-query={opener_query}
                   data-reshape={reshape}
                 >
                   <Icon name="file" size="sm" />
@@ -87,6 +92,7 @@ export function RecordReferenceAdd({
             data-verb="create"
             data-field={name}
             data-type={first_handle}
+            data-query={opener_query}
             data-reshape={reshape}
           >
             <Icon name="plus" size="sm" />
@@ -109,6 +115,7 @@ export function RecordReferenceAdd({
                   data-verb="create"
                   data-field={name}
                   data-type={target.handle}
+                  data-query={opener_query}
                   data-reshape={reshape}
                 >
                   <Icon name="file" size="sm" />

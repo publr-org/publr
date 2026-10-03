@@ -53,6 +53,29 @@ records of the type hold the same value, checked on every write like a slug. A
 reference field says what purging the record it points at does to the pointer:
 kept, refused, or cleared.
 
+A **virtual** field is shown and read as if the record stored it, but works it out from
+other records. The one kind so far, `referenced_by`, is the records of a type whose
+reference field points here: a product's `variants` is every variant whose `product` is
+the product.
+
+```zig
+.{ .name = "variants", .label = "Variants", .kind = "virtual", .many = true,
+   .options = .{ .virtual = "referenced_by", .to = &.{"variant"}, .via = "product" } }
+```
+
+The variant's reference is the only truth: a variant made anywhere joins its product, and
+one whose reference is cleared leaves it. What the field keeps is the order, the variants'
+ids, saved like a multiple reference. Reads (`record get`, `record list` with documents,
+queries, templates) give the full records in that order, the ones not yet ordered after in
+the order they were made; only those the reader may read, one level deep.
+
+The editor shows it as a multiple reference: a card per record, reordered, removed,
+linked or created in the drawer. Saving the list writes the difference into the records
+it names, each as the caller would save it: one left out has its reference cleared (or
+this record taken out of a multiple one), one added points here. A record a single
+reference holds elsewhere moves here after a confirmation. The reference changes in the
+record's own status: a published variant moves at once, a draft stays a draft.
+
 Everything that has fields is a record of some type, in the same two tables:
 records, authors, later media items. A type may be private
 (`public: false`): only signed-in callers see it. A plugin declares the types

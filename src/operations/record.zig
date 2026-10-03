@@ -9,6 +9,8 @@ const document_domain = @import("document.zig");
 const crud_module = @import("document/crud.zig");
 pub const fixture = @import("record/fixture.zig");
 const lifecycle = @import("record/lifecycle.zig");
+const virtual = @import("record/virtual.zig");
+const virtual_edit = @import("record/virtual/edit.zig");
 const app_module = @import("record/app.zig");
 
 const Ctx = sdk.Ctx;
@@ -317,7 +319,20 @@ pub const Get = struct {
             return error.Invalid;
         }
 
-        return crud.get(ctx, granted, in.id, in.purpose, in.slot);
+        var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
+
+        // What a site or the API reads shows virtual fields worked out; the editor gets
+        // what they keep, to save it back.
+        if (in.purpose == .delivery) {
+            var one = [_][]const u8{got.document};
+
+            try virtual.expand(ctx, &.{got.record}, &one, &.{});
+            got.document = one[0];
+        } else {
+            got.document = try virtual_edit.with_members(ctx, granted, got.record, got.document);
+        }
+
+        return got;
     }
 };
 
@@ -361,6 +376,10 @@ pub const Save = struct {
             return error.Invalid;
         }
 
+        // A virtual field's list is written into the records it names before the save keeps
+        // its order.
+        try virtual_edit.apply(ctx, granted, in.id, in.document);
+
         return crud.save(ctx, granted, in.id, in.document, in.expected_version, in.status);
     }
 };
@@ -393,11 +412,14 @@ pub const List = struct {
         slug: ?[]const u8 = null,
         filter_field: ?[]const u8 = null,
         filter_value: ?[]const u8 = null,
+        filter_values: []const []const u8 = &.{},
         ids: []const []const u8 = &.{},
         order: Order = .updated_desc,
         limit: u32 = 50,
         offset: u32 = 0,
         documents: bool = false,
+        /// With `documents`: virtual fields worked out (`false` reads what they keep).
+        expand: bool = true,
     };
     pub const Out = struct {
         records: []const Record,
@@ -415,11 +437,13 @@ pub const List = struct {
         .slug = "Only the record whose slug field holds this value (a type with a slug field)",
         .filter_field = "A field path (`views`, `seo.title`, `tags`); one type only",
         .filter_value = "The value to match (text, number, true/false, or an id for references)",
+        .filter_values = "With `filter_field`: any of these values (references or text)",
         .ids = "Only these records, by id (up to the page size)",
         .order = "`updated_desc` (default), `created_desc` or `title_asc`",
         .limit = "Page size, up to 200",
         .offset = "Rows to skip",
         .documents = "Also return each record's live document, read with the page in one go",
+        .expand = "With documents: virtual fields as the records they stand for (default)",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -437,6 +461,7 @@ pub const List = struct {
             .slug = in.slug,
             .filter_field = in.filter_field,
             .filter_value = in.filter_value,
+            .filter_values = in.filter_values,
             .ids = in.ids,
             .order = in.order,
             .limit = in.limit,
@@ -447,7 +472,16 @@ pub const List = struct {
             return .{ .records = listed };
         }
 
-        return .{ .records = listed, .documents = try domain.listed.documents_of(ctx, listed) };
+        const documents = try domain.listed.documents_of(ctx, listed);
+
+        if (in.expand) {
+            const writable = @constCast(documents);
+            const clauses = try virtual.kept_clauses(ctx.arena, in.filters);
+
+            try virtual.expand(ctx, listed, writable, clauses);
+        }
+
+        return .{ .records = listed, .documents = documents };
     }
 };
 

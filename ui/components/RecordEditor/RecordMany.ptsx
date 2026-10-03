@@ -42,6 +42,7 @@ export type RecordManyProps = {
   can_create: boolean;
   first_handle: string;
   live_suffix: string;
+  opener_query?: string;
   pick_search: boolean;
   targets: Array<{
     handle: string;
@@ -59,6 +60,7 @@ export function RecordMany({
   can_create,
   first_handle,
   live_suffix,
+  opener_query = "",
   pick_search,
   targets,
 }: RecordManyProps) {
@@ -98,6 +100,7 @@ export function RecordMany({
           can_create={can_create}
           first_handle={first_handle}
           live_suffix={live_suffix}
+          opener_query={opener_query}
           pick_search={pick_search}
           targets={targets}
         />

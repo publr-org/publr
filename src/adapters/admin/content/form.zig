@@ -11,6 +11,7 @@ const record_operations = @import("../../../operations/record.zig");
 const term_operations = @import("../../../operations/term.zig");
 const editor = @import("../editor.zig");
 const impact_dialog = @import("impact.zig");
+const pick_owner = @import("pick_owner.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -259,26 +260,39 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
         return admin.fail(&session, err, back);
     };
     const live_only = admin.query_param(&session, "live") != null;
+    const via = admin.query_param(&session, "via") orelse "";
+    const parent = admin.query_param(&session, "parent") orelse "";
     const listed = registry.SDK.dispatch(&session.ctx, record_operations.List, .{
         .type = handle,
         .filters = if (live_only) &.{"status:is:published"} else &.{},
         .search = search,
         .order = .title_asc,
         .limit = record_operations.list_max,
+        .documents = via.len > 0 and parent.len > 0,
+        .expand = false,
     }) catch |err| return admin.fail(&session, err, back);
     const arena = session.arena;
-    const rows = try arena.alloc(views.RecordPick.RowsItem, listed.records.len);
+    const owners: []const pick_owner.Owner = if (listed.documents.len > 0)
+        try pick_owner.owners_of(&session, listed.records, listed.documents, field, via, parent)
+    else
+        &.{};
+    var rows: std.ArrayList(views.RecordPick.RowsItem) = .empty;
     const titles = try display.titles(&session.ctx, listed.records);
 
     for (listed.records, titles, 0..) |record, title, index| {
         const status = registry.Statuses.find(record.status);
+        const owner: pick_owner.Owner = if (owners.len > 0) owners[index] else .free;
+        if (owner == .here) {
+            continue;
+        }
 
-        rows[index] = .{
+        try rows.append(arena, .{
             .id = record.id,
             .title = title,
             .status = if (status) |known| known.label else record.status,
             .published = registry.Statuses.is_live(record.status),
-        };
+            .moves_from = if (owner == .elsewhere) owner.elsewhere else "",
+        });
     }
 
     const html = try admin.render.html(arena, views.RecordPick, .{
@@ -287,7 +301,9 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
         .field = field,
         .search = search orelse "",
         .live = live_only,
-        .rows = rows,
+        .via = via,
+        .parent = parent,
+        .rows = rows.items,
     });
 
     try session.response.set_header("Cache-Control", "private, no-store");

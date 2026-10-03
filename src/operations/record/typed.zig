@@ -203,6 +203,7 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
                 .limit = page.limit,
                 .offset = page.offset,
                 .documents = true,
+                .expand = false,
             });
             const items = try ctx.arena().alloc(Item, listed.records.len);
 
@@ -227,6 +228,7 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
                 .ids = ids,
                 .limit = @intCast(ids.len),
                 .documents = true,
+                .expand = false,
             });
             const items = try ctx.arena().alloc(Item, listed.records.len);
 

@@ -215,6 +215,16 @@ pub const core = [_]Kind{
         .has = .{ .target = true },
     },
     .{
+        .id = "virtual",
+        .label = "Virtual",
+        .description = "Records worked out from others: the ones whose reference points here",
+        .icon = "link",
+        // What it keeps: the records' ids in the order they are shown.
+        .storage = .ref,
+        .control = .input,
+        .has = .{ .target = true },
+    },
+    .{
         .id = "terms",
         .label = "Terms",
         .description = "Terms of a taxonomy the record is classified under",
@@ -458,7 +468,7 @@ fn validate(comptime kinds: []const Kind) void {
 pub const Core = Registry(&core);
 
 test "core registry: every kind found, storage columns, conversions" {
-    try std.testing.expectEqual(@as(usize, 27), Core.all.len);
+    try std.testing.expectEqual(@as(usize, 28), Core.all.len);
     try std.testing.expect(Core.find_kind("terms").?.has.taxonomy);
     try std.testing.expectEqual(Storage.long, Core.find_kind("richtext").?.storage);
     try std.testing.expectEqual(Storage.bool, Core.find_kind("boolean").?.storage);

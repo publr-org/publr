@@ -155,7 +155,12 @@ pub const Options = struct {
     labels: []const []const u8 = &.{},
     source: []const u8 = "",
     /// The record types a reference may point at, by handle; empty for any record type.
+    /// A virtual field names the one type its records are of.
     to: []const []const u8 = &.{},
+    /// A virtual field: which kind (`referenced_by`), and the reference field of the `to`
+    /// type that points here.
+    virtual: []const u8 = "",
+    via: []const u8 = "",
     /// The taxonomy a terms field assigns from, by handle.
     taxonomy: []const u8 = "",
     rows: ?u32 = null,

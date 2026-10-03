@@ -222,7 +222,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(target_id.len > 0);
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
-            const pointing = try values.referrers(ctx.db, ctx.arena, target_id);
+            const pointing = try values.referrers(ctx.db, ctx.arena, target_id, .live);
             var clears = false;
 
             for (pointing) |referrer| {

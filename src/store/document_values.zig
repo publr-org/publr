@@ -24,6 +24,7 @@ pub const pending = "pending";
 pub const slot_len_max: u32 = 64;
 
 pub const Referrer = struct { record_id: []const u8, field: []const u8 };
+pub const Slots = enum { live, editing };
 /// A value row with the record it belongs to, from a read of many records.
 pub const Owned = struct { record: []const u8, row: Row };
 
@@ -289,18 +290,26 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             return rows.items;
         }
 
+        /// The records pointing at the target: through their live values, or (`editing`)
+        /// their live or pending ones, what an editor sees.
         pub fn referrers(
             connection: *db.Db,
             arena: std.mem.Allocator,
             target_id: []const u8,
+            slots: Slots,
         ) db.Error![]Referrer {
             std.debug.assert(target_id.len > 0);
             std.debug.assert(rows_max > 0);
 
-            var select = try connection.prepare(
-                "SELECT DISTINCT record, field FROM " ++ table ++ " WHERE slot = 'live' " ++
-                    "AND kind = 'ref' AND value = ?1 ORDER BY record, field",
-            );
+            const select_live = "SELECT DISTINCT record, field FROM " ++ table ++
+                " WHERE slot = 'live' AND kind = 'ref' AND value = ?1 ORDER BY record, field";
+            const select_editing = "SELECT DISTINCT record, field FROM " ++ table ++
+                " WHERE slot IN ('live', 'pending') AND kind = 'ref' AND value = ?1 " ++
+                "ORDER BY record, field";
+            var select = switch (slots) {
+                .live => try connection.prepare(select_live),
+                .editing => try connection.prepare(select_editing),
+            };
             defer select.finalize();
 
             try select.bind_text(1, target_id);

@@ -1,6 +1,12 @@
 import { Publr } from "publr-jsx";
 import { onBack, onClose, onPick, submitted } from "./ReferenceDrawer.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
 import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
@@ -33,10 +39,14 @@ export type RecordPickProps = {
   search: string;
   /** Only live records are offered: the field takes nothing else. */
   live: boolean;
-  rows: Array<{ id: string; title: string; status: string; published: boolean }>;
+  /** Opened from a virtual field: the reference field it reads, and the record it lists
+   * for. A record held elsewhere is moved here only after a confirmation. */
+  via: string;
+  parent: string;
+  rows: Array<{ id: string; title: string; status: string; published: boolean; moves_from: string }>;
 };
 
-export function RecordPick({ type, type_name, field, search, live, rows }: RecordPickProps) {
+export function RecordPick({ type, type_name, field, search, live, via, parent, rows }: RecordPickProps) {
   state.title = `Link a ${type_name}`;
   return (
     <div class="flex flex-col" data-part="record-pick" ref={root_ref}>
@@ -77,6 +87,8 @@ export function RecordPick({ type, type_name, field, search, live, rows }: Recor
           {live && <input type="hidden" name="live" value="1" />}
           <input type="hidden" name="type" value={type} />
           <input type="hidden" name="field" value={field} />
+          {via !== "" && <input type="hidden" name="via" value={via} />}
+          {parent !== "" && <input type="hidden" name="parent" value={parent} />}
           <Input type="search" name="q" value={search} placeholder="Search" classes="w-80" />
           <Button type="submit" hierarchy="secondary">
             Search
@@ -108,18 +120,58 @@ export function RecordPick({ type, type_name, field, search, live, rows }: Recor
                       <Status tone="neutral">{row.status}</Status>
                     )}
                   </TableCell>
+                  <TableCell>
+                    {row.moves_from !== "" && (
+                      <Text as="span" variant="body-sm" tone="muted">
+                        In {row.moves_from}
+                      </Text>
+                    )}
+                  </TableCell>
                   <TableCell align="right">
-                    <Button
-                      type="button"
-                      hierarchy="secondary"
-                      size="sm"
-                      data-link-id={row.id}
-                      onClick={onPick}
-                      data-field={field}
-                    >
-                      <Icon name="link" size="sm" />
-                      <span>Link</span>
-                    </Button>
+                    {row.moves_from === "" ? (
+                      <Button
+                        type="button"
+                        hierarchy="secondary"
+                        size="sm"
+                        data-link-id={row.id}
+                        onClick={onPick}
+                        data-field={field}
+                      >
+                        <Icon name="link" size="sm" />
+                        <span>Link</span>
+                      </Button>
+                    ) : (
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button type="button" hierarchy="secondary" size="sm">
+                            <Icon name="link" size="sm" />
+                            <span>Link</span>
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogTitle>Move {row.title} here?</DialogTitle>
+                          <DialogDescription>
+                            This {type_name} belongs to {row.moves_from}. Linking it here removes
+                            it from {row.moves_from}.
+                          </DialogDescription>
+                          <div class="mt-5 flex justify-end gap-2">
+                            <DialogClose asChild>
+                              <Button type="button" hierarchy="secondary">
+                                Cancel
+                              </Button>
+                            </DialogClose>
+                            <Button
+                              type="button"
+                              data-link-id={row.id}
+                              onClick={onPick}
+                              data-field={field}
+                            >
+                              Move it here
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
