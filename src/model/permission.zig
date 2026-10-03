@@ -22,9 +22,10 @@ pub const Permission = struct {
 
 /// Granted to every plugin without asking: harmless, and needed to run at all.
 pub const always = [_][]const u8{
-    "heartbeat.check",   "project.status", "status.list",
-    "internal.create",   "internal.get",   "internal.save",
-    "internal.find_one", "internal.find",  "internal.delete",
+    "heartbeat.check",    "project.status", "status.list",
+    "internal.create",    "internal.get",   "internal.save",
+    "internal.find_one",  "internal.find",  "internal.delete",
+    "project.currencies",
 };
 
 /// The record operations a plugin reaches on its own content types without asking.
@@ -217,12 +218,12 @@ pub const core = [_]Permission{
 /// setup, who holds what, one person's saved views, an app's records handed to another.
 /// No grant reaches them.
 pub const never = [_][]const u8{
-    "user.sign_in",       "user.sign_out",      "user.set_password", "user.password_link",
-    "sign_on.configure",  "sign_on.status",     "sign_on.redeem",    "identity.sign_in",
-    "identity.configure", "identity.status",    "identity.link",     "identity.unlink",
-    "identity.list",      "identity.providers", "project.init",      "role.list",
-    "view.list",          "view.get",           "view.create",       "view.update",
-    "view.delete",        "project.move_app",
+    "user.sign_in",       "user.sign_out",      "user.set_password",      "user.password_link",
+    "sign_on.configure",  "sign_on.status",     "sign_on.redeem",         "identity.sign_in",
+    "identity.configure", "identity.status",    "identity.link",          "identity.unlink",
+    "identity.list",      "identity.providers", "project.init",           "role.list",
+    "view.list",          "view.get",           "view.create",            "view.update",
+    "view.delete",        "project.move_app",   "project.set_currencies",
 };
 
 /// A secret a plugin names is its own permission, `secret.<NAME>`, always high.

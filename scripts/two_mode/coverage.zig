@@ -47,6 +47,7 @@ const exercised = [_]Part{
     .{ .name = "remotes", .where = "greeter's use of sampler hello" },
     .{ .name = "operation", .where = "greeter's use of sampler hello" },
     .{ .name = "compatible_with", .where = "greeter, with sampler" },
+    .{ .name = "to", .where = "greeter recall's post" },
 };
 
 /// What only the sandbox has: a compiled-in plugin runs with everything, unlimited.

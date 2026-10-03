@@ -6,6 +6,7 @@
 const std = @import("std");
 const field = @import("field.zig");
 const kinds = @import("kinds.zig");
+const currency = @import("currency.zig");
 
 const Def = field.Def;
 const Kind = kinds.Kind;
@@ -87,6 +88,8 @@ const Flattener = struct {
 
             if (field.is_group(def.kind)) {
                 try flattener.walk_group(def, value, path, ordinal);
+            } else if (field.is_money(def.kind)) {
+                try flattener.walk_money(def, value, path, ordinal);
             } else if (field.is_repeater(def.kind)) {
                 try flattener.walk_repeater(def, value, path);
             } else if (def.many) {
@@ -128,6 +131,35 @@ const Flattener = struct {
             }
 
             try flattener.walk(def.fields, item.object, path, @intCast(index));
+        }
+    }
+
+    /// One integer row per currency: `price.GBP`, `price.EUR`.
+    fn walk_money(
+        flattener: *Flattener,
+        def: Def,
+        value: Value,
+        path: []const u8,
+        ordinal: u32,
+    ) Error!void {
+        std.debug.assert(field.is_money(def.kind));
+        std.debug.assert(path.len > 0);
+
+        if (value != .object) {
+            return error.Invalid;
+        }
+
+        var entries = value.object.iterator();
+
+        while (entries.next()) |entry| {
+            if (currency.find(entry.key_ptr.*) == null) {
+                return error.Invalid;
+            }
+
+            var path_buffer: [path_len_max]u8 = undefined;
+            const amount_path = try join(&path_buffer, path, entry.key_ptr.*);
+
+            try flattener.leaf(def, entry.value_ptr.*, amount_path, ordinal);
         }
     }
 
@@ -258,6 +290,8 @@ fn assemble_fields(
         const path = try join(&path_buffer, prefix, def.name);
         const value: ?Value = if (field.is_group(def.kind))
             try assemble_group(known, arena, def, rows, path, ordinal)
+        else if (field.is_money(def.kind))
+            try assemble_money(arena, rows, path, ordinal)
         else if (field.is_repeater(def.kind))
             try assemble_repeater(known, arena, def, rows, path)
         else if (def.many)
@@ -290,6 +324,34 @@ fn assemble_group(
     }
 
     return try assemble_fields(known, arena, def.fields, rows, path, ordinal);
+}
+
+/// `{ "GBP": 850 }` from the rows under `path`: one per currency.
+fn assemble_money(
+    arena: std.mem.Allocator,
+    rows: []const Row,
+    path: []const u8,
+    ordinal: i64,
+) Error!?Value {
+    std.debug.assert(path.len > 0);
+    std.debug.assert(ordinal >= 0);
+
+    var object: std.json.ObjectMap = .empty;
+
+    for (rows) |row| {
+        const under = row.field.len == path.len + 4 and std.mem.startsWith(u8, row.field, path) and
+            row.field[path.len] == '.';
+
+        if (row.ordinal != ordinal or !under or row.value != .integer) {
+            continue;
+        }
+
+        const code = arena.dupe(u8, row.field[path.len + 1 ..]) catch return error.OutOfMemory;
+
+        object.put(arena, code, .{ .integer = row.value.integer }) catch return error.OutOfMemory;
+    }
+
+    return if (object.count() == 0) null else .{ .object = object };
 }
 
 fn assemble_repeater(
@@ -491,6 +553,10 @@ pub fn find_path(fields: []const field.Def, path: []const u8) ?*const field.Def 
         return if (field.is_leaf(found.kind)) found else null;
     }
 
+    if (field.is_money(found.kind)) {
+        return if (currency.find(path[dot.? + 1 ..]) != null) found else null;
+    }
+
     if (field.is_leaf(found.kind)) {
         return null;
     }
@@ -510,4 +576,33 @@ pub fn parse_int_like(text: []const u8) ?i64 {
     }
 
     return std.fmt.parseInt(i64, text, 10) catch null;
+}
+
+test "money: one row per currency, assembled back, and its paths" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const fields = [_]Def{.{ .name = "price", .label = "Price", .kind = "money" }};
+    const text = "{\"price\":{\"GBP\":850,\"EUR\":990}}";
+    const value = try std.json.parseFromSliceLeaky(Value, arena, text, .{});
+    var buffer: [flat_max]Flat = undefined;
+    const flat = try flatten(&kinds.core, &fields, value, &buffer);
+
+    try std.testing.expectEqual(@as(usize, 2), flat.len);
+    try std.testing.expectEqualStrings("price.GBP", flat[0].field);
+
+    var rows: [2]Row = undefined;
+
+    for (flat, &rows) |one, *row| {
+        row.* = .{ .field = one.field, .ordinal = 0, .value = one.value };
+    }
+
+    const back = try assemble(&kinds.core, arena, &fields, &rows);
+
+    const price = back.object.get("price").?;
+
+    try std.testing.expectEqual(@as(i64, 990), price.object.get("EUR").?.integer);
+    try std.testing.expect(find_path(&fields, "price.GBP") != null);
+    try std.testing.expect(find_path(&fields, "price.ZZZ") == null);
 }

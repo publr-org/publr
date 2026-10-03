@@ -61,6 +61,9 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     try fill_identities(ctx);
     try fill_plugins(ctx, dir);
     try fill_internal(ctx);
+    _ = try SDK.dispatch(ctx, projects.currencies.SetCurrencies, .{
+        .currencies = &.{ .{ .code = "GBP", .symbol = "£" }, .{ .code = "EUR" } },
+    });
 
     const custom = publr.operations.custom_fields;
     _ = try SDK.dispatch(ctx, custom.Update, .{

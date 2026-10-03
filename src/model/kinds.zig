@@ -271,6 +271,15 @@ pub const core = [_]Kind{
         .many_allowed = false,
     },
     .{
+        .id = "money",
+        .label = "Money",
+        .description = "An amount in each of the site's currencies, in minor units",
+        .icon = "tag",
+        .storage = .int,
+        .many_allowed = false,
+        .check = &@import("kinds/extra.zig").money,
+    },
+    .{
         .id = "link",
         .label = "Link",
         .description = "A URL, link text and target",
@@ -449,7 +458,7 @@ fn validate(comptime kinds: []const Kind) void {
 pub const Core = Registry(&core);
 
 test "core registry: every kind found, storage columns, conversions" {
-    try std.testing.expectEqual(@as(usize, 26), Core.all.len);
+    try std.testing.expectEqual(@as(usize, 27), Core.all.len);
     try std.testing.expect(Core.find_kind("terms").?.has.taxonomy);
     try std.testing.expectEqual(Storage.long, Core.find_kind("richtext").?.storage);
     try std.testing.expectEqual(Storage.bool, Core.find_kind("boolean").?.storage);

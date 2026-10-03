@@ -26,6 +26,8 @@ pub const Operation = struct {
     fields: []const @import("../model/sandboxed_plugin.zig").Field = &.{},
     /// Its `--help`, as the build rendered it.
     help: []const u8 = "",
+    /// The shape it takes: which of its fields are references to read before it runs.
+    input: []const @import("../model/contract.zig").Node = &.{},
     /// Which plugin, and which of its entries, runs it: the host's own numbering.
     sandboxed_plugin: u32,
     entry: u32,

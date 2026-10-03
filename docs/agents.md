@@ -80,12 +80,12 @@ pub const Sign = struct {
         .name = "Who signs",
         .message = "What they write",
     };
+    pub const rules: sdk.operation.Rules(In) = .{
+        .name = .{ .min_len = 1, .max_len = 80 },
+        .message = .{ .min_len = 1, .max_len = 500 },
+    };
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        if (in.name.len == 0 or in.name.len > 80 or in.message.len == 0 or in.message.len > 500) {
-            return error.Invalid;
-        }
-
         const entry: Entry = .{ .name = in.name, .message = in.message };
         const id = try entries.create(ctx, entry, .{ .status = "published" });
 
@@ -101,6 +101,10 @@ pub const Sign = struct {
   operation is safe to give an app's users, not who may call it: administrators call
   `app.*` operations too. Never give one operation two names; if the admin needs
   different behaviour, that is a second operation.
+- **Declare bounds, don't write them.** `pub const rules: sdk.operation.Rules(In)` holds
+  each input field's bounds (`min`/`max`, `min_len`/`max_len`, `items_min`/`items_max`,
+  `preset`, `pattern`); core refuses a call that breaks them before your code runs, saying
+  which field, and `--help` shows them.
 - **Document everything.** Every namespace, operation and field gets its text: an
   operation its `description`, `details` (who may call it, what it changes, how it fails),
   `example`, `example_out` and `field_docs`. `publr <namespace> --help` shows them to the
@@ -150,7 +154,9 @@ work for.
 
 - **The server owns the facts and the rules.** An operation reads what it decides on from
   storage. Its input is the request: a query, answers, a selection, quantities, record
-  IDs. Never records' contents, prices, rules or policies sent by the caller: a visitor can
+  IDs. Take a record as `publr.records.Ref(Variant, "variant")`: the caller sends its id,
+  core reads the stored record with the caller's access before your operation runs
+  (`in.variant.value.?`), and refuses one that is unknown or not theirs to see. Never records' contents, prices, rules or policies sent by the caller: a visitor can
   send anything.
 - **Pages show and collect.** A page never gathers data to send to an operation for it to
   trust, and never calls an operation only so a check appears to happen.
@@ -169,8 +175,10 @@ work for.
   `delete`. They never show in the admin's Content, reach only your plugin's records in
   the request's app, and need no permission.
 - **Use the field kinds.** A record pointing at another is a `reference` field
-  (`.options = .{ .to = &.{"product"} }`), a time is `datetime`, a choice is `select`.
-  Never a record ID in a `string`, never JSON in a `text`, never a time as a number.
+  (`.options = .{ .to = &.{"product"} }`), a time is `datetime`, a choice is `select`,
+  a price is `money` (`{ "GBP": 850 }`, minor units, in the site's currencies; a template
+  writes it with `Publr.build.money(product.data.price)`). Never a
+  record ID in a `string`, never JSON in a `text`, never a time or a price as a number.
 - **What is pointed at is a record.** If anything refers to a part of a record (a
   product's variants), make the part its own content type with a reference to the whole.
 - **History keeps a copy.** An order copies what was bought (name, variant, price,

@@ -76,7 +76,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 128 + client_files.names.len;
+pub const routes_count: u32 = 130 + client_files.names.len;
 const client_files = @import("../ui/client_files.zig");
 
 const styles_css = @embedFile("styles_css");
@@ -97,6 +97,8 @@ pub fn register(router: *http.Router) void {
     router.post("/admin/logout", &auth_pages.logout);
     router.get("/admin/settings", &settings_pages.show);
     router.get("/admin/settings/system", &settings_pages.system);
+    router.get("/admin/settings/system/currencies", &settings_pages.currencies_tab);
+    router.post("/admin/settings/system/currencies", &settings_pages.save_currencies);
     router.get("/admin/settings/users", &user_pages.list);
     router.get("/admin/settings/users/new", &user_pages.new_page);
     router.post("/admin/settings/users/create", &user_pages.create);

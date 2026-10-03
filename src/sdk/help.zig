@@ -90,6 +90,68 @@ fn print_field_docs(
         if (doc.len > 0) {
             out.print("      {s}\n", .{doc}) catch return error.WriteFailed;
         }
+
+        const rule = comptime rule_of(Operation, field.name, is_input);
+
+        if (rule.len > 0) {
+            out.print("      {s}\n", .{rule}) catch return error.WriteFailed;
+        }
+    }
+}
+
+/// An input field's declared rule in words: `1 to 20`, `up to 80 characters`.
+fn rule_of(
+    comptime Operation: type,
+    comptime field: []const u8,
+    comptime is_input: bool,
+) []const u8 {
+    comptime {
+        std.debug.assert(field.len > 0);
+
+        if (!is_input or !@hasDecl(Operation, "rules")) {
+            return "";
+        }
+
+        if (!@hasField(@TypeOf(Operation.rules), field)) {
+            return "";
+        }
+
+        const rule = @field(Operation.rules, field);
+        var words: []const u8 = "";
+
+        words = words ++ bounds("", rule.min, rule.max);
+        words = words ++ bounds(" characters", rule.min_len, rule.max_len);
+        words = words ++ bounds(" items", rule.items_min, rule.items_max);
+
+        if (rule.preset != .any) {
+            words = words ++ (if (words.len > 0) "; " else "") ++ @tagName(rule.preset);
+        }
+
+        if (rule.pattern.len > 0) {
+            words = words ++ (if (words.len > 0) "; " else "") ++ "like " ++ rule.pattern;
+        }
+
+        return words;
+    }
+}
+
+fn bounds(comptime unit: []const u8, comptime low: anytype, comptime high: anytype) []const u8 {
+    comptime {
+        std.debug.assert(unit.len < 16);
+
+        if (low != null and high != null) {
+            return std.fmt.comptimePrint("{d} to {d}{s}", .{ low.?, high.?, unit });
+        }
+
+        if (low) |least| {
+            return std.fmt.comptimePrint("at least {d}{s}", .{ least, unit });
+        }
+
+        if (high) |most| {
+            return std.fmt.comptimePrint("up to {d}{s}", .{ most, unit });
+        }
+
+        return "";
     }
 }
 
@@ -272,7 +334,7 @@ fn type_label_depth(comptime Type: type, comptime depth: u32) []const u8 {
             "text"
         else
             "list of " ++ type_label_depth(pointer.child, depth + 1),
-        .@"struct" => |info| blk: {
+        .@"struct" => |info| if (@hasDecl(Type, "reference")) "id of " ++ Type.handle else blk: {
             var joined: []const u8 = "{ ";
 
             for (info.fields, 0..) |field, index| {

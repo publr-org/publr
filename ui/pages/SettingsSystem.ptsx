@@ -1,7 +1,11 @@
 import { Layout } from "../layouts/Layout.ptsx";
-import { EditorColumn } from "../components/EditorColumn.ptsx";
 import { PageHeader } from "@publr/ui/PageHeader.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
+import { CurrencyTable } from "../components/CurrencyTable.ptsx";
 
 export type SettingsSystemProps = {
   user_name: string;
@@ -13,21 +17,66 @@ export type SettingsSystemProps = {
   top_bar?: JSX.Element;
   csrf: string;
   nav: JSX.Element;
+  /** The section shown: `general`, or `currencies`. */
+  tab: string;
+  /** Where the currencies form posts. */
+  action: string;
+  /** The site's currencies, the default first. */
+  currencies: Array<{
+    index: number;
+    code: string;
+    symbol: string;
+    format: string;
+    decimal: string;
+    thousands: string;
+    example: string;
+  }>;
+  /** Every ISO 4217 code and its decimals. */
+  digits: Array<{ code: string; digits: number }>;
+  /** Shown after a save. */
+  notice?: string;
+  /** Why a save was refused. */
+  problem?: string;
 };
 
-/** The system's own settings: a placeholder until there is something to configure. */
-export function SettingsSystem({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav }: SettingsSystemProps) {
+/** The system's own settings, a section per tab: general, and the currencies the site
+ * prices in and how it writes them. */
+export function SettingsSystem({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, tab, action, currencies, digits, notice = "", problem = "" }: SettingsSystemProps) {
   return (
     <Layout title="System settings" section="settings" sidebar={nav}
       user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      <EditorColumn>
-        <PageHeader title="System settings" description="How this Publr runs." />
-        <p class="mt-6">
+      <div class="px-8 pt-7 pb-6">
+        <PageHeader title="System settings" description="How this Publr runs, and the conventions the site follows." />
+      </div>
+      <div class="border-y border-border px-8 py-2">
+        <TabNav label="System settings">
+          <TabNavLink href="/admin/settings/system" active={tab === "general"}>General</TabNavLink>
+          <TabNavLink href="/admin/settings/system/currencies" active={tab === "currencies"}>Currencies</TabNavLink>
+        </TabNav>
+      </div>
+      {tab === "general" && (
+        <div class="px-8 py-6">
           <Text variant="body-md" tone="muted">
-            Nothing to configure yet. The site's own settings live in the sections below Users.
+            Nothing to configure here yet. The site's own settings live in the sections below Users.
           </Text>
-        </p>
-      </EditorColumn>
+        </div>
+      )}
+      {tab === "currencies" && (
+        <form method="post" action={action}>
+          <input type="hidden" name="csrf" value={csrf} />
+          <div class="flex flex-col gap-4 px-8 py-6">
+            <Text variant="body-md" tone="muted">
+              What money fields hold amounts in, and how pages write them. The default is the one pages show. A format uses {"{symbol}"}, {"{amount}"} and {"{code}"}.
+            </Text>
+            {problem !== "" && <Callout tone="warning" title="Not saved"><Text variant="body-md">{problem}</Text></Callout>}
+            {notice !== "" && <Callout title={notice} />}
+          </div>
+          <div class="border-t border-border">
+            <CurrencyTable rows={currencies} digits={digits} />
+          </div>
+          <div class="border-t border-border px-8 py-4"><Button type="submit">Save currencies</Button></div>
+        </form>
+      )}
     </Layout>
   );
 }

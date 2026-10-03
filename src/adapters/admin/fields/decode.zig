@@ -82,6 +82,10 @@ fn field_value(
         return entries_value(arena, def, form, name);
     }
 
+    if (model.field.is_money(def.kind) and !has_exact(form, name)) {
+        return money_value(arena, form, name);
+    }
+
     if (kind.has.taxonomy) {
         return terms_value(arena, def, form, name);
     }
@@ -245,6 +249,47 @@ fn moment_of(def: Def, text: []const u8) ?i64 {
     std.debug.assert(def.name.len > 0);
 
     return time.parse_datetime_local(text) orelse time.parse_date(text);
+}
+
+/// A money field's inputs, `price.GBP`, as `{ "GBP": 850 }`: each amount in the currency's
+/// minor units; an empty input leaves the currency out.
+fn money_value(arena: std.mem.Allocator, form: *const Form, name: []const u8) Error!?Value {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(form.len <= Form.pairs_max);
+
+    var object: std.json.ObjectMap = .empty;
+
+    for (form.pairs[0..form.len]) |pair| {
+        const under = pair.name.len == name.len + 4 and std.mem.startsWith(u8, pair.name, name) and
+            pair.name[name.len] == '.';
+
+        if (!under or std.mem.trim(u8, pair.value, " ").len == 0) {
+            continue;
+        }
+
+        const code = pair.name[name.len + 1 ..];
+        const currency = model.currency.find(code) orelse return error.Invalid;
+        const amount = model.money.parse_decimal(pair.value, currency.digits) orelse {
+            return error.Invalid;
+        };
+
+        object.put(arena, code, .{ .integer = amount }) catch return error.OutOfMemory;
+    }
+
+    return if (object.count() == 0) null else .{ .object = object };
+}
+
+/// Whether the form names exactly this field: a money field edited as JSON.
+fn has_exact(form: *const Form, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    for (form.pairs[0..form.len]) |pair| {
+        if (std.mem.eql(u8, pair.name, name)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn has_prefix(form: *const Form, prefix: []const u8) bool {

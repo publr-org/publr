@@ -699,6 +699,7 @@ pub const TestContext = struct {
                 .excerpt = "an excerpt",
                 .related = data.related,
                 .rows = rows.items,
+                .price = .{ .GBP = 925 },
             }, .{});
             return (try std.json.parseFromSlice(
                 std.json.Value,
@@ -706,6 +707,16 @@ pub const TestContext = struct {
                 text,
                 .{ .allocate = .alloc_always },
             )).value;
+        }
+
+        pub fn getAmount(data: Data, key: []const u8, currency: []const u8) ?i64 {
+            std.debug.assert(key.len > 0);
+            std.debug.assert(currency.len > 0);
+            _ = data;
+
+            const priced = std.mem.eql(u8, key, "price") and std.mem.eql(u8, currency, "GBP");
+
+            return if (priced) 925 else null;
         }
 
         pub fn getText(data: Data, key: []const u8) ?[]const u8 {
@@ -886,6 +897,18 @@ pub const TestContext = struct {
             .updated_at = "",
             .data = .{ .content = "" },
         };
+    }
+
+    pub fn money_code(ctx: *const TestContext, wanted: ?[]const u8) !?[]const u8 {
+        _ = ctx;
+
+        return if (wanted == null or std.mem.eql(u8, wanted.?, "GBP")) "GBP" else null;
+    }
+
+    pub fn money(ctx: *const TestContext, amount: i64, currency: []const u8) ![]const u8 {
+        std.debug.assert(std.mem.eql(u8, currency, "GBP"));
+
+        return std.fmt.allocPrint(ctx.arena, "£{d}", .{amount});
     }
 
     pub fn build_time(ctx: *const TestContext) i64 {
@@ -1217,6 +1240,51 @@ test "repeaters: a data field with no fallback is the rows, each read as an entr
     }, .{});
     defer testing.allocator.free(message);
     try testing.expect(contains(message, "needs a ?? fallback"));
+}
+
+test "money: a field written as the site writes it, natively and in script" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/posts/[slug].publr",
+            \\---
+            \\const post = Publr.build.getEntry();
+            \\const price = Publr.build.money(post.data.price);
+            \\const euros = Publr.build.money(post.data.price, 'EUR');
+            \\---
+            \\<b>{price}</b><i>{euros}</i>
+        ),
+        source("content/index.publr",
+            \\---
+            \\const posts = Publr.build.getCollection({ type: 'post' });
+            \\---
+            \\<ul>{posts.map(post => <li>{Publr.build.money(post.data.price)}</li>)}</ul>
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const ctx: TestContext = .{ .arena = arena, .slug = "second" };
+    const page_index = program.find("content/posts/[slug].publr").?;
+    try testing.expect(program.templates[page_index].javascript == null);
+    const page = try render_test(arena, program, page_index, &ctx);
+    try testing.expectEqualStrings("<b>£925</b><i></i>", page);
+
+    const index = program.find("content/index.publr").?;
+    const listing = try render_test(arena, program, index, &ctx);
+    try testing.expect(contains(listing, "<li>£925</li>"));
+
+    const message = try refuse(&.{
+        source("content/index.publr",
+            \\---
+            \\const price = Publr.build.money('cheap');
+            \\---
+            \\<b>{price}</b>
+        ),
+    }, .{});
+    defer testing.allocator.free(message);
+    try testing.expect(contains(message, "money takes a field of an entry"));
 }
 
 test "islands: dynamic is inferred from Publr.request, `island` defers, dynamic needs dynamic" {

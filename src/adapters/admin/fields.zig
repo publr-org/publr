@@ -55,6 +55,8 @@ pub const Context = struct {
     slug_prefix: []const u8,
     /// The record is live: a slug locked on publish is shown, not edited.
     live: bool = false,
+    /// The site's currencies, the default first: one input each on a money field.
+    currencies: []const model.money.Entry = &.{},
 };
 
 const Option = struct { value: []const u8, label: []const u8, selected: bool };
@@ -158,6 +160,9 @@ fn row_of(context: Context, def: Def, current: ?Value) Error!Row {
     } else if (model.field.is_group(def.kind)) {
         row.shape = "group";
         row.parts = try parts_of(context, def, current);
+    } else if (model.field.is_money(def.kind) and (try money_entries(context, current)).len > 0) {
+        row.shape = "group";
+        row.parts = try money_parts_of(context, def, current);
     } else if (model.field.is_repeater(def.kind)) {
         row.shape = "repeater";
         row.entries = try entries_of(context, def, current);
@@ -217,6 +222,75 @@ fn parts_of(context: Context, def: Def, current: ?Value) Error![]const views.Par
         context.arena,
         instances,
     );
+}
+
+/// The currencies a money field shows an input for: the site's, else the ones it holds.
+fn money_entries(context: Context, current: ?Value) Error![]const model.money.Entry {
+    std.debug.assert(context.currencies.len <= 64);
+
+    if (context.currencies.len > 0) {
+        return context.currencies;
+    }
+
+    const held = if (current != null and current.? == .object) current.?.object.keys() else &.{};
+    const entries = try context.arena.alloc(model.money.Entry, held.len);
+
+    for (held, entries) |code, *entry| {
+        entry.* = .{ .code = code };
+    }
+
+    return entries;
+}
+
+/// A money field as one decimal input per currency, `price.GBP`, its amount shown in the
+/// currency's own decimals (850 is `8.50`).
+fn money_parts_of(context: Context, def: Def, current: ?Value) Error![]const views.PartsItem {
+    std.debug.assert(model.field.is_money(def.kind));
+
+    const entries = try money_entries(context, current);
+    const instances = try context.arena.alloc(Instance, entries.len);
+
+    for (entries, instances) |entry, *instance| {
+        const code = entry.code;
+        const currency = model.currency.find(code);
+        const digits: u8 = if (currency) |found| found.digits else 2;
+        const object = current != null and current.? == .object;
+        const held: ?Value = if (object) current.?.object.get(code) else null;
+        var buffer: [32]u8 = undefined;
+        const amount = if (held != null and held.? == .integer)
+            try context.arena.dupe(u8, model.money.format_minor(&buffer, held.?.integer, digits))
+        else
+            "";
+
+        instance.* = .{
+            .name = try print(context.arena, "{s}.{s}", .{ def.name, code }),
+            .label = code,
+            .required = false,
+            .control = "number",
+            .value = amount,
+            .step = try step_of(context.arena, digits),
+            .prefix = if (entry.symbol.len > 0) entry.symbol else code,
+        };
+    }
+
+    return convert_all(
+        views.PartsItem,
+        views.Part_optionsItem,
+        "part_options",
+        context.arena,
+        instances,
+    );
+}
+
+/// The step of an amount's input: `1` for a currency without decimals, `0.01` for two.
+fn step_of(arena: std.mem.Allocator, digits: u8) Error![]const u8 {
+    std.debug.assert(digits <= 4);
+
+    if (digits == 0) {
+        return "1";
+    }
+
+    return print(arena, "0.{s}1", .{"0000"[0 .. digits - 1]});
 }
 
 /// A repeater's items, one box each, its fields as `name[index].child`.

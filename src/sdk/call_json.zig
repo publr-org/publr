@@ -7,6 +7,8 @@ const operation = @import("operation.zig");
 const sandboxed_plugins = @import("sandboxed_plugins.zig");
 const json = @import("../lib/json.zig");
 const Event = @import("middleware.zig").Event;
+const contract = @import("../model/contract.zig");
+const Value = std.json.Value;
 
 const Error = operation.Error;
 
@@ -81,7 +83,7 @@ fn dispatch(
 
     ctx.within = found.name;
 
-    const result = run(ctx, sandboxed, found, input);
+    const result = run(SDK, ctx, sandboxed, found, input);
 
     if (result) |_| {
         SDK.emit(ctx, .{ .completed = .{
@@ -129,6 +131,7 @@ fn admit(
 }
 
 fn run(
+    comptime SDK: type,
     ctx: *Ctx,
     sandboxed: *const sandboxed_plugins.SandboxedPlugins,
     found: sandboxed_plugins.Operation,
@@ -138,7 +141,7 @@ fn run(
     std.debug.assert(input.len > 0);
 
     if (found.kind == .read) {
-        return run_pipeline(ctx, sandboxed, found, input);
+        return run_pipeline(SDK, ctx, sandboxed, found, input);
     }
 
     // As `SDK.run`: hooks inside the write's transaction, nested writes as savepoints.
@@ -150,7 +153,7 @@ fn run(
     var transaction = try ctx.db.transaction();
     errdefer transaction.rollback();
 
-    const output = try run_pipeline(ctx, sandboxed, found, input);
+    const output = try run_pipeline(SDK, ctx, sandboxed, found, input);
 
     if (ctx.dependency_failure) {
         return error.InvalidationFailed;
@@ -162,6 +165,7 @@ fn run(
 }
 
 fn run_pipeline(
+    comptime SDK: type,
     ctx: *Ctx,
     sandboxed: *const sandboxed_plugins.SandboxedPlugins,
     found: sandboxed_plugins.Operation,
@@ -170,11 +174,20 @@ fn run_pipeline(
     std.debug.assert(ctx.parent != null);
     std.debug.assert(found.name.len > 0);
 
+    if (found.input.len > 0) {
+        const value = std.json.parseFromSliceLeaky(Value, ctx.arena, input, .{}) catch {
+            return error.Invalid;
+        };
+
+        try @import("../sdk.zig").refuse_broken(ctx, found.input, value);
+    }
+
     const changed = if (sandboxed.hooked(.before, found.name))
         try sandboxed.before(ctx, found.name, input)
     else
         input;
-    const output = try sandboxed.run(ctx, found, changed);
+    const resolved = try resolve_references(SDK, ctx, found.input, changed);
+    const output = try sandboxed.run(ctx, found, resolved);
 
     if (sandboxed.hooked(.after, found.name)) {
         try sandboxed.after(ctx, found.name, changed, output);
@@ -199,4 +212,100 @@ test "an unknown name without plugins is not found" {
 
     try std.testing.expectEqualStrings("{\"rows\":1}", out);
     try std.testing.expectError(error.Invalid, call(TestSDK, &ctx, "hello.record", "{"));
+}
+
+/// An installed operation's references read now, as a compiled-in one's are: each field its
+/// shape marks a reference (or a list of them), at the top of the input, becomes
+/// `{ id, value }`, the record read with the caller's access.
+fn resolve_references(
+    comptime SDK: type,
+    ctx: *Ctx,
+    shape: []const contract.Node,
+    input: []const u8,
+) Error![]const u8 {
+    std.debug.assert(input.len > 0);
+    std.debug.assert(shape.len <= contract.nodes_max);
+
+    if (!has_reference(shape)) {
+        return input;
+    }
+
+    var parsed = std.json.parseFromSliceLeaky(Value, ctx.arena, input, .{}) catch {
+        return error.Invalid;
+    };
+
+    if (parsed != .object) {
+        return error.Invalid;
+    }
+
+    for (shape) |node| {
+        if (node.kind != .reference or node.parent < 0) {
+            continue;
+        }
+
+        const holder = shape[@intCast(node.parent)];
+
+        if (node.parent == 0) {
+            const value = parsed.object.getPtr(node.name) orelse continue;
+
+            value.* = try record_for(SDK, ctx, node.to, value.*);
+        } else if (holder.kind == .list and holder.parent == 0) {
+            const list = parsed.object.getPtr(holder.name) orelse continue;
+
+            if (list.* != .array) {
+                return error.Invalid;
+            }
+
+            for (list.array.items) |*item| {
+                item.* = try record_for(SDK, ctx, node.to, item.*);
+            }
+        }
+    }
+
+    return std.json.Stringify.valueAlloc(ctx.arena, parsed, .{}) catch error.OutOfMemory;
+}
+
+fn has_reference(shape: []const contract.Node) bool {
+    std.debug.assert(shape.len <= contract.nodes_max);
+
+    for (shape) |node| {
+        if (node.kind == .reference) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// `{ id, value }` for an id: the record of content type `handle`, as `record.get` answers
+/// the caller; not found when it is another type's.
+fn record_for(comptime SDK: type, ctx: *Ctx, handle: []const u8, id: Value) Error!Value {
+    std.debug.assert(handle.len > 0);
+
+    if (id != .string or id.string.len == 0 or id.string.len > 128) {
+        return error.Invalid;
+    }
+
+    const asked = std.json.Stringify.valueAlloc(ctx.arena, .{ .id = id.string }, .{}) catch {
+        return error.OutOfMemory;
+    };
+    const answer = try call(SDK, ctx, "record.get", asked);
+    const Got = struct { record: struct { type: []const u8 }, document: []const u8 };
+    const got = std.json.parseFromSliceLeaky(Got, ctx.arena, answer, .{
+        .ignore_unknown_fields = true,
+    }) catch return error.Invalid;
+
+    if (!std.mem.eql(u8, got.record.type, handle)) {
+        return error.NotFound;
+    }
+
+    const document = std.json.parseFromSliceLeaky(Value, ctx.arena, got.document, .{}) catch {
+        return error.Invalid;
+    };
+    var pair: std.json.ObjectMap = .empty;
+
+    pair.put(ctx.arena, "id", id) catch return error.OutOfMemory;
+    pair.put(ctx.arena, "value", document) catch return error.OutOfMemory;
+
+    return .{ .object = pair };
 }

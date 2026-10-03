@@ -73,7 +73,7 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 .details = if (@hasDecl(Declared, "details")) Declared.details else "",
                 .open = @hasDecl(Declared, "open") and Declared.open,
                 .fields = fields_of(Declared),
-                .input = shapes.describe(Declared.In),
+                .input = sdk_operation.input_shape(Declared),
                 .output = shapes.describe(Declared.Out),
             }};
         }
@@ -178,12 +178,19 @@ fn shape_of(comptime Type: type) Field.Shape {
             .@"enum" => .string,
             .pointer => |pointer| if (pointer.child == u8)
                 .string
-            else if (help.listable(pointer.child))
+            else if (help.listable(pointer.child) or is_reference(pointer.child))
                 .strings
             else
                 .json,
+            .@"struct" => if (is_reference(Type)) .string else .json,
             else => .json,
         };
+    }
+}
+
+fn is_reference(comptime Type: type) bool {
+    comptime {
+        return @typeInfo(Type) == .@"struct" and @hasDecl(Type, "reference");
     }
 }
 

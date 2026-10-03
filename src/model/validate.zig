@@ -213,6 +213,16 @@ fn validate_one(
     };
     const before = problems.len;
 
+    // A money value is an object of amounts, one integer row each when stored: its kind's
+    // check says what it must be.
+    if (field.is_money(def.kind)) {
+        if (kind.check) |check| {
+            check(def, value, path, problems);
+        }
+
+        return;
+    }
+
     switch (kind.storage) {
         .text, .long => validate_text(kind, def, value, path, problems),
         .bool => {

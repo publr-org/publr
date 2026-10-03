@@ -30,6 +30,18 @@ type editor and the record form read the descriptor. A value of any kind is
 stored as one of five classes (`text`, `int`, `real`, `ref`, `long`), so the
 tables never learn about a kind.
 
+A **money** field holds an amount per currency, each in minor units of an ISO 4217
+currency: `{ "GBP": 850, "EUR": 990 }` is £8.50 and €9.90. Each amount is its own integer
+value at `price.GBP`, so lists filter and sort by `price.GBP` like any field. The site's
+currencies (`project set_currencies`, the default first) are the only ones a money field
+takes; until they are set, any ISO 4217 code is taken. They are set in the admin under
+Settings, System settings, Currencies, or with `project set_currencies`. The site says how
+each is written:
+a symbol, a format such as `{symbol}{amount}` or `{amount} {code}`, the decimal separator
+(`.` or `,`) and the thousands one (`,`, `.`, `'`, a space or none). The number of decimals is the currency's own (JPY none, KWD three).
+The admin shows one input per currency, and templates write an amount with
+`money(product.data.price)`.
+
 A record is one record of one type in one status. Its document is a JSON
 object shaped by the type's fields. It is validated on every write and stored
 as rows, one row per field value (`records` + `record_values`). So every

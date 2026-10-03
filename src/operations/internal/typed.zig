@@ -14,7 +14,7 @@ pub fn Record(comptime Document: type) type {
     return struct { id: []const u8, version: i64, value: Document };
 }
 
-pub const Page = struct { limit: u32 = 50, offset: u32 = 0 };
+pub const Page = sdk.operation.Page;
 
 /// The calling plugin's records of collection `kind`, whose documents are `Document`.
 pub fn of(comptime Document: type, comptime kind: []const u8) type {
@@ -216,4 +216,42 @@ test "typed internal records: create, get, save a field, find one, find many, de
 
     try std.testing.expect(try visits.delete(&ctx, ada));
     try std.testing.expectError(error.NotFound, visits.get(&ctx, ada));
+}
+
+test "references in an installed plugin: the relay reads the record before it runs" {
+    var project: internal.TestProject = undefined;
+    try project.init();
+    defer project.deinit();
+
+    var system = project.ctx(.system);
+    try @import("../record/fixture.zig").post_type(&system);
+
+    const records = @import("../record.zig");
+    const SDK = @import("../../server/registry.zig").SDK;
+    const created = try SDK.dispatch(&system, records.Create, .{
+        .type = "post",
+        .document = "{\"title\":\"From the sandbox\"}",
+        .status = "published",
+    });
+    const asked = try std.fmt.allocPrint(system.arena, "{{\"post\":\"{s}\"}}", .{created.id});
+    const answer = try SDK.call_json(&system, "greeter.recall", asked);
+
+    try std.testing.expect(std.mem.indexOf(u8, answer, "From the sandbox") != null);
+
+    const unknown = SDK.call_json(&system, "greeter.recall", "{\"post\":\"nope\"}");
+    try std.testing.expectError(error.NotFound, unknown);
+}
+
+test "rules in an installed plugin: the relay refuses a field that breaks one" {
+    var project: internal.TestProject = undefined;
+    try project.init();
+    defer project.deinit();
+
+    var system = project.ctx(.system);
+    const SDK = @import("../../server/registry.zig").SDK;
+    const long = "{\"note\":\"" ++ "x" ** 201 ++ "\"}";
+    const refused = SDK.call_json(&system, "greeter.greet", long);
+
+    try std.testing.expectError(error.Failed, refused);
+    try std.testing.expect(std.mem.indexOf(u8, system.failure.?.message, "note") != null);
 }

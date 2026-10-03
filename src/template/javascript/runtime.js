@@ -12,6 +12,7 @@ globalThis.__publr = (() => {
     getReferences: (...args) => host(scope + ".getReferences", args),
     getReference: (...args) => host(scope + ".getReference", args),
     now: () => host(scope + ".now", []),
+    money: (price, currency) => host(scope + ".money", [price, currency]),
     get session() { return host(scope + ".session", []); },
     header: name => host(scope + ".header", [name]),
     cookie: name => host(scope + ".cookie", [name]),

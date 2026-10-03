@@ -8,6 +8,7 @@
 //! provider gives.
 
 const std = @import("std");
+const input_rule = @import("input_rule.zig");
 
 pub const nodes_max: u32 = 256;
 pub const depth_max: u32 = 16;
@@ -15,7 +16,7 @@ pub const values_max: u32 = 64;
 /// What describing one node costs the compiler at most, in branches.
 const branches_per_node: u32 = 16;
 
-pub const Kind = enum { string, integer, number, boolean, enumeration, list, object };
+pub const Kind = enum { string, integer, number, boolean, enumeration, list, object, reference };
 
 pub const Node = struct {
     /// The node it sits in; the root's is -1.
@@ -29,7 +30,35 @@ pub const Node = struct {
     required: bool = true,
     /// An enumeration's values.
     values: []const []const u8 = &.{},
+    /// A reference's content type: the caller sends an id, the operation gets the record.
+    to: []const u8 = "",
+    /// The bounds the operation declares on this field of its input.
+    rule: input_rule.Rule = .{},
 };
+
+/// The first top-level field of `value` that breaks its rule: `quantity is above its
+/// greatest value`, into `buffer`; null when every field keeps to its rule.
+pub fn rules_broken(nodes: []const Node, value: std.json.Value, buffer: []u8) ?[]const u8 {
+    std.debug.assert(nodes.len > 0 and nodes.len <= nodes_max);
+    std.debug.assert(buffer.len >= 64);
+
+    if (value != .object) {
+        return null;
+    }
+
+    for (nodes) |node| {
+        if (node.parent != 0 or node.rule.empty()) {
+            continue;
+        }
+
+        const field = value.object.get(node.name) orelse continue;
+        const why = input_rule.broken(node.rule, field) orelse continue;
+
+        return std.fmt.bufPrint(buffer, "{s} {s}", .{ node.name, why }) catch buffer[0..0];
+    }
+
+    return null;
+}
 
 pub const Reason = enum { missing, unknown, kind, nullable, value };
 
@@ -65,6 +94,7 @@ pub fn describe(comptime Type: type) []const Node {
                 .optional = unwrapped.optional,
                 .required = next.required,
                 .values = values_of(unwrapped.type),
+                .to = reference_to(unwrapped.type),
             };
 
             for (children_of(unwrapped.type)) |child| {
@@ -100,7 +130,7 @@ fn children_of(comptime Type: type) []const Child {
                 &.{}
             else
                 &.{.{ .type = info.child, .name = "[]", .required = true }},
-            .@"struct" => |info| fields: {
+            .@"struct" => |info| if (@hasDecl(Type, "reference")) &.{} else fields: {
                 var children: [info.fields.len]Child = undefined;
 
                 for (info.fields, &children) |field, *child| {
@@ -119,6 +149,16 @@ fn children_of(comptime Type: type) []const Child {
             },
             else => &.{},
         };
+    }
+}
+
+fn reference_to(comptime Type: type) []const u8 {
+    comptime {
+        std.debug.assert(@typeInfo(Type) != .void);
+
+        const is_struct = @typeInfo(Type) == .@"struct";
+
+        return if (is_struct and @hasDecl(Type, "reference")) Type.handle else "";
     }
 }
 
@@ -160,7 +200,7 @@ fn kind_of(comptime Type: type) Kind {
             .float, .comptime_float => .number,
             .bool => .boolean,
             .@"enum" => .enumeration,
-            .@"struct" => .object,
+            .@"struct" => if (@hasDecl(Type, "reference")) .reference else .object,
             .pointer => |info| if (info.size == .slice and info.child == u8) .string else .list,
             else => @compileError("contract: " ++ @typeName(Type) ++ " has no JSON shape"),
         };
@@ -179,7 +219,7 @@ pub fn check_input(sent: []const Node, accepted: []const Node) ?Problem {
         };
         const theirs = accepted[provider];
 
-        if (theirs.kind != node.kind) {
+        if (theirs.kind != node.kind or !std.mem.eql(u8, theirs.to, node.to)) {
             return .{ .node = @intCast(index), .on_user_side = true, .reason = .kind };
         }
 
@@ -220,7 +260,7 @@ pub fn check_output(read: []const Node, given: []const Node) ?Problem {
         };
         const theirs = given[provider];
 
-        if (theirs.kind != node.kind) {
+        if (theirs.kind != node.kind or !std.mem.eql(u8, theirs.to, node.to)) {
             return .{ .node = @intCast(index), .on_user_side = true, .reason = .kind };
         }
 

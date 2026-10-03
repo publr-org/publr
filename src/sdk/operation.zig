@@ -93,6 +93,62 @@ pub fn Docs(comptime Shape: type) type {
     }
 }
 
+/// The one way a list is paged: `limit` (1 to 200) and `offset`, and what a page answers.
+pub const Page = struct { limit: u32 = 50, offset: u32 = 0 };
+pub const page_limit_max: u32 = 200;
+
+pub fn PageOut(comptime Item: type) type {
+    comptime std.debug.assert(@sizeOf(Item) > 0);
+
+    return struct { items: []const Item, next_offset: ?u32 = null };
+}
+
+/// The bounds an operation declares on its input's fields (`pub const rules`), checked by
+/// core before it runs: `.{ .quantity = .{ .min = 1, .max = 20 } }`.
+pub fn Rules(comptime Shape: type) type {
+    comptime {
+        const Rule = @import("../model/input_rule.zig").Rule;
+        const none: Rule = .{};
+        const default_ptr: ?*const anyopaque = @ptrCast(&none);
+
+        std.debug.assert(@typeInfo(Shape).@"struct".fields.len <= fields_max);
+
+        return @Struct(
+            .auto,
+            null,
+            std.meta.fieldNames(Shape),
+            &@splat(Rule),
+            &@splat(.{ .default_value_ptr = default_ptr }),
+        );
+    }
+}
+
+/// The shape of what an operation takes, its declared rules on its top-level fields.
+pub fn input_shape(comptime Operation: type) []const @import("../model/contract.zig").Node {
+    comptime {
+        const contract = @import("../model/contract.zig");
+        const described = contract.describe(Operation.In);
+
+        std.debug.assert(described.len > 0);
+
+        if (!@hasDecl(Operation, "rules")) {
+            return described;
+        }
+
+        var nodes = described[0..described.len].*;
+
+        for (&nodes) |*node| {
+            if (node.parent == 0 and @hasField(@TypeOf(Operation.rules), node.name)) {
+                node.rule = @field(Operation.rules, node.name);
+            }
+        }
+
+        const fixed = nodes;
+
+        return &fixed;
+    }
+}
+
 pub fn field_doc(
     comptime Operation: type,
     comptime docs_name: []const u8,

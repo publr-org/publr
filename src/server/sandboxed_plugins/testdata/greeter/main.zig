@@ -52,8 +52,29 @@ pub const roles = [_]publr.plugin.Role{.{
     .grants = &.{"greeter.*"},
 }};
 
-pub const operations = [_]type{ Greet, Count, People };
+pub const operations = [_]type{ Greet, Count, People, Recall };
 pub const middleware = [_]type{Announce};
+
+/// Takes a reference: the caller names a post, the sandbox hands greeter the stored one.
+pub const Recall = struct {
+    pub const name = "greeter.recall";
+    pub const description = "The title of a post, read by core before greeter runs";
+    pub const details = "Editors and administrators may call it. An unknown post is not found.";
+    pub const kind: sdk.operation.Kind = .read;
+    pub const In = struct { post: publr.records.Ref(struct { title: []const u8 }, "post") };
+    pub const Out = struct { title: []const u8 };
+    pub const example: In = .{ .post = .{ .id = "a1b2c3d4e5f60718293a4b5c" } };
+    pub const example_out: Out = .{ .title = "Hello, world" };
+    pub const field_docs: sdk.operation.Docs(In) = .{ .post = "The post, by id" };
+
+    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
+        std.debug.assert(ctx.now_ms() >= 0);
+
+        const post = in.post.value orelse return error.Invalid;
+
+        return .{ .title = post.title };
+    }
+};
 
 pub const Greet = struct {
     pub const name = "greeter.greet";
@@ -66,10 +87,11 @@ pub const Greet = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct { note: []const u8 };
     pub const Out = struct { total: u32 };
+    pub const rules: sdk.operation.Rules(In) = .{ .note = .{ .max_len = 200 } };
     pub const example: In = .{ .note = "hello from the sandbox" };
     pub const example_out: Out = .{ .total = 1 };
     pub const field_docs: sdk.operation.Docs(In) = .{
-        .note = "The greeting, up to 280 characters",
+        .note = "The greeting",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{ .total = "How many greetings exist now" };
 

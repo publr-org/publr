@@ -246,6 +246,9 @@ pub const Find = struct {
         app: ?[]const u8 = null,
     };
     pub const Out = struct { records: []const Item };
+    pub const rules: sdk.operation.Rules(In) = .{
+        .limit = .{ .min = 1, .max = sdk.operation.page_limit_max },
+    };
     pub const example: In = .{ .plugin = "greeter", .kind = "visit" };
     pub const example_out: Out = .{ .records = &.{example_item} };
     pub const field_docs: sdk.operation.Docs(In) = .{
@@ -263,7 +266,7 @@ pub const Find = struct {
 
         const paired = (in.field == null) == (in.value == null);
 
-        if (in.limit == 0 or in.limit > records.list_max or !paired) {
+        if (!paired) {
             return error.Invalid;
         }
 

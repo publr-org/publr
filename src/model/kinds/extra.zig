@@ -2,6 +2,31 @@ const std = @import("std");
 const field = @import("../field.zig");
 const Value = std.json.Value;
 
+/// An amount per ISO 4217 currency, each a whole number of minor units: `{ "GBP": 850 }`.
+pub fn money(def: field.Def, value: Value, path: []const u8, problems: *field.Problems) void {
+    std.debug.assert(def.name.len > 0);
+    std.debug.assert(path.len > 0);
+
+    if (value != .object) {
+        problems.add(path, "give amounts by currency, as { \"GBP\": 850 }");
+        return;
+    }
+
+    var entries = value.object.iterator();
+
+    while (entries.next()) |entry| {
+        if (@import("../currency.zig").find(entry.key_ptr.*) == null) {
+            problems.add(path, "use ISO 4217 currency codes, as GBP or EUR");
+            return;
+        }
+
+        if (entry.value_ptr.* != .integer) {
+            problems.add(path, "give each amount in minor units, a whole number (850 for 8.50)");
+            return;
+        }
+    }
+}
+
 pub fn color(def: field.Def, value: Value, path: []const u8, problems: *field.Problems) void {
     std.debug.assert(def.name.len > 0);
     std.debug.assert(path.len > 0);

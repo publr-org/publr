@@ -110,6 +110,13 @@ pub fn is_leaf(kind: []const u8) bool {
     return leaf;
 }
 
+/// A money field: an amount per currency, `{ "GBP": 850 }`, each in minor units.
+pub fn is_money(kind: []const u8) bool {
+    std.debug.assert(kind.len <= 64 << 10);
+
+    return std.mem.eql(u8, kind, "money");
+}
+
 pub fn is_group(kind: []const u8) bool {
     if (kind.len > kinds.string_len_max) {
         return false;

@@ -145,6 +145,9 @@ pub const Decl = struct {
         cookie: []const u8,
         /// `Publr.request.random(<bound>)`
         random: u32,
+        /// `Publr.build.money(<entry>.data.<key>)`, or with `, '<code>'`: the amount the
+        /// field holds in the site's default (or that) currency, as the site writes it.
+        money: Money,
         /// `Publr.request.userField('<group>.<field>')`: a custom field of the signed-in
         /// user, as text; null when nobody is signed in or the field is empty.
         user_field: []const u8,
@@ -184,6 +187,7 @@ pub const Decl = struct {
 
     pub const Query = struct { type_id: []const u8, limit: ?u32 = null, offset: ?u32 = null };
     pub const DataText = struct { object: []const u8, key: []const u8, fallback: []const u8 };
+    pub const Money = struct { object: []const u8, key: []const u8, currency: ?[]const u8 };
     pub const References = struct { object: []const u8, key: []const u8 };
     pub const PropText = struct { key: []const u8, fallback: []const u8 };
 };

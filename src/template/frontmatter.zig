@@ -536,7 +536,40 @@ fn data_call(compiler: *Compiler, name: []const u8, rhs: []const u8, call: []con
         return references_call(compiler, name, args, .one);
     }
 
+    if (call_of(call, "money(")) |args| {
+        return money_call(compiler, name, args);
+    }
+
     return compiler.fail("unsupported Publr call: {s}", .{rhs});
+}
+
+/// `money(product.data.price)` or `money(product.data.price, 'EUR')`: a money field of an
+/// entry, written in the site's default currency or the one named.
+fn money_call(compiler: *Compiler, name: []const u8, args: []const u8) Error!void {
+    std.debug.assert(name.len > 0);
+
+    const comma = expression.top_level(args, ',');
+    const field = std.mem.trim(u8, args[0 .. comma orelse args.len], " \t");
+    const currency = if (comma) |at|
+        try expression.js_string(compiler, std.mem.trim(u8, args[at + 1 ..], " \t"))
+    else
+        null;
+    const at = std.mem.indexOf(u8, field, ".data.") orelse {
+        return compiler.fail("money takes a field of an entry: money(product.data.price)", .{});
+    };
+    const object = field[0..at];
+    const key = field[at + ".data.".len ..];
+    const owner = compiler.find_local(object) orelse {
+        return compiler.fail("`{s}` is not a frontmatter entry", .{object});
+    };
+
+    if (owner.type != .entry or !expression.is_identifier(key)) {
+        return compiler.fail("money takes a field of an entry: money(product.data.price)", .{});
+    }
+
+    try declare(compiler, name, .string, .{
+        .money = .{ .object = object, .key = key, .currency = currency },
+    });
 }
 
 const Arity = enum { one, many };

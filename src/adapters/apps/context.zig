@@ -66,6 +66,14 @@ pub const Deps = struct {
         deps.add(key);
     }
 
+    /// A key a render read that is not a record or a type: `setting:currencies`.
+    pub fn record_key(deps: *Deps, key: []const u8) void {
+        std.debug.assert(key.len > 0);
+        std.debug.assert(key.len <= changes.key_len_max);
+
+        deps.add(key);
+    }
+
     pub fn record_type(deps: *Deps, handle: []const u8) void {
         std.debug.assert(handle.len > 0);
         std.debug.assert(deps.keys.items.len <= keys_max);
@@ -176,6 +184,22 @@ pub const Context = struct {
         pub fn javascript_value(data: Data, _: std.mem.Allocator) !std.json.Value {
             std.debug.assert(data.document == .object);
             return data.document;
+        }
+
+        /// A money field's amount in one currency, in minor units.
+        pub fn getAmount(data: Data, key: []const u8, currency: []const u8) ?i64 {
+            std.debug.assert(key.len > 0);
+            std.debug.assert(data.document == .object);
+
+            const field = data.document.object.get(key) orelse return null;
+
+            if (field != .object) {
+                return null;
+            }
+
+            const amount = field.object.get(currency) orelse return null;
+
+            return if (amount == .integer) amount.integer else null;
         }
 
         pub fn getText(data: Data, key: []const u8) ?[]const u8 {
@@ -626,6 +650,9 @@ pub const Context = struct {
     }
 
     /// `Publr.build.now()`: when the site was last built, in milliseconds.
+    pub const money_code = @import("money.zig").code;
+    pub const money = @import("money.zig").write;
+
     pub fn build_time(ctx: *const Context) i64 {
         std.debug.assert(ctx.app.built_at >= 0);
         std.debug.assert(ctx.app.css.len > 0);
@@ -806,7 +833,7 @@ pub const Context = struct {
         }
     }
 
-    fn sdk_context(ctx: *const Context) sdk.Ctx {
+    pub fn sdk_context(ctx: *const Context) sdk.Ctx {
         std.debug.assert(ctx.project.connection.transaction_depth == 0);
         std.debug.assert(ctx.live or ctx.caller == .anonymous);
         std.debug.assert(ctx.deps == null or ctx.caller == .anonymous);

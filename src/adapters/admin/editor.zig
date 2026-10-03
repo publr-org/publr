@@ -638,6 +638,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .terms = try terms_of(session, def),
                 .slug_prefix = try slug_prefix_of(session, def),
                 .live = live,
+                .currencies = try currencies_of(session),
             };
             const rows = try fields.rows_of(context, def.fields, document);
             const field_rows = try admin.render.view(arena, views.RecordFields, .{
@@ -1154,6 +1155,16 @@ fn expected_version_of(form: *const Form) ?i64 {
 
 test {
     std.testing.refAllDecls(@This());
+}
+
+/// The site's currencies, for its money fields; none when they cannot be read.
+fn currencies_of(session: *Session) Error![]const model.money.Entry {
+    std.debug.assert(session.signed_in());
+
+    const Currencies = @import("../../operations/project/currencies.zig").Currencies;
+    const listed = registry.SDK.dispatch(&session.ctx, Currencies, .{}) catch return &.{};
+
+    return listed.currencies;
 }
 
 pub fn user_options(

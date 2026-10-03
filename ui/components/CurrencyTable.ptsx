@@ -1,0 +1,181 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Radio } from "@publr/ui/Radio.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+
+export type CurrencyTableProps = {
+  /** The site's currencies, the default first. */
+  rows: Array<{
+    /** The row's position, which names its inputs: `currency[<index>].code`. */
+    index: number;
+    code: string;
+    symbol: string;
+    format: string;
+    /** `period` or `comma`. */
+    decimal: string;
+    /** `comma`, `period`, `space`, `apostrophe` or `none`. */
+    thousands: string;
+    /** 1234.56 written as the row says; empty for a code that is not a currency. */
+    example: string;
+  }>;
+  /** Every ISO 4217 code and its decimals, for the example as a row is edited. */
+  digits: Array<{ code: string; digits: number }>;
+};
+
+type Row = CurrencyTableProps["rows"][number];
+
+/** `chosen` is the position of the default currency. */
+export const state = Publr.reactive({
+  rows: [] as CurrencyTableProps["rows"],
+  digits: [] as CurrencyTableProps["digits"],
+  chosen: 0,
+});
+
+const separators: Record<string, string> = {
+  period: ".", comma: ",", space: " ", apostrophe: "'", none: "",
+};
+
+/** 1234.56 as the row writes it, the server's formatting step for step. */
+const example = (row: Row): string => {
+  const code = row.code.trim().toUpperCase();
+  const known = state.digits.find((entry) => entry.code === code);
+  if (!known) return "";
+  const minor = 123456;
+  const scale = 10 ** known.digits;
+  const whole = String(Math.floor(minor / scale));
+  const thousands = separators[row.thousands] ?? ",";
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, thousands);
+  const fraction = String(minor % scale).padStart(known.digits, "0");
+  const amount = known.digits === 0 ? grouped : grouped + (separators[row.decimal] ?? ".") + fraction;
+  const symbol = row.symbol.trim() === "" ? code : row.symbol.trim();
+  return row.format.replaceAll("{symbol}", symbol).replaceAll("{amount}", amount).replaceAll("{code}", code);
+};
+
+const renumbered = (rows: Row[]): Row[] => rows.map((row, index) => ({ ...row, index }));
+
+/** Typing in a row: the field changes, and its example with it. */
+export const edited = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  if (input.name === "default") {
+    state.chosen = Number(input.value);
+    return;
+  }
+  const match = /^currency\[(\d+)\]\.(code|symbol|format|decimal|thousands)$/.exec(input.name ?? "");
+  if (!match) return;
+  const position = Number(match[1]);
+  const field = match[2] as "code" | "symbol" | "format" | "decimal" | "thousands";
+  state.rows = state.rows.map((row) => {
+    if (row.index !== position) return row;
+    const changed = { ...row, [field]: input.value };
+    return { ...changed, example: example(changed) };
+  });
+};
+
+/** Add appends a currency to fill in; Remove drops its row. */
+export const clicked = (event: MouseEvent) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[name]");
+  if (!button) return;
+  if (button.name === "currency-add") {
+    event.preventDefault();
+    const fresh: Row = {
+      index: state.rows.length, code: "", symbol: "", format: "{symbol}{amount}",
+      decimal: "period", thousands: "comma", example: "",
+    };
+    state.rows = [...state.rows, fresh];
+    return;
+  }
+  if (button.name !== "currency-remove") return;
+  event.preventDefault();
+  const position = Number(button.value);
+  state.rows = renumbered(state.rows.filter((row) => row.index !== position));
+  if (state.chosen === position) state.chosen = 0;
+  else if (state.chosen > position) state.chosen -= 1;
+};
+
+export function CurrencyTable({ rows, digits }: CurrencyTableProps) {
+  state.rows = rows;
+  state.digits = digits;
+  state.chosen = 0;
+
+  return (
+    <div data-part="currency-table" onInput={edited} onChange={edited} onClick={clicked}>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Default</TableHead>
+            <TableHead>Code</TableHead>
+            <TableHead>Symbol</TableHead>
+            <TableHead>Format</TableHead>
+            <TableHead>Decimal</TableHead>
+            <TableHead>Thousands</TableHead>
+            <TableHead>Example</TableHead>
+            <TableHead>Remove</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {state.rows.map((row) => (
+            <TableRow>
+              <TableCell>
+                <FieldLabel htmlFor={`currency-${row.index}-default`} classes="sr-only">Default</FieldLabel>
+                <Radio id={`currency-${row.index}-default`} name="default" value={`${row.index}`}
+                  checked={state.chosen === row.index} />
+              </TableCell>
+              <TableCell>
+                <FieldLabel htmlFor={`currency-${row.index}-code`} classes="sr-only">Code</FieldLabel>
+                <Input id={`currency-${row.index}-code`} name={`currency[${row.index}].code`} value={row.code}
+                  placeholder="EUR" size="sm" maxLength={3} required classes="w-24" />
+              </TableCell>
+              <TableCell>
+                <FieldLabel htmlFor={`currency-${row.index}-symbol`} classes="sr-only">Symbol</FieldLabel>
+                <Input id={`currency-${row.index}-symbol`} name={`currency[${row.index}].symbol`} value={row.symbol}
+                  size="sm" maxLength={8} classes="w-20" />
+              </TableCell>
+              <TableCell>
+                <FieldLabel htmlFor={`currency-${row.index}-format`} classes="sr-only">Format</FieldLabel>
+                <Input id={`currency-${row.index}-format`} name={`currency[${row.index}].format`} value={row.format}
+                  size="sm" maxLength={32} required classes="w-48" />
+              </TableCell>
+              <TableCell>
+                <NativeSelect id={`currency-${row.index}-decimal`} name={`currency[${row.index}].decimal`}
+                  label="Decimal separator" size="sm">
+                  <option value="period" selected={row.decimal === "period"}>1.50</option>
+                  <option value="comma" selected={row.decimal === "comma"}>1,50</option>
+                </NativeSelect>
+              </TableCell>
+              <TableCell>
+                <NativeSelect id={`currency-${row.index}-thousands`} name={`currency[${row.index}].thousands`}
+                  label="Thousands separator" size="sm">
+                  <option value="comma" selected={row.thousands === "comma"}>1,000</option>
+                  <option value="period" selected={row.thousands === "period"}>1.000</option>
+                  <option value="space" selected={row.thousands === "space"}>1 000</option>
+                  <option value="apostrophe" selected={row.thousands === "apostrophe"}>1'000</option>
+                  <option value="none" selected={row.thousands === "none"}>1000</option>
+                </NativeSelect>
+              </TableCell>
+              <TableCell><Text variant="body-md">{row.example}</Text></TableCell>
+              <TableCell>
+                <Button type="button" hierarchy="tertiary" size="sm" name="currency-remove" value={`${row.index}`}
+                  label={`Remove ${row.code}`}>Remove</Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {state.rows.length === 0 && (
+        <div class="px-8 py-4"><Text variant="body-md" tone="muted">No currencies yet: any ISO 4217 code is taken.</Text></div>
+      )}
+      <div class="border-t border-border px-8 py-3">
+        <Button type="button" hierarchy="secondary" size="sm" name="currency-add">Add currency</Button>
+      </div>
+    </div>
+  );
+}

@@ -252,6 +252,9 @@ pub fn Renderer(comptime Ctx: type) type {
                 .header => |name| .{ .opt_string = ctx.header(name) },
                 .cookie => |name| .{ .opt_string = ctx.cookie(name) },
                 .random => |bound| .{ .int = ctx.random(bound) },
+                .money => |access| .{
+                    .string = try money(ctx, frame.lookup(access.object), access),
+                },
                 .user_field => |path| .{ .opt_string = try ctx.user_field(path) },
                 .call => |operation| .{ .entry = try ctx.call(operation) },
                 .redirect => |target| try renderer.redirect(frame, target),
@@ -890,4 +893,15 @@ test "escape covers the five special characters and nothing else" {
     try escape(&writer, "<a href=\"x\">&'</a>");
     const expected = "&lt;a href=&quot;x&quot;&gt;&amp;&#39;&lt;/a&gt;";
     try std.testing.expectEqualStrings(expected, writer.buffered());
+}
+
+/// A money field as the site writes it, or "" when it holds nothing in that currency.
+fn money(ctx: anytype, owner: anytype, access: ast.Decl.Money) ![]const u8 {
+    std.debug.assert(access.key.len > 0);
+    std.debug.assert(access.object.len > 0);
+
+    const currency = try ctx.money_code(access.currency) orelse return "";
+    const amount = owner.entry.data.getAmount(access.key, currency) orelse return "";
+
+    return ctx.money(amount, currency);
 }

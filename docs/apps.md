@@ -241,6 +241,7 @@ rebuilds what read it through the usual `type:<handle>` dependency.
 | `getCollection({ type, limit, offset })`: live records, newest first | `header('name')`, `cookie('name')` |
 | `getReferences(entry, 'field')`: the live records a reference field points at, in the order stored; `getReference(entry, 'field')` the first as an entry, blank when none; `entry.data.rows` with no fallback: a repeater's rows as entries | `now()`: the clock, per request, the same shape |
 | `now()`: the clock of the build, `YYYY-MM-DD HH:MM:SS` UTC | `random(n)`: a number in `[0, n)` |
+| `money(entry.data.price)`: a money field in the site's default currency as the site writes it (`£9.25`); `money(entry.data.price, 'EUR')` in that one; empty when the field holds none | `money(...)`: the same, per request |
 | | `getCollection(...)`, `getReferences(...)`: records, read per request |
 | | `userField('<group>.<field>')`: a custom field of the signed-in user, as text; null when signed out or empty |
 | | `call('<namespace>.<verb>')`: runs an operation that allows frontmatter calls, as the visitor; its output is the entry's `data` |
@@ -296,6 +297,12 @@ is the first of them as an entry, blank (empty id and type, no fields) when the
 field points at nothing live, so `seo.data.description ?? ""` reads either way.
 Every target is a dependency of the page, so its arrival or change rebuilds it,
 and a render reads each record once however many fields point at it.
+
+A money field is written with `money(product.data.price)`: the amount in the site's
+default currency, with the symbol, format and separators the site set for it
+(`project set_currencies`), `£1,234.56` or `1 234,56 €`. A second argument names
+another of the site's currencies. A page that writes money depends on the
+currencies, so changing them rebuilds it.
 
 A page that follows a tree of references costs one `record.get` per record it
 reaches, and each of those is tens of kilobytes of arena: a page reaching five

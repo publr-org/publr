@@ -51,6 +51,10 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
                 return references(vm, frame, args, true);
             }
 
+            if (std.mem.eql(u8, method, "money")) {
+                return money(vm, frame.ctx, args);
+            }
+
             if (std.mem.eql(u8, method, "now")) {
                 const stamp = if (request) frame.ctx.now() else frame.ctx.build_time();
                 return vm.string(try time.datetime_text(vm.arena, stamp));
@@ -350,6 +354,33 @@ fn option_number(vm: *VM, object: Value, key: []const u8) !?u32 {
     }
 
     return @intFromFloat(number);
+}
+
+/// `money(price)` or `money(price, "EUR")`: the amount the site's default (or the named)
+/// currency holds in `price`, written as the site writes it; "" when it holds none.
+fn money(vm: *VM, ctx: anytype, args: Value) !Value {
+    std.debug.assert(api.JS_IsArray(args));
+
+    const price = try vm.item(args, 0);
+    defer vm.free(price);
+    const named = try vm.item(args, 1);
+    defer vm.free(named);
+    const wanted: ?[]const u8 = if (api.JS_IsString(named)) try string(vm, named) else null;
+    const currency = try ctx.money_code(wanted) orelse return vm.string("");
+
+    if (!api.JS_IsObject(price)) {
+        return vm.string("");
+    }
+
+    const held = try vm.get(price, currency);
+    defer vm.free(held);
+    var amount: i64 = 0;
+
+    if (!api.JS_IsNumber(held) or api.JS_ToInt64(vm.context, &amount, held) < 0) {
+        return vm.string("");
+    }
+
+    return vm.string(try ctx.money(amount, currency));
 }
 
 fn positive(vm: *VM, value: Value) !u32 {

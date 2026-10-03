@@ -41,7 +41,7 @@ pub fn providers(ctx: *Ctx, replacing: ?*const Manifest) Error![]const fit.Provi
     return list.items;
 }
 
-/// Refused when a contract the plugin needs does not fit what is there.
+/// Refused, naming the contract, when one the plugin needs does not fit what is there.
 pub fn check_user(ctx: *Ctx, manifest: *const Manifest, there: []const fit.Provider) Error!void {
     std.debug.assert(manifest.name.len > 0);
     std.debug.assert(ctx.now_ms >= 0);
@@ -52,9 +52,13 @@ pub fn check_user(ctx: *Ctx, manifest: *const Manifest, there: []const fit.Provi
     for (found[0..count]) |finding| {
         if (finding.required) {
             var buffer: [256]u8 = undefined;
+            const why = fit.describe(finding, &buffer);
+            const message = std.fmt.allocPrint(ctx.arena, "{s} needs {s}", .{
+                manifest.name,
+                why,
+            }) catch return error.OutOfMemory;
 
-            std.log.warn("plugin {s}: {s}", .{ manifest.name, fit.describe(finding, &buffer) });
-            return error.Conflict;
+            return ctx.fail(.{ .name = "ContractMismatch", .status = 409, .message = message });
         }
     }
 }
@@ -178,11 +182,11 @@ test "contracts: a required misfit refuses, an optional one does not" {
     try check_user(&ctx, &fits, &there);
 
     const required = test_manifest(struct { sku: []const u8 }, &.{"inventory@^1"}, &.{});
-    try std.testing.expectError(error.Conflict, check_user(&ctx, &required, &there));
+    try std.testing.expectError(error.Failed, check_user(&ctx, &required, &there));
 
     const optional = test_manifest(struct { sku: []const u8 }, &.{}, &.{"inventory"});
     try check_user(&ctx, &optional, &there);
 
     const too_new = test_manifest(Reserve, &.{"inventory@^2"}, &.{});
-    try std.testing.expectError(error.Conflict, check_user(&ctx, &too_new, &there));
+    try std.testing.expectError(error.Failed, check_user(&ctx, &too_new, &there));
 }

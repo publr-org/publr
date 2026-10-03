@@ -2,6 +2,7 @@
 //! filters, and keeping the old live copy as a revision.
 
 const std = @import("std");
+const currencies = @import("../project/currencies.zig");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const registry = @import("../../server/registry.zig");
@@ -75,6 +76,8 @@ pub fn Of(comptime Domain: type) type {
             if (!problems.is_empty()) {
                 return error.Invalid;
             }
+
+            try currencies.refuse_others(ctx, def.fields, parsed);
 
             return parsed;
         }

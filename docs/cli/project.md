@@ -65,6 +65,22 @@ After a build the artifacts are what the index holds:
   ]
 ```
 
+## `currencies`, `set_currencies`
+
+The currencies the site prices in, the default first: what money fields take, and how
+an amount in each is written. Anyone may read them; administrators set them, each an
+ISO 4217 code once. Only `code` is needed: the symbol defaults to the code, the format
+to `{symbol}{amount}` (`{code}` is there too), the separators to `.` and `,`. A decimal
+separator is `.` or `,`; a thousands one `,`, `.`, `'`, a space or none. An empty list
+takes any code again.
+
+```
+$ publr --as-admin project set_currencies --currencies '[{"code":"GBP","symbol":"£"},
+  {"code":"EUR","symbol":"€","format":"{amount} {symbol}","decimal":",","thousands":" "}]'
+```
+
+925 in GBP is then written `£9.25`, 123456 in EUR `1 234,56 €`.
+
 ## `move_app`
 
 Every record of one app handed to another, after the app's `.name` changed in its
