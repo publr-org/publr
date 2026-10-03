@@ -282,6 +282,12 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
   `.{ .name = "slug", .label = "Slug", .kind = "slug", .options = .{ .source = "title" } }`.
   An entry is `id`, `type`, `slug`, `title`, `created_at`, `updated_at` and `data`, its
   fields (`lesson.data.body`).
+- **Ask with a query when the reads do not fit.** `Publr.build.query(groq, params)` (or
+  `Publr.request.query`) reads with GROQ: several types joined, nested lists, any filter,
+  counts, order by anything, in one call. `*[_type == "variant" && product == $id] |
+  order(price.GBP) { _id, title, price }`. Its answer is plain JSON shaped by the query, not
+  entries; references are record ids (`product == ^._id`, `author->name`). The URL's query
+  string is `Publr.request.param('error')`.
 - **The body** takes `{value}` (escaped), `set:html={value}` (markup,
   sanitized: no scripts, styles, frames or `on…` attributes survive), `{items.map((item) =>
   (...))}`, `{test ? (...) : null}`, and `<Component prop="..." />` with `<slot />`. A

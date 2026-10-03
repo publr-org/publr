@@ -540,10 +540,12 @@ fn data_call(compiler: *Compiler, name: []const u8, rhs: []const u8, call: []con
         return money_call(compiler, name, args);
     }
 
-    const scripted = [_][]const u8{ "get(", "findOne(", "find(", "query(" };
+    const scripted = [_][]const u8{ "get(", "findOne(", "find(", "param(", "query(" };
 
+    // Only the start matters: a call spread over lines reaches here cut at the first one,
+    // and the script reads the whole frontmatter anyway.
     for (scripted) |prefix| {
-        if (call_of(call, prefix) != null) {
+        if (std.mem.startsWith(u8, call, prefix)) {
             return compiler.script("{s} runs as script", .{rhs});
         }
     }

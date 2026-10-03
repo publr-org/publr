@@ -959,6 +959,16 @@ pub const TestContext = struct {
         return if (std.mem.eql(u8, name, "error")) "NotEnoughStock" else null;
     }
 
+    /// The posts' titles, newest first: what `*[_type == "post"]{ title }` answers here.
+    pub fn run_query(ctx: *const TestContext, groq: []const u8, params: []const u8) ![]const u8 {
+        _ = ctx;
+
+        std.debug.assert(groq.len > 0);
+        std.debug.assert(params.len > 0);
+
+        return "[{\"title\":\"Second <post>\"},{\"title\":\"First\"}]";
+    }
+
     pub fn call_with(ctx: *const TestContext, operation: []const u8, input: []const u8) !Entry {
         std.debug.assert(operation.len > 0);
         std.debug.assert(input.len <= 1 << 20);
@@ -1370,6 +1380,39 @@ test "set:html: whatever a page prints as markup is sanitized, natively and in s
     const scripted = try render_test(arena, program, scripted_index, &ctx);
     try testing.expect(contains(scripted, "<div><b>kept</b><img src=\"x\"></div>"));
     try testing.expect(!contains(scripted, "onerror"));
+}
+
+test "queries: a GROQ answer is plain JSON; param reads the address's query string" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/index.publr",
+            \\---
+            \\const posts = Publr.build.query('*[_type == $type]{ title }', { type: 'post' });
+            \\---
+            \\<ul>{posts.map(post => <li>{post.title}</li>)}</ul>
+        ),
+        source("content/live.dynamic.publr",
+            \\---
+            \\const refused = Publr.request.param('error');
+            \\---
+            \\<p>{refused}</p>
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const ctx: TestContext = .{ .arena = arena, .live = true };
+    const listed_page = program.find("content/index.publr").?;
+    const listing = try render_test(arena, program, listed_page, &ctx);
+
+    try testing.expect(contains(listing, "<li>Second &lt;post&gt;</li><li>First</li>"));
+
+    const live_page = program.find("content/live.dynamic.publr").?;
+    const live = try render_test(arena, program, live_page, &ctx);
+
+    try testing.expect(contains(live, "<p>NotEnoughStock</p>"));
 }
 
 test "reads: get, findOne and find by one field run as script; more than one field is refused" {

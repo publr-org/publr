@@ -168,7 +168,7 @@ A refused form comes back with the refusal's name, `?error=NotEnoughStock` when 
 plugin refused in its own words, and the page says what it wants to about it:
 
 ```
-const refused = Publr.request.query('error');
+const refused = Publr.request.param('error');
 ```
 
 An island's JSON call gets the plugin's message too: `{ "error": "NotEnoughStock",
@@ -289,7 +289,8 @@ rebuilds what read it through the usual `type:<handle>` dependency.
 | `getCollection({ type, limit, offset })`: live records, newest first | `header('name')`, `cookie('name')` |
 | `getReferences(entry, 'field')`: the live records a reference field points at, in the order stored; `getReference(entry, 'field')` the first as an entry, blank when none; `entry.data.rows` with no fallback: a repeater's rows as entries | `now()`: the clock, per request, the same shape |
 | `now()`: the clock of the build, `YYYY-MM-DD HH:MM:SS` UTC | `random(n)`: a number in `[0, n)` |
-| `get('order', id)`: the live record by id, null when there is none or it is of another type; `findOne('product', 'sku', 'EG-50')` the one whose field holds the value; `find('variant', { product: id }, { limit, offset })` live records, newest first, filtered on at most one field by equality | `query('error')`: a value from the address's query string, null when absent |
+| `get('order', id)`: the live record by id, null when there is none or it is of another type; `findOne('product', 'sku', 'EG-50')` the one whose field holds the value; `find('variant', { product: id }, { limit, offset })` live records, newest first, filtered on at most one field by equality | `param('error')`: a value from the address's query string, null when absent |
+| `query('*[_type == "variant" && product == $id] \| order(price.GBP) { _id, title, price }', { id: product.id })`: a [GROQ query](queries.md) over what the visitor may read, its answer plain JSON (`variant.title`, not `.data`); a static page that queries rebuilds when any record changes | `query(...)`: the same, per request |
 | | `call('app.inventory.levels', { product: id })`: a plugin's `app.*` read, with its input, as the visitor; the answer is `.data`, plain JSON |
 | `money(entry.data.price)`: a money field in the site's default currency as the site writes it (`£9.25`); `money(entry.data.price, 'EUR')` in that one; empty when the field holds none | `money(...)`: the same, per request |
 | | `getCollection(...)`, `getReferences(...)`: records, read per request |

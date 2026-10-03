@@ -63,6 +63,10 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
                 return found_records(vm, frame, args);
             }
 
+            if (std.mem.eql(u8, method, "query")) {
+                return queried(vm, frame, args);
+            }
+
             if (std.mem.eql(u8, method, "now")) {
                 const stamp = if (request) frame.ctx.now() else frame.ctx.build_time();
                 return vm.string(try time.datetime_text(vm.arena, stamp));
@@ -109,7 +113,7 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
                 return optional(vm, ctx.cookie(text));
             }
 
-            if (std.mem.eql(u8, method, "query")) {
+            if (std.mem.eql(u8, method, "param")) {
                 return optional(vm, try ctx.query_param(text));
             }
 
@@ -392,6 +396,29 @@ fn json(vm: *VM, value: std.json.Value) !Value {
     std.debug.assert(terminated.len == text.len);
 
     return vm.check(api.JS_ParseJSON(vm.context, terminated.ptr, terminated.len, "publr:data"));
+}
+
+/// `query(groq, params)`: the answer as plain JSON.
+fn queried(vm: *VM, frame: anytype, args: Value) !Value {
+    std.debug.assert(api.JS_IsArray(args));
+
+    const text_value = try vm.item(args, 0);
+    defer vm.free(text_value);
+    const given = try vm.item(args, 1);
+    defer vm.free(given);
+    const text = try string(vm, text_value);
+    const params = if (api.JS_IsString(given)) try string(vm, given) else "{}";
+
+    return json_text(vm, try frame.ctx.run_query(text, params));
+}
+
+/// JSON text as a JavaScript value, as a query answers it.
+fn json_text(vm: *VM, text: []const u8) !Value {
+    std.debug.assert(text.len > 0);
+
+    const terminated = try vm.arena.dupeZ(u8, text);
+
+    return vm.check(api.JS_ParseJSON(vm.context, terminated.ptr, terminated.len, "publr:query"));
 }
 
 fn optional(vm: *VM, text: ?[]const u8) !Value {

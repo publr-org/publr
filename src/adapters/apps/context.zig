@@ -681,6 +681,7 @@ pub const Context = struct {
     pub const get_record = @import("reads.zig").get_record;
     pub const find_records = @import("reads.zig").find_records;
     pub const call_with = @import("reads.zig").call_with;
+    pub const run_query = @import("reads.zig").run_query;
     pub const money_code = @import("money.zig").code;
     pub const money = @import("money.zig").write;
 

@@ -1,6 +1,7 @@
 //! What a template reads beyond its route's records: `get(type, id)`, `findOne` and
-//! `find(type, { field: value })` (one field, by equality: no query language), and
-//! `call(name, input)`, which runs a plugin's `app.*` read for the visitor.
+//! `find(type, { field: value })` (one field, by equality), `query(groq, params)` (GROQ,
+//! through `record.query`), and `call(name, input)`, which runs a plugin's `app.*` read for
+//! the visitor.
 
 const std = @import("std");
 const registry = @import("../../server/registry.zig");
@@ -8,6 +9,7 @@ const record_operations = @import("../../operations/record.zig");
 const identity_module = @import("../rest/identity.zig");
 const json = @import("../../lib/json.zig");
 const context_module = @import("context.zig");
+const changes = @import("../../operations/project/changes.zig");
 
 const Context = context_module.Context;
 const Entry = Context.Entry;
@@ -65,6 +67,32 @@ pub fn find_records(
     }
 
     return entries;
+}
+
+/// `query(groq, params)`: a GROQ query as the page's reader, its answer as JSON. A static
+/// page depends on every record then: any change rebuilds it. A query the engine refuses
+/// fails the render, saying why.
+pub fn run_query(ctx: *const Context, groq: []const u8, params: []const u8) ![]const u8 {
+    std.debug.assert(groq.len > 0);
+    std.debug.assert(params.len > 0);
+
+    if (ctx.deps) |deps| {
+        deps.record_key(changes.all_records_key);
+    }
+
+    var sdk_ctx = ctx.sdk_context();
+    const answered = registry.SDK.dispatch(&sdk_ctx, record_operations.Query, .{
+        .query = groq,
+        .params = params,
+    }) catch |err| {
+        const message = if (sdk_ctx.failure) |failure| failure.message else @errorName(err);
+
+        std.log.warn("query refused: {s}", .{message});
+
+        return error.QueryRefused;
+    };
+
+    return answered.result.text;
 }
 
 /// `call(name, input)`: a plugin's `app.*` read, installed or built in, as the visitor for
