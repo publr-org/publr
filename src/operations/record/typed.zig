@@ -202,11 +202,12 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
                 .order = .created_desc,
                 .limit = page.limit,
                 .offset = page.offset,
+                .documents = true,
             });
             const items = try ctx.arena().alloc(Item, listed.records.len);
 
-            for (listed.records, items) |row, *target| {
-                target.* = try get(ctx, row.id);
+            for (listed.records, listed.documents, items) |row, document, *target| {
+                target.* = try item(ctx, row, document);
             }
 
             return items;

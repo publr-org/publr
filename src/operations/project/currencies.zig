@@ -156,8 +156,9 @@ pub fn takes(listed: []const Entry, code: []const u8) bool {
     return listed.len == 0 or entry_of(listed, code) != null;
 }
 
-/// A money field, at the top or in a group, holds amounts in the site's currencies
-/// only (`project set_currencies`); any when they are not set.
+/// Every money field, at the top or in a group or a repeater's items at any depth, holds
+/// amounts in the site's currencies only (`project set_currencies`); any when they are not
+/// set. The document is walked with a worklist, one entry per object it holds.
 pub fn refuse_others(
     ctx: *Ctx,
     fields: []const model.field.Def,
@@ -172,33 +173,52 @@ pub fn refuse_others(
     }
 
     const Level = struct { fields: []const model.field.Def, object: std.json.ObjectMap };
-    var stack: [model.field.depth_max + 1]Level = undefined;
-    var depth: u32 = 1;
+    var pending: std.ArrayList(Level) = .empty;
 
-    stack[0] = .{ .fields = fields, .object = document.object };
+    pending.append(ctx.arena, .{ .fields = fields, .object = document.object }) catch {
+        return error.OutOfMemory;
+    };
 
-    while (depth > 0) {
-        depth -= 1;
-
-        const level = stack[depth];
-
+    while (pending.pop()) |level| {
         for (level.fields) |field| {
             const value = level.object.get(field.name) orelse continue;
 
-            if (value != .object) {
-                continue;
-            }
+            if (model.field.is_money(field.kind) and value == .object) {
+                try refuse_codes(listed, value.object);
+            } else if (model.field.is_group(field.kind) and value == .object) {
+                const inner: Level = .{ .fields = field.fields, .object = value.object };
 
-            if (model.field.is_money(field.kind)) {
-                for (value.object.keys()) |code| {
-                    if (!takes(listed, code)) {
-                        return error.Invalid;
-                    }
-                }
-            } else if (model.field.is_group(field.kind) and depth < stack.len) {
-                stack[depth] = .{ .fields = field.fields, .object = value.object };
-                depth += 1;
+                pending.append(ctx.arena, inner) catch return error.OutOfMemory;
+            } else if (model.field.is_repeater(field.kind) and value == .array) {
+                try push_items(ctx, &pending, field.fields, value.array.items);
             }
+        }
+    }
+}
+
+fn refuse_codes(listed: []const Entry, amounts: std.json.ObjectMap) Error!void {
+    std.debug.assert(listed.len <= currencies_max);
+
+    for (amounts.keys()) |code| {
+        if (!takes(listed, code)) {
+            return error.Invalid;
+        }
+    }
+}
+
+fn push_items(
+    ctx: *Ctx,
+    pending: anytype,
+    fields: []const model.field.Def,
+    items: []const std.json.Value,
+) Error!void {
+    std.debug.assert(items.len <= model.document.items_max);
+
+    for (items) |item| {
+        if (item == .object) {
+            pending.append(ctx.arena, .{ .fields = fields, .object = item.object }) catch {
+                return error.OutOfMemory;
+            };
         }
     }
 }
@@ -260,6 +280,29 @@ test "money: amounts per currency, only the site's, found and sorted by one" {
         .document = "{\"title\":\"Yen\",\"price\":{\"JPY\":100}}",
     });
     try std.testing.expectError(error.Invalid, elsewhere);
+
+    const nested_definition =
+        \\{"handle":"menu","name":"Menu","fields":[
+        \\ {"name":"title","label":"Title","kind":"string","required":true},
+        \\ {"name":"dishes","label":"Dishes","kind":"repeater","fields":[
+        \\  {"name":"name","label":"Name","kind":"string"},
+        \\  {"name":"cost","label":"Cost","kind":"group","fields":[
+        \\   {"name":"price","label":"Price","kind":"money"}]}]}]}
+    ;
+    _ = try registry.SDK.dispatch(&system, content_types.Create, .{
+        .definition = nested_definition,
+    });
+    _ = try registry.SDK.dispatch(&system, records.Create, .{
+        .type = "menu",
+        .document = "{\"title\":\"Lunch\",\"dishes\":[{\"name\":\"Soup\"," ++
+            "\"cost\":{\"price\":{\"GBP\":450}}}]}",
+    });
+    const nested_yen = registry.SDK.dispatch(&system, records.Create, .{
+        .type = "menu",
+        .document = "{\"title\":\"Dinner\",\"dishes\":[{\"name\":\"Soup\"," ++
+            "\"cost\":{\"price\":{\"JPY\":450}}}]}",
+    });
+    try std.testing.expectError(error.Invalid, nested_yen);
 
     const unknown = registry.SDK.dispatch(&system, SetCurrencies, .{
         .currencies = &.{.{ .code = "ZZZ" }},

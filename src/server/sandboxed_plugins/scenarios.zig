@@ -272,9 +272,21 @@ test "disabled, a plugin runs nothing and keeps its grants; enabled again, it ru
 
     _ = try scenario.install();
 
-    const stopped = try scenario.by_name(plugin_operations.Disable);
+    var stopping = scenario.ctx(.system);
+    const partly = registry.SDK.dispatch(&stopping, plugin_operations.Disable, .{
+        .names = &.{ "greeter", "missing" },
+    });
 
-    try std.testing.expect(!stopped.enabled);
+    // All or none: the unknown second name leaves greeter running.
+    try std.testing.expectError(error.NotFound, partly);
+    try std.testing.expectEqual(0, try scenario.total(admin, "greeter.count", "{}"));
+
+    stopping = scenario.ctx(.system);
+    const stopped = try registry.SDK.dispatch(&stopping, plugin_operations.Disable, .{
+        .names = &.{"greeter"},
+    });
+
+    try std.testing.expect(!stopped.plugins[0].enabled);
     try std.testing.expectError(error.NotFound, scenario.call(admin, "greeter.count", "{}"));
 
     const started = try scenario.by_name(plugin_operations.Enable);

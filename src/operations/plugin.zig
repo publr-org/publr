@@ -5,6 +5,7 @@ const store = @import("../store.zig");
 const state = @import("plugin/state.zig");
 const lifecycle = @import("plugin/lifecycle.zig");
 const versions = @import("plugin/versions.zig");
+const dependents = @import("plugin/dependents.zig");
 const views = @import("plugin/detail.zig");
 const registry = @import("../server/registry.zig");
 
@@ -282,15 +283,48 @@ pub const Get = ByName(
     null,
 );
 
-pub const Disable = ByName(
-    "plugin.disable",
-    "Stop a plugin: its operations and hooks unload, its grants and content stay",
-    "Enabling it again brings it back with what it held.",
-    .write,
-    views.example_disabled,
-    lifecycle.disable,
-    "plugin.disabled",
-);
+pub const Disable = struct {
+    pub const name = "plugin.disable";
+    pub const description = "Stop plugins: operations and hooks unload, grants and content stay";
+    pub const details =
+        \\One or several at once, all or none. Refused while an enabled plugin left running
+        \\names one of them in `depends_on`: the refusal names it and the command that stops
+        \\them together. A plugin that only lists one in `compatible_with` keeps running, its
+        \\hooks into it silent. Enabling a plugin again brings it back with what it held.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const In = struct { names: []const []const u8 };
+    pub const Out = struct { plugins: []const Detail };
+    pub const rules: sdk.operation.Rules(In) = .{
+        .names = .{ .items_min = 1, .items_max = dependents.together_max },
+    };
+    pub const example: In = .{ .names = &.{"greeter"} };
+    pub const example_out: Out = .{ .plugins = &.{views.example_disabled} };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .names = "The plugins' names, dependents and what they depend on together",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .plugins = "Each plugin as it is after",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        try dependents.refuse_left_behind(ctx, in.names, "disable");
+
+        const shown = ctx.arena.alloc(Detail, in.names.len) catch return error.OutOfMemory;
+
+        for (in.names, shown) |plugin_name, *detail| {
+            const disabled = try lifecycle.disable(ctx, plugin_name);
+
+            ctx.notice("plugin.disabled", plugin_name);
+            detail.* = try detail_of(ctx, disabled);
+        }
+
+        return .{ .plugins = shown };
+    }
+};
 
 pub const Update = ByName(
     "plugin.update",
@@ -432,7 +466,8 @@ pub const Remove = struct {
     pub const description = "Remove a plugin: off the list, its grants and versions dropped";
     pub const details =
         \\Its operations and hooks stop at once. Its content types and their records stay
-        \\until an administrator deletes them.
+        \\until an administrator deletes them. Refused, like `plugin disable`, while an
+        \\enabled plugin depends on it.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct { name: []const u8 };
@@ -445,6 +480,7 @@ pub const Remove = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
+        try dependents.refuse_left_behind(ctx, &.{in.name}, "remove");
         try lifecycle.remove(ctx, in.name);
         ctx.notice("plugin.removed", in.name);
 

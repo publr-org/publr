@@ -24,6 +24,8 @@ pub const pending = "pending";
 pub const slot_len_max: u32 = 64;
 
 pub const Referrer = struct { record_id: []const u8, field: []const u8 };
+/// A value row with the record it belongs to, from a read of many records.
+pub const Owned = struct { record: []const u8, row: Row };
 
 pub fn Store(comptime tables: tables_module.Tables) type {
     return struct {
@@ -225,6 +227,63 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                     .ordinal = cell.ordinal,
                     .value = stored,
                 }) catch return error.OutOfMemory;
+            }
+
+            return rows.items;
+        }
+
+        /// The rows of many records' copies in `slot`, one query for a page of them:
+        /// grouped by record, each record's in `field, ordinal` order.
+        pub fn read_many(
+            connection: *db.Db,
+            arena: std.mem.Allocator,
+            record_ids: []const []const u8,
+            slot: []const u8,
+        ) Error![]const Owned {
+            std.debug.assert(slot.len > 0);
+            std.debug.assert(record_ids.len <= 1024);
+
+            if (record_ids.len == 0) {
+                return &.{};
+            }
+
+            const ids = std.json.Stringify.valueAlloc(arena, record_ids, .{}) catch {
+                return error.OutOfMemory;
+            };
+            var select = try connection.prepare(
+                "SELECT record, field, ordinal, value FROM " ++ table ++ " WHERE record IN " ++
+                    "(SELECT value FROM json_each(?1)) AND slot = ?2 " ++
+                    "ORDER BY record, field, ordinal",
+            );
+            defer select.finalize();
+
+            try select.bind_text(1, ids);
+            try select.bind_text(2, slot);
+
+            const Cell = struct {
+                record: []const u8,
+                field: []const u8,
+                ordinal: i64,
+                value: db.Any,
+            };
+            var rows: std.ArrayList(Owned) = .empty;
+
+            while (try select.step()) {
+                std.debug.assert(rows.items.len < rows_max * record_ids.len);
+
+                const cell = try select.read(Cell, arena);
+                const stored: Stored = switch (cell.value) {
+                    .integer => |number| .{ .integer = number },
+                    .real => |number| .{ .real = number },
+                    .text => |text| .{ .text = text },
+                    .blob, .null => unreachable,
+                };
+
+                rows.append(arena, .{ .record = cell.record, .row = .{
+                    .field = cell.field,
+                    .ordinal = cell.ordinal,
+                    .value = stored,
+                } }) catch return error.OutOfMemory;
             }
 
             return rows.items;

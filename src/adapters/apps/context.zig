@@ -526,14 +526,15 @@ pub const Context = struct {
             .order = .created_desc,
             .limit = @min(options.limit orelse query_limit_default, query_limit_max),
             .offset = options.offset orelse 0,
+            .documents = true,
         }) catch |err| switch (err) {
             error.NotFound => return &.{},
             else => return err,
         };
         const entries = try ctx.arena.alloc(Entry, listed.records.len);
 
-        for (listed.records, entries) |record, *out| {
-            out.* = try ctx.load(record.id);
+        for (listed.records, listed.documents, entries) |record, text, *out| {
+            out.* = try ctx.adopt(record, text);
         }
 
         return entries;
@@ -626,12 +627,15 @@ pub const Context = struct {
             error.NotFound => return error.EntryNotFound,
             else => return err,
         };
-        const parsed = @import("../../lib/json.zig").parse(
-            std.json.Value,
-            ctx.arena,
-            got.document,
-            .{},
-        );
+        return ctx.entry_of(got.record, got.document);
+    }
+
+    /// A record and its document text as templates read them.
+    fn entry_of(ctx: *const Context, record: record_operations.Record, text: []const u8) !Entry {
+        std.debug.assert(record.id.len > 0);
+        std.debug.assert(text.len > 0);
+
+        const parsed = @import("../../lib/json.zig").parse(std.json.Value, ctx.arena, text, .{});
         const document = parsed catch return error.EntryNotFound;
 
         if (document != .object) {
@@ -639,20 +643,43 @@ pub const Context = struct {
         }
 
         return .{
-            .id = got.record.id,
-            .type = got.record.type,
-            .slug = got.record.slug,
-            .title = got.record.title,
-            .created_at = try time.date_text(ctx.arena, got.record.created_at),
-            .updated_at = try time.date_text(ctx.arena, got.record.updated_at),
+            .id = record.id,
+            .type = record.type,
+            .slug = record.slug,
+            .title = record.title,
+            .created_at = try time.date_text(ctx.arena, record.created_at),
+            .updated_at = try time.date_text(ctx.arena, record.updated_at),
             .data = .{ .arena = ctx.arena, .document = document },
         };
     }
 
-    /// `Publr.build.now()`: when the site was last built, in milliseconds.
+    /// A listed record, its document read with its page: remembered like a loaded one.
+    fn adopt(ctx: *const Context, record: record_operations.Record, text: []const u8) !Entry {
+        std.debug.assert(record.id.len > 0);
+
+        if (ctx.deps) |deps| {
+            deps.record_entry(record.id);
+        }
+
+        if (ctx.memo) |memo| {
+            if (memo.entries.get(record.id)) |known| {
+                return known;
+            }
+        }
+
+        const adopted = try ctx.entry_of(record, text);
+
+        if (ctx.memo) |memo| {
+            try memo.entries.put(ctx.arena, adopted.id, adopted);
+        }
+
+        return adopted;
+    }
+
     pub const money_code = @import("money.zig").code;
     pub const money = @import("money.zig").write;
 
+    /// `Publr.build.now()`: when the site was last built, in milliseconds.
     pub fn build_time(ctx: *const Context) i64 {
         std.debug.assert(ctx.app.built_at >= 0);
         std.debug.assert(ctx.app.css.len > 0);

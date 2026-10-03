@@ -396,8 +396,13 @@ pub const List = struct {
         order: Order = .updated_desc,
         limit: u32 = 50,
         offset: u32 = 0,
+        documents: bool = false,
     };
-    pub const Out = struct { records: []const Record };
+    pub const Out = struct {
+        records: []const Record,
+        /// With `documents`: each record's live document, in the records' order.
+        documents: []const []const u8 = &.{},
+    };
     pub const example: In = .{ .type = "post", .filters = &.{"status:is:published"}, .limit = 20 };
     pub const example_out: Out = .{ .records = &.{example_record} };
     pub const field_docs: sdk.operation.Docs(In) = .{
@@ -412,6 +417,7 @@ pub const List = struct {
         .order = "`updated_desc` (default), `created_desc` or `title_asc`",
         .limit = "Page size, up to 200",
         .offset = "Rows to skip",
+        .documents = "Also return each record's live document, read with the page in one go",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -434,7 +440,11 @@ pub const List = struct {
             .offset = in.offset,
         });
 
-        return .{ .records = listed };
+        if (!in.documents) {
+            return .{ .records = listed };
+        }
+
+        return .{ .records = listed, .documents = try domain.listed.documents_of(ctx, listed) };
     }
 };
 

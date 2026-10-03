@@ -441,7 +441,25 @@ fn Change(comptime Operation: type) type {
     };
 }
 
-const disable = Change(plugin_operations.Disable).handle;
+/// Disable from the plugin's page: the one plugin, refused in words while others need it.
+fn disable(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .post);
+    std.debug.assert(ctx.user_data != null);
+
+    var post = try admin.accept(request, response, ctx, back) orelse return;
+    const session = &post.session;
+    const name = try admin.param(session, "name", back) orelse return;
+
+    _ = registry.SDK.dispatch(&session.ctx, plugin_operations.Disable, .{
+        .names = &.{name},
+    }) catch |err| return admin.fail(session, err, back);
+
+    if (std.mem.eql(u8, post.form.text("next") orelse "", "list")) {
+        return session.response.redirect(.see_other, back);
+    }
+
+    try redirect_to(session, name);
+}
 const update = Change(plugin_operations.Update).handle;
 const cancel_update = Change(plugin_operations.CancelUpdate).handle;
 const rollback = Change(plugin_operations.Rollback).handle;
