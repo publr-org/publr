@@ -140,7 +140,7 @@ fn stubs_of(builder: *std.Build) *std.Build.Step.WriteFile {
     const files = builder.addWriteFiles();
 
     _ = files.add("publr_sqlite.zig", "pub const Error = error{ Sqlite, Constraint, " ++
-        "Busy, ReadOnly, OutOfMemory };\n");
+        "Busy, ReadOnly, OutOfMemory, Interrupted, TooBig };\n");
 
     for (stub_imports) |name| {
         _ = files.add(builder.fmt("{s}.zig", .{name}), "pub const all = .{};\n");

@@ -429,6 +429,8 @@ fn describe(err: sdk.Error, ctx: *const sdk.Ctx) []const u8 {
         error.Constraint => "database constraint violated",
         error.ReadOnly => "database is read-only",
         error.Sqlite => "database error",
+        error.Interrupted => "it asked for more work than a call may do; ask for less",
+        error.TooBig => "the answer is too large; ask for less",
     };
 
     std.debug.assert(text.len > 0);

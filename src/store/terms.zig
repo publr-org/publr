@@ -22,7 +22,6 @@ pub const Order = documents.Order;
 pub const Filter = documents.Filter;
 pub const Author = documents.Author;
 pub const Query = documents.Query;
-pub const new_id = documents.new_id;
 pub const insert = Store.insert;
 pub const get = Store.get;
 pub const save = Store.save;

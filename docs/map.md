@@ -422,6 +422,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `store/record_terms.zig` | 380 | `record_terms`: a record's membership per slot and field, ancestors included; promote, rebuild after a move |
 | `store/snapshots.zig` | 182 | `snapshots` table: take/get/list/prune |
 | `store/views.zig` | 226 | `views` table: a user's saved views, insert/get/list/update/delete |
+| `store/next_id.zig` | 49 | A table's next time-ordered id, after the greatest one it holds for the same millisecond |
 | `store/sandboxed_plugins.zig` | 161 | `sandboxed_plugins` table: one row per installed plugin, get/list/count/put/delete |
 | `store/users.zig` | 414 | `users` table: insert/find/list/tokens/password, the account's roles read with it |
 | `store/user_roles.zig` | 106 | `user_roles` table: the roles an account holds, set whole; how many hold one |
@@ -528,7 +529,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `lib/http/static.zig` | 106 | Serve files from a directory |
 | `lib/http/status.zig` | 75 | Status codes |
 | `lib/http/form.zig` | 135 | urlencoded bodies and query strings as name/value pairs, percent-decoded |
-| `lib/id.zig` | 48 | Ids: 24 hex, random (records, users) or derived from a name (content types) |
+| `lib/id.zig` | 112 | Ids: 24 hex, time-ordered (records, users), random (tokens) or derived from a name (content types) |
 | `lib/text.zig` | 57 | Slugs: slugify and numeric suffixes |
 | `lib/html.zig` | 32 | HTML escaping |
 | `lib/report.zig` | 46 | Print an error box to stderr |

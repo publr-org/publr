@@ -297,6 +297,32 @@ pub fn is_app(name: []const u8) bool {
     return std.mem.startsWith(u8, name, "app.");
 }
 
+/// JSON an operation answers as it is, written through untouched: a query's result.
+pub const Json = struct {
+    text: []const u8,
+
+    pub fn jsonStringify(json: Json, writer: anytype) !void {
+        std.debug.assert(json.text.len > 0);
+
+        try writer.beginWriteRaw();
+        try writer.writer.writeAll(json.text);
+        writer.endWriteRaw();
+    }
+
+    pub fn jsonParse(
+        allocator: std.mem.Allocator,
+        source: anytype,
+        options: std.json.ParseOptions,
+    ) !Json {
+        const value = try std.json.Value.jsonParse(allocator, source, options);
+        const text = std.json.Stringify.valueAlloc(allocator, value, .{}) catch {
+            return error.OutOfMemory;
+        };
+
+        return .{ .text = text };
+    }
+};
+
 pub fn assert_serialisable(comptime Type: type, comptime depth: u32) void {
     comptime {
         if (depth > type_depth_max) {

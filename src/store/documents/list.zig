@@ -121,6 +121,11 @@ pub fn List(comptime tables: tables_module.Tables) type {
         const list_by_record = "SELECT " ++ record_columns ++ " FROM (SELECT * FROM " ++
             table ++ " r WHERE ";
         const list_by_title = select_record ++ " WHERE ";
+        // Over one type, bound first (`?1`), the lookup index finds the records holding the
+        // value, instead of each record of the type being checked in turn.
+        const list_filter_one_type = " AND r.id IN (SELECT v.record FROM " ++ values ++
+            " v WHERE v.type_id = ?1 AND v.field = ?{d} AND v.value = ?{d} " ++
+            "AND v.slot = 'live' AND v.kind <> 'long')";
         const list_filter = " AND EXISTS (SELECT 1 FROM " ++ values ++ " v WHERE " ++
             "v.record = r.id AND v.type_id = r.type_id AND v.field = ?{d} AND v.value = ?{d} " ++
             "AND v.slot = 'live' AND v.kind <> 'long')";
@@ -223,6 +228,8 @@ pub fn List(comptime tables: tables_module.Tables) type {
 
                 if (has_assignments and filter.membership) {
                     writer.print(list_membership, args) catch return error.OutOfMemory;
+                } else if (query.type_ids.len == 1) {
+                    writer.print(list_filter_one_type, args) catch return error.OutOfMemory;
                 } else {
                     writer.print(list_filter, args) catch return error.OutOfMemory;
                 }
@@ -247,17 +254,22 @@ pub fn List(comptime tables: tables_module.Tables) type {
             }
 
             if (query.app) |app| {
-                switch (app) {
-                    .none => writer.writeAll(" AND r.app IS NULL") catch {
-                        return error.OutOfMemory;
-                    },
-                    .name => writer.print(" AND r.app = ?{d}", .{bind_index}) catch {
-                        return error.OutOfMemory;
-                    },
-                }
+                try write_app(writer, app, bind_index);
             }
         }
     };
+}
+
+/// Which app's records: one app's (its name bound at `bind_index`), or the project's own.
+fn write_app(writer: *std.Io.Writer, app: App, bind_index: u32) Error!void {
+    std.debug.assert(bind_index > 0);
+
+    switch (app) {
+        .none => writer.writeAll(" AND r.app IS NULL") catch return error.OutOfMemory,
+        .name => writer.print(" AND r.app = ?{d}", .{bind_index}) catch {
+            return error.OutOfMemory;
+        },
+    }
 }
 
 /// `?1, ?2, ?3`: one placeholder per item, from `bind_index` on, which moves past them.

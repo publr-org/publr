@@ -509,11 +509,12 @@ pub const Validate = struct {
 };
 
 pub const Shown = @import("record/shown.zig").Shown(List, example_id);
+pub const Query = @import("record/query.zig").Query;
 
 pub const operations = [_]type{
     Create,    Get,    Save,           Transition, Publish,  List,
     Referrers, Delete, DiscardChanges, Purge,      Validate, SetApp,
-    Shown,
+    Shown,     Query,
 };
 
 const SDK = registry.SDK;

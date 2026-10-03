@@ -33,7 +33,7 @@ pub const own_records = [_][]const u8{
     "record.get",      "record.list",    "record.create",     "record.save",
     "record.delete",   "record.publish", "record.transition", "record.discard_changes",
     "record.purge",    "snapshot.list",  "snapshot.get",      "snapshot.take",
-    "record.validate", "record.set_app", "record.shown",
+    "record.validate", "record.set_app", "record.shown",      "record.query",
 };
 
 pub const core = [_]Permission{
@@ -47,6 +47,7 @@ pub const core = [_]Permission{
             "record.list",
             "record.referrers",
             "record.shown",
+            "record.query",
             "project.impact",
         },
     },

@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const ids = @import("../lib/id.zig");
+const next_id = @import("next_id.zig");
 const db = @import("../lib/db.zig");
 const tables_module = @import("tables.zig");
 const list_module = @import("documents/list.zig");
@@ -20,7 +21,6 @@ pub const Filter = list_module.Filter;
 pub const Author = list_module.Author;
 pub const Query = list_module.Query;
 pub const Record = list_module.Record;
-pub const new_id = ids.random;
 
 pub const App = list_module.App;
 
@@ -51,7 +51,8 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             std.debug.assert(row.status.len > 0);
 
             var id_buffer: [id_len]u8 = undefined;
-            const id = arena.dupe(u8, new_id(io, &id_buffer)) catch return error.OutOfMemory;
+            const made = try next_id.next(table, connection, io, now_ms, &id_buffer);
+            const id = arena.dupe(u8, made) catch return error.OutOfMemory;
 
             var statement = try connection.prepare(
                 "INSERT INTO " ++ table ++ " (id, type_id, created_by, updated_by, status, " ++

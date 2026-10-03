@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const ids = @import("../lib/id.zig");
+const next_id = @import("next_id.zig");
 const db = @import("../lib/db.zig");
 const model = @import("../model/internal_record.zig");
 
@@ -39,7 +40,8 @@ pub fn insert(
     now_ms: i64,
 ) Error![]const u8 {
     var id_buffer: [id_len]u8 = undefined;
-    const id = arena.dupe(u8, ids.random(io, &id_buffer)) catch return error.OutOfMemory;
+    const made = try next_id.next("internal_records", connection, io, now_ms, &id_buffer);
+    const id = arena.dupe(u8, made) catch return error.OutOfMemory;
 
     try insert_as(connection, scope, id, document, now_ms);
 

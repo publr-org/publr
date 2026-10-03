@@ -7,6 +7,7 @@
         // Sibling checkouts, never URLs: the build fetches nothing.
         .publr_sqlite = .{ .path = "../lib/sqlite" },
         .publr_http = .{ .path = "../lib/http" },
+        .publr_groq = .{ .path = "../lib/groq" },
         .publr_auth = .{ .path = "../lib/auth" },
         .publr_deps = .{ .path = "../lib/deps" },
         .publr_wasm = .{ .path = "../lib/wasm" },

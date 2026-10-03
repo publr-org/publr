@@ -124,6 +124,10 @@ pub fn add_module(
         .target = target,
         .release = optimize != .Debug,
     });
+    const publr_groq = builder.dependency("publr_groq", .{
+        .target = target,
+        .release = optimize != .Debug,
+    });
     const publr_deps = builder.dependency("publr_deps", .{
         .target = target,
         .release = optimize != .Debug,
@@ -138,6 +142,7 @@ pub fn add_module(
             .{ .name = "publr_sqlite", .module = publr_sqlite.module("publr_sqlite") },
             .{ .name = "publr_http", .module = publr_http.module("publr_http") },
             .{ .name = "publr_auth", .module = publr_auth.module("publr_auth") },
+            .{ .name = "publr_groq", .module = publr_groq.module("publr_groq") },
             .{ .name = "publr_deps", .module = publr_deps.module("publr_deps") },
             .{ .name = "publr_jit", .module = publr_jit.module("publr_jit") },
         },

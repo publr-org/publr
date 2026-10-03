@@ -22,7 +22,6 @@ pub const Filter = documents.Filter;
 pub const Author = documents.Author;
 pub const Query = documents.Query;
 pub const App = documents.App;
-pub const new_id = documents.new_id;
 pub const insert = Store.insert;
 pub const get = Store.get;
 pub const save = Store.save;
@@ -90,6 +89,28 @@ fn seed_record_by(
     try values.write(&kinds.core, &fixture.connection, id, values.live, type_id, fields, document);
 
     return id;
+}
+
+test "ids sort in the order records were made, within one millisecond too" {
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const type_id = try seed_type(&fixture, arena);
+    const first = try seed_record_by(&fixture, arena, type_id, "A", "draft", 1, "u_1", 5_000);
+    const second = try seed_record_by(&fixture, arena, type_id, "B", "draft", 1, "u_1", 5_000);
+    const third = try seed_record_by(&fixture, arena, type_id, "C", "draft", 1, "u_1", 5_000);
+    const later = try seed_record_by(&fixture, arena, type_id, "D", "draft", 1, "u_1", 5_001);
+
+    try std.testing.expectEqualStrings(first[0..12], third[0..12]);
+    try std.testing.expectEqualStrings("0002", third[12..16]);
+    try std.testing.expect(std.mem.order(u8, first, second) == .lt);
+    try std.testing.expect(std.mem.order(u8, second, third) == .lt);
+    try std.testing.expect(std.mem.order(u8, third, later) == .lt);
+    try std.testing.expectEqualStrings("0000", later[12..16]);
 }
 
 test "insert, get, save with version check, transition, delete" {

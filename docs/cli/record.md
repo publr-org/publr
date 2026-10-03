@@ -35,6 +35,7 @@ change what their role allows. Back to the [CLI reference](../cli.md).
 | `record purge --id <id>` | Remove for good, snapshots included (admins) |
 | `record referrers --id <id>` | Who points at this record (or media item), and through which field |
 | `record shown (--ids a,b \| --type <t> [--limit])` | Titles as people see them: each record's own, then its type's display hooks (what the admin lists show). Never changes what is stored or what `record list` answers |
+| `record query --query <groq> [--params <json>] [--perspective published\|all]` | Read content with a GROQ query, nested records included, in one read; see [Queries](../queries.md). Answers `result` and `problems` (references made `null` because you may not read their record) |
 | `record validate --type <t> --document <json>` | Report every problem without saving |
 
 ```

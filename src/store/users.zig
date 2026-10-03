@@ -1,5 +1,6 @@
 const std = @import("std");
 const ids = @import("../lib/id.zig");
+const next_id = @import("next_id.zig");
 const account = @import("../model/account.zig");
 const db = @import("../lib/db.zig");
 const user_roles = @import("user_roles.zig");
@@ -38,8 +39,6 @@ pub const Insert = struct {
     now_ms: i64,
 };
 
-pub const new_id = ids.random;
-
 /// For tests: an empty users table.
 pub fn delete_all(connection: *db.Db) db.Error!void {
     std.debug.assert(connection.transaction_depth == 0);
@@ -77,7 +76,8 @@ pub fn insert(
     std.debug.assert(row.now_ms >= 0);
 
     var id_buffer: [id_len]u8 = undefined;
-    const id = arena.dupe(u8, new_id(io, &id_buffer)) catch return error.OutOfMemory;
+    const made = try next_id.next("users", connection, io, row.now_ms, &id_buffer);
+    const id = arena.dupe(u8, made) catch return error.OutOfMemory;
 
     var statement = try connection.prepare(
         "INSERT INTO users " ++

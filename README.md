@@ -71,6 +71,7 @@ zig build verify-full              # every check: wasm, smoke, parity, two-mode,
 - [Philosophy](docs/philosophy.md): why Publr is shaped the way it is.
 - [Architecture](docs/architecture.md): how Publr works, in plain terms.
 - [Content](docs/content.md): types, records, documents, statuses, media.
+- [Queries](docs/queries.md): reading content with GROQ, nested records in one read.
 - [Admin](docs/admin.md): the plain HTML admin at `/admin`.
 - [Apps](docs/apps.md): the apps of a project, `.publr` templates, islands, the static build.
 - [Streaming islands](docs/streaming.md): a proposal for islands in the page's own response, and hosting it anywhere.

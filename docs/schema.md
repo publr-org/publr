@@ -3,7 +3,10 @@
 Publr keeps everything in one SQLite file (`data/publr.db` by default), in
 strict tables created by `src/lib/db/schema.sql` when the database opens. There
 are no migrations: pre-release, the schema is the schema. Ids are 24 hex
-characters, times are Unix milliseconds, booleans are `0`/`1`.
+characters, times are Unix milliseconds, booleans are `0`/`1`. A record's, term's, user's,
+internal record's or saved view's id is time-ordered: the millisecond it was made (12
+characters), a counter within that millisecond (4), random (8). Sorted by id, rows are in
+the order they were made; copies of a database merged later cannot collide.
 
 The shape is deliberately small. Two tables carry the content of the whole
 site, whatever a plugin adds: `records` (one row per thing: a record, an
@@ -475,7 +478,7 @@ One row per term: `records` for the term domain, with one column more, the
 parent. A term belongs to exactly one taxonomy; its title and slug are field
 values in `term_values`, joined in by the lists. The same lifecycle as a
 record: status, pending edits (`changed`), version, revisions in `snapshots`
-(ids are random, so both domains share the snapshot table).
+(ids are unique across both domains, so they share the snapshot table).
 
 | Column | Type | Meaning |
 |---|---|---|

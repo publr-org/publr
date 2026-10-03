@@ -23,9 +23,10 @@ pub const Stage = enum { operation, before, after, event, display };
 /// error set's `@typeInfo` differs between two compilations, so it is written out here, once,
 /// and a new error the set gains fails to compile until it is listed.
 const names = [_][]const u8{
-    "Denied",    "Invalid",    "NotFound",    "Conflict",       "Vetoed",
-    "Throttled", "Failed",     "Unavailable", "BadCredentials", "InvalidationFailed",
-    "Sqlite",    "Constraint", "Busy",        "ReadOnly",       "OutOfMemory",
+    "Denied",      "Invalid",    "NotFound",    "Conflict",       "Vetoed",
+    "Throttled",   "Failed",     "Unavailable", "BadCredentials", "InvalidationFailed",
+    "Sqlite",      "Constraint", "Busy",        "ReadOnly",       "OutOfMemory",
+    "Interrupted", "TooBig",
 };
 
 comptime {

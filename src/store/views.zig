@@ -1,5 +1,6 @@
 const std = @import("std");
 const ids = @import("../lib/id.zig");
+const next_id = @import("next_id.zig");
 const db = @import("../lib/db.zig");
 const view = @import("../model/view.zig");
 
@@ -35,7 +36,8 @@ pub fn insert(
     std.debug.assert(query.len > 0 and query.len <= view.query_bytes_max);
 
     var id_buffer: [id_len]u8 = undefined;
-    const id = arena.dupe(u8, ids.random(io, &id_buffer)) catch return error.OutOfMemory;
+    const made = try next_id.next("views", connection, io, now_ms, &id_buffer);
+    const id = arena.dupe(u8, made) catch return error.OutOfMemory;
 
     var statement = try connection.prepare(
         "INSERT INTO views (id, user_id, name, query, created_at, updated_at) " ++
