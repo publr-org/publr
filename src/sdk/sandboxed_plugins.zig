@@ -28,6 +28,8 @@ pub const Operation = struct {
     help: []const u8 = "",
     /// The shape it takes: which of its fields are references to read before it runs.
     input: []const @import("../model/contract.zig").Node = &.{},
+    /// Input fields never written to the logs.
+    secret: []const []const u8 = &.{},
     /// Which plugin, and which of its entries, runs it: the host's own numbering.
     sandboxed_plugin: u32,
     entry: u32,

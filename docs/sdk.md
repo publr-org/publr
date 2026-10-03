@@ -140,6 +140,15 @@ text: `publr <namespace> <verb> --help` prints all of it with a runnable
 example and its JSON, and the REST adapter will serve it. Documentation that
 lives in the operation cannot drift from the operation.
 
+### What is logged
+
+Every top-level call is logged by the core, once: a completed write in the activity log,
+inside its transaction, and a refused or failed call, reads included, in the error log,
+after its rollback. The calls it sets off inside are part of its entry, not entries of
+their own. An operation lists the input fields that hold a secret (`secret`), and any
+field named like one is masked too, so a password never reaches a log. Both logs are
+append-only (`docs/schema.md`, `activity` and `errors`).
+
 ### The shape
 
 Just enough to see it; the full contract lives in the code and tests.

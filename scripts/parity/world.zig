@@ -117,12 +117,17 @@ fn fill_plugins(ctx: *Ctx, dir: []const u8) Error!void {
         .file = try path_in(ctx, dir, "world-farewell.wasm"),
     });
     ctx.caller = admin;
-    _ = try SDK.dispatch(ctx, plugin_operations.Enable, .{ .name = "greeter" });
+    _ = try SDK.dispatch(ctx, plugin_operations.Enable, .{ .names = &.{"greeter"} });
     _ = try SDK.dispatch(ctx, plugin_operations.Update, .{ .name = "greeter" });
     _ = try SDK.dispatch(ctx, plugin_operations.Rollback, .{ .name = "greeter" });
     ctx.caller = .system;
     _ = try SDK.dispatch(ctx, plugin_operations.Add, .{ .file = next });
     ctx.caller = admin;
+
+    // One refusal for the error log's example: a plugin that is not there.
+    const refused = SDK.dispatch(ctx, plugin_operations.Disable, .{ .names = &.{"nowhere"} });
+
+    std.debug.assert(std.meta.isError(refused));
 }
 
 fn path_in(ctx: *Ctx, dir: []const u8, name: []const u8) Error![]const u8 {

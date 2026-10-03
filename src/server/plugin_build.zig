@@ -336,7 +336,8 @@ fn install(init: std.process.Init, db_path: [:0]const u8, name: []const u8, path
 
     const update = std.mem.indexOf(u8, added.written(), "\"update\": true") != null;
     const verb: []const u8 = if (update) "update" else "enable";
-    const next = [_][]const u8{ "--as-admin", "plugin", verb, "--name", name };
+    const flag: []const u8 = if (update) "--name" else "--names";
+    const next = [_][]const u8{ "--as-admin", "plugin", verb, flag, name };
     var stdout_buffer: [16 << 10]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch |err| std.debug.print("stdout: {t}\n", .{err});

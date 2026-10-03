@@ -270,8 +270,9 @@ fn server_options(first_port: u16, browser: bool) http.Options {
             .port = first_port,
             .connections_max = 8,
             .request_bytes_max = 64 << 10,
-            // The whole browser build's module in one response.
-            .response_bytes_max = 6 << 20,
+            // The whole browser build's module in one response: 6.4 MiB in Debug on
+            // 2026-10-03, with room to grow.
+            .response_bytes_max = 8 << 20,
         };
     }
 

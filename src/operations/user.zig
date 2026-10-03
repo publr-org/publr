@@ -48,6 +48,8 @@ pub const Link = struct { path: []const u8, expires_at: i64 };
 
 pub const Create = struct {
     pub const name = "user.create";
+    /// Never written to the logs.
+    pub const secret = .{"password"};
     pub const description = "Create a user; omit the password to get one generated, " ++
         "or ask for a set-password link instead";
     pub const details =
@@ -173,6 +175,8 @@ pub const PasswordLink = struct {
 
 pub const SetPassword = struct {
     pub const name = "user.set_password";
+    /// Never written to the logs.
+    pub const secret = .{ "token", "password" };
     pub const description = "Redeem a set-password link: sets the password, activates the " ++
         "account, signs out every session";
     pub const details =

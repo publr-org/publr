@@ -12,6 +12,8 @@ pub const session_id_len = store.sessions.id_len;
 
 pub const SignIn = struct {
     pub const name = "user.sign_in";
+    /// Never written to the logs.
+    pub const secret = .{"password"};
     pub const description = "Sign in with email and password; returns a session token";
     pub const details =
         \\Anyone may call it (no `--as`). Over HTTP this is `POST /api/auth/sign-in`, which
@@ -106,6 +108,8 @@ pub const SignIn = struct {
 
 pub const SignOut = struct {
     pub const name = "user.sign_out";
+    /// Never written to the logs.
+    pub const secret = .{"token"};
     pub const description = "Sign out: revoke a session token";
     pub const details =
         \\Anyone holding the token may call it; over HTTP this is `POST /api/auth/sign-out`

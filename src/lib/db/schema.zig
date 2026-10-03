@@ -26,6 +26,8 @@ pub const tables = [_][]const u8{
     "internal_record_values",
     "field_groups",
     "sandboxed_plugins",
+    "activity",
+    "errors",
 };
 
 pub fn apply(connection: *db.Db) db.Error!void {

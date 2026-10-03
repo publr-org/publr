@@ -25,6 +25,8 @@ const plugin_operations = @import("../operations/plugin.zig");
 const plugin_types = @import("../sdk/plugin/types.zig");
 const plugin_contracts = @import("../model/plugin_contracts.zig");
 const shapes = @import("../model/contract.zig");
+const activity = @import("../operations/activity.zig");
+const errors = @import("../operations/errors.zig");
 
 pub const native_plugins = contract.Merged(@import("native_plugins").all);
 
@@ -34,7 +36,8 @@ const core_operations = heartbeat.operations ++ project.operations ++ custom_fie
     role.operations ++
     content_type.operations ++
     record.operations ++ taxonomy.operations ++ term.operations ++ snapshot.operations ++
-    view.operations ++ plugin_operations.operations ++ internal.operations;
+    view.operations ++ plugin_operations.operations ++ internal.operations ++
+    activity.operations ++ errors.operations;
 const core_namespaces = [_]sdk.operation.Namespace{
     heartbeat.namespace,
     project.namespace,
@@ -52,6 +55,8 @@ const core_namespaces = [_]sdk.operation.Namespace{
     view.namespace,
     plugin_operations.namespace,
     internal.namespace,
+    activity.namespace,
+    errors.namespace,
 };
 
 /// The names no plugin may take: every core namespace, `app` (what an app's users call is
@@ -157,6 +162,7 @@ pub const registry: sdk.Registry = .{
     .schemas = native_plugins.merged_schemas,
     .roles = native_plugins.merged_roles,
     .bootstrap = &bootstrap,
+    .log = activity.log,
 };
 
 pub const SDK = sdk.SDK(registry);

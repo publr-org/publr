@@ -77,7 +77,7 @@ fn expect_structure(
             "--group", "profile", "--definition",  profile,
         },
         &.{ "--as-admin", "plugin", "add", "--file", module },
-        &.{ "--as-admin", "plugin", "enable", "--name", "postcard" },
+        &.{ "--as-admin", "plugin", "enable", "--names", "postcard" },
     };
 
     for (steps) |step| {

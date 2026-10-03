@@ -363,7 +363,7 @@ pub fn enable(request: *Request, response: *Response, ctx: *Context) Error!void 
     std.debug.assert(request.method() == .post);
 
     _ = registry.SDK.dispatch(&session.ctx, plugin_operations.Enable, .{
-        .name = name,
+        .names = &.{name},
         .content_access = chosen.scope,
         .types = chosen.types,
     }) catch |err| return admin.fail(session, err, back);

@@ -281,3 +281,39 @@ CREATE TABLE IF NOT EXISTS sandboxed_plugins (
     installed_at      INTEGER NOT NULL,
     updated_at        INTEGER NOT NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS activity (
+    id        INTEGER PRIMARY KEY,
+    at        INTEGER NOT NULL,
+    actor     TEXT NOT NULL,
+    app       TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    input     TEXT NOT NULL,
+    units     TEXT NOT NULL,
+    calls     TEXT NOT NULL
+) STRICT;
+
+CREATE TRIGGER IF NOT EXISTS activity_kept BEFORE UPDATE ON activity
+    BEGIN SELECT RAISE(ABORT, 'the activity log is append-only'); END;
+
+CREATE TRIGGER IF NOT EXISTS activity_never_removed BEFORE DELETE ON activity
+    BEGIN SELECT RAISE(ABORT, 'the activity log is append-only'); END;
+
+CREATE TABLE IF NOT EXISTS errors (
+    id        INTEGER PRIMARY KEY,
+    at        INTEGER NOT NULL,
+    actor     TEXT NOT NULL,
+    app       TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    input     TEXT NOT NULL,
+    calls     TEXT NOT NULL,
+    error     TEXT NOT NULL,
+    message   TEXT NOT NULL,
+    failed_in TEXT NOT NULL
+) STRICT;
+
+CREATE TRIGGER IF NOT EXISTS errors_kept BEFORE UPDATE ON errors
+    BEGIN SELECT RAISE(ABORT, 'the error log is append-only'); END;
+
+CREATE TRIGGER IF NOT EXISTS errors_never_removed BEFORE DELETE ON errors
+    BEGIN SELECT RAISE(ABORT, 'the error log is append-only'); END;

@@ -102,9 +102,11 @@ const Scenario = struct {
 
         std.debug.assert(!added.update);
 
-        return registry.SDK.dispatch(&enabling, plugin_operations.Enable, .{
-            .name = added.name,
+        const enabled = try registry.SDK.dispatch(&enabling, plugin_operations.Enable, .{
+            .names = &.{added.name},
         });
+
+        return enabled.plugins[0];
     }
 
     fn add(scenario: *Scenario, path: []const u8) !plugin_operations.Added {
@@ -289,9 +291,12 @@ test "disabled, a plugin runs nothing and keeps its grants; enabled again, it ru
     try std.testing.expect(!stopped.plugins[0].enabled);
     try std.testing.expectError(error.NotFound, scenario.call(admin, "greeter.count", "{}"));
 
-    const started = try scenario.by_name(plugin_operations.Enable);
+    var starting = scenario.ctx(.system);
+    const started = try registry.SDK.dispatch(&starting, plugin_operations.Enable, .{
+        .names = &.{"greeter"},
+    });
 
-    try std.testing.expect(started.enabled);
+    try std.testing.expect(started.plugins[0].enabled);
     try std.testing.expectEqual(0, try scenario.total(admin, "greeter.count", "{}"));
 }
 
@@ -520,7 +525,9 @@ test "a plugin that inserts at the front of a list keeps every entry" {
     var enabling = scenario.ctx(.system);
 
     std.debug.assert(!added.update);
-    _ = try registry.SDK.dispatch(&enabling, plugin_operations.Enable, .{ .name = added.name });
+    _ = try registry.SDK.dispatch(&enabling, plugin_operations.Enable, .{
+        .names = &.{added.name},
+    });
 
     // The rest move up with an overlapping copy: without `bulk_memory` the plugin build got
     // it wrong, and "carol, alice, alice" came back.

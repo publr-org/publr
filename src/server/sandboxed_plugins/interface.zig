@@ -153,6 +153,7 @@ fn find(context: *anyopaque, name: []const u8) ?sdk.sandboxed_plugins.Operation 
         .fields = declared.fields,
         .help = declared.help,
         .input = declared.input,
+        .secret = declared.secret,
         .sandboxed_plugin = target.sandboxed_plugin,
         .entry = target.entry,
     };

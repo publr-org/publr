@@ -463,7 +463,7 @@ const Project = struct {
 
         const added = try SDK.dispatch(&system, plugin_operations.Add, .{ .file = path });
 
-        _ = try SDK.dispatch(&system, plugin_operations.Enable, .{ .name = added.name });
+        _ = try SDK.dispatch(&system, plugin_operations.Enable, .{ .names = &.{added.name} });
     }
 
     pub fn deinit(project: *Project) void {

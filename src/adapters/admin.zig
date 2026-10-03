@@ -11,6 +11,7 @@ const top_bar = @import("admin/top_bar.zig");
 pub const app_scope = @import("admin/app_scope.zig");
 pub const auth_pages = @import("admin/auth.zig");
 const settings_pages = @import("admin/settings.zig");
+const activity_pages = @import("admin/activity.zig");
 const user_pages = @import("admin/users.zig");
 const structure_pages = @import("admin/structure.zig");
 const types_pages = @import("admin/types.zig");
@@ -76,7 +77,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 130 + client_files.names.len;
+pub const routes_count: u32 = 132 + client_files.names.len;
 const client_files = @import("../ui/client_files.zig");
 
 const styles_css = @embedFile("styles_css");
@@ -98,6 +99,8 @@ pub fn register(router: *http.Router) void {
     router.get("/admin/settings", &settings_pages.show);
     router.get("/admin/settings/system", &settings_pages.system);
     router.get("/admin/settings/system/currencies", &settings_pages.currencies_tab);
+    router.get("/admin/settings/activity", &activity_pages.show_activity);
+    router.get("/admin/settings/activity/errors", &activity_pages.show_errors);
     router.post("/admin/settings/system/currencies", &settings_pages.save_currencies);
     router.get("/admin/settings/users", &user_pages.list);
     router.get("/admin/settings/users/new", &user_pages.new_page);

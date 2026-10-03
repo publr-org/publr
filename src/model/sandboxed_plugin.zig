@@ -80,6 +80,8 @@ pub const Operation = struct {
     /// The shapes it takes and answers: its published contract.
     input: []const contract.Node = &.{},
     output: []const contract.Node = &.{},
+    /// Input fields never written to the logs.
+    secret: []const []const u8 = &.{},
 };
 
 /// Another plugin's operation as this plugin uses it: what it sends and what it reads.

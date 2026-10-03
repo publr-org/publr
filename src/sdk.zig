@@ -1,5 +1,6 @@
 const std = @import("std");
 const contract = @import("model/contract.zig");
+pub const trail = @import("sdk/trail.zig");
 pub const db = @import("lib/db.zig");
 
 pub const dependencies = @import("sdk/dependencies.zig");
@@ -46,6 +47,8 @@ pub const Registry = struct {
     roles: []const role.Role = &role.core,
     /// Runs as the system once the schema is applied: declared content types and the like.
     bootstrap: ?*const fn (*Ctx) Error!void = null,
+    /// Where top-level calls are logged, done or refused; none keeps no log.
+    log: ?trail.Log = null,
 };
 
 pub const schemas_max: u32 = 64;
@@ -104,11 +107,14 @@ pub fn SDK(comptime registry: Registry) type {
             const started = std.Io.Clock.awake.now(ctx.io);
 
             const notify = ctx.notify;
+            var trail_state: trail.Trail = .{ .root = operation_id };
+            const opened = trail_open(ctx, &trail_state);
 
             ctx.parent = operation_id;
             ctx.notify = &emit_notice;
             defer ctx.parent = parent;
             defer ctx.notify = notify;
+            defer trail_close(ctx, opened);
 
             const granted = admit(ctx, Operation, in) catch |err| {
                 emit(ctx, .{ .rejected = .{
@@ -116,6 +122,9 @@ pub fn SDK(comptime registry: Registry) type {
                     .operation_id = operation_id,
                     .err = err,
                 } });
+                const secret = comptime trail.secret_of(Operation);
+
+                log_failure(ctx, Operation.name, input_text(ctx, in), secret, err);
                 return err;
             };
 
@@ -149,9 +158,102 @@ pub fn SDK(comptime registry: Registry) type {
                     .operation_id = operation_id,
                     .err = err,
                 } });
+                const secret = comptime trail.secret_of(Operation);
+
+                log_failure(ctx, Operation.name, input_text(ctx, in), secret, err);
             }
 
             return result;
+        }
+
+        /// A top-level call carries a trail while the registry keeps a log; inner calls add
+        /// to it. Answers whether this call opened it.
+        pub fn trail_open(ctx: *Ctx, state: *trail.Trail) bool {
+            std.debug.assert(state.root != 0);
+
+            if (registry.log == null or ctx.trail != null) {
+                return false;
+            }
+
+            ctx.trail = state;
+
+            return true;
+        }
+
+        pub fn trail_close(ctx: *Ctx, opened: bool) void {
+            std.debug.assert(!opened or ctx.trail != null);
+
+            if (opened) {
+                ctx.trail = null;
+            }
+        }
+
+        /// Whether the call running now is the top-level one its trail was opened for.
+        fn at_top(ctx: *Ctx) bool {
+            std.debug.assert(ctx.parent != null);
+
+            const open = ctx.trail orelse return false;
+
+            return open.root == ctx.parent.?;
+        }
+
+        /// The input as JSON for the log; empty when it cannot be written.
+        fn input_text(ctx: *Ctx, in: anytype) []const u8 {
+            std.debug.assert(ctx.now_ms >= 0);
+
+            if (registry.log == null) {
+                return "";
+            }
+
+            return std.json.Stringify.valueAlloc(ctx.arena, in, .{}) catch "";
+        }
+
+        /// A top-level write about to commit: its activity entry, in its transaction.
+        pub fn log_activity(
+            ctx: *Ctx,
+            name: []const u8,
+            input: []const u8,
+            secret: []const []const u8,
+        ) Error!void {
+            std.debug.assert(name.len > 0);
+
+            const log = registry.log orelse return;
+
+            if (!at_top(ctx)) {
+                return;
+            }
+
+            const entry = ctx.trail.?.entry(name, input, secret);
+
+            try log.activity(ctx, &entry);
+        }
+
+        /// A top-level call refused or failed, after its rollback: its error entry.
+        pub fn log_failure(
+            ctx: *Ctx,
+            name: []const u8,
+            input: []const u8,
+            secret: []const []const u8,
+            err: anyerror,
+        ) void {
+            std.debug.assert(name.len > 0);
+
+            const log = registry.log orelse return;
+
+            if (!at_top(ctx)) {
+                return;
+            }
+
+            var entry = ctx.trail.?.entry(name, input, secret);
+            const own = if (err == error.Failed) ctx.failure else null;
+
+            entry.error_name = @errorName(err);
+
+            if (entry.failed_in.len == 0) {
+                entry.message = if (own) |failure| failure.message else "";
+            }
+
+            log.failure(ctx, &entry);
         }
 
         fn admit(ctx: *Ctx, comptime Operation: type, in: Operation.In) Error!Grant {
@@ -339,6 +441,12 @@ pub fn SDK(comptime registry: Registry) type {
 
             if (ctx.dependency_failure) {
                 return error.InvalidationFailed;
+            }
+
+            if (registry.log != null and at_top(ctx)) {
+                const secret = comptime trail.secret_of(Operation);
+
+                try log_activity(ctx, Operation.name, input_text(ctx, in), secret);
             }
 
             try transaction.commit();
@@ -571,6 +679,24 @@ pub fn SDK(comptime registry: Registry) type {
             });
         }
 
+        /// An inner call's end or a notice, kept on the top-level call's trail.
+        fn follow(ctx: *Ctx, open: *trail.Trail, event: Event) void {
+            std.debug.assert(open.root != 0);
+
+            switch (event) {
+                .completed => |done| if (done.operation_id != open.root) {
+                    open.called(ctx, done.operation_name, false);
+                },
+                .rejected, .failed => |failed| if (failed.operation_id != open.root) {
+                    open.called(ctx, failed.operation_name, true);
+                },
+                .notice => |notice| open.noticed(ctx, .{
+                    .name = notice.name,
+                    .subject = notice.subject,
+                }),
+            }
+        }
+
         pub fn emit_notice(ctx: *Ctx, notice: Event.Notice) void {
             std.debug.assert(notice.name.len > 0);
             std.debug.assert(notice.operation_id != 0);
@@ -580,6 +706,10 @@ pub fn SDK(comptime registry: Registry) type {
         pub fn emit(ctx: *Ctx, event: Event) void {
             std.debug.assert(ctx.next_operation_id > 1);
             std.debug.assert(registry.middleware.len <= middleware.middleware_max);
+
+            if (ctx.trail) |open| {
+                follow(ctx, open, event);
+            }
 
             if (ctx.sandboxed_plugins) |sandboxed| {
                 sandboxed.event(ctx, event);

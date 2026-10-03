@@ -34,7 +34,7 @@ pub fn expect_sandboxed_plugins(
     std.debug.assert(std.fs.path.isAbsolute(module));
 
     const add = [_][]const u8{ "--as-admin", "plugin", "add", "--file", module };
-    const enable = [_][]const u8{ "--as-admin", "plugin", "enable", "--name", "greeter" };
+    const enable = [_][]const u8{ "--as-admin", "plugin", "enable", "--names", "greeter" };
     const greet = [_][]const u8{ "--as-admin", "greeter", "greet", "--note", "smoke" };
     const anonymous = [_][]const u8{ "greeter", "count" };
     const list = [_][]const u8{ "--as-admin", "plugin", "list" };

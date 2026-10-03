@@ -193,43 +193,54 @@ pub const Add = struct {
 
 pub const Enable = struct {
     pub const name = "plugin.enable";
-    pub const description = "Start a plugin: low and medium granted, high pending";
+    pub const description = "Start plugins: low and medium granted, high pending";
     pub const details =
-        \\Refused while a plugin it depends on is missing, or when a content type it declares
-        \\belongs to someone else. Its content types are created; it is granted what it asks
-        \\for at the low and medium tiers (what it held before, if disabled, stays).
-        \\`content_access` is `public` (the default), `all`, or `specific` with `types`.
+        \\One or several at once, all or none. Refused while a plugin one depends on is not
+        \\running and not among them: the refusal names it and the command that starts them
+        \\together. Refused too when a content type one declares belongs to someone else.
+        \\Their content types are created; each is granted what it asks for at the low and
+        \\medium tiers (what it held before, if disabled, stays). `content_access` applies
+        \\to each: `public` (the default), `all`, or `specific` with `types`.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
-        name: []const u8,
+        names: []const []const u8,
         content_access: state.Scope = .public,
         types: []const []const u8 = &.{},
     };
-    pub const Out = Detail;
-    pub const example: In = .{ .name = "farewell" };
-    pub const example_out: Out = views.example_enabled;
+    pub const Out = struct { plugins: []const Detail };
+    pub const rules: sdk.operation.Rules(In) = .{
+        .names = .{ .items_min = 1, .items_max = dependents.together_max },
+        .types = .{ .items_max = 64 },
+    };
+    pub const example: In = .{ .names = &.{"farewell"} };
+    pub const example_out: Out = .{ .plugins = &.{views.example_enabled} };
     pub const field_docs: sdk.operation.Docs(In) = .{
-        .name = "The plugin's name",
+        .names = "The plugins' names, what they depend on among them",
         .content_access = "`public`, `all` or `specific`",
         .types = "With `specific`: the content types, by handle",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .plugins = "Each plugin as it is after",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        if (in.types.len > 64) {
-            return error.Invalid;
-        }
+        try dependents.refuse_missing_parents(ctx, in.names);
 
         const access: ContentAccess = .{ .scope = in.content_access, .types = in.types };
+        const shown = ctx.arena.alloc(Detail, in.names.len) catch return error.OutOfMemory;
 
-        const enabled = try lifecycle.enable(ctx, in.name, access);
+        for (in.names, shown) |plugin_name, *detail| {
+            const enabled = try lifecycle.enable(ctx, plugin_name, access);
 
-        ctx.notice("plugin.enabled", in.name);
+            ctx.notice("plugin.enabled", plugin_name);
+            detail.* = try detail_of(ctx, enabled);
+        }
 
-        return detail_of(ctx, enabled);
+        return .{ .plugins = shown };
     }
 };
 

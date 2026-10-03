@@ -20,7 +20,7 @@ to enable it, or to update it.
 | `plugin get --name <n>` | Every request with its tier and state, the content access, the versions |
 | `plugin add --file <path>` | Add a module from this machine (`--as-admin` only); a new plugin, or the next version of one |
 | `plugin upload --file <name> --data <base64> [--offset <n>] [--last false]` | Add a module sent a piece at a time: what the admin's Upload plugin button sends |
-| `plugin enable --name <n> [--content_access public\|all\|specific] [--types <t,...>]` | Start it: its content types created, low and medium granted, high pending |
+| `plugin enable --names <a,b> [--content_access public\|all\|specific] [--types <t,...>]` | Start one or several: their content types created, low and medium granted, high pending. Refused while one depends on a plugin that is not running and not among them, naming the command that starts them together |
 | `plugin disable --names <a,b>` | Stop one or several; their grants, content types and records stay. Refused while an enabled plugin depends on one, naming it and the command that stops them together |
 | `plugin update --name <n>` | Apply the next version, granting what it asks for; the current one is kept |
 | `plugin rollback --name <n>` | Go back to the version the last update replaced |
@@ -39,8 +39,8 @@ the plugin runs without it.
 ```
 $ publr --as-admin plugin add --file ./zig-out/sandboxed-plugins/greeter.wasm
 { "name": "greeter", "version": "0.1.0", "update": false }
-$ publr --as-admin plugin enable --name greeter
-{ "name": "greeter", "active": true, "requests": [ { "key": "users.names", "state": "granted", … } ], … }
+$ publr --as-admin plugin enable --names greeter
+{ "plugins": [ { "name": "greeter", "enabled": true, "requests": [ { "key": "users.names", "state": "granted", … } ], … } ] }
 $ publr --as-admin greeter greet --note hello
 { "total": 1 }
 $ publr --as-admin plugin add --file ./greeter-0.2.0.wasm

@@ -41,6 +41,8 @@ pub const Ctx = struct {
     now_ms: i64,
     next_operation_id: OperationId = 1,
     notify: ?Notify = null,
+    /// The top-level call's trail, for the activity and error logs (`sdk/trail.zig`).
+    trail: ?*@import("trail.zig").Trail = null,
     /// The installed plugins installed in the project: their operations and hooks.
     sandboxed_plugins: ?*const @import("sandboxed_plugins.zig").SandboxedPlugins = null,
     /// Every compiled-in plugin's `State` (`publr.plugin_states.of`), where a server made them.

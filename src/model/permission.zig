@@ -223,7 +223,8 @@ pub const never = [_][]const u8{
     "identity.configure", "identity.status",    "identity.link",          "identity.unlink",
     "identity.list",      "identity.providers", "project.init",           "role.list",
     "view.list",          "view.get",           "view.create",            "view.update",
-    "view.delete",        "project.move_app",   "project.set_currencies",
+    "view.delete",        "project.move_app",   "project.set_currencies", "activity.list",
+    "errors.list",
 };
 
 /// A secret a plugin names is its own permission, `secret.<NAME>`, always high.

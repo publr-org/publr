@@ -78,6 +78,8 @@ pub const Recall = struct {
 
 pub const Greet = struct {
     pub const name = "greeter.greet";
+    /// Kept out of the logs, so the sandbox carries a plugin's own secrets.
+    pub const secret = .{"note"};
     pub const description = "Record a greeting and count them";
     pub const details =
         \\Editors and administrators may call it. The greeting is a record of the plugin's

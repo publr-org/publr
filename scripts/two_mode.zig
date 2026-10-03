@@ -114,15 +114,16 @@ fn install(init: std.process.Init, binary: []const u8, dir: []const u8, module: 
         .ignore_unknown_fields = true,
     })).name;
     const enabled = try expect_ok(init, binary, dir, &.{
-        "--as-admin", "plugin", "enable", "--name", name, "--content_access", "all",
+        "--as-admin", "plugin", "enable", "--names", name, "--content_access", "all",
     });
     const Request = struct { key: []const u8, state: []const u8 };
-    const Enabled = struct { requests: []const Request };
+    const Plugin = struct { requests: []const Request };
+    const Enabled = struct { plugins: []const Plugin };
     const parsed = try std.json.parseFromSliceLeaky(Enabled, arena, enabled, .{
         .ignore_unknown_fields = true,
     });
 
-    for (parsed.requests) |request| {
+    for (parsed.plugins[0].requests) |request| {
         if (!std.mem.eql(u8, request.state, "granted")) {
             _ = try expect_ok(init, binary, dir, &.{
                 "--as-admin", "plugin", "grant", "--name", name, "--key", request.key,

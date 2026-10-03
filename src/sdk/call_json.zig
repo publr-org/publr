@@ -62,7 +62,10 @@ fn dispatch(
     const parent = ctx.parent;
     const notify = ctx.notify;
     const within = ctx.within;
+    var trail_state: @import("trail.zig").Trail = .{ .root = operation_id };
+    const opened = SDK.trail_open(ctx, &trail_state);
 
+    defer SDK.trail_close(ctx, opened);
     ctx.parent = operation_id;
     ctx.notify = &SDK.emit_notice;
     ctx.plugin_depth += 1;
@@ -77,6 +80,7 @@ fn dispatch(
             .operation_id = operation_id,
             .err = err,
         } });
+        SDK.log_failure(ctx, found.name, input, found.secret, err);
 
         return err;
     };
@@ -97,6 +101,7 @@ fn dispatch(
             .operation_id = operation_id,
             .err = err,
         } });
+        SDK.log_failure(ctx, found.name, input, found.secret, err);
     }
 
     return result;
@@ -159,6 +164,7 @@ fn run(
         return error.InvalidationFailed;
     }
 
+    try SDK.log_activity(ctx, found.name, input, found.secret);
     try transaction.commit();
 
     return output;

@@ -105,6 +105,10 @@ pub const Sign = struct {
   each input field's bounds (`min`/`max`, `min_len`/`max_len`, `items_min`/`items_max`,
   `preset`, `pattern`); core refuses a call that breaks them before your code runs, saying
   which field, and `--help` shows them.
+- **Declare secrets.** `pub const secret = .{"password"}` lists the input fields that
+  hold one. Core logs every call's input (`publr activity list`, `publr errors list`)
+  with them replaced by `•`; a field named like a secret (`password`, `token`, `secret`,
+  `*_key`) is masked even undeclared, but declare it anyway.
 - **Document everything.** Every namespace, operation and field gets its text: an
   operation its `description`, `details` (who may call it, what it changes, how it fails),
   `example`, `example_out` and `field_docs`. `publr <namespace> --help` shows them to the

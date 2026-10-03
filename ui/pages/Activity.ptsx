@@ -1,0 +1,90 @@
+import { Layout } from "../layouts/Layout.ptsx";
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+
+export type ActivityProps = {
+  user_name: string;
+  user_email: string;
+  /** The rail sections the viewer may open besides Content: set by the server from what
+   * the viewer's roles grant. */
+  can_structure?: boolean;
+  can_settings?: boolean;
+  top_bar?: JSX.Element;
+  csrf: string;
+  nav: JSX.Element;
+  /** The log shown: `activity`, or `errors`. */
+  tab: string;
+  /** The entries, newest first. */
+  entries: Array<{
+    /** When, as `YYYY-MM-DD HH:MM:SS` UTC. */
+    when: string;
+    who: string;
+    operation: string;
+    /** What it changed and set off, or the error and its message. */
+    what: string;
+    /** The input as sent, secrets masked. */
+    input: string;
+  }>;
+  /** The next page back, or empty at the oldest. */
+  older_href: string;
+};
+
+/** The two logs, read only: what was done, and what was refused or failed. */
+export function Activity({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, tab, entries, older_href }: ActivityProps) {
+  return (
+    <Layout title="Activity" section="settings" sidebar={nav}
+      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
+      <div class="px-8 pt-7 pb-6">
+        <PageHeader title="Activity" description="Everything done and everything refused, kept for good. Nothing here can be changed." />
+      </div>
+      <div class="border-y border-border px-8 py-2">
+        <TabNav label="Logs">
+          <TabNavLink href="/admin/settings/activity" active={tab === "activity"}>Activity</TabNavLink>
+          <TabNavLink href="/admin/settings/activity/errors" active={tab === "errors"}>Errors</TabNavLink>
+        </TabNav>
+      </div>
+      {entries.length === 0 && (
+        <div class="px-8 py-6">
+          <Text variant="body-md" tone="muted">{tab === "errors" ? "Nothing has been refused or failed." : "Nothing has been done yet."}</Text>
+        </div>
+      )}
+      {entries.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>When</TableHead>
+              <TableHead>Who</TableHead>
+              <TableHead>Operation</TableHead>
+              <TableHead>{tab === "errors" ? "Error" : "Changed"}</TableHead>
+              <TableHead>Input</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entries.map((entry) => (
+              <TableRow>
+                <TableCell><Text variant="body-sm" tone="muted">{entry.when}</Text></TableCell>
+                <TableCell><Text variant="body-sm">{entry.who}</Text></TableCell>
+                <TableCell><Code>{entry.operation}</Code></TableCell>
+                <TableCell><Text variant="body-sm">{entry.what}</Text></TableCell>
+                <TableCell><Code classes="break-all">{entry.input}</Code></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      {older_href !== "" && (
+        <div class="border-t border-border px-8 py-4"><Button href={older_href} hierarchy="secondary" size="sm">Older</Button></div>
+      )}
+    </Layout>
+  );
+}

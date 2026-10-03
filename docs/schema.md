@@ -404,6 +404,50 @@ removes its snapshots.
 
 Primary key `(record, seq)`; index `snapshots_kind (record, kind, seq)`.
 
+## `activity`
+
+What was done: one row per top-level write that completed, appended in the write's own
+transaction (a rolled-back write leaves none). The calls it set off inside are listed in
+it, not rows of their own. Append-only: triggers refuse every `UPDATE` and `DELETE`, so a
+rollback, revert or merge in Cloud is a row of its own, never a change to these. Kept
+forever; no index beyond the id, which is the order things happened. Inputs are stored
+with secrets masked (`model/secret.zig`). Read with `activity list`.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | integer | Increasing: the order things happened |
+| `at` | integer | When, milliseconds |
+| `actor` | text | A user id, `system`, `anonymous`, `plugin:<name>`, `token:<id>` |
+| `app` | text | The app it came through, empty for none |
+| `operation` | text | `plugin.disable`, `record.save` |
+| `input` | text | The input as JSON, secrets replaced by `•` |
+| `units` | text | JSON array of what it changed: `record:<id>`, `plugin:<name>` |
+| `calls` | text | JSON array of the operations it set off inside, in order |
+
+Triggers `activity_kept`, `activity_never_removed`.
+
+## `errors`
+
+What was refused or failed: one row per top-level call that was denied, given invalid
+input, refused (a dependency, a contract) or failed, reads included. Written after the
+call's rollback, in a transaction of its own. Append-only and kept forever like
+`activity`. Read with `errors list`.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | integer | Increasing: the order things happened |
+| `at` | integer | When, milliseconds |
+| `actor` | text | Who called, as in `activity` |
+| `app` | text | The app it came through, empty for none |
+| `operation` | text | The top-level operation |
+| `input` | text | The input as JSON, secrets replaced by `•` |
+| `calls` | text | JSON array of the operations it set off inside before failing |
+| `error` | text | The error's name: `Denied`, `Invalid`, `Failed` |
+| `message` | text | What went wrong, in words, when there is a message |
+| `failed_in` | text | The inner operation the failure came from; empty when its own |
+
+Triggers `errors_kept`, `errors_never_removed`.
+
 ## `taxonomies`
 
 The schemas of terms, exactly as `content_types` are the schemas of records:

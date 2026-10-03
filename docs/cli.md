@@ -175,6 +175,8 @@ runnable example.
 | [`status`](cli/status.md) | The lifecycle states a record can be in |
 | [`snapshot`](cli/snapshot.md) | Frozen copies of records: revisions and other archives |
 | [`view`](cli/view.md) | Saved views: the content list's filters, named and kept per user |
+| [`activity`](cli/activity.md) | What was done: every completed write, kept forever |
+| [`errors`](cli/activity.md) | What was refused or failed, kept forever |
 | [`internal`](cli/internal.md) | A plugin's internal records: what it keeps for itself, never content |
 | [`plugin`](cli/plugin.md) | Installed plugins: install from a file, grant, update, remove |
 

@@ -29,6 +29,8 @@ pub const setup_key = "project.initialised_at";
 
 pub const Init = struct {
     pub const name = "project.init";
+    /// Never written to the logs.
+    pub const secret = .{"password"};
     pub const description = "Set up a fresh installation: creates the first admin, exactly once";
     pub const details =
         \\Run this once, right after the first `serve` (or before). It creates the first

@@ -34,6 +34,8 @@ pub const operations = [_]type{ Configure, Status, Redeem };
 
 pub const Configure = struct {
     pub const name = "sign_on.configure";
+    /// Never written to the logs.
+    pub const secret = .{"public_key"};
     pub const description = "Trust an issuer to sign people in to this site";
     pub const details =
         \\Administrators only. `issuer` is the issuer's address (`https://publr.app`),
@@ -111,6 +113,8 @@ pub const Status = struct {
 
 pub const Redeem = struct {
     pub const name = "sign_on.redeem";
+    /// Never written to the logs.
+    pub const secret = .{"token"};
     pub const description = "Sign in with a token the trusted issuer signed";
     pub const details =
         \\Anyone may call it: the token is the credential. It must carry the issuer's
