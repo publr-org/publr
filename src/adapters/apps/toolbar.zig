@@ -14,6 +14,7 @@ const engine = @import("../../template.zig");
 const build = @import("build.zig");
 const Project = @import("../../server/project.zig").Project;
 const App = @import("state.zig").App;
+const model_app = @import("../../model/app.zig");
 
 const Request = http.Request;
 const Response = http.Response;
@@ -62,7 +63,8 @@ pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerr
         return response.json(.ok, Answer{ .signed_in = false });
     }
 
-    const path = http.Form.query_param(ctx.arena, request.query(), "path") orelse "/";
+    const shown = http.Form.query_param(ctx.arena, request.query(), "path") orelse "/";
+    const path = model_app.without_base(project.base, shown);
     var edit: ?Edit = null;
 
     if (path.len > 0 and path.len <= path_len_max and path[0] == '/') {
@@ -78,6 +80,7 @@ pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerr
     return response.json(.ok, Answer{
         .signed_in = true,
         .name = if (identity.display_name.len > 0) identity.display_name else identity.email,
+        .admin = try std.fmt.allocPrint(ctx.arena, "{s}{s}", .{ project.base, admin_path }),
         .edit = if (edit) |found| found.url else null,
         .edit_label = if (edit) |found| found.label else "",
     });
@@ -123,7 +126,10 @@ fn edit_link(
     }
 
     return .{
-        .url = try std.fmt.allocPrint(arena, "/admin/content/{s}", .{listed.records[0].id}),
+        .url = try std.fmt.allocPrint(arena, "{s}/admin/content/{s}", .{
+            project.base,
+            listed.records[0].id,
+        }),
         .label = try label_of(&sdk_ctx, query.type_id),
     };
 }

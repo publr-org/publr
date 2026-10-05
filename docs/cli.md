@@ -21,7 +21,7 @@ The database is `data/publr.db` by default and is created on first use.
 
 ```
 publr [--db <path>] serve [--port <n>] [--static [--full]] [--dev] [--out <dir>] [--url <base>]
-                          [--apps <dir>]
+                          [--apps <dir>] [--idle-stop <s>]
 ```
 
 Starts the HTTP server on `127.0.0.1` and runs until the process is stopped.
@@ -37,7 +37,8 @@ the next free one (at most 20 tries) and prints the port it took. With
 | `--full` | With `--static`: build every page again. |
 | `--dev` | Render every page on request, cache nothing, tint every island. |
 | `--out <dir>` | The built apps to serve when they exist, one folder each (default `output`). |
-| `--url <base>` | The project's public address: the apps' sitemaps, and the domain subdomain apps hang from (default `http://127.0.0.1:8080`). |
+| `--idle-stop <s>` | Stop after this many seconds without a request (default: never): a server started on demand that goes away when nobody uses it. |
+| `--url <base>` | The project's public address: the apps' sitemaps, and the domain subdomain apps hang from (default `http://127.0.0.1:8080`). A path in it (`https://example.com/site`) is where the whole project is served: requests are answered under it, and every address it sends back (pages, assets, redirects, cookies) carries it. |
 | `--apps <dir>` | Where each app's public files are read from, `<dir>/<folder>/public` (default `apps`). |
 
 ## Building

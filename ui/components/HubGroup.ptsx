@@ -1,0 +1,19 @@
+import { Heading } from "@publr/ui/Heading.ptsx";
+
+export type HubGroupProps = {
+  title: string;
+  /** The group's cards (LinkCard). */
+  children?: JSX.Element;
+};
+
+/** A titled group of smaller cards on a HubPage, under its main ones. */
+export function HubGroup({ title, children }: HubGroupProps) {
+  return (
+    <section class="flex flex-col gap-4">
+      <Heading level={2} size="sm" tone="muted">
+        {title}
+      </Heading>
+      <div class="grid gap-4 sm:grid-cols-2">{children}</div>
+    </section>
+  );
+}

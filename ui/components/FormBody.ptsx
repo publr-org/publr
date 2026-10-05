@@ -1,0 +1,91 @@
+import { EditorAside } from "./EditorAside.ptsx";
+import { EditorAsideSection } from "./EditorAsideSection.ptsx";
+import { IndexHeader } from "./IndexHeader.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+
+export type FormBodyProps = {
+  title: string;
+  description?: string;
+  /** Actions about the page rather than the form: open something, switch something. */
+  actions?: JSX.Element;
+  /** A header of the page's own instead of the title band: the record editor's, which
+   * carries a drawer's back and close. */
+  header?: JSX.Element;
+  /** A row of facts under the title: a status, when it was saved. */
+  meta?: JSX.Element;
+  /** What stopped the last save: what each is about (a field's path) and what is wrong. */
+  problems?: Array<{ code: string; text: string }>;
+  problems_title?: string;
+  /** A notice above the form: why part of it cannot change. */
+  notice?: JSX.Element;
+  /** The aside's sections (EditorAsideSection): the save first, then what is known. */
+  aside?: JSX.Element;
+  /** What cannot be undone, last in the aside; each opens a confirm. */
+  danger?: JSX.Element;
+  /** An aside of the page's own (the record editor's actions) instead of `aside`. */
+  side?: JSX.Element;
+  /** Centred in the sheet: a record, edited in focus. Everything else sits at the gutter. */
+  focus?: boolean;
+  /** Drawn inside a drawer, which scrolls on its own. */
+  in_drawer?: boolean;
+  /** The column alone: a preview of a form, no title, no aside. */
+  bare?: boolean;
+  /** The form, or what is shown of the one thing. */
+  children?: JSX.Element;
+};
+
+/** The body of a page about one thing: the title band, an optional facts band, then the
+ * column (problems, a notice, the form) at one width, beside the aside with the save,
+ * the details and the danger zone. FormPage puts it in the chrome; the record editor
+ * draws it in a drawer too. */
+export function FormBody({
+  title,
+  description,
+  actions,
+  header,
+  meta,
+  problems = [],
+  problems_title = "This was not saved.",
+  notice,
+  aside,
+  danger,
+  side,
+  focus = false,
+  in_drawer = false,
+  bare = false,
+  children,
+}: FormBodyProps) {
+  return (
+    <div class="flex grow items-stretch" data-part="form-body">
+      <div class={["min-w-0 flex-1", bare ? "py-7" : "pb-10"]}>
+        {!bare && header}
+        {!bare && !header && (
+          <IndexHeader title={title} description={description} actions={actions} />
+        )}
+        {!bare && meta && (
+          <div class="flex min-h-12 flex-wrap items-center gap-3 border-y border-border px-8 py-2.5">
+            {meta}
+          </div>
+        )}
+        <div class={["flex w-full max-w-4xl flex-col gap-6 px-8", focus ? "mx-auto" : "", meta ? "pt-6" : ""]}>
+          {problems.length > 0 && (
+            <Callout
+              tone="error"
+              title={problems_title}
+              items={problems}
+            />
+          )}
+          {notice}
+          {children}
+        </div>
+      </div>
+      {!bare && side}
+      {!bare && !side && (aside || danger) && (
+        <EditorAside in_drawer={in_drawer}>
+          {aside}
+          {danger && <EditorAsideSection title="Danger zone">{danger}</EditorAsideSection>}
+        </EditorAside>
+      )}
+    </div>
+  );
+}

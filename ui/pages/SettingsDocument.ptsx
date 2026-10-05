@@ -1,41 +1,40 @@
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
-import { Button } from "@publr/ui/Button.ptsx";
-import { Text } from "@publr/ui/Text.ptsx";
-import { Layout } from "../layouts/Layout.ptsx";
-import { EditorColumn } from "../components/EditorColumn.ptsx";
+import { FormPage } from "../layouts/FormPage.ptsx";
 import { ReferenceDrawer } from "../components/ReferenceDrawer.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
 
 export type SettingsDocumentProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
   title: string;
-  nav: JSX.Element;
   description: string;
   has_fields: boolean;
   schema_href: string;
+  /** The section's values in the record editor (RecordEditor), drawn by the adapter. */
   editor: JSX.Element;
 };
 
-export function SettingsDocument({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, title, nav, editor, description, has_fields, schema_href }: SettingsDocumentProps) {
+/** One settings section of the site: its values in the record editor, or, before its
+ * fields are defined, the way to define them. */
+export function SettingsDocument({ title, description, has_fields, schema_href, editor }: SettingsDocumentProps) {
   return (
-    <Layout title={title} section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      {has_fields ? editor : (
-        <EditorColumn>
-          <PageHeader title={title} description={description} />
-          <p class="mt-6">
-            <Text variant="body-md" tone="muted">This section has no fields yet. Define its fields in Structure to start configuring it.</Text>
-          </p>
-          <div class="mt-6"><Button href={schema_href}>Define fields</Button></div>
-        </EditorColumn>
-      )}
-      <ReferenceDrawer />
-    </Layout>
+    <FormPage
+      title={title}
+      description={description}
+      actions={!has_fields && <Button href={schema_href}>Define fields</Button>}
+      editor={
+        has_fields && (
+          <div class="contents">
+            {editor}
+            <ReferenceDrawer />
+          </div>
+        )
+      }
+    >
+      <Empty compact>
+        <EmptyTitle>No fields yet</EmptyTitle>
+        <EmptyDescription>Define its fields in Structure to start configuring it.</EmptyDescription>
+      </Empty>
+    </FormPage>
   );
 }

@@ -8,6 +8,9 @@ export type SettingsNavProps = {
   system_active: boolean;
   users_active: boolean;
   plugins_active: boolean;
+  /** Structure sits below the users, for whoever may change structure. */
+  can_structure: boolean;
+  structure_active: boolean;
   /** The pages compiled-in plugins add, for whoever may use them. */
   pages: Array<{ label: string; href: string; icon: IconName; active: boolean }>;
   /** The settings sections defined under Structure, in their order. */
@@ -18,34 +21,42 @@ export function SettingsNav({
   system_active,
   users_active,
   plugins_active,
+  can_structure,
+  structure_active,
   pages,
   sections,
 }: SettingsNavProps) {
   return (
-    <div class="flex flex-col gap-0.5 pt-2">
+    <div class="flex flex-col pt-2">
       <SidebarNavItem href="/admin/settings/system" active={system_active}>
         <Icon name="settings" size="sm" classes="shrink-0" />
-        <Text as="span" variant="body-md">System settings</Text>
+        <Text as="span" variant="nav">System settings</Text>
       </SidebarNavItem>
       <SidebarNavItem href="/admin/settings/users" active={users_active}>
         <Icon name="users" size="sm" classes="shrink-0" />
-        <Text as="span" variant="body-md">Users</Text>
+        <Text as="span" variant="nav">Users</Text>
       </SidebarNavItem>
+      {can_structure && (
+        <SidebarNavItem href="/admin/structure" active={structure_active}>
+          <Icon name="components" size="sm" classes="shrink-0" />
+          <Text as="span" variant="nav">Structure</Text>
+        </SidebarNavItem>
+      )}
       <SidebarNavItem href="/admin/settings/plugins" active={plugins_active}>
         <Icon name="package" size="sm" classes="shrink-0" />
-        <Text as="span" variant="body-md">Plugins</Text>
+        <Text as="span" variant="nav">Plugins</Text>
       </SidebarNavItem>
 
       {pages.map((page) => (
         <SidebarNavItem href={page.href} active={page.active}>
           <Icon name={page.icon} size="sm" classes="shrink-0" />
-          <Text as="span" variant="body-md">{page.label}</Text>
+          <Text as="span" variant="nav">{page.label}</Text>
         </SidebarNavItem>
       ))}
       {sections.map((section) => (
         <SidebarNavItem href={section.href} active={section.active}>
           <Icon name="file" size="sm" classes="shrink-0" />
-          <Text as="span" variant="body-md">{section.label}</Text>
+          <Text as="span" variant="nav">{section.label}</Text>
         </SidebarNavItem>
       ))}
     </div>

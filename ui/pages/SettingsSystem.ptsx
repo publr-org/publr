@@ -1,5 +1,8 @@
-import { Layout } from "../layouts/Layout.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
@@ -13,15 +16,6 @@ import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
 import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 
 export type SettingsSystemProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
-  nav: JSX.Element;
   /** The section shown: `general`, or `currencies`. */
   tab: string;
   /** Whether the viewer may read the activity and error logs: the menu beside the tabs. */
@@ -48,19 +42,31 @@ export type SettingsSystemProps = {
 
 /** The system's own settings, a section per tab: general, and the currencies the site
  * prices in and how it writes them. */
-export function SettingsSystem({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, tab, can_logs = false, action, currencies, digits, notice = "", problem = "" }: SettingsSystemProps) {
+export function SettingsSystem({
+  tab,
+  can_logs = false,
+  action,
+  currencies,
+  digits,
+  notice = "",
+  problem = "",
+}: SettingsSystemProps) {
   return (
-    <Layout title="System settings" section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      <div class="px-8 pt-7 pb-6">
-        <PageHeader title="System settings" description="How this Publr runs, and the conventions the site follows." />
-      </div>
-      <div class="flex items-center justify-between gap-4 border-y border-border px-8 py-2">
+    <IndexPage
+      title="System settings"
+      description="How this Publr runs, and the conventions the site follows."
+      tabs={
         <TabNav label="System settings">
-          <TabNavLink href="/admin/settings/system" active={tab === "general"}>General</TabNavLink>
-          <TabNavLink href="/admin/settings/system/currencies" active={tab === "currencies"}>Currencies</TabNavLink>
+          <TabNavLink href="/admin/settings/system" active={tab === "general"}>
+            General
+          </TabNavLink>
+          <TabNavLink href="/admin/settings/system/currencies" active={tab === "currencies"}>
+            Currencies
+          </TabNavLink>
         </TabNav>
-        {can_logs && (
+      }
+      tab_menu={
+        can_logs && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" hierarchy="tertiary" size="sm" label="More" title="More">
@@ -72,31 +78,44 @@ export function SettingsSystem({ user_name, user_email, can_structure = true, ca
               <DropdownMenuItem href="/admin/settings/system/errors">Error log</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        )}
-      </div>
-      {tab === "general" && (
-        <div class="px-8 py-6">
-          <Text variant="body-md" tone="muted">
-            Nothing to configure here yet. The site's own settings live in the sections below Users.
-          </Text>
-        </div>
-      )}
-      {tab === "currencies" && (
-        <form method="post" action={action}>
-          <input type="hidden" name="csrf" value={csrf} />
-          <div class="flex flex-col gap-4 px-8 py-6">
-            <Text variant="body-md" tone="muted">
-              What money fields hold amounts in, and how pages write them. The default is the one pages show. A format uses {"{symbol}"}, {"{amount}"} and {"{code}"}.
+        )
+      }
+      notice={
+        tab === "currencies" && (
+          <div class="contents">
+            <Text as="p" variant="body-md" tone="muted">
+              What money fields hold amounts in, and how pages write them. The default is the one
+              pages show. A format uses {"{symbol}"}, {"{amount}"} and {"{code}"}.
             </Text>
-            {problem !== "" && <Callout tone="warning" title="Not saved"><Text variant="body-md">{problem}</Text></Callout>}
+            {problem !== "" && (
+              <Callout tone="error" title="Not saved">
+                {problem}
+              </Callout>
+            )}
             {notice !== "" && <Callout title={notice} />}
           </div>
-          <div class="border-t border-border">
-            <CurrencyTable rows={currencies} digits={digits} />
-          </div>
-          <div class="border-t border-border px-8 py-4"><Button type="submit">Save currencies</Button></div>
-        </form>
-      )}
-    </Layout>
+        )
+      }
+      empty={
+        tab === "general" && (
+          <Empty>
+            <EmptyTitle>Nothing to configure yet</EmptyTitle>
+            <EmptyDescription>The site's own settings live in the sections below Users.</EmptyDescription>
+          </Empty>
+        )
+      }
+      footer={
+        tab === "currencies" && (
+          <Button type="submit" form="currencies">
+            Save currencies
+          </Button>
+        )
+      }
+    >
+      <form id="currencies" method="post" action={action}>
+        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+        <CurrencyTable rows={currencies} digits={digits} />
+      </form>
+    </IndexPage>
   );
 }

@@ -14,4 +14,5 @@ pub const names = .{
     "operation-context",
     "query-cache",
     "ref",
+    "base",
 };

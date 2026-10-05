@@ -160,6 +160,110 @@ pub fn domain_of(base_url: []const u8) []const u8 {
     return without_port(host);
 }
 
+/// The path of the project's public address, which it is served under: `/environments/dev` of
+/// `https://ada.publr.app/environments/dev`; empty at the root.
+pub fn path_of(address: []const u8) []const u8 {
+    const scheme = std.mem.indexOf(u8, address, "://") orelse return "";
+    const rest = address[scheme + 3 ..];
+    const slash = std.mem.indexOfScalar(u8, rest, '/') orelse return "";
+    const path = std.mem.trimEnd(u8, rest[slash..], "/");
+
+    std.debug.assert(path.len == 0 or path[0] == '/');
+
+    return path;
+}
+
+test "the base is the path of the public address" {
+    const dev = "/environments/dev";
+
+    try std.testing.expectEqualStrings(dev, path_of("https://ada.publr.app/environments/dev"));
+    try std.testing.expectEqualStrings(dev, path_of("https://ada.publr.app/environments/dev/"));
+    try std.testing.expectEqualStrings("", path_of("https://ada.publr.app"));
+    try std.testing.expectEqualStrings("", path_of("https://ada.publr.app/"));
+    try std.testing.expectEqualStrings("", path_of("http://127.0.0.1:8080"));
+}
+
+/// Attributes whose value is an address the browser follows or loads.
+pub fn url_attribute(name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    const names = [_][]const u8{ "href", "src", "action", "formaction", "poster" };
+
+    for (names) |candidate| {
+        if (std.ascii.eqlIgnoreCase(name, candidate)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Whether a root path lacks the base the project is served under: never another host
+/// (`//…`), a full address, a fragment, or a path already at or under it. The same rule as
+/// the admin's renders (`rt.needs_base`) and the browser's (`Publr.url`).
+pub fn needs_base(base: []const u8, value: []const u8) bool {
+    std.debug.assert(base.len == 0 or base[0] == '/');
+
+    if (base.len == 0 or value.len == 0 or value[0] != '/') {
+        return false;
+    }
+
+    if (value.len > 1 and value[1] == '/') {
+        return false;
+    }
+
+    if (!std.mem.startsWith(u8, value, base)) {
+        return true;
+    }
+
+    const rest = value[base.len..];
+
+    return !(rest.len == 0 or rest[0] == '/' or rest[0] == '?' or rest[0] == '#');
+}
+
+test "a root path is written under the base, once" {
+    const base = "/environments/dev";
+
+    try std.testing.expect(needs_base(base, "/admin"));
+    try std.testing.expect(needs_base(base, "/environments/devx"));
+    try std.testing.expect(!needs_base(base, "/environments/dev/admin"));
+    try std.testing.expect(!needs_base(base, "/environments/dev?x=1"));
+    try std.testing.expect(!needs_base(base, "//cdn.example/a.js"));
+    try std.testing.expect(!needs_base(base, "https://example.com/"));
+    try std.testing.expect(!needs_base(base, "#top"));
+    try std.testing.expect(!needs_base("", "/admin"));
+    try std.testing.expect(url_attribute("HREF") and !url_attribute("data-href"));
+}
+
+/// A path the browser shows, without the base the project is served under:
+/// `/environments/dev/about` is `/about`. Anything outside the base as it is.
+pub fn without_base(base: []const u8, path: []const u8) []const u8 {
+    std.debug.assert(base.len == 0 or base[0] == '/');
+
+    if (base.len == 0 or !std.mem.startsWith(u8, path, base)) {
+        return path;
+    }
+
+    const rest = path[base.len..];
+
+    if (rest.len == 0) {
+        return "/";
+    }
+
+    return if (rest[0] == '/') rest else path;
+}
+
+test "a path the browser shows loses the base, and only the base" {
+    const base = "/environments/dev";
+
+    try std.testing.expectEqualStrings("/about", without_base(base, "/environments/dev/about"));
+    try std.testing.expectEqualStrings("/", without_base(base, "/environments/dev"));
+    const other = "/environments/devx";
+
+    try std.testing.expectEqualStrings(other, without_base(base, other));
+    try std.testing.expectEqualStrings("/about", without_base("", "/about"));
+}
+
 test "resolve: the subdomain first, then the longest path, the path seen from inside" {
     const mounts = [_]Mount{
         .{ .path = "/" },

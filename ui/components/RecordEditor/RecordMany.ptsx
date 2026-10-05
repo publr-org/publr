@@ -26,6 +26,7 @@ export type RecordManyProps = {
     card_status: string;
     card_tone: string;
     card_href: string;
+    delete_note?: string;
     remove: string;
     up: string;
     down: string;
@@ -86,6 +87,7 @@ export function RecordMany({
           card_status={item.card_status}
           card_tone={item.card_tone}
           card_href={item.card_href}
+          delete_note={item.delete_note}
           remove={item.remove}
           up={item.up}
           down={item.down}

@@ -4,6 +4,7 @@
 //! addresses differ.
 const std = @import("std");
 const admin = @import("../admin.zig");
+const settings_nav = @import("settings_nav.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const slugs = @import("../../lib/text.zig");
@@ -25,7 +26,7 @@ const Routed = views.TypeForm.Applies_routedItem;
 const Other = views.TypeForm.Applies_otherItem;
 
 pub const Domain = struct {
-    /// `/admin/types`, `/admin/taxonomies`.
+    /// `/admin/types`, `/admin/structure/taxonomies`.
     base: []const u8,
     /// `Content types`, `Taxonomies`.
     title: []const u8,
@@ -139,7 +140,7 @@ pub fn Pages(comptime domain: Domain) type {
                 const content_href = if (summary.kind == .component)
                     ""
                 else if (domain.is_taxonomy)
-                    href
+                    try print(session.arena, "{s}/terms", .{href})
                 else if (summary.kind == .settings)
                     try print(session.arena, "/admin/settings/{s}", .{summary.handle})
                 else
@@ -158,15 +159,7 @@ pub fn Pages(comptime domain: Domain) type {
                 }) catch return error.OutOfMemory;
             }
 
-            const shell = admin.shell_of(&session);
-
-            try admin.render.page(response, session.arena, .ok, views.Types, .{
-                .user_name = shell.user_name,
-                .user_email = shell.user_email,
-                .can_structure = shell.can_structure,
-                .can_settings = shell.can_settings,
-                .top_bar = shell.top_bar,
-                .csrf = shell.csrf,
+            try admin.screen(&session, .ok, views.Types, .{
                 .title = domain.title,
                 .new_href = back ++ "/new",
                 .new_label = "New " ++ domain.noun,
@@ -260,11 +253,15 @@ pub fn Pages(comptime domain: Domain) type {
                 try print(arena, "{s}/{s}/delete", .{ back, handle })
             else
                 null;
+            // A definition's own page: a taxonomy's terms, a type's fields.
             const back_href: ?[]const u8 = if (existing_handle) |handle|
-                try print(arena, "{s}/{s}", .{ back, handle })
+                try print(arena, "{s}/{s}{s}", .{
+                    back,
+                    handle,
+                    if (domain.is_taxonomy) "/terms" else "",
+                })
             else
                 null;
-            const shell = admin.shell_of(session);
             const errors = try head_errors(arena, problems);
             const limits = model.content_type;
             const applicable: Applicable = if (domain.is_taxonomy)
@@ -272,23 +269,21 @@ pub fn Pages(comptime domain: Domain) type {
             else
                 .{};
 
-            try admin.render.page(session.response, arena, .ok, views.TypeForm, .{
-                .user_name = shell.user_name,
-                .user_email = shell.user_email,
-                .can_structure = shell.can_structure,
-                .can_settings = shell.can_settings,
-                .top_bar = shell.top_bar,
-                .csrf = shell.csrf,
-                .title = if (is_new) "New " ++ domain.noun else def.name,
-                .crumb_label = domain.title,
-                .crumb_href = back,
+            const own_name: ?[]const u8 = if (back_href == null) null else def.name;
+            const parents = try parents_of(arena, .{
+                .label = domain.title,
+                .href = back,
+            }, own_name, back_href);
+
+            try admin.screen(session, .ok, views.TypeForm, .{
+                .title = if (is_new) "New " ++ domain.noun else "Settings",
+                .parents = parents,
+                .cancel_href = back_href orelse back,
                 .noun = domain.noun,
-                .back_label = if (domain.is_taxonomy) "Terms" else "Fields",
                 .action = action,
                 .is_new = is_new,
                 .choose_kind = domain.fixed_kind == null,
                 .problems = try problem_items(arena, errors.rest),
-                .back_href = back_href,
                 .system = def.system,
                 .owner = def.owner,
                 .handle = def.handle,
@@ -347,7 +342,12 @@ pub fn Pages(comptime domain: Domain) type {
             }) catch |err| {
                 return render_form(session, def, null, try problems_of(session, err, definition));
             };
-            const location = try print(session.arena, "{s}/{s}", .{ back, created.handle });
+            // A taxonomy goes on to its terms, a type to its fields.
+            const location = try print(session.arena, "{s}/{s}{s}", .{
+                back,
+                created.handle,
+                if (domain.is_taxonomy) "/terms" else "",
+            });
 
             try response.redirect(.see_other, location);
         }
@@ -584,6 +584,28 @@ fn head_errors(arena: std.mem.Allocator, problems: []const model.field.Problem) 
     return errors;
 }
 
+/// Structure, the definitions' list, and, for an existing one, its own page.
+fn parents_of(
+    arena: std.mem.Allocator,
+    list: views.TypeForm.ParentsItem,
+    name: ?[]const u8,
+    own_href: ?[]const u8,
+) Error![]const views.TypeForm.ParentsItem {
+    std.debug.assert(list.href.len > 0);
+    std.debug.assert((name == null) == (own_href == null));
+
+    const items = try arena.alloc(views.TypeForm.ParentsItem, if (name == null) 2 else 3);
+
+    items[0] = .{ .label = "Structure", .href = "/admin/structure" };
+    items[1] = list;
+
+    if (name) |own_name| {
+        items[2] = .{ .label = own_name, .href = own_href.? };
+    }
+
+    return items;
+}
+
 fn problem_items(
     arena: std.mem.Allocator,
     problems: []const model.field.Problem,
@@ -594,7 +616,7 @@ fn problem_items(
     const items = try arena.alloc(views.TypeForm.ProblemsItem, problems.len);
 
     for (problems, 0..) |problem, index| {
-        items[index] = .{ .path = problem.path, .message = problem.message };
+        items[index] = .{ .code = problem.path, .text = problem.message };
     }
 
     return items;

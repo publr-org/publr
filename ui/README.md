@@ -1,5 +1,19 @@
 # Admin components
 
+## Layouts
+
+Every page returns one layout from `layouts/` and fills its slots; `docs/admin.md` lists
+them. `Chrome` (rail, sidebar, crumbs, top bar) and `Document` (the HTML document) are
+drawn only by the layouts, from `Publr.request`, which the admin fills from the session
+(`ui/request.zig` is its shape). Their parts live in `components/`: `IndexHeader` (the
+title band), `IndexSection` (one of several lists, or a part of a form), `FormBody` (a
+FormPage's body, which the record editor also draws in drawers), `EditorAside` and
+`EditorAsideSection` (the aside), `ConfirmAction` (a danger zone's confirm), `HubGroup`.
+`render.page` refuses a page whose root is not a layout; `pjsx_gen` refuses the chrome
+outside the layouts and spacing on a page's top-level elements.
+
+## Parts
+
 Pages and adapters keep their existing props. The larger components coordinate
 their sections and pass props explicitly; their parts live in a directory with
 the parent's name.

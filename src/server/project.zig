@@ -26,6 +26,9 @@ pub const Project = struct {
     apps_failed: bool = false,
     /// The host the apps' subdomains hang from: the project's address without its port.
     domain: []const u8 = "",
+    /// The path the project is served under (`/environments/dev`, the path of `--url`);
+    /// empty at the root. Requests arrive without it; every address sent back carries it.
+    base: []const u8 = "",
     /// The apps as `serve` holds them, to load again when asked; null outside `serve`.
     apps_host: ?*@import("apps_host.zig").AppsHost = null,
     /// The key the CLI next to this server sends a command with (`operator.zig`); null when

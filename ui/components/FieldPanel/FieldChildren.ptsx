@@ -45,8 +45,8 @@ export function FieldChildren({ add_child_href, children, kind, csrf }: FieldChi
       </div>
       {children.length === 0 ? (
         <div class="mt-4">
-          <Empty>
-            <EmptyTitle>Nothing inside yet</EmptyTitle>
+          <Empty compact>
+            <EmptyTitle size="xs">Nothing inside yet</EmptyTitle>
             <EmptyDescription>
               {kind === "repeater"
                 ? "Each item repeats the fields you add here."

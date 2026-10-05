@@ -67,20 +67,10 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             .enable_href = try std.fmt.allocPrint(arena, "{s}/enable", .{base}),
             .update_href = try std.fmt.allocPrint(arena, "{s}/update", .{base}),
             .disable_action = try std.fmt.allocPrint(arena, "{s}/disable", .{base}),
-            .remove_action = try std.fmt.allocPrint(arena, "{s}/remove", .{base}),
         };
     }
 
-    const shell = admin.shell_of(&session);
-
-    try admin.render.page(response, arena, .ok, views.Plugins, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try settings_nav.node(&session, "plugins"),
+    try admin.screen(&session, .ok, views.Plugins, .{
         .tab = "installed",
         .built_in = &.{},
         .plugins = shown.items,
@@ -111,16 +101,7 @@ pub fn built_in(request: *Request, response: *Response, ctx: *Context) Error!voi
         };
     }
 
-    const shell = admin.shell_of(&session);
-
-    try admin.render.page(response, session.arena, .ok, views.Plugins, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try settings_nav.node(&session, "plugins"),
+    try admin.screen(&session, .ok, views.Plugins, .{
         .tab = "built_in",
         .built_in = &shown,
         .plugins = &.{},
@@ -181,16 +162,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         row.* = .{ .name = operation };
     }
 
-    const shell = admin.shell_of(&session);
-
-    try admin.render.page(response, arena, .ok, views.Plugin, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try settings_nav.node(&session, "plugins"),
+    try admin.screen(&session, .ok, views.Plugin, .{
         .name = detail.name,
         .version = detail.version,
         .summary = detail.summary,
@@ -324,16 +296,7 @@ fn render_review(session: *Session, review: Review) Error!void {
     std.debug.assert(review.title.len > 0);
     std.debug.assert(review.action.len > 0);
 
-    const shell = admin.shell_of(session);
-
-    try admin.render.page(session.response, session.arena, .ok, views.PluginReview, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try settings_nav.node(session, "plugins"),
+    try admin.screen(session, .ok, views.PluginReview, .{
         .title = review.title,
         .summary = review.summary,
         .action = review.action,

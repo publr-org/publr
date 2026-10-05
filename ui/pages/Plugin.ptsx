@@ -1,29 +1,17 @@
-import { Layout } from "../layouts/Layout.ptsx";
-import { EditorColumn } from "../components/EditorColumn.ptsx";
-import { PluginRequests } from "../components/PluginRequests.ptsx";
+import { Publr } from "publr-jsx";
+import { FormPage } from "../layouts/FormPage.ptsx";
+import { ConfirmAction } from "../components/ConfirmAction.ptsx";
 import { ContentAccess } from "../components/ContentAccess.ptsx";
+import { EditorAsideSection } from "../components/EditorAsideSection.ptsx";
+import { IndexSection } from "../components/IndexSection.ptsx";
+import { PluginRequests } from "../components/PluginRequests.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { Code } from "@publr/ui/Code.ptsx";
-import { Dialog } from "@publr/ui/Dialog.ptsx";
-import { DialogClose } from "@publr/ui/DialogClose.ptsx";
-import { DialogContent } from "@publr/ui/DialogContent.ptsx";
-import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
-import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
-import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
-import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 export type PluginProps = {
-  user_name: string;
-  user_email: string;
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
-  nav: JSX.Element;
   name: string;
   version: string;
   summary: string;
@@ -62,81 +50,120 @@ export type PluginProps = {
  * back to), every permission it asked for, granted or revoked one at a time, its content
  * access, and what it brings. Revoking takes effect on its next call. */
 export function Plugin({
-  user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, name, version, summary, enabled, update,
-  update_href, previous, enable_href, disable_action, rollback_action, decide_action, access_action,
-  remove_action, requests, operations, show_access, scope, recommend, note, types,
+  name,
+  version,
+  summary,
+  enabled,
+  update,
+  update_href,
+  previous,
+  enable_href,
+  disable_action,
+  rollback_action,
+  decide_action,
+  access_action,
+  remove_action,
+  requests,
+  operations,
+  show_access,
+  scope,
+  recommend,
+  note,
+  types,
 }: PluginProps) {
   return (
-    <Layout title={name} section="settings" crumb_label="Plugins" crumb_href="/admin/settings/plugins"
-      sidebar={nav} user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      <EditorColumn>
-        <PageHeader title={name} description={summary} back_label="Plugins" back_href="/admin/settings/plugins">
-          {enabled ? (
-            <form method="post" action={disable_action}>
-              <input type="hidden" name="csrf" value={csrf} />
-              <Button type="submit" hierarchy="secondary">Disable</Button>
-            </form>
-          ) : (
-            <Button href={enable_href}>Enable</Button>
-          )}
-        </PageHeader>
-        <div class="mt-6 space-y-6">
-          <div class="flex flex-wrap items-center gap-3">
-            {enabled ? <Status tone="success">Enabled</Status> : <Status tone="neutral">Disabled</Status>}
-            <Text as="span" variant="body-sm" tone="muted">Version {version}</Text>
-          </div>
-          {update !== "" && (
-            <Callout title={`Version ${update} is available`} tone="info">
-              <Text as="p" variant="body-sm">This version keeps running until you review and apply it.</Text>
-              <Button href={update_href} size="sm" hierarchy="secondary" classes="mt-2">Review update</Button>
-            </Callout>
-          )}
-          {previous !== "" && (
-            <form method="post" action={rollback_action} class="flex flex-wrap items-center gap-3">
-              <input type="hidden" name="csrf" value={csrf} />
-              <Text as="span" variant="body-sm" tone="muted">Previous version {previous} is kept.</Text>
-              <Button type="submit" size="sm" hierarchy="secondary">Roll back to {previous}</Button>
-            </form>
-          )}
-          <SectionTitle title="Permissions" />
-          {requests.length > 0 ? (
-            <PluginRequests csrf={csrf} action={decide_action} requests={requests} />
-          ) : (
-            <Text as="p" variant="body-sm" tone="muted">It asks for nothing beyond its own operations and content types.</Text>
-          )}
-          {show_access && (
-            <form method="post" action={access_action} class="space-y-4">
-              <input type="hidden" name="csrf" value={csrf} />
-              <ContentAccess scope={scope} recommend={recommend} note={note} types={types} />
-              <Button type="submit" hierarchy="secondary">Save content access</Button>
-            </form>
-          )}
-          <SectionTitle title="Operations" />
-          <div class="flex flex-wrap gap-2">
-            {operations.map((operation) => <Code>{operation.name}</Code>)}
-          </div>
-          <div class="border-t border-border pt-6">
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button hierarchy="secondary" intent="destructive">Remove plugin</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogTitle>Remove {name}?</DialogTitle>
-                <DialogDescription>
-                  Its operations and hooks stop and its grants go. Its content types and their records stay.
-                </DialogDescription>
-                <form method="post" action={remove_action} class="mt-5 flex justify-end gap-2">
-                  <input type="hidden" name="csrf" value={csrf} />
-                  <DialogClose asChild>
-                    <Button hierarchy="secondary">Cancel</Button>
-                  </DialogClose>
-                  <Button type="submit" intent="destructive">Remove plugin</Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
+    <FormPage
+      title={name}
+      parents={[{ label: "Plugins", href: "/admin/settings/plugins" }]}
+      description={summary}
+      meta={
+        <div class="contents">
+          {enabled ? <Status tone="success">Enabled</Status> : <Status tone="neutral">Disabled</Status>}
+          <Text as="span" variant="body-sm" tone="muted">
+            Version {version}
+          </Text>
         </div>
-      </EditorColumn>
-    </Layout>
+      }
+      notice={
+        update !== "" && (
+          <Callout title={`Version ${update} is available`}>
+            This version keeps running until you review and apply it.
+          </Callout>
+        )
+      }
+      aside={
+        <div class="contents">
+          <EditorAsideSection>
+            {enabled ? (
+              <form method="post" action={disable_action}>
+                <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                <Button type="submit" hierarchy="secondary" classes="w-full">
+                  Disable
+                </Button>
+              </form>
+            ) : (
+              <Button href={enable_href} classes="w-full">
+                Enable
+              </Button>
+            )}
+          </EditorAsideSection>
+          {(update !== "" || previous !== "") && (
+            <EditorAsideSection title="Versions">
+              {update !== "" && (
+                <Button href={update_href} hierarchy="secondary" classes="w-full">
+                  Review {update}
+                </Button>
+              )}
+              {previous !== "" && (
+                <form method="post" action={rollback_action}>
+                  <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                  <Button type="submit" hierarchy="secondary" classes="w-full">
+                    Roll back to {previous}
+                  </Button>
+                </form>
+              )}
+            </EditorAsideSection>
+          )}
+        </div>
+      }
+      danger={
+        <ConfirmAction
+          label="Remove plugin"
+          title={`Remove ${name}?`}
+          description="Its operations and hooks stop and its grants go. Its content types and their records stay."
+          action={remove_action}
+        />
+      }
+    >
+      <IndexSection boxed padded title="Permissions">
+        {requests.length > 0 ? (
+          <PluginRequests csrf={Publr.request.session.csrf} action={decide_action} requests={requests} />
+        ) : (
+          <Text as="p" variant="body-sm" tone="muted">
+            It asks for nothing beyond its own operations and content types.
+          </Text>
+        )}
+      </IndexSection>
+      {show_access && (
+        <IndexSection boxed padded title="Content access">
+          <form method="post" action={access_action} class="flex flex-col gap-4">
+            <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+            <ContentAccess scope={scope} recommend={recommend} note={note} types={types} />
+            <div>
+              <Button type="submit" hierarchy="secondary">
+                Save content access
+              </Button>
+            </div>
+          </form>
+        </IndexSection>
+      )}
+      <IndexSection boxed padded title="Operations">
+        <div class="flex flex-wrap gap-2">
+          {operations.map((operation) => (
+            <Code>{operation.name}</Code>
+          ))}
+        </div>
+      </IndexSection>
+    </FormPage>
   );
 }

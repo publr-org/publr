@@ -6,6 +6,7 @@ const VM = engine.VM;
 const Value = engine.Value;
 const api = engine.api;
 const escape = @import("../render.zig").escape;
+const address = @import("../../model/app/address.zig");
 
 pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
     return struct {
@@ -234,7 +235,7 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             }
 
             try buffer.writer.print("<{s}", .{name});
-            try write_attributes(vm, &buffer.writer, attributes);
+            try write_attributes(vm, &buffer.writer, attributes, frame.ctx.url_base());
             try buffer.writer.writeAll(">");
 
             if (is_void(name)) {
@@ -359,8 +360,15 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             try writer.writeAll(try sanitize.sanitize(vm.arena, text, .content));
         }
 
-        pub fn attribute(vm: *VM, writer: *std.Io.Writer, name: []const u8, value: Value) !void {
+        /// An attribute's name, and the path the project is served under, which a root path
+        /// in a URL attribute goes under.
+        pub const Named = struct { name: []const u8, base: []const u8 };
+
+        pub fn attribute(vm: *VM, writer: *std.Io.Writer, named: Named, value: Value) !void {
             std.debug.assert(!api.JS_IsException(value));
+            std.debug.assert(named.base.len == 0 or named.base[0] == '/');
+
+            const name = named.name;
 
             if (!valid_name(name)) {
                 return error.InvalidJavaScriptAttribute;
@@ -381,12 +389,24 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
                 return;
             }
 
+            const text = try scalar(vm, value);
+
             try writer.print(" {s}=\"", .{name});
-            try escape(writer, try scalar(vm, value));
+
+            if (address.url_attribute(name) and address.needs_base(named.base, text)) {
+                try writer.writeAll(named.base);
+            }
+
+            try escape(writer, text);
             try writer.writeByte('"');
         }
 
-        fn write_attributes(vm: *VM, writer: *std.Io.Writer, attributes: Value) !void {
+        fn write_attributes(
+            vm: *VM,
+            writer: *std.Io.Writer,
+            attributes: Value,
+            base: []const u8,
+        ) !void {
             std.debug.assert(api.JS_IsObject(attributes));
 
             for (try property_names(vm, attributes)) |name| {
@@ -396,7 +416,7 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 
                 const value = try vm.get(attributes, name);
                 defer vm.free(value);
-                try attribute(vm, writer, name, value);
+                try attribute(vm, writer, .{ .name = name, .base = base }, value);
             }
         }
     };

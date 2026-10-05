@@ -1,4 +1,5 @@
 const std = @import("std");
+const base = @import("base.zig");
 const auth = @import("../lib/auth.zig");
 const rest = @import("../adapters/rest.zig");
 const sdk = @import("../sdk.zig");
@@ -32,7 +33,9 @@ pub const plugin_operator_commands = plugin_hooks.OperatorCommands(registry.oper
 pub fn register(router: *http.Router) void {
     std.debug.assert(router.routes_len == 0);
 
-    // First, so it runs last: whatever the rest leaves without a cache policy is private.
+    // First of all, so it runs last: under a base path, the addresses sent back get it.
+    router.use(&base.under_base);
+    // Then, so it runs after the rest: whatever they leave without a cache policy is private.
     router.use(&private_by_default);
     // Behind a CDN that purges: every write answers with the dependency keys it raised.
     router.use(&apps_adapter.edge.changes);
@@ -284,8 +287,9 @@ test "the rail shows an editor Content, and an administrator Structure and Setti
     const structure = "href=\"/admin/structure\"";
     const settings = "href=\"/admin/settings\"";
     const administrator = try flow.call("GET", "/admin/content", "");
-    try std.testing.expect(std.mem.indexOf(u8, administrator.body, structure) != null);
     try std.testing.expect(std.mem.indexOf(u8, administrator.body, settings) != null);
+    const settings_page = try flow.call("GET", "/admin/settings/users", "");
+    try std.testing.expect(std.mem.indexOf(u8, settings_page.body, structure) != null);
 
     var system = harness.ctx(.system);
     const users = @import("../operations/user.zig");

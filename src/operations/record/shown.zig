@@ -15,6 +15,8 @@ const list_max = store.records.list_max;
 
 pub const point = "record.title";
 
+pub const Purpose = @import("../document/crud.zig").Purpose;
+
 pub const Title = struct { id: []const u8, title: []const u8 };
 
 pub fn Shown(comptime List: type, comptime example_id: []const u8) type {
@@ -34,6 +36,8 @@ pub fn Shown(comptime List: type, comptime example_id: []const u8) type {
             ids: []const []const u8 = &.{},
             type: ?[]const u8 = null,
             limit: u32 = 50,
+            /// `edit`: from the pending copy of a record with changes, as its editor sees it.
+            purpose: Purpose = .delivery,
         };
         pub const Out = struct { titles: []const Title };
         pub const example: In = .{ .ids = &.{example_id} };
@@ -44,6 +48,7 @@ pub fn Shown(comptime List: type, comptime example_id: []const u8) type {
             .ids = "These records, up to 200",
             .type = "Or a type's records, newest first",
             .limit = "With `type`: how many, up to 200",
+            .purpose = "`delivery` (default) or `edit`: pending copies where there are changes",
         };
         pub const output_docs: sdk.operation.Docs(Out) = .{
             .titles = "Each readable record's id and the title shown for it",
@@ -63,6 +68,7 @@ pub fn Shown(comptime List: type, comptime example_id: []const u8) type {
                 .type = in.type,
                 .documents = true,
                 .expand = false,
+                .purpose = in.purpose,
                 .limit = if (by_ids) @intCast(in.ids.len) else in.limit,
             });
             const titles = try ctx.arena.alloc(Title, listed.records.len);

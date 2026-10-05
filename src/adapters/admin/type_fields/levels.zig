@@ -79,7 +79,6 @@ pub fn page(session: *Session, handle: []const u8, def: Def, top: ?Level) Error!
     std.debug.assert(top == null or top.?.url.len > 0);
 
     const arena = session.arena;
-    const shell = admin.shell_of(session);
     const type_href = try spaces.hub(session, handle);
     const fragment = session.request.header("publr-fragment") orelse "";
 
@@ -105,16 +104,14 @@ pub fn page(session: *Session, handle: []const u8, def: Def, top: ?Level) Error!
     else
         null;
 
-    try admin.render.page(session.response, arena, .ok, views.TypeFields, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
+    const parents = try arena.alloc(views.TypeFields.ParentsItem, 2);
+
+    parents[0] = .{ .label = "Structure", .href = "/admin/structure" };
+    parents[1] = .{ .label = spaces.of(session).title(), .href = spaces.of(session).base() };
+
+    try admin.screen(session, .ok, views.TypeFields, .{
         .title = def.name,
-        .crumb_label = spaces.of(session).title(),
-        .crumb_href = spaces.of(session).base(),
+        .parents = parents,
         .type_href = type_href,
         .list = try columns.list_node(session, handle, def),
         .levels = levels,

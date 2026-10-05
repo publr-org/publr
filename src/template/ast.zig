@@ -216,6 +216,9 @@ pub const Node = union(enum) {
     attr: Attr,
     /// An `/_app/...` URL, written under the app's mount with the asset fingerprint.
     asset: []const u8,
+    /// The path the project is served under, before a root path a URL attribute was
+    /// written with (`href="/posts"`); nothing at the root.
+    url_base,
     /// `</head>` is about to be written: the stylesheet, the preloads, the loader.
     head_assets,
     /// `{items.map((item) => ( ... ))}`

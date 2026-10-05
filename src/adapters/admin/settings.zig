@@ -180,8 +180,6 @@ const Shown = struct {
 fn render(session: *admin.Session, status: admin.Status, shown: Shown) admin.Error!void {
     std.debug.assert(shown.entries.len <= currencies.currencies_max + 1);
     std.debug.assert(session.signed_in());
-
-    const shell = admin.shell_of(session);
     const arena = session.arena;
     const rows = try arena.alloc(views.SettingsSystem.CurrenciesItem, shown.entries.len);
     const digits = try arena.alloc(views.SettingsSystem.DigitsItem, model.currency.all.len);
@@ -194,14 +192,7 @@ fn render(session: *admin.Session, status: admin.Status, shown: Shown) admin.Err
         item.* = .{ .code = currency.code, .digits = @floatFromInt(currency.digits) };
     }
 
-    try admin.render.page(session.response, arena, status, views.SettingsSystem, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try settings_nav.node(session, "system"),
+    try admin.screen(session, status, views.SettingsSystem, .{
         .tab = shown.tab,
         .can_logs = registry.SDK.may(&session.ctx, @import("../../operations/activity.zig").List),
         .action = currencies_path,

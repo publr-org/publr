@@ -1,23 +1,11 @@
-import { onNavigate, onBack, submitted } from "./TypeColumns.ptsx";
+import { IndexHeader } from "./IndexHeader.ptsx";
+import { IndexSection } from "./IndexSection.ptsx";
+import { FieldListActions } from "./FieldList/FieldListActions.ptsx";
+import { FieldRows } from "./FieldList/FieldRows.ptsx";
 import type { IconName } from "@publr/ui/Icon.ptsx";
-import { Button } from "@publr/ui/Button.ptsx";
-import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
-import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
-import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
-import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
-import { EmptyContent } from "@publr/ui/EmptyContent.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
 import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
-import { Icon } from "@publr/ui/Icon.ptsx";
-import { Link } from "@publr/ui/Link.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
-import { SplitButton } from "@publr/ui/SplitButton.ptsx";
-import { Table } from "@publr/ui/Table.ptsx";
-import { TableBody } from "@publr/ui/TableBody.ptsx";
-import { TableCell } from "@publr/ui/TableCell.ptsx";
-import { TableRow } from "@publr/ui/TableRow.ptsx";
-import { Text } from "@publr/ui/Text.ptsx";
 
 export type FieldListProps = {
   standalone?: boolean;
@@ -50,11 +38,9 @@ export type FieldListProps = {
   }>;
 };
 
-/** A content type's fields, the left column of its page: the title band with one split
- * button (Add field; its arrow opens the records and the settings), then one row per
- * field in the order the editor shows them. Every row offers its editor and its place
- * (up, down); groups and repeaters offer a child. A field is deleted from its own page,
- * after a confirmation. */
+/** A content type's fields: on its page, the title band with the preview and Add field,
+ * then the rows (FieldRows) or the empty state filling the page; on a field group's page,
+ * a boxed section of the form. A field is deleted from its own page, after a confirmation. */
 export function FieldList({
   csrf,
   title,
@@ -67,161 +53,53 @@ export function FieldList({
   rows,
 }: FieldListProps) {
   return (
-    <div class={standalone ? "py-0" : "py-7"} data-part="field-list" data-standalone={standalone}>
-      <div class={standalone ? "px-0" : "px-8"}>
-        <PageHeader title={title} description={description}>
-          {(group_href || settings_href || content_href) ? (<DropdownMenu>
-            <SplitButton>
-              <Button onClick={onNavigate} href={add_href} attach="start">
-                <Icon name="plus" size="sm" />
-                <span>Add field</span>
-              </Button>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" attach="end" label="More" title="More">
-                  <Icon name="chevron-down" size="sm" />
-                </Button>
-              </DropdownMenuTrigger>
-            </SplitButton>
-            <DropdownMenuContent align="right">
-              {group_href && <DropdownMenuItem href={group_href}>Field group</DropdownMenuItem>}
-              {content_href && (
-                <DropdownMenuItem onClick={onNavigate} href={content_href ?? "#"}>
-                  <Icon name="file" size="sm" />
-                  See content
-                </DropdownMenuItem>
-              )}
-              {settings_href && (<DropdownMenuItem onClick={onNavigate} href={settings_href ?? "#"}>
-                <Icon name="settings" size="sm" />
-                Settings
-              </DropdownMenuItem>)}
-            </DropdownMenuContent>
-          </DropdownMenu>) : (
-            <Button onClick={onNavigate} href={add_href}>
-              <Icon name="plus" size="sm" />
-              <span>Add field</span>
-            </Button>
+    <div class="flex flex-1 flex-col" data-part="field-list" data-standalone={standalone}>
+      {standalone ? (
+        <IndexSection
+          boxed
+          title={title}
+          description={description}
+          actions={
+            <FieldListActions
+              standalone={standalone}
+              add_href={add_href}
+              group_href={group_href}
+              settings_href={settings_href}
+              content_href={content_href}
+            />
+          }
+        >
+          {rows.length > 0 && (
+            <FieldRows csrf={csrf} standalone={standalone} add_href={add_href} rows={rows} />
           )}
-        </PageHeader>
-      </div>
-      {rows.length === 0 ? (
-        <div class="mx-8 mt-8">
-          <Empty>
-            <EmptyTitle>No fields yet</EmptyTitle>
-            <EmptyDescription>
-              Pick a kind, name the field, and keep going to build the form.
-            </EmptyDescription>
-            <EmptyContent>
-              <Button onClick={onNavigate} href={add_href}>
-                <Icon name="plus" size="sm" />
-                <span>Add the first field</span>
-              </Button>
-            </EmptyContent>
-          </Empty>
-        </div>
+        </IndexSection>
       ) : (
-        <div class="mt-8 border-y border-border">
-          <Table>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow>
-                  <TableCell>
-                    <span class={["inline-flex items-center gap-3", row.nested ? "pl-8" : ""]}>
-                      <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
-                        <Icon name={row.icon} size="sm" />
-                      </span>
-                      {row.locked ? (
-                        <Text as="span" variant="heading-xs">
-                          {row.label}
-                        </Text>
-                      ) : (
-                        <Link onClick={onNavigate} href={row.edit_href} variant="heading-xs" tone="default">
-                          {row.label}
-                        </Link>
-                      )}
-                      {row.required && (
-                        <Text as="span" variant="heading-xs" tone="error">
-                          *
-                        </Text>
-                      )}
-                      <Text as="span" variant="body-md" tone="muted">
-                        {row.summary}
-                      </Text>
-                    </span>
-                  </TableCell>
-                  <TableCell align="right">
-                    {row.locked ? (
-                      <Text as="span" variant="body-sm" tone="muted">
-                        locked
-                      </Text>
-                    ) : (
-                      <span class="inline-flex items-center justify-end gap-1">
-                        {row.add_child_href && (
-                          <Button onClick={onNavigate}
-                            href={row.add_child_href ?? "#"}
-                            hierarchy="tertiary"
-                            size="sm"
-                            label="Add a field inside"
-                            title="Add a field inside"
-                          >
-                            <Icon name="plus" size="sm" />
-                          </Button>
-                        )}
-                        <form onSubmit={submitted}
-                          method="post"
-                          action={row.move_action}
-                          class="inline-flex items-center gap-1"
-                        >
-                          <input type="hidden" name="csrf" value={csrf} />
-                          <Button
-                            type="submit"
-                            name="direction"
-                            value="up"
-                            hierarchy="tertiary"
-                            size="sm"
-                            label="Move up"
-                            title="Move up"
-                          >
-                            <Icon name="chevron-up" size="sm" />
-                          </Button>
-                          <Button
-                            type="submit"
-                            name="direction"
-                            value="down"
-                            hierarchy="tertiary"
-                            size="sm"
-                            label="Move down"
-                            title="Move down"
-                          >
-                            <Icon name="chevron-down" size="sm" />
-                          </Button>
-                        </form>
-                        <Button onClick={onNavigate}
-                          href={row.edit_href}
-                          hierarchy="tertiary"
-                          size="sm"
-                          label="Edit"
-                          title="Edit"
-                        >
-                          <Icon name="edit" size="sm" />
-                        </Button>
-                      </span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <div class="border-t border-border bg-muted/40 px-8 py-4">
-            <Link onClick={onNavigate}
-              href={add_href}
-              variant="body-sm"
-              tone="default"
-              classes="inline-flex items-center gap-2"
-            >
-              <Icon name="plus" size="sm" />
-              {standalone ? "Add another field" : "Add another field to this type"}
-            </Link>
-          </div>
+        <div class="flex flex-1 flex-col">
+          <IndexHeader
+            title={title}
+            description={description}
+            actions={
+              <FieldListActions
+                standalone={standalone}
+                add_href={add_href}
+                group_href={group_href}
+                settings_href={settings_href}
+                content_href={content_href}
+              />
+            }
+          />
+          {rows.length === 0 ? (
+            <Empty>
+              <EmptyTitle>No fields yet</EmptyTitle>
+              <EmptyDescription>
+                Pick a kind, name the field, and keep going to build the form.
+              </EmptyDescription>
+            </Empty>
+          ) : (
+            <div class="border-t border-border">
+              <FieldRows csrf={csrf} standalone={standalone} add_href={add_href} rows={rows} />
+            </div>
+          )}
         </div>
       )}
     </div>

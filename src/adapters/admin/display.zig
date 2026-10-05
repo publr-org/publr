@@ -34,7 +34,12 @@ pub fn titles(ctx: *sdk.Ctx, found: []const records.Record) Error![]const []cons
         id.* = record.id;
     }
 
-    const answered = registry.SDK.dispatch(ctx, records.Shown, .{ .ids = ids }) catch {
+    // The admin shows what its editors see: a moved draft or pending variant reads its new
+    // product, not the one it is published with.
+    const answered = registry.SDK.dispatch(ctx, records.Shown, .{
+        .ids = ids,
+        .purpose = .edit,
+    }) catch {
         return shown;
     };
 

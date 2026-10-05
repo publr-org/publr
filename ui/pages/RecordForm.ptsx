@@ -1,49 +1,28 @@
-import { Editor } from "../layouts/Editor.ptsx";
+import { FormPage } from "../layouts/FormPage.ptsx";
 import { ReferenceDrawer } from "../components/ReferenceDrawer.ptsx";
 
-/** One record, new or existing: the editor fragment (RecordEditor, rendered by the
- * adapter and handed over as a node) inside the editor shell. */
+/** One record, new or existing: the editor (RecordEditor, rendered by the adapter and
+ * handed over as a node, since it also opens in drawers) in a FormPage. A content record
+ * is edited in focus; a term stays beside the Settings sidebar. */
 export type RecordFormProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
   title: string;
-  /** "content" for a record, "types" for a term. */
-  section: string;
-  crumb_label: string;
-  crumb_href: string;
+  parents: Array<{ label: string; href: string }>;
+  focus: boolean;
   editor: JSX.Element;
 };
 
-export function RecordForm({
-  user_name,
-  user_email, can_structure = true, can_settings = true, top_bar,
-  csrf,
-  title,
-  section,
-  crumb_label,
-  crumb_href,
-  editor,
-}: RecordFormProps) {
+export function RecordForm({ title, parents, focus, editor }: RecordFormProps) {
   return (
-    <Editor
+    <FormPage
       title={title}
-      section={section}
-      crumb_label={crumb_label}
-      crumb_href={crumb_href}
-      user_name={user_name}
-      user_email={user_email}
-      can_structure={can_structure}
-      can_settings={can_settings} top_bar={top_bar}
-      csrf={csrf}
-    >
-      {editor}
-      <ReferenceDrawer />
-    </Editor>
+      parents={parents}
+      focus={focus}
+      editor={
+        <div class="contents">
+          {editor}
+          <ReferenceDrawer />
+        </div>
+      }
+    />
   );
 }

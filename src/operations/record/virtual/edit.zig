@@ -96,8 +96,19 @@ fn write_difference(
     std.debug.assert(parent.len > 0);
     std.debug.assert(current.len <= members_max);
 
+    const reference = try reference_of(ctx, def);
+
     for (current) |child| {
-        if (!contains(wanted, child)) {
+        if (contains(wanted, child)) {
+            continue;
+        }
+
+        // A record that needs its parent is deleted (restorable) rather than left without.
+        if (reference.required and !reference.many) {
+            const away: records.Transition.In = .{ .id = child, .to = "deleted" };
+
+            _ = try registry.SDK.dispatch(ctx, records.Transition, away);
+        } else {
             try repoint(ctx, granted, child, def, parent, .leave);
         }
     }
@@ -135,7 +146,7 @@ fn repoint(
     };
     const held: Value = if (fields == .object) fields.object.get(def.options.via) orelse
         .null else .null;
-    const next = try moved(arena, held, try reference_is_many(ctx, def), parent, move);
+    const next = try moved(arena, held, (try reference_of(ctx, def)).many, parent, move);
     var change: std.json.ObjectMap = .empty;
 
     change.put(arena, def.options.via, next) catch return error.OutOfMemory;
@@ -190,7 +201,7 @@ fn moved(
     return .{ .array = items };
 }
 
-fn reference_is_many(ctx: *Ctx, def: model.field.Def) Error!bool {
+fn reference_of(ctx: *Ctx, def: model.field.Def) Error!model.field.Def {
     std.debug.assert(def.options.to.len == 1);
 
     const row = try records.domain.definition.find(ctx, def.options.to[0]) orelse {
@@ -199,7 +210,7 @@ fn reference_is_many(ctx: *Ctx, def: model.field.Def) Error!bool {
 
     for (row.def.fields) |field| {
         if (std.mem.eql(u8, field.name, def.options.via)) {
-            return field.many;
+            return field;
         }
     }
 
@@ -258,7 +269,9 @@ fn points_here(
         };
     };
 
-    if (!std.mem.eql(u8, got.record.type, def.options.to[0])) {
+    const deleted = std.mem.eql(u8, got.record.status, "deleted");
+
+    if (deleted or !std.mem.eql(u8, got.record.type, def.options.to[0])) {
         return false;
     }
 

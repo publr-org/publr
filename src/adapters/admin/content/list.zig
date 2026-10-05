@@ -104,7 +104,6 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         record_operations.List,
         try admin.app_scope.narrow(arena, scope, try filters.list_in(arena, effective)),
     ) catch |err| return admin.fail(&session, err, back);
-    const shell = admin.shell_of(&session);
     var props = try base_props(&page, @intCast(listed.records.len));
 
     try fill_header(&props, &page);
@@ -119,15 +118,11 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     const list_panel = try admin.render.view(arena, views.ContentList, props);
 
-    try admin.render.page(response, arena, .ok, views.Content, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try admin.nav_content(&session, .{ .view_id = view_id, .filters = effective }),
+    try admin.screen_with(&session, .{
+        .content = .{ .view_id = view_id, .filters = effective },
+    }, .ok, views.Content, .{
         .title = props.title,
+        .has_types = has_record_type(page.types),
         .list = list_panel,
     });
 }
@@ -140,11 +135,9 @@ fn base_props(page: *const Page, shown: u32) Error!views.ContentList.Props {
 
     const session = page.session;
     const arena = session.arena;
-    const shell = admin.shell_of(session);
 
     return .{
-        .csrf = shell.csrf,
-        .has_types = has_record_type(page.types),
+        .csrf = session.csrf_token(),
         .title = try title_of(page),
         .address = try page.href(page.effective),
         .shown_text = try print(arena, "{d} shown", .{shown}),

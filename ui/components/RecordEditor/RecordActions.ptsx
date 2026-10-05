@@ -15,19 +15,10 @@ import { Text } from "@publr/ui/Text.ptsx";
 export type RecordActionsProps = {
   in_drawer: boolean;
   is_new: boolean;
-  actions: Array<{
-    name: string;
-    value: string;
-    label: string;
-    destructive: boolean;
-    primary: boolean;
-  }>;
   action_route: string;
   csrf: string;
   expected_version: string;
-  has_destructive: boolean;
   id: string;
-  parks: boolean;
   versions_href: string;
   /** Sections the adapter draws for the thing being edited: a record's terms (RecordTerms),
    * a term's parent (TermParent). */
@@ -39,13 +30,10 @@ export type RecordActionsProps = {
 export function RecordActions({
   in_drawer,
   is_new,
-  actions,
   action_route,
   csrf,
   expected_version,
-  has_destructive,
   id,
-  parks,
   versions_href,
   aside,
   impact,
@@ -56,7 +44,7 @@ export function RecordActions({
         <EditorAsideSection>
           <DropdownMenu>
             <SplitButton classes="w-full">
-              {actions.map(
+              {state.actions.map(
                 (item) =>
                   item.primary && (
                     <form
@@ -81,7 +69,7 @@ export function RecordActions({
               </DropdownMenuTrigger>
             </SplitButton>
             <DropdownMenuContent align="right">
-              {actions.map(
+              {state.actions.map(
                 (item) =>
                   !item.primary &&
                   !item.destructive && (
@@ -93,8 +81,8 @@ export function RecordActions({
                     </form>
                   ),
               )}
-              {has_destructive && <DropdownMenuSeparator />}
-              {actions.map(
+              {state.has_destructive && <DropdownMenuSeparator />}
+              {state.actions.map(
                 (item) =>
                   item.destructive && (
                     <form method="post" action={action_route} onSubmit={onSubmit}>
@@ -109,7 +97,7 @@ export function RecordActions({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          {parks && (
+          {state.parks && (
             <Text as="p" variant="body-xs" tone="muted">
               Edits are saved as pending changes; the live version stays until you publish.
             </Text>

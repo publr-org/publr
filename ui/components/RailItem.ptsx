@@ -1,0 +1,28 @@
+import { Icon } from "@publr/ui/Icon.ptsx";
+
+export type RailItemProps = {
+  href: string;
+  label: string;
+  icon_name: "home" | "file" | "settings";
+  active: boolean;
+};
+
+/** One section on the admin's dark rail: an icon link, lit when the page is in it. */
+export function RailItem({ href, label, icon_name, active }: RailItemProps) {
+  return (
+    <a
+      href={href}
+      aria-label={label}
+      title={label}
+      aria-current={active ? "page" : undefined}
+      class={[
+        "inline-flex size-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground",
+        active
+          ? "bg-rail-accent text-rail-foreground"
+          : "text-rail-muted hover:bg-rail-accent/60 hover:text-rail-foreground",
+      ]}
+    >
+      <Icon name={icon_name} size="md" />
+    </a>
+  );
+}

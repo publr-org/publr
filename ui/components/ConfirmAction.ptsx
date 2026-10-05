@@ -1,0 +1,65 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
+
+export type ConfirmActionProps = {
+  /** What the button and the confirm say: "Delete user". */
+  label: string;
+  /** The question: "Delete Ada?". */
+  title: string;
+  /** What happens, and what stays. */
+  description: string;
+  /** Where the confirmed form posts. */
+  action: string;
+  /** Fields the post carries besides the CSRF token. */
+  fields?: Array<{ name: string; value: string }>;
+  /** Choices the confirm offers ("also delete its records"), above its buttons. */
+  children?: JSX.Element;
+};
+
+/** Something that cannot be undone, in a FormPage's danger zone: a button that asks first,
+ * then posts. */
+export function ConfirmAction({
+  label,
+  title,
+  description,
+  action,
+  fields = [],
+  children,
+}: ConfirmActionProps) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button type="button" hierarchy="secondary" intent="destructive" classes="w-full">
+          {label}
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
+        <form method="post" action={action} class="mt-5 flex flex-col gap-5">
+          <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+          {fields.map((field) => (
+            <input type="hidden" name={field.name} value={field.value} />
+          ))}
+          {children}
+          <div class="flex justify-end gap-2">
+            <DialogClose asChild>
+              <Button type="button" hierarchy="secondary">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" intent="destructive">
+              {label}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

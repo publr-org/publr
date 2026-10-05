@@ -39,14 +39,13 @@ pub fn list_node(session: *Session, handle: []const u8, def: Def) Error!admin.re
     std.debug.assert(session.signed_in());
 
     const arena = session.arena;
-    const shell = admin.shell_of(session);
     const kind_label = if (spaces.of(session) == .custom)
         "Custom fields"
     else
         type_pages.kind_text(def.kind).label;
     const hub = try spaces.hub(session, handle);
     const content_href: ?[]const u8 = if (spaces.of(session) == .taxonomies)
-        try print(arena, "/admin/taxonomies/{s}", .{handle})
+        try print(arena, "/admin/structure/taxonomies/{s}/terms", .{handle})
     else if (def.kind == .component)
         null
     else if (def.kind == .settings)
@@ -55,7 +54,7 @@ pub fn list_node(session: *Session, handle: []const u8, def: Def) Error!admin.re
         try print(arena, "/admin/content?type={s}", .{handle});
 
     return admin.render.view(arena, views.FieldList, .{
-        .csrf = shell.csrf,
+        .csrf = session.csrf_token(),
         .title = if (spaces.of(session) == .custom) "Fields" else def.name,
         .description = if (spaces.of(session) == .custom) "" else try print(
             arena,

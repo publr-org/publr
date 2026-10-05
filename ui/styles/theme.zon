@@ -68,6 +68,8 @@
         .{ .name = "text-2xs--line-height", .value = "calc(1 / 0.6875)" },
         .{ .name = "text-body-sm", .value = "0.8125rem" },
         .{ .name = "text-body-sm--line-height", .value = "calc(1.125 / 0.8125)" },
+        .{ .name = "text-nav", .value = "0.8125rem" },
+        .{ .name = "text-nav--line-height", .value = "calc(1.25 / 0.8125)" },
         .{ .name = "text-heading-sm", .value = "0.9375rem" },
         .{ .name = "text-heading-sm--line-height", .value = "1.3" },
         .{ .name = "tracking-heading-xl", .value = "-0.02em" },

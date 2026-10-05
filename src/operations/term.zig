@@ -120,6 +120,8 @@ pub const example_parent_id = "f60718293a4b5c6d7e8f9012";
 pub const example_changed_id = "0718293a4b5c6d7e8f901234";
 pub const example_draft_id = "18293a4b5c6d7e8f90123456";
 pub const example_document = "{\"name\":\"Engineering\"}";
+/// An edit to the example term, which its save keeps as a change to publish.
+pub const example_edit = "{\"name\":\"Engineering & Design\"}";
 const example_term: Term = .{
     .id = example_id,
     .type_id = "d4e5f60718293a4b5c6d7e8f",
@@ -324,7 +326,7 @@ pub const Save = struct {
         parent: ?[]const u8 = null,
     };
     pub const Out = struct { version: i64, slug: ?[]const u8, changed: bool, parent: ?[]const u8 };
-    pub const example: In = .{ .id = example_id, .document = example_document };
+    pub const example: In = .{ .id = example_id, .document = example_edit };
     pub const example_out: Out = .{
         .version = 3,
         .slug = "engineering",

@@ -8,6 +8,7 @@ const ast = @import("ast.zig");
 const compile = @import("compile.zig");
 const time = @import("../lib/time.zig");
 const javascript = @import("javascript/vm.zig");
+const address = @import("../model/app/address.zig");
 
 const Expr = ast.Expr;
 const Node = ast.Node;
@@ -375,6 +376,7 @@ pub fn Renderer(comptime Ctx: type) type {
                 .raw => |expr| try renderer.write_raw(writer, frame, expr),
                 .attr => |attr| try renderer.write_attr(writer, frame, attr),
                 .asset => |path| try frame.ctx.asset_url(writer, path),
+                .url_base => try writer.writeAll(frame.ctx.url_base()),
                 .head_assets => try frame.ctx.head_assets(writer),
                 .loop => |loop| try renderer.write_loop(writer, frame, loop),
                 .cond => |cond| {
@@ -426,7 +428,7 @@ pub fn Renderer(comptime Ctx: type) type {
                 .javascript => |value| try Bridge.attribute(
                     frame.execution.vm.?,
                     writer,
-                    attr.name,
+                    .{ .name = attr.name, .base = frame.ctx.url_base() },
                     value,
                 ),
                 .boolean => |flag| if (flag) {
@@ -434,18 +436,31 @@ pub fn Renderer(comptime Ctx: type) type {
                     try writer.writeAll(attr.name);
                 },
                 .opt_string => |text| if (text) |present| {
-                    try write_quoted(writer, attr.name, present);
+                    try write_quoted(writer, attr.name, frame.ctx.url_base(), present);
                 },
-                .string => |text| try write_quoted(writer, attr.name, text),
+                .string => |text| try write_quoted(writer, attr.name, frame.ctx.url_base(), text),
                 .int => |number| try writer.print(" {s}=\"{d}\"", .{ attr.name, number }),
                 else => unreachable,
             }
         }
 
-        fn write_quoted(writer: *std.Io.Writer, name: []const u8, text: []const u8) anyerror!void {
+        /// ` name="text"`; a root path in a URL attribute under the base the project is
+        /// served at, unless it carries it already.
+        fn write_quoted(
+            writer: *std.Io.Writer,
+            name: []const u8,
+            base: []const u8,
+            text: []const u8,
+        ) anyerror!void {
             std.debug.assert(name.len > 0);
+            std.debug.assert(base.len == 0 or base[0] == '/');
 
             try writer.print(" {s}=\"", .{name});
+
+            if (address.url_attribute(name) and address.needs_base(base, text)) {
+                try writer.writeAll(base);
+            }
+
             try escape(writer, text);
             try writer.writeAll("\"");
         }

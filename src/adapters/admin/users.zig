@@ -59,16 +59,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         };
     }
 
-    const shell = admin.shell_of(&session);
-
-    try admin.render.page(response, arena, .ok, views.Users, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try settings_nav.node(&session, "users"),
+    try admin.screen(&session, .ok, views.Users, .{
         .users = rows,
     });
 }
@@ -271,7 +262,7 @@ fn problems_of(session: *Session, id: []const u8, document: []const u8) Error![]
     const problems = try session.arena.alloc(Problem, checked.problems.len);
 
     for (checked.problems, problems) |problem, *out| {
-        out.* = .{ .path = problem.path, .message = problem.message };
+        out.* = .{ .code = problem.path, .text = problem.message };
     }
 
     return problems;
@@ -322,17 +313,9 @@ fn render_form(session: *Session, status: admin.Status, shape: Shape) Error!void
     const arena = session.arena;
     const is_new = shape.id.len == 0;
     const me = session.ctx.caller.user_id() orelse "";
-    const shell = admin.shell_of(session);
     const own = try std.fmt.allocPrint(arena, "{s}/{s}", .{ back, shape.id });
 
-    try admin.render.page(session.response, arena, status, views.UserForm, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try settings_nav.node(session, "users"),
+    try admin.screen(session, status, views.UserForm, .{
         .title = if (is_new) "New user" else shape.name,
         .action = if (is_new) back ++ "/create" else try std.mem.concat(arena, u8, &.{
             own,

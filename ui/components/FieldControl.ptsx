@@ -1,6 +1,12 @@
 import { onOpenReference } from "./RecordEditor.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Checkbox } from "@publr/ui/Checkbox.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
 import { InputGroup } from "@publr/ui/InputGroup.ptsx";
@@ -38,6 +44,8 @@ export type FieldControlProps = {
   card_status: string;
   card_tone: string;
   card_href: string;
+  /** Set when removing the card deletes its record: why, for the confirmation. */
+  delete_note?: string;
   /** The reshape actions of one value in a list; empty when the value stands alone. */
   remove: string;
   up: string;
@@ -68,6 +76,7 @@ export function FieldControl({
   card_status,
   card_tone,
   card_href,
+  delete_note = "",
   remove,
   up,
   down,
@@ -251,7 +260,7 @@ export function FieldControl({
                 <Icon name="chevron-down" size="xs" />
               </Button>
             )}
-            {remove !== "" && (
+            {remove !== "" && delete_note === "" && (
               <Button
                 type="submit"
                 name="reshape"
@@ -263,6 +272,29 @@ export function FieldControl({
               >
                 <Icon name="x-close" size="xs" />
               </Button>
+            )}
+            {remove !== "" && delete_note !== "" && (
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button type="button" hierarchy="tertiary" size="xs" label="Delete" title="Delete">
+                    <Icon name="trash" size="xs" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogTitle>Delete {card_title}?</DialogTitle>
+                  <DialogDescription>{delete_note}</DialogDescription>
+                  <div class="mt-5 flex justify-end gap-2">
+                    <DialogClose asChild>
+                      <Button type="button" hierarchy="secondary">
+                        Cancel
+                      </Button>
+                    </DialogClose>
+                    <Button type="submit" form="record" name="reshape" value={remove} intent="destructive">
+                      Delete
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
             )}
           </ReferenceCard>
         )}

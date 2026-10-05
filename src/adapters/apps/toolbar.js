@@ -165,12 +165,16 @@ const clamp = (left, top, bar) => {
   ];
 };
 
+// The path the project is served under (`/environments/dev`), which the page's module
+// scripts state; empty at the root.
+const base = document.querySelector('script[data-publr-base]')?.dataset.publrBase ?? '';
+
 const start = async () => {
   if (!signed_in() || opted_out() || window.top !== window) {
     return;
   }
 
-  const answer = await fetch('/_publr/toolbar?path=' + encodeURIComponent(location.pathname), {
+  const answer = await fetch(base + '/_publr/toolbar?path=' + encodeURIComponent(location.pathname), {
     credentials: 'same-origin',
     headers: { accept: 'application/json' },
   })
@@ -182,7 +186,7 @@ const start = async () => {
   }
 
   if (!answer.signed_in) {
-    document.cookie = hint + '=; Path=/; Max-Age=0; SameSite=Lax';
+    document.cookie = hint + '=; Path=' + (base || '/') + '; Max-Age=0; SameSite=Lax';
     return;
   }
 

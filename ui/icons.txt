@@ -2,8 +2,11 @@ calendar-check
 chart
 check
 duplicate
+external
+file
 globe
 group
+home
 image
 link
 list-unordered
@@ -11,6 +14,7 @@ math
 package
 paragraph
 quote
+settings
 stack
 tag
 text-align-left

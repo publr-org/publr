@@ -122,6 +122,8 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
             "routes",
             "settings_pages",
             "top_bar",
+            "sign_in_at",
+            "app_picker_segment",
             "State",
             "operator_commands",
             "before_command",

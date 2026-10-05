@@ -5,41 +5,42 @@ import { BreadcrumbItem } from "@publr/ui/BreadcrumbItem.ptsx";
 import { BreadcrumbLink } from "@publr/ui/BreadcrumbLink.ptsx";
 import { BreadcrumbList } from "@publr/ui/BreadcrumbList.ptsx";
 import { BreadcrumbPage } from "@publr/ui/BreadcrumbPage.ptsx";
-import { BreadcrumbSeparator } from "@publr/ui/BreadcrumbSeparator.ptsx";
 
 export type CrumbsProps = {
-  /** Which section the page belongs to: "dashboard", "content" or "types". */
-  section: string;
-  /** The page's parent inside its section, before the title. */
-  crumb_label?: string;
-  crumb_href?: string;
   title: string;
+  /** The pages between the area and this one. */
+  parents: Array<{ label: string; href: string }>;
 };
 
-export function Crumbs({ section, crumb_label, crumb_href, title }: CrumbsProps) {
+/** Where the page stands: the area (from the request), its parents, the page, then the
+ * levels open in a drawer, each a way back. The overview is the area itself. */
+export function Crumbs({ title, parents }: CrumbsProps) {
   return (
     <div class="flex min-w-0" data-part="crumbs">
       <Breadcrumb>
         <BreadcrumbList>
-          <BreadcrumbItem>
-            {section === "dashboard" && <BreadcrumbPage>Overview</BreadcrumbPage>}
-            {section === "content" && (
-              <BreadcrumbLink href="/admin/content">Content</BreadcrumbLink>
-            )}
-            {section === "settings" && <BreadcrumbLink href="/admin/settings">Settings</BreadcrumbLink>}
-            {section === "structure" && <BreadcrumbPage>Structure</BreadcrumbPage>}
-            {section === "types" && <BreadcrumbLink href="/admin/structure">Structure</BreadcrumbLink>}
-            {section === "" && <BreadcrumbLink href="/admin">Overview</BreadcrumbLink>}
-          </BreadcrumbItem>
-          {crumb_label && <BreadcrumbSeparator />}
-          {crumb_label && (
+          {Publr.request.admin.area === "overview" && (
             <BreadcrumbItem>
-              <BreadcrumbLink href={crumb_href ?? "#"}>{crumb_label}</BreadcrumbLink>
+              <BreadcrumbPage>Overview</BreadcrumbPage>
             </BreadcrumbItem>
           )}
-          {section !== "dashboard" && section !== "structure" && <BreadcrumbSeparator />}
-          {section !== "dashboard" && section !== "structure" && (
+          {Publr.request.admin.area === "content" && (
             <BreadcrumbItem>
+              <BreadcrumbLink href="/admin/content">Content</BreadcrumbLink>
+            </BreadcrumbItem>
+          )}
+          {Publr.request.admin.area === "settings" && (
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/admin/settings">Settings</BreadcrumbLink>
+            </BreadcrumbItem>
+          )}
+          {parents.map((parent) => (
+            <BreadcrumbItem separated>
+              <BreadcrumbLink href={parent.href}>{parent.label}</BreadcrumbLink>
+            </BreadcrumbItem>
+          ))}
+          {Publr.request.admin.area !== "overview" && (
+            <BreadcrumbItem separated>
               <span hidden={(Publr.stores.navigation as NavigationStore).open}>
                 <BreadcrumbPage>{title}</BreadcrumbPage>
               </span>
@@ -56,10 +57,7 @@ export function Crumbs({ section, crumb_label, crumb_href, title }: CrumbsProps)
             </BreadcrumbItem>
           )}
           {(Publr.stores.navigation as NavigationStore).levels.map((level) => (
-            <BreadcrumbItem key={level.depth} data-part="drawer-crumb-row">
-              <span aria-hidden="true" class="text-input">
-                /
-              </span>
+            <BreadcrumbItem key={level.depth} separated data-part="drawer-crumb-row">
               <span hidden={!level.top}>
                 <BreadcrumbPage>{level.title}</BreadcrumbPage>
               </span>

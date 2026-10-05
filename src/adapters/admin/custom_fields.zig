@@ -32,14 +32,7 @@ pub fn list(
         };
     }
 
-    const shell = admin.shell_of(&session);
-    try admin.render.page(response, session.arena, .ok, admin.views.CustomFields, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
+    try admin.screen(&session, .ok, admin.views.CustomFields, .{
         .groups = rows,
     });
 }
@@ -58,7 +51,7 @@ pub fn new_page(
     def.name = "";
     def.handle = "";
     def.group.location = &.{.{ .rules = &.{.{ .field = "destination", .value = "user" }} }};
-    try @import("field_group.zig").render(&session, response, def, true);
+    try @import("field_group.zig").render(&session, def, true);
 }
 
 pub fn create(

@@ -23,26 +23,19 @@ pub fn show(
         return @import("type_fields/levels.zig").page(&session, handle, got.definition, null);
     }
 
-    try render(&session, response, got.definition, false);
+    try render(&session, got.definition, false);
 }
 
 pub fn render(
     session: *admin.Session,
-    response: *admin.Response,
     def: model.content_type.Def,
     fresh: bool,
 ) admin.Error!void {
     std.debug.assert(session.signed_in());
-    const shell = admin.shell_of(session);
     const subjects = try subjects_of(session);
     const hub = try std.fmt.allocPrint(session.arena, "/admin/custom-fields/{s}", .{def.handle});
-    try admin.render.page(response, session.arena, .ok, admin.views.FieldGroup, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
+
+    try admin.screen(session, .ok, admin.views.FieldGroup, .{
         .title = if (fresh) "New field group" else def.name,
         .name = def.name,
         .handle = def.handle,

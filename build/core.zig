@@ -173,6 +173,7 @@ pub fn add_module(
 
     module.addImport("views", generated.views);
     module.addImport("runtime", generated.runtime);
+    module.addImport("request", generated.request);
     module.addImport("pjsx_syntax", generated.runtime);
     jit.add(builder, module, generated.classes, optimize);
     add_admin_scripts(builder, module, generated.stores);
@@ -306,7 +307,15 @@ fn add_apps(
     module.addAnonymousImport("apps_preflight_css", .{
         .root_source_file = jit_host.path("src/preflight.css"),
     });
-    apps.add(builder, module, generated.runtime, generated.tool, from.apps_dir, from.apps_max);
+    apps.add(
+        builder,
+        module,
+        generated.runtime,
+        generated.request,
+        generated.tool,
+        from.apps_dir,
+        from.apps_max,
+    );
 }
 
 pub fn add_entry(

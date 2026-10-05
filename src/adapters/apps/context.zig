@@ -14,6 +14,7 @@ const changes = @import("../../operations/project/changes.zig");
 const engine = @import("../../template.zig");
 const Project = @import("../../server/project.zig").Project;
 const App = @import("state.zig").App;
+const model_app = @import("../../model/app.zig");
 
 pub const Error = error{EntryNotFound};
 pub const query_limit_default: u32 = 50;
@@ -384,13 +385,23 @@ pub const Context = struct {
         std.debug.assert(path.len > 0);
         std.debug.assert(std.mem.endsWith(u8, path, ".js"));
 
+        // `data-publr-base`: the path the project is served under, for the toolbar's calls.
         try writer.print("<script type=\"module\" async fetchpriority=\"low\" " ++
-            "src=\"{s}{s}{s}?v={s}\"></script>", .{
+            "src=\"{s}{s}{s}?v={s}\" data-publr-base=\"{s}\"></script>", .{
             ctx.app.base(),
             assets_prefix,
             path,
             &ctx.app.version,
+            model_app.path_of(ctx.app.options.base_url),
         });
+    }
+
+    /// The path the project is served under (`/environments/dev`), before a root path a
+    /// template wrote in a URL attribute; empty at the root.
+    pub fn url_base(ctx: *const Context) []const u8 {
+        std.debug.assert(ctx.app.options.base_url.len > 0);
+
+        return model_app.path_of(ctx.app.options.base_url);
     }
 
     /// An `/_app/...` URL under the app's mount, with the fingerprint of the build. The

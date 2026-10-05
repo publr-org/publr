@@ -18,6 +18,8 @@ pub const Generated = struct {
     stores: std.Build.LazyPath,
     /// The render runtime the generated views import; the theme's components share it.
     runtime: *std.Build.Module,
+    /// What a view reads as `Publr.request`, filled by the admin per page.
+    request: *std.Build.Module,
     tool: *std.Build.Step.Compile,
 };
 
@@ -37,7 +39,13 @@ pub fn add(
             .root_source_file = builder.path("scripts/pjsx_gen.zig"),
             .target = builder.graph.host,
             .optimize = .Debug,
-            .imports = &.{.{ .name = "pjsx", .module = pjsx_host.module("pjsx") }},
+            .imports = &.{
+                .{ .name = "pjsx", .module = pjsx_host.module("pjsx") },
+                // Only `Shape` is read here, so the render runtime is not needed.
+                .{ .name = "request", .module = builder.createModule(.{
+                    .root_source_file = builder.path("ui/request.zig"),
+                }) },
+            },
         }),
     });
     const run = builder.addRunArtifact(tool);
@@ -63,11 +71,20 @@ pub fn add(
     declare_inputs(builder, run, icons, "", ".svg");
 
     const runtime = add_runtime(builder, pjsx_host, target, optimize);
+    const request = builder.createModule(.{
+        .root_source_file = builder.path("ui/request.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "runtime", .module = runtime }},
+    });
     const views = builder.createModule(.{
         .root_source_file = out.path(builder, "views.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "runtime", .module = runtime }},
+        .imports = &.{
+            .{ .name = "runtime", .module = runtime },
+            .{ .name = "request", .module = request },
+        },
     });
 
     std.debug.assert(views.root_source_file != null);
@@ -77,6 +94,7 @@ pub fn add(
         .classes = out.path(builder, "classes.txt"),
         .stores = out.path(builder, "stores.js"),
         .runtime = runtime,
+        .request = request,
         .tool = tool,
     };
 }

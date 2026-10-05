@@ -74,6 +74,7 @@ export type RecordFieldsProps = {
       card_status: string;
       card_tone: string;
       card_href: string;
+      delete_note: string;
       remove: string;
       up: string;
       down: string;

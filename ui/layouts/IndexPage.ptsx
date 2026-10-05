@@ -1,0 +1,92 @@
+import { Chrome } from "./Chrome.ptsx";
+import { IndexHeader } from "../components/IndexHeader.ptsx";
+
+export type IndexPageProps = {
+  title: string;
+  parents?: Array<{ label: string; href: string }>;
+  description?: string;
+  /** The page's actions, its primary one last. */
+  actions?: JSX.Element;
+  /** A row of facts under the title: a status, where you are. */
+  meta?: JSX.Element;
+  /** The page's tabs (TabNav), and a menu at the band's end. */
+  tabs?: JSX.Element;
+  tab_menu?: JSX.Element;
+  /** Callouts above the list: why it cannot change, what was saved or refused. */
+  notice?: JSX.Element;
+  /** What narrows the list: its fields and the button that applies them, in a band. */
+  filters?: JSX.Element;
+  /** Drawn instead of the list, filling the sheet, when there is nothing to list. */
+  empty?: JSX.Element;
+  /** A band under the list: more rows, the save of an editable table. */
+  footer?: JSX.Element;
+  /** The list draws its own header because it redraws in place (IndexHeader). */
+  own_header?: boolean;
+  /** The list, edge to edge; IndexSections when the page has several. */
+  children?: JSX.Element;
+};
+
+/** A page that lists things: the title band, then optional bands for facts, tabs and
+ * filters, then the list running edge to edge, or the empty state filling the sheet, then
+ * an optional footer band. Every band, rule and gutter is the layout's; a page fills the
+ * slots and sets no spacing of its own. */
+export function IndexPage({
+  title,
+  parents = [],
+  description,
+  actions,
+  meta,
+  tabs,
+  tab_menu,
+  notice,
+  filters,
+  empty,
+  footer,
+  own_header = false,
+  children,
+}: IndexPageProps) {
+  return (
+    <Chrome title={title} parents={parents}>
+      <div class="flex flex-1 flex-col" data-part="index-page">
+        {!own_header && <IndexHeader title={title} description={description} actions={actions} />}
+        {meta && (
+          <div class="flex min-h-12 flex-wrap items-center gap-3 border-t border-border px-8 py-2.5">
+            {meta}
+          </div>
+        )}
+        {tabs && (
+          <div class="flex items-center justify-between gap-4 border-t border-border px-8 py-2">
+            {tabs}
+            {tab_menu}
+          </div>
+        )}
+        {notice && (
+          <div class="flex flex-col gap-3 border-t border-border px-8 py-5">{notice}</div>
+        )}
+        {filters && (
+          <div class="flex flex-wrap items-end gap-3 border-t border-border px-8 py-4">{filters}</div>
+        )}
+        {empty ? (
+          <div class={["flex flex-1 flex-col", meta || tabs || notice || filters ? "border-t border-border" : ""]}>
+            {empty}
+          </div>
+        ) : (
+          <div
+            class={[
+              "flex flex-col",
+              footer ? "" : "flex-1",
+              own_header ? "" : "border-t border-border",
+            ]}
+          >
+            {children}
+          </div>
+        )}
+        {footer && (
+          <div class="flex items-center justify-between gap-4 border-t border-border px-8 py-4">
+            {footer}
+          </div>
+        )}
+      </div>
+    </Chrome>
+  );
+}

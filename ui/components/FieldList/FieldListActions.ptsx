@@ -1,0 +1,72 @@
+import { onNavigate, openPreview } from "../TypeColumns.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { SplitButton } from "@publr/ui/SplitButton.ptsx";
+
+export type FieldListActionsProps = {
+  standalone: boolean;
+  add_href: string;
+  group_href: string;
+  settings_href?: string;
+  content_href?: string;
+};
+
+/** The fields list's actions: the preview of the form (on a type's page), and Add field,
+ * whose arrow opens the field group, the records and the settings. */
+export function FieldListActions({
+  standalone,
+  add_href,
+  group_href,
+  settings_href,
+  content_href,
+}: FieldListActionsProps) {
+  return (
+  <div class="contents">
+    {!standalone && (
+      <Button type="button" hierarchy="secondary" onClick={openPreview}>
+        <Icon name="columns" size="sm" />
+        <span>Preview</span>
+      </Button>
+    )}
+    {group_href || settings_href || content_href ? (
+      <DropdownMenu>
+        <SplitButton>
+          <Button onClick={onNavigate} href={add_href} attach="start">
+            <Icon name="plus" size="sm" />
+            <span>Add field</span>
+          </Button>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" attach="end" label="More" title="More">
+              <Icon name="chevron-down" size="sm" />
+            </Button>
+          </DropdownMenuTrigger>
+        </SplitButton>
+        <DropdownMenuContent align="right">
+          {group_href && <DropdownMenuItem href={group_href}>Field group</DropdownMenuItem>}
+          {content_href && (
+            <DropdownMenuItem onClick={onNavigate} href={content_href ?? "#"}>
+              <Icon name="file" size="sm" />
+              See content
+            </DropdownMenuItem>
+          )}
+          {settings_href && (
+            <DropdownMenuItem onClick={onNavigate} href={settings_href ?? "#"}>
+              <Icon name="settings" size="sm" />
+              Settings
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : (
+      <Button onClick={onNavigate} href={add_href}>
+        <Icon name="plus" size="sm" />
+        <span>Add field</span>
+      </Button>
+    )}
+  </div>
+  );
+}

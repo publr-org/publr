@@ -12,6 +12,7 @@ pub fn add(
     builder: *std.Build,
     library: *std.Build.Module,
     runtime: *std.Build.Module,
+    request: *std.Build.Module,
     pjsx_gen: *std.Build.Step.Compile,
     dir: []const u8,
     apps_max: u32,
@@ -41,7 +42,7 @@ pub fn add(
     });
 
     for (names, 0..) |name, index| {
-        const app = app_module(builder, library, runtime, pjsx_gen, dir, name);
+        const app = app_module(builder, library, runtime, request, pjsx_gen, dir, name);
 
         module.addImport(builder.fmt("app_{d}", .{index}), app);
     }
@@ -72,6 +73,7 @@ fn app_module(
     builder: *std.Build,
     library: *std.Build.Module,
     runtime: *std.Build.Module,
+    request: *std.Build.Module,
     pjsx_gen: *std.Build.Step.Compile,
     dir: []const u8,
     name: []const u8,
@@ -84,7 +86,14 @@ fn app_module(
     // A folder of its own per app: two apps' identical stand-ins would otherwise be one
     // file in two modules, which the compiler refuses.
     _ = placeholders.add("app.txt", app_dir);
-    const interactive = embed.interactive(builder, runtime, pjsx_gen, app_dir, placeholders);
+    const interactive = embed.interactive(
+        builder,
+        runtime,
+        request,
+        pjsx_gen,
+        app_dir,
+        placeholders,
+    );
     const style = embed.optional_file(builder, placeholders, app_dir, "public/style.css", "");
     const root = builder.addWriteFiles().add("app.zig", builder.fmt(root_format, .{
         std.zig.fmtString(name),

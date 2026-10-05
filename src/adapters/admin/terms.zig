@@ -2,6 +2,7 @@
 //! `editor.zig` over the term operations, with the parent in its aside.
 const std = @import("std");
 const admin = @import("../admin.zig");
+const settings_nav = @import("settings_nav.zig");
 const fields = @import("fields.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
@@ -48,7 +49,7 @@ fn crumb_of(arena: std.mem.Allocator, def: Def) Error![]const u8 {
     std.debug.assert(def.handle.len > 0);
     std.debug.assert(taxonomy_pages.back.len > 0);
 
-    return print(arena, "{s}/{s}", .{ taxonomy_pages.back, def.handle });
+    return print(arena, "{s}/{s}/terms", .{ taxonomy_pages.back, def.handle });
 }
 
 /// A term's aside: its parent, in a hierarchical taxonomy: every other term but what is
@@ -172,15 +173,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         };
     }
 
-    const shell = admin.shell_of(&session);
-
-    try admin.render.page(response, arena, .ok, views.Terms, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
+    try admin.screen(&session, .ok, views.Terms, .{
         .title = def.name,
         .handle = def.handle,
         .hierarchical = def.hierarchical,

@@ -420,6 +420,8 @@ pub const List = struct {
         documents: bool = false,
         /// With `documents`: virtual fields worked out (`false` reads what they keep).
         expand: bool = true,
+        /// With `documents`: `edit` gives the pending copy of a record with changes.
+        purpose: Purpose = .delivery,
     };
     pub const Out = struct {
         records: []const Record,
@@ -444,6 +446,7 @@ pub const List = struct {
         .offset = "Rows to skip",
         .documents = "Also return each record's live document, read with the page in one go",
         .expand = "With documents: virtual fields as the records they stand for (default)",
+        .purpose = "With documents: `edit` reads pending copies where there are changes",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -472,7 +475,10 @@ pub const List = struct {
             return .{ .records = listed };
         }
 
-        const documents = try domain.listed.documents_of(ctx, listed);
+        const documents = switch (in.purpose) {
+            .delivery => try domain.listed.documents_of(ctx, listed),
+            .edit => try domain.listed.edit_documents_of(ctx, listed),
+        };
 
         if (in.expand) {
             const writable = @constCast(documents);

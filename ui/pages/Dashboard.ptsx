@@ -1,38 +1,73 @@
-import { Layout } from "../layouts/Layout.ptsx";
-import { Empty } from "@publr/ui/Empty.ptsx";
-import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { HubPage } from "../layouts/HubPage.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { FilterChip } from "@publr/ui/FilterChip.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { IsoField } from "@publr/ui/IsoField.ptsx";
+import { LinkCard } from "@publr/ui/LinkCard.ptsx";
+import { PromptBox } from "@publr/ui/PromptBox.ptsx";
 
 export type DashboardProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
+  /** Work waiting for the viewer, each with its count as text ("4", "50+"). */
+  shortcuts: Array<{ label: string; count: string; href: string }>;
 };
 
-export function Dashboard({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf }: DashboardProps) {
+/** The overview: what to build next, the work waiting, and the ways into the rest. */
+export function Dashboard({ shortcuts }: DashboardProps) {
   return (
-    <Layout
-      title="Overview"
-      section="dashboard"
-      user_name={user_name}
-      user_email={user_email}
-      can_structure={can_structure}
-      can_settings={can_settings} top_bar={top_bar}
-      csrf={csrf}
-    >
-      <div class="px-8 py-7">
-        <PageHeader title="Overview" />
-        <div class="mt-6">
-          <Empty>
-            <EmptyDescription>Here will be the dashboard.</EmptyDescription>
-          </Empty>
+    <HubPage title="Overview" hero>
+      <div class="relative flex flex-1 flex-col">
+        <IsoField />
+        <div class="relative mx-auto flex w-full max-w-5xl flex-1 flex-col gap-16 px-8 pt-24 pb-16">
+          <section class="mx-auto flex w-full max-w-2xl flex-col items-center gap-8">
+            <Heading level={1} size="2xl" classes="text-center">
+              What should we build next?
+            </Heading>
+            <PromptBox
+              name="prompt"
+              rows={3}
+              disabled
+              placeholder="Ask your agent for a page, a content type, a plugin..."
+              hint="Agents connect soon"
+            >
+              <Button hierarchy="primary" size="md" disabled>
+                Build
+              </Button>
+            </PromptBox>
+            {shortcuts.length > 0 && (
+              <div class="flex flex-wrap justify-center gap-2">
+                {shortcuts.map((shortcut) => (
+                  <FilterChip key={shortcut.href} href={shortcut.href} count={shortcut.count}>
+                    {shortcut.label}
+                  </FilterChip>
+                ))}
+              </div>
+            )}
+          </section>
+          <section class="grid gap-5 sm:grid-cols-3">
+            <LinkCard
+              href="/admin/structure"
+              icon_name="components"
+              size="large"
+              title="Model your content"
+              description="Define the types, fields and taxonomies your agent and editors work with."
+            />
+            <LinkCard
+              href="/admin/settings/plugins"
+              icon_name="settings"
+              size="large"
+              title="Add a plugin"
+              description="Plugins bring operations and content types; review what they ask for."
+            />
+            <LinkCard
+              href="/admin/content"
+              icon_name="file"
+              size="large"
+              title="Write content"
+              description="Draft, review and publish the records your site is made of."
+            />
+          </section>
         </div>
       </div>
-    </Layout>
+    </HubPage>
   );
 }

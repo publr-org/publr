@@ -36,6 +36,28 @@ const book_type: model.content_type.Def = .{
             .kind = "reference",
             .options = .{ .to = &.{"author"} },
         },
+        .{
+            .name = "chapters",
+            .label = "Chapters",
+            .kind = "virtual",
+            .many = true,
+            .options = .{ .virtual = "referenced_by", .to = &.{"chapter"}, .via = "book" },
+        },
+    },
+};
+const chapter_type: model.content_type.Def = .{
+    .handle = "chapter",
+    .name = "Chapter",
+    .public = true,
+    .fields = &.{
+        .{ .name = "title", .label = "Title", .kind = "string", .required = true },
+        .{
+            .name = "book",
+            .label = "Book",
+            .kind = "reference",
+            .required = true,
+            .options = .{ .to = &.{"book"} },
+        },
     },
 };
 const ledger_type: model.content_type.Def = .{
@@ -58,7 +80,12 @@ const Library = struct {
 
         try SDK.bootstrap(&system);
 
-        for ([_]model.content_type.Def{ author_type, book_type, ledger_type }) |def| {
+        for ([_]model.content_type.Def{
+            author_type,
+            book_type,
+            chapter_type,
+            ledger_type,
+        }) |def| {
             const definition = try model.content_type.encode(system.arena, def);
 
             _ = try SDK.dispatch(&system, types.Create, .{ .definition = definition });
@@ -279,4 +306,35 @@ test "virtual: saving the list repoints the records it adds and leaves out" {
     const live = try ask(&admin, "*[_type == \"book\" && title == \"Second\"][0].author");
 
     try std.testing.expectEqualStrings("null", live.result.text);
+}
+
+test "virtual: leaving out a record that needs its parent deletes it, restorable" {
+    var library: Library = .{};
+    try library.init();
+    defer library.deinit();
+
+    var admin = library.as_admin();
+    const first = try ask(&admin, "*[_type == \"book\" && title == \"First\"][0]._id");
+    const book_id = first.result.text[1 .. first.result.text.len - 1];
+    const shape = "{{\"title\":\"{s}\",\"book\":\"{s}\"}}";
+    const one = try create(&admin, "chapter", try std.fmt.allocPrint(admin.arena, shape, .{
+        "One",
+        book_id,
+    }), "published");
+    const two = try create(&admin, "chapter", try std.fmt.allocPrint(admin.arena, shape, .{
+        "Two",
+        book_id,
+    }), "published");
+    const kept = try std.fmt.allocPrint(admin.arena, "{{\"chapters\":[\"{s}\"]}}", .{one});
+
+    _ = try SDK.dispatch(&admin, record.Save, .{ .id = book_id, .document = kept });
+
+    const gone = try SDK.dispatch(&admin, record.Get, .{ .id = two, .purpose = .edit });
+
+    try std.testing.expectEqualStrings("deleted", gone.record.status);
+    try std.testing.expect(contains(gone.document, book_id));
+
+    const got = try SDK.dispatch(&admin, record.Get, .{ .id = book_id, .purpose = .edit });
+
+    try std.testing.expect(!contains(got.document, two));
 }

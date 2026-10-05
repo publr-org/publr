@@ -24,6 +24,7 @@ pub const Interactive = struct {
 pub fn interactive(
     builder: *std.Build,
     runtime: *std.Build.Module,
+    request: *std.Build.Module,
     pjsx_gen: *std.Build.Step.Compile,
     app_dir: []const u8,
     placeholders: *std.Build.Step.WriteFile,
@@ -56,9 +57,14 @@ pub fn interactive(
         run.addFileInput(builder.path(source));
     }
 
+    // A component may read the request (the base path its URLs go under); an app's
+    // render hands none, and reads it as empty.
     const module = builder.createModule(.{
         .root_source_file = out.path(builder, "views.zig"),
-        .imports = &.{.{ .name = "runtime", .module = runtime }},
+        .imports = &.{
+            .{ .name = "runtime", .module = runtime },
+            .{ .name = "request", .module = request },
+        },
     });
 
     return .{

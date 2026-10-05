@@ -1,0 +1,62 @@
+import { Chrome } from "./Chrome.ptsx";
+import { FormBody } from "../components/FormBody.ptsx";
+
+export type FormPageProps = {
+  title: string;
+  parents?: Array<{ label: string; href: string }>;
+  description?: string;
+  actions?: JSX.Element;
+  meta?: JSX.Element;
+  problems?: Array<{ code: string; text: string }>;
+  problems_title?: string;
+  notice?: JSX.Element;
+  aside?: JSX.Element;
+  danger?: JSX.Element;
+  /** Editing one record: no sidebar, the form centred. */
+  focus?: boolean;
+  /** A body drawn by an editor that also lives in drawers (the record editor's FormBody),
+   * in place of the slots. */
+  editor?: JSX.Element;
+  children?: JSX.Element;
+};
+
+/** A page about one thing: a form to edit it, or what is known about it. The chrome, then
+ * FormBody: the title band, facts, problems, a notice, the column at one width, and the
+ * aside with the save, the details and the danger zone. */
+export function FormPage({
+  title,
+  parents = [],
+  description,
+  actions,
+  meta,
+  problems = [],
+  problems_title,
+  notice,
+  aside,
+  danger,
+  focus = false,
+  editor,
+  children,
+}: FormPageProps) {
+  return (
+    <Chrome title={title} parents={parents} focus={focus}>
+      {editor}
+      {!editor && (
+        <FormBody
+          title={title}
+          description={description}
+          actions={actions}
+          meta={meta}
+          problems={problems}
+          problems_title={problems_title}
+          notice={notice}
+          aside={aside}
+          danger={danger}
+          focus={focus}
+        >
+          {children}
+        </FormBody>
+      )}
+    </Chrome>
+  );
+}

@@ -19,7 +19,7 @@ export async function send(file: File, csrf: string): Promise<{ name: string; up
   do {
     const piece = bytes.subarray(offset, offset + piece_bytes);
     const last = offset + piece.length >= bytes.length;
-    const response = await fetch("/api/plugin/upload", {
+    const response = await fetch(Publr.url("/api/plugin/upload"), {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf },
@@ -46,7 +46,7 @@ export const upload = async (event: Event) => {
   try {
     const added = await send(file, state.csrf);
     const page = added.update ? "update" : "enable";
-    window.location.href = `/admin/settings/plugins/${added.name}/${page}`;
+    window.location.href = Publr.url(`/admin/settings/plugins/${added.name}/${page}`);
   } catch (error) {
     state.note = `Not uploaded: ${(error as Error).message}`;
   } finally {

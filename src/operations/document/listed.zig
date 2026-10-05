@@ -19,6 +19,46 @@ pub fn Of(comptime Domain: type) type {
 
         /// Each record's live document as JSON text, in the records' order.
         pub fn documents_of(ctx: *Ctx, records: []const Record) Error![]const []const u8 {
+            return documents_in(ctx, records, values.live);
+        }
+
+        /// What an editor sees: the pending copy of a record with unpublished changes, the
+        /// live document of the others.
+        pub fn edit_documents_of(ctx: *Ctx, records: []const Record) Error![]const []const u8 {
+            std.debug.assert(records.len <= 1024);
+
+            const live = try documents_in(ctx, records, values.live);
+            var changed: std.ArrayList(Record) = .empty;
+
+            for (records) |record| {
+                if (record.changed) {
+                    changed.append(ctx.arena, record) catch return error.OutOfMemory;
+                }
+            }
+
+            if (changed.items.len == 0) {
+                return live;
+            }
+
+            const pending = try documents_in(ctx, changed.items, values.pending);
+            const texts = @constCast(live);
+            var next: u32 = 0;
+
+            for (records, texts) |record, *text| {
+                if (record.changed) {
+                    text.* = pending[next];
+                    next += 1;
+                }
+            }
+
+            return texts;
+        }
+
+        fn documents_in(
+            ctx: *Ctx,
+            records: []const Record,
+            slot: []const u8,
+        ) Error![]const []const u8 {
             std.debug.assert(records.len <= 1024);
             std.debug.assert(ctx.now_ms >= 0);
 
@@ -28,7 +68,7 @@ pub fn Of(comptime Domain: type) type {
                 id.* = record.id;
             }
 
-            const owned = try values.read_many(ctx.db, ctx.arena, ids, values.live);
+            const owned = try values.read_many(ctx.db, ctx.arena, ids, slot);
             const grouped = try group(ctx, owned);
             const texts = ctx.arena.alloc([]const u8, records.len) catch {
                 return error.OutOfMemory;

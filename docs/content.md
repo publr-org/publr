@@ -74,7 +74,9 @@ linked or created in the drawer. Saving the list writes the difference into the 
 it names, each as the caller would save it: one left out has its reference cleared (or
 this record taken out of a multiple one), one added points here. A record a single
 reference holds elsewhere moves here after a confirmation. The reference changes in the
-record's own status: a published variant moves at once, a draft stays a draft.
+record's own status: a published variant moves at once, a draft stays a draft. A record
+whose reference is required and single cannot be left without one: removing it from the
+list deletes it (moves it to `deleted`, restorable), after a confirmation.
 
 Everything that has fields is a record of some type, in the same two tables:
 records, authors, later media items. A type may be private

@@ -2,6 +2,7 @@
 //! and children, `<slot />`, and the hand-off to components and `{...}` constructs.
 
 const std = @import("std");
+const address = @import("../model/app/address.zig");
 const ast = @import("ast.zig");
 const compile = @import("compile.zig");
 const expression = @import("expression.zig");
@@ -545,6 +546,19 @@ fn write_literal_attribute(compiler: *Compiler, attr: Attr, verbatim: []const u8
         }
     }
 
+    if (attr.literal) |value| {
+        if (address.url_attribute(attr.name) and root_path(value)) {
+            try compiler.static(" ");
+            try compiler.static(attr.name);
+            try compiler.static("=\"");
+            try compiler.push(.url_base);
+            try compiler.static(value);
+            try compiler.static("\"");
+
+            return;
+        }
+    }
+
     try compiler.static(" ");
     try compiler.static(verbatim);
 
@@ -553,6 +567,13 @@ fn write_literal_attribute(compiler: *Compiler, attr: Attr, verbatim: []const u8
             try collect_classes(compiler, classes);
         }
     }
+}
+
+/// `/posts`, not `//cdn.example` (another host), `#top` or `https://…`.
+fn root_path(value: []const u8) bool {
+    std.debug.assert(value.len <= 1 << 16);
+
+    return value.len > 0 and value[0] == '/' and (value.len == 1 or value[1] != '/');
 }
 
 fn generated_asset(compiler: *const Compiler, url: []const u8) bool {

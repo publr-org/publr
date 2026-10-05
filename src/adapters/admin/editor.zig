@@ -402,13 +402,21 @@ pub fn Editor(comptime domain: Domain) type {
             const shape = try load(session, id) orelse return;
             const row = shape.loaded.?.row;
 
+            const status = registry.Statuses.find(row.status);
+            const may_purge = registry.SDK.may(&session.ctx, operations.Purge);
+            const actions = try actions_of(session.arena, row, may_purge);
+
             session.response.json(.ok, .{
                 .saved = true,
                 .id = row.id,
                 .version = row.version,
                 .title = row.title,
                 .status = row.status,
+                .status_label = if (status) |known| known.label else row.status,
                 .changed = row.changed,
+                .parks = row.changed or registry.Statuses.is_live(row.status),
+                .actions = actions,
+                .has_destructive = has_destructive(actions),
             }) catch return error.OutOfMemory;
         }
 
@@ -532,7 +540,7 @@ pub fn Editor(comptime domain: Domain) type {
 
             const first = problems[0];
 
-            return print(session.arena, "Not saved: {s} {s}", .{ first.path, first.message });
+            return print(session.arena, "Not saved: {s} {s}", .{ first.code, first.text });
         }
 
         fn problems_of(
@@ -553,7 +561,7 @@ pub fn Editor(comptime domain: Domain) type {
             const problems = try session.arena.alloc(Problem, checked.problems.len);
 
             for (checked.problems, 0..) |problem, index| {
-                problems[index] = .{ .path = problem.path, .message = problem.message };
+                problems[index] = .{ .code = problem.path, .text = problem.message };
             }
 
             return problems;
@@ -578,22 +586,14 @@ pub fn Editor(comptime domain: Domain) type {
                 return fragment_answer(session, html);
             }
 
-            const shell = admin.shell_of(session);
             const def = shape.def;
 
             if (def.kind == .settings) {
-                return admin.render.page(session.response, arena, .ok, views.SettingsDocument, .{
-                    .user_name = shell.user_name,
-                    .user_email = shell.user_email,
-                    .can_structure = shell.can_structure,
-                    .can_settings = shell.can_settings,
-                    .top_bar = shell.top_bar,
-                    .csrf = shell.csrf,
+                return admin.screen(session, .ok, views.SettingsDocument, .{
                     .title = def.name,
                     .description = def.description,
                     .has_fields = def.fields.len > 0,
                     .schema_href = try print(arena, "/admin/structure/settings/{s}", .{def.handle}),
-                    .nav = try @import("settings_nav.zig").node(session, def.handle),
                     .editor = editor_panel,
                 });
             }
@@ -603,17 +603,14 @@ pub fn Editor(comptime domain: Domain) type {
             else
                 try print(arena, "New {s}", .{def.name});
 
-            try admin.render.page(session.response, arena, .ok, views.RecordForm, .{
-                .user_name = shell.user_name,
-                .user_email = shell.user_email,
-                .can_structure = shell.can_structure,
-                .can_settings = shell.can_settings,
-                .top_bar = shell.top_bar,
-                .csrf = shell.csrf,
+            const parents = try arena.alloc(views.RecordForm.ParentsItem, 1);
+
+            parents[0] = .{ .label = def.name, .href = try domain.crumb(arena, def) };
+
+            try admin.screen(session, .ok, views.RecordForm, .{
                 .title = title,
-                .section = domain.section,
-                .crumb_label = def.name,
-                .crumb_href = try domain.crumb(arena, def),
+                .parents = parents,
+                .focus = std.mem.eql(u8, domain.section, "content"),
                 .editor = editor_panel,
             });
         }
@@ -628,7 +625,6 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(session.signed_in());
 
             const arena = session.arena;
-            const shell = admin.shell_of(session);
             const def = shape.def;
             const status_now = if (shape.loaded) |full| full.row.status else "";
             const live = shape.loaded != null and registry.Statuses.is_live(status_now);
@@ -643,6 +639,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .currencies = try currencies_of(session),
                 .record_id = if (shape.loaded) |full| full.row.id else "",
                 .fixed = if (shape.loaded == null) fixed_of(session, def) else "",
+                .delete_notes = try delete_notes_of(session, def),
             };
             const rows = try fields.rows_of(context, def.fields, document);
             const field_rows = try admin.render.view(arena, views.RecordFields, .{
@@ -677,7 +674,7 @@ pub fn Editor(comptime domain: Domain) type {
 
                 return admin.render.view(arena, views.RecordEditor, .{
                     .group_position = @tagName(def.group.presentation.position),
-                    .csrf = shell.csrf,
+                    .csrf = session.csrf_token(),
                     .id = row.id,
                     .record_url = try print(arena, "{s}/{s}", .{ back, row.id }),
                     .save_url = try print(arena, "{s}/{s}/save", .{ back, row.id }),
@@ -705,6 +702,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .fields = field_rows,
                     .parks = parks,
                     .preview = shape.preview,
+                    .focus = def.kind != .settings,
                     .aside = aside,
                     .impact = null,
                 });
@@ -712,7 +710,7 @@ pub fn Editor(comptime domain: Domain) type {
 
             return admin.render.view(arena, views.RecordEditor, .{
                 .group_position = @tagName(def.group.presentation.position),
-                .csrf = shell.csrf,
+                .csrf = session.csrf_token(),
                 .id = "",
                 .record_url = "",
                 .save_url = "",
@@ -846,6 +844,40 @@ fn add_action(
         .destructive = destructive,
         .primary = false,
     }) catch return error.OutOfMemory;
+}
+
+/// The virtual fields whose records need this one (their reference is required and
+/// single): removing one deletes it, said in the confirmation.
+fn delete_notes_of(session: *Session, def: Def) Error![]const fields.DeleteNote {
+    std.debug.assert(def.fields.len <= model.field.fields_max);
+
+    var notes: std.ArrayList(fields.DeleteNote) = .empty;
+
+    for (def.fields) |field| {
+        if (!model.field.is_virtual(field.kind) or field.options.to.len != 1) {
+            continue;
+        }
+
+        const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
+            .type = field.options.to[0],
+        }) catch continue;
+
+        for (got.definition.fields) |child_field| {
+            const named = std.mem.eql(u8, child_field.name, field.options.via);
+
+            if (named and child_field.required and !child_field.many) {
+                const note = try print(session.arena, "A {s} cannot be left without its {s}, " ++
+                    "so removing it from here deletes it. You can restore it from Deleted.", .{
+                    got.definition.name,
+                    child_field.label,
+                });
+
+                try notes.append(session.arena, .{ .field = field.name, .note = note });
+            }
+        }
+    }
+
+    return notes.items;
 }
 
 /// The reference a virtual field's "Create new item" sets (`via`, `parent`), when the

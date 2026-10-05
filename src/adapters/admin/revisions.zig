@@ -56,18 +56,9 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         }) catch return error.OutOfMemory;
     }
 
-    const shell = admin.shell_of(&session);
-
-    try admin.render.page(response, arena, .ok, views.Revisions, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try admin.nav_content(&session, .{
-            .filters = .{ .types = &.{full.record.type}, .type_view = true },
-        }),
+    try admin.screen_with(&session, .{
+        .content = .{ .filters = .{ .types = &.{full.record.type}, .type_view = true } },
+    }, .ok, views.Revisions, .{
         .title = std.fmt.allocPrint(arena, "Versions of {s}", .{record_title}) catch {
             return error.OutOfMemory;
         },
@@ -105,18 +96,10 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     };
     const fields = try fields_of(arena, got.definition.fields, document);
     const record_title = if (full.record.title.len > 0) full.record.title else full.record.id;
-    const shell = admin.shell_of(&session);
 
-    try admin.render.page(response, arena, .ok, views.Revision, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try admin.nav_content(&session, .{
-            .filters = .{ .types = &.{full.record.type}, .type_view = true },
-        }),
+    try admin.screen_with(&session, .{
+        .content = .{ .filters = .{ .types = &.{full.record.type}, .type_view = true } },
+    }, .ok, views.Revision, .{
         .title = std.fmt.allocPrint(arena, "Version {d} of {s}", .{ seq, record_title }) catch {
             return error.OutOfMemory;
         },

@@ -300,20 +300,56 @@ out and says so.
 
 A plugin can show in the **admin**. Its views are PTSX files in `ui/` beside its
 `main.zig`, lowered with the admin's own when it is compiled in: they import the design
-system as `@publr/ui/<Name>.ptsx` and the admin's views as `@publr/admin/<Name>.ptsx`
-(`Layout`, `EditorColumn`), and are rendered as `publr.admin.views.<Name>`. A view's name
-may not be one the admin or the design system has, so name it after the plugin. An icon
-it names only at runtime goes in its `ui/icons.txt`, one per line, as the admin's do.
+system as `@publr/ui/<Name>.ptsx` and the admin's views as `@publr/admin/<Name>.ptsx`, and
+are rendered as `publr.admin.views.<Name>`. A view's name may not be one the admin or the
+design system has, so name it after the plugin. An icon it names only at runtime goes in
+its `ui/icons.txt`, one per line, as the admin's do.
+
+A plugin's page is drawn like the core's: its view returns one of the admin's layouts,
+`IndexPage` (a list), `FormPage` (one thing), `HubPage` or `CardPage`, and fills its slots
+(title, parents for the crumbs, description, actions, meta, tabs, notice, filters, the
+list, empty, footer; for a form the column, the aside and the danger zone, where
+`ConfirmAction` asks before anything is undone). The layout draws the chrome, the
+sidebar, the crumbs and every gutter; the view sets no spacing of its own, and the build
+refuses a page drawn otherwise. Who is signed in and the CSRF token are read where they
+are needed as `Publr.request.session` (`name`, `email`, `csrf`); no view forwards them.
+
+```tsx
+import { IndexPage } from "@publr/admin/IndexPage.ptsx";
+
+export function GuestbookEntries({ entries }: GuestbookEntriesProps) {
+  return (
+    <IndexPage
+      title="Guestbook"
+      description="What visitors wrote, newest first."
+      empty={entries.length === 0 && <Empty>…</Empty>}
+    >
+      <Table>…</Table>
+    </IndexPage>
+  );
+}
+```
+
+The route's handler renders it with `publr.admin.screen(&session, .ok, View, props)`,
+the view's own data only, after `publr.admin.require` for the signed-in session.
 
 - A settings page (`pub const settings_pages = [_]publr.plugin.SettingsPage{...}`): a
   label, an icon and the path of one of its own `get` routes, listed in the Settings
-  sidebar for whoever may call the operation it names. The route's handler draws the page
-  in the admin's chrome: `publr.admin.require` for the signed-in session,
-  `publr.admin.shell_of` for the chrome's props, `publr.admin.settings_nav.node` for the
-  sidebar with the page marked.
+  sidebar for whoever may call the operation it names, and lit on that path and every
+  path under it. A page that belongs under another's entry says so with
+  `publr.admin.screen_with(&session, .{ .settings_path = "/admin/<other>" }, ...)`.
 - A top bar item (`pub fn top_bar(session: *const publr.admin.Session)
-  publr.admin.Error!?publr.admin.render.Node`): called for every signed-in page, before
-  "View site"; null shows nothing. An item that fails is left out and logged.
+  publr.admin.Error!?publr.admin.render.Node`): called for every signed-in page; null
+  shows nothing. An item that fails is left out and logged.
+- A segment joined to the app picker (`pub fn app_picker_segment(session: *const
+  publr.admin.Session, attached: bool) publr.admin.Error!?publr.admin.render.Node`): drawn
+  after the picker as one control where the project has apps (`attached` true: draw it as
+  the control's end, `StatusButton attach="end"`), on its own in the top bar where it has
+  none. Null shows nothing.
+- Where someone who must sign in goes (`pub fn sign_in_at(session: *const
+  publr.admin.Session) anyerror!?[]const u8`): asked on the login page before the form and
+  before a trusted issuer; the first plugin that names an address sends the browser there.
+  Null leaves the login as it is.
 - Actions on the rows of another plugin's page (`pub const row_actions =
   [_]publr.plugin.RowAction{...}`): the page's slot as its owner names it, a label, a path
   where `{name}` stands for the row's name, a row kind (every row when empty) and the

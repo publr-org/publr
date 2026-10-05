@@ -3,7 +3,6 @@ import { Heading } from "@publr/ui/Heading.ptsx";
 import { ChoiceButton } from "@publr/ui/ChoiceButton.ptsx";
 import { RecordSingle } from "./RecordEditor/RecordSingle.ptsx";
 import { RecordActions } from "./RecordEditor/RecordActions.ptsx";
-import { RecordProblems } from "./RecordEditor/RecordProblems.ptsx";
 import { RecordHeader } from "./RecordEditor/RecordHeader.ptsx";
 import { RecordRepeater } from "./RecordEditor/RecordRepeater.ptsx";
 import { RecordGroup } from "./RecordEditor/RecordGroup.ptsx";
@@ -12,7 +11,8 @@ import { Button } from "@publr/ui/Button.ptsx";
 import { mutation } from "publr";
 import { invalidate } from "publr/query";
 import { Publr } from "publr-jsx";
-import { EditorColumn } from "./EditorColumn.ptsx";
+import { FormBody } from "./FormBody.ptsx";
+import { Separator } from "@publr/ui/Separator.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
@@ -38,6 +38,14 @@ export const tabKeys = (event: KeyboardEvent) => {
   tabs[next].focus();
 };
 
+export type RecordAction = {
+  name: string;
+  value: string;
+  label: string;
+  destructive: boolean;
+  primary: boolean;
+};
+
 export const state = Publr.reactive({
   id: "",
   version: "",
@@ -56,6 +64,12 @@ export const state = Publr.reactive({
   save_error: false,
   edit_revision: 0,
   title: "",
+  status: "",
+  status_label: "",
+  changed: false,
+  parks: false,
+  has_destructive: false,
+  actions: [] as RecordAction[],
 });
 
 export const form_ref = Publr.ref<HTMLFormElement>();
@@ -233,7 +247,7 @@ const headers_of = (answer: string) => {
 };
 
 const post = async (url: string, params: URLSearchParams, answer: "editor" | "json") =>
-  fetch(url, {
+  fetch(Publr.url(url), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", ...headers_of(answer) },
     body: params.toString(),
@@ -254,10 +268,20 @@ const save = mutation(async () => {
   if (!response.ok || response.redirected) throw new Error("Could not save");
   const answer = await response.json() as {
     saved: boolean; id?: string; version?: number; title?: string; reason?: string;
+    status?: string; status_label?: string; changed?: boolean; parks?: boolean;
+    has_destructive?: boolean; actions?: RecordAction[];
   };
   if (!answer.saved) throw new Error(answer.reason ?? "Cannot save yet");
   if (disposed) return false;
   state.version = String(answer.version ?? "");
+  if (answer.actions) {
+    state.status = answer.status ?? state.status;
+    state.status_label = answer.status_label ?? state.status_label;
+    state.changed = answer.changed ?? state.changed;
+    state.parks = answer.parks ?? state.parks;
+    state.has_destructive = answer.has_destructive ?? state.has_destructive;
+    state.actions = answer.actions;
+  }
   state.dirty = state.edit_revision !== revision;
   state.saved_text = state.dirty ? "Unsaved changes" : "All changes saved";
   invalidate("content");
@@ -268,7 +292,7 @@ const save = mutation(async () => {
     state.submit_url = state.save_url;
     state.record_url = `${state.base_url}/${answer.id}`;
     refresh_after_create = true;
-    if (!state.in_drawer) history.replaceState(null, "", state.record_url);
+    if (!state.in_drawer) history.replaceState(null, "", Publr.url(state.record_url));
     Publr.stores.navigation.created(root_ref.current, answer.id, answer.title ?? "");
   }
   return true;
@@ -283,7 +307,7 @@ const drain = async () => {
     if (!refresh_after_create) return true;
     const revision = state.edit_revision;
     const memo = focused();
-    const fresh = await fetch(`${state.record_url}/editor`, {
+    const fresh = await fetch(Publr.url(`${state.record_url}/editor`), {
       credentials: "same-origin", headers: headers_of("editor"),
     });
     if (!fresh.ok || fresh.redirected) throw new Error("Could not refresh the editor");
@@ -463,7 +487,7 @@ export type RecordEditorProps = {
   changed: boolean;
   versions_href: string;
   /** What was refused, by path, when the last post did not go through. */
-  problems: Array<{ path: string; message: string }>;
+  problems: Array<{ code: string; text: string }>;
   /** The status actions, each its own form to the record's action route; the primary one
    * is the split button's face, the rest its menu. */
   actions: Array<{
@@ -481,6 +505,8 @@ export type RecordEditorProps = {
   /** Drawn as a preview of the type on its fields page: the form alone, no title band,
    * no status strip, no aside; the host makes it inert. */
   preview: boolean;
+  /** Centred in the sheet, as a record is edited; a settings section sits at the gutter. */
+  focus?: boolean;
   /** Sections of the aside the adapter draws: the record's terms, a term's parent. */
   aside?: JSX.Element;
   /** The dependency dialog for the aside, rendered by the adapter under `serve --dev`. */
@@ -512,6 +538,7 @@ export function RecordEditor({
   fields,
   parks,
   preview,
+  focus = true,
   aside,
   impact,
 }: RecordEditorProps) {
@@ -525,6 +552,12 @@ export function RecordEditor({
   state.base_url = base_url;
   state.csrf = csrf;
   state.in_drawer = in_drawer;
+  state.status = status;
+  state.status_label = status_label;
+  state.changed = changed;
+  state.parks = parks;
+  state.has_destructive = has_destructive;
+  state.actions = actions;
 
   return (
     <div
@@ -537,56 +570,58 @@ export function RecordEditor({
       data-part="record-editor"
       aria-busy={state.busy}
     >
-      <EditorColumn wide>
-        {!preview && <RecordHeader in_drawer={in_drawer} title={title} type_name={type_name} />}
-        {!preview && (
-          <div class="mt-5 flex h-10 items-center gap-3 border-y border-border px-8">
+      <FormBody
+        title={title}
+        description={type_name}
+        bare={preview}
+        focus={focus}
+        in_drawer={in_drawer}
+        header={<RecordHeader in_drawer={in_drawer} title={title} type_name={type_name} />}
+        meta={
+          <div class="contents">
             {is_new && <Status tone="neutral">New</Status>}
-            {!is_new && status === "published" && <Status tone="success">{status_label}</Status>}
-            {!is_new && status !== "published" && <Status tone="neutral">{status_label}</Status>}
-            {changed && <Status tone="warning">unpublished changes</Status>}
-            <span aria-hidden="true" class="h-4 w-px bg-border"></span>
+            {!is_new && state.status === "published" && <Status tone="success">{state.status_label}</Status>}
+            {!is_new && state.status !== "published" && <Status tone="neutral">{state.status_label}</Status>}
+            {state.changed && <Status tone="warning">unpublished changes</Status>}
+            <Separator orientation="vertical" />
             <Text as="span" variant="body-xs" tone="muted">
               {state.saved_text}
             </Text>
             <Button hierarchy="tertiary" size="sm" hidden={!state.save_error} onClick={retrySave}>Retry save</Button>
           </div>
-        )}
-        <div class="mx-auto w-full max-w-4xl px-8">
-          {problems.length > 0 && <RecordProblems problems={problems} />}
-          <form
-            id="record"
-            method="post"
-            action={state.submit_url}
-            class="mt-6 flex flex-col gap-7"
-            data-group-position={group_position}
-            data-part="record-form"
-            ref={form_ref}
-            inert={state.submitting}
-          >
-            <input type="hidden" name="csrf" value={csrf} />
-            {is_new && <input type="hidden" name="type" value={type} />}
-            {!is_new && <input type="hidden" name="expected_version" value={state.version} />}
-            {fields}
-          </form>
-        </div>
-      </EditorColumn>
-      {!preview && (
-        <RecordActions
-          in_drawer={in_drawer}
-          is_new={is_new}
-          actions={actions}
-          action_route={action_route}
-          csrf={csrf}
-          expected_version={expected_version}
-          has_destructive={has_destructive}
-          id={id}
-          parks={parks}
-          versions_href={versions_href}
-          aside={aside}
-          impact={impact}
-        />
-      )}
+        }
+        problems={problems}
+        problems_title="The record was not saved."
+        side={
+          <RecordActions
+            in_drawer={in_drawer}
+            is_new={is_new}
+            action_route={action_route}
+            csrf={csrf}
+            expected_version={expected_version}
+            id={id}
+            versions_href={versions_href}
+            aside={aside}
+            impact={impact}
+          />
+        }
+      >
+        <form
+          id="record"
+          method="post"
+          action={state.submit_url}
+          class="flex flex-col gap-7"
+          data-group-position={group_position}
+          data-part="record-form"
+          ref={form_ref}
+          inert={state.submitting}
+        >
+          <input type="hidden" name="csrf" value={csrf} />
+          {is_new && <input type="hidden" name="type" value={type} />}
+          {!is_new && <input type="hidden" name="expected_version" value={state.version} />}
+          {fields}
+        </form>
+      </FormBody>
     </div>
   );
 }

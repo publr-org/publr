@@ -7,6 +7,7 @@ const operator = @import("operator.zig");
 const routes = @import("routes.zig");
 const http = @import("../lib/http.zig");
 const apps_adapter = @import("../adapters/apps.zig");
+const model_app = @import("../model/app.zig");
 const sdk = @import("../sdk.zig");
 const build_command = @import("build.zig");
 const apps_host = @import("apps_host.zig");
@@ -25,6 +26,8 @@ const Flags = struct {
     apps: apps_adapter.Options = .{},
     /// Bring every app's build up to date at startup and serve it.
     static: bool = false,
+    /// Stop after this long without a request; 0 never.
+    idle_stop_s: u32 = 0,
     /// With `--static`: build everything again, whatever the marker and the queue say.
     full: bool = false,
     /// `--url` was given; without it the apps' address is this server's own.
@@ -56,7 +59,8 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     try application.init(init, db_path);
     defer application.deinit();
 
-    var project = project_of(init.io, &application, browser_dir);
+    const base = if (flags.url_given) model_app.path_of(flags.apps.base_url) else "";
+    var project = project_of(init.io, &application, browser_dir, base);
     const first_port = flags.port orelse default_port(browser_dir != null);
     const search_span: u16 = if (flags.port == null) port_search_max else 0;
     var options = server_options(first_port, browser_dir != null);
@@ -69,7 +73,7 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     };
     defer listener.deinit();
 
-    listener.user_data = &project;
+    attach(&listener, &project);
 
     const bound = try listener.bound_port();
 
@@ -101,9 +105,22 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
 
     try listener.enable_shutdown_signals();
 
-    try run_loop(&listener, &project);
+    try run_loop(&listener, &project, @as(i64, flags.idle_stop_s) * std.time.ms_per_s);
 
     return 0;
+}
+
+/// The listener answering for `project`, under the path it is served at. The CLI beside the
+/// server, and the servers of the project's other copies, call it on its own port at
+/// `/_publr/...`, never under that path.
+fn attach(listener: *http.App, project: *routes.Project) void {
+    std.debug.assert(project.base.len == 0 or project.base[0] == '/');
+
+    listener.user_data = project;
+    listener.path_base = project.base;
+    listener.path_base_exempt = "/_publr/";
+
+    std.debug.assert(listener.user_data != null);
 }
 
 /// The project served: the plugins told where.
@@ -116,7 +133,12 @@ fn started(init: std.process.Init, project: *routes.Project, port: u16) !void {
     try plugin_hooks.serving(.{ .io = init.io, .arena = arena, .project = project, .port = port });
 }
 
-fn project_of(io: std.Io, application: *server.Server, browser_dir: ?[]const u8) routes.Project {
+fn project_of(
+    io: std.Io,
+    application: *server.Server,
+    browser_dir: ?[]const u8,
+    base: []const u8,
+) routes.Project {
     std.debug.assert(application.runtime.open_count == 1);
     std.debug.assert(browser_dir == null or browser_dir.?.len > 0);
 
@@ -125,6 +147,7 @@ fn project_of(io: std.Io, application: *server.Server, browser_dir: ?[]const u8)
         .auth = &application.auth,
         .io = io,
         .static_dir = browser_dir,
+        .base = base,
         .sandboxed_plugins = application.sandboxed(),
         .plugin_states = &application.plugin_states,
     };
@@ -187,15 +210,22 @@ fn claim(
     return try operator.open(init.io, init.arena.allocator(), db_path, port);
 }
 
-fn run_loop(listener: *http.App, project: *routes.Project) !void {
+fn run_loop(listener: *http.App, project: *routes.Project, idle_stop_ms: i64) !void {
     std.debug.assert(tick_ms > 0);
+    std.debug.assert(idle_stop_ms >= 0);
+
+    var idle: Idle = .{ .stop_ms = idle_stop_ms, .last_ms = sdk.context.wall_clock_ms(project.io) };
+
     // The loop is the server's, interleaved with the apps' rebuild queue: a batch that
     // went quiet (an admin's publish, a CLI's) is rebuilt between requests, never inside
     // one.
     while (listener.engine.phase != .stopped) {
         try listener.engine.tick(tick_ms);
 
-        if (project.stop_requested and listener.engine.phase == .running) {
+        const counters = listener.engine.counters;
+        const idle_over = idle.over(counters.requests_total, counters.active, project.io);
+
+        if ((project.stop_requested or idle_over) and listener.engine.phase == .running) {
             listener.engine.stop();
         }
 
@@ -204,6 +234,32 @@ fn run_loop(listener: *http.App, project: *routes.Project) !void {
         }
     }
 }
+
+/// `--idle-stop`: when the server last answered, by its count of requests.
+const Idle = struct {
+    stop_ms: i64,
+    last_ms: i64,
+    seen: u64 = 0,
+
+    /// Whether nothing has asked for as long as `stop_ms`, with no connection open.
+    fn over(idle: *Idle, requests_total: u64, active: u32, io: std.Io) bool {
+        std.debug.assert(idle.stop_ms >= 0);
+        std.debug.assert(requests_total >= idle.seen);
+
+        if (idle.stop_ms == 0) {
+            return false;
+        }
+
+        const now_ms = sdk.context.wall_clock_ms(io);
+
+        if (requests_total != idle.seen or active > 0) {
+            idle.seen = requests_total;
+            idle.last_ms = now_ms;
+        }
+
+        return now_ms - idle.last_ms >= idle.stop_ms;
+    }
+};
 
 fn tick_apps(project: *const routes.Project) void {
     std.debug.assert(project.apps.len > 0);
@@ -298,9 +354,11 @@ const help =
     \\  --dev             Render every page live, cache nothing, tint the islands
     \\  --out <dir>       The built apps to serve from, one folder each (default: output)
     \\  --url <base>      The project's public address: the apps' sitemaps, and the domain
-    \\                    their subdomains hang from (default: this server's own address)
+    \\                    their subdomains hang from (default: this server's own address);
+    \\                    a path in it is where the whole project is served
     \\  --apps <dir>      Where each app's public files are read from, <dir>/<folder>/public
     \\                    (default: apps)
+    \\  --idle-stop <s>   Stop after this many seconds without a request (default: never)
     \\  --edge-max-age <s>
     \\                    How long a CDN in front may keep built pages and static islands
     \\                    (CDN-Cache-Control); for a CDN purged on every change (default 0)
@@ -327,6 +385,11 @@ fn parse_flags(args: []const []const u8) Flags {
             }
             flags.port = std.fmt.parseInt(u16, args[index], 10) catch
                 return .{ .refused = "--port must be a number (0 picks a free port)" };
+        } else if (std.mem.eql(u8, arg, "--idle-stop")) {
+            index += 1;
+            const text = if (index < args.len) args[index] else "";
+            flags.idle_stop_s = std.fmt.parseInt(u32, text, 10) catch
+                return .{ .refused = "--idle-stop needs a number of seconds" };
         } else if (std.mem.eql(u8, arg, "--static")) {
             flags.static = true;
         } else if (std.mem.eql(u8, arg, "--full")) {

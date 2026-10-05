@@ -1,43 +1,49 @@
-import { Layout } from "../layouts/Layout.ptsx";
-import { Heading } from "@publr/ui/Heading.ptsx";
+import { HubPage } from "../layouts/HubPage.ptsx";
+import { HubGroup } from "../components/HubGroup.ptsx";
 import { LinkCard } from "@publr/ui/LinkCard.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
 
-export type StructureProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
-};
+export type StructureProps = {};
 
-export function Structure({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf }: StructureProps) {
+export function Structure({}: StructureProps) {
   return (
-    <Layout title="Structure" section="structure"
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      <div class="flex flex-col gap-8 px-8 py-7">
-        <PageHeader title="Structure" description="Define your content and how it fits together." />
-        <div class="grid gap-5 sm:grid-cols-3">
-          <LinkCard href="/admin/types" title="Content Types" icon_name="file" size="large"
-            description="Define the types of content your editors can create and the fields they contain." />
-          <LinkCard href="/admin/structure/taxonomies" title="Taxonomies" icon_name="tag" size="large"
-            description="Organize content with categories, tags, and other classifications." />
-          <LinkCard href="/admin/structure/settings" title="Settings" icon_name="settings" size="large"
-            description="Define settings sections and the fields your editors can configure." />
-        </div>
-        <section aria-labelledby="advanced-heading" class="mt-4 flex flex-col gap-4">
-          <Heading id="advanced-heading" level={2} size="sm" tone="muted">Advanced</Heading>
-          <div class="grid gap-4 sm:grid-cols-2">
-            <LinkCard href="/admin/components" title="Components" icon_name="components"
-              description="Build reusable components with typed props and composition rules." />
-            <LinkCard href="/admin/custom-fields" title="Custom Fields" icon_name="list-unordered"
-              description="Add fields to user profiles and media." />
-          </div>
-        </section>
+    <HubPage title="Structure" description="Define your content and how it fits together.">
+      <div class="grid gap-5 sm:grid-cols-3">
+        <LinkCard
+          href="/admin/types"
+          title="Content Types"
+          icon_name="file"
+          size="large"
+          description="Define the types of content your editors can create and the fields they contain."
+        />
+        <LinkCard
+          href="/admin/structure/taxonomies"
+          title="Taxonomies"
+          icon_name="tag"
+          size="large"
+          description="Organize content with categories, tags, and other classifications."
+        />
+        <LinkCard
+          href="/admin/structure/settings"
+          title="Settings"
+          icon_name="settings"
+          size="large"
+          description="Define settings sections and the fields your editors can configure."
+        />
       </div>
-    </Layout>
+      <HubGroup title="Advanced">
+        <LinkCard
+          href="/admin/components"
+          title="Components"
+          icon_name="components"
+          description="Build reusable components with typed props and composition rules."
+        />
+        <LinkCard
+          href="/admin/custom-fields"
+          title="Custom Fields"
+          icon_name="list-unordered"
+          description="Add fields to user profiles and media."
+        />
+      </HubGroup>
+    </HubPage>
   );
 }

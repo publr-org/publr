@@ -2,9 +2,7 @@ import { DataTable } from "@publr/ui/DataTable.ptsx";
 import type { DataTableProps } from "@publr/ui/DataTable.ptsx";
 import { onNavigate } from "@publr/ui/DataTable.ptsx";
 import { Publr } from "publr-jsx";
-import { ContentNoTypes } from "./ContentList/ContentNoTypes.ptsx";
-import { Heading } from "@publr/ui/Heading.ptsx";
-import { Text } from "@publr/ui/Text.ptsx";
+import { IndexHeader } from "./IndexHeader.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Dialog } from "@publr/ui/Dialog.ptsx";
 import { DialogClose } from "@publr/ui/DialogClose.ptsx";
@@ -25,8 +23,6 @@ import { DropdownMenuSearch } from "@publr/ui/DropdownMenuSearch.ptsx";
 
 export type ContentListProps = {
   csrf: string;
-  /** Whether any record type exists; without one there is nothing to list. */
-  has_types: boolean;
   /** The view's name: a saved view's, a type's, a built-in view's, or the whole content. */
   title: string;
   /** The list's own address, the filters in force written one way, for the history. */
@@ -102,7 +98,6 @@ Publr.effect(() => {
 
 export function ContentList({
   csrf,
-  has_types,
   title,
   address,
   shown_text,
@@ -142,145 +137,48 @@ export function ContentList({
   state.new_targets = new_targets;
 
   return (
-    <div data-part="content-list" onDatatableload={onDatatableload}>
-      {has_types ? (
-        <DataTable
-          address={address}
-          columns={columns}
-          rows={rows}
-          filters={filters}
-          hidden={hidden}
-          search={search}
-          add_filters={add_filters}
-          empty_text={empty_text}
-        >
-          <div class="px-8 pt-7 pb-5">
-            <header class="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-              <div class="min-w-0">
-                <Heading level={1} size="xl">
-                  {state.title}
-                </Heading>
-                <Text as="p" variant="body-md" tone="muted" classes="mt-1.5">
-                  {state.shown_text}
-                </Text>
-              </div>
-              <div class="flex shrink-0 flex-wrap items-center gap-2">
-                {state.is_saved && (
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button
-                        type="button"
-                        hierarchy="tertiary"
-                        size="md"
-                        label="Rename view"
-                        title="Rename view"
-                      >
-                        <Icon name="edit" size="sm" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogTitle>Rename view</DialogTitle>
-                      <DialogDescription>
-                        The name is yours alone: views are private.
-                      </DialogDescription>
-                      <form method="post" action={state.rename_href}>
-                        <input type="hidden" name="csrf" value={csrf} />
-                        <Field classes="mt-4">
-                          <FieldLabel htmlFor="rename-view-name">Name</FieldLabel>
-                          <Input
-                            id="rename-view-name"
-                            name="name"
-                            value={state.title}
-                            required
-                            maxLength={80}
-                          />
-                        </Field>
-                        <div class="mt-5 flex justify-end gap-2">
-                          <DialogClose asChild>
-                            <Button type="button" hierarchy="secondary">
-                              Cancel
-                            </Button>
-                          </DialogClose>
-                          <Button type="submit">Rename</Button>
-                        </div>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
-                )}
+    <div data-part="content-list" class="flex flex-1 flex-col" onDatatableload={onDatatableload}>
+      <DataTable
+        address={address}
+        columns={columns}
+        rows={rows}
+        filters={filters}
+        hidden={hidden}
+        search={search}
+        add_filters={add_filters}
+        empty_text={empty_text}
+      >
+        <IndexHeader
+          title={state.title}
+          description={state.shown_text}
+          actions={
+            <div class="contents">
+              {state.is_saved && (
                 <Dialog>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button type="button" hierarchy="secondary">
-                        {state.view_changed && (
-                          <span
-                            aria-hidden="true"
-                            data-part="button-mark"
-                            class="absolute -top-1 -right-1 size-2.5 rounded-full border-2 border-card bg-primary"
-                          />
-                        )}
-                        <Icon name="bookmark" size="sm" />
-                        <span>View</span>
-                        <Icon name="chevron-down" size="xs" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="right">
-                      {is_saved && (
-                        <span class="contents">
-                          {state.view_changed && (
-                            <form method="post" action={state.save_href}>
-                              <input type="hidden" name="csrf" value={csrf} />
-                              <input type="hidden" name="filters" value={state.filters_query} />
-                              <DropdownMenuItem type="submit">
-                                <Icon name="bookmark" size="sm" />
-                                Save changes to this view
-                              </DropdownMenuItem>
-                            </form>
-                          )}
-                        </span>
-                      )}
-                      <DialogTrigger asChild>
-                        <DropdownMenuItem>
-                          <Icon name="plus" size="sm" />
-                          {state.is_saved ? "Create new view" : "Copy view"}
-                        </DropdownMenuItem>
-                      </DialogTrigger>
-                      <DropdownMenuSeparator />
-                      {state.view_changed ? (
-                        <DropdownMenuItem onClick={onNavigate} href={state.base_href}>
-                          <Icon name="reset" size="sm" />
-                          Clear changes
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem disabled>
-                          <Icon name="reset" size="sm" />
-                          Clear changes
-                        </DropdownMenuItem>
-                      )}
-                      {state.is_saved && (
-                        <form method="post" action={state.delete_href}>
-                          <input type="hidden" name="csrf" value={csrf} />
-                          <DropdownMenuItem type="submit" variant="destructive">
-                            <Icon name="trash" size="sm" />
-                            Delete view
-                          </DropdownMenuItem>
-                        </form>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <DialogTrigger asChild>
+                    <Button
+                      type="button"
+                      hierarchy="tertiary"
+                      size="md"
+                      label="Rename view"
+                      title="Rename view"
+                    >
+                      <Icon name="edit" size="sm" />
+                    </Button>
+                  </DialogTrigger>
                   <DialogContent>
-                    <DialogTitle>{state.is_saved ? "New view" : "Copy view"}</DialogTitle>
+                    <DialogTitle>Rename view</DialogTitle>
                     <DialogDescription>
-                      The filters in force are saved under this name, for you alone.
+                      The name is yours alone: views are private.
                     </DialogDescription>
-                    <form method="post" action="/admin/views/create">
+                    <form method="post" action={state.rename_href}>
                       <input type="hidden" name="csrf" value={csrf} />
-                      <input type="hidden" name="filters" value={state.filters_query} />
                       <Field classes="mt-4">
-                        <FieldLabel htmlFor="new-view-name">Name</FieldLabel>
+                        <FieldLabel htmlFor="rename-view-name">Name</FieldLabel>
                         <Input
-                          id="new-view-name"
+                          id="rename-view-name"
                           name="name"
-                          value={state.copy_name}
+                          value={state.title}
                           required
                           maxLength={80}
                         />
@@ -291,49 +189,136 @@ export function ContentList({
                             Cancel
                           </Button>
                         </DialogClose>
-                        <Button type="submit">Save view</Button>
+                        <Button type="submit">Rename</Button>
                       </div>
                     </form>
                   </DialogContent>
                 </Dialog>
-
-                <>
-                  {state.new_href !== "" && (
-                    <Button href={state.new_href}>
-                      <Icon name="plus" size="sm" />
-                      <span>{state.new_label}</span>
+              )}
+              <Dialog>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" hierarchy="secondary">
+                      {state.view_changed && (
+                        <span
+                          aria-hidden="true"
+                          data-part="button-mark"
+                          class="absolute -top-1 -right-1 size-2.5 rounded-full border-2 border-card bg-primary"
+                        />
+                      )}
+                      <Icon name="bookmark" size="sm" />
+                      <span>View</span>
+                      <Icon name="chevron-down" size="xs" />
                     </Button>
-                  )}
-                  {state.new_targets.length > 0 && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button type="button">
-                          <Icon name="plus" size="sm" />
-                          <span>{state.new_label}</span>
-                          <Icon name="chevron-down" size="xs" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="right">
-                        {state.new_targets.length >= 8 && (
-                          <DropdownMenuSearch placeholder="Search types" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="right">
+                    {is_saved && (
+                      <span class="contents">
+                        {state.view_changed && (
+                          <form method="post" action={state.save_href}>
+                            <input type="hidden" name="csrf" value={csrf} />
+                            <input type="hidden" name="filters" value={state.filters_query} />
+                            <DropdownMenuItem type="submit">
+                              <Icon name="bookmark" size="sm" />
+                              Save changes to this view
+                            </DropdownMenuItem>
+                          </form>
                         )}
-                        {state.new_targets.map((target) => (
-                          <DropdownMenuItem key={target.href} href={target.href}>
-                            <Icon name="file" size="sm" />
-                            {target.label}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </>
-              </div>
-            </header>
-          </div>
-        </DataTable>
-      ) : (
-        <ContentNoTypes />
-      )}
+                      </span>
+                    )}
+                    <DialogTrigger asChild>
+                      <DropdownMenuItem>
+                        <Icon name="plus" size="sm" />
+                        {state.is_saved ? "Create new view" : "Copy view"}
+                      </DropdownMenuItem>
+                    </DialogTrigger>
+                    <DropdownMenuSeparator />
+                    {state.view_changed ? (
+                      <DropdownMenuItem onClick={onNavigate} href={state.base_href}>
+                        <Icon name="reset" size="sm" />
+                        Clear changes
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem disabled>
+                        <Icon name="reset" size="sm" />
+                        Clear changes
+                      </DropdownMenuItem>
+                    )}
+                    {state.is_saved && (
+                      <form method="post" action={state.delete_href}>
+                        <input type="hidden" name="csrf" value={csrf} />
+                        <DropdownMenuItem type="submit" variant="destructive">
+                          <Icon name="trash" size="sm" />
+                          Delete view
+                        </DropdownMenuItem>
+                      </form>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DialogContent>
+                  <DialogTitle>{state.is_saved ? "New view" : "Copy view"}</DialogTitle>
+                  <DialogDescription>
+                    The filters in force are saved under this name, for you alone.
+                  </DialogDescription>
+                  <form method="post" action="/admin/views/create">
+                    <input type="hidden" name="csrf" value={csrf} />
+                    <input type="hidden" name="filters" value={state.filters_query} />
+                    <Field classes="mt-4">
+                      <FieldLabel htmlFor="new-view-name">Name</FieldLabel>
+                      <Input
+                        id="new-view-name"
+                        name="name"
+                        value={state.copy_name}
+                        required
+                        maxLength={80}
+                      />
+                    </Field>
+                    <div class="mt-5 flex justify-end gap-2">
+                      <DialogClose asChild>
+                        <Button type="button" hierarchy="secondary">
+                          Cancel
+                        </Button>
+                      </DialogClose>
+                      <Button type="submit">Save view</Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              <>
+                {state.new_href !== "" && (
+                  <Button href={state.new_href}>
+                    <Icon name="plus" size="sm" />
+                    <span>{state.new_label}</span>
+                  </Button>
+                )}
+                {state.new_targets.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button">
+                        <Icon name="plus" size="sm" />
+                        <span>{state.new_label}</span>
+                        <Icon name="chevron-down" size="xs" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="right">
+                      {state.new_targets.length >= 8 && (
+                        <DropdownMenuSearch placeholder="Search types" />
+                      )}
+                      {state.new_targets.map((target) => (
+                        <DropdownMenuItem key={target.href} href={target.href}>
+                          <Icon name="file" size="sm" />
+                          {target.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </>
+            </div>
+          }
+        />
+      </DataTable>
     </div>
   );
 }

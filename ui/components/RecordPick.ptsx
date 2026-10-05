@@ -97,8 +97,8 @@ export function RecordPick({ type, type_name, field, search, live, via, parent, 
       </div>
       {rows.length === 0 ? (
         <div class="mx-8">
-          <Empty>
-            <EmptyTitle>Nothing to link</EmptyTitle>
+          <Empty compact>
+            <EmptyTitle size="xs">Nothing to link</EmptyTitle>
             <EmptyDescription>No {type_name} records match.</EmptyDescription>
           </Empty>
         </div>

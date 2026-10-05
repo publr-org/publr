@@ -61,7 +61,12 @@ pub const Context = struct {
     record_id: []const u8 = "",
     /// A reference set by the virtual field that opened this new record: posted, not shown.
     fixed: []const u8 = "",
+    /// Virtual fields whose records cannot be left without this one: removing deletes.
+    delete_notes: []const DeleteNote = &.{},
 };
+
+/// Why removing a virtual field's record deletes it, by field name.
+pub const DeleteNote = struct { field: []const u8, note: []const u8 };
 
 const Option = struct { value: []const u8, label: []const u8, selected: bool };
 
@@ -92,6 +97,8 @@ const Instance = struct {
     card_tone: []const u8 = "neutral",
     card_href: []const u8 = "",
     remove: []const u8 = "",
+    /// Set on a virtual field's cards when removing deletes the record: why.
+    delete_note: []const u8 = "",
     up: []const u8 = "",
     down: []const u8 = "",
     options: []const Option = &.{},
@@ -201,6 +208,15 @@ fn row_of(context: Context, def: Def, current: ?Value) Error!Row {
     } else if (def.many) {
         row.shape = "many";
         row.items = try items_of(context, def, kind, current);
+
+        for (context.delete_notes) |entry| {
+            if (std.mem.eql(u8, entry.field, def.name)) {
+                for (@constCast(row.items)) |*item| {
+                    item.delete_note = entry.note;
+                }
+            }
+        }
+
         row.add = try print(context.arena, "add:{s}", .{def.name});
         row.add_label = add_label_of(def, if (kind.has.target) "Add reference" else "Add value");
         row.has_pick = kind.has.target;

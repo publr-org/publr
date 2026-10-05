@@ -4,12 +4,13 @@ import { httpOperation } from "publr/transport";
 import { invalidate } from "publr/query";
 import { FormPreview } from "./FormPreview.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import type { StructureLevel } from "./Navigation.ptsx";
 
 export const state = Publr.reactive({
   floor: "", list_html: null as string | null, initial_html: null as string | null,
-  refresh: 0, busy: false, error: "", refresh_error: false,
+  refresh: 0, busy: false, error: "", refresh_error: false, previewing: false,
 });
 const navigation = Publr.stores.navigation;
 const stack = navigation.structure as StructureLevel[];
@@ -24,13 +25,17 @@ export const root_ref = Publr.ref<HTMLElement>(() => {
 });
 
 const top = () => stack[stack.length - 1];
-const is_ours = (url: URL) => url.origin === location.origin &&
-  (url.pathname === state.floor || (url.pathname.startsWith(`${state.floor}/fields/`) &&
-    !url.pathname.slice(`${state.floor}/fields/`.length).includes("/")));
-const address = (url: URL) => url.pathname + url.search;
+// Levels keep the site's own paths; the browser's carry the base the project is served under.
+const is_ours = (url: URL) => {
+  const path = Publr.path(url.pathname);
+  return url.origin === location.origin &&
+    (path === state.floor || (path.startsWith(`${state.floor}/fields/`) &&
+      !path.slice(`${state.floor}/fields/`.length).includes("/")));
+};
+const address = (url: URL) => Publr.path(url.pathname) + url.search;
 const settle = (push: boolean) => {
   const href = top()?.url ?? state.floor;
-  if (push && href !== location.pathname + location.search) history.pushState(null, "", href);
+  if (push && href !== address(new URL(location.href))) history.pushState(null, "", Publr.url(href));
 };
 const pop_to = (depth: number) => {
   const opener = stack[depth]?.opener;
@@ -40,7 +45,7 @@ const pop_to = (depth: number) => {
 };
 const came_back_to = (depth: number) => {
   if (depth === 0 && state.floor.startsWith("/admin/custom-fields/")) {
-    location.assign(state.floor); return;
+    location.assign(Publr.url(state.floor)); return;
   }
   pop_to(Math.max(0, Math.min(depth, stack.length)));
   settle(true);
@@ -163,7 +168,7 @@ const write = mutation(async (form: HTMLFormElement, params: URLSearchParams) =>
   if (top() !== origin) return;
   const wanted = address(new URL(next, location.href));
   if (wanted === state.floor && state.floor.startsWith("/admin/custom-fields/")) {
-    location.assign(state.floor); return;
+    location.assign(Publr.url(state.floor)); return;
   }
   const index = stack.findIndex(level => level.url === wanted);
   if (wanted === state.floor) pop_to(0);
@@ -184,7 +189,7 @@ export const submitted = (event: Event) => {
   if ((event.currentTarget as HTMLElement).closest('[data-standalone="true"]')) return;
   const form = event.currentTarget;
   if (!(form instanceof HTMLFormElement) || event.defaultPrevented ||
-      !new URL(form.action).pathname.startsWith(`${state.floor}/fields/`)) return;
+      !Publr.path(new URL(form.action).pathname).startsWith(`${state.floor}/fields/`)) return;
   event.preventDefault();
   const params = new URLSearchParams();
   for (const [name, value] of new FormData(form)) if (typeof value === "string") params.append(name, value);
@@ -193,8 +198,14 @@ export const submitted = (event: Event) => {
   void write(form, params);
 };
 export const pressed = (event: Event) => {
-  if (event instanceof KeyboardEvent && event.key === "Escape" && !event.defaultPrevented && stack.length) onBack(event);
+  if (!(event instanceof KeyboardEvent) || event.key !== "Escape" || event.defaultPrevented) return;
+  if (stack.length) onBack(event);
+  else if (state.previewing) state.previewing = false;
 };
+// The preview frames the fields and the form side by side over the page; closing it
+// leaves the fields where they were.
+export const openPreview = () => { state.previewing = true; };
+export const closePreview = () => { state.previewing = false; };
 export const went_back = () => go(location.href, false);
 
 export type TypeColumnsProps = {
@@ -208,39 +219,53 @@ export type TypeColumnsProps = {
 export function TypeColumns({ type_href, list, levels, open, preview }: TypeColumnsProps) {
   state.floor = type_href;
   return (
-    <div class="flex min-h-0 grow items-stretch" data-part="type-columns" ref={root_ref}
+    <div class="flex grow flex-col" data-part="type-columns" ref={root_ref}
       onDocumentKeyDown={pressed} onWindowPopState={went_back} aria-busy={state.busy}>
-      <div class="relative min-w-0 flex-1 lg:w-1/2 lg:flex-none" data-part="type-left" data-type-href={type_href} inert={state.busy}>
-        <div class="h-full overflow-y-auto outline-none" inert={Publr.stores.navigation.structure.length > 0}
-          data-part="type-list" ref={floor_ref} tabindex={-1} innerHTML={state.list_html}>{list}</div>
-        <div innerHTML={state.initial_html}>{levels}</div>
-        <div data-part="type-levels">
-          {Publr.stores.navigation.structure.map((level) => (
-            <div key={level.id} class="contents" data-part="type-level" data-url={level.url}>
-              <a href={type_href} aria-label="Back" class="absolute inset-0 bg-black/50"
-                data-part="type-scrim" onClick={onBack}></a>
-              <div ref={panel_ref} data-level={level.id} data-part="type-panel" style={level.style}
-                class="drawer-enter absolute inset-y-0 right-0 overflow-y-auto border-l border-border bg-card shadow-2xl outline-none"
-                inert={level.inactive} focusScope={!level.inactive} tabindex={-1} aria-busy={level.loading}>
-                <div class="px-8 py-4" hidden={!level.loading} role="status">
-                  <Text variant="body-sm" tone="muted">Loading field…</Text>
+      <div class="fixed inset-0 z-30 bg-black/50" hidden={!state.previewing} onClick={closePreview}
+        data-part="type-preview-scrim"></div>
+      <div class={state.previewing
+        ? "fixed inset-6 z-40 flex overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+        : "flex grow items-stretch"}
+        data-part="type-frame">
+        <div class={state.previewing ? "relative min-w-0 w-1/2 overflow-y-auto" : "relative flex min-w-0 flex-1 flex-col"}
+          data-part="type-left" data-type-href={type_href} inert={state.busy}>
+          <div class="flex grow flex-col outline-none" inert={Publr.stores.navigation.structure.length > 0}
+            data-part="type-list" ref={floor_ref} tabindex={-1} innerHTML={state.list_html}>{list}</div>
+          <div innerHTML={state.initial_html}>{levels}</div>
+          <div data-part="type-levels">
+            {Publr.stores.navigation.structure.map((level) => (
+              <div key={level.id} class="contents" data-part="type-level" data-url={level.url}>
+                <a href={type_href} aria-label="Back" class="absolute inset-0 bg-black/50"
+                  data-part="type-scrim" onClick={onBack}></a>
+                <div ref={panel_ref} data-level={level.id} data-part="type-panel" style={level.style}
+                  class="drawer-enter absolute inset-y-0 right-0 overflow-y-auto border-l border-border bg-card shadow-2xl outline-none"
+                  inert={level.inactive} focusScope={!level.inactive} tabindex={-1} aria-busy={level.loading}>
+                  <div class="px-8 py-4" hidden={!level.loading} role="status">
+                    <Text variant="body-sm" tone="muted">Loading field…</Text>
+                  </div>
+                  <div class="px-8 py-4" hidden={!level.error} role="alert">
+                    <Text variant="body-sm">{level.error}</Text>
+                    <Button onClick={retryLevel} data-level={level.id} hierarchy="secondary">Retry</Button>
+                  </div>
+                  <div class="flex min-h-full flex-col" data-part="type-panel-body" innerHTML={level.html}></div>
                 </div>
-                <div class="px-8 py-4" hidden={!level.error} role="alert">
-                  <Text variant="body-sm">{level.error}</Text>
-                  <Button onClick={retryLevel} data-level={level.id} hierarchy="secondary">Retry</Button>
-                </div>
-                <div class="flex min-h-full flex-col" data-part="type-panel-body" innerHTML={level.html}></div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <div class="absolute inset-x-0 bottom-0 px-8 py-4" hidden={!state.error} role="alert">
+            <Text variant="body-sm">{state.error}</Text>
+            <Button onClick={retryColumns} hidden={!state.refresh_error} hierarchy="secondary">Retry refresh</Button>
+          </div>
         </div>
-        <div class="absolute inset-x-0 bottom-0 px-8 py-4" hidden={!state.error} role="alert">
-          <Text variant="body-sm">{state.error}</Text>
-          <Button onClick={retryColumns} hidden={!state.refresh_error} hierarchy="secondary">Retry refresh</Button>
+        <div class="relative flex min-w-0 w-1/2 flex-col border-l border-border bg-card"
+          hidden={!state.previewing} data-part="type-preview">
+          <FormPreview note="" editor={preview}>
+            <Button type="button" hierarchy="tertiary" size="sm" label="Close preview" title="Close preview"
+              onClick={closePreview}>
+              <Icon name="x-close" size="sm" />
+            </Button>
+          </FormPreview>
         </div>
-      </div>
-      <div class="relative z-10 hidden min-w-0 border-l border-border bg-card lg:flex lg:w-1/2 lg:flex-col">
-        <FormPreview note="" editor={preview} />
       </div>
     </div>
   );

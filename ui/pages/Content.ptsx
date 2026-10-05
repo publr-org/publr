@@ -1,35 +1,45 @@
-import { Layout } from "../layouts/Layout.ptsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
 
 export type ContentProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
-  nav: JSX.Element;
-  /** The view's name, for the window and the breadcrumb. */
+  /** The view's name, for the window and the crumbs. */
   title: string;
-  /** The list itself (ContentList), rendered once by the adapter: the page wraps it in the
-   * shell, and the list's script fetches it bare to draw it again in place. */
-  list: JSX.Element;
+  /** Whether any record type exists; without one there is nothing to list. */
+  has_types: boolean;
+  /** The list itself (ContentList), rendered once by the adapter: the page wraps it, and
+   * the list's script fetches it bare to draw it again in place, its header included. */
+  list?: JSX.Element;
 };
 
-export function Content({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, title, list }: ContentProps) {
+/** The content: one view of the records, filtered and saved, or the way to the first
+ * content type when there is none. */
+export function Content({ title, has_types, list }: ContentProps) {
   return (
-    <Layout
+    <IndexPage
       title={title}
-      section="content"
-      user_name={user_name}
-      user_email={user_email}
-      can_structure={can_structure}
-      can_settings={can_settings} top_bar={top_bar}
-      csrf={csrf}
-      sidebar={nav}
+      own_header={has_types}
+      actions={
+        !has_types && (
+          <Button href="/admin/types/new">
+            <Icon name="plus" size="sm" />
+            <span>New content type</span>
+          </Button>
+        )
+      }
+      empty={
+        !has_types && (
+          <Empty>
+            <EmptyTitle>No content types yet</EmptyTitle>
+            <EmptyDescription>Content is made of records of a type. Define a type first.</EmptyDescription>
+          </Empty>
+        )
+      }
     >
       {list}
-    </Layout>
+    </IndexPage>
   );
 }

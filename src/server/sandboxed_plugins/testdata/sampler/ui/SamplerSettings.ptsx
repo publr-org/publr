@@ -1,37 +1,24 @@
-import { Layout } from "@publr/admin/Layout.ptsx";
-import { EditorColumn } from "@publr/admin/EditorColumn.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { FormPage } from "@publr/admin/FormPage.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 export type SamplerSettingsProps = {
-  user_name: string;
-  user_email: string;
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
-  nav: JSX.Element;
   /** The lines the notes' notices left, oldest first. */
   lines: string[];
   /** The port `serve` got, as the sampler's state noted it. */
   port: string;
 };
 
-/** The sampler's settings page: a compiled-in plugin's page in the admin's own chrome. */
-export function SamplerSettings({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, lines, port }: SamplerSettingsProps) {
+/** The sampler's settings page: a compiled-in plugin's page in the admin's own layouts. */
+export function SamplerSettings({ lines, port }: SamplerSettingsProps) {
   return (
-    <Layout title="Sampler" section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      <EditorColumn>
-        <PageHeader title="Sampler" description={`The notes the sampler kept, served on port ${port}.`} />
-        <ul class="mt-6 flex flex-col gap-2">
-          {lines.map((line) => (
-            <li>
-              <Text variant="body-md">{line}</Text>
-            </li>
-          ))}
-        </ul>
-      </EditorColumn>
-    </Layout>
+    <FormPage title="Sampler" description={`The notes the sampler kept, served on port ${port}.`}>
+      <ul class="flex flex-col gap-2">
+        {lines.map((line) => (
+          <li>
+            <Text variant="body-md">{line}</Text>
+          </li>
+        ))}
+      </ul>
+    </FormPage>
   );
 }

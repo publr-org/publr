@@ -1,58 +1,101 @@
+import { Button } from "@publr/ui/Button.ptsx";
 import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
 import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
 import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
-import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
 import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import { StatusButton } from "@publr/ui/StatusButton.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 type Choice = {
-  /** What the form sends: empty for everything, `_project` for the project's own, else an
-   * app's name. */
+  /** What the form sends: empty for everything, else an app's name. */
   value: string;
   label: string;
   current: boolean;
+  /** The app's site, opened beside the choice; empty for everything. */
+  href: string;
 };
 
 export type AppSwitcherProps = {
-  /** What the admin shows now: "All apps", "Project only" or an app's label. */
+  /** What the admin shows now: "All apps" or an app's label. */
   current: string;
+  /** The site of the app shown now; empty when it is not one app. */
+  current_href: string;
   /** Everything, the project's own, then each app. */
   choices: Choice[];
   csrf: string;
   /** The page to come back to, narrowed. */
   back: string;
+  /** What plugins join to the picker, after it (`app_picker_segment`). */
+  after?: JSX.Element;
+  /** Whether anything is joined after it. */
+  extended: boolean;
 };
 
-/** Which app the admin shows, top right: every record, the project's own, or one app's.
- * It only narrows what is listed; picking one reloads the page. */
-export function AppSwitcher({ current, choices, csrf, back }: AppSwitcherProps) {
+/** Which app the admin shows, top right: every record, or one app's, with a way to that
+ * app's site. It only narrows what is listed; picking one reloads the
+ * page. Plugins may join their own segments to it, one control. */
+export function AppSwitcher({ current, current_href, choices, csrf, back, after, extended }: AppSwitcherProps) {
+  const linked = current_href !== "";
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <StatusButton tone="neutral" icon_name="stack" label={`Showing: ${current}. Switch app`}>
-          {current}
-        </StatusButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="right" classes="min-w-56">
-        {choices.map((choice) => (
-          <div class="contents" key={choice.value}>
-            <form method="post" action="/admin/app" data-part="app-choice">
-              <input type="hidden" name="csrf" value={csrf} />
-              <input type="hidden" name="app" value={choice.value} />
-              <input type="hidden" name="back" value={back} />
-              <DropdownMenuItem type="submit">
-                <Text as="span" variant="body-md" classes="flex-1 truncate">
-                  {choice.label}
-                </Text>
-                {choice.current && <Icon name="check" size="sm" />}
-              </DropdownMenuItem>
-            </form>
-            {choice.value === "_project" && <DropdownMenuSeparator />}
-          </div>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div class="inline-flex items-stretch" data-part="app-picker">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <StatusButton
+            stripe={false}
+            prefix={linked ? "App" : undefined}
+            attach={linked || extended ? "start" : "none"}
+            merge={linked ? "next" : "none"}
+            label={`Showing: ${current}. Switch app`}
+          >
+            {current}
+          </StatusButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="right" classes="min-w-64">
+          {choices.map((choice) => (
+            <div class="contents" key={choice.value}>
+              <div class="flex items-center gap-1" data-part="app-choice">
+                <form method="post" action="/admin/app" class="min-w-0 flex-1">
+                  <input type="hidden" name="csrf" value={csrf} />
+                  <input type="hidden" name="app" value={choice.value} />
+                  <input type="hidden" name="back" value={back} />
+                  <DropdownMenuItem type="submit">
+                    <Text as="span" variant="body-md" classes="flex-1 truncate">
+                      {choice.label}
+                    </Text>
+                    {choice.current && <Icon name="check" size="sm" />}
+                  </DropdownMenuItem>
+                </form>
+                {choice.href !== "" && (
+                  <Button
+                    size="sm"
+                    hierarchy="tertiary"
+                    href={choice.href}
+                    target="_blank"
+                    label={`Open ${choice.label}`}
+                    title={`Open ${choice.label}`}
+                  >
+                    <Icon name="external" size="sm" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {linked && (
+        <StatusButton
+          stripe={false}
+          href={current_href}
+          target="_blank"
+          icon_name="external"
+          attach={extended ? "middle" : "end"}
+          merge="previous"
+          label={`Open ${current}`}
+        />
+      )}
+      {after}
+    </div>
   );
 }

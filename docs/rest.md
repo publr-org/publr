@@ -53,6 +53,13 @@ its `public/` files at their own paths (`<mount>/robots.txt`). A built
 page answers with an `ETag`, a rendered one with `no-store`; `X-Publr-Served` says which
 (`file`, `memory`, `render`). With no app there, `/` opens the admin.
 
+## Served under a path
+
+A project whose `--url` has a path (`https://example.com/site`) is served under it: every
+route above answers at `/site/...`, and a request outside it is not the project's (404).
+Every address it sends back carries the path: pages, assets, island and script requests,
+redirects, and the paths its cookies are kept for.
+
 ## Health
 
 | Route | What |

@@ -560,6 +560,8 @@ pub fn Merged(comptime plugins: anytype) type {
         var settings_pages: []const SettingsPage = &.{};
         var row_actions: []const RowAction = &.{};
         var top_bar: []const type = &.{};
+        var sign_in_at: []const type = &.{};
+        var app_picker_segment: []const type = &.{};
         var operator_commands: []const route.DeclaredCommand = &.{};
         var before_command: []const type = &.{};
         var serving: []const type = &.{};
@@ -595,6 +597,14 @@ pub fn Merged(comptime plugins: anytype) type {
 
             if (@hasDecl(Plugin, "top_bar")) {
                 top_bar = top_bar ++ &[_]type{Plugin};
+            }
+
+            if (@hasDecl(Plugin, "sign_in_at")) {
+                sign_in_at = sign_in_at ++ &[_]type{Plugin};
+            }
+
+            if (@hasDecl(Plugin, "app_picker_segment")) {
+                app_picker_segment = app_picker_segment ++ &[_]type{Plugin};
             }
 
             operator_commands = operator_commands ++ route.operator_commands_of(Plugin);
@@ -721,6 +731,10 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_row_actions = row_actions;
             /// The plugins with a top bar item, in name order.
             pub const merged_top_bar = top_bar;
+            /// The plugins that may send someone who must sign in elsewhere, in name order.
+            pub const merged_sign_in_at = sign_in_at;
+            /// The plugins that join a segment to the app picker, in name order.
+            pub const merged_app_picker_segment = app_picker_segment;
             /// The plugins that keep a `State`, in name order.
             pub const merged_stateful = state.stateful(plugins);
             pub const merged_operator_commands = operator_commands;

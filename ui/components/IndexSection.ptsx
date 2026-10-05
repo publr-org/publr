@@ -1,0 +1,76 @@
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type IndexSectionProps = {
+  title: string;
+  description?: string;
+  /** The section's own actions, at the end of its heading row. */
+  actions?: JSX.Element;
+  /** Said instead of the list when the section has nothing in it. */
+  empty?: string;
+  /** Inside a FormPage's column: a bordered box of its own instead of a band. */
+  boxed?: boolean;
+  /** The content is text or a form, not a list: it sits at the gutter, stacked. */
+  padded?: boolean;
+  /** The section's list or form, edge to edge. */
+  children?: JSX.Element;
+};
+
+/** One of several lists on a page (IndexPage) or one part of a form (FormPage): a heading
+ * row at the sheet's gutter with its own actions, then its content, or a line saying there
+ * is nothing. Sections follow each other with a rule between. */
+export function IndexSection({
+  title,
+  description,
+  actions,
+  empty,
+  boxed = false,
+  padded = false,
+  children,
+}: IndexSectionProps) {
+  return (
+    <section
+      class={
+        boxed
+          ? "overflow-hidden rounded-xl border border-border"
+          : "border-b border-border last:border-b-0"
+      }
+      data-part="index-section"
+    >
+      <div
+        class={[
+          "flex min-h-14 items-center justify-between gap-3 py-4",
+          boxed ? "px-5" : "px-8",
+        ]}
+      >
+        <div class="min-w-0">
+          <Heading level={2} size="sm">
+            {title}
+          </Heading>
+          {description && (
+            <Text as="p" variant="body-sm" tone="muted" classes="mt-0.5">
+              {description}
+            </Text>
+          )}
+        </div>
+        {actions && <div class="flex shrink-0 items-center gap-2">{actions}</div>}
+      </div>
+      {empty ? (
+        <div class={boxed ? "px-5 pb-5" : "px-8 pb-5"}>
+          <Text as="p" variant="body-sm" tone="muted">
+            {empty}
+          </Text>
+        </div>
+      ) : (
+        <div
+          class={[
+            "border-t border-border",
+            padded ? (boxed ? "flex flex-col gap-4 px-5 py-5" : "flex flex-col gap-4 px-8 py-5") : "",
+          ]}
+        >
+          {children}
+        </div>
+      )}
+    </section>
+  );
+}

@@ -84,6 +84,9 @@ pub const App = struct {
     stores_imports: []const []const u8,
     /// Where the app answers: `https://example.com/newsletter`, `https://app.example.com`.
     url: []const u8,
+    /// What the app's own URLs start with on its host: the path the project is served under,
+    /// then the app's mount (`/environments/dev/newsletter`); empty at the root.
+    public_base: []const u8 = "",
     output: ?std.Io.Dir = null,
     options: Options,
     /// What a build depends on besides the records: the templates, `version` (the
@@ -150,6 +153,12 @@ pub const App = struct {
         errdefer gpa.free(app.stores_imports);
 
         app.url = try url_of(gpa, options.base_url, spec.mount);
+        errdefer gpa.free(app.url);
+
+        app.public_base = try std.fmt.allocPrint(gpa, "{s}{s}", .{
+            model_app.path_of(options.base_url),
+            model_app.base_path(spec.mount),
+        });
         app.build_stamp = fingerprint.build_stamp(spec, &app.version, app.url);
 
         std.debug.assert(app.css.len > 0);
@@ -209,6 +218,7 @@ pub const App = struct {
         }
 
         app.gpa.free(app.url);
+        app.gpa.free(app.public_base);
         app.gpa.free(app.stores_imports);
         fingerprint.free(app.gpa, app.assets);
         app.unload();
@@ -223,11 +233,13 @@ pub const App = struct {
         return app.program.?;
     }
 
-    /// What the app's own URLs start with on its host: `/newsletter`, or nothing.
+    /// What the app's own URLs start with on its host: `/newsletter`, or nothing, after the
+    /// path the project is served under.
     pub fn base(app: *const App) []const u8 {
         std.debug.assert(app.spec.name.len > 0);
+        std.debug.assert(app.public_base.len == 0 or app.public_base[0] == '/');
 
-        return model_app.base_path(app.spec.mount);
+        return app.public_base;
     }
 
     /// Opens (creating) `<output>/<app>/`: the build writes there and `serve` reads.

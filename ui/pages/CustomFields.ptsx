@@ -1,6 +1,9 @@
-import { Layout } from "../layouts/Layout.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Table } from "@publr/ui/Table.ptsx";
@@ -9,34 +12,63 @@ import { TableHead } from "@publr/ui/TableHead.ptsx";
 import { TableBody } from "@publr/ui/TableBody.ptsx";
 import { TableRow } from "@publr/ui/TableRow.ptsx";
 import { TableCell } from "@publr/ui/TableCell.ptsx";
+
 export type CustomFieldsProps = {
-  user_name: string; user_email: string; csrf: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
   groups: Array<{ name: string; handle: string; href: string; status: string }>;
 };
-export function CustomFields({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, groups }: CustomFieldsProps) {
+
+/** The field groups that extend users and media, and a way to add one. */
+export function CustomFields({ groups }: CustomFieldsProps) {
   return (
-    <Layout title="Custom Fields" section="structure"
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      <div class="px-8 pt-7 pb-6">
-        <PageHeader title="Custom Fields" description="Create field groups and choose where they appear.">
-          <Button href="/admin/custom-fields/new">Add field group</Button>
-        </PageHeader>
-      </div>
-      <div class="border-t border-border">
-        {groups.length === 0 && <div class="px-8 py-8"><Text variant="body-md" tone="muted">No field groups yet. Add a group to extend users or media.</Text></div>}
-        {groups.length > 0 && <Table>
-          <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Handle</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-          <TableBody>{groups.map((group) => (<TableRow>
-            <TableCell><Link href={group.href}>{group.name}</Link></TableCell>
-            <TableCell>{group.handle}</TableCell><TableCell>{group.status}</TableCell>
-          </TableRow>))}</TableBody>
-        </Table>}
-      </div>
-    </Layout>
+    <IndexPage
+      title="Custom Fields"
+      parents={[{ label: "Structure", href: "/admin/structure" }]}
+      description="Create field groups and choose where they appear."
+      actions={
+        <Button href="/admin/custom-fields/new">
+          <Icon name="plus" size="sm" />
+          <span>Add field group</span>
+        </Button>
+      }
+      empty={
+        groups.length === 0 && (
+          <Empty>
+            <EmptyTitle>No field groups yet</EmptyTitle>
+            <EmptyDescription>Add a group to extend users or media.</EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Handle</TableHead>
+            <TableHead>Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {groups.map((group) => (
+            <TableRow>
+              <TableCell>
+                <Link href={group.href} variant="body-sm" tone="default">
+                  {group.name}
+                </Link>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="mono-xs" tone="muted">
+                  {group.handle}
+                </Text>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {group.status}
+                </Text>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
   );
 }

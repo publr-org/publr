@@ -102,16 +102,7 @@ fn render(
     std.debug.assert(tab.len > 0);
     std.debug.assert(session.signed_in());
 
-    const shell = admin.shell_of(session);
-
-    try admin.render.page(session.response, session.arena, .ok, views.Activity, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try settings_nav.node(session, "system"),
+    try admin.screen(session, .ok, views.Activity, .{
         .tab = tab,
         .entries = entries,
         .older_href = older_href,

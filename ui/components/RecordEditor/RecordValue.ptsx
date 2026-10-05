@@ -22,6 +22,7 @@ export type RecordValueProps = {
   card_status: string;
   card_tone: string;
   card_href: string;
+  delete_note?: string;
   remove: string;
   up: string;
   down: string;
@@ -51,6 +52,7 @@ export function RecordValue({
   card_status,
   card_tone,
   card_href,
+  delete_note = "",
   remove,
   up,
   down,
@@ -76,6 +78,7 @@ export function RecordValue({
       card_status={card_status}
       card_tone={card_tone}
       card_href={card_href}
+      delete_note={delete_note}
       remove={remove}
       up={up}
       down={down}

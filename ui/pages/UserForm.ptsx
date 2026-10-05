@@ -1,33 +1,18 @@
-import { Layout } from "../layouts/Layout.ptsx";
-import { EditorColumn } from "../components/EditorColumn.ptsx";
+import { Publr } from "publr-jsx";
+import { FormPage } from "../layouts/FormPage.ptsx";
+import { ConfirmAction } from "../components/ConfirmAction.ptsx";
+import { EditorAsideSection } from "../components/EditorAsideSection.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Code } from "@publr/ui/Code.ptsx";
-import { RecordProblems } from "../components/RecordEditor/RecordProblems.ptsx";
-import { Dialog } from "@publr/ui/Dialog.ptsx";
-import { DialogClose } from "@publr/ui/DialogClose.ptsx";
-import { DialogContent } from "@publr/ui/DialogContent.ptsx";
-import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
-import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
-import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { FieldSet } from "@publr/ui/FieldSet.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
-import { Text } from "@publr/ui/Text.ptsx";
 
 export type UserFormProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
-  nav: JSX.Element;
   title: string;
   /** Where the form posts: create, or update of an existing account. */
   action: string;
@@ -51,105 +36,134 @@ export type UserFormProps = {
    * roles are not known yet. */
   fields?: JSX.Element;
   /** The custom field values refused, by path, when the last post did not go through. */
-  problems: Array<{ path: string; message: string }>;
+  problems: Array<{ code: string; text: string }>;
 };
 
 /** One account: its name, email and roles. A new account is invited with a set-password
  * link unless a password is typed; an existing one can be renamed, given other roles,
  * sent a fresh link, or deleted. */
 export function UserForm({
-  user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, title, action, is_new, is_me, name, email, roles,
-  invited, link, link_action, delete_action, problem, fields, problems,
+  title,
+  action,
+  is_new,
+  is_me,
+  name,
+  email,
+  roles,
+  invited,
+  link,
+  link_action,
+  delete_action,
+  problem,
+  fields,
+  problems,
 }: UserFormProps) {
   return (
-    <Layout title={title} section="settings" crumb_label="Users" crumb_href="/admin/settings/users"
-      sidebar={nav} user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      <EditorColumn>
-        <PageHeader title={title} back_label="Users" back_href="/admin/settings/users" />
-        {problem !== "" && (
-          <Text as="p" variant="body-sm" tone="error" classes="font-medium">
-            The user was not saved: {problem}.
-          </Text>
-        )}
-        {problems.length > 0 && <RecordProblems problems={problems} />}
-        {link !== "" && (
-          <Callout title="Set-password link" tone="info">
-            <Text as="p" variant="body-sm">
-              Send this link to {name}; it works once, for an hour, and is shown only now.
-              Prefix it with the site's address.
-            </Text>
-            <Code classes="mt-2 block break-all">{link}</Code>
+    <FormPage
+      title={title}
+      parents={[{ label: "Users", href: "/admin/settings/users" }]}
+      problems={problems}
+      problems_title="The custom fields were not saved."
+      notice={
+        (problem !== "" && (
+          <Callout tone="error" title="The user was not saved.">
+            {problem}
           </Callout>
-        )}
-        <form id="user" method="post" action={action} class="mt-6 space-y-5">
-          <input type="hidden" name="csrf" value={csrf} />
-          <Field>
-            <FieldLabel htmlFor="display_name">Name</FieldLabel>
-            <Input id="display_name" name="display_name" value={name} required autocomplete="off" />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="email">Email</FieldLabel>
-            <Input id="email" type="email" name="email" value={email} required={is_new}
-              readOnly={!is_new} autocomplete="off" />
-            {!is_new && <FieldDescription>The email an account signs in with cannot change.</FieldDescription>}
-          </Field>
-          <fieldset class="m-0 min-w-0 space-y-3 border-0 p-0" data-part="user-roles">
-            <legend class="mb-2 p-0">
-              <Text as="span" variant="body-sm" tone="default">Roles</Text>
-            </legend>
-            {roles.map((role) => (
-              <CheckboxField id={`role-${role.name}`} name="roles" value={role.name}
-                checked={role.checked} disabled={is_me} label={role.label}
-                description={role.description} />
-            ))}
-            {is_me && <FieldDescription>Your own roles are changed by another admin.</FieldDescription>}
-          </fieldset>
-          {is_new && (
-            <Field>
-              <FieldLabel htmlFor="password">Password</FieldLabel>
-              <Input id="password" type="password" name="password" autocomplete="new-password" />
-              <FieldDescription>
-                Leave it empty to invite the person with a set-password link instead.
-              </FieldDescription>
-            </Field>
+        )) ||
+        (link !== "" && (
+          <Callout title="Set-password link">
+            Send this link to {name}; it works once, for an hour, and is shown only now. Prefix it
+            with the site's address.
+          </Callout>
+        ))
+      }
+      aside={
+        <div class="contents">
+          <EditorAsideSection>
+            <Button type="submit" form="user" classes="w-full">
+              {is_new ? "Create user" : "Save"}
+            </Button>
+            <Button href="/admin/settings/users" hierarchy="tertiary" classes="w-full">
+              Cancel
+            </Button>
+          </EditorAsideSection>
+          {link !== "" && (
+            <EditorAsideSection title="Link">
+              <Code classes="break-all">{link}</Code>
+            </EditorAsideSection>
           )}
-          {fields && <div class="space-y-5 border-t border-border pt-6" data-part="user-fields">{fields}</div>}
-          <div class="flex flex-wrap items-center gap-2">
-            <Button type="submit">{is_new ? "Create user" : "Save"}</Button>
-            <Button href="/admin/settings/users" hierarchy="tertiary">Cancel</Button>
-          </div>
-        </form>
-        {!is_new && (
-          <div class="mt-6 flex flex-wrap items-center gap-2 border-t border-border pt-6">
-            <form method="post" action={link_action}>
-              <input type="hidden" name="csrf" value={csrf} />
-              <Button type="submit" hierarchy="secondary">
-                {invited ? "New set-password link" : "Reset password by link"}
-              </Button>
-            </form>
-            {!is_me && (
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button hierarchy="secondary" intent="destructive">Delete user</Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogTitle>Delete {name}?</DialogTitle>
-                  <DialogDescription>
-                    The account goes for good and is signed out everywhere. What they created stays.
-                  </DialogDescription>
-                  <form method="post" action={delete_action} class="mt-5 flex justify-end gap-2">
-                    <input type="hidden" name="csrf" value={csrf} />
-                    <DialogClose asChild>
-                      <Button hierarchy="secondary">Cancel</Button>
-                    </DialogClose>
-                    <Button type="submit" intent="destructive">Delete user</Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            )}
+          {!is_new && (
+            <EditorAsideSection title="Password">
+              <form method="post" action={link_action}>
+                <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                <Button type="submit" hierarchy="secondary" classes="w-full">
+                  {invited ? "New set-password link" : "Reset password by link"}
+                </Button>
+              </form>
+            </EditorAsideSection>
+          )}
+        </div>
+      }
+      danger={
+        !is_new &&
+        !is_me && (
+          <ConfirmAction
+            label="Delete user"
+            title={`Delete ${name}?`}
+            description="The account goes for good and is signed out everywhere. What they created stays."
+            action={delete_action}
+          />
+        )
+      }
+    >
+      <form id="user" method="post" action={action} class="flex flex-col gap-5">
+        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+        <Field>
+          <FieldLabel htmlFor="display_name">Name</FieldLabel>
+          <Input id="display_name" name="display_name" value={name} required autocomplete="off" />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="email">Email</FieldLabel>
+          <Input
+            id="email"
+            type="email"
+            name="email"
+            value={email}
+            required={is_new}
+            readOnly={!is_new}
+            autocomplete="off"
+          />
+          {!is_new && <FieldDescription>The email an account signs in with cannot change.</FieldDescription>}
+        </Field>
+        <FieldSet legend="Roles">
+          {roles.map((role) => (
+            <CheckboxField
+              id={`role-${role.name}`}
+              name="roles"
+              value={role.name}
+              checked={role.checked}
+              disabled={is_me}
+              label={role.label}
+              description={role.description}
+            />
+          ))}
+          {is_me && <FieldDescription>Your own roles are changed by another admin.</FieldDescription>}
+        </FieldSet>
+        {is_new && (
+          <Field>
+            <FieldLabel htmlFor="password">Password</FieldLabel>
+            <Input id="password" type="password" name="password" autocomplete="new-password" />
+            <FieldDescription>
+              Leave it empty to invite the person with a set-password link instead.
+            </FieldDescription>
+          </Field>
+        )}
+        {fields && (
+          <div class="flex flex-col gap-5 border-t border-border pt-6" data-part="user-fields">
+            {fields}
           </div>
         )}
-      </EditorColumn>
-    </Layout>
+      </form>
+    </FormPage>
   );
 }

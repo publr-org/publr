@@ -1,5 +1,4 @@
-import { Layout } from "../layouts/Layout.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
@@ -12,15 +11,6 @@ import { TableRow } from "@publr/ui/TableRow.ptsx";
 import { TableCell } from "@publr/ui/TableCell.ptsx";
 
 export type UsersProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
-  nav: JSX.Element;
   users: Array<{
     href: string;
     name: string;
@@ -34,47 +24,58 @@ export type UsersProps = {
   }>;
 };
 
-/** Every account, oldest first, and a way to add one. */
-export function Users({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, users }: UsersProps) {
+/** Every account, oldest first, and a way to add one. There is always one: whoever looks. */
+export function Users({ users }: UsersProps) {
   return (
-    <Layout title="Users" section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      <div class="px-8 pt-7 pb-6">
-        <PageHeader title="Users" description="Who may sign in, and what they may do.">
-          <Button href="/admin/settings/users/new">Add user</Button>
-        </PageHeader>
-      </div>
-      <div class="border-t border-border">
-        <Table>
-          <TableHeader>
+    <IndexPage
+      title="Users"
+      description="Who may sign in, and what they may do."
+      actions={<Button href="/admin/settings/users/new">Add user</Button>}
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead>Roles</TableHead>
+            <TableHead>Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {users.map((user) => (
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Roles</TableHead>
-              <TableHead>Status</TableHead>
+              <TableCell>
+                <Link href={user.href} variant="body-sm" tone="default">
+                  {user.name}
+                </Link>
+                {user.me && (
+                  <Text as="span" variant="body-sm" tone="muted">
+                    {" "}
+                    (you)
+                  </Text>
+                )}
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {user.email}
+                </Text>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {user.roles}
+                </Text>
+              </TableCell>
+              <TableCell>
+                {user.active ? (
+                  <Status tone="success">Active</Status>
+                ) : (
+                  <Status tone="warning">Invited</Status>
+                )}
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map((user) => (
-              <TableRow>
-                <TableCell>
-                  <Link href={user.href}>{user.name}</Link>
-                  {user.me && <Text as="span" variant="body-sm" tone="muted"> (you)</Text>}
-                </TableCell>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>{user.roles}</TableCell>
-                <TableCell>
-                  {user.active ? (
-                    <Status tone="success">Active</Status>
-                  ) : (
-                    <Status tone="warning">Invited</Status>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </Layout>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
   );
 }

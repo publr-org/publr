@@ -658,6 +658,8 @@ fn destroy(program: *Program) void {
 /// says so, a fixed clock.
 pub const TestContext = struct {
     arena: std.mem.Allocator,
+    /// The path the project is served under, empty at the root.
+    base: []const u8 = "",
     live: bool = false,
     email: ?[]const u8 = null,
     slug: ?[]const u8 = null,
@@ -803,6 +805,12 @@ pub const TestContext = struct {
         _ = ctx;
 
         try writer.writeAll("<style>/* css */</style>");
+    }
+
+    pub fn url_base(ctx: *const TestContext) []const u8 {
+        std.debug.assert(ctx.base.len == 0 or ctx.base[0] == '/');
+
+        return ctx.base;
     }
 
     pub fn asset_url(ctx: *const TestContext, writer: *std.Io.Writer, path: []const u8) !void {

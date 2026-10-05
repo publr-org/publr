@@ -35,10 +35,10 @@ export function ContentNav({
   settings,
 }: ContentNavProps) {
   return (
-    <div class="flex flex-col gap-0.5">
+    <div class="flex flex-col">
       <SidebarNavItem href={recent_href} active={recent_active} classes="mt-2">
         <Icon name="clock-rewind" size="sm" classes="shrink-0" />
-        <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+        <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
           Recent
         </Text>
       </SidebarNavItem>
@@ -46,7 +46,7 @@ export function ContentNav({
       {private_views.map((item) => (
         <SidebarNavItem href={item.href} active={item.active}>
           <Icon name="bookmark" size="sm" classes="shrink-0" />
-          <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+          <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
             {item.label}
           </Text>
           {item.locked && <Icon name="lock" size="xs" classes="shrink-0" />}
@@ -55,24 +55,24 @@ export function ContentNav({
       <SidebarNavEyebrow>Views</SidebarNavEyebrow>
       <SidebarNavItem href={all_href} active={all_active}>
         <Icon name="bookmark" size="sm" classes="shrink-0" />
-        <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+        <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
           All
         </Text>
       </SidebarNavItem>
       <SidebarNavItem href={all_href}>
         <Icon name="folder" size="sm" classes="shrink-0" />
-        <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+        <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
           Status
         </Text>
         <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
           {statuses.length}
         </Text>
       </SidebarNavItem>
-      <div class="flex flex-col gap-0.5 pl-6">
+      <div class="flex flex-col pl-3">
         {statuses.map((item) => (
           <SidebarNavSubItem href={item.href} active={item.active}>
             <Icon name="bookmark" size="sm" classes="shrink-0" />
-            <Text as="span" variant="body-sm" classes="min-w-0 flex-1 truncate">
+            <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
               {item.label}
             </Text>
           </SidebarNavSubItem>
@@ -80,18 +80,18 @@ export function ContentNav({
       </div>
       <SidebarNavItem href={all_href}>
         <Icon name="folder" size="sm" classes="shrink-0" />
-        <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+        <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
           Content type
         </Text>
         <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
           {types.length}
         </Text>
       </SidebarNavItem>
-      <div class="flex flex-col gap-0.5 pl-6">
+      <div class="flex flex-col pl-3">
         {types.map((item) => (
           <SidebarNavSubItem href={item.href} active={item.active}>
             <Icon name="bookmark" size="sm" classes="shrink-0" />
-            <Text as="span" variant="body-sm" classes="min-w-0 flex-1 truncate">
+            <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
               {item.label}
             </Text>
           </SidebarNavSubItem>
@@ -108,7 +108,7 @@ export function ContentNav({
       {settings.map((item) => (
         <SidebarNavItem href={item.href} active={item.active}>
           <Icon name="settings" size="sm" classes="shrink-0" />
-          <Text as="span" variant="body-md" classes="min-w-0 flex-1 truncate">
+          <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
             {item.label}
           </Text>
         </SidebarNavItem>

@@ -1,37 +1,20 @@
-import { Editor } from "../layouts/Editor.ptsx";
-import { EditorAside } from "../components/EditorAside.ptsx";
+import { Publr } from "publr-jsx";
+import { FormPage } from "../layouts/FormPage.ptsx";
+import { ConfirmAction } from "../components/ConfirmAction.ptsx";
 import { EditorAsideSection } from "../components/EditorAsideSection.ptsx";
-import { EditorColumn } from "../components/EditorColumn.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
-import { Code } from "@publr/ui/Code.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
-import { Text } from "@publr/ui/Text.ptsx";
-import { Dialog } from "@publr/ui/Dialog.ptsx";
-import { DialogClose } from "@publr/ui/DialogClose.ptsx";
-import { DialogContent } from "@publr/ui/DialogContent.ptsx";
-import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
-import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
-import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
 import { TypeHead } from "../components/TypeHead.ptsx";
 
 export type TypeFormProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
   title: string;
-  /** The list the page belongs to: "Content types" at /admin/types, or "Taxonomies". */
-  crumb_label: string;
-  crumb_href: string;
+  /** Structure, the list the type belongs to, and the type's own page once it exists. */
+  parents: Array<{ label: string; href: string }>;
+  /** Where Cancel goes: the type's page, or the list for a new one. */
+  cancel_href: string;
   /** "content type" or "taxonomy", for the buttons and the dialog. */
   noun: string;
-  /** What the page under an existing definition is called: "Fields" or "Terms". */
-  back_label: string;
   /** A taxonomy: no kind, no URL; hierarchical or flat, public or not. */
   is_taxonomy: boolean;
   hierarchical: boolean;
@@ -47,9 +30,7 @@ export type TypeFormProps = {
   is_new: boolean;
   choose_kind: boolean;
   /** What was refused, by path, when the last post did not go through. */
-  problems: Array<{ path: string; message: string }>;
-  /** The fields page of an existing type, where the settings page leads back. */
-  back_href?: string;
+  problems: Array<{ code: string; text: string }>;
   /** Declared by a plugin: the head is fixed, only fields of your own can be added. */
   system: boolean;
   owner: string;
@@ -81,14 +62,10 @@ export type TypeFormProps = {
 /** A content type's head: what it is called, what kind it is, who may read it. A new
  * type is created here and continues to its fields; an existing one edits its settings. */
 export function TypeForm({
-  user_name,
-  user_email, can_structure = true, can_settings = true, top_bar,
-  csrf,
   title,
-  crumb_label,
-  crumb_href,
+  parents,
+  cancel_href,
   noun,
-  back_label,
   is_taxonomy,
   hierarchical,
   single,
@@ -99,7 +76,6 @@ export function TypeForm({
   is_new,
   choose_kind,
   problems,
-  back_href,
   system,
   owner,
   handle,
@@ -122,127 +98,83 @@ export function TypeForm({
   delete_action,
 }: TypeFormProps) {
   return (
-    <Editor
+    <FormPage
       title={title}
-      section="types"
-      crumb_label={crumb_label}
-      crumb_href={crumb_href}
-      user_name={user_name}
-      user_email={user_email}
-      can_structure={can_structure}
-      can_settings={can_settings} top_bar={top_bar}
-      csrf={csrf}
-    >
-      <EditorColumn>
-        <PageHeader
-          title={title}
-          back_label={back_href != null ? back_label : undefined}
-          back_href={back_href}
-        />
-        {problems.length > 0 && (
-          <div class="mt-6 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4">
-            <Text as="p" variant="body-sm" tone="error" classes="font-medium">
-              The {noun} was not saved.
-            </Text>
-            <ul class="mt-2 flex flex-col gap-1">
-              {problems.map((problem) => (
-                <li class="flex items-baseline gap-2">
-                  {problem.path !== "" && <Code>{problem.path}</Code>}
-                  <Text as="span" variant="body-sm">
-                    {problem.message}
-                  </Text>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {system ? (
-          <div class="mt-8 rounded-xl border border-border bg-muted/40 px-5 py-4">
-            <Text variant="body-sm" tone="muted">
-              Declared by the <strong>{owner}</strong> plugin: handle <Code>{handle}</Code>,{" "}
-              {visibility}. Its settings are fixed in code; its declared fields are locked, and you
-              can add fields of your own.
-            </Text>
-          </div>
-        ) : (
-          <form id="type" method="post" action={action} class="mt-8 space-y-5">
-            <input type="hidden" name="csrf" value={csrf} />
-            <TypeHead
-              is_record={is_record}
-              is_settings={is_settings}
-              is_component={is_component}
-              name={name}
-              handle={handle}
-              description={description}
-              name_count={name_count}
-              handle_count={handle_count}
-              description_count={description_count}
-              name_error={name_error}
-              handle_error={handle_error}
-              description_error={description_error}
-              url={url}
-              has_url={has_url}
-              base_url={base_url}
-              is_new={is_new}
-              choose_kind={choose_kind}
-              is_taxonomy={is_taxonomy}
-              hierarchical={hierarchical}
-              is_public={is_public}
-              single={single}
-              applies_routed={applies_routed}
-              applies_other={applies_other}
-              show_all_types={show_all_types}
-            />
-          </form>
-        )}
-      </EditorColumn>
-      <EditorAside>
-        {!system && (
+      parents={parents}
+      problems={problems}
+      problems_title={`The ${noun} was not saved.`}
+      notice={
+        system && (
+          <Callout title={`Declared by the ${owner} plugin`}>
+            Handle {handle}, {visibility}. Its settings are fixed in code; its declared fields are
+            locked, and you can add fields of your own.
+          </Callout>
+        )
+      }
+      aside={
+        !system && (
           <EditorAsideSection>
             <Button type="submit" form="type" classes="w-full">
               {is_new ? (is_taxonomy ? "Create and add terms" : "Create and add fields") : "Save settings"}
             </Button>
-            <Button href={back_href ?? crumb_href} hierarchy="tertiary" classes="w-full">
+            <Button href={cancel_href} hierarchy="tertiary" classes="w-full">
               Cancel
             </Button>
           </EditorAsideSection>
-        )}
-        {delete_action && (
-          <EditorAsideSection>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button hierarchy="secondary" intent="destructive" classes="w-full">
-                  Delete {noun}
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogTitle>Delete {name}?</DialogTitle>
-                <DialogDescription>
-                  {is_taxonomy
-                    ? "The taxonomy goes for good. Its terms stay unless you delete them too; with terms kept, the taxonomy cannot be deleted."
-                    : "The type goes for good. Its records stay unless you delete them too; with records kept, the type cannot be deleted."}
-                </DialogDescription>
-                <form method="post" action={delete_action ?? "#"} class="mt-5 space-y-5">
-                  <input type="hidden" name="csrf" value={csrf} />
-                  <CheckboxField
-                    id="force"
-                    name="force"
-                    label={is_taxonomy ? "Also delete its terms" : "Also delete its records"}
-                  />
-                  <div class="flex justify-end gap-2">
-                    <DialogClose asChild>
-                      <Button hierarchy="secondary">Cancel</Button>
-                    </DialogClose>
-                    <Button type="submit" intent="destructive">
-                      Delete {noun}
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </EditorAsideSection>
-        )}
-      </EditorAside>
-    </Editor>
+        )
+      }
+      danger={
+        delete_action && (
+          <ConfirmAction
+            label={`Delete ${noun}`}
+            title={`Delete ${name}?`}
+            description={
+              is_taxonomy
+                ? "The taxonomy goes for good. Its terms stay unless you delete them too; with terms kept, the taxonomy cannot be deleted."
+                : "The type goes for good. Its records stay unless you delete them too; with records kept, the type cannot be deleted."
+            }
+            action={delete_action ?? "#"}
+          >
+            <CheckboxField
+              id="force"
+              name="force"
+              label={is_taxonomy ? "Also delete its terms" : "Also delete its records"}
+            />
+          </ConfirmAction>
+        )
+      }
+    >
+      {!system && (
+        <form id="type" method="post" action={action} class="flex flex-col gap-5">
+          <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+          <TypeHead
+            is_record={is_record}
+            is_settings={is_settings}
+            is_component={is_component}
+            name={name}
+            handle={handle}
+            description={description}
+            name_count={name_count}
+            handle_count={handle_count}
+            description_count={description_count}
+            name_error={name_error}
+            handle_error={handle_error}
+            description_error={description_error}
+            url={url}
+            has_url={has_url}
+            base_url={base_url}
+            is_new={is_new}
+            choose_kind={choose_kind}
+            is_taxonomy={is_taxonomy}
+            hierarchical={hierarchical}
+            is_public={is_public}
+            single={single}
+            applies_routed={applies_routed}
+            applies_other={applies_other}
+            show_all_types={show_all_types}
+          />
+        </form>
+      )}
+    </FormPage>
   );
 }

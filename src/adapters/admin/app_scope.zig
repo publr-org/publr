@@ -1,4 +1,4 @@
-//! Which app the admin shows: every record, the project's own, or one app's. The choice is
+//! Which app the admin shows: every record, or one app's. The choice is
 //! the viewer's, kept in a cookie; it narrows the content list and says which app a new
 //! record belongs to, never what anyone may read.
 const std = @import("std");
@@ -18,15 +18,11 @@ const Node = admin.render.Node;
 const ListIn = record_operations.List.In;
 
 pub const cookie_name = "publr_admin_app";
-/// What the form and the cookie say for the project's own records; never an app's name,
-/// which starts with a letter.
-pub const project_value = "_project";
 const back_len_max: u32 = 2048;
 const year_s: u32 = 365 * 24 * 60 * 60;
 
 pub const Scope = union(enum) {
     all,
-    project,
     app: *const App,
 
     pub fn label(scope: Scope) []const u8 {
@@ -34,7 +30,6 @@ pub const Scope = union(enum) {
 
         return switch (scope) {
             .all => "All apps",
-            .project => "Project only",
             .app => |app| app.spec.label,
         };
     }
@@ -44,7 +39,7 @@ pub const Scope = union(enum) {
         std.debug.assert(scope != .app or model.app.valid_name(scope.app.spec.name));
 
         return switch (scope) {
-            .all, .project => null,
+            .all => null,
             .app => |app| app.spec.name,
         };
     }
@@ -56,10 +51,6 @@ pub fn of(session: *const Session) Scope {
 
     const header = session.request.header("cookie") orelse return .all;
     const value = identity_module.cookie_value(header, cookie_name) orelse return .all;
-
-    if (std.mem.eql(u8, value, project_value)) {
-        return .project;
-    }
 
     if (value.len == 0 or !model.app.valid_name(value)) {
         return .all;
@@ -78,7 +69,6 @@ pub fn narrow(arena: std.mem.Allocator, scope: Scope, in: ListIn) Error!ListIn {
 
     const clause = switch (scope) {
         .all => return in,
-        .project => "app:none:",
         .app => |app| try std.fmt.allocPrint(arena, "app:is:{s}", .{app.spec.name}),
     };
 
@@ -105,7 +95,9 @@ pub fn narrow(arena: std.mem.Allocator, scope: Scope, in: ListIn) Error!ListIn {
 }
 
 /// The switcher in the top bar, for a project with apps; null for one without.
-pub fn switcher(session: *const Session) ?Node {
+/// The app picker, with what plugins join after it (`after`); null where the project has no
+/// apps.
+pub fn switcher(session: *const Session, after: ?Node) ?Node {
     std.debug.assert(session.signed_in());
 
     const apps = session.project.apps;
@@ -117,23 +109,39 @@ pub fn switcher(session: *const Session) ?Node {
     const arena = session.arena;
     const scope = of(session);
     const Choice = admin.views.AppSwitcher.ChoicesItem;
-    const choices = arena.alloc(Choice, apps.len + 2) catch return null;
+    const choices = arena.alloc(Choice, apps.len + 1) catch return null;
 
-    choices[0] = .{ .value = "", .label = "All apps", .current = scope == .all };
-    choices[1] = .{ .value = project_value, .label = "Project only", .current = scope == .project };
+    choices[0] = .{ .value = "", .label = "All apps", .current = scope == .all, .href = "" };
 
-    for (apps, choices[2..]) |*app, *choice| {
-        const current = scope == .app and scope.app == app;
-
-        choice.* = .{ .value = app.spec.name, .label = app.spec.label, .current = current };
+    for (apps, choices[1..]) |*app, *choice| {
+        choice.* = .{
+            .value = app.spec.name,
+            .label = app.spec.label,
+            .current = scope == .app and scope.app == app,
+            .href = site_of(app),
+        };
     }
 
     return admin.render.view(arena, admin.views.AppSwitcher, .{
         .current = scope.label(),
+        .current_href = if (scope == .app) site_of(scope.app) else "",
         .choices = choices,
         .csrf = session.csrf_token(),
         .back = back_of(session),
+        .after = after,
+        .extended = after != null,
     }) catch null;
+}
+
+/// Where an app's site opens: its own path on this host (the base the project is served
+/// under included), or its address when it answers on a subdomain.
+fn site_of(app: *const App) []const u8 {
+    std.debug.assert(app.url.len > 0);
+
+    return switch (app.spec.mount) {
+        .subdomain => app.url,
+        .path => if (app.base().len > 0) app.base() else "/",
+    };
 }
 
 /// Where the switcher brings the viewer back: this page, when it is one a link reaches.
@@ -192,7 +200,7 @@ pub fn choose(request: *Request, response: *Response, ctx: *Context) Error!void 
     var post = try admin.accept(request, response, ctx, "/admin") orelse return;
     const session = &post.session;
     const value = post.form.get("app") orelse "";
-    const known = value.len == 0 or std.mem.eql(u8, value, project_value) or
+    const known = value.len == 0 or
         (model.app.valid_name(value) and session.project.find(value) != null);
 
     if (!known) {
@@ -345,11 +353,11 @@ test "the switcher narrows the list, and new records belong to the app chosen" {
     try std.testing.expect(std.mem.indexOf(u8, narrowed.body, "Site news") != null);
     try std.testing.expect(std.mem.indexOf(u8, narrowed.body, "Shared note") == null);
 
-    const own_args = .{ session, cookie_name, project_value };
-    const own = try std.fmt.allocPrint(arena, "{s}; {s}={s}", own_args);
-    const project_only = try admin_call(&harness, "GET", "/admin/content", own, "");
-    try std.testing.expect(std.mem.indexOf(u8, project_only.body, "Site news") == null);
-    try std.testing.expect(std.mem.indexOf(u8, project_only.body, "Shared note") != null);
+    const stale = try std.fmt.allocPrint(arena, "{s}; {s}=_project", .{ session, cookie_name });
+    const fallen = try admin_call(&harness, "GET", "/admin/content", stale, "");
+    try std.testing.expect(std.mem.indexOf(u8, fallen.body, "Site news") != null);
+    try std.testing.expect(std.mem.indexOf(u8, fallen.body, "Shared note") != null);
+    try std.testing.expect(std.mem.indexOf(u8, fallen.body, "Project only") == null);
 
     const create_form = "csrf={s}&type=post&title=Made+here";
     const create_body = try std.fmt.allocPrint(arena, create_form, .{csrf});

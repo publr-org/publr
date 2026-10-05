@@ -1,11 +1,10 @@
-import { Layout } from "../layouts/Layout.ptsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
 import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
 import { Table } from "@publr/ui/Table.ptsx";
 import { TableBody } from "@publr/ui/TableBody.ptsx";
 import { TableCell } from "@publr/ui/TableCell.ptsx";
@@ -15,14 +14,6 @@ import { TableRow } from "@publr/ui/TableRow.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 export type TypesProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
   /** "Content types" or "Taxonomies": the page, its header and its empty state. */
   title: string;
   new_href: string;
@@ -46,9 +37,6 @@ export type TypesProps = {
 };
 
 export function Types({
-  user_name,
-  user_email, can_structure = true, can_settings = true, top_bar,
-  csrf,
   title,
   new_href,
   new_label,
@@ -59,93 +47,84 @@ export function Types({
   types,
 }: TypesProps) {
   return (
-    <Layout
+    <IndexPage
       title={title}
-      section="types"
-      user_name={user_name}
-      user_email={user_email}
-      can_structure={can_structure}
-      can_settings={can_settings} top_bar={top_bar}
-      csrf={csrf}
-    >
-      <div class="px-8 pt-7 pb-6">
-        <PageHeader title={title} description={`${types.length} defined`}>
-          <Button href={new_href}>
-            <Icon name="plus" size="sm" />
-            <span>{new_label}</span>
-          </Button>
-        </PageHeader>
-      </div>
-      {types.length === 0 ? (
-        <div class="mx-8">
+      parents={[{ label: "Structure", href: "/admin/structure" }]}
+      description={`${types.length} defined`}
+      actions={
+        <Button href={new_href}>
+          <Icon name="plus" size="sm" />
+          <span>{new_label}</span>
+        </Button>
+      }
+      empty={
+        types.length === 0 && (
           <Empty>
             <EmptyTitle>{empty_title}</EmptyTitle>
             <EmptyDescription>{empty_description}</EmptyDescription>
           </Empty>
-        </div>
-      ) : (
-        <div class="border-t border-border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Handle</TableHead>
-                {show_kind && <TableHead>Kind</TableHead>}
-                <TableHead>Visibility</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead align="right">Fields</TableHead>
-                <TableHead align="right">{manage_label}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {types.map((entry) => (
-                <TableRow>
-                  <TableCell>
-                    <Link href={entry.href} variant="body-md" tone="default">
-                      {entry.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Text as="span" variant="mono-xs" tone="muted">
-                      {entry.handle}
-                    </Text>
-                  </TableCell>
-                  {show_kind && (
-                    <TableCell>
-                      <Text as="span" variant="body-md" tone="muted">
-                        {entry.kind}
-                      </Text>
-                    </TableCell>
-                  )}
-                  <TableCell>
-                    <Text as="span" variant="body-md" tone="muted">
-                      {entry.visibility}
-                    </Text>
-                  </TableCell>
-                  <TableCell>
-                    <Text as="span" variant="body-md" tone="muted">
-                      {entry.owner}
-                    </Text>
-                  </TableCell>
-                  <TableCell numeric align="right">
-                    <Text as="span" variant="body-md">
-                      {entry.fields}
-                    </Text>
-                  </TableCell>
-                  <TableCell align="right">
-                    {entry.content_href !== "" && (
-                      <Button href={entry.content_href} hierarchy="secondary" size="sm">
-                        <span>{manage_label}</span>
-                        <Icon name="chevron-right" size="xs" />
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-    </Layout>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Handle</TableHead>
+            {show_kind && <TableHead>Kind</TableHead>}
+            <TableHead>Visibility</TableHead>
+            <TableHead>Owner</TableHead>
+            <TableHead align="right">Fields</TableHead>
+            <TableHead align="right">{manage_label}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {types.map((entry) => (
+            <TableRow>
+              <TableCell>
+                <Link href={entry.href} variant="body-sm" tone="default">
+                  {entry.name}
+                </Link>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="mono-xs" tone="muted">
+                  {entry.handle}
+                </Text>
+              </TableCell>
+              {show_kind && (
+                <TableCell>
+                  <Text as="span" variant="body-sm" tone="muted">
+                    {entry.kind}
+                  </Text>
+                </TableCell>
+              )}
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {entry.visibility}
+                </Text>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {entry.owner}
+                </Text>
+              </TableCell>
+              <TableCell numeric align="right">
+                <Text as="span" variant="body-sm">
+                  {entry.fields}
+                </Text>
+              </TableCell>
+              <TableCell align="right">
+                {entry.content_href !== "" && (
+                  <Button href={entry.content_href} hierarchy="secondary" size="sm">
+                    <span>{manage_label}</span>
+                    <Icon name="chevron-right" size="xs" />
+                  </Button>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
   );
 }

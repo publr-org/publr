@@ -1,0 +1,136 @@
+import { Publr } from "publr-jsx";
+import { Document } from "./Document.ptsx";
+import { Mark } from "../components/Mark.ptsx";
+import { Crumbs } from "../components/Crumbs.ptsx";
+import { RailItem } from "../components/RailItem.ptsx";
+import { Avatar } from "@publr/ui/Avatar.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type ChromeProps = {
+  /** The page's name: the last crumb and the window's title. */
+  title: string;
+  /** The pages between the area and this one, in the crumbs. */
+  parents?: Array<{ label: string; href: string }>;
+  /** Editing one record: no sidebar, the sheet to itself. */
+  focus?: boolean;
+  children?: JSX.Element;
+};
+
+/** The admin around every signed-in page, drawn by the page layouts (IndexPage, FormPage,
+ * HubPage), never by a page. A dark icon rail (the mark, the sections, at the bottom the
+ * signed-in user and Settings), the area's sidebar unless the page is in focus, and the
+ * sheet opening with the crumbs and the plugins' top bar items. Who is signed in, the area
+ * and its sidebar come from the request. */
+export function Chrome({ title, parents = [], focus = false, children }: ChromeProps) {
+  return (
+    <Document title={title}>
+      <div class="flex h-dvh overflow-hidden">
+        {Publr.request.session.email !== "" && (
+        <div class="flex w-14 shrink-0 flex-col items-center bg-rail text-rail-foreground">
+          <a
+            href="/admin"
+            aria-label="Publr"
+            class="flex h-14 w-full items-center justify-center text-rail-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-rail-foreground"
+          >
+            <Mark classes="size-6" />
+          </a>
+          <nav aria-label="Sections" class="flex flex-col items-center gap-1 pt-1">
+            <RailItem
+              href="/admin"
+              label="Overview"
+              icon_name="home"
+              active={Publr.request.admin.area === "overview"}
+            />
+            <RailItem
+              href="/admin/content"
+              label="Content"
+              icon_name="file"
+              active={Publr.request.admin.area === "content"}
+            />
+          </nav>
+          <div class="mt-auto flex flex-col items-center gap-1 pb-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger classes="inline-flex size-9 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 transition-colors hover:bg-rail-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground">
+                <Avatar
+                  size="sm"
+                  name={Publr.request.session.name}
+                  email={Publr.request.session.email}
+                />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="left" classes="min-w-56">
+                <div class="flex flex-col px-2 py-1.5" data-part="account">
+                  <Text as="span" variant="heading-xs" classes="truncate">
+                    {Publr.request.session.name}
+                  </Text>
+                  <Text as="span" variant="body-xs" tone="muted" classes="truncate">
+                    {Publr.request.session.email}
+                  </Text>
+                </div>
+                <DropdownMenuSeparator />
+                <form method="post" action="/admin/logout">
+                  <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                  <DropdownMenuItem type="submit">
+                    <Icon name="logout" size="sm" />
+                    Log out
+                  </DropdownMenuItem>
+                </form>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {(Publr.request.admin.can_settings || Publr.request.admin.can_structure) && (
+              <RailItem
+                href={Publr.request.admin.can_settings ? "/admin/settings" : "/admin/structure"}
+                label="Settings"
+                icon_name="settings"
+                active={Publr.request.admin.area === "settings"}
+              />
+            )}
+          </div>
+        </div>
+        )}
+        {!focus && Publr.request.admin.sidebar && (
+          <aside
+            aria-label="Section navigation"
+            class="flex w-60 shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground"
+          >
+            <a
+              href={Publr.request.admin.area === "content" ? "/admin/content" : "/admin/settings"}
+              class="flex h-14 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-5 text-sidebar-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring"
+            >
+              {Publr.request.admin.area === "content" ? (
+                <Icon name="file" size="sm" classes="shrink-0" />
+              ) : (
+                <Icon name="settings" size="sm" classes="shrink-0" />
+              )}
+              <Text as="span" variant="heading-sm">
+                {Publr.request.admin.area === "content" ? "Content" : "Settings"}
+              </Text>
+            </a>
+            <nav
+              class="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4"
+              aria-label="Section"
+            >
+              {Publr.request.admin.sidebar}
+            </nav>
+          </aside>
+        )}
+        <main
+          id="main"
+          tabindex="-1"
+          class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-card outline-none"
+        >
+          <div class="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card/95 px-8 backdrop-blur">
+            <Crumbs title={title} parents={parents} />
+            <div class="flex shrink-0 items-center gap-4">{Publr.request.admin.top_bar}</div>
+          </div>
+          {children}
+        </main>
+      </div>
+    </Document>
+  );
+}

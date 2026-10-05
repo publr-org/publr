@@ -1,0 +1,145 @@
+import { onNavigate, submitted } from "../TypeColumns.ptsx";
+import type { IconName } from "@publr/ui/Icon.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type FieldRowsProps = {
+  csrf: string;
+  standalone: boolean;
+  add_href: string;
+  rows: Array<{
+    /** The field's path: `title`, or `gallery.caption` inside a group or repeater. */
+    path: string;
+    label: string;
+    required: boolean;
+    icon: IconName;
+    /** The kind and what matters about it: `Reference (many) to address`. */
+    summary: string;
+    /** Inside a group or repeater: drawn indented under its parent. */
+    nested: boolean;
+    /** Declared in code by a plugin: shown, never changed here. */
+    locked: boolean;
+    edit_href: string;
+    move_action: string;
+    delete_action: string;
+    /** The picker for a child field; present on groups and repeaters. */
+    add_child_href?: string;
+  }>;
+};
+
+/** One row per field in the order the editor shows them, each with its editor and its
+ * place (up, down), groups and repeaters with a child; then a way to add another. */
+export function FieldRows({ csrf, standalone, add_href, rows }: FieldRowsProps) {
+  return (
+    <div class="contents">
+      <Table>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow>
+              <TableCell>
+                <span class={["inline-flex items-center gap-3", row.nested ? "pl-8" : ""]}>
+                  <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
+                    <Icon name={row.icon} size="sm" />
+                  </span>
+                  {row.locked ? (
+                    <Text as="span" variant="heading-xs">
+                      {row.label}
+                    </Text>
+                  ) : (
+                    <Link onClick={onNavigate} href={row.edit_href} variant="heading-xs" tone="default">
+                      {row.label}
+                    </Link>
+                  )}
+                  {row.required && (
+                    <Text as="span" variant="heading-xs" tone="error">
+                      *
+                    </Text>
+                  )}
+                  <Text as="span" variant="body-sm" tone="muted">
+                    {row.summary}
+                  </Text>
+                </span>
+              </TableCell>
+              <TableCell align="right">
+                {row.locked ? (
+                  <Text as="span" variant="body-sm" tone="muted">
+                    locked
+                  </Text>
+                ) : (
+                  <span class="inline-flex items-center justify-end gap-1">
+                    {row.add_child_href && (
+                      <Button onClick={onNavigate}
+                        href={row.add_child_href ?? "#"}
+                        hierarchy="tertiary"
+                        size="sm"
+                        label="Add a field inside"
+                        title="Add a field inside"
+                      >
+                        <Icon name="plus" size="sm" />
+                      </Button>
+                    )}
+                    <form onSubmit={submitted}
+                      method="post"
+                      action={row.move_action}
+                      class="inline-flex items-center gap-1"
+                    >
+                      <input type="hidden" name="csrf" value={csrf} />
+                      <Button
+                        type="submit"
+                        name="direction"
+                        value="up"
+                        hierarchy="tertiary"
+                        size="sm"
+                        label="Move up"
+                        title="Move up"
+                      >
+                        <Icon name="chevron-up" size="sm" />
+                      </Button>
+                      <Button
+                        type="submit"
+                        name="direction"
+                        value="down"
+                        hierarchy="tertiary"
+                        size="sm"
+                        label="Move down"
+                        title="Move down"
+                      >
+                        <Icon name="chevron-down" size="sm" />
+                      </Button>
+                    </form>
+                    <Button onClick={onNavigate}
+                      href={row.edit_href}
+                      hierarchy="tertiary"
+                      size="sm"
+                      label="Edit"
+                      title="Edit"
+                    >
+                      <Icon name="edit" size="sm" />
+                    </Button>
+                  </span>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <div class="border-t border-border bg-muted/40 px-8 py-4">
+        <Link onClick={onNavigate}
+          href={add_href}
+          variant="body-sm"
+          tone="default"
+          classes="inline-flex items-center gap-2"
+        >
+          <Icon name="plus" size="sm" />
+          {standalone ? "Add another field" : "Add another field to this type"}
+        </Link>
+      </div>
+    </div>
+  );
+}

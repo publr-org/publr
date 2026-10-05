@@ -1,0 +1,32 @@
+import { Publr } from "publr-jsx";
+import { Navigation } from "../components/Navigation.ptsx";
+import { IconSprite } from "../components/IconSprite.ptsx";
+
+export type DocumentProps = {
+  /** The window's title, before " · Publr". */
+  title: string;
+  children?: JSX.Element;
+};
+
+/** The admin's HTML document: the head every page shares, the icon sprite and the shared
+ * navigation store. The layouts open with it; pages never do. Its root states the base path
+ * the project is served under, which the page's scripts build addresses with. */
+export function Document({ title, children }: DocumentProps) {
+  return (
+    <html lang="en" class="h-full bg-background" data-publr-base={Publr.request.admin.base}>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{title} · Publr</title>
+        <link rel="stylesheet" href="/admin/styles.css" />
+        <script type="module" src="/admin/stores.js"></script>
+      </head>
+      <body class="min-h-screen bg-background text-foreground antialiased">
+        <Navigation>
+          <IconSprite />
+          {children}
+        </Navigation>
+      </body>
+    </html>
+  );
+}

@@ -57,7 +57,6 @@ pub fn Of(comptime Domain: type) type {
             var parsed = try merged(ctx, row, type_row.def, base, given);
             const slug = try checked(ctx, row, type_row.def, &parsed, live);
             const actor = ctx.caller.user_id();
-            const version = try documents.save(ctx.db, row.id, actor, expected, ctx.now_ms, park);
             const slot = if (park) values.pending else values.live;
 
             if (!park) {
@@ -66,15 +65,64 @@ pub fn Of(comptime Domain: type) type {
 
             try write(ctx, row, type_row.def, slot, parsed);
 
+            // An edit taken back leaves nothing to publish: the pending copy that now reads
+            // as the live one goes, and the record is not changed any more.
+            const unchanged = park and live and try same_as_live(ctx, row.id);
+            const kept = park and !unchanged;
+
+            if (unchanged) {
+                try values.clear(ctx.db, row.id, values.pending);
+            }
+
+            const version = try documents.save(ctx.db, row.id, actor, expected, ctx.now_ms, kept);
+
             if (!park) {
                 ctx.notice(notice_name("saved"), row.id);
+            } else if (unchanged) {
+                if (row.changed) {
+                    ctx.notice(notice_name("changes_discarded"), row.id);
+                }
             } else if (!row.changed) {
                 ctx.notice(notice_name("changed"), row.id);
             } else {
                 ctx.notice(notice_name("changes_saved"), row.id);
             }
 
-            return .{ .version = version, .slug = slug, .changed = park };
+            return .{ .version = version, .slug = slug, .changed = kept };
+        }
+
+        /// Whether the pending copy holds exactly what the live one does, field by field.
+        fn same_as_live(ctx: *Ctx, id: []const u8) Error!bool {
+            std.debug.assert(id.len > 0);
+
+            const live = try values.read(ctx.db, ctx.arena, id, values.live);
+            const pending = try values.read(ctx.db, ctx.arena, id, values.pending);
+
+            if (live.len != pending.len) {
+                return false;
+            }
+
+            for (live, pending) |one, other| {
+                if (!std.mem.eql(u8, one.field, other.field) or one.ordinal != other.ordinal) {
+                    return false;
+                }
+
+                if (!std.meta.eql(std.meta.activeTag(one.value), std.meta.activeTag(other.value))) {
+                    return false;
+                }
+
+                const equal = switch (one.value) {
+                    .integer => |number| number == other.value.integer,
+                    .real => |number| number == other.value.real,
+                    .text => |text| std.mem.eql(u8, text, other.value.text),
+                };
+
+                if (!equal) {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// The fields straight into the live document, and into the pending copy when there
@@ -291,6 +339,40 @@ test "a save with the live status writes live and pending, and publishes nothing
     const after = try SDK.dispatch(&anon, records.Get, .{ .id = id });
     try std.testing.expectEqualStrings("Draft title", after.record.title);
     try std.testing.expect(std.mem.indexOf(u8, after.document, "\"views\":9") != null);
+}
+
+test "an edit taken back leaves the record unchanged" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try SDK.bootstrap(&system);
+    try records.fixture.post_type(&system);
+
+    const id = try published_post(&system, "{\"title\":\"Test\",\"body\":\"first\",\"views\":1}");
+
+    const edited = try SDK.dispatch(&system, records.Save, .{
+        .id = id,
+        .document = "{\"title\":\"Test111\"}",
+    });
+    try std.testing.expect(edited.changed);
+
+    const back = try SDK.dispatch(&system, records.Save, .{
+        .id = id,
+        .document = "{\"title\":\"Test\"}",
+    });
+    try std.testing.expect(!back.changed);
+
+    const got = try SDK.dispatch(&system, records.Get, .{ .id = id, .purpose = .edit });
+    try std.testing.expect(!got.record.changed);
+    try std.testing.expectEqualStrings("Test", got.record.title);
+
+    const again = try SDK.dispatch(&system, records.Save, .{
+        .id = id,
+        .document = "{\"title\":\"Test\"}",
+    });
+    try std.testing.expect(!again.changed);
 }
 
 test "a save with another status moves along a registered transition only" {

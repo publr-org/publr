@@ -1,0 +1,22 @@
+import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+
+export type IndexHeaderProps = {
+  title: string;
+  description?: string;
+  /** The page's actions, its primary one last. */
+  actions?: JSX.Element;
+  id?: string;
+};
+
+/** The title band of every page: the h1, a line under it, the actions on the right, at the
+ * sheet's gutter. Drawn by the layouts; a list that redraws itself in place (the content
+ * list) draws it inside the part it redraws. */
+export function IndexHeader({ title, description, actions, id }: IndexHeaderProps) {
+  return (
+    <div class="px-8 pt-7 pb-6" data-part="page-header">
+      <PageHeader id={id} title={title} description={description}>
+        {actions}
+      </PageHeader>
+    </div>
+  );
+}

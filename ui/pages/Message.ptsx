@@ -1,73 +1,29 @@
-import { Layout } from "../layouts/Layout.ptsx";
-import { EditorColumn } from "../components/EditorColumn.ptsx";
+import { FormPage } from "../layouts/FormPage.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
-import { Code } from "@publr/ui/Code.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
-import { Text } from "@publr/ui/Text.ptsx";
 
-/** Every "something went wrong" page: a heading, a line, the problems when the
- * refused thing was a document or a definition, and a way back. */
+/** Every "something went wrong" page: a heading, a line, the problems when the refused
+ * thing was a document or a definition, and a way back. The chrome stays in the area of
+ * the address that failed. */
 export type MessageProps = {
-  user_name?: string;
-  user_email?: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf?: string;
-  /** The section the refused page belonged to, so the chrome stays where the user was. */
-  section: string;
-  nav?: JSX.Element;
   heading: string;
   text: string;
-  problems: Array<{ path: string; message: string }>;
+  problems: Array<{ code: string; text: string }>;
   link_href: string;
   link_label: string;
 };
 
-export function Message({
-  user_name,
-  user_email, can_structure = true, can_settings = true, top_bar,
-  csrf,
-  section,
-  nav,
-  heading,
-  text,
-  problems,
-  link_href,
-  link_label,
-}: MessageProps) {
+export function Message({ heading, text, problems, link_href, link_label }: MessageProps) {
   return (
-    <Layout
+    <FormPage
       title={heading}
-      section={section}
-      user_name={user_name}
-      user_email={user_email}
-      can_structure={can_structure}
-      can_settings={can_settings} top_bar={top_bar}
-      csrf={csrf}
-      sidebar={nav}
-    >
-      <EditorColumn>
-        <div>
-          <PageHeader title={heading} description={text.length > 0 ? text : undefined}>
-            <Button href={link_href} hierarchy="secondary">
-              {link_label}
-            </Button>
-          </PageHeader>
-          {problems.length > 0 && (
-            <ul class="mt-6 divide-y divide-border rounded-xl border border-border">
-              {problems.map((problem) => (
-                <li class="flex items-baseline gap-3 px-4 py-3">
-                  <Code classes="shrink-0">{problem.path}</Code>
-                  <Text variant="body-sm">{problem.message}</Text>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </EditorColumn>
-    </Layout>
+      description={text.length > 0 ? text : undefined}
+      problems={problems}
+      problems_title="What was refused"
+      actions={
+        <Button href={link_href} hierarchy="secondary">
+          {link_label}
+        </Button>
+      }
+    />
   );
 }

@@ -1,0 +1,23 @@
+import { Chrome } from "./Chrome.ptsx";
+import { IndexHeader } from "../components/IndexHeader.ptsx";
+
+export type HubPageProps = {
+  title: string;
+  parents?: Array<{ label: string; href: string }>;
+  description?: string;
+  /** No title band: the page opens with its own hero (the overview). */
+  hero?: boolean;
+  /** The cards, then titled groups of more (HubGroup). */
+  children?: JSX.Element;
+};
+
+/** A page of ways to other pages: the title band, then cards in a grid at the sheet's
+ * gutter. The overview opens with its own hero instead of the band. */
+export function HubPage({ title, parents = [], description, hero = false, children }: HubPageProps) {
+  return (
+    <Chrome title={title} parents={parents}>
+      {!hero && <IndexHeader title={title} description={description} />}
+      <div class={["flex flex-1 flex-col gap-10 pb-10", hero ? "" : "px-8"]}>{children}</div>
+    </Chrome>
+  );
+}

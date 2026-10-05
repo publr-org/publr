@@ -77,7 +77,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 132 + client_files.names.len;
+pub const routes_count: u32 = 126 + client_files.names.len;
 const client_files = @import("../ui/client_files.zig");
 
 const styles_css = @embedFile("styles_css");
@@ -113,13 +113,7 @@ pub fn register(router: *http.Router) void {
     router.get("/admin/settings/:handle", &@import("admin/content/form.zig").settings_page);
     router.get("/admin/structure", &structure_pages.show);
     register_schemas(router);
-    router.get("/admin/taxonomies", &taxonomy_pages.list);
-    router.get("/admin/taxonomies/new", &taxonomy_pages.new_page);
-    router.post("/admin/taxonomies/create", &taxonomy_pages.create);
-    router.get("/admin/taxonomies/:handle", &term_pages.list);
-    router.get("/admin/taxonomies/:handle/settings", &taxonomy_pages.settings_page);
-    router.post("/admin/taxonomies/:handle/update", &taxonomy_pages.update);
-    router.post("/admin/taxonomies/:handle/delete", &taxonomy_pages.delete);
+    router.get("/admin/structure/taxonomies/:handle/terms", &term_pages.list);
     router.get("/admin/terms/new", &term_pages.new_page);
     router.get("/admin/terms/new/editor", &term_pages.new_editor);
     router.post("/admin/terms/create", &term_pages.create);
@@ -152,7 +146,7 @@ pub fn register(router: *http.Router) void {
 fn register_schemas(router: *http.Router) void {
     std.debug.assert(router.routes_len < 200);
     register_definition(router, "/admin/types", types_pages);
-    register_definition(router, "/admin/structure/taxonomies", taxonomy_pages.Structure);
+    register_definition(router, taxonomy_pages.back, taxonomy_pages.Pages);
     register_definition(router, "/admin/structure/settings", @import("admin/setting_types.zig"));
     register_definition(router, "/admin/components", @import("admin/components.zig"));
     router.get("/admin/custom-fields", &@import("admin/custom_fields.zig").list);
@@ -259,7 +253,7 @@ pub const Session = struct {
         // Narrowed to an app, the admin reaches the project's own types and its plugins'.
         switch (app_scope.of(&session)) {
             .app => |app| session.ctx.app_plugins = app.spec.plugins,
-            .all, .project => {},
+            .all => {},
         }
 
         std.debug.assert(session.ctx.now_ms > 0);
@@ -303,33 +297,37 @@ pub const Session = struct {
     }
 };
 
-/// What every signed-in page's chrome needs: who is signed in, the CSRF token for the
-/// sign-out form, and the rail sections the viewer's roles open besides Content. The
-/// content types go through `nav_items`, typed per view.
-pub const Shell = struct {
-    user_name: []const u8,
-    user_email: []const u8,
-    csrf: []const u8,
-    /// Structure, for whoever may change a content type.
-    can_structure: bool,
-    /// Settings, for whoever may manage the accounts.
-    can_settings: bool,
-    /// What compiled-in plugins put in the top bar for this viewer; null when nothing.
-    top_bar: ?render.Node,
-};
+/// What every page reads as `Publr.request`, and how a page stands in its sidebar.
+pub const chrome = @import("admin/chrome.zig");
 
-pub fn shell_of(session: *const Session) Shell {
+/// A signed-in page: the view with its own data, and the request its layout reads the
+/// chrome from (who is signed in, the area of the address, its sidebar, the top bar).
+pub fn screen(
+    session: *const Session,
+    status: Status,
+    comptime View: type,
+    props: View.Props,
+) Error!void {
     std.debug.assert(session.signed_in());
-    std.debug.assert(session.identity.email.len > 0);
+    std.debug.assert(session.response.body.len == 0);
 
-    return .{
-        .user_name = session.identity.display_name,
-        .user_email = session.identity.email,
-        .csrf = session.csrf_token(),
-        .can_structure = registry.SDK.may(&session.ctx, types.Create),
-        .can_settings = registry.SDK.may(&session.ctx, users.List),
-        .top_bar = top_bar.of(session),
-    };
+    try screen_with(session, .{}, status, View, props);
+}
+
+/// `screen`, for a page whose sidebar entry the address alone does not say.
+pub fn screen_with(
+    session: *const Session,
+    options: chrome.Options,
+    status: Status,
+    comptime View: type,
+    props: View.Props,
+) Error!void {
+    std.debug.assert(session.response.body.len == 0);
+    std.debug.assert(@hasDecl(View, "render"));
+
+    const request = try chrome.request_of(session, options);
+
+    try render.page(session.response, session.arena, request, status, View, props);
 }
 
 /// One row action, resolved for a row: what the menu item says and where it goes.
@@ -404,8 +402,7 @@ pub fn fail(session: *const Session, err: anyerror, back: []const u8) Error!void
     try message(session, "Something went wrong", text, &.{}, back);
 }
 
-/// The problems page: what was refused and why, with a way back. Chromeless when the
-/// caller is not signed in (a refused login, a foreign form).
+/// The problems page: what was refused and why, with a way back.
 pub fn message(
     session: *const Session,
     heading: []const u8,
@@ -419,41 +416,22 @@ pub fn message(
     var items: std.ArrayList(views.Message.ProblemsItem) = .empty;
 
     for (problems) |problem| {
-        items.append(session.arena, .{ .path = problem.path, .message = problem.message }) catch {
+        items.append(session.arena, .{ .code = problem.path, .text = problem.message }) catch {
             return error.OutOfMemory;
         };
     }
 
-    const in_types = std.mem.startsWith(u8, back, "/admin/types") or
-        std.mem.startsWith(u8, back, "/admin/taxonomies") or
-        std.mem.startsWith(u8, back, "/admin/terms");
-    var props: views.Message.Props = .{
-        .section = if (in_types) "types" else "content",
+    // The chrome stays in the area of the address that failed: a refused plugin action
+    // stays under Settings. Before sign-in there is none.
+    const request = try chrome.request_of(session, .{});
+
+    try render.page(session.response, session.arena, request, .ok, views.Message, .{
         .heading = heading,
         .text = text,
         .problems = items.items,
         .link_href = back,
         .link_label = "Back",
-    };
-
-    if (session.signed_in()) {
-        const shell = shell_of(session);
-        // The sidebar lists the types through an operation, which needs a context it
-        // may write to; the page's session is borrowed, so it is copied for that.
-        var listing = session.*;
-
-        props.user_name = shell.user_name;
-        props.user_email = shell.user_email;
-        props.can_structure = shell.can_structure;
-        props.can_settings = shell.can_settings;
-        props.top_bar = shell.top_bar;
-        props.csrf = shell.csrf;
-        if (!in_types) {
-            props.nav = try nav_content(&listing, .{});
-        }
-    }
-
-    try render.page(session.response, session.arena, .ok, views.Message, props);
+    });
 }
 
 /// Unix milliseconds as `YYYY-MM-DD HH:MM`, UTC.
@@ -868,7 +846,8 @@ test "admin over http: setup, login, types and content through plain forms" {
 
     const edit_page = try flow.call("GET", location, "");
     try std.testing.expect(std.mem.indexOf(u8, edit_page.body, "value=\"Hello\"") != null);
-    const publish_button = ">Publish</span>";
+    // The buttons are drawn by the browser from the editor's transferred state.
+    const publish_button = "&quot;label&quot;:&quot;Publish&quot;";
     try std.testing.expect(std.mem.indexOf(u8, edit_page.body, publish_button) != null);
 
     const publish_path = try std.fmt.allocPrint(arena, "{s}/action", .{location});
@@ -897,8 +876,8 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expect(std.mem.indexOf(u8, versions.body, ">revision</span>") == null);
     _ = try flow.call("GET", location, "");
 
-    const publish_changes = ">Publish changes</span>";
-    const discard_changes = ">Discard changes</span>";
+    const publish_changes = "&quot;label&quot;:&quot;Publish changes&quot;";
+    const discard_changes = "&quot;label&quot;:&quot;Discard changes&quot;";
     try std.testing.expect(std.mem.indexOf(u8, changed.body, publish_changes) != null);
     try std.testing.expect(std.mem.indexOf(u8, changed.body, discard_changes) != null);
 
@@ -1006,13 +985,14 @@ test "admin over http: setup, login, types and content through plain forms" {
         "csrf={s}&name=Topics&handle=topics&description=&hierarchical=1&public=1&applies_to=post",
         .{csrf_token},
     );
-    const taxonomy_created = try flow.call("POST", "/admin/taxonomies/create", taxonomy_body);
+    const taxonomies = "/admin/structure/taxonomies";
+    const taxonomy_created = try flow.call("POST", taxonomies ++ "/create", taxonomy_body);
     const taxonomy_location = taxonomy_created.header("Location").?;
-    try std.testing.expectEqualStrings("/admin/taxonomies/topics", taxonomy_location);
-    const taxonomies_page = try flow.call("GET", "/admin/taxonomies", "");
+    try std.testing.expectEqualStrings(taxonomies ++ "/topics/terms", taxonomy_location);
+    const taxonomies_page = try flow.call("GET", "/admin/structure/taxonomies", "");
     try std.testing.expect(std.mem.indexOf(u8, taxonomies_page.body, "<title>Taxonomies") != null);
     try std.testing.expect(std.mem.indexOf(u8, taxonomies_page.body, ">Topics</a>") != null);
-    const empty_terms = try flow.call("GET", "/admin/taxonomies/topics", "");
+    const empty_terms = try flow.call("GET", "/admin/structure/taxonomies/topics/terms", "");
     try std.testing.expect(std.mem.indexOf(u8, empty_terms.body, "No terms yet") != null);
     const term_body = try std.fmt.allocPrint(
         arena,
@@ -1030,7 +1010,7 @@ test "admin over http: setup, login, types and content through plain forms" {
         .{ csrf_token, term_location["/admin/terms/".len..] },
     );
     _ = try flow.call("POST", "/admin/terms/create", child_body);
-    const terms_page = try flow.call("GET", "/admin/taxonomies/topics", "");
+    const terms_page = try flow.call("GET", "/admin/structure/taxonomies/topics/terms", "");
     try std.testing.expect(std.mem.indexOf(u8, terms_page.body, ">Technology</a>") != null);
     try std.testing.expect(std.mem.indexOf(u8, terms_page.body, ">Engineering</a>") != null);
     try std.testing.expect(std.mem.indexOf(u8, terms_page.body, "pl-4") != null);
@@ -1052,7 +1032,7 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expect(std.mem.indexOf(u8, new_post.body, "Engineering") != null);
     try std.testing.expect(std.mem.indexOf(u8, new_post.body, "form=\"record\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, new_post.body, "id=\"field-themes-") != null);
-    const settings = try flow.call("GET", "/admin/taxonomies/topics/settings", "");
+    const settings = try flow.call("GET", "/admin/structure/taxonomies/topics/settings", "");
     try std.testing.expect(std.mem.indexOf(u8, settings.body, "id=\"applies-post\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, settings.body, "value=\"post\" checked") != null);
 
@@ -1304,7 +1284,7 @@ test "schema creation pages fit a fixed request arena with many field definition
 
     for ([_][]const u8{
         "/admin/structure/settings/new", "/admin/types/new",
-        "/admin/components/new",         "/admin/taxonomies/new",
+        "/admin/components/new",         "/admin/structure/taxonomies/new",
     }) |path| {
         fixed.reset();
         flow.inner.arena = fixed.allocator();

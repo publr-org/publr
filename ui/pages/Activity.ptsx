@@ -1,5 +1,7 @@
-import { Layout } from "../layouts/Layout.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { TabNav } from "@publr/ui/TabNav.ptsx";
 import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
@@ -20,15 +22,6 @@ import { TableRow } from "@publr/ui/TableRow.ptsx";
 import { TableCell } from "@publr/ui/TableCell.ptsx";
 
 export type ActivityProps = {
-  user_name: string;
-  user_email: string;
-  /** The rail sections the viewer may open besides Content: set by the server from what
-   * the viewer's roles grant. */
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
-  nav: JSX.Element;
   /** The log shown: `activity`, or `errors`. */
   tab: string;
   /** The entries, newest first. */
@@ -52,72 +45,101 @@ export type ActivityProps = {
 
 /** One of the two logs, read only: what was done, or what was refused or failed. Reached
  * from the menu beside System settings' tabs. */
-export function Activity({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, tab, entries, older_href }: ActivityProps) {
+export function Activity({ tab, entries, older_href }: ActivityProps) {
   return (
-    <Layout title={tab === "errors" ? "Error log" : "Activity log"} section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      <div class="px-8 pt-7 pb-6">
-        <PageHeader title="Logs"
-          description="Every change made, and every call refused or failed, kept for good. Nothing here can be changed."
-          back_href="/admin/settings/system" back_label="System settings" />
-      </div>
-      <div class="border-y border-border px-8 py-2">
+    <IndexPage
+      title="Logs"
+      parents={[{ label: "System settings", href: "/admin/settings/system" }]}
+      description="Every change made, and every call refused or failed, kept for good. Nothing here can be changed."
+      tabs={
         <TabNav label="Logs">
-          <TabNavLink href="/admin/settings/system/activity" active={tab === "activity"}>Activity log</TabNavLink>
-          <TabNavLink href="/admin/settings/system/errors" active={tab === "errors"}>Error log</TabNavLink>
+          <TabNavLink href="/admin/settings/system/activity" active={tab === "activity"}>
+            Activity log
+          </TabNavLink>
+          <TabNavLink href="/admin/settings/system/errors" active={tab === "errors"}>
+            Error log
+          </TabNavLink>
         </TabNav>
-      </div>
-      {entries.length === 0 && (
-        <div class="px-8 py-6">
-          <Text variant="body-md" tone="muted">{tab === "errors" ? "Nothing has been refused or failed." : "Nothing has been done yet."}</Text>
-        </div>
-      )}
-      {entries.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Time</TableHead>
-              <TableHead>Who</TableHead>
-              <TableHead>Operation</TableHead>
-              <TableHead>{tab === "errors" ? "Error" : "Changed"}</TableHead>
-              <TableHead>Input</TableHead>
+      }
+      empty={
+        entries.length === 0 && (
+          <Empty>
+            <EmptyTitle>{tab === "errors" ? "No errors" : "No activity yet"}</EmptyTitle>
+            <EmptyDescription>
+              {tab === "errors" ? "Nothing has been refused or failed." : "Nothing has been done yet."}
+            </EmptyDescription>
+          </Empty>
+        )
+      }
+      footer={
+        older_href !== "" && (
+          <Button href={older_href} hierarchy="secondary" size="sm">
+            Older
+          </Button>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Date</TableHead>
+            <TableHead>Time</TableHead>
+            <TableHead>Who</TableHead>
+            <TableHead>Operation</TableHead>
+            <TableHead>{tab === "errors" ? "Error" : "Changed"}</TableHead>
+            <TableHead>Input</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {entries.map((entry) => (
+            <TableRow classes="relative cursor-pointer">
+              <TableCell classes="whitespace-nowrap">
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={`Open ${entry.operation} at ${entry.date} ${entry.time}`}
+                      class="absolute inset-0 cursor-pointer"
+                    />
+                  </DialogTrigger>
+                  <DialogContent classes="max-w-2xl">
+                    <DialogTitle>{entry.operation}</DialogTitle>
+                    <DialogDescription>{`${entry.date} ${entry.time} UTC, ${entry.who}`}</DialogDescription>
+                    <CodeBlock classes="mt-4 max-h-[60vh] overflow-y-auto">{entry.json}</CodeBlock>
+                    <div class="mt-5 flex justify-end">
+                      <DialogClose asChild>
+                        <Button type="button" hierarchy="secondary">
+                          Close
+                        </Button>
+                      </DialogClose>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                <Text variant="body-sm" tone="muted">
+                  {entry.date}
+                </Text>
+              </TableCell>
+              <TableCell classes="whitespace-nowrap">
+                <Text variant="body-sm" tone="muted">
+                  {entry.time}
+                </Text>
+              </TableCell>
+              <TableCell>
+                <Text variant="body-sm">{entry.who}</Text>
+              </TableCell>
+              <TableCell>
+                <Code>{entry.operation}</Code>
+              </TableCell>
+              <TableCell>
+                <Text variant="body-sm">{entry.what}</Text>
+              </TableCell>
+              <TableCell>
+                <Code classes="break-all">{entry.input}</Code>
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {entries.map((entry) => (
-              <TableRow classes="relative cursor-pointer">
-                <TableCell classes="whitespace-nowrap">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <button type="button" aria-label={`Open ${entry.operation} at ${entry.date} ${entry.time}`} class="absolute inset-0 cursor-pointer" />
-                    </DialogTrigger>
-                    <DialogContent classes="max-w-2xl">
-                      <DialogTitle>{entry.operation}</DialogTitle>
-                      <DialogDescription>{`${entry.date} ${entry.time} UTC, ${entry.who}`}</DialogDescription>
-                      <CodeBlock classes="mt-4 max-h-[60vh] overflow-y-auto">{entry.json}</CodeBlock>
-                      <div class="mt-5 flex justify-end">
-                        <DialogClose asChild>
-                          <Button type="button" hierarchy="secondary">Close</Button>
-                        </DialogClose>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                  <Text variant="body-sm" tone="muted">{entry.date}</Text>
-                </TableCell>
-                <TableCell classes="whitespace-nowrap"><Text variant="body-sm" tone="muted">{entry.time}</Text></TableCell>
-                <TableCell><Text variant="body-sm">{entry.who}</Text></TableCell>
-                <TableCell><Code>{entry.operation}</Code></TableCell>
-                <TableCell><Text variant="body-sm">{entry.what}</Text></TableCell>
-                <TableCell><Code classes="break-all">{entry.input}</Code></TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-      {older_href !== "" && (
-        <div class="border-t border-border px-8 py-4"><Button href={older_href} hierarchy="secondary" size="sm">Older</Button></div>
-      )}
-    </Layout>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
   );
 }

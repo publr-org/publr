@@ -1,10 +1,13 @@
-import { Layout } from "../layouts/Layout.ptsx";
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { UploadPlugin } from "../components/UploadPlugin.ptsx";
 import { TabNav } from "@publr/ui/TabNav.ptsx";
 import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
-import { PageHeader } from "@publr/ui/PageHeader.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Table } from "@publr/ui/Table.ptsx";
 import { TableBody } from "@publr/ui/TableBody.ptsx";
@@ -15,13 +18,6 @@ import { TableRow } from "@publr/ui/TableRow.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 export type PluginsProps = {
-  user_name: string;
-  user_email: string;
-  can_structure?: boolean;
-  can_settings?: boolean;
-  top_bar?: JSX.Element;
-  csrf: string;
-  nav: JSX.Element;
   /** `installed`: the ones loaded at runtime into the sandbox; `built_in`: the ones built
    * into this binary. */
   tab: string;
@@ -40,112 +36,148 @@ export type PluginsProps = {
     enable_href: string;
     update_href: string;
     disable_action: string;
-    remove_action: string;
   }>;
 };
 
 /** Every plugin added, running or not: enable one to review what it asks for, update one
- * a newer module was uploaded for, stop or remove one. */
-export function Plugins({ user_name, user_email, can_structure = true, can_settings = true, top_bar, csrf, nav, tab, built_in, plugins }: PluginsProps) {
+ * a newer module was uploaded for, stop one. Removing one is on its own page. */
+export function Plugins({ tab, built_in, plugins }: PluginsProps) {
   return (
-    <Layout title="Plugins" section="settings" sidebar={nav}
-      user_name={user_name} user_email={user_email} can_structure={can_structure} can_settings={can_settings} top_bar={top_bar} csrf={csrf}>
-      <div class="px-8 pt-7 pb-6">
-        <PageHeader title="Plugins"
-          description={tab === "installed"
-            ? "Installed at runtime. Each runs in a sandbox and can do only what you grant it."
-            : "Built into this binary: always running, with full access. A new build changes them."}>
-          {tab === "installed" && <UploadPlugin csrf={csrf} />}
-        </PageHeader>
-        <TabNav label="Plugins" classes="mt-5">
-          <TabNavLink href="/admin/settings/plugins" active={tab === "installed"}>Installed</TabNavLink>
-          <TabNavLink href="/admin/settings/plugins/built-in" active={tab === "built_in"}>Built-in</TabNavLink>
+    <IndexPage
+      title="Plugins"
+      description={
+        tab === "installed"
+          ? "Installed at runtime. Each runs in a sandbox and can do only what you grant it."
+          : "Built into this binary: always running, with full access. A new build changes them."
+      }
+      actions={tab === "installed" && <UploadPlugin csrf={Publr.request.session.csrf} />}
+      tabs={
+        <TabNav label="Plugins">
+          <TabNavLink href="/admin/settings/plugins" active={tab === "installed"}>
+            Installed
+          </TabNavLink>
+          <TabNavLink href="/admin/settings/plugins/built-in" active={tab === "built_in"}>
+            Built-in
+          </TabNavLink>
         </TabNav>
-      </div>
+      }
+      empty={
+        (tab === "built_in" && built_in.length === 0 && (
+          <Empty>
+            <EmptyTitle>No built-in plugins</EmptyTitle>
+            <EmptyDescription>This binary was built without plugins.</EmptyDescription>
+          </Empty>
+        )) ||
+        (tab === "installed" && plugins.length === 0 && (
+          <Empty>
+            <EmptyTitle>No plugins yet</EmptyTitle>
+            <EmptyDescription>Upload a plugin's .wasm file to add it.</EmptyDescription>
+          </Empty>
+        ))
+      }
+    >
       {tab === "built_in" && (
-        <div class="border-t border-border">
-          <Table>
-            <TableHeader>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Plugin</TableHead>
+              <TableHead>Version</TableHead>
+              <TableHead>Brings</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {built_in.map((row) => (
               <TableRow>
-                <TableHead>Plugin</TableHead>
-                <TableHead>Version</TableHead>
-                <TableHead>Brings</TableHead>
+                <TableCell>
+                  <Text as="p" variant="body-sm">
+                    {row.name}
+                  </Text>
+                  <Text as="p" variant="body-sm" tone="muted">
+                    {row.summary}
+                  </Text>
+                </TableCell>
+                <TableCell>
+                  <Text as="span" variant="mono-xs" tone="muted">
+                    {row.version}
+                  </Text>
+                </TableCell>
+                <TableCell>
+                  <Text as="span" variant="body-sm" tone="muted">
+                    {row.brings}
+                  </Text>
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {built_in.map((row) => (
-                <TableRow>
-                  <TableCell>
-                    <Text as="p" variant="body-md">{row.name}</Text>
-                    <Text as="p" variant="body-sm" tone="muted">{row.summary}</Text>
-                  </TableCell>
-                  <TableCell>{row.version}</TableCell>
-                  <TableCell>{row.brings}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {built_in.length === 0 && (
-            <div class="px-8 py-6">
-              <Text as="p" variant="body-sm" tone="muted">This binary was built without plugins.</Text>
-            </div>
-          )}
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       )}
       {tab === "installed" && (
-      <div class="border-t border-border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Plugin</TableHead>
               <TableHead>Version</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead></TableHead>
+              <TableHead align="right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {plugins.map((row) => (
               <TableRow>
                 <TableCell>
-                  <Link href={row.href}>{row.name}</Link>
-                  <Text as="p" variant="body-sm" tone="muted">{row.summary}</Text>
+                  <Link href={row.href} variant="body-sm" tone="default">
+                    {row.name}
+                  </Link>
+                  <Text as="p" variant="body-sm" tone="muted">
+                    {row.summary}
+                  </Text>
                 </TableCell>
-                <TableCell>{row.version}</TableCell>
                 <TableCell>
-                  <div class="flex flex-col gap-1">
-                    {row.enabled ? <Status tone="success">Enabled</Status> : <Status tone="neutral">Disabled</Status>}
+                  <Text as="span" variant="mono-xs" tone="muted">
+                    {row.version}
+                  </Text>
+                </TableCell>
+                <TableCell>
+                  <div class="flex flex-col items-start gap-1">
+                    {row.enabled ? (
+                      <Status tone="success">Enabled</Status>
+                    ) : (
+                      <Status tone="neutral">Disabled</Status>
+                    )}
                     {row.update !== "" && <Status tone="review">Update to {row.update} available</Status>}
-                    {row.enabled && row.pending !== "" && <Status tone="warning">{row.pending} waiting for approval</Status>}
+                    {row.enabled && row.pending !== "" && (
+                      <Status tone="warning">{row.pending} waiting for approval</Status>
+                    )}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell align="right">
                   <div class="flex flex-wrap items-center justify-end gap-2">
-                    {!row.enabled && <Button href={row.enable_href} size="sm">Enable</Button>}
-                    {row.update !== "" && <Button href={row.update_href} size="sm" hierarchy="secondary">Update</Button>}
+                    {!row.enabled && (
+                      <Button href={row.enable_href} size="sm">
+                        Enable
+                      </Button>
+                    )}
+                    {row.update !== "" && (
+                      <Button href={row.update_href} size="sm" hierarchy="secondary">
+                        Update
+                      </Button>
+                    )}
                     {row.enabled && (
                       <form method="post" action={row.disable_action}>
-                        <input type="hidden" name="csrf" value={csrf} />
+                        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
                         <input type="hidden" name="next" value="list" />
-                        <Button type="submit" size="sm" hierarchy="secondary">Disable</Button>
+                        <Button type="submit" size="sm" hierarchy="secondary">
+                          Disable
+                        </Button>
                       </form>
                     )}
-                    <form method="post" action={row.remove_action}>
-                      <input type="hidden" name="csrf" value={csrf} />
-                      <Button type="submit" size="sm" hierarchy="tertiary" intent="destructive">Remove</Button>
-                    </form>
                   </div>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
-        {plugins.length === 0 && (
-          <div class="px-8 py-6">
-            <Text as="p" variant="body-sm" tone="muted">No plugin yet. Upload a plugin's .wasm file to add it.</Text>
-          </div>
-        )}
-      </div>
       )}
-    </Layout>
+    </IndexPage>
   );
 }

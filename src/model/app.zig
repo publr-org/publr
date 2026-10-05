@@ -5,6 +5,10 @@ pub const Resolved = address.Resolved;
 pub const resolve = address.resolve;
 pub const url = address.url;
 pub const domain_of = address.domain_of;
+pub const path_of = address.path_of;
+pub const without_base = address.without_base;
+pub const needs_base = address.needs_base;
+pub const url_attribute = address.url_attribute;
 
 pub const name_len_max: u32 = 32;
 pub const label_len_max: u32 = 64;

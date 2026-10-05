@@ -154,19 +154,11 @@ fn settings(
     std.debug.assert(request.path().len > 0);
 
     var session = try publr.admin.require(request, response, ctx) orelse return;
-    const shell = publr.admin.shell_of(&session);
     const logged = publr.registry.SDK.dispatch(&session.ctx, Logs, .{}) catch |err| {
         return publr.admin.fail(&session, err, "/admin/settings");
     };
 
-    try publr.admin.render.page(response, session.arena, .ok, publr.admin.views.SamplerSettings, .{
-        .user_name = shell.user_name,
-        .user_email = shell.user_email,
-        .can_structure = shell.can_structure,
-        .can_settings = shell.can_settings,
-        .top_bar = shell.top_bar,
-        .csrf = shell.csrf,
-        .nav = try publr.admin.settings_nav.node(&session, "/admin/sampler"),
+    try publr.admin.screen(&session, .ok, publr.admin.views.SamplerSettings, .{
         .lines = logged.lines,
         .port = try std.fmt.allocPrint(session.arena, "{d}", .{
             publr.plugin_states.of(&session.ctx, @This()).port,

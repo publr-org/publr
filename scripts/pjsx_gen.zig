@@ -12,8 +12,12 @@
 //! resolve or lower fails the build by name.
 const std = @import("std");
 const pjsx = @import("pjsx");
+const request = @import("request");
+const layouts = @import("pjsx_gen/layouts.zig");
 
 const Module = pjsx.compiler.ModuleIR;
+/// Stands for the render runtime's node while the request's fields are read.
+const ShapeNode = struct { render_fn: ?*const anyopaque };
 
 const file_bytes_max = 4 << 20;
 const modules_max: u32 = 512;
@@ -528,9 +532,16 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
     std.debug.assert(set.modules.items.len <= modules_max);
 
     const arena = set.arena;
-    const program = pjsx.targets.zig.Program.init(arena, set.modules.items) catch |err| {
+
+    try layouts.check(set.modules.items);
+
+    var program = pjsx.targets.zig.Program.init(arena, set.modules.items) catch |err| {
         return report(err, "program");
     };
+
+    program.request = pjsx.targets.zig.requestFields(request.Shape(ShapeNode));
+    // Root paths in URL attributes go under the path the project is served at.
+    program.url_base = "admin.base";
 
     for (set.modules.items) |module| {
         const name = module.component.name;

@@ -11,7 +11,7 @@ export type RecordHeaderProps = {
 
 export function RecordHeader({ in_drawer, title, type_name }: RecordHeaderProps) {
   return (
-    <div class="flex items-center gap-4 px-8">
+    <div class="flex items-center gap-4 px-8 pt-7 pb-6" data-part="page-header">
       {in_drawer && (
         <Button
           type="button"
