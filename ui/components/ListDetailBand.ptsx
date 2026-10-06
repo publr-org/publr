@@ -1,0 +1,6 @@
+export type ListDetailBandProps = { children?: JSX.Element };
+
+/** A ListDetailPage's band across the top, over the list and the detail. */
+export function ListDetailBand({ children }: ListDetailBandProps) {
+  return <div class="border-b border-border" data-part="list-detail-band">{children}</div>;
+}

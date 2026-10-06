@@ -89,9 +89,14 @@ Publr records who created a record and who last changed it. Who gets credited
 is content: a reference field to an `author` record, chosen by editors; only
 users who have an author record can be picked.
 
-Media will be a record type too. A media field points at a media record;
-caption, alt and credit are its fields. The rules a media field carries (file
-size, file family, image dimensions) wait on that library to be checked.
+Media is a record type too: every file in the library is a published record of the
+core `media` type (title, alt text, caption, credit, focal point), filed in at most one
+`media_folders` term and under any `media_tags` terms, with the file's own facts (name,
+type, size, dimensions, key, hash) beside it in the `media` table, written only by the
+library. The type is kept out of Content's lists: the library is its admin. A media
+field points at a media record. The rules a media field carries (file size, file
+family, image dimensions) wait on the field's picker to be checked. See
+[CLI: media](cli/media.md).
 
 Two axes describe where a record is. **Status** is publication: a registry,
 `draft`, `published`, `archived`, `deleted` in the core, moved by transitions

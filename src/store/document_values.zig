@@ -325,26 +325,29 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             return found.items;
         }
 
-        /// The document of a type holding a text value in a field, if any (unique lookups).
+        /// Another document of a type (not `except`) holding a text value in a field, if any
+        /// (unique lookups).
         pub fn find_by_text(
             connection: *db.Db,
             arena: std.mem.Allocator,
             type_id: []const u8,
             path: []const u8,
             text: []const u8,
+            except: []const u8,
         ) db.Error!?[]const u8 {
             std.debug.assert(type_id.len > 0);
             std.debug.assert(path.len > 0);
 
             var select = try connection.prepare(
                 "SELECT record FROM " ++ table ++ " WHERE type_id = ?1 AND field = ?2 " ++
-                    "AND value = ?3 AND slot = 'live' AND kind <> 'long' LIMIT 1",
+                    "AND value = ?3 AND slot = 'live' AND kind <> 'long' AND record <> ?4 LIMIT 1",
             );
             defer select.finalize();
 
             try select.bind_text(1, type_id);
             try select.bind_text(2, path);
             try select.bind_text(3, text);
+            try select.bind_text(4, except);
 
             if (!try select.step()) {
                 return null;
@@ -354,26 +357,28 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             return (try select.read(Found, arena)).record;
         }
 
-        /// The document of a type holding a whole-number value in a field, if any.
+        /// Another document of a type (not `except`) holding a whole-number value in a field.
         pub fn find_by_integer(
             connection: *db.Db,
             arena: std.mem.Allocator,
             type_id: []const u8,
             path: []const u8,
             number: i64,
+            except: []const u8,
         ) db.Error!?[]const u8 {
             std.debug.assert(type_id.len > 0);
             std.debug.assert(path.len > 0);
 
             var select = try connection.prepare(
                 "SELECT record FROM " ++ table ++ " WHERE type_id = ?1 AND field = ?2 " ++
-                    "AND value = ?3 AND slot = 'live' AND kind = 'int' LIMIT 1",
+                    "AND value = ?3 AND slot = 'live' AND kind = 'int' AND record <> ?4 LIMIT 1",
             );
             defer select.finalize();
 
             try select.bind_text(1, type_id);
             try select.bind_text(2, path);
             try select.bind_int(3, number);
+            try select.bind_text(4, except);
 
             if (!try select.step()) {
                 return null;

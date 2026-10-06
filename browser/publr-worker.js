@@ -47,19 +47,91 @@ async function forward(request, url) {
     path: url.pathname,
     query: url.search.slice(1),
     headers,
-    body: request.method === "GET" || request.method === "HEAD" ? "" : await request.text(),
   };
 
-  const reply = call("publr_request", JSON.stringify(envelope));
-  const response = JSON.parse(reply);
+  const text = JSON.stringify(envelope);
+  const read_only = request.method === "GET" || request.method === "HEAD";
+  // The body goes over as its bytes, whatever they are: a form, JSON, a file.
+  const body = read_only ? new Uint8Array(0) : new Uint8Array(await request.arrayBuffer());
 
-  for (const { name, value } of response.headers) if (name.toLowerCase() === "set-cookie") store_cookie(value);
-  if (request.method !== "GET" && request.method !== "HEAD") await persist();
+  // A request that reads a library file the module lacks names it; it is handed over from
+  // OPFS and the request runs again, as often as it names another one.
+  for (let round = 0; round < needs_max; round += 1) {
+    const response = JSON.parse(call("publr_request", text, body));
+    if (response.need) {
+      await attach(response.need);
+      continue;
+    }
 
-  return new Response(response.body, {
-    status: response.status,
-    headers: response.headers.map(({ name, value }) => [name, value]),
-  });
+    try {
+      if (response.status < 400) await carry_out(response.effects ?? []);
+      for (const { name, value } of response.headers) if (name.toLowerCase() === "set-cookie") store_cookie(value);
+      const body = body_bytes();
+      if (!read_only) await persist();
+      return new Response(response.status === 204 || response.status === 304 ? null : body, {
+        status: response.status,
+        headers: response.headers.map(({ name, value }) => [name, value]),
+      });
+    } finally {
+      instance.exports.publr_settle();
+    }
+  }
+  instance.exports.publr_settle();
+  throw Object.assign(new Error("Publr needed more files than it may ask for"), { status: 503 });
+}
+
+const needs_max = 8;
+const areas = { files: 0, incoming: 1 };
+
+/** The folder an area's files live in, under OPFS's `media/`. */
+async function folder_of(area, key, create) {
+  let folder = await (await navigator.storage.getDirectory()).getDirectoryHandle("media", { create: true });
+  if (area === "incoming") folder = await folder.getDirectoryHandle(".incoming", { create: true });
+  const parts = key.split("/");
+  for (const part of parts.slice(0, -1)) folder = await folder.getDirectoryHandle(part, { create });
+  return { folder, name: parts[parts.length - 1] };
+}
+
+async function attach(need) {
+  const { folder, name } = await folder_of(need.area, need.key, false).catch(() => ({ folder: null, name: "" }));
+  const handle = folder && await folder.getFileHandle(name).catch(() => null);
+  if (!handle) throw Object.assign(new Error(`${need.key} is not in this browser's storage`), { status: 404 });
+  const bytes = new Uint8Array(await (await handle.getFile()).arrayBuffer());
+  const key = new TextEncoder().encode(need.key);
+  const key_ptr = instance.exports.publr_alloc(key.length);
+  const ptr = bytes.length > 0 ? instance.exports.publr_alloc(bytes.length) : 0;
+  if (!key_ptr || !ptr) throw Object.assign(new Error("Publr has no memory for this file"), { status: 503 });
+  new Uint8Array(instance.exports.memory.buffer, key_ptr, key.length).set(key);
+  new Uint8Array(instance.exports.memory.buffer, ptr, bytes.length).set(bytes);
+  const code = instance.exports.publr_attach(areas[need.area], key_ptr, key.length, ptr, bytes.length);
+  instance.exports.publr_free(key_ptr, key.length);
+  if (code !== 0) throw Object.assign(new Error("Publr could not take the file: " + code), { status: 503 });
+}
+
+/** What the response wrote and removed, done in OPFS before it reaches the page. */
+async function carry_out(effects) {
+  for (const [index, effect] of effects.entries()) {
+    const { folder, name } = await folder_of(effect.area, effect.key, effect.kind !== "remove");
+    if (effect.kind === "remove") {
+      await folder.removeEntry(name).catch(() => {});
+      continue;
+    }
+    const ptr = instance.exports.publr_effect_ptr(index);
+    const len = instance.exports.publr_effect_len(index);
+    const bytes = new Uint8Array(instance.exports.memory.buffer, ptr, len).slice();
+    const handle = await folder.getFileHandle(name, { create: true });
+    const append = effect.kind === "append" && effect.offset > 0;
+    const writable = await handle.createWritable({ keepExistingData: append });
+    if (append) await writable.seek(effect.offset);
+    await writable.write(bytes);
+    await writable.close();
+  }
+}
+
+function body_bytes() {
+  const ptr = instance.exports.publr_body_ptr();
+  const len = instance.exports.publr_body_len();
+  return new Uint8Array(instance.exports.memory.buffer, ptr, len).slice();
 }
 
 async function boot() {
@@ -86,17 +158,20 @@ async function boot() {
   console.log("publr: wasm ready");
 }
 
-function call(name, text) {
+function call(name, text, body = new Uint8Array(0)) {
   const encoded = new TextEncoder().encode(text);
   const ptr = instance.exports.publr_alloc(encoded.length);
-  if (!ptr) {
+  const body_ptr = body.length > 0 ? instance.exports.publr_alloc(body.length) : 0;
+  if (!ptr || (body.length > 0 && !body_ptr)) {
+    if (ptr) instance.exports.publr_free(ptr, encoded.length);
     const error = new Error("Request is too large or Publr has no memory available");
-    error.status = encoded.length > 8 * 1024 * 1024 ? 413 : 503;
+    error.status = body.length > 32 * 1024 * 1024 ? 413 : 503;
     throw error;
   }
   try {
     new Uint8Array(instance.exports.memory.buffer, ptr, encoded.length).set(encoded);
-    const code = instance.exports[name](ptr, encoded.length);
+    if (body.length > 0) new Uint8Array(instance.exports.memory.buffer, body_ptr, body.length).set(body);
+    const code = instance.exports[name](ptr, encoded.length, body_ptr, body.length);
     if (code !== 0) {
       const error = new Error(name + " failed: " + code);
       error.status = code >= 2 && code <= 4 ? 400 : 503;
@@ -104,6 +179,7 @@ function call(name, text) {
     }
   } finally {
     instance.exports.publr_free(ptr, encoded.length);
+    if (body.length > 0) instance.exports.publr_free(body_ptr, body.length);
   }
 
   return new TextDecoder().decode(response_bytes());

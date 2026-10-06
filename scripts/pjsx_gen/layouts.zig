@@ -8,7 +8,13 @@ const Module = pjsx.compiler.ModuleIR;
 const NodeIR = pjsx.compiler.NodeIR;
 
 /// The layouts a page is drawn by, and the parts only they may use.
-pub const layouts = [_][]const u8{ "IndexPage", "FormPage", "HubPage", "CardPage" };
+pub const layouts = [_][]const u8{
+    "IndexPage",
+    "FormPage",
+    "HubPage",
+    "CardPage",
+    "ListDetailPage",
+};
 const chrome_parts = [_][]const u8{ "Chrome", "Document" };
 /// The spacing a layout owns: a page's own top-level elements set none of it.
 const spacing_prefixes = [_][]const u8{
@@ -18,7 +24,7 @@ const spacing_prefixes = [_][]const u8{
 
 pub fn check(modules: []const *const Module) !void {
     std.debug.assert(modules.len > 0);
-    std.debug.assert(layouts.len == 4);
+    std.debug.assert(layouts.len == 5);
 
     for (modules) |module| {
         try check_imports(module);

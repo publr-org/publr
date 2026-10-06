@@ -29,6 +29,16 @@ export function Crumbs({ title, parents }: CrumbsProps) {
               <BreadcrumbLink href="/admin/content">Content</BreadcrumbLink>
             </BreadcrumbItem>
           )}
+          {Publr.request.admin.area === "media" && title === "Media" && (
+            <BreadcrumbItem>
+              <BreadcrumbPage>Media</BreadcrumbPage>
+            </BreadcrumbItem>
+          )}
+          {Publr.request.admin.area === "media" && title !== "Media" && (
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/admin/media">Media</BreadcrumbLink>
+            </BreadcrumbItem>
+          )}
           {Publr.request.admin.area === "settings" && (
             <BreadcrumbItem>
               <BreadcrumbLink href="/admin/settings">Settings</BreadcrumbLink>
@@ -39,7 +49,7 @@ export function Crumbs({ title, parents }: CrumbsProps) {
               <BreadcrumbLink href={parent.href}>{parent.label}</BreadcrumbLink>
             </BreadcrumbItem>
           ))}
-          {Publr.request.admin.area !== "overview" && (
+          {Publr.request.admin.area !== "overview" && (Publr.request.admin.area !== "media" || title !== "Media") && (
             <BreadcrumbItem separated>
               <span hidden={(Publr.stores.navigation as NavigationStore).open}>
                 <BreadcrumbPage>{title}</BreadcrumbPage>

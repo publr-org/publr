@@ -1,0 +1,137 @@
+import { Publr } from "publr-jsx";
+import { ListDetailPage } from "@publr/admin/ListDetailPage.ptsx";
+import { MediaLibrary } from "../components/MediaLibrary.ptsx";
+
+export type MediaProps = {
+  folder: string;
+  tags: Array<string>;
+  search: string;
+  year: number;
+  month: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  prev_href: string;
+  next_href: string;
+  page_text: string;
+  pills: Array<{
+    id: string;
+    label: string;
+    value: string;
+    options: Array<{ label: string; href: string; selected: boolean }>;
+    remove_href: string;
+  }>;
+  add_filters: Array<{ label: string; href: string; added: boolean }>;
+  kind: string;
+  size_filter: string;
+  visibility: string;
+  items: Array<{
+    id: string;
+    title: string;
+    href: string;
+    thumb: string;
+    image: boolean;
+    video: boolean;
+    src: string;
+    kind: string;
+    icon: "video" | "audio" | "file";
+    facts: string;
+    selected: boolean;
+  }>;
+  total: number;
+  all: number;
+  unsorted: number;
+  all_href: string;
+  unsorted_href: string;
+  folders: Array<{
+    id: string;
+    name: string;
+    parent: string;
+    depth: number;
+    level: "0" | "1" | "2" | "3" | "4" | "5";
+    label: string;
+    count: number;
+    href: string;
+    current: boolean;
+    nests: boolean;
+  }>;
+  tag_list: Array<{
+    id: string;
+    name: string;
+    count: number;
+    href: string;
+    selected: boolean;
+    enabled: boolean;
+  }>;
+  periods: Array<{ year: number; month: number; count: number }>;
+  years: Array<{ value: string; label: string; selected: boolean }>;
+  months: Array<{ value: string; label: string; selected: boolean }>;
+};
+
+/** The media library: the explorer and its filters on the left, the files as a wall of
+ * squares beside it, the search, the filters in force, the view and Upload across the top. */
+export function Media({
+  folder,
+  tags,
+  search,
+  year,
+  month,
+  page,
+  page_size,
+  pages,
+  prev_href,
+  next_href,
+  page_text,
+  pills,
+  add_filters,
+  kind,
+  size_filter,
+  visibility,
+  items,
+  total,
+  all,
+  unsorted,
+  all_href,
+  unsorted_href,
+  folders,
+  tag_list,
+  periods,
+  years,
+  months,
+}: MediaProps) {
+  return (
+    <ListDetailPage title="Media">
+      <MediaLibrary
+        csrf={Publr.request.session.csrf}
+        folder={folder}
+        tags={tags}
+        search={search}
+        year={year}
+        month={month}
+        page={page}
+        page_size={page_size}
+        pages={pages}
+        prev_href={prev_href}
+        next_href={next_href}
+        page_text={page_text}
+        pills={pills}
+        add_filters={add_filters}
+        kind={kind}
+        size_filter={size_filter}
+        visibility={visibility}
+        items={items}
+        total={total}
+        all={all}
+        unsorted={unsorted}
+        all_href={all_href}
+        unsorted_href={unsorted_href}
+        folders={folders}
+        tag_list={tag_list}
+        periods={periods}
+        years={years}
+        months={months}
+        live={true}
+      />
+    </ListDetailPage>
+  );
+}

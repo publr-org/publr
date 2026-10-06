@@ -1,0 +1,51 @@
+import { DiffText } from "@publr/ui/DiffText.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import type { CompareValue } from "./CompareValues.ptsx";
+import { CompareValues } from "./CompareValues.ptsx";
+
+export type CompareFieldProps = {
+  label: string;
+  left: Array<CompareValue>;
+  right: Array<CompareValue>;
+  /** What each version changed, read beside its label; none when nothing did. */
+  left_changes?: Array<{ text: string; mark: string }>;
+  right_changes?: Array<{ text: string; mark: string }>;
+  /** A word on each version's value (`From the branch`, `Kept here`); empty for none. */
+  left_note?: string;
+  right_note?: string;
+  /** Shown quieter: a field neither version changed. */
+  dim?: boolean;
+};
+
+/** One field in two versions, side by side: each version's value, what it changed marked. */
+export function CompareField({
+  label,
+  left,
+  right,
+  left_changes = [],
+  right_changes = [],
+  left_note = "",
+  right_note = "",
+  dim = false,
+}: CompareFieldProps) {
+  return (
+    <div class={["grid grid-cols-2", dim ? "opacity-60" : ""]} data-quiet="true" data-conflict="false" data-part="compare-field">
+      <div class="flex flex-col gap-2 px-8 py-5">
+        <div class="flex items-start gap-2">
+          <Text as="span" variant="body-xs" tone="muted" classes="shrink-0">{label}</Text>
+          {left_note !== "" && <Text as="span" variant="body-xs" tone="success" classes="shrink-0">{left_note}</Text>}
+          {left_changes.length > 0 && <DiffText segments={left_changes} classes="ml-auto" />}
+        </div>
+        <CompareValues values={left} />
+      </div>
+      <div class="flex flex-col gap-2 border-l border-border px-8 py-5">
+        <div class="flex items-start gap-2">
+          <Text as="span" variant="body-xs" tone="muted" classes="shrink-0">{label}</Text>
+          {right_note !== "" && <Text as="span" variant="body-xs" tone="success" classes="shrink-0">{right_note}</Text>}
+          {right_changes.length > 0 && <DiffText segments={right_changes} classes="ml-auto" />}
+        </div>
+        <CompareValues values={right} />
+      </div>
+    </div>
+  );
+}

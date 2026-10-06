@@ -1,0 +1,17 @@
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type ListDetailGroupProps = {
+  /** What the group's things are: `Content types`, `Lesson`. */
+  label: string;
+  children?: JSX.Element;
+};
+
+/** One group of a ListDetailPage's list: its name, then its items. */
+export function ListDetailGroup({ label, children }: ListDetailGroupProps) {
+  return (
+    <div class="flex flex-col gap-1" data-part="list-detail-group">
+      <Text as="span" variant="eyebrow-xs" tone="muted" classes="px-2">{label}</Text>
+      <ul class="flex flex-col gap-0.5">{children}</ul>
+    </div>
+  );
+}

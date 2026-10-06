@@ -2,6 +2,7 @@
 //! they may open, the plugins' top bar items, which area the address is in and that area's
 //! sidebar. Filled once per page from the session; the views never forward it.
 const std = @import("std");
+const avatar = @import("avatar.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const types = @import("../../operations/content_type.zig");
@@ -23,7 +24,7 @@ pub const Options = struct {
     settings_path: ?[]const u8 = null,
 };
 
-pub const Area = enum { overview, content, settings };
+pub const Area = enum { overview, content, media, settings };
 
 /// The rail section of an address: the overview, the content and its records, and the
 /// rest (settings, structure, plugins' pages) under Settings.
@@ -37,6 +38,10 @@ pub fn area_of(path: []const u8) Area {
 
     if (under(path, "/admin/content")) {
         return .content;
+    }
+
+    if (under(path, "/admin/media")) {
+        return .media;
     }
 
     return .settings;
@@ -56,7 +61,7 @@ pub fn under(path: []const u8, prefix: []const u8) bool {
 
 /// The request of the pages before sign-in, which draw no chrome.
 pub const signed_out: Request = .{
-    .session = .{ .name = "", .email = "", .csrf = "" },
+    .session = .{ .name = "", .email = "", .csrf = "", .avatar = "" },
     .admin = .{
         .base = "",
         .path = "/admin",
@@ -103,6 +108,7 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
             .name = session.identity.display_name,
             .email = session.identity.email,
             .csrf = session.csrf_token(),
+            .avatar = try avatar.address_of(session.arena, session.identity.email),
         },
         .admin = .{
             .base = session.project.base,
@@ -136,7 +142,7 @@ fn sidebar_of(
     listing.* = session.*;
 
     switch (area) {
-        .overview => return null,
+        .overview, .media => return null,
         .content => {
             const kept = try session.arena.create(ContentSidebar);
 
@@ -195,6 +201,9 @@ test "area_of: the overview, the content, and everything else under Settings" {
     try std.testing.expectEqual(Area.overview, area_of("/admin"));
     try std.testing.expectEqual(Area.content, area_of("/admin/content"));
     try std.testing.expectEqual(Area.content, area_of("/admin/content/42/revisions"));
+    try std.testing.expectEqual(Area.media, area_of("/admin/media"));
+    try std.testing.expectEqual(Area.media, area_of("/admin/media/01a1"));
+    try std.testing.expectEqual(Area.settings, area_of("/admin/mediakit"));
     try std.testing.expectEqual(Area.settings, area_of("/admin/contentful"));
     try std.testing.expectEqual(Area.settings, area_of("/admin/types/post"));
     try std.testing.expectEqual(Area.settings, area_of("/admin/deployments/main/3"));
@@ -226,7 +235,7 @@ fn signed_in_request(sidebar: ?Node) Request {
 
     var request = signed_out;
 
-    request.session = .{ .name = "Ada", .email = "ada@example.com", .csrf = "token" };
+    request.session = .{ .name = "Ada", .email = "ada@example.com", .csrf = "token", .avatar = "" };
     request.admin.path = "/admin/settings/users";
     request.admin.area = "settings";
     request.admin.can_settings = true;

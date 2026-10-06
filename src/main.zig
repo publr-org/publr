@@ -132,6 +132,7 @@ fn run_command(
             .now_ms = sdk.context.wall_clock_ms(init.io),
             .password_env = init.environ_map.get("PUBLR_PASSWORD"),
             .sandboxed_plugins = application.sandboxed(),
+            .files = application.files_of(),
         }, args, out);
     }
 

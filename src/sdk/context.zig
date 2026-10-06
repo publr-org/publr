@@ -54,6 +54,8 @@ pub const Ctx = struct {
     plugin_depth: u32 = 0,
     /// Set while a display hook runs: it may read what it is granted, never write.
     reads_only: bool = false,
+    /// Where the media library keeps its files, where a server made it.
+    files: ?@import("../lib/files.zig").Files = null,
 
     pub fn init(options: Options) Ctx {
         std.debug.assert(options.request_id.len <= request_id_len_max);

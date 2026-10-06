@@ -58,7 +58,7 @@ fn type_pill(page: *const Page) Error!Pill {
     var options: std.ArrayList(Option) = .empty;
 
     for (page.types) |summary| {
-        if (summary.kind != .record) {
+        if (summary.kind != .record or model.media.is_library(summary.handle)) {
             continue;
         }
 

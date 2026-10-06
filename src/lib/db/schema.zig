@@ -20,6 +20,7 @@ pub const tables = [_][]const u8{
     "user_values",
     "user_search",
     "record_terms",
+    "media",
     "snapshots",
     "views",
     "internal_records",

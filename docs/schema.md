@@ -543,6 +543,29 @@ is moved under another parent.
 Primary key `(record, slot, field, term)`; index `record_terms_reverse (term,
 slot, record)` answers "which records are in this term".
 
+## `media`
+
+The facts of each file in the media library, one row per record of the `media`
+type: what only the library writes. What people write about a file (title, alt
+text, caption, credit, focal point) is the record's document, and its folder and
+tags are its `media_folders` and `media_tags` terms. The bytes are kept outside
+the database under `storage_key`.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `record` | text, references `records` | The file's record; cascades on delete |
+| `filename` | text | The name it was uploaded with |
+| `mime_type` | text | What it is, decided by its extension and checked against its bytes |
+| `size` | integer | Bytes |
+| `width`, `height` | integer, nullable | Pixels, for images stb reads |
+| `storage_key` | text, unique | Where the bytes are: `YYYY/MM/<stem>-<random>.<ext>` |
+| `hash` | text | SHA-256 of the bytes, hex |
+| `private` | integer | `1`: served only to signed-in users, never cached by others |
+| `created_at` | integer | Upload time, ms |
+
+Index `media_created (created_at, record)` serves the newest-first list;
+`media_hash (hash)` finds an upload of the same bytes.
+
 ## `deps_edges`, `deps_artifacts`, `deps_pending`, `deps_meta`
 
 The dependency index, owned by the `publr_deps` library and created by it in
@@ -558,9 +581,7 @@ last change. Keys are `record:<id>`, `type:<handle>`, `records`,
 
 ## Coming with later gates
 
-`media` (files: name, mime type, size, dimensions, storage key, hash) joins as
-a record type with the media gate; API token tables come with the tokens
-gate. A built-in plugin that truly needs its own table names it
+API token tables come with the tokens gate. A built-in plugin that truly needs its own table names it
 `<plugin>_<table>` and creates it from `schema_sql` when the database opens;
 the default, for every plugin, is a declared content type.
 

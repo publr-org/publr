@@ -1,0 +1,32 @@
+import { Skeleton } from "@publr/ui/Skeleton.ptsx";
+
+export type AdminSkeletonProps = {
+  /** What is under way, in the middle: a spinner and a line saying what. */
+  children?: JSX.Element;
+};
+
+/** The admin about to appear, drawn in gray over the whole window: the rail and the top bar,
+ * with what is under way in the middle of an empty sheet. Shown while the browser
+ * waits for another copy's admin (a new environment being made). */
+export function AdminSkeleton({ children }: AdminSkeletonProps) {
+  return (
+    <div class="flex h-full w-full bg-card" data-part="admin-skeleton">
+      <div class="flex w-14 shrink-0 flex-col items-center gap-3 border-r border-border py-4">
+        <Skeleton classes="size-6 rounded-full" />
+        <Skeleton classes="mt-3 size-6" />
+        <Skeleton classes="size-6" />
+        <div class="mt-auto flex flex-col items-center gap-3">
+          <Skeleton classes="size-7 rounded-full" />
+          <Skeleton classes="size-6" />
+        </div>
+      </div>
+      <div class="flex min-w-0 flex-1 flex-col">
+        <div class="flex h-14 shrink-0 items-center justify-between border-b border-border px-8">
+          <Skeleton classes="h-3 w-24" />
+          <Skeleton classes="h-8 w-44 rounded-lg" />
+        </div>
+        <div class="flex flex-1 flex-col items-center justify-center gap-3">{children}</div>
+      </div>
+    </div>
+  );
+}

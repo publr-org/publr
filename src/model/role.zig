@@ -28,16 +28,16 @@ pub const editor = "editor";
 pub const settings_grant = "settings.edit";
 
 const editor_grants = [_][]const u8{
-    "record.*",              "!record.purge",
-    "term.*",                "!term.purge",
-    "snapshot.*",            "view.*",
-    "status.*",              "heartbeat.*",
-    "content_type.get",      "content_type.list",
-    "content_type.validate", "taxonomy.get",
-    "taxonomy.list",         "taxonomy.validate",
-    "user.options",          "project.status",
-    "project.impact",        "identity.list",
-    "identity.unlink",
+    "record.*",          "!record.purge",
+    "term.*",            "!term.purge",
+    "media.*",           "snapshot.*",
+    "view.*",            "status.*",
+    "heartbeat.*",       "content_type.get",
+    "content_type.list", "content_type.validate",
+    "taxonomy.get",      "taxonomy.list",
+    "taxonomy.validate", "user.options",
+    "project.status",    "project.impact",
+    "identity.list",     "identity.unlink",
 };
 
 pub const core = [_]Role{
@@ -254,6 +254,9 @@ pub fn problem(roles: []const Role) ?[]const u8 {
 
 pub fn Registry(comptime roles: []const Role) type {
     comptime {
+        // Checking a grant reads each of its characters a few times.
+        @setEvalBranchQuota(1000 + roles.len * grants_max * grant_len_max);
+
         if (problem(roles)) |message| {
             @compileError("roles: " ++ message);
         }

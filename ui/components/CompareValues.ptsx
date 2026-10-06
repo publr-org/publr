@@ -1,0 +1,63 @@
+import { DiffText } from "@publr/ui/DiffText.ptsx";
+import { ReferenceCard } from "@publr/ui/ReferenceCard.ptsx";
+import type { IconName } from "@publr/ui/Icon.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { DefinitionCard } from "./DefinitionCard.ptsx";
+
+/** A value as a version has it: a document pointed at as its card, a field of a content type
+ * as its row, anything else as text, marked `added` or `removed` where that says something. */
+export type CompareValue = {
+  json: string;
+  /** `same`, `added` or `removed`. */
+  mark: string;
+  card: boolean;
+  title: string;
+  type_label: string;
+  status: string;
+  tone: string;
+  href: string;
+  segments: Array<{ text: string; mark: string }>;
+  /** A definition (a field of a type, a plugin, a request it makes): drawn as its card. */
+  definition: boolean;
+  icon: IconName;
+  required: boolean;
+  summary: string;
+  name: string;
+  details: string[];
+};
+
+export type CompareValuesProps = {
+  /** One version's values. */
+  values: Array<CompareValue>;
+  /** Items can be dragged out (into a value made of both versions' items). */
+  draggable?: boolean;
+};
+
+/** A field's values as one version has them: a document pointed at as its card, anything
+ * else as text, with what this version added and removed marked. */
+export function CompareValues({ values, draggable = false }: CompareValuesProps) {
+  return (
+    <div class="flex flex-col gap-2" data-part="compare-values">
+      {values.length === 0 && <Text as="p" variant="body-sm" tone="muted">Empty</Text>}
+      {values.map((value) => (
+        <div data-json={value.json} draggable={draggable ? "true" : "false"} class={draggable ? "cursor-grab" : ""}>
+          {value.card ? (
+            <ReferenceCard type_label={value.type_label} title={value.title} status={value.status} tone={value.tone} href="" mark={value.mark} />
+          ) : value.definition ? (
+            <DefinitionCard
+              icon={value.icon}
+              label={value.title}
+              required={value.required}
+              summary={value.summary}
+              name={value.name}
+              details={value.details}
+              mark={value.mark}
+            />
+          ) : (
+            <DiffText segments={value.segments} boxed />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}

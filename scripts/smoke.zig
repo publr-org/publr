@@ -246,6 +246,16 @@ fn expect_taxonomies(
 
     try expect_contains(init, binary, work_dir, &tree, "\"title\": \"Technology\"");
     try expect_contains(init, binary, work_dir, &listed_taxonomies, "\"handle\": \"topics\"");
+
+    const shot_list = try std.fs.path.join(init.arena.allocator(), &.{ work_dir, "shot-list.txt" });
+
+    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = shot_list, .data = "Shot list\n" });
+
+    const upload = [_][]const u8{ "--as-admin", "media", "add", "--file", shot_list };
+    const listed_media = [_][]const u8{ "--as", admin, "media", "list", "--folder", "unsorted" };
+
+    try expect_contains(init, binary, work_dir, &upload, "\"family\": \"text\"");
+    try expect_contains(init, binary, work_dir, &listed_media, "\"filename\": \"shot-list.txt\"");
 }
 
 /// A post published, every app built from it, and the files the build promises.
@@ -422,7 +432,22 @@ fn expect_serve(init: std.process.Init, binary: []const u8, work_dir: []const u8
         return error.SmokeFailed;
     }
 
+    try expect_media_missing(init, port);
     try expect_site(init, port);
+}
+
+/// A media address the library does not hold answers not found, resized or not.
+fn expect_media_missing(init: std.process.Init, port: u16) !void {
+    std.debug.assert(port > 0);
+
+    const missing = try http_get(init, port, "/media/2026/01/missing-file.png?w=40");
+
+    std.debug.assert(missing.len > 0);
+
+    if (std.mem.indexOf(u8, missing, "404 Not Found") == null) {
+        std.debug.print("smoke: serve: a missing media file answered: {s}\n", .{missing});
+        return error.SmokeFailed;
+    }
 }
 
 /// The apps: the root app's built home page, the post's page, a fragment, the stylesheet

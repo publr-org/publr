@@ -15,6 +15,7 @@ pub const taxonomies = @import("store/taxonomies.zig");
 pub const terms = @import("store/terms.zig");
 pub const term_values = @import("store/term_values.zig");
 pub const record_terms = @import("store/record_terms.zig");
+pub const media = @import("store/media.zig");
 pub const snapshots = @import("store/snapshots.zig");
 pub const settings = @import("store/settings.zig");
 pub const users = @import("store/users.zig");

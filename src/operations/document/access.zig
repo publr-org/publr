@@ -144,7 +144,8 @@ pub fn Of(comptime Domain: type) type {
             }
 
             for (try Domain.definitions.list_briefs(ctx.db, ctx.arena)) |brief| {
-                const listed = brief.kind == .record;
+                // The media library's files are records too; its own pages list them.
+                const listed = brief.kind == .record and !model.media.is_library(brief.handle);
 
                 const visible = definitions.visible_type(
                     granted,

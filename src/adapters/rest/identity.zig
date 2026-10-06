@@ -270,6 +270,7 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
 
     ctx.sandboxed_plugins = project.sandboxed_plugins;
     ctx.plugin_states = project.plugin_states;
+    ctx.files = project.files;
 
     return ctx;
 }

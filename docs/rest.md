@@ -53,6 +53,33 @@ its `public/` files at their own paths (`<mount>/robots.txt`). A built
 page answers with an `ETag`, a rendered one with `no-store`; `X-Publr-Served` says which
 (`file`, `memory`, `render`). With no app there, `/` opens the admin.
 
+## Media
+
+`GET /media/<key>` serves a file of the media library by its key
+(`2026/10/harbour-a1b2c3.jpg`). `?w=` and `?h=` resize a JPEG or PNG, never larger than
+it is; with both, `?fit=cover` scales it until it covers them and then crops, otherwise
+it crops at full size, around the file's focal point or `?fp=x,y` (percent). `?q=` is
+the quality, 1 to 100 (90). A browser whose `Accept` takes WebP gets WebP. Copies are
+cached beside the originals. A public file answers `Cache-Control: public,
+max-age=31536000, immutable` with an `ETag` of its hash (and the copy's suffix) and
+`304` to a match; a private one is `404` to anyone not signed in and `private, no-store`
+to the rest. Every answer carries a Content-Security-Policy with `sandbox`, so an SVG or
+a text file opened on its own runs nothing. A file larger than one response (2 MiB)
+answers `413` to a request for the whole file; ranges of it, and its resized copies, are
+served.
+
+`POST /media/upload?filename=<name>[&folder=<id>]` adds a file to the library: the
+body is the file's bytes as they are (no form, no base64), taken as they arrive and
+kept in the library's uploads area until the whole file is in; then `media upload`
+checks and adds it, and the answer is `201` with the file as `media list` gives it.
+Signed-in only, same origin, with `X-Csrf-Token`; up to 32 MiB. A file is read in part
+with `Range` (`206`), which is how a browser plays a video, so a file larger than one
+response is served that way.
+
+`GET /admin/avatar/<md5>` is the signed-in user's Gravatar from the admin's own address:
+fetched once on a thread of its own and kept beside the media cache, served after that
+(a clear pixel until then, or when there is none).
+
 ## Served under a path
 
 A project whose `--url` has a path (`https://example.com/site`) is served under it: every

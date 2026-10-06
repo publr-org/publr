@@ -1,0 +1,52 @@
+import { Chrome } from "./Chrome.ptsx";
+import { ListDetailBand } from "../components/ListDetailBand.ptsx";
+import { ListDetailColumns } from "../components/ListDetailColumns.ptsx";
+import { ListDetailDetail } from "../components/ListDetailDetail.ptsx";
+import { ListDetailList } from "../components/ListDetailList.ptsx";
+
+export type ListDetailPageProps = {
+  title: string;
+  parents?: Array<{ label: string; href: string }>;
+  /** The band across the top, over the list and the detail: what the whole page is about. */
+  header?: JSX.Element;
+  /** What the list is, for assistive tech: `Conflicts`, `Media`. */
+  list_label?: string;
+  /** The things worked through, grouped, each leading to its detail (ListDetailGroup,
+   * ListDetailItem). Left out when band, list and detail are one island, which draws them
+   * itself from the layout's parts (ListDetailBand, ListDetailColumns, ListDetailList,
+   * ListDetailDetail) and is the page's only child. */
+  list?: JSX.Element;
+  /** The one thing open, beside the list; or, without `list`, the whole island. */
+  children?: JSX.Element;
+};
+
+/** A page that works through a set of things one at a time: a band across the top, the
+ * things listed on the left (grouped, the open one marked, done ones checked), the open
+ * one's detail on the right. No section sidebar: the list takes its place. A merge's
+ * conflicts are worked through this way, and a media library browsed. */
+export function ListDetailPage({
+  title,
+  parents = [],
+  header,
+  list_label = "",
+  list,
+  children,
+}: ListDetailPageProps) {
+  return (
+    <Chrome title={title} parents={parents} focus>
+      <div class="flex flex-1 flex-col" data-part="list-detail-page">
+        {list ? (
+          <div class="contents">
+            {header && <ListDetailBand>{header}</ListDetailBand>}
+            <ListDetailColumns>
+              <ListDetailList label={list_label}>{list}</ListDetailList>
+              <ListDetailDetail>{children}</ListDetailDetail>
+            </ListDetailColumns>
+          </div>
+        ) : (
+          children
+        )}
+      </div>
+    </Chrome>
+  );
+}

@@ -55,7 +55,7 @@ test "term values live apart from record values" {
     try write(&kinds.core, connection, id, live, taxonomy_id, taxonomy.test_topics.fields, parsed);
 
     try std.testing.expectEqual(@as(usize, 2), (try read(connection, arena, id, live)).len);
-    const by_slug = try find_by_text(connection, arena, taxonomy_id, "slug", "zig");
+    const by_slug = try find_by_text(connection, arena, taxonomy_id, "slug", "zig", "");
     try std.testing.expectEqualStrings(id, by_slug.?);
     try std.testing.expect(try has_slot(connection, id, live));
 

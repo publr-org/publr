@@ -62,6 +62,10 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
     };
 
     for (listed.types) |summary| {
+        if (model.media.is_library(summary.handle)) {
+            continue;
+        }
+
         const one_type: Filters = .{ .types = &.{summary.handle}, .type_view = true };
         const row = try row_of(arena, summary.name, one_type, address, on_view);
         const appended = switch (summary.kind) {

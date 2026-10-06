@@ -251,8 +251,11 @@ fn hook_sentence(arena: std.mem.Allocator, hook: Hook) error{OutOfMemory}![]cons
     std.debug.assert(hook.reason.len > 0);
 
     return switch (hook.stage) {
-        .event, .after => std.fmt.allocPrint(arena, "See when {s} happens", .{hook.target}),
-        .before => std.fmt.allocPrint(arena, "Change what is sent to {s}", .{hook.target}),
+        .event => std.fmt.allocPrint(arena, "See when {s} happens", .{hook.target}),
+        .after => std.fmt.allocPrint(arena, "See when the {s} operation happens", .{hook.target}),
+        .before => std.fmt.allocPrint(arena, "Change what is sent to the {s} operation", .{
+            hook.target,
+        }),
         .display => std.fmt.allocPrint(arena, "Change how {s} is shown, as text", .{
             hook.target,
         }),
@@ -398,7 +401,10 @@ test "requests carry tiers; install grants low and medium that are available" {
     try std.testing.expectEqual(@as(usize, 5), list.len);
     try std.testing.expect(!list[2].available);
     try std.testing.expectEqualStrings("after:record.save", list[3].key);
-    try std.testing.expectEqualStrings("See when record.save happens", list[3].sentence);
+    try std.testing.expectEqualStrings(
+        "See when the record.save operation happens",
+        list[3].sentence,
+    );
     try std.testing.expectEqualStrings("Run up to 2000 ms of CPU in one call", list[4].sentence);
     try std.testing.expectEqual(permission.Tier.high, list[4].tier);
     try std.testing.expectEqual(@as(usize, 2), granted.len);

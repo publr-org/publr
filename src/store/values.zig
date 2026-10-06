@@ -213,9 +213,10 @@ test "write then assemble round-trips every kind, groups, repeaters and many ref
 
     try std.testing.expectEqualStrings(
         "e1",
-        (try find_by_text(connection, arena, type_id, "title", "Hello")).?,
+        (try find_by_text(connection, arena, type_id, "title", "Hello", "")).?,
     );
-    try std.testing.expect(try find_by_text(connection, arena, type_id, "title", "Nope") == null);
+    const nope = try find_by_text(connection, arena, type_id, "title", "Nope", "");
+    try std.testing.expect(nope == null);
 
     var fts = try connection.prepare(
         "SELECT count(*) FROM record_search WHERE record_search MATCH 'hello'",
@@ -282,7 +283,8 @@ test "slots: a pending copy is invisible to lookups until promoted to live" {
     const pending_title = (try read_text(connection, arena, "e1", pending, "title")).?;
     try std.testing.expectEqualStrings("Live", live_title);
     try std.testing.expectEqualStrings("Edited", pending_title);
-    try std.testing.expect(try find_by_text(connection, arena, type_id, "title", "Edited") == null);
+    const parked = try find_by_text(connection, arena, type_id, "title", "Edited", "");
+    try std.testing.expect(parked == null);
 
     try std.testing.expect(try promote(connection, "e1", pending, live));
     try std.testing.expect(!try promote(connection, "e1", pending, live));
@@ -291,7 +293,8 @@ test "slots: a pending copy is invisible to lookups until promoted to live" {
     try std.testing.expectEqual(@as(usize, 1), (try slots_of(connection, arena, "e1")).len);
     const promoted_title = (try read_text(connection, arena, "e1", live, "title")).?;
     try std.testing.expectEqualStrings("Edited", promoted_title);
-    try std.testing.expect(try find_by_text(connection, arena, type_id, "title", "Edited") != null);
+    const live_now = try find_by_text(connection, arena, type_id, "title", "Edited", "");
+    try std.testing.expect(live_now != null);
 
     try clear(connection, "e1", null);
     try std.testing.expectEqual(@as(usize, 0), (try read(connection, arena, "e1", live)).len);

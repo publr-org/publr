@@ -36,7 +36,7 @@ pub fn Of(comptime Domain: type) type {
 
             for (type_row.def.fields) |field| {
                 if (field.unique or model.field.is_slug(field.kind)) {
-                    try refuse_taken(ctx, row, field);
+                    try refuse_taken(ctx, row, field, values.pending);
                 }
             }
 
@@ -63,13 +63,17 @@ pub fn Of(comptime Domain: type) type {
             try document.refuse_unpublished_targets(ctx, type_row.def, parsed);
         }
 
-        /// A parked slug or unique value was checked against live values when it was
-        /// typed; check again now.
-        fn refuse_taken(ctx: *Ctx, row: Record, field: model.field.Def) Error!void {
+        /// A slug or unique value in `slot` held live by another document is refused: a
+        /// parked one was checked when it was typed and is checked again as it goes live.
+        fn refuse_taken(
+            ctx: *Ctx,
+            row: Record,
+            field: model.field.Def,
+            slot: []const u8,
+        ) Error!void {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(field.name.len > 0);
 
-            const slot = values.pending;
             const type_id = row.type_id;
             const name = field.name;
             const kind = registry.Kinds.find_kind(field.kind) orelse return;
@@ -79,18 +83,146 @@ pub fn Of(comptime Domain: type) type {
                     return;
                 };
 
-                break :blk try values.find_by_integer(ctx.db, ctx.arena, type_id, name, parked);
+                break :blk try values.find_by_integer(ctx.db, ctx.arena, type_id, name, parked, id);
             } else blk: {
                 const parked = try values.read_text(ctx.db, ctx.arena, row.id, slot, name) orelse {
                     return;
                 };
 
-                break :blk try values.find_by_text(ctx.db, ctx.arena, type_id, name, parked);
+                const id = row.id;
+
+                break :blk try values.find_by_text(ctx.db, ctx.arena, type_id, name, parked, id);
             };
 
             if (holder != null and !std.mem.eql(u8, holder.?, row.id)) {
                 return error.Conflict;
             }
+        }
+
+        /// What a document was before something other than these operations replaced its
+        /// rows (a merge, a rollback): its status and its live document as JSON text.
+        pub const Before = struct { status: []const u8, live: ?[]const u8 };
+
+        /// Taken before the rows are replaced; null when the document is not there.
+        pub fn landing(ctx: *Ctx, id: []const u8) Error!?Before {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+
+            const row = try documents.get(ctx.db, ctx.arena, id) orelse return null;
+            const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
+
+            return .{ .status = row.status, .live = try live_text(ctx, row, type_row.def) };
+        }
+
+        /// After the rows were replaced, everything a person making the same move gets: the
+        /// checks of going live (slugs and unique values free, targets live), the revision of
+        /// the live document replaced, and the notices. A refused check fails the write.
+        /// Called once every document of the write is in place, so targets written in the
+        /// same write count.
+        pub fn landed(ctx: *Ctx, id: []const u8, before: ?Before) Error!void {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+
+            const found = try documents.get(ctx.db, ctx.arena, id);
+            const row = found orelse {
+                if (before != null) {
+                    ctx.notice(notice_name("purged"), id);
+                }
+
+                return;
+            };
+            const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
+            const def = type_row.def;
+            const live = registry.Statuses.is_live(row.status);
+
+            try rewrite_copies(ctx, row, def);
+
+            if (live) {
+                try check_live(ctx, row, def);
+            }
+
+            const was = before orelse {
+                ctx.notice(notice_name("created"), row.id);
+
+                if (live) {
+                    ctx.notice(notice_name("published"), row.id);
+                }
+
+                return;
+            };
+
+            try announce(ctx, row, def, was);
+        }
+
+        /// Each copy written again from its document: what is derived from the values
+        /// (search text) follows what was written, whichever side each value came from.
+        fn rewrite_copies(ctx: *Ctx, row: Record, def: store.definitions.Def) Error!void {
+            std.debug.assert(row.id.len > 0);
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+
+            for ([_][]const u8{ values.live, values.pending }) |slot| {
+                if (!try values.has_slot(ctx.db, row.id, slot)) {
+                    continue;
+                }
+
+                const copy = try document.document_of(ctx, row.id, slot, def);
+                const kinds = registry.Kinds.all;
+
+                try values.write(kinds, ctx.db, row.id, slot, row.type_id, def.fields, copy);
+            }
+        }
+
+        fn check_live(ctx: *Ctx, row: Record, def: store.definitions.Def) Error!void {
+            std.debug.assert(registry.Statuses.is_live(row.status));
+            std.debug.assert(def.fields.len <= model.field.fields_max);
+
+            for (def.fields) |field| {
+                if (field.unique or model.field.is_slug(field.kind)) {
+                    try refuse_taken(ctx, row, field, values.live);
+                }
+            }
+
+            try check_references(ctx, row, values.live);
+        }
+
+        /// The revision of the live document replaced, and the notices of the move.
+        fn announce(ctx: *Ctx, row: Record, def: store.definitions.Def, was: Before) Error!void {
+            std.debug.assert(row.id.len > 0);
+            std.debug.assert(was.status.len > 0);
+
+            const live = registry.Statuses.is_live(row.status);
+            const now = try live_text(ctx, row, def);
+            const replaced = if (was.live) |old|
+                now == null or !std.mem.eql(u8, old, now.?)
+            else
+                now != null;
+
+            if (replaced and was.live != null) {
+                const actor = ctx.caller.user_id();
+                const kind = store.snapshots.revision;
+
+                _ = try store.snapshots.take(ctx.db, row.id, kind, ctx.now_ms, actor, was.live.?);
+            }
+
+            ctx.notice(notice_name("saved"), row.id);
+
+            if (!std.mem.eql(u8, was.status, row.status)) {
+                notify_transition(ctx, row.id, was.status, row.status);
+            } else if (live and replaced) {
+                ctx.notice(notice_name("published"), row.id);
+            }
+        }
+
+        fn live_text(ctx: *Ctx, row: Record, def: store.definitions.Def) Error!?[]const u8 {
+            std.debug.assert(row.id.len > 0);
+
+            if (!try values.has_slot(ctx.db, row.id, values.live)) {
+                return null;
+            }
+
+            const live = try document.document_of(ctx, row.id, values.live, def);
+
+            return std.json.Stringify.valueAlloc(ctx.arena, live, .{}) catch error.OutOfMemory;
         }
 
         /// The outcome notice of a status move, if the move has a name of its own.

@@ -99,11 +99,17 @@ pub fn html(arena: std.mem.Allocator, comptime View: type, props: View.Props) Er
 
 /// What every page is drawn by. A page fills one of these and sets no frame of its own:
 /// the chrome, the bands, the gutters and the empty states are theirs.
-pub const layouts = [_][]const u8{ "IndexPage", "FormPage", "HubPage", "CardPage" };
+pub const layouts = [_][]const u8{
+    "IndexPage",
+    "FormPage",
+    "HubPage",
+    "CardPage",
+    "ListDetailPage",
+};
 
 fn is_layout(comptime name: []const u8) bool {
     comptime {
-        std.debug.assert(layouts.len == 4);
+        std.debug.assert(layouts.len == 5);
 
         for (layouts) |layout| {
             if (std.mem.eql(u8, layout, name)) {
@@ -129,7 +135,8 @@ pub fn page(
     comptime {
         if (!is_layout(View.root_component)) {
             @compileError("a page is drawn by one of the layouts (IndexPage, FormPage, " ++
-                "HubPage, CardPage); this one's root is \"" ++ View.root_component ++ "\"");
+                "HubPage, CardPage, ListDetailPage); this one's root is \"" ++
+                View.root_component ++ "\"");
         }
     }
 

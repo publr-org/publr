@@ -1,6 +1,10 @@
 import { Button } from "@publr/ui/Button.ptsx";
 import { Code } from "@publr/ui/Code.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 export type PluginRequestsProps = {
@@ -24,60 +28,69 @@ export type PluginRequestsProps = {
   }>;
 };
 
-/** What a plugin asks for, one request a row: the sentence, the plugin's reason in quotes,
- * the key, its tier, where it stands, and a button for each change an administrator may make. */
+/** What a plugin wants to do, one request a row of a table under its section's heading: what
+ * it would do, why ("because it: ..."), the permission's key; then how risky it is, where it
+ * stands, and a button for each change an administrator may make. */
 export function PluginRequests({ csrf, action, requests }: PluginRequestsProps) {
   return (
-    <div class="divide-y divide-border rounded-xl border border-border" data-part="plugin-requests">
-      {requests.map((request) => (
-        <div class="flex flex-wrap items-start gap-4 px-5 py-4" data-key={request.key}>
-          <div class="min-w-0 flex-1 space-y-1">
-            <Text as="p" variant="body-md" classes="font-medium">{request.sentence}</Text>
-            {request.reason !== "" && (
-              <Text as="p" variant="body-sm" tone="muted">“{request.reason}”</Text>
-            )}
-            <Code>{request.key}</Code>
-            {request.note !== "" && <Text as="p" variant="body-sm" tone="muted">{request.note}</Text>}
-          </div>
-          <div class="flex shrink-0 flex-wrap items-center gap-3">
-            {request.tier === "high" ? (
-              <Status tone="error">High</Status>
-            ) : request.tier === "medium" ? (
-              <Status tone="warning">Medium</Status>
-            ) : (
-              <Status tone="neutral">Low</Status>
-            )}
-            {request.state === "granted" && <Status tone="success">Granted</Status>}
-            {request.state === "pending" && <Status tone="review">Pending</Status>}
-            {request.state === "denied" && <Status tone="error">Denied</Status>}
-            {request.state === "unavailable" && <Status tone="neutral">Unavailable</Status>}
-            {action !== "" && request.can_grant && (
-              <form method="post" action={action}>
-                <input type="hidden" name="csrf" value={csrf} />
-                <input type="hidden" name="key" value={request.key} />
-                <input type="hidden" name="change" value="grant" />
-                <Button type="submit" size="sm" hierarchy="secondary">Grant</Button>
-              </form>
-            )}
-            {action !== "" && request.can_revoke && (
-              <form method="post" action={action}>
-                <input type="hidden" name="csrf" value={csrf} />
-                <input type="hidden" name="key" value={request.key} />
-                <input type="hidden" name="change" value="revoke" />
-                <Button type="submit" size="sm" hierarchy="secondary">Revoke</Button>
-              </form>
-            )}
-            {action !== "" && request.can_deny && (
-              <form method="post" action={action}>
-                <input type="hidden" name="csrf" value={csrf} />
-                <input type="hidden" name="key" value={request.key} />
-                <input type="hidden" name="change" value="deny" />
-                <Button type="submit" size="sm" hierarchy="tertiary">Deny</Button>
-              </form>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
+    <Table>
+      <TableBody>
+        {requests.map((request) => (
+          <TableRow>
+            <TableCell>
+              <div class="flex min-w-0 flex-col gap-1 py-1.5" data-key={request.key}>
+                <Text as="p" variant="body-md" classes="font-medium">{request.sentence}</Text>
+                {request.reason !== "" && (
+                  <Text as="p" variant="body-sm" tone="muted">{`because it: “${request.reason}”`}</Text>
+                )}
+                <div class="flex flex-wrap items-center gap-2 pt-1">
+                  <Code>{request.key}</Code>
+                  {request.note !== "" && <Text as="span" variant="body-xs" tone="muted">{request.note}</Text>}
+                </div>
+              </div>
+            </TableCell>
+            <TableCell align="right">
+              <div class="flex flex-wrap items-center justify-end gap-3">
+                {request.tier === "high" ? (
+                  <Status tone="error">High risk</Status>
+                ) : request.tier === "medium" ? (
+                  <Status tone="warning">Medium risk</Status>
+                ) : (
+                  <Status tone="neutral">Low risk</Status>
+                )}
+                {request.state === "granted" && <Status tone="success">Granted</Status>}
+                {request.state === "pending" && <Status tone="review">Pending</Status>}
+                {request.state === "denied" && <Status tone="error">Denied</Status>}
+                {request.state === "unavailable" && <Status tone="neutral">Unavailable</Status>}
+                {action !== "" && request.can_grant && (
+                  <form method="post" action={action}>
+                    <input type="hidden" name="csrf" value={csrf} />
+                    <input type="hidden" name="key" value={request.key} />
+                    <input type="hidden" name="change" value="grant" />
+                    <Button type="submit" size="sm" hierarchy="secondary">Grant</Button>
+                  </form>
+                )}
+                {action !== "" && request.can_revoke && (
+                  <form method="post" action={action}>
+                    <input type="hidden" name="csrf" value={csrf} />
+                    <input type="hidden" name="key" value={request.key} />
+                    <input type="hidden" name="change" value="revoke" />
+                    <Button type="submit" size="sm" hierarchy="secondary">Revoke</Button>
+                  </form>
+                )}
+                {action !== "" && request.can_deny && (
+                  <form method="post" action={action}>
+                    <input type="hidden" name="csrf" value={csrf} />
+                    <input type="hidden" name="key" value={request.key} />
+                    <input type="hidden" name="change" value="deny" />
+                    <Button type="submit" size="sm" hierarchy="tertiary">Deny</Button>
+                  </form>
+                )}
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

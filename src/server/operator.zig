@@ -15,7 +15,9 @@ pub const route = "/_publr/cli";
 pub const key_len: u32 = 64;
 const session_bytes_max: u32 = 256;
 
-pub const Session = struct { port: u16, key: [key_len]u8 };
+/// `build` stamps the binary the server runs (`build_stamp`): one started from an older
+/// build of the file has another, and 0 when it is not known.
+pub const Session = struct { port: u16, key: [key_len]u8, build: u64 = 0 };
 
 const Envelope = struct { args: []const []const u8, password: ?[]const u8 = null };
 const Answer = struct { code: u8, out: []const u8, err: []const u8 };
@@ -33,8 +35,16 @@ pub fn open(io: std.Io, arena: std.mem.Allocator, db_path: []const u8, port: u16
     var secret: [key_len / 2]u8 = undefined;
     io.random(&secret);
 
-    const session: Session = .{ .port = port, .key = std.fmt.bytesToHex(secret, .lower) };
-    const text = try std.fmt.allocPrint(arena, "{d} {s}\n", .{ port, &session.key });
+    const session: Session = .{
+        .port = port,
+        .key = std.fmt.bytesToHex(secret, .lower),
+        .build = build_stamp(io, arena),
+    };
+    const text = try std.fmt.allocPrint(arena, "{d} {s} {d}\n", .{
+        port,
+        &session.key,
+        session.build,
+    });
     var file = try std.Io.Dir.cwd().createFile(io, try path_of(arena, db_path), .{
         .permissions = .fromMode(0o600),
     });
@@ -84,12 +94,27 @@ fn parse(text: []const u8) ?Session {
     const port_text = words.next() orelse return null;
     const key = words.next() orelse return null;
     const port = std.fmt.parseInt(u16, port_text, 10) catch return null;
+    const build_text = words.next() orelse "0";
+    const build = std.fmt.parseInt(u64, build_text, 10) catch 0;
 
     if (key.len != key_len or port == 0) {
         return null;
     }
 
-    return .{ .port = port, .key = key[0..key_len].* };
+    return .{ .port = port, .key = key[0..key_len].*, .build = build };
+}
+
+/// The binary at this process's path as it is now: its file's modification time. A rebuild
+/// changes it; 0 when it cannot be read.
+pub fn build_stamp(io: std.Io, arena: std.mem.Allocator) u64 {
+    const path = std.process.executablePathAlloc(io, arena) catch return 0;
+    const stat = std.Io.Dir.cwd().statFile(io, path, .{}) catch return 0;
+    const nanoseconds = stat.mtime.nanoseconds;
+
+    std.debug.assert(path.len > 0);
+    std.debug.assert(stat.size > 0);
+
+    return if (nanoseconds <= 0) 0 else @truncate(@as(u96, @intCast(nanoseconds)));
 }
 
 fn answers(io: std.Io, port: u16) bool {
@@ -218,6 +243,7 @@ pub fn handle(
         .password_env = envelope.password,
         .sandboxed_plugins = project.sandboxed_plugins,
         .plugin_states = project.plugin_states,
+        .files = project.files,
     }, envelope.args, &out.writer) catch |failure| blk: {
         err.writer.print("publr: {s}\n", .{@errorName(failure)}) catch {
             return response.text(.internal_server_error, @errorName(failure));
@@ -267,6 +293,7 @@ pub const Commands = struct {
             .password_env = commands.init.environ_map.get("PUBLR_PASSWORD"),
             .sandboxed_plugins = application.sandboxed(),
             .plugin_states = &application.plugin_states,
+            .files = application.files_of(),
         }, args, out);
     }
 
@@ -304,3 +331,13 @@ pub const Commands = struct {
         commands.* = undefined;
     }
 };
+
+test "a session reads its port, key and build; one written before builds were kept has 0" {
+    const key = "a" ** key_len;
+    const stamped = parse("8080 " ++ key ++ " 1759740000123456789\n").?;
+    const unstamped = parse("8080 " ++ key ++ "\n").?;
+
+    try std.testing.expectEqual(@as(u64, 1759740000123456789), stamped.build);
+    try std.testing.expectEqual(@as(u64, 0), unstamped.build);
+    try std.testing.expect(parse("0 " ++ key ++ "\n") == null);
+}

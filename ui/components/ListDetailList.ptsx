@@ -1,0 +1,20 @@
+export type ListDetailListProps = {
+  /** What the list is, for assistive tech: `Conflicts`, `Media`. */
+  label: string;
+  children?: JSX.Element;
+};
+
+/** A ListDetailPage's list: the left column, kept in view as the detail scrolls. */
+export function ListDetailList({ label, children }: ListDetailListProps) {
+  return (
+    <div class="w-72 shrink-0 border-r border-border" data-part="list-detail-column">
+      <nav
+        aria-label={label}
+        class="sticky top-14 flex max-h-[calc(100dvh-3.5rem)] flex-col gap-5 overflow-y-auto px-6 py-5"
+        data-part="list-detail-list"
+      >
+        {children}
+      </nav>
+    </div>
+  );
+}

@@ -11,6 +11,8 @@ pub fn Shape(comptime Node: type) type {
             name: []const u8,
             email: []const u8,
             csrf: []const u8,
+            /// The signed-in user's picture, served from the admin's own address.
+            avatar: []const u8,
         },
         admin: struct {
             /// What the project's addresses start with when it is served under a path

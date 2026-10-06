@@ -188,6 +188,18 @@ pub fn destroy_all(connection: *db.Db, user_id: []const u8) db.Error!u32 {
     return connection.changes();
 }
 
+/// Every session, whoever's: nobody stays signed in.
+pub fn destroy_every(connection: *db.Db) db.Error!u32 {
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var statement = try connection.prepare("DELETE FROM sessions");
+    defer statement.finalize();
+
+    try statement.exec();
+
+    return connection.changes();
+}
+
 pub fn cleanup(connection: *db.Db, now_ms: i64) db.Error!u32 {
     std.debug.assert(now_ms >= 0);
     std.debug.assert(cleanup_batch > 0);

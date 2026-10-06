@@ -9,6 +9,7 @@ const types = @import("../operations/content_type.zig");
 const users = @import("../operations/user.zig");
 const top_bar = @import("admin/top_bar.zig");
 pub const app_scope = @import("admin/app_scope.zig");
+pub const compare = @import("admin/compare.zig");
 pub const auth_pages = @import("admin/auth.zig");
 const settings_pages = @import("admin/settings.zig");
 const activity_pages = @import("admin/activity.zig");
@@ -19,6 +20,8 @@ const taxonomy_pages = @import("admin/taxonomies.zig");
 const term_pages = @import("admin/terms.zig");
 const field_pages = @import("admin/type_fields.zig");
 const content_pages = @import("admin/content.zig");
+const media_pages = @import("admin/media.zig");
+const avatar_pages = @import("admin/avatar.zig");
 const revision_pages = @import("admin/revisions.zig");
 
 pub const Request = http.Request;
@@ -52,6 +55,65 @@ pub fn accept(request: *Request, response: *Response, ctx: *Context, back: []con
     return .{ .session = session, .form = form };
 }
 
+/// The login for someone who must sign in, with the page they asked for (`return`) when a
+/// link reaches it: whatever signs them in brings them back to it.
+fn login_for(session: *const Session) Error![]const u8 {
+    std.debug.assert(!session.signed_in());
+
+    const request = session.request;
+    const path = request.path();
+
+    if (request.method() != .get or std.mem.startsWith(u8, path, "/admin/login")) {
+        return "/admin/login";
+    }
+
+    const query = request.query();
+    const page = if (query.len > 0)
+        try std.fmt.allocPrint(session.arena, "{s}?{s}", .{ path, query })
+    else
+        path;
+    const login = try std.fmt.allocPrint(session.arena, "/admin/login?return={s}", .{
+        try query_value(session.arena, page),
+    });
+
+    std.debug.assert(login.len > page.len);
+
+    return login;
+}
+
+/// `text` as a value in an address's query: a page's own address (`/admin/content?type=post`)
+/// inside `return=`, every character a path is not made of escaped.
+pub fn query_value(arena: std.mem.Allocator, text: []const u8) Error![]const u8 {
+    std.debug.assert(text.len <= 64 << 10);
+
+    var out: std.Io.Writer.Allocating = .init(arena);
+
+    std.Uri.Component.percentEncode(&out.writer, text, kept_in_query) catch {
+        return error.OutOfMemory;
+    };
+
+    std.debug.assert(out.written().len >= text.len);
+
+    return out.written();
+}
+
+fn kept_in_query(char: u8) bool {
+    return std.ascii.isAlphanumeric(char) or char == '/' or char == '-' or char == '_' or
+        char == '.' or char == '~';
+}
+
+test "a page's address survives inside return=" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    try std.testing.expectEqualStrings(
+        "/admin/content%3Ftype%3Dpost%26app%3Dweb",
+        try query_value(arena, "/admin/content?type=post&app=web"),
+    );
+    try std.testing.expectEqualStrings("/admin", try query_value(arena, "/admin"));
+}
+
 /// A route parameter that must be there; answers null after a not-found page otherwise.
 pub fn param(session: *const Session, name: []const u8, back: []const u8) Error!?[]const u8 {
     std.debug.assert(name.len > 0);
@@ -77,7 +139,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 126 + client_files.names.len;
+pub const routes_count: u32 = 131 + client_files.names.len;
 const client_files = @import("../ui/client_files.zig");
 
 const styles_css = @embedFile("styles_css");
@@ -121,6 +183,11 @@ pub fn register(router: *http.Router) void {
     router.get("/admin/terms/:id/editor", &term_pages.editor_fragment);
     router.post("/admin/terms/:id/save", &term_pages.save);
     router.post("/admin/terms/:id/action", &term_pages.action);
+    router.get("/admin/avatar/:hash", &avatar_pages.show);
+    router.get("/admin/media", &media_pages.library);
+    router.get("/admin/media/:id", &media_pages.file.show);
+    router.post("/admin/media/:id", &media_pages.file.save);
+    router.post("/admin/media/:id/delete", &media_pages.file.remove);
     router.get("/admin/content", &content_pages.list);
     router.get("/admin/content/new", &content_pages.new_page);
     router.get("/admin/content/new/editor", &content_pages.new_editor);
@@ -374,7 +441,7 @@ pub fn require(request: *Request, response: *Response, ctx: *Context) Error!?Ses
     const session = Session.open(request, response, ctx);
 
     if (!session.signed_in()) {
-        try response.redirect(.see_other, "/admin/login");
+        try response.redirect(.see_other, try login_for(&session));
 
         return null;
     }
@@ -1039,7 +1106,10 @@ test "admin over http: setup, login, types and content through plain forms" {
     const logout_body = try std.fmt.allocPrint(arena, "csrf={s}", .{csrf_token});
     _ = try flow.call("POST", "/admin/logout", logout_body);
     const after = try flow.call("GET", "/admin/content", "");
-    try std.testing.expectEqualStrings("/admin/login", after.header("Location").?);
+    // Signed out, the page asked for comes back after the next sign-in.
+    const login = "/admin/login?return=/admin/content";
+
+    try std.testing.expectEqualStrings(login, after.header("Location").?);
 }
 
 test "a settings type uses the shared editor and publishes only after a guarded write" {

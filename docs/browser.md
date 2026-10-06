@@ -17,19 +17,28 @@ flowchart LR
 
 A tiny page registers a service worker and reloads. From then on the worker
 intercepts every request the page makes to its own origin, hands it to the
-Publr module as a JSON envelope (method, path, query, headers, body), and
+Publr module as a JSON envelope (method, path, query, headers) with the body's
+bytes beside it as they are, and
 returns the module's response as a real HTTP response. Publr answers exactly
 as the native server would: the same routes, the same operations, the same
 permissions. The worker knows nothing about Publr; it only carries requests in
 and responses out.
 
-Two things the worker does own, because a service worker cannot see them:
+Three things the worker does own, because the module cannot reach them:
 
 - **the database**: SQLite lives in memory inside the module and is written
   to the browser's storage after every change and restored on the next boot;
 - **the session cookie**: `Set-Cookie` and `Cookie` are invisible to service
   workers, so the worker keeps the cookie jar itself and persists it with the
-  database.
+  database;
+- **the media library's files**: each file is its own file in OPFS under
+  `media/`, which only the worker can open, and only asynchronously. When a request
+  needs one the module does not hold, its answer names it (`need`); the worker hands
+  it over (`publr_attach`) and runs the request again, which is safe because a failed
+  request changed nothing. What a request writes or removes comes back as `effects`,
+  carried out in OPFS before the response reaches the page. The module resizes images
+  as the server does, but keeps their format (no WebP) and keeps no copies. A
+  response's body is read by pointer (`publr_body_ptr`), so it may be bytes.
 
 ## Building and running it
 

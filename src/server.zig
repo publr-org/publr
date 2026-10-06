@@ -5,6 +5,7 @@ const deps = @import("lib/deps.zig");
 const registry = @import("server/registry.zig");
 const sdk = @import("sdk.zig");
 const builtin = @import("builtin");
+const files = @import("lib/files.zig");
 
 /// The sandbox runs plugins natively; the browser build has none yet.
 pub const sandboxed_plugins = if (builtin.os.tag == .wasi)
@@ -27,6 +28,8 @@ pub const Server = struct {
     sandboxed_plugins: SandboxHost,
     /// Every compiled-in plugin's `State`.
     plugin_states: PluginStates,
+    /// The media library's folder, beside the database.
+    media: files.Disk,
 
     pub fn init(server: *Server, process: std.process.Init, db_path: [:0]const u8) !void {
         std.debug.assert(db_path.len > 0);
@@ -50,6 +53,13 @@ pub const Server = struct {
         try server.auth.init(process.gpa, process.io, .{});
         errdefer server.auth.deinit();
 
+        server.media = try files.Disk.open(process.io, try sibling_dir(
+            process.arena.allocator(),
+            db_path,
+            "media",
+        ));
+        errdefer server.media.close();
+
         try server.apply_declared_types(process);
 
         if (SandboxHost != void) {
@@ -70,6 +80,14 @@ pub const Server = struct {
         });
 
         std.debug.assert(server.runtime.open_count == 1);
+    }
+
+    /// Where the media library's files are, for every context this server makes.
+    pub fn files_of(server: *Server) files.Files {
+        std.debug.assert(server.runtime.open_count == 1);
+        std.debug.assert(server.connection.transaction_depth == 0);
+
+        return .{ .disk = &server.media };
     }
 
     /// What every context this server makes carries: the installed plugins, or none.
@@ -112,6 +130,7 @@ pub const Server = struct {
             server.sandboxed_plugins.deinit();
         }
 
+        server.media.close();
         server.auth.deinit();
         server.connection.close();
         server.runtime.deinit();
@@ -146,9 +165,17 @@ const heap_alignment: std.mem.Alignment = .@"8";
 fn sandboxed_plugins_dir(arena: std.mem.Allocator, db_path: []const u8) ![]const u8 {
     std.debug.assert(db_path.len > 0);
 
+    return sibling_dir(arena, db_path, "plugins");
+}
+
+/// A folder beside the database: `data/publr.db` keeps its plugins in `data/plugins`.
+fn sibling_dir(arena: std.mem.Allocator, db_path: []const u8, name: []const u8) ![]const u8 {
+    std.debug.assert(db_path.len > 0);
+    std.debug.assert(name.len > 0);
+
     const parent = std.fs.path.dirname(db_path) orelse ".";
 
-    return std.fs.path.join(arena, &.{ if (parent.len == 0) "." else parent, "plugins" });
+    return std.fs.path.join(arena, &.{ if (parent.len == 0) "." else parent, name });
 }
 
 fn ensure_parent_dir(io: std.Io, path: []const u8) !void {

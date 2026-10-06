@@ -45,6 +45,7 @@ pub const operations = struct {
     pub const record = @import("operations/record.zig");
     pub const taxonomy = @import("operations/taxonomy.zig");
     pub const term = @import("operations/term.zig");
+    pub const media = @import("operations/media.zig");
     pub const snapshot = @import("operations/snapshot.zig");
     pub const view = @import("operations/view.zig");
     pub const internal = @import("operations/internal.zig");

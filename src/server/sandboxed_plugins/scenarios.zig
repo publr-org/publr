@@ -432,7 +432,8 @@ test "the admin reviews, installs, grants and removes a plugin through plain for
 
     const page = try flow.call("GET", page_path, "");
 
-    try std.testing.expect(std.mem.indexOf(u8, page.body, "greeter.people") != null);
+    try std.testing.expect(std.mem.indexOf(u8, page.body, "users.names") != null);
+    try std.testing.expect(std.mem.indexOf(u8, page.body, "Low risk") != null);
     try std.testing.expect(std.mem.indexOf(u8, page.body, ">Grant<") != null);
 
     const remove_body = try std.fmt.allocPrint(arena, "csrf={s}", .{csrf});

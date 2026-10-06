@@ -18,6 +18,7 @@ const content_type = @import("../operations/content_type.zig");
 const record = @import("../operations/record.zig");
 const taxonomy = @import("../operations/taxonomy.zig");
 const term = @import("../operations/term.zig");
+const media = @import("../operations/media.zig");
 const snapshot = @import("../operations/snapshot.zig");
 const view = @import("../operations/view.zig");
 const internal = @import("../operations/internal.zig");
@@ -35,7 +36,8 @@ const core_operations = heartbeat.operations ++ project.operations ++ custom_fie
     sign_in.operations ++ sign_on.operations ++ identity.operations ++ status.operations ++
     role.operations ++
     content_type.operations ++
-    record.operations ++ taxonomy.operations ++ term.operations ++ snapshot.operations ++
+    record.operations ++ taxonomy.operations ++ term.operations ++ media.operations ++
+    snapshot.operations ++
     view.operations ++ plugin_operations.operations ++ internal.operations ++
     activity.operations ++ errors.operations;
 const core_namespaces = [_]sdk.operation.Namespace{
@@ -51,6 +53,7 @@ const core_namespaces = [_]sdk.operation.Namespace{
     record.namespace,
     taxonomy.namespace,
     term.namespace,
+    media.namespace,
     snapshot.namespace,
     view.namespace,
     plugin_operations.namespace,
@@ -198,6 +201,7 @@ pub const serving = native_plugins.merged_serving;
 fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
     @import("std").debug.assert(ctx.caller == .system);
     @import("std").debug.assert(ctx.db.transaction_depth == 0);
+    try media.bootstrap(ctx);
     try plugin_types.apply_all(ctx);
 
     inline for (native_plugins.all) |Plugin| {

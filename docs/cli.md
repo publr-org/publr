@@ -104,7 +104,8 @@ permission a plugin may ask for, with its tier. `publr --help` points agents to 
 
 ## While a server runs
 
-`publr serve` owns its project while it runs. It writes its port and a fresh key beside the
+`publr serve` owns its project while it runs. It writes its port, a fresh key and a stamp
+of the binary it runs (the file's modification time, which a rebuild changes) beside the
 database (`<db>.serve`, readable by its user only), and removes them when it stops. Every
 other command then goes to it and runs there, as the admin's changes do: a plugin added,
 enabled or updated from the CLI is live when the command returns, and its hooks and events
@@ -173,6 +174,7 @@ runnable example.
 | [`record`](cli/record.md) | The content itself: documents, statuses, lists |
 | [`taxonomy`](cli/taxonomy.md) | Taxonomies: the classifications records are filed under |
 | [`term`](cli/term.md) | The terms of the taxonomies, with a record's lifecycle and a parent |
+| [`media`](cli/media.md) | The media library: files, their folders and tags |
 | [`status`](cli/status.md) | The lifecycle states a record can be in |
 | [`snapshot`](cli/snapshot.md) | Frozen copies of records: revisions and other archives |
 | [`view`](cli/view.md) | Saved views: the content list's filters, named and kept per user |

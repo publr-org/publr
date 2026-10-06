@@ -7,7 +7,7 @@ const apps_adapter = @import("../apps.zig");
 
 const headers_reserved: u32 = 1024;
 const path_bytes_max: u32 = 1024;
-const Range = struct { start: u64, end: u64 };
+pub const Range = struct { start: u64, end: u64 };
 
 pub fn serve(
     request: *http.Request,
@@ -56,7 +56,7 @@ pub fn serve(
     try response.set_body(.partial_content, http.static.content_type(path), buffer);
 }
 
-fn parse_range(value: []const u8, size: u64, cap: u32) ?Range {
+pub fn parse_range(value: []const u8, size: u64, cap: u32) ?Range {
     std.debug.assert(cap > 0);
 
     if (size == 0 or !std.mem.startsWith(u8, value, "bytes=")) {

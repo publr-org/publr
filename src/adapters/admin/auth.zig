@@ -180,10 +180,26 @@ fn issuer_login(session: *Session) Error!?[]const u8 {
 
     std.debug.assert(sign_on_operations.valid_issuer(status.issuer));
 
-    return std.fmt.allocPrint(session.arena, "{s}/sign-on?site={s}&return=/admin", .{
+    return std.fmt.allocPrint(session.arena, "{s}/sign-on?site={s}&return={s}", .{
         status.issuer,
         status.audience,
+        try return_of(session),
     }) catch error.OutOfMemory;
+}
+
+/// The page to come back to after signing in, as the login was given it (`return`),
+/// encoded again for the next address; `/admin` when none, or none on this site.
+pub fn return_of(session: *const Session) Error![]const u8 {
+    std.debug.assert(!session.signed_in());
+
+    const wanted = admin.query_param(session, "return") orelse return "/admin";
+    const local = wanted.len > 1 and wanted[0] == '/' and wanted[1] != '/' and wanted[1] != '\\';
+
+    if (!local) {
+        return "/admin";
+    }
+
+    return admin.query_value(session.arena, wanted);
 }
 
 /// What an account whose roles reach none of the admin's operations is told: an app's

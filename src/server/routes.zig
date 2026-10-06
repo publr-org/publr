@@ -11,6 +11,7 @@ const identity_module = @import("../adapters/rest/identity.zig");
 const rest_auth = @import("../adapters/rest/auth.zig");
 const rest_providers = @import("../adapters/rest/providers.zig");
 const apps_adapter = @import("../adapters/apps.zig");
+const media_adapter = @import("../adapters/media.zig");
 const builtin = @import("builtin");
 const operator = @import("operator.zig");
 const apps_load = @import("apps_load.zig");
@@ -59,6 +60,7 @@ pub fn register(router: *http.Router) void {
 
     provider_routes.register(router);
     admin.register(router);
+    media_adapter.register(router);
     rest.register(router);
     apps_adapter.register(router);
 
@@ -69,7 +71,8 @@ pub fn register(router: *http.Router) void {
     const fixed = 9 + operator_routes + provider_routes.routes_count +
         native_plugin_routes.routes_count;
 
-    std.debug.assert(router.routes_len == fixed + admin.routes_count + apps_adapter.routes_count);
+    std.debug.assert(router.routes_len == fixed + admin.routes_count + apps_adapter.routes_count +
+        media_adapter.routes_count);
     plugin_routes.assert_unshadowed(native_plugin_routes.shadowed(router, first_core));
 }
 

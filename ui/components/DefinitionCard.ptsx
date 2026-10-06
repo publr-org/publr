@@ -1,0 +1,48 @@
+import type { IconName } from "@publr/ui/Icon.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type DefinitionCardProps = {
+  /** Its icon, its label, a mark when required, and what matters about it: a field's kind
+   * (`Reference (many) to lesson`), a plugin's version, a request's tier and standing. */
+  icon: IconName;
+  label: string;
+  required: boolean;
+  summary: string;
+  /** Its name in the API, and anything more, a line each (`Help: Shown under it`). */
+  name: string;
+  details: string[];
+  /** `same`, `added` or `removed` against the version before both. */
+  mark: string;
+};
+
+/** A definition as its own page lists it (a field of a content type, a plugin, a request a
+ * plugin makes): in a comparison, beside the same one in another version. */
+export function DefinitionCard({ icon, label, required, summary, name, details, mark }: DefinitionCardProps) {
+  return (
+    <div
+      class={[
+        "flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3",
+        mark === "removed" ? "opacity-60" : "",
+      ]}
+      data-part="definition-card"
+    >
+      <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
+        <Icon name={icon} size="sm" />
+      </span>
+      <div class="flex min-w-0 flex-col gap-1">
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span class="inline-flex items-baseline gap-1">
+            <Text as="span" variant="heading-xs" classes={mark === "removed" ? "line-through" : ""}>{label}</Text>
+            {required && <Text as="span" variant="heading-xs" tone="error">*</Text>}
+          </span>
+          <Text as="span" variant="body-sm" tone="muted">{summary}</Text>
+        </div>
+        <Text as="span" variant="body-xs" tone="muted" classes="font-mono">{name}</Text>
+        {details.map((detail) => (
+          <Text as="span" variant="body-xs" tone="muted">{detail}</Text>
+        ))}
+      </div>
+    </div>
+  );
+}

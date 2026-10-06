@@ -1117,7 +1117,9 @@ fn add_path_types(
     for (names) |summary| {
         const wanted = field.options.to.len == 0 or names_target(field.options.to, summary.handle);
 
-        if (summary.kind == .record and wanted and
+        const library = model.media.is_library(summary.handle);
+
+        if (summary.kind == .record and wanted and !library and
             (!field.options.reference.public_only or summary.public))
         {
             options.append(session.arena, .{

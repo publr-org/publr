@@ -23,6 +23,8 @@ pub const Options = struct {
     sandboxed_plugins: ?*const sdk.sandboxed_plugins.SandboxedPlugins = null,
     /// Every compiled-in plugin's `State`, where a server made them.
     plugin_states: ?*anyopaque = null,
+    /// The media library's files, where a server made them.
+    files: ?@import("../lib/files.zig").Files = null,
 };
 
 const AuthState = @import("../lib/auth.zig").State;
@@ -152,6 +154,7 @@ pub fn CLI(comptime SDK: type) type {
 
             ctx.sandboxed_plugins = options.sandboxed_plugins;
             ctx.plugin_states = options.plugin_states;
+            ctx.files = options.files;
 
             inline for (SDK.operations) |Operation| {
                 if (std.mem.eql(u8, Operation.name, name)) {

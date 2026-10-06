@@ -1,3 +1,4 @@
+audio
 calendar-check
 chart
 check
@@ -19,3 +20,4 @@ stack
 tag
 text-align-left
 user
+video

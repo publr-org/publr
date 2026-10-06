@@ -306,10 +306,13 @@ design system has, so name it after the plugin. An icon it names only at runtime
 its `ui/icons.txt`, one per line, as the admin's do.
 
 A plugin's page is drawn like the core's: its view returns one of the admin's layouts,
-`IndexPage` (a list), `FormPage` (one thing), `HubPage` or `CardPage`, and fills its slots
+`IndexPage` (a list), `FormPage` (one thing), `HubPage`, `CardPage` or `ListDetailPage`
+(working through a set of things one at a time, as a merge does), and fills its slots
 (title, parents for the crumbs, description, actions, meta, tabs, notice, filters, the
 list, empty, footer; for a form the column, the aside and the danger zone, where
-`ConfirmAction` asks before anything is undone). The layout draws the chrome, the
+`ConfirmAction` asks before anything is undone). Two versions of something compare on
+`CompareSides` and `CompareField`, their values shaped by `publr.admin.compare` (see
+`admin.md`). The layout draws the chrome, the
 sidebar, the crumbs and every gutter; the view sets no spacing of its own, and the build
 refuses a page drawn otherwise. Who is signed in and the CSRF token are read where they
 are needed as `Publr.request.session` (`name`, `email`, `csrf`); no view forwards them.
@@ -349,7 +352,9 @@ the view's own data only, after `publr.admin.require` for the signed-in session.
 - Where someone who must sign in goes (`pub fn sign_in_at(session: *const
   publr.admin.Session) anyerror!?[]const u8`): asked on the login page before the form and
   before a trusted issuer; the first plugin that names an address sends the browser there.
-  Null leaves the login as it is.
+  Null leaves the login as it is. The page they asked for is the login's `return`
+  (`publr.admin.query_param(session, "return")`), a path on the site; carry it on with
+  `publr.admin.query_value` so they land there once signed in.
 - Actions on the rows of another plugin's page (`pub const row_actions =
   [_]publr.plugin.RowAction{...}`): the page's slot as its owner names it, a label, a path
   where `{name}` stands for the row's name, a row kind (every row when empty) and the

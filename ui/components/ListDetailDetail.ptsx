@@ -1,0 +1,6 @@
+export type ListDetailDetailProps = { children?: JSX.Element };
+
+/** A ListDetailPage's detail: the open thing, beside the list, to the page's edge. */
+export function ListDetailDetail({ children }: ListDetailDetailProps) {
+  return <div class="flex min-w-0 flex-1 flex-col" data-part="list-detail-detail">{children}</div>;
+}

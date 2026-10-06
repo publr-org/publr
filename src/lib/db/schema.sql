@@ -209,6 +209,22 @@ CREATE TABLE IF NOT EXISTS record_terms (
 
 CREATE INDEX IF NOT EXISTS record_terms_reverse ON record_terms(term, slot, record);
 
+CREATE TABLE IF NOT EXISTS media (
+    record      TEXT PRIMARY KEY REFERENCES records(id) ON DELETE CASCADE,
+    filename    TEXT NOT NULL,
+    mime_type   TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    width       INTEGER,
+    height      INTEGER,
+    storage_key TEXT NOT NULL UNIQUE,
+    hash        TEXT NOT NULL,
+    private     INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS media_created ON media(created_at, record);
+CREATE INDEX IF NOT EXISTS media_hash ON media(hash);
+
 CREATE TABLE IF NOT EXISTS views (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -53,6 +53,12 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
               icon_name="file"
               active={Publr.request.admin.area === "content"}
             />
+            <RailItem
+              href="/admin/media"
+              label="Media"
+              icon_name="image"
+              active={Publr.request.admin.area === "media"}
+            />
           </nav>
           <div class="mt-auto flex flex-col items-center gap-1 pb-3">
             <DropdownMenu>
@@ -61,6 +67,7 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
                   size="sm"
                   name={Publr.request.session.name}
                   email={Publr.request.session.email}
+                  src={Publr.request.session.avatar}
                 />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="left" classes="min-w-56">

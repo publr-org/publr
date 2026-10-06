@@ -1,0 +1,1136 @@
+import { Publr } from "publr-jsx";
+import { ListDetailBand } from "./ListDetailBand.ptsx";
+import { ListDetailColumns } from "./ListDetailColumns.ptsx";
+import { ListDetailDetail } from "./ListDetailDetail.ptsx";
+import { ListDetailList } from "./ListDetailList.ptsx";
+import { AssetCard } from "@publr/ui/AssetCard.ptsx";
+import { AssetCardBadge } from "@publr/ui/AssetCardBadge.ptsx";
+import { AssetCardFile } from "@publr/ui/AssetCardFile.ptsx";
+import { AssetCardCaption } from "@publr/ui/AssetCardCaption.ptsx";
+import { AssetCardGrid } from "@publr/ui/AssetCardGrid.ptsx";
+import { AssetCardMeta } from "@publr/ui/AssetCardMeta.ptsx";
+import { AssetCardPreview } from "@publr/ui/AssetCardPreview.ptsx";
+import { AssetCardSelect } from "@publr/ui/AssetCardSelect.ptsx";
+import { AssetCardTitle } from "@publr/ui/AssetCardTitle.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Checkbox } from "@publr/ui/Checkbox.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuCheckboxItem } from "@publr/ui/DropdownMenuCheckboxItem.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { FilterBar } from "@publr/ui/FilterBar.ptsx";
+import { FilterChip } from "@publr/ui/FilterChip.ptsx";
+import { FilterPill } from "@publr/ui/FilterPill.ptsx";
+import { FilterPillBody } from "@publr/ui/FilterPillBody.ptsx";
+import { FilterPillLabel } from "@publr/ui/FilterPillLabel.ptsx";
+import { FilterPillOperator } from "@publr/ui/FilterPillOperator.ptsx";
+import { FilterPillRemove } from "@publr/ui/FilterPillRemove.ptsx";
+import { FilterPillValue } from "@publr/ui/FilterPillValue.ptsx";
+import { FolderNav } from "@publr/ui/FolderNav.ptsx";
+import { FolderNavItem } from "@publr/ui/FolderNavItem.ptsx";
+import { FolderNavItemActions } from "@publr/ui/FolderNavItemActions.ptsx";
+import { FolderNavItemCount } from "@publr/ui/FolderNavItemCount.ptsx";
+import { FolderNavItemLink } from "@publr/ui/FolderNavItemLink.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Pagination } from "@publr/ui/Pagination.ptsx";
+import { PaginationContent } from "@publr/ui/PaginationContent.ptsx";
+import { PaginationItem } from "@publr/ui/PaginationItem.ptsx";
+import { PaginationNext } from "@publr/ui/PaginationNext.ptsx";
+import { PaginationPrevious } from "@publr/ui/PaginationPrevious.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+/** A file as a tile draws it. The server fills these for the first page; `load` again from
+ * what `media list` answers, so the markup reads fields, never works anything out. */
+export type MediaItem = {
+  id: string;
+  title: string;
+  /** Its page: `/admin/media/<id>`. */
+  href: string;
+  /** A square copy for the tile; empty for a file that is not an image. */
+  thumb: string;
+  image: boolean;
+  /** A video: the tile shows its first frame from `src`. */
+  video: boolean;
+  /** The file itself: `/media/<key>`. */
+  src: string;
+  /** Its type as people say it: `PDF`, `MP4`. */
+  kind: string;
+  /** The icon a file without a preview shows. */
+  icon: "video" | "audio" | "file";
+  /** `JPG · 2400 × 1600 · 1.2 MB`. */
+  facts: string;
+  selected: boolean;
+};
+export type MediaFolder = {
+  id: string;
+  name: string;
+  parent: string;
+  depth: number;
+  /** Its indent in the tree, `"1"` to `"5"`. */
+  level: "0" | "1" | "2" | "3" | "4" | "5";
+  /** Its name indented by its depth, for the folder pickers. */
+  label: string;
+  count: number;
+  href: string;
+  current: boolean;
+  /** Whether a folder may still be made inside it. */
+  nests: boolean;
+};
+export type MediaTag = {
+  id: string;
+  name: string;
+  count: number;
+  /** Choosing it, or dropping it when chosen. */
+  href: string;
+  selected: boolean;
+  enabled: boolean;
+};
+/** One filter in the bar, drawn as Content's are: its name, `is`, its value, a menu of the
+ * values it may take (each a link the page follows in place), and a way to drop it. */
+export type MediaPill = {
+  id: string;
+  label: string;
+  value: string;
+  options: Array<{ label: string; href: string; selected: boolean }>;
+  /** Dropping it; empty while it is at Any. */
+  remove_href: string;
+};
+export type MediaPeriod = { year: number; month: number; count: number };
+export type MediaOption = { value: string; label: string; selected: boolean };
+export type MediaAddFilter = { label: string; href: string; added: boolean };
+
+export const state = Publr.reactive({
+  csrf: "",
+  folder: "",
+  tags: [] as string[],
+  search: "",
+  year: 0,
+  month: 0,
+  page: 1,
+  page_size: 25,
+  items: [] as MediaItem[],
+  total: 0,
+  all: 0,
+  unsorted: 0,
+  all_href: "/admin/media",
+  unsorted_href: "/admin/media?folder=unsorted",
+  folders: [] as MediaFolder[],
+  tag_list: [] as MediaTag[],
+  periods: [] as MediaPeriod[],
+  pills: [] as MediaPill[],
+  add_filters: [] as MediaAddFilter[],
+  years: [] as MediaOption[],
+  months: [] as MediaOption[],
+  /** The bar's filters on the file itself: empty while not in the bar, `any` at Any. */
+  kind: "",
+  size_filter: "",
+  visibility: "",
+  pages: 1,
+  prev_href: "",
+  next_href: "",
+  page_text: "",
+  selected_count: 0,
+  details: false,
+  size: "md" as "sm" | "md" | "lg",
+  busy: false,
+  note: "",
+  dragging: false,
+  /** On the library page the explorer filters in place; elsewhere its links navigate. */
+  live: false,
+});
+
+const depth_max = 5;
+const month_names = ["", "January", "February", "March", "April", "May", "June", "July",
+  "August", "September", "October", "November", "December"];
+
+const size_text = (bytes: number): string => {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+};
+
+type Filter = { folder: string; tags: string[]; search: string; year: number; month: number; page: number;
+  kind: string; size: string; visibility: string };
+
+/** The library's address for a filter, as the server writes it. */
+const href_of = (change: Partial<Filter>): string => {
+  const next: Filter = { folder: state.folder, tags: state.tags, search: state.search,
+    year: state.year, month: state.month, page: 1, kind: state.kind, size: state.size_filter,
+    visibility: state.visibility, ...change };
+  const query = new URLSearchParams();
+  if (next.folder !== "") query.set("folder", next.folder);
+  for (const tag of next.tags) query.append("tag", tag);
+  if (next.search !== "") query.set("search", next.search);
+  if (next.year > 0) query.set("year", String(next.year));
+  if (next.year > 0 && next.month > 0) query.set("month", String(next.month));
+  if (next.kind !== "") query.set("type", next.kind);
+  if (next.size !== "") query.set("size", next.size);
+  if (next.visibility !== "") query.set("visibility", next.visibility);
+  if (next.page > 1) query.set("page", String(next.page));
+  const text = query.toString();
+  return text === "" ? "/admin/media" : `/admin/media?${text}`;
+};
+
+const toggled_tags = (id: string): string[] =>
+  state.tags.includes(id) ? state.tags.filter((tag) => tag !== id) : [...state.tags, id];
+
+type Choice = { value: string; label: string };
+const kinds: Choice[] = [{ value: "image", label: "Images" }, { value: "video", label: "Videos" },
+  { value: "audio", label: "Audio" }, { value: "pdf", label: "PDFs" }, { value: "other", label: "Other files" }];
+const sizes: Choice[] = [{ value: "small", label: "Under 1 MB" }, { value: "medium", label: "1 to 10 MB" },
+  { value: "large", label: "Over 10 MB" }];
+const visibilities: Choice[] = [{ value: "public", label: "Public" }, { value: "private", label: "Private" }];
+
+const pill_of = (field: "kind" | "size" | "visibility", label: string, choices: Choice[]): MediaPill => {
+  const current = field === "size" ? state.size_filter : state[field];
+  const any = current === "" || current === "any";
+  return {
+    id: field,
+    label,
+    value: choices.find((choice) => choice.value === current)?.label ?? "Any",
+    options: [
+      { label: "Any", href: href_of({ [field]: "any" }), selected: any },
+      ...choices.map((choice) => ({ label: choice.label, href: href_of({ [field]: choice.value }), selected: choice.value === current })),
+    ],
+    // Type stays in the bar at Any; the others leave it.
+    remove_href: field === "kind" && any ? "" : href_of({ [field]: "" }),
+  };
+};
+
+/** The bar's filters on the file itself, drawn as Content's, and Filter's menu. */
+const restamp_pills = () => {
+  const pills = [pill_of("kind", "Type", kinds)];
+  if (state.size_filter !== "") pills.push(pill_of("size", "Size", sizes));
+  if (state.visibility !== "") pills.push(pill_of("visibility", "Visibility", visibilities));
+  state.pills = pills;
+  state.add_filters = [
+    { label: "Size", href: `${href_of({ size: "any" })}#filter-size`, added: state.size_filter !== "" },
+    { label: "Visibility", href: `${href_of({ visibility: "any" })}#filter-visibility`, added: state.visibility !== "" },
+  ];
+  const years = [...new Set(state.periods.map((period) => period.year))];
+  state.years = [{ value: "0", label: "Any year", selected: state.year === 0 },
+    ...years.map((year) => ({ value: String(year), label: String(year), selected: year === state.year }))];
+  state.months = [{ value: "0", label: "Any month", selected: state.month === 0 },
+    ...state.periods.filter((period) => period.year === state.year).map((period) => ({
+      value: String(period.month),
+      label: `${month_names[period.month] ?? ""} · ${period.count}`,
+      selected: period.month === state.month,
+    }))];
+};
+
+const restamp_selection = (selected: string[]) => {
+  state.items = state.items.map((item) => ({ ...item, selected: selected.includes(item.id) }));
+  state.selected_count = selected.length;
+};
+
+const selection = (): string[] => state.items.filter((item) => item.selected).map((item) => item.id);
+
+/** Everything the markup reads that follows from the filter and the counts. */
+const restamp = () => {
+  state.all_href = href_of({ folder: "" });
+  state.unsorted_href = href_of({ folder: "unsorted" });
+  state.folders = state.folders.map((folder) => ({
+    ...folder,
+    href: href_of({ folder: folder.id }),
+    current: folder.id === state.folder,
+  }));
+  state.tag_list = state.tag_list.map((tag) => ({
+    ...tag,
+    href: href_of({ tags: toggled_tags(tag.id) }),
+    selected: state.tags.includes(tag.id),
+    enabled: state.tags.includes(tag.id) || tag.count > 0,
+  }));
+  restamp_pills();
+  state.pages = Math.max(1, Math.ceil(state.total / state.page_size));
+  state.prev_href = state.page > 1 ? href_of({ page: state.page - 1 }) : "";
+  state.next_href = state.page < state.pages ? href_of({ page: state.page + 1 }) : "";
+  state.page_text = `Page ${state.page} of ${state.pages} · ${state.total} files`;
+};
+
+const filter_from = (address: string) => {
+  const query = new URL(address, location.href).searchParams;
+  state.folder = query.get("folder") ?? "";
+  state.tags = query.getAll("tag");
+  state.search = query.get("search") ?? "";
+  state.year = Number(query.get("year") ?? 0) || 0;
+  state.month = Number(query.get("month") ?? 0) || 0;
+  state.page = Math.max(1, Number(query.get("page") ?? 1) || 1);
+  state.kind = query.get("type") ?? "";
+  state.size_filter = query.get("size") ?? "";
+  state.visibility = query.get("visibility") ?? "";
+};
+
+type Listed = {
+  items: Array<{ id: string; title: string; filename: string; family: string; size: number;
+    width: number | null; height: number | null; key: string }>;
+  total: number;
+  all: number;
+  unsorted: number;
+  folders: Array<{ id: string; name: string; parent: string | null; depth: number; count: number }>;
+  tags: Array<{ id: string; name: string; count: number }>;
+  periods: MediaPeriod[];
+};
+
+const shaped = (listed: Listed) => {
+  state.items = listed.items.map((item) => {
+    const extension = (item.filename.split(".").pop() ?? "").toUpperCase();
+    const dimensions = item.width ? ` · ${item.width} × ${item.height}` : "";
+    return {
+      id: item.id,
+      title: item.title,
+      href: `/admin/media/${item.id}`,
+      thumb: item.family === "image" ? `/media/${item.key}?w=480&h=480&fit=cover` : "",
+      image: item.family === "image",
+      video: item.family === "video",
+      src: `/media/${item.key}`,
+      kind: extension,
+      icon: item.family === "video" ? "video" : item.family === "audio" ? "audio" : "file",
+      facts: `${extension}${dimensions} · ${size_text(item.size)}`,
+      selected: false,
+    };
+  });
+  state.total = listed.total;
+  state.all = listed.all;
+  state.unsorted = listed.unsorted;
+  state.folders = listed.folders.map((folder) => ({
+    id: folder.id,
+    name: folder.name,
+    parent: folder.parent ?? "",
+    depth: folder.depth,
+    level: String(Math.min(folder.depth + 1, depth_max)) as MediaFolder["level"],
+    label: `${"— ".repeat(folder.depth)}${folder.name}`,
+    count: folder.count,
+    href: "",
+    current: false,
+    nests: folder.depth < depth_max - 1,
+  }));
+  state.tag_list = listed.tags.map((tag) => ({ ...tag, href: "", selected: false, enabled: true }));
+  state.periods = listed.periods;
+};
+
+const answer = async (response: Response) => {
+  if (response.ok) return response.json();
+  const failed = await response.json().catch(() => ({}));
+  throw new Error(failed.message ?? failed.error ?? `${response.status}`);
+};
+
+const write = (operation: string, body: unknown) =>
+  fetch(Publr.url(`/api/${operation}`), {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },
+    body: JSON.stringify(body),
+  }).then(answer);
+
+let latest = 0;
+
+/** Asks the server for the files and counts of the current filter and shows them. */
+export const load = async () => {
+  const query = new URLSearchParams();
+  if (state.folder !== "") query.set("folder", state.folder);
+  for (const tag of state.tags) query.append("tags", tag);
+  if (state.search !== "") query.set("search", state.search);
+  if (state.year > 0) query.set("year", String(state.year));
+  if (state.year > 0 && state.month > 0) query.set("month", String(state.month));
+  const chosen = (value: string) => (value === "any" ? "" : value);
+  if (chosen(state.kind) !== "") query.set("kind", chosen(state.kind));
+  if (chosen(state.size_filter) !== "") query.set("size", chosen(state.size_filter));
+  if (chosen(state.visibility) !== "") query.set("visibility", chosen(state.visibility));
+  query.set("limit", String(state.page_size));
+  query.set("offset", String((state.page - 1) * state.page_size));
+  const asked = ++latest;
+  const kept = selection();
+  try {
+    const response = await fetch(Publr.url(`/api/media/list?${query}`), { credentials: "same-origin" });
+    const listed: Listed = await answer(response);
+    if (asked !== latest) return;
+    shaped(listed);
+    restamp();
+    restamp_selection(kept.filter((id) => state.items.some((item) => item.id === id)));
+  } catch (error) {
+    if (asked === latest) state.note = `Could not load the library: ${(error as Error).message}`;
+  }
+};
+
+const go = (address: string, push: boolean) => {
+  if (push) history.pushState(null, "", Publr.url(address));
+  else history.replaceState(null, "", Publr.url(address));
+  filter_from(location.href);
+  restamp();
+  load();
+};
+
+/** Follows a filter link in place: the address changes, the page asks for its files. */
+export const follow = (event: MouseEvent) => {
+  const link = event.currentTarget as HTMLAnchorElement;
+  if (!state.live || event.metaKey || event.ctrlKey || event.shiftKey || !link.href) return;
+  event.preventDefault();
+  const target = new URL(link.href);
+  history.pushState(null, "", target.pathname + target.search);
+  filter_from(link.href);
+  restamp();
+  load();
+  // Added from Filter's menu: its value menu opens at once, as the bar does on a page load.
+  if (target.hash.startsWith("#filter-")) requestAnimationFrame(() => open_value(target.hash.slice(1)));
+};
+
+/** The bar's own rule: a pill's value is its last menu trigger outside the operator. */
+const open_value = (id: string) => {
+  const pill = document.getElementById(id);
+  if (!pill) return;
+  const triggers = [...pill.querySelectorAll<HTMLElement>("[data-part='trigger']")].filter(
+    (trigger) => !trigger.closest("[data-part='filter-pill-operator']"),
+  );
+  triggers[triggers.length - 1]?.click();
+};
+
+export const came_back = () => {
+  if (!state.live) return;
+  filter_from(location.href);
+  restamp();
+  load();
+};
+
+let typing = 0;
+
+export const searched = (event: Event) => {
+  const value = (event.currentTarget as HTMLInputElement).value.trim();
+  window.clearTimeout(typing);
+  typing = window.setTimeout(() => go(href_of({ search: value }), false), 250);
+};
+
+export const dated = (event: Event) => {
+  const select = event.currentTarget as HTMLSelectElement;
+  const value = Number(select.value) || 0;
+  go(href_of(select.name === "year" ? { year: value, month: 0 } : { month: value }), true);
+};
+
+export const toggled = (event: Event) => {
+  const box = event.currentTarget as HTMLInputElement;
+  const others = selection().filter((id) => id !== box.value);
+  restamp_selection(box.checked ? [...others, box.value] : others);
+};
+
+export const select_page = () => restamp_selection(state.items.map((item) => item.id));
+
+export const clear_selection = () => restamp_selection([]);
+
+const done = async (work: () => Promise<unknown>, note: string) => {
+  state.busy = true;
+  state.note = "";
+  try {
+    await work();
+    state.note = note;
+  } catch (error) {
+    state.note = `Not done: ${(error as Error).message}`;
+  } finally {
+    state.busy = false;
+  }
+  await load();
+};
+
+export const delete_selected = async () => {
+  const ids = selection();
+  await done(() => write("media/delete", { ids }), `${ids.length} deleted`);
+  restamp_selection([]);
+};
+
+export const move_selected = (event: Event) => {
+  const folder = (event.currentTarget as HTMLElement).dataset.folder ?? "";
+  const ids = selection();
+  return done(() => write("media/move", { ids, folder }), `${ids.length} moved`);
+};
+
+export const tag_ref = Publr.ref<HTMLInputElement>();
+
+export const tagged = (event: Event) => {
+  event.preventDefault();
+  const name = (tag_ref.current?.value ?? "").trim();
+  const ids = selection();
+  if (name === "" || ids.length === 0) return;
+  if (tag_ref.current) tag_ref.current.value = "";
+  return done(() => write("media/tag", { ids, tag: name }), `Tagged ${name}`);
+};
+
+const named = (form: HTMLFormElement): string => String(new FormData(form).get("name") ?? "").trim();
+
+export const folder_made = (event: Event) => {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const name = named(form);
+  const parent = form.dataset.parent ?? "";
+  form.reset();
+  if (name === "") return;
+  return done(() => write("term/create", {
+    taxonomy: "media_folders",
+    document: JSON.stringify({ name }),
+    status: "published",
+    ...(parent !== "" ? { parent } : {}),
+  }), `Folder ${name} made`);
+};
+
+export const folder_renamed = (event: Event) => {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const name = named(form);
+  const id = form.dataset.folder ?? "";
+  if (name === "") return;
+  return done(() => write("term/save", { id, document: JSON.stringify({ name }), status: "published" }), "Renamed");
+};
+
+export const folder_moved = (event: Event) => {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const id = form.dataset.folder ?? "";
+  const parent = String(new FormData(form).get("parent") ?? "");
+  return done(() => write("term/save", { id, document: "{}", parent }), "Moved");
+};
+
+export const folder_deleted = async (event: Event) => {
+  event.preventDefault();
+  const id = (event.currentTarget as HTMLFormElement).dataset.folder ?? "";
+  if (state.folder === id) {
+    history.pushState(null, "", Publr.url(href_of({ folder: "" })));
+    filter_from(location.href);
+  }
+  await done(() => write("media/folder_delete", { folder: id }), "Folder removed");
+};
+
+export const tag_made = (event: Event) => {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const name = named(form);
+  form.reset();
+  if (name === "") return;
+  return done(() => write("term/create", {
+    taxonomy: "media_tags",
+    document: JSON.stringify({ name }),
+    status: "published",
+  }), `Tag ${name} made`);
+};
+
+/** Sends one file as it is, the request's body, into the open folder; the server takes it
+ * as it arrives. */
+const send = (file: File, position: string) => new Promise<void>((resolve, reject) => {
+  const query = new URLSearchParams({ filename: file.name });
+  if (state.folder !== "" && state.folder !== "unsorted") query.set("folder", state.folder);
+  const request = new XMLHttpRequest();
+  request.open("POST", Publr.url(`/media/upload?${query}`));
+  request.setRequestHeader("X-Csrf-Token", state.csrf);
+  request.upload.onprogress = (event) => {
+    if (!event.lengthComputable) return;
+    state.note = `Uploading ${position}${file.name}… ${Math.round((event.loaded / Math.max(event.total, 1)) * 100)}%`;
+  };
+  request.onload = () => {
+    if (request.status >= 200 && request.status < 300) return resolve();
+    const failed = (() => { try { return JSON.parse(request.responseText); } catch { return {}; } })();
+    reject(new Error(failed.message ?? failed.error ?? `${request.status}`));
+  };
+  request.onerror = () => reject(new Error("the connection failed"));
+  request.send(file);
+});
+
+const upload = async (files: File[]) => {
+  if (files.length === 0) return;
+  state.busy = true;
+  let failed = "";
+  for (const [index, file] of files.entries()) {
+    try {
+      await send(file, files.length > 1 ? `${index + 1} of ${files.length}: ` : "");
+    } catch (error) {
+      failed = `${file.name} was not uploaded: ${(error as Error).message}`;
+    }
+  }
+  state.busy = false;
+  state.note = failed !== "" ? failed : files.length === 1 ? "Uploaded" : `${files.length} uploaded`;
+  await load();
+};
+
+export const file_ref = Publr.ref<HTMLInputElement>();
+
+export const choose = () => file_ref.current?.click();
+
+export const chosen = (event: Event) => {
+  const input = event.currentTarget as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = "";
+  upload(files);
+};
+
+export const dragged = (event: DragEvent) => {
+  if (!event.dataTransfer?.types.includes("Files")) return;
+  event.preventDefault();
+  state.dragging = true;
+};
+
+export const left = (event: DragEvent) => {
+  if (event.currentTarget === event.target) state.dragging = false;
+};
+
+export const dropped = (event: DragEvent) => {
+  event.preventDefault();
+  state.dragging = false;
+  upload(Array.from(event.dataTransfer?.files ?? []));
+};
+
+const view_key = "publr.media.view";
+
+const remember_view = () => {
+  try {
+    localStorage.setItem(view_key, JSON.stringify({ details: state.details, size: state.size }));
+  } catch {
+    // A browser that keeps nothing still shows the view chosen until the page goes.
+  }
+};
+
+/** The view this browser chose last time, once the header is on the page. */
+export const view_ref = Publr.ref<HTMLElement>(() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(view_key) ?? "{}");
+    if (typeof saved.details === "boolean") state.details = saved.details;
+    if (saved.size === "sm" || saved.size === "md" || saved.size === "lg") state.size = saved.size;
+  } catch {
+    // Nothing kept, or a browser that keeps nothing: the default view.
+  }
+});
+
+export const toggle_details = () => {
+  state.details = !state.details;
+  remember_view();
+};
+
+export const sized = (event: Event) => {
+  const size = (event.currentTarget as HTMLElement).dataset.size;
+  if (size === "sm" || size === "md" || size === "lg") state.size = size;
+  remember_view();
+};
+
+
+export type MediaLibraryProps = {
+  csrf: string;
+  folder: string;
+  tags?: Array<string>;
+  search: string;
+  year: number;
+  month: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  prev_href: string;
+  next_href: string;
+  page_text: string;
+  pills?: Array<{
+    id: string;
+    label: string;
+    value: string;
+    options: Array<{ label: string; href: string; selected: boolean }>;
+    remove_href: string;
+  }>;
+  add_filters?: Array<{ label: string; href: string; added: boolean }>;
+  kind?: string;
+  size_filter?: string;
+  visibility?: string;
+  items?: Array<{
+    id: string;
+    title: string;
+    href: string;
+    thumb: string;
+    image: boolean;
+    video: boolean;
+    src: string;
+    kind: string;
+    icon: "video" | "audio" | "file";
+    facts: string;
+    selected: boolean;
+  }>;
+  total: number;
+  all: number;
+  unsorted: number;
+  all_href: string;
+  unsorted_href: string;
+  folders: Array<{
+    id: string;
+    name: string;
+    parent: string;
+    depth: number;
+    level: "0" | "1" | "2" | "3" | "4" | "5";
+    label: string;
+    count: number;
+    href: string;
+    current: boolean;
+    nests: boolean;
+  }>;
+  tag_list: Array<{
+    id: string;
+    name: string;
+    count: number;
+    href: string;
+    selected: boolean;
+    enabled: boolean;
+  }>;
+  periods: Array<{ year: number; month: number; count: number }>;
+  years: Array<{ value: string; label: string; selected: boolean }>;
+  months: Array<{ value: string; label: string; selected: boolean }>;
+  /** Filters in place on the library page; on a file's page the explorer's links navigate. */
+  live: boolean;
+  /** How large the tiles are until this browser's own choice is read. */
+  size?: "sm" | "md" | "lg";
+  /** A file's page puts its own band here instead of the library's. */
+  band?: JSX.Element;
+  /** A file's page puts the file here instead of the tiles. */
+  children?: JSX.Element;
+};
+
+/** The media library as one island: across the top the search, the filters in force, the
+ * view and Upload; on the left every file, the unsorted ones, the folder tree (each with
+ * what it holds under the rest of the filter), the tags (choosing several narrows to files
+ * carrying them all) and the upload month; beside it the files as square tiles edge to
+ * edge, each naming itself on hover or always, selectable for the bulk bar, and taking
+ * files dropped on them. Following a filter asks the server for that page's files and
+ * draws them in place. */
+export function MediaLibrary({
+  csrf,
+  folder,
+  tags = [],
+  search,
+  year,
+  month,
+  page,
+  page_size,
+  pages,
+  prev_href,
+  next_href,
+  page_text,
+  pills = [],
+  add_filters = [],
+  kind = "",
+  size_filter = "",
+  visibility = "",
+  items = [],
+  total,
+  all,
+  unsorted,
+  all_href,
+  unsorted_href,
+  folders,
+  tag_list,
+  periods,
+  years,
+  months,
+  live,
+  size = "md",
+  band,
+  children,
+}: MediaLibraryProps) {
+  state.csrf = csrf;
+  state.folder = folder;
+  state.tags = tags;
+  state.search = search;
+  state.year = year;
+  state.month = month;
+  state.page = page;
+  state.page_size = page_size;
+  state.pages = pages;
+  state.prev_href = prev_href;
+  state.next_href = next_href;
+  state.page_text = page_text;
+  state.pills = pills;
+  state.add_filters = add_filters;
+  state.kind = kind;
+  state.size_filter = size_filter;
+  state.visibility = visibility;
+  state.years = years;
+  state.months = months;
+  state.items = items;
+  state.total = total;
+  state.all = all;
+  state.unsorted = unsorted;
+  state.all_href = all_href;
+  state.unsorted_href = unsorted_href;
+  state.folders = folders;
+  state.tag_list = tag_list;
+  state.periods = periods;
+  state.live = live;
+  state.size = size;
+
+  return (
+    <div class="flex flex-1 flex-col" data-part="media-library" ref={view_ref} onWindowPopState={came_back}>
+      <ListDetailBand>
+        {band ? (
+          band
+        ) : (
+          <FilterBar classes="pl-8 pr-5">
+            {state.pills.map((pill) => (
+              <FilterPill key={pill.id} id={`filter-${pill.id}`}>
+                <FilterPillLabel>{pill.label}</FilterPillLabel>
+                <FilterPillOperator fixed>is</FilterPillOperator>
+                <FilterPillBody attached>
+                  {pill.options.length > 0 ? (
+                    <DropdownMenu classes="flex">
+                      <DropdownMenuTrigger asChild>
+                        <FilterPillValue attached>{pill.value}</FilterPillValue>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent classes="max-h-80 overflow-y-auto">
+                        {pill.options.map((option) => (
+                          <DropdownMenuCheckboxItem key={option.href} onClick={follow} href={option.href} checked={option.selected}>
+                            {option.label}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <FilterPillValue attached>{pill.value}</FilterPillValue>
+                  )}
+                  {pill.remove_href !== "" && (
+                    <FilterPillRemove onClick={follow} href={pill.remove_href} label={`Remove the ${pill.label} filter`} />
+                  )}
+                </FilterPillBody>
+              </FilterPill>
+            ))}
+            <div class="flex min-w-40 flex-1 items-stretch">
+              <Input type="search" name="search" inset size="sm" aria-label="Search files" value={state.search}
+                placeholder="Type to search" onInput={searched} classes="px-0" />
+            </div>
+            {state.note !== "" && (
+              <Text as="span" variant="body-sm" tone="muted" classes="self-center whitespace-nowrap" data-part="media-note">{state.note}</Text>
+            )}
+            <div class="flex items-center" data-part="filter-bar-adder">
+            <DropdownMenu classes="flex items-center">
+              <DropdownMenuTrigger asChild>
+                <Button type="button" hierarchy="tertiary" size="sm">
+                  <Icon name="filter-lines" size="sm" />
+                  <span>Filter</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="right">
+                {state.add_filters.map((item) => (
+                  <span key={item.label} class="contents">
+                    {item.added ? (
+                      <DropdownMenuItem disabled>{item.label}</DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem onClick={follow} href={item.href}>{item.label}</DropdownMenuItem>
+                    )}
+                  </span>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            </div>
+            <DropdownMenu classes="flex items-center">
+              <DropdownMenuTrigger asChild>
+                <Button type="button" hierarchy="tertiary" size="sm">
+                  <Icon name="grid" size="sm" />
+                  <span>View</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="right" classes="min-w-56">
+                <DropdownMenuCheckboxItem checked={state.details} onClick={toggle_details}>
+                  Always show details
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem checked={state.size === "sm"} data-size="sm" onClick={sized}>
+                  Small tiles
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={state.size === "md"} data-size="md" onClick={sized}>
+                  Medium tiles
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={state.size === "lg"} data-size="lg" onClick={sized}>
+                  Large tiles
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <input type="file" multiple class="hidden" ref={file_ref} onChange={chosen} />
+            <div class="flex items-center">
+              <Button type="button" size="sm" onClick={choose} disabled={state.busy}>
+                <Icon name="upload" size="sm" />
+                <span>Upload</span>
+              </Button>
+            </div>
+          </FilterBar>
+        )}
+      </ListDetailBand>
+      <ListDetailColumns>
+        <ListDetailList label="Media">
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between px-2">
+              <Text as="span" variant="eyebrow-xs" tone="muted">Folders</Text>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button type="button" hierarchy="tertiary" size="xs" label="New folder" title="New folder">
+                    <Icon name="folder-plus" size="sm" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogTitle>New folder</DialogTitle>
+                  <form class="mt-4 flex flex-col gap-4" data-parent="" onSubmit={folder_made}>
+                    <Input name="name" placeholder="Name" required maxLength={64} />
+                    <div class="flex justify-end gap-2">
+                      <DialogClose asChild><Button type="button" hierarchy="secondary">Cancel</Button></DialogClose>
+                      <DialogClose asChild><Button type="submit">Create</Button></DialogClose>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+            <FolderNav label="Folders">
+              <FolderNavItem>
+                <FolderNavItemLink href={state.all_href} current={state.folder === ""} onClick={follow}>
+                  <Icon name="grid" size="sm" />
+                  All files
+                </FolderNavItemLink>
+                <FolderNavItemCount persistent>{`${state.all}`}</FolderNavItemCount>
+              </FolderNavItem>
+              <FolderNavItem>
+                <FolderNavItemLink href={state.unsorted_href} current={state.folder === "unsorted"} onClick={follow}>
+                  <Icon name="file" size="sm" />
+                  Unsorted
+                </FolderNavItemLink>
+                <FolderNavItemCount persistent>{`${state.unsorted}`}</FolderNavItemCount>
+              </FolderNavItem>
+              {state.folders.map((entry) => (
+                <FolderNavItem level={entry.level} key={entry.id}>
+                  <FolderNavItemLink href={entry.href} current={entry.current} onClick={follow}>
+                    <Icon name="folder" size="sm" />
+                    {entry.name}
+                  </FolderNavItemLink>
+                  <FolderNavItemCount>{`${entry.count}`}</FolderNavItemCount>
+                  <FolderNavItemActions>
+                    {entry.nests && (
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button type="button" hierarchy="tertiary" size="xs" label={`New folder in ${entry.name}`} title="New folder inside">
+                            <Icon name="folder-plus" size="sm" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogTitle>{`New folder in ${entry.name}`}</DialogTitle>
+                          <form class="mt-4 flex flex-col gap-4" data-parent={entry.id} onSubmit={folder_made}>
+                            <Input name="name" placeholder="Name" required maxLength={64} />
+                            <div class="flex justify-end gap-2">
+                              <DialogClose asChild><Button type="button" hierarchy="secondary">Cancel</Button></DialogClose>
+                              <DialogClose asChild><Button type="submit">Create</Button></DialogClose>
+                            </div>
+                          </form>
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button type="button" hierarchy="tertiary" size="xs" label={`Rename ${entry.name}`} title="Rename">
+                          <Icon name="edit" size="sm" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogTitle>{`Rename ${entry.name}`}</DialogTitle>
+                        <form class="mt-4 flex flex-col gap-4" data-folder={entry.id} onSubmit={folder_renamed}>
+                          <Input name="name" value={entry.name} required maxLength={64} />
+                          <div class="flex justify-end gap-2">
+                            <DialogClose asChild><Button type="button" hierarchy="secondary">Cancel</Button></DialogClose>
+                            <DialogClose asChild><Button type="submit">Rename</Button></DialogClose>
+                          </div>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button type="button" hierarchy="tertiary" size="xs" label={`Move ${entry.name}`} title="Move">
+                          <Icon name="folder" size="sm" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogTitle>{`Move ${entry.name}`}</DialogTitle>
+                        <DialogDescription>Not into itself or a folder inside it.</DialogDescription>
+                        <form class="mt-4 flex flex-col gap-4" data-folder={entry.id} onSubmit={folder_moved}>
+                          <NativeSelect name="parent" label="Into">
+                            <option value="">The top level</option>
+                            {state.folders.map((home) => (
+                              <option value={home.id} selected={home.id === entry.parent}>{home.label}</option>
+                            ))}
+                          </NativeSelect>
+                          <div class="flex justify-end gap-2">
+                            <DialogClose asChild><Button type="button" hierarchy="secondary">Cancel</Button></DialogClose>
+                            <DialogClose asChild><Button type="submit">Move</Button></DialogClose>
+                          </div>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button type="button" hierarchy="tertiary" size="xs" label={`Delete ${entry.name}`} title="Delete">
+                          <Icon name="trash" size="sm" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogTitle>{`Delete ${entry.name}?`}</DialogTitle>
+                        <DialogDescription>
+                          Its files and folders move up a level; files in a top-level folder become unsorted.
+                        </DialogDescription>
+                        <form class="mt-4 flex justify-end gap-2" data-folder={entry.id} onSubmit={folder_deleted}>
+                          <DialogClose asChild><Button type="button" hierarchy="secondary">Cancel</Button></DialogClose>
+                          <DialogClose asChild><Button type="submit" intent="destructive">Delete folder</Button></DialogClose>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </FolderNavItemActions>
+                </FolderNavItem>
+              ))}
+            </FolderNav>
+          </div>
+          <div class="flex flex-col gap-2">
+            <Text as="span" variant="eyebrow-xs" tone="muted" classes="px-2">Tags</Text>
+            <div class="flex flex-wrap gap-1.5 px-2">
+              {state.tag_list.map((tag) => (
+                tag.enabled ? (
+                  <FilterChip href={tag.href} onClick={follow} count={`${tag.count}`} selected={tag.selected}>
+                    {tag.name}
+                  </FilterChip>
+                ) : (
+                  <FilterChip count="0" disabled>{tag.name}</FilterChip>
+                )
+              ))}
+            </div>
+            <form class="flex items-center gap-1 px-2" onSubmit={tag_made}>
+              <Input name="name" size="sm" placeholder="New tag" maxLength={64} classes="min-w-0 flex-1" />
+              <Button type="submit" hierarchy="tertiary" size="sm" label="Add tag" title="Add tag">
+                <Icon name="plus" size="sm" />
+              </Button>
+            </form>
+          </div>
+          <div class="flex flex-col gap-2">
+            <Text as="span" variant="eyebrow-xs" tone="muted" classes="px-2">Uploaded</Text>
+            <div class="flex gap-2 px-2">
+              <NativeSelect name="year" label="Year" size="sm" onChange={dated} classes="flex-1">
+                {state.years.map((option) => (
+                  <option value={option.value} selected={option.selected}>{option.label}</option>
+                ))}
+              </NativeSelect>
+              <NativeSelect name="month" label="Month" size="sm" onChange={dated} disabled={state.year === 0} classes="flex-1">
+                {state.months.map((option) => (
+                  <option value={option.value} selected={option.selected}>{option.label}</option>
+                ))}
+              </NativeSelect>
+            </div>
+          </div>
+        </ListDetailList>
+        <ListDetailDetail>
+          {children ? (
+            children
+          ) : (
+            <div class="relative flex flex-1 flex-col" data-part="media-grid" onDragOver={dragged} onDragLeave={left} onDrop={dropped}>
+              {state.selected_count > 0 && (
+                <div class="sticky top-14 z-20 flex flex-wrap items-center gap-2 border-b border-border bg-card px-6 py-2" data-part="media-bulk">
+                  <Text as="span" variant="heading-xs">{`${state.selected_count} selected`}</Text>
+                  <Button type="button" hierarchy="tertiary" size="sm" onClick={select_page}>Select page</Button>
+                  <Button type="button" hierarchy="tertiary" size="sm" onClick={clear_selection}>Clear</Button>
+                  <div class="ml-auto flex items-center gap-2">
+                    <form class="flex items-center gap-1" onSubmit={tagged}>
+                      <Input name="tag" size="sm" placeholder="Tag" classes="w-32" ref={tag_ref} />
+                      <Button type="submit" hierarchy="secondary" size="sm" disabled={state.busy}>
+                        <Icon name="tag" size="sm" />
+                        <span>Tag</span>
+                      </Button>
+                    </form>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" hierarchy="secondary" size="sm" disabled={state.busy}>
+                          <Icon name="folder" size="sm" />
+                          <span>Move to</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="right" classes="max-h-80 min-w-56 overflow-y-auto">
+                        <DropdownMenuItem data-folder="" onClick={move_selected}>Unsorted</DropdownMenuItem>
+                        {state.folders.map((target) => (
+                          <DropdownMenuItem data-folder={target.id} onClick={move_selected}>{target.label}</DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button type="button" hierarchy="secondary" intent="destructive" size="sm" disabled={state.busy} onClick={delete_selected}>
+                      <Icon name="trash" size="sm" />
+                      <span>Delete</span>
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {state.items.length === 0 ? (
+                <Empty mark="files">
+                  <EmptyTitle>No files here</EmptyTitle>
+                  <EmptyDescription>Drop files anywhere on this page, or use Upload.</EmptyDescription>
+                </Empty>
+              ) : (
+                <AssetCardGrid size={state.size}>
+                  {state.items.map((item) => (
+                    <AssetCard look="tile" key={item.id}>
+                      <AssetCardSelect>
+                        <Checkbox value={item.id} checked={item.selected} onChange={toggled} />
+                      </AssetCardSelect>
+                      <a href={item.href} class="block outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" aria-label={item.title}>
+                        <AssetCardPreview>
+                          {item.image ? (
+                            <img src={item.thumb} alt="" loading="lazy" class="size-full object-cover" />
+                          ) : item.video ? (
+                            <video src={`${item.src}#t=0.1`} muted playsinline preload="metadata" class="size-full object-cover" />
+                          ) : (
+                            <AssetCardFile label={item.kind}>
+                              <Icon name={item.icon} size="lg" />
+                            </AssetCardFile>
+                          )}
+                        </AssetCardPreview>
+                        {item.video && (
+                          <AssetCardBadge label={item.kind}>
+                            <Icon name="video" size="sm" />
+                          </AssetCardBadge>
+                        )}
+                        <AssetCardCaption always={state.details}>
+                          <AssetCardTitle tone="overlay">{item.title}</AssetCardTitle>
+                          <AssetCardMeta tone="overlay">{item.facts}</AssetCardMeta>
+                        </AssetCardCaption>
+                      </a>
+                    </AssetCard>
+                  ))}
+                </AssetCardGrid>
+              )}
+              {state.pages > 1 && (
+                <div class="border-t border-border px-6 py-4" data-part="media-pages">
+                  <Pagination label="Pages">
+                    <PaginationContent>
+                      {state.prev_href !== "" && (
+                        <PaginationItem>
+                          <PaginationPrevious href={state.prev_href} onClick={follow} />
+                        </PaginationItem>
+                      )}
+                      <PaginationItem>
+                        <Text as="span" variant="body-sm" tone="muted">{state.page_text}</Text>
+                      </PaginationItem>
+                      {state.next_href !== "" && (
+                        <PaginationItem>
+                          <PaginationNext href={state.next_href} onClick={follow} />
+                        </PaginationItem>
+                      )}
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              )}
+              {state.dragging && (
+                <div class="pointer-events-none absolute inset-0 z-30 flex items-center justify-center border-2 border-dashed border-primary bg-primary/10" data-part="media-drop">
+                  <Text as="span" variant="heading-sm">Drop to upload</Text>
+                </div>
+              )}
+            </div>
+          )}
+        </ListDetailDetail>
+      </ListDetailColumns>
+    </div>
+  );
+}

@@ -403,7 +403,7 @@ fn targets_of(session: *Session, chosen: []const []const u8) Error![]const Targe
     var targets: std.ArrayList(Target) = .empty;
 
     for (listed.types) |summary| {
-        if (summary.kind != .record) {
+        if (summary.kind != .record or model.media.is_library(summary.handle)) {
             continue;
         }
 

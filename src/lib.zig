@@ -10,6 +10,8 @@ pub const text = @import("lib/text.zig");
 pub const time = @import("lib/time.zig");
 pub const json = @import("lib/json.zig");
 pub const html = @import("lib/html.zig");
+pub const image = @import("lib/image.zig");
+pub const files = @import("lib/files.zig");
 pub const report = @import("lib/report.zig");
 /// Native code only: never part of the plugin SDK.
 pub const environment = @import("lib/environment.zig");

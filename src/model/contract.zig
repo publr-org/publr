@@ -13,8 +13,9 @@ const input_rule = @import("input_rule.zig");
 pub const nodes_max: u32 = 256;
 pub const depth_max: u32 = 16;
 pub const values_max: u32 = 64;
-/// What describing one node costs the compiler at most, in branches.
-const branches_per_node: u32 = 16;
+/// What describing one node costs the compiler at most, in branches: its own turn, and its
+/// turns as a child in its parent's two walks over its fields (listed, then queued).
+const branches_per_node: u32 = 24;
 
 pub const Kind = enum { string, integer, number, boolean, enumeration, list, object, reference };
 

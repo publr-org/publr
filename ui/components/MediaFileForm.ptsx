@@ -1,0 +1,100 @@
+import { Publr } from "publr-jsx";
+import { MediaFocal } from "./MediaFocal.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Switch } from "@publr/ui/Switch.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+export type MediaFileFormProps = {
+  id: string;
+  title: string;
+  preview: string;
+  image: boolean;
+  shown: "video" | "audio" | "pdf" | "other";
+  file: string;
+  kind: string;
+  alt: string;
+  caption: string;
+  credit: string;
+  focal_x: number;
+  focal_y: number;
+  folder: string;
+  tags: string;
+  restricted: boolean;
+  folders: Array<{ id: string; label: string }>;
+};
+
+/** What is written about one file, where it is filed and who may open it: the preview with
+ * its focal point beside the fields, saved with one button. */
+export function MediaFileForm({
+  id,
+  title,
+  preview,
+  image,
+  shown,
+  file,
+  kind,
+  alt,
+  caption,
+  credit,
+  focal_x,
+  focal_y,
+  folder,
+  tags,
+  restricted,
+  folders,
+}: MediaFileFormProps) {
+  return (
+  <form method="post" action={`/admin/media/${id}`} class="grid gap-8 p-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+    <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+    <MediaFocal src={preview} focal_x={focal_x} focal_y={focal_y} image={image} shown={shown} file={file} kind={kind} />
+    <div class="flex flex-col gap-5">
+      <Field>
+        <FieldLabel htmlFor="media-title" required>Title</FieldLabel>
+        <Input id="media-title" name="title" value={title} required maxLength={200} />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="media-alt">Alt text</FieldLabel>
+        <Input id="media-alt" name="alt" value={alt} maxLength={500} />
+        <FieldDescription>What the image shows, for people who cannot see it.</FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="media-caption">Caption</FieldLabel>
+        <Textarea id="media-caption" name="caption" value={caption} rows={3} />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="media-credit">Credit</FieldLabel>
+        <Input id="media-credit" name="credit" value={credit} maxLength={200} />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="media-folder">Folder</FieldLabel>
+        <NativeSelect id="media-folder" name="folder">
+          <option value="" selected={folder === ""}>Unsorted</option>
+          {folders.map((entry) => (
+            <option value={entry.id} selected={entry.id === folder}>{entry.label}</option>
+          ))}
+        </NativeSelect>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="media-tags">Tags</FieldLabel>
+        <Input id="media-tags" name="tags" value={tags} placeholder="harbour, boats" />
+        <FieldDescription>Separated by commas; new ones are made.</FieldDescription>
+      </Field>
+      <Field>
+        <div class="flex items-center justify-between gap-4">
+          <FieldLabel htmlFor="media-private">Private</FieldLabel>
+          <Switch id="media-private" name="private" value="1" checked={restricted} />
+        </div>
+        <FieldDescription>Only signed-in users can open a private file.</FieldDescription>
+      </Field>
+      <div class="flex justify-end">
+        <Button type="submit">Save</Button>
+      </div>
+    </div>
+  </form>
+  );
+}

@@ -1,0 +1,146 @@
+import { ListDetailPage } from "@publr/admin/ListDetailPage.ptsx";
+import { Publr } from "publr-jsx";
+import { MediaLibrary } from "../components/MediaLibrary.ptsx";
+import { MediaFileForm } from "../components/MediaFileForm.ptsx";
+import { MediaFileHeader } from "../components/MediaFileHeader.ptsx";
+
+export type MediaFileProps = {
+  id: string;
+  title: string;
+  filename: string;
+  /** `JPEG · 2400 × 1600 · 1.2 MB`. */
+  facts: string;
+  uploaded: string;
+  /** Where it is served: `/media/<key>`. */
+  url: string;
+  preview: string;
+  image: boolean;
+  shown: "video" | "audio" | "pdf" | "other";
+  kind: string;
+  alt: string;
+  caption: string;
+  credit: string;
+  focal_x: number;
+  focal_y: number;
+  folder: string;
+  /** Its tags' names, comma-separated. */
+  tags: string;
+  /** Only signed-in users may open it. */
+  restricted: boolean;
+  saved: boolean;
+  folders: Array<{
+    id: string;
+    name: string;
+    parent: string;
+    depth: number;
+    level: "0" | "1" | "2" | "3" | "4" | "5";
+    label: string;
+    count: number;
+    href: string;
+    current: boolean;
+    nests: boolean;
+  }>;
+  tag_list: Array<{
+    id: string;
+    name: string;
+    count: number;
+    href: string;
+    selected: boolean;
+    enabled: boolean;
+  }>;
+  periods: Array<{ year: number; month: number; count: number }>;
+  years: Array<{ value: string; label: string; selected: boolean }>;
+  months: Array<{ value: string; label: string; selected: boolean }>;
+  all: number;
+  unsorted: number;
+};
+
+/** One file of the library: its preview with the focal point, what people wrote about it,
+ * where it is filed and who may see it, beside the library's explorer. */
+export function MediaFile({
+  id,
+  title,
+  filename,
+  facts,
+  uploaded,
+  url,
+  preview,
+  image,
+  shown,
+  kind,
+  alt,
+  caption,
+  credit,
+  focal_x,
+  focal_y,
+  folder,
+  tags,
+  restricted,
+  saved,
+  folders,
+  tag_list,
+  periods,
+  years,
+  months,
+  all,
+  unsorted,
+}: MediaFileProps) {
+  return (
+    <ListDetailPage title={title}>
+      <MediaLibrary
+        csrf={Publr.request.session.csrf}
+        folder={folder}
+        search=""
+        year={0}
+        month={0}
+        page={1}
+        page_size={25}
+        pages={1}
+        prev_href=""
+        next_href=""
+        page_text=""
+        total={0}
+        all={all}
+        unsorted={unsorted}
+        all_href="/admin/media"
+        unsorted_href="/admin/media?folder=unsorted"
+        folders={folders}
+        tag_list={tag_list}
+        periods={periods}
+        years={years}
+        months={months}
+        live={false}
+        band={
+          <MediaFileHeader
+            id={id}
+            title={title}
+            filename={filename}
+            facts={facts}
+            uploaded={uploaded}
+            url={url}
+            saved={saved}
+          />
+        }
+      >
+        <MediaFileForm
+          id={id}
+          title={title}
+          preview={preview}
+          image={image}
+          shown={shown}
+          file={url}
+          kind={kind}
+          alt={alt}
+          caption={caption}
+          credit={credit}
+          focal_x={focal_x}
+          focal_y={focal_y}
+          folder={folder}
+          tags={tags}
+          restricted={restricted}
+          folders={folders}
+        />
+      </MediaLibrary>
+    </ListDetailPage>
+  );
+}

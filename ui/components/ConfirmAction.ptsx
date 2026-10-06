@@ -18,24 +18,27 @@ export type ConfirmActionProps = {
   action: string;
   /** Fields the post carries besides the CSRF token. */
   fields?: Array<{ name: string; value: string }>;
+  /** In a title band among other actions, at its own width; else the aside's full width. */
+  inline?: boolean;
   /** Choices the confirm offers ("also delete its records"), above its buttons. */
   children?: JSX.Element;
 };
 
-/** Something that cannot be undone, in a FormPage's danger zone: a button that asks first,
- * then posts. */
+/** Something that cannot be undone, in a FormPage's danger zone or a title band: a button
+ * that asks first, then posts. */
 export function ConfirmAction({
   label,
   title,
   description,
   action,
   fields = [],
+  inline = false,
   children,
 }: ConfirmActionProps) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button type="button" hierarchy="secondary" intent="destructive" classes="w-full">
+        <Button type="button" hierarchy="secondary" intent="destructive" classes={inline ? "" : "w-full"}>
           {label}
         </Button>
       </DialogTrigger>

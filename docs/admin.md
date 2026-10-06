@@ -18,16 +18,18 @@ handle and the address follow the name as it is typed.
 
 The chrome is two levels deep, like the design-system library and the PublrJS docs: a
 dark icon rail (the mark, one icon per area; at the bottom the signed-in user, whose avatar
+(their Gravatar, fetched once and served from `/admin/avatar/<md5>`, initials until then)
 opens a menu with their name, email and "Log out", and under it the settings), the area's
 own light sidebar, and the sheet, which opens with the crumbs (the area, the page's
-parents, the page) and the plugins' top bar items. There are three areas: the overview
-(`/admin`), the content (`/admin/content` and below) and Settings (everything else:
+parents, the page) and the plugins' top bar items. There are four areas: the overview
+(`/admin`), the content (`/admin/content` and below), the media library (`/admin/media`
+and below, with no sidebar of its own) and Settings (everything else:
 system settings, users, structure, plugins and every page a plugin adds). The area, the
 sidebar and the entry lit in it follow from the address, so a page never names them, and
 a refused action stays in the area it was refused in. Who is signed in reaches the chrome
 as the request (`Publr.request` in PTSX), never as props a page forwards.
 
-Every page is drawn by one of four layouts and fills its slots; the layout owns the
+Every page is drawn by one of five layouts and fills its slots; the layout owns the
 chrome, the bands, the gutters and the empty states, and a page sets no spacing of its
 own. The build refuses a page whose root is not one of them.
 
@@ -37,6 +39,15 @@ own. The build refuses a page whose root is not one of them.
 | `FormPage` | A page about one thing: a type's settings, a user, a plugin, a record, a refusal | title, parents, description, actions, meta, problems (an error callout), a notice, the column (one width, at the gutter; centred in focus), an aside (save first, then what is known), danger (last in the aside, each asks first), focus (no sidebar: a content record only) |
 | `HubPage` | A page of ways to other pages: Structure, the overview | title, description, the cards, titled groups of more; the overview opens with its own hero |
 | `CardPage` | Before sign-in: log in, set up | title, a line, a notice, the form, a footer |
+| `ListDetailPage` | Working through a set of things one at a time: a merge's conflicts, a deployment's changes, a media library | title, parents, a header band across the top, the list on the left (`ListDetailGroup`s of `ListDetailItem`s, the open one marked, done ones checked; it takes the section sidebar's place), the open thing's detail on the right. A page whose band, list and detail are one island (the media library) leaves the list out and draws them inside it from the layout's own parts: `ListDetailBand`, `ListDetailColumns`, `ListDetailList`, `ListDetailDetail` |
+
+Two versions of something are compared side by side: `CompareSides` heads the two columns
+(any content: the copies merged, Before and After), then one `CompareField` per field, each
+version's values drawn by `CompareValues` (a document pointed at as its card, a field of a
+content type, a plugin or a request it makes as its `DefinitionCard`, anything else as text) with what that version changed
+read beside the field's label. `publr.admin.compare` turns values into what they draw and
+works out what changed: a text word by word, a field's definition line by line, a list
+item by item, nothing for a value new whole.
 
 A page's primary action is always in its title band, never repeated in its empty state;
 there are no back links, the crumbs lead back. Several lists on one page, or the parts of a
@@ -145,8 +156,8 @@ field's range), a date and time as a `datetime-local` input, or a `date` input f
 shown as days (milliseconds in the document, UTC either way), a select as a
 select, or as radios and checkboxes when the field says so, a boolean as a
 switch, a checkbox or two radios with the field's labels, a number with its
-unit, as a slider or a rating, a media file as its id until the media library
-lands. A field's help text sits under its control, its placeholder inside; a
+unit, as a slider or a rating, a media file as its id until the media field's
+picker lands. A field's help text sits under its control, its placeholder inside; a
 group or repeater folds when the field says so, and a repeater item's header
 reads its label field. A new record starts with every default. A
 reference is a card (the record's type and status, its title as the open
@@ -209,6 +220,33 @@ keyed rows, loading/errors, and history. The content adapter projects authorized
 records into the generic schema in `src/adapters/admin/content/table.zig`.
 Other list pages can provide the same schema; they do not need a client renderer
 or an HTML-fragment endpoint. See `../ui/docs/data-table.md` for the contract.
+
+## The media library
+
+`/admin/media` is the library. Across the top is the filter bar Content's list draws, from
+the same parts, for what the files themselves are: Type (images, videos, audio, PDFs,
+other files) always, and from its Filter menu Size (under 1 MB, 1 to 10 MB, over 10 MB)
+and Visibility (public or private), each `is` a value chosen from its menu and dropped
+with its ×; custom fields join it later. Then Type to search, View (always show each
+tile's name and facts, not only on hover; small, medium or large tiles, kept by the
+browser) and Upload. On the left: All files, Unsorted, the folder tree (each folder with
+what it holds, itself and below, under the rest of the filter; new folder, rename, move
+and delete on its row), the tags (choosing several narrows to files carrying them all; a
+tag that would leave nothing is inert; a new one made in place) and the upload year and
+month. Beside it the files fill the sheet as
+square tiles with nothing between them: an image as a cropped copy, a video as its first
+frame with its type in the corner, any other file as its kind's icon over its type (PDF,
+MP3), its name and facts over the bottom on hover. Ticking tiles brings the
+bulk bar: tag, move to a folder, delete. Files dropped anywhere on the tiles upload into
+the open folder, each one request whose body is the file. Following a filter, a page or Back asks
+`media list` for that page and draws it in place; every one is a link that works
+without scripts too.
+
+`/admin/media/:id` is one file, the library's explorer still on the left: its preview
+(an image, where clicking places the focal point the crops keep in view; a video or a
+sound to play; a PDF to read in the page), title, alt text, caption,
+credit, folder, tags by name, and Private; Save posts the form, Delete asks first. A
+folder's delete moves what it held up a level.
 
 ## Settings and custom fields
 

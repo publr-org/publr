@@ -150,6 +150,7 @@ fn project_of(
         .base = base,
         .sandboxed_plugins = application.sandboxed(),
         .plugin_states = &application.plugin_states,
+        .files = application.files_of(),
     };
 }
 
@@ -326,9 +327,9 @@ fn server_options(first_port: u16, browser: bool) http.Options {
             .port = first_port,
             .connections_max = 8,
             .request_bytes_max = 64 << 10,
-            // The whole browser build's module in one response: 6.4 MiB in Debug on
-            // 2026-10-03, with room to grow.
-            .response_bytes_max = 8 << 20,
+            // The whole browser build's module in one response: 8.4 MiB in ReleaseSmall on
+            // 2026-10-06 once it resized images, with room to grow.
+            .response_bytes_max = 16 << 20,
         };
     }
 

@@ -1,13 +1,11 @@
 import { Publr } from "publr-jsx";
-import { FormPage } from "../layouts/FormPage.ptsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { ConfirmAction } from "../components/ConfirmAction.ptsx";
 import { ContentAccess } from "../components/ContentAccess.ptsx";
-import { EditorAsideSection } from "../components/EditorAsideSection.ptsx";
 import { IndexSection } from "../components/IndexSection.ptsx";
 import { PluginRequests } from "../components/PluginRequests.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
-import { Text } from "@publr/ui/Text.ptsx";
 
 export type PluginReviewProps = {
   title: string;
@@ -56,7 +54,7 @@ export type PluginReviewProps = {
 };
 
 /** What enabling or updating a plugin grants, before it is done: every request with the
- * plugin's reason and tier, low to high; allowed from the aside. */
+ * plugin's reason and risk, low to high; allowed from the title band. */
 export function PluginReview({
   title,
   summary,
@@ -75,52 +73,48 @@ export function PluginReview({
   types,
 }: PluginReviewProps) {
   return (
-    <FormPage
+    <IndexPage
       title={title}
       parents={[{ label: "Plugins", href: "/admin/settings/plugins" }]}
       description={summary}
-      notice={<Callout title="Nothing changes until you allow it">{note_text}</Callout>}
-      aside={
-        <EditorAsideSection>
-          <Button type="submit" form="plugin-review" classes="w-full">
-            {allow_label}
-          </Button>
-          {cancel_href !== "" && (
-            <Button href={cancel_href} hierarchy="tertiary" classes="w-full">
-              Cancel
-            </Button>
+      actions={
+        <div class="contents">
+          {discard_action !== "" && (
+            <ConfirmAction
+              inline
+              label="Discard this version"
+              title="Discard this version?"
+              description="The uploaded version goes; the one running stays as it is."
+              action={discard_action}
+            />
           )}
-        </EditorAsideSection>
+          {cancel_href !== "" && (
+            <Button href={cancel_href} hierarchy="secondary">Cancel</Button>
+          )}
+          <Button type="submit" form="plugin-review">{allow_label}</Button>
+        </div>
       }
-      danger={
-        discard_action !== "" && (
-          <ConfirmAction
-            label="Discard this version"
-            title="Discard this version?"
-            description="The uploaded version goes; the one running stays as it is."
-            action={discard_action}
-          />
-        )
-      }
+      notice={<Callout title="Nothing changes until you allow it">{note_text}</Callout>}
     >
-      <IndexSection boxed padded title={requests_title}>
-        {requests.length > 0 ? (
-          <PluginRequests csrf={Publr.request.session.csrf} action="" requests={requests} />
-        ) : (
-          <Text as="p" variant="body-sm" tone="muted">
-            Nothing beyond its own operations and content types.
-          </Text>
-        )}
+      <IndexSection
+        title={requests_title}
+        empty={requests.length === 0 ? "Nothing beyond its own operations and content types." : undefined}
+      >
+        <PluginRequests csrf={Publr.request.session.csrf} action="" requests={requests} />
       </IndexSection>
       {granted.length > 0 && (
-        <IndexSection boxed padded title="Already granted">
+        <IndexSection title="It already may">
           <PluginRequests csrf={Publr.request.session.csrf} action="" requests={granted} />
         </IndexSection>
       )}
-      <form id="plugin-review" method="post" action={action} class="flex flex-col gap-5">
+      <form id="plugin-review" method="post" action={action} class="contents">
         <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
-        {show_access && <ContentAccess scope={scope} recommend={recommend} note={note} types={types} />}
+        {show_access && (
+          <IndexSection padded title="Content access">
+            <ContentAccess scope={scope} recommend={recommend} note={note} types={types} />
+          </IndexSection>
+        )}
       </form>
-    </FormPage>
+    </IndexPage>
   );
 }

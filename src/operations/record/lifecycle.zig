@@ -277,3 +277,117 @@ test "SDK rejects oversized ids and invalid statuses without leaving a transacti
         try std.testing.expectEqual(@as(u32, 0), ctx.db.transaction_depth);
     }
 }
+
+/// Notices kept on the call's trail, as the activity log would see them.
+fn hear(ctx: *Ctx, notice: sdk.Event.Notice) void {
+    std.debug.assert(notice.name.len > 0);
+    std.debug.assert(ctx.trail != null);
+
+    ctx.trail.?.noticed(ctx, .{ .name = notice.name, .subject = notice.subject });
+}
+
+fn heard(trail: *const sdk.trail.Trail, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(trail.root != 0);
+
+    for (trail.notices.items) |notice| {
+        if (std.mem.eql(u8, notice.name, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// The record's live copy made `document` straight in the store, as a merge writes it.
+fn replace_live(ctx: *Ctx, id: []const u8, document: []const u8) !void {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(ctx.db.transaction_depth >= 1);
+
+    const row = (try store.records.get(ctx.db, ctx.arena, id)).?;
+    const type_row = (try record_operations.domain.definition.find(ctx, row.type_id)).?;
+    const value = try std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, document, .{});
+
+    const fields = type_row.def.fields;
+
+    try store.values.write(registry.Kinds.all, ctx.db, id, "live", row.type_id, fields, value);
+}
+
+test "a document whose rows were replaced from outside lands as a person's move would" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try registry.SDK.bootstrap(&system);
+    try record_operations.fixture.post_type(&system);
+
+    const created = try registry.SDK.dispatch(&system, record_operations.Create, .{
+        .type = "post",
+        .document = "{\"title\":\"Hello\",\"slug\":\"hello\"}",
+    });
+    _ = try registry.SDK.dispatch(&system, Publish, .{ .id = created.id });
+    const other = try registry.SDK.dispatch(&system, record_operations.Create, .{
+        .type = "post",
+        .document = "{\"title\":\"Taken\",\"slug\":\"taken\"}",
+    });
+    _ = try registry.SDK.dispatch(&system, Publish, .{ .id = other.id });
+
+    var trail: sdk.trail.Trail = .{ .root = 1 };
+
+    system.parent = 1;
+    system.trail = &trail;
+    system.notify = hear;
+    defer system.notify = null;
+
+    // The live title replaced: a revision of the old one, saved and published.
+    {
+        var transaction = try system.db.transaction();
+        defer transaction.rollback();
+
+        const before = try lifecycle.landing(&system, created.id);
+
+        try replace_live(&system, created.id, "{\"title\":\"Hi\",\"slug\":\"hello\"}");
+        try lifecycle.landed(&system, created.id, before);
+
+        const revisions = try store.snapshots.list(
+            system.db,
+            system.arena,
+            created.id,
+            store.snapshots.revision,
+            8,
+        );
+
+        try std.testing.expect(heard(&trail, "record.saved"));
+        try std.testing.expect(heard(&trail, "record.published"));
+        try std.testing.expect(!heard(&trail, "record.transitioned"));
+        try std.testing.expectEqual(@as(usize, 1), revisions.len);
+    }
+
+    // Taken back to a draft: the move's own notices.
+    {
+        trail.notices.clearRetainingCapacity();
+
+        var transaction = try system.db.transaction();
+        defer transaction.rollback();
+
+        const before = try lifecycle.landing(&system, created.id);
+
+        _ = try store.records.set_status(system.db, created.id, "draft", null, 1, null, false);
+        try lifecycle.landed(&system, created.id, before);
+
+        try std.testing.expect(heard(&trail, "record.transitioned"));
+        try std.testing.expect(heard(&trail, "record.unpublished"));
+    }
+
+    // A slug another live document holds is refused.
+    {
+        var transaction = try system.db.transaction();
+        defer transaction.rollback();
+
+        const before = try lifecycle.landing(&system, created.id);
+
+        try replace_live(&system, created.id, "{\"title\":\"Hello\",\"slug\":\"taken\"}");
+        try std.testing.expectError(error.Conflict, lifecycle.landed(&system, created.id, before));
+    }
+}

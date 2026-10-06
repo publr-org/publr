@@ -56,6 +56,7 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     try fill_types(ctx);
     try fill_records(ctx);
     try fill_taxonomies(ctx);
+    try fill_media(ctx);
     try fill_views(ctx);
     try fill_sign_on(ctx);
     try fill_identities(ctx);
@@ -97,6 +98,8 @@ pub fn upload_plugins(io: std.Io, dir: []const u8) !void {
     for (files) |file| {
         try folder.writeFile(io, .{ .sub_path = file.name, .data = file.bytes });
     }
+
+    try folder.writeFile(io, .{ .sub_path = "harbour.png", .data = &tiny_png });
 }
 
 /// `greeter` enabled, updated to 0.2.0 and rolled back, with 0.2.0 offered again; `farewell`
@@ -175,6 +178,58 @@ fn term_with_id(ctx: *Ctx, id: []const u8, name: []const u8, parent: ?[]const u8
 
     try store.terms.rename(ctx.db, created.id, id);
 }
+
+/// The library the media examples name: one published file under the example's id and
+/// key, with alt text and a credit, and a folder under `media.example_folder_id`.
+fn fill_media(ctx: *Ctx) Error!void {
+    std.debug.assert(ctx.caller == .user);
+
+    const media = publr.operations.media;
+    const item = media.library.example_item;
+
+    std.debug.assert(item.id.len == store.records.id_len);
+
+    const created = try SDK.dispatch(ctx, records.Create, .{
+        .type = "media",
+        .document = "{\"title\":\"Harbour at dawn\",\"alt\":\"Fishing boats\"," ++
+            "\"credit\":\"Ada\",\"focal_y\":40}",
+        .status = "published",
+    });
+
+    try store.records.rename(ctx.db, created.id, item.id);
+    try store.media.insert(ctx.db, .{
+        .record = item.id,
+        .filename = item.filename,
+        .mime_type = item.mime_type,
+        .size = @intCast(item.size),
+        .width = 2400,
+        .height = 1600,
+        .storage_key = item.key,
+        .hash = "9f2c" ** 16,
+        .private = false,
+        .created_at = ctx.now_ms,
+    });
+
+    const folder = try SDK.dispatch(ctx, terms.Create, .{
+        .taxonomy = "media_folders",
+        .document = "{\"name\":\"Photos\"}",
+        .status = "published",
+    });
+
+    try store.terms.rename(ctx.db, folder.id, media.serve.example_folder_id);
+
+    // What `/media/upload` would have left for the `media upload` example.
+    ctx.files.?.write(.incoming, "u7f3a9c2e1", &tiny_png) catch return error.Unavailable;
+}
+
+/// A one-pixel PNG: the file the media examples add.
+pub const tiny_png = [_]u8{
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+    0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00,
+    0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08,
+    0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
+    0xB0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+};
 
 /// The view the examples name, Ada's.
 fn fill_views(ctx: *Ctx) Error!void {

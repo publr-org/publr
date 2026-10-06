@@ -1,0 +1,74 @@
+import { Publr } from "publr-jsx";
+import { AssetCardFile } from "@publr/ui/AssetCardFile.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type MediaFocalProps = {
+  /** The preview's address. */
+  src: string;
+  focal_x: number;
+  focal_y: number;
+  /** Whether the file is an image a focal point means something for. */
+  image: boolean;
+  /** What else it is, for how it is shown: played, read in the page, or named. */
+  shown: "video" | "audio" | "pdf" | "other";
+  /** The file itself. */
+  file: string;
+  /** Its type: `PDF`. */
+  kind: string;
+};
+
+export const state = Publr.reactive({ x: 50, y: 50 });
+
+/** Clicking the image puts the focal point there, in percent of its width and height. */
+export const placed = (event: MouseEvent) => {
+  const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  if (box.width === 0 || box.height === 0) return;
+  state.x = Math.round(Math.min(100, Math.max(0, ((event.clientX - box.left) / box.width) * 100)));
+  state.y = Math.round(Math.min(100, Math.max(0, ((event.clientY - box.top) / box.height) * 100)));
+};
+
+/** A file's preview; for an image, the point its crops keep in view, set by clicking. */
+export function MediaFocal({ src, focal_x, focal_y, image, shown, file, kind }: MediaFocalProps) {
+  state.x = focal_x;
+  state.y = focal_y;
+
+  return (
+    <div class="flex flex-col gap-2" data-part="media-focal">
+      {image ? (
+        <div class="relative w-full cursor-crosshair overflow-hidden rounded-md bg-muted" onClick={placed}>
+          <img src={src} alt="" class="block h-auto w-full select-none" draggable={false} />
+          <span
+            class="pointer-events-none absolute size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md ring-2 ring-black/40"
+            style={`left:${state.x}%;top:${state.y}%`}
+            data-part="media-focal-point"
+          />
+        </div>
+      ) : shown === "video" ? (
+        <video src={file} controls playsinline preload="metadata" class="block w-full rounded-md bg-black" />
+      ) : shown === "audio" ? (
+        <div class="flex flex-col gap-4 rounded-md bg-muted p-6">
+          <AssetCardFile label={kind}>
+            <Icon name="audio" size="lg" />
+          </AssetCardFile>
+          <audio src={file} controls preload="metadata" class="w-full" />
+        </div>
+      ) : shown === "pdf" ? (
+        <iframe src={file} title="The document" class="block aspect-[3/4] w-full rounded-md border border-border bg-muted" />
+      ) : (
+        <div class="flex aspect-video w-full items-center justify-center rounded-md bg-muted">
+          <AssetCardFile label={kind}>
+            <Icon name="file" size="lg" />
+          </AssetCardFile>
+        </div>
+      )}
+      {image && (
+        <Text as="span" variant="body-xs" tone="muted">
+          {`Focal point ${state.x}% across, ${state.y}% down. Click the image to move it; crops keep it in view.`}
+        </Text>
+      )}
+      <input type="hidden" name="focal_x" value={`${state.x}`} />
+      <input type="hidden" name="focal_y" value={`${state.y}`} />
+    </div>
+  );
+}

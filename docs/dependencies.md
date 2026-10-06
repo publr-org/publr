@@ -20,7 +20,7 @@ dependency-free C. Ours to keep: vendored as-is in this repository, compiled by
 | `publr_jit` (`../jit`) | Our own class-to-CSS compiler; build-time for the stylesheet, in the binary for class merging | sibling checkout | Ours | The admin's stylesheet, and stacked class attributes merged at render. |
 | `../ui/src/components`, `../icons/icons` | The design system's PTSX components and the icon artwork, read by the build | sibling checkout | Ours | What the admin's pages are made of. |
 | `vendor/stb/` | `stb_image.h`, `stb_image_resize2.h`, `stb_image_write.h` | 2c980bb | MIT / public domain | Decode, resize and encode images for media. |
-| `vendor/libwebp/` | libwebp | 1.6.0 | BSD-3-Clause | WebP encoding for optimized media. |
+| `vendor/libwebp/` | libwebp | 1.6.0 | BSD-3-Clause | WebP encoding for optimized media (the native build only). |
 
 That is the whole list. Everything else in the binary is Zig, either the
 standard library or code in this repository.

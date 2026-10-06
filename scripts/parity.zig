@@ -121,6 +121,7 @@ fn seed(init: std.process.Init, dir: []const u8) !void {
     });
 
     ctx.sandboxed_plugins = application.sandboxed();
+    ctx.files = application.files_of();
 
     try world.upload_plugins(init.io, dir);
     try world.fill(&ctx, dir);

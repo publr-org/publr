@@ -327,7 +327,7 @@ fn fill_header(props: *views.ContentList.Props, page: *const Page) Error!void {
     var targets: std.ArrayList(views.ContentList.New_targetsItem) = .empty;
 
     for (page.types) |summary| {
-        if (summary.kind != .record) {
+        if (summary.kind != .record or model.media.is_library(summary.handle)) {
             continue;
         }
 

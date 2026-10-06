@@ -1,0 +1,6 @@
+export type ListDetailColumnsProps = { children?: JSX.Element };
+
+/** A ListDetailPage's two columns: a ListDetailList, then a ListDetailDetail. */
+export function ListDetailColumns({ children }: ListDetailColumnsProps) {
+  return <div class="flex flex-1 items-stretch" data-part="list-detail-columns">{children}</div>;
+}

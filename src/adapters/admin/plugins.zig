@@ -155,12 +155,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     const name = try admin.param(&session, "name", back) orelse return;
     const detail = try get(&session, name) orelse return;
     const arena = session.arena;
-    const operations = try arena.alloc(views.Plugin.OperationsItem, detail.operations.len);
     const base = try std.fmt.allocPrint(arena, "{s}/{s}", .{ back, detail.name });
-
-    for (detail.operations, operations) |operation, *row| {
-        row.* = .{ .name = operation };
-    }
 
     try admin.screen(&session, .ok, views.Plugin, .{
         .name = detail.name,
@@ -183,7 +178,6 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
             detail.allowed_domains,
             true,
         ),
-        .operations = operations,
         .show_access = detail.uses_content,
         .scope = @tagName(detail.content_access.scope),
         .recommend = @tagName(detail.recommend.recommend),
@@ -217,7 +211,7 @@ pub fn review_enable(request: *Request, response: *Response, ctx: *Context) Erro
         .allow_label = "Allow & Enable",
         .cancel_href = back,
         .discard_action = "",
-        .requests_title = "This plugin asks to",
+        .requests_title = "This plugin wants to",
         .requests = try rows.requests(
             views.PluginReview.RequestsItem,
             arena,
@@ -261,7 +255,7 @@ pub fn review_update(request: *Request, response: *Response, ctx: *Context) Erro
         .allow_label = "Allow & Update",
         .cancel_href = base,
         .discard_action = try std.fmt.allocPrint(arena, "{s}/cancel-update", .{base}),
-        .requests_title = "New permissions",
+        .requests_title = "This version also wants to",
         .requests = split.fresh,
         .granted = split.held,
         .note_text = "Allowing grants everything the new version asks for. The version it " ++

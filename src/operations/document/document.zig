@@ -117,17 +117,19 @@ pub fn Of(comptime Domain: type) type {
 
                 const value = document.object.get(field.name) orelse continue;
                 const name = field.name;
+                const except = own_id orelse "";
                 const holder = switch (value) {
                     .string => |text| if (text.len == 0)
                         null
                     else
-                        try values.find_by_text(ctx.db, ctx.arena, type_id, name, text),
+                        try values.find_by_text(ctx.db, ctx.arena, type_id, name, text, except),
                     .integer => |number| try values.find_by_integer(
                         ctx.db,
                         ctx.arena,
                         type_id,
                         name,
                         number,
+                        except,
                     ),
                     else => null,
                 };
@@ -297,6 +299,7 @@ pub fn Of(comptime Domain: type) type {
                     type_id,
                     slug_field.name,
                     candidate,
+                    own_id orelse "",
                 );
                 const taken_by_other = holder != null and
                     (own_id == null or !std.mem.eql(u8, holder.?, own_id.?));

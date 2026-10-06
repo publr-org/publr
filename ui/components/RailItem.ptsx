@@ -3,7 +3,7 @@ import { Icon } from "@publr/ui/Icon.ptsx";
 export type RailItemProps = {
   href: string;
   label: string;
-  icon_name: "home" | "file" | "settings";
+  icon_name: "home" | "file" | "image" | "settings";
   active: boolean;
 };
 
