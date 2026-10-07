@@ -1,8 +1,8 @@
 name: Release
 
-# Actions → Release → Run, choosing patch, minor or major. The next version is checked and
-# built first; only then is it committed to main, tagged and released, so a failed run
-# leaves no commit, tag or Release behind.
+# Actions → Release → Run, choosing patch, minor or major. It releases main as it is, once
+# verify has passed on that commit. The next version is built first; only then is it
+# committed to main, tagged and released, so a failed run leaves no commit, tag or Release.
 
 on:
   workflow_dispatch:
@@ -40,6 +40,15 @@ jobs:
           if [ "$GITHUB_REF" != refs/heads/main ]; then
             echo "::error::release from main, not $GITHUB_REF"; exit 1
           fi
+          verified="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow verify.yml \
+            --commit "$GITHUB_SHA" --limit 1 --json status,conclusion \
+            --jq '.[] | "\(.status) \(.conclusion)"')"
+          case "$verified" in
+            "completed success") ;;
+            "") echo "::error::verify has not run on $GITHUB_SHA; push a commit first"; exit 1 ;;
+            completed*) echo "::error::verify failed on $GITHUB_SHA"; exit 1 ;;
+            *) echo "::error::verify is still running on $GITHUB_SHA; release when it passes"; exit 1 ;;
+          esac
           current="$(sed -nE 's/^ *\.version = "([0-9]+\.[0-9]+\.[0-9]+)",$/\1/p' build.zig.zon)"
           IFS=. read -r major minor patch <<< "$current"
           case "$BUMP" in
@@ -52,28 +61,6 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Releasing \`v$version\` ($BUMP from $current) from \`$(git rev-parse --short HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
-
-  verify:
-    needs: version
-    runs-on: ubuntu-latest
-    env: { VERSION: "${{ needs.version.outputs.version }}" }
-    steps:
-      - uses: actions/checkout@v4
-        with: { path: publr }
-
-      - name: Write the version
-        working-directory: publr
-        run: &write_version |
-          perl -pi -e 's/^(\s*\.version|pub const version) = "\d+\.\d+\.\d+"/$1 = "$ENV{VERSION}"/' $VERSION_FILES
-          for file in $VERSION_FILES; do
-            grep -q "version = \"$VERSION\"" "$file" || { echo "::error file=$file::no version line"; exit 1; }
-          done
-
-      - uses: ./publr/.github/actions/workspace
-
-      - name: zig build verify-full
-        working-directory: publr
-        run: zig build verify-full -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary all
 
   # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
   # kind of CPU (for any CPU of that kind: baseline). Linux is cross-compiled against musl.
@@ -94,7 +81,11 @@ jobs:
 
       - name: Write the version
         working-directory: publr
-        run: *write_version
+        run: &write_version |
+          perl -pi -e 's/^(\s*\.version|pub const version) = "\d+\.\d+\.\d+"/$1 = "$ENV{VERSION}"/' $VERSION_FILES
+          for file in $VERSION_FILES; do
+            grep -q "version = \"$VERSION\"" "$file" || { echo "::error file=$file::no version line"; exit 1; }
+          done
 
       - uses: ./publr/.github/actions/workspace
         with: { target: "${{ matrix.target }}" }
@@ -114,7 +105,7 @@ jobs:
         with: { name: "${{ matrix.file }}", path: "${{ matrix.file }}" }
 
   release:
-    needs: [version, verify, build]
+    needs: [version, build]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}

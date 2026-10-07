@@ -32,9 +32,30 @@ pub fn add_check(
     run.addDirectoryArg(builder.path(@import("sandboxed_plugins.zig").fixture_dir));
     run.addArtifactArg(native);
     run.addFileArg(installable);
+    run.addArg(version(builder));
     run.has_side_effects = true;
 
-    std.debug.assert(run.argv.items.len == 8);
+    std.debug.assert(run.argv.items.len == 9);
 
     return &run.step;
+}
+
+/// The version `build.zig.zon` says, which `--version` and `/api/health` answer.
+fn version(builder: *std.Build) []const u8 {
+    std.debug.assert(builder.build_root.path != null);
+
+    const io = builder.graph.io;
+    const gpa = builder.allocator;
+    const limit: std.Io.Limit = .limited(1 << 16);
+    const handle = builder.build_root.handle;
+    const text = handle.readFileAllocOptions(io, "build.zig.zon", gpa, limit, .of(u8), 0) catch
+        @panic("build.zig.zon is unreadable");
+    const Manifest = struct { version: []const u8 };
+    const options: std.zon.parse.Options = .{ .ignore_unknown_fields = true };
+    const manifest = std.zon.parse.fromSliceAlloc(Manifest, gpa, text, null, options) catch
+        @panic("build.zig.zon has no .version");
+
+    std.debug.assert(manifest.version.len > 0);
+
+    return manifest.version;
 }

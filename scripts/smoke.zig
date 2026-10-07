@@ -18,6 +18,8 @@ pub fn main(init: std.process.Init) !u8 {
     const fixtures_arg = iterator.next() orelse return error.MissingPlugin;
     const native_arg = iterator.next() orelse return error.MissingBinaryPath;
     const installable_arg = iterator.next() orelse return error.MissingPlugin;
+    // From build.zig.zon, which a release rewrites.
+    const version = iterator.next() orelse return error.MissingVersion;
     const arena = init.arena.allocator();
     const module = try std.Io.Dir.cwd().realPathFileAlloc(init.io, module_arg, arena);
     const binary = try std.Io.Dir.cwd().realPathFileAlloc(init.io, binary_arg, arena);
@@ -35,7 +37,9 @@ pub fn main(init: std.process.Init) !u8 {
     const check = [_][]const u8{ "heartbeat", "check", "--echo", "smoke" };
     const admin_check = [_][]const u8{ "--as-admin", "heartbeat", "check" };
 
-    try expect_output(init, binary, work_dir, &.{"--version"}, "publr 0.2.0\n");
+    const version_line = try std.fmt.allocPrint(arena, "publr {s}\n", .{version});
+
+    try expect_output(init, binary, work_dir, &.{"--version"}, version_line);
     try expect_contains(init, binary, work_dir, &check, "\"echo\": \"smoke\"");
     try expect_contains(init, binary, work_dir, &admin_check, "\"caller\": \"system\"");
     try expect_contains(init, binary, work_dir, &.{"--help"}, "heartbeat check");
@@ -51,7 +55,7 @@ pub fn main(init: std.process.Init) !u8 {
     try sandboxed.expect_sandboxed_plugins(init, binary, work_dir, module);
     try sandboxed.expect_plugin_build(init, bare, work_dir, fixtures);
     try expect_build(init, binary, work_dir, "smoke@example.com");
-    try expect_serve(init, binary, work_dir);
+    try expect_serve(init, binary, work_dir, version);
     try expect_bare(init, bare, work_dir);
     try expect_apps_folder(init, bare, work_dir);
     const native_plugins = @import("smoke/native_plugins.zig");
@@ -394,9 +398,14 @@ pub fn expect_failure(
     }
 }
 
-fn expect_serve(init: std.process.Init, binary: []const u8, work_dir: []const u8) !void {
+fn expect_serve(
+    init: std.process.Init,
+    binary: []const u8,
+    work_dir: []const u8,
+    version: []const u8,
+) !void {
     std.debug.assert(binary.len > 0);
-    std.debug.assert(work_dir.len > 0);
+    std.debug.assert(version.len > 0);
 
     var child = try std.process.spawn(init.io, .{
         .argv = &.{ binary, "serve", "--port", "8090" },
@@ -409,7 +418,11 @@ fn expect_serve(init: std.process.Init, binary: []const u8, work_dir: []const u8
     const port = try read_port(init, child.stderr.?);
     const body = try http_get(init, port, "/api/health");
 
-    if (std.mem.indexOf(u8, body, "\"version\":\"0.2.0\"") == null) {
+    const expected = try std.fmt.allocPrint(init.arena.allocator(), "\"version\":\"{s}\"", .{
+        version,
+    });
+
+    if (std.mem.indexOf(u8, body, expected) == null) {
         std.debug.print("smoke: serve: unexpected /api/health body: {s}\n", .{body});
         return error.SmokeFailed;
     }
