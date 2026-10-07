@@ -37,8 +37,10 @@ runs:
       working-directory: publr-js
       run: npm ci && npx vp build
 
+    # Its own cache saves Zig's cache folders on every run (hundreds of MB each), which
+    # would push the carried compiler out of the repository's 10 GB.
     - uses: mlugg/setup-zig@v2
-      with: { version: 0.16.0 }
+      with: { version: 0.16.0, use-cache: false }
 
     # Building the carried compiler takes minutes, so it is built only when Zig or the way
     # lib/zig packs it changes (the key), and saved at once so a later failure keeps it.
