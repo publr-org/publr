@@ -1,15 +1,17 @@
 name: Release
 
-# Actions → Release → Run, with the version (0.2.1). The version must already be in
-# build.zig.zon and the source on main. The tag and the Release are made together at the
-# end, so a failed run leaves neither behind.
+# Actions → Release → Run, choosing patch, minor or major. The next version is checked and
+# built first; only then is it committed to main, tagged and released, so a failed run
+# leaves no commit, tag or Release behind.
 
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: Version to release, without the v (0.2.1)
-        required: true
+      bump:
+        description: What kind of release
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: write
@@ -17,35 +19,55 @@ permissions:
 concurrency: release
 
 env:
-  VERSION: ${{ inputs.version }}
-  TAG: v${{ inputs.version }}
   GH_TOKEN: ${{ github.token }}
+  # The versions written on a release; build.zig.zon is the one read.
+  VERSION_FILES: build.zig.zon src/publr.zig src/operations/heartbeat.zig
 
 jobs:
-  verify:
+  version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with: { path: publr }
 
-      - name: Check the version
+      - name: The next version
+        id: next
         working-directory: publr
+        env: { BUMP: "${{ inputs.bump }}" }
         run: |
           if [ "$GITHUB_REF" != refs/heads/main ]; then
             echo "::error::release from main, not $GITHUB_REF"; exit 1
           fi
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::$VERSION is not MAJOR.MINOR.PATCH"; exit 1
+          current="$(sed -nE 's/^ *\.version = "([0-9]+\.[0-9]+\.[0-9]+)",$/\1/p' build.zig.zon)"
+          IFS=. read -r major minor patch <<< "$current"
+          case "$BUMP" in
+            major) version="$((major + 1)).0.0" ;;
+            minor) version="$major.$((minor + 1)).0" ;;
+            patch) version="$major.$minor.$((patch + 1))" ;;
+          esac
+          if git ls-remote --exit-code --tags origin "v$version" >/dev/null; then
+            echo "::error::v$version already exists"; exit 1
           fi
-          if git ls-remote --exit-code --tags origin "$TAG" >/dev/null; then
-            echo "::error::$TAG already exists"; exit 1
-          fi
-          for file in build.zig.zon src/publr.zig src/operations/heartbeat.zig; do
-            if ! grep -q "version = \"$VERSION\"" "$file"; then
-              echo "::error file=$file::does not say version $VERSION"; exit 1
-            fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing \`v$version\` ($BUMP from $current) from \`$(git rev-parse --short HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
+
+  verify:
+    needs: version
+    runs-on: ubuntu-latest
+    env: { VERSION: "${{ needs.version.outputs.version }}" }
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: publr }
+
+      - name: Write the version
+        working-directory: publr
+        run: &write_version |
+          perl -pi -e 's/^(\s*\.version|pub const version) = "\d+\.\d+\.\d+"/$1 = "$ENV{VERSION}"/' $VERSION_FILES
+          for file in $VERSION_FILES; do
+            grep -q "version = \"$VERSION\"" "$file" || { echo "::error file=$file::no version line"; exit 1; }
           done
-          echo "Releasing $TAG from \`$(git rev-parse --short HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: ./publr/.github/actions/workspace
 
@@ -56,6 +78,7 @@ jobs:
   # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
   # CPU. Linux is cross-compiled against musl.
   build:
+    needs: version
     strategy:
       matrix:
         include:
@@ -64,15 +87,23 @@ jobs:
           - { runner: macos-latest, target: native, file: publr-macos-aarch64 }
           - { runner: macos-15-intel, target: native, file: publr-macos-x86_64 }
     runs-on: ${{ matrix.runner }}
+    env: { VERSION: "${{ needs.version.outputs.version }}" }
     steps:
       - uses: actions/checkout@v4
         with: { path: publr }
+
+      - name: Write the version
+        working-directory: publr
+        run: *write_version
+
       - uses: ./publr/.github/actions/workspace
 
+      # The carried Zig compiler declares an 8 GB bound; macos-latest has 7 GB and swap.
       - name: zig build
         working-directory: publr
         run: |
-          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe --prefix ../out
+          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe \
+            --maxrss 8000000000 --prefix ../out
           cp ../out/bin/publr ../${{ matrix.file }}
 
       - name: Check it reports the version
@@ -83,13 +114,29 @@ jobs:
         with: { name: "${{ matrix.file }}", path: "${{ matrix.file }}" }
 
   release:
-    needs: [verify, build]
+    needs: [version, verify, build]
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: v${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with: { path: publr }
       - uses: actions/download-artifact@v4
         with: { path: dist, merge-multiple: true }
+
+      - name: Write the version
+        working-directory: publr
+        run: *write_version
+
+      - name: Commit the version and tag it
+        working-directory: publr
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "Release $TAG"
+          git tag "$TAG"
+          git push --atomic origin HEAD:main "$TAG"
 
       - name: Checksums
         working-directory: dist
@@ -100,7 +147,7 @@ jobs:
           for file in publr-*; do sha256sum "$file" > "$file.sha256"; done
           cat SHA256SUMS
 
-      - name: Create the tag and the Release
+      - name: Release
         run: |
           cat > notes.md <<EOF
           Download \`publr\` for your OS and CPU below, or install it with
@@ -112,7 +159,7 @@ jobs:
           EOF
           gh release create "$TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$(git -C publr rev-parse HEAD)" \
+            --verify-tag \
             --title "$TAG" \
             --notes-file notes.md \
             --generate-notes
