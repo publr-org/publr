@@ -1,0 +1,118 @@
+name: Release
+
+# Actions → Release → Run, with the version (0.2.1). The version must already be in
+# build.zig.zon and the source on main. The tag and the Release are made together at the
+# end, so a failed run leaves neither behind.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, without the v (0.2.1)
+        required: true
+
+permissions:
+  contents: write
+
+concurrency: release
+
+env:
+  VERSION: ${{ inputs.version }}
+  TAG: v${{ inputs.version }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: publr }
+
+      - name: Check the version
+        working-directory: publr
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::release from main, not $GITHUB_REF"; exit 1
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$VERSION is not MAJOR.MINOR.PATCH"; exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "$TAG" >/dev/null; then
+            echo "::error::$TAG already exists"; exit 1
+          fi
+          for file in build.zig.zon src/publr.zig src/operations/heartbeat.zig; do
+            if ! grep -q "version = \"$VERSION\"" "$file"; then
+              echo "::error file=$file::does not say version $VERSION"; exit 1
+            fi
+          done
+          echo "Releasing $TAG from \`$(git rev-parse --short HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: ./publr/.github/actions/workspace
+
+      - name: zig build verify-full
+        working-directory: publr
+        run: zig build verify-full --summary all
+
+  # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
+  # CPU. Linux is cross-compiled against musl.
+  build:
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-latest, target: x86_64-linux-musl, file: publr-linux-x86_64 }
+          - { runner: ubuntu-latest, target: aarch64-linux-musl, file: publr-linux-aarch64 }
+          - { runner: macos-latest, target: native, file: publr-macos-aarch64 }
+          - { runner: macos-15-intel, target: native, file: publr-macos-x86_64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: publr }
+      - uses: ./publr/.github/actions/workspace
+
+      - name: zig build
+        working-directory: publr
+        run: |
+          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe --prefix ../out
+          cp ../out/bin/publr ../${{ matrix.file }}
+
+      - name: Check it reports the version
+        if: matrix.target != 'aarch64-linux-musl'
+        run: test "$(./${{ matrix.file }} --version)" = "publr $VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with: { name: "${{ matrix.file }}", path: "${{ matrix.file }}" }
+
+  release:
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: publr }
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          cp ../publr/install.sh .
+          chmod +x publr-*
+          sha256sum publr-* install.sh > SHA256SUMS
+          for file in publr-*; do sha256sum "$file" > "$file.sha256"; done
+          cat SHA256SUMS
+
+      - name: Create the tag and the Release
+        run: |
+          cat > notes.md <<EOF
+          Download \`publr\` for your OS and CPU below, or install it with
+          \`curl -fsSL https://raw.githubusercontent.com/publr-org/publr/$TAG/install.sh | sh\`.
+          Each binary has its SHA-256 next to it, and \`SHA256SUMS\` lists every file.
+
+          macOS builds are not signed yet. If macOS refuses to open \`publr\`, run
+          \`xattr -d com.apple.quarantine publr\` once.
+          EOF
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$(git -C publr rev-parse HEAD)" \
+            --title "$TAG" \
+            --notes-file notes.md \
+            --generate-notes
