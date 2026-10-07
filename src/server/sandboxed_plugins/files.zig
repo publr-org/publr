@@ -21,7 +21,7 @@ pub const Files = struct {
 
         try cwd.createDirPath(io, path);
 
-        var dir = try cwd.openDir(io, path, .{});
+        var dir = try cwd.openDir(io, path, .{ .iterate = true });
         errdefer dir.close(io);
 
         try dir.createDirPath(io, uploads_dir);
