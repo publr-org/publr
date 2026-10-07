@@ -122,7 +122,10 @@ fn compile(
 
     return switch (try child.wait(init.io)) {
         .exited => |code| code,
-        else => 1,
+        else => |term| {
+            report.err("publr plugin build: the compiler stopped: {any}", .{term});
+            return 1;
+        },
     };
 }
 

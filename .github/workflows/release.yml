@@ -76,7 +76,7 @@ jobs:
         run: zig build verify-full -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary all
 
   # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
-  # CPU. Linux is cross-compiled against musl.
+  # kind of CPU (for any CPU of that kind: baseline). Linux is cross-compiled against musl.
   build:
     needs: version
     strategy:
@@ -102,7 +102,7 @@ jobs:
       - name: zig build
         working-directory: publr
         run: |
-          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe \
+          zig build -Dtarget=${{ matrix.target }} -Dcpu=baseline -Doptimize=ReleaseSafe \
             -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --prefix ../out
           cp ../out/bin/publr ../${{ matrix.file }}
 
