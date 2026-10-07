@@ -15,6 +15,7 @@ const media_adapter = @import("../adapters/media.zig");
 const builtin = @import("builtin");
 const operator = @import("operator.zig");
 const apps_load = @import("apps_load.zig");
+const remote = @import("remote.zig");
 const plugin_routes = @import("plugin_routes.zig");
 const plugin_hooks = @import("plugin_hooks.zig");
 
@@ -55,6 +56,7 @@ pub fn register(router: *http.Router) void {
     if (builtin.os.tag != .wasi) {
         router.post(operator.route, &operator.handle);
         router.post(apps_load.route, &apps_load.handle);
+        router.post(remote.route, &remote.handle);
         plugin_operator_commands.register(router);
     }
 
@@ -67,7 +69,7 @@ pub fn register(router: *http.Router) void {
     const operator_routes: u32 = if (builtin.os.tag == .wasi)
         0
     else
-        2 + plugin_operator_commands.routes_count;
+        3 + plugin_operator_commands.routes_count;
     const fixed = 9 + operator_routes + provider_routes.routes_count +
         native_plugin_routes.routes_count;
 

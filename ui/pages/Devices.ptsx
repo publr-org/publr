@@ -1,0 +1,100 @@
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { ConfirmAction } from "../components/ConfirmAction.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+
+export type DevicesProps = {
+  /** Every account's devices, for an administrator; else only the viewer's own. */
+  everyone: boolean;
+  devices: Array<{
+    name: string;
+    /** `read`, `drafts` or `write`. */
+    scope: string;
+    /** Whose account it acts for, shown to administrators. */
+    email: string;
+    /** When it was approved and last used, `YYYY-MM-DD HH:MM`, UTC. */
+    approved: string;
+    used: string;
+    /** Where Revoke posts. */
+    revoke_action: string;
+  }>;
+};
+
+/** The agents and tools acting for an account, each under the scope its person chose, and a
+ * way to stop each one. A device is added from its own side, with `publr login`. */
+export function Devices({ everyone, devices }: DevicesProps) {
+  return (
+    <IndexPage
+      title="Devices"
+      description="Agents and tools that act for an account. Each does only what its person approved, and never deletes anything for good."
+      empty={
+        devices.length === 0 && (
+          <Empty>
+            <EmptyTitle>No devices</EmptyTitle>
+            <EmptyDescription>
+              An agent signs in with <Code>publr login</Code> and this site's address; you
+              approve it here.
+            </EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Device</TableHead>
+            {everyone && <TableHead>Account</TableHead>}
+            <TableHead>May</TableHead>
+            <TableHead>Approved</TableHead>
+            <TableHead>Last used</TableHead>
+            <TableHead />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {devices.map((device) => (
+            <TableRow>
+              <TableCell>
+                <Text as="span" variant="body-sm">{device.name}</Text>
+              </TableCell>
+              {everyone && (
+                <TableCell>
+                  <Text as="span" variant="body-sm" tone="muted">{device.email}</Text>
+                </TableCell>
+              )}
+              <TableCell>
+                {device.scope === "read" && <Status tone="neutral">Read</Status>}
+                {device.scope === "drafts" && <Status tone="info">Save drafts</Status>}
+                {device.scope === "write" && <Status tone="warning">Write and publish</Status>}
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">{device.approved}</Text>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">{device.used}</Text>
+              </TableCell>
+              <TableCell>
+                <ConfirmAction
+                  inline
+                  label="Revoke"
+                  title={`Revoke ${device.name}?`}
+                  description="It stops working at once. What it changed stays."
+                  action={device.revoke_action}
+                />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

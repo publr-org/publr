@@ -15,6 +15,8 @@ pub const Folder = union(enum) {
     any,
     /// Files in no folder.
     unsorted,
+    /// Files taken in from the media folder that no one has looked at yet, in any folder.
+    unreviewed,
     /// A folder's term id: the files in it and in the folders below it.
     term: []const u8,
 };
@@ -99,6 +101,7 @@ fn where_of(arena: std.mem.Allocator, filter: Filter, leave: Leave) !Where {
             .any => {},
             .unsorted => try where.add(arena, "NOT EXISTS (" ++ in_term ++
                 " AND t.field = 'media_folders')", null),
+            .unreviewed => try where.add(arena, "m.unreviewed = 1", null),
             .term => |term| try where.add(arena, "EXISTS (" ++ in_term ++
                 " AND t.field = 'media_folders' AND t.term = ?N)", .{ .text = term }),
         }
@@ -227,6 +230,8 @@ pub const Item = struct {
     storage_key: []const u8,
     private: bool,
     created_at: i64,
+    unreviewed: bool,
+    missing: bool,
     title: []const u8,
 };
 
@@ -247,7 +252,8 @@ pub fn items(
     const sql = try std.fmt.allocPrint(
         arena,
         "SELECT m.record, m.filename, m.mime_type, m.size, m.width, m.height, " ++
-            "m.storage_key, m.private, m.created_at, COALESCE((" ++ title_value ++
+            "m.storage_key, m.private, m.created_at, m.unreviewed, m.missing, " ++
+            "COALESCE((" ++ title_value ++
             "), m.filename){s}{s} ORDER BY m.created_at DESC, m.record DESC LIMIT {d} OFFSET {d}",
         .{ from, where.sql.items, limit, offset },
     );
@@ -301,6 +307,17 @@ pub fn unsorted_count(connection: *db.Db, arena: std.mem.Allocator, filter: Filt
     unsorted.folder = .unsorted;
 
     return count(connection, arena, unsorted);
+}
+
+/// The filter's files no one has looked at yet: what Unreviewed would hold.
+pub fn unreviewed_count(connection: *db.Db, arena: std.mem.Allocator, filter: Filter) !u32 {
+    std.debug.assert(filter.tags.len <= tags_max);
+
+    var unreviewed = filter;
+
+    unreviewed.folder = .unreviewed;
+
+    return count(connection, arena, unreviewed);
 }
 
 /// The filter's files without its folder: what All files would hold.

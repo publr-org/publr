@@ -215,6 +215,7 @@ pub const Delete = struct {
         \\record still points at is refused like any record that is referenced.
     ;
     pub const kind: sdk.operation.Kind = .write;
+    pub const destroys = true;
     pub const In = struct { ids: []const []const u8 };
     pub const Out = struct { deleted: u32 };
     pub const example: In = .{ .ids = &.{library.example_item.id} };

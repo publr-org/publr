@@ -124,6 +124,7 @@ pub const Purge = struct {
     pub const name = "record.purge";
     pub const description = "Remove a record for good: document, pending edits and snapshots";
     pub const kind: sdk.operation.Kind = .write;
+    pub const destroys = true;
     pub const In = struct { id: []const u8 };
     pub const Out = struct { purged: bool };
     pub const example: In = .{ .id = example_id };

@@ -278,6 +278,7 @@ pub const Delete = struct {
     pub const name = "custom_fields.delete";
     pub const description = "Delete a custom field group schema";
     pub const kind: sdk.operation.Kind = .write;
+    pub const destroys = true;
     pub const In = Get.In;
     pub const Out = struct { deleted: bool };
     pub const example: In = .{ .group = "user" };

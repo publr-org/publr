@@ -62,11 +62,13 @@ fn dispatch(
     const operation_id = ctx.allocate_operation_id();
     const parent = ctx.parent;
     const notify = ctx.notify;
+
     const within = ctx.within;
     var trail_state: @import("trail.zig").Trail = .{ .root = operation_id };
     const opened = SDK.trail_open(ctx, &trail_state);
 
     defer SDK.trail_close(ctx, opened);
+    ctx.publishes = ctx.publishes and parent != null;
     ctx.parent = operation_id;
     ctx.notify = &SDK.emit_notice;
     ctx.plugin_depth += 1;
@@ -166,6 +168,7 @@ fn run(
         return error.InvalidationFailed;
     }
 
+    try SDK.check_drafts(ctx);
     try SDK.log_activity(ctx, found.name, input, found.secret);
     try transaction.commit();
 

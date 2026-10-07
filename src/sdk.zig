@@ -106,11 +106,11 @@ pub fn SDK(comptime registry: Registry) type {
             const operation_id = ctx.allocate_operation_id();
             const parent = ctx.parent;
             const started = std.Io.Clock.awake.now(ctx.io);
-
             const notify = ctx.notify;
             var trail_state: trail.Trail = .{ .root = operation_id };
             const opened = trail_open(ctx, &trail_state);
 
+            ctx.publishes = ctx.publishes and parent != null;
             ctx.parent = operation_id;
             ctx.notify = &emit_notice;
             defer ctx.parent = parent;
@@ -267,6 +267,12 @@ pub fn SDK(comptime registry: Registry) type {
             try run_pre_hooks(ctx, Operation.name);
             try check_fence(ctx, owner);
 
+            if (comptime operation.destroys(Operation)) {
+                if (ctx.caller == .token) {
+                    return ctx.fail(operation.needs_person);
+                }
+            }
+
             return authorize_request(ctx, .{
                 .operation_name = Operation.name,
                 .kind = Operation.kind,
@@ -419,14 +425,14 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// A caller that is not an account (the system, a plugin, a machine token) may use
-        /// the admin when the core policy lets it list the content types.
+        /// the admin when it is the system; a device answers by its account's roles.
         fn may_any(ctx: *const Ctx) bool {
             std.debug.assert(ctx.caller != .user);
             std.debug.assert(ctx.now_ms >= 0);
 
             return switch (ctx.caller) {
-                .system, .token => true,
-                .anonymous, .user, .machine, .plugin => false,
+                .system => true,
+                .anonymous, .user, .token, .machine, .plugin => false,
             };
         }
 
@@ -472,6 +478,8 @@ pub fn SDK(comptime registry: Registry) type {
             if (ctx.dependency_failure) {
                 return error.InvalidationFailed;
             }
+
+            try check_drafts(ctx);
 
             if (registry.log != null and at_top(ctx)) {
                 const secret = comptime trail.secret_of(Operation);
@@ -862,7 +870,27 @@ pub fn SDK(comptime registry: Registry) type {
         pub fn emit_notice(ctx: *Ctx, notice: Event.Notice) void {
             std.debug.assert(notice.name.len > 0);
             std.debug.assert(notice.operation_id != 0);
+
+            const published = std.mem.endsWith(u8, notice.name, ".published");
+            const unpublished = std.mem.endsWith(u8, notice.name, ".unpublished");
+
+            if (published or unpublished) {
+                ctx.publishes = true;
+            }
+
             emit(ctx, .{ .notice = notice });
+        }
+
+        /// A write about to commit for a `drafts` device: refused when it changed what
+        /// visitors see, so the whole write rolls back and waits for a person.
+        pub fn check_drafts(ctx: *Ctx) Error!void {
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+
+            const scope = ctx.caller.scope() orelse return;
+
+            if (scope == .drafts and ctx.publishes) {
+                return ctx.fail(operation.drafts_only);
+            }
         }
 
         pub fn emit(ctx: *Ctx, event: Event) void {

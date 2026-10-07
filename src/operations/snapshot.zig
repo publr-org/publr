@@ -177,6 +177,7 @@ pub const Prune = struct {
     pub const name = "snapshot.prune";
     pub const description = "Keep only the newest snapshots of a kind for a record";
     pub const kind: sdk.operation.Kind = .write;
+    pub const destroys = true;
     pub const In = struct { id: []const u8, kind: []const u8, keep: u32 };
     pub const Out = struct { removed: u32 };
     pub const example: In = .{ .id = example_id, .kind = "revision", .keep = 20 };

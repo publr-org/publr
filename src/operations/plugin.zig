@@ -7,6 +7,7 @@ const lifecycle = @import("plugin/lifecycle.zig");
 const versions = @import("plugin/versions.zig");
 const dependents = @import("plugin/dependents.zig");
 const views = @import("plugin/detail.zig");
+const sources = @import("plugin/sources.zig");
 const registry = @import("../server/registry.zig");
 
 const Ctx = sdk.Ctx;
@@ -481,6 +482,7 @@ pub const Remove = struct {
         \\enabled plugin depends on it.
     ;
     pub const kind: sdk.operation.Kind = .write;
+    pub const destroys = true;
     pub const In = struct { name: []const u8 };
     pub const Out = struct { removed: []const u8 };
     pub const example: In = .{ .name = "greeter" };
@@ -502,4 +504,4 @@ pub const Remove = struct {
 pub const operations = [_]type{
     List,         Get,          Upload, Add,  Enable,           Disable, Update, Rollback,
     CancelUpdate, GrantRequest, Revoke, Deny, SetContentAccess, Remove,
-};
+} ++ sources.operations;

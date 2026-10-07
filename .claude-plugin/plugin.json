@@ -1,0 +1,8 @@
+{
+  "name": "build-on-publr",
+  "description": "How to build on Publr: where each need goes, what never to do, and when core may change",
+  "version": "0.2.0",
+  "homepage": "https://publr.org",
+  "repository": "https://github.com/publr-org/publr",
+  "license": "Apache-2.0"
+}

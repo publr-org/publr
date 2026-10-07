@@ -125,6 +125,7 @@ pub const Purge = struct {
         \\the records first.
     ;
     pub const kind: sdk.operation.Kind = .write;
+    pub const destroys = true;
     pub const In = struct { id: []const u8 };
     pub const Out = struct { purged: bool };
     pub const example: In = .{ .id = example_id };

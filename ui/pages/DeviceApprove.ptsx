@@ -1,0 +1,76 @@
+import { Publr } from "publr-jsx";
+import { FormPage } from "../layouts/FormPage.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { ChoiceCard } from "@publr/ui/ChoiceCard.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type DeviceApproveProps = {
+  /** What the device calls itself. */
+  name: string;
+  /** The code it showed its person, `WXYZ-BCDF`, so they can tell it is the same. */
+  code: string;
+  /** Who it would act for. */
+  email: string;
+  /** What it asked for, preselected; anything more is not offered. */
+  asked: string;
+};
+
+/** A device asking to act for the signed-in account: what it is, which code it showed, and
+ * what it may do, at most what it asked. Approve or deny, here and nowhere else. */
+export function DeviceApprove({ name, code, email, asked }: DeviceApproveProps) {
+  return (
+    <FormPage
+      title="Approve a device"
+      parents={[{ label: "Devices", href: "/admin/settings/devices" }]}
+      description={`${name} asks to act for ${email}. Approve it only if you just started it and it shows the code ${code}.`}
+      actions={
+        <div class="contents">
+          <Button type="submit" form="device-approve" name="decision" value="deny" hierarchy="secondary">
+            Deny
+          </Button>
+          <Button type="submit" form="device-approve" name="decision" value="approve">
+            Approve
+          </Button>
+        </div>
+      }
+      notice={
+        <Callout title="A device never deletes anything for good">
+          Deleting a content type, a user or a plugin, or purging content, is done here by a
+          person, whatever the device may do.
+        </Callout>
+      }
+    >
+      <form id="device-approve" method="post" action="/admin/settings/devices/approve" class="space-y-3">
+        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+        <input type="hidden" name="code" value={code} />
+        <Text as="p" variant="body-sm">What it may do</Text>
+        <div class="grid gap-3 sm:grid-cols-3">
+          <ChoiceCard
+            name="scope"
+            value="read"
+            checked={asked === "read"}
+            title="Read"
+            description="See what you can see. It changes nothing."
+          />
+          <ChoiceCard
+            name="scope"
+            value="drafts"
+            checked={asked === "drafts"}
+            disabled={asked === "read"}
+            title="Save drafts"
+            description="Change content as you could, but nothing goes live until you publish it."
+          />
+          <ChoiceCard
+            name="scope"
+            value="write"
+            checked={asked === "write"}
+            disabled={asked !== "write"}
+            title="Write and publish"
+            description="Everything you could do, including publishing."
+          />
+        </div>
+      </form>
+    </FormPage>
+  );
+}

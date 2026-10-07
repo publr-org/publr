@@ -23,6 +23,7 @@ const content_pages = @import("admin/content.zig");
 const media_pages = @import("admin/media.zig");
 const avatar_pages = @import("admin/avatar.zig");
 const revision_pages = @import("admin/revisions.zig");
+const device_pages = @import("admin/devices.zig");
 
 pub const Request = http.Request;
 pub const Response = http.Response;
@@ -139,7 +140,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 131 + client_files.names.len;
+pub const routes_count: u32 = 135 + client_files.names.len;
 const client_files = @import("../ui/client_files.zig");
 
 const styles_css = @embedFile("styles_css");
@@ -171,6 +172,10 @@ pub fn register(router: *http.Router) void {
     router.post("/admin/settings/users/:id/update", &user_pages.update);
     router.post("/admin/settings/users/:id/password-link", &user_pages.password_link);
     router.post("/admin/settings/users/:id/delete", &user_pages.delete);
+    router.get("/admin/settings/devices", &device_pages.list);
+    router.post("/admin/settings/devices/:id/revoke", &device_pages.revoke);
+    router.get("/admin/settings/devices/approve", &device_pages.approve_page);
+    router.post("/admin/settings/devices/approve", &device_pages.decide);
     @import("admin/plugins.zig").register(router);
     router.get("/admin/settings/:handle", &@import("admin/content/form.zig").settings_page);
     router.get("/admin/structure", &structure_pages.show);

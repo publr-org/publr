@@ -159,6 +159,12 @@ pub fn add_module(
         module.addAnonymousImport("agents_guide", .{
             .root_source_file = builder.path("docs/agents.md"),
         });
+        module.addAnonymousImport("skill", .{
+            .root_source_file = builder.path("skills/build-on-publr/SKILL.md"),
+        });
+        module.addAnonymousImport("skill_core_changes", .{
+            .root_source_file = builder.path("skills/build-on-publr/references/core-changes.md"),
+        });
     }
 
     add_compiler(builder, module, target, optimize, from.compiler);

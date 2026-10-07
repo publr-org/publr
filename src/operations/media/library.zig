@@ -30,6 +30,10 @@ pub const Item = struct {
     key: []const u8,
     private: bool,
     created_at: i64,
+    /// Taken in from the media folder; no one has looked at it yet.
+    unreviewed: bool = false,
+    /// Its file is gone from the media folder.
+    missing: bool = false,
 };
 
 pub const example_item: Item = .{
@@ -123,6 +127,8 @@ pub fn item_of(row: anytype, title: []const u8) Item {
         .key = row.storage_key,
         .private = row.private,
         .created_at = row.created_at,
+        .unreviewed = row.unreviewed,
+        .missing = row.missing,
     };
 }
 
@@ -151,7 +157,7 @@ pub fn written_of(ctx: *Ctx, id: []const u8) Error!Written {
 }
 
 /// Writes the fields given straight into the live file: the library's records are never
-/// drafts.
+/// drafts. Someone changing a file has looked at it: it leaves the unreviewed ones.
 pub fn save(ctx: *Ctx, id: []const u8, document: anytype) Error!void {
     std.debug.assert(id.len > 0);
     std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -165,6 +171,7 @@ pub fn save(ctx: *Ctx, id: []const u8, document: anytype) Error!void {
         .document = text,
         .status = "published",
     });
+    try store.media.reviewed(ctx.db, &.{id});
 }
 
 /// The file's row, or `NotFound`: one only the library writes, so a record of the type

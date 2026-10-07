@@ -57,6 +57,33 @@ fn parse(args: []const []const u8) ?[]const u8 {
     return null;
 }
 
+/// The `apps` operations with no server running: the project's own folder, and `load` only
+/// checks it, as `serve` would load it; nothing is swapped.
+pub const Checker = struct {
+    init: std.process.Init,
+    dir: []const u8 = "",
+
+    pub fn folder(checker: *Checker) @import("../sdk/context.zig").AppsFolder {
+        const named = apps_adapter.spec.public_dir;
+
+        checker.dir = apps_adapter.folder.resolve_dir(checker.init.io, named);
+
+        std.debug.assert(checker.dir.len > 0);
+
+        return .{ .context = checker, .dir = checker.dir, .reload = &check };
+    }
+
+    fn check(context: *anyopaque) ?[]const u8 {
+        const checker: *Checker = @ptrCast(@alignCast(context));
+
+        std.debug.assert(checker.dir.len > 0);
+
+        const answer = check_here(checker.init, checker.dir) catch |err| return @errorName(err);
+
+        return answer.@"error";
+    }
+};
+
 /// With no server: the apps read and compiled as `serve` would, nothing swapped.
 fn check_here(init: std.process.Init, dir: []const u8) !Answer {
     std.debug.assert(dir.len > 0);

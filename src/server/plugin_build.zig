@@ -383,3 +383,70 @@ fn unchanged(
     return try commands.run(&get, &installed.writer) == 0 and
         std.mem.indexOf(u8, installed.written(), hashed) != null;
 }
+
+/// What `serve` gives the `plugin build` operation: the build started as this binary's own
+/// `publr plugin build`, in a process of its own, its output to `<data>/builds/<name>.log`;
+/// it installs through this server when it is done, as the CLI's does.
+pub const Builder = struct {
+    io: std.Io,
+    db_path: []const u8,
+    executable: []const u8 = "",
+    logs_dir: []const u8 = "",
+
+    pub fn hook(builder: *Builder, arena: std.mem.Allocator) !sdk_context.PluginBuilder {
+        std.debug.assert(builder.db_path.len > 0);
+
+        builder.executable = try std.process.executablePathAlloc(builder.io, arena);
+        builder.logs_dir = try std.fs.path.join(arena, &.{
+            std.fs.path.dirname(builder.db_path) orelse ".",
+            "builds",
+        });
+
+        std.debug.assert(builder.executable.len > 0);
+
+        return .{
+            .context = builder,
+            .plugins_dir = "plugins",
+            .logs_dir = builder.logs_dir,
+            .start = &start,
+        };
+    }
+
+    fn start(context: *anyopaque, name: []const u8) ?[]const u8 {
+        const builder: *Builder = @ptrCast(@alignCast(context));
+
+        std.debug.assert(name.len > 0);
+        std.debug.assert(builder.executable.len > 0);
+
+        builder.spawn(name) catch |err| return @errorName(err);
+
+        return null;
+    }
+
+    fn spawn(builder: *Builder, name: []const u8) !void {
+        std.debug.assert(name.len <= 64);
+
+        var buffer: [512]u8 = undefined;
+        const log_path = try std.fmt.bufPrint(&buffer, "{s}/{s}.log", .{ builder.logs_dir, name });
+        const cwd = std.Io.Dir.cwd();
+
+        try cwd.createDirPath(builder.io, builder.logs_dir);
+
+        var log = try cwd.createFile(builder.io, log_path, .{});
+        defer log.close(builder.io);
+
+        // Not waited for: it outlives this request, and installs through the server itself.
+        _ = try std.process.spawn(builder.io, .{
+            .argv = &.{
+                builder.executable, "--db",  builder.db_path,
+                "plugin",           "build", "--name",
+                name,
+            },
+            .stdin = .ignore,
+            .stdout = .{ .file = log },
+            .stderr = .{ .file = log },
+        });
+    }
+};
+
+const sdk_context = @import("../sdk/context.zig");

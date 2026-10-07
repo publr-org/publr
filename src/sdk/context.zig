@@ -9,6 +9,27 @@ pub const request_id_len_max: u32 = 64;
 
 pub const Notify = *const fn (ctx: *Ctx, notice: Notice) void;
 
+/// The folder the running server reads the project's apps from, and a way to read them
+/// again: what the `apps` operations change.
+/// Builds a sandboxed plugin from its sources in the project, in a process of its own (the
+/// server answers on meanwhile), then installs it: what `plugin build` starts for an agent.
+pub const PluginBuilder = struct {
+    context: *anyopaque,
+    /// Where each plugin's sources are: `<plugins_dir>/<name>/`.
+    plugins_dir: []const u8,
+    /// Where each build writes what it did: `<logs_dir>/<name>.log`.
+    logs_dir: []const u8,
+    /// Starts the build: null once started, else why it could not be.
+    start: *const fn (context: *anyopaque, name: []const u8) ?[]const u8,
+};
+
+pub const AppsFolder = struct {
+    context: *anyopaque,
+    dir: []const u8,
+    /// The apps read again and swapped in: null when they load, else why they do not.
+    reload: *const fn (context: *anyopaque) ?[]const u8,
+};
+
 pub const Ctx = struct {
     dependencies: ?*@import("dependencies.zig").Collector = null,
     dependency_failure: bool = false,
@@ -56,6 +77,13 @@ pub const Ctx = struct {
     reads_only: bool = false,
     /// Where the media library keeps its files, where a server made it.
     files: ?@import("../lib/files.zig").Files = null,
+    /// The project's apps, where a server holds them.
+    apps: ?AppsFolder = null,
+    /// Building plugins from their sources, where a server carries the compiler.
+    builder: ?PluginBuilder = null,
+    /// A write so far changed what visitors see (a `published` or `unpublished` notice):
+    /// what a `drafts` device may not do.
+    publishes: bool = false,
 
     pub fn init(options: Options) Ctx {
         std.debug.assert(options.request_id.len <= request_id_len_max);

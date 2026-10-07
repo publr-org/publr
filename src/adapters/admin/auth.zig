@@ -6,6 +6,7 @@ const sign_in_operations = @import("../../operations/sign_in.zig");
 const sign_on_operations = @import("../../operations/sign_on.zig");
 const identity_operations = @import("../../operations/identity.zig");
 const identity_module = @import("../rest/identity.zig");
+const rest_auth = @import("../rest/auth.zig");
 const dashboard = @import("dashboard.zig");
 
 const Request = admin.Request;
@@ -119,7 +120,7 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
             return response.redirect(.see_other, "/admin/content");
         }
 
-        return render_login(response, ctx.arena, session.project.base, no_access);
+        return render_login(&session, no_access);
     }
 
     if (try sign_in_elsewhere(&session)) |location| {
@@ -143,7 +144,7 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
     else
         null;
 
-    try render_login(response, ctx.arena, session.project.base, notice);
+    try render_login(&session, notice);
 }
 
 /// Where a compiled-in plugin sends someone who must sign in, instead of the form: the
@@ -206,12 +207,11 @@ pub fn return_of(session: *const Session) Error![]const u8 {
 /// visitor, whose own sign-in is the app's.
 pub const no_access = "This account has no access to the admin.";
 
-fn render_login(
-    response: *Response,
-    arena: std.mem.Allocator,
-    base: []const u8,
-    problem: ?[]const u8,
-) Error!void {
+fn render_login(session: *const Session, problem: ?[]const u8) Error!void {
+    const response = session.response;
+    const arena = session.arena;
+    const base = session.project.base;
+
     std.debug.assert(response.body.len == 0);
     std.debug.assert(problem == null or problem.?.len > 0);
 
@@ -230,10 +230,32 @@ fn render_login(
 
     const request = try admin.chrome.signed_out_at(arena, base);
 
+    const action = if (coming_back(session)) |page|
+        try std.fmt.allocPrint(arena, "/admin/login?return={s}", .{
+            try admin.query_value(arena, page),
+        })
+    else
+        "/admin/login";
+
     try admin.render.page(response, arena, request, .ok, views.Login, .{
         .notice = problem,
         .providers = buttons,
+        .action = action,
     });
+}
+
+/// The page on this site the login was given to come back to (`return`), if any. The form
+/// posts it back in its own address, so a failed attempt keeps it too.
+fn coming_back(session: *const Session) ?[]const u8 {
+    std.debug.assert(session.request.path().len > 0);
+
+    const wanted = admin.query_param(session, "return") orelse return null;
+
+    if (!rest_auth.local_path(wanted) or !std.mem.startsWith(u8, wanted, "/admin")) {
+        return null;
+    }
+
+    return wanted;
 }
 
 pub fn login(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -243,18 +265,18 @@ pub fn login(request: *Request, response: *Response, ctx: *Context) Error!void {
     var session = Session.open(request, response, ctx);
     const arena = ctx.arena;
     const form = Form.parse(arena, request.body) orelse {
-        return render_login(response, arena, session.project.base, "bad form");
+        return render_login(&session, "bad form");
     };
 
     if (!session.guard(&form)) {
-        return render_login(response, arena, session.project.base, "cross-origin request refused");
+        return render_login(&session, "cross-origin request refused");
     }
 
     const email = form.text("email") orelse {
-        return render_login(response, arena, session.project.base, "email is required");
+        return render_login(&session, "email is required");
     };
     const password = form.get("password") orelse {
-        return render_login(response, arena, session.project.base, "password is required");
+        return render_login(&session, "password is required");
     };
 
     try start_session(&session, email, password, "/admin/login");
@@ -281,7 +303,7 @@ fn start_session(
             @errorName(err);
 
         return if (std.mem.eql(u8, back, "/admin/login"))
-            render_login(session.response, session.arena, session.project.base, problem)
+            render_login(session, problem)
         else
             render_setup(session.response, session.arena, session.project.base, problem);
     };
@@ -296,7 +318,7 @@ fn start_session(
             .token = out.token,
         }) catch |err| return admin.fail(session, err, back);
 
-        return render_login(session.response, session.arena, session.project.base, no_access);
+        return render_login(session, no_access);
     }
 
     try identity_module.set_session_cookie(
@@ -308,7 +330,7 @@ fn start_session(
         out.expires_at,
         anonymous.now_ms,
     );
-    try session.response.redirect(.see_other, "/admin/content");
+    try session.response.redirect(.see_other, coming_back(session) orelse "/admin/content");
 }
 
 pub fn logout(request: *Request, response: *Response, ctx: *Context) Error!void {

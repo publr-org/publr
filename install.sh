@@ -1,7 +1,18 @@
 #!/bin/sh
-# Publr installer: detects your OS and CPU, downloads the matching binary, verifies it, puts it on PATH.
+# Publr installer: a folder holding the publr binary for your OS and CPU, and your sites, each
+# a folder beside it (`./publr new <name>`). Nothing goes on your PATH.
 #   curl -fsSL https://publr.dev/install.sh | sh
-# Optional: PUBLR_VERSION=v0.2.0 (default: latest), PUBLR_INSTALL_DIR=/some/bin (default: ~/.local/bin)
+#
+#   sites/
+#     publr          the binary every site here runs
+#     blog/          publr.zon, apps/, plugins/, data/
+#
+# Optional:
+#   PUBLR_HOME=<folder>       where, without asking (empty asks; "." is here)
+#   PUBLR_FIRST_SITE=<name>   the first site, without asking ("-" for none)
+#   PUBLR_VERSION=v0.2.0      a release (default: latest)
+#   PUBLR_BINARY=<file>       a publr you built, copied instead of downloaded
+# Run again in the same folder to update the binary; the sites stay as they are.
 #
 # Trust: this script is only as trustworthy as where you got it. The README publishes its SHA-256 and a
 # tag-pinned GitHub URL; verify before running if that matters to you. The binary's own checksum is
@@ -10,54 +21,87 @@ set -eu
 
 repo="https://github.com/publr-org/publr/releases"
 version="${PUBLR_VERSION:-latest}"
-dir="${PUBLR_INSTALL_DIR:-$HOME/.local/bin}"
 
-case "$(uname -s)" in
-    Darwin) os="macos" ;;
-    Linux)  os="linux" ;;
-    *) echo "publr: unsupported OS '$(uname -s)'; download a build from $repo" >&2; exit 1 ;;
-esac
+# Asked on the terminal, so it works when this script itself comes through a pipe.
+ask() {
+    if [ -r /dev/tty ]; then
+        printf '%s' "$1" > /dev/tty
+        read -r answer < /dev/tty || answer=""
+    else
+        answer=""
+    fi
+    printf '%s' "$answer"
+}
 
-case "$(uname -m)" in
-    arm64|aarch64) arch="aarch64" ;;
-    x86_64|amd64)  arch="x86_64" ;;
-    *) echo "publr: unsupported CPU '$(uname -m)'; download a build from $repo" >&2; exit 1 ;;
-esac
+home="${PUBLR_HOME:-}"
+if [ -z "$home" ]; then
+    home="$(ask "Folder for Publr and your sites (empty: here): ")"
+fi
+[ -z "$home" ] && home="."
+mkdir -p "$home"
+cd "$home"
 
-file="publr-$os-$arch"
-if [ "$version" = "latest" ]; then
-    url="$repo/latest/download/$file"
+download() {
+    case "$(uname -s)" in
+        Darwin) os="macos" ;;
+        Linux)  os="linux" ;;
+        *) echo "publr: unsupported OS '$(uname -s)'; download a build from $repo" >&2; exit 1 ;;
+    esac
+
+    case "$(uname -m)" in
+        arm64|aarch64) arch="aarch64" ;;
+        x86_64|amd64)  arch="x86_64" ;;
+        *) echo "publr: unsupported CPU '$(uname -m)'; download a build from $repo" >&2; exit 1 ;;
+    esac
+
+    file="publr-$os-$arch"
+    if [ "$version" = "latest" ]; then
+        url="$repo/latest/download/$file"
+    else
+        url="$repo/download/$version/$file"
+    fi
+
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+
+    echo "publr: downloading $url"
+    if ! curl -fsSL "$url" -o "$tmp/publr" || ! curl -fsSL "$url.sha256" -o "$tmp/publr.sha256"; then
+        echo "publr: no $file at $repo ($version); build one (zig build) and run this with" >&2
+        echo "       PUBLR_BINARY=<path to zig-out/bin/publr>" >&2
+        exit 1
+    fi
+
+    expected="$(cut -d' ' -f1 < "$tmp/publr.sha256")"
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$tmp/publr" | cut -d' ' -f1)"
+    else
+        actual="$(shasum -a 256 "$tmp/publr" | cut -d' ' -f1)"
+    fi
+    if [ "$expected" != "$actual" ]; then
+        echo "publr: checksum mismatch, refusing to install" >&2
+        exit 1
+    fi
+
+    install -m 755 "$tmp/publr" ./publr
+}
+
+if [ -n "${PUBLR_BINARY:-}" ]; then
+    install -m 755 "$PUBLR_BINARY" ./publr
 else
-    url="$repo/download/$version/$file"
+    download
 fi
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+echo "publr: $(./publr --version) in $(pwd)/publr"
 
-echo "publr: downloading $url"
-curl -fsSL "$url" -o "$tmp/publr"
-curl -fsSL "$url.sha256" -o "$tmp/publr.sha256"
-
-expected="$(cut -d' ' -f1 < "$tmp/publr.sha256")"
-if command -v sha256sum >/dev/null 2>&1; then
-    actual="$(sha256sum "$tmp/publr" | cut -d' ' -f1)"
+site="${PUBLR_FIRST_SITE:-}"
+if [ -z "$site" ]; then
+    site="$(ask "Name of your first site (empty: none yet): ")"
+fi
+if [ -n "$site" ] && [ "$site" != "-" ] && [ ! -e "$site" ]; then
+    ./publr new "$site"
 else
-    actual="$(shasum -a 256 "$tmp/publr" | cut -d' ' -f1)"
+    echo
+    echo "Next:"
+    echo "  cd $(pwd)"
+    echo "  ./publr new <name>        # a site: a folder beside the binary"
 fi
-if [ "$expected" != "$actual" ]; then
-    echo "publr: checksum mismatch, refusing to install" >&2
-    exit 1
-fi
-
-mkdir -p "$dir"
-install -m 755 "$tmp/publr" "$dir/publr"
-
-echo "publr: installed $("$dir/publr" --version) to $dir/publr"
-case ":$PATH:" in
-    *":$dir:"*) ;;
-    *) echo "publr: add $dir to your PATH, for example: export PATH=\"$dir:\$PATH\"" ;;
-esac
-echo
-echo "Next:"
-echo "  publr serve                                             # start on http://127.0.0.1:8080"
-echo "  publr init --email you@example.com --display_name You   # create the first admin"

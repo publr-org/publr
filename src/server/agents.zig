@@ -4,15 +4,27 @@
 const std = @import("std");
 const toolchain = @import("toolchain.zig");
 const permission = @import("../model/permission.zig");
+const operator = @import("operator.zig");
 
-const guide = @embedFile("agents_guide");
+pub const guide = @embedFile("agents_guide");
 
-pub fn run(init: std.process.Init, out: *std.Io.Writer) !u8 {
+pub fn run(init: std.process.Init, out: *std.Io.Writer, db_path: []const u8) !u8 {
     std.debug.assert(guide.len > 0);
     std.debug.assert(permission.core.len > 0);
 
     try out.writeAll(guide);
     try out.writeAll("\n## On this machine\n\n");
+
+    // What `serve` left beside the database, while it answers.
+    if (try operator.find(init.io, init.arena.allocator(), db_path)) |session| {
+        const url = if (session.url.len > 0) session.url else "http://127.0.0.1";
+
+        try out.print("This project's server runs at {s} (port {d}); every command run " ++
+            "from this folder goes to it.\n\n", .{ url, session.port });
+    } else {
+        try out.writeAll("No server runs for this project: start it with `publr serve`, " ++
+            "and it prints its address.\n\n");
+    }
 
     if (toolchain.unpack(init)) |tools| {
         try out.print("The SDK's source: `{s}/src`.\n", .{tools.sdk});

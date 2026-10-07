@@ -100,6 +100,18 @@ redirects, and the paths its cookies are kept for.
 | `POST /_publr/apps/load` | from `publr apps load`, with the same key: the apps read from their folder again and swapped in; answers `{ "loaded" }` or `{ "error" }` |
 | `POST /_publr/cli` | body `{ "args", "password" }`: a command the CLI sends the server running for its database, run as the CLI would run it; answers `{ "code", "out", "err" }`. Only with the key this run of `serve` wrote beside the database (`X-Publr-Operator`), else `403`; see [CLI](cli.md#while-a-server-runs) |
 
+## A device elsewhere
+
+| Route | What |
+|---|---|
+| `POST /api/cli` | body `{ "args" }`: a command sent by `publr --site <address>`, run here as the device whose token comes in `Authorization: Bearer`; answers `{ "code", "out", "err" }`. `--as` is refused; without a device's token, `401` |
+
+Any route takes a device's token in `Authorization: Bearer <token>` instead of the
+session cookie, and then needs no CSRF token. The token comes from signing in by link:
+`POST /api/device/start`, the person approves at the link it answers,
+`POST /api/device/poll` until `approved`, then `POST /api/device/claim` once
+([Authentication: Devices](auth.md#devices)).
+
 ## Authentication
 
 | Route | What |

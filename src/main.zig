@@ -56,6 +56,14 @@ fn run(init: std.process.Init) !u8 {
         rest = rest[2..];
     }
 
+    // Everything goes to the Publr named, its help and its plugins' commands too; signing in
+    // and out of it are this machine's.
+    if (try site_of(init, &rest)) |address| {
+        if (rest.len > 0 and !is_account(rest[0])) {
+            return try publr.remote.forward(init, address, rest, out);
+        }
+    }
+
     if (try tool(init, out, db_path, rest)) |code| {
         return code;
     }
@@ -79,6 +87,46 @@ fn run(init: std.process.Init) !u8 {
     }
 
     return code;
+}
+
+fn has_flag(args: []const []const u8, flag: []const u8) bool {
+    std.debug.assert(flag.len > 0);
+    std.debug.assert(args.len <= args_max);
+
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, flag)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// `login`, `logout` or `whoami`: about this machine's devices, never sent elsewhere.
+fn is_account(command: []const u8) bool {
+    std.debug.assert(command.len <= cli.value_len_max);
+
+    return std.mem.eql(u8, command, "login") or std.mem.eql(u8, command, "logout") or
+        std.mem.eql(u8, command, "whoami");
+}
+
+/// The Publr elsewhere a command goes to: `--site <address>` (taken off the words), else
+/// `PUBLR_SITE`; null to run it here.
+fn site_of(init: std.process.Init, rest: *[]const []const u8) !?[]const u8 {
+    const named = rest.len >= 2 and std.mem.eql(u8, rest.*[0], "--site");
+    const site = if (named) rest.*[1] else init.environ_map.get("PUBLR_SITE") orelse return null;
+
+    if (named) {
+        rest.* = rest.*[2..];
+    }
+
+    if (site.len == 0 or builtin.os.tag == .wasi) {
+        return error.InvalidArguments;
+    }
+
+    std.debug.assert(site.len > 0);
+
+    return site;
 }
 
 /// The command as the plugins' pre-command hooks leave it.
@@ -179,8 +227,8 @@ fn collect_args(init: std.process.Init, storage: *[args_max][]const u8) ![]const
     return storage[0..count];
 }
 
-/// The commands that are not operations: `serve`, `build`, `zig` and `check-apps`. Null for
-/// anything else, which the CLI answers.
+/// The commands that are not operations: `serve`, `build`, `zig`, `login`, `logout`, `whoami`,
+/// `skill`, `new` and `check-apps`. Null for anything else, which the CLI answers.
 fn tool(
     init: std.process.Init,
     out: *std.Io.Writer,
@@ -197,15 +245,23 @@ fn tool(
     const build = std.mem.eql(u8, rest[0], "build");
     const zig = std.mem.eql(u8, rest[0], "zig");
     const agents = rest.len == 1 and std.mem.eql(u8, rest[0], "agents");
+    const skill = std.mem.eql(u8, rest[0], "skill");
+    const new_site = std.mem.eql(u8, rest[0], "new");
+    // As the local operator; `apps.load` is the operation a device or `--as` reaches.
     const apps_load = rest.len > 1 and std.mem.eql(u8, rest[0], "apps") and
-        std.mem.eql(u8, rest[1], "load");
+        std.mem.eql(u8, rest[1], "load") and !has_flag(rest, "--help");
+    // With `--files`, the sources come in the command: the operation, not the build here.
     const plugin_build = rest.len > 1 and std.mem.eql(u8, rest[0], "plugin") and
-        std.mem.eql(u8, rest[1], "build");
+        std.mem.eql(u8, rest[1], "build") and !has_flag(rest, "--files") and
+        !has_flag(rest, "--help");
+    const login = is_account(rest[0]);
 
     // In the browser there is no server, no build and no compiler: the modules are `void`
     // there.
     if (builtin.os.tag == .wasi) {
-        if (serve or build or zig or plugin_build or agents or apps_load) {
+        if (serve or build or zig or plugin_build or agents or apps_load or login or skill or
+            new_site)
+        {
             return error.Unsupported;
         }
     } else {
@@ -214,7 +270,19 @@ fn tool(
         }
 
         if (agents) {
-            return try publr.agents.run(init, out);
+            return try publr.agents.run(init, out, db_path);
+        }
+
+        if (login) {
+            return try publr.login.run(init, out, rest);
+        }
+
+        if (skill) {
+            return try publr.skill.run(init, out, rest[1..]);
+        }
+
+        if (new_site) {
+            return try publr.new_site.run(init, out, rest[1..]);
         }
 
         if (apps_load) {

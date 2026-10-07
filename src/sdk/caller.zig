@@ -1,6 +1,7 @@
 const std = @import("std");
 const account = @import("../model/account.zig");
 const role = @import("../model/role.zig");
+const device = @import("../model/device.zig");
 
 pub const id_len_max: u32 = account.id_len_max;
 pub const capabilities_max: u32 = 64;
@@ -15,7 +16,15 @@ pub const Caller = union(enum) {
 
     /// A signed-in account and the names of the roles it holds.
     pub const User = struct { id: []const u8, roles: []const []const u8 = &.{role.admin} };
-    pub const Token = struct { id: []const u8, user_id: []const u8 };
+    /// A device acting for an account: the account's roles, narrowed by the device's scope.
+    pub const Token = struct {
+        id: []const u8,
+        user_id: []const u8,
+        roles: []const []const u8 = &.{},
+        scope: device.Scope = .read,
+        /// What the person approved it as.
+        name: []const u8 = "",
+    };
     pub const Machine = struct { id: []const u8, scopes: []const []const u8 };
     pub const Plugin = struct {
         name: []const u8,
@@ -71,14 +80,16 @@ pub const Caller = union(enum) {
         };
     }
 
-    /// The roles a signed-in account holds; null for any other caller.
+    /// The roles a signed-in account holds, or the account a device acts for; null for any
+    /// other caller.
     pub fn roles(caller: Caller) ?[]const []const u8 {
         const found: ?[]const []const u8 = switch (caller) {
             .user => |user| user.roles,
-            .anonymous, .token, .machine, .system, .plugin => null,
+            .token => |token| token.roles,
+            .anonymous, .machine, .system, .plugin => null,
         };
 
-        std.debug.assert(found == null or caller == .user);
+        std.debug.assert(found == null or caller == .user or caller == .token);
         std.debug.assert(found == null or found.?.len <= role.user_roles_max);
 
         return found;
@@ -98,6 +109,19 @@ pub const Caller = union(enum) {
         }
 
         return false;
+    }
+
+    /// The device's scope when a device makes the call; null for anyone else.
+    pub fn scope(caller: Caller) ?device.Scope {
+        const found: ?device.Scope = switch (caller) {
+            .token => |token| token.scope,
+            .anonymous, .user, .machine, .system, .plugin => null,
+        };
+
+        std.debug.assert(found == null or caller == .token);
+        std.debug.assert(found != null or caller != .token);
+
+        return found;
     }
 
     pub fn via(caller: Caller) ?[]const u8 {
@@ -158,8 +182,10 @@ test "authentication and user id per caller kind" {
     try std.testing.expectEqualStrings("admin", user.roles().?[0]);
     try std.testing.expect(user.holds("admin"));
     try std.testing.expect(!user.holds("editor"));
-    try std.testing.expect(token.roles() == null);
+    try std.testing.expectEqual(@as(usize, 0), token.roles().?.len);
     try std.testing.expect(!token.holds("admin"));
+    try std.testing.expectEqual(device.Scope.read, token.scope().?);
+    try std.testing.expect(user.scope() == null);
 }
 
 test "capabilities: system has all, plugins and machine tokens only listed ones, users none" {

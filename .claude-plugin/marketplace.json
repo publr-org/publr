@@ -1,0 +1,11 @@
+{
+  "name": "publr",
+  "owner": { "name": "Publr", "url": "https://publr.org" },
+  "plugins": [
+    {
+      "name": "build-on-publr",
+      "source": "./",
+      "description": "How to build on Publr: where each need goes, what never to do, and when core may change"
+    }
+  ]
+}

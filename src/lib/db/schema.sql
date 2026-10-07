@@ -41,6 +41,32 @@ CREATE TABLE IF NOT EXISTS sign_on_tokens (
 
 CREATE INDEX IF NOT EXISTS sign_on_tokens_expires_at ON sign_on_tokens(expires_at);
 
+CREATE TABLE IF NOT EXISTS devices (
+    id           TEXT PRIMARY KEY,
+    secret_hash  BLOB NOT NULL,
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    scope        TEXT NOT NULL,
+    created_at   INTEGER NOT NULL,
+    last_used_at INTEGER NOT NULL,
+    revoked_at   INTEGER
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS devices_user_id ON devices(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS device_requests (
+    code_hash  BLOB PRIMARY KEY,
+    user_code  TEXT NOT NULL UNIQUE,
+    name       TEXT NOT NULL,
+    scope      TEXT NOT NULL,
+    state      TEXT NOT NULL,
+    user_id    TEXT REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS device_requests_expires_at ON device_requests(expires_at);
+
 CREATE TABLE IF NOT EXISTS identities (
     provider     TEXT NOT NULL,
     provider_id  TEXT NOT NULL,
@@ -219,7 +245,9 @@ CREATE TABLE IF NOT EXISTS media (
     storage_key TEXT NOT NULL UNIQUE,
     hash        TEXT NOT NULL,
     private     INTEGER NOT NULL,
-    created_at  INTEGER NOT NULL
+    created_at  INTEGER NOT NULL,
+    unreviewed  INTEGER NOT NULL DEFAULT 0,
+    missing     INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS media_created ON media(created_at, record);

@@ -100,7 +100,8 @@ restrictive grant to make sure it does.
 ### Callers
 
 The pipeline always knows who is calling: an anonymous visitor, a user (with the
-roles it holds), a user token, a machine token with its own policy,
+roles it holds), a device acting for a user (its roles, narrowed by the scope its person
+approved: [Authentication: Devices](auth.md#devices)), a machine token with its own policy,
 the local operator (`system`), or a plugin with a set of permission scopes.
 Policies use this to decide the grant. The CLI runs as anonymous unless told
 otherwise (`--as <user id or email>`, `--as-admin`).
@@ -111,6 +112,12 @@ comes from inside that operation, and the policy sees its name. So a plugin can
 let its own operations write records on the caller's behalf while refusing the
 same caller writing them directly. A grant limited to the caller's own records
 is asked of the database as such, so a list's limit and offset count only those.
+
+An operation that destroys what cannot be had back declares `destroys = true` (deleting a
+content type, purging a record): a device is refused it whatever it may otherwise do,
+and a person does it in the admin. A write by a device allowed only drafts is refused
+whole when it publishes or unpublishes anything (a `*.published` or `*.unpublished`
+notice).
 
 An operation may declare `open` (anyone may call it, like signing in) and
 `allow_frontmatter_calls` (a dynamic page may run it when it is opened,

@@ -72,6 +72,8 @@ export type MediaItem = {
   icon: "video" | "audio" | "file";
   /** `JPG · 2400 × 1600 · 1.2 MB`. */
   facts: string;
+  /** Its bytes are gone from the media folder. */
+  missing: boolean;
   selected: boolean;
 };
 export type MediaFolder = {
@@ -125,8 +127,19 @@ export const state = Publr.reactive({
   total: 0,
   all: 0,
   unsorted: 0,
+  unreviewed: 0,
+  /** Unreviewed is listed while it holds files or is the folder looked at. */
+  unreviewed_shown: false,
   all_href: "/admin/media",
   unsorted_href: "/admin/media?folder=unsorted",
+  unreviewed_href: "/admin/media?folder=unreviewed",
+  /** The files live in a folder on a server, which people can put files into by hand. */
+  on_server: false,
+  server_busy: false,
+  /** What the last check of that folder found, or the hint before one. */
+  server_note: "Pick up files put into the media folder outside the admin.",
+  server_new: 0,
+  server_skipped: [] as string[],
   folders: [] as MediaFolder[],
   tag_list: [] as MediaTag[],
   periods: [] as MediaPeriod[],
@@ -242,6 +255,8 @@ const selection = (): string[] => state.items.filter((item) => item.selected).ma
 const restamp = () => {
   state.all_href = href_of({ folder: "" });
   state.unsorted_href = href_of({ folder: "unsorted" });
+  state.unreviewed_href = href_of({ folder: "unreviewed" });
+  state.unreviewed_shown = state.unreviewed > 0 || state.folder === "unreviewed";
   state.folders = state.folders.map((folder) => ({
     ...folder,
     href: href_of({ folder: folder.id }),
@@ -275,10 +290,11 @@ const filter_from = (address: string) => {
 
 type Listed = {
   items: Array<{ id: string; title: string; filename: string; family: string; size: number;
-    width: number | null; height: number | null; key: string }>;
+    width: number | null; height: number | null; key: string; missing: boolean }>;
   total: number;
   all: number;
   unsorted: number;
+  unreviewed: number;
   folders: Array<{ id: string; name: string; parent: string | null; depth: number; count: number }>;
   tags: Array<{ id: string; name: string; count: number }>;
   periods: MediaPeriod[];
@@ -293,18 +309,21 @@ const shaped = (listed: Listed) => {
       title: item.title,
       href: `/admin/media/${item.id}`,
       thumb: item.family === "image" ? `/media/${item.key}?w=480&h=480&fit=cover` : "",
-      image: item.family === "image",
-      video: item.family === "video",
+      image: item.family === "image" && !item.missing,
+      video: item.family === "video" && !item.missing,
       src: `/media/${item.key}`,
       kind: extension,
       icon: item.family === "video" ? "video" : item.family === "audio" ? "audio" : "file",
       facts: `${extension}${dimensions} · ${size_text(item.size)}`,
+      missing: item.missing,
       selected: false,
     };
   });
   state.total = listed.total;
   state.all = listed.all;
   state.unsorted = listed.unsorted;
+  state.unreviewed = listed.unreviewed;
+  state.unreviewed_shown = listed.unreviewed > 0 || state.folder === "unreviewed";
   state.folders = listed.folders.map((folder) => ({
     id: folder.id,
     name: folder.name,
@@ -509,6 +528,36 @@ export const folder_deleted = async (event: Event) => {
   await done(() => write("media/folder_delete", { folder: id }), "Folder removed");
 };
 
+type Synced = { new: number; added: number; missing: number; skipped_count: number;
+  skipped: Array<{ path: string; reason: string }>; more: boolean };
+
+const sync_summary = (out: Synced, check: boolean) => {
+  const parts = [check ? `${out.new} new` : `${out.added} added`];
+  if (out.missing > 0) parts.push(`${out.missing} missing`);
+  if (out.skipped_count > 0) parts.push(`${out.skipped_count} skipped`);
+  if (check && out.new === 0 && out.missing === 0 && out.skipped_count === 0) return "Up to date.";
+  return `${parts.join(" · ")}${out.more ? ", and more to look at" : ""}.`;
+};
+
+/** Looks at the media folder on the server, or takes in what is new there. */
+const synced = async (check: boolean) => {
+  state.server_busy = true;
+  try {
+    const out = (await write("media/sync", { check })) as Synced;
+    state.server_note = sync_summary(out, check);
+    state.server_new = check ? out.new : 0;
+    state.server_skipped = out.skipped.slice(0, 5).map((skip) => `${skip.path}: ${skip.reason}`);
+  } catch (error) {
+    state.server_note = `Not done: ${(error as Error).message}`;
+  } finally {
+    state.server_busy = false;
+  }
+  if (!check) await load();
+};
+
+export const server_checked = () => synced(true);
+export const server_taken = () => synced(false);
+
 export const tag_made = (event: Event) => {
   event.preventDefault();
   const form = event.currentTarget as HTMLFormElement;
@@ -654,13 +703,17 @@ export type MediaLibraryProps = {
     kind: string;
     icon: "video" | "audio" | "file";
     facts: string;
+    missing: boolean;
     selected: boolean;
   }>;
   total: number;
   all: number;
   unsorted: number;
+  unreviewed?: number;
   all_href: string;
   unsorted_href: string;
+  unreviewed_href?: string;
+  on_server?: boolean;
   folders: Array<{
     id: string;
     name: string;
@@ -723,8 +776,11 @@ export function MediaLibrary({
   total,
   all,
   unsorted,
+  unreviewed = 0,
   all_href,
   unsorted_href,
+  unreviewed_href = "/admin/media?folder=unreviewed",
+  on_server = false,
   folders,
   tag_list,
   periods,
@@ -760,6 +816,10 @@ export function MediaLibrary({
   state.unsorted = unsorted;
   state.all_href = all_href;
   state.unsorted_href = unsorted_href;
+  state.unreviewed = unreviewed;
+  state.unreviewed_shown = unreviewed > 0 || folder === "unreviewed";
+  state.unreviewed_href = unreviewed_href;
+  state.on_server = on_server;
   state.folders = folders;
   state.tag_list = tag_list;
   state.periods = periods;
@@ -899,6 +959,15 @@ export function MediaLibrary({
                 </FolderNavItemLink>
                 <FolderNavItemCount persistent>{`${state.unsorted}`}</FolderNavItemCount>
               </FolderNavItem>
+              {state.unreviewed_shown && (
+                <FolderNavItem>
+                  <FolderNavItemLink href={state.unreviewed_href} current={state.folder === "unreviewed"} onClick={follow}>
+                    <Icon name="search" size="sm" />
+                    Unreviewed
+                  </FolderNavItemLink>
+                  <FolderNavItemCount persistent>{`${state.unreviewed}`}</FolderNavItemCount>
+                </FolderNavItem>
+              )}
               {state.folders.map((entry) => (
                 <FolderNavItem level={entry.level} key={entry.id}>
                   <FolderNavItemLink href={entry.href} current={entry.current} onClick={follow}>
@@ -1023,6 +1092,26 @@ export function MediaLibrary({
               </NativeSelect>
             </div>
           </div>
+          {state.on_server && (
+            <div class="flex flex-col gap-2 px-2" data-part="media-server">
+              <Text as="span" variant="eyebrow-xs" tone="muted">On the server</Text>
+              <Text as="p" variant="body-sm" tone="muted">{state.server_note}</Text>
+              {state.server_skipped.map((line) => (
+                <Text as="p" variant="body-xs" tone="muted" classes="break-all">{line}</Text>
+              ))}
+              <div class="flex gap-2">
+                <Button type="button" hierarchy="secondary" size="sm" disabled={state.server_busy} onClick={server_checked}>
+                  <Icon name="sync" size="sm" />
+                  <span>Check</span>
+                </Button>
+                {state.server_new > 0 && (
+                  <Button type="button" size="sm" disabled={state.server_busy} onClick={server_taken}>
+                    {`Add ${state.server_new}`}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </ListDetailList>
         <ListDetailDetail>
           {children ? (
@@ -1090,6 +1179,11 @@ export function MediaLibrary({
                         {item.video && (
                           <AssetCardBadge label={item.kind}>
                             <Icon name="video" size="sm" />
+                          </AssetCardBadge>
+                        )}
+                        {item.missing && (
+                          <AssetCardBadge label="Missing">
+                            <Icon name="alert-triangle" size="sm" />
                           </AssetCardBadge>
                         )}
                         <AssetCardCaption always={state.details}>

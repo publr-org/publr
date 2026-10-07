@@ -266,6 +266,7 @@ pub const Delete = struct {
         \\that no longer exist until the records are saved again.
     ;
     pub const kind: sdk.operation.Kind = .write;
+    pub const destroys = true;
     pub const In = struct { taxonomy: []const u8, force: bool = false };
     pub const Out = struct { deleted: bool, terms_removed: u32 };
     pub const example: In = .{ .taxonomy = "tags" };

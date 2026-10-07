@@ -6,7 +6,11 @@ you. Read it whole before changing anything.
 
 ## The project
 
-A project is the folder `publr` runs in:
+Every `publr` in this guide means this site's own binary, run from the site's folder:
+the one its `publr.zon` names in `.binary`, else the first of `./publr`, `../publr`,
+`./zig-out/bin/publr`, `../zig-out/bin/publr` that exists (sites beside a shared binary,
+or a Publr checkout with its own build). Never a `publr` from the PATH. A project (a
+site) is the folder `publr` runs in:
 
 ```
 data/publr.db                       the database: content, users, installed plugins
@@ -333,8 +337,35 @@ When something waits, finish by telling them what it is, why the plugin needs it
 they approve it in the admin under Settings > Plugins. A call the plugin was not granted
 answers `Denied`; handle it, so the plugin still works without it.
 
+## Working on a Publr elsewhere
+
+When the project runs on another machine (a server, Publr Cloud), sign in to it as a
+device, then send it commands:
+
+```sh
+publr login https://example.com          # prints a link; your person approves you there
+publr --site https://example.com record list --type post
+publr --site https://example.com --help  # its own commands, plugins included
+publr whoami                             # whose device this is, and what it may do
+```
+
+The person chooses what you may do: `read`, `drafts` (you write, they publish) or
+`write`. Never ask them for a password or a token, and never paste a token anywhere: the
+link is the only way in. Whatever you may do, you never delete anything for good: deleting
+a content type, a user or a plugin, purging a record, is refused with `NeedsPerson`; say
+what should go and let them do it in the admin. Under `drafts`, a write that would publish
+is refused with `DraftsOnly`: save drafts and tell them what waits to be published.
+
+With no files of your own to edit, the project's apps and plugins are reached through
+operations: `apps files`, `apps read`, `apps write --path <app>/<path> --content <text>`,
+`apps remove`, then `apps load`, which answers why the apps do not load when they do not;
+and `plugin build --name <name> --files '[{"path":"main.zig","content":"..."}]'`, which
+builds and installs on the server, with `plugin build_log --name <name>` to follow it.
+
 ## Where to read more
 
+- `publr skill`: the short version of how to decide where each need goes, and when Publr
+  itself may change (only as a generic pull request).
 - `publr --help`, and `--help` on any namespace or command.
 - The SDK's source, as this binary builds plugins against it: `publr agents` ends with
   where it is on this machine. Start at `publr.zig` and `sdk/plugin/`.

@@ -45,7 +45,7 @@ plugins, not the core.
 
 Browser requests that change something must come from the same origin and
 carry a per-session CSRF token; requests without a browser cookie (the CLI,
-API tokens) are unaffected.
+a device's token) are unaffected.
 
 A project has one set of accounts and one session for the admin and every app. When an
 app answers on a subdomain ([Apps](apps.md#where-an-app-answers)), the session cookie is
@@ -90,6 +90,53 @@ without a password cannot be dropped: that would lock the account out. Signing i
 a provider opens an ordinary session, with the same cookie, CSRF token, expiry and
 sign-out; and it raises events like password sign-in (`auth.identity_signed_in`,
 `auth.identity_linked`, `auth.identity_refused`, `auth.identity_unlinked`).
+
+## Devices
+
+A device is an agent or a tool that a person lets act for their account: the CLI on
+another machine, an agent in a terminal, a chat app. It signs in by link, never with a
+password or a pasted token.
+
+```mermaid
+sequenceDiagram
+    participant D as Device
+    participant P as Publr
+    participant A as Person, in the admin
+    D->>P: device.start {name, scope}
+    P-->>D: device code (kept), user code, approve link
+    D->>A: shows the link
+    A->>P: opens it signed in, picks the scope, approves
+    D->>P: device.poll (a read, every few seconds)
+    P-->>D: approved
+    D->>P: device.claim
+    P-->>D: token, once
+    D->>P: later requests: Authorization: Bearer <token>
+```
+
+`publr login <address>` does all of this. The token is `id.secret`; only the hash of the
+secret is stored. A device never expires: its person, or an administrator, revokes it
+under **Settings › Devices**, and it stops working at once.
+
+A device acts as its account, with that account's roles, narrowed by the **scope** its
+person approved:
+
+| Scope | What the device may do |
+|---|---|
+| `read` | read what its account may read |
+| `drafts` | write as its account may, but nothing visitors see changes: a write that publishes or unpublishes something (a `*.published` or `*.unpublished` notice) is refused whole, so edits wait as drafts for a person |
+| `write` | everything its account may |
+
+Whatever its scope, a device never destroys data for good. An operation that declares
+`destroys` (deleting a content type, a taxonomy, a field group or a user; purging a
+record or a term; removing a plugin; pruning snapshots; deleting media) is refused to it
+with `NeedsPerson`, and a person does it in the admin. A device never approves another
+device, and a request carrying its token needs no CSRF token (no browser sends it on its
+own). Its changes are logged as `token:<id>`, and the activity log names the device.
+
+A trusted issuer (a Publr Cloud dashboard) may also get a device's token for one of its
+people with a sign-on token it signs (`device.redeem`), the trust `sign_on` already
+gives it: that is how a chat app reaches a Cloud project over MCP. Approving or revoking
+a device is announced (`auth.device_approved`, `auth.device_revoked`).
 
 ## Roles
 

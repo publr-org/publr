@@ -21,8 +21,9 @@ Status: **v0.2, pre-release.** Nothing is stable yet.
 
 ## Install
 
-One binary. The installer detects your OS and CPU, downloads the matching
-build, verifies its checksum and puts `publr` on your PATH:
+One binary, in a folder with your sites. The installer asks where (empty: here),
+downloads the build for your OS and CPU into it, verifies its checksum and offers
+to make your first site. Nothing goes on your PATH:
 
 ```
 curl -fsSL https://publr.dev/install.sh | sh
@@ -44,11 +45,30 @@ SHA-256 next to it, and the installer refuses a mismatch.
 ## Run it
 
 ```
+sites/
+  publr          the binary
+  blog/          a site: publr.zon, apps/, plugins/, data/
+```
+
+Make a site beside the binary, then run it from its folder:
+
+```
+./publr new blog && cd blog
+../publr serve                               # prints its address; its admin asks for the first account
+```
+
+Every command below means the site's own binary (`../publr` there, `./zig-out/bin/publr`
+in a Publr checkout), run from the site's folder:
+
+```
 publr serve                                  # http://127.0.0.1:8080
 publr init --email you@example.com --display_name You   # first admin; the password is generated and shown once
 publr build                                  # the apps as files, into ./output/<app> (served by `serve`)
 publr --help                                 # every command; publr <namespace> <verb> --help for details
 publr agents                                 # for an agent building plugins on this Publr
+publr skill install                          # the build-on-publr skill, into this project
+publr login https://example.com              # this machine as a device of a Publr elsewhere
+publr --site https://example.com <command>   # any command, sent there
 ```
 
 The database lives in `data/publr.db` next to where you run it (`--db <path>`

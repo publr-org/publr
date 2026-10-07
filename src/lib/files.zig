@@ -8,6 +8,7 @@ const std = @import("std");
 pub const kept_elsewhere = @import("files/deferred.zig");
 pub const Deferred = kept_elsewhere.Deferred;
 const disk = @import("files/disk.zig");
+pub const dropped = @import("files/dropped.zig");
 
 pub const Disk = disk.Disk;
 

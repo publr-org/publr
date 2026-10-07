@@ -25,6 +25,13 @@ pub const Options = struct {
     plugin_states: ?*anyopaque = null,
     /// The media library's files, where a server made them.
     files: ?@import("../lib/files.zig").Files = null,
+    /// The project's apps, where a server holds them.
+    apps: ?sdk.context.AppsFolder = null,
+    /// Building plugins from their sources, where a server carries the compiler.
+    builder: ?sdk.context.PluginBuilder = null,
+    /// Who runs every command, fixed: a device sending them from elsewhere (`/api/cli`).
+    /// `--as` and `--as-admin` are refused then.
+    device: ?sdk.Caller = null,
 };
 
 const AuthState = @import("../lib/auth.zig").State;
@@ -46,11 +53,17 @@ pub fn CLI(comptime SDK: type) type {
 
             std.debug.assert(options.db.transaction_depth == 0);
 
-            var caller: sdk.Caller = .anonymous;
+            var caller: sdk.Caller = options.device orelse .anonymous;
             var index: u32 = 0;
 
             while (index < args.len and std.mem.startsWith(u8, args[index], "-")) : (index += 1) {
                 const flag = args[index];
+                const acting_as = std.mem.eql(u8, flag, "--as-admin") or
+                    std.mem.eql(u8, flag, "--as");
+
+                if (acting_as and options.device != null) {
+                    return fail(options, "a device acts as its own account; drop \"--as\"");
+                }
 
                 if (std.mem.eql(u8, flag, "--as-admin")) {
                     caller = .system;
@@ -155,6 +168,8 @@ pub fn CLI(comptime SDK: type) type {
             ctx.sandboxed_plugins = options.sandboxed_plugins;
             ctx.plugin_states = options.plugin_states;
             ctx.files = options.files;
+            ctx.apps = options.apps;
+            ctx.builder = options.builder;
 
             inline for (SDK.operations) |Operation| {
                 if (std.mem.eql(u8, Operation.name, name)) {

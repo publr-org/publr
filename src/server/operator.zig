@@ -10,14 +10,18 @@ const registry = @import("registry.zig");
 const server = @import("../server.zig");
 const sdk = @import("../sdk.zig");
 const Project = @import("project.zig").Project;
+const apps_load = @import("apps_load.zig");
+const plugin_build = @import("plugin_build.zig");
+const toolchain = @import("toolchain.zig");
 
 pub const route = "/_publr/cli";
 pub const key_len: u32 = 64;
-const session_bytes_max: u32 = 256;
+const session_bytes_max: u32 = 1024;
 
 /// `build` stamps the binary the server runs (`build_stamp`): one started from an older
-/// build of the file has another, and 0 when it is not known.
-pub const Session = struct { port: u16, key: [key_len]u8, build: u64 = 0 };
+/// build of the file has another, and 0 when it is not known. `url` is where people and
+/// agents reach it (`--url`, else `http://127.0.0.1:<port>`); empty when not known.
+pub const Session = struct { port: u16, key: [key_len]u8, build: u64 = 0, url: []const u8 = "" };
 
 const Envelope = struct { args: []const []const u8, password: ?[]const u8 = null };
 const Answer = struct { code: u8, out: []const u8, err: []const u8 };
@@ -29,8 +33,15 @@ pub fn path_of(arena: std.mem.Allocator, db_path: []const u8) ![]const u8 {
 }
 
 /// `serve`, once listening: a fresh key, written with the port beside the database.
-pub fn open(io: std.Io, arena: std.mem.Allocator, db_path: []const u8, port: u16) !Session {
+pub fn open(
+    io: std.Io,
+    arena: std.mem.Allocator,
+    db_path: []const u8,
+    port: u16,
+    url: []const u8,
+) !Session {
     std.debug.assert(port > 0);
+    std.debug.assert(std.mem.indexOfAny(u8, url, " \n") == null);
 
     var secret: [key_len / 2]u8 = undefined;
     io.random(&secret);
@@ -39,11 +50,13 @@ pub fn open(io: std.Io, arena: std.mem.Allocator, db_path: []const u8, port: u16
         .port = port,
         .key = std.fmt.bytesToHex(secret, .lower),
         .build = build_stamp(io, arena),
+        .url = url,
     };
-    const text = try std.fmt.allocPrint(arena, "{d} {s} {d}\n", .{
+    const text = try std.fmt.allocPrint(arena, "{d} {s} {d} {s}\n", .{
         port,
         &session.key,
         session.build,
+        url,
     });
     var file = try std.Io.Dir.cwd().createFile(io, try path_of(arena, db_path), .{
         .permissions = .fromMode(0o600),
@@ -96,12 +109,13 @@ fn parse(text: []const u8) ?Session {
     const port = std.fmt.parseInt(u16, port_text, 10) catch return null;
     const build_text = words.next() orelse "0";
     const build = std.fmt.parseInt(u64, build_text, 10) catch 0;
+    const url = words.next() orelse "";
 
     if (key.len != key_len or port == 0) {
         return null;
     }
 
-    return .{ .port = port, .key = key[0..key_len].*, .build = build };
+    return .{ .port = port, .key = key[0..key_len].*, .build = build, .url = url };
 }
 
 /// The binary at this process's path as it is now: its file's modification time. A rebuild
@@ -244,6 +258,8 @@ pub fn handle(
         .sandboxed_plugins = project.sandboxed_plugins,
         .plugin_states = project.plugin_states,
         .files = project.files,
+        .apps = if (project.apps_host) |host| host.folder() else null,
+        .builder = project.builder,
     }, envelope.args, &out.writer) catch |failure| blk: {
         err.writer.print("publr: {s}\n", .{@errorName(failure)}) catch {
             return response.text(.internal_server_error, @errorName(failure));
@@ -271,6 +287,9 @@ pub const Commands = struct {
     db_path: [:0]const u8,
     local: ?*server.Server = null,
     arena_bytes: []u8 = &.{},
+    /// What the `apps` and `plugin build` operations reach with no server running.
+    checker: apps_load.Checker = undefined,
+    builder: plugin_build.Builder = undefined,
 
     pub fn run(commands: *Commands, args: []const []const u8, out: *std.Io.Writer) !u8 {
         std.debug.assert(args.len > 0);
@@ -281,6 +300,9 @@ pub const Commands = struct {
 
         const application = try commands.open_local();
         var fixed = std.heap.FixedBufferAllocator.init(commands.arena_bytes);
+
+        commands.checker = .{ .init = commands.init };
+        commands.builder = .{ .io = commands.init.io, .db_path = commands.db_path };
 
         std.debug.assert(commands.arena_bytes.len == server.request_arena_bytes);
 
@@ -294,7 +316,20 @@ pub const Commands = struct {
             .sandboxed_plugins = application.sandboxed(),
             .plugin_states = &application.plugin_states,
             .files = application.files_of(),
+            .apps = commands.checker.folder(),
+            .builder = try commands.local_builder(),
         }, args, out);
+    }
+
+    /// Builds started here install into the database themselves once built.
+    fn local_builder(commands: *Commands) !?sdk.context.PluginBuilder {
+        std.debug.assert(commands.db_path.len > 0);
+
+        if (!toolchain.carried) {
+            return null;
+        }
+
+        return try commands.builder.hook(commands.init.arena.allocator());
     }
 
     fn open_local(commands: *Commands) !*server.Server {
@@ -334,6 +369,10 @@ pub const Commands = struct {
 
 test "a session reads its port, key and build; one written before builds were kept has 0" {
     const key = "a" ** key_len;
+    const addressed = parse("8080 " ++ key ++ " 7 https://publr.local\n").?;
+
+    try std.testing.expectEqualStrings("https://publr.local", addressed.url);
+
     const stamped = parse("8080 " ++ key ++ " 1759740000123456789\n").?;
     const unstamped = parse("8080 " ++ key ++ "\n").?;
 

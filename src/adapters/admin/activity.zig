@@ -8,6 +8,7 @@ const time = @import("../../lib/time.zig");
 const activity = @import("../../operations/activity.zig");
 const errors = @import("../../operations/errors.zig");
 const settings_nav = @import("settings_nav.zig");
+const devices = @import("../../operations/device/people.zig");
 
 const views = admin.views;
 const Entry = views.Activity.EntriesItem;
@@ -30,12 +31,13 @@ pub fn show_activity(
         .limit = page_size,
     }) catch |err| return admin.fail(&session, err, "/admin/settings");
     const entries = try session.arena.alloc(Entry, listed.entries.len);
+    const known = try devices_of(&session);
 
     for (listed.entries, entries) |item, *entry| {
         entry.* = .{
             .date = (try when_of(session.arena, item.at)).date,
             .time = (try when_of(session.arena, item.at)).time,
-            .who = item.actor,
+            .who = try who_of(session.arena, item.actor, known),
             .operation = item.operation,
             .what = try changed_text(session.arena, item.units, item.calls),
             .input = item.input,
@@ -107,6 +109,40 @@ fn render(
         .entries = entries,
         .older_href = older_href,
     });
+}
+
+/// Every working device, to name the changes they made; none when they cannot be listed.
+fn devices_of(session: *admin.Session) admin.Error![]const devices.Item {
+    std.debug.assert(session.signed_in());
+
+    const listed = registry.SDK.dispatch(&session.ctx, devices.List, .{ .all = true }) catch {
+        return &.{};
+    };
+
+    return listed.devices;
+}
+
+/// Who made an entry: a device by its name and its account, `token:<id>` once revoked.
+fn who_of(
+    arena: std.mem.Allocator,
+    actor: []const u8,
+    known: []const devices.Item,
+) admin.Error![]const u8 {
+    std.debug.assert(actor.len > 0);
+
+    const prefix = "token:";
+
+    if (!std.mem.startsWith(u8, actor, prefix)) {
+        return actor;
+    }
+
+    for (known) |device| {
+        if (std.mem.eql(u8, device.id, actor[prefix.len..])) {
+            return std.fmt.allocPrint(arena, "{s} ({s})", .{ device.name, device.email });
+        }
+    }
+
+    return actor;
 }
 
 /// `record:7f…, plugin:cart; set off record.save`.

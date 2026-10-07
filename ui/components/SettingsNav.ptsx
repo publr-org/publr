@@ -7,6 +7,8 @@ export type SettingsNavProps = {
   /** The fixed pages first: the system's own settings, then the users. */
   system_active: boolean;
   users_active: boolean;
+  /** The agents and tools acting for the viewer's account, or for everyone's. */
+  devices_active: boolean;
   plugins_active: boolean;
   /** Structure sits below the users, for whoever may change structure. */
   can_structure: boolean;
@@ -20,6 +22,7 @@ export type SettingsNavProps = {
 export function SettingsNav({
   system_active,
   users_active,
+  devices_active,
   plugins_active,
   can_structure,
   structure_active,
@@ -35,6 +38,10 @@ export function SettingsNav({
       <SidebarNavItem href="/admin/settings/users" active={users_active}>
         <Icon name="users" size="sm" classes="shrink-0" />
         <Text as="span" variant="nav">Users</Text>
+      </SidebarNavItem>
+      <SidebarNavItem href="/admin/settings/devices" active={devices_active}>
+        <Icon name="device-desktop" size="sm" classes="shrink-0" />
+        <Text as="span" variant="nav">Devices</Text>
       </SidebarNavItem>
       {can_structure && (
         <SidebarNavItem href="/admin/structure" active={structure_active}>

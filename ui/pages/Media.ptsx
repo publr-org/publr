@@ -36,6 +36,7 @@ export type MediaProps = {
     kind: string;
     icon: "video" | "audio" | "file";
     facts: string;
+    missing: boolean;
     selected: boolean;
   }>;
   total: number;
@@ -43,6 +44,9 @@ export type MediaProps = {
   unsorted: number;
   all_href: string;
   unsorted_href: string;
+  unreviewed: number;
+  unreviewed_href: string;
+  on_server: boolean;
   folders: Array<{
     id: string;
     name: string;
@@ -93,6 +97,9 @@ export function Media({
   unsorted,
   all_href,
   unsorted_href,
+  unreviewed,
+  unreviewed_href,
+  on_server,
   folders,
   tag_list,
   periods,
@@ -125,6 +132,9 @@ export function Media({
         unsorted={unsorted}
         all_href={all_href}
         unsorted_href={unsorted_href}
+        unreviewed={unreviewed}
+        unreviewed_href={unreviewed_href}
+        on_server={on_server}
         folders={folders}
         tag_list={tag_list}
         periods={periods}

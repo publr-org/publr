@@ -6,6 +6,7 @@ pub const list = @import("media/list.zig");
 pub const edit = @import("media/edit.zig");
 pub const serve = @import("media/serve.zig");
 pub const tags = @import("media/tags.zig");
+pub const sync = @import("media/sync.zig");
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "media",
@@ -30,8 +31,9 @@ pub const Move = edit.Move;
 pub const Tag = edit.Tag;
 pub const File = serve.File;
 pub const FolderDelete = serve.FolderDelete;
+pub const Sync = sync.Sync;
 
-pub const operations = [_]type{ Upload, Add, List } ++ edit.operations ++ serve.operations;
+pub const operations = [_]type{ Upload, Add, List, Sync } ++ edit.operations ++ serve.operations;
 
 pub const bootstrap = library.bootstrap;
 

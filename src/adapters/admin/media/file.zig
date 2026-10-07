@@ -65,6 +65,8 @@ pub fn show(
         .months = sides.months,
         .all = @floatFromInt(listed.all),
         .unsorted = @floatFromInt(listed.unsorted),
+        .unreviewed = @floatFromInt(listed.unreviewed),
+        .on_server = library.on_server(&session),
     });
 }
 

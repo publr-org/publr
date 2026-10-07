@@ -17,6 +17,30 @@ given.
 
 The database is `data/publr.db` by default and is created on first use.
 
+## Sites
+
+```
+publr new <name>
+```
+
+A site is a folder `publr` runs in: `publr.zon`, `apps/`, `plugins/`, and `data/` once it
+first runs. Several sites may share one binary, each a folder beside it:
+
+```
+sites/
+  publr          the binary (the installer puts it here; nothing goes on the PATH)
+  blog/          publr.zon, apps/, plugins/, data/
+  shop/
+```
+
+`new` makes `<name>/` in the current folder, with a `publr.zon` naming it. Where the
+binary is not one of the places agents look first (`publr`, `../publr`,
+`zig-out/bin/publr`, `../zig-out/bin/publr`, from the site), `publr.zon` also names it
+(`.binary`), relative when near and absolute when far. Then `cd <name>` and `serve`; the
+first admin is made on the admin's setup page, or with `init`. A Publr checkout is a site
+too, run by its own build. Sites on one binary share its built-in plugins; a site's own
+plugins are sandboxed.
+
 ## Serving
 
 ```
@@ -61,7 +85,7 @@ publr apps load [--apps <dir>]
 Reads the project's apps again from the folder the running server was started with and
 swaps them in, so a changed template is live when it returns, and says which folder; a
 template that does not load is named with the reason, and the apps answer 503 until a load
-succeeds. With no server running, it only checks the apps: those in `--apps <dir>`, else
+succeeds. (A device, or `--as`, reaches the same as the operation `apps.load`.) With no server running, it only checks the apps: those in `--apps <dir>`, else
 the project's own `apps/`, else the build's folder. `--apps` is refused while a server
 runs, since the server reads only its own folder. See [Apps](apps.md).
 
@@ -102,11 +126,49 @@ Prints the guide for an agent building on this Publr ([Agents](agents.md), built
 binary so it always matches it), then where the SDK's source is on this machine and every
 permission a plugin may ask for, with its tier. `publr --help` points agents to it.
 
+## A Publr elsewhere
+
+```
+publr login <address> [--name <name>] [--scope read|drafts|write] [--no-browser]
+publr logout [<address>]
+publr whoami [<address>]
+publr --site <address> <command ...>
+```
+
+`login` signs this machine in to the Publr at `<address>` as a device
+([Authentication: Devices](auth.md#devices)): it prints a link (and opens it when there is
+a browser), its person approves it in that Publr's admin and chooses what it may do
+(`drafts` unless `--scope` asks otherwise), and the token is kept in
+`~/.publr/credentials` (or `$PUBLR_CREDENTIALS`), readable by its user only, by address.
+It is never printed. `--name` is what the person sees; it defaults to "The publr CLI on"
+this machine's name.
+
+`--site <address>` (or `PUBLR_SITE`) sends a command to that Publr with its token: the
+words go as they are and are read there, so its plugins' commands and its help are what
+answer. `--as` and `--as-admin` are refused there; the device is who you are. `logout`
+revokes the device there and forgets it here; `whoami` says whose it is, its scope and its
+name. With one address kept, `logout` and `whoami` need none.
+
+## The skill
+
+```
+publr skill
+publr skill install [--dir <path>]
+```
+
+`skill` prints the build-on-publr skill this binary carries: how an agent decides where a
+need goes, what it never does, and when core may change. `skill install` writes it, with
+its references, into a project (`.claude/skills/build-on-publr/` unless `--dir` names
+another folder), where agents that load skills from a folder find it. The repository is
+also a plugin marketplace (`.claude-plugin/`) offering the same skill.
+
 ## While a server runs
 
-`publr serve` owns its project while it runs. It writes its port, a fresh key and a stamp
-of the binary it runs (the file's modification time, which a rebuild changes) beside the
-database (`<db>.serve`, readable by its user only), and removes them when it stops. Every
+`publr serve` owns its project while it runs. It writes its port, a fresh key, a stamp
+of the binary it runs (the file's modification time, which a rebuild changes) and its
+address (`--url`, else `http://127.0.0.1:<port>`) beside the database (`<db>.serve`,
+readable by its user only), and removes them when it stops. `publr agents` says that
+address while it answers. Every
 other command then goes to it and runs there, as the admin's changes do: a plugin added,
 enabled or updated from the CLI is live when the command returns, and its hooks and events
 fire in the server. Output, errors and the exit code are the same as run here; a file named
@@ -119,6 +181,7 @@ removes it and runs here.
 | Flag | Meaning |
 |---|---|
 | `--db <path>` | Use this database file. Must come first. |
+| `--site <address>` | Send the command to the Publr at that address, as this machine's device there (after `--db`, before the command); `PUBLR_SITE` does the same. See [A Publr elsewhere](#a-publr-elsewhere). |
 | `--as <user>` | Run as that user, by id or email; the user's roles apply. |
 | `--as-admin` | Run as the local operator (`system`), unrestricted. |
 | `-h`, `--help` | Print usage, options and every command. After a namespace (`publr user --help`, or just `publr user`), explain the namespace and list its commands. After a command, print its explanation, every field with its meaning, the output shape, and a runnable example with its output. |
@@ -170,6 +233,8 @@ runnable example.
 | [`user`](cli/user.md) | Accounts, roles, passwords and signing in |
 | [`role`](cli/role.md) | What each role lets its accounts call |
 | [`identity`](cli/identity.md) | Signing in with a provider: which accounts, and whether sign-up is open |
+| [`device`](cli/device.md) | Agents and tools acting for an account, signed in by link |
+| [`apps`](cli/apps.md) | The project's apps as files, for agents with no file system |
 | [`content_type`](cli/content_type.md) | Content types: the shapes records are made of |
 | [`record`](cli/record.md) | The content itself: documents, statuses, lists |
 | [`taxonomy`](cli/taxonomy.md) | Taxonomies: the classifications records are filed under |

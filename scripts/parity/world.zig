@@ -62,6 +62,8 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     try fill_identities(ctx);
     try fill_plugins(ctx, dir);
     try fill_internal(ctx);
+    try fill_devices(ctx, admin_id);
+    try fill_apps(ctx, dir);
     _ = try SDK.dispatch(ctx, projects.currencies.SetCurrencies, .{
         .currencies = &.{ .{ .code = "GBP", .symbol = "£" }, .{ .code = "EUR" } },
     });
@@ -239,6 +241,73 @@ fn fill_views(ctx: *Ctx) Error!void {
     const created = try SDK.dispatch(ctx, saved_views.Create, saved_views.Create.example);
 
     try store.views.rename(ctx.db, created.id, saved_views.example_id);
+}
+
+/// What the `device` examples name: a request waiting under the documented user code, one
+/// approved under the documented device code, and Ada's device under the documented id.
+fn fill_devices(ctx: *Ctx, admin_id: []const u8) Error!void {
+    std.debug.assert(admin_id.len > 0);
+
+    const people = publr.operations.device.people;
+    const expires_at = ctx.now_ms + publr.model.device.request_lifetime_ms;
+    const approved_code = "BCDF-GHJK";
+
+    _ = try store.device_requests.insert(ctx.db, .{
+        .code_hash = [_]u8{1} ** 32,
+        .user_code = people.example_code,
+        .name = "An agent on Ada's laptop",
+        .scope = "drafts",
+        .expires_at = expires_at,
+    }, ctx.now_ms);
+    _ = try store.device_requests.insert(ctx.db, .{
+        .code_hash = publr.operations.device.hash_of(publr.operations.device.example_device_code),
+        .user_code = approved_code,
+        .name = "An agent on Ada's laptop",
+        .scope = "drafts",
+        .expires_at = expires_at,
+    }, ctx.now_ms);
+    _ = try store.device_requests.decide(ctx.db, .{
+        .user_code = approved_code,
+        .state = "approved",
+        .scope = "drafts",
+        .user_id = admin_id,
+    }, ctx.now_ms);
+
+    const created = try store.devices.create(ctx.db, ctx.io, ctx.arena, .{
+        .user_id = admin_id,
+        .name = "An agent on Ada's laptop",
+        .scope = "drafts",
+    }, ctx.now_ms);
+    var rename = try ctx.db.prepare("UPDATE devices SET id = ?1 WHERE id = ?2");
+    defer rename.finalize();
+
+    try rename.bind_text(1, people.example_device_id);
+    try rename.bind_text(2, created.device.id);
+    try rename.exec();
+}
+
+/// The app the `apps` examples name, `www`, with the page they read and the one they remove.
+fn fill_apps(ctx: *Ctx, dir: []const u8) Error!void {
+    std.debug.assert(dir.len > 0);
+
+    const zon = ".{ .name = \"www\", .mount = .{ .path = \"/\" } }\n";
+    const files = [_]struct { path: []const u8, data: []const u8 }{
+        .{ .path = "apps/www/app.zon", .data = zon },
+        .{ .path = "apps/www/content/index.publr", .data = "<h1>Hi</h1>\n" },
+        .{ .path = "apps/www/content/old.publr", .data = "<h1>Old</h1>\n" },
+        .{ .path = "data/builds/guestbook.log", .data = "{\n  \"enabled\": [\"guestbook\"]\n}\n" },
+    };
+    var root = std.Io.Dir.cwd().openDir(ctx.io, dir, .{}) catch return error.Unavailable;
+    defer root.close(ctx.io);
+
+    root.createDirPath(ctx.io, "apps/www/content") catch return error.Unavailable;
+    root.createDirPath(ctx.io, "data/builds") catch return error.Unavailable;
+
+    for (files) |file| {
+        root.writeFile(ctx.io, .{ .sub_path = file.path, .data = file.data }) catch {
+            return error.Unavailable;
+        };
+    }
 }
 
 /// Greeter's visit the internal examples name.

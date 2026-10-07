@@ -11,6 +11,8 @@ const custom_fields = @import("../operations/custom_fields.zig");
 const user = @import("../operations/user.zig");
 const sign_in = @import("../operations/sign_in.zig");
 const sign_on = @import("../operations/sign_on.zig");
+const device = @import("../operations/device.zig");
+const apps = @import("../operations/apps.zig");
 const identity = @import("../operations/identity.zig");
 const status = @import("../operations/status.zig");
 const role = @import("../operations/role.zig");
@@ -33,19 +35,21 @@ pub const native_plugins = contract.Merged(@import("native_plugins").all);
 
 const core_operations = heartbeat.operations ++ project.operations ++ custom_fields.operations ++
     user.operations ++
-    sign_in.operations ++ sign_on.operations ++ identity.operations ++ status.operations ++
+    sign_in.operations ++ sign_on.operations ++ device.operations ++ identity.operations ++
+    status.operations ++
     role.operations ++
     content_type.operations ++
     record.operations ++ taxonomy.operations ++ term.operations ++ media.operations ++
     snapshot.operations ++
     view.operations ++ plugin_operations.operations ++ internal.operations ++
-    activity.operations ++ errors.operations;
+    activity.operations ++ errors.operations ++ apps.operations;
 const core_namespaces = [_]sdk.operation.Namespace{
     heartbeat.namespace,
     project.namespace,
     custom_fields.namespace,
     user.namespace,
     sign_on.namespace,
+    device.namespace,
     identity.namespace,
     status.namespace,
     role.namespace,
@@ -60,6 +64,7 @@ const core_namespaces = [_]sdk.operation.Namespace{
     internal.namespace,
     activity.namespace,
     errors.namespace,
+    apps.namespace,
 };
 
 /// The names no plugin may take: every core namespace, `app` (what an app's users call is

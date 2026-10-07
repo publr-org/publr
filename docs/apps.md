@@ -491,9 +491,12 @@ app, as its routes see it), `base()` (what the app's URLs start with, `/newslett
 nothing), `query(name)`, `header(name)`, `cookie(name)`, `host()`, `user()`, the signed-in
 visitor (with its `roles`) or null, and `user_field('<group>.<field>')`, as `userField` in a
 template. `call(Operation, in)` runs any operation as the visitor,
-through the same pipeline and policies as the API. `print()` formats text that lives as
-long as the request. The answers are `redirect(url)` (a `303` to a path on the domain or
-any URL), `respond(status, html)` and `json(value)`.
+through the same pipeline and policies as the API. `posted()` is the request's body, and
+`io()` what a call elsewhere (`std.http.Client`) runs on, while the request waits.
+`print()` formats text that lives as long as the request. The answers are
+`redirect(url)` (a `303` to a path on the domain or any URL), `respond(status, html)` and
+`json(value)`; a `publr.Response` built by hand may also set `content_type` and up to
+eight `headers` of its own (`WWW-Authenticate`, `Link`).
 
 The file is Zig, compiled into the binary with the app: it imports `publr` and every
 built-in plugin by its name (`@import("<name>")`). An app without one builds as before,

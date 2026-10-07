@@ -234,12 +234,65 @@ pub const tags_definition =
 ;
 
 /// Whether a content type is the library's: its records are files, kept out of Content.
+/// Where a file put into the media folder by hand belongs: its name, and the library
+/// folders its directories name, outermost first and no deeper than folders nest. A top
+/// directory of four digits is the library's own dated layout and names no folder.
+pub const Placed = struct { filename: []const u8, folders: []const []const u8 };
+
+pub fn placed_of(buffer: *[folder_depth_max][]const u8, path: []const u8) Placed {
+    std.debug.assert(path.len > 0);
+    std.debug.assert(path[path.len - 1] != '/');
+
+    const slash = std.mem.lastIndexOfScalar(u8, path, '/') orelse
+        return .{ .filename = path, .folders = &.{} };
+    var directories = std.mem.splitScalar(u8, path[0..slash], '/');
+    var count: u32 = 0;
+    const first = directories.first();
+    const dated = first.len == 4 and for (first) |char| {
+        if (!std.ascii.isDigit(char)) {
+            break false;
+        }
+    } else true;
+
+    if (!dated) {
+        directories.reset();
+
+        while (directories.next()) |directory| {
+            if (count == folder_depth_max) {
+                break;
+            }
+
+            if (directory.len > 0) {
+                buffer[count] = directory;
+                count += 1;
+            }
+        }
+    }
+
+    return .{ .filename = path[slash + 1 ..], .folders = buffer[0..count] };
+}
+
 pub fn is_library(handle: []const u8) bool {
     const library = std.mem.eql(u8, handle, type_handle);
 
     std.debug.assert(!library or handle.len == type_handle.len);
 
     return library;
+}
+
+test "placed_of: directories name folders, the dated layout none" {
+    var buffer: [folder_depth_max][]const u8 = undefined;
+    const trip = placed_of(&buffer, "Photos/Trips/Beach Day.JPG");
+
+    try std.testing.expectEqualStrings("Beach Day.JPG", trip.filename);
+    try std.testing.expectEqual(@as(usize, 2), trip.folders.len);
+    try std.testing.expectEqualStrings("Trips", trip.folders[1]);
+    try std.testing.expectEqual(@as(usize, 0), placed_of(&buffer, "2026/10/cat.jpg").folders.len);
+    try std.testing.expectEqual(@as(usize, 0), placed_of(&buffer, "cat.jpg").folders.len);
+    try std.testing.expectEqual(
+        @as(usize, folder_depth_max),
+        placed_of(&buffer, "a/b/c/d/e/f/g/cat.jpg").folders.len,
+    );
 }
 
 test "kind_of: by extension, any case; unknown and missing ones refused" {

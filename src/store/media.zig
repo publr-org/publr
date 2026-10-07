@@ -17,17 +17,22 @@ pub const Row = struct {
     hash: []const u8,
     private: bool,
     created_at: i64,
+    /// Taken in from the media folder and not yet looked at by anyone.
+    unreviewed: bool = false,
+    /// Its file is no longer in the folder.
+    missing: bool = false,
 };
 
 const columns = "record, filename, mime_type, size, width, height, storage_key, hash, " ++
-    "private, created_at";
+    "private, created_at, unreviewed, missing";
 
 pub fn insert(connection: *db.Db, row: Row) db.Error!void {
     std.debug.assert(row.record.len > 0 and row.storage_key.len > 0);
     std.debug.assert(row.size >= 0);
 
     var statement = try connection.prepare(
-        "INSERT INTO media (" ++ columns ++ ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO media (" ++ columns ++ ") VALUES " ++
+            "(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
     );
     defer statement.finalize();
 
@@ -41,6 +46,8 @@ pub fn insert(connection: *db.Db, row: Row) db.Error!void {
     try statement.bind_text(8, row.hash);
     try statement.bind_int(9, @intFromBool(row.private));
     try statement.bind_int(10, row.created_at);
+    try statement.bind_int(11, @intFromBool(row.unreviewed));
+    try statement.bind_int(12, @intFromBool(row.missing));
     try statement.exec();
 }
 
@@ -99,6 +106,64 @@ pub fn set_private(connection: *db.Db, record: []const u8, private: bool) db.Err
     try update.bind_text(1, record);
     try update.bind_int(2, @intFromBool(private));
     try update.exec();
+}
+
+/// Someone has looked at the files: they leave the unreviewed ones.
+pub fn reviewed(connection: *db.Db, records: []const []const u8) db.Error!void {
+    std.debug.assert(records.len <= 1 << 16);
+
+    var update = try connection.prepare("UPDATE media SET unreviewed = 0 WHERE record = ?1");
+    defer update.finalize();
+
+    for (records) |record| {
+        std.debug.assert(record.len > 0);
+
+        update.reset();
+        try update.bind_text(1, record);
+        try update.exec();
+    }
+}
+
+pub fn set_missing(connection: *db.Db, record: []const u8, missing: bool) db.Error!void {
+    std.debug.assert(record.len > 0);
+    std.debug.assert(record.len <= 128);
+
+    var update = try connection.prepare("UPDATE media SET missing = ?2 WHERE record = ?1");
+    defer update.finalize();
+
+    try update.bind_text(1, record);
+    try update.bind_int(2, @intFromBool(missing));
+    try update.exec();
+}
+
+pub const Kept = struct { record: []const u8, storage_key: []const u8, missing: bool };
+
+/// A page of the library's files by record, after `after`: where each is kept.
+pub fn kept_after(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    after: []const u8,
+    limit: u32,
+) db.Error![]const Kept {
+    std.debug.assert(limit > 0 and limit <= 10_000);
+    std.debug.assert(after.len <= 128);
+
+    var select = try connection.prepare(
+        "SELECT record, storage_key, missing FROM media WHERE record > ?1 " ++
+            "ORDER BY record LIMIT ?2",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, after);
+    try select.bind_int(2, limit);
+
+    var found: std.ArrayList(Kept) = .empty;
+
+    while (try select.step()) {
+        try found.append(arena, try select.read(Kept, arena));
+    }
+
+    return found.items;
 }
 
 /// Whether some file already holds these exact bytes: an upload of the same file twice.
@@ -208,6 +273,12 @@ test "media rows: insert, read by record, key and hash, flip privacy, gone with 
     try std.testing.expectEqualStrings("m1", (try by_hash(connection, arena, hash)).?.record);
     try set_private(connection, "m1", true);
     try std.testing.expect((try get(connection, arena, "m1")).?.private);
+    try set_missing(connection, "m1", true);
+    try std.testing.expect((try kept_after(connection, arena, "", 10))[0].missing);
+    try std.testing.expectEqual(@as(usize, 0), (try kept_after(connection, arena, "m1", 10)).len);
+    try connection.exec("UPDATE media SET unreviewed = 1");
+    try reviewed(connection, &.{"m1"});
+    try std.testing.expect(!(try get(connection, arena, "m1")).?.unreviewed);
     try connection.exec("DELETE FROM records WHERE id = 'm1'");
     try std.testing.expect((try get(connection, arena, "m1")) == null);
 }

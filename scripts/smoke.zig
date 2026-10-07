@@ -42,6 +42,8 @@ pub fn main(init: std.process.Init) !u8 {
     try expect_contains(init, binary, work_dir, &.{ "user", "--help" }, "user password_link");
     try expect_compiler(init, binary, bare, work_dir);
     try expect_contains(init, bare, work_dir, &.{"agents"}, "publr plugin build --name");
+    try expect_contains(init, bare, work_dir, &.{"skill"}, "name: build-on-publr");
+    try expect_contains(init, bare, work_dir, &.{ "new", "smoke-site" }, "Made smoke-site/");
     try expect_contains(init, bare, work_dir, &.{"--help"}, "run `publr agents` first");
     try expect_auth(init, binary, work_dir);
     const sandboxed = @import("smoke/sandboxed_plugins.zig");
@@ -55,6 +57,7 @@ pub fn main(init: std.process.Init) !u8 {
     const native_plugins = @import("smoke/native_plugins.zig");
 
     try native_plugins.expect_native_admin(init, native, work_dir, installable);
+    try @import("smoke/devices.zig").expect_devices(init, binary, work_dir);
 
     std.debug.print("smoke: ok\n", .{});
 
@@ -256,6 +259,33 @@ fn expect_taxonomies(
 
     try expect_contains(init, binary, work_dir, &upload, "\"family\": \"text\"");
     try expect_contains(init, binary, work_dir, &listed_media, "\"filename\": \"shot-list.txt\"");
+    try expect_media_sync(init, binary, work_dir, admin);
+}
+
+/// A file put into the media folder by hand is taken in, filed by its directory.
+fn expect_media_sync(
+    init: std.process.Init,
+    binary: []const u8,
+    work_dir: []const u8,
+    admin: []const u8,
+) !void {
+    std.debug.assert(binary.len > 0);
+    std.debug.assert(admin.len > 0);
+
+    const arena = init.arena.allocator();
+    const folder = try std.fs.path.join(arena, &.{ work_dir, "data", "media", "Notes" });
+    const brief = try std.fs.path.join(arena, &.{ folder, "Brief.txt" });
+
+    try std.Io.Dir.cwd().createDirPath(init.io, folder);
+    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = brief, .data = "Brief\n" });
+
+    const check = [_][]const u8{ "--as", admin, "media", "sync", "--check", "true" };
+    const sync = [_][]const u8{ "--as", admin, "media", "sync" };
+    const unreviewed = [_][]const u8{ "--as", admin, "media", "list", "--folder", "unreviewed" };
+
+    try expect_contains(init, binary, work_dir, &check, "\"new\": 1");
+    try expect_contains(init, binary, work_dir, &sync, "\"added\": 1");
+    try expect_contains(init, binary, work_dir, &unreviewed, "\"filename\": \"Brief.txt\"");
 }
 
 /// A post published, every app built from it, and the files the build promises.

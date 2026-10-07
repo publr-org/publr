@@ -157,7 +157,23 @@ fn add(
     folder: ?[]const u8,
 ) Error!library.Item {
     std.debug.assert(bytes.len <= files_module.bytes_max);
+    std.debug.assert(media.valid_filename(filename));
 
+    const kept = try checked(ctx, filename, bytes);
+    var random_hex: [ids.len]u8 = undefined;
+    var key_buffer: [files_module.key_len_max]u8 = undefined;
+    const random = ids.random(ctx.io, &random_hex)[0..media.random_len];
+    const key = try ctx.arena.dupe(u8, media.key_of(&key_buffer, ctx.now_ms, filename, random));
+
+    files.write(.files, key, kept) catch |err| return library.fail(err);
+
+    return added(ctx, .{ .filename = filename, .key = key, .bytes = kept, .folder = folder });
+}
+
+/// The bytes the library keeps of a file: what its extension says they are, an SVG
+/// cleaned of scripts.
+pub fn checked(ctx: *Ctx, filename: []const u8, bytes: []const u8) Error![]const u8 {
+    std.debug.assert(bytes.len <= files_module.bytes_max);
     std.debug.assert(media.valid_filename(filename));
 
     if (bytes.len == 0) {
@@ -170,37 +186,48 @@ fn add(
         return ctx.fail(not_what_it_says);
     }
 
-    const kept = if (std.mem.eql(u8, kind.extension, "svg")) try clean_svg(ctx, bytes) else bytes;
-    const size = image.size_of(kept);
-    var random_hex: [ids.len]u8 = undefined;
-    var key_buffer: [files_module.key_len_max]u8 = undefined;
-    const random = ids.random(ctx.io, &random_hex)[0..media.random_len];
-    const key = try ctx.arena.dupe(u8, media.key_of(&key_buffer, ctx.now_ms, filename, random));
-    const hash = hash_of(kept);
+    return if (std.mem.eql(u8, kind.extension, "svg")) try clean_svg(ctx, bytes) else bytes;
+}
 
-    files.write(.files, key, kept) catch |err| return library.fail(err);
+pub const Kept = struct {
+    filename: []const u8,
+    key: []const u8,
+    bytes: []const u8,
+    folder: ?[]const u8 = null,
+    /// Taken in from the media folder rather than uploaded.
+    unreviewed: bool = false,
+};
 
+/// The record and row of a file whose bytes are kept under its key.
+pub fn added(ctx: *Ctx, kept: Kept) Error!library.Item {
+    std.debug.assert(kept.bytes.len > 0);
+    std.debug.assert(files_module.valid_key(kept.key));
+
+    const kind = media.kind_of(kept.filename).?;
+    const size = image.size_of(kept.bytes);
+    const hash = hash_of(kept.bytes);
     const created = try registry.SDK.dispatch(ctx, record.Create, .{
         .type = media.type_handle,
-        .document = try document_of(ctx, filename, folder),
+        .document = try document_of(ctx, kept.filename, kept.folder),
         .status = "published",
     });
     const row: store.media.Row = .{
         .record = created.id,
-        .filename = filename,
+        .filename = kept.filename,
         .mime_type = kind.mime_type,
-        .size = @intCast(kept.len),
+        .size = @intCast(kept.bytes.len),
         .width = if (size) |known| known.width else null,
         .height = if (size) |known| known.height else null,
-        .storage_key = key,
+        .storage_key = kept.key,
         .hash = &hash,
         .private = false,
         .created_at = ctx.now_ms,
+        .unreviewed = kept.unreviewed,
     };
 
     try store.media.insert(ctx.db, row);
 
-    return library.item_of(row, title_of(filename));
+    return library.item_of(row, title_of(kept.filename));
 }
 
 fn clean_svg(ctx: *Ctx, bytes: []const u8) Error![]const u8 {

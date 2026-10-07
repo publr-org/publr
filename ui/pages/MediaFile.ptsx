@@ -53,6 +53,8 @@ export type MediaFileProps = {
   months: Array<{ value: string; label: string; selected: boolean }>;
   all: number;
   unsorted: number;
+  unreviewed: number;
+  on_server: boolean;
 };
 
 /** One file of the library: its preview with the focal point, what people wrote about it,
@@ -84,6 +86,8 @@ export function MediaFile({
   months,
   all,
   unsorted,
+  unreviewed,
+  on_server,
 }: MediaFileProps) {
   return (
     <ListDetailPage title={title}>
@@ -104,6 +108,8 @@ export function MediaFile({
         unsorted={unsorted}
         all_href="/admin/media"
         unsorted_href="/admin/media?folder=unsorted"
+        unreviewed={unreviewed}
+        on_server={on_server}
         folders={folders}
         tag_list={tag_list}
         periods={periods}

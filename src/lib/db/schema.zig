@@ -8,6 +8,8 @@ pub const tables = [_][]const u8{
     "user_roles",
     "sessions",
     "sign_on_tokens",
+    "devices",
+    "device_requests",
     "identities",
     "content_types",
     "records",

@@ -66,7 +66,7 @@ pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) opera
     return switch (ctx.caller) {
         .anonymous => anonymous_grant(request),
         .user => |user| role_grant(roles, user.roles, request),
-        .token => Grant.allow_all,
+        .token => |token| device_grant(roles, token, request),
         .machine => scoped_grant(ctx, request),
         .plugin => |plugin| if (plugin.access != null)
             try plugin_grant(ctx, request, roles)
@@ -153,6 +153,22 @@ fn anonymous_grant(request: Request) Grant {
 
     std.debug.assert(granted.allows());
     std.debug.assert(granted.read_only);
+
+    return granted;
+}
+
+/// What the device's account may, narrowed by its scope: a `read` device reads only. What
+/// a `drafts` device may not do (publish) is known only once the write ran
+/// (`SDK.check_drafts`).
+fn device_grant(roles: []const Role, token: caller_module.Caller.Token, request: Request) Grant {
+    std.debug.assert(request.operation_name.len > 0);
+    std.debug.assert(token.user_id.len > 0);
+
+    var granted = role_grant(roles, token.roles, request);
+
+    if (token.scope == .read and granted.allows()) {
+        granted.read_only = true;
+    }
 
     return granted;
 }
@@ -330,6 +346,34 @@ test "roles: editors are denied the users and settings namespaces, admins are no
     try std.testing.expectError(error.Denied, authorize(&anon, users_list, &.{}, &role.core));
     try std.testing.expect((try authorize(&editor, entries_save, &.{}, &role.core)).allows());
     try std.testing.expect((try authorize(&admin, users_list, &.{}, &role.core)).allows());
+}
+
+test "devices: their account's roles, a read device reads only" {
+    var harness: Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    const save: Request = .{ .operation_name = "record.save", .kind = .write, .resource = .{} };
+    const users_list: Request = .{ .operation_name = "user.list", .kind = .read, .resource = .{} };
+    const editor_roles: []const []const u8 = &.{"editor"};
+
+    var writer = harness.ctx(.{ .token = .{
+        .id = "d_1",
+        .user_id = "u_1",
+        .roles = editor_roles,
+        .scope = .write,
+    } });
+    try std.testing.expect((try authorize(&writer, save, &.{}, &role.core)).allows());
+    try std.testing.expectError(error.Denied, authorize(&writer, users_list, &.{}, &role.core));
+
+    var reader = harness.ctx(.{ .token = .{
+        .id = "d_2",
+        .user_id = "u_1",
+        .roles = &.{"admin"},
+        .scope = .read,
+    } });
+    try std.testing.expectError(error.Denied, authorize(&reader, save, &.{}, &role.core));
+    try std.testing.expect((try authorize(&reader, users_list, &.{}, &role.core)).allows());
 }
 
 test "plugin policies intersect and can deny" {

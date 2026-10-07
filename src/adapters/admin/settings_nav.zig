@@ -44,6 +44,7 @@ pub fn node(session: *admin.Session, path: []const u8) admin.Error!admin.render.
     return admin.render.view(session.arena, admin.views.SettingsNav, .{
         .system_active = chrome.under(path, "/admin/settings/system"),
         .users_active = chrome.under(path, "/admin/settings/users"),
+        .devices_active = chrome.under(path, "/admin/settings/devices"),
         .can_structure = registry.SDK.may(&session.ctx, types.Create),
         .structure_active = in_structure(path),
         .plugins_active = chrome.under(path, "/admin/settings/plugins"),

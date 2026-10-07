@@ -4,6 +4,8 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const session_module = @import("../../store/sessions.zig");
+const device_module = @import("../../store/devices.zig");
+const device_model = @import("../../model/device.zig");
 const user_module = @import("../../store/users.zig");
 const csrf = @import("../../lib/auth.zig").csrf;
 const http = @import("../../lib/http.zig");
@@ -48,6 +50,10 @@ pub fn identify(
 ) Identity {
     std.debug.assert(project.connection.transaction_depth == 0);
 
+    if (request.header("authorization")) |authorization| {
+        return identify_device(authorization, arena, project);
+    }
+
     const cookie_header = request.header("cookie") orelse return .{};
     const token = cookie_value(cookie_header, project.session_cookie) orelse return .{};
     const now_ms = sdk.context.wall_clock_ms(project.io);
@@ -63,6 +69,51 @@ pub fn identify(
         .caller = .{ .user = .{ .id = credentials.user.id, .roles = credentials.user.roles } },
         .session = session,
         .token = token,
+        .display_name = credentials.user.display_name,
+        .email = credentials.user.email,
+    };
+}
+
+/// A device's request: `Authorization: Bearer <token>`. It carries no session, so no CSRF
+/// token either: nothing sends the header on its own, as a browser sends a cookie. Anything
+/// else in the header, or a token that does not work, is anonymous.
+fn identify_device(
+    authorization: []const u8,
+    arena: std.mem.Allocator,
+    project: *const Project,
+) Identity {
+    std.debug.assert(project.connection.transaction_depth == 0);
+
+    const prefix = "Bearer ";
+    const bearer = authorization.len > prefix.len and
+        std.ascii.eqlIgnoreCase(authorization[0..prefix.len], prefix);
+
+    if (!bearer) {
+        return .{};
+    }
+
+    const token = std.mem.trim(u8, authorization[prefix.len..], " ");
+    const now_ms = sdk.context.wall_clock_ms(project.io);
+    const connection = project.connection;
+    const device = device_module.validate(connection, arena, token, now_ms) catch return .{};
+    const found = user_module.find_by_id(connection, arena, device.user_id) catch return .{};
+    const credentials = found orelse return .{};
+    const scope = device_model.Scope.parse(device.scope) orelse return .{};
+
+    if (!credentials.user.active) {
+        return .{};
+    }
+
+    std.debug.assert(device.revoked_at == null);
+
+    return .{
+        .caller = .{ .token = .{
+            .id = device.id,
+            .user_id = device.user_id,
+            .roles = credentials.user.roles,
+            .scope = scope,
+            .name = device.name,
+        } },
         .display_name = credentials.user.display_name,
         .email = credentials.user.email,
     };
@@ -271,6 +322,8 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
     ctx.sandboxed_plugins = project.sandboxed_plugins;
     ctx.plugin_states = project.plugin_states;
     ctx.files = project.files;
+    ctx.apps = if (project.apps_host) |host| host.folder() else null;
+    ctx.builder = project.builder;
 
     return ctx;
 }
@@ -281,4 +334,53 @@ test "cookie parsing" {
     try std.testing.expectEqualStrings("abc", cookie_value("publr_session=abc", cookie_name).?);
     try std.testing.expect(cookie_value("a=1; b=2", cookie_name) == null);
     try std.testing.expect(cookie_value("", cookie_name) == null);
+}
+
+test "a device's bearer token: its account, its scope, no CSRF; revoked, anonymous" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const routes = @import("../../server/routes.zig");
+    var flow: routes.testing.Flow = undefined;
+    flow.init(.{
+        .connection = &harness.fixture.connection,
+        .auth = &harness.auth,
+        .io = std.testing.io,
+    }, arena_state.allocator());
+
+    var system = harness.ctx(.system);
+    try @import("../../operations/user.zig").seed_editor(&system);
+
+    const email = "editor@example.com";
+    const editor = (try user_module.find_by_email(system.db, flow.arena, email)).?;
+    const created = try device_module.create(system.db, std.testing.io, flow.arena, .{
+        .user_id = editor.user.id,
+        .name = "laptop",
+        .scope = "drafts",
+    }, 1);
+    const template = "{s} /api/device/{s} HTTP/1.1\r\nHost: h\r\n" ++
+        "Authorization: Bearer {s}\r\nContent-Length: 0\r\n\r\n";
+    const token = created.token_text();
+
+    const listed = try flow.call(try flow.head(template, .{ "GET", "list", token }), "");
+    try std.testing.expectEqual(@as(u16, 200), listed.status.code());
+    try std.testing.expect(std.mem.indexOf(u8, listed.body, "\"current\":true") != null);
+
+    const revoke_body = try std.fmt.allocPrint(flow.arena, "{{\"id\":\"{s}\"}}", .{
+        created.device.id,
+    });
+    const revoke_head = try flow.head(template, .{ "POST", "revoke", token });
+    const revoked = try flow.call(revoke_head, revoke_body);
+    try std.testing.expectEqual(@as(u16, 200), revoked.status.code());
+
+    const after = try flow.call(try flow.head(template, .{ "GET", "list", token }), "");
+    try std.testing.expectEqual(@as(u16, 403), after.status.code());
+
+    const malformed = "GET /api/device/list HTTP/1.1\r\nHost: h\r\n" ++
+        "Authorization: Basic x\r\n\r\n";
+    try std.testing.expectEqual(@as(u16, 403), (try flow.call(malformed, "")).status.code());
 }

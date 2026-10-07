@@ -32,6 +32,14 @@ pub fn main(init: std.process.Init) !u8 {
     var checked: u32 = 0;
 
     inline for (SDK.operations) |Operation| {
+        // Building a plugin needs the compiler, which the fixture binary does not carry;
+        // smoke builds one with a binary that does.
+        const builds = comptime std.mem.startsWith(u8, Operation.name, "plugin.build");
+
+        if (builds and !publr.toolchain.carried) {
+            continue;
+        }
+
         try check(init, binary, work_dir, Operation);
 
         checked += 1;
@@ -90,7 +98,9 @@ fn run_example(
 
     const arena = init.arena.allocator();
 
-    const arguments = if (comptime std.mem.eql(u8, Operation.name, "sign_on.redeem"))
+    const redeems = comptime std.mem.eql(u8, Operation.name, "sign_on.redeem") or
+        std.mem.eql(u8, Operation.name, "device.redeem");
+    const arguments = if (redeems)
         try world.fresh_sign_on(arena, printed, publr.sdk.context.wall_clock_ms(init.io))
     else
         printed;

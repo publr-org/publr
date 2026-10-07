@@ -11,6 +11,7 @@ const model_app = @import("../model/app.zig");
 const sdk = @import("../sdk.zig");
 const build_command = @import("build.zig");
 const apps_host = @import("apps_host.zig");
+const plugin_build = @import("plugin_build.zig");
 
 const port_default: u16 = 8080;
 const browser_port_default: u16 = 8081;
@@ -93,10 +94,12 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         routes.register(listener.router());
     }
 
-    const session = try claim(init, db_path, bound, browser_dir == null);
+    const session = try claim(init, db_path, bound, &apps, browser_dir == null);
     defer if (session != null) operator.close(init.io, init.arena.allocator(), db_path);
 
+    var builder: plugin_build.Builder = .{ .io = init.io, .db_path = db_path };
     project.operator_key = if (session) |*owned| &owned.key else null;
+    project.builder = try builder_of(init, &builder, session != null);
     announce(bound, browser_dir);
 
     if (browser_dir == null) {
@@ -104,7 +107,6 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     }
 
     try listener.enable_shutdown_signals();
-
     try run_loop(&listener, &project, @as(i64, flags.idle_stop_s) * std.time.ms_per_s);
 
     return 0;
@@ -176,6 +178,22 @@ fn apps_mode(arena: std.mem.Allocator, flags: Flags, bound: u16) !apps_host.Mode
 
 /// Whether a server already runs for this database, said when it does: one project, one
 /// owner. When none does, the compiler for plugins is made ready before serving.
+/// What builds plugins from sources an agent sends: only beside a CLI session (the build
+/// installs through it) and with the compiler carried.
+fn builder_of(
+    init: std.process.Init,
+    builder: *plugin_build.Builder,
+    session: bool,
+) !?sdk.context.PluginBuilder {
+    std.debug.assert(builder.db_path.len > 0);
+
+    if (!session or !toolchain.carried) {
+        return null;
+    }
+
+    return try builder.hook(init.arena.allocator());
+}
+
 fn another_server(init: std.process.Init, db_path: [:0]const u8) !bool {
     std.debug.assert(db_path.len > 0);
 
@@ -199,6 +217,7 @@ fn claim(
     init: std.process.Init,
     db_path: [:0]const u8,
     port: u16,
+    apps: *const apps_host.AppsHost,
     owns_project: bool,
 ) !?operator.Session {
     std.debug.assert(port > 0);
@@ -208,7 +227,9 @@ fn claim(
         return null;
     }
 
-    return try operator.open(init.io, init.arena.allocator(), db_path, port);
+    const url = apps.mode.options.base_url;
+
+    return try operator.open(init.io, init.arena.allocator(), db_path, port, url);
 }
 
 fn run_loop(listener: *http.App, project: *routes.Project, idle_stop_ms: i64) !void {

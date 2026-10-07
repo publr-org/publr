@@ -32,6 +32,8 @@ pub const Request = apps.middleware.Request;
 pub const Response = apps.middleware.Response;
 pub const template = @import("template.zig");
 pub const operations = struct {
+    pub const device = @import("operations/device.zig");
+    pub const apps = @import("operations/apps.zig");
     pub const heartbeat = @import("operations/heartbeat.zig");
     pub const project = @import("operations/project.zig");
     pub const custom_fields = @import("operations/custom_fields.zig");
@@ -58,6 +60,10 @@ pub const plugin_build = if (builtin.os.tag == .wasi) void else @import("server/
 pub const operator = if (builtin.os.tag == .wasi) void else @import("server/operator.zig");
 pub const agents = if (builtin.os.tag == .wasi) void else @import("server/agents.zig");
 pub const apps_load = if (builtin.os.tag == .wasi) void else @import("server/apps_load.zig");
+pub const login = if (builtin.os.tag == .wasi) void else @import("server/login.zig");
+pub const skill = if (builtin.os.tag == .wasi) void else @import("server/skill.zig");
+pub const new_site = if (builtin.os.tag == .wasi) void else @import("server/new_site.zig");
+pub const remote = if (builtin.os.tag == .wasi) void else @import("server/remote.zig");
 
 test {
     std.testing.refAllDecls(@This());

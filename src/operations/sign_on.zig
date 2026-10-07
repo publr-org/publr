@@ -142,40 +142,52 @@ pub const Redeem = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const claims = try trusted_claims(ctx, in.token);
-
-        if (!try store.sign_on_tokens.claim(ctx.db, claims.jti, claims.exp)) {
-            ctx.notice("auth.sign_on_replayed", claims.sub);
-
-            return error.Conflict;
-        }
-
-        const email = store.users.normalize_email(ctx.arena, claims.sub) catch {
-            return error.BadCredentials;
-        };
-        const found = try store.users.find_by_email(ctx.db, ctx.arena, email) orelse {
-            return error.BadCredentials;
-        };
-
-        if (!found.user.active) {
-            return error.BadCredentials;
-        }
+        const user = try vouched_user(ctx, in.token);
 
         _ = try store.sessions.cleanup(ctx.db, ctx.now_ms);
-        _ = try store.sign_on_tokens.cleanup(ctx.db, ctx.now_ms);
 
-        const user_id = found.user.id;
-        const created = try store.sessions.create(ctx.db, ctx.io, ctx.arena, user_id, ctx.now_ms);
+        const created = try store.sessions.create(ctx.db, ctx.io, ctx.arena, user.id, ctx.now_ms);
 
-        ctx.notice("auth.sign_on_succeeded", found.user.id);
+        ctx.notice("auth.sign_on_succeeded", user.id);
 
         return .{
             .token = try ctx.arena.dupe(u8, created.token_text()),
-            .user_id = found.user.id,
+            .user_id = user.id,
             .expires_at = created.session.expires_at,
         };
     }
 };
+
+/// The active account a token the trusted issuer signed for this site names, the token
+/// used up. `BadCredentials` for a token that is not good, `Conflict` for one used before.
+pub fn vouched_user(ctx: *Ctx, token: []const u8) Error!store.users.User {
+    std.debug.assert(ctx.db.transaction_depth >= 1);
+
+    const claims = try trusted_claims(ctx, token);
+
+    if (!try store.sign_on_tokens.claim(ctx.db, claims.jti, claims.exp)) {
+        ctx.notice("auth.sign_on_replayed", claims.sub);
+
+        return error.Conflict;
+    }
+
+    _ = try store.sign_on_tokens.cleanup(ctx.db, ctx.now_ms);
+
+    const email = store.users.normalize_email(ctx.arena, claims.sub) catch {
+        return error.BadCredentials;
+    };
+    const found = try store.users.find_by_email(ctx.db, ctx.arena, email) orelse {
+        return error.BadCredentials;
+    };
+
+    if (!found.user.active) {
+        return error.BadCredentials;
+    }
+
+    std.debug.assert(found.user.id.len > 0);
+
+    return found.user;
+}
 
 /// The token's claims when this site's issuer signed them for this site and they are still
 /// good; `BadCredentials` for anything else, alike, so nothing tells a forger which part

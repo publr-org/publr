@@ -212,6 +212,7 @@ pub const Delete = struct {
     pub const name = "content_type.delete";
     pub const description = "Delete a content type; refuses while it has records unless forced";
     pub const kind: sdk.operation.Kind = .write;
+    pub const destroys = true;
     pub const In = struct { type: []const u8, force: bool = false };
     pub const Out = struct { deleted: bool, records_removed: u32 };
     pub const example: In = .{ .type = "page" };

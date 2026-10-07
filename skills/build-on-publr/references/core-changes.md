@@ -100,8 +100,8 @@ and never send their code or data anywhere else.
 
 ## 7. Until it is merged
 
-- The app builds against the PR's branch at a pinned commit (in `build.zig.zon`), never
-  against a core edited inside the app's checkout.
+- The project runs a `publr` built from the PR's branch at a pinned commit, never a core
+  edited inside the project.
 - The app-specific half lives in the app's plugin, so dropping the core patch later only
   means bumping the pin.
 - If review changes the shape, adapt the app to what is merged. If it is rejected, the
@@ -112,10 +112,10 @@ and never send their code or data anywhere else.
 
 ## On Publr Cloud
 
-A Publr Cloud project is its own Publr instance, the same as a self-hosted one: its owner
-may add compiled-in plugins and change core. Every rule above applies unchanged, for the
-same reason: a project whose core is edited in place stops taking Publr's updates. What
-Cloud keeps out of the instance's reach is the platform around it (routing, isolation
-from other projects, resource limits, the rules of the owner's plan), so nothing inside
-the project needs to be protected from its own owner. Never try to work around those
-limits from inside the project.
+A Publr Cloud project runs the same Publr for every project: its own code is sandboxed
+plugins and apps, never native code, and core never changes there. A change to core
+reaches Cloud only once it is merged and released. A project that needs its own core or
+compiled-in plugins is exported and run on its own binary. What Cloud keeps out of a
+project's reach (routing, isolation from other projects, resource limits, the rules of
+the owner's plan) is enforced outside it; never try to work around those limits from
+inside the project.

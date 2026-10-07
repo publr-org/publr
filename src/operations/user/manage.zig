@@ -99,6 +99,7 @@ pub const Delete = struct {
         \\cannot be deleted.
     ;
     pub const kind: sdk.operation.Kind = .write;
+    pub const destroys = true;
     pub const In = struct { user: []const u8 };
     pub const Out = struct { user_id: []const u8, sessions_revoked: u32 };
     pub const example: In = .{ .user = "editor@example.com" };

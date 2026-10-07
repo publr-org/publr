@@ -251,6 +251,45 @@ and the row is removed.
 | `id` | text, primary key | The token's `jti`, as the issuer set it |
 | `expires_at` | integer | The token's expiry, Unix milliseconds |
 
+## `devices`
+
+Devices a person let act for their account: an agent, a CLI on another machine. The
+device holds `id.secret`; only the hash of the secret is stored. A device never expires;
+revoking it keeps the row, so the activity log (`token:<id>`) can still name it. Deleting
+the user removes their devices.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text, primary key | Device id (the public half of the token) |
+| `secret_hash` | blob | SHA-256 of the secret half |
+| `user_id` | text, references `users` | Whose account it acts for; cascades on delete |
+| `name` | text | What the person approved it as ("An agent on Ada's laptop") |
+| `scope` | text | `read`, `drafts` or `write` |
+| `created_at` | integer | When it was approved |
+| `last_used_at` | integer | When it last made a request, to the minute |
+| `revoked_at` | integer, null | When it was revoked; null while it works |
+
+Index: `devices_user_id (user_id, created_at)`.
+
+## `device_requests`
+
+Devices waiting for a person to approve them (`device.start`), until they collect their
+token (`device.poll`) or ten minutes pass. The device holds the device code; only its hash
+is stored. The person types the user code.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `code_hash` | blob, primary key | SHA-256 of the device code |
+| `user_code` | text, unique | `WXYZ-1234`, what the person types or follows |
+| `name` | text | The name the device asked for |
+| `scope` | text | The scope asked for, then the one approved |
+| `state` | text | `pending`, `approved` or `denied` |
+| `user_id` | text, references `users`, null | Who approved or denied it |
+| `expires_at` | integer | When the request lapses, Unix milliseconds |
+| `created_at` | integer | When the device asked |
+
+Index: `device_requests_expires_at (expires_at)`.
+
 ## `identities`
 
 Who a sign-in provider says an account is (`identity.sign_in`, `identity.link`).
@@ -554,14 +593,16 @@ the database under `storage_key`.
 | Column | Type | Meaning |
 |---|---|---|
 | `record` | text, references `records` | The file's record; cascades on delete |
-| `filename` | text | The name it was uploaded with |
+| `filename` | text | The name it was uploaded with, or had in the media folder |
 | `mime_type` | text | What it is, decided by its extension and checked against its bytes |
 | `size` | integer | Bytes |
 | `width`, `height` | integer, nullable | Pixels, for images stb reads |
-| `storage_key` | text, unique | Where the bytes are: `YYYY/MM/<stem>-<random>.<ext>` |
+| `storage_key` | text, unique | Where the bytes are: `YYYY/MM/<stem>-<random>.<ext>`, or the path a file put into the media folder by hand already had |
 | `hash` | text | SHA-256 of the bytes, hex |
 | `private` | integer | `1`: served only to signed-in users, never cached by others |
 | `created_at` | integer | Upload time, ms |
+| `unreviewed` | integer | `1`: taken in from the media folder by `media sync`; `0` once someone changes the file |
+| `missing` | integer | `1`: the last `media sync` found its bytes gone from the media folder |
 
 Index `media_created (created_at, record)` serves the newest-first list;
 `media_hash (hash)` finds an upload of the same bytes.

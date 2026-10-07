@@ -27,6 +27,26 @@ pub const Kind = enum { read, write };
 /// owns the operation and raised with `ctx.fail`: "your email is not verified", "the plan's
 /// limit is reached". An operation lists the ones it can end with in `failures`, for its
 /// documentation.
+/// Whether the operation destroys what cannot be had back (`pub const destroys = true`):
+/// a device never may; a person does it in the admin.
+pub fn destroys(comptime Operation: type) bool {
+    return @hasDecl(Operation, "destroys") and Operation.destroys;
+}
+
+/// What a device is told when it tries to destroy something.
+pub const needs_person: Failure = .{
+    .name = "NeedsPerson",
+    .status = 403,
+    .message = "This destroys data for good, so a person does it in the admin, not a device",
+};
+
+/// What a `drafts` device is told when its write would change what visitors see.
+pub const drafts_only: Failure = .{
+    .name = "DraftsOnly",
+    .status = 403,
+    .message = "This device saves drafts only; a person publishes them in the admin",
+};
+
 pub const Failure = struct {
     /// What REST answers (`{ "error": "Unverified" }`): letters only, starting upper-case.
     name: []const u8,
@@ -205,6 +225,14 @@ pub fn validate(comptime Operation: type) void {
 
         if (@hasDecl(Operation, "details")) {
             assert_decl(Operation, "details", []const u8);
+        }
+
+        if (@hasDecl(Operation, "destroys")) {
+            assert_decl(Operation, "destroys", bool);
+
+            if (Operation.kind != .write) {
+                @compileError(Operation.name ++ ": only a write destroys");
+            }
         }
 
         if (@hasDecl(Operation, "failures")) {

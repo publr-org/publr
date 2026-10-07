@@ -229,14 +229,19 @@ other files) always, and from its Filter menu Size (under 1 MB, 1 to 10 MB, over
 and Visibility (public or private), each `is` a value chosen from its menu and dropped
 with its ×; custom fields join it later. Then Type to search, View (always show each
 tile's name and facts, not only on hover; small, medium or large tiles, kept by the
-browser) and Upload. On the left: All files, Unsorted, the folder tree (each folder with
-what it holds, itself and below, under the rest of the filter; new folder, rename, move
-and delete on its row), the tags (choosing several narrows to files carrying them all; a
-tag that would leave nothing is inert; a new one made in place) and the upload year and
-month. Beside it the files fill the sheet as
+browser) and Upload. On the left: All files, Unsorted, Unreviewed (files taken in from
+the media folder that no one has changed yet, listed while there are any), the folder
+tree (each folder with what it holds, itself and below, under the rest of the filter; new
+folder, rename, move and delete on its row), the tags (choosing several narrows to files
+carrying them all; a tag that would leave nothing is inert; a new one made in place), the
+upload year and month, and on a server On the server: Check looks at the media folder for
+files put there by hand and says how many are new, missing or skipped (the first few
+skipped with why), and Add takes the new ones in (`media sync`). Beside it the files fill
+the sheet as
 square tiles with nothing between them: an image as a cropped copy, a video as its first
 frame with its type in the corner, any other file as its kind's icon over its type (PDF,
-MP3), its name and facts over the bottom on hover. Ticking tiles brings the
+MP3), a file whose bytes are gone with Missing in the corner, its name and facts over
+the bottom on hover. Ticking tiles brings the
 bulk bar: tag, move to a folder, delete. Files dropped anywhere on the tiles upload into
 the open folder, each one request whose body is the file. Following a filter, a page or Back asks
 `media list` for that page and draws it in place; every one is a link that works

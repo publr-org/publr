@@ -31,13 +31,14 @@ pub const List = struct {
     pub const description = "The library's files a filter keeps, with the explorer's counts";
     pub const details =
         \\Newest first, `limit` a page (25 by default). `folder` is a folder's id (its files
-        \\and those of the folders below it), `unsorted` (files in no folder), or empty for
+        \\and those of the folders below it), `unsorted` (files in no folder), `unreviewed`
+        \\(files taken in from the media folder that no one has looked at), or empty for
         \\all. Every tag in `tags` must be on a file; `search` matches its name or title;
-        \\`year` and `month` its upload date; `kind`, `size` and `visibility` the file itself.
-        \\Beside the page: the folder tree, each folder
-        \\with the files it would show keeping the rest of the filter; the tags, each with
-        \\what adding it would leave; the months files were uploaded in; and what All files
-        \\and Unsorted would hold. Signed-in callers only.
+        \\`year` and `month` its upload date; `kind`, `size` and `visibility` the file
+        \\itself. Beside the page: the folder tree, each folder with the files it would show
+        \\keeping the rest of the filter; the tags, each with what adding it would leave;
+        \\the months files were uploaded in; and what All files, Unsorted and Unreviewed
+        \\would hold. Signed-in callers only.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -58,6 +59,7 @@ pub const List = struct {
         total: u32,
         all: u32,
         unsorted: u32,
+        unreviewed: u32,
         folders: []const Folder,
         tags: []const Tag,
         periods: []const Period,
@@ -68,6 +70,7 @@ pub const List = struct {
         .total = 1,
         .all = 3,
         .unsorted = 1,
+        .unreviewed = 0,
         .folders = &.{.{
             .id = "2a3b4c5d6e7f80910a1b2c3d",
             .name = "Photos",
@@ -79,7 +82,7 @@ pub const List = struct {
         .periods = &.{.{ .year = 2026, .month = 10, .count = 3 }},
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
-        .folder = "A folder's id, `unsorted`, or empty for every file",
+        .folder = "A folder's id, `unsorted`, `unreviewed`, or empty for every file",
         .tags = "Tag ids; a file must carry each one",
         .search = "Part of a file's name or title",
         .year = "Uploaded in this year",
@@ -95,6 +98,7 @@ pub const List = struct {
         .total = "How many files the filter keeps",
         .all = "How many the filter keeps in any folder",
         .unsorted = "How many it keeps in no folder",
+        .unreviewed = "How many it keeps that came from the media folder unreviewed",
         .folders = "Every folder in tree order, with its depth and count",
         .tags = "Every tag, with its count",
         .periods = "The months files were uploaded in, newest first, with counts",
@@ -118,6 +122,7 @@ pub const List = struct {
             .total = try listing.count(ctx.db, ctx.arena, filter),
             .all = try listing.all_count(ctx.db, ctx.arena, filter),
             .unsorted = try listing.unsorted_count(ctx.db, ctx.arena, filter),
+            .unreviewed = try listing.unreviewed_count(ctx.db, ctx.arena, filter),
             .folders = try folders_of(ctx, filter),
             .tags = try tags_of(ctx, filter),
             .periods = try periods_of(ctx, filter),
@@ -140,6 +145,8 @@ fn filter_of(in: List.In) Error!listing.Filter {
         .any
     else if (std.mem.eql(u8, in.folder, "unsorted"))
         .unsorted
+    else if (std.mem.eql(u8, in.folder, "unreviewed"))
+        .unreviewed
     else
         .{ .term = in.folder };
 

@@ -135,6 +135,30 @@ pub const AppsHost = struct {
         }
     }
 
+    /// What the `apps` operations reach: the folder, and `reload` with its reason.
+    pub fn folder(host: *AppsHost) sdk.context.AppsFolder {
+        std.debug.assert(host.mode.options.apps_dir.len > 0);
+
+        const dir = if (host.dir.len > 0)
+            host.dir
+        else
+            apps_adapter.folder.resolve_dir(host.project.io, host.mode.options.apps_dir);
+
+        return .{ .context = host, .dir = dir, .reload = &reload_reason };
+    }
+
+    fn reload_reason(context: *anyopaque) ?[]const u8 {
+        const host: *AppsHost = @ptrCast(@alignCast(context));
+
+        std.debug.assert(host.apps.len <= apps_adapter.spec.apps_max);
+
+        host.reload() catch |err| {
+            return if (host.reason.len > 0) host.reason.text() else @errorName(err);
+        };
+
+        return null;
+    }
+
     pub fn close(host: *AppsHost) void {
         std.debug.assert(host.apps.len <= apps_adapter.spec.apps_max);
 

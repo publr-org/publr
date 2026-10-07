@@ -67,12 +67,24 @@ pub fn library(
         .unsorted = @floatFromInt(listed.unsorted),
         .all_href = sides.all_href,
         .unsorted_href = sides.unsorted_href,
+        .unreviewed = @floatFromInt(listed.unreviewed),
+        .unreviewed_href = sides.unreviewed_href,
+        .on_server = on_server(&session),
         .folders = sides.folders,
         .tag_list = sides.tags,
         .periods = sides.periods,
         .years = sides.years,
         .months = sides.months,
     });
+}
+
+/// Whether the files are in a folder on a server, which people can put files into by hand.
+pub fn on_server(session: *const admin.Session) bool {
+    std.debug.assert(session.ctx.now_ms >= 0);
+
+    const files = session.ctx.files orelse return false;
+
+    return files == .disk;
 }
 
 fn filter_of(arena: std.mem.Allocator, query: []const u8) admin.Error!explorer.Filter {
@@ -132,6 +144,7 @@ pub fn Sides(comptime View: type) type {
     return struct {
         all_href: []const u8,
         unsorted_href: []const u8,
+        unreviewed_href: []const u8,
         folders: []const View.FoldersItem,
         tags: []const View.Tag_listItem,
         periods: []const View.PeriodsItem,
@@ -157,9 +170,14 @@ pub fn sides_of(
     unsorted.folder = "unsorted";
     unsorted.page = 1;
 
+    var unreviewed = unsorted;
+
+    unreviewed.folder = "unreviewed";
+
     return .{
         .all_href = try explorer.href_of(arena, everywhere),
         .unsorted_href = try explorer.href_of(arena, unsorted),
+        .unreviewed_href = try explorer.href_of(arena, unreviewed),
         .folders = try folders_of(View.FoldersItem, arena, filter, listed.folders),
         .tags = try tags_of(View.Tag_listItem, arena, filter, listed.tags),
         .periods = try periods_of(View.PeriodsItem, arena, listed.periods),
@@ -476,12 +494,13 @@ fn items_of(arena: std.mem.Allocator, items: []const media.Item) admin.Error![]c
                 try std.fmt.allocPrint(arena, "/media/{s}?w=480&h=480&fit=cover", .{item.key})
             else
                 "",
-            .image = image,
-            .video = std.mem.eql(u8, item.family, "video"),
+            .image = image and !item.missing,
+            .video = std.mem.eql(u8, item.family, "video") and !item.missing,
             .src = try std.fmt.allocPrint(arena, "/media/{s}", .{item.key}),
             .kind = try explorer.kind_of(arena, item.filename),
             .icon = enum_of(@FieldType(Item, "icon"), explorer.icon_of(item.family)),
             .facts = try explorer.facts_of(arena, item),
+            .missing = item.missing,
             .selected = false,
         };
     }

@@ -44,6 +44,8 @@ pub const Project = struct {
     plugin_states: ?*anyopaque = null,
     /// The media library's files, which every context made for a request carries.
     files: ?@import("../lib/files.zig").Files = null,
+    /// Building plugins from their sources, where `serve` carries the compiler.
+    builder: ?sdk.context.PluginBuilder = null,
     /// The session cookie's name; a plugin's `serving` may name another, so several servers
     /// on one host keep their sign-ins apart.
     session_cookie: []const u8 = @import("../adapters/rest/identity.zig").cookie_name,

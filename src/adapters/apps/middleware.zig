@@ -37,6 +37,11 @@ pub const Response = struct {
     location: []const u8 = "",
     content_type: []const u8 = "text/html; charset=utf-8",
     body: []const u8 = "",
+    /// Headers besides the type and the cache policy: `WWW-Authenticate`, `Link`, ….
+    headers: []const Header = &.{},
+
+    pub const Header = struct { name: []const u8, value: []const u8 };
+    pub const headers_max: u32 = 8;
 };
 
 /// The signed-in visitor.
@@ -197,6 +202,20 @@ pub const Request = struct {
         return .{ .status = status, .body = body };
     }
 
+    /// The request's body, as sent: empty for a request with none.
+    pub fn posted(request: *const Request) []const u8 {
+        std.debug.assert(request.http.body.len <= 64 << 20);
+
+        return request.http.body;
+    }
+
+    /// For calls to elsewhere (`std.http.Client`), made while the request waits.
+    pub fn io(request: *const Request) std.Io {
+        std.debug.assert(request.http.path().len > 0);
+
+        return request.project.io;
+    }
+
     /// `value` as JSON, `200 OK`.
     pub fn json(request: *const Request, value: anytype) Response {
         std.debug.assert(request.http.path().len > 0);
@@ -247,8 +266,16 @@ fn write(response: *http.Response, given: Response) !void {
         return error.Invalid;
     }
 
+    if (given.headers.len > Response.headers_max) {
+        return error.Invalid;
+    }
+
     // Middleware answers per request, often per visitor: no shared cache keeps it.
     try response.set_header("Cache-Control", "private, no-store");
+
+    for (given.headers) |header| {
+        try response.add_header(header.name, header.value);
+    }
 
     if (redirecting) {
         return response.redirect(status, given.location);
