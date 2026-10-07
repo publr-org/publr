@@ -15,4 +15,4 @@ jobs:
 
       - name: zig build verify-full
         working-directory: publr
-        run: zig build verify-full --summary all
+        run: zig build verify-full -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary all

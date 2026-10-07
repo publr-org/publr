@@ -73,7 +73,7 @@ jobs:
 
       - name: zig build verify-full
         working-directory: publr
-        run: zig build verify-full --summary all
+        run: zig build verify-full -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary all
 
   # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
   # CPU. Linux is cross-compiled against musl.
@@ -97,13 +97,13 @@ jobs:
         run: *write_version
 
       - uses: ./publr/.github/actions/workspace
+        with: { target: "${{ matrix.target }}" }
 
-      # The carried Zig compiler declares an 8 GB bound; macos-latest has 7 GB and swap.
       - name: zig build
         working-directory: publr
         run: |
           zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe \
-            --maxrss 8000000000 --prefix ../out
+            -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --prefix ../out
           cp ../out/bin/publr ../${{ matrix.file }}
 
       - name: Check it reports the version

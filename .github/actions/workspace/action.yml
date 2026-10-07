@@ -1,8 +1,15 @@
 name: Publr workspace
 description: >
   The sibling repositories Publr builds against, checked out beside the caller's own
-  (latest main of each), the PublrJS runtime built with Vite+, and Zig. The caller checks
-  out its own repository, and publr when it builds on it, into $GITHUB_WORKSPACE/<name>.
+  (latest main of each), the PublrJS runtime built with Vite+, Zig, and the compiler Publr
+  carries, built once per target and Zig and kept in the Actions cache. The caller checks
+  out its own repository, and publr when it builds on it, into $GITHUB_WORKSPACE/<name>,
+  and passes -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" to zig build.
+
+inputs:
+  target:
+    description: The target publr is built for, which the carried compiler runs on
+    default: native
 
 runs:
   using: composite
@@ -32,6 +39,33 @@ runs:
 
     - uses: mlugg/setup-zig@v2
       with: { version: 0.16.0 }
+
+    # Building the carried compiler takes minutes, so it is built only when Zig or the way
+    # lib/zig packs it changes (the key), and saved at once so a later failure keeps it.
+    - id: toolchain
+      uses: actions/cache/restore@v4
+      with:
+        path: zig-toolchain/toolchain.tar.gz
+        key: >-
+          zig-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.target }}-${{
+          hashFiles('lib/zig/build/**', 'lib/zig/build.zig.zon', 'publr/.zigversion') }}
+    - name: Build the carried compiler
+      if: steps.toolchain.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: lib/zig
+      # Zig declares 8 GB for building itself; it peaks near 2 GB, and macos-latest has 7.
+      run: |
+        zig build toolchain -Dtarget=${{ inputs.target }} --maxrss 8000000000 \
+          --prefix "$GITHUB_WORKSPACE/zig-toolchain"
+    - if: steps.toolchain.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: zig-toolchain/toolchain.tar.gz
+        key: ${{ steps.toolchain.outputs.cache-primary-key }}
+    - name: Use it
+      shell: bash
+      run: |
+        echo "PUBLR_TOOLCHAIN_ARCHIVE=$GITHUB_WORKSPACE/zig-toolchain/toolchain.tar.gz" >> "$GITHUB_ENV"
 
     - name: Record what was built
       shell: bash

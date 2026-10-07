@@ -22,6 +22,8 @@ pub const Sources = struct {
     public_dir: []const u8 = "apps",
     /// Whether the binary carries the compiler for sandboxed plugins (`publr zig`).
     compiler: bool = true,
+    /// That compiler's archive built before for the same target, instead of building it.
+    toolchain_archive: ?[]const u8 = null,
 };
 
 /// `-Dpreset=<dir>`: a project's parts kept together, `<dir>/apps`, `<dir>/plugins` and
@@ -68,6 +70,12 @@ pub fn sources(builder: *std.Build) Sources {
         "compiler",
         "Carry the compiler for sandboxed plugins, `publr zig` (default: true)",
     ) orelse true;
+    const toolchain_archive = builder.option(
+        []const u8,
+        "toolchain-archive",
+        "The carried compiler's archive, built before for this target by " ++
+            "`zig build toolchain` in ../lib/zig, used instead of building it",
+    );
     const chosen: Sources = .{
         .apps_dir = apps_dir,
         .plugins_dir = plugins_dir,
@@ -75,6 +83,7 @@ pub fn sources(builder: *std.Build) Sources {
         .apps_max = apps_max,
         .public_dir = if (from_preset != null) builder.pathFromRoot(apps_dir) else "apps",
         .compiler = compiler,
+        .toolchain_archive = toolchain_archive,
     };
     const root = builder.build_root.path.?;
 
@@ -167,7 +176,7 @@ pub fn add_module(
         });
     }
 
-    add_compiler(builder, module, target, optimize, from.compiler);
+    add_compiler(builder, module, target, optimize, from);
 
     vendors.add_include_paths(builder, module);
     module.linkLibrary(vendors.add_library(builder, target));
@@ -199,28 +208,35 @@ fn add_compiler(
     module: *std.Build.Module,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    wanted: bool,
+    from: Sources,
 ) void {
     std.debug.assert(module.root_source_file != null);
     std.debug.assert(builder.build_root.path != null);
 
-    const carried = wanted and target.result.os.tag != .wasi;
+    const carried = from.compiler and target.result.os.tag != .wasi;
     const options = builder.addOptions();
 
     options.addOption(bool, "compiler", carried);
     module.addImport("toolchain_options", options.createModule());
 
-    if (carried) {
-        const publr_zig = builder.dependency("publr_zig", .{
-            .target = target,
-            .release = optimize != .Debug,
-        });
-
-        module.addImport("publr_zig", publr_zig.module("publr_zig"));
-        module.addAnonymousImport("sdk_archive", .{
-            .root_source_file = sandboxed_plugins.sdk_archive(builder, publr_zig.artifact("pack")),
-        });
+    if (!carried) {
+        return;
     }
+
+    const release = optimize != .Debug;
+    const publr_zig = if (from.toolchain_archive) |archive|
+        builder.dependency("publr_zig", .{
+            .target = target,
+            .release = release,
+            .@"toolchain-archive" = archive,
+        })
+    else
+        builder.dependency("publr_zig", .{ .target = target, .release = release });
+
+    module.addImport("publr_zig", publr_zig.module("publr_zig"));
+    module.addAnonymousImport("sdk_archive", .{
+        .root_source_file = sandboxed_plugins.sdk_archive(builder, publr_zig.artifact("pack")),
+    });
 }
 
 /// What the admin's pages run in the browser: the PublrJS runtime from the sibling

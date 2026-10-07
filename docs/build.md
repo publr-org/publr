@@ -29,6 +29,7 @@ each concern lives in `build/<topic>.zig`.
 | `-Dapps=<dir>` | `apps` | the folder of apps compiled in, relative to this repository; absent is none (`build/apps.zig`) |
 | `-Dapps-max=<n>` | `32` | how many apps one project may compile in, 1 to 1024 |
 | `-Dcompiler=false` | `true` | leave out the compiler for sandboxed plugins (`publr zig`, about 8 MB); the test fixture is built without it |
+| `-Dtoolchain-archive=<file>` | none | carry this archive as that compiler instead of building it: `zig build toolchain -Dtarget=<the same target>` in `../lib/zig` makes it (`zig-out/toolchain.tar.gz`). CI keeps one per target until Zig changes |
 | `-Dplugins=<dir>` | `plugins` | the folder of plugins, one each, relative to this repository; `publr.zon` beside it names the ones compiled in (`.plugins = .{ .native = ... }`), the rest are built for the sandbox |
 | `-Dpreset=<dir>` | none | a project's parts at once: `<dir>/apps`, `<dir>/plugins` and `<dir>/publr.zon` (each option above still wins); the binary reads the preset's apps wherever it runs when the project has no `apps/` of its own |
 
