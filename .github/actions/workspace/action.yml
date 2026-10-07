@@ -2,7 +2,8 @@ name: Publr workspace
 description: >
   The sibling repositories Publr builds against, checked out beside the caller's own
   (latest main of each), the PublrJS runtime built with Vite+, Zig, and the compiler Publr
-  carries, built once per target and Zig and kept in the Actions cache. The caller checks
+  carries, built once per target and Zig and kept in the Actions cache. `commits` names the
+  commit to take of any of them instead (a Publr release's workspace.txt). The caller checks
   out its own repository, and publr when it builds on it, into $GITHUB_WORKSPACE/<name>,
   and passes -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" to zig build.
 
@@ -10,22 +11,37 @@ inputs:
   target:
     description: The target publr is built for, which the carried compiler runs on
     default: native
+  commits:
+    description: Lines of `<folder> <commit>` (lib, pjsx, jit, ui, icons, publr-js); main otherwise
+    default: ""
 
 runs:
   using: composite
   steps:
+    - id: refs
+      shell: bash
+      env: { COMMITS: "${{ inputs.commits }}" }
+      run: |
+        for folder in lib pjsx jit ui icons publr-js; do
+          commit="$(printf '%s\n' "$COMMITS" | awk -v folder="$folder" '$1 == folder { print $2 }')"
+          echo "${folder//-/_}=$commit" >> "$GITHUB_OUTPUT"
+        done
+
     - uses: actions/checkout@v4
-      with: { repository: publr-org/lib, path: lib }
+      with: { repository: publr-org/lib, path: lib, ref: "${{ steps.refs.outputs.lib }}" }
     - uses: actions/checkout@v4
-      with: { repository: publr-org/pjsx, path: pjsx }
+      with: { repository: publr-org/pjsx, path: pjsx, ref: "${{ steps.refs.outputs.pjsx }}" }
     - uses: actions/checkout@v4
-      with: { repository: publr-org/jit, path: jit }
+      with: { repository: publr-org/jit, path: jit, ref: "${{ steps.refs.outputs.jit }}" }
     - uses: actions/checkout@v4
-      with: { repository: publr-org/ui, path: ui }
+      with: { repository: publr-org/ui, path: ui, ref: "${{ steps.refs.outputs.ui }}" }
     - uses: actions/checkout@v4
-      with: { repository: publr-org/icons, path: icons }
+      with: { repository: publr-org/icons, path: icons, ref: "${{ steps.refs.outputs.icons }}" }
     - uses: actions/checkout@v4
-      with: { repository: publr-org/publrjs, path: publr-js }
+      with:
+        repository: publr-org/publrjs
+        path: publr-js
+        ref: "${{ steps.refs.outputs.publr_js }}"
 
     - uses: actions/setup-node@v4
       with:

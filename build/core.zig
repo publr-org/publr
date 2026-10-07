@@ -70,12 +70,17 @@ pub fn sources(builder: *std.Build) Sources {
         "compiler",
         "Carry the compiler for sandboxed plugins, `publr zig` (default: true)",
     ) orelse true;
-    const toolchain_archive = builder.option(
+    const toolchain_archive_option = builder.option(
         []const u8,
         "toolchain-archive",
         "The carried compiler's archive, built before for this target by " ++
             "`zig build toolchain` in ../lib/zig, used instead of building it",
     );
+    // Empty is none: a project building on this one passes its own option through.
+    const toolchain_archive = if (toolchain_archive_option) |path|
+        (if (path.len == 0) null else path)
+    else
+        null;
     const chosen: Sources = .{
         .apps_dir = apps_dir,
         .plugins_dir = plugins_dir,

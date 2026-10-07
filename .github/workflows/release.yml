@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.next.outputs.version }}
+      commits: ${{ steps.commits.outputs.commits }}
     steps:
       - uses: actions/checkout@v4
         with: { path: publr }
@@ -62,6 +63,21 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Releasing \`v$version\` ($BUMP from $current) from \`$(git rev-parse --short HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
 
+      # The libraries as they are now, the same for every build and kept with the Release
+      # (workspace.txt), so whatever builds this release later builds it with them.
+      - name: The libraries' commits
+        id: commits
+        run: |
+          {
+            echo "commits<<EOF"
+            for pair in lib:lib pjsx:pjsx jit:jit ui:ui icons:icons publr-js:publrjs; do
+              commit="$(git ls-remote "https://github.com/publr-org/${pair#*:}.git" refs/heads/main | cut -f1)"
+              [ -n "$commit" ] || { echo "::error::no main in ${pair#*:}" >&2; exit 1; }
+              echo "${pair%%:*} $commit"
+            done
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
   # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
   # kind of CPU (for any CPU of that kind: baseline). Linux is cross-compiled against musl.
   build:
@@ -88,7 +104,9 @@ jobs:
           done
 
       - uses: ./publr/.github/actions/workspace
-        with: { target: "${{ matrix.target }}" }
+        with:
+          target: ${{ matrix.target }}
+          commits: ${{ needs.version.outputs.commits }}
 
       - name: zig build
         working-directory: publr
@@ -131,10 +149,12 @@ jobs:
 
       - name: Checksums
         working-directory: dist
+        env: { COMMITS: "${{ needs.version.outputs.commits }}" }
         run: |
           cp ../publr/install.sh .
+          printf '%s\n' "$COMMITS" > workspace.txt
           chmod +x publr-*
-          sha256sum publr-* install.sh > SHA256SUMS
+          sha256sum publr-* install.sh workspace.txt > SHA256SUMS
           for file in publr-*; do sha256sum "$file" > "$file.sha256"; done
           cat SHA256SUMS
 
