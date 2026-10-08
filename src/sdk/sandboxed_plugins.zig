@@ -87,6 +87,16 @@ pub const SandboxedPlugins = struct {
             output: []const u8,
         ) Error!void,
         event: *const fn (context: *anyopaque, ctx: *Ctx, event: middleware.Event) void,
+        /// Runs operation `name` as the installed plugin `plugin`, on behalf of whoever calls:
+        /// each check gets the narrower of the plugin's grants and their roles. What a plugin's
+        /// frame asks of the admin beyond its own operations (a GROQ read).
+        call_as: *const fn (
+            context: *anyopaque,
+            ctx: *Ctx,
+            plugin: []const u8,
+            name: []const u8,
+            input: []const u8,
+        ) Error![]const u8,
         /// Every display hook on `target` (`record.title/variant`) in turn, each handed the
         /// batch the one before it answered; the last answer, as JSON.
         display: *const fn (
@@ -185,6 +195,21 @@ pub const SandboxedPlugins = struct {
         std.debug.assert(ctx.parent != null);
 
         return sandboxed.vtable.before(sandboxed.context, ctx, name, input);
+    }
+
+    /// `name` run as the installed plugin `plugin` for whoever calls; not found when no
+    /// installed plugin has that name.
+    pub fn call_as(
+        sandboxed: *const SandboxedPlugins,
+        ctx: *Ctx,
+        plugin: []const u8,
+        name: []const u8,
+        input: []const u8,
+    ) Error![]const u8 {
+        std.debug.assert(plugin.len > 0);
+        std.debug.assert(name.len > 0);
+
+        return sandboxed.vtable.call_as(sandboxed.context, ctx, plugin, name, input);
     }
 
     pub fn display(

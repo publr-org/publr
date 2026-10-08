@@ -1,0 +1,25 @@
+import { Chrome } from "./Chrome.ptsx";
+import { PluginFrame } from "../components/PluginFrame.ptsx";
+
+export type FramePageProps = {
+  title: string;
+  parents?: Array<{ label: string; href: string }>;
+  /** The frame's document, and what the frame may ask of the admin. */
+  src: string;
+  plugin: string;
+  page: string;
+  csrf: string;
+  operations: string[];
+};
+
+/** A plugin's own page: the chrome, with the plugin frame filling the sheet under the
+ * crumbs. What the plugin draws stays inside the frame. */
+export function FramePage({ title, parents = [], src, plugin, page, csrf, operations }: FramePageProps) {
+  return (
+    <Chrome title={title} parents={parents}>
+      <div class="flex flex-1 flex-col">
+        <PluginFrame src={src} title={title} plugin={plugin} page={page} csrf={csrf} operations={operations} />
+      </div>
+    </Chrome>
+  );
+}

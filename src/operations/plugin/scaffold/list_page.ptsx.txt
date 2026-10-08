@@ -1,0 +1,15 @@
+import { IndexPage } from "@publr/admin/IndexPage.ptsx";
+import { __Name__List } from "./__Name__List.ptsx";
+
+export type __Name__PageProps = {
+  items: Array<{ id: string; title: string; type_label: string; status: string; tone: string; href: string }>;
+};
+
+/** __Title__'s page in the admin: its entries, and a way to add one. */
+export function __Name__Page({ items }: __Name__PageProps) {
+  return (
+    <IndexPage title="__Title__" description="Entries people add and remove.">
+      <__Name__List items={items} />
+    </IndexPage>
+  );
+}

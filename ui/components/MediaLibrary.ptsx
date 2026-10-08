@@ -1119,7 +1119,7 @@ export function MediaLibrary({
           ) : (
             <div class="relative flex flex-1 flex-col" data-part="media-grid" onDragOver={dragged} onDragLeave={left} onDrop={dropped}>
               {state.selected_count > 0 && (
-                <div class="sticky top-14 z-20 flex flex-wrap items-center gap-2 border-b border-border bg-card px-6 py-2" data-part="media-bulk">
+                <div class="sticky top-[var(--sheet-top,3.5rem)] z-20 flex flex-wrap items-center gap-2 border-b border-border bg-card px-6 py-2" data-part="media-bulk">
                   <Text as="span" variant="heading-xs">{`${state.selected_count} selected`}</Text>
                   <Button type="button" hierarchy="tertiary" size="sm" onClick={select_page}>Select page</Button>
                   <Button type="button" hierarchy="tertiary" size="sm" onClick={clear_selection}>Clear</Button>

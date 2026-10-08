@@ -65,6 +65,10 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         return 0;
     }
 
+    // Only a plugin being installed gets its types beside its views: a build to a file
+    // (the fixtures) leaves the sources as they are.
+    try @import("plugin_build/types.zig").write(init, request.dir, manifest);
+
     return install(init, db_path, request.name, built);
 }
 

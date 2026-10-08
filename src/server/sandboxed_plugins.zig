@@ -55,6 +55,7 @@ pub const Host = struct {
         host.operations = .empty;
         host.index_arena = std.heap.ArenaAllocator.init(gpa);
         host.roles = null;
+        host.manifests = &.{};
         host.interface = .{ .context = host, .vtable = &interface.vtable };
     }
 

@@ -165,6 +165,69 @@ Each hook carries its reason (`pub const reason = "..."`); an event hook names t
 it sees (`pub const event = "record.published"`), an operation or a notice, and sees only
 that one, compiled in or installed. A plugin never writes `export fn`.
 
+### Pages in the plugin frame
+
+Any plugin, installed or built-in, can bring pages of its own, listed in the Settings
+sidebar for whoever may call the read that draws them:
+
+```zig
+pub const pages = [_]publr.plugin.Page{.{
+    .path = "log",
+    .label = "Guestbook log",
+    .icon = "stack",
+    .operation = Page, // a read: In has `query` and `base`, Out has `html`, all strings
+}};
+```
+
+The page is at `/admin/plugin/<plugin>/<path>`. The admin draws its chrome and puts the
+plugin frame in the sheet: an `<iframe sandbox>` with an opaque origin. The frame's
+document is the `html` the read answers, run as the person looking at it, with the
+address's query string as `query` and the path the project is served under as `base`.
+
+A compiled-in plugin draws the page with the admin's own layouts, so it looks like any
+other Settings page: its view (an `IndexPage`, a `FormPage`) rendered whole with
+`publr.admin.render.document(arena, publr.admin.chrome.in_plugin_frame(arena, in.base),
+View, props)`, which leaves out the rail, the sidebar and the crumbs the admin already
+draws around the frame. An installed plugin gets the same once the design system is drawn
+for it by the host; until then it answers its own markup. It gets the admin's stylesheet and a small bridge, and
+nothing else: no session, no network (`connect-src 'none'`), and it can be framed only
+by the admin. Its response carries the same policy, so it stays sandboxed even when
+opened on its own.
+
+Inside, anything goes: any markup, any script, any library. The admin's design system
+is the easy default. The frame reaches the admin only through the bridge:
+
+- `publr.call("guestbook.sign", input)` runs one of the plugin's own operations as the
+  viewer, through the usual checks, and resolves with its output. Anything else is
+  refused.
+- `publr.navigate("log?week=2")`, and every link clicked, goes to another of the
+  plugin's pages (`?week=2` alone stays on this one). A link to another site opens in a
+  new tab.
+- The frame grows with what it shows.
+
+What the frame draws never reaches the admin, so it needs no sanitizing and no
+permission.
+
+A page can also be a declaration, with no views of the plugin's: `.form = .{ .read =
+Read, .save = Save, .multiline = &.{"description"} }` instead of `.operation`. The admin
+draws it as one of its own pages (no frame: nothing of the plugin's is drawn), a field for
+each field of `Save`'s input (strings, numbers, switches; `multiline` ones as several
+lines; each `field_docs` line as its help), filled from what `Read` answers; Save calls
+`Save` as the person looking. It works the same for an installed plugin, which draws
+nothing else in the admin yet.
+
+In a page's PTSX, `publr/operations` does the talking, the same in the frame and on an
+admin page: `call("guestbook.sign")` is a write through one of the plugin's operations
+(called with its input; `isPending`, `error`, `value`), after which every read on the page
+reads again; `query("guestbook.entries")` is a reactive read (`value`, `isPending`,
+`refresh()`), and ``query(groq`*[_type == "entry"]`, () => params)`` a GROQ read through
+`record.query`, run as the plugin for the viewer, so it reads no more than both may. The
+admin's composites (`FieldRow`, `ItemList`, `StatusStrip`) and `OperationForm` (a form
+from a list of fields and the operation that saves them) make the page look like the
+admin's own without styling it. `publr plugin build` writes `ui/operations.d.ts`, each
+operation's input and output as TypeScript, and `plugin scaffold` gives a working plugin
+to start from.
+
 ## One folder, and which are compiled in
 
 Every plugin of a project is a folder under `plugins/`, `plugins/<name>/main.zig`, the

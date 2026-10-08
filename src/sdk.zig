@@ -387,6 +387,32 @@ pub fn SDK(comptime registry: Registry) type {
             return if (granted) |_| true else |_| false;
         }
 
+        /// `may`, for an operation known only by its name: a built-in one, or one an
+        /// installed plugin brings. An operation that does not exist is not allowed.
+        pub fn may_named(ctx: *const Ctx, name: []const u8) bool {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            inline for (registry.operations) |Operation| {
+                if (std.mem.eql(u8, Operation.name, name)) {
+                    return may(ctx, Operation);
+                }
+            }
+
+            const sandboxed = ctx.sandboxed_plugins orelse return false;
+            const found = sandboxed.find(name) orelse return false;
+            const request: authorize.Request = .{
+                .operation_name = found.name,
+                .kind = found.kind,
+                .resource = .{},
+                .open = found.open,
+            };
+            const in_force = roles_in_force(ctx);
+            const granted = authorize.authorize(ctx, request, registry.policies, in_force);
+
+            return if (granted) |_| true else |_| false;
+        }
+
         /// Whether the caller may use the admin: its roles grant some operation of the
         /// admin's, neither an app's (`app.*`) nor one open to everyone. What an anonymous
         /// visitor may read (live public records) does not count: an account whose roles

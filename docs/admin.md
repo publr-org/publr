@@ -29,7 +29,7 @@ sidebar and the entry lit in it follow from the address, so a page never names t
 a refused action stays in the area it was refused in. Who is signed in reaches the chrome
 as the request (`Publr.request` in PTSX), never as props a page forwards.
 
-Every page is drawn by one of five layouts and fills its slots; the layout owns the
+Every page is drawn by one of six layouts and fills its slots; the layout owns the
 chrome, the bands, the gutters and the empty states, and a page sets no spacing of its
 own. The build refuses a page whose root is not one of them.
 
@@ -40,6 +40,7 @@ own. The build refuses a page whose root is not one of them.
 | `HubPage` | A page of ways to other pages: Structure, the overview | title, description, the cards, titled groups of more; the overview opens with its own hero |
 | `CardPage` | Before sign-in: log in, set up | title, a line, a notice, the form, a footer |
 | `ListDetailPage` | Working through a set of things one at a time: a merge's conflicts, a deployment's changes, a media library | title, parents, a header band across the top, the list on the left (`ListDetailGroup`s of `ListDetailItem`s, the open one marked, done ones checked; it takes the section sidebar's place), the open thing's detail on the right. A page whose band, list and detail are one island (the media library) leaves the list out and draws them inside it from the layout's own parts: `ListDetailBand`, `ListDetailColumns`, `ListDetailList`, `ListDetailDetail` |
+| `FramePage` | A page a plugin brings, drawn by its own read in the plugin frame | title, parents; the frame fills the sheet and grows with what it shows |
 
 Two versions of something are compared side by side: `CompareSides` heads the two columns
 (any content: the copies merged, Before and After), then one `CompareField` per field, each

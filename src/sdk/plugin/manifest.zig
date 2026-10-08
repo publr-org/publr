@@ -48,6 +48,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .internal_records = contract.internal_records_of(Plugin),
             .remotes = remotes_of(Plugin),
             .compatible_with = contract.compatible_with_of(Plugin),
+            .pages = pages_of(Plugin),
             .left_out = runtime.left_out(Plugin),
         };
     }
@@ -77,6 +78,45 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 .output = shapes.describe(Declared.Out),
                 .secret = @import("../trail.zig").secret_of(Declared),
             }};
+        }
+
+        return list;
+    }
+}
+
+/// The plugin's pages whose operation runs in the sandbox; one that takes the host's
+/// context is left out with its operation.
+fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
+    comptime {
+        const declared = @import("admin_slots.zig").pages_of(Plugin);
+        var list: []const sandboxed_plugin.Page = &.{};
+
+        std.debug.assert(declared.len <= @import("admin_slots.zig").pages_max);
+
+        for (declared) |page| {
+            const takes = @import("context.zig").takes_plugin_ctx;
+
+            if (page.form) |form| {
+                if (!takes(form.read.run) or !takes(form.save.run)) {
+                    continue;
+                }
+
+                list = list ++ &[_]sandboxed_plugin.Page{.{
+                    .path = page.path,
+                    .label = page.label,
+                    .icon = page.icon,
+                    .read = form.read.name,
+                    .save = form.save.name,
+                    .multiline = form.multiline,
+                }};
+            } else if (takes(page.operation.?.run)) {
+                list = list ++ &[_]sandboxed_plugin.Page{.{
+                    .path = page.path,
+                    .label = page.label,
+                    .icon = page.icon,
+                    .operation = page.operation.?.name,
+                }};
+            }
         }
 
         return list;
@@ -151,7 +191,7 @@ fn namespaces_of(comptime Plugin: type) []const sandboxed_plugin.Namespace {
     }
 }
 
-fn fields_of(comptime Declared: type) []const Field {
+pub fn fields_of(comptime Declared: type) []const Field {
     comptime {
         std.debug.assert(Declared.name.len > 0);
 

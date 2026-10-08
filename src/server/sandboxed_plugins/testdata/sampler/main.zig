@@ -1,7 +1,8 @@
 //! Every part of the plugin contract a sandboxed plugin can declare, once, so the two-mode
 //! check sees each part run sandboxed and compiled in: an operation open to anyone, a write
 //! with a before hook that reshapes its input and an after hook that raises a notice, an
-//! event hook that answers the notice with a record, its own types and a custom field group.
+//! event hook that answers the notice with a record, its own types and a custom field group,
+//! and a page of its own in the plugin frame, drawn by a read.
 //! Compiled in, it also answers a route, lists it in Settings, puts an item in the top bar,
 //! keeps a state, takes `--sampler-in <folder>` off a command, notes the port `serve` got,
 //! and answers the operator's `ping`: what only a compiled-in plugin does, left out of its
@@ -50,7 +51,14 @@ pub const custom_fields = [_]publr.plugin.ContentTypeDef{.{
     .group = .{ .location = &.{.{ .rules = &.{.{ .field = "destination", .value = "user" }} }} },
 }};
 
-pub const operations = [_]type{ Hello, Echo, Note, Logs };
+pub const operations = [_]type{ Hello, Echo, Note, Logs, Page };
+
+pub const pages = [_]publr.plugin.Page{.{
+    .path = "log",
+    .label = "Sampler log",
+    .icon = "stack",
+    .operation = Page,
+}};
 
 pub const internal_records = [_]publr.plugin.InternalCollection{
     .{ .kind = "tally", .indexed = &.{"word"}, .append_only = true, .shared = true },
@@ -279,6 +287,61 @@ pub const Logs = struct {
         return .{ .lines = lines };
     }
 };
+
+/// The sampler's page: the log as a list, and a button that adds a note through the frame.
+pub const Page = struct {
+    pub const name = "sampler.page";
+    pub const description = "Draws the sampler's page: the log, and a way to add a note";
+    pub const kind: sdk.operation.Kind = .read;
+    pub const In = struct { query: []const u8 = "", base: []const u8 = "" };
+    pub const Out = struct { html: []const u8 };
+    pub const example: In = .{};
+    pub const example_out: Out = .{ .html = "<ul><li>noted HELLO</li></ul>" };
+
+    pub fn run(ctx: *PluginCtx, in: In, grant: *const sdk.Grant) sdk.Error!Out {
+        std.debug.assert(ctx.now_ms() >= 0);
+        std.debug.assert(in.query.len <= 4096);
+
+        const listed = try Logs.run(ctx, .{}, grant);
+
+        // Compiled in, the admin's layouts draw it; the sandbox gets them with the design
+        // system drawn by the host, and draws its own markup until then.
+        if (comptime @import("builtin").os.tag != .freestanding) {
+            const request = publr.admin.chrome.in_plugin_frame(ctx.arena(), in.base) catch {
+                return error.OutOfMemory;
+            };
+            const View = publr.admin.views.SamplerLog;
+            const html = publr.admin.render.document(ctx.arena(), request, View, .{
+                .lines = listed.lines,
+            }) catch return error.OutOfMemory;
+
+            return .{ .html = html };
+        }
+
+        return .{ .html = try own_markup(ctx, listed.lines) };
+    }
+};
+
+fn own_markup(ctx: *PluginCtx, lines: []const []const u8) sdk.Error![]const u8 {
+    std.debug.assert(lines.len <= 200);
+
+    var out: std.Io.Writer.Allocating = .init(ctx.arena());
+    const writer = &out.writer;
+
+    writer.writeAll("<main class=\"p-8\"><ul data-part=\"sampler-log\">") catch {
+        return error.OutOfMemory;
+    };
+
+    for (lines) |line| {
+        writer.print("<li>{s}</li>", .{line}) catch return error.OutOfMemory;
+    }
+
+    writer.writeAll("</ul><button data-part=\"sampler-add\" onclick=\"" ++
+        "publr.call('sampler.note',{note:'from the frame'}).then(()=>publr.navigate('log'))" ++
+        "\">Add a note</button></main>") catch return error.OutOfMemory;
+
+    return out.written();
+}
 
 fn before(_: void, left: []const u8, right: []const u8) bool {
     return std.mem.lessThan(u8, left, right);

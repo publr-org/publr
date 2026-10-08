@@ -1,6 +1,7 @@
 //! A compiled-in plugin in the admin: its settings page answered at its own route in the
 //! admin's chrome, listed in the Settings sidebar, and its item in the top bar of every
-//! signed-in page; its state, hooks and operator command; and every structure change
+//! signed-in page; its own page in the plugin frame, whose document is sandboxed; its
+//! state, hooks and operator command; and every structure change
 //! heard by a plugin listening for them. `binary` is Publr with the fixture plugins
 //! compiled in; `module` an installed plugin to add.
 const std = @import("std");
@@ -47,9 +48,33 @@ pub fn expect_native_admin(
     try expect_in("/admin/sampler", page, "served on port 8092");
     try expect_in("/admin/settings/system", system, "href=\"/admin/sampler\"");
     try expect_in("/admin/settings/system", system, "Sampler: 1");
+    try expect_framed(init, port, cookie);
     try expect_ping(init, port, dir);
     try expect_moved(init, binary, work_dir);
     try expect_structure(init, binary, dir, module);
+}
+
+/// The sampler's own page: the chrome with the plugin frame, listed in Settings; the
+/// frame's document drawn by its read, under a policy that sandboxes it wherever it opens.
+fn expect_framed(init: std.process.Init, port: u16, cookie: []const u8) !void {
+    std.debug.assert(port > 0);
+    std.debug.assert(cookie.len > 0);
+
+    const path = "/admin/plugin/sampler/log";
+    const page = try smoke.http_get_cookie(init, port, path, cookie);
+    const frame = try smoke.http_get_cookie(init, port, path ++ "/frame", cookie);
+    const missing = try smoke.http_get_cookie(init, port, "/admin/plugin/sampler/nope", cookie);
+
+    try expect_in(path, page, "<title>Sampler log · Publr</title>");
+    try expect_in(path, page, "src=\"/admin/plugin/sampler/log/frame\"");
+    try expect_in(path, page, "sandbox=\"allow-scripts allow-popups");
+    try expect_in(path, page, "href=\"/admin/plugin/sampler/log\"");
+    try expect_in(path ++ "/frame", frame, "Content-Security-Policy: sandbox allow-scripts");
+    try expect_in(path ++ "/frame", frame, "connect-src 'none'");
+    try expect_in(path ++ "/frame", frame, "noted KEPT");
+    try expect_in(path ++ "/frame", frame, "Add a note");
+    try expect_in(path ++ "/frame", frame, "window.publr");
+    try expect_in("/admin/plugin/sampler/nope", missing, "No such page");
 }
 
 /// A type, a taxonomy, a field group, an installed plugin: each change, made through the

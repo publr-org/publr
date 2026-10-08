@@ -35,6 +35,10 @@ pub const OperatorCommand = route.OperatorCommand;
 pub const admin_slots = @import("plugin/admin_slots.zig");
 pub const SettingsPage = admin_slots.SettingsPage;
 pub const RowAction = admin_slots.RowAction;
+pub const Page = admin_slots.Page;
+
+/// A page and the plugin it is of.
+pub const OwnedPage = struct { plugin: []const u8, page: Page };
 pub const state = @import("plugin/state.zig");
 pub const depends_on = @import("plugin/depends_on.zig");
 pub const Process = state.Process;
@@ -473,6 +477,21 @@ fn lists(comptime list: []const []const u8, comptime name: []const u8) bool {
     }
 }
 
+/// Whether `Operation` is one the plugin declares.
+pub fn owns_operation(comptime Plugin: type, comptime Operation: type) bool {
+    comptime {
+        std.debug.assert(Operation.name.len > 0);
+
+        for (operations_of(Plugin)) |Declared| {
+            if (Declared == Operation) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
 /// The plugin's name `count` times: the owner of each of its operations or middlewares.
 fn owners(comptime Plugin: type, comptime count: u32) []const []const u8 {
     comptime {
@@ -559,6 +578,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var routes: []const route.Declared = &.{};
         var settings_pages: []const SettingsPage = &.{};
         var row_actions: []const RowAction = &.{};
+        var pages: []const OwnedPage = &.{};
         var top_bar: []const type = &.{};
         var sign_in_at: []const type = &.{};
         var app_picker_segment: []const type = &.{};
@@ -594,6 +614,22 @@ pub fn Merged(comptime plugins: anytype) type {
             routes = routes ++ own_routes;
             settings_pages = settings_pages ++ admin_slots.settings_pages_of(Plugin, own_routes);
             row_actions = row_actions ++ admin_slots.row_actions_of(Plugin);
+
+            for (admin_slots.pages_of(Plugin)) |page| {
+                const used = if (page.form) |form| [_]type{ form.read, form.save } else [_]type{
+                    page.operation.?,
+                    page.operation.?,
+                };
+
+                for (used) |Operation| {
+                    if (!owns_operation(Plugin, Operation)) {
+                        @compileError("plugin " ++ Plugin.manifest.name ++ ": page " ++
+                            page.path ++ " uses " ++ Operation.name ++ ", not one of its own");
+                    }
+                }
+
+                pages = pages ++ &[_]OwnedPage{.{ .plugin = Plugin.manifest.name, .page = page }};
+            }
 
             if (@hasDecl(Plugin, "top_bar")) {
                 top_bar = top_bar ++ &[_]type{Plugin};
@@ -729,6 +765,8 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_settings_pages = settings_pages;
             /// Every plugin's actions on other pages' rows, in name order.
             pub const merged_row_actions = row_actions;
+            /// Every plugin's own pages, in name order.
+            pub const merged_pages = pages;
             /// The plugins with a top bar item, in name order.
             pub const merged_top_bar = top_bar;
             /// The plugins that may send someone who must sign in elsewhere, in name order.

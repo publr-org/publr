@@ -1,0 +1,24 @@
+import { FramePage } from "../layouts/FramePage.ptsx";
+
+export type PluginPageProps = {
+  title: string;
+  src: string;
+  plugin: string;
+  page: string;
+  csrf: string;
+  operations: string[];
+};
+
+/** A page a plugin brings, under Settings. */
+export function PluginPage({ title, src, plugin, page, csrf, operations }: PluginPageProps) {
+  return (
+    <FramePage
+      title={title}
+      src={src}
+      plugin={plugin}
+      page={page}
+      csrf={csrf}
+      operations={operations}
+    />
+  );
+}

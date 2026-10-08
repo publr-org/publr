@@ -10,7 +10,7 @@ export function ListDetailList({ label, children }: ListDetailListProps) {
     <div class="w-72 shrink-0 border-r border-border" data-part="list-detail-column">
       <nav
         aria-label={label}
-        class="sticky top-14 flex max-h-[calc(100dvh-3.5rem)] flex-col gap-5 overflow-y-auto px-6 py-5"
+        class="sticky top-[var(--sheet-top,3.5rem)] flex max-h-[calc(100dvh-var(--sheet-top,3.5rem))] flex-col gap-5 overflow-y-auto px-6 py-5"
         data-part="list-detail-list"
       >
         {children}

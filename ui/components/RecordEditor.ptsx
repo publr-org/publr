@@ -13,6 +13,7 @@ import { invalidate } from "publr/query";
 import { Publr } from "publr-jsx";
 import { FormBody } from "./FormBody.ptsx";
 import { Separator } from "@publr/ui/Separator.ptsx";
+import { StatusStrip } from "@publr/ui/StatusStrip.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
@@ -442,6 +443,20 @@ export const onReference = (event: Event) => {
   });
 };
 
+/** A reshape asked for by name, as a submit button with `name="reshape"` would send it. */
+const reshape_by = async (code: string) => {
+  const form = form_of();
+  if (!form || state.submitting) return;
+  const memo = focused();
+  if (!await flush() || disposed) return;
+  await submit(form.action, body_of(form, { reshape: code }), memo, true);
+};
+const item_of = (event: Event) => (event.currentTarget as HTMLButtonElement).value;
+/** An ItemList's rail: each button carries the item's field name (`chapters[1]`). */
+export const onItemUp = (event: Event) => reshape_by(`up:${item_of(event)}`);
+export const onItemDown = (event: Event) => reshape_by(`down:${item_of(event)}`);
+export const onItemRemove = (event: Event) => reshape_by(`remove:${item_of(event)}`);
+
 const onLinked = async (id: string, field: string, reshape: string) => {
   const form = form_of();
   if (!form || !field) return;
@@ -579,14 +594,13 @@ export function RecordEditor({
         header={<RecordHeader in_drawer={in_drawer} title={title} type_name={type_name} />}
         meta={
           <div class="contents">
-            {is_new && <Status tone="neutral">New</Status>}
-            {!is_new && state.status === "published" && <Status tone="success">{state.status_label}</Status>}
-            {!is_new && state.status !== "published" && <Status tone="neutral">{state.status_label}</Status>}
-            {state.changed && <Status tone="warning">unpublished changes</Status>}
-            <Separator orientation="vertical" />
-            <Text as="span" variant="body-xs" tone="muted">
-              {state.saved_text}
-            </Text>
+            <StatusStrip
+              status={is_new ? "New" : state.status_label}
+              tone={is_new ? "neutral" : state.status === "published" ? "success" : "neutral"}
+              note={state.saved_text}
+            >
+              {state.changed && <Status tone="warning">unpublished changes</Status>}
+            </StatusStrip>
             <Button hierarchy="tertiary" size="sm" hidden={!state.save_error} onClick={retrySave}>Retry save</Button>
           </div>
         }

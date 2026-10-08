@@ -1,8 +1,7 @@
 import { ChoiceButton } from "@publr/ui/ChoiceButton.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
-import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
-import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { FieldRow } from "@publr/ui/FieldRow.ptsx";
 import { Heading } from "@publr/ui/Heading.ptsx";
 import { PanelTab } from "@publr/ui/PanelTab.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
@@ -74,6 +73,12 @@ export type RecordFieldsProps = {
       card_status: string;
       card_tone: string;
       card_href: string;
+      id: string;
+      title: string;
+      type_label: string;
+      status: string;
+      tone: string;
+      href: string;
       delete_note: string;
       remove: string;
       up: string;
@@ -166,12 +171,13 @@ export function RecordFields({
         data-layout-kind={field.shape}
         data-group-active={group_visible ? "true" : "false"}
         hidden={!group_visible || field.shape === "fixed"}
-        data-labels={group_labels} data-instructions={group_instructions}><Field>
-        {field.shape !== "group" && field.shape !== "repeater" && field.shape !== "tab" && field.shape !== "accordion" && field.shape !== "message" && field.shape !== "fixed" && (
-          <FieldLabel htmlFor={`field-${field.name}`} required={field.required}>
-            {field.label}
-          </FieldLabel>
-        )}
+        data-labels={group_labels} data-instructions={group_instructions}>
+        <FieldRow
+          label={field.shape !== "group" && field.shape !== "repeater" && field.shape !== "tab" && field.shape !== "accordion" && field.shape !== "message" && field.shape !== "fixed" ? field.label : ""}
+          htmlFor={`field-${field.name}`}
+          required={field.required}
+          description={field.help}
+        >
         {field.shape === "tab" && <PanelTab id={`layout-tab-${field.name}`}
           panel={`layout-panel-${field.name}`} selected={false} label={field.label} onClick={onLayoutTab} />}
         {(field.shape === "accordion" || field.shape === "message") && <Heading level={3} size="sm">{field.label}</Heading>}
@@ -254,8 +260,7 @@ export function RecordFields({
             add_label={field.add_label}
           />
         )}
-        {field.help !== "" && <FieldDescription>{field.help}</FieldDescription>}
-      </Field></div>
+        </FieldRow></div>
     ))}
     </>
   );

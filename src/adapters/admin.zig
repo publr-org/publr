@@ -140,7 +140,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 135 + client_files.names.len;
+pub const routes_count: u32 = 138 + client_files.names.len;
 const client_files = @import("../ui/client_files.zig");
 
 const styles_css = @embedFile("styles_css");
@@ -177,6 +177,7 @@ pub fn register(router: *http.Router) void {
     router.get("/admin/settings/devices/approve", &device_pages.approve_page);
     router.post("/admin/settings/devices/approve", &device_pages.decide);
     @import("admin/plugins.zig").register(router);
+    @import("admin/frame.zig").register(router);
     router.get("/admin/settings/:handle", &@import("admin/content/form.zig").settings_page);
     router.get("/admin/structure", &structure_pages.show);
     register_schemas(router);
@@ -293,6 +294,9 @@ fn script(response: *Response, source: []const u8) Error!void {
 
     try response.set_body(.ok, "text/javascript; charset=utf-8", source);
     try response.set_header("Cache-Control", "no-cache");
+    // The plugin frame has an opaque origin, and a module script it loads needs this; the
+    // admin's scripts carry no data, only code every visitor of the login page gets.
+    try response.set_header("Access-Control-Allow-Origin", "*");
 }
 
 /// One admin request: who is calling, where the answer goes, and a context to dispatch

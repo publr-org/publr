@@ -15,7 +15,7 @@ export function EditorAside({ in_drawer = false, children }: EditorAsideProps) {
       aria-label="Actions and details"
       class="w-80 shrink-0 border-l border-border"
     >
-      <div class={["sticky flex flex-col divide-y divide-border", in_drawer ? "top-0" : "top-14"]}>
+      <div class={["sticky flex flex-col divide-y divide-border", in_drawer ? "top-0" : "top-[var(--sheet-top,3.5rem)]"]}>
         {children}
       </div>
     </aside>

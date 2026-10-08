@@ -14,6 +14,7 @@ pub const layouts = [_][]const u8{
     "HubPage",
     "CardPage",
     "ListDetailPage",
+    "FramePage",
 };
 const chrome_parts = [_][]const u8{ "Chrome", "Document" };
 /// The spacing a layout owns: a page's own top-level elements set none of it.
@@ -24,11 +25,12 @@ const spacing_prefixes = [_][]const u8{
 
 pub fn check(modules: []const *const Module) !void {
     std.debug.assert(modules.len > 0);
-    std.debug.assert(layouts.len == 5);
+    std.debug.assert(layouts.len == 6);
 
     for (modules) |module| {
         try check_imports(module);
         try check_spacing(module);
+        try check_tones(module);
     }
 }
 
@@ -99,6 +101,90 @@ fn check_spacing(module: *const Module) !void {
                 try check_classes(module.component.name, attribute.attribute.value);
             }
         }
+    }
+}
+
+/// The tones a status takes (the design system's StatusTone); a literal `tone` outside
+/// them would draw no status at all on the composites that take a tone as text.
+const tones = [_][]const u8{ "neutral", "success", "warning", "error", "accent", "review", "info" };
+const status_composites = [_][]const u8{ "StatusStrip", "ReferenceCard" };
+const nodes_walked_max: u32 = 1 << 14;
+
+fn check_tones(module: *const Module) !void {
+    std.debug.assert(module.component.name.len > 0);
+
+    var stack: [256]*const NodeIR = undefined;
+    var depth: u32 = 1;
+    var walked: u32 = 0;
+
+    stack[0] = module.component.root;
+
+    while (depth > 0 and walked < nodes_walked_max) : (walked += 1) {
+        depth -= 1;
+
+        const node = stack[depth];
+
+        const children: []const *const NodeIR = switch (node.*) {
+            .element => |element| element.children,
+            .fragment => |fragment| fragment.children,
+            .expression => |expression| if (expression.value.* == .node)
+                &.{expression.value.node.node}
+            else
+                &.{},
+            .text => &.{},
+        };
+
+        for (children) |child| {
+            if (depth < stack.len) {
+                stack[depth] = child;
+                depth += 1;
+            }
+        }
+
+        if (node.* != .element) {
+            continue;
+        }
+
+        // Markup handed in a prop (`meta={<StatusStrip … />}`) is walked too.
+        for (node.element.attributes) |attribute| {
+            const markup = attribute == .attribute and attribute.attribute.value.* == .node;
+
+            if (markup and depth < stack.len) {
+                stack[depth] = attribute.attribute.value.node.node;
+                depth += 1;
+            }
+        }
+
+        const status_composite = node.element.name == .component and
+            is_one_of(node.element.name.component.name, &status_composites);
+
+        for (node.element.attributes) |attribute| {
+            if (!status_composite) {
+                break;
+            }
+
+            if (attribute == .attribute and std.mem.eql(u8, attribute.attribute.name, "tone")) {
+                try check_tone(module.component.name, attribute.attribute.value);
+            }
+        }
+    }
+}
+
+fn check_tone(name: []const u8, value: *const pjsx.compiler.ExpressionIR) !void {
+    std.debug.assert(name.len > 0);
+
+    if (value.* != .literal or value.literal != .string) {
+        return;
+    }
+
+    if (!is_one_of(value.literal.string, &tones)) {
+        std.debug.print(
+            "pjsx_gen: {s} names the tone \"{s}\"; a status takes neutral, success, " ++
+                "warning, error, accent, review or info\n",
+            .{ name, value.literal.string },
+        );
+
+        return error.UnknownTone;
     }
 }
 

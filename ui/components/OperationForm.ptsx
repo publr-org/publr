@@ -1,0 +1,98 @@
+import { Publr } from "publr-jsx";
+import { call } from "publr/operations";
+import { EditorAsideSection } from "./EditorAsideSection.ptsx";
+import { FormBody } from "./FormBody.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { FieldRow } from "@publr/ui/FieldRow.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { StatusStrip } from "@publr/ui/StatusStrip.ptsx";
+import { Switch } from "@publr/ui/Switch.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+export type OperationFormProps = {
+  title: string;
+  /** The operation a save calls with every field's value: `site_info.save`. */
+  operation: string;
+  /** The fields in order. `kind`: string (a line), text (lines), number, boolean. */
+  fields: Array<{ name: string; label: string; kind: string; required: boolean; help: string; value: string }>;
+  /** Under the save button: what saving does. */
+  note?: string;
+};
+
+type Field = OperationFormProps["fields"][number];
+
+export const state = Publr.reactive({
+  save: "",
+  fields: [] as Field[],
+  status: "All changes saved",
+  busy: false,
+});
+
+const saveForm = call(() => state.save);
+
+/** The status line follows the save: saving, its refusal, or saved. */
+Publr.effect(() => {
+  state.busy = saveForm.isPending;
+  state.status = state.busy
+    ? "Saving…"
+    : saveForm.isError
+      ? `Not saved: ${(saveForm.error as Error).message}`
+      : "All changes saved";
+});
+
+export const typed = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const value = input.type === "checkbox" ? (input.checked ? "true" : "false") : input.value;
+  state.fields = state.fields.map((field) => (field.name === input.name ? { ...field, value } : field));
+};
+
+/** Every field's value as the operation takes it: numbers and switches typed. */
+export const save = () => {
+  const input: Record<string, unknown> = {};
+  for (const field of state.fields) {
+    input[field.name] =
+      field.kind === "number" ? Number(field.value) : field.kind === "boolean" ? field.value === "true" : field.value;
+  }
+  saveForm(input);
+};
+
+/** A plugin's form by declaration: its fields drawn with the admin's controls, saved
+ * through one operation, the status line and the save as on every editor. */
+export function OperationForm({ title, operation, fields, note = "" }: OperationFormProps) {
+  state.save = operation;
+  state.fields = fields;
+  state.status = "All changes saved";
+  state.busy = false;
+
+  return (
+    <div class="flex grow flex-col" data-part="operation-form" onInput={typed} onChange={typed}>
+      <FormBody
+        title={title}
+        meta={<StatusStrip status="Saved" tone="success" note={state.status} />}
+        aside={
+          <EditorAsideSection>
+            <Button classes="w-full" disabled={state.busy} onClick={save}>Save</Button>
+            {note !== "" && <Text as="p" variant="body-xs" tone="muted">{note}</Text>}
+          </EditorAsideSection>
+        }
+      >
+        <div class="flex flex-col gap-7">
+          {state.fields.map((field) => (
+            <FieldRow key={field.name} label={field.label} htmlFor={`field-${field.name}`}
+              required={field.required} description={field.help}>
+              {field.kind === "text" && <Textarea id={`field-${field.name}`} name={field.name} value={field.value} rows={8} />}
+              {field.kind === "boolean" && <Switch id={`field-${field.name}`} name={field.name} checked={field.value === "true"} />}
+              {field.kind === "string" && (
+                <Input id={`field-${field.name}`} name={field.name} value={field.value} required={field.required} />
+              )}
+              {field.kind === "number" && (
+                <Input id={`field-${field.name}`} name={field.name} value={field.value} type="number" required={field.required} />
+              )}
+            </FieldRow>
+          ))}
+        </div>
+      </FormBody>
+    </div>
+  );
+}

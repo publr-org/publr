@@ -63,6 +63,7 @@ pub const Manifest = struct {
     internal_records: []const internal_record.Collection = &.{},
     remotes: []const RemoteUse = &.{},
     compatible_with: []const []const u8 = &.{},
+    pages: []const Page = &.{},
     /// What the plugin brings that its sandboxed build left out, each with why.
     left_out: []const []const u8 = &.{},
 };
@@ -131,6 +132,18 @@ pub const Field = struct {
     values: []const []const u8 = &.{},
 
     pub const Shape = enum { string, integer, number, boolean, strings, json };
+};
+
+/// A page of the plugin's own: drawn by its read `operation` in the plugin frame, or, by
+/// declaration, a form the admin draws from `save`'s input filled from `read`.
+pub const Page = struct {
+    path: []const u8,
+    label: []const u8,
+    icon: []const u8,
+    operation: []const u8 = "",
+    read: []const u8 = "",
+    save: []const u8 = "",
+    multiline: []const []const u8 = &.{},
 };
 
 /// A hook a plugin asks for; its entry is the number of operations plus its position here.

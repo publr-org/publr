@@ -96,6 +96,14 @@ const Instance = struct {
     card_status: []const u8 = "",
     card_tone: []const u8 = "neutral",
     card_href: []const u8 = "",
+    /// The same card as the design system's ItemList takes its items, so a list of
+    /// references is drawn by it: the field name as the id the buttons carry.
+    id: []const u8 = "",
+    title: []const u8 = "",
+    type_label: []const u8 = "",
+    status: []const u8 = "",
+    tone: []const u8 = "neutral",
+    href: []const u8 = "",
     remove: []const u8 = "",
     /// Set on a virtual field's cards when removing deletes the record: why.
     delete_note: []const u8 = "",
@@ -841,6 +849,12 @@ fn fill_input(
     instance.card_status = if (status) |known| known.label else "";
     instance.card_tone = if (status) |known| tone_of(known.color) else "neutral";
     instance.card_href = try print(context.arena, "/admin/content/{s}", .{instance.value});
+    instance.id = instance.name;
+    instance.title = instance.card_title;
+    instance.type_label = instance.card_type;
+    instance.status = instance.card_status;
+    instance.tone = instance.card_tone;
+    instance.href = instance.card_href;
 
     if (!in_list) {
         instance.remove = try print(context.arena, "clear:{s}", .{instance.name});

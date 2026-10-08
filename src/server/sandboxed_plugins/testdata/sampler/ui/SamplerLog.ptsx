@@ -1,0 +1,61 @@
+import { IndexPage } from "@publr/admin/IndexPage.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SamplerLogProps = {
+  /** The lines the notes' notices left, oldest first. */
+  lines: string[];
+};
+
+/** The sampler's own page in the plugin frame, drawn by the admin's layouts as a native
+ * settings page is. */
+export function SamplerLog({ lines }: SamplerLogProps) {
+  return (
+    <IndexPage
+      title="Sampler log"
+      description="What the sampler noted each time a note was kept."
+      actions={<Button>Add a note</Button>}
+      empty={
+        lines.length === 0 && (
+          <Empty>
+            <EmptyTitle>Nothing noted yet</EmptyTitle>
+            <EmptyDescription>Each note kept leaves a line here.</EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Line</TableHead>
+            <TableHead>Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {lines.map((line) => (
+            <TableRow>
+              <TableCell>
+                <Text as="span" variant="body-sm">
+                  {line}
+                </Text>
+              </TableCell>
+              <TableCell>
+                <Status tone="success">Noted</Status>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

@@ -50,6 +50,9 @@ const exercised = [_]Part{
     .{ .name = "compatible_with", .where = "greeter, with sampler" },
     .{ .name = "to", .where = "greeter recall's post" },
     .{ .name = "secret", .where = "greeter greet's note, kept out of the logs" },
+    .{ .name = "pages", .where = "sampler's log page, drawn by sampler page" },
+    .{ .name = "path", .where = "sampler's log page" },
+    .{ .name = "icon", .where = "sampler's log page" },
 };
 
 /// What only the sandbox has: a compiled-in plugin runs with everything, unlimited.

@@ -5,6 +5,7 @@ pub const names = .{
     "publr-runtime",
     "publr-transport",
     "publr-query",
+    "publr-operations",
     "publr-focus",
     "publr-position",
     "publr-router",

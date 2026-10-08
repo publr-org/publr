@@ -105,11 +105,12 @@ pub const layouts = [_][]const u8{
     "HubPage",
     "CardPage",
     "ListDetailPage",
+    "FramePage",
 };
 
 fn is_layout(comptime name: []const u8) bool {
     comptime {
-        std.debug.assert(layouts.len == 5);
+        std.debug.assert(layouts.len == 6);
 
         for (layouts) |layout| {
             if (std.mem.eql(u8, layout, name)) {
@@ -132,10 +133,24 @@ pub fn page(
     std.debug.assert(response.body.len == 0);
     std.debug.assert(@hasDecl(View, "render"));
 
+    try response.html(status, try document(arena, request, View, props));
+}
+
+/// The page, doctype first, as `page` sends it: for a page shown elsewhere, a plugin's in
+/// its frame.
+pub fn document(
+    arena: std.mem.Allocator,
+    request: *const Request,
+    comptime View: type,
+    props: View.Props,
+) Error![]const u8 {
+    std.debug.assert(@hasDecl(View, "render"));
+
     comptime {
         if (!is_layout(View.root_component)) {
             @compileError("a page is drawn by one of the layouts (IndexPage, FormPage, " ++
-                "HubPage, CardPage, ListDetailPage); this one's root is \"" ++
+                "HubPage, CardPage, ListDetailPage, FramePage); " ++
+                "this one's root is \"" ++
                 View.root_component ++ "\"");
         }
     }
@@ -151,5 +166,5 @@ pub fn page(
 
     std.debug.assert(out.written().len <= page_bytes_max);
 
-    try response.html(status, out.written());
+    return out.written();
 }

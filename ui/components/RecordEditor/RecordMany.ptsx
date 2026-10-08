@@ -1,6 +1,8 @@
 import { Button } from "@publr/ui/Button.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import { RecordReferenceAdd } from "./RecordReferenceAdd.ptsx";
+import { ItemList } from "@publr/ui/ItemList.ptsx";
+import { onItemDown, onItemRemove, onItemUp, onOpenReference } from "../RecordEditor.ptsx";
 import { RecordValue } from "./RecordValue.ptsx";
 
 export type RecordManyProps = {
@@ -26,6 +28,12 @@ export type RecordManyProps = {
     card_status: string;
     card_tone: string;
     card_href: string;
+    id: string;
+    title: string;
+    type_label: string;
+    status: string;
+    tone: string;
+    href: string;
     delete_note?: string;
     remove: string;
     up: string;
@@ -67,52 +75,75 @@ export function RecordMany({
 }: RecordManyProps) {
   return (
     <div class="flex flex-col gap-2" data-field={name} data-reshape={add}>
-      {items.map((item) => (
-        <RecordValue
-          name={item.name}
-          control={item.control}
-          value={item.value}
-          checked={item.checked}
-          readonly={item.readonly}
-          label_on={item.label_on}
-          placeholder={item.placeholder}
-          rows={item.rows}
-          min={item.min}
-          max={item.max}
-          step={item.step}
-          prefix={item.prefix}
-          suffix={item.suffix}
-          card_type={item.card_type}
-          card_title={item.card_title}
-          card_status={item.card_status}
-          card_tone={item.card_tone}
-          card_href={item.card_href}
-          delete_note={item.delete_note}
-          remove={item.remove}
-          up={item.up}
-          down={item.down}
-          options={item.options}
-        />
-      ))}
-      {has_pick ? (
-        <RecordReferenceAdd
-          reshape={add}
-          name={name}
-          can_link={can_link}
-          can_create={can_create}
-          first_handle={first_handle}
-          live_suffix={live_suffix}
-          opener_query={opener_query}
-          pick_search={pick_search}
-          targets={targets}
-        />
+      {has_pick && opener_query === "" ? (
+        <>
+          {items.map((item) => (
+            <input type="hidden" name={item.name} value={item.value} />
+          ))}
+          <ItemList items={items} onMoveUp={onItemUp} onMoveDown={onItemDown} onRemove={onItemRemove}
+            onOpen={onOpenReference} />
+          <RecordReferenceAdd
+            reshape={add}
+            name={name}
+            can_link={can_link}
+            can_create={can_create}
+            first_handle={first_handle}
+            live_suffix={live_suffix}
+            opener_query={opener_query}
+            pick_search={pick_search}
+            targets={targets}
+          />
+        </>
       ) : (
-        <div class="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
-          <Button type="submit" name="reshape" value={add} hierarchy="secondary" size="sm">
-            <Icon name="plus" size="sm" />
-            <span>{add_label}</span>
-          </Button>
-        </div>
+        <>
+        {items.map((item) => (
+          <RecordValue
+            name={item.name}
+            control={item.control}
+            value={item.value}
+            checked={item.checked}
+            readonly={item.readonly}
+            label_on={item.label_on}
+            placeholder={item.placeholder}
+            rows={item.rows}
+            min={item.min}
+            max={item.max}
+            step={item.step}
+            prefix={item.prefix}
+            suffix={item.suffix}
+            card_type={item.card_type}
+            card_title={item.card_title}
+            card_status={item.card_status}
+            card_tone={item.card_tone}
+            card_href={item.card_href}
+            delete_note={item.delete_note}
+            remove={item.remove}
+            up={item.up}
+            down={item.down}
+            options={item.options}
+          />
+        ))}
+        {has_pick ? (
+          <RecordReferenceAdd
+            reshape={add}
+            name={name}
+            can_link={can_link}
+            can_create={can_create}
+            first_handle={first_handle}
+            live_suffix={live_suffix}
+            opener_query={opener_query}
+            pick_search={pick_search}
+            targets={targets}
+          />
+        ) : (
+          <div class="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
+            <Button type="submit" name="reshape" value={add} hierarchy="secondary" size="sm">
+                <Icon name="plus" size="sm" />
+                <span>{add_label}</span>
+            </Button>
+          </div>
+        )}
+        </>
       )}
     </div>
   );

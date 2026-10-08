@@ -31,6 +31,7 @@ to enable it, or to update it.
 | `plugin set_content_access --name <n> --scope <s> [--types <t,...>]` | Which content types its content permissions reach |
 | `plugin remove --name <n>` | Take it off the list; its content types and records stay. Refused, like disable, while an enabled plugin depends on it |
 | `plugin build --name <n> --files <json>` | For an agent with no file system: each `{ "path", "content" }` written to `plugins/<n>/`, then the build started on its own beside the running server, which installs it when built (added and enabled, or updated). Needs `serve` and a binary carrying the compiler; refused to a drafts-only device. Without `--files`, `publr plugin build` builds the sources already there, here |
+| `plugin scaffold --name <n> [--page list\|form]` | The files of a new plugin with a page of its own in the admin, `{ path, content }`, ready for `plugin build --files`; writes nothing |
 | `plugin build_log --name <n>` | What that build printed so far: the compiler's messages, then what installing answered |
 
 A request's key is the permission's (`content.write`), a hook's (`after:record.save`,

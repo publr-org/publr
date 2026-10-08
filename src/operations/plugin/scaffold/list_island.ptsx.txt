@@ -1,0 +1,76 @@
+import { Publr } from "publr-jsx";
+import { call, query } from "publr/operations";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Drawer } from "@publr/ui/Drawer.ptsx";
+import { DrawerClose } from "@publr/ui/DrawerClose.ptsx";
+import { DrawerContent } from "@publr/ui/DrawerContent.ptsx";
+import { DrawerHeader } from "@publr/ui/DrawerHeader.ptsx";
+import { DrawerTitle } from "@publr/ui/DrawerTitle.ptsx";
+import { DrawerTrigger } from "@publr/ui/DrawerTrigger.ptsx";
+import { FieldRow } from "@publr/ui/FieldRow.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { ItemList } from "@publr/ui/ItemList.ptsx";
+
+type Item = { id: string; title: string; type_label: string; status: string; tone: string; href: string };
+
+export type __Name__ListProps = {
+  /** The entries as the list draws them, from the page's server render. */
+  items: Item[];
+};
+
+export const state = Publr.reactive({ items: [] as Item[], title: "" });
+
+const listed = query("__name__.list", undefined, { seeded: true });
+const addEntry = call("__name__.add");
+const removeEntry = call("__name__.remove");
+
+const shown = (entries: Array<{ id: string; title: string }>): Item[] =>
+  entries.map((entry) => ({ id: entry.id, title: entry.title, type_label: "Entry", status: "", tone: "", href: "" }));
+
+/** Read again after every add or remove. */
+Publr.effect(() => {
+  const read = listed.value;
+  if (read) state.items = shown(read.entries);
+});
+
+export const typed = (event: Event) => {
+  state.title = (event.target as HTMLInputElement).value;
+};
+export const add = () => {
+  if (state.title.trim() === "") return;
+  addEntry({ title: state.title });
+  state.title = "";
+};
+export const remove = (event: Event) => removeEntry({ id: (event.currentTarget as HTMLButtonElement).value });
+
+/** The entries as cards, each removable, and a drawer to add one. */
+export function __Name__List({ items }: __Name__ListProps) {
+  state.items = items;
+  state.title = "";
+
+  return (
+    <div class="px-8 py-6">
+      <ItemList items={state.items} onRemove={remove}>
+        <Drawer>
+          <DrawerTrigger asChild>
+            <Button hierarchy="secondary" size="sm"><Icon name="plus" size="sm" /><span>Add entry</span></Button>
+          </DrawerTrigger>
+          <DrawerContent label="New entry">
+            <DrawerHeader>
+              <DrawerTitle>New entry</DrawerTitle>
+            </DrawerHeader>
+            <div class="flex flex-col gap-6 px-8 py-6">
+              <FieldRow label="Title" htmlFor="__name__-title" required>
+                <Input id="__name__-title" name="title" value={state.title} onInput={typed} />
+              </FieldRow>
+              <DrawerClose asChild>
+                <Button onClick={add}>Add entry</Button>
+              </DrawerClose>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      </ItemList>
+    </div>
+  );
+}

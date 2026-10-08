@@ -247,6 +247,42 @@ curl -X POST http://127.0.0.1:8080/api/app.guestbook/sign \
   -d '{"name":"Ada","message":"hi"}'             # an `app.*` operation, as a visitor
 ```
 
+## Admin pages for a plugin
+
+A plugin's settings are best a `.kind = .settings` content type: the admin draws its page
+for you. A page of its own is for what that cannot do. Start from a working one:
+
+```sh
+publr --as-admin plugin scaffold --name notes --page list   # or --page form
+```
+
+It answers every file of a plugin with a page (`{ path, content }`); hand them to
+`plugin build --name notes --files <files>`, or write them into `plugins/notes/` and run
+`publr plugin build --name notes`. The page is listed in Settings and shown in the plugin
+frame, looking like the admin's own. Keep it that way:
+
+- **Compose, never style.** The page returns an admin layout (`IndexPage`, `FormPage`)
+  and fills it with the design system's composites: `FieldRow` for each field (label,
+  required mark, help), `ItemList` for an ordered list of linked items (move, remove, a
+  place to add), `StatusStrip` for the status line. Set no spacing or colours of your own;
+  a status tone is one of neutral, success, warning, error, accent, review, info (the
+  build refuses others).
+- **A form by declaration.** A page declared as
+  `.form = .{ .read = Read, .save = Save, .multiline = &.{"description"} }` needs no
+  views at all: the admin draws the form from `Save`'s input (each field's `field_docs`
+  line is its help), filled from what `Read` answers, compiled in or installed alike. In
+  a page of your own, `@publr/admin/OperationForm.ptsx` does the same from a list of
+  fields.
+- **Data through `publr/operations`.** `call("notes.add")` writes through one of the
+  plugin's operations (call it with the input; it has `isPending` and `error`);
+  `query("notes.list")` reads reactively and reads again after every write (with
+  `{ seeded: true }` when the page's server render already drew it, so it reads only
+  once a write makes it stale);
+  ``query(groq`*[_type == "notes_entry"]`)`` reads GROQ as the plugin may. No `fetch`, no
+  tokens: in the frame both go through the admin, which runs only what the plugin may.
+- **Typed.** `publr plugin build` writes `ui/operations.d.ts`: every operation's input and
+  output, so a misspelt name or field is an error in your editor.
+
 ## Pages: apps
 
 The site people visit is made of apps: folders of templates, never compiled. An app

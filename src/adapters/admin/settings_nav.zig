@@ -1,11 +1,13 @@
 //! The Settings sidebar: the system's settings, the users and the plugins first, then the
-//! pages compiled-in plugins add, then every settings definition as a value-editing
-//! destination. The entry the address is under is lit.
+//! pages plugins add (compiled-in plugins' routes, then every plugin's framed pages), then
+//! every settings definition as a value-editing destination. The entry the address is
+//! under is lit.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const types = @import("../../operations/content_type.zig");
 const chrome = @import("chrome.zig");
+const frame = @import("frame.zig");
 
 /// The addresses Structure stands for: the hub and every kind of definition under it.
 const structure_paths = [_][]const u8{
@@ -83,6 +85,21 @@ fn pages_of(session: *admin.Session, path: []const u8) admin.Error![]const Page 
                 .active = chrome.under(path, page.path),
             });
         }
+    }
+
+    for (try frame.all(session)) |page| {
+        const href = try std.fmt.allocPrint(session.arena, "{s}/{s}/{s}", .{
+            frame.prefix,
+            page.plugin,
+            page.path,
+        });
+
+        try pages.append(session.arena, .{
+            .label = page.label,
+            .href = href,
+            .icon = std.meta.stringToEnum(@FieldType(Page, "icon"), page.icon) orelse .package,
+            .active = chrome.under(path, href),
+        });
     }
 
     return pages.items;

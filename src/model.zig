@@ -24,6 +24,7 @@ pub const device = @import("model/device.zig");
 pub const view = @import("model/view.zig");
 pub const internal_record = @import("model/internal_record.zig");
 pub const contract = @import("model/contract.zig");
+pub const operation_types = @import("model/operation_types.zig");
 pub const plugin_contracts = @import("model/plugin_contracts.zig");
 pub const version_range = @import("model/version_range.zig");
 pub const currency = @import("model/currency.zig");

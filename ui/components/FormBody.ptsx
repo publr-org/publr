@@ -56,7 +56,7 @@ export function FormBody({
   children,
 }: FormBodyProps) {
   return (
-    <div class="flex grow items-stretch" data-part="form-body">
+    <div class="flex min-w-0 grow items-stretch" data-part="form-body">
       <div class={["min-w-0 flex-1", bare ? "py-7" : "pb-10"]}>
         {!bare && header}
         {!bare && !header && (

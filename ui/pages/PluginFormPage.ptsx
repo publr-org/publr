@@ -1,0 +1,15 @@
+import { FormPage } from "../layouts/FormPage.ptsx";
+import { OperationForm } from "../components/OperationForm.ptsx";
+
+export type PluginFormPageProps = {
+  title: string;
+  /** The plugin's write that saves the form. */
+  operation: string;
+  fields: Array<{ name: string; label: string; kind: string; required: boolean; help: string; value: string }>;
+};
+
+/** A plugin's page by declaration, drawn by the admin itself: no markup of the plugin's,
+ * so it needs no frame, and an installed plugin has it as a compiled-in one does. */
+export function PluginFormPage({ title, operation, fields }: PluginFormPageProps) {
+  return <FormPage title={title} editor={<OperationForm title={title} operation={operation} fields={fields} />} />;
+}

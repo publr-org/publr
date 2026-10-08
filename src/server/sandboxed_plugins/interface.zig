@@ -28,6 +28,7 @@ pub const vtable: sdk.sandboxed_plugins.SandboxedPlugins.VTable = .{
     .after = &after,
     .event = &event,
     .display = &display,
+    .call_as = &call_as,
 };
 
 fn host_of(context: *anyopaque) *Host {
@@ -174,6 +175,34 @@ fn run(
     var access = try access_of(loaded, ctx);
 
     return invoke_module.invoke(loaded, ctx, &access, found.entry, input);
+}
+
+fn call_as(
+    context: *anyopaque,
+    ctx: *sdk.Ctx,
+    plugin: []const u8,
+    name: []const u8,
+    input: []const u8,
+) sdk.Error![]const u8 {
+    const host = host_of(context);
+    const loaded = host.find_loaded(plugin) orelse return error.NotFound;
+
+    std.debug.assert(name.len > 0);
+    std.debug.assert(ctx.caller != .plugin);
+
+    var access = try access_of(loaded, ctx);
+    const saved = ctx.caller;
+
+    ctx.caller = .{ .plugin = .{
+        .name = loaded.name(),
+        .capabilities = &.{},
+        .on_behalf_of = saved.user_id(),
+        .access = &access,
+        .roles = saved.roles(),
+    } };
+    defer ctx.caller = saved;
+
+    return @import("../registry.zig").SDK.call_json(ctx, name, input);
 }
 
 fn hooked(context: *anyopaque, hook_stage: sdk.sandboxed_plugins.Stage, name: []const u8) bool {

@@ -1,0 +1,114 @@
+import { Publr } from "publr-jsx";
+
+export const frame_ref = Publr.ref<HTMLIFrameElement>();
+export const state = Publr.reactive({
+  height: 0,
+  plugin: "",
+  page: "",
+  csrf: "",
+  operations: [] as string[],
+});
+
+/** Another page of the plugin's, or this one with another query: `notes`, `?week=2`,
+ * `notes?week=2`. Nothing else leaves the frame as an address. */
+const page_address = /^([a-z0-9-]{1,48})?(\?[^#]*)?$/;
+
+export function go(to: string) {
+  const match = page_address.exec(to);
+  if (to === "" || !match) return;
+  const page = match[1] ?? state.page;
+  window.location.href = Publr.url(`/admin/plugin/${state.plugin}/${page}${match[2] ?? ""}`);
+}
+
+export async function run(operation: string, input: unknown): Promise<unknown> {
+  const dot = operation.indexOf(".");
+  const response = await fetch(
+    Publr.url(`/api/${operation.slice(0, dot)}/${operation.slice(dot + 1)}`),
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },
+      body: JSON.stringify(input ?? {}),
+    },
+  );
+  const answer = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(answer.message ?? answer.error ?? `refused (${response.status})`);
+  return answer;
+}
+
+/** A GROQ read the frame asks for, run by the admin as the plugin for the person looking. */
+export async function read(frame: HTMLIFrameElement, id: number, query: string, params: unknown) {
+  try {
+    const response = await fetch(Publr.url(`/admin/plugin/${state.plugin}/query`), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },
+      body: JSON.stringify({ query, params: params ?? {} }),
+    });
+    const answer = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(answer.message ?? answer.error ?? `refused (${response.status})`);
+    reply(frame, { id, ok: true, value: answer.result });
+  } catch (error) {
+    reply(frame, { id, ok: false, error: (error as Error).message });
+  }
+}
+
+export function reply(frame: HTMLIFrameElement, answer: object) {
+  frame.contentWindow?.postMessage(Object.assign({ publr: 1 }, answer), "*");
+}
+
+/** Runs what the frame asks when it is one of the plugin's own operations, as the person
+ * looking at it, through the same checks as any call. */
+export async function answer(frame: HTMLIFrameElement, id: number, operation: string, input: unknown) {
+  if (!state.operations.includes(operation)) {
+    reply(frame, { id, ok: false, error: `${operation} is not one of this plugin's operations` });
+    return;
+  }
+  try {
+    reply(frame, { id, ok: true, value: await run(operation, input) });
+  } catch (error) {
+    reply(frame, { id, ok: false, error: (error as Error).message });
+  }
+}
+
+export const received = (event: MessageEvent) => {
+  const frame = frame_ref.current;
+  const message = event.data;
+  if (!frame || event.source !== frame.contentWindow || !message || message.publr !== 1) return;
+  if (message.kind === "height") state.height = Math.min(Math.max(Number(message.height) || 0, 0), 100000);
+  if (message.kind === "navigate") go(String(message.to));
+  if (message.kind === "call") answer(frame, Number(message.id), String(message.operation), message.input);
+  if (message.kind === "query") read(frame, Number(message.id), String(message.query), message.params);
+};
+
+export type PluginFrameProps = {
+  /** The frame's document. */
+  src: string;
+  title: string;
+  plugin: string;
+  page: string;
+  csrf: string;
+  /** The plugin's own operations: the only ones the frame may ask for. */
+  operations: string[];
+};
+
+/** A plugin's page in the plugin frame: an opaque, sandboxed iframe that grows with what
+ * it shows and talks to the admin only through `received`. */
+export function PluginFrame({ src, title, plugin, page, csrf, operations }: PluginFrameProps) {
+  state.plugin = plugin;
+  state.page = page;
+  state.csrf = csrf;
+  state.operations = operations;
+  state.height = 0;
+  return (
+    <iframe
+      ref={frame_ref}
+      src={src}
+      title={title}
+      sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+      class="block min-h-full w-full flex-1 border-0"
+      style={state.height > 0 ? `height:${state.height}px` : ""}
+      onWindowMessage={received}
+    ></iframe>
+  );
+}

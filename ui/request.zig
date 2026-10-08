@@ -30,6 +30,9 @@ pub fn Shape(comptime Node: type) type {
             top_bar: ?Node,
             /// The area's sidebar, drawn only when the chrome reaches it.
             sidebar: ?Node,
+            /// The page is shown inside another (the AI workspace follows the agent in a
+            /// frame): the sheet alone, without the rail and the sidebar.
+            framed: bool = false,
         },
     };
 }
