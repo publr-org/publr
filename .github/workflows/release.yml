@@ -239,19 +239,6 @@ jobs:
         working-directory: publr
         run: *write_version
 
-      # The fixture this release made and the lived site go in its own commit, so the tag
-      # holds them; nothing ever changes them after.
-      - name: Commit the version and tag it
-        working-directory: publr
-        run: |
-          cp ../upgrade/publr/fixtures/upgrade/*.tar.gz fixtures/upgrade/
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A fixtures/upgrade src/lib/db/migrations src/lib/db/migrations.zig
-          git commit -qam "Release $TAG"
-          git tag "$TAG"
-          git push --atomic origin HEAD:main "$TAG"
-
       - name: Checksums
         working-directory: dist
         env: { COMMITS: "${{ needs.version.outputs.commits }}" }
@@ -277,6 +264,19 @@ jobs:
           openssl pkeyutl -sign -inkey ../signing.pem -rawin -in SHA256SUMS -out SHA256SUMS.sig
           rm ../signing.pem
           test "$(wc -c < SHA256SUMS.sig)" -eq 64
+
+      # The fixture this release made and the lived site go in its own commit, so the tag
+      # holds them; nothing ever changes them after.
+      - name: Commit the version and tag it
+        working-directory: publr
+        run: |
+          cp ../upgrade/publr/fixtures/upgrade/*.tar.gz fixtures/upgrade/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A fixtures/upgrade src/lib/db/migrations src/lib/db/migrations.zig
+          git commit -qam "Release $TAG"
+          git tag "$TAG"
+          git push --atomic origin HEAD:main "$TAG"
 
       - name: Release
         run: |
