@@ -566,14 +566,21 @@ fn write_literal_attribute(compiler: *Compiler, attr: Attr, verbatim: []const u8
         }
     }
 
-    try compiler.static(" ");
-    try compiler.static(verbatim);
-
     if (std.mem.eql(u8, attr.name, "class")) {
         if (attr.literal) |classes| {
             try collect_classes(compiler, classes);
+            try compiler.static(" class=\"");
+            try compiler.push(.{
+                .classes = classes,
+            });
+            try compiler.static("\"");
+
+            return;
         }
     }
+
+    try compiler.static(" ");
+    try compiler.static(verbatim);
 }
 
 /// `/posts`, not `//cdn.example` (another host), `#top` or `https://…`.

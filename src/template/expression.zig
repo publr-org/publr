@@ -914,9 +914,19 @@ fn entry_member(compiler: *Compiler, boxed: *const Expr, name: []const u8) Error
             .type = .data,
             .access = .entry_data,
         },
+        .{
+            .name = "restricted",
+            .type = .boolean,
+            .access = .entry_restricted,
+        },
+        .{
+            .name = "reason",
+            .type = .string,
+            .access = .entry_reason,
+        },
     };
 
-    std.debug.assert(members.len == 7);
+    std.debug.assert(members.len == 9);
 
     for (members) |candidate| {
         if (std.mem.eql(u8, candidate.name, name)) {

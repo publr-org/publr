@@ -1,5 +1,6 @@
 //! Every script data read goes through the same context as native templates.
 const std = @import("std");
+const routes = @import("../routes.zig");
 const engine = @import("vm.zig");
 const VM = engine.VM;
 const Value = engine.Value;
@@ -65,6 +66,32 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
 
             if (std.mem.eql(u8, method, "query")) {
                 return queried(vm, frame, args);
+            }
+
+            if (std.mem.eql(u8, method, "media")) {
+                return viewed(vm, frame, args);
+            }
+
+            if (std.mem.eql(u8, method, "locale")) {
+                return vm.string(frame.ctx.locale());
+            }
+
+            if (std.mem.eql(u8, method, "managed")) {
+                return api.publr_js_boolean(vm.context, @intFromBool(frame.ctx.managed()));
+            }
+
+            if (std.mem.eql(u8, method, "languages")) {
+                const text = try frame.ctx.languages_json();
+                const terminated = try vm.arena.dupeZ(u8, text);
+
+                const listed = api.JS_ParseJSON(
+                    vm.context,
+                    terminated.ptr,
+                    terminated.len,
+                    "publr:data",
+                );
+
+                return vm.check(listed);
             }
 
             if (std.mem.eql(u8, method, "now")) {
@@ -306,6 +333,10 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
             }
 
             try vm.set(object, "slug", try optional(vm, value.slug));
+            const restricted = api.publr_js_boolean(vm.context, @intFromBool(value.restricted));
+
+            try vm.set(object, "restricted", restricted);
+            try vm.set(object, "reason", try vm.string(value.reason));
             try vm.set(
                 object,
                 "__publr_entry",
@@ -410,6 +441,22 @@ fn queried(vm: *VM, frame: anytype, args: Value) !Value {
     const params = if (api.JS_IsString(given)) try string(vm, given) else "{}";
 
     return json_text(vm, try frame.ctx.run_query(text, params));
+}
+
+/// `media(id)`: the file a media field names, or null.
+fn viewed(vm: *VM, frame: anytype, args: Value) !Value {
+    std.debug.assert(api.JS_IsArray(args));
+
+    const id_value = try vm.item(args, 0);
+    defer vm.free(id_value);
+
+    if (!api.JS_IsString(id_value)) {
+        return api.publr_js_null();
+    }
+
+    const found = try frame.ctx.media(try string(vm, id_value)) orelse return api.publr_js_null();
+
+    return json_text(vm, found);
 }
 
 /// JSON text as a JavaScript value, as a query answers it.
@@ -563,15 +610,5 @@ fn positive(vm: *VM, value: Value) !u32 {
 fn inferred_type(rel: []const u8) ![]const u8 {
     std.debug.assert(rel.len > 0);
 
-    if (!std.mem.startsWith(u8, rel, "content/")) {
-        return error.MissingType;
-    }
-
-    const path = rel["content/".len..];
-    const cut = std.mem.lastIndexOfScalar(u8, path, '/') orelse {
-        return if (std.mem.startsWith(u8, path, "[slug]")) "page" else error.MissingType;
-    };
-    const dir = path[0..cut];
-    const name = if (std.mem.lastIndexOfScalar(u8, dir, '/')) |at| dir[at + 1 ..] else dir;
-    return if (std.mem.endsWith(u8, name, "s")) name[0 .. name.len - 1] else name;
+    return routes.position_type(rel) orelse error.MissingType;
 }

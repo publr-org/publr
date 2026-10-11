@@ -419,6 +419,14 @@ fn publr_call(compiler: *Compiler, name: []const u8, rhs: []const u8) Error!void
         return declare(compiler, name, .string, if (request) .request_now else .build_now);
     }
 
+    if (std.mem.eql(u8, call, "locale()")) {
+        return declare(compiler, name, .string, .locale);
+    }
+
+    if (std.mem.eql(u8, call, "managed()")) {
+        return declare(compiler, name, .boolean, .managed);
+    }
+
     if (std.mem.eql(u8, call, "session")) {
         return session_call(compiler, name, request);
     }
@@ -565,7 +573,9 @@ fn data_call(compiler: *Compiler, name: []const u8, rhs: []const u8, call: []con
         return money_call(compiler, name, args);
     }
 
-    const scripted = [_][]const u8{ "get(", "findOne(", "find(", "param(", "query(" };
+    const scripted = [_][]const u8{
+        "get(", "findOne(", "find(", "param(", "query(", "media(", "mediaUrl(", "languages(",
+    };
 
     // Only the start matters: a call spread over lines reaches here cut at the first one,
     // and the script reads the whole frontmatter anyway.

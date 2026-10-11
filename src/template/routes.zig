@@ -23,6 +23,26 @@ pub const Match = struct {
 
 pub const pattern_len_max: u32 = 1024;
 
+/// The type a template's place in `content/` names: `content/[slug].publr` a page,
+/// `content/posts/[slug].publr` a post. Null outside `content/` or at its root otherwise.
+pub fn position_type(rel: []const u8) ?[]const u8 {
+    std.debug.assert(rel.len > 0);
+    std.debug.assert(rel.len <= pattern_len_max);
+
+    if (!std.mem.startsWith(u8, rel, "content/")) {
+        return null;
+    }
+
+    const path = rel["content/".len..];
+    const cut = std.mem.lastIndexOfScalar(u8, path, '/') orelse {
+        return if (std.mem.startsWith(u8, path, "[slug]")) "page" else null;
+    };
+    const dir = path[0..cut];
+    const name = if (std.mem.lastIndexOfScalar(u8, dir, '/')) |at| dir[at + 1 ..] else dir;
+
+    return if (std.mem.endsWith(u8, name, "s")) name[0 .. name.len - 1] else name;
+}
+
 /// "content/posts/[slug].publr" becomes "/posts/:slug"; "content/index.publr" becomes
 /// "/"; "content/docs/[...path].publr" becomes "/docs/*".
 pub fn route_pattern(arena: std.mem.Allocator, rel: []const u8) ![]const u8 {
@@ -218,4 +238,12 @@ test "routes sort static, then dynamic, then catch-all, each by pattern" {
     try std.testing.expectEqualStrings("/posts", routes[1].pattern);
     try std.testing.expectEqualStrings("/posts/:slug", routes[2].pattern);
     try std.testing.expectEqualStrings("/docs/*", routes[3].pattern);
+}
+
+test "position_type: a page at the root, a post in posts/, nothing outside content/" {
+    try std.testing.expectEqualStrings("page", position_type("content/[slug].publr").?);
+    try std.testing.expectEqualStrings("post", position_type("content/posts/[slug].publr").?);
+    try std.testing.expectEqualStrings("item", position_type("content/a/items/[slug].publr").?);
+    try std.testing.expect(position_type("components/menu.publr") == null);
+    try std.testing.expect(position_type("content/index.publr") == null);
 }

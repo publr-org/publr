@@ -235,7 +235,7 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             }
 
             try buffer.writer.print("<{s}", .{name});
-            try write_attributes(vm, &buffer.writer, attributes, frame.ctx.url_base());
+            try write_attributes(vm, &buffer.writer, attributes, frame.ctx);
             try buffer.writer.writeAll(">");
 
             if (is_void(name)) {
@@ -371,6 +371,9 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
         pub const Named = struct {
             name: []const u8,
             base: []const u8,
+            /// The host a `class` is written through, by the names the app's sheet styles
+            /// it by.
+            ctx: ?*const Ctx = null,
         };
 
         pub fn attribute(vm: *VM, writer: *std.Io.Writer, named: Named, value: Value) !void {
@@ -400,6 +403,14 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 
             const text = try scalar(vm, value);
 
+            if (@hasDecl(Ctx, "write_classes") and std.mem.eql(u8, name, "class")) {
+                if (named.ctx) |ctx| {
+                    try writer.writeAll(" class=\"");
+                    try ctx.write_classes(writer, text);
+                    return writer.writeByte('"');
+                }
+            }
+
             try writer.print(" {s}=\"", .{name});
 
             if (address.url_attribute(name) and address.needs_base(named.base, text)) {
@@ -414,9 +425,11 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             vm: *VM,
             writer: *std.Io.Writer,
             attributes: Value,
-            base: []const u8,
+            ctx: *const Ctx,
         ) !void {
             std.debug.assert(api.JS_IsObject(attributes));
+
+            const base = ctx.url_base();
 
             for (try property_names(vm, attributes)) |name| {
                 if (std.mem.eql(u8, name, "set:html")) {
@@ -428,6 +441,7 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
                 try attribute(vm, writer, .{
                     .name = name,
                     .base = base,
+                    .ctx = ctx,
                 }, value);
             }
         }

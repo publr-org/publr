@@ -37,10 +37,17 @@ pub const VM = struct {
         };
     }
 
-    pub fn start(vm: *VM) Error!void {
+    /// The heap's guard alone, for code that needs no template runtime: a runaway
+    /// script is still stopped.
+    pub fn guard(vm: *VM) void {
         std.debug.assert(vm.interrupts == 0);
         api.JS_SetInterruptHandler(vm.runtime, interrupt, vm);
         api.JS_SetContextOpaque(vm.context, vm);
+    }
+
+    pub fn start(vm: *VM) Error!void {
+        std.debug.assert(vm.interrupts == 0);
+        vm.guard();
         api.JS_SetModuleLoaderFunc(vm.runtime, module_name, load_module, vm);
         const global = api.JS_GetGlobalObject(vm.context);
         defer vm.free(global);

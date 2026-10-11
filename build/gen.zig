@@ -16,8 +16,13 @@ pub const Generated = struct {
     classes: std.Build.LazyPath,
     /// The client half of the views that keep state in the browser.
     stores: std.Build.LazyPath,
+    /// The views' compiled expressions as bytecode, for their first values.
+    expressions: std.Build.LazyPath,
     /// The render runtime the generated views import; the theme's components share it.
     runtime: *std.Build.Module,
+    /// The runtime's class merge (`src/ui/class_merge.zig`), which imports the admin's
+    /// class book once the sheet's build has written it.
+    class_merge: *std.Build.Module,
     /// What a view reads as `Publr.request`, filled by the admin per page.
     request: *std.Build.Module,
     tool: *std.Build.Step.Compile,
@@ -60,6 +65,7 @@ pub fn add(
     const components = builder.pathFromRoot(components_dir);
     const icons = builder.pathFromRoot(icons_dir);
 
+    run.addArg("--engine");
     run.addDirectoryArg(builder.path("ui"));
     run.addArg(components);
     run.addArg(icons);
@@ -78,7 +84,8 @@ pub fn add(
     declare_inputs(builder, run, components, "", ".ptsx");
     declare_inputs(builder, run, icons, "", ".svg");
 
-    const runtime = add_runtime(builder, pjsx_host, target, optimize);
+    const parts = add_runtime(builder, pjsx_host, target, optimize);
+    const runtime = parts.runtime;
     const request = builder.createModule(.{
         .root_source_file = builder.path("ui/request.zig"),
         .target = target,
@@ -110,18 +117,57 @@ pub fn add(
         .views = views,
         .classes = out.path(builder, "classes.txt"),
         .stores = out.path(builder, "stores.js"),
+        .expressions = bytecode(builder, out.path(builder, "expressions.js")),
         .runtime = runtime,
+        .class_merge = parts.class_merge,
         .request = request,
         .tool = tool,
     };
 }
+
+/// `expressions.js` compiled to QuickJS bytecode by a host tool.
+pub fn bytecode(builder: *std.Build, source: std.Build.LazyPath) std.Build.LazyPath {
+    std.debug.assert(builder.build_root.path != null);
+
+    const vm = builder.createModule(.{
+        .root_source_file = builder.path("src/template/javascript/vm.zig"),
+        .target = builder.graph.host,
+        .optimize = .ReleaseFast,
+        .link_libc = true,
+    });
+
+    @import("javascript.zig").add(builder, vm);
+
+    const tool = builder.addExecutable(.{
+        .name = "expressions_bytecode",
+        .root_module = builder.createModule(.{
+            .root_source_file = builder.path("scripts/expressions_bytecode.zig"),
+            .target = builder.graph.host,
+            .optimize = .Debug,
+            .imports = &.{.{
+                .name = "vm",
+                .module = vm,
+            }},
+        }),
+    });
+    const run = builder.addRunArtifact(tool);
+
+    run.addFileArg(source);
+
+    return run.addOutputFileArg("expressions.bin");
+}
+
+const Runtime = struct {
+    runtime: *std.Build.Module,
+    class_merge: *std.Build.Module,
+};
 
 fn add_runtime(
     builder: *std.Build,
     pjsx_host: *std.Build.Dependency,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Module {
+) Runtime {
     std.debug.assert(builder.build_root.path != null);
 
     const jit = builder.dependency("publr_jit", .{
@@ -153,7 +199,10 @@ fn add_runtime(
 
     std.debug.assert(runtime.root_source_file != null);
 
-    return runtime;
+    return .{
+        .runtime = runtime,
+        .class_merge = class_merge,
+    };
 }
 
 /// Every file with `extension` under `root/dir`, declared as an input of `run`.

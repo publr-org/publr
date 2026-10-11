@@ -7,6 +7,7 @@ const engine = @import("../../template.zig");
 const model_app = @import("../../model/app.zig");
 const middleware = @import("middleware.zig");
 const registry = @import("../../server/registry.zig");
+const ui_render = @import("../../ui/render.zig");
 
 pub const apps_max: u32 = apps_options.apps_max;
 pub const minify: bool = apps_options.minify;
@@ -34,6 +35,8 @@ pub const Spec = struct {
     templates: []const File,
     assets: []const File,
     tokens: jit.Theme,
+    /// The typefaces every page links before its stylesheet (`app.zon`'s `.fonts`).
+    fonts: []const model_app.Font = &.{},
     style_css: []const u8,
     interactive_classes: []const u8,
     pjsx_components: []const engine.PjsxComponent,
@@ -102,10 +105,11 @@ fn spec_of(comptime App: type) Spec {
             .tokens = jit.extendTheme(jit.default_theme, .{
                 .tokens = tokens_of(config.tokens),
             }),
+            .fonts = config.fonts,
             .style_css = App.style_css,
             .interactive_classes = App.interactive_classes,
             .pjsx_components = components_of(App.interactive),
-            .pjsx_renders = renders_of(App.interactive),
+            .pjsx_renders = renders_of(App.interactive, App.expressions),
             .middleware = middleware_of(App.middleware),
         };
     }
@@ -326,7 +330,10 @@ fn component_of(comptime name: []const u8, comptime Component: type) engine.Pjsx
 }
 
 /// The same components' render functions, by the same index, wrapped to take props by name.
-fn renders_of(comptime Interactive: type) []const engine.PjsxRender {
+fn renders_of(
+    comptime Interactive: type,
+    comptime expressions: []const u8,
+) []const engine.PjsxRender {
     comptime {
         std.debug.assert(@typeInfo(Interactive) == .@"struct");
 
@@ -334,7 +341,7 @@ fn renders_of(comptime Interactive: type) []const engine.PjsxRender {
         var renders: [decls.len]engine.PjsxRender = undefined;
 
         for (decls, 0..) |decl, index| {
-            renders[index] = &Thunk(@field(Interactive, decl.name)).render;
+            renders[index] = &Thunk(@field(Interactive, decl.name), expressions).render;
         }
 
         const final = renders;
@@ -354,13 +361,16 @@ fn is_string_prop(comptime field: std.builtin.Type.StructField) bool {
 }
 
 /// A call site's values over the component's own defaults; a null leaves the default.
-fn Thunk(comptime Component: type) type {
+/// The component renders with a request that carries only the engine for the app's
+/// compiled expressions (`expressions`, its bytecode).
+fn Thunk(comptime Component: type, comptime expressions: []const u8) type {
     return struct {
         fn render(
             writer: *std.Io.Writer,
             arena: std.mem.Allocator,
             props: []const engine.Prop,
             children: ?[]const u8,
+            classes: ?*const anyopaque,
         ) anyerror!void {
             std.debug.assert(props.len <= engine.props_max);
             std.debug.assert(@hasDecl(Component, "render"));
@@ -384,6 +394,19 @@ fn Thunk(comptime Component: type) type {
                     filled.children = runtime.raw(text);
                 }
             }
+
+            const runner = try ui_render.Runner.create(arena, expressions);
+            defer runner.deinit();
+
+            var request = ui_render.engine_request(runner);
+            var templates: runtime.Templates = .{
+                .gpa = arena,
+            };
+            defer templates.deinit();
+
+            request.publr_classes = classes;
+            request.publr_templates = &templates;
+            filled.publr_request = &request;
 
             try Component.render(writer, arena, filled);
         }

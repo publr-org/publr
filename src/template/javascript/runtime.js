@@ -12,6 +12,9 @@ globalThis.__publr = (() => {
     getReferences: (...args) => host(scope + ".getReferences", args),
     getReference: (...args) => host(scope + ".getReference", args),
     now: () => host(scope + ".now", []),
+    // The language the page is in (`pl`), and the page in every language for a switch.
+    locale: () => host(scope + ".locale", []),
+    languages: () => host(scope + ".languages", []),
     money: (price, currency) => host(scope + ".money", [price, currency]),
     get session() { return host(scope + ".session", []); },
     header: name => host(scope + ".header", [name]),
@@ -25,6 +28,16 @@ globalThis.__publr = (() => {
     findOne: (type, field, value) => host(scope + ".findOne", [type, field, String(value)]),
     find: (type, where, page) => host(scope + ".find", [type, JSON.stringify(where ?? {}), JSON.stringify(page ?? {})]),
     redirect: path => host(scope + ".redirect", [path]),
+    // The file a media field holds: { url, alt, title, width, height, ... } or null.
+    media: id => (typeof id === "string" && id !== "" ? host(scope + ".media", [id]) : null),
+    // Its address, resized: mediaUrl(record.photo, { w: 800, h: 600, fit: "cover", q: 80 }).
+    mediaUrl: (id, size) => {
+      const file = typeof id === "string" && id !== "" ? host(scope + ".media", [id]) : null;
+      if (!file) return "";
+      const pairs = ["w", "h", "fit", "q"].filter(key => size && size[key] != null)
+        .map(key => key + "=" + encodeURIComponent(String(size[key])));
+      return pairs.length > 0 ? file.url + "?" + pairs.join("&") : file.url;
+    },
   });
   return Object.freeze({ element, text, component, isNode: value => nodes.has(value),
     api: Object.freeze({ build: api("build"), request: api("request") }) });

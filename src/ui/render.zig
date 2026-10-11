@@ -5,12 +5,16 @@ const std = @import("std");
 const http = @import("../lib/http.zig");
 const runtime = @import("runtime");
 const request_module = @import("request");
+pub const Runner = @import("expressions.zig").Runner;
+const admin_expressions = @embedFile("admin_expressions");
 
 const Response = http.Response;
 const Error = http.Error;
 const Status = http.Status;
 
 pub const page_bytes_max: u32 = 4 << 20;
+/// What a page's writer starts with: every admin page so far fits, the largest editor too.
+pub const page_bytes_first: u32 = 1 << 20;
 
 /// What a view reads as `Publr.request`: handed to the page's root, which hands it down.
 pub const Request = request_module.Request;
@@ -56,6 +60,8 @@ pub fn view(arena: std.mem.Allocator, comptime View: type, props: View.Props) Er
 /// A node whose body runs only when the page reaches it: `Body.render(capture, writer,
 /// arena, request)` with the capture kept in the arena and the page's request.
 pub const lazy = runtime.viewed;
+/// Markup written as it is: only for HTML already made safe (`lib/sanitize.zig`).
+pub const raw = runtime.raw;
 
 /// Several nodes as one, rendered one after another.
 pub fn all(arena: std.mem.Allocator, nodes: []const Node) Error!Node {
@@ -85,12 +91,47 @@ pub fn all(arena: std.mem.Allocator, nodes: []const Node) Error!Node {
     return runtime.viewed(kept, Body);
 }
 
+/// A request with nothing of a signed-in page but the engine for compiled expressions:
+/// for a fragment, or an app's component, rendered with no page around it.
+pub fn engine_request(runner: *const Runner) Request {
+    std.debug.assert(runner.expressions.context == @as(*const anyopaque, runner));
+
+    return .{
+        .session = .{
+            .name = "",
+            .email = "",
+            .csrf = "",
+            .avatar = "",
+        },
+        .admin = .{
+            .base = "",
+            .path = "",
+            .area = "",
+            .can_structure = false,
+            .can_settings = false,
+            .top_bar = null,
+            .sidebar = null,
+        },
+        .publr_expressions = &runner.expressions,
+    };
+}
+
 /// A node as a string: the answer to a request for the fragment alone.
 pub fn to_html(arena: std.mem.Allocator, node: Node) Error![]const u8 {
     std.debug.assert(page_bytes_max > 0);
     std.debug.assert(node.raw != null or node.render_fn != null);
 
-    return runtime.render_to_string(arena, node) catch error.OutOfMemory;
+    // A fragment has no page around it: its views get a request that carries the
+    // engine for their compiled expressions and nothing of a signed-in page.
+    const runner = Runner.create(arena, admin_expressions) catch return error.OutOfMemory;
+    defer runner.deinit();
+
+    const request = engine_request(runner);
+    var out: std.Io.Writer.Allocating = .init(arena);
+
+    node.render_with(&out.writer, arena, &request) catch return error.OutOfMemory;
+
+    return out.written();
 }
 
 /// A view rendered to a string, for a fragment answer or a body the adapter splices.
@@ -99,8 +140,27 @@ pub fn html(arena: std.mem.Allocator, comptime View: type, props: View.Props) Er
     std.debug.assert(page_bytes_max > 0);
 
     var out: std.Io.Writer.Allocating = .init(arena);
+    const runner = Runner.create(arena, admin_expressions) catch return error.OutOfMemory;
+    defer runner.deinit();
+    var templates: runtime.Templates = .{
+        .gpa = arena,
+    };
+    defer templates.deinit();
 
-    View.render(&out.writer, arena, props) catch return error.OutOfMemory;
+    var handed = props;
+
+    if (props.publr_request) |given| {
+        const with_engine = arena.create(Request) catch return error.OutOfMemory;
+
+        with_engine.* = @as(*const Request, @ptrCast(@alignCast(given))).*;
+        with_engine.publr_expressions = &runner.expressions;
+        with_engine.publr_templates = &templates;
+        runner.base = with_engine.admin.base;
+        runner.catalogue = with_engine.publr_catalogue;
+        handed.publr_request = with_engine;
+    }
+
+    View.render(&out.writer, arena, handed) catch return error.OutOfMemory;
 
     return out.written();
 }
@@ -114,11 +174,12 @@ pub const layouts = [_][]const u8{
     "CardPage",
     "ListDetailPage",
     "FramePage",
+    "WorkspacePage",
 };
 
 fn is_layout(comptime name: []const u8) bool {
     comptime {
-        std.debug.assert(layouts.len == 6);
+        std.debug.assert(layouts.len == 7);
 
         for (layouts) |layout| {
             if (std.mem.eql(u8, layout, name)) {
@@ -141,6 +202,18 @@ pub fn page(
     std.debug.assert(response.body.len == 0);
     std.debug.assert(@hasDecl(View, "render"));
 
+    // Drawn where it is sent from: the page is never also held in the arena.
+    if (response.body_room.len > 0) {
+        var writer: std.Io.Writer = .fixed(response.body_room);
+
+        draw(&writer, arena, request, View, props) catch |err| switch (err) {
+            error.WriteFailed => return error.BodyTooLarge,
+            else => return err,
+        };
+
+        return response.html(status, writer.buffered());
+    }
+
     try response.html(status, try document(arena, request, View, props));
 }
 
@@ -157,22 +230,55 @@ pub fn document(
     comptime {
         if (!is_layout(View.root_component)) {
             @compileError("a page is drawn by one of the layouts (IndexPage, FormPage, " ++
-                "HubPage, CardPage, ListDetailPage, FramePage); " ++
+                "HubPage, CardPage, ListDetailPage, FramePage, WorkspacePage); " ++
                 "this one's root is \"" ++
                 View.root_component ++ "\"");
         }
     }
 
-    var out: std.Io.Writer.Allocating = .init(arena);
-    var handed = props;
+    // Room for a whole page up front: grown a step at a time, every outgrown buffer would
+    // stay in the request's arena until the request ends (2-3 times the page in all).
+    var out = std.Io.Writer.Allocating.initCapacity(arena, page_bytes_first) catch {
+        return error.OutOfMemory;
+    };
 
-    handed.publr_request = request;
-
-    // JSX has no doctype; every page starts with one here.
-    out.writer.writeAll("<!doctype html>\n") catch return error.OutOfMemory;
-    View.render(&out.writer, arena, handed) catch return error.OutOfMemory;
+    draw(&out.writer, arena, request, View, props) catch return error.OutOfMemory;
 
     std.debug.assert(out.written().len <= page_bytes_max);
 
     return out.written();
+}
+
+/// The page into `writer`, doctype first.
+fn draw(
+    writer: *std.Io.Writer,
+    arena: std.mem.Allocator,
+    request: *const Request,
+    comptime View: type,
+    props: View.Props,
+) (Error || error{WriteFailed})!void {
+    std.debug.assert(@hasDecl(View, "render"));
+
+    var handed = props;
+    const runner = Runner.create(arena, admin_expressions) catch return error.OutOfMemory;
+    defer runner.deinit();
+
+    var with_engine = request.*;
+    var templates: runtime.Templates = .{
+        .gpa = arena,
+    };
+    defer templates.deinit();
+
+    with_engine.publr_expressions = &runner.expressions;
+    with_engine.publr_templates = &templates;
+    runner.base = request.admin.base;
+    runner.catalogue = request.publr_catalogue;
+    handed.publr_request = &with_engine;
+
+    // JSX has no doctype; every page starts with one here.
+    try writer.writeAll("<!doctype html>\n");
+    View.render(writer, arena, handed) catch |err| switch (err) {
+        error.WriteFailed => return error.WriteFailed,
+        else => return error.OutOfMemory,
+    };
 }

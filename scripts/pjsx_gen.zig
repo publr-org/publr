@@ -23,7 +23,7 @@ const ShapeNode = struct {
 
 const file_bytes_max = 4 << 20;
 const modules_max: u32 = 512;
-const icons_max: u32 = 64;
+const icons_max: u32 = 128;
 const plugin_dirs_max: u32 = 64;
 const runtime_import = "publr-jsx";
 /// The design-system Button's loading spinner: always in the sprite.
@@ -34,6 +34,7 @@ const sprite_stem = "IconSprite";
 const Set = struct {
     arena: std.mem.Allocator,
     io: std.Io,
+    engine: bool,
     modules: std.ArrayList(*const Module) = .empty,
     sources: std.ArrayList([]const u8) = .empty,
     /// Design-system components by file stem: `Button` → `Button/Button.ptsx`.
@@ -119,7 +120,15 @@ fn run(init: std.process.Init) !u8 {
     const io = init.io;
     var args = try init.minimal.args.iterateAllocator(arena);
     _ = args.next();
-    const ui_dir_path = args.next() orelse return usage();
+    var first = args.next() orelse return usage();
+    // The views run their compiled expressions through the request's engine.
+    const engine = std.mem.eql(u8, first, "--engine");
+
+    if (engine) {
+        first = args.next() orelse return usage();
+    }
+
+    const ui_dir_path = first;
     const components_dir_path = args.next() orelse return usage();
     const icons_dir_path = args.next() orelse return usage();
     const out_dir_path = args.next() orelse return usage();
@@ -143,6 +152,7 @@ fn run(init: std.process.Init) !u8 {
     var set: Set = .{
         .arena = arena,
         .io = io,
+        .engine = engine,
         .components_dir_path = components_dir_path,
         .components_dir = try cwd.openDir(io, components_dir_path, .{
             .iterate = true,
@@ -551,6 +561,13 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
     program.request = pjsx.targets.zig.requestFields(request.Shape(ShapeNode));
     // Root paths in URL attributes go under the path the project is served at.
     program.url_base = "admin.base";
+    // A site's interactive views write their classes with the site's book.
+    program.classes_field = "publr_classes";
+    program.templates_field = "publr_templates";
+
+    if (set.engine) {
+        program.expressions_field = "publr_expressions";
+    }
 
     for (set.modules.items) |module| {
         const name = module.component.name;
@@ -565,7 +582,10 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
     const views = program.viewsFile(arena) catch |err| return report(err, "views.zig");
     const classes = program.classesFile(arena) catch |err| return report(err, "classes.txt");
     var browser: std.Io.Writer.Allocating = .init(arena);
+    // The class book first: every class the stores write is written by its short name.
+    try browser.writer.writeAll("import \"./class-book.js\";\n");
     try browser_imports(set, &browser.writer);
+    try shared_helpers(set, &browser.writer);
     try browser.writer.writeAll(try program.storesFile(arena));
     const stores = browser.written();
     try out_dir.writeFile(set.io, .{
@@ -580,6 +600,66 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
         .sub_path = "stores.js",
         .data = stores,
     });
+    try out_dir.writeFile(set.io, .{
+        .sub_path = "expressions.js",
+        .data = program.serverFile(arena) catch |err| return report(err, "expressions.js"),
+    });
+}
+
+/// The helpers islands import from plain modules (`upload_picture` from `PictureTray`),
+/// once each, ahead of the stores that use them.
+fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
+    std.debug.assert(set.modules.items.len > 0);
+
+    var written: std.ArrayList([]const u8) = .empty;
+
+    for (set.modules.items) |module| {
+        if (module.component.store_registration == null) {
+            continue;
+        }
+
+        for (module.component.imports) |import| {
+            if (is_runtime(import.source) or !imports_helper(import)) {
+                continue;
+            }
+
+            const stem = stem_of(import.source);
+
+            if (contains(written.items, stem)) {
+                continue;
+            }
+
+            const code = shared_code_of(set, stem) orelse continue;
+
+            try written.append(set.arena, stem);
+            try out.print("\n// {s}\n{s}\n", .{ stem, code });
+        }
+    }
+}
+
+/// Whether an import names a helper rather than only components: a lowercase value name.
+fn imports_helper(import: anytype) bool {
+    std.debug.assert(import.names.len <= 256);
+
+    for (import.names) |name| {
+        if (!name.type_only and name.imported.len > 0 and !std.ascii.isUpper(name.imported[0])) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn shared_code_of(set: *const Set, stem: []const u8) ?[]const u8 {
+    std.debug.assert(stem.len > 0);
+
+    for (set.modules.items) |module| {
+        if (std.mem.eql(u8, stem_of(std.fs.path.basename(module.filename)), stem)) {
+            return module.component.shared_code;
+        }
+    }
+
+    return null;
 }
 
 fn is_runtime(source: []const u8) bool {
@@ -634,8 +714,8 @@ fn browser_imports(set: *Set, writer: *std.Io.Writer) !void {
 }
 
 fn usage() u8 {
-    std.debug.print("usage: pjsx_gen <ui_dir> <components_dir> <icons_dir> <out_dir> " ++
-        "[<plugin_ui_dir> ...]\n", .{});
+    std.debug.print("usage: pjsx_gen [--engine] <ui_dir> <components_dir> <icons_dir> " ++
+        "<out_dir> [<plugin_ui_dir> ...]\n", .{});
 
     return 2;
 }

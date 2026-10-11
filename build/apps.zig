@@ -64,6 +64,7 @@ const root_format =
     \\pub const middleware = @import("app_middleware");
     \\pub const style_css = @embedFile("app_style_css");
     \\pub const interactive_classes = @embedFile("app_interactive_classes");
+    \\pub const expressions = @embedFile("app_expressions");
     \\
 ;
 
@@ -117,6 +118,9 @@ fn app_module(
     });
     module.addAnonymousImport("app_interactive_classes", .{
         .root_source_file = interactive.classes,
+    });
+    module.addAnonymousImport("app_expressions", .{
+        .root_source_file = interactive.expressions,
     });
 
     return module;

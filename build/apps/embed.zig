@@ -6,6 +6,7 @@ const imports = @import("../../src/template/imports.zig");
 const publr_js_dir = "../publr-js/dist";
 const loader_source = "src/adapters/apps/islands.js";
 const toolbar_source = "src/adapters/apps/toolbar.js";
+const frame_source = "src/adapters/apps/frame.js";
 const entry_format = "    .{{ .path = \"{s}\", .data = @embedFile(\"{s}\") }},\n";
 const templates_max: u32 = 4096;
 const template_bytes_max: u32 = 4 << 20;
@@ -20,6 +21,8 @@ pub const Interactive = struct {
     module: *std.Build.Module,
     classes: std.Build.LazyPath,
     stores: std.Build.LazyPath,
+    /// The components' compiled expressions as bytecode, for their first values.
+    expressions: std.Build.LazyPath,
 };
 
 /// `interactive/*.ptsx` through pjsx_gen: the lowered render modules, their class manifest
@@ -47,11 +50,13 @@ pub fn interactive(
             }),
             .classes = placeholders.add("interactive-classes.txt", ""),
             .stores = placeholders.add("stores.js", ""),
+            .expressions = placeholders.add("expressions.bin", ""),
         };
     }
 
     const run = builder.addRunArtifact(pjsx_gen);
 
+    run.addArg("--engine");
     run.addDirectoryArg(builder.path(dir));
     run.addArg(builder.pathFromRoot("../ui/src/components"));
     run.addArg(builder.pathFromRoot("../icons/icons"));
@@ -63,7 +68,7 @@ pub fn interactive(
     }
 
     // A component may read the request (the base path its URLs go under); an app's
-    // render hands none, and reads it as empty.
+    // render hands one carrying only the engine for its compiled expressions.
     const module = builder.createModule(.{
         .root_source_file = out.path(builder, "views.zig"),
         .imports = &.{
@@ -82,6 +87,7 @@ pub fn interactive(
         .module = module,
         .classes = out.path(builder, "classes.txt"),
         .stores = out.path(builder, "stores.js"),
+        .expressions = @import("../gen.zig").bytecode(builder, out.path(builder, "expressions.js")),
     };
 }
 
@@ -243,6 +249,8 @@ pub fn assets(
     write_entry(builder, writer, files, "islands.js", loader_source, count);
     count += 1;
     write_entry(builder, writer, files, "toolbar.js", toolbar_source, count);
+    count += 1;
+    write_entry(builder, writer, files, "frame.js", frame_source, count);
     count += 1;
 
     inline for (client_files.names) |name| {

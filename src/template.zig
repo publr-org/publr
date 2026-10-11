@@ -9,6 +9,8 @@ pub const render = @import("template/render.zig");
 pub const routes = @import("template/routes.zig");
 pub const impact = @import("template/impact.zig");
 pub const imports = @import("template/imports.zig");
+pub const regions = @import("template/regions.zig");
+pub const overrides = @import("template/overrides.zig");
 
 pub const Template = ast.Template;
 pub const Options = compile.Options;
@@ -333,7 +335,6 @@ fn islands_of(arena: std.mem.Allocator, uses: []const compile.IslandUse) LoadErr
     return islands;
 }
 
-/// Every class the templates name, sorted, once each: the stylesheet's input.
 fn classes_of(arena: std.mem.Allocator, templates: []const Template) LoadError![]const []const u8 {
     std.debug.assert(templates.len <= templates_max);
 
@@ -722,6 +723,10 @@ pub const TestContext = struct {
     calls: ?*std.ArrayList([]const u8) = null,
     /// Every template the render went through, when recording.
     templates: ?*std.ArrayList([]const u8) = null,
+    /// `gone` stands as a reference the reader may not read, not as one left out.
+    restricted_gone: bool = false,
+    /// `Publr.build.managed()`: someone else runs the site (Publr Cloud).
+    is_managed: bool = false,
 
     pub const Entry = struct {
         id: []const u8,
@@ -731,6 +736,8 @@ pub const TestContext = struct {
         created_at: []const u8,
         updated_at: []const u8,
         data: Data,
+        restricted: bool = false,
+        reason: []const u8 = "",
     };
     pub const Data = struct {
         content: []const u8,
@@ -939,6 +946,17 @@ pub const TestContext = struct {
         std.debug.assert(ids.len <= 8);
 
         for (ids) |id| {
+            if (ctx.restricted_gone and std.mem.eql(u8, id, "gone")) {
+                var locked = posts[0];
+
+                locked.id = "";
+                locked.title = "";
+                locked.type = "assessment";
+                locked.restricted = true;
+                locked.reason = "access";
+                try found.append(ctx.arena, locked);
+            }
+
             for (posts) |post| {
                 if (std.mem.eql(u8, post.id, id)) {
                     try found.append(ctx.arena, post);
@@ -1001,6 +1019,22 @@ pub const TestContext = struct {
         return 1000;
     }
 
+    pub fn locale(ctx: *const TestContext) []const u8 {
+        _ = ctx;
+
+        return "en";
+    }
+
+    pub fn managed(ctx: *const TestContext) bool {
+        return ctx.is_managed;
+    }
+
+    pub fn languages_json(ctx: *const TestContext) ![]const u8 {
+        _ = ctx;
+
+        return "[]";
+    }
+
     pub fn now(ctx: *const TestContext) i64 {
         _ = ctx;
 
@@ -1053,6 +1087,19 @@ pub const TestContext = struct {
         std.debug.assert(params.len > 0);
 
         return "[{\"title\":\"Second <post>\"},{\"title\":\"First\"}]";
+    }
+
+    /// One public file, `m1`: what a media field holding that id shows.
+    pub fn media(ctx: *const TestContext, id: []const u8) !?[]const u8 {
+        _ = ctx;
+
+        std.debug.assert(id.len > 0);
+
+        if (!std.mem.eql(u8, id, "m1")) {
+            return null;
+        }
+
+        return "{\"url\":\"/media/2026/10/pancakes.png\",\"alt\":\"Pancakes\"}";
     }
 
     pub fn call_with(ctx: *const TestContext, operation: []const u8, input: []const u8) !Entry {
@@ -1365,6 +1412,46 @@ test "references: getReferences follows a field, a component takes an entry, ent
     // A component with no route reads the type's one record.
     const latest = try render_test(arena, program, program.find("components/latest.publr").?, &ctx);
     try testing.expectEqualStrings("<b>Second &lt;post&gt;</b>", latest);
+}
+
+test "references: one the reader may not read stands in place, saying its type and why" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/posts/[slug].publr",
+            \\---
+            \\const post = Publr.build.getEntry();
+            \\const related = Publr.build.getReferences(post, 'related');
+            \\---
+            \\<ul>{related.map((item) => (
+            \\  <li>{item.restricted && item.reason}{item.title}</li>
+            \\))}</ul>
+        ),
+        source("content/notes/[slug].publr",
+            \\---
+            \\const post = Publr.build.getEntry({ type: 'post' });
+            \\const related = Publr.build.getReferences(post, 'related');
+            \\const names = related.map((item) =>
+            \\  item.restricted ? `(${item.reason})` : item.title);
+            \\---
+            \\<p>{names.join(', ')}</p>
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const ctx: TestContext = .{
+        .arena = arena,
+        .slug = "second",
+        .restricted_gone = true,
+    };
+    const posts_page = program.find("content/posts/[slug].publr").?;
+    const typed = try render_test(arena, program, posts_page, &ctx);
+    try testing.expect(contains(typed, "<li>First</li><li>access</li>"));
+    const notes_page = program.find("content/notes/[slug].publr").?;
+    const scripted = try render_test(arena, program, notes_page, &ctx);
+    try testing.expect(contains(scripted, "First, (access), Second &lt;post&gt;"));
 }
 
 test "repeaters: a data field with no fallback is the rows, each read as an entry" {
@@ -2593,4 +2680,40 @@ fn check_load_allocation_failure(gpa: std.mem.Allocator) !void {
 
 test "app loading releases allocations on every allocation failure" {
     try testing.checkAllAllocationFailures(testing.allocator, check_load_allocation_failure, .{});
+}
+
+test "Publr.build.managed() picks what a page shows where it runs, and keeps it static" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/index.publr",
+            \\---
+            \\const managed = Publr.build.managed();
+            \\---
+            \\<p>{managed ? (<a href="/admin">Dashboard</a>) : (<a href="/new">Deploy now</a>)}</p>
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const page = program.routes[0].template;
+
+    try testing.expect(!program.routes[0].live);
+    try testing.expect(!program.templates[page].dynamic);
+
+    const own: TestContext = .{
+        .arena = arena,
+    };
+    const cloud: TestContext = .{
+        .arena = arena,
+        .is_managed = true,
+    };
+    const on_own = try render_test(arena, program, page, &own);
+    const on_cloud = try render_test(arena, program, page, &cloud);
+
+    try testing.expect(std.mem.indexOf(u8, on_own, "Deploy now") != null);
+    try testing.expect(std.mem.indexOf(u8, on_own, "Dashboard") == null);
+    try testing.expect(std.mem.indexOf(u8, on_cloud, "Dashboard") != null);
+    try testing.expect(std.mem.indexOf(u8, on_cloud, "Deploy now") == null);
 }

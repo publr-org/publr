@@ -72,6 +72,10 @@ pub const Expr = struct {
             entry_id,
             entry_type,
             entry_data,
+            /// `entry.restricted`: a reference to a record the reader may not read here.
+            entry_restricted,
+            /// `entry.reason`: why (`access`, `not_shared`, `deleted`); empty otherwise.
+            entry_reason,
             /// `<entry>.data.<name>`
             data_text: []const u8,
             session_email,
@@ -141,6 +145,11 @@ pub const Decl = struct {
     pub const Value = union(enum) {
         /// `Publr.build.now()`: `YYYY-MM-DD HH:MM:SS`, UTC.
         build_now,
+        /// `Publr.build.locale()`: the language the page is in (`pl`); empty without any.
+        locale,
+        /// `Publr.build.managed()`: whether someone else runs this site and keeps its Publr up
+        /// to date (Publr Cloud).
+        managed,
         /// `Publr.request.now()`: the same shape, per request.
         request_now,
         /// `Publr.request.session`
@@ -243,6 +252,9 @@ pub const Node = union(enum) {
     /// The path the project is served under, before a root path a URL attribute was
     /// written with (`href="/posts"`); nothing at the root.
     url_base,
+    /// A literal `class` attribute's value, written by the names the app's sheet styles it
+    /// by (the host's `write_classes`), as it is without one.
+    classes: []const u8,
     /// `</head>` is about to be written: the stylesheet, the preloads, the loader.
     head_assets,
     /// `{items.map((item) => ( ... ))}`
