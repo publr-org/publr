@@ -9,4 +9,11 @@ const migration = @import("migration.zig");
 /// written over five lines. Released ones never change and are never removed: a database
 /// made by any release since 0.3.0 runs the chain from where it is.
 /// `zig build migration-draft` starts the next one.
-pub const core = [_]migration.Migration{};
+pub const core = [_]migration.Migration{
+    .of(
+        "publr",
+        "unreleased",
+        @import("migrations/unreleased.zig"),
+        @embedFile("migrations/unreleased.zig"),
+    ),
+};
