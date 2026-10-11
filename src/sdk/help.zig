@@ -26,6 +26,11 @@ pub fn command(comptime Operation: type, out: *std.Io.Writer) Error!void {
         Operation.description,
     }) catch return error.WriteFailed;
 
+    if (comptime operation.deprecation(Operation) != null) {
+        out.print("\nDeprecated: {s}.\n", .{comptime operation.deprecation_text(Operation)}) catch
+            return error.WriteFailed;
+    }
+
     if (@hasDecl(Operation, "details")) {
         out.print("\n{s}\n", .{Operation.details}) catch return error.WriteFailed;
     }

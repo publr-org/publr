@@ -3,6 +3,11 @@ name: Release
 # Actions → Release → Run, choosing patch, minor or major. It releases main as it is, once
 # verify has passed on that commit. The next version is built first; only then is it
 # committed to main, tagged and released, so a failed run leaves no commit, tag or Release.
+#
+# The kind must match the database (`.agents/specs/updates.md`): a patch has no migration,
+# a minor's migration only adds, a one-way migration needs a major. The Linux x86_64 build
+# makes the release's upgrade fixture and carries the lived site, updates every earlier
+# fixture with the release binary, and proves the previous minor still runs on the result.
 
 on:
   workflow_dispatch:
@@ -28,10 +33,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.next.outputs.version }}
+      previous: ${{ steps.kind.outputs.previous }}
       commits: ${{ steps.commits.outputs.commits }}
     steps:
       - uses: actions/checkout@v4
-        with: { path: publr }
+        with: { path: publr, fetch-depth: 0 }
 
       - name: The next version
         id: next
@@ -63,6 +69,42 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Releasing \`v$version\` ($BUMP from $current) from \`$(git rev-parse --short HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
 
+      # Patch: no migration. Minor: one that only adds. Major: may be one-way.
+      - name: The kind matches the database
+        id: kind
+        working-directory: publr
+        env:
+          BUMP: "${{ inputs.bump }}"
+          VERSION: "${{ steps.next.outputs.version }}"
+        run: |
+          last="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          migration=src/lib/db/migrations/unreleased.zig
+          unreleased=false; one_way=false; schema_changed=false
+          [ -f "$migration" ] && unreleased=true
+          if $unreleased && grep -q 'pub const one_way = true' "$migration"; then one_way=true; fi
+          if [ -n "$last" ] && ! git diff --quiet "$last" -- src/lib/db/schema.sql; then
+            schema_changed=true
+          fi
+          if $schema_changed && ! $unreleased; then
+            echo "::error::schema.sql changed since $last with no $migration; run zig build migration-draft"; exit 1
+          fi
+          case "$BUMP" in
+            patch) if $unreleased; then
+                     echo "::error::a patch carries no migration; release a minor"; exit 1
+                   fi ;;
+            minor) if $one_way; then
+                     echo "::error::the migration is one-way: that is a major"; exit 1
+                   fi
+                   if ! $unreleased; then
+                     echo "::warning::a minor without a migration: usually a patch"
+                   fi ;;
+          esac
+          IFS=. read -r major minor patch <<< "$VERSION"
+          previous="$(git tag -l 'v*' | sed 's/^v//' | sort -V | awk -F. -v major="$major" -v minor="$minor" \
+            '$1 < major || ($1 == major && $2 < minor) { latest = $0 } END { if (latest) print "v" latest }')"
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          echo "Migration: $unreleased (one-way: $one_way). Step back tested against: ${previous:-none}" >> "$GITHUB_STEP_SUMMARY"
+
       # The libraries as they are now, the same for every build and kept with the Release
       # (workspace.txt), so whatever builds this release later builds it with them.
       - name: The libraries' commits
@@ -93,8 +135,10 @@ jobs:
     env: { VERSION: "${{ needs.version.outputs.version }}" }
     steps:
       - uses: actions/checkout@v4
-        with: { path: publr }
+        with: { path: publr, fetch-depth: 0 }
 
+      # The version, and the next migration named by it before anything is built: a
+      # released binary never records a migration as `unreleased`.
       - name: Write the version
         working-directory: publr
         run: &write_version |
@@ -102,6 +146,12 @@ jobs:
           for file in $VERSION_FILES; do
             grep -q "version = \"$VERSION\"" "$file" || { echo "::error file=$file::no version line"; exit 1; }
           done
+          migrations=src/lib/db/migrations
+          if [ -f "$migrations/unreleased.zig" ]; then
+            mv "$migrations/unreleased.zig" "$migrations/$VERSION.zig"
+            perl -pi -e 's/"unreleased"/"$ENV{VERSION}"/; s/migrations\/unreleased\.zig/migrations\/$ENV{VERSION}.zig/g' "$migrations.zig"
+            grep -q "migrations/$VERSION.zig" "$migrations.zig" || { echo "::error::$migrations.zig does not list unreleased.zig"; exit 1; }
+          fi
 
       - uses: ./publr/.github/actions/workspace
         with:
@@ -119,6 +169,37 @@ jobs:
         if: matrix.target != 'aarch64-linux-musl'
         run: test "$(./${{ matrix.file }} --version)" = "publr $VERSION"
 
+      # With the release binary itself: its fixture, the lived site carried on, every
+      # earlier fixture updated, and the previous minor running on the result.
+      - name: Upgrade fixtures and tests
+        if: matrix.file == 'publr-linux-x86_64'
+        working-directory: publr
+        env: { PREVIOUS: "${{ needs.version.outputs.previous }}" }
+        run: |
+          binary="$PWD/../${{ matrix.file }}"
+          previous_binary=""
+          if [ -n "$PREVIOUS" ]; then
+            mkdir -p ../previous
+            gh release download "$PREVIOUS" --repo "$GITHUB_REPOSITORY" --dir ../previous \
+              --pattern publr-linux-x86_64 --pattern SHA256SUMS
+            (cd ../previous && grep ' publr-linux-x86_64$' SHA256SUMS | sha256sum -c -)
+            chmod +x ../previous/publr-linux-x86_64
+            previous_binary="$PWD/../previous/publr-linux-x86_64"
+          fi
+          zig build upgrade-fixture -Dupgrade-binary="$binary" \
+            -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE"
+          zig build upgrade -Dupgrade-binary="$binary" -Dupgrade-previous="$previous_binary" \
+            -Dupgrade-releasing=true -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" 2>&1 | tee ../upgrade.txt
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.file == 'publr-linux-x86_64'
+        with:
+          name: upgrade
+          path: |
+            publr/fixtures/upgrade/*.tar.gz
+            upgrade.txt
+
       - uses: actions/upload-artifact@v4
         with: { name: "${{ matrix.file }}", path: "${{ matrix.file }}" }
 
@@ -132,17 +213,23 @@ jobs:
       - uses: actions/checkout@v4
         with: { path: publr }
       - uses: actions/download-artifact@v4
-        with: { path: dist, merge-multiple: true }
+        with: { path: dist, pattern: "publr-*", merge-multiple: true }
+      - uses: actions/download-artifact@v4
+        with: { path: upgrade, name: upgrade }
 
       - name: Write the version
         working-directory: publr
         run: *write_version
 
+      # The fixture this release made and the lived site go in its own commit, so the tag
+      # holds them; nothing ever changes them after.
       - name: Commit the version and tag it
         working-directory: publr
         run: |
+          cp ../upgrade/publr/fixtures/upgrade/*.tar.gz fixtures/upgrade/
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A fixtures/upgrade src/lib/db/migrations src/lib/db/migrations.zig
           git commit -qam "Release $TAG"
           git tag "$TAG"
           git push --atomic origin HEAD:main "$TAG"
@@ -158,6 +245,21 @@ jobs:
           for file in publr-*; do sha256sum "$file" > "$file.sha256"; done
           cat SHA256SUMS
 
+      # `publr update` trusts SHA256SUMS only with this signature, checked against the
+      # public key compiled into every release (src/server/update/key.zig).
+      - name: Sign
+        working-directory: dist
+        env: { SIGNING_KEY: "${{ secrets.PUBLR_RELEASE_SIGNING_KEY }}" }
+        run: |
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "::error::secret PUBLR_RELEASE_SIGNING_KEY is not set: releases must be signed"; exit 1
+          fi
+          umask 077
+          printf '%s\n' "$SIGNING_KEY" > ../signing.pem
+          openssl pkeyutl -sign -inkey ../signing.pem -rawin -in SHA256SUMS -out SHA256SUMS.sig
+          rm ../signing.pem
+          test "$(wc -c < SHA256SUMS.sig)" -eq 64
+
       - name: Release
         run: |
           cat > notes.md <<EOF
@@ -167,6 +269,16 @@ jobs:
 
           macOS builds are not signed yet. If macOS refuses to open \`publr\`, run
           \`xattr -d com.apple.quarantine publr\` once.
+
+          ## Updating
+
+          A running Publr updates from Settings › Updates, or \`publr update\`. Every update
+          backs the whole site up first. Every earlier release since 0.3.0 was updated to
+          this one before it shipped:
+
+          \`\`\`
+          $(grep -E '^(upgrade to|  |[0-9]+ passed)' upgrade/upgrade.txt || true)
+          \`\`\`
           EOF
           gh release create "$TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \

@@ -196,6 +196,60 @@ pub fn field_doc(
     }
 }
 
+/// An operation on its way out (`.agents/specs/updates.md`, "Deprecation before removal"):
+/// it keeps working for at least six months, every caller is told, and only a major removes
+/// it. `pub const deprecated: Deprecated = .{ .since = "0.4.0", .instead = "record.save" };`
+pub const Deprecated = struct {
+    /// The minor release that deprecated it.
+    since: []const u8,
+    /// The operation to call instead; empty when nothing replaces it.
+    instead: []const u8 = "",
+    /// Why, in a sentence, when the name of the replacement does not say.
+    why: []const u8 = "",
+};
+
+pub fn deprecation(comptime Operation: type) ?Deprecated {
+    comptime {
+        if (!@hasDecl(Operation, "deprecated")) {
+            return null;
+        }
+
+        const found: Deprecated = Operation.deprecated;
+
+        std.debug.assert(found.since.len > 0);
+
+        return found;
+    }
+}
+
+/// `deprecated since 0.4.0; call record.save instead`: what every caller is told.
+pub fn deprecation_text(comptime Operation: type) []const u8 {
+    comptime {
+        std.debug.assert(Operation.name.len > 0);
+
+        const found = deprecation(Operation) orelse return "";
+        const instead = if (found.instead.len > 0) "; call " ++ found.instead ++ " instead" else "";
+        const why = if (found.why.len > 0) ". " ++ found.why else "";
+
+        return Operation.name ++ " is deprecated since " ++ found.since ++ instead ++ why;
+    }
+}
+
+fn validate_deprecated(comptime Operation: type) void {
+    comptime {
+        std.debug.assert(Operation.name.len > 0);
+
+        if (!@hasDecl(Operation, "deprecated")) {
+            return;
+        }
+
+        assert_decl(Operation, "deprecated", Deprecated);
+
+        _ = std.SemanticVersion.parse(Operation.deprecated.since) catch
+            @compileError(Operation.name ++ ": `deprecated.since` is the release, `0.4.0`");
+    }
+}
+
 pub fn validate(comptime Operation: type) void {
     comptime {
         assert_decl(Operation, "name", []const u8);
@@ -244,6 +298,8 @@ pub fn validate(comptime Operation: type) void {
                 @compileError(Operation.name ++ ": only a write destroys");
             }
         }
+
+        validate_deprecated(Operation);
 
         if (@hasDecl(Operation, "failures")) {
             for (Operation.failures) |failure| {
@@ -465,4 +521,24 @@ test "a failure is a name of letters, a 4xx or 5xx status and a short message" {
     for ([_]Failure{ lower, spaced, success, silent }) |bad| {
         try std.testing.expect(!valid_failure(bad));
     }
+}
+
+test "a deprecated operation says since when and what to call instead" {
+    const Old = struct {
+        pub const name = "note.old_save";
+        pub const deprecated: Deprecated = .{
+            .since = "0.4.0",
+            .instead = "note.save",
+        };
+    };
+    const Plain = struct {
+        pub const name = "note.save";
+    };
+
+    try std.testing.expectEqualStrings(
+        "note.old_save is deprecated since 0.4.0; call note.save instead",
+        comptime deprecation_text(Old),
+    );
+    try std.testing.expect(comptime deprecation(Plain) == null);
+    try std.testing.expectEqualStrings("", comptime deprecation_text(Plain));
 }

@@ -1,0 +1,119 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { UpdatesPanel } from "../components/UpdatesPanel.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+
+export type UpdatesProps = {
+  /** The release running. */
+  version: string;
+  /** Publr Cloud keeps it up to date: nothing here starts an update. */
+  managed: boolean;
+  /** `idle`, the step an update is on, or `done` / `failed`. */
+  step: string;
+  busy: boolean;
+  step_label: string;
+  headline: string;
+  back_label: string;
+  newest_label: string;
+  target: string;
+  message: string;
+  /** The release kept to go back to; empty when there is none. */
+  previous: string;
+  /** The backups taken before each update, newest first. */
+  backups: Array<{ name: string; from: string; to: string; at: string }>;
+};
+
+/** This site's Publr: updating it, going back, and the backups every update takes first. */
+export function Updates({
+  version,
+  managed,
+  step,
+  busy,
+  step_label,
+  headline,
+  back_label,
+  newest_label,
+  target,
+  message,
+  previous,
+  backups,
+}: UpdatesProps) {
+  return (
+    <IndexPage
+      title={Publr.t("Updates")}
+      description={Publr.t("Publr {version}. Every update backs the whole site up first, is rehearsed on a copy of it, and goes back by itself if the new release cannot start.", { version })}
+      notice={
+        <UpdatesPanel
+          version={version}
+          managed={managed}
+          step={step}
+          busy={busy}
+          step_label={step_label}
+          headline={headline}
+          back_label={back_label}
+          newest_label={newest_label}
+          target={target}
+          message={message}
+          previous={previous}
+          csrf={Publr.request.session.csrf}
+        />
+      }
+      empty={
+        backups.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("No backups yet")}</EmptyTitle>
+            <EmptyDescription>
+              {Publr.t("The whole site is backed up before every update; the last three are kept.")}
+            </EmptyDescription>
+          </Empty>
+        )
+      }
+      footer={
+        backups.length > 0 && (
+          <Text variant="body-sm" tone="muted">
+            {Publr.t("The backups taken before the last three updates, kept beside the site. To put one back, stop the server and run")}{" "}
+            <Code>publr restore</Code>{" "}
+            {Publr.t("with its name.")}
+          </Text>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("Backed up")}</TableHead>
+            <TableHead>{Publr.t("Before the update")}</TableHead>
+            <TableHead>{Publr.t("Name")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {backups.map((backup) => (
+            <TableRow>
+              <TableCell>
+                <Text as="span" variant="body-sm">{backup.at}</Text>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {`${backup.from} → ${backup.to}`}
+                </Text>
+              </TableCell>
+              <TableCell>
+                <Code>{backup.name}</Code>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

@@ -60,6 +60,7 @@ pub fn add(builder: *std.Build, parts: Parts) void {
     const browser_step = browser.add_step(builder, parts.from);
 
     full.dependOn(parity_step);
+    full.dependOn(@import("upgrade.zig").add(builder, parts.exe));
     full.dependOn(browser_step);
     builder.step("parity", "Run every printed example").dependOn(parity_step);
 

@@ -9,8 +9,9 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
+      # Every tag: the upgrade tests compare each released fixture and migration with it.
       - uses: actions/checkout@v4
-        with: { path: publr }
+        with: { path: publr, fetch-depth: 0 }
       - uses: ./publr/.github/actions/workspace
 
       - name: zig build verify-full

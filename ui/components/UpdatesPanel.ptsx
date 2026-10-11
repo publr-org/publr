@@ -1,0 +1,304 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+
+type Release = {
+  version: string;
+  kind: string;
+  notes: string;
+  published_at: string;
+  url: string;
+  /** What this kind of update does to the site, in words. */
+  meaning: string;
+  /** The button's words: a major asks twice. */
+  button: string;
+};
+type Found = {
+  version: string;
+  managed: boolean;
+  step: string;
+  target: string;
+  message: string;
+  previous: string | null;
+};
+
+export const state = Publr.reactive({
+  version: "",
+  managed: false,
+  step: "idle",
+  /** An update is on its way: its step is shown and followed. */
+  busy: false,
+  step_label: "",
+  /** The callout's title for the step: what runs, what happened. */
+  headline: "",
+  back_label: "",
+  newest_label: "",
+  target: "",
+  message: "",
+  previous: "",
+  releases: [] as Release[],
+  checked: false,
+  checking: false,
+  /** The major release whose Update was pressed once: the second press starts it. */
+  confirming: "",
+  note: "",
+  csrf: "",
+});
+
+const steps: Record<string, string> = {
+  starting: Publr.t("Starting"),
+  downloading: Publr.t("Downloading the release"),
+  verifying: Publr.t("Checking it is the release Publr signed"),
+  rehearsing: Publr.t("Rehearsing on a copy of this site"),
+  swapping: Publr.t("Backing up and swapping it in"),
+  restarting: Publr.t("Restarting"),
+};
+
+const kinds: Record<string, string> = {
+  patch: Publr.t("Fixes only: the data is untouched, and going back is a click."),
+  minor: Publr.t("Adds to the database. Backed up first; going back is still a click."),
+  major: Publr.t("Plugins and apps built on Publr may need changes, and the data may change for good. Read the notes first."),
+};
+
+const headline_of = (found: Found): string => {
+  if (found.managed) return Publr.t("Publr {version}, kept up to date by Publr Cloud", { version: found.version });
+  if (found.step === "failed") return Publr.t("The update to {version} did not go through", { version: found.target });
+  if (found.step === "done") return found.message;
+  return Publr.t("Updating to {version}", { version: found.target });
+};
+
+const labelled = (release: Release): Release => ({
+  ...release,
+  meaning: kinds[release.kind] ?? "",
+  button:
+    state.confirming === release.version
+      ? Publr.t("Yes, update to {version}", { version: release.version })
+      : Publr.t("Update to {version}", { version: release.version }),
+});
+
+const settle = (found: Found) => {
+  state.version = found.version;
+  state.managed = found.managed;
+  state.step = found.step;
+  state.busy = found.step in steps;
+  state.step_label = steps[found.step] ?? "";
+  state.headline = headline_of(found);
+  state.back_label = Publr.t("Go back to {version}", { version: found.previous ?? "" });
+  state.newest_label = Publr.t("Publr {version} is the newest release.", { version: found.version });
+  state.target = found.target;
+  state.message = found.message;
+  state.previous = found.previous ?? "";
+};
+
+const current = (): Found => ({
+  version: state.version,
+  managed: state.managed,
+  step: state.step,
+  target: state.target,
+  message: state.message,
+  previous: state.previous === "" ? null : state.previous,
+});
+
+const call = async (operation: string, method: string, body?: unknown) => {
+  const response = await fetch(Publr.url(`/api/update/${operation}`), {
+    method,
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const answer = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(answer.message ?? answer.error ?? `${response.status}`);
+  return answer;
+};
+
+/** While an update runs, its step is asked for again; a restart drops the server for a
+ * moment, which only means asking again. */
+export const refresh = async () => {
+  try {
+    settle(await call("status", "GET"));
+  } catch {
+    // The server is restarting: the next refresh finds the new one.
+  }
+};
+
+Publr.effect(() => {
+  if (!state.busy) return;
+  void state.step;
+  const timer = window.setTimeout(refresh, 1500);
+  return () => window.clearTimeout(timer);
+});
+
+export const check = async () => {
+  state.checking = true;
+  state.note = "";
+  try {
+    const found = await call("check", "GET");
+    state.releases = found.releases.map(labelled);
+    state.checked = true;
+  } catch (error) {
+    state.note = Publr.t("Could not reach Publr's releases: {reason}", { reason: (error as Error).message });
+  } finally {
+    state.checking = false;
+  }
+};
+
+export const apply = async (event: MouseEvent) => {
+  const version = (event.currentTarget as HTMLButtonElement).value;
+  const chosen = state.releases.find((release) => release.version === version);
+  if (chosen?.kind === "major" && state.confirming !== version) {
+    state.confirming = version;
+    state.releases = state.releases.map(labelled);
+    return;
+  }
+  state.note = "";
+  try {
+    await call("apply", "POST", { version });
+    settle({ ...current(), step: "starting", target: version });
+    state.releases = [];
+    state.checked = false;
+  } catch (error) {
+    state.note = Publr.t("The update did not start: {reason}", { reason: (error as Error).message });
+  }
+};
+
+export const roll_back = async () => {
+  state.note = "";
+  try {
+    const answer = await call("rollback", "POST", {});
+    settle({ ...current(), step: "starting", target: answer.to });
+  } catch (error) {
+    state.note = Publr.t("Could not go back: {reason}", { reason: (error as Error).message });
+  }
+};
+
+export type UpdatesPanelProps = {
+  version: string;
+  managed: boolean;
+  step: string;
+  /** Whether `step` is one an update is on, and how it reads. */
+  busy: boolean;
+  step_label: string;
+  /** The callout's title, the go-back button's words, and the line when nothing is newer. */
+  headline: string;
+  back_label: string;
+  newest_label: string;
+  target: string;
+  message: string;
+  /** The release kept to go back to; empty when there is none. */
+  previous: string;
+  csrf: string;
+};
+
+/** This site's Publr: checking for newer releases, updating to one and following it to the
+ * restart, and going back. Where Publr Cloud runs the site, only what it runs. */
+export function UpdatesPanel({
+  version,
+  managed,
+  step,
+  busy,
+  step_label,
+  headline,
+  back_label,
+  newest_label,
+  target,
+  message,
+  previous,
+  csrf,
+}: UpdatesPanelProps) {
+  state.version = version;
+  state.managed = managed;
+  state.step = step;
+  state.busy = busy;
+  state.step_label = step_label;
+  state.headline = headline;
+  state.back_label = back_label;
+  state.newest_label = newest_label;
+  state.target = target;
+  state.message = message;
+  state.previous = previous;
+  state.csrf = csrf;
+
+  return (
+    <div class="flex flex-col gap-6" data-part="updates-panel">
+      {state.managed && (
+        <Callout tone="info" title={state.headline}>
+          {Publr.t("Every update is backed up and tested on this site's data before it reaches it.")}
+        </Callout>
+      )}
+      {!state.managed && state.busy && (
+        <Callout tone="info" title={state.headline}>
+          {state.step_label}…
+        </Callout>
+      )}
+      {!state.managed && state.step === "done" && (
+        <Callout tone="info" title={state.headline}>
+          {state.previous !== "" && <Text variant="body-sm">{Publr.t("The release before is kept, should you need to go back.")}</Text>}
+        </Callout>
+      )}
+      {!state.managed && state.step === "failed" && (
+        <Callout tone="error" title={state.headline}>
+          {state.message} {Publr.t("Nothing on the site changed.")}
+        </Callout>
+      )}
+      {!state.managed && !state.busy && (
+        <div class="flex flex-wrap items-center gap-3">
+          <Button onClick={check} disabled={state.checking}>
+            {state.checking ? Publr.t("Checking…") : Publr.t("Check for updates")}
+          </Button>
+          {state.previous !== "" && (
+            <Button hierarchy="secondary" onClick={roll_back}>
+              {state.back_label}
+            </Button>
+          )}
+          <Text as="span" variant="body-sm" tone="muted">{state.note}</Text>
+        </div>
+      )}
+      {state.checked && state.releases.length === 0 && (
+        <Text variant="body-sm" tone="muted">{state.newest_label}</Text>
+      )}
+      {state.releases.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{Publr.t("Release")}</TableHead>
+              <TableHead>{Publr.t("Kind")}</TableHead>
+              <TableHead>{Publr.t("What it means")}</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {state.releases.map((release) => (
+              <TableRow key={release.version}>
+                <TableCell>
+                  <Link href={release.url}>{release.version}</Link>
+                </TableCell>
+                <TableCell>
+                  {release.kind === "patch" && <Status tone="success">{Publr.t("Patch")}</Status>}
+                  {release.kind === "minor" && <Status tone="info">{Publr.t("Minor")}</Status>}
+                  {release.kind === "major" && <Status tone="warning">{Publr.t("Major")}</Status>}
+                </TableCell>
+                <TableCell>
+                  <Text as="span" variant="body-sm" tone="muted">{release.meaning}</Text>
+                </TableCell>
+                <TableCell>
+                  <Button size="sm" value={release.version} onClick={apply}>
+                    {release.button}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}

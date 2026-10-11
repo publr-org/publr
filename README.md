@@ -98,10 +98,12 @@ zig build verify-full              # every check: wasm, smoke, parity, two-mode,
 - [Authentication](docs/auth.md): accounts, sessions, passwords, setup.
 - [SDK](docs/sdk.md): the plugin surface: operations, hooks, UI.
 - [Plugins](docs/plugins.md): built-in plugins, compiled in, and installed ones, run in a WebAssembly sandbox.
+- [Plugin API reference](docs/plugin-api.md): every declaration a plugin can make, and its shape.
 - [Agents](docs/agents.md): building on Publr with an agent; the guide `publr agents` prints.
 - [CLI reference](docs/cli.md): flags and every command, one page per namespace.
 - [REST API](docs/rest.md): the server and the `/api/` routes.
 - [Publr in the browser](docs/browser.md): the same binary as WebAssembly, no server.
 - [Database schema](docs/schema.md): every table, column and index, and why.
+- [Updates](docs/updates.md): what a version promises, backups, updating and going back, migrations.
 - [Dependencies](docs/dependencies.md): the three libraries, and the decision tree for any more.
 - [Build reference](docs/build.md): every build step and rule.
