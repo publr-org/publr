@@ -29,6 +29,11 @@ pub const Options = struct {
     apps: ?sdk.context.AppsFolder = null,
     /// Building plugins from their sources, where a server carries the compiler.
     builder: ?sdk.context.PluginBuilder = null,
+    /// Running a conversation's turn beside the server, where one runs.
+    agents: ?sdk.context.AgentStarter = null,
+    live: ?sdk.context.Live = null,
+    /// Updating Publr, where a server runs it.
+    updater: ?sdk.context.Updater = null,
     /// Who runs every command, fixed: a device sending them from elsewhere (`/api/cli`).
     /// `--as` and `--as-admin` are refused then.
     device: ?sdk.Caller = null,
@@ -79,6 +84,11 @@ pub fn CLI(comptime SDK: type) type {
                     );
                 } else if (is_help_flag(flag)) {
                     try print_help(out);
+                    return 0;
+                } else if (std.mem.eql(u8, flag, "--commands")) {
+                    @import("cli/commands.zig").print(SDK, options.sandboxed_plugins, out) catch
+                        return error.WriteFailed;
+
                     return 0;
                 } else {
                     return failf(options, "unknown flag \"{s}\"; run \"publr --help\"", .{flag});
@@ -170,6 +180,9 @@ pub fn CLI(comptime SDK: type) type {
             ctx.files = options.files;
             ctx.apps = options.apps;
             ctx.builder = options.builder;
+            ctx.agents = options.agents;
+            ctx.live = options.live;
+            ctx.updater = options.updater;
 
             inline for (SDK.operations) |Operation| {
                 if (std.mem.eql(u8, Operation.name, name)) {
@@ -265,6 +278,13 @@ pub fn CLI(comptime SDK: type) type {
                     comptime sdk.operation.verb(Operation.name),
                 });
             };
+
+            if (comptime sdk.operation.deprecation(Operation) != null) {
+                const text = comptime sdk.operation.deprecation_text(Operation);
+
+                std.debug.print("publr: {s}\n", .{text});
+            }
+
             const result = SDK.dispatch(ctx, Operation, in) catch |err| {
                 return failf(options, "{s} {s}: {s}", .{
                     comptime sdk.operation.namespace(Operation.name),
@@ -358,8 +378,11 @@ const help_header =
     \\       publr plugin build --name <name>                    build and install a plugin
     \\       publr apps load                                     load the apps' changes
     \\       publr zig <args>                                    the compiler for plugins
+    \\       publr db check                                      what an update would find
+    \\       publr backups | restore <name>                      the backups before each update
     \\
-    \\An agent building on Publr: run `publr agents` first, and read all of it.
+    \\An agent building on Publr: run `publr agents` first, and read all of it. Every command
+    \\with its flags, on one line each: `publr --commands`.
     \\
     \\Options:
     \\
@@ -530,7 +553,7 @@ pub fn parse_in(
 
         inline for (std.meta.fields(In), 0..) |field, field_index| {
             if (std.mem.eql(u8, flag[2..], field.name)) {
-                @field(in, field.name) = parse_value(field.type, arena, value) catch {
+                const parsed = parse_value(field.type, arena, value) catch {
                     problem.set("invalid value \"{s}\" for --{s} (expected {s})", .{
                         value,
                         field.name,
@@ -538,6 +561,16 @@ pub fn parse_in(
                     });
                     return error.Invalid;
                 };
+                const list = comptime field.type == []const []const u8;
+
+                // A list flag given again adds to the list (`--tags a --tags b`, and a
+                // query's `tags=a&tags=b`), as a comma inside one value does.
+                @field(in, field.name) = if (list and seen[field_index])
+                    std.mem.concat(arena, []const u8, &.{ @field(in, field.name), parsed }) catch {
+                        return error.OutOfMemory;
+                    }
+                else
+                    parsed;
                 seen[field_index] = true;
                 matched = true;
             }
@@ -662,6 +695,12 @@ fn parse_list(
         return &.{};
     }
 
+    // A JSON array, as `--commands` says lists are, and the only way to give a value with a
+    // comma in it (an address); else values split at commas.
+    if (text[0] == '[') {
+        return parse_json([]const Value, arena, text);
+    }
+
     const count = std.mem.count(u8, text, ",") + 1;
     var list = arena.alloc(Value, count) catch return error.OutOfMemory;
     var iterator = std.mem.splitScalar(u8, text, ',');
@@ -693,6 +732,19 @@ test "parse_in fills fields from flags and applies defaults" {
     try std.testing.expectEqual(@as(u32, 1), in.times);
     try std.testing.expectEqual(@as(u32, 2), @as(u32, @intCast(in.tags.len)));
     try std.testing.expect(in.loud);
+
+    const repeated = [_][]const u8{ "--name", "zig", "--tags", "a", "--tags", "b,c" };
+    const again = try parse_in(In, arena, &repeated, &problem, null);
+
+    try std.testing.expectEqual(@as(u32, 3), @as(u32, @intCast(again.tags.len)));
+    try std.testing.expectEqualStrings("c", again.tags[2]);
+
+    // A JSON array keeps a comma inside a value.
+    const as_json = [_][]const u8{ "--name", "zig", "--tags", "[\"a,b\",\"c\"]" };
+    const listed = try parse_in(In, arena, &as_json, &problem, null);
+
+    try std.testing.expectEqual(@as(u32, 2), @as(u32, @intCast(listed.tags.len)));
+    try std.testing.expectEqualStrings("a,b", listed.tags[0]);
 
     try std.testing.expectError(error.Invalid, parse_in(In, arena, &.{}, &problem, null));
     try std.testing.expectEqualStrings("missing required --name (text)", problem.text());
