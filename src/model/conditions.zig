@@ -169,8 +169,12 @@ test "conditions require every rule in any group and distinguish false from empt
 }
 
 pub fn validate_fields(defs: anytype, problems: anytype) void {
-    std.debug.assert(defs.len <= 64);
-    var edges = [_][64]bool{[_]bool{false} ** 64} ** 64;
+    std.debug.assert(defs.len <= fields_max);
+
+    // Which field's conditions read which: a row of bits per field, closed transitively, so
+    // a field reaching itself is a cycle.
+    const Row = std.bit_set.StaticBitSet(fields_max);
+    var edges: [fields_max]Row = @splat(Row.initEmpty());
 
     for (defs, 0..) |def, index| {
         if (!valid(def.conditions)) {
@@ -185,7 +189,7 @@ pub fn validate_fields(defs: anytype, problems: anytype) void {
                 for (defs, 0..) |target, target_index| {
                     if (std.mem.eql(u8, target.name, rule.field)) {
                         found = true;
-                        edges[index][target_index] = true;
+                        edges[index].set(target_index);
                     }
                 }
 
@@ -198,15 +202,17 @@ pub fn validate_fields(defs: anytype, problems: anytype) void {
 
     for (0..defs.len) |through| {
         for (0..defs.len) |from| {
-            for (0..defs.len) |to| {
-                edges[from][to] = edges[from][to] or (edges[from][through] and edges[through][to]);
+            if (edges[from].isSet(through)) {
+                edges[from].setUnion(edges[through]);
             }
         }
     }
 
     for (defs, 0..) |def, index| {
-        if (edges[index][index]) {
+        if (edges[index].isSet(index)) {
             problems.add(def.name, "conditional logic cannot contain a cycle");
         }
     }
 }
+
+const fields_max = @import("limits.zig").type_fields_max;

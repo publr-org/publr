@@ -7,6 +7,7 @@ const http = @import("../../lib/http.zig");
 const apps_adapter = @import("../apps.zig");
 const state = @import("state.zig");
 const media = @import("media.zig");
+const pages = @import("pages.zig");
 
 const Request = http.Request;
 const Response = http.Response;
@@ -162,7 +163,7 @@ pub fn serve(
             app.spec.name,
         });
 
-        return serve_from(app, built, inside, response, ctx);
+        return serve_from(app, built, inside, request, response, ctx);
     }
 
     if (path.len == 0 or hidden(path) or reserved(path) or is_stylesheet_input(path)) {
@@ -175,13 +176,15 @@ pub fn serve(
         return serve_range(app, root, path, request, response, ctx);
     }
 
-    return serve_from(app, root, inside, response, ctx);
+    return serve_from(app, root, inside, request, response, ctx);
 }
 
+/// A public file is kept as long as a built page, and revalidated by its `ETag` after.
 fn serve_from(
     app: *const state.App,
     root: []const u8,
     inside: []const u8,
+    request: *const Request,
     response: *Response,
     ctx: *HttpContext,
 ) !bool {
@@ -192,7 +195,15 @@ fn serve_from(
     const result = try http.static.serve_file(root, inside, response, ctx.arena, bytes_max);
 
     switch (result) {
-        .served => try apps_adapter.serve(response, app, .file, .{}),
+        .served => {
+            const cache: apps_adapter.Cache = .{
+                .max_age = pages.page_max_age,
+                .stale = pages.page_stale,
+            };
+
+            try apps_adapter.serve(response, app, .file, cache);
+            _ = try apps_adapter.unchanged(request, response, response.body);
+        },
         .not_found => return false,
         .too_large => try response.text(.internal_server_error, "file exceeds response cap"),
     }

@@ -14,6 +14,9 @@ const Memo = @import("context.zig").Memo;
 const build = @import("build.zig");
 const visitor = @import("visitor.zig");
 const public = @import("public.zig");
+const shell = @import("shell.zig");
+const framed = @import("framed.zig");
+const ids = @import("../../lib/id.zig");
 const Project = @import("../../server/project.zig").Project;
 const Target = Project.Target;
 const App = @import("state.zig").App;
@@ -23,6 +26,7 @@ const Request = http.Request;
 const Response = http.Response;
 const HttpContext = http.Context;
 const Context = context_module.Context;
+const model_variant = @import("../../model/variant.zig");
 
 pub const Renderer = engine.Renderer(Context);
 
@@ -31,20 +35,44 @@ pub const Renderer = engine.Renderer(Context);
 pub const page_max_age: u32 = 60;
 pub const page_stale: u32 = 24 * 60 * 60;
 
-pub fn renderer(arena: std.mem.Allocator, app: *const App) Renderer {
+/// The renderer for a page or fragment in `place`'s language: its islands are asked for
+/// under the language's address, so they read in it too.
+pub fn renderer(arena: std.mem.Allocator, app: *const App, place: model_variant.Place) Renderer {
     std.debug.assert(app.pages().templates.len > 0);
     std.debug.assert(app.pages().options.pjsx.len == app.spec.pjsx_renders.len);
+
+    const base = if (place.address.len == 0)
+        app.base()
+    else
+        std.mem.concat(arena, u8, &.{ app.base(), place.address }) catch app.base();
 
     return .{
         .templates = app.pages().templates,
         .pjsx = app.spec.pjsx_renders,
         .arena = arena,
-        .base = app.base(),
+        .base = base,
     };
 }
 
-/// One page of the app into `arena`.
+/// One page of the app into `arena`, as its design has it: the published overrides of
+/// its template and template parts applied (`design.zig`).
 pub fn render_page(
+    arena: std.mem.Allocator,
+    app: *const App,
+    index: u32,
+    context: Context,
+) ![]const u8 {
+    std.debug.assert(index < app.pages().templates.len);
+    std.debug.assert(context.app == app);
+
+    const html = try render_file_page(arena, app, index, context);
+    const rel = app.pages().templates[index].rel;
+
+    return @import("design.zig").apply(context, rel, html);
+}
+
+/// One page of the app into `arena`, as its files have it.
+pub fn render_file_page(
     arena: std.mem.Allocator,
     app: *const App,
     index: u32,
@@ -63,9 +91,59 @@ pub fn render_page(
 
     page_context.page = &app.pages().templates[index];
     page_context.memo = &memo;
-    try renderer(arena, app).render(&out.writer, index, &page_context, .{});
+    try renderer(arena, app, context.place).render(&out.writer, index, &page_context, .{});
 
     return out.written();
+}
+
+/// A `[slug]` page of the app as its files have it, showing `shown` where it reads its
+/// entry: a record not published yet, or a new one's stand-in (`stand_in`).
+pub fn render_shown(
+    arena: std.mem.Allocator,
+    app: *const App,
+    index: u32,
+    context: Context,
+    shown: Context.Entry,
+) ![]const u8 {
+    std.debug.assert(shown.type.len > 0);
+    std.debug.assert(shown.data.document == .object);
+
+    var shown_context = context;
+
+    shown_context.params = .{
+        .slug = shown.slug orelse "",
+    };
+    shown_context.shown = shown;
+
+    return render_file_page(arena, app, index, shown_context);
+}
+
+/// A new record of the type as its page reads it: no id, slug or title, `document` its
+/// fields (the type's defaults), an empty one when null.
+pub fn stand_in(
+    arena: std.mem.Allocator,
+    handle: []const u8,
+    document: ?std.json.Value,
+) !Context.Entry {
+    std.debug.assert(handle.len > 0);
+    std.debug.assert(document == null or document.? == .object);
+
+    const fields = document orelse std.json.Value{
+        .object = .empty,
+    };
+
+    return .{
+        .id = "",
+        .type = handle,
+        .slug = null,
+        .title = "",
+        .created_at = "",
+        .updated_at = "",
+        .data = .{
+            .arena = arena,
+            .document = fields,
+        },
+    };
 }
 
 /// A component wrapped as the fragment the loader patches in.
@@ -88,7 +166,9 @@ pub fn render_fragment(
 
     fragment_context.memo = &memo;
     try out.writer.print("<template patchfor=\"{s}\">", .{island.key});
-    try renderer(arena, app).render(&out.writer, island.template, &fragment_context, .{
+    const fragment_renderer = renderer(arena, app, context.place);
+
+    try fragment_renderer.render(&out.writer, island.template, &fragment_context, .{
         .values = island.props,
     });
     try out.writer.writeAll("</template>\n");
@@ -98,6 +178,31 @@ pub fn render_fragment(
 
 /// A request for one of the app's pages: its middleware, then its routes, then its 404.
 pub fn dispatch(
+    project: *const Project,
+    target: Target,
+    request: *Request,
+    response: *Response,
+    ctx: *HttpContext,
+) anyerror!void {
+    std.debug.assert(ctx.user_data != null);
+    std.debug.assert(target.path.len > 0);
+
+    switch (try shell.answer(project, target.app, ctx.arena, request, response)) {
+        .plain => return serve(project, target, request, response, ctx),
+        .sandboxed => {
+            // The page as the frame's visitor gets it, never as the administrator.
+            var buffer: [ids.len]u8 = undefined;
+            const visitor_id = framed.visitor_of(project, request, &buffer);
+            var as_visitor = try framed.as_visitor(project, ctx.arena, request, visitor_id);
+
+            try serve(project, target, &as_visitor, response, ctx);
+            try shell.guard(target.app, visitor_id, response);
+            try shell.seal(response);
+        },
+    }
+}
+
+fn serve(
     project: *const Project,
     target: Target,
     request: *Request,
@@ -182,14 +287,16 @@ fn render(
     const app = target.app;
     const route = matched.route;
 
+    const full_path = try model_variant.under(ctx.arena, target.place.address, target.path);
+
     if (!route.live) {
-        if (build.built_page(app, ctx.arena, target.path)) |html| {
+        if (build.built_page(app, ctx.arena, full_path)) |html| {
             const cache: apps_adapter.Cache = .{
                 .max_age = page_max_age,
                 .stale = page_stale,
             };
 
-            try edge.tag(response, app, ctx.arena, target.path);
+            try edge.tag(response, app, ctx.arena, full_path);
 
             return apps_adapter.serve_file(request, response, app, status, html, cache);
         }
@@ -215,6 +322,8 @@ fn render(
         .live = route.live,
         .caller = caller,
         .visitor_id = visitor_id,
+        .place = target.place,
+        .route = route,
         .redirect_to = if (route.live) &redirect_to else null,
     }) catch |err| {
         if (err == error.EntryNotFound) {
@@ -284,7 +393,47 @@ pub fn not_found(
         .project = project,
         .app = app,
         .request = request,
+        .place = target.place,
     });
 
     try response.set_body(.not_found, "text/html; charset=utf-8", html);
+}
+
+test "render_shown: a [slug] page with nothing published draws a draft or a stand-in" {
+    var harness: apps_adapter.Harness = undefined;
+    try harness.init(.{});
+    defer harness.deinit();
+
+    const arena = harness.arena_state.allocator();
+    const app = harness.app;
+    const index = app.program.?.match("/posts/any").?.route.template;
+    const context: Context = .{
+        .arena = arena,
+        .project = &harness.flow.project,
+        .app = app,
+    };
+    var unpublished = context;
+    unpublished.params = .{
+        .slug = "any",
+    };
+    const missing = render_file_page(arena, app, index, unpublished);
+    try std.testing.expectError(error.EntryNotFound, missing);
+
+    const blank = try render_shown(arena, app, index, context, try stand_in(arena, "post", null));
+    try std.testing.expect(std.mem.indexOf(u8, blank, "href=\"/posts\"") != null);
+    const blank_text = try harness.decoded(app, blank);
+    try std.testing.expect(std.mem.indexOf(u8, blank_text, "sm:text-5xl\"></h1>") != null);
+
+    var draft = try stand_in(arena, "post", .{
+        .object = .empty,
+    });
+    draft.slug = "my-draft";
+    draft.title = "A draft";
+    const drawn = try render_shown(arena, app, index, context, draft);
+    const drawn_text = try harness.decoded(app, drawn);
+    try std.testing.expect(std.mem.indexOf(u8, drawn_text, "sm:text-5xl\">A draft</h1>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, drawn, "<code>my-draft</code>") != null);
+
+    const other = render_shown(arena, app, index, context, try stand_in(arena, "note", null));
+    try std.testing.expectError(error.EntryNotFound, other);
 }

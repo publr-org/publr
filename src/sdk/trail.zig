@@ -40,6 +40,9 @@ pub const Log = struct {
 pub const Trail = struct {
     /// The top-level call's operation id.
     root: u64,
+    /// The top-level call's arena: an inner call may run on a scratch given back before the
+    /// trail is read, so what it adds is copied here.
+    arena: std.mem.Allocator,
     calls: std.ArrayList([]const u8) = .empty,
     notices: std.ArrayList(Notice) = .empty,
     failed_in: []const u8 = "",
@@ -50,22 +53,31 @@ pub const Trail = struct {
         std.debug.assert(name.len > 0);
         std.debug.assert(trail.root != 0);
 
+        const kept = trail.arena.dupe(u8, name) catch return;
+
         if (trail.calls.items.len < calls_max) {
-            trail.calls.append(ctx.arena, name) catch return;
+            trail.calls.append(trail.arena, kept) catch return;
         }
 
         if (failed and trail.failed_in.len == 0) {
-            trail.failed_in = name;
-            trail.message = if (ctx.failure) |failure| failure.message else "";
+            const message = if (ctx.failure) |failure| failure.message else "";
+
+            trail.failed_in = kept;
+            trail.message = trail.arena.dupe(u8, message) catch "";
         }
     }
 
-    pub fn noticed(trail: *Trail, ctx: *Ctx, notice: Notice) void {
+    pub fn noticed(trail: *Trail, notice: Notice) void {
         std.debug.assert(notice.name.len > 0);
         std.debug.assert(trail.root != 0);
 
         if (trail.notices.items.len < notices_max) {
-            trail.notices.append(ctx.arena, notice) catch return;
+            const kept: Notice = .{
+                .name = trail.arena.dupe(u8, notice.name) catch return,
+                .subject = trail.arena.dupe(u8, notice.subject) catch return,
+            };
+
+            trail.notices.append(trail.arena, kept) catch return;
         }
     }
 

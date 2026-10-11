@@ -15,8 +15,12 @@ const Error = sdk.Error;
 const Record = records.Record;
 const Value = std.json.Value;
 
-/// The children read for one virtual field of a page, at most.
-pub const children_max: u32 = 10_000;
+/// The children a virtual field holds for one record, at most: the ones its kept order
+/// names first, then the rest in the order they were made. More are read with a query of
+/// the children's type.
+pub const children_max: u32 = 50;
+/// Children read a page at a time while the ones a record shows are looked for.
+const children_page: u32 = 200;
 
 /// Each document's virtual fields worked out, in place. `clauses` are the parent read's
 /// status and owner filters (`status:is:published`, `created:by:<id>`), kept for the
@@ -61,23 +65,12 @@ fn expand_field(
     std.debug.assert(model.field.is_virtual(def.kind));
     std.debug.assert(type_handle.len > 0);
 
-    const arena = ctx.arena;
-    var parents: std.ArrayList([]const u8) = .empty;
-
-    for (found) |record| {
-        if (std.mem.eql(u8, record.type, type_handle)) {
-            parents.append(arena, record.id) catch return error.OutOfMemory;
-        }
-    }
-
-    const children = try children_of(ctx, def, parents.items, clauses);
-
     for (found, documents) |record, *document| {
         if (!std.mem.eql(u8, record.type, type_handle)) {
             continue;
         }
 
-        document.* = try placed(arena, document.*, def, record.id, children);
+        document.* = try placed(ctx, document.*, def, record.id, clauses);
     }
 }
 
@@ -87,105 +80,161 @@ const Child = struct {
     fields: Value,
 };
 
-/// The records of the field's type whose reference points at one of `parents`, as the
-/// caller may read them.
+/// The children a record shows: of the field's type, pointing at `parent`, as the caller
+/// may read them; the `kept` ones (the field's own order) first, then the rest oldest
+/// first, `children_max` in all. Read a page at a time into the scratch: only the ones
+/// shown are kept.
 fn children_of(
     ctx: *Ctx,
     def: model.field.Def,
-    parents: []const []const u8,
+    parent: []const u8,
+    kept: []const []const u8,
     clauses: []const []const u8,
 ) Error![]const Child {
-    std.debug.assert(parents.len <= records.list_max);
+    std.debug.assert(parent.len > 0);
+    std.debug.assert(kept.len <= children_max);
 
     const arena = ctx.arena;
-    var children: std.ArrayList(Child) = .empty;
+    const scratch = try ctx.scratch();
+    const kept_found = try arena.alloc(?Child, kept.len);
+    var rest: std.ArrayList(Child) = .empty;
+    var kept_left: u32 = @intCast(kept.len);
     var offset: u32 = 0;
 
-    while (children.items.len < children_max) {
-        const listed = registry.SDK.dispatch(ctx, records.List, .{
+    @memset(kept_found, null);
+
+    while (kept_left > 0 or rest.items.len < children_max - kept.len) {
+        const begun = scratch.mark();
+        defer scratch.rewind(begun);
+
+        var paged = ctx.*;
+
+        paged.arena = scratch.allocator();
+
+        const listed = registry.SDK.dispatch(&paged, records.List, .{
             .type = def.options.to[0],
             .filter_field = def.options.via,
-            .filter_values = parents,
+            .filter_values = &.{parent},
             .filters = clauses,
-            .order = .created_desc,
-            .limit = records.list_max,
+            .order = .created_asc,
+            .limit = children_page,
             .offset = offset,
             .documents = true,
             .expand = false,
         }) catch |err| switch (err) {
-            error.NotFound, error.Denied, error.Invalid => return children.items,
+            error.NotFound, error.Denied, error.Invalid => break,
             else => return err,
         };
 
         for (listed.records, listed.documents) |record, text| {
-            const fields = std.json.parseFromSliceLeaky(Value, arena, text, .{}) catch continue;
+            const at = index_of(kept, record.id);
+            const wanted = if (at) |index|
+                kept_found[index] == null
+            else
+                rest.items.len < children_max - kept.len;
 
-            children.append(arena, .{
-                .id = record.id,
-                .type = record.type,
+            if (!wanted) {
+                continue;
+            }
+
+            const fields = std.json.parseFromSliceLeaky(Value, arena, text, .{
+                .allocate = .alloc_always,
+            }) catch continue;
+            const child: Child = .{
+                .id = try arena.dupe(u8, record.id),
+                .type = try arena.dupe(u8, record.type),
                 .fields = fields,
-            }) catch return error.OutOfMemory;
+            };
+
+            if (at) |index| {
+                kept_found[index] = child;
+                kept_left -= 1;
+            } else {
+                rest.append(arena, child) catch return error.OutOfMemory;
+            }
         }
 
-        if (listed.records.len < records.list_max) {
+        if (listed.records.len < children_page) {
             break;
         }
 
-        offset += records.list_max;
+        offset += children_page;
     }
 
-    return children.items;
+    var shown: std.ArrayList(Child) = .empty;
+
+    for (kept_found) |found| {
+        if (found) |child| {
+            shown.append(arena, child) catch return error.OutOfMemory;
+        }
+    }
+
+    const room = children_max - @as(u32, @intCast(shown.items.len));
+
+    shown.appendSlice(arena, rest.items[0..@min(rest.items.len, room)]) catch {
+        return error.OutOfMemory;
+    };
+
+    std.debug.assert(shown.items.len <= children_max);
+
+    return shown.items;
+}
+
+fn index_of(ids: []const []const u8, id: []const u8) ?u32 {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(ids.len <= children_max);
+
+    for (ids, 0..) |known, index| {
+        if (std.mem.eql(u8, known, id)) {
+            return @intCast(index);
+        }
+    }
+
+    return null;
 }
 
 /// The document with the field's kept ids replaced by the children pointing at `parent`:
-/// the kept order first, the rest after by id (the order they were made).
+/// the kept order first, the rest after in the order they were made.
 fn placed(
-    arena: std.mem.Allocator,
+    ctx: *Ctx,
     text: []const u8,
     def: model.field.Def,
     parent: []const u8,
-    children: []const Child,
+    clauses: []const []const u8,
 ) Error![]const u8 {
     std.debug.assert(parent.len > 0);
     std.debug.assert(def.options.via.len > 0);
 
+    const arena = ctx.arena;
     var document = std.json.parseFromSliceLeaky(Value, arena, text, .{}) catch return text;
 
     if (document != .object) {
         return text;
     }
 
-    const kept = document.object.get(def.name);
-    var ordered: std.ArrayList(Child) = .empty;
+    var kept: std.ArrayList([]const u8) = .empty;
 
-    if (kept != null and kept.? == .array) {
-        for (kept.?.array.items) |item| {
-            if (item != .string) {
-                continue;
-            }
+    if (document.object.get(def.name)) |held| {
+        if (held == .array) {
+            for (held.array.items) |item| {
+                if (kept.items.len == children_max) {
+                    break;
+                }
 
-            for (children) |child| {
-                if (std.mem.eql(u8, child.id, item.string) and points_at(child, def, parent)) {
-                    ordered.append(arena, child) catch return error.OutOfMemory;
+                const fresh = item == .string and item.string.len > 0 and
+                    index_of(kept.items, item.string) == null;
+
+                if (fresh) {
+                    kept.append(arena, item.string) catch return error.OutOfMemory;
                 }
             }
         }
     }
 
-    var rest: std.ArrayList(Child) = .empty;
-
-    for (children) |child| {
-        if (points_at(child, def, parent) and !listed_in(ordered.items, child.id)) {
-            rest.append(arena, child) catch return error.OutOfMemory;
-        }
-    }
-
-    std.mem.sort(Child, rest.items, {}, by_id);
-    ordered.appendSlice(arena, rest.items) catch return error.OutOfMemory;
-
+    const children = try children_of(ctx, def, parent, kept.items, clauses);
     var items = std.json.Array.init(arena);
 
-    for (ordered.items) |child| {
+    for (children) |child| {
         items.append(try object_of(arena, child)) catch return error.OutOfMemory;
     }
 
@@ -194,53 +243,6 @@ fn placed(
     }) catch return error.OutOfMemory;
 
     return std.json.Stringify.valueAlloc(arena, document, .{}) catch error.OutOfMemory;
-}
-
-/// Whether the child's reference holds the parent: the one id, or one of many.
-fn points_at(child: Child, def: model.field.Def, parent: []const u8) bool {
-    std.debug.assert(parent.len > 0);
-
-    if (child.fields != .object) {
-        return false;
-    }
-
-    const held = child.fields.object.get(def.options.via) orelse return false;
-
-    return switch (held) {
-        .string => |id| std.mem.eql(u8, id, parent),
-        .array => |ids| holds_id(ids.items, parent),
-        else => false,
-    };
-}
-
-fn holds_id(items: []const Value, id: []const u8) bool {
-    std.debug.assert(id.len > 0);
-
-    for (items) |item| {
-        if (item == .string and std.mem.eql(u8, item.string, id)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-fn listed_in(children: []const Child, id: []const u8) bool {
-    std.debug.assert(id.len > 0);
-
-    for (children) |child| {
-        if (std.mem.eql(u8, child.id, id)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-fn by_id(_: void, left: Child, right: Child) bool {
-    std.debug.assert(left.id.len > 0);
-
-    return std.mem.order(u8, left.id, right.id) == .lt;
 }
 
 /// A child as its parent shows it: `_id`, `_type`, then its fields.

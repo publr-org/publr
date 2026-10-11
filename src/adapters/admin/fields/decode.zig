@@ -50,7 +50,11 @@ fn object_of(
         if (model.field.is_layout(def.kind)) {
             continue;
         }
-        const value = (try field_value(arena, def, form, prefix)) orelse continue;
+        // Saving keeps a field the document leaves out, so a top-level field the form
+        // posted blank (a list under its bare name) is written as null: cleared.
+        const posted_blank = prefix.len == 0 and form.get(def.name) != null;
+        const value = (try field_value(arena, def, form, prefix)) orelse
+            if (posted_blank) Value.null else continue;
 
         object.put(arena, def.name, value) catch return error.OutOfMemory;
     }
@@ -73,11 +77,16 @@ fn field_value(
     const name = try print(arena, "{s}{s}", .{ prefix, def.name });
     const kind = model.kinds.lookup(registry.Kinds.all, def.kind);
 
+    // A group drawn closed (past the fold) posts its value whole, as JSON.
+    if (model.field.is_group(def.kind) and has_exact(form, name)) {
+        return closed_value(arena, form, name);
+    }
+
     if (model.field.is_group(def.kind)) {
         const child_prefix = try print(arena, "{s}.", .{name});
         const object = try object_of(arena, def.fields, form, child_prefix);
 
-        return if (object.object.count() > 0) object else null;
+        return if (filled(object)) object else null;
     }
 
     if (model.field.is_repeater(def.kind)) {
@@ -99,11 +108,33 @@ fn field_value(
         return json_value(arena, form, name);
     }
 
+    // A multi-select posts each chosen value under the field's own name.
+    const multi = kind.control == .select and def.options.select.control == .dropdown;
+
+    if (def.many and multi) {
+        return terms_value(arena, def, form, name);
+    }
+
     if (def.many) {
         return list_value(arena, def, kind, form, name);
     }
 
     return leaf_value(def, kind, form, name);
+}
+
+/// Whether a group was filled in: an unticked checkbox still posts `false`, so a group
+/// holding nothing else was left empty, and its required parts are not asked for.
+fn filled(object: Value) bool {
+    std.debug.assert(object == .object);
+    std.debug.assert(object.object.count() <= model.field.fields_max);
+
+    for (object.object.values()) |value| {
+        if (value != .bool or value.bool) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// A repeater's items, `name[0].`, `name[1].`, until an index no pair starts with.
@@ -119,8 +150,37 @@ fn entries_value(
     var array = std.json.Array.init(arena);
     var index: u32 = 0;
 
-    while (index < items_max) : (index += 1) {
-        const item_prefix = try print(arena, "{s}[{d}].", .{ name, index });
+    while (index < items_max) {
+        const item_name = try print(arena, "{s}[{d}]", .{ name, index });
+        const run_name = try print(arena, "{s}[{d}+]", .{ name, index });
+
+        // An item drawn closed (past the fold) posts its value whole, as JSON.
+        if (has_exact(form, item_name)) {
+            const closed = try closed_value(arena, form, item_name) orelse return error.Invalid;
+
+            array.append(closed) catch return error.OutOfMemory;
+            index += 1;
+            continue;
+        }
+
+        // A run of closed items posts their values as one JSON list.
+        if (has_exact(form, run_name)) {
+            const run = try json_value(arena, form, run_name) orelse return error.Invalid;
+
+            if (run != .array or run.array.items.len == 0) {
+                return error.Invalid;
+            }
+
+            if (index + run.array.items.len > items_max) {
+                return error.Invalid;
+            }
+
+            array.appendSlice(run.array.items) catch return error.OutOfMemory;
+            index += @intCast(run.array.items.len);
+            continue;
+        }
+
+        const item_prefix = try print(arena, "{s}.", .{item_name});
 
         if (!has_prefix(form, item_prefix)) {
             break;
@@ -129,6 +189,7 @@ fn entries_value(
         const item = try object_of(arena, def.fields, form, item_prefix);
 
         array.append(item) catch return error.OutOfMemory;
+        index += 1;
     }
 
     return if (array.items.len == 0) null else .{
@@ -228,6 +289,25 @@ fn json_value(arena: std.mem.Allocator, form: *const Form, name: []const u8) Err
     }
 
     return @import("../../../lib/json.zig").parse(Value, arena, text, .{}) catch error.Invalid;
+}
+
+/// An item or group drawn closed: its value as JSON, an object; null when it had none.
+fn closed_value(arena: std.mem.Allocator, form: *const Form, name: []const u8) Error!?Value {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(has_exact(form, name));
+
+    // A closed group that had no value posts its input blank.
+    if (form.text(name) == null) {
+        return null;
+    }
+
+    const value = try json_value(arena, form, name) orelse return null;
+
+    if (value != .object) {
+        return error.Invalid;
+    }
+
+    return value;
 }
 
 fn leaf_value(def: Def, kind: Kind, form: *const Form, name: []const u8) Error!?Value {
@@ -417,6 +497,38 @@ const test_fields = [_]Def{
     },
 };
 
+test "items and groups drawn closed past the fold come back whole from their JSON" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // faq[0] drawn open, faq[1] closed, faq[2..] one run; seo closed.
+    const body = "live=1&faq%5B0%5D.question=Why&" ++
+        "faq%5B1%5D=%7B%22question%22%3A%22How%22%7D&" ++
+        "faq%5B2%2B%5D=%5B%7B%22question%22%3A%22When%22%7D%2C" ++
+        "%7B%22question%22%3A%22Who%22%7D%5D&" ++
+        "seo=%7B%22description%22%3A%22About%22%7D";
+    const form = Form.parse(arena, body).?;
+    const text = document_of(arena, &test_fields, &form).?;
+
+    try std.testing.expectEqualStrings(
+        "{\"live\":true,\"seo\":{\"description\":\"About\"}," ++
+            "\"faq\":[{\"question\":\"Why\"},{\"question\":\"How\"}," ++
+            "{\"question\":\"When\"},{\"question\":\"Who\"}]}",
+        text,
+    );
+
+    // A closed group that had no value posts blank: nothing, not an error.
+    const empty = Form.parse(arena, "live=1&seo=").?;
+    try std.testing.expectEqualStrings(
+        "{\"live\":true,\"seo\":null}",
+        document_of(arena, &test_fields, &empty).?,
+    );
+
+    const broken = Form.parse(arena, "faq%5B0%2B%5D=%5B%5D").?;
+    try std.testing.expect(document_of(arena, &test_fields, &broken) == null);
+}
+
 test "the form's paths become the document: lists, groups, repeaters, JSON inside" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -449,4 +561,53 @@ test "the form's paths become the document: lists, groups, repeaters, JSON insid
 
     const bad = Form.parse(arena, "views=x").?;
     try std.testing.expect(document_of(arena, &test_fields, &bad) == null);
+}
+
+test "a field the form posted blank is cleared; one it left out is kept" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const cleared = Form.parse(arena, "title=&tags=&live=1").?;
+
+    try std.testing.expectEqualStrings(
+        "{\"title\":null,\"live\":true,\"tags\":null}",
+        document_of(arena, &test_fields, &cleared).?,
+    );
+}
+
+test "a group left empty but for an unticked checkbox is left out" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const parts = [_]Def{
+        .{
+            .name = "url",
+            .label = "URL",
+            .kind = "url",
+            .required = true,
+        },
+        .{
+            .name = "new_window",
+            .label = "New window",
+            .kind = "boolean",
+        },
+    };
+    const link = [_]Def{
+        .{
+            .name = "link",
+            .label = "Link",
+            .kind = "group",
+            .fields = &parts,
+        },
+    };
+
+    const untouched = Form.parse(arena, "link.url=").?;
+    const ticked = Form.parse(arena, "link.url=&link.new_window=1").?;
+
+    try std.testing.expectEqualStrings("{}", document_of(arena, &link, &untouched).?);
+    try std.testing.expectEqualStrings(
+        "{\"link\":{\"new_window\":true}}",
+        document_of(arena, &link, &ticked).?,
+    );
 }

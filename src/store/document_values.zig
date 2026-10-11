@@ -28,6 +28,25 @@ pub const Referrer = struct {
     field: []const u8,
 };
 pub const Slots = enum { live, editing };
+/// A pointer a document holds (live or pending) at one that is gone, in the trash, or of
+/// another type: what Site Health works through.
+pub const Link = struct {
+    holder: []const u8,
+    holder_type: []const u8,
+    field: []const u8,
+    target: []const u8,
+    /// Empty when the target is gone for good.
+    target_type: []const u8,
+    target_status: []const u8,
+};
+pub const links_max: u32 = 10_000;
+/// Where a reading of the suspect links stands: after this target, holder and field. The
+/// empty key is before every link.
+pub const LinkKey = struct {
+    target: []const u8 = "",
+    holder: []const u8 = "",
+    field: []const u8 = "",
+};
 /// A value row with the record it belongs to, from a read of many records.
 pub const Owned = struct {
     record: []const u8,
@@ -39,7 +58,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
         const table = tables.values;
         const search = tables.search;
         const field_scope = "type_id = ?1 AND (field = ?2 OR " ++
-            "substr(field, 1, length(?2) + 1) = ?2 || '.')";
+            "substr(field, 1, length(?2) + 1) IN (?2 || '.', ?2 || '@'))";
 
         pub fn write(
             known: []const kinds.Kind,
@@ -53,8 +72,8 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             std.debug.assert(record_id.len > 0);
             std.debug.assert(slot.len > 0 and slot.len <= slot_len_max);
 
-            var buffer: [document.flat_max]document.Flat = undefined;
-            const flat = try document.flatten(known, fields, value, &buffer);
+            // Checked whole first: a document refused leaves what is stored as it was.
+            _ = try document.count_rows(known, fields, value);
 
             try clear(connection, record_id, slot);
 
@@ -70,16 +89,60 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             );
             defer fts.finalize();
 
-            for (flat) |row| {
-                insert.reset();
-                try insert.bind_text(1, record_id);
-                try insert.bind_text(2, slot);
-                try insert.bind_text(3, type_id);
-                try insert.bind_text(4, row.field);
-                try insert.bind_int(5, row.ordinal);
-                try insert.bind_text(6, @tagName(row.column));
+            var writing: Writing = .{
+                .insert = &insert,
+                .fts = &fts,
+                .record_id = record_id,
+                .slot = slot,
+                .type_id = type_id,
+            };
 
-                switch (row.value) {
+            // Each row stored as the walk reaches it, while its path is there.
+            _ = document.each_row(known, fields, value, .{
+                .context = &writing,
+                .row = Writing.row,
+            }) catch |err| return writing.failed orelse err;
+
+            if (writing.failed) |err| {
+                return err;
+            }
+        }
+
+        /// The rows of one document going into the tables, and the store's error that
+        /// stopped them, if one did.
+        const Writing = struct {
+            insert: *db.Statement,
+            fts: *db.Statement,
+            record_id: []const u8,
+            slot: []const u8,
+            type_id: []const u8,
+            failed: ?Error = null,
+
+            fn row(context: *anyopaque, flat: document.Flat) document.Error!void {
+                const writing: *Writing = @ptrCast(@alignCast(context));
+
+                std.debug.assert(writing.failed == null);
+
+                writing.store(flat) catch |err| {
+                    writing.failed = err;
+                    return error.Invalid;
+                };
+            }
+
+            fn store(writing: *Writing, row_flat: document.Flat) Error!void {
+                std.debug.assert(row_flat.field.len > 0);
+
+                const insert = writing.insert;
+
+                insert.reset();
+                try insert.bind_text(1, writing.record_id);
+                try insert.bind_text(2, writing.slot);
+                try insert.bind_text(3, writing.type_id);
+                try insert.bind_text(4, row_flat.field);
+                try insert.bind_int(5, row_flat.ordinal);
+                try insert.bind_text(6, @tagName(row_flat.column));
+
+                switch (row_flat.value) {
                     .text => |text| try insert.bind_text(7, text),
                     .integer => |number| try insert.bind_int(7, number),
                     .real => |number| try insert.bind_real(7, number),
@@ -87,17 +150,19 @@ pub fn Store(comptime tables: tables_module.Tables) type {
 
                 try insert.exec();
 
-                if (row.searchable) {
+                if (row_flat.searchable) {
+                    const fts = writing.fts;
+
                     fts.reset();
-                    try fts.bind_text(1, row.value.text);
-                    try fts.bind_text(2, record_id);
-                    try fts.bind_text(3, slot);
-                    try fts.bind_text(4, type_id);
-                    try fts.bind_text(5, row.field);
+                    try fts.bind_text(1, row_flat.value.text);
+                    try fts.bind_text(2, writing.record_id);
+                    try fts.bind_text(3, writing.slot);
+                    try fts.bind_text(4, writing.type_id);
+                    try fts.bind_text(5, row_flat.field);
                     try fts.exec();
                 }
             }
-        }
+        };
 
         pub fn clear(connection: *db.Db, record_id: []const u8, slot: ?[]const u8) db.Error!void {
             std.debug.assert(record_id.len > 0);
@@ -450,6 +515,72 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             return (try select.read(Found, arena)).value;
         }
 
+        /// The pointers that may be broken (at a record in the trash, gone for good, or of
+        /// another type than the field's; holders in the trash and pointers at users left
+        /// out), in the order of their target, holder and field: the next `limit` after
+        /// `after`, for a reading that goes through them in pages.
+        pub fn suspect_links(
+            connection: *db.Db,
+            arena: std.mem.Allocator,
+            after: LinkKey,
+            limit: u32,
+        ) db.Error![]Link {
+            std.debug.assert(limit > 0 and limit <= links_max);
+            std.debug.assert(connection.transaction_depth <= 8);
+
+            const documents = tables.documents;
+            var select = try connection.prepare(
+                "SELECT DISTINCT v.record, v.type_id, v.field, v.value, " ++
+                    "coalesce(t.type_id, ''), coalesce(t.status, '') FROM " ++ table ++ " v " ++
+                    "JOIN " ++ documents ++ " h ON h.id = v.record " ++
+                    "LEFT JOIN " ++ documents ++ " t ON t.id = v.value " ++
+                    "WHERE v.slot IN ('live', 'pending') AND v.kind = 'ref' " ++
+                    "AND h.status <> 'deleted' AND v.value NOT IN (SELECT id FROM users) " ++
+                    "AND (t.id IS NULL OR t.status = 'deleted' " ++
+                    "OR t.type_id <> v.type_id) AND (v.value, v.record, v.field) > (?1, ?2, ?3) " ++
+                    "ORDER BY v.value, v.record, v.field LIMIT ?4",
+            );
+            defer select.finalize();
+
+            try select.bind_text(1, after.target);
+            try select.bind_text(2, after.holder);
+            try select.bind_text(3, after.field);
+            try select.bind_int(4, limit);
+
+            var found: std.ArrayList(Link) = .empty;
+
+            while (try select.step()) {
+                std.debug.assert(found.items.len < limit);
+
+                const link = try select.read(Link, arena);
+
+                found.append(arena, link) catch return error.OutOfMemory;
+            }
+
+            return found.items;
+        }
+
+        /// One document's pointers at a target removed, in every slot: how many.
+        pub fn delete_reference(
+            connection: *db.Db,
+            holder_id: []const u8,
+            target_id: []const u8,
+        ) db.Error!u32 {
+            std.debug.assert(holder_id.len > 0);
+            std.debug.assert(target_id.len > 0);
+
+            var statement = try connection.prepare(
+                "DELETE FROM " ++ table ++ " WHERE record = ?1 AND kind = 'ref' AND value = ?2",
+            );
+            defer statement.finalize();
+
+            try statement.bind_text(1, holder_id);
+            try statement.bind_text(2, target_id);
+            try statement.exec();
+
+            return connection.changes();
+        }
+
         /// Every pointer at a document, in every slot of every document, removed: how many.
         pub fn delete_references(connection: *db.Db, target_id: []const u8) db.Error!u32 {
             std.debug.assert(target_id.len > 0);
@@ -522,6 +653,29 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             }
 
             return removed;
+        }
+
+        /// The variant values (`path@code`, and anything under one) the field holds.
+        pub fn count_variants(
+            connection: *db.Db,
+            type_id: []const u8,
+            path: []const u8,
+        ) db.Error!u32 {
+            std.debug.assert(type_id.len > 0);
+            std.debug.assert(path.len > 0);
+
+            var select = try connection.prepare(
+                "SELECT count(*) FROM " ++ table ++ " WHERE type_id = ?1 AND " ++
+                    "substr(field, 1, length(?2) + 1) = ?2 || '@'",
+            );
+            defer select.finalize();
+
+            try select.bind_text(1, type_id);
+            try select.bind_text(2, path);
+
+            std.debug.assert(try select.step());
+
+            return @intCast(select.read_int());
         }
 
         pub fn count_field(connection: *db.Db, type_id: []const u8, path: []const u8) db.Error!u32 {

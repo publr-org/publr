@@ -4,15 +4,20 @@ const auth = @import("../lib/auth.zig");
 const identity_module = @import("rest/identity.zig");
 const http = @import("../lib/http.zig");
 const Project = @import("../server/project.zig").Project;
+const language_module = @import("admin/language.zig");
+/// A `{name}` and its value, for `Session.tf`.
+pub const Placeholder = @import("runtime").Placeholder;
 const registry = @import("../server/registry.zig");
 const types = @import("../operations/content_type.zig");
 const users = @import("../operations/user.zig");
 const top_bar = @import("admin/top_bar.zig");
 pub const app_scope = @import("admin/app_scope.zig");
 pub const compare = @import("admin/compare.zig");
+pub const pager = @import("admin/pager.zig");
 pub const auth_pages = @import("admin/auth.zig");
 const settings_pages = @import("admin/settings.zig");
 const activity_pages = @import("admin/activity.zig");
+pub const preview_pages = @import("admin/preview.zig");
 const user_pages = @import("admin/users.zig");
 const structure_pages = @import("admin/structure.zig");
 const types_pages = @import("admin/types.zig");
@@ -24,6 +29,12 @@ const media_pages = @import("admin/media.zig");
 const avatar_pages = @import("admin/avatar.zig");
 const revision_pages = @import("admin/revisions.zig");
 const device_pages = @import("admin/devices.zig");
+const secret_pages = @import("admin/secrets.zig");
+const removal_pages = @import("admin/removals.zig");
+const trash_pages = @import("admin/trash.zig");
+const health_pages = @import("admin/health.zig");
+const rail_pages = @import("admin/rail.zig");
+const design_pages = @import("admin/design.zig");
 
 pub const Request = http.Request;
 pub const Response = http.Response;
@@ -109,6 +120,44 @@ fn kept_in_query(char: u8) bool {
         char == '.' or char == '~';
 }
 
+/// Some element of `html` carries `class`: every name the page writes it with.
+fn has_class(html: []const u8, class: []const u8) bool {
+    const book = &@import("class_merge").admin;
+    const id = book.class_id(class) orelse return false;
+    var rest = html;
+
+    std.debug.assert(book.atom_starts.len == book.classes.len + 1);
+
+    while (std.mem.indexOf(u8, rest, "class=\"")) |at| {
+        const value_start = at + "class=\"".len;
+        const value_end = std.mem.indexOfScalarPos(u8, rest, value_start, '"') orelse return false;
+        const value = rest[value_start..value_end];
+        const all = for (book.atoms_of(id)) |atom| {
+            if (!has_name(value, book.atom_names[atom])) break false;
+        } else true;
+
+        if (all and (book.marker_names[id].len == 0 or has_name(value, book.marker_names[id]))) {
+            return true;
+        }
+
+        rest = rest[value_end..];
+    }
+
+    return false;
+}
+
+fn has_name(value: []const u8, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    var tokens = std.mem.tokenizeScalar(u8, value, ' ');
+
+    while (tokens.next()) |token| {
+        if (std.mem.eql(u8, token, name)) return true;
+    }
+
+    return false;
+}
+
 test "a page's address survives inside return=" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -142,22 +191,31 @@ pub fn query_param(session: *const Session, name: []const u8) ?[]const u8 {
 }
 
 pub const render = @import("../ui/render.zig");
+/// The tabs plugins add to System settings.
+pub const settings_tabs = @import("admin/settings_tabs.zig");
 pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 138 + client_files.names.len;
+pub const routes_count: u32 = 159 + preview_pages.routes_count +
+    removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
+    rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
+    design_pages.routes_count + @import("admin/settings_tabs.zig").tabs.len;
 const client_files = @import("../ui/client_files.zig");
 
 const styles_css = @embedFile("styles_css");
 const stores_js = @embedFile("admin_stores_js");
+/// The admin's class book for the browser's merge, installed before any store runs.
+const class_book_js = "import { useClassBook } from \"./publr-class-merge.js\";\n" ++
+    "useClassBook(" ++ @embedFile("admin_class_book_json") ++ ");\n";
 
 pub fn register(router: *http.Router) void {
     std.debug.assert(router.routes_len < 256 - routes_count);
 
     const before = router.routes_len;
 
-    router.get("/admin", &auth_pages.home);
+    register_overview(router);
+    @import("admin/ai.zig").register(router);
     register_assets(router);
 
     router.get("/admin/setup", &auth_pages.setup_page);
@@ -167,10 +225,11 @@ pub fn register(router: *http.Router) void {
     router.post("/admin/logout", &auth_pages.logout);
     router.get("/admin/settings", &settings_pages.show);
     router.get("/admin/settings/system", &settings_pages.system);
-    router.get("/admin/settings/system/currencies", &settings_pages.currencies_tab);
+    router.post("/admin/settings/system", &settings_pages.save_language);
     router.get("/admin/settings/system/activity", &activity_pages.show_activity);
     router.get("/admin/settings/system/errors", &activity_pages.show_errors);
-    router.post("/admin/settings/system/currencies", &settings_pages.save_currencies);
+
+    @import("admin/settings_tabs.zig").register(router);
     router.get("/admin/settings/users", &user_pages.list);
     router.get("/admin/settings/users/new", &user_pages.new_page);
     router.post("/admin/settings/users/create", &user_pages.create);
@@ -182,6 +241,7 @@ pub fn register(router: *http.Router) void {
     router.post("/admin/settings/devices/:id/revoke", &device_pages.revoke);
     router.get("/admin/settings/devices/approve", &device_pages.approve_page);
     router.post("/admin/settings/devices/approve", &device_pages.decide);
+    register_settings_pages(router);
     @import("admin/plugins.zig").register(router);
     @import("admin/frame.zig").register(router);
     router.get("/admin/settings/:handle", &@import("admin/content/form.zig").settings_page);
@@ -191,25 +251,23 @@ pub fn register(router: *http.Router) void {
     router.get("/admin/terms/new", &term_pages.new_page);
     router.get("/admin/terms/new/editor", &term_pages.new_editor);
     router.post("/admin/terms/create", &term_pages.create);
+    router.post("/admin/terms/cells", &term_pages.cells);
     router.get("/admin/terms/:id", &term_pages.edit);
     router.get("/admin/terms/:id/editor", &term_pages.editor_fragment);
     router.post("/admin/terms/:id/save", &term_pages.save);
     router.post("/admin/terms/:id/action", &term_pages.action);
     router.get("/admin/avatar/:hash", &avatar_pages.show);
-    router.get("/admin/media", &media_pages.library);
-    router.get("/admin/media/:id", &media_pages.file.show);
-    router.post("/admin/media/:id", &media_pages.file.save);
-    router.post("/admin/media/:id/delete", &media_pages.file.remove);
+    register_media(router);
     router.get("/admin/content", &content_pages.list);
     router.get("/admin/content/new", &content_pages.new_page);
     router.get("/admin/content/new/editor", &content_pages.new_editor);
     router.get("/admin/content/pick", &content_pages.pick);
     router.post("/admin/content/create", &content_pages.create);
+    router.post("/admin/content/cells", &content_pages.cells);
     router.get("/admin/content/:id", &content_pages.edit);
     router.get("/admin/content/:id/editor", &content_pages.editor_fragment);
     router.post("/admin/content/:id/save", &content_pages.save);
     router.post("/admin/content/:id/action", &content_pages.action);
-    router.post("/admin/content/:id/app", &app_scope.move);
     router.post("/admin/app", &app_scope.choose);
     router.post("/admin/views/create", &content_pages.view_pages.create);
     router.post("/admin/views/:id/save", &content_pages.view_pages.save);
@@ -220,6 +278,46 @@ pub fn register(router: *http.Router) void {
     router.post("/admin/content/:id/restore", &revision_pages.restore);
 
     std.debug.assert(router.routes_len == before + routes_count);
+}
+
+/// The media library's pages, and a record's page drawn from its edit copy.
+fn register_media(router: *http.Router) void {
+    std.debug.assert(router.routes_len > 0);
+
+    const before = router.routes_len;
+
+    router.get("/admin/media", &media_pages.library);
+    router.get("/admin/media/:id", &media_pages.file.show);
+    router.post("/admin/media/:id", &media_pages.file.save);
+    router.post("/admin/media/:id/delete", &media_pages.file.remove);
+    preview_pages.register(router);
+
+    std.debug.assert(router.routes_len == before + 4 + preview_pages.routes_count);
+}
+
+/// The Overview, and its agents step for a tool that opens the agent's terminal itself.
+fn register_overview(router: *http.Router) void {
+    std.debug.assert(router.routes_len < 256 - 2);
+
+    const before = router.routes_len;
+
+    router.get("/admin", &auth_pages.home);
+    router.get("/admin/agents", &@import("admin/dashboard.zig").agents_step);
+
+    std.debug.assert(router.routes_len == before + 2);
+}
+
+/// The pages that register themselves: the settings ones before `/admin/settings/:handle`.
+fn register_settings_pages(router: *http.Router) void {
+    std.debug.assert(router.routes_len > 0);
+
+    design_pages.register(router);
+    secret_pages.register(router);
+    removal_pages.register(router);
+    trash_pages.register(router);
+    health_pages.register(router);
+    rail_pages.register(router);
+    @import("admin/updates.zig").register(router);
 }
 
 fn register_schemas(router: *http.Router) void {
@@ -263,9 +361,16 @@ fn register_fields(router: *http.Router, comptime base: []const u8) void {
 }
 
 fn register_assets(router: *http.Router) void {
-    std.debug.assert(router.routes_len < 256 - client_files.names.len - 2);
+    std.debug.assert(router.routes_len < 256 - client_files.names.len - 5);
     router.get("/admin/styles.css", &styles);
     router.get("/admin/stores.js", &stores);
+    router.get("/admin/class-book.js", &class_book);
+    router.get("/admin/editor/*", &editor_file);
+    router.get("/admin/messages/*", &@import("admin/language.zig").messages);
+    router.post("/admin/language", &@import("admin/language.zig").choose);
+    router.post("/admin/variant", &@import("admin/variant.zig").choose);
+    router.get("/admin/welcome", &@import("admin/welcome.zig").page);
+    router.post("/admin/welcome", &@import("admin/welcome.zig").save);
 
     inline for (client_files.names) |name| {
         router.get("/admin/" ++ name ++ ".js", &struct {
@@ -274,6 +379,46 @@ fn register_assets(router: *http.Router) void {
             }
         }.serve);
     }
+}
+
+const editor_files = @import("editor_files").files;
+
+/// The block editor's own files (ES modules on the admin's runtime, its canvas stylesheet,
+/// the jit engine the canvas compiles live classes with), embedded at build.
+fn editor_file(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(std.mem.startsWith(u8, request.path(), "/admin/editor/"));
+    std.debug.assert(ctx.user_data != null);
+
+    const path = request.path()["/admin/editor/".len..];
+
+    for (editor_files) |file| {
+        if (std.mem.eql(u8, file.path, path)) {
+            try response.set_body(.ok, editor_file_type(path), file.data);
+            try response.set_header("Cache-Control", "no-cache");
+            return;
+        }
+    }
+
+    try response.set_body(.not_found, "text/plain; charset=utf-8", "Not Found");
+}
+
+fn editor_file_type(path: []const u8) []const u8 {
+    std.debug.assert(path.len > 0);
+    std.debug.assert(path[0] != '/');
+
+    if (std.mem.endsWith(u8, path, ".js")) {
+        return "text/javascript; charset=utf-8";
+    }
+
+    if (std.mem.endsWith(u8, path, ".css")) {
+        return "text/css; charset=utf-8";
+    }
+
+    if (std.mem.endsWith(u8, path, ".wasm")) {
+        return "application/wasm";
+    }
+
+    return "text/plain; charset=utf-8";
 }
 
 /// The admin stylesheet, compiled by the build from the classes the views use.
@@ -292,6 +437,13 @@ fn stores(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(ctx.user_data != null);
 
     try script(response, stores_js);
+}
+
+fn class_book(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .get or request.method() == .head);
+    std.debug.assert(ctx.user_data != null);
+
+    try script(response, class_book_js);
 }
 
 fn script(response: *Response, source: []const u8) Error!void {
@@ -315,6 +467,8 @@ pub const Session = struct {
     identity: identity_module.Identity,
     ctx: sdk.Ctx,
     csrf: [auth.csrf.token_len]u8 = undefined,
+    /// The language the admin speaks to the person (`language.zig`).
+    language: language_module.Language = .{},
 
     pub fn open(request: *Request, response: *Response, ctx: *Context) Session {
         std.debug.assert(ctx.user_data != null);
@@ -332,9 +486,13 @@ pub const Session = struct {
 
         _ = identity.csrf_token(project, &session.csrf);
 
-        // Narrowed to an app, the admin reaches the project's own types and its plugins'.
+        // Narrowed to an app, the admin reaches what the app reaches: the types living in
+        // it or shared with it, of the project's own and of its plugins.
         switch (app_scope.of(&session)) {
-            .app => |app| session.ctx.app_plugins = app.spec.plugins,
+            .app => |app| {
+                session.ctx.app_plugins = app.spec.plugins;
+                session.ctx.app_reach = app.spec.name;
+            },
             .all => {},
         }
 
@@ -343,8 +501,58 @@ pub const Session = struct {
         const now_ms = session.ctx.now_ms;
 
         identity_module.repair_hint(project, request, response, ctx.arena, &identity, now_ms);
+        session.language = language_module.of(&session);
+        session.ctx.language = .{
+            .locale = session.language.locale,
+            .translator = session.language.translator,
+            .catalogue = session.language.script,
+        };
 
         return session;
+    }
+
+    /// `Publr.t` for text the adapters write: the message in the person's language.
+    pub fn translated(session: *const Session, id: []const u8) Error![]const u8 {
+        return language_module.text(session, "", id, &.{});
+    }
+
+    /// A declared label (a status, a page in the sidebar, a field kind) in the person's
+    /// language: words written in a declaration, collected for translators from there
+    /// (`scripts/i18n.zig --declared`), looked up as they stand.
+    pub fn declared(session: *const Session, label: []const u8) Error![]const u8 {
+        if (label.len == 0) {
+            return label;
+        }
+
+        return language_module.text(session, "", label, &.{});
+    }
+
+    /// The message with its `{name}` placeholders filled.
+    pub fn translated_with(
+        session: *const Session,
+        id: []const u8,
+        values: []const Placeholder,
+    ) Error![]const u8 {
+        return language_module.text(session, "", id, values);
+    }
+
+    /// The message meant in `context` (`verb`).
+    pub fn translated_in(
+        session: *const Session,
+        context: []const u8,
+        id: []const u8,
+    ) Error![]const u8 {
+        return language_module.text(session, context, id, &.{});
+    }
+
+    /// The message for `count` of something: `("{count} record", "{count} records", n)`.
+    pub fn translated_count(
+        session: *const Session,
+        one: []const u8,
+        other: []const u8,
+        count: u64,
+    ) Error![]const u8 {
+        return language_module.counted(session, one, other, count, &.{});
     }
 
     pub fn signed_in(session: *const Session) bool {
@@ -445,6 +653,33 @@ pub fn row_actions(
         }
     }
 
+    const sandboxed = session.ctx.sandboxed_plugins orelse return links.items;
+
+    // An installed plugin's actions lead only into the admin, through its own operations.
+    for (sandboxed.manifests()) |manifest| {
+        for (manifest.row_actions) |action| {
+            const fits = action.kind.len == 0 or std.mem.eql(u8, action.kind, kind);
+            const into_admin = std.mem.startsWith(u8, action.path, "/admin/") and
+                std.mem.indexOf(u8, action.path, "//") == null;
+            const own = std.mem.startsWith(u8, action.operation, manifest.name) and
+                sandboxed.find(action.operation) != null;
+
+            if (!std.mem.eql(u8, action.slot, slot) or !fits or !into_admin or !own) {
+                continue;
+            }
+
+            if (registry.SDK.may_named(&session.ctx, action.operation)) {
+                const path = action.path;
+                const href = try std.mem.replaceOwned(u8, session.arena, path, "{name}", name);
+
+                try links.append(session.arena, .{
+                    .label = action.label,
+                    .href = href,
+                });
+            }
+        }
+    }
+
     return links.items;
 }
 
@@ -475,6 +710,26 @@ pub fn require(request: *Request, response: *Response, ctx: *Context) Error!?Ses
         return null;
     }
 
+    // A person who never chose the admin's language is welcomed first, whatever page
+    // they opened; a script's read is not turned away.
+    const page_asked = request.method() == .get and
+        !std.mem.eql(u8, request.header("accept") orelse "", "application/json");
+
+    if (session.language.welcome and page_asked) {
+        const welcome = @import("admin/welcome.zig");
+
+        // The page with its query: a sign-in handed over (`?name=…&return=…`) goes on after.
+        const query = request.query();
+        const asked = if (query.len > 0)
+            try std.fmt.allocPrint(session.arena, "{s}?{s}", .{ request.path(), query })
+        else
+            request.path();
+
+        try response.redirect(.see_other, try welcome.address_of(&session, asked));
+
+        return null;
+    }
+
     return session;
 }
 
@@ -487,12 +742,46 @@ pub fn fail(session: *const Session, err: anyerror, back: []const u8) Error!void
     const failure = if (err == error.Failed) session.ctx.failure else null;
     const text = if (failure) |declared| declared.message else @errorName(err);
 
-    try message(session, "Something went wrong", text, &.{}, back);
+    if (err == error.NotFound) {
+        const heading = try session.translated("There is no such page");
+        const said = try session.translated(
+            "What this address points to does not exist: it was removed, or never made.",
+        );
+
+        return message_with(session, .not_found, heading, said, &.{}, back);
+    }
+
+    if (err == error.Denied) {
+        const heading = try session.translated("This is not yours to open");
+        const said = try session.translated(
+            "Your account may not see or change what this page is for.",
+        );
+
+        return message_with(session, .forbidden, heading, said, &.{}, back);
+    }
+
+    try message(session, try session.translated("Something went wrong"), text, &.{}, back);
 }
 
 /// The problems page: what was refused and why, with a way back.
 pub fn message(
     session: *const Session,
+    heading: []const u8,
+    text: []const u8,
+    problems: anytype,
+    back: []const u8,
+) Error!void {
+    std.debug.assert(heading.len > 0);
+    std.debug.assert(back.len > 0);
+
+    try message_with(session, .ok, heading, text, problems, back);
+}
+
+/// The problems page, answered with `status`: a page that is not there says so to the
+/// browser and to whatever asks before showing it (the AI workspace's preview).
+fn message_with(
+    session: *const Session,
+    status: Status,
     heading: []const u8,
     text: []const u8,
     problems: anytype,
@@ -516,12 +805,12 @@ pub fn message(
     // stays under Settings. Before sign-in there is none.
     const request = try chrome.request_of(session, .{});
 
-    try render.page(session.response, session.arena, request, .ok, views.Message, .{
+    try render.page(session.response, session.arena, request, status, views.Message, .{
         .heading = heading,
         .text = text,
         .problems = items.items,
         .link_href = back,
-        .link_label = "Back",
+        .link_label = try session.translated("Back"),
     });
 }
 
@@ -671,6 +960,11 @@ test "admin over http: setup, login, types and content through plain forms" {
     const created = try flow.call("POST", "/admin/setup", setup_body);
     try std.testing.expectEqualStrings("/admin/content", created.header("Location").?);
     try std.testing.expect(std.mem.startsWith(u8, flow.cookie, "publr_session="));
+
+    const overview = try flow.call("GET", "/admin", "");
+    const login_line = "publr login http://h";
+    try std.testing.expect(std.mem.indexOf(u8, overview.body, login_line) != null);
+    try std.testing.expect(std.mem.indexOf(u8, overview.body, "agent-tab-here") == null);
 
     const structure = try flow.call("GET", "/admin/structure", "");
     try std.testing.expectEqual(.ok, structure.status);
@@ -907,6 +1201,8 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expect(std.mem.indexOf(u8, seeded_page.body, "name=\"tone[0]\"") != null);
     const new_entry_page = try flow.call("GET", "/admin/content/new?type=post", "");
     try std.testing.expect(std.mem.indexOf(u8, new_entry_page.body, "name=\"title\"") != null);
+    const type_link = "href=\"/admin/types/post\"";
+    try std.testing.expect(std.mem.indexOf(u8, new_entry_page.body, type_link) != null);
 
     const settings_body = try std.fmt.allocPrint(
         flow.inner.arena,
@@ -1073,7 +1369,7 @@ test "admin over http: setup, login, types and content through plain forms" {
     const deleted = try flow.call("POST", delete_path, delete_body);
     try std.testing.expectEqualStrings("/admin/content", deleted.header("Location").?);
     const gone = try flow.call("GET", view_location, "");
-    try std.testing.expect(std.mem.indexOf(u8, gone.body, "NotFound") != null);
+    try std.testing.expect(std.mem.indexOf(u8, gone.body, "There is no such page") != null);
 
     const taxonomy_body = try std.fmt.allocPrint(
         arena,
@@ -1108,7 +1404,7 @@ test "admin over http: setup, login, types and content through plain forms" {
     const terms_page = try flow.call("GET", "/admin/structure/taxonomies/topics/terms", "");
     try std.testing.expect(std.mem.indexOf(u8, terms_page.body, ">Technology</a>") != null);
     try std.testing.expect(std.mem.indexOf(u8, terms_page.body, ">Engineering</a>") != null);
-    try std.testing.expect(std.mem.indexOf(u8, terms_page.body, "pl-4") != null);
+    try std.testing.expect(has_class(terms_page.body, "pl-4"));
     const topics_field = try std.fmt.allocPrint(
         arena,
         "csrf={s}&kind=terms&parent=&name=themes&label=Themes&many=1&taxonomy=topics&next=finish",
@@ -1242,6 +1538,146 @@ test "a settings type uses the shared editor and publishes only after a guarded 
     try std.testing.expect(std.mem.indexOf(u8, all_content.body, after.records[0].id) == null);
     const shown = try flow.call("GET", "/admin/settings/website", "");
     try std.testing.expect(std.mem.indexOf(u8, shown.body, "Welcome home") != null);
+}
+
+test "a long entry draws its items past the fold closed and answers their fields when opened" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var flow: Flow = .{
+        .inner = undefined,
+    };
+    flow.inner.init(.{
+        .connection = &harness.fixture.connection,
+        .auth = &harness.auth,
+        .io = std.testing.io,
+    }, arena);
+    _ = try flow.call(
+        "POST",
+        "/admin/setup",
+        "email=ada%40example.com&display_name=Ada&password=correct+horse+battery",
+    );
+    var system = harness.ctx(.system);
+    try registry.SDK.bootstrap(&system);
+    const records = @import("../operations/record.zig");
+    const content_type = @import("../model/content_type.zig");
+    const faq_type: content_type.Def = .{
+        .handle = "faqpage",
+        .name = "FAQ page",
+        .fields = &.{
+            .{
+                .name = "title",
+                .label = "Title",
+                .kind = "string",
+            },
+            .{
+                .name = "faq",
+                .label = "Questions",
+                .kind = "repeater",
+                .fields = &.{
+                    .{
+                        .name = "question",
+                        .label = "Question",
+                        .kind = "string",
+                    },
+                },
+            },
+        },
+    };
+    _ = try registry.SDK.dispatch(&system, types.Create, .{
+        .definition = try content_type.encode(arena, faq_type),
+    });
+
+    var items: std.Io.Writer.Allocating = .init(arena);
+
+    for (0..80) |index| {
+        try items.writer.print("{s}{{\"question\":\"Q{d}\"}}", .{
+            if (index == 0) "" else ",",
+            index,
+        });
+    }
+
+    const document = try std.fmt.allocPrint(arena, "{{\"title\":\"FAQ\",\"faq\":[{s}]}}", .{
+        items.written(),
+    });
+    const record = try registry.SDK.dispatch(&system, records.Create, .{
+        .type = "faqpage",
+        .document = document,
+    });
+    const path = try std.fmt.allocPrint(arena, "/admin/content/{s}", .{record.id});
+    const page = try flow.call("GET", path, "");
+    try std.testing.expectEqual(.ok, page.status);
+
+    // The title and items 0-48 make the fold's 50 fields; 49-58 are one line each, the
+    // rest one run.
+    const has = struct {
+        fn in(html: []const u8, text: []const u8) bool {
+            return std.mem.indexOf(u8, html, text) != null;
+        }
+    }.in;
+    try std.testing.expect(has(page.body, "name=\"faq[48].question\""));
+    try std.testing.expect(!has(page.body, "name=\"faq[49].question\""));
+    try std.testing.expect(has(page.body, "name=\"faq[49]\""));
+    try std.testing.expect(has(page.body, "name=\"faq[58]\""));
+    try std.testing.expect(has(page.body, "name=\"faq[59+]\""));
+    try std.testing.expect(!has(page.body, "name=\"faq[60]\""));
+
+    // Opening an item past the fold: the browser posts its value and draws the fields the
+    // server answers; a run answers its items as lines.
+    const csrf = flow.csrf_of(page.body);
+    const item = try std.fmt.allocPrint(
+        arena,
+        "csrf={s}&type=faqpage&path=faq%5B70%5D&value={s}",
+        .{ csrf, try form_encoded(arena, "{\"question\":\"Q70\"}") },
+    );
+    const cells = try flow.call("POST", "/admin/content/cells", item);
+    try std.testing.expectEqual(.ok, cells.status);
+    try std.testing.expect(has(cells.body, "\"name\":\"faq[70].question\""));
+    try std.testing.expect(has(cells.body, "\"value\":\"Q70\""));
+
+    const run = try std.fmt.allocPrint(
+        arena,
+        "csrf={s}&type=faqpage&path=faq%5B59%2B%5D&value={s}",
+        .{ csrf, try form_encoded(arena, "[{\"question\":\"Q59\"},{\"question\":\"Q60\"}]") },
+    );
+    const lines = try flow.call("POST", "/admin/content/cells", run);
+    try std.testing.expectEqual(.ok, lines.status);
+    try std.testing.expect(has(lines.body, "\"name\":\"faq[60]\",\"label\":\"Q60\""));
+
+    // Drawn again by the server (a reshape), an item the browser opened stays open.
+    const all_items = document["{\"title\":\"FAQ\",\"faq\":".len .. document.len - 1];
+    const body = try std.fmt.allocPrint(
+        arena,
+        "csrf={s}&title=FAQ&faq%5B0%2B%5D={s}&open=faq%5B70%5D&reshape=add%3Afaq",
+        .{ csrf, try form_encoded(arena, all_items) },
+    );
+    const redrawn = try flow.call("POST", try std.fmt.allocPrint(arena, "{s}/save", .{path}), body);
+    try std.testing.expectEqual(.ok, redrawn.status);
+    try std.testing.expect(has(redrawn.body, "name=\"faq[70].question\" value=\"Q70\""));
+    try std.testing.expect(has(redrawn.body, "name=\"open\" value=\"faq[70]\""));
+    try std.testing.expect(has(redrawn.body, "name=\"faq[59+]\""));
+    try std.testing.expect(has(redrawn.body, "name=\"faq[71+]\""));
+}
+
+fn form_encoded(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
+    std.debug.assert(text.len > 0);
+
+    var out: std.ArrayList(u8) = .empty;
+
+    for (text) |byte| {
+        if (std.ascii.isAlphanumeric(byte)) {
+            try out.append(arena, byte);
+        } else {
+            try out.print(arena, "%{X:0>2}", .{byte});
+        }
+    }
+
+    std.debug.assert(out.items.len >= text.len);
+
+    return out.items;
 }
 
 test "settings and custom fields have isolated authoring and validated field forms" {
@@ -1421,4 +1857,24 @@ test "schema creation pages fit a fixed request arena with many field definition
         try std.testing.expectEqual(.ok, page.status);
         try std.testing.expect(std.mem.indexOf(u8, page.body, "Create and add") != null);
     }
+}
+
+/// An admin address no page answers: said inside the admin, with a way back, never a bare
+/// "Not Found" (an agent's guess shown in the preview lands here too).
+pub fn missing(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(std.mem.startsWith(u8, request.path(), "/admin"));
+    std.debug.assert(ctx.user_data != null);
+
+    var session = try require(request, response, ctx) orelse return;
+
+    const nothing_here = try session.translated("Nothing in the admin lives at this address.");
+    const why = try session.translated("It may have moved, or the link that led here was wrong.");
+
+    try screen(&session, .not_found, views.Message, .{
+        .heading = try session.translated("There is no such page"),
+        .text = try std.fmt.allocPrint(session.arena, "{s} {s}", .{ nothing_here, why }),
+        .problems = &.{},
+        .link_href = "/admin",
+        .link_label = try session.translated("Go to the overview"),
+    });
 }

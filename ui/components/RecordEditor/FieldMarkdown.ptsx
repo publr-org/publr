@@ -1,0 +1,130 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+export const state = Publr.reactive({ previewing: false });
+
+export const holder = Publr.ref<HTMLElement>();
+export const shown = Publr.ref<HTMLElement>();
+
+const area_of = () => holder.current?.querySelector("textarea") ?? null;
+
+/** Text made safe to put in a page: every character with a meaning in HTML escaped. */
+const escaped = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** Inline marks on text already escaped: code, bold, italic, and links to the web, mail or
+ * the site's own pages only. */
+const inline = (text: string) =>
+  text
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:|\/)[^\s)]*)\)/g, '<a href="$2" rel="noopener">$1</a>');
+
+/** What the field will read as: headings, quotes, lists and paragraphs of the markdown. The
+ * text is escaped before any tag is made, so nothing typed becomes markup of its own. */
+const rendered = (markdown: string) => {
+  const blocks = escaped(markdown).split(/\n{2,}/);
+  return blocks
+    .map((block) => {
+      const lines = block.split("\n");
+      const heading = /^(#{1,6})\s+(.*)$/.exec(block);
+      if (heading) return `<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`;
+      if (lines.every((line) => /^\s*[-*]\s+/.test(line))) {
+        return `<ul>${lines.map((line) => `<li>${inline(line.replace(/^\s*[-*]\s+/, ""))}</li>`).join("")}</ul>`;
+      }
+      if (lines.every((line) => /^\s*\d+\.\s+/.test(line))) {
+        return `<ol>${lines.map((line) => `<li>${inline(line.replace(/^\s*\d+\.\s+/, ""))}</li>`).join("")}</ol>`;
+      }
+      if (lines.every((line) => line.startsWith("&gt;"))) {
+        return `<blockquote>${inline(lines.map((line) => line.replace(/^&gt;\s?/, "")).join("<br>"))}</blockquote>`;
+      }
+      return block.trim() === "" ? "" : `<p>${inline(lines.join("<br>"))}</p>`;
+    })
+    .join("");
+};
+
+/** Wraps the selection in `before` and `after`, or puts them at the caret around a word to
+ * type, and tells the editor the field changed. */
+const wrap = (before: string, after: string, placeholder: string) => {
+  const area = area_of();
+  if (!area) return;
+  const start = area.selectionStart;
+  const end = area.selectionEnd;
+  const chosen = area.value.slice(start, end) || placeholder;
+  area.setRangeText(`${before}${chosen}${after}`, start, end, "select");
+  area.setSelectionRange(start + before.length, start + before.length + chosen.length);
+  area.focus();
+  area.dispatchEvent(new Event("input", { bubbles: true }));
+};
+
+/** Puts `prefix` at the start of each selected line. */
+const lines = (prefix: string) => {
+  const area = area_of();
+  if (!area) return;
+  const from = area.value.lastIndexOf("\n", area.selectionStart - 1) + 1;
+  const to = area.selectionEnd;
+  const text = area.value.slice(from, to) || Publr.t("text");
+  area.setRangeText(text.split("\n").map((line) => `${prefix}${line}`).join("\n"), from, to, "end");
+  area.focus();
+  area.dispatchEvent(new Event("input", { bubbles: true }));
+};
+
+export const bolded = () => wrap("**", "**", Publr.t("bold text"));
+export const italicised = () => wrap("*", "*", Publr.t("italic text"));
+export const linked = () => wrap("[", "](https://)", Publr.t("link text"));
+export const coded = () => wrap("`", "`", Publr.t("code"));
+export const headed = () => lines("## ");
+export const listed = () => lines("- ");
+export const numbered = () => lines("1. ");
+export const quoted = () => lines("> ");
+
+export const wrote = () => {
+  state.previewing = false;
+};
+
+export const previewed = () => {
+  state.previewing = true;
+  const area = area_of();
+  if (shown.current && area) shown.current.innerHTML = rendered(area.value);
+};
+
+export type FieldMarkdownProps = {
+  id: string;
+  name: string;
+  value: string;
+  rows: number;
+};
+
+/** A markdown field: the text itself, a toolbar that writes the marks around the selection,
+ * and a preview of how it reads. The textarea is what the form posts. */
+export function FieldMarkdown({ id, name, value, rows }: FieldMarkdownProps) {
+  return (
+    <div class="flex flex-col gap-1.5" data-part="field-markdown" ref={holder}>
+      <div class="flex flex-wrap items-center gap-0.5">
+        <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Bold")} title={Publr.t("Bold")} onClick={bolded}><Icon name="bold" size="sm" /></Button>
+        <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Italic")} title={Publr.t("Italic")} onClick={italicised}><Icon name="italic" size="sm" /></Button>
+        <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Heading")} title={Publr.t("Heading")} onClick={headed}><Icon name="heading-level-2" size="sm" /></Button>
+        <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Link")} title={Publr.t("Link")} onClick={linked}><Icon name="link" size="sm" /></Button>
+        <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("List")} title={Publr.t("List")} onClick={listed}><Icon name="list-unordered" size="sm" /></Button>
+        <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Numbered list")} title={Publr.t("Numbered list")} onClick={numbered}><Icon name="list-ordered" size="sm" /></Button>
+        <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Quote")} title={Publr.t("Quote")} onClick={quoted}><Icon name="quote" size="sm" /></Button>
+        <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Code")} title={Publr.t("Code")} onClick={coded}><Icon name="code" size="sm" /></Button>
+        <span class="ml-auto flex items-center gap-1">
+          <Button type="button" hierarchy="tertiary" size="xs" pressed={!state.previewing} onClick={wrote}>{Publr.t("Write")}</Button>
+          <Button type="button" hierarchy="tertiary" size="xs" pressed={state.previewing} onClick={previewed}>{Publr.t("Preview")}</Button>
+        </span>
+      </div>
+      <div hidden={state.previewing}>
+        <Textarea id={id} name={name} value={value} rows={rows} />
+      </div>
+      <div
+        hidden={!state.previewing}
+        ref={shown}
+        class="min-h-24 rounded-lg border border-input bg-card px-3.5 py-2.5 text-sm leading-6 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:font-semibold [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_ul]:list-disc"
+      ></div>
+    </div>
+  );
+}

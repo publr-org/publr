@@ -77,6 +77,60 @@ pub fn get(
 }
 
 /// Oldest first; `kind` null means every kind.
+/// Which of a record's snapshots a page reads: of `kind` (every kind when null), before
+/// `before` (0 for the newest), newest first, `limit` of them; the documents only when
+/// asked for, the title (`title_field` of each document) always.
+pub const Window = struct {
+    kind: ?[]const u8 = null,
+    before: i64 = 0,
+    limit: u32,
+    documents: bool = false,
+    title_field: []const u8 = "title",
+};
+
+/// A snapshot as a page of them lists it.
+pub const Listed = struct {
+    seq: i64,
+    kind: []const u8,
+    at: i64,
+    by: ?[]const u8,
+    title: []const u8,
+    document: []const u8,
+};
+
+pub fn page(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    record: []const u8,
+    window: Window,
+) db.Error![]Listed {
+    std.debug.assert(record.len > 0);
+    std.debug.assert(window.limit > 0 and window.limit <= list_max);
+
+    var select = try connection.prepare(
+        "SELECT seq, kind, at, by, coalesce(json_extract(document, '$.' || ?5), ''), " ++
+            "CASE WHEN ?6 THEN document ELSE '' END FROM snapshots WHERE record = ?1 " ++
+            "AND (?2 IS NULL OR kind = ?2) AND (?3 = 0 OR seq < ?3) ORDER BY seq DESC LIMIT ?4",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, record);
+    try select.bind_optional_text(2, window.kind);
+    try select.bind_int(3, window.before);
+    try select.bind_int(4, window.limit);
+    try select.bind_text(5, window.title_field);
+    try select.bind_int(6, @intFromBool(window.documents));
+
+    var rows: std.ArrayList(Listed) = .empty;
+
+    while (try select.step()) {
+        std.debug.assert(rows.items.len < window.limit);
+        rows.append(arena, try select.read(Listed, arena)) catch return error.OutOfMemory;
+    }
+
+    return rows.items;
+}
+
 pub fn list(
     connection: *db.Db,
     arena: std.mem.Allocator,

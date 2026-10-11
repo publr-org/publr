@@ -93,25 +93,29 @@ pub fn applies(options: Options, context: Context) bool {
     return false;
 }
 
+/// The fields as checked: as they are while the group applies, else with nothing required
+/// (a copy in `arena`).
 pub fn checked_fields(
+    arena: std.mem.Allocator,
     defs: []const @import("field.zig").Def,
     active: bool,
-    buffer: *[@import("field.zig").fields_max]@import("field.zig").Def,
-) []const @import("field.zig").Def {
-    std.debug.assert(defs.len <= buffer.len);
+) error{OutOfMemory}![]const @import("field.zig").Def {
+    std.debug.assert(defs.len <= @import("field.zig").fields_max);
 
     if (active) {
         return defs;
     }
 
-    @memcpy(buffer[0..defs.len], defs);
+    const relaxed = try arena.dupe(@import("field.zig").Def, defs);
 
-    for (buffer[0..defs.len]) |*field| {
+    for (relaxed) |*field| {
         field.required = false;
         field.options.items_min = null;
     }
 
-    return buffer[0..defs.len];
+    std.debug.assert(relaxed.len == defs.len);
+
+    return relaxed;
 }
 
 test "location groups combine AND and OR and absent context never matches exclusions" {

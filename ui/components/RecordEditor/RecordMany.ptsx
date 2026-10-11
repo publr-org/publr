@@ -28,6 +28,7 @@ export type RecordManyProps = {
     card_status: string;
     card_tone: string;
     card_href: string;
+    formats: string;
     id: string;
     title: string;
     type_label: string;
@@ -116,6 +117,7 @@ export function RecordMany({
             card_status={item.card_status}
             card_tone={item.card_tone}
             card_href={item.card_href}
+            formats={item.formats}
             delete_note={item.delete_note}
             remove={item.remove}
             up={item.up}

@@ -206,3 +206,82 @@ fn assert_scope(scope: Scope) void {
     std.debug.assert(scope.plugin.len > 0);
     std.debug.assert(scope.kind.len > 0 and scope.kind.len <= model.kind_len_max);
 }
+
+/// One of a plugin's collections, across apps, and how many records it holds.
+pub const Collection = struct {
+    kind: []const u8,
+    count: i64,
+};
+
+pub const collections_max: u32 = 64;
+
+pub fn collections_of(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    plugin: []const u8,
+) Error![]Collection {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(collections_max > 0);
+
+    var select = try connection.prepare(
+        "SELECT kind, COUNT(*) AS count FROM internal_records WHERE plugin = ?1 " ++
+            "GROUP BY kind ORDER BY kind LIMIT ?2",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, plugin);
+    try select.bind_int(2, collections_max);
+
+    var rows: std.ArrayList(Collection) = .empty;
+
+    while (try select.step()) {
+        std.debug.assert(rows.items.len < collections_max);
+        rows.append(arena, try select.read(Collection, arena)) catch return error.OutOfMemory;
+    }
+
+    return rows.items;
+}
+
+/// Every record of one of a plugin's collections, across apps.
+pub fn delete_collection(connection: *db.Db, plugin: []const u8, kind: []const u8) Error!void {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(kind.len > 0);
+
+    var statement = try connection.prepare(
+        "DELETE FROM internal_records WHERE plugin = ?1 AND kind = ?2",
+    );
+    defer statement.finalize();
+
+    try statement.bind_text(1, plugin);
+    try statement.bind_text(2, kind);
+    try statement.exec();
+}
+
+/// The ids of one of a plugin's collections, across apps, as a JSON array.
+pub fn ids_of_collection(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    plugin: []const u8,
+    kind: []const u8,
+) Error![]const u8 {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(kind.len > 0);
+
+    var select = try connection.prepare(
+        "SELECT json_group_array(id) AS ids FROM internal_records WHERE plugin = ?1 AND kind = ?2",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, plugin);
+    try select.bind_text(2, kind);
+
+    if (!try select.step()) {
+        return "[]";
+    }
+
+    const Ids = struct {
+        ids: []const u8,
+    };
+
+    return (try select.read(Ids, arena)).ids;
+}

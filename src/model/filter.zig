@@ -85,6 +85,8 @@ pub const Definition = struct {
     source: Source = .none,
     /// What a fresh pill starts with, under the first operator; empty for "any".
     default_value: []const u8 = "",
+    /// In the Filter menu; off for a filter only the core's own reads use.
+    offered: bool = true,
     apply: Apply,
 
     pub fn operator(def: Definition, id: []const u8) ?Operator {
@@ -188,6 +190,9 @@ pub const core = [_]Definition{
         .label = "App",
         .operators = &.{ is, project_own },
         .source = .apps,
+        // A design record's app (each app has its own templates and patterns); content
+        // lives where its type does, so the admin never offers it.
+        .offered = false,
         .apply = &apply_app,
     },
 };

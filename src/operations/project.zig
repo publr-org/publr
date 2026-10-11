@@ -138,6 +138,7 @@ pub const operations = [_]type{
     move_app.MoveApp,
     currencies.Currencies,
     currencies.SetCurrencies,
+    @import("user/language.zig").SetSiteLanguage,
 };
 pub const middleware = [_]type{changes.RecordChanged};
 

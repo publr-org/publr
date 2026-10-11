@@ -1,0 +1,132 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+
+/** One value of the list: the name it posts as (`name`), and a key that stays with it as
+ * it moves (`label`), in the shape the server sends choices in. */
+export type ListValue = {
+  name: string;
+  value: string;
+  label: string;
+  selected: boolean;
+};
+
+export const state = Publr.reactive({
+  name: "",
+  type: "text",
+  values: [] as ListValue[],
+  empty: true,
+});
+
+export const root = Publr.ref<HTMLElement>();
+
+let made = 0;
+
+/** What each value's box holds now: typing is not tracked, so a change to the list reads it. */
+const current = (): ListValue[] =>
+  state.values.map((entry) => {
+    const box = root.current?.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-key="${entry.label}"]`);
+    return { ...entry, value: box ? box.value : entry.value };
+  });
+
+/** The list after a change: names follow the order, and the editor hears an edit. */
+const keep = (values: ListValue[], focus = "") => {
+  state.values = values.map((entry, index) => ({ ...entry, name: `${state.name}[${index}]` }));
+  state.empty = state.values.length === 0;
+  queueMicrotask(() => {
+    root.current?.dispatchEvent(new Event("input", { bubbles: true }));
+    if (focus !== "") root.current?.querySelector<HTMLElement>(`[data-key="${focus}"]`)?.focus();
+  });
+};
+
+const key_of = (event: Event) => (event.currentTarget as HTMLButtonElement).value;
+
+export const added = () => {
+  made += 1;
+  const key = `new-${made}`;
+  keep([...current(), { name: "", value: "", label: key, selected: false }], key);
+};
+
+export const removed = (event: Event) => {
+  const key = key_of(event);
+  keep(current().filter((entry) => entry.label !== key));
+};
+
+const moved = (key: string, by: number) => {
+  const values = current();
+  const from = values.findIndex((entry) => entry.label === key);
+  const to = from + by;
+  if (from < 0 || to < 0 || to >= values.length) return;
+  const [entry] = values.splice(from, 1);
+  values.splice(to, 0, entry);
+  keep(values, key);
+};
+
+export const raised = (event: Event) => {
+  moved(key_of(event), -1);
+};
+
+export const lowered = (event: Event) => {
+  moved(key_of(event), 1);
+};
+
+export type RecordListProps = {
+  name: string;
+  /** The input each value takes: `text`, `email`, `url`, `number`, `date`, `textarea`... */
+  type: string;
+  /** The values as the record holds them: each with the name it posts under and its key. */
+  values: ListValue[];
+  add_label: string;
+};
+
+/** A list of plain values, edited here: adding, moving and removing one renumbers the
+ * names the values post under, with no round trip. An empty list posts the field's bare
+ * name, so saving it clears the field. */
+export function RecordList({ name, type, values, add_label }: RecordListProps) {
+  state.name = name;
+  state.type = type;
+  state.values = values;
+  state.empty = values.length === 0;
+
+  return (
+    <div class="flex flex-col gap-2" id={`field-${name}`} data-part="record-list" ref={root}>
+      {state.empty && <input type="hidden" name={name} value="" />}
+      {state.values.map((entry) => (
+        <div class="flex items-start gap-2" key={entry.label}>
+          <div class="min-w-0 flex-1">
+            {type === "textarea" && <Textarea name={entry.name} value={entry.value} rows={3} data-key={entry.label} />}
+            {type === "text" && <Input name={entry.name} type="text" value={entry.value} data-key={entry.label} />}
+            {type === "email" && <Input name={entry.name} type="email" value={entry.value} data-key={entry.label} />}
+            {type === "url" && <Input name={entry.name} type="url" value={entry.value} data-key={entry.label} />}
+            {type === "number" && <Input name={entry.name} type="number" value={entry.value} data-key={entry.label} />}
+            {type === "date" && <Input name={entry.name} type="date" value={entry.value} data-key={entry.label} classes="max-w-xs" />}
+            {type === "datetime-local" && <Input name={entry.name} type="datetime-local" value={entry.value} data-key={entry.label} classes="max-w-sm" />}
+            {type === "time" && <Input name={entry.name} type="time" value={entry.value} data-key={entry.label} classes="max-w-40" />}
+          </div>
+          <span class="inline-flex shrink-0 items-center gap-1 pt-0.5">
+            <Button type="button" hierarchy="tertiary" size="sm" label={Publr.t("Move up")} title={Publr.t("Move up")}
+              value={entry.label} onClick={raised}>
+              <Icon name="chevron-up" size="sm" />
+            </Button>
+            <Button type="button" hierarchy="tertiary" size="sm" label={Publr.t("Move down")} title={Publr.t("Move down")}
+              value={entry.label} onClick={lowered}>
+              <Icon name="chevron-down" size="sm" />
+            </Button>
+            <Button type="button" hierarchy="tertiary" size="sm" label={Publr.t("Remove")} title={Publr.t("Remove")}
+              value={entry.label} onClick={removed}>
+              <Icon name="x-close" size="sm" />
+            </Button>
+          </span>
+        </div>
+      ))}
+      <div class="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
+        <Button type="button" hierarchy="secondary" size="sm" onClick={added}>
+          <Icon name="plus" size="sm" />
+          <span>{add_label}</span>
+        </Button>
+      </div>
+    </div>
+  );
+}

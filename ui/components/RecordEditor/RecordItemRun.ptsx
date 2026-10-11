@@ -1,0 +1,52 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { onOpen, state } from "../RecordEditor.ptsx";
+import { RecordClosedItem } from "./RecordClosedItem.ptsx";
+
+/** The rest of a repeater's items past the fold: one row, their values one JSON list,
+ * until "Show all" has the browser list them as closed items. */
+export function RecordItemRun({ repeater, name, label, value_json }: {
+  repeater: string;
+  name: string;
+  label: string;
+  value_json: string;
+}) {
+  return (
+    <div class="contents">
+      {/* Not posted once listed: each item's line posts its own value then. */}
+      <input type="hidden" name={name} value={value_json} disabled={!!state.listed[name]} />
+      {state.listed[name] ? (
+        <div class="contents">
+          <input type="hidden" name="open" value={repeater} />
+          {state.listed[name].map((line) => (
+            <RecordClosedItem name={line.name} label={line.label} value_json={line.value_json} />
+          ))}
+        </div>
+      ) : (
+        <div class="flex items-center gap-2 rounded-xl border border-dashed border-border px-5 py-3">
+          <Text as="span" variant="body-sm" tone="muted">
+            {label}
+          </Text>
+          <Button
+            type="button"
+            onClick={onOpen}
+            value={name}
+            hierarchy="tertiary"
+            size="sm"
+            classes="ml-auto"
+            disabled={state.opening === name}
+          >
+            {Publr.t("Show all")}
+          </Button>
+          {state.open_failed === name && (
+            <Text as="span" variant="body-sm" tone="error">
+              {Publr.t("Could not open these fields. Try again.")}
+            </Text>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+

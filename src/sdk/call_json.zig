@@ -66,6 +66,7 @@ fn dispatch(
     const within = ctx.within;
     var trail_state: @import("trail.zig").Trail = .{
         .root = operation_id,
+        .arena = ctx.arena,
     };
     const opened = SDK.trail_open(ctx, &trail_state);
 

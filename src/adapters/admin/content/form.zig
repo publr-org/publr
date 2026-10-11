@@ -2,6 +2,7 @@
 //! has in its aside: its terms (one section per `terms` field of the type) and, under
 //! `serve --dev`, the dependency dialog. The drawer's picker of records is here too.
 const std = @import("std");
+const class_merge = @import("class_merge");
 const admin = @import("../../admin.zig");
 const fields = @import("../fields.zig");
 const registry = @import("../../../server/registry.zig");
@@ -46,6 +47,7 @@ pub const preview_node = Editor.preview_node;
 pub const edit = Editor.edit;
 pub const editor_fragment = Editor.editor;
 pub const create = Editor.create;
+pub const cells = Editor.cells;
 pub const save = Editor.save;
 pub const action = Editor.action;
 pub const wants_fragment = Editor.wants_fragment;
@@ -71,18 +73,55 @@ fn aside_of(
     std.debug.assert(session.signed_in());
 
     const row: ?fields.Record = if (shape.loaded) |full| full.row else null;
-    const app = if (row) |found| try admin.app_scope.aside(session, found.id, found.app) else null;
     const terms_node = try terms_of(session, def, document);
     const impact = try impact_dialog.node_of(session, def, row);
+    const panels = if (row) |found| try panels_of(session, def, found.id) else null;
 
-    if (app == null and terms_node == null and impact == null) {
+    if (panels == null and terms_node == null and impact == null) {
         return null;
     }
 
     return try admin.render.view(session.arena, views.RecordAside, .{
-        .app = app,
+        .panels = panels,
         .terms = terms_node,
         .impact = impact,
+    });
+}
+
+/// The boxes plugins add to this type's form, each in the plugin frame, told the record.
+fn panels_of(session: *Session, def: Def, id: []const u8) Error!?admin.render.Node {
+    std.debug.assert(def.handle.len > 0);
+    std.debug.assert(id.len > 0);
+
+    const frame_panels = @import("../frame/panels.zig");
+    const frame_pages = @import("../frame/pages.zig");
+    const found = try frame_panels.for_type(session, def.handle);
+
+    if (found.len == 0) {
+        return null;
+    }
+
+    const Item = views.RecordPanels.PanelsItem;
+    const items = try session.arena.alloc(Item, found.len);
+
+    for (found, items) |panel, *item| {
+        const operations = try frame_pages.operations_of(session, panel.plugin);
+
+        item.* = .{
+            .label = panel.label,
+            .plugin = panel.plugin,
+            .src = try print(session.arena, "/admin/plugin/{s}/panels/{s}/frame?record={s}", .{
+                panel.plugin,
+                panel.operation,
+                id,
+            }),
+            .operations = try std.mem.join(session.arena, ",", operations),
+        };
+    }
+
+    return try admin.render.view(session.arena, views.RecordPanels, .{
+        .csrf = session.csrf_token(),
+        .panels = items,
     });
 }
 
@@ -96,19 +135,15 @@ fn terms_of(session: *Session, def: Def, document: ?Value) Error!?admin.render.N
     std.debug.assert(def.fields.len <= model.field.fields_max);
     std.debug.assert(session.signed_in());
 
-    var buffer: [model.field.fields_max]model.field.Def = undefined;
-    var count: u32 = 0;
+    var assigned: std.ArrayList(model.field.Def) = .empty;
 
     for (def.fields) |field| {
         if (field.locked and std.mem.eql(u8, field.kind, "terms")) {
-            buffer[count] = field;
-            count += 1;
+            assigned.append(session.arena, field) catch return error.OutOfMemory;
         }
     }
 
-    const assigned = buffer[0..count];
-
-    if (assigned.len == 0) {
+    if (assigned.items.len == 0) {
         return null;
     }
 
@@ -117,7 +152,7 @@ fn terms_of(session: *Session, def: Def, document: ?Value) Error!?admin.render.N
     var selected_tokens: std.Io.Writer.Allocating = .init(arena);
     var tree_tokens: std.Io.Writer.Allocating = .init(arena);
 
-    for (assigned) |field| {
+    for (assigned.items) |field| {
         const tokens: Tokens = .{
             .selected = &selected_tokens,
             .tree = &tree_tokens,
@@ -162,28 +197,20 @@ fn term_field_of(
     }) catch return null;
     const tree = registry.SDK.dispatch(&session.ctx, term_operations.Tree, .{
         .taxonomy = field.options.taxonomy,
+        .limit = terms_shown,
     }) catch return null;
     const chosen = chosen_of(document, field.name);
-    const nodes = try arena.alloc(TermNode, tree.terms.len);
+    var nodes: std.ArrayList(TermNode) = .empty;
     var selected_text: std.Io.Writer.Allocating = .init(arena);
 
-    for (tree.terms, nodes) |term, *node| {
-        const selected = holds(chosen, term.id);
-
-        node.* = .{
+    for (tree.terms) |term| {
+        nodes.append(arena, .{
             .id = term.id,
             .title = term.title,
             .depth = term.depth,
             .indent = indent_of(term.depth),
-            .selected = selected,
-        };
-
-        if (selected) {
-            selected_text.writer.print("{s} ", .{term.id}) catch return error.OutOfMemory;
-            tokens.selected.writer.print("{s}:{s} ", .{ field.name, term.id }) catch {
-                return error.OutOfMemory;
-            };
-        }
+            .selected = holds(chosen, term.id),
+        }) catch return error.OutOfMemory;
 
         if (term.parent) |parent| {
             tokens.tree.writer.print("{s}>{s} ", .{ term.id, parent }) catch {
@@ -192,13 +219,43 @@ fn term_field_of(
         }
     }
 
+    // Every chosen term is kept, the ones past the first shown too: offered at the end.
+    for (chosen) |item| {
+        if (item != .string or item.string.len == 0) {
+            continue;
+        }
+
+        const id = item.string;
+
+        // A chosen id that is no longer a term is dropped, as it would be from the tree.
+        if (!in_tree(tree.terms, id)) {
+            const term = registry.SDK.dispatch(&session.ctx, term_operations.Get, .{
+                .id = id,
+                .purpose = .edit,
+            }) catch continue;
+
+            nodes.append(arena, .{
+                .id = id,
+                .title = term.term.title,
+                .depth = 0,
+                .indent = indent_of(0),
+                .selected = true,
+            }) catch return error.OutOfMemory;
+        }
+
+        selected_text.writer.print("{s} ", .{id}) catch return error.OutOfMemory;
+        tokens.selected.writer.print("{s}:{s} ", .{ field.name, id }) catch {
+            return error.OutOfMemory;
+        };
+    }
+
     return .{
         .name = field.name,
         .label = field.label,
         .help = field.help,
         .hierarchical = got.definition.hierarchical,
         .many = field.many,
-        .nodes = nodes,
+        .nodes = nodes.items,
         .selected = std.mem.trimEnd(u8, selected_text.written(), " "),
     };
 }
@@ -223,6 +280,22 @@ fn chosen_of(document: ?Value, name: []const u8) []const Value {
     };
 }
 
+/// The terms a field's picker offers from its taxonomy's tree, the chosen ones aside.
+const terms_shown: u32 = 200;
+
+fn in_tree(terms: []const term_operations.Node, id: []const u8) bool {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(terms.len <= terms_shown);
+
+    for (terms) |term| {
+        if (std.mem.eql(u8, term.id, id)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 fn holds(items: []const Value, id: []const u8) bool {
     std.debug.assert(id.len > 0);
     std.debug.assert(items.len <= fields.items_max);
@@ -243,13 +316,16 @@ pub fn indent_of(depth: u32) []const u8 {
 
     return switch (@min(depth, 5)) {
         0 => "",
-        1 => "pl-4",
-        2 => "pl-8",
-        3 => "pl-12",
-        4 => "pl-16",
-        else => "pl-20",
+        1 => class_merge.listed("pl-4"),
+        2 => class_merge.listed("pl-8"),
+        3 => class_merge.listed("pl-12"),
+        4 => class_merge.listed("pl-16"),
+        else => class_merge.listed("pl-20"),
     };
 }
+
+/// The records the drawer's picker shows at a time.
+const pick_page: u32 = 50;
 
 /// The drawer's picker: the target type's records, searchable, each with a Link button.
 pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -270,12 +346,15 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
     const live_only = admin.query_param(&session, "live") != null;
     const via = admin.query_param(&session, "via") orelse "";
     const parent = admin.query_param(&session, "parent") orelse "";
+    const offset = admin.pager.offset_of(&session);
+    // One past the page: whether there is a next one.
     const listed = registry.SDK.dispatch(&session.ctx, record_operations.List, .{
         .type = handle,
         .filters = if (live_only) &.{"status:is:published"} else &.{},
         .search = search,
         .order = .title_asc,
-        .limit = record_operations.list_max,
+        .limit = pick_page + 1,
+        .offset = offset,
         .documents = via.len > 0 and parent.len > 0,
         .expand = false,
     }) catch |err| return admin.fail(&session, err, back);
@@ -285,9 +364,11 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
     else
         &.{};
     var rows: std.ArrayList(views.RecordPick.RowsItem) = .empty;
-    const titles = try display.titles(&session.ctx, listed.records);
+    const more = listed.records.len > pick_page;
+    const shown = listed.records[0..@min(listed.records.len, pick_page)];
+    const titles = try display.titles(&session.ctx, shown);
 
-    for (listed.records, titles, 0..) |record, title, index| {
+    for (shown, titles, 0..) |record, title, index| {
         const status = registry.Statuses.find(record.status);
         const owner: pick_owner.Owner = if (owners.len > 0) owners[index] else .free;
         if (owner == .here) {
@@ -297,7 +378,7 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
         try rows.append(arena, .{
             .id = record.id,
             .title = title,
-            .status = if (status) |known| known.label else record.status,
+            .status = if (status) |known| try session.declared(known.label) else record.status,
             .published = registry.Statuses.is_live(record.status),
             .moves_from = if (owner == .elsewhere) owner.elsewhere else "",
         });
@@ -312,6 +393,8 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
         .via = via,
         .parent = parent,
         .rows = rows.items,
+        .next_offset = if (more) @floatFromInt(offset + pick_page) else 0,
+        .previous_offset = if (offset == 0) -1 else @floatFromInt(offset -| pick_page),
     });
 
     try session.response.set_header("Cache-Control", "private, no-store");

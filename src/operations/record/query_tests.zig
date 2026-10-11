@@ -234,19 +234,21 @@ test "query: a visitor reads live public records, a draft reference is null with
     try std.testing.expect(!contains(seen.result.text, "Unseen"));
 }
 
-test "query: an editor reads drafts only when asking for every status" {
+test "query: an editor reads drafts too, unless asking for published records only" {
     var library: Library = .{};
     try library.init();
     defer library.deinit();
 
     var admin = library.as_admin();
-    const published = try ask(&admin, "*[_type == \"book\"]{ title }");
+    const published = try SDK.dispatch(&admin, Query, .{
+        .query = "*[_type == \"book\"]{ title }",
+        .perspective = .published,
+    });
 
     try std.testing.expect(!contains(published.result.text, "Unseen"));
 
     const everything = try SDK.dispatch(&admin, Query, .{
         .query = "*[_type == \"book\"]{ title, \"by\": author->name }",
-        .perspective = .all,
     });
 
     try std.testing.expect(contains(everything.result.text, "Unseen"));
@@ -419,4 +421,30 @@ test "virtual: leaving out a record that needs its parent deletes it, restorable
     });
 
     try std.testing.expect(!contains(got.document, two));
+}
+
+test "query: a reference into a Private type stands in place, saying its type and why" {
+    var library: Library = .{};
+    try library.init();
+    defer library.deinit();
+
+    var admin = library.as_admin();
+    const books = try create(&admin, "ledger", "{\"title\":\"Costs\"}", "published");
+    _ = try create(&admin, "book", try book(&admin, "Kept", 1, books), "published");
+
+    var visitor = library.harness.ctx(.anonymous);
+    const kept = try ask(&visitor,
+        \\*[_type == "book" && title == "Kept"] { title, "by": author-> }
+    );
+
+    try std.testing.expectEqualStrings(
+        \\[{"title":"Kept","by":{"restricted":true,"type":"ledger","reason":"access"}}]
+    , kept.result.text);
+
+    const seen = try ask(&admin,
+        \\*[_type == "book" && title == "Kept"] { "by": author->title }
+    );
+    try std.testing.expectEqualStrings(
+        \\[{"by":"Costs"}]
+    , seen.result.text);
 }

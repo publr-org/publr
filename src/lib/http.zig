@@ -1,10 +1,13 @@
-//! HTTP is `publr_http`. This is the app it generates for Publr (no extensions) and the
-//! handler contract every adapter is written against:
+//! HTTP is `publr_http`. This is the app it generates for Publr (WebSockets, for the pages
+//! that watch something live) and the handler contract every adapter is written against:
 //! `fn (request, response, ctx) Error!void`.
 
 const publr_http = @import("publr_http");
 
-pub const App = publr_http.Server(.{});
+pub const websocket = publr_http.extensions.websocket;
+pub const App = publr_http.Server(.{
+    .websocket = websocket,
+});
 pub const Context = App.Context;
 pub const Router = App.Router;
 pub const Request = publr_http.Request;

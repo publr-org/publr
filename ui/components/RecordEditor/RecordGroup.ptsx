@@ -1,13 +1,20 @@
-import { Field } from "@publr/ui/Field.ptsx";
-import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
-import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
-import { RecordValue } from "./RecordValue.ptsx";
+import { RecordCell } from "./RecordCell.ptsx";
+import { onOpen, state } from "../RecordEditor.ptsx";
 
 export type RecordGroupProps = {
+  name: string;
   label: string;
   required: boolean;
   collapsed: boolean;
+  /** Past the fold: drawn without its parts, its value as JSON until it is opened. */
+  closed: boolean;
+  /** Past the fold and opened: kept open when the editor is drawn again. */
+  opened: boolean;
+  value_json: string;
   parts: Array<{
     name: string;
     conditions: string;
@@ -32,6 +39,7 @@ export type RecordGroupProps = {
     card_status: string;
     card_tone: string;
     card_href: string;
+    formats: string;
     remove: string;
     up: string;
     down: string;
@@ -40,13 +48,40 @@ export type RecordGroupProps = {
       label: string;
       selected: boolean;
     }>;
+    files: Array<{
+      id: string;
+      title: string;
+      thumb: string;
+      image: boolean;
+      kind: string;
+      icon: "video" | "audio" | "file";
+      facts: string;
+      missing: boolean;
+      slot: string;
+      place: string;
+      first: boolean;
+      last: boolean;
+    }>;
+    types: Array<{ id: string; label: string }>;
+    accept: string;
+    can_upload: boolean;
   }>;
 };
 
-export function RecordGroup({ label, required, collapsed, parts }: RecordGroupProps) {
+export function RecordGroup({
+  name,
+  label,
+  required,
+  collapsed,
+  closed,
+  opened: kept_open,
+  value_json,
+  parts,
+}: RecordGroupProps) {
   return (
-    <details class="rounded-xl border border-border" open={!collapsed}>
-      <summary class="cursor-pointer px-5 py-3">
+    <details class="group/disclosure rounded-xl border border-border" open={!collapsed || closed}>
+      <summary class="flex cursor-pointer list-none items-center gap-2 px-5 py-3 [&::-webkit-details-marker]:hidden">
+            <Icon name="chevron-right" size="sm" classes="shrink-0 text-muted-foreground transition-transform group-open/disclosure:rotate-90" />
         <Text as="span" variant="heading-xs">
           {label}
         </Text>
@@ -57,40 +92,111 @@ export function RecordGroup({ label, required, collapsed, parts }: RecordGroupPr
           </Text>
         )}
       </summary>
+      {/* Not posted once opened: its parts post their values then. */}
+      {closed && <input type="hidden" name={name} value={value_json} disabled={!!state.opened[name]} />}
+      {closed ? (
+        <div class="flex flex-col gap-5 border-t border-border px-5 py-4">
+          {state.opened[name] ? (
+            <div class="contents">
+              <input type="hidden" name="open" value={name} />
+              {state.opened[name].map((cell) => (
+                <RecordCell
+                  name={cell.name}
+                  conditions={cell.conditions}
+                  value_kind={cell.value_kind}
+                  label={cell.label}
+                  required={cell.required}
+                  help={cell.help}
+                  control={cell.control}
+                  value={cell.value}
+                  checked={cell.checked}
+                  readonly={cell.readonly}
+                  label_on={cell.label_on}
+                  placeholder={cell.placeholder}
+                  rows={cell.rows}
+                  min={cell.min}
+                  max={cell.max}
+                  step={cell.step}
+                  prefix={cell.prefix}
+                  suffix={cell.suffix}
+                  card_type={cell.card_type}
+                  card_title={cell.card_title}
+                  card_status={cell.card_status}
+                  card_tone={cell.card_tone}
+                  card_href={cell.card_href}
+                  formats={cell.formats}
+                  remove={cell.remove}
+                  up={cell.up}
+                  down={cell.down}
+                  files={cell.files}
+                  types={cell.types}
+                  accept={cell.accept}
+                  can_upload={cell.can_upload}
+                  options={cell.cell_options}
+                />
+              ))}
+            </div>
+          ) : (
+            <div class="contents">
+              <Button
+                type="button"
+                onClick={onOpen}
+                value={name}
+                hierarchy="secondary"
+                size="sm"
+                disabled={state.opening === name}
+              >
+                {Publr.t("Show fields")}
+              </Button>
+              {state.open_failed === name && (
+                <Text as="p" variant="body-sm" tone="error">
+                  {Publr.t("Could not open these fields. Try again.")}
+                </Text>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
       <div class="flex flex-col gap-5 border-t border-border px-5 py-4">
+        {kept_open && <input type="hidden" name="open" value={name} />}
         {parts.map((child) => (
-          <div data-conditions={child.conditions} data-field-path={child.name} data-value-kind={child.value_kind}><Field>
-            <FieldLabel htmlFor={`field-${child.name}`} required={child.required}>
-              {child.label}
-            </FieldLabel>
-            <RecordValue
-              name={child.name}
-              control={child.control}
-              value={child.value}
-              checked={child.checked}
-              readonly={child.readonly}
-              label_on={child.label_on}
-              placeholder={child.placeholder}
-              rows={child.rows}
-              min={child.min}
-              max={child.max}
-              step={child.step}
-              prefix={child.prefix}
-              suffix={child.suffix}
-              card_type={child.card_type}
-              card_title={child.card_title}
-              card_status={child.card_status}
-              card_tone={child.card_tone}
-              card_href={child.card_href}
-              remove={child.remove}
-              up={child.up}
-              down={child.down}
-              options={child.part_options}
-            />
-            {child.help !== "" && <FieldDescription>{child.help}</FieldDescription>}
-          </Field></div>
+          <RecordCell
+            name={child.name}
+            conditions={child.conditions}
+            value_kind={child.value_kind}
+            label={child.label}
+            required={child.required}
+            help={child.help}
+            control={child.control}
+            value={child.value}
+            checked={child.checked}
+            readonly={child.readonly}
+            label_on={child.label_on}
+            placeholder={child.placeholder}
+            rows={child.rows}
+            min={child.min}
+            max={child.max}
+            step={child.step}
+            prefix={child.prefix}
+            suffix={child.suffix}
+            card_type={child.card_type}
+            card_title={child.card_title}
+            card_status={child.card_status}
+            card_tone={child.card_tone}
+            card_href={child.card_href}
+            formats={child.formats}
+            remove={child.remove}
+            up={child.up}
+            down={child.down}
+            files={child.files}
+            types={child.types}
+            accept={child.accept}
+            can_upload={child.can_upload}
+            options={child.part_options}
+          />
         ))}
       </div>
+      )}
     </details>
   );
 }

@@ -74,7 +74,9 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         return;
     }
 
-    const listed_types = registry.SDK.dispatch(&session.ctx, types.List, .{}) catch |err| {
+    const listed_types = registry.SDK.dispatch(&session.ctx, types.List, .{
+        .limit = @import("../../../sdk/operation.zig").page_limit_max,
+    }) catch |err| {
         return admin.fail(&session, err, "/admin");
     };
     const view_id = admin.query_param(&session, "view");
@@ -98,11 +100,14 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .changed = !(try filters.same(arena, effective, resting)),
         .types = listed_types.types,
     };
-    const scope = admin.app_scope.of(&session);
+    var list_in = try filters.list_in(arena, effective);
+
+    list_in.variant = @import("../variant.zig").chosen(&session);
+
     const listed = registry.SDK.dispatch(
         &session.ctx,
         record_operations.List,
-        try admin.app_scope.narrow(arena, scope, try filters.list_in(arena, effective)),
+        list_in,
     ) catch |err| return admin.fail(&session, err, back);
     var props = try base_props(&page, @intCast(listed.records.len));
 
@@ -137,13 +142,12 @@ fn base_props(page: *const Page, shown: u32) Error!views.ContentList.Props {
     std.debug.assert(page.session.signed_in());
 
     const session = page.session;
-    const arena = session.arena;
 
     return .{
         .csrf = session.csrf_token(),
         .title = try title_of(page),
         .address = try page.href(page.effective),
-        .shown_text = try print(arena, "{d} shown", .{shown}),
+        .shown_text = try session.translated_count("{count} shown", "{count} shown", shown),
         .is_saved = page.saved != null,
         .view_id = page.view_id orelse "",
         .view_changed = page.changed,
@@ -154,7 +158,7 @@ fn base_props(page: *const Page, shown: u32) Error!views.ContentList.Props {
         .delete_href = "",
         .rename_href = "",
         .new_href = "",
-        .new_label = "New record",
+        .new_label = try session.translated("New record"),
         .new_targets = &.{},
         .hidden = &.{},
         .search = page.effective.search orelse "",
@@ -199,6 +203,16 @@ fn redirect_by_kind(session: *Session, address: Filters) Error!bool {
         .settings => {
             const location = try print(session.arena, "/admin/settings/{s}", .{handle});
             try session.response.redirect(.see_other, location);
+            return true;
+        },
+        // Files show where their owner draws them; the library's own on its page.
+        .media => {
+            if (model.media.is_library(handle)) {
+                try session.response.redirect(.see_other, "/admin/media");
+            } else {
+                try admin.fail(session, error.NotFound, back);
+            }
+
             return true;
         },
     }
@@ -252,13 +266,26 @@ fn title_of(page: *const Page) Error![]const u8 {
         }
     }
 
-    for (built_in_views) |candidate| {
+    for (built_in_views, 0..) |candidate, index| {
         if (try filters.same(page.session.arena, page.effective, candidate.filter)) {
-            return candidate.name;
+            return built_in_name(page.session, @intCast(index));
         }
     }
 
-    return "All content";
+    return page.session.translated("All content");
+}
+
+/// A built-in view's name, by its place in `built_in_views`.
+fn built_in_name(session: *const Session, index: u32) Error![]const u8 {
+    std.debug.assert(index < built_in_views.len);
+    std.debug.assert(built_in_views.len == 4);
+
+    return switch (index) {
+        0 => session.translated("Recent"),
+        1 => session.translated("Created by me"),
+        2 => session.translated("Updated by me"),
+        else => session.translated("Changed"),
+    };
 }
 
 /// The view the filters rest on when no saved view is shown: a type's own view, a built-in
@@ -289,23 +316,18 @@ fn default_base(
 }
 
 const built_in_views = [_]struct {
-    name: []const u8,
     filter: Filters,
 }{
     .{
-        .name = "Recent",
         .filter = admin.nav.recent,
     },
     .{
-        .name = "Created by me",
         .filter = admin.nav.created_by_me,
     },
     .{
-        .name = "Updated by me",
         .filter = admin.nav.updated_by_me,
     },
     .{
-        .name = "Changed",
         .filter = admin.nav.changed_only,
     },
 };
@@ -338,21 +360,27 @@ fn fill_header(props: *views.ContentList.Props, page: *const Page) Error!void {
     std.debug.assert(props.title.len > 0);
     std.debug.assert(page.types.len <= 4096);
 
-    const arena = page.session.arena;
+    const session = page.session;
+    const arena = session.arena;
 
     if (page.view_id) |id| {
         props.save_href = try print(arena, "/admin/views/{s}/save", .{id});
         props.rename_href = try print(arena, "/admin/views/{s}/rename", .{id});
         props.delete_href = try print(arena, "/admin/views/{s}/delete", .{id});
-        props.copy_name = "New view";
+        props.copy_name = try session.translated("New view");
     } else {
-        props.copy_name = try print(arena, "Copy of {s}", .{props.title});
+        props.copy_name = try session.translated_with("Copy of {view}", &.{.{
+            .name = "view",
+            .value = props.title,
+        }});
     }
 
     var targets: std.ArrayList(views.ContentList.New_targetsItem) = .empty;
 
     for (page.types) |summary| {
-        if (summary.kind != .record or model.media.is_library(summary.handle)) {
+        const hidden = model.design.is_design(summary.handle);
+
+        if (summary.kind != .record or hidden) {
             continue;
         }
 
@@ -368,7 +396,10 @@ fn fill_header(props: *views.ContentList.Props, page: *const Page) Error!void {
 
     if (targets.items.len == 1) {
         props.new_href = targets.items[0].href;
-        props.new_label = try print(arena, "New {s}", .{targets.items[0].label});
+        props.new_label = try session.translated_with("New {type}", &.{.{
+            .name = "type",
+            .value = targets.items[0].label,
+        }});
     } else {
         props.new_targets = targets.items;
     }

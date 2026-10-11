@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const contract = @import("model/contract.zig");
 pub const trail = @import("sdk/trail.zig");
 pub const db = @import("lib/db.zig");
@@ -18,6 +19,8 @@ pub const plugin_access = @import("sdk/plugin_access.zig");
 pub const call_json = @import("sdk/call_json.zig");
 pub const help = @import("sdk/help.zig");
 pub const structure = @import("sdk/structure.zig");
+pub const scratch = @import("sdk/scratch.zig");
+pub const definition_cache = @import("sdk/definition_cache.zig");
 
 pub const Caller = caller.Caller;
 pub const Ctx = context.Ctx;
@@ -25,9 +28,11 @@ pub const Error = operation.Error;
 pub const Grant = grant.Grant;
 pub const Policy = authorize.Policy;
 pub const Event = middleware.Event;
+pub const Scratch = scratch.Scratch;
+pub const DefinitionCache = definition_cache.DefinitionCache;
 
 pub const operations_max: u32 = 1024;
-pub const in_bytes_max: u32 = 64 << 10;
+pub const in_bytes_max: u32 = @import("model/limits.zig").input_bytes_max;
 
 const AuthState = @import("lib/auth.zig").State;
 const role = @import("model/role.zig");
@@ -44,12 +49,18 @@ pub const Registry = struct {
     operation_owners: []const []const u8 = &.{},
     middleware_owners: []const []const u8 = &.{},
     schemas: []const [:0]const u8 = &.{},
+    /// The chain a database is migrated along: core's, then each compiled-in plugin's.
+    migrations: []const db.migration.Migration = &.{},
     /// What a signed-in account's roles grant: the core's, with the plugins' merged in.
     roles: []const role.Role = &role.core,
     /// Runs as the system once the schema is applied: declared content types and the like.
     bootstrap: ?*const fn (*Ctx) Error!void = null,
     /// Where top-level calls are logged, done or refused; none keeps no log.
     log: ?trail.Log = null,
+    /// What a device's removal becomes instead of running (it never destroys): an item on
+    /// its removal list for its person, answered as a failure that says where. Without it,
+    /// the removal is refused.
+    removal: ?*const fn (ctx: *Ctx, operation: []const u8, input: []const u8) Error = null,
 };
 
 pub const schemas_max: u32 = 64;
@@ -61,10 +72,11 @@ pub fn SDK(comptime registry: Registry) type {
         pub const operations = registry.operations;
         pub const namespaces = registry.namespaces;
         pub const schemas = registry.schemas;
+        pub const migrations = registry.migrations;
         pub const roles = registry.roles;
 
         pub fn apply_schemas(connection: *db.Db) db.Error!void {
-            std.debug.assert(connection.transaction_depth == 0);
+            std.debug.assert(connection.transaction_depth <= 1);
             comptime std.debug.assert(schemas.len <= schemas_max);
 
             inline for (schemas) |sql| {
@@ -109,6 +121,7 @@ pub fn SDK(comptime registry: Registry) type {
             const notify = ctx.notify;
             var trail_state: trail.Trail = .{
                 .root = operation_id,
+                .arena = ctx.arena,
             };
             const opened = trail_open(ctx, &trail_state);
 
@@ -276,8 +289,15 @@ pub fn SDK(comptime registry: Registry) type {
             try check_fence(ctx, owner);
 
             if (comptime operation.destroys(Operation)) {
-                if (ctx.caller == .token) {
-                    return ctx.fail(operation.needs_person);
+                if (ctx.caller == .token and !ctx.kept) {
+                    const put_on_list = registry.removal orelse {
+                        return ctx.fail(operation.needs_person);
+                    };
+                    const input = std.json.Stringify.valueAlloc(ctx.arena, in, .{}) catch {
+                        return error.OutOfMemory;
+                    };
+
+                    return put_on_list(ctx, Operation.name, input);
                 }
             }
 
@@ -426,6 +446,9 @@ pub fn SDK(comptime registry: Registry) type {
         /// visitor may read (live public records) does not count: an account whose roles
         /// grant only what apps call never gets in.
         pub fn reaches_admin(ctx: *const Ctx) bool {
+            // Each operation's name is read once at comptime, a byte at a time.
+            @setEvalBranchQuota(registry.operations.len * operation.name_len_max * 2);
+
             std.debug.assert(ctx.now_ms >= 0);
             comptime std.debug.assert(registry.operations.len > 0);
 
@@ -496,6 +519,10 @@ pub fn SDK(comptime registry: Registry) type {
                 return run_pipeline(ctx, Operation, in, granted);
             }
 
+            // A write may change a definition: what this request read of them is read again.
+            ctx.forget_definitions();
+            defer ctx.forget_definitions();
+
             // Hooks run inside the write's transaction, so a failing hook rolls back the
             // operation it hooks. A nested write is a savepoint: its failure undoes only
             // itself, and the caller decides what happens next.
@@ -524,6 +551,14 @@ pub fn SDK(comptime registry: Registry) type {
             try transaction.commit();
             std.debug.assert(ctx.db.transaction_depth == transaction.depth - 1);
 
+            // What a write does outside the database once it is kept (`committed`), when no
+            // other write encloses it.
+            if (comptime @hasDecl(Operation, "committed")) {
+                if (ctx.db.transaction_depth == 0) {
+                    try Operation.committed(ctx, in, out);
+                }
+            }
+
             return out;
         }
 
@@ -537,6 +572,10 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.parent != null);
 
             try check_rules(ctx, Operation, in);
+
+            if (comptime operation.deprecation(Operation) != null) {
+                note_deprecated(ctx, Operation);
+            }
 
             var input = in;
 
@@ -664,25 +703,65 @@ pub fn SDK(comptime registry: Registry) type {
                     .inner = ctx,
                 };
 
-                return Operation.run(&wrapped, in, granted) catch |err| as_outcome(err);
+                return Operation.run(&wrapped, in, granted) catch |err| as_outcome(ctx.db, err);
             }
 
-            return Operation.run(ctx, in, granted) catch |err| as_outcome(err);
+            return Operation.run(ctx, in, granted) catch |err| as_outcome(ctx.db, err);
         }
 
-        /// The one place storage errors become outcomes: a broken constraint (a duplicate
-        /// key, a missing parent) is a conflict to the caller. Everything else passes as is.
-        fn as_outcome(err: Error) Error {
+        /// The one place storage errors become outcomes: a taken key or a reference (a
+        /// missing parent, a row still in use) is a conflict to the caller. A NOT NULL, a
+        /// CHECK or a column's type broken is the code and the database disagreeing: a
+        /// failure, logged with SQLite's words, never shown as a conflict.
+        fn as_outcome(connection: *db.Db, err: Error) Error {
             std.debug.assert(@errorName(err).len > 0);
 
             const outcome: Error = switch (err) {
-                error.Constraint => error.Conflict,
+                error.Constraint => switch (connection.constraint_broken()) {
+                    .unique, .reference => error.Conflict,
+                    .none, .not_null, .check, .datatype, .other => broken(connection),
+                },
                 else => err,
             };
 
             std.debug.assert(outcome != error.Constraint);
 
             return outcome;
+        }
+
+        /// A caller used an operation on its way out: logged with who it was, so whoever
+        /// runs the site finds the plugin, app or script to change before a major removes it.
+        fn note_deprecated(ctx: *const Ctx, comptime Operation: type) void {
+            const text = comptime operation.deprecation_text(Operation);
+
+            std.debug.assert(text.len > 0);
+
+            if (builtin.is_test) {
+                return;
+            }
+
+            const plugin_word = if (ctx.plugin.len > 0) ", plugin " else "";
+
+            std.log.warn("{s} (called by {s}{s}{s})", .{
+                text,
+                ctx.caller.label(),
+                plugin_word,
+                ctx.plugin,
+            });
+        }
+
+        fn broken(connection: *db.Db) Error {
+            const message = connection.message();
+
+            std.debug.assert(message.len > 0);
+
+            if (builtin.is_test) {
+                std.log.debug("database refused a write: {s}", .{message});
+            } else {
+                std.log.err("database refused a write: {s}", .{message});
+            }
+
+            return error.Sqlite;
         }
 
         fn invoke_hook(ctx: *Ctx, comptime Middleware: type, args: anytype) Error!void {
@@ -902,7 +981,7 @@ pub fn SDK(comptime registry: Registry) type {
                 .rejected, .failed => |failed| if (failed.operation_id != open.root) {
                     open.called(ctx, failed.operation_name, true);
                 },
-                .notice => |notice| open.noticed(ctx, .{
+                .notice => |notice| open.noticed(.{
                     .name = notice.name,
                     .subject = notice.subject,
                 }),
@@ -1204,6 +1283,10 @@ pub const testing = struct {
         buffer: []u8,
         fixed: std.heap.FixedBufferAllocator,
         auth: AuthState,
+        /// One scratch beside the one arena, shared by every context made here, as a
+        /// request's calls share theirs.
+        scratch_buffer: []u8,
+        scratch: scratch.Scratch,
 
         pub fn init(harness: *Harness) !void {
             std.debug.assert(harness_arena_bytes > 0);
@@ -1215,6 +1298,13 @@ pub const testing = struct {
             harness.buffer = try std.testing.allocator.alloc(u8, harness_arena_bytes);
             errdefer std.testing.allocator.free(harness.buffer);
 
+            harness.scratch_buffer = try std.testing.allocator.alloc(u8, scratch.bytes_default);
+            errdefer std.testing.allocator.free(harness.scratch_buffer);
+
+            harness.scratch = .{
+                .fixed = .init(harness.scratch_buffer),
+            };
+
             const params: AuthState.Options = .{
                 .params = auth_params_test,
             };
@@ -1223,7 +1313,10 @@ pub const testing = struct {
         }
 
         pub fn deinit(harness: *Harness) void {
+            std.debug.assert(harness.scratch_buffer.len == scratch.bytes_default);
+
             harness.auth.deinit();
+            std.testing.allocator.free(harness.scratch_buffer);
             std.testing.allocator.free(harness.buffer);
             harness.fixture.deinit();
         }
@@ -1232,13 +1325,17 @@ pub const testing = struct {
             std.debug.assert(harness.fixture.connection.transaction_depth == 0);
             std.debug.assert(harness.buffer.len == harness_arena_bytes);
 
-            return Ctx.init(.{
+            var made = Ctx.init(.{
                 .caller = who,
                 .db = &harness.fixture.connection,
                 .io = std.testing.io,
                 .arena = harness.fixed.allocator(),
                 .auth = &harness.auth,
             });
+
+            made.scratch_set_aside = &harness.scratch;
+
+            return made;
         }
     };
 
@@ -1676,11 +1773,13 @@ test "ctx.plugin: an operation's plugin, a hook's own, kept by a core call" {
         pub const example: In = .{};
         pub const example_out: Out = .{};
 
+        const Peeking = SDK(.{
+            .operations = &.{Peek},
+        });
+
         pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
             try Seen.note(ctx);
-            _ = try SDK(.{
-                .operations = &.{Peek},
-            }).dispatch(ctx, Peek, .{});
+            _ = try Peeking.dispatch(ctx, Peek, .{});
 
             return .{};
         }

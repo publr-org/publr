@@ -237,24 +237,54 @@ pub fn delete(connection: *db.Db, user_id: []const u8) db.Error!bool {
     return connection.changes() == 1;
 }
 
-pub fn list(connection: *db.Db, arena: std.mem.Allocator) db.Error![]User {
-    std.debug.assert(list_max > 0);
+/// Which accounts a page reads: the ones whose name or email holds `query` (every one when
+/// empty), oldest first, `limit` of them from `offset`.
+pub const Window = struct {
+    query: []const u8 = "",
+    offset: u32 = 0,
+    limit: u32,
+};
+
+const matching = " WHERE ?1 = '' OR instr(lower(display_name), lower(?1)) > 0 OR " ++
+    "instr(lower(email), lower(?1)) > 0";
+
+pub fn page(connection: *db.Db, arena: std.mem.Allocator, window: Window) db.Error![]User {
+    std.debug.assert(window.limit > 0 and window.limit <= list_max);
+    std.debug.assert(window.query.len <= 256);
 
     var select = try connection.prepare(
-        "SELECT " ++ select_columns ++ " ORDER BY created_at, email LIMIT " ++
-            std.fmt.comptimePrint("{d}", .{list_max}),
+        "SELECT " ++ select_columns ++ matching ++ " ORDER BY created_at, email LIMIT ?2 OFFSET ?3",
     );
     defer select.finalize();
+
+    try select.bind_text(1, window.query);
+    try select.bind_int(2, window.limit);
+    try select.bind_int(3, window.offset);
 
     var users: std.ArrayList(User) = .empty;
 
     while (try select.step()) {
-        std.debug.assert(users.items.len < list_max);
+        std.debug.assert(users.items.len < window.limit);
         const credentials = try read_row(connection, &select, arena);
         users.append(arena, credentials.user) catch return error.OutOfMemory;
     }
 
     return users.items;
+}
+
+/// How many accounts `query` matches, as `page` reads them.
+pub fn count_matching(connection: *db.Db, query: []const u8) db.Error!u32 {
+    std.debug.assert(query.len <= 256);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var select = try connection.prepare("SELECT count(*) FROM users" ++ matching);
+    defer select.finalize();
+
+    try select.bind_text(1, query);
+
+    std.debug.assert(try select.step());
+
+    return @intCast(select.read_int());
 }
 
 /// `select_columns`, in order.
@@ -347,8 +377,16 @@ test "insert, count, find by email/id, list; emails are unique" {
     });
     try std.testing.expectError(error.Constraint, duplicate);
 
-    const users = try list(&fixture.connection, arena);
+    const users = try page(&fixture.connection, arena, .{
+        .limit = 10,
+    });
     try std.testing.expectEqual(@as(usize, 1), users.len);
+    try std.testing.expectEqual(1, try count_matching(&fixture.connection, "ADA@"));
+    try std.testing.expectEqual(0, try count_matching(&fixture.connection, "grace"));
+    try std.testing.expectEqual(0, (try page(&fixture.connection, arena, .{
+        .offset = 1,
+        .limit = 10,
+    })).len);
 }
 
 test "pending user: no password, token lookup honours expiry, set_password activates" {

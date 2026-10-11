@@ -1,0 +1,74 @@
+import { Publr } from "publr-jsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export const state = Publr.reactive({ player: "", host: "" });
+
+/** Where a link plays from when it is a video the editor can show: YouTube's and Vimeo's
+ * players; empty for anything else. */
+const player_of = (address: string) => {
+  try {
+    const url = new URL(address);
+    const host = url.hostname.replace(/^www\./, "");
+    if (host === "youtube.com" && url.searchParams.get("v")) {
+      return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(url.searchParams.get("v") ?? "")}`;
+    }
+    if (host === "youtu.be" && url.pathname.length > 1) {
+      return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(url.pathname.slice(1))}`;
+    }
+    if (host === "vimeo.com" && /^\/\d+/.test(url.pathname)) {
+      return `https://player.vimeo.com/video/${url.pathname.slice(1).split("/")[0]}`;
+    }
+  } catch {
+    return "";
+  }
+  return "";
+};
+
+const host_of = (address: string) => {
+  try {
+    return new URL(address).hostname;
+  } catch {
+    return "";
+  }
+};
+
+const shown = (address: string) => {
+  state.player = player_of(address.trim());
+  state.host = state.player === "" ? host_of(address.trim()) : "";
+};
+
+export const typed = (event: Event) => {
+  shown((event.currentTarget as HTMLInputElement).value);
+};
+
+export const root = Publr.ref<HTMLElement>((element) => {
+  const input = element.querySelector("input");
+  if (input) shown(input.value);
+});
+
+export type FieldEmbedProps = {
+  id: string;
+  name: string;
+  value: string;
+  placeholder: string;
+};
+
+/** An embed field: the address of what is embedded, and below it a preview: the video for
+ * a YouTube or Vimeo link, the site it comes from for anything else. */
+export function FieldEmbed({ id, name, value, placeholder }: FieldEmbedProps) {
+  return (
+    <div class="flex flex-col gap-2" data-part="field-embed" ref={root}>
+      <Input id={id} name={name} type="url" value={value} placeholder={placeholder} onInput={typed} />
+      {state.player !== "" && (
+        <div class="aspect-video w-full max-w-xl overflow-hidden rounded-lg border border-border bg-muted">
+          <iframe src={state.player} title={Publr.t("Preview of the embed")} class="size-full" loading="lazy"
+            referrerpolicy="strict-origin-when-cross-origin" allow="fullscreen"></iframe>
+        </div>
+      )}
+      {state.host !== "" && (
+        <Text as="p" variant="body-sm" tone="muted">{Publr.t("Embeds from {host}", { host: state.host })}</Text>
+      )}
+    </div>
+  );
+}

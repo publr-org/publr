@@ -60,13 +60,12 @@ pub fn Of(comptime Domain: type) type {
                 )) .taxonomy else if (def.kind == .settings) .settings else .content,
                 .type = def.handle,
             });
-            var checked: [model.field.fields_max]model.field.Def = undefined;
             model.validate.validate_document(
                 known,
-                model.field_group.checked_fields(
+                try model.field_group.checked_fields(
+                    ctx.arena,
                     def.fields,
                     active,
-                    &checked,
                 ),
                 parsed,
                 ctx.now_ms,
@@ -155,30 +154,53 @@ pub fn Of(comptime Domain: type) type {
                 return;
             }
 
-            const buffer = try ctx.arena.create([model.document.flat_max]model.document.Flat);
-            const flattened = try model.document.flatten(
-                registry.Kinds.all,
-                def.fields,
-                document,
-                buffer,
-            );
+            const Checking = struct {
+                ctx: *Ctx,
+                fields: []const model.field.Def,
+                failed: ?Error = null,
 
-            for (flattened) |item| {
-                if (item.column != .ref) {
-                    continue;
+                // Each pointer checked as the walk reaches it: nothing is held for the
+                // whole document.
+                fn row(context: *anyopaque, item: model.document.Flat) model.document.Error!void {
+                    const checking: *@This() = @ptrCast(@alignCast(context));
+
+                    std.debug.assert(item.field.len > 0);
+
+                    if (item.column != .ref) {
+                        return;
+                    }
+
+                    const field = model.document.find_path(checking.fields, item.field) orelse {
+                        return error.Invalid;
+                    };
+                    const reference = std.mem.eql(u8, field.kind, "reference");
+                    const user = std.mem.eql(u8, field.kind, "user");
+                    const narrowed = field.options.reference.live_only or
+                        field.options.reference.public_only;
+
+                    if (user or (reference and narrowed)) {
+                        refuse_target(checking.ctx, field.*, item.value.text) catch |err| {
+                            checking.failed = err;
+                            return error.Invalid;
+                        };
+                    }
                 }
-                const field = model.document.find_path(
-                    def.fields,
-                    item.field,
-                ) orelse return error.Invalid;
-                const reference = std.mem.eql(u8, field.kind, "reference");
-                const user = std.mem.eql(u8, field.kind, "user");
-                if (user or (reference and (field.options.reference.live_only or
-                    field.options.reference.public_only)))
-                {
-                    try refuse_target(ctx, field.*, item.value.text);
+            };
+            var checking: Checking = .{
+                .ctx = ctx,
+                .fields = def.fields,
+            };
+
+            _ = model.document.each_row(registry.Kinds.all, def.fields, document, .{
+                .context = &checking,
+                .row = Checking.row,
+            }) catch |err| {
+                if (checking.failed) |failure| {
+                    return failure;
                 }
-            }
+
+                return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
+            };
         }
 
         fn refuse_target(ctx: *Ctx, field: model.field.Def, id: []const u8) Error!void {

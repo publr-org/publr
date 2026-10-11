@@ -32,10 +32,15 @@ pub const Brief = struct {
     owner: []const u8,
     editor: []const u8,
     fields_len: u32,
+    /// Where the type lives (empty: Global) and who it is shared with.
+    app: []const u8 = "",
+    shared: ?content_type.Shared = null,
 };
 
 pub fn Store(comptime tables: tables_module.Tables) type {
     return struct {
+        /// The tables this store's definitions and their documents live in.
+        pub const names = tables;
         const table = tables.definitions;
         const scope: groups.Scope = @field(groups.Scope, table);
         const encode = content_type.encode;
@@ -190,9 +195,40 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             return rows.items;
         }
 
+        /// The definitions whose `applies_to` names `handle` (a taxonomy applying to a type),
+        /// by name, at most `limit_count`.
+        pub fn applying_to(
+            connection: *db.Db,
+            arena: std.mem.Allocator,
+            handle: []const u8,
+            limit_count: u32,
+        ) Error![]Row {
+            std.debug.assert(handle.len > 0 and handle.len <= 128);
+            std.debug.assert(limit_count > 0 and limit_count <= list_max);
+
+            var select = try connection.prepare("SELECT " ++ select_columns ++ " WHERE EXISTS " ++
+                "(SELECT 1 FROM json_each(" ++ table ++ ".definition, '$.applies_to') " ++
+                "WHERE value = ?1) ORDER BY name, id LIMIT ?2");
+            defer select.finalize();
+
+            try select.bind_text(1, handle);
+            try select.bind_int(2, limit_count);
+
+            var rows: std.ArrayList(Row) = .empty;
+
+            while (try read_row(connection, &select, arena)) |row| {
+                std.debug.assert(rows.items.len < limit_count);
+                try rows.append(arena, row);
+            }
+
+            return rows.items;
+        }
+
         const brief_columns = "id, handle, name, json_extract(definition, '$.kind'), " ++
             "json_extract(definition, '$.public'), json_extract(definition, '$.system'), " ++
             "json_extract(definition, '$.owner'), json_extract(definition, '$.editor'), " ++
+            "coalesce(json_extract(definition, '$.app'), ''), " ++
+            "coalesce(json_extract(definition, '$.shared'), ''), " ++
             "(SELECT json_array_length(field_groups.definition, '$.fields') " ++
             "FROM field_groups WHERE scope = '" ++ table ++ "' AND owner = " ++ table ++
             ".id) FROM " ++ table;
@@ -206,6 +242,8 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             system: bool,
             owner: []const u8,
             editor: []const u8,
+            app: []const u8,
+            shared: []const u8,
             fields_len: i64,
         };
 
@@ -223,29 +261,115 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             while (try select.step()) {
                 std.debug.assert(briefs.items.len < list_max);
 
-                const columns = try select.read(BriefColumns, arena);
-                const kind = std.meta.stringToEnum(content_type.Kind, columns.kind) orelse {
-                    return error.Invalid;
-                };
-
-                if (columns.fields_len < 0 or columns.fields_len > field.fields_max) {
-                    return error.Invalid;
-                }
-
-                try briefs.append(arena, .{
-                    .id = columns.id,
-                    .handle = columns.handle,
-                    .name = columns.name,
-                    .kind = kind,
-                    .public = columns.public,
-                    .system = columns.system,
-                    .owner = columns.owner,
-                    .editor = columns.editor,
-                    .fields_len = @intCast(columns.fields_len),
-                });
+                try briefs.append(arena, try brief_read(&select, arena));
             }
 
             return briefs.items;
+        }
+
+        /// Where a reading of the definitions by name stands: after this name and id; the
+        /// empty one is before every definition.
+        pub const BriefKey = struct {
+            name: []const u8 = "",
+            id: []const u8 = "",
+        };
+
+        /// The next `limit` definitions after `after`, by name, for a reading that goes
+        /// through them in pages.
+        pub fn briefs_after(
+            connection: *db.Db,
+            arena: std.mem.Allocator,
+            after: BriefKey,
+            limit_count: u32,
+        ) Error![]Brief {
+            std.debug.assert(limit_count > 0 and limit_count <= list_max);
+            std.debug.assert(connection.transaction_depth <= 8);
+
+            var select = try connection.prepare("SELECT " ++ brief_columns ++
+                " WHERE (name, id) > (?1, ?2) ORDER BY name, id LIMIT ?3");
+            defer select.finalize();
+
+            try select.bind_text(1, after.name);
+            try select.bind_text(2, after.id);
+            try select.bind_int(3, limit_count);
+
+            var briefs: std.ArrayList(Brief) = .empty;
+
+            while (try select.step()) {
+                std.debug.assert(briefs.items.len < limit_count);
+
+                try briefs.append(arena, try brief_read(&select, arena));
+            }
+
+            return briefs.items;
+        }
+
+        /// One definition's brief, by id; null when there is none.
+        pub fn brief_by_id(
+            connection: *db.Db,
+            arena: std.mem.Allocator,
+            id: []const u8,
+        ) Error!?Brief {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(id.len <= 128);
+
+            var select = try connection.prepare("SELECT " ++ brief_columns ++ " WHERE id = ?1");
+            defer select.finalize();
+
+            try select.bind_text(1, id);
+
+            if (!try select.step()) {
+                return null;
+            }
+
+            return try brief_read(&select, arena);
+        }
+
+        fn brief_read(select: *db.Statement, arena: std.mem.Allocator) Error!Brief {
+            const columns = try select.read(BriefColumns, arena);
+
+            std.debug.assert(columns.id.len > 0);
+
+            const kind = std.meta.stringToEnum(content_type.Kind, columns.kind) orelse {
+                return error.Invalid;
+            };
+
+            if (columns.fields_len < 0 or columns.fields_len > field.fields_max) {
+                return error.Invalid;
+            }
+
+            return .{
+                .id = columns.id,
+                .handle = columns.handle,
+                .name = columns.name,
+                .kind = kind,
+                .public = columns.public,
+                .system = columns.system,
+                .owner = columns.owner,
+                .editor = columns.editor,
+                .fields_len = @intCast(columns.fields_len),
+                .app = columns.app,
+                .shared = try shared_of(arena, columns.shared),
+            };
+        }
+
+        /// The `shared` of a definition's JSON: absent, or the object `Shared` encodes to.
+        fn shared_of(arena: std.mem.Allocator, text: []const u8) Error!?content_type.Shared {
+            std.debug.assert(text.len <= content_type.definition_bytes_max);
+
+            if (text.len == 0) {
+                return null;
+            }
+
+            const options: std.json.ParseOptions = .{
+                .allocate = .alloc_always,
+            };
+
+            const Shared = content_type.Shared;
+
+            return std.json.parseFromSliceLeaky(Shared, arena, text, options) catch |err| {
+                return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
+            };
         }
 
         /// Deleting a definition cascades to its documents and values; the search index

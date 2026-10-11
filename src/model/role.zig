@@ -38,6 +38,7 @@ const editor_grants = [_][]const u8{
     "taxonomy.validate", "user.options",
     "project.status",    "project.impact",
     "identity.list",     "identity.unlink",
+    "design.moodboard",  "design.save_moodboard",
 };
 
 pub const core = [_]Role{

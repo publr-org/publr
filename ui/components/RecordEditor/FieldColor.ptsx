@@ -1,0 +1,49 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { ColorSwatchInput } from "@publr/ui/ColorSwatchInput.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+
+export const state = Publr.reactive({ value: "" });
+
+export const root = Publr.ref<HTMLElement>();
+
+/** A change the swatch or Clear made: the hex box follows, and the editor hears an edit. */
+const changed = (value: string) => {
+  state.value = value;
+  queueMicrotask(() => root.current?.dispatchEvent(new Event("input", { bubbles: true })));
+};
+
+export const picked = (event: Event) => {
+  changed((event.currentTarget as HTMLInputElement).value);
+};
+
+export const typed = (event: Event) => {
+  state.value = (event.currentTarget as HTMLInputElement).value.trim();
+};
+
+export const cleared = () => {
+  changed("");
+};
+
+export type FieldColorProps = {
+  id: string;
+  name: string;
+  value: string;
+  label: string;
+};
+
+/** A color field: the swatch to pick with, the hex to read and type, and a way to clear it.
+ * The hex box is what the form posts. */
+export function FieldColor({ id, name, value, label }: FieldColorProps) {
+  state.value = value;
+
+  return (
+    <div class="flex items-center gap-2" ref={root} data-part="field-color">
+      <ColorSwatchInput value={state.value} label={Publr.t("Pick {label}", { label })} onInput={picked} />
+      <Input id={id} name={name} value={state.value} placeholder="#rrggbb" onInput={typed} classes="max-w-40" />
+      {state.value !== "" && (
+        <Button type="button" hierarchy="tertiary" size="sm" onClick={cleared}>{Publr.t("Clear")}</Button>
+      )}
+    </div>
+  );
+}

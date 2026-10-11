@@ -8,7 +8,7 @@ a normal `record save` of its document. Signed-in callers only. Back to the [CLI
 
 | Command | What |
 |---|---|
-| `snapshot list --id <record> [--kind <k>] [--limit <n>]` | Oldest first; every kind when `--kind` is omitted |
+| `snapshot list --id <record> [--kind <k>] [--before <seq>] [--limit <n>] [--documents]` | Newest first, 50 a page (`--limit` up to 200, `--before` a page's `next_before`), each with its title; documents only with `--documents`; every kind when `--kind` is omitted |
 | `snapshot get --id <record> --seq <n>` | One snapshot with its document |
 | `snapshot take --id <record> --kind <k>` | Freeze the record's live document under your own kind (`order.completed`) |
 | `snapshot restore --id <record> --seq <n> [--expected_version <v>]` | Write that document back through `record save` (pending changes on a live record) |

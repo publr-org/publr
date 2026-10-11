@@ -6,6 +6,7 @@ const records = @import("../../../operations/record.zig");
 const list = @import("list.zig");
 const filters = @import("filters.zig");
 const display = @import("../display.zig");
+const section_columns = @import("section_columns.zig");
 
 const Props = admin.views.ContentList.Props;
 const Cell = admin.views.ContentList.CellsItem;
@@ -19,21 +20,26 @@ pub fn fill(props: *Props, page: *const list.Page, found: []const records.Record
 
     const arena = page.session.arena;
     const titles = try display.titles(&page.session.ctx, found);
+    const extra = try section_columns.of(page, found);
     var rows: std.ArrayList(Row) = .empty;
 
-    for (found, titles) |record, title| {
+    for (found, titles, 0..) |record, title, position| {
+        const own: []const []const u8 = if (extra) |columns| columns.cells[position] else &.{};
+
         try rows.append(arena, .{
             .id = record.id,
-            .cells = try cells_of(page, record, title, props.show_type),
+            .cells = try cells_of(page, record, title, props.show_type, own),
         });
     }
 
     props.rows = rows.items;
-    props.columns = try columns_of(page, props.show_type);
+    const own_fields = if (extra) |columns| columns.fields else &.{};
+
+    props.columns = try columns_of(page, props.show_type, own_fields);
     props.empty_text = if (page.effective.is_empty())
-        "No records yet. Create the first one."
+        try page.session.translated("No records yet. Create the first one.")
     else
-        "No records match these filters.";
+        try page.session.translated("No records match these filters.");
 }
 
 fn cells_of(
@@ -41,6 +47,7 @@ fn cells_of(
     record: records.Record,
     shown_title: []const u8,
     show_type: bool,
+    own: []const []const u8,
 ) Error![]const Cell {
     std.debug.assert(record.id.len > 0);
     std.debug.assert(page.session.signed_in());
@@ -54,6 +61,10 @@ fn cells_of(
     title.href = href;
     try cells.append(arena, title);
 
+    for (own, 0..) |text, index| {
+        try cells.append(arena, cell(own_ids[index], text));
+    }
+
     if (show_type) {
         try cells.append(arena, cell("type", type_name));
     }
@@ -64,13 +75,13 @@ fn cells_of(
     var workflow = cell("status", record.status);
     workflow.kind = "status";
     workflow.tone = tone_of(if (status) |found| found.color else .neutral);
-    workflow.extra = if (record.changed) "changed" else "";
+    workflow.extra = if (record.changed) try page.session.translated("changed") else "";
     workflow.extra_tone = "warning";
     try cells.append(arena, workflow);
     var updated = cell("updated", admin.time_text(arena, record.updated_at));
     updated.kind = "numeric";
     try cells.append(arena, updated);
-    var open = cell("open", "Open");
+    var open = cell("open", try page.session.translated("Open"));
     open.kind = "action";
     open.href = href;
     try cells.append(arena, open);
@@ -92,7 +103,14 @@ fn cell(id: []const u8, text: []const u8) Cell {
     };
 }
 
-fn columns_of(page: *const list.Page, show_type: bool) Error![]const Column {
+/// The ids of a section's own columns, after the title.
+const own_ids = [_][]const u8{ "own_0", "own_1", "own_2", "own_3" };
+
+fn columns_of(
+    page: *const list.Page,
+    show_type: bool,
+    own: []const section_columns.Field,
+) Error![]const Column {
     std.debug.assert(page.session.signed_in());
     std.debug.assert(page.effective.clauses.len <= model.view.clauses_max);
 
@@ -105,20 +123,24 @@ fn columns_of(page: *const list.Page, show_type: bool) Error![]const Column {
     var columns: std.ArrayList(Column) = .empty;
     try columns.append(arena, .{
         .id = "title",
-        .label = "Title",
+        .label = try page.session.translated("Title"),
         .href = try page.href(title),
         .active = order == .title_asc,
     });
 
-    if (show_type) {
-        try columns.append(arena, column("type", "Content type"));
+    for (own, 0..) |field, index| {
+        try columns.append(arena, column(own_ids[index], field.label));
     }
 
-    try columns.append(arena, column("slug", "Slug"));
-    try columns.append(arena, column("status", "Status"));
+    if (show_type) {
+        try columns.append(arena, column("type", try page.session.translated("Content type")));
+    }
+
+    try columns.append(arena, column("slug", try page.session.translated("Slug")));
+    try columns.append(arena, column("status", try page.session.translated("Status")));
     try columns.append(arena, .{
         .id = "updated",
-        .label = "Updated",
+        .label = try page.session.translated("Updated"),
         .href = try page.href(updated),
         .active = order == .updated_desc,
     });

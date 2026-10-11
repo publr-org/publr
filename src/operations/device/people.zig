@@ -231,9 +231,12 @@ pub const List = struct {
     pub const open = true;
     pub const In = struct {
         all: bool = false,
+        limit: u32 = 50,
+        offset: u32 = 0,
     };
     pub const Out = struct {
         devices: []const Item,
+        total: u32 = 0,
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -250,9 +253,12 @@ pub const List = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .all = "Every account's devices (administrators only)",
+        .limit = "How many at most; 50 when omitted, up to 200",
+        .offset = "How many to pass over first: the next page's start",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
-        .devices = "Up to 256, newest first",
+        .devices = "A page of them, newest first",
+        .total = "How many there are in all",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
@@ -262,8 +268,12 @@ pub const List = struct {
             return error.Denied;
         }
 
+        if (in.limit == 0 or in.limit > sdk.operation.page_limit_max) {
+            return error.Invalid;
+        }
+
         const owner: ?[]const u8 = if (in.all) null else user_id;
-        const found = try store.devices.list(ctx.db, ctx.arena, owner);
+        const found = try store.devices.page(ctx.db, ctx.arena, owner, in.offset, in.limit);
         const items = ctx.arena.alloc(Item, found.len) catch return error.OutOfMemory;
         const current: []const u8 = if (ctx.caller == .token) ctx.caller.token.id else "";
 
@@ -286,6 +296,7 @@ pub const List = struct {
 
         return .{
             .devices = items,
+            .total = try store.devices.count(ctx.db, owner),
         };
     }
 };

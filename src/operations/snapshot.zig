@@ -29,6 +29,9 @@ pub const Item = struct {
     kind: []const u8,
     at: i64,
     by: ?[]const u8,
+    /// The document's title; empty where it has none.
+    title: []const u8 = "",
+    /// The document; in a list, only when asked for.
     document: []const u8,
 };
 
@@ -43,15 +46,23 @@ const example_item: Item = .{
 
 pub const List = struct {
     pub const name = "snapshot.list";
-    pub const description = "List a record's snapshots, oldest first";
+    pub const description = "List a record's snapshots, newest first, a page at a time";
+    pub const details =
+        \\Each with its title; its document only with `documents`. `before` reads the page
+        \\older than a snapshot: a page's `next_before`.
+    ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         id: []const u8,
         kind: ?[]const u8 = null,
-        limit: u32 = 100,
+        before: i64 = 0,
+        limit: u32 = 50,
+        documents: bool = false,
     };
     pub const Out = struct {
         snapshots: []const Item,
+        /// Where the next page starts; 0 after the oldest.
+        next_before: i64 = 0,
     };
     pub const example: In = .{
         .id = example_id,
@@ -63,26 +74,51 @@ pub const List = struct {
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The record id",
         .kind = "Only this kind (`revision`, ...); every kind when omitted",
-        .limit = "How many, up to 1000",
+        .before = "Only the ones older than this sequence number: a page's `next_before`",
+        .limit = "How many, 50 when omitted, up to 200",
+        .documents = "Each snapshot's document too",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .snapshots = "Newest first: seq, kind, at, by, title, and the document when asked",
+        .next_before = "The next page's `before`; 0 after the oldest",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        if (in.limit == 0 or in.limit > snapshot.list_max) {
+        if (in.limit == 0 or in.limit > sdk.operation.page_limit_max or in.before < 0) {
             return error.Invalid;
         }
 
         const row = try access.load(ctx, in.id, granted) orelse return error.NotFound;
-        const rows = try snapshot.list(ctx.db, ctx.arena, row.id, in.kind, in.limit);
+        const type_row = try record.domain.definition.find(ctx, row.type) orelse {
+            return error.NotFound;
+        };
+        const rows = try snapshot.page(ctx.db, ctx.arena, row.id, .{
+            .kind = in.kind,
+            .before = in.before,
+            .limit = in.limit,
+            .documents = in.documents,
+            .title_field = type_row.def.title_field,
+        });
         const items = try ctx.arena.alloc(Item, rows.len);
 
-        for (rows, 0..) |found, index| {
-            items[index] = item_of(found);
+        for (rows, items) |found, *item| {
+            item.* = .{
+                .seq = found.seq,
+                .kind = found.kind,
+                .at = found.at,
+                .by = found.by,
+                .title = found.title,
+                .document = found.document,
+            };
         }
+
+        const full = rows.len == in.limit;
 
         return .{
             .snapshots = items,
+            .next_before = if (full) rows[rows.len - 1].seq else 0,
         };
     }
 };

@@ -216,18 +216,30 @@ pub fn list(
     arena: std.mem.Allocator,
     user_id: ?[]const u8,
 ) db.Error![]const Device {
+    return page(connection, arena, user_id, 0, listed_max);
+}
+
+/// `list`, `limit` of them from `offset`.
+pub fn page(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    user_id: ?[]const u8,
+    offset: u32,
+    limit: u32,
+) db.Error![]const Device {
     std.debug.assert(user_id == null or user_id.?.len > 0);
-    std.debug.assert(listed_max > 0);
+    std.debug.assert(limit > 0 and limit <= listed_max);
 
     var select = try connection.prepare(
         "SELECT " ++ columns_sql ++ " FROM devices " ++
             "WHERE revoked_at IS NULL AND (?1 IS NULL OR user_id = ?1) " ++
-            "ORDER BY created_at DESC, id DESC LIMIT " ++
-            std.fmt.comptimePrint("{d}", .{listed_max}),
+            "ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3",
     );
     defer select.finalize();
 
     try select.bind_optional_text(1, user_id);
+    try select.bind_int(2, limit);
+    try select.bind_int(3, offset);
 
     var found: std.ArrayList(Device) = .empty;
 
@@ -235,9 +247,25 @@ pub fn list(
         found.append(arena, try select.read(Device, arena)) catch return error.OutOfMemory;
     }
 
-    std.debug.assert(found.items.len <= listed_max);
+    std.debug.assert(found.items.len <= limit);
 
     return found.items;
+}
+
+/// How many devices `list` reads in all.
+pub fn count(connection: *db.Db, user_id: ?[]const u8) db.Error!u32 {
+    std.debug.assert(user_id == null or user_id.?.len > 0);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var select = try connection.prepare("SELECT count(*) FROM devices " ++
+        "WHERE revoked_at IS NULL AND (?1 IS NULL OR user_id = ?1)");
+    defer select.finalize();
+
+    try select.bind_optional_text(1, user_id);
+
+    std.debug.assert(try select.step());
+
+    return @intCast(select.read_int());
 }
 
 /// Stops a device working. False when it was unknown or already revoked.

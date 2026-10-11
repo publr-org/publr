@@ -10,6 +10,8 @@ const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const records = @import("../record.zig");
+const hinted = @import("query_dataset/hints.zig");
+const documents_module = @import("query_dataset/documents.zig");
 
 const groq = @import("../../lib/groq.zig");
 const Value = groq.Value;
@@ -18,7 +20,9 @@ const Grant = sdk.Grant;
 
 /// Records a query may read in all: past this it is refused, asking for less.
 pub const documents_max: u32 = 50_000;
-const page_size: u32 = records.list_max;
+/// Records read at once, in the request's scratch: a page with its working copies stays
+/// well inside it, and only what the filter keeps is copied out.
+const page_size: u32 = 20;
 
 pub const Type = struct {
     handle: []const u8,
@@ -60,46 +64,52 @@ pub const Source = struct {
     }
 
     fn everything(context: *anyopaque, arena: std.mem.Allocator) groq.DatasetError![]const Value {
-        return candidates(context, arena, &.{});
+        return candidates(context, arena, &.{}, null);
     }
 
-    /// The readable records the hints allow: of the hinted types (or every readable one),
-    /// the hinted ids, the first hinted field's value.
+    /// The readable records the hints allow that `keep` keeps: of the hinted types (or
+    /// every readable one), the hinted ids, the first hinted field's value.
     fn candidates(
         context: *anyopaque,
         arena: std.mem.Allocator,
         hints: []const groq.Hint,
+        keep: ?groq.Keep,
     ) groq.DatasetError![]const Value {
         const source = of(context);
         var documents: std.ArrayList(Value) = .empty;
-        const wanted_types = hint_values(hints, "_type");
+        const wanted_types = hinted.hint_values(hints, "_type");
 
         std.debug.assert(source.types.len <= 4096);
 
         if (wanted_types) |types| {
             for (source.out_of_reach) |handle| {
-                if (holds_string(types, handle)) {
+                if (hinted.holds_string(types, handle)) {
                     source.refused_type = handle;
                     return error.OutOfReach;
                 }
             }
         }
 
-        const ids = try id_list(arena, hints);
-        const field = field_hint(hints);
+        const ids = try hinted.id_list(arena, hints);
+        const field = hinted.field_hint(hints);
 
         for (source.types) |each| {
             if (wanted_types) |types| {
-                if (!holds_string(types, each.handle)) {
+                if (!hinted.holds_string(types, each.handle)) {
                     continue;
                 }
             }
 
-            try source.read_type(arena, each, ids, field, &documents);
+            try source.read_type(arena, .{
+                .type = each,
+                .ids = ids,
+                .field = field,
+                .keep = keep,
+            }, &documents);
         }
 
         // Ids are time-ordered: by id is the order records were made in, across types.
-        std.mem.sort(Value, documents.items, {}, by_id);
+        std.mem.sort(Value, documents.items, {}, documents_module.by_id);
 
         return documents.items;
     }
@@ -107,12 +117,13 @@ pub const Source = struct {
     fn read_type(
         source: *Source,
         arena: std.mem.Allocator,
-        each: Type,
-        ids: ?[]const []const u8,
-        field: ?groq.Hint,
+        read: Read,
         documents: *std.ArrayList(Value),
     ) groq.DatasetError!void {
-        const filter_value = if (field) |hint| text_of(arena, hint.values[0]) catch null else null;
+        const filter_value = if (read.field) |hint|
+            hinted.text_of(arena, hint.values[0]) catch null
+        else
+            null;
 
         const own = if (source.owner) |user_id|
             try std.fmt.allocPrint(arena, "created:by:{s}", .{user_id})
@@ -124,7 +135,10 @@ pub const Source = struct {
                 const clause = try std.fmt.allocPrint(arena, "status:is:{s}", .{status});
                 const clauses = try clauses_of(arena, clause, own);
 
-                try source.read_pages(arena, each, ids, field, filter_value, clauses, documents);
+                try source.read_pages(arena, read, .{
+                    .value = filter_value,
+                    .clauses = clauses,
+                }, documents);
             }
 
             return;
@@ -132,54 +146,112 @@ pub const Source = struct {
 
         const clauses = try clauses_of(arena, null, own);
 
-        try source.read_pages(arena, each, ids, field, filter_value, clauses, documents);
+        try source.read_pages(arena, read, .{
+            .value = filter_value,
+            .clauses = clauses,
+        }, documents);
     }
 
+    /// A type's records a page at a time, each page in the request's scratch: its documents
+    /// are built there, the ones `keep` keeps copied into `arena`, and the page given back.
+    /// A page that does not fit (records with many virtual children) is read again with
+    /// half as many records, down to one.
     fn read_pages(
         source: *Source,
         arena: std.mem.Allocator,
-        each: Type,
-        ids: ?[]const []const u8,
-        field: ?groq.Hint,
-        filter_value: ?[]const u8,
-        clauses: []const []const u8,
+        read: Read,
+        filter: Filter,
         documents: *std.ArrayList(Value),
     ) groq.DatasetError!void {
-        var offset: u32 = 0;
+        std.debug.assert(read.type.handle.len > 0);
+        std.debug.assert(filter.value == null or read.field != null);
 
-        while (true) {
-            const listed = registry.SDK.dispatch(source.ctx, records.List, .{
-                .type = each.handle,
-                .ids = ids orelse &.{},
-                .filters = clauses,
-                .filter_field = if (filter_value != null) field.?.attribute else null,
-                .filter_value = filter_value,
-                .order = .created_desc,
-                .limit = page_size,
+        var offset: u32 = 0;
+        var size: u32 = page_size;
+
+        while (source.read <= documents_max) {
+            const before = documents.items.len;
+            const count = source.read_page(arena, read, filter, .{
                 .offset = offset,
-                .documents = true,
-            }) catch |err| switch (err) {
-                error.OutOfMemory => return error.OutOfMemory,
-                error.NotFound, error.Denied, error.Invalid => return,
-                else => return error.DatasetFailed,
+                .size = size,
+            }, documents) catch |err| switch (err) {
+                error.OutOfMemory => {
+                    if (size == 1) {
+                        return error.OutOfMemory;
+                    }
+
+                    documents.shrinkRetainingCapacity(before);
+                    size /= 2;
+                    continue;
+                },
+                else => |other| return other,
             };
 
-            source.read += @intCast(listed.records.len);
+            source.read += count;
 
             if (source.read > documents_max) {
                 return error.TooMuchWork;
             }
 
-            for (listed.records, listed.documents) |record, document| {
-                try documents.append(arena, try document_of(arena, record, document, source.mask));
-            }
-
-            if (listed.records.len < page_size) {
+            if (count < size) {
                 return;
             }
 
-            offset += page_size;
+            offset += size;
         }
+
+        return error.TooMuchWork;
+    }
+
+    /// One page: how many records it read.
+    fn read_page(
+        source: *Source,
+        arena: std.mem.Allocator,
+        read: Read,
+        filter: Filter,
+        window: Window,
+        documents: *std.ArrayList(Value),
+    ) groq.DatasetError!u32 {
+        std.debug.assert(window.size > 0 and window.size <= page_size);
+
+        const scratch = try source.ctx.scratch();
+        const begun = scratch.mark();
+        defer scratch.rewind(begun);
+
+        const page = scratch.allocator();
+        var paged = source.ctx.*;
+
+        paged.arena = page;
+        defer source.ctx.next_operation_id = paged.next_operation_id;
+
+        const listed = registry.SDK.dispatch(&paged, records.List, .{
+            .type = read.type.handle,
+            .ids = read.ids orelse &.{},
+            .filters = filter.clauses,
+            .filter_field = if (filter.value != null) read.field.?.attribute else null,
+            .filter_value = filter.value,
+            .order = .created_desc,
+            .limit = window.size,
+            .offset = window.offset,
+            .documents = true,
+        }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.NotFound, error.Denied, error.Invalid => return 0,
+            else => return error.DatasetFailed,
+        };
+
+        std.debug.assert(listed.records.len <= window.size);
+
+        for (listed.records, listed.documents) |record, text| {
+            const document = try documents_module.document_of(page, record, text, source.mask);
+            const kept = if (read.keep) |keep| try keep.of(document) else true;
+
+            if (kept) {
+                try documents.append(arena, try groq.values.copy(arena, document));
+            }
+        }
+
+        return @intCast(listed.records.len);
     }
 
     fn find(
@@ -198,15 +270,23 @@ pub const Source = struct {
         ids[0] = id;
 
         const stored = store.records.get(source.ctx.db, arena, id) catch return error.DatasetFailed;
-        const row = stored orelse return .missing;
+
+        if (stored == null) {
+            return restricted(source, arena, id, .missing);
+        }
+
+        const row = stored.?;
         const readable = type_named(source.types, row.type) orelse {
-            return .{
+            return restricted(source, arena, id, .{
                 .unreadable = "type",
-            };
+            });
         };
         var found: std.ArrayList(Value) = .empty;
 
-        try source.read_type(arena, readable, ids, null, &found);
+        try source.read_type(arena, .{
+            .type = readable,
+            .ids = ids,
+        }, &found);
 
         if (found.items.len == 1) {
             return .{
@@ -214,19 +294,63 @@ pub const Source = struct {
             };
         }
 
-        const statuses = source.live orelse return .{
+        const statuses = source.live orelse return restricted(source, arena, id, .{
             .unreadable = "owner",
-        };
+        });
         var live = false;
 
         for (statuses) |status| {
             live = live or std.mem.eql(u8, status, row.status);
         }
 
-        return .{
+        return restricted(source, arena, id, .{
             .unreadable = if (live) "owner" else "status",
+        });
+    }
+
+    /// A reference the reader may not follow: what stands in its place (its type and why),
+    /// else `otherwise` (not published yet).
+    fn restricted(
+        source: *Source,
+        arena: std.mem.Allocator,
+        id: []const u8,
+        otherwise: groq.Found,
+    ) groq.DatasetError!groq.Found {
+        std.debug.assert(id.len > 0);
+        std.debug.assert(otherwise != .document);
+
+        const reach = @import("reach.zig");
+        const why = reach.explain(source.ctx, source.granted, id) catch return error.DatasetFailed;
+
+        if (why.reason == null) {
+            return otherwise;
+        }
+
+        const json = try reach.payload(arena, why);
+
+        return .{
+            .document = try groq.values.from_json(arena, json),
         };
     }
+};
+
+/// What one type's read asks for: its ids, one field's value, and what to keep.
+const Read = struct {
+    type: Type,
+    ids: ?[]const []const u8 = null,
+    field: ?groq.Hint = null,
+    keep: ?groq.Keep = null,
+};
+
+/// What every page of a read filters on: one field's value, the status and owner clauses.
+const Filter = struct {
+    value: ?[]const u8,
+    clauses: []const []const u8,
+};
+
+const Window = struct {
+    offset: u32,
+    size: u32,
 };
 
 fn clauses_of(
@@ -247,15 +371,6 @@ fn clauses_of(
     return clauses.items;
 }
 
-fn by_id(_: void, left: Value, right: Value) bool {
-    std.debug.assert(left == .object and right == .object);
-
-    const left_id = left.object.get("_id").?.string;
-    const right_id = right.object.get("_id").?.string;
-
-    return std.mem.order(u8, left_id, right_id) == .lt;
-}
-
 fn type_named(types: []const Type, handle: []const u8) ?Type {
     std.debug.assert(handle.len > 0);
 
@@ -266,144 +381,4 @@ fn type_named(types: []const Type, handle: []const u8) ?Type {
     }
 
     return null;
-}
-
-fn hint_values(hints: []const groq.Hint, attribute: []const u8) ?[]const Value {
-    std.debug.assert(attribute.len > 0);
-
-    for (hints) |hint| {
-        if (std.mem.eql(u8, hint.attribute, attribute)) {
-            return hint.values;
-        }
-    }
-
-    return null;
-}
-
-fn holds_string(values: []const Value, wanted: []const u8) bool {
-    std.debug.assert(wanted.len > 0);
-
-    for (values) |held| {
-        if (held == .string and std.mem.eql(u8, held.string, wanted)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-fn id_list(
-    arena: std.mem.Allocator,
-    hints: []const groq.Hint,
-) error{OutOfMemory}!?[]const []const u8 {
-    const values = hint_values(hints, "_id") orelse return null;
-    var ids: std.ArrayList([]const u8) = .empty;
-
-    for (values) |held| {
-        if (held == .string and held.string.len <= 64) {
-            try ids.append(arena, held.string);
-        }
-    }
-
-    if (ids.items.len == 0 or ids.items.len > records.list_max) {
-        return null;
-    }
-
-    return ids.items;
-}
-
-/// The first hint on one of the record's own fields with a single value.
-fn field_hint(hints: []const groq.Hint) ?groq.Hint {
-    std.debug.assert(hints.len <= 64);
-
-    for (hints) |hint| {
-        const own = hint.attribute.len > 0 and hint.attribute[0] != '_';
-
-        if (own and hint.values.len == 1) {
-            return hint;
-        }
-    }
-
-    return null;
-}
-
-/// A value as `filter_value` takes it: text as it is, numbers and booleans written out.
-fn text_of(arena: std.mem.Allocator, value: Value) ![]const u8 {
-    std.debug.assert(value != .number or std.math.isFinite(value.number));
-
-    return switch (value) {
-        .string => |text| text,
-        .boolean => |truth| if (truth) "true" else "false",
-        .number => |number| blk: {
-            var out: std.Io.Writer.Allocating = .init(arena);
-
-            groq.values.write_number(&out.writer, number) catch return error.OutOfMemory;
-
-            break :blk out.written();
-        },
-        else => error.OutOfMemory,
-    };
-}
-
-/// A record as a query sees it: its columns as `_` attributes, then its fields as stored.
-fn document_of(
-    arena: std.mem.Allocator,
-    record: records.Record,
-    text: []const u8,
-    mask: []const []const u8,
-) groq.DatasetError!Value {
-    var builder: groq.values.ObjectBuilder = .{};
-    var buffer: [40]u8 = undefined;
-
-    try builder.put(arena, "_id", .{
-        .string = record.id,
-    });
-    try builder.put(arena, "_type", .{
-        .string = record.type,
-    });
-    try builder.put(arena, "_createdAt", .{
-        .string = try arena.dupe(u8, groq.datetimes.format(&buffer, .{
-            .seconds = @divFloor(record.created_at, 1000),
-            .nanoseconds = @intCast(@mod(record.created_at, 1000) * 1_000_000),
-        })),
-    });
-    try builder.put(arena, "_updatedAt", .{
-        .string = try arena.dupe(u8, groq.datetimes.format(&buffer, .{
-            .seconds = @divFloor(record.updated_at, 1000),
-            .nanoseconds = @intCast(@mod(record.updated_at, 1000) * 1_000_000),
-        })),
-    });
-
-    const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch {
-        return error.DatasetFailed;
-    };
-    const converted = try groq.values.from_json(arena, parsed);
-
-    if (converted == .object) {
-        for (converted.object.keys, converted.object.values) |key, held| {
-            if (!hidden(mask, key)) {
-                try builder.put(arena, key, held);
-            }
-        }
-    }
-
-    return .{
-        .object = builder.object(),
-    };
-}
-
-/// Whether the grant hides a field: named itself, or a field inside it (`seo.title` hides
-/// `seo`, the safe way round).
-fn hidden(mask: []const []const u8, key: []const u8) bool {
-    std.debug.assert(key.len > 0);
-
-    for (mask) |path| {
-        const top = path[0 .. std.mem.indexOfScalar(u8, path, '.') orelse path.len];
-
-        if (std.mem.eql(u8, top, key)) {
-            return true;
-        }
-    }
-
-    return false;
 }

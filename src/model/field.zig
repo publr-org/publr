@@ -10,7 +10,18 @@ pub const pattern = @import("field/pattern.zig");
 pub const name_len_max: u32 = 64;
 pub const label_len_max: u32 = 128;
 pub const help_len_max: u32 = 255;
-pub const fields_max: u32 = 64;
+/// Fields at one level of a type: the build's limit (`limits.zig`).
+pub const fields_max: u32 = @import("limits.zig").type_fields_max;
+/// What a type past it is told: the limit, and what to do.
+pub const too_many_fields = std.fmt.comptimePrint(
+    "too many fields: a type holds at most {d} at one level; group some into a group " ++
+        "or repeater, which holds as many again",
+    .{fields_max},
+);
+pub const too_many_children = std.fmt.comptimePrint(
+    "too many fields inside: a group or repeater holds at most {d}",
+    .{fields_max},
+);
 pub const depth_max: u32 = 3;
 pub const choices_max: u32 = 256;
 pub const targets_max: u32 = 64;
@@ -29,6 +40,9 @@ pub const Def = struct {
     /// No two records of the type may hold the same value; a text value held once.
     unique: bool = false,
     searchable: bool = false,
+    /// Holds a value per variant beside the main one (`name@pl`, see `variant.zig`): what a
+    /// variant is belongs to the plugin that declares the dimension, a language for one.
+    variants: bool = false,
     /// Declared in code by the type's owner: shown, never edited or removed by hand.
     locked: bool = false,
     many: bool = false,
@@ -220,7 +234,7 @@ fn validate_defs_in(
     std.debug.assert(problems.len <= problems_max);
 
     if (defs.len > fields_max) {
-        problems.add("fields", "too many fields");
+        problems.add("fields", too_many_fields);
 
         return;
     }
@@ -424,7 +438,7 @@ fn validate_shape(kind: kinds.Kind, def: Def, problems: *Problems) void {
     }
 
     if (def.fields.len > fields_max) {
-        problems.add(def.name, "too many child fields");
+        problems.add(def.name, too_many_children);
         return;
     }
 
@@ -800,7 +814,7 @@ test "unique, help, default and the kind's own option rules" {
             .kind = "media",
             .options = .{
                 .media = .{
-                    .types = &.{"font"},
+                    .types = &.{"typeface"},
                     .create = false,
                     .link = false,
                 },

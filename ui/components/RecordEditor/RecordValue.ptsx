@@ -1,5 +1,7 @@
+import { Publr } from "publr-jsx";
 import { ChoiceButton } from "@publr/ui/ChoiceButton.ptsx";
 import { FieldControl } from "../FieldControl.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
 import { Radio } from "@publr/ui/Radio.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
@@ -22,6 +24,7 @@ export type RecordValueProps = {
   card_status: string;
   card_tone: string;
   card_href: string;
+  formats: string;
   delete_note?: string;
   remove: string;
   up: string;
@@ -31,6 +34,24 @@ export type RecordValueProps = {
     label: string;
     selected: boolean;
   }>;
+  /** A media value inside a group or a repeater: what RecordMedia shows and takes. */
+  files?: Array<{
+    id: string;
+    title: string;
+    thumb: string;
+    image: boolean;
+    kind: string;
+    icon: "video" | "audio" | "file";
+    facts: string;
+    missing: boolean;
+    slot: string;
+    place: string;
+    first: boolean;
+    last: boolean;
+  }>;
+  types?: Array<{ id: string; label: string }>;
+  accept?: string;
+  can_upload?: boolean;
 };
 
 export function RecordValue({
@@ -52,11 +73,16 @@ export function RecordValue({
   card_status,
   card_tone,
   card_href,
+  formats,
   delete_note = "",
   remove,
   up,
   down,
   options,
+  files = [],
+  types = [],
+  accept = "",
+  can_upload = true,
 }: RecordValueProps) {
   return (
     <FieldControl
@@ -78,14 +104,26 @@ export function RecordValue({
       card_status={card_status}
       card_tone={card_tone}
       card_href={card_href}
+      formats={formats}
       delete_note={delete_note}
       remove={remove}
       up={up}
       down={down}
+      files={files}
+      types={types}
+      accept={accept}
+      can_upload={can_upload}
     >
       {control === "buttons"
         ? options.map((option) => (
             <ChoiceButton name={name} value={option.value} label={option.label} checked={option.selected} />
+          ))
+        : control === "rating"
+        ? options.map((option) => (
+            <label class="cursor-pointer p-0.5 text-muted-foreground/40 transition-colors" title={option.label}>
+              <input type="radio" class="sr-only" name={name} value={option.value} checked={option.selected} aria-label={Publr.t("{rating} of {count}", { rating: option.label, count: options.length })} />
+              <Icon name="star" size="lg" />
+            </label>
           ))
         : control === "radios"
         ? options.map((option) => (

@@ -1,13 +1,20 @@
+import { Publr } from "publr-jsx";
 import { ChoiceButton } from "@publr/ui/ChoiceButton.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
 import { FieldRow } from "@publr/ui/FieldRow.ptsx";
 import { Heading } from "@publr/ui/Heading.ptsx";
+import { MultiSelect } from "@publr/ui/MultiSelect.ptsx";
+import { MultiSelectContent } from "@publr/ui/MultiSelectContent.ptsx";
+import { MultiSelectItem } from "@publr/ui/MultiSelectItem.ptsx";
 import { PanelTab } from "@publr/ui/PanelTab.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
 import { onLayoutTab } from "../RecordEditor.ptsx";
 import { RecordGroup } from "./RecordGroup.ptsx";
 import { RecordMany } from "./RecordMany.ptsx";
+import { RecordList } from "./RecordList.ptsx";
+import { RecordMedia } from "./RecordMedia.ptsx";
 import { RecordRepeater } from "./RecordRepeater.ptsx";
 import { RecordSingle } from "./RecordSingle.ptsx";
 
@@ -27,6 +34,11 @@ export type RecordFieldsProps = {
     help: string;
     /** A group or repeater folded away until opened. */
     collapsed: boolean;
+    /** A group past the fold, drawn without its parts: its value rides in `json_value`
+     * until it is opened. */
+    closed: boolean;
+    /** A group past the fold that was opened: kept open when the editor is drawn again. */
+    opened: boolean;
     /** A reference: which of the two ways of adding a record the field offers, and
      * `:live` on the link button's id when only live records may be picked. */
     can_create: boolean;
@@ -34,7 +46,7 @@ export type RecordFieldsProps = {
     live_suffix: string;
     /** A virtual field's `&via=..&parent=..`, carried to the drawer it opens. */
     opener_query: string;
-    /** single, many, checks, group, repeater, json */
+    /** single, many, media, multiselect, checks, group, repeater, json */
     shape: string;
     /** A select drawn as checkboxes: one per choice, named by the choice's index. */
     choices: Array<{ name: string; value: string; label: string; selected: boolean }>;
@@ -43,6 +55,8 @@ export type RecordFieldsProps = {
     /** The reshape action that appends a value or an item, and its button's label. */
     add: string;
     add_label: string;
+    /** A repeater past the fold whose items are all listed: kept so when drawn again. */
+    listed: boolean;
     /** A list of references: the record to add is picked from the target type's records. */
     has_pick: boolean;
     /** The type a reference field points at, by handle. */
@@ -52,6 +66,30 @@ export type RecordFieldsProps = {
     any_type: boolean;
     pick_search: boolean;
     first_handle: string;
+    /** A media field: a gallery or one file, the families its rules take (with their
+     * labels; none for any), what the file chooser offers, whether new files may be
+     * uploaded, and the files it holds. */
+    many: boolean;
+    /** A list of plain values edited in the browser: the input it takes (`text`, `number`,
+     * `date`, `textarea`...); its values come as `choices`. */
+    list_type: string;
+    types: Array<{ id: string; label: string }>;
+    accept: string;
+    can_upload: boolean;
+    files: Array<{
+      id: string;
+      title: string;
+      thumb: string;
+      image: boolean;
+      kind: string;
+      icon: "video" | "audio" | "file";
+      facts: string;
+      missing: boolean;
+      slot: string;
+      place: string;
+      first: boolean;
+      last: boolean;
+    }>;
     items: Array<{
       name: string;
       label: string;
@@ -73,6 +111,7 @@ export type RecordFieldsProps = {
       card_status: string;
       card_tone: string;
       card_href: string;
+      formats: string;
       id: string;
       title: string;
       type_label: string;
@@ -109,15 +148,41 @@ export type RecordFieldsProps = {
       card_status: string;
       card_tone: string;
       card_href: string;
+      formats: string;
       remove: string;
       up: string;
       down: string;
       part_options: Array<{ value: string; label: string; selected: boolean }>;
+      files: Array<{
+        id: string;
+        title: string;
+        thumb: string;
+        image: boolean;
+        kind: string;
+        icon: "video" | "audio" | "file";
+        facts: string;
+        missing: boolean;
+        slot: string;
+        place: string;
+        first: boolean;
+        last: boolean;
+      }>;
+      types: Array<{ id: string; label: string }>;
+      accept: string;
+      can_upload: boolean;
     }>;
     entries: Array<{
       name: string;
       /** What names the item in its header: the label field's value, or its number. */
       label: string;
+      /** Past the fold: drawn as one line without its cells, its value as JSON until it is
+       * opened. A run (`faq[10+]`) stands for every item from there on, its values a JSON
+       * list, until the repeater's items are all listed. */
+      closed: boolean;
+      run: boolean;
+      value_json: string;
+      /** Past the fold and opened: kept open when the editor is drawn again. */
+      opened: boolean;
       remove: string;
       up: string;
       down: string;
@@ -145,10 +210,28 @@ export type RecordFieldsProps = {
         card_status: string;
         card_tone: string;
         card_href: string;
+        formats: string;
         remove: string;
         up: string;
         down: string;
         cell_options: Array<{ value: string; label: string; selected: boolean }>;
+        files: Array<{
+          id: string;
+          title: string;
+          thumb: string;
+          image: boolean;
+          kind: string;
+          icon: "video" | "audio" | "file";
+          facts: string;
+          missing: boolean;
+          slot: string;
+          place: string;
+          first: boolean;
+          last: boolean;
+        }>;
+        types: Array<{ id: string; label: string }>;
+        accept: string;
+        can_upload: boolean;
       }>;
     }>;
   }>;
@@ -170,7 +253,7 @@ export function RecordFields({
       <div data-conditions={field.conditions} data-field-path={field.name} data-value-kind={field.value_kind}
         data-layout-kind={field.shape}
         data-group-active={group_visible ? "true" : "false"}
-        hidden={!group_visible || field.shape === "fixed"}
+        hidden={!group_visible || field.shape === "fixed" || field.name.includes("@")}
         data-labels={group_labels} data-instructions={group_instructions}>
         <FieldRow
           label={field.shape !== "group" && field.shape !== "repeater" && field.shape !== "tab" && field.shape !== "accordion" && field.shape !== "message" && field.shape !== "fixed" ? field.label : ""}
@@ -202,6 +285,22 @@ export function RecordFields({
             ))}
           </div>
         )}
+        {field.shape === "list" && (
+          <RecordList name={field.name} type={field.list_type} values={field.choices} add_label={field.add_label} />
+        )}
+        {field.shape === "multiselect" && (
+          <div>
+            <input type="hidden" name={field.name} value="" />
+            <MultiSelect id={`field-${field.name}`} name={field.name} defaultValues={field.json_value}
+              placeholder={Publr.t("Choose…")} label={field.label}>
+              <MultiSelectContent>
+                {field.choices.map((choice) => (
+                  <MultiSelectItem value={choice.value}>{choice.label}</MultiSelectItem>
+                ))}
+              </MultiSelectContent>
+            </MultiSelect>
+          </div>
+        )}
         {field.shape === "json" && (
           <Textarea
             id={`field-${field.name}`}
@@ -212,7 +311,7 @@ export function RecordFields({
             mono
           />
         )}
-        {field.shape === "json" && <FieldDescription>Edited as JSON.</FieldDescription>}
+        {field.shape === "json" && <FieldDescription>{Publr.t("Edited as JSON.")}</FieldDescription>}
         {field.shape === "fixed" && <input type="hidden" name={field.name} value={field.json_value} />}
         {field.shape === "single" && (
           <RecordSingle
@@ -242,25 +341,44 @@ export function RecordFields({
             targets={field.targets}
           />
         )}
+        {field.shape === "media" && (
+          <RecordMedia
+            name={field.name}
+            many={field.many}
+            types={field.types}
+            accept={field.accept}
+            can_upload={field.can_upload}
+            files={field.files}
+          />
+        )}
         {field.shape === "group" && (
           <RecordGroup
+            name={field.name}
             label={field.label}
             required={field.required}
             collapsed={field.collapsed}
+            closed={field.closed}
+            opened={field.opened}
+            value_json={field.json_value}
             parts={field.parts}
           />
         )}
         {field.shape === "repeater" && (
           <RecordRepeater
+            name={field.name}
             label={field.label}
             required={field.required}
             collapsed={field.collapsed}
             entries={field.entries}
+            listed={field.listed}
             add={field.add}
             add_label={field.add_label}
           />
         )}
-        </FieldRow></div>
+        </FieldRow>
+        <div data-part="shared-mark" hidden>
+          <Text as="p" variant="body-sm" tone="muted">{Publr.t("Same in every language")}</Text>
+        </div></div>
     ))}
     </>
   );

@@ -9,6 +9,7 @@ pub const view_pages = @import("content/views.zig");
 pub const list = list_page.list;
 pub const new_page = form_pages.new_page;
 pub const create = form_pages.create;
+pub const cells = form_pages.cells;
 pub const edit = form_pages.edit;
 pub const save = form_pages.save;
 pub const new_editor = form_pages.new_editor;

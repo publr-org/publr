@@ -58,7 +58,9 @@ fn type_pill(page: *const Page) Error!Pill {
     var options: std.ArrayList(Option) = .empty;
 
     for (page.types) |summary| {
-        if (summary.kind != .record or model.media.is_library(summary.handle)) {
+        const hidden = model.design.is_design(summary.handle);
+
+        if (summary.kind != .record or hidden) {
             continue;
         }
 
@@ -77,24 +79,28 @@ fn type_pill(page: *const Page) Error!Pill {
     cleared.types = &.{};
 
     const label = if (chosen.len == 0)
-        "Any"
+        try page.session.translated("Any")
     else if (chosen.len == 1)
         (if (page.type_named(chosen[0])) |found| found.name else chosen[0])
     else
-        try std.fmt.allocPrint(arena, "{d} types", .{chosen.len});
+        try page.session.translated_count("{count} type", "{count} types", chosen.len);
+
+    const only = try page.session.arena.alloc(Operator, 1);
+
+    only[0] = .{
+        .label = try page.session.declared("is"),
+        .href = "",
+        .selected = true,
+    };
 
     return .{
         .id = "filter-type",
         .name = "types",
-        .label = "Content type",
-        .operator = "is",
+        .label = try page.session.translated("Content type"),
+        .operator = try page.session.declared("is"),
         .operator_id = "is",
         .operator_name = "types_operator",
-        .operators = &.{.{
-            .label = "is",
-            .href = "",
-            .selected = true,
-        }},
+        .operators = only,
         .value = label,
         .value_kind = "choice",
         .day = "",
@@ -141,7 +147,10 @@ fn pill_of(page: *const Page, def: Definition, clause: Clause, index: u32) Error
     const operator = def.operator(clause.operator) orelse def.operators[0];
     const choices = try choices_of(page, def, operator);
     var options: std.ArrayList(Option) = .empty;
-    var value: []const u8 = if (operator.takes == .day) "Pick a day" else "Any";
+    var value: []const u8 = if (operator.takes == .day)
+        try page.session.translated("Pick a day")
+    else
+        try page.session.translated("Any");
 
     for (choices) |choice| {
         const selected = std.mem.eql(u8, choice.id, clause.value);
@@ -156,7 +165,7 @@ fn pill_of(page: *const Page, def: Definition, clause: Clause, index: u32) Error
         }
 
         options.append(arena, .{
-            .label = choice.label,
+            .label = try page.session.declared(choice.label),
             .href = try page.href(try model.view.with(arena, page.effective, index, chosen)),
             .selected = selected,
         }) catch return error.OutOfMemory;
@@ -171,8 +180,8 @@ fn pill_of(page: *const Page, def: Definition, clause: Clause, index: u32) Error
     return .{
         .id = try std.fmt.allocPrint(arena, "filter-{s}-{s}", .{ def.key, operator.slot }),
         .name = def.key,
-        .label = def.label,
-        .operator = operator.label,
+        .label = try page.session.declared(def.label),
+        .operator = try page.session.declared(operator.label),
         .operator_id = operator.id,
         .operator_name = try std.fmt.allocPrint(arena, "{s}_operator", .{def.key}),
         .operators = try operators_of(page, def, clause, index),
@@ -216,7 +225,7 @@ fn choices_of(
 
     out.append(arena, .{
         .id = "",
-        .label = "Any",
+        .label = try page.session.translated("Any"),
     }) catch return error.OutOfMemory;
 
     switch (def.source) {
@@ -226,7 +235,7 @@ fn choices_of(
             for (registry.Statuses.all) |status| {
                 out.append(arena, .{
                     .id = status.id,
-                    .label = status.label,
+                    .label = try page.session.declared(status.label),
                 }) catch {
                     return error.OutOfMemory;
                 };
@@ -308,7 +317,7 @@ fn operators_of(
         }
 
         out.append(arena, .{
-            .label = operator.label,
+            .label = try page.session.declared(operator.label),
             .href = try page.href(try model.view.with(arena, page.effective, index, kept)),
             .selected = std.mem.eql(u8, operator.id, clause.operator),
         }) catch return error.OutOfMemory;
@@ -344,6 +353,10 @@ fn adders(page: *const Page) Error![]const views.ContentList.Add_filtersItem {
     var items: std.ArrayList(views.ContentList.Add_filtersItem) = .empty;
 
     for (registry.Filters.all) |def| {
+        if (!def.offered) {
+            continue;
+        }
+
         var fresh: ?Clause = null;
 
         for (def.operators) |operator| {
@@ -363,7 +376,7 @@ fn adders(page: *const Page) Error![]const views.ContentList.Add_filtersItem {
 
         const clause = fresh orelse {
             items.append(arena, .{
-                .label = def.label,
+                .label = try page.session.declared(def.label),
                 .href = "",
                 .added = true,
             }) catch {
@@ -380,7 +393,7 @@ fn adders(page: *const Page) Error![]const views.ContentList.Add_filtersItem {
         };
 
         items.append(arena, .{
-            .label = def.label,
+            .label = try page.session.declared(def.label),
             .href = href,
             .added = false,
         }) catch {

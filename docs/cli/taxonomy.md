@@ -19,7 +19,7 @@ users may read taxonomies; changing them needs an admin. Back to the
 | `taxonomy create --definition <json>` | Create a taxonomy; admins only |
 | `taxonomy update --taxonomy <handle\|id> --definition <json> [--drop_content true]` | Change a taxonomy; existing terms follow as records follow a type change; turning `hierarchical` off is refused while any term has a parent; a type dropped from `applies_to` loses its records' terms of this taxonomy |
 | `taxonomy get --taxonomy <handle\|id>` | Read the full definition |
-| `taxonomy list` | List taxonomies |
+| `taxonomy list [--limit <n>] [--offset <n>]` | List taxonomies by name, 50 a page (`--limit` up to 200); `total` counts them all |
 | `taxonomy delete --taxonomy <handle\|id> [--force true]` | Delete; refuses while terms exist unless forced |
 | `taxonomy validate --definition <json>` | Report every problem without saving |
 

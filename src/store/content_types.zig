@@ -20,7 +20,11 @@ pub const get_by_id = Store.get_by_id;
 pub const get_by_handle = Store.get_by_handle;
 pub const list = Store.list;
 pub const list_briefs = Store.list_briefs;
+pub const briefs_after = Store.briefs_after;
+pub const brief_by_id = Store.brief_by_id;
+pub const BriefKey = Store.BriefKey;
 pub const delete = Store.delete;
+pub const names = Store.names;
 
 const test_post = content_type.test_post;
 

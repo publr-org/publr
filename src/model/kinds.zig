@@ -16,7 +16,8 @@ pub const Storage = enum { text, int, real, ref, long, bool, none };
 
 /// The control the record form draws for the kind; `json` is the fallback for anything
 /// without a control of its own.
-pub const Control = enum { input, number, datetime, textarea, checkbox, select, json };
+/// `rich` is the block editor's inline editor over the field's HTML.
+pub const Control = enum { input, number, datetime, textarea, rich, checkbox, select, json };
 
 /// Which validation and option controls the field form shows for the kind.
 pub const Has = struct {
@@ -103,7 +104,7 @@ pub const core = [_]Kind{
         .description = "Formatted content",
         .icon = "quote",
         .storage = .long,
-        .control = .textarea,
+        .control = .rich,
         .has = .{
             .length = true,
             .rows = true,

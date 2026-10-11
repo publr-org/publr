@@ -14,10 +14,10 @@ public taxonomies. Back to the [CLI reference](../cli.md).
 | Command | What |
 |---|---|
 | `term create --taxonomy <t> --document <json> [--status <s>] [--parent <id>]` | Create; title from the taxonomy's `title_field`, slug from the slug field's source, unique per taxonomy; `parent` puts it under a term of the same, hierarchical, taxonomy |
-| `term get --id <id> [--purpose delivery\|edit] [--slot <s>]` | Read one term with its document and its parent |
+| `term get --id <id> [--purpose delivery\|edit] [--slot <s>]` | Read one term with its document and its parent: its latest copy for a signed-in caller, the live one for a visitor |
 | `term save --id <id> --document <json> [--expected_version <n>] [--parent <id>]` | Write the document; `--parent` moves the term (an empty string makes it a root, omitted keeps it), and every record filed under it or a descendant follows; refused while more than 10 000 assignments would change |
 | `term list [--taxonomy <t>] [--taxonomies a,b] [--filters k:op:v,...] [--search] [--slug] [--filter_field --filter_value] [--order] [--limit] [--offset]` | List terms as `record list` lists records; `title_asc` by default |
-| `term tree --taxonomy <t>` | Every term in tree order, parents first, siblings by title, each with its depth |
+| `term tree --taxonomy <t> [--limit <n>] [--offset <n>]` | The terms in tree order, parents first, siblings by title, each with its depth, 50 a page (`--limit` up to 200); `total` counts them all |
 | `term publish --id <id>`, `term discard_changes --id <id>`, `term transition --id <id> --to <status>` | The lifecycle, as for records |
 | `term delete --id <id>` | Move to `deleted` (reversible) |
 | `term purge --id <id>` | Remove for good (admins); refused while the term has children or records filed under it |

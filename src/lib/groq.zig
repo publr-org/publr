@@ -10,6 +10,7 @@ pub const Value = groq.Value;
 pub const Dataset = groq.Dataset;
 pub const DatasetError = groq.DatasetError;
 pub const Hint = groq.Hint;
+pub const Keep = groq.Keep;
 pub const Found = groq.Found;
 pub const values = groq.values;
 pub const evaluation = groq.evaluation;

@@ -13,7 +13,7 @@ pub fn validate_def(def: Def, problems: *field.Problems) void {
     std.debug.assert(problems.len <= field.problems_max);
 
     if (def.fields.len > field.fields_max) {
-        problems.add("fields", "too many fields");
+        problems.add("fields", field.too_many_fields);
         return;
     }
 
@@ -36,25 +36,49 @@ pub fn validate_def(def: Def, problems: *field.Problems) void {
     }
 }
 
-/// The `terms` fields of a content type: every one names the taxonomy it assigns from.
-pub fn terms_fields(
-    fields: []const field.Def,
-    buffer: *[field.fields_max]field.Def,
-) []const field.Def {
+/// The `terms` fields of a content type, one at a time: every one names the taxonomy it
+/// assigns from.
+pub fn terms_fields(fields: []const field.Def) TermsFields {
     std.debug.assert(fields.len <= field.fields_max);
-    std.debug.assert(buffer.len == field.fields_max);
 
-    var count: u32 = 0;
+    return .{
+        .fields = fields,
+    };
+}
 
-    for (fields) |candidate| {
-        if (std.mem.eql(u8, candidate.kind, "terms")) {
-            buffer[count] = candidate;
-            count += 1;
+pub const TermsFields = struct {
+    fields: []const field.Def,
+    index: u32 = 0,
+
+    pub fn next(terms: *TermsFields) ?*const field.Def {
+        std.debug.assert(terms.index <= terms.fields.len);
+
+        while (terms.index < terms.fields.len) {
+            const candidate = &terms.fields[terms.index];
+
+            terms.index += 1;
+
+            if (std.mem.eql(u8, candidate.kind, "terms")) {
+                return candidate;
+            }
         }
+
+        return null;
     }
 
-    return buffer[0..count];
-}
+    pub fn count(fields: []const field.Def) u32 {
+        std.debug.assert(fields.len <= field.fields_max);
+
+        var found: u32 = 0;
+        var each = terms_fields(fields);
+
+        while (each.next()) |_| {
+            found += 1;
+        }
+
+        return found;
+    }
+};
 
 /// The taxonomy every term test writes against: a name, a slug, and a hierarchy.
 pub const test_topics: Def = .{
@@ -109,9 +133,8 @@ test "a taxonomy is a record-kind definition without a url and without terms fie
     validate_def(wrong, &bad);
     try std.testing.expectEqual(@as(u32, 3), bad.len);
 
-    var buffer: [field.fields_max]field.Def = undefined;
-    try std.testing.expectEqual(@as(usize, 1), terms_fields(wrong.fields, &buffer).len);
-    try std.testing.expectEqual(@as(usize, 0), terms_fields(test_topics.fields, &buffer).len);
+    try std.testing.expectEqual(@as(u32, 1), TermsFields.count(wrong.fields));
+    try std.testing.expectEqual(@as(u32, 0), TermsFields.count(test_topics.fields));
 }
 
 test "a terms field names a taxonomy, may sit anywhere, and takes no choices" {

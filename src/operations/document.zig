@@ -49,6 +49,7 @@ pub fn Domain(comptime domain_config: Config) type {
         pub const lifecycle = @import("document/lifecycle.zig").Of(@This());
         pub const crud = @import("document/crud.zig").Of(@This());
         pub const listed = @import("document/listed.zig").Of(@This());
+        pub const variants = @import("document/variants.zig").Of(@This());
         pub const definition = @import("document/definition.zig").Of(@This());
 
         /// `record.created`, `term.published`: the notice names of the domain.

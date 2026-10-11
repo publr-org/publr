@@ -1,0 +1,140 @@
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { RecordValue } from "./RecordValue.ptsx";
+
+/** One field inside a group or a repeater item, as the server answers it. */
+export type Cell = {
+  name: string;
+  conditions: string;
+  value_kind: string;
+  label: string;
+  required: boolean;
+  help: string;
+  control: string;
+  value: string;
+  checked: boolean;
+  readonly: boolean;
+  label_on: string;
+  placeholder: string;
+  rows: number;
+  min: string;
+  max: string;
+  step: string;
+  prefix: string;
+  suffix: string;
+  card_type: string;
+  card_title: string;
+  card_status: string;
+  card_tone: string;
+  card_href: string;
+  formats: string;
+  remove: string;
+  up: string;
+  down: string;
+  files: Array<{
+    id: string;
+    title: string;
+    thumb: string;
+    image: boolean;
+    kind: string;
+    icon: "video" | "audio" | "file";
+    facts: string;
+    missing: boolean;
+    slot: string;
+    place: string;
+    first: boolean;
+    last: boolean;
+  }>;
+  types: Array<{ id: string; label: string }>;
+  accept: string;
+  can_upload: boolean;
+};
+
+export type CellOption = { value: string; label: string; selected: boolean };
+
+export type RecordCellProps = Cell & {
+  options: Array<CellOption>;
+};
+
+/** A field inside a group or a repeater item: its label, its control, its help line. Drawn
+ * by the server for what a page shows first, and by the browser for an item opened later. */
+export function RecordCell({
+  name,
+  conditions,
+  value_kind,
+  label,
+  required,
+  help,
+  control,
+  value,
+  checked,
+  readonly,
+  label_on,
+  placeholder,
+  rows,
+  min,
+  max,
+  step,
+  prefix,
+  suffix,
+  card_type,
+  card_title,
+  card_status,
+  card_tone,
+  card_href,
+  formats,
+  remove,
+  up,
+  down,
+  options,
+  files,
+  types,
+  accept,
+  can_upload,
+}: RecordCellProps) {
+  return (
+    <div data-conditions={conditions} data-field-path={name} data-value-kind={value_kind}
+      hidden={name.includes("@")}><Field>
+      <FieldLabel htmlFor={`field-${name}`} required={required}>
+        {label}
+      </FieldLabel>
+      <RecordValue
+        name={name}
+        control={control}
+        value={value}
+        checked={checked}
+        readonly={readonly}
+        label_on={label_on}
+        placeholder={placeholder}
+        rows={rows}
+        min={min}
+        max={max}
+        step={step}
+        prefix={prefix}
+        suffix={suffix}
+        card_type={card_type}
+        card_title={card_title}
+        card_status={card_status}
+        card_tone={card_tone}
+        card_href={card_href}
+        formats={formats}
+        remove={remove}
+        up={up}
+        down={down}
+        options={options}
+        files={files}
+        types={types}
+        accept={accept}
+        can_upload={can_upload}
+      />
+      {help !== "" && <FieldDescription>{help}</FieldDescription>}
+    </Field></div>
+  );
+}
+
+/** A field of an item or group the browser opened, as the server answers it. */
+export type OpenedCell = Cell & { cell_options: Array<CellOption> };
+
+/** An item line of a run the browser listed. */
+export type ItemLine = { name: string; label: string; value_json: string };

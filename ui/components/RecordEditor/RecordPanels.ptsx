@@ -1,0 +1,25 @@
+import { Publr } from "publr-jsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { EditorAsideSection } from "../EditorAsideSection.ptsx";
+import { PluginPanel } from "../PluginPanel.ptsx";
+
+export type RecordPanelsProps = {
+  csrf: string;
+  /** The panels plugins add to this record's form, each in the plugin frame. */
+  panels: Array<{ label: string; plugin: string; src: string; operations: string }>;
+};
+
+/** The boxes plugins add to a record's form: each titled, named after its plugin, and
+ * drawn by the plugin in its frame. */
+export function RecordPanels({ csrf, panels }: RecordPanelsProps) {
+  return (
+    <>
+      {panels.map((panel) => (
+        <EditorAsideSection title={panel.label}>
+          <Text as="span" variant="body-xs" tone="muted">{Publr.t("From {name}", { name: panel.plugin })}</Text>
+          <PluginPanel src={panel.src} title={panel.label} plugin={panel.plugin} csrf={csrf} operations={panel.operations} />
+        </EditorAsideSection>
+      ))}
+    </>
+  );
+}

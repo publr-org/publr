@@ -1,0 +1,83 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { onOpen, state } from "../RecordEditor.ptsx";
+import { RecordCell } from "./RecordCell.ptsx";
+
+/** An item past the fold: one line, its value held as JSON until "Show fields" has the
+ * browser draw its fields. */
+export function RecordClosedItem({ name, label, value_json }: { name: string; label: string; value_json: string }) {
+  return (
+    <div class="rounded-xl border border-border">
+      <div class="flex items-center gap-2 px-5 py-3">
+        <Text as="span" variant="heading-xs" classes="truncate">
+          {label}
+        </Text>
+        {!state.opened[name] && (
+          <Button
+            type="button"
+            onClick={onOpen}
+            value={name}
+            hierarchy="tertiary"
+            size="sm"
+            classes="ml-auto"
+            disabled={state.opening === name}
+          >
+            {Publr.t("Show fields")}
+          </Button>
+        )}
+      </div>
+      {state.open_failed === name && (
+        <Text as="p" variant="body-sm" tone="error" classes="px-5 pb-3">
+          {Publr.t("Could not open these fields. Try again.")}
+        </Text>
+      )}
+      {/* Not posted once opened: its fields post their values then. */}
+      <input type="hidden" name={name} value={value_json} disabled={!!state.opened[name]} />
+      {state.opened[name] && <input type="hidden" name="open" value={name} />}
+      {state.opened[name] && (
+        <div class="border-t border-border px-5 py-4">
+          <div class="flex flex-col gap-5">
+            {state.opened[name].map((cell) => (
+              <RecordCell
+                name={cell.name}
+                conditions={cell.conditions}
+                value_kind={cell.value_kind}
+                label={cell.label}
+                required={cell.required}
+                help={cell.help}
+                control={cell.control}
+                value={cell.value}
+                checked={cell.checked}
+                readonly={cell.readonly}
+                label_on={cell.label_on}
+                placeholder={cell.placeholder}
+                rows={cell.rows}
+                min={cell.min}
+                max={cell.max}
+                step={cell.step}
+                prefix={cell.prefix}
+                suffix={cell.suffix}
+                card_type={cell.card_type}
+                card_title={cell.card_title}
+                card_status={cell.card_status}
+                card_tone={cell.card_tone}
+                card_href={cell.card_href}
+                formats={cell.formats}
+                remove={cell.remove}
+                up={cell.up}
+                down={cell.down}
+                files={cell.files}
+                types={cell.types}
+                accept={cell.accept}
+                can_upload={cell.can_upload}
+                options={cell.cell_options}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

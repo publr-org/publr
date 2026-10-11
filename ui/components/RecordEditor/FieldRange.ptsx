@@ -1,0 +1,30 @@
+import { Publr } from "publr-jsx";
+import { RangePicker } from "@publr/ui/RangePicker.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export const state = Publr.reactive({ value: 0 });
+
+export const moved = (event: Event) => {
+  state.value = Number((event.currentTarget as HTMLInputElement).value);
+};
+
+export type FieldRangeProps = {
+  id: string;
+  name: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+};
+
+/** A number on a slider over the field's range, its value beside it as it moves. */
+export function FieldRange({ id, name, value, min, max, step }: FieldRangeProps) {
+  state.value = value;
+
+  return (
+    <div class="flex items-center gap-4" data-part="field-range">
+      <RangePicker id={id} name={name} value={state.value} min={min} max={max} step={step} onInput={moved} classes="flex-1" />
+      <Text as="span" variant="body-sm" classes="w-12 text-right tabular-nums">{`${state.value}`}</Text>
+    </div>
+  );
+}

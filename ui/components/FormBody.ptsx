@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { EditorAside } from "./EditorAside.ptsx";
 import { EditorAsideSection } from "./EditorAsideSection.ptsx";
 import { IndexHeader } from "./IndexHeader.ptsx";
@@ -32,6 +33,8 @@ export type FormBodyProps = {
   bare?: boolean;
   /** The form, or what is shown of the one thing. */
   children?: JSX.Element;
+  /** One column, the aside under the form: a narrow panel (a visual record's Entry). */
+  stacked?: boolean;
 };
 
 /** The body of a page about one thing: the title band, an optional facts band, then the
@@ -45,7 +48,7 @@ export function FormBody({
   header,
   meta,
   problems = [],
-  problems_title = "This was not saved.",
+  problems_title = "",
   notice,
   aside,
   danger,
@@ -53,25 +56,26 @@ export function FormBody({
   focus = false,
   in_drawer = false,
   bare = false,
+  stacked = false,
   children,
 }: FormBodyProps) {
   return (
-    <div class="flex min-w-0 grow items-stretch" data-part="form-body">
-      <div class={["min-w-0 flex-1", bare ? "py-7" : "pb-10"]}>
+    <div class={["flex min-w-0 grow", stacked ? "flex-col" : "items-stretch"]} data-part="form-body">
+      <div class={["min-w-0 flex-1", bare ? "py-7" : "pb-10", stacked ? "[&_[data-part=page-header]]:px-4" : ""]}>
         {!bare && header}
         {!bare && !header && (
           <IndexHeader title={title} description={description} actions={actions} />
         )}
         {!bare && meta && (
-          <div class="flex min-h-12 flex-wrap items-center gap-3 border-y border-border px-8 py-2.5">
+          <div class={["flex min-h-12 flex-wrap items-center gap-3 border-y border-border py-2.5", stacked ? "px-4" : "px-8"]}>
             {meta}
           </div>
         )}
-        <div class={["flex w-full max-w-4xl flex-col gap-6 px-8", focus ? "mx-auto" : "", meta ? "pt-6" : ""]}>
+        <div class={["flex w-full max-w-4xl flex-col gap-6", stacked ? "px-4" : "px-8", focus ? "mx-auto" : "", meta ? "pt-6" : ""]}>
           {problems.length > 0 && (
             <Callout
               tone="error"
-              title={problems_title}
+              title={problems_title !== "" ? problems_title : Publr.t("This was not saved.")}
               items={problems}
             />
           )}
@@ -81,9 +85,9 @@ export function FormBody({
       </div>
       {!bare && side}
       {!bare && !side && (aside || danger) && (
-        <EditorAside in_drawer={in_drawer}>
+        <EditorAside in_drawer={in_drawer} stacked={stacked}>
           {aside}
-          {danger && <EditorAsideSection title="Danger zone">{danger}</EditorAsideSection>}
+          {danger && <EditorAsideSection title={Publr.t("Danger zone")}>{danger}</EditorAsideSection>}
         </EditorAside>
       )}
     </div>

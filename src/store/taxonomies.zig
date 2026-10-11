@@ -21,8 +21,13 @@ pub const update = Store.update;
 pub const get_by_id = Store.get_by_id;
 pub const get_by_handle = Store.get_by_handle;
 pub const list = Store.list;
+pub const applying_to = Store.applying_to;
 pub const list_briefs = Store.list_briefs;
+pub const briefs_after = Store.briefs_after;
+pub const brief_by_id = Store.brief_by_id;
+pub const BriefKey = Store.BriefKey;
 pub const delete = Store.delete;
+pub const names = Store.names;
 
 test "a taxonomy definition is stored in its own table, apart from the content types" {
     var fixture: db.testing.Fixture = undefined;

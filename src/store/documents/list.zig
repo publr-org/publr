@@ -35,13 +35,24 @@ pub const Record = struct {
 /// Only the documents whose ids a JSON array lists.
 const list_ids = " AND r.id IN (SELECT value FROM json_each(?{d}))";
 
+/// The copy a list reads of the record `r`: the live one, or its latest.
+const live_slot = "'live'";
+const latest_slot = "(CASE WHEN r.changed THEN 'pending' ELSE 'live' END)";
+
+fn slot_of(query: Query) []const u8 {
+    std.debug.assert(query.type_ids.len > 0);
+    std.debug.assert(query.limit <= list_max);
+
+    return if (query.latest) latest_slot else live_slot;
+}
+
 /// Which app's documents a list keeps: one app's, or the project's own (no app).
 pub const App = union(enum) {
     none,
     name: []const u8,
 };
 
-pub const Order = enum { updated_desc, created_desc, title_asc };
+pub const Order = enum { updated_desc, created_desc, created_asc, title_asc };
 
 pub const Filter = struct {
     field: []const u8,
@@ -80,6 +91,10 @@ pub const Query = struct {
     updated_after_ms: ?i64 = null,
     updated_before_ms: ?i64 = null,
     app: ?App = null,
+    /// Match, name and order by each record's latest copy (its pending changes when it has
+    /// some, else its live document) instead of the live one: what the admin and the API
+    /// read. A page drawn for a visitor reads live copies only.
+    latest: bool = false,
     order: Order = .updated_desc,
     limit: u32 = 50,
     offset: u32 = 0,
@@ -130,18 +145,26 @@ pub fn List(comptime tables: tables_module.Tables) type {
         const record_columns = "r.id, r.type_id, t.handle, r.status, r.changed, r.version, " ++
             "title.value, slug.value, r.created_by, r.updated_by, r.created_at, r.updated_at, " ++
             "r.app";
-        const record_joins = "JOIN " ++ tables.definitions ++ " t ON t.id = r.type_id " ++
-            "LEFT JOIN " ++ values ++ " title ON title.record = r.id AND title.slot = 'live' " ++
-            "AND title.ordinal = 0 " ++
-            "AND title.field = json_extract(t.definition, '$.title_field') " ++
-            "LEFT JOIN " ++ values ++ " slug ON slug.record = r.id AND slug.slot = 'live' " ++
-            "AND slug.ordinal = 0 AND slug.field = (SELECT f.value ->> 'name' " ++
-            "FROM field_groups g, json_each(g.definition, '$.fields') f " ++
-            "WHERE g.scope = '" ++ tables.definitions ++ "' AND g.owner = t.id " ++
-            "AND f.value ->> 'kind' = 'slug' " ++
-            "LIMIT 1)";
+        fn joins(comptime slot: []const u8) []const u8 {
+            comptime std.debug.assert(slot.len > 0);
+
+            return "JOIN " ++ tables.definitions ++ " t ON t.id = r.type_id " ++
+                "LEFT JOIN " ++ values ++ " title ON title.record = r.id AND title.slot = " ++
+                slot ++ " AND title.ordinal = 0 " ++
+                "AND title.field = json_extract(t.definition, '$.title_field') " ++
+                "LEFT JOIN " ++ values ++ " slug ON slug.record = r.id AND slug.slot = " ++
+                slot ++ " AND slug.ordinal = 0 AND slug.field = (SELECT f.value ->> 'name' " ++
+                "FROM field_groups g, json_each(g.definition, '$.fields') f " ++
+                "WHERE g.scope = '" ++ tables.definitions ++ "' AND g.owner = t.id " ++
+                "AND f.value ->> 'kind' = 'slug' " ++
+                "LIMIT 1)";
+        }
+        const record_joins = joins(live_slot);
+        const latest_joins = joins(latest_slot);
         pub const select_record = "SELECT " ++ record_columns ++ " FROM " ++ table ++ " r " ++
             record_joins;
+        const select_latest = "SELECT " ++ record_columns ++ " FROM " ++ table ++ " r " ++
+            latest_joins;
 
         /// The joins bring one row per document, so a list ordered by a row column picks
         /// its page from the table alone and joins the page; a list ordered by title needs
@@ -149,21 +172,22 @@ pub fn List(comptime tables: tables_module.Tables) type {
         const list_by_record = "SELECT " ++ record_columns ++ " FROM (SELECT * FROM " ++
             table ++ " r WHERE ";
         const list_by_title = select_record ++ " WHERE ";
+        const list_latest_by_title = select_latest ++ " WHERE ";
         // Over one type, bound first (`?1`), the lookup index finds the records holding the
         // value, instead of each record of the type being checked in turn.
         const list_filter_one_type = " AND r.id IN (SELECT v.record FROM " ++ values ++
             " v WHERE v.type_id = ?1 AND v.field = ?{d} AND v.value = ?{d} " ++
-            "AND v.slot = 'live' AND v.kind <> 'long')";
+            "AND v.slot = {s} AND v.kind <> 'long')";
         const list_filter = " AND EXISTS (SELECT 1 FROM " ++ values ++ " v WHERE " ++
             "v.record = r.id AND v.type_id = r.type_id AND v.field = ?{d} AND v.value = ?{d} " ++
-            "AND v.slot = 'live' AND v.kind <> 'long')";
+            "AND v.slot = {s} AND v.kind <> 'long')";
         const list_filter_any = " AND r.id IN (SELECT v.record FROM " ++ values ++
             " v WHERE v.type_id = ?1 AND v.field = ?{d} AND v.value IN " ++
-            "(SELECT value FROM json_each(?{d})) AND v.slot = 'live' AND v.kind <> 'long')";
+            "(SELECT value FROM json_each(?{d})) AND v.slot = {s} AND v.kind <> 'long')";
         const list_search = " AND r.id IN (SELECT record FROM " ++ tables.search ++
-            " WHERE " ++ tables.search ++ " MATCH ?{d} AND slot = 'live')";
+            " WHERE " ++ tables.search ++ " MATCH ?{d} AND slot = {s})";
         const list_membership = " AND EXISTS (SELECT 1 FROM " ++ (tables.assignments orelse "") ++
-            " m WHERE m.record = r.id AND m.field = ?{d} AND m.term = ?{d} AND m.slot = 'live')";
+            " m WHERE m.record = r.id AND m.field = ?{d} AND m.term = ?{d} AND m.slot = {s})";
 
         pub fn list(connection: *db.Db, arena: std.mem.Allocator, query: Query) Error![]Record {
             std.debug.assert(query.type_ids.len > 0 and query.type_ids.len <= type_ids_max);
@@ -196,7 +220,9 @@ pub fn List(comptime tables: tables_module.Tables) type {
             const paging = .{ limit, query.offset };
 
             if (query.order == .title_asc) {
-                writer.writeAll(list_by_title) catch return error.OutOfMemory;
+                const head = if (query.latest) list_latest_by_title else list_by_title;
+
+                writer.writeAll(head) catch return error.OutOfMemory;
                 try write_conditions(writer, query);
                 writer.print(" ORDER BY title.value, r.id LIMIT {d} OFFSET {d}", paging) catch {
                     return error.OutOfMemory;
@@ -205,6 +231,7 @@ pub fn List(comptime tables: tables_module.Tables) type {
                 const order: []const u8 = switch (query.order) {
                     .updated_desc => " ORDER BY r.updated_at DESC, r.id",
                     .created_desc => " ORDER BY r.created_at DESC, r.id",
+                    .created_asc => " ORDER BY r.created_at, r.id",
                     .title_asc => unreachable,
                 };
 
@@ -214,7 +241,7 @@ pub fn List(comptime tables: tables_module.Tables) type {
                     order,
                     limit,
                     query.offset,
-                    record_joins,
+                    if (query.latest) latest_joins else record_joins,
                     order,
                 }) catch return error.OutOfMemory;
             }
@@ -234,7 +261,7 @@ pub fn List(comptime tables: tables_module.Tables) type {
             std.debug.assert(bind_index > 1);
             std.debug.assert(filter.values_json == null or query.type_ids.len == 1);
 
-            const args = .{ bind_index, bind_index + 1 };
+            const args = .{ bind_index, bind_index + 1, slot_of(query) };
             const has_assignments = comptime (tables.assignments != null);
             const written = if (filter.values_json != null)
                 writer.print(list_filter_any, args)
@@ -285,7 +312,9 @@ pub fn List(comptime tables: tables_module.Tables) type {
             }
 
             if (query.search != null) {
-                writer.print(list_search, .{bind_index}) catch return error.OutOfMemory;
+                writer.print(list_search, .{ bind_index, slot_of(query) }) catch {
+                    return error.OutOfMemory;
+                };
                 bind_index += 1;
             }
 
