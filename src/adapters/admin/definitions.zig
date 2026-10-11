@@ -3,6 +3,11 @@
 //! (`types.zig`, `taxonomies.zig`); the pages are the same, the operations and the
 //! addresses differ.
 const std = @import("std");
+const sdk_operation = @import("../../sdk/operation.zig");
+const type_editor = @import("type_editor.zig");
+const type_placement = @import("type_placement.zig");
+const type_names = @import("type_names.zig");
+const variants = @import("../../operations/variants.zig");
 const admin = @import("../admin.zig");
 const settings_nav = @import("settings_nav.zig");
 const registry = @import("../../server/registry.zig");
@@ -41,38 +46,112 @@ pub const Domain = struct {
     is_taxonomy: bool,
     fixed_kind: ?Kind = null,
 
-    /// `content types`, `taxonomies`: the title, lowercased.
-    pub fn plural_title(comptime domain: Domain) []const u8 {
-        comptime std.debug.assert(domain.title.len > 0);
+    /// What the domain's pages say of it, in the person's language.
+    pub fn words(comptime domain: Domain, session: *const Session) Error!Words {
         comptime std.debug.assert(domain.noun.len > 0);
+        std.debug.assert(session.signed_in());
 
-        return comptime blk: {
-            var lowered: [domain.title.len]u8 = undefined;
+        if (domain.fixed_kind == .settings) {
+            return settings_words(session);
+        }
 
-            for (domain.title, 0..) |char, index| {
-                lowered[index] = std.ascii.toLower(char);
-            }
+        if (domain.fixed_kind == .component) {
+            return component_words(session);
+        }
 
-            const copy = lowered;
-            break :blk &copy;
-        };
-    }
+        if (domain.is_taxonomy) {
+            return taxonomy_words(session);
+        }
 
-    pub fn empty_description(comptime domain: Domain) []const u8 {
-        comptime std.debug.assert(domain.noun.len > 0);
-        comptime std.debug.assert(domain.base.len > 0);
-
-        return if (domain.fixed_kind == .settings)
-            "Define a settings section, then add the fields your editors can configure."
-        else if (domain.fixed_kind == .component)
-            "Create a reusable set of fields."
-        else if (domain.is_taxonomy)
-            "A taxonomy is a set of terms records are filed under: categories, tags. " ++
-                "Create the first one."
-        else
-            "A content type is a name and a list of fields. Create the first one.";
+        return content_type_words(session);
     }
 };
+
+const Words = struct {
+    title: []const u8,
+    new_label: []const u8,
+    empty_title: []const u8,
+    empty_description: []const u8,
+    conflict: []const u8,
+    denied: []const u8,
+};
+
+fn content_type_words(session: *const Session) Error!Words {
+    std.debug.assert(session.signed_in());
+
+    const conflict = try session.translated(
+        "another content type has this handle, or content holds values the change would lose",
+    );
+
+    return .{
+        .title = try session.translated("Content types"),
+        .new_label = try session.translated("New content type"),
+        .empty_title = try session.translated("No content types yet"),
+        .empty_description = try session.translated(
+            "A content type is a name and a list of fields. Create the first one.",
+        ),
+        .conflict = conflict,
+        .denied = try session.translated("you may not change content types"),
+    };
+}
+
+fn taxonomy_words(session: *const Session) Error!Words {
+    std.debug.assert(session.signed_in());
+
+    const conflict = try session.translated(
+        "another taxonomy has this handle, or content holds values the change would lose",
+    );
+    const what = try session.translated(
+        "A taxonomy is a set of terms records are filed under: categories, tags.",
+    );
+    const first = try session.translated("Create the first one.");
+
+    return .{
+        .title = try session.translated("Taxonomies"),
+        .new_label = try session.translated("New taxonomy"),
+        .empty_title = try session.translated("No taxonomies yet"),
+        .empty_description = try std.fmt.allocPrint(session.arena, "{s} {s}", .{ what, first }),
+        .conflict = conflict,
+        .denied = try session.translated("you may not change taxonomies"),
+    };
+}
+
+fn settings_words(session: *const Session) Error!Words {
+    std.debug.assert(session.signed_in());
+
+    const conflict = try session.translated(
+        "another settings section has this handle, or content holds values the change would lose",
+    );
+    const empty_description = try session.translated(
+        "Define a settings section, then add the fields your editors can configure.",
+    );
+
+    return .{
+        .title = try session.translated("Settings"),
+        .new_label = try session.translated("New settings section"),
+        .empty_title = try session.translated("No settings yet"),
+        .empty_description = empty_description,
+        .conflict = conflict,
+        .denied = try session.translated("you may not change settings"),
+    };
+}
+
+fn component_words(session: *const Session) Error!Words {
+    std.debug.assert(session.signed_in());
+
+    const conflict = try session.translated(
+        "another component has this handle, or content holds values the change would lose",
+    );
+
+    return .{
+        .title = try session.translated("Components"),
+        .new_label = try session.translated("New component"),
+        .empty_title = try session.translated("No components yet"),
+        .empty_description = try session.translated("Create a reusable set of fields."),
+        .conflict = conflict,
+        .denied = try session.translated("you may not change components"),
+    };
+}
 
 /// What the head's own fields were refused for, shown under each; the rest listed above.
 const HeadErrors = struct {
@@ -136,6 +215,9 @@ pub fn keyed(comptime In: type, comptime key: []const u8, value: []const u8, ext
     return in;
 }
 
+/// Definitions a list page shows at a time.
+const page_size: u32 = 50;
+
 pub fn Pages(comptime domain: Domain) type {
     return struct {
         const operations = domain.operations;
@@ -151,7 +233,11 @@ pub fn Pages(comptime domain: Domain) type {
             std.debug.assert(ctx.user_data != null);
 
             var session = try admin.require(request, response, ctx) orelse return;
-            const listed = registry.SDK.dispatch(&session.ctx, operations.List, .{}) catch |err| {
+            const offset = admin.pager.offset_of(&session);
+            const listed = registry.SDK.dispatch(&session.ctx, operations.List, .{
+                .offset = offset,
+                .limit = page_size,
+            }) catch |err| {
                 return admin.fail(&session, err, "/admin");
             };
             var items: std.ArrayList(views.Types.TypesItem) = .empty;
@@ -160,6 +246,9 @@ pub fn Pages(comptime domain: Domain) type {
                 if (domain.fixed_kind) |kind| {
                     if (summary.kind != kind) continue;
                 }
+
+                // Files are managed where their owner draws them, not as a type.
+                if (summary.kind == .media) continue;
                 const href = try print(session.arena, "{s}/{s}", .{ back, summary.handle });
                 const content_href = if (summary.kind == .component)
                     ""
@@ -175,7 +264,7 @@ pub fn Pages(comptime domain: Domain) type {
                     .href = href,
                     .name = summary.name,
                     .handle = summary.handle,
-                    .kind = kind_label(summary.kind),
+                    .kind = try kind_label(&session, summary.kind),
                     .visibility = if (summary.public) "public" else "private",
                     .owner = owner,
                     .fields = summary.fields,
@@ -183,26 +272,46 @@ pub fn Pages(comptime domain: Domain) type {
                 }) catch return error.OutOfMemory;
             }
 
+            const shown: u32 = @intCast(@field(listed, domain.plural).len);
+            const pages = try admin.pager.links(
+                session.arena,
+                back,
+                offset,
+                shown,
+                listed.total,
+                page_size,
+            );
+
+            const words = try domain.words(&session);
+
             try admin.screen(&session, .ok, views.Types, .{
-                .title = domain.title,
+                .title = words.title,
                 .new_href = back ++ "/new",
-                .new_label = "New " ++ domain.noun,
-                .empty_title = comptime ("No " ++ domain.plural_title() ++ " yet"),
-                .empty_description = domain.empty_description(),
+                .new_label = words.new_label,
+                .empty_title = words.empty_title,
+                .empty_description = words.empty_description,
                 .show_kind = !domain.is_taxonomy and domain.fixed_kind == null,
-                .manage_label = if (domain.is_taxonomy) "Terms" else "Manage",
+                .manage_label = if (domain.is_taxonomy)
+                    try session.translated("Terms")
+                else
+                    try session.translated("Manage"),
                 .types = items.items,
+                .total = @floatFromInt(listed.total),
+                .range = pages.range,
+                .previous_href = pages.previous_href,
+                .next_href = pages.next_href,
             });
         }
 
-        fn kind_label(kind: Kind) []const u8 {
-            std.debug.assert(@typeInfo(Kind).@"enum".fields.len == 3);
+        fn kind_label(session: *const Session, kind: Kind) Error![]const u8 {
+            std.debug.assert(@typeInfo(Kind).@"enum".fields.len == 4);
             std.debug.assert(back.len > 0);
 
             return switch (kind) {
-                .record => "Record type",
-                .settings => "Settings",
-                .component => "Component",
+                .record => session.translated("Record type"),
+                .settings => session.translated("Settings"),
+                .component => session.translated("Component"),
+                .media => session.translated("Media"),
             };
         }
 
@@ -219,7 +328,7 @@ pub fn Pages(comptime domain: Domain) type {
                 wanted,
             ) orelse .record);
 
-            try render_form(&session, def, null, &.{});
+            try render_form(&session, type_placement.new_def(&session, def), null, &.{});
         }
 
         pub fn settings_page(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -294,16 +403,19 @@ pub fn Pages(comptime domain: Domain) type {
                 .{};
 
             const own_name: ?[]const u8 = if (back_href == null) null else def.name;
-            const parents = try parents_of(arena, .{
-                .label = domain.title,
+            const placement = try type_placement.props_of(session, def);
+            const untranslated = try untranslated_of(session);
+            const words = try domain.words(session);
+            const parents = try parents_of(session, .{
+                .label = words.title,
                 .href = back,
             }, own_name, back_href);
 
             try admin.screen(session, .ok, views.TypeForm, .{
-                .title = if (is_new) "New " ++ domain.noun else "Settings",
+                .title = if (is_new) words.new_label else try session.translated("Settings"),
                 .parents = parents,
                 .cancel_href = back_href orelse back,
-                .noun = domain.noun,
+                .noun = try session.declared(domain.noun),
                 .action = action,
                 .is_new = is_new,
                 .choose_kind = domain.fixed_kind == null,
@@ -337,6 +449,26 @@ pub fn Pages(comptime domain: Domain) type {
                 .base_url = try host_url_of(session),
                 .visibility = if (def.public) "public" else "private",
                 .is_public = def.public,
+                .has_apps = placement.has_apps,
+                .is_global = placement.is_global,
+                .home = placement.home,
+                .apps = placement.apps,
+                .share_all = placement.share_all,
+                .shares = placement.shares,
+                .plural_name = def.plural_name,
+                .noun_languages = try type_names.languages_of(
+                    views.TypeForm.Noun_languagesItem,
+                    arena,
+                    def,
+                ),
+                .untranslated_label = try session.declared(untranslated.label),
+                .keep_label = try session.declared(untranslated.keep),
+                .keep_help = try session.declared(untranslated.keep_help),
+                .omit_label = try session.declared(untranslated.omit),
+                .omit_help = try session.declared(untranslated.omit_help),
+                .falls_back = def.variant_fallback,
+                .visual = model.editor.is_visual(def.editor),
+                .rich_fields = try type_editor.choices(arena, def),
                 .delete_action = delete_action,
             });
         }
@@ -356,6 +488,10 @@ pub fn Pages(comptime domain: Domain) type {
                 def.fields = &term_fields;
             } else if (def.url.len > 0) {
                 def.fields = &slug_field;
+            }
+
+            if (!domain.is_taxonomy) {
+                def = try type_editor.with_body(session.arena, def);
             }
 
             const definition = model.content_type.encode(session.arena, def) catch {
@@ -406,9 +542,9 @@ pub fn Pages(comptime domain: Domain) type {
         }
 
         /// The head of the form over `base`: kind, names, handle (made from the name when
-        /// empty), visibility. Fields and everything the form does not show stay as they
-        /// are. A taxonomy has no kind and no URL; it is public or not, and hierarchical
-        /// or flat.
+        /// empty), where it lives and who reads it. Fields and everything the form does not
+        /// show stay as they are. A taxonomy has no kind and no URL; it is hierarchical or
+        /// flat.
         fn head_of(arena: std.mem.Allocator, form: *const Form, base: Def) Error!Def {
             std.debug.assert(form.len <= admin.form_pairs_max);
             std.debug.assert(base.fields.len <= model.field.fields_max);
@@ -417,6 +553,7 @@ pub fn Pages(comptime domain: Domain) type {
             const name = form.text("name") orelse "";
             const has_url = form.get("has_url") != null;
 
+            def = try type_names.read(arena, form, def);
             def.name = name;
             def.description = form.text("description") orelse "";
             def.handle = form.text("handle") orelse try handle_of(arena, name);
@@ -425,11 +562,10 @@ pub fn Pages(comptime domain: Domain) type {
                 def.kind = .record;
                 def.url = "";
                 def.hierarchical = form.get("hierarchical") != null;
-                def.public = form.get("public") != null;
                 def.single = form.get("single") != null;
                 def.applies_to = try values_of(arena, form, "applies_to");
 
-                return def;
+                return type_placement.read(arena, form, def);
             }
 
             def.kind = domain.fixed_kind orelse
@@ -437,15 +573,13 @@ pub fn Pages(comptime domain: Domain) type {
             const routed = has_url and def.kind == .record;
 
             def.url = if (routed) form.text("url") orelse def.handle else "";
-            // A record type is on the site when it has a URL; a settings type's one
-            // record is site content the templates read; a component has no records.
-            def.public = switch (def.kind) {
-                .record => def.url.len > 0,
-                .settings => form.get("public") != null,
-                .component => false,
-            };
+            def = try type_placement.read(arena, form, def);
 
-            return def;
+            if (def.kind == .component) {
+                def.public = false;
+            }
+
+            return type_editor.chosen(arena, form, def);
         }
 
         pub fn delete(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -486,9 +620,8 @@ pub fn Pages(comptime domain: Domain) type {
             if (err != error.Invalid) {
                 const one = try session.arena.alloc(model.field.Problem, 1);
                 const message: []const u8 = switch (err) {
-                    error.Conflict => "another " ++ domain.noun ++ " has this handle, or " ++
-                        "content holds values the change would lose",
-                    error.Denied => comptime ("you may not change " ++ domain.plural_title()),
+                    error.Conflict => (try domain.words(session)).conflict,
+                    error.Denied => (try domain.words(session)).denied,
                     else => @errorName(err),
                 };
 
@@ -561,7 +694,9 @@ fn applies_of(session: *Session, def: Def) !Applicable {
     std.debug.assert(session.signed_in());
     std.debug.assert(def.applies_to.len <= model.taxonomy.applies_max);
 
-    const listed = try registry.SDK.dispatch(&session.ctx, content_types.List, .{});
+    const listed = try registry.SDK.dispatch(&session.ctx, content_types.List, .{
+        .limit = sdk_operation.page_limit_max,
+    });
     var routed: std.ArrayList(Routed) = .empty;
     var other: std.ArrayList(Other) = .empty;
 
@@ -583,6 +718,23 @@ fn applies_of(session: *Session, def: Def) !Applicable {
                 .value = summary.handle,
                 .label = summary.name,
                 .selected = selected,
+            });
+        }
+    }
+
+    // A type it applies to past the first listed: offered too, so saving keeps it.
+    for (def.applies_to) |handle| {
+        const shown = for (listed.types) |summary| {
+            if (std.mem.eql(u8, summary.handle, handle)) {
+                break true;
+            }
+        } else false;
+
+        if (!shown) {
+            try other.append(session.arena, .{
+                .value = handle,
+                .label = handle,
+                .selected = true,
             });
         }
     }
@@ -621,7 +773,7 @@ fn head_errors(arena: std.mem.Allocator, problems: []const model.field.Problem) 
 
 /// Structure, the definitions' list, and, for an existing one, its own page.
 fn parents_of(
-    arena: std.mem.Allocator,
+    session: *const Session,
     list: views.TypeForm.ParentsItem,
     name: ?[]const u8,
     own_href: ?[]const u8,
@@ -629,10 +781,11 @@ fn parents_of(
     std.debug.assert(list.href.len > 0);
     std.debug.assert((name == null) == (own_href == null));
 
-    const items = try arena.alloc(views.TypeForm.ParentsItem, if (name == null) 2 else 3);
+    const count: u32 = if (name == null) 2 else 3;
+    const items = try session.arena.alloc(views.TypeForm.ParentsItem, count);
 
     items[0] = .{
-        .label = "Structure",
+        .label = try session.translated("Structure"),
         .href = "/admin/structure",
     };
     items[1] = list;
@@ -671,6 +824,11 @@ fn problem_items(
 pub fn host_url_of(session: *const Session) Error![]const u8 {
     std.debug.assert(session.signed_in());
     std.debug.assert(slug_field.len == 1);
+
+    // On the admin's own host, the site's address is elsewhere.
+    if (session.project.on_admin_host(session.request)) {
+        return session.project.site_origin;
+    }
 
     const host = session.request.header("host") orelse "localhost";
     const forwarded = session.request.header("x-forwarded-proto") orelse "http";
@@ -714,7 +872,7 @@ test "the head's own problems go under their fields, the rest stay listed" {
         },
         .{
             .path = "url",
-            .message = "a type with a url is public",
+            .message = "only a record type can be accessible via URL",
         },
         .{
             .path = "handle",
@@ -754,3 +912,20 @@ test "handles are made from names; an input is keyed under the domain's name" {
     try std.testing.expectEqualStrings("{}", in.definition);
     try std.testing.expect(!in.drop_content);
 }
+
+/// The untranslated-records setting's words, on a site with more than one variant whose
+/// dimension names it; unnamed hides it.
+fn untranslated_of(session: *Session) Error!Untranslated {
+    std.debug.assert(session.signed_in());
+
+    const words: ?Untranslated = comptime if (variants.setting()) |dimension|
+        dimension.untranslated
+    else
+        null;
+    const named = words orelse return .{};
+    const others = variants.others(&session.ctx) catch return .{};
+
+    return if (others.len == 0) .{} else named;
+}
+
+const Untranslated = @import("../../sdk/plugin/variants.zig").Untranslated;

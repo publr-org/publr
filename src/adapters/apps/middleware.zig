@@ -180,6 +180,7 @@ pub const Request = struct {
 
         ctx.app = request.app.spec.name;
         ctx.app_plugins = request.app.spec.plugins;
+        ctx.app_reach = request.app.spec.name;
 
         return registry.SDK.dispatch(&ctx, Operation, in);
     }

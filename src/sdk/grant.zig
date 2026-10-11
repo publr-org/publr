@@ -1,6 +1,7 @@
 const std = @import("std");
 const Ctx = @import("context.zig").Ctx;
 const operation = @import("operation.zig");
+const content_type = @import("../model/content_type.zig");
 
 pub const list_len_max: u32 = 64;
 pub const resolvers_max: u32 = 8;
@@ -81,6 +82,9 @@ pub const Grant = struct {
     /// The plugins whose content types are in reach: a type a plugin outside this list owns
     /// is not, one no plugin owns always is. Null: every plugin's.
     plugins: ?[]const []const u8 = null,
+    /// The app the caller reads for: only types living in it or shared with it are in
+    /// reach. Null: every type, wherever it lives (the admin across apps, the CLI).
+    app: ?[]const u8 = null,
     statuses: ?[]const []const u8 = null,
     field_mask: []const []const u8 = &.{},
     transitions: ?[]const Transition = null,
@@ -111,6 +115,19 @@ pub const Grant = struct {
         }
 
         return contains(list, owner);
+    }
+
+    /// Whether a type living in `home` (empty: Global) and shared as `shared` is in reach.
+    pub fn allows_placement(
+        grant: *const Grant,
+        home: []const u8,
+        shared: content_type.Shared,
+    ) bool {
+        std.debug.assert(home.len <= 64);
+
+        const app = grant.app orelse return true;
+
+        return content_type.reaches(home, shared, app);
     }
 
     pub fn allows_status(grant: *const Grant, status: []const u8) bool {
@@ -151,6 +168,7 @@ pub const Grant = struct {
             .read_only = left.read_only or right.read_only,
             .types = try intersect_lists(left.types, right.types, arena),
             .plugins = try intersect_lists(left.plugins, right.plugins, arena),
+            .app = left.app orelse right.app,
             .statuses = try intersect_lists(left.statuses, right.statuses, arena),
             .field_mask = try union_lists(left.field_mask, right.field_mask, arena),
             .transitions = if (left.transitions != null) left.transitions else right.transitions,

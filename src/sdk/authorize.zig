@@ -237,12 +237,24 @@ pub fn authorize(
         result = try Grant.intersect(result, delivery_grant, ctx.arena);
     }
 
+    if (ctx.preview and result.allows()) {
+        result = try Grant.intersect(result, .{
+            .read_only = true,
+        }, ctx.arena);
+    }
+
     if (ctx.app_plugins) |plugins| {
         if (result.allows()) {
             result = try Grant.intersect(result, .{
                 .plugins = plugins,
             }, ctx.arena);
         }
+    }
+
+    if (ctx.app_reach.len > 0 and result.allows()) {
+        result = try Grant.intersect(result, .{
+            .app = ctx.app_reach,
+        }, ctx.arena);
     }
 
     if (!result.allows()) {

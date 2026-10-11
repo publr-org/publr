@@ -83,11 +83,12 @@ $ publr --as-admin project set_currencies --currencies '[{"code":"GBP","symbol":
 
 ## `move_app`
 
-Every record of one app handed to another, after the app's `.name` changed in its
-`app.zon`; with no `--to`, they become the project's own. Every record, whatever its
-type or status. Administrators only.
+Every content type and taxonomy of one app handed to another, after the app's `.name`
+changed in its `app.zon`; with no `--to`, they become Global. Types shared with the old
+name are shared with the new one, and the app's design records follow. No record changes.
+Administrators only.
 
 ```
 $ publr --as-admin project move_app --from www --to site
-{ "moved": 42 }
+{ "moved": 6 }
 ```

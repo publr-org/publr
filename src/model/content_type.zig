@@ -10,27 +10,67 @@ pub const handle_len_max: u32 = 64;
 pub const name_len_max: u32 = 50;
 pub const description_len_max: u32 = 500;
 pub const url_len_max: u32 = 128;
-pub const editor_len_max: u32 = 64;
 pub const definition_bytes_max: u32 = 1 << 20;
 pub const id_len = ids.len;
 pub const statuses_max: u32 = 64;
+/// The apps a type may be shared with by name, besides every app at once.
+pub const shared_apps_max: u32 = 64;
 
 /// What a type is for: `record` types hold any number of records (posts, hotels), a
 /// `settings` type holds exactly one (the homepage, the header, general options), a
-/// `component` holds none: it is a set of fields other types will reuse.
-pub const Kind = enum { record, settings, component };
+/// `component` holds none: it is a set of fields other types will reuse. A `media` type's
+/// records are files: the library's own (`media`) or another set core or a plugin keeps
+/// apart from it (pictures pasted into a chat). A media type shows only where its owner
+/// draws it, never in Content.
+pub const Kind = enum { record, settings, component, media };
+
+/// The apps that reach a type besides the one it lives in: every app (apps added later
+/// too), or the ones listed. A Global type is shared with every app unless it says
+/// otherwise; an app's type with none.
+pub const Shared = struct {
+    all: bool = false,
+    apps: []const []const u8 = &.{},
+};
+
+/// A type's name in one of the admin's languages, as the sentences that decline it need it:
+/// its gender and its forms, singular and plural, by case (`genitive`), as the language's
+/// pack names them. A form left out reads the name.
+pub const NounForms = struct {
+    locale: []const u8,
+    gender: []const u8 = "",
+    forms: []const NounForm = &.{},
+};
+
+pub const NounForm = struct {
+    case: []const u8,
+    singular: []const u8 = "",
+    plural: []const u8 = "",
+};
 
 pub const Def = struct {
     handle: []const u8,
     name: []const u8,
+    /// The name for more than one: `Products`; empty reads the name.
+    plural_name: []const u8 = "",
+    /// The name declined in the admin's other languages.
+    noun_forms: []const NounForms = &.{},
     /// What the type is for, in a sentence or two, for the people who build with it.
     description: []const u8 = "",
     kind: Kind = .record,
+    /// The file families a media type takes (`image`, `pdf`...); empty takes every one the
+    /// library takes. Meaningless on other kinds.
+    families: []const []const u8 = &.{},
     icon: []const u8 = "",
     /// Where its records live on the site, `posts` for `/posts/<slug>`; empty for a type
-    /// without pages of its own. A type with a URL is public.
+    /// without pages of its own. Public and Private types alike may have one.
     url: []const u8 = "",
+    /// Public: any visitor of an app the type reaches reads its live records. Private:
+    /// only callers that are signed in, whose roles allow it.
     public: bool = false,
+    /// The app the type lives in (`app.zon`'s `.name`); empty for a Global type.
+    app: []const u8 = "",
+    /// The other apps that reach it; null for the default of where it lives.
+    shared: ?Shared = null,
     /// Owned by the core or a plugin: its declared fields are locked, only fields added
     /// by hand can change.
     system: bool = false,
@@ -47,6 +87,9 @@ pub const Def = struct {
     applies_to: []const []const u8 = &.{},
     /// A taxonomy whose records take one term, not several.
     single: bool = false,
+    /// A record not written in a variant (a language) still shows there, in its main values;
+    /// false leaves it out of that variant: not listed, its address there not found.
+    variant_fallback: bool = true,
     group: @import("field_group.zig").Options = .{},
     fields: []const field.Def,
 };
@@ -60,7 +103,7 @@ pub fn validate_def(known: []const kinds.Kind, def: Def, problems: *field.Proble
     }
 
     if (def.fields.len > field.fields_max) {
-        problems.add("fields", "too many fields");
+        problems.add("fields", field.too_many_fields);
         return;
     }
 
@@ -81,9 +124,7 @@ pub fn validate_def(known: []const kinds.Kind, def: Def, problems: *field.Proble
         problems.add("description", "description must be up to 500 characters");
     }
 
-    if (def.editor.len == 0 or def.editor.len > editor_len_max) {
-        problems.add("editor", "editor must be 1 to 64 characters");
-    }
+    @import("editor.zig").validate(def.editor, def.editor_config, def.fields, problems);
 
     if (def.statuses.len > statuses_max) {
         problems.add("statuses", "too many statuses");
@@ -93,13 +134,13 @@ pub fn validate_def(known: []const kinds.Kind, def: Def, problems: *field.Proble
         problems.add("url", "url must be path segments of [a-z0-9_-], up to 128 characters");
     }
 
-    if (def.url.len > 0 and !def.public) {
-        problems.add("url", "a type with a url is public");
-    }
+    validate_placement(def, problems);
 
     if (def.url.len > 0 and def.kind != .record) {
         problems.add("url", "only a record type can be accessible via URL");
     }
+
+    validate_families(def, problems);
 
     if (def.url.len > 0 and !has_slug(def.fields)) {
         problems.add("url", "a type accessible via URL needs a slug field: each record's " ++
@@ -115,6 +156,77 @@ pub fn validate_def(known: []const kinds.Kind, def: Def, problems: *field.Proble
     }
 }
 
+fn validate_placement(def: Def, problems: *field.Problems) void {
+    std.debug.assert(problems.len <= field.problems_max);
+    std.debug.assert(shared_apps_max > 0);
+
+    const app_name = @import("app.zig").valid_name;
+
+    if (def.app.len > 0 and !app_name(def.app)) {
+        problems.add("app", "app must be an app's name, [a-z][a-z0-9_]*");
+    }
+
+    const shared = def.shared orelse return;
+
+    if (shared.apps.len > shared_apps_max) {
+        problems.add("shared", "shared with at most 64 apps by name");
+        return;
+    }
+
+    for (shared.apps, 0..) |name, index| {
+        if (!app_name(name)) {
+            problems.add("shared", "shared with apps by their names, [a-z][a-z0-9_]*");
+            return;
+        }
+
+        for (shared.apps[0..index]) |earlier| {
+            if (std.mem.eql(u8, earlier, name)) {
+                problems.add("shared", "an app is named twice");
+                return;
+            }
+        }
+    }
+}
+
+/// Who the type is shared with: what it says, else every app for a Global type and none
+/// for an app's.
+pub fn shared_of(def: Def) Shared {
+    std.debug.assert(def.app.len <= 64);
+
+    if (def.shared) |shared| {
+        return shared;
+    }
+
+    return .{
+        .all = def.app.len == 0,
+    };
+}
+
+/// Whether the app named reaches a type living in `home` and shared as `shared`: its own
+/// app always, another when shared with it.
+pub fn reaches(home: []const u8, shared: Shared, app: []const u8) bool {
+    std.debug.assert(app.len > 0);
+    std.debug.assert(shared.apps.len <= shared_apps_max);
+
+    if (std.mem.eql(u8, home, app) or shared.all) {
+        return true;
+    }
+
+    for (shared.apps) |listed| {
+        if (std.mem.eql(u8, listed, app)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+pub fn reached_by(def: Def, app: []const u8) bool {
+    std.debug.assert(app.len > 0);
+
+    return reaches(def.app, shared_of(def), app);
+}
+
 pub fn has_slug(fields: []const field.Def) bool {
     std.debug.assert(fields.len <= field.fields_max);
 
@@ -125,6 +237,18 @@ pub fn has_slug(fields: []const field.Def) bool {
     }
 
     std.debug.assert(fields.len <= field.fields_max);
+
+    return false;
+}
+
+fn has_title(fields: []const field.Def) bool {
+    std.debug.assert(fields.len <= field.fields_max);
+
+    for (fields) |candidate| {
+        if (std.mem.eql(u8, candidate.name, "title")) {
+            return std.mem.eql(u8, candidate.kind, "string");
+        }
+    }
 
     return false;
 }
@@ -188,6 +312,32 @@ pub fn find_field(fields: []const field.Def, name: []const u8) ?*const field.Def
 /// Everything here fails like the database does, plus `Invalid` for a definition that is
 /// not the JSON we expect.
 pub const Error = error{ Invalid, OutOfMemory };
+
+fn validate_families(def: Def, problems: *field.Problems) void {
+    std.debug.assert(field.options.media_types_max > 0);
+
+    if (def.families.len > 0 and def.kind != .media) {
+        problems.add("families", "only a media type takes file families");
+        return;
+    }
+
+    if (def.kind == .media and !has_title(def.fields)) {
+        problems.add("fields", "a media type has a `title` field: a file is titled after " ++
+            "its name");
+    }
+
+    if (def.families.len > field.options.media_types_max) {
+        problems.add("families", "too many file families");
+        return;
+    }
+
+    for (def.families) |family| {
+        if (!field.options.valid_media_type(family)) {
+            problems.add("families", "families must name the library's file families");
+            return;
+        }
+    }
+}
 
 pub fn encode(arena: std.mem.Allocator, def: Def) Error![]const u8 {
     std.debug.assert(def.handle.len > 0);
@@ -353,7 +503,8 @@ test "a type may start empty, and its title field is whichever field the name fi
     var unlisted = empty;
     unlisted.url = "pages";
     validate_def(&kinds.core, unlisted, &url_problems);
-    try std.testing.expectEqual(@as(u32, 2), url_problems.len);
+    // No slug field; a Private type may have pages (gated content).
+    try std.testing.expectEqual(@as(u32, 1), url_problems.len);
 
     var sluggable: field.Problems = .{};
     var listed = titled;
@@ -373,6 +524,43 @@ test "a type may start empty, and its title field is whichever field the name fi
     listed.kind = .settings;
     validate_def(&kinds.core, listed, &settings_problems);
     try std.testing.expectEqual(@as(u32, 1), settings_problems.len);
+}
+
+test "a type reaches its own app, and the apps it is shared with" {
+    const global: Def = .{
+        .handle = "country",
+        .name = "Country",
+        .fields = &.{},
+    };
+    try std.testing.expect(reached_by(global, "www"));
+    try std.testing.expect(reached_by(global, "shop"));
+
+    var stock = global;
+    stock.app = "warehouse";
+    try std.testing.expect(reached_by(stock, "warehouse"));
+    try std.testing.expect(!reached_by(stock, "www"));
+
+    stock.shared = .{
+        .apps = &.{"www"},
+    };
+    try std.testing.expect(reached_by(stock, "www"));
+    try std.testing.expect(!reached_by(stock, "portal"));
+
+    var listed = global;
+    listed.shared = .{
+        .apps = &.{"www"},
+    };
+    try std.testing.expect(reached_by(listed, "www"));
+    try std.testing.expect(!reached_by(listed, "shop"));
+
+    var problems: field.Problems = .{};
+    var wrong = stock;
+    wrong.app = "Warehouse";
+    wrong.shared = .{
+        .apps = &.{ "www", "www" },
+    };
+    validate_def(&kinds.core, wrong, &problems);
+    try std.testing.expectEqual(@as(u32, 2), problems.len);
 }
 
 test "malformed definitions are rejected before internal field assumptions" {

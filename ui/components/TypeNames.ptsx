@@ -1,0 +1,69 @@
+import { Publr } from "publr-jsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type TypeNamesProps = {
+  /** What the type's name reads as, for the placeholders. */
+  name: string;
+  plural_name: string;
+  /** Each admin language whose pack declines nouns: the type's name there, by case. */
+  languages: Array<{
+    locale: string;
+    label: string;
+    genders: Array<{ key: string; label: string; selected: boolean }>;
+    cases: Array<{ key: string; label: string; singular: string; plural: string }>;
+  }>;
+};
+
+/** The type's name for more than one, and in each admin language that declines it: the
+ * forms its sentences need ("Nowa strona", "Brak stron"). A form left empty reads the name. */
+export function TypeNames({ name, plural_name, languages }: TypeNamesProps) {
+  return (
+    <div class="flex flex-col gap-5" data-part="type-names">
+      <Field>
+        <FieldLabel htmlFor="plural_name">{Publr.t("Plural name")}</FieldLabel>
+        <Input id="plural_name" name="plural_name" value={plural_name} placeholder={name} maxLength={50} />
+        <FieldDescription>{Publr.t("What more than one are called, as in “No products yet”.")}</FieldDescription>
+      </Field>
+      {languages.map((language) => (
+        <details class="rounded-lg border border-border px-4 py-3" data-part="type-forms">
+          <summary class="cursor-pointer">
+            <Text as="span" variant="label-md-strong">
+              {Publr.t("Forms in {language}", { language: language.label })}
+            </Text>
+          </summary>
+          <div class="mt-4 flex flex-col gap-4">
+            <Field>
+              <FieldLabel htmlFor={`forms-${language.locale}-gender`}>{Publr.t("Gender")}</FieldLabel>
+              <NativeSelect id={`forms-${language.locale}-gender`} name={`forms.${language.locale}.gender`}>
+                <option value="">{Publr.t("Not set")}</option>
+                {language.genders.map((gender) => (
+                  <option value={gender.key} selected={gender.selected}>{gender.label}</option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3">
+              <Text as="span" variant="label-sm" tone="muted">{Publr.t("Case")}</Text>
+              <Text as="span" variant="label-sm" tone="muted">{Publr.t("Singular")}</Text>
+              <Text as="span" variant="label-sm" tone="muted">{Publr.t("Plural")}</Text>
+              {language.cases.map((form) => (
+                <div class="contents">
+                  <Text as="span" variant="body-sm">{form.label}</Text>
+                  <Input name={`forms.${language.locale}.${form.key}.singular`} value={form.singular}
+                    placeholder={name} size="sm" aria-label={Publr.t("{case}, singular", { case: form.label })} />
+                  <Input name={`forms.${language.locale}.${form.key}.plural`} value={form.plural}
+                    placeholder={plural_name !== "" ? plural_name : name} size="sm"
+                    aria-label={Publr.t("{case}, plural", { case: form.label })} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}

@@ -27,6 +27,18 @@ $ publr --site example.com apps write --path www/content/index.publr --content '
 { "path": "www/content/index.publr", "bytes": 11 }
 ```
 
+## `edit`
+
+One part of a file changed: `old`, which must be in it exactly once, becomes `new`. Refused,
+changing nothing, when `old` is not there or is there more than once. A small change
+(a word in a heading, one rule in a stylesheet) without sending the whole file; refused to
+a drafts-only device as `write` is.
+
+```
+$ publr --site example.com apps edit --path www/content/index.publr --old '<h1>Hi</h1>' --new '<h1>Hello</h1>'
+{ "path": "www/content/index.publr", "bytes": 14 }
+```
+
 ## `remove`
 
 One file deleted. As `write`, refused to a drafts-only device.

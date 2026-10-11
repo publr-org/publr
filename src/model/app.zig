@@ -6,6 +6,8 @@ pub const resolve = address.resolve;
 pub const url = address.url;
 pub const domain_of = address.domain_of;
 pub const path_of = address.path_of;
+pub const host_of = address.host_of;
+pub const origin_of = address.origin_of;
 pub const without_base = address.without_base;
 pub const needs_base = address.needs_base;
 pub const url_attribute = address.url_attribute;
@@ -17,6 +19,7 @@ pub const subdomain_len_max: u32 = 63;
 pub const path_len_max: u32 = 128;
 pub const segments_max: u32 = 8;
 pub const tokens_max: u32 = 1024;
+pub const fonts_max: u32 = 32;
 pub const roles_max: u32 = 16;
 pub const plugins_max: u32 = 64;
 pub const host_len_max = address.host_len_max;
@@ -35,6 +38,24 @@ pub const Token = struct {
     value: []const u8,
 };
 
+/// A typeface the app's pages load: its family, and the stylesheet that serves it, or the
+/// files the site hosts itself (each an `@font-face`).
+pub const Font = struct {
+    family: []const u8,
+    url: []const u8 = "",
+    faces: []const FontFace = &.{},
+};
+
+/// One hosted file of a family: its weight (a range for a variable face) and style.
+pub const FontFace = struct {
+    weight_min: u32 = 400,
+    weight_max: u32 = 400,
+    italic: bool = false,
+    src: []const u8,
+};
+
+pub const font_faces_max: u32 = 32;
+
 /// What `app.zon` declares.
 pub const Config = struct {
     /// The app's id: what records, built pages and the CLI know it by, whatever its folder.
@@ -43,6 +64,8 @@ pub const Config = struct {
     label: []const u8 = "",
     mount: Mount,
     tokens: []const Token = &.{},
+    /// The typefaces every page links in its head, before the app's stylesheet.
+    fonts: []const Font = &.{},
     /// The roles a signed-in visitor needs to be signed in to this app; empty for any role.
     roles: []const []const u8 = &.{},
     /// The plugins the app uses: it never reaches a content type another plugin owns, and

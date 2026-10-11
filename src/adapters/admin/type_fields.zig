@@ -3,6 +3,7 @@
 //! `content_type update`, so existing records follow the same rules as from the CLI.
 //! A field inside a group or repeater is addressed as `parent.name`, one level deep.
 const std = @import("std");
+const variants = @import("../../operations/variants.zig");
 const spaces = @import("schema_space.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
@@ -13,6 +14,7 @@ const place_rules = @import("type_fields/place.zig");
 const rules = @import("type_fields/rules.zig");
 const default_value = @import("type_fields/default_value.zig");
 const look = @import("type_fields/look.zig");
+const type_editor = @import("type_editor.zig");
 pub const columns = @import("type_fields/columns.zig");
 pub const levels = @import("type_fields/levels.zig");
 pub const writes = @import("type_fields/write.zig");
@@ -51,17 +53,17 @@ const Links = struct {
 
 /// What the step back from a level is called: the picker for a new field's form, else the
 /// level under it as the page's script names it, else the fields page.
-fn back_label_of(session: *const Session, path: ?[]const u8) []const u8 {
+fn back_label_of(session: *const Session, path: ?[]const u8) Error![]const u8 {
     std.debug.assert(path == null or path.?.len > 0);
     std.debug.assert(session.signed_in());
 
     if (path == null) {
-        return "Kinds";
+        return session.translated("Kinds");
     }
 
     const under = levels.below(session);
 
-    return if (under.len > 0) under else "Fields";
+    return if (under.len > 0) under else session.translated("Fields");
 }
 
 /// The kind's descriptor, or the placeholder for a kind no plugin provides any more.
@@ -178,24 +180,30 @@ fn render_picker(session: *Session, handle: []const u8, def: Def, parent: []cons
                 @FieldType(KindCard, "icon"),
                 text.icon,
             ) orelse unreachable,
-            .label = text.label,
-            .description = text.description,
+            .label = try session.declared(text.label),
+            .description = try session.declared(text.description),
         }) catch return error.OutOfMemory;
     }
 
     const description = if (parent.len > 0)
-        try print(arena, "A field inside {s}", .{parent})
+        try session.translated_with("A field inside {field}", &.{.{
+            .name = "field",
+            .value = parent,
+        }})
     else
-        try print(arena, "A field of {s}", .{def.name});
+        try session.translated_with("A field of {type}", &.{.{
+            .name = "type",
+            .value = def.name,
+        }});
     const back_href = if (parent.len > 0)
         try print(arena, "{s}/fields/{s}", .{ type_href, parent })
     else
         type_href;
     const panel = try admin.render.view(arena, views.KindPanel, .{
-        .title = "Pick a kind",
+        .title = try session.translated("Pick a kind"),
         .description = description,
         .back_href = back_href,
-        .back_label = back_label_of(session, null),
+        .back_label = try back_label_of(session, null),
         .kinds = cards.items,
     });
     const url = if (parent.len > 0)
@@ -205,7 +213,7 @@ fn render_picker(session: *Session, handle: []const u8, def: Def, parent: []cons
 
     try levels.answer(session, handle, def, .{
         .url = url,
-        .title = "Pick a kind",
+        .title = try session.translated("Pick a kind"),
         .panel = panel,
     });
 }
@@ -238,7 +246,7 @@ pub fn render_form(
 
     try levels.answer(session, handle, def, .{
         .url = url,
-        .title = if (path == null) "New field" else field.label,
+        .title = if (path == null) try session.translated("New field") else field.label,
         .panel = panel,
     });
 }
@@ -260,20 +268,21 @@ pub fn panel_node(
     const text = text_of(field.kind);
     const links = try links_of(arena, try spaces.hub(session, handle), field, parent, path);
     const set = field.options;
+    const dimension_offered = try translate_offered(session);
 
     return admin.render.view(arena, views.FieldPanel, .{
         .csrf = session.csrf_token(),
-        .title = if (path == null) "New field" else field.label,
+        .title = if (path == null) try session.translated("New field") else field.label,
         .type_href = links.type_href,
         .form_id = if (parent.len > 0) "field-2" else "field-1",
         .back_href = links.back_href,
-        .back_label = back_label_of(session, path),
+        .back_label = try back_label_of(session, path),
         .action = links.action,
         .is_new = path == null,
         .is_layout = model.field.is_layout(field.kind),
         .problems = try problem_items(arena, problems),
         .kind = field.kind,
-        .kind_label = text.label,
+        .kind_label = try session.declared(text.label),
         .parent = parent,
         .name = field.name,
         .label = field.label,
@@ -283,10 +292,20 @@ pub fn panel_node(
         .many = field.many,
         .can_search = can_search(field.kind),
         .searchable = field.searchable,
+        .can_translate = dimension_offered != null and !model.field.is_layout(field.kind),
+        .translates = if (path == null) translated_by_default(field.kind) else field.variants,
+        .translate_label = if (dimension_offered) |dimension|
+            try session.declared(dimension.label)
+        else
+            "",
+        .translate_help = if (dimension_offered) |dimension|
+            try session.declared(dimension.help)
+        else
+            "",
         .can_title = text.title_allowed and parent.len == 0 and spaces.of(session) != .custom,
         .is_title = path != null and std.mem.eql(u8, def.title_field, field.name),
         .has_target = text.has.target,
-        .targets = try targets_of(session, set.to),
+        .targets = try targets_of(session, def, set.to),
         .has_taxonomy = text.has.taxonomy,
         .taxonomies = try taxonomies_of(session, set.taxonomy),
         .has_source = text.has.source,
@@ -308,7 +327,12 @@ pub fn panel_node(
         .is_container = !model.field.is_leaf(field.kind),
         .add_child_href = links.add_child_href,
         .children = try children_of(arena, links.type_href, field),
-        .delete_action = links.delete_action,
+        // The field a visual type's block editor writes stays while the type is visual.
+        .delete_action = if (path != null and parent.len == 0 and
+            type_editor.is_edited(def, field.name))
+            null
+        else
+            links.delete_action,
     });
 }
 
@@ -399,29 +423,148 @@ fn children_of(
     return rows;
 }
 
-/// The record types a reference may point at, the chosen ones ticked.
-fn targets_of(session: *Session, chosen: []const []const u8) Error![]const Target {
+/// The record types a reference of `def` may point at, the chosen ones ticked: the types
+/// its app reaches (its own, Global ones, other apps' shared with it), or for a Global type
+/// the Global ones. One chosen before and out of reach since stays, marked.
+fn targets_of(session: *Session, def: Def, chosen: []const []const u8) Error![]const Target {
     std.debug.assert(session.signed_in());
     std.debug.assert(chosen.len <= model.field.targets_max);
 
-    const listed = registry.SDK.dispatch(&session.ctx, types.List, .{}) catch {
+    var everything = session.ctx;
+
+    everything.app_reach = "";
+    everything.app_plugins = null;
+
+    const listed = registry.SDK.dispatch(&everything, types.List, .{
+        .limit = @import("../../sdk/operation.zig").page_limit_max,
+    }) catch {
         return error.OutOfMemory;
     };
     var targets: std.ArrayList(Target) = .empty;
 
     for (listed.types) |summary| {
-        if (summary.kind != .record or model.media.is_library(summary.handle)) {
+        const hidden = model.design.is_design(summary.handle);
+        const selected = contains(chosen, summary.handle);
+
+        if (summary.kind != .record or hidden) {
+            continue;
+        }
+
+        const reached = try target_reached(session, def, summary.handle);
+
+        if (!reached and !selected) {
             continue;
         }
 
         targets.append(session.arena, .{
             .value = summary.handle,
-            .label = summary.name,
-            .selected = contains(chosen, summary.handle),
+            .label = try target_label(session, def, summary, reached),
+            .selected = selected,
+        }) catch return error.OutOfMemory;
+    }
+
+    // One chosen past the first types listed: offered too, so saving the field keeps it.
+    for (chosen) |handle| {
+        if (offered(targets.items, handle)) {
+            continue;
+        }
+
+        const got = registry.SDK.dispatch(&everything, types.Get, .{
+            .type = handle,
+        }) catch continue;
+
+        targets.append(session.arena, .{
+            .value = handle,
+            .label = got.definition.name,
+            .selected = true,
         }) catch return error.OutOfMemory;
     }
 
     return targets.items;
+}
+
+fn offered(targets: []const Target, handle: []const u8) bool {
+    std.debug.assert(handle.len > 0);
+
+    for (targets) |target| {
+        if (std.mem.eql(u8, target.value, handle)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn target_reached(session: *Session, def: Def, handle: []const u8) Error!bool {
+    std.debug.assert(handle.len > 0);
+    std.debug.assert(session.signed_in());
+
+    var everything = session.ctx;
+
+    everything.app_reach = "";
+    everything.app_plugins = null;
+
+    const got = registry.SDK.dispatch(&everything, types.Get, .{
+        .type = handle,
+    }) catch return false;
+    const target = got.definition;
+
+    if (def.app.len == 0) {
+        return target.app.len == 0;
+    }
+
+    return model.content_type.reached_by(target, def.app);
+}
+
+/// The type's name, after the app it lives in when that is another app, or saying it is
+/// out of reach now.
+fn target_label(
+    session: *Session,
+    def: Def,
+    summary: types.Summary,
+    reached: bool,
+) Error![]const u8 {
+    std.debug.assert(summary.handle.len > 0);
+    std.debug.assert(def.app.len <= 64);
+
+    const arena = session.arena;
+    const own = std.mem.eql(u8, summary.app, def.app);
+
+    if (!reached) {
+        const app = if (def.app.len == 0)
+            try session.translated("Global types")
+        else
+            app_label(session, def.app);
+
+        return session.translated_with("{type} (not shared with {app})", &.{
+            .{
+                .name = "type",
+                .value = summary.name,
+            },
+            .{
+                .name = "app",
+                .value = app,
+            },
+        });
+    }
+
+    if (own or summary.app.len == 0) {
+        return summary.name;
+    }
+
+    return std.fmt.allocPrint(arena, "{s} \u{203A} {s}", .{
+        app_label(session, summary.app),
+        summary.name,
+    }) catch error.OutOfMemory;
+}
+
+fn app_label(session: *const Session, name: []const u8) []const u8 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(session.project.apps.len <= 1024);
+
+    const app = session.project.find(name) orelse return name;
+
+    return app.spec.label;
 }
 
 /// The taxonomies a terms field may assign from, the chosen one selected.
@@ -500,4 +643,46 @@ pub fn edit(request: *Request, response: *Response, ctx: *Context) Error!void {
 
 test {
     std.testing.refAllDecls(@This());
+}
+
+/// The variant setting's words, when a plugin declares the dimension and the site has more
+/// than one variant.
+const Offered = struct {
+    label: []const u8,
+    help: []const u8,
+};
+
+fn translate_offered(session: *Session) Error!?Offered {
+    std.debug.assert(session.signed_in());
+
+    const words: ?Offered = comptime if (variants.setting()) |dimension| .{
+        .label = dimension.label,
+        .help = dimension.help,
+    } else null;
+    const setting = words orelse return null;
+    const others = variants.others(&session.ctx) catch return null;
+
+    if (others.len == 0) {
+        return null;
+    }
+
+    return setting;
+}
+
+/// What a new field starts with: the words people read are translated, the facts shared.
+pub fn translated_by_default(kind: []const u8) bool {
+    std.debug.assert(kind.len > 0);
+
+    const worded = [_][]const u8{
+        "string", "text",  "richtext", "slug",
+        "link",   "embed", "markdown",
+    };
+
+    for (worded) |candidate| {
+        if (std.mem.eql(u8, candidate, kind)) {
+            return true;
+        }
+    }
+
+    return false;
 }

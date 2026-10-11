@@ -14,6 +14,7 @@ const cli = @import("../cli.zig");
 const sandboxed_cli = @import("../cli/sandboxed_plugins.zig");
 const context = @import("context.zig");
 const visitor = @import("visitor.zig");
+const framed = @import("framed.zig");
 const Project = @import("../../server/project.zig").Project;
 const Target = Project.Target;
 
@@ -43,7 +44,8 @@ pub fn call(
         });
     }
 
-    if (identity.origin_of(request) != .same) {
+    // The administrator's frame posts from an opaque origin, as a visitor (`framed.zig`).
+    if (identity.origin_of(request) != .same and !framed.from_frame(request)) {
         return response.json(.forbidden, .{
             .@"error" = "cross_origin",
         });
@@ -79,6 +81,7 @@ pub fn call(
 
     sdk_ctx.app = app.spec.name;
     sdk_ctx.app_plugins = app.spec.plugins;
+    sdk_ctx.app_reach = app.spec.name;
     sdk_ctx.visitor = try visitor.ensure(project, request, response, ctx.arena);
 
     if (!as_form) {

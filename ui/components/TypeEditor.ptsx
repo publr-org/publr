@@ -1,0 +1,64 @@
+import { Publr } from "publr-jsx";
+import { ChoiceCard } from "@publr/ui/ChoiceCard.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type TypeEditorProps = {
+  /** Its records are edited in the block editor, over one rich text field. */
+  visual: boolean;
+  is_new: boolean;
+  /** The type's rich text fields, the one the block editor edits selected. */
+  rich_fields: Array<{ value: string; label: string; selected: boolean }>;
+};
+
+/** How a record type's records are edited: a form of its fields, or visually, the block
+ * editor over one of its rich text fields. */
+export function TypeEditor({ visual, is_new, rich_fields }: TypeEditorProps) {
+  return (
+    <div class="space-y-6">
+      <fieldset class="m-0 min-w-0 border-0 p-0">
+        <legend class="mb-2 p-0">
+          <Text as="span" variant="body-sm" tone="default">
+            {Publr.t("Editor")}
+          </Text>
+        </legend>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <ChoiceCard
+            name="editor"
+            value="form"
+            checked={!visual}
+            title={Publr.t("Form")}
+            description={Publr.t("Edited as a form, one control per field.")}
+          />
+          <ChoiceCard
+            name="editor"
+            value="visual"
+            checked={visual}
+            title={Publr.t("Visual")}
+            description={
+              is_new
+                ? Publr.t("Edited with the block editor, over a Body field.")
+                : Publr.t("Edited with the block editor, over one of its rich text fields.")
+            }
+          />
+        </div>
+      </fieldset>
+      {rich_fields.length > 1 && (
+        <Field>
+          <FieldLabel htmlFor="editor_field">{Publr.t("Field the block editor edits")}</FieldLabel>
+          <NativeSelect id="editor_field" name="editor_field">
+            {rich_fields.map((field) => (
+              <option value={field.value} selected={field.selected}>
+                {field.label}
+              </option>
+            ))}
+          </NativeSelect>
+          <FieldDescription>{Publr.t("Used when the type is visual.")}</FieldDescription>
+        </Field>
+      )}
+    </div>
+  );
+}

@@ -169,6 +169,44 @@ pub fn domain_of(base_url: []const u8) []const u8 {
     return without_port(host);
 }
 
+/// The host of an address with its port, as a request names it in `Host`:
+/// `admin.localhost:8080` of `http://admin.localhost:8080/admin`; empty when it is not
+/// `scheme://host...`.
+pub fn host_of(address: []const u8) []const u8 {
+    std.debug.assert(address.len <= 64 << 10);
+
+    const scheme_end = std.mem.indexOf(u8, address, "://") orelse return "";
+    const rest = address[scheme_end + 3 ..];
+    const host = rest[0 .. std.mem.indexOfScalar(u8, rest, '/') orelse rest.len];
+
+    return if (host.len > host_len_max) "" else host;
+}
+
+/// The scheme and host of an address, its path left off: `http://localhost:8080`.
+pub fn origin_of(address: []const u8) []const u8 {
+    const host = host_of(address);
+
+    if (host.len == 0) {
+        return "";
+    }
+
+    const scheme_end = std.mem.indexOf(u8, address, "://").?;
+
+    std.debug.assert(scheme_end + 3 + host.len <= address.len);
+
+    return address[0 .. scheme_end + 3 + host.len];
+}
+
+test "an address's host keeps its port; its origin drops the path" {
+    const admin = "http://admin.localhost:8080/a";
+
+    try std.testing.expectEqualStrings("admin.localhost:8080", host_of(admin));
+    try std.testing.expectEqualStrings("example.com", host_of("https://example.com"));
+    try std.testing.expectEqualStrings("", host_of("example.com"));
+    try std.testing.expectEqualStrings("http://admin.localhost:8080", origin_of(admin));
+    try std.testing.expectEqualStrings("", origin_of("/admin"));
+}
+
 /// The path of the project's public address, which it is served under: `/environments/dev` of
 /// `https://ada.publr.app/environments/dev`; empty at the root.
 pub fn path_of(address: []const u8) []const u8 {

@@ -3,8 +3,10 @@
 Content types are data: a handle, names, a kind (`record`, the default, holds
 any number of records; `settings` exactly one; `component` none, its fields are
 for other types to reuse), `url` (`posts`: where its records live on the site;
-a type with a url is public and needs a slug field), whether the type is public, and a list of
-fields, which may be empty. Records take their title from `title_field` (default
+a type with a url needs a slug field), whether the type is public, where it lives (`app`, an
+app's `.name`, empty for Global), who it is shared with (`shared`: `{ "all": true }` or
+`{ "apps": ["www"] }`; left out, every app for a Global type and none for an app's), and a
+list of fields, which may be empty. Records take their title from `title_field` (default
 `title`) when a field of that name exists. Definitions are JSON (`publr
 content_type create --help` spells out every key and field kind). Signed-in
 users may read types; changing them needs an admin. Anonymous callers never see type definitions, only the live records
@@ -17,7 +19,7 @@ of public types. Back to the
 | `content_type create --definition <json>` | Create a type; admins only |
 | `content_type update --type <handle\|id> --definition <json> [--drop_content true]` | Change a type; existing records follow (see below) |
 | `content_type get --type <handle\|id>` | Read the full definition |
-| `content_type list` | List types |
+| `content_type list [--limit <n>] [--offset <n>]` | List types by name, 50 a page (`--limit` up to 200); `total` counts every type the caller sees |
 | `content_type delete --type <handle\|id> [--force true]` | Delete; refuses while records exist unless forced |
 | `content_type validate --definition <json>` | Report every problem without saving |
 
@@ -58,7 +60,7 @@ richtext, media, reference or a unique field), and carry `options`:
   purge` does to a pointer at the purged record), `container` (`collapsed`,
   `label_field`, `add_label`) and `media` (`size_min`, `size_max` in bytes,
   `types` from image, video, audio, pdf, document, spreadsheet, presentation,
-  text, code, archive, `width_min`, `width_max`, `height_min`, `height_max` in
+  text, code, archive, font, `width_min`, `width_max`, `height_min`, `height_max` in
   pixels, `create`, `link`; kept on the definition now, checked when the
   media library lands);
 - `source` for slugs, `to` for references (the record types it may point at,

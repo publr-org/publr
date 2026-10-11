@@ -1,0 +1,185 @@
+import { Publr } from "publr-jsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { ChoiceCard } from "@publr/ui/ChoiceCard.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export const state = Publr.reactive({
+  share_listed: false,
+  app: "",
+});
+
+export const onApp = (event: Event) => {
+  state.app = (event.target as HTMLSelectElement).value;
+};
+
+export const onShare = (event: Event) => {
+  state.share_listed = (event.target as HTMLInputElement).value === "listed";
+};
+
+export type TypePlacementProps = {
+  /** "content type" or "taxonomy", for the words. */
+  noun: string;
+  /** The project has apps: where the type lives and who it is shared with are asked. */
+  has_apps: boolean;
+  /** Global: no app owns it. */
+  is_global: boolean;
+  /** The app it lives in; empty for Global. */
+  home: string;
+  /** Every app, the one it lives in selected unless it is Global. */
+  apps: Array<{ value: string; label: string; selected: boolean }>;
+  /** Shared with every app, those added later too; else with the ticked ones. Every app is
+   * listed; the one it lives in is hidden, here and as the App choice changes. */
+  share_all: boolean;
+  shares: Array<{ value: string; label: string; checked: boolean }>;
+  /** Who reads it is asked: not for a component, which has no records. */
+  show_access: boolean;
+  is_public: boolean;
+  /** The site has more than one language: what a record not translated into one does
+   * there, in the words of the plugin that adds languages. */
+  untranslated_label?: string;
+  keep_label?: string;
+  keep_help?: string;
+  omit_label?: string;
+  omit_help?: string;
+  falls_back?: boolean;
+};
+
+/** Where a type lives, which other apps reach it, and who may read it. Posted as `app`
+ * (empty for Global), `share` (`all` or `listed`), `shared` per ticked app and `access`
+ * (`public` or `private`). Any of it may change at any time; no record moves. */
+export function TypePlacement({
+  noun,
+  has_apps,
+  is_global,
+  home,
+  apps,
+  share_all,
+  shares,
+  show_access,
+  is_public,
+  untranslated_label = "",
+  keep_label = "",
+  keep_help = "",
+  omit_label = "",
+  omit_help = "",
+  falls_back = true,
+}: TypePlacementProps) {
+  state.share_listed = !share_all;
+  state.app = home;
+
+  return (
+    <div class="space-y-6" data-part="type-placement">
+      {has_apps && (
+        <Field>
+          <FieldLabel htmlFor="app">{Publr.t("App")}</FieldLabel>
+          <NativeSelect id="app" name="app" onChange={onApp}>
+            <option value="" selected={is_global}>
+              {Publr.t("Global")}
+            </option>
+            {apps.map((app) => (
+              <option value={app.value} selected={app.selected}>
+                {app.label}
+              </option>
+            ))}
+          </NativeSelect>
+          <FieldDescription>
+            {Publr.t("The app whose admin and schema the {noun} belongs to. A Global {noun} belongs to none: a library every app it is shared with can use.", { noun })}
+          </FieldDescription>
+        </Field>
+      )}
+      {has_apps && (
+        <fieldset class="m-0 min-w-0 space-y-3 border-0 p-0" data-part="type-shares">
+          <legend class="mb-2 p-0">
+            <Text as="span" variant="body-sm">{Publr.t("Shared with")}</Text>
+          </legend>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <ChoiceCard
+              name="share"
+              value="all"
+              checked={share_all}
+              title={Publr.t("All apps")}
+              description={Publr.t("Every app, including ones added later.")}
+              onChange={onShare}
+            />
+            <ChoiceCard
+              name="share"
+              value="listed"
+              checked={!share_all}
+              title={Publr.t("Selected apps")}
+              description={Publr.t("Only the apps you pick. Its own app always reaches it.")}
+              onChange={onShare}
+            />
+          </div>
+          <div class="hidden" hidden={!state.share_listed}>
+            <div class="space-y-2 pt-2" data-part="type-share-apps">
+              {shares.map((app) => (
+                <div hidden={state.app === app.value}>
+                  <CheckboxField
+                    id={`shared-${app.value}`}
+                    name="shared"
+                    value={app.value}
+                    checked={app.checked}
+                    label={app.label}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+          <FieldDescription>
+            {Publr.t("The apps it is shared with reference it, read it and call on it as they do their own types. Taking an app off leaves what it linked marked, never broken.")}
+          </FieldDescription>
+        </fieldset>
+      )}
+      {show_access && (
+        <fieldset class="m-0 min-w-0 border-0 p-0" data-part="type-access">
+          <legend class="mb-2 p-0">
+            <Text as="span" variant="body-sm">{Publr.t("Access")}</Text>
+          </legend>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <ChoiceCard
+              name="access"
+              value="public"
+              checked={is_public}
+              title={Publr.t("Public")}
+              description={Publr.t("Any visitor reads what is published.")}
+            />
+            <ChoiceCard
+              name="access"
+              value="private"
+              checked={!is_public}
+              title={Publr.t("Private")}
+              description={Publr.t("Only people signed in, as their roles allow.")}
+            />
+          </div>
+        </fieldset>
+      )}
+      {untranslated_label !== "" && (
+        <fieldset class="m-0 min-w-0 border-0 p-0" data-part="type-untranslated">
+          <legend class="mb-2 p-0">
+            <Text as="span" variant="body-sm">{untranslated_label}</Text>
+          </legend>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <ChoiceCard
+              name="untranslated"
+              value="keep"
+              checked={falls_back}
+              title={keep_label}
+              description={keep_help}
+            />
+            <ChoiceCard
+              name="untranslated"
+              value="omit"
+              checked={!falls_back}
+              title={omit_label}
+              description={omit_help}
+            />
+          </div>
+        </fieldset>
+      )}
+    </div>
+  );
+}

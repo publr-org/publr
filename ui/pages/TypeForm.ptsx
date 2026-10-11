@@ -6,6 +6,9 @@ import { Button } from "@publr/ui/Button.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { TypeHead } from "../components/TypeHead.ptsx";
+import { TypeNames } from "../components/TypeNames.ptsx";
+import { TypeEditor } from "../components/TypeEditor.ptsx";
+import { TypePlacement } from "../components/TypePlacement.ptsx";
 
 export type TypeFormProps = {
   title: string;
@@ -55,6 +58,30 @@ export type TypeFormProps = {
   base_url: string;
   visibility: string;
   is_public: boolean;
+  /** Where it lives, who it is shared with: see TypePlacement. */
+  has_apps: boolean;
+  is_global: boolean;
+  home: string;
+  apps: Array<{ value: string; label: string; selected: boolean }>;
+  share_all: boolean;
+  shares: Array<{ value: string; label: string; checked: boolean }>;
+  untranslated_label?: string;
+  keep_label?: string;
+  keep_help?: string;
+  omit_label?: string;
+  omit_help?: string;
+  falls_back?: boolean;
+  /** The name for more than one, and the name declined in the admin's other languages. */
+  plural_name?: string;
+  noun_languages?: Array<{
+    locale: string;
+    label: string;
+    genders: Array<{ key: string; label: string; selected: boolean }>;
+    cases: Array<{ key: string; label: string; singular: string; plural: string }>;
+  }>;
+  /** A record type: edited as a form, or visually over one of `rich_fields`. */
+  visual: boolean;
+  rich_fields: Array<{ value: string; label: string; selected: boolean }>;
   /** The delete form's action; absent for a new type. */
   delete_action?: string;
 };
@@ -95,6 +122,22 @@ export function TypeForm({
   base_url,
   visibility,
   is_public,
+  has_apps,
+  is_global,
+  home,
+  apps,
+  share_all,
+  shares,
+  plural_name = "",
+  noun_languages = [],
+  untranslated_label = "",
+  keep_label = "",
+  keep_help = "",
+  omit_label = "",
+  omit_help = "",
+  falls_back = true,
+  visual,
+  rich_fields,
   delete_action,
 }: TypeFormProps) {
   return (
@@ -102,12 +145,11 @@ export function TypeForm({
       title={title}
       parents={parents}
       problems={problems}
-      problems_title={`The ${noun} was not saved.`}
+      problems_title={Publr.t("The {noun} was not saved.", { noun })}
       notice={
         system && (
-          <Callout title={`Declared by the ${owner} plugin`}>
-            Handle {handle}, {visibility}. Its settings are fixed in code; its declared fields are
-            locked, and you can add fields of your own.
+          <Callout title={Publr.t("Declared by the {owner} plugin", { owner })}>
+            {Publr.t("Handle {handle}, {visibility}. Its settings are fixed in code; its declared fields are locked, and you can add fields of your own.", { handle, visibility })}
           </Callout>
         )
       }
@@ -115,10 +157,10 @@ export function TypeForm({
         !system && (
           <EditorAsideSection>
             <Button type="submit" form="type" classes="w-full">
-              {is_new ? (is_taxonomy ? "Create and add terms" : "Create and add fields") : "Save settings"}
+              {is_new ? (is_taxonomy ? Publr.t("Create and add terms") : Publr.t("Create and add fields")) : Publr.t("Save settings")}
             </Button>
             <Button href={cancel_href} hierarchy="tertiary" classes="w-full">
-              Cancel
+              {Publr.t("Cancel")}
             </Button>
           </EditorAsideSection>
         )
@@ -126,19 +168,19 @@ export function TypeForm({
       danger={
         delete_action && (
           <ConfirmAction
-            label={`Delete ${noun}`}
-            title={`Delete ${name}?`}
+            label={Publr.t("Delete {noun}", { noun })}
+            title={Publr.t("Delete {name}?", { name })}
             description={
               is_taxonomy
-                ? "The taxonomy goes for good. Its terms stay unless you delete them too; with terms kept, the taxonomy cannot be deleted."
-                : "The type goes for good. Its records stay unless you delete them too; with records kept, the type cannot be deleted."
+                ? Publr.t("The taxonomy goes for good. Its terms stay unless you delete them too; with terms kept, the taxonomy cannot be deleted.")
+                : Publr.t("The type goes for good. Its records stay unless you delete them too; with records kept, the type cannot be deleted.")
             }
             action={delete_action ?? "#"}
           >
             <CheckboxField
               id="force"
               name="force"
-              label={is_taxonomy ? "Also delete its terms" : "Also delete its records"}
+              label={is_taxonomy ? Publr.t("Also delete its terms") : Publr.t("Also delete its records")}
             />
           </ConfirmAction>
         )
@@ -167,12 +209,32 @@ export function TypeForm({
             choose_kind={choose_kind}
             is_taxonomy={is_taxonomy}
             hierarchical={hierarchical}
-            is_public={is_public}
             single={single}
             applies_routed={applies_routed}
             applies_other={applies_other}
             show_all_types={show_all_types}
           />
+          <TypeNames name={name} plural_name={plural_name} languages={noun_languages} />
+          <TypePlacement
+            noun={noun}
+            has_apps={has_apps}
+            is_global={is_global}
+            home={home}
+            apps={apps}
+            share_all={share_all}
+            shares={shares}
+            show_access={!is_component}
+            is_public={is_public}
+            untranslated_label={is_record ? untranslated_label : ""}
+            keep_label={keep_label}
+            keep_help={keep_help}
+            omit_label={omit_label}
+            omit_help={omit_help}
+            falls_back={falls_back}
+          />
+          {!is_taxonomy && is_record && (
+            <TypeEditor visual={visual} is_new={is_new} rich_fields={rich_fields} />
+          )}
         </form>
       )}
     </FormPage>

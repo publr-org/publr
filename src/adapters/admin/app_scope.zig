@@ -1,6 +1,6 @@
-//! Which app the admin shows: every record, or one app's. The choice is
-//! the viewer's, kept in a cookie; it narrows the content list and says which app a new
-//! record belongs to, never what anyone may read.
+//! Which app the admin shows: everything, or what one app reaches (the types living in it
+//! or shared with it). The choice is the viewer's, kept in a cookie; it narrows the admin
+//! and says where a new type lives, never what anyone's roles allow.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const identity_module = @import("../rest/identity.zig");
@@ -15,7 +15,6 @@ const Context = admin.Context;
 const Error = admin.Error;
 const Session = admin.Session;
 const Node = admin.render.Node;
-const ListIn = record_operations.List.In;
 
 pub const cookie_name = "publr_admin_app";
 const back_len_max: u32 = 2048;
@@ -25,11 +24,11 @@ pub const Scope = union(enum) {
     all,
     app: *const App,
 
-    pub fn label(scope: Scope) []const u8 {
+    pub fn label(scope: Scope, session: *const Session) admin.Error![]const u8 {
         std.debug.assert(scope != .app or scope.app.spec.label.len > 0);
 
         return switch (scope) {
-            .all => "All apps",
+            .all => session.translated("All apps"),
             .app => |app| app.spec.label,
         };
     }
@@ -65,37 +64,6 @@ pub fn of(session: *const Session) Scope {
     };
 }
 
-/// The list narrowed to the scope, unless its own filters already ask about the app.
-pub fn narrow(arena: std.mem.Allocator, scope: Scope, in: ListIn) Error!ListIn {
-    std.debug.assert(in.filters.len <= model.filter.filters_max);
-
-    const clause = switch (scope) {
-        .all => return in,
-        .app => |app| try std.fmt.allocPrint(arena, "app:is:{s}", .{app.spec.name}),
-    };
-
-    for (in.filters) |existing| {
-        if (std.mem.startsWith(u8, existing, "app:")) {
-            return in;
-        }
-    }
-
-    if (in.filters.len == model.filter.filters_max) {
-        return in;
-    }
-
-    const clauses = arena.alloc([]const u8, in.filters.len + 1) catch return error.OutOfMemory;
-
-    @memcpy(clauses[0..in.filters.len], in.filters);
-    clauses[in.filters.len] = clause;
-
-    var narrowed = in;
-
-    narrowed.filters = clauses;
-
-    return narrowed;
-}
-
 /// The switcher in the top bar, for a project with apps; null for one without.
 /// The app picker, with what plugins join after it (`after`); null where the project has no
 /// apps.
@@ -115,7 +83,7 @@ pub fn switcher(session: *const Session, after: ?Node) ?Node {
 
     choices[0] = .{
         .value = "",
-        .label = "All apps",
+        .label = session.translated("All apps") catch return null,
         .current = scope == .all,
         .href = "",
     };
@@ -130,7 +98,7 @@ pub fn switcher(session: *const Session, after: ?Node) ?Node {
     }
 
     return admin.render.view(arena, admin.views.AppSwitcher, .{
-        .current = scope.label(),
+        .current = scope.label(session) catch return null,
         .current_href = if (scope == .app) site_of(scope.app) else "",
         .choices = choices,
         .csrf = session.csrf_token(),
@@ -169,44 +137,6 @@ fn back_of(session: *const Session) []const u8 {
         request.path();
 }
 
-/// The record's App section in the editor's aside, for a project with apps.
-pub fn aside(session: *const Session, id: []const u8, app: ?[]const u8) Error!?Node {
-    std.debug.assert(id.len > 0);
-    std.debug.assert(session.signed_in());
-
-    const apps = session.project.apps;
-
-    if (apps.len == 0) {
-        return null;
-    }
-
-    const arena = session.arena;
-    const Choice = admin.views.RecordApp.ChoicesItem;
-    const choices = arena.alloc(Choice, apps.len + 1) catch return error.OutOfMemory;
-
-    choices[0] = .{
-        .value = "",
-        .label = "Project only",
-        .current = app == null,
-    };
-
-    for (apps, choices[1..]) |*known, *choice| {
-        const current = app != null and std.mem.eql(u8, app.?, known.spec.name);
-
-        choice.* = .{
-            .value = known.spec.name,
-            .label = known.spec.label,
-            .current = current,
-        };
-    }
-
-    return try admin.render.view(arena, admin.views.RecordApp, .{
-        .action = try std.fmt.allocPrint(arena, "/admin/content/{s}/app", .{id}),
-        .csrf = session.csrf_token(),
-        .choices = choices,
-    });
-}
-
 /// `POST /admin/app`: the viewer's choice kept, and back to the page it was made on.
 pub fn choose(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .post);
@@ -232,27 +162,6 @@ pub fn choose(request: *Request, response: *Response, ctx: *Context) Error!void 
 
     try response.set_header("Set-Cookie", cookie);
     try response.redirect(.see_other, safe_back(post.form.get("back") orelse ""));
-}
-
-/// `POST /admin/content/:id/app`: the record handed to the app chosen, or to the project.
-pub fn move(request: *Request, response: *Response, ctx: *Context) Error!void {
-    std.debug.assert(request.method() == .post);
-    std.debug.assert(ctx.user_data != null);
-
-    const back = "/admin/content";
-    var post = try admin.accept(request, response, ctx, back) orelse return;
-    const session = &post.session;
-    const id = try admin.param(session, "id", back) orelse return;
-    const app = post.form.get("app") orelse "";
-
-    _ = registry.SDK.dispatch(&session.ctx, record_operations.SetApp, .{
-        .id = id,
-        .app = app,
-    }) catch |err| return admin.fail(session, err, back);
-
-    const location = try std.fmt.allocPrint(session.arena, "{s}/{s}", .{ back, id });
-
-    try response.redirect(.see_other, location);
 }
 
 /// Only back into the admin, on this host: a path under `/admin`, nothing that could name
@@ -317,7 +226,7 @@ fn admin_call(
     return harness.flow.call(head, body);
 }
 
-test "the switcher narrows the list, and new records belong to the app chosen" {
+test "the switcher narrows the admin to what the app reaches, and places new types there" {
     var harness: Harness = undefined;
     try harness.init(.{});
     defer harness.deinit();
@@ -327,16 +236,28 @@ test "the switcher narrows the list, and new records belong to the app chosen" {
     system.now_ms = @import("../../sdk.zig").context.wall_clock_ms(std.testing.io);
     try @import("../../operations/user.zig").seed_admin(&system);
 
+    var note = model.content_type.test_post;
+    note.handle = "note";
+    note.name = "Note";
+    note.app = "docs";
+    _ = try registry.SDK.dispatch(&system, @import("../../operations/content_type.zig").Create, .{
+        .definition = try model.content_type.encode(arena, note),
+    });
+
     const Create = record_operations.Create;
     _ = try registry.SDK.dispatch(&system, Create, .{
         .type = "post",
-        .document = "{\"title\":\"Site news\"}",
-        .app = "www",
+        .document = "{\"title\":\"Global news\"}",
     });
     _ = try registry.SDK.dispatch(&system, Create, .{
-        .type = "post",
-        .document = "{\"title\":\"Shared note\"}",
+        .type = "note",
+        .document = "{\"title\":\"Docs only\"}",
     });
+    try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&system, Create, .{
+        .type = "post",
+        .document = "{\"title\":\"Told an app\"}",
+        .app = "www",
+    }));
 
     const signed = try harness.flow.call(
         "POST /api/auth/sign-in HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
@@ -348,9 +269,8 @@ test "the switcher narrows the list, and new records belong to the app chosen" {
 
     const everything = try admin_call(&harness, "GET", "/admin/content", session, "");
     try std.testing.expect(std.mem.indexOf(u8, everything.body, "All apps") != null);
-    try std.testing.expect(std.mem.indexOf(u8, everything.body, "Website") != null);
-    try std.testing.expect(std.mem.indexOf(u8, everything.body, "Site news") != null);
-    try std.testing.expect(std.mem.indexOf(u8, everything.body, "Shared note") != null);
+    try std.testing.expect(std.mem.indexOf(u8, everything.body, "Global news") != null);
+    try std.testing.expect(std.mem.indexOf(u8, everything.body, "Docs only") != null);
 
     const marker = "name=\"csrf\" value=\"";
     const at = std.mem.indexOf(u8, everything.body, marker).? + marker.len;
@@ -365,41 +285,25 @@ test "the switcher narrows the list, and new records belong to the app chosen" {
 
     const in_www = try std.fmt.allocPrint(arena, "{s}; {s}=www", .{ session, cookie_name });
     const narrowed = try admin_call(&harness, "GET", "/admin/content", in_www, "");
-    try std.testing.expect(std.mem.indexOf(u8, narrowed.body, "Site news") != null);
-    try std.testing.expect(std.mem.indexOf(u8, narrowed.body, "Shared note") == null);
+    try std.testing.expect(std.mem.indexOf(u8, narrowed.body, "Global news") != null);
+    try std.testing.expect(std.mem.indexOf(u8, narrowed.body, "Docs only") == null);
+
+    const in_docs = try std.fmt.allocPrint(arena, "{s}; {s}=docs", .{ session, cookie_name });
+    const own = try admin_call(&harness, "GET", "/admin/content", in_docs, "");
+    try std.testing.expect(std.mem.indexOf(u8, own.body, "Global news") != null);
+    try std.testing.expect(std.mem.indexOf(u8, own.body, "Docs only") != null);
 
     const stale = try std.fmt.allocPrint(arena, "{s}; {s}=_project", .{ session, cookie_name });
     const fallen = try admin_call(&harness, "GET", "/admin/content", stale, "");
-    try std.testing.expect(std.mem.indexOf(u8, fallen.body, "Site news") != null);
-    try std.testing.expect(std.mem.indexOf(u8, fallen.body, "Shared note") != null);
-    try std.testing.expect(std.mem.indexOf(u8, fallen.body, "Project only") == null);
+    try std.testing.expect(std.mem.indexOf(u8, fallen.body, "Docs only") != null);
 
-    const create_form = "csrf={s}&type=post&title=Made+here";
-    const create_body = try std.fmt.allocPrint(arena, create_form, .{csrf});
-    const created = try admin_call(&harness, "POST", "/admin/content/create", in_www, create_body);
-    const location = created.header("Location").?;
-    const id = location["/admin/content/".len..];
-    const Get = record_operations.Get;
-    try std.testing.expectEqualStrings(
-        "www",
-        (try registry.SDK.dispatch(&system, Get, .{
-            .id = id,
-        })).record.app.?,
-    );
-
-    const editor = try admin_call(&harness, "GET", location, session, "");
-    try std.testing.expect(std.mem.indexOf(u8, editor.body, "data-part=\"record-app\"") != null);
-    const move_path = try std.fmt.allocPrint(arena, "/admin/content/{s}/app", .{id});
-    const move_body = try std.fmt.allocPrint(arena, "csrf={s}&app=", .{csrf});
-    const moved = try admin_call(&harness, "POST", move_path, session, move_body);
-    try std.testing.expectEqualStrings(location, moved.header("Location").?);
-    const after = try registry.SDK.dispatch(&system, Get, .{
-        .id = id,
-    });
-    try std.testing.expect(after.record.app == null);
+    const new_type = try admin_call(&harness, "GET", "/admin/types/new", in_docs, "");
+    const placement = "data-part=\"type-placement\"";
+    try std.testing.expect(std.mem.indexOf(u8, new_type.body, placement) != null);
+    try std.testing.expect(std.mem.indexOf(u8, new_type.body, "value=\"docs\" selected") != null);
 
     const unknown = try std.fmt.allocPrint(arena, "csrf={s}&app=nope", .{csrf});
     const refused = try admin_call(&harness, "POST", "/admin/app", session, unknown);
     try std.testing.expect(refused.header("Location") == null);
-    try std.testing.expect(std.mem.indexOf(u8, refused.body, "NotFound") != null);
+    try std.testing.expect(std.mem.indexOf(u8, refused.body, "There is no such page") != null);
 }

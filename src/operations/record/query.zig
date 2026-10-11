@@ -39,9 +39,10 @@ pub const Query = struct {
         \\$slug][0]{ title, "variants": *[_type == "variant" && product == ^._id] |
         \\order(price.GBP) }`. All of the language but its extensions, custom functions,
         \\delta mode and vendor functions. It reads what the caller may: the types their grant
-        \\reaches (a visitor: public ones), live records with perspective `published` (the
-        \\default, and a visitor's only one) or every status the grant allows with `all`,
-        \\without the fields the grant hides. A query naming a type out of reach is refused as
+        \\reaches (a visitor: public ones), every status the grant allows with perspective
+        \\`all` (the default), each record's latest copy for a signed-in caller, or live
+        \\records only with `published` (a visitor's and a site page's only one), without
+        \\the fields the grant hides. A query naming a type out of reach is refused as
         \\`Denied`; a reference to a record the caller may not read is `null`, listed in
         \\`problems`. References are record ids: `product == ^._id` compares them, `->`
         \\follows them.
@@ -51,7 +52,7 @@ pub const Query = struct {
         query: []const u8,
         /// `$name` values, a JSON object.
         params: []const u8 = "{}",
-        perspective: Perspective = .published,
+        perspective: Perspective = .all,
     };
     pub const Perspective = enum { published, all };
     pub const Out = struct {
@@ -208,6 +209,8 @@ fn problems_of(
     return problems;
 }
 
+const types_chunk: u32 = 100;
+
 /// What the caller may read: the readable types, the statuses by perspective, the fields
 /// the grant hides.
 fn source_of(
@@ -218,24 +221,62 @@ fn source_of(
     std.debug.assert(granted.allows());
 
     const arena = ctx.arena;
-    const rows = store.content_types.list(ctx.db, arena) catch return error.Failed;
     var readable: std.ArrayList(query_dataset.Type) = .empty;
     var out_of_reach: std.ArrayList([]const u8) = .empty;
     const filter = granted.record_filter;
     const visitor = ctx.caller == .anonymous;
     const public_only = visitor or filter.flags.public_types_only;
+    const scratch = try ctx.scratch();
+    var key_name: [256]u8 = undefined;
+    var key_name_len: u32 = 0;
+    var key_id: [256]u8 = undefined;
+    var key_id_len: u32 = 0;
 
-    for (rows) |row| {
-        const in_reach = granted.allows_type(row.id) and granted.allows_owner(row.def.owner);
-        const visible = !public_only or row.def.public;
+    // The types a chunk at a time, their briefs only: what is kept is each one's handle.
+    while (true) {
+        const begun = scratch.mark();
+        defer scratch.rewind(begun);
 
-        if (in_reach and visible and kind_readable(ctx, row.def.kind)) {
-            readable.append(arena, .{
-                .handle = row.def.handle,
-            }) catch return error.OutOfMemory;
-        } else {
-            out_of_reach.append(arena, row.def.handle) catch return error.OutOfMemory;
+        const briefs = store.content_types.briefs_after(ctx.db, scratch.allocator(), .{
+            .name = key_name[0..key_name_len],
+            .id = key_id[0..key_id_len],
+        }, types_chunk) catch return error.Failed;
+
+        for (briefs) |brief| {
+            const shared = model.content_type.shared_of(.{
+                .handle = brief.handle,
+                .name = brief.name,
+                .app = brief.app,
+                .shared = brief.shared,
+                .fields = &.{},
+            });
+            const in_reach = granted.allows_type(brief.id) and
+                granted.allows_owner(brief.owner) and
+                granted.allows_placement(brief.app, shared);
+            const visible = !public_only or brief.public;
+            const handle = try arena.dupe(u8, brief.handle);
+
+            if (in_reach and visible and kind_readable(ctx, brief.kind)) {
+                readable.append(arena, .{
+                    .handle = handle,
+                }) catch return error.OutOfMemory;
+            } else {
+                out_of_reach.append(arena, handle) catch return error.OutOfMemory;
+            }
         }
+
+        if (briefs.len < types_chunk) {
+            break;
+        }
+
+        const last = briefs[briefs.len - 1];
+
+        std.debug.assert(last.name.len <= key_name.len and last.id.len <= key_id.len);
+
+        @memcpy(key_name[0..last.name.len], last.name);
+        key_name_len = @intCast(last.name.len);
+        @memcpy(key_id[0..last.id.len], last.id);
+        key_id_len = @intCast(last.id.len);
     }
 
     const live_only = visitor or perspective == .published or filter.flags.live_only;
