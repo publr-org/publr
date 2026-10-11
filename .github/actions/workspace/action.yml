@@ -12,7 +12,7 @@ inputs:
     description: The target publr is built for, which the carried compiler runs on
     default: native
   commits:
-    description: Lines of `<folder> <commit>` (lib, pjsx, jit, ui, icons, publr-js); main otherwise
+    description: Lines of `<folder> <commit>` (lib, pjsx, jit, ui, icons, publr-js, editor); main otherwise
     default: ""
 
 runs:
@@ -22,7 +22,7 @@ runs:
       shell: bash
       env: { COMMITS: "${{ inputs.commits }}" }
       run: |
-        for folder in lib pjsx jit ui icons publr-js; do
+        for folder in lib pjsx jit ui icons publr-js editor; do
           commit="$(printf '%s\n' "$COMMITS" | awk -v folder="$folder" '$1 == folder { print $2 }')"
           echo "${folder//-/_}=$commit" >> "$GITHUB_OUTPUT"
         done
@@ -42,6 +42,8 @@ runs:
         repository: publr-org/publrjs
         path: publr-js
         ref: "${{ steps.refs.outputs.publr_js }}"
+    - uses: actions/checkout@v4
+      with: { repository: publr-org/editor, path: editor, ref: "${{ steps.refs.outputs.editor }}" }
 
     - uses: actions/setup-node@v4
       with:

@@ -112,7 +112,7 @@ jobs:
         run: |
           {
             echo "commits<<EOF"
-            for pair in lib:lib pjsx:pjsx jit:jit ui:ui icons:icons publr-js:publrjs; do
+            for pair in lib:lib pjsx:pjsx jit:jit ui:ui icons:icons publr-js:publrjs editor:editor; do
               commit="$(git ls-remote "https://github.com/publr-org/${pair#*:}.git" refs/heads/main | cut -f1)"
               [ -n "$commit" ] || { echo "::error::no main in ${pair#*:}" >&2; exit 1; }
               echo "${pair%%:*} $commit"
