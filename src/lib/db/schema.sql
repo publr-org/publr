@@ -4,6 +4,15 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at INTEGER NOT NULL
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS migrations (
+    source     TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    sha256     TEXT NOT NULL,
+    one_way    INTEGER NOT NULL DEFAULT 0,
+    applied_ms INTEGER NOT NULL,
+    PRIMARY KEY (source, name)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS users (
     id                         TEXT PRIMARY KEY,
     email                      TEXT NOT NULL UNIQUE,
@@ -264,6 +273,128 @@ CREATE TABLE IF NOT EXISTS views (
 
 CREATE INDEX IF NOT EXISTS views_user ON views(user_id, name);
 
+CREATE TABLE IF NOT EXISTS rail_pins (
+    user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plugin    TEXT NOT NULL DEFAULT '',
+    page      TEXT NOT NULL,
+    position  INTEGER NOT NULL,
+    pinned_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, plugin, page)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS ai_conversations (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    prompt        TEXT NOT NULL,
+    provider      TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    scope         TEXT NOT NULL,
+    state         TEXT NOT NULL,
+    answer        TEXT NOT NULL DEFAULT '',
+    device_id     TEXT NOT NULL DEFAULT '',
+    input_tokens  INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    draft         TEXT NOT NULL DEFAULT '',
+    cached_tokens INTEGER NOT NULL DEFAULT 0
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS ai_conversations_user ON ai_conversations(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS secrets (
+    name       TEXT PRIMARY KEY,
+    sealed     BLOB NOT NULL,
+    updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS ai_steps (
+    conversation_id TEXT NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+    position        INTEGER NOT NULL,
+    kind            TEXT NOT NULL,
+    summary         TEXT NOT NULL,
+    detail          TEXT NOT NULL,
+    failed          INTEGER NOT NULL DEFAULT 0,
+    href            TEXT NOT NULL DEFAULT '',
+    at              INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, position)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS ai_pictures (
+    conversation_id TEXT NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+    asked           INTEGER NOT NULL,
+    ordinal         INTEGER NOT NULL,
+    media_key       TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, asked, ordinal)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS ai_activity (
+    conversation_id TEXT PRIMARY KEY REFERENCES ai_conversations(id) ON DELETE CASCADE,
+    doing           TEXT NOT NULL,
+    since           INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS ai_browsers (
+    conversation_id TEXT PRIMARY KEY REFERENCES ai_conversations(id) ON DELETE CASCADE,
+    ready_at        INTEGER NOT NULL DEFAULT 0,
+    number          INTEGER NOT NULL DEFAULT 0,
+    state           TEXT NOT NULL DEFAULT 'idle',
+    call            TEXT NOT NULL DEFAULT '',
+    answer          TEXT NOT NULL DEFAULT '',
+    failed          INTEGER NOT NULL DEFAULT 0,
+    picture         TEXT NOT NULL DEFAULT ''
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS removals (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id       TEXT NOT NULL DEFAULT '',
+    conversation_id TEXT NOT NULL DEFAULT '',
+    state           TEXT NOT NULL,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS removals_user ON removals(user_id, state, created_at);
+
+CREATE TABLE IF NOT EXISTS removal_items (
+    removal_id TEXT NOT NULL REFERENCES removals(id) ON DELETE CASCADE,
+    position   INTEGER NOT NULL,
+    operation  TEXT NOT NULL,
+    input      TEXT NOT NULL,
+    label      TEXT NOT NULL,
+    detail     TEXT NOT NULL DEFAULT '',
+    blocked    TEXT NOT NULL DEFAULT '',
+    state      TEXT NOT NULL,
+    message    TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (removal_id, position)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS trash (
+    id              TEXT PRIMARY KEY,
+    kind            TEXT NOT NULL,
+    key             TEXT NOT NULL,
+    label           TEXT NOT NULL,
+    removed_by      TEXT NOT NULL DEFAULT '',
+    device_id       TEXT NOT NULL DEFAULT '',
+    conversation_id TEXT NOT NULL DEFAULT '',
+    removed_at      INTEGER NOT NULL,
+    keep_until      INTEGER NOT NULL,
+    copy            TEXT NOT NULL,
+    files           TEXT NOT NULL DEFAULT ''
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS trash_removed ON trash(removed_at);
+
+CREATE TABLE IF NOT EXISTS health_kept (
+    target  TEXT NOT NULL,
+    app     TEXT NOT NULL,
+    reason  TEXT NOT NULL,
+    holders INTEGER NOT NULL,
+    kept_at INTEGER NOT NULL,
+    PRIMARY KEY (target, app)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS internal_records (
     id         TEXT PRIMARY KEY,
     plugin     TEXT NOT NULL,
@@ -323,7 +454,8 @@ CREATE TABLE IF NOT EXISTS sandboxed_plugins (
     previous_hash     TEXT,
     previous_manifest TEXT,
     installed_at      INTEGER NOT NULL,
-    updated_at        INTEGER NOT NULL
+    updated_at        INTEGER NOT NULL,
+    remove_data       TEXT NOT NULL DEFAULT '[]'
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS activity (

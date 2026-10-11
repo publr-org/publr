@@ -68,6 +68,9 @@ pub fn handle(
         .files = project.files,
         .apps = if (project.apps_host) |host| host.folder() else null,
         .builder = project.builder,
+        .agents = project.agents,
+        .live = project.live,
+        .updater = project.updater,
         .device = identity.caller,
     }, envelope.args, &out.writer) catch |failure| blk: {
         err.writer.print("publr: {s}\n", .{@errorName(failure)}) catch {

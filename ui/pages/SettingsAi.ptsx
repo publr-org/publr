@@ -1,0 +1,177 @@
+import { FormPage } from "../layouts/FormPage.ptsx";
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Card } from "@publr/ui/Card.ptsx";
+import { CardBody } from "@publr/ui/CardBody.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SettingsAiProps = {
+  /** The providers installed, the one in use first. */
+  providers: Array<{
+    plugin: string;
+    label: string;
+    chosen: boolean;
+    /** The secret its key is kept under; empty for a provider with no key. */
+    key_secret: string;
+    key_set: boolean;
+    key_url: string;
+    /** What to do to get a key, one sentence after another. */
+    key_steps: string;
+    models: Array<{ id: string; label: string; selected: boolean }>;
+    permissions_href: string;
+    /** What it asks for (sending requests out, its key) waits for approval. */
+    pending: boolean;
+  }>;
+  /** The official providers that can be set up in a click. */
+  offered: Array<{ name: string; label: string; summary: string }>;
+  /** Whether a folder of official plugins is known (`PUBLR_PLUGIN_CATALOG`). */
+  catalog: boolean;
+  notice: string;
+  problem: string;
+};
+
+/** Models on the project's own keys: the providers installed, each with its key, its
+ * model and a test; the one conversations use; and the ones that can be set up. */
+export function SettingsAi({ providers, offered, catalog, notice, problem }: SettingsAiProps) {
+  return (
+    <FormPage
+      title={Publr.t("AI")}
+      description={Publr.t("Build with a model on your own key: its bill is yours, and Publr charges nothing. Conversations use the provider marked In use.")}
+      notice={
+        <div class="flex flex-col gap-3">
+          {problem !== "" && (
+            <Callout tone="error" title={Publr.t("That did not work")}>
+              {problem}
+            </Callout>
+          )}
+          {notice !== "" && <Callout title={notice} />}
+          {providers.length === 0 && offered.length === 0 && (
+            <Callout title={Publr.t("No model providers yet")}>
+              {Publr.t("A provider is a plugin: upload its .wasm under Plugins, then approve what it asks for.")}{" "}
+              {catalog ? Publr.t("Or set one up below.") : Publr.t("With the folder of official plugins named by")}
+              {catalog ? "" : " "}
+              {!catalog && <Code>PUBLR_PLUGIN_CATALOG</Code>}
+              {catalog ? "" : Publr.t(", they can be set up from here in a click.")}
+            </Callout>
+          )}
+        </div>
+      }
+    >
+      <div class="flex flex-col gap-6">
+        {providers.map((provider) => (
+          <Card key={provider.plugin}>
+            <CardBody>
+              <div class="flex flex-col gap-5">
+                <div class="flex items-center justify-between gap-4">
+                  <Heading level={2} size="sm">
+                    {provider.label}
+                  </Heading>
+                  <div class="flex items-center gap-3">
+                    {provider.pending && <Status tone="warning">{Publr.t("Waiting for approval")}</Status>}
+                    {provider.chosen && <Status tone="accent">{Publr.t("In use")}</Status>}
+                    {provider.key_set ? (
+                      <Status tone="success">{Publr.t("Key set")}</Status>
+                    ) : (
+                      <Status tone="warning">{Publr.t("Needs a key")}</Status>
+                    )}
+                  </div>
+                </div>
+                {provider.key_secret !== "" && (
+                  <form method="post" action="/admin/settings/ai/key" class="flex flex-col gap-2">
+                    <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                    <input type="hidden" name="name" value={provider.key_secret} />
+                    <Text as="p" variant="body-sm" tone="muted">
+                      {provider.key_steps}{" "}
+                      <Link href={provider.key_url} external variant="body-sm">
+                        {Publr.t("Get a key")}
+                      </Link>
+                    </Text>
+                    <div class="flex items-center gap-2">
+                      <Input
+                        type="password"
+                        name="value"
+                        placeholder={provider.key_set ? Publr.t("Paste a new key to replace it") : Publr.t("Paste your key")}
+                        classes="flex-1"
+                      />
+                      <Button hierarchy="secondary" size="md" type="submit">
+                        {Publr.t("Save key")}
+                      </Button>
+                    </div>
+                  </form>
+                )}
+                {provider.pending && (
+                  <div class="flex items-center justify-between gap-4">
+                    <Text as="p" variant="body-sm" tone="muted">
+                      {Publr.t("It can call out only once you approve what it asks for: sending requests to its API, and using its key.")}
+                    </Text>
+                    <Button hierarchy="primary" size="md" href={provider.permissions_href}>
+                      {Publr.t("Approve")}
+                    </Button>
+                  </div>
+                )}
+                <div class="flex flex-wrap items-center gap-2">
+                  <form method="post" action="/admin/settings/ai/choose" class="flex items-center gap-2">
+                    <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                    <input type="hidden" name="provider" value={provider.plugin} />
+                    <NativeSelect name="model" size="sm" label={Publr.t("Model")}>
+                      {provider.models.map((model) => (
+                        <option value={model.id} selected={model.selected}>
+                          {model.label}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                    <Button hierarchy={provider.chosen ? "secondary" : "primary"} size="md" type="submit">
+                      {provider.chosen ? Publr.t("Save model") : Publr.t("Use this provider")}
+                    </Button>
+                  </form>
+                  <form method="post" action="/admin/settings/ai/test">
+                    <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                    <input type="hidden" name="provider" value={provider.plugin} />
+                    <Button hierarchy="secondary" size="md" type="submit">
+                      {Publr.t("Test")}
+                    </Button>
+                  </form>
+                  <Link href={provider.permissions_href} variant="body-sm">
+                    {Publr.t("Permissions")}
+                  </Link>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+        ))}
+        {offered.length > 0 && (
+          <div class="flex flex-col gap-3">
+            <SectionTitle title={Publr.t("Set up another")} />
+            {offered.map((item) => (
+              <div key={item.name} class="flex items-center justify-between gap-4">
+                <div class="flex min-w-0 flex-col">
+                  <Text as="span" variant="heading-xs">
+                    {item.label}
+                  </Text>
+                  <Text as="span" variant="body-sm" tone="muted">
+                    {item.summary}
+                  </Text>
+                </div>
+                <form method="post" action="/admin/settings/ai/set-up">
+                  <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                  <input type="hidden" name="name" value={item.name} />
+                  <Button hierarchy="secondary" size="md" type="submit">
+                    {Publr.t("Set up")}
+                  </Button>
+                </form>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </FormPage>
+  );
+}

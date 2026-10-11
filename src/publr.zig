@@ -15,6 +15,8 @@ pub const cli = @import("adapters/cli.zig");
 pub const server = @import("server.zig");
 pub const registry = @import("server/registry.zig");
 pub const plugin = @import("sdk/plugin.zig");
+/// Model providers: the contract, and the two operations a provider plugin registers with.
+pub const ai = @import("sdk/ai.zig");
 /// A plugin's records as typed values: `publr.records.of(Order, "order")`.
 pub const records = @import("operations/record/typed.zig");
 /// A plugin's internal records as typed values: `publr.internal.of(Movement, "movement")`.
@@ -26,6 +28,7 @@ pub const plugin_hooks = @import("server/plugin_hooks.zig");
 pub const rest = @import("adapters/rest.zig");
 pub const admin = @import("adapters/admin.zig");
 pub const project = @import("server/project.zig");
+pub const split = @import("server/split.zig");
 pub const apps = @import("adapters/apps.zig");
 /// What an app's `middleware.zig` is given, and what it answers with.
 pub const Request = apps.middleware.Request;
@@ -48,22 +51,31 @@ pub const operations = struct {
     pub const taxonomy = @import("operations/taxonomy.zig");
     pub const term = @import("operations/term.zig");
     pub const media = @import("operations/media.zig");
+    pub const design = @import("operations/design.zig");
     pub const snapshot = @import("operations/snapshot.zig");
     pub const view = @import("operations/view.zig");
+    pub const rail = @import("operations/rail.zig");
+    pub const ai = @import("operations/ai.zig");
+    pub const secret = @import("operations/secret.zig");
+    pub const http = @import("operations/http.zig");
     pub const internal = @import("operations/internal.zig");
     pub const plugin = @import("operations/plugin.zig");
+    pub const variants = @import("operations/variants.zig");
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");
 pub const toolchain = if (builtin.os.tag == .wasi) void else @import("server/toolchain.zig");
 pub const plugin_build = if (builtin.os.tag == .wasi) void else @import("server/plugin_build.zig");
 pub const operator = if (builtin.os.tag == .wasi) void else @import("server/operator.zig");
+pub const database = if (builtin.os.tag == .wasi) void else @import("server/database.zig");
+pub const update = if (builtin.os.tag == .wasi) void else @import("server/update.zig");
 pub const agents = if (builtin.os.tag == .wasi) void else @import("server/agents.zig");
 pub const apps_load = if (builtin.os.tag == .wasi) void else @import("server/apps_load.zig");
 pub const login = if (builtin.os.tag == .wasi) void else @import("server/login.zig");
 pub const skill = if (builtin.os.tag == .wasi) void else @import("server/skill.zig");
 pub const new_site = if (builtin.os.tag == .wasi) void else @import("server/new_site.zig");
 pub const remote = if (builtin.os.tag == .wasi) void else @import("server/remote.zig");
+pub const agent = if (builtin.os.tag == .wasi) void else @import("server/agent.zig");
 
 test {
     std.testing.refAllDecls(@This());

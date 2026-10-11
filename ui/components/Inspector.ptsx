@@ -1,0 +1,453 @@
+/** The preview's inspector: hover shows an element's box (content, padding, border, margin,
+ * and a flex or grid container's tracks and gaps), a click picks it. What was picked is
+ * described for the agent: the page, the design system's components around it, the admin's
+ * extension point it sits in, its text. The hit-test and the box are Publr Editor's
+ * (`chrome-inline.ts`, as Publr Companion carries them). Same-origin frames only. */
+
+/** An element picked in the preview, described for the agent. */
+export type Picked = {
+  /** The page it is on: `/admin/content`, `/about`. */
+  page: string;
+  /** In words, outermost first: `Sidebar › Nav item "Content"`. */
+  label: string;
+  /** The admin's extension point it sits in (`rail`, `top_bar`, …); empty for none. */
+  slot: string;
+  /** A selector that finds it again. */
+  selector: string;
+  /** Its text, cut short. */
+  text: string;
+  /** The record a list row shows, by id; empty outside one. */
+  row: string;
+  /** The list column it is in, by its heading; empty outside a table. */
+  column: string;
+  /** The editor field it is part of, by its path (`title`); empty outside one. */
+  field: string;
+  /** Where it leads, when it is a link or inside one. */
+  link: string;
+  /** Where it is, in the frame's viewport. */
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+const style_text = `
+.pi-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
+.pi-layer * { box-sizing: border-box; pointer-events: none !important; }
+.pi-hover-outline { position: fixed; outline: 1px dashed #6366f1; }
+.pi-hover-box-clip { position: absolute; inset: 0; overflow: hidden; }
+.pi-part, .pi-layout-item, .pi-layout-gap { position: absolute; }
+.pi-content { background: rgb(111 168 220 / 38%); }
+.pi-padding-top, .pi-padding-right, .pi-padding-bottom, .pi-padding-left { background: rgb(147 196 125 / 42%); }
+.pi-border-top, .pi-border-right, .pi-border-bottom, .pi-border-left { background: rgb(255 229 153 / 58%); }
+.pi-margin-top, .pi-margin-right, .pi-margin-bottom, .pi-margin-left {
+  background: repeating-linear-gradient(135deg, rgb(230 142 68 / 34%) 0 2px, transparent 2px 7px), rgb(246 178 107 / 25%);
+}
+.pi-hover-outline[data-layout] { outline-color: #8b5cf6; }
+.pi-layout-item { border: 1px dotted #8b5cf6; }
+.pi-layout-gap {
+  border-inline: 1px dashed rgb(124 58 237 / 70%);
+  background: repeating-linear-gradient(135deg, rgb(124 58 237 / 48%) 0 2px, transparent 2px 7px), rgb(139 92 246 / 18%);
+}
+.pi-selected { position: fixed; outline: 2px solid #6366f1; outline-offset: 1px; border-radius: 2px; }
+.pi-pin {
+  position: fixed; width: 20px; height: 20px; border-radius: 10px; background: #6366f1; color: #fff;
+  font: 600 11px/20px system-ui, sans-serif; text-align: center; box-shadow: 0 1px 3px rgb(0 0 0 / 30%);
+}
+`;
+
+const skipped = new Set(["SCRIPT", "STYLE", "LINK", "META", "HEAD", "NOSCRIPT"]);
+
+/** Names the design system gives its parts, in words for the label. */
+const words_of = (name: string) => name.replace(/[-_]/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2");
+
+/** The inspector over a window's page while picking (the preview's frame, or the admin
+ * around it): answers a function that stops it. `on_pick` hears each element picked;
+ * `skip` names parts never picked (the conversation beside the preview, the frame itself). */
+export const start_inspector = (
+  view: Window | null,
+  on_pick: (picked: Picked) => void,
+  skip: (element: Element) => boolean,
+) => {
+  const doc = view ? (() => { try { return view.document; } catch { return null; } })() : null;
+  if (!view || !doc || !doc.body) return () => {};
+
+  const sheet = doc.createElement("style");
+  sheet.textContent = style_text;
+  doc.head.append(sheet);
+  const layer = doc.createElement("div");
+  layer.className = "pi-layer";
+  doc.body.append(layer);
+  const selected_box = doc.createElement("div");
+  selected_box.className = "pi-selected";
+  selected_box.hidden = true;
+  layer.append(selected_box);
+
+  const all = () => {
+    const out: Element[] = [doc.body];
+    const walk = (root: Element) => {
+      for (const element of Array.from(root.children)) {
+        if (element === layer || skipped.has(element.tagName) || skip(element)) continue;
+        // An icon or a drawing is picked whole, never its inner shapes.
+        if (element.closest("svg") && element.localName !== "svg") continue;
+        out.push(element);
+        if (element.localName !== "svg") walk(element);
+      }
+    };
+    walk(doc.body);
+    return out;
+  };
+  const geometry = geometry_of(view, layer, all);
+  geometry.hide();
+  let point: { x: number; y: number } | null = null;
+  let scheduled = 0;
+  let picked: Element | null = null;
+
+  const place = (box: HTMLElement, element: Element) => {
+    const rect = element.getBoundingClientRect();
+    Object.assign(box.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+  };
+  const paint = () => {
+    scheduled = 0;
+    if (picked && picked.isConnected) place(selected_box, picked);
+    if (!point) return geometry.hide();
+    const target = geometry.target_at(point.x, point.y);
+    if (!target || target === picked) return geometry.hide();
+    geometry.show(target);
+  };
+  const schedule = () => {
+    if (!scheduled) scheduled = view.requestAnimationFrame(paint);
+  };
+  const pick = (element: Element) => {
+    picked = element;
+    selected_box.hidden = false;
+    place(selected_box, element);
+    geometry.hide();
+    on_pick(describe(view, doc, element));
+  };
+  const moved = (event: PointerEvent) => {
+    if (skipped_at(event)) return left();
+    point = { x: event.clientX, y: event.clientY };
+    schedule();
+  };
+  const left = () => {
+    point = null;
+    geometry.hide();
+  };
+  const skipped_at = (event: Event) => {
+    const origin = event.target as Element | null;
+    for (let node = origin; node; node = node.parentElement) if (skip(node)) return true;
+    return false;
+  };
+  // Picking replaces the page's own clicks: nothing is followed or submitted meanwhile.
+  const gesture = (event: Event) => {
+    const pointer = event as PointerEvent;
+    if (pointer.button !== 0 || skipped_at(event)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.type !== "pointerdown") return;
+    const target = geometry.target_at(pointer.clientX, pointer.clientY);
+    if (target) pick(target);
+  };
+  const keyed = (event: KeyboardEvent) => {
+    const parent = picked?.parentElement;
+    if ((event.metaKey || event.altKey) && event.key === "ArrowUp" && parent && parent !== doc.documentElement) {
+      event.preventDefault();
+      pick(parent);
+    }
+  };
+  const gestures = ["pointerdown", "mousedown", "mouseup", "click", "dblclick"];
+  view.addEventListener("pointermove", moved, true);
+  doc.documentElement.addEventListener("pointerleave", left);
+  view.addEventListener("scroll", schedule, true);
+  view.addEventListener("resize", schedule);
+  view.addEventListener("keydown", keyed, true);
+  for (const type of gestures) view.addEventListener(type, gesture, true);
+
+  return () => {
+    view.removeEventListener("pointermove", moved, true);
+    doc.documentElement.removeEventListener("pointerleave", left);
+    view.removeEventListener("scroll", schedule, true);
+    view.removeEventListener("resize", schedule);
+    view.removeEventListener("keydown", keyed, true);
+    for (const type of gestures) view.removeEventListener(type, gesture, true);
+    layer.remove();
+    sheet.remove();
+  };
+};
+
+/** Numbered pins on the elements comments are about, over a window's page; answers a
+ * function that takes them off. */
+export const pin_comments = (view: Window | null, pins: Array<{ number: number; selector: string }>) => {
+  const doc = view ? (() => { try { return view.document; } catch { return null; } })() : null;
+  if (!doc || !view || !doc.body || pins.length === 0) return () => {};
+  const layer = doc.createElement("div");
+  layer.className = "pi-layer";
+  const sheet = doc.createElement("style");
+  sheet.textContent = style_text;
+  doc.head.append(sheet);
+  doc.body.append(layer);
+  const marks = pins.map((pin) => {
+    const mark = doc.createElement("div");
+    mark.className = "pi-pin";
+    mark.textContent = `${pin.number}`;
+    layer.append(mark);
+    return { mark, selector: pin.selector };
+  });
+  const place = () => {
+    for (const { mark, selector } of marks) {
+      const element = (() => { try { return doc.querySelector(selector); } catch { return null; } })();
+      mark.hidden = !element;
+      if (!element) continue;
+      const rect = element.getBoundingClientRect();
+      Object.assign(mark.style, { left: `${rect.right - 10}px`, top: `${rect.top - 10}px` });
+    }
+  };
+  place();
+  view.addEventListener("scroll", place, true);
+  view.addEventListener("resize", place);
+  return () => {
+    view.removeEventListener("scroll", place, true);
+    view.removeEventListener("resize", place);
+    layer.remove();
+    sheet.remove();
+  };
+};
+
+/** An element as the agent is told of it. */
+const describe = (view: Window, doc: Document, element: Element): Picked => {
+  const names: string[] = [];
+  let slot = "";
+  for (let node: Element | null = element; node && node !== doc.body; node = node.parentElement) {
+    const ds = node.getAttribute("data-ds");
+    const part = node.getAttribute("data-part");
+    if (!slot && node.getAttribute("data-slot")) slot = node.getAttribute("data-slot") ?? "";
+    if (ds) names.unshift(words_of(ds));
+    else if (part && names.length < 2) names.unshift(words_of(part));
+  }
+  const shown = ((element as HTMLElement).innerText ?? element.textContent ?? "").replace(/\s+/g, " ").trim();
+  // A control with no words (an icon link) goes by the name it gives assistive tech.
+  const named = element.closest("[aria-label], [title]");
+  const text = shown !== "" ? shown : (named?.getAttribute("aria-label") ?? named?.getAttribute("title") ?? "");
+  const own = names.length > 0 ? "" : element.localName;
+  const quoted = text !== "" ? ` "${text.slice(0, 60)}"` : "";
+  const rect = element.getBoundingClientRect();
+  const row = element.closest("[data-row-id]")?.getAttribute("data-row-id") ?? "";
+  const field = element.closest("[data-field-path]")?.getAttribute("data-field-path") ?? "";
+  const anchor = element.closest("a[href]");
+  return {
+    row,
+    column: column_of(element),
+    field,
+    link: anchor ? (anchor.getAttribute("href") ?? "").replace(/[?&]framed=1/, "") : "",
+    page: view.location.pathname + view.location.search.replace(/[?&]framed=1/, ""),
+    label: `${[...names.slice(-4), own].filter((name) => name !== "").join(" › ")}${quoted}`,
+    slot,
+    selector: selector_of(doc, element),
+    text: text.slice(0, 300),
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+};
+
+/** The heading of the table column `element` sits in; empty outside a table. */
+const column_of = (element: Element) => {
+  const cell = element.closest("td, th");
+  const table = cell?.closest("table");
+  if (!cell || !table || !cell.parentElement) return "";
+  const index = Array.from(cell.parentElement.children).indexOf(cell);
+  const heading = table.querySelectorAll("thead tr")[0]?.children[index];
+  return (heading?.textContent ?? "").replace(/\s+/g, " ").trim();
+};
+
+/** The shortest path of tag names from the top that finds `element` alone. */
+const selector_of = (doc: Document, element: Element) => {
+  const unique = (candidate: string) => { try { return doc.querySelectorAll(candidate).length === 1; } catch { return false; } };
+  if (element.id && unique(`#${CSS.escape(element.id)}`)) return `#${CSS.escape(element.id)}`;
+  const parts: string[] = [];
+  for (let node: Element | null = element; node && node !== doc.documentElement; node = node.parentElement) {
+    const here: Element = node;
+    const same = Array.from(here.parentElement?.children ?? []).filter((other) => other.localName === here.localName);
+    parts.unshift(CSS.escape(here.localName) + (same.length > 1 ? `:nth-of-type(${same.indexOf(here) + 1})` : ""));
+    if (unique(parts.join(" > "))) return parts.join(" > ");
+  }
+  return parts.join(" > ");
+};
+
+/** The hover box and the hit-test, Publr Editor's. */
+const geometry_of = (view: Window, layer: HTMLElement, all: () => Element[]) => {
+  const doc = view.document;
+  const div = (name: string) => {
+    const element = doc.createElement("div");
+    element.className = name;
+    return element;
+  };
+  const outline = div("pi-hover-outline");
+  const clip = div("pi-hover-box-clip");
+  outline.append(clip);
+  layer.append(outline);
+  const parts: Record<string, HTMLElement> = {};
+  for (const name of ["content", ...["padding", "border", "margin"].flatMap((kind) => ["Top", "Right", "Bottom", "Left"].map((side) => kind + side))]) {
+    const part = div(`pi-part pi-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`);
+    parts[name] = part;
+    (name.startsWith("margin") ? outline : clip).append(part);
+  }
+  let layout_parts: HTMLElement[] = [];
+  const px = (value: string) => Math.max(0, Number.parseFloat(value) || 0);
+  const signed = (value: string) => Number.parseFloat(value) || 0;
+  const depth_of = (element: Element) => {
+    let depth = 0;
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) depth++;
+    return depth;
+  };
+  const radius = (value: string) => {
+    const pair = value.split(/\s+/).map((part) => Number.parseFloat(part) || 0);
+    return [pair[0] ?? 0, pair[1] ?? pair[0] ?? 0];
+  };
+  // A rounded corner paints nothing outside its curve: a point there is the parent's.
+  const painted = (rect: DOMRect, look: CSSStyleDeclaration, x: number, y: number) => {
+    const corners: Array<[string, number, number, number, number]> = [
+      ["borderTopLeftRadius", rect.left, rect.top, 1, 1],
+      ["borderTopRightRadius", rect.right, rect.top, -1, 1],
+      ["borderBottomRightRadius", rect.right, rect.bottom, -1, -1],
+      ["borderBottomLeftRadius", rect.left, rect.bottom, 1, -1],
+    ];
+    for (const [property, edge_x, edge_y, dir_x, dir_y] of corners) {
+      const [rx0, ry0] = radius((look as unknown as Record<string, string>)[property]);
+      const rx = Math.min(rx0, rect.width / 2);
+      const ry = Math.min(ry0, rect.height / 2);
+      if (!rx || !ry) continue;
+      const dx = (x - (edge_x + dir_x * rx)) / rx;
+      const dy = (y - (edge_y + dir_y * ry)) / ry;
+      const in_x = dir_x > 0 ? x < edge_x + rx : x > edge_x - rx;
+      const in_y = dir_y > 0 ? y < edge_y + ry : y > edge_y - ry;
+      if (in_x && in_y && dx * dx + dy * dy > 1) return false;
+    }
+    return true;
+  };
+  const within = (left: number, top: number, right: number, bottom: number, x: number, y: number) =>
+    x >= left && x <= right && y >= top && y <= bottom;
+  const target_at = (x: number, y: number) => {
+    let best: { element: Element; depth: number; area: number } | null = null;
+    for (const element of all()) {
+      const look = view.getComputedStyle(element);
+      if (look.visibility === "hidden" || look.display === "none") continue;
+      const rect = element.getBoundingClientRect();
+      if (!rect.width || !rect.height) continue;
+      const in_border = within(rect.left, rect.top, rect.right, rect.bottom, x, y);
+      const in_margin = in_border || within(
+        rect.left - px(look.marginLeft), rect.top - px(look.marginTop),
+        rect.right + px(look.marginRight), rect.bottom + px(look.marginBottom), x, y,
+      );
+      if (!in_margin || (in_border && !painted(rect, look, x, y))) continue;
+      const candidate = { element, depth: depth_of(element), area: rect.width * rect.height };
+      if (!best || candidate.depth > best.depth || (candidate.depth === best.depth && candidate.area < best.area)) {
+        best = candidate;
+      }
+    }
+    return best ? best.element : null;
+  };
+  const put = (part: HTMLElement, left: number, top: number, width: number, height: number) => {
+    part.hidden = !(width > 0 && height > 0);
+    if (part.hidden) return;
+    Object.assign(part.style, { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` });
+  };
+  const box_model = (rect: DOMRect, look: CSSStyleDeclaration) => {
+    const border = { top: px(look.borderTopWidth), right: px(look.borderRightWidth), bottom: px(look.borderBottomWidth), left: px(look.borderLeftWidth) };
+    const padding = { top: px(look.paddingTop), right: px(look.paddingRight), bottom: px(look.paddingBottom), left: px(look.paddingLeft) };
+    const margin = { top: px(look.marginTop), right: px(look.marginRight), bottom: px(look.marginBottom), left: px(look.marginLeft) };
+    const inner_width = Math.max(0, rect.width - border.left - border.right);
+    const inner_height = Math.max(0, rect.height - border.top - border.bottom);
+    const content = {
+      left: border.left + padding.left,
+      top: border.top + padding.top,
+      width: Math.max(0, inner_width - padding.left - padding.right),
+      height: Math.max(0, inner_height - padding.top - padding.bottom),
+    };
+    put(parts.marginTop, -margin.left, -margin.top, rect.width + margin.left + margin.right, margin.top);
+    put(parts.marginRight, rect.width, 0, margin.right, rect.height);
+    put(parts.marginBottom, -margin.left, rect.height, rect.width + margin.left + margin.right, margin.bottom);
+    put(parts.marginLeft, -margin.left, 0, margin.left, rect.height);
+    put(parts.borderTop, 0, 0, rect.width, border.top);
+    put(parts.borderRight, rect.width - border.right, border.top, border.right, inner_height);
+    put(parts.borderBottom, 0, rect.height - border.bottom, rect.width, border.bottom);
+    put(parts.borderLeft, 0, border.top, border.left, inner_height);
+    put(parts.paddingTop, border.left, border.top, inner_width, padding.top);
+    put(parts.paddingRight, rect.width - border.right - padding.right, border.top + padding.top, padding.right, content.height);
+    put(parts.paddingBottom, border.left, rect.height - border.bottom - padding.bottom, inner_width, padding.bottom);
+    put(parts.paddingLeft, border.left, border.top + padding.top, padding.left, content.height);
+    put(parts.content, content.left, content.top, content.width, content.height);
+    return content;
+  };
+  // A flex or grid container: its items' bands and the free space between them.
+  const tracks = (element: Element, rect: DOMRect, look: CSSStyleDeclaration, content: { left: number; top: number; width: number; height: number }) => {
+    for (const part of layout_parts) part.remove();
+    layout_parts = [];
+    const layout = look.display.includes("grid") ? "grid" : look.display.includes("flex") ? "flex" : "";
+    if (layout === "") {
+      delete outline.dataset.layout;
+      return;
+    }
+    outline.dataset.layout = layout;
+    const add = (kind: string, left: number, top: number, width: number, height: number) => {
+      if (width <= 0 || height <= 0) return;
+      const part = div(`pi-layout-${kind}`);
+      clip.append(part);
+      put(part, left, top, width, height);
+      layout_parts.push(part);
+    };
+    const children = Array.from(element.children)
+      .map((child) => ({ rect: child.getBoundingClientRect(), look: view.getComputedStyle(child) }))
+      .filter(({ rect: box }) => box.width > 0 && box.height > 0);
+    if (layout === "flex" && look.flexWrap === "nowrap") {
+      const column = look.flexDirection.startsWith("column");
+      const start = column ? rect.top + content.top : rect.left + content.left;
+      const end = column ? rect.top + content.top + content.height : rect.left + content.left + content.width;
+      let edge = start;
+      const sorted = children.sort((a, b) => (column ? a.rect.top - b.rect.top : a.rect.left - b.rect.left));
+      for (const { rect: box, look: child } of sorted) {
+        const from = (column ? box.top - signed(child.marginTop) : box.left - signed(child.marginLeft));
+        const to = (column ? box.bottom + signed(child.marginBottom) : box.right + signed(child.marginRight));
+        if (column) add("item", content.left, Math.max(start, from) - rect.top, content.width, Math.min(end, to) - Math.max(start, from));
+        else add("item", Math.max(start, from) - rect.left, content.top, Math.min(end, to) - Math.max(start, from), content.height);
+        if (from - edge > 0.5) {
+          if (column) add("gap", content.left, edge - rect.top, content.width, from - edge);
+          else add("gap", edge - rect.left, content.top, from - edge, content.height);
+        }
+        edge = Math.max(edge, to);
+      }
+      if (sorted.length > 0 && end - edge > 0.5) {
+        if (column) add("gap", content.left, edge - rect.top, content.width, end - edge);
+        else add("gap", edge - rect.left, content.top, end - edge, content.height);
+      }
+      return;
+    }
+    for (const { rect: box } of children) add("item", box.left - rect.left, box.top - rect.top, box.width, box.height);
+  };
+  return {
+    target_at,
+    hide: () => {
+      outline.hidden = true;
+    },
+    show: (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      const look = view.getComputedStyle(element);
+      outline.hidden = false;
+      Object.assign(outline.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+      tracks(element, rect, look, box_model(rect, look));
+    },
+  };
+};
+
+export type InspectorLayerProps = {
+  /** Whether picking is on: the preview below is covered by nothing, the frame's own page
+   * shows the box. */
+  active: boolean;
+};
+
+/** Marks the preview while picking: what the inspector draws lives in the frame itself. */
+export function InspectorLayer({ active }: InspectorLayerProps) {
+  return <div data-part="inspector" class={active ? "pointer-events-none absolute inset-0 ring-2 ring-primary/40 ring-inset" : "hidden"}></div>;
+}

@@ -1,0 +1,111 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { PromptBox } from "@publr/ui/PromptBox.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { PictureTray, images_in, pictures_max, upload_picture, type Picture } from "./PictureTray.ptsx";
+
+export const state = Publr.reactive({
+  pictures: [] as Picture[],
+  busy: false,
+  note: "",
+  csrf: "",
+});
+
+const chooser = Publr.ref<HTMLInputElement>();
+
+const attach = async (files: File[]) => {
+  const room = pictures_max - state.pictures.length;
+  if (files.length === 0) return;
+  if (room <= 0) {
+    state.note = Publr.tn("Up to {count} picture with one message", "Up to {count} pictures with one message", pictures_max);
+    return;
+  }
+  state.busy = true;
+  state.note = "";
+  for (const file of files.slice(0, room)) {
+    try {
+      const picture = await upload_picture(file, state.csrf, Publr.url);
+      state.pictures = [...state.pictures, picture];
+    } catch (error) {
+      state.note = Publr.t("{file} was not attached: {reason}", { file: file.name, reason: (error as Error).message });
+    }
+  }
+  state.busy = false;
+};
+
+export const choose = () => chooser.current?.click();
+
+export const chosen = (event: Event) => {
+  const input = event.currentTarget as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = "";
+  attach(files);
+};
+
+export const pasted = (event: ClipboardEvent) => {
+  const files = images_in(event.clipboardData);
+  if (files.length === 0) return;
+  event.preventDefault();
+  attach(files);
+};
+
+export const dragged = (event: DragEvent) => {
+  if (images_in(event.dataTransfer).length > 0 || event.dataTransfer?.types.includes("Files")) {
+    event.preventDefault();
+  }
+};
+
+export const dropped = (event: DragEvent) => {
+  event.preventDefault();
+  attach(images_in(event.dataTransfer));
+};
+
+export const removed = (event: MouseEvent) => {
+  const key = (event.currentTarget as HTMLButtonElement).value;
+  state.pictures = state.pictures.filter((picture) => picture.key !== key);
+};
+
+export type AskBoxProps = {
+  /** The session's token, for the form and the uploads. */
+  csrf: string;
+};
+
+/** What to build: words, pictures attached, pasted or dropped on it, and the access the
+ * agent gets. Sent as a plain form; the pictures go into the media library as they come. */
+export function AskBox({ csrf }: AskBoxProps) {
+  state.csrf = csrf;
+
+  return (
+    <form
+      method="post"
+      action="/admin/ai/ask"
+      class="flex w-full flex-col gap-2"
+      onPaste={pasted}
+      onDragOver={dragged}
+      onDrop={dropped}
+    >
+      <input type="hidden" name="csrf" value={csrf} />
+      <input ref={chooser} type="file" accept="image/*" multiple class="hidden" onChange={chosen} />
+      <PromptBox
+        name="prompt"
+        rows={3}
+        placeholder={Publr.t("Ask for a page, a content type, a plugin...")}
+        hint={Publr.t("Attach, paste or drop pictures: a screenshot, a sketch, a logo.")}
+        attachments={<PictureTray pictures={state.pictures} onRemove={removed} />}
+      >
+        <Button type="button" hierarchy="tertiary" size="md" label={Publr.t("Attach pictures")} onClick={choose}>
+          <Icon name="image" size="sm" />
+        </Button>
+        <Button hierarchy="primary" size="md" type="submit" disabled={state.busy}>
+          {Publr.t("Build")}
+        </Button>
+      </PromptBox>
+      {state.note !== "" && (
+        <Text as="p" variant="body-sm" tone="error">
+          {state.note}
+        </Text>
+      )}
+    </form>
+  );
+}

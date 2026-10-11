@@ -1,0 +1,61 @@
+/** The agent's hand in the preview: a large glowing pointer that glides to what the agent
+ * is about to open (a row of a list, a link) and pulses as it clicks, so its work reads
+ * as something done, not a page jumping. Drawn over the window, never inside the page. */
+
+let pointer: HTMLElement | null = null;
+let at = { x: -1, y: -1 };
+
+const pointer_style = [
+  "position: fixed",
+  "z-index: 60",
+  "width: 28px",
+  "height: 28px",
+  "margin: -14px 0 0 -14px",
+  "border-radius: 9999px",
+  "background: radial-gradient(circle, rgb(99 102 241 / 95%) 0 30%, rgb(99 102 241 / 35%) 31% 60%, transparent 61%)",
+  "box-shadow: 0 0 24px 8px rgb(99 102 241 / 45%)",
+  "pointer-events: none",
+  "transition: left 700ms cubic-bezier(.22,.8,.3,1), top 700ms cubic-bezier(.22,.8,.3,1), transform 180ms ease, opacity 300ms ease",
+].join(";");
+
+const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+/** The pointer glides to `x`, `y` (in the window) and clicks there. */
+export const point_at = async (x: number, y: number) => {
+  if (!pointer) {
+    pointer = document.createElement("div");
+    pointer.setAttribute("aria-hidden", "true");
+    pointer.style.cssText = pointer_style;
+    document.body.append(pointer);
+  }
+  const start = at.x < 0 ? { x: x - 120, y: y + 80 } : at;
+  pointer.style.transition = "none";
+  pointer.style.left = `${start.x}px`;
+  pointer.style.top = `${start.y}px`;
+  pointer.style.opacity = "1";
+  void pointer.offsetWidth;
+  pointer.style.transition = pointer_style.split(";").find((rule) => rule.startsWith("transition"))?.slice(11) ?? "";
+  pointer.style.left = `${x}px`;
+  pointer.style.top = `${y}px`;
+  at = { x, y };
+  await wait(720);
+  pointer.style.transform = "scale(0.7)";
+  await wait(180);
+  pointer.style.transform = "scale(1)";
+  await wait(160);
+};
+
+/** The pointer fades once the agent is done pointing. */
+export const rest_pointer = () => {
+  if (pointer) pointer.style.opacity = "0";
+};
+
+export type PointerFieldProps = {
+  /** Whether the agent points at things in the preview as it works. */
+  shown: boolean;
+};
+
+/** Where the agent's pointer lives: it draws itself over the window when it moves. */
+export function PointerField({ shown }: PointerFieldProps) {
+  return <div data-part="pointer" aria-hidden="true" class={shown ? "contents" : "hidden"}></div>;
+}

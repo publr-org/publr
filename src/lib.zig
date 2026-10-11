@@ -4,6 +4,7 @@
 pub const db = @import("lib/db.zig");
 pub const http = @import("lib/http.zig");
 pub const auth = @import("lib/auth.zig");
+pub const ai = @import("lib/ai.zig");
 pub const deps = @import("lib/deps.zig");
 pub const id = @import("lib/id.zig");
 pub const text = @import("lib/text.zig");

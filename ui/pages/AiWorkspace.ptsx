@@ -1,0 +1,70 @@
+import { Publr } from "publr-jsx";
+import { WorkspacePage } from "../layouts/WorkspacePage.ptsx";
+import { Workspace } from "../components/Workspace.ptsx";
+
+export type AiWorkspaceProps = {
+  id: string;
+  prompt: string;
+  /** The first ask's pictures, as the page shows them. */
+  prompt_pictures: string[];
+  conversation_state: string;
+  steps: Array<{
+    position: number;
+    kind: string;
+    summary: string;
+    detail: string;
+    failed: boolean;
+    href: string;
+    blocks: Array<{ kind: string; number: number; runs: Array<{ text: string; style: string }> }>;
+    /** An ask's pictures, as the page shows them. */
+    pictures: string[];
+    destructive: boolean;
+    trash_entry: string;
+  }>;
+  frame_path: string;
+  frame_label: string;
+  frame_position: number;
+  frame_url: string;
+  review_path: string;
+  undoable: boolean;
+  trash_entries: string[];
+  earlier: number;
+};
+
+/** A conversation with a model: the admin page it works on beside the conversation. */
+export function AiWorkspace({
+  id,
+  prompt,
+  prompt_pictures,
+  conversation_state,
+  steps,
+  frame_path,
+  frame_label,
+  frame_position,
+  frame_url,
+  review_path,
+  undoable,
+  trash_entries,
+  earlier,
+}: AiWorkspaceProps) {
+  return (
+    <WorkspacePage title={prompt}>
+      <Workspace
+        id={id}
+        prompt={prompt}
+        prompt_pictures={prompt_pictures}
+        conversation_state={conversation_state}
+        steps={steps}
+        frame_path={frame_path}
+        frame_label={frame_label}
+        frame_position={frame_position}
+        frame_url={frame_url}
+        review_path={review_path}
+        undoable={undoable}
+        trash_entries={trash_entries}
+        earlier={earlier}
+        csrf={Publr.request.session.csrf}
+      />
+    </WorkspacePage>
+  );
+}

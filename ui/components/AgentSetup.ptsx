@@ -1,0 +1,68 @@
+import { Publr } from "publr-jsx";
+import { Card } from "@publr/ui/Card.ptsx";
+import { CardBody } from "@publr/ui/CardBody.ptsx";
+import { Command } from "@publr/ui/Command.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Step } from "@publr/ui/Step.ptsx";
+import { Steps } from "@publr/ui/Steps.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type AgentSetupProps = {
+  /** `cd` into the project's folder; empty unless the admin is open on this machine. */
+  folder_command: string;
+  /** The project's own binary installing the skill, run from its folder. */
+  install_command: string;
+  /** Signing an agent in at this site's address; empty when it works in the folder. */
+  login_command: string;
+};
+
+/** Setting your own agent to work on this site, step by step: in its folder when the admin
+ * is open on the machine it runs on, else signed in at its address. */
+export function AgentSetup({ folder_command, install_command, login_command }: AgentSetupProps) {
+  return (
+    <Card>
+      <CardBody>
+        {folder_command !== "" && (
+          <Steps>
+            <Step number={1} title={Publr.t("Open a terminal in this site's folder")}>
+              <Command command={folder_command} />
+            </Step>
+            <Step number={2} title={Publr.t("Give your agent the Publr skill")}>
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("It teaches your agent how Publr works: content types, pages, plugins.")}
+              </Text>
+              <Command command={install_command} />
+            </Step>
+            <Step number={3} title={Publr.t("Start your agent there and ask")}>
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("Describe what you want, like \"Add a recipes section with a page listing them\".")}
+              </Text>
+            </Step>
+          </Steps>
+        )}
+        {login_command !== "" && (
+          <Steps>
+            <Step number={1} title={Publr.t("Sign your agent in to this site")}>
+              <Command command={login_command} />
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("Your browser opens to approve it.")} It gets drafts access, which you can revoke
+                under <Link href="/admin/settings/devices" variant="body-sm">{Publr.t("Settings › Devices")}</Link>.
+              </Text>
+            </Step>
+            <Step number={2} title={Publr.t("Give your agent the Publr skill")}>
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("It teaches your agent how Publr works: content types, pages, plugins.")}
+              </Text>
+              <Command command="publr skill install" />
+            </Step>
+            <Step number={3} title={Publr.t("Ask")}>
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("Describe what you want, like \"Add a recipes section with a page listing them\".")}
+              </Text>
+            </Step>
+          </Steps>
+        )}
+      </CardBody>
+    </Card>
+  );
+}

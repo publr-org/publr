@@ -10,6 +10,7 @@ const terms = publr.operations.term;
 const projects = publr.operations.project;
 const users = publr.operations.user;
 const saved_views = publr.operations.view;
+const conversation = publr.operations.ai;
 const sign_on = publr.operations.sign_on;
 const identities = publr.operations.identity;
 const sign_on_token = publr.model.sign_on_token;
@@ -68,6 +69,8 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     try fill_plugins(ctx, dir);
     try fill_internal(ctx);
     try fill_devices(ctx, admin_id);
+    try fill_conversations(ctx, admin_id);
+    _ = try SDK.dispatch(ctx, publr.operations.secret.Set, publr.operations.secret.Set.example);
     try fill_apps(ctx, dir);
     _ = try SDK.dispatch(ctx, projects.currencies.SetCurrencies, .{
         .currencies = &.{ .{
@@ -293,6 +296,23 @@ fn fill_views(ctx: *Ctx) Error!void {
     const created = try SDK.dispatch(ctx, saved_views.Create, saved_views.Create.example);
 
     try store.views.rename(ctx.db, created.id, saved_views.example_id);
+}
+
+/// What the `ai` examples name: Ada's conversation under the documented id, its turn
+/// running.
+fn fill_conversations(ctx: *Ctx, admin_id: []const u8) Error!void {
+    std.debug.assert(admin_id.len > 0);
+    std.debug.assert(conversation.example_id.len == store.ai_conversations.id_len);
+
+    const id = try store.ai_conversations.insert(ctx.db, ctx.io, ctx.arena, .{
+        .user_id = admin_id,
+        .prompt = conversation.example_prompt,
+        .provider = "scripted",
+        .model = "",
+        .scope = "drafts",
+    }, ctx.now_ms);
+
+    try store.ai_conversations.rename(ctx.db, id, conversation.example_id);
 }
 
 /// What the `device` examples name: a request waiting under the documented user code, one

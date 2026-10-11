@@ -287,6 +287,9 @@ pub fn handle(
         .files = project.files,
         .apps = if (project.apps_host) |host| host.folder() else null,
         .builder = project.builder,
+        .agents = project.agents,
+        .live = project.live,
+        .updater = project.updater,
     }, envelope.args, &out.writer) catch |failure| blk: {
         err.writer.print("publr: {s}\n", .{@errorName(failure)}) catch {
             return response.text(.internal_server_error, @errorName(failure));

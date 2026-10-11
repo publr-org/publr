@@ -33,7 +33,7 @@ pub const own_records = [_][]const u8{
     "record.get",      "record.list",    "record.create",     "record.save",
     "record.delete",   "record.publish", "record.transition", "record.discard_changes",
     "record.purge",    "snapshot.list",  "snapshot.get",      "snapshot.take",
-    "record.validate", "record.set_app", "record.shown",      "record.query",
+    "record.validate", "record.shown",   "record.query",      "record.reach",
 };
 
 pub const core = [_]Permission{
@@ -48,6 +48,7 @@ pub const core = [_]Permission{
             "record.referrers",
             "record.shown",
             "record.query",
+            "record.reach",
             "project.impact",
         },
     },
@@ -118,7 +119,6 @@ pub const core = [_]Permission{
         .operations = &.{
             "record.create",
             "record.save",
-            "record.set_app",
             "record.delete",
             "record.discard_changes",
             "snapshot.take",
@@ -210,23 +210,34 @@ pub const core = [_]Permission{
     },
     .{
         .key = "http.fetch",
-        .sentence = "Fetch data from external URLs",
+        .sentence = "Send requests to the domains it names",
         .tier = .high,
-        .host = true,
+        .operations = &.{ "http.fetch", "http.stream", "http.read" },
+    },
+    .{
+        .key = "ai.progress",
+        .sentence = "Show the words a model writes as it writes them",
+        .tier = .low,
+        .operations = &.{"ai.progress"},
     },
 };
 
 /// The operations no permission names: sessions and passwords, who may sign people in,
-/// setup, who holds what, one person's saved views, an app's records handed to another.
+/// setup, who holds what, one person's saved views, an app's types handed to another,
+/// the project's secrets, a person's conversations with a model.
 /// No grant reaches them.
 pub const never = [_][]const u8{
-    "user.sign_in",       "user.sign_out",      "user.set_password",      "user.password_link",
-    "sign_on.configure",  "sign_on.status",     "sign_on.redeem",         "identity.sign_in",
-    "identity.configure", "identity.status",    "identity.link",          "identity.unlink",
-    "identity.list",      "identity.providers", "project.init",           "role.list",
-    "view.list",          "view.get",           "view.create",            "view.update",
-    "view.delete",        "project.move_app",   "project.set_currencies", "activity.list",
-    "errors.list",
+    "user.sign_in",       "user.sign_out",      "user.set_password",          "user.password_link",
+    "sign_on.configure",  "sign_on.status",     "sign_on.redeem",             "identity.sign_in",
+    "identity.configure", "identity.status",    "identity.link",              "identity.unlink",
+    "identity.list",      "identity.providers", "project.init",               "role.list",
+    "view.list",          "view.get",           "view.create",                "view.update",
+    "view.delete",        "project.move_app",   "project.set_currencies",     "activity.list",
+    "errors.list",        "secret.list",        "secret.set",                 "secret.remove",
+    "ai.ask",             "ai.conversation",    "ai.conversations",           "ai.stop",
+    "ai.begin",           "ai.step",            "ai.finish",                  "ai.draft",
+    "user.language",      "user.set_language",  "project.set_admin_language", "user.variant",
+    "user.set_variant",
 };
 
 /// A secret a plugin names is its own permission, `secret.<NAME>`, always high.

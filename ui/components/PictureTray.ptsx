@@ -1,0 +1,71 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Thumbnail } from "@publr/ui/Thumbnail.ptsx";
+
+/** A picture attached to a message: a chat picture, kept apart from the media library. */
+export type Picture = { key: string; name: string; src: string };
+
+export const pictures_max = 8;
+
+/** The image files a drop or a paste carries. */
+export const images_in = (transfer: DataTransfer | null): File[] =>
+  Array.from(transfer?.files ?? []).filter((file) => file.type.startsWith("image/"));
+
+/** A pasted picture is often called `image.png`; it gets a name of its own. */
+const name_of = (file: File) => {
+  if (file.name !== "" && file.name !== "image.png") return file.name;
+  const extension = file.type === "image/jpeg" ? "jpg" : file.type.replace("image/", "");
+  return `pasted-${Date.now()}.${extension}`;
+};
+
+/** Uploads one picture as a chat picture (private, never in the media library); the
+ * picture as the ask names it. */
+export const upload_picture = (file: File, csrf: string, url: (path: string) => string) =>
+  new Promise<Picture>((resolve, reject) => {
+    const query = new URLSearchParams({ filename: name_of(file), type: "ai_picture" });
+    const request = new XMLHttpRequest();
+    request.open("POST", url(`/media/upload?${query}`));
+    request.setRequestHeader("X-Csrf-Token", csrf);
+    request.onload = () => {
+      const answer = (() => { try { return JSON.parse(request.responseText); } catch { return {}; } })();
+      if (request.status >= 200 && request.status < 300) {
+        return resolve({ key: answer.key, name: answer.filename, src: url(`/media/${answer.key}?w=160`) });
+      }
+      reject(new Error(answer.message ?? answer.error ?? `${request.status}`));
+    };
+    request.onerror = () => reject(new Error(Publr.t("the connection failed")));
+    request.send(file);
+  });
+
+export type PictureTrayProps = {
+  pictures: Picture[];
+  /** Takes off the picture whose key is the button's value. */
+  onRemove: (event: MouseEvent) => void;
+};
+
+/** The pictures attached to a message, each with the field the form sends it in and a
+ * button that takes it off. */
+export function PictureTray({ pictures, onRemove }: PictureTrayProps) {
+  return (
+    <div class="flex flex-wrap gap-2 empty:hidden">
+      {pictures.map((picture) => (
+        <div>
+          <input type="hidden" name="picture" value={picture.key} />
+          <Thumbnail src={picture.src} alt={picture.name}>
+            <Button
+              type="button"
+              hierarchy="secondary"
+              size="xs"
+              label={Publr.t("Remove {name}", { name: picture.name })}
+              value={picture.key}
+              onClick={onRemove}
+            >
+              <Icon name="x-close" size="xs" />
+            </Button>
+          </Thumbnail>
+        </div>
+      ))}
+    </div>
+  );
+}

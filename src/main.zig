@@ -231,7 +231,8 @@ fn collect_args(init: std.process.Init, storage: *[args_max][]const u8) ![]const
 }
 
 /// The commands that are not operations: `serve`, `build`, `zig`, `login`, `logout`, `whoami`,
-/// `skill`, `new` and `check-apps`. Null for anything else, which the CLI answers.
+/// `skill`, `new`, `db check`, `backups`, `restore` and `check-apps`. Null for anything else,
+/// which the CLI answers.
 fn tool(
     init: std.process.Init,
     out: *std.Io.Writer,
@@ -248,6 +249,7 @@ fn tool(
     const build = std.mem.eql(u8, rest[0], "build");
     const zig = std.mem.eql(u8, rest[0], "zig");
     const agents = rest.len == 1 and std.mem.eql(u8, rest[0], "agents");
+    const agent = std.mem.eql(u8, rest[0], "agent");
     const skill = std.mem.eql(u8, rest[0], "skill");
     const new_site = std.mem.eql(u8, rest[0], "new");
     // As the local operator; `apps.load` is the operation a device or `--as` reaches.
@@ -262,8 +264,8 @@ fn tool(
     // In the browser there is no server, no build and no compiler: the modules are `void`
     // there.
     if (builtin.os.tag == .wasi) {
-        if (serve or build or zig or plugin_build or agents or apps_load or login or skill or
-            new_site)
+        if (serve or build or zig or plugin_build or agents or agent or apps_load or login or
+            skill or new_site)
         {
             return error.Unsupported;
         }
@@ -274,6 +276,10 @@ fn tool(
 
         if (agents) {
             return try publr.agents.run(init, out, db_path);
+        }
+
+        if (agent) {
+            return try publr.agent.run(init, db_path, rest[1..]);
         }
 
         if (login) {
@@ -298,6 +304,14 @@ fn tool(
 
         if (serve) {
             return try publr.serve.run(init, db_path, rest[1..]);
+        }
+
+        if (std.mem.eql(u8, rest[0], "update-run")) {
+            return try publr.update.run(init, db_path, rest[1..]);
+        }
+
+        if (publr.database.handles(rest) and !has_flag(rest, "--help")) {
+            return try publr.database.run(init, out, db_path, rest);
         }
 
         if (build) {

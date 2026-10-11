@@ -4,6 +4,7 @@ const db = @import("../db.zig");
 pub const sql: [:0]const u8 = @embedFile("schema.sql");
 pub const tables = [_][]const u8{
     "settings",
+    "migrations",
     "users",
     "user_roles",
     "sessions",
@@ -25,6 +26,17 @@ pub const tables = [_][]const u8{
     "media",
     "snapshots",
     "views",
+    "rail_pins",
+    "ai_conversations",
+    "ai_steps",
+    "ai_pictures",
+    "ai_browsers",
+    "ai_activity",
+    "removals",
+    "removal_items",
+    "trash",
+    "health_kept",
+    "secrets",
     "internal_records",
     "internal_record_values",
     "field_groups",
@@ -35,14 +47,81 @@ pub const tables = [_][]const u8{
 
 pub fn apply(connection: *db.Db) db.Error!void {
     std.debug.assert(sql.len > 0);
-    std.debug.assert(connection.transaction_depth == 0);
+    std.debug.assert(connection.transaction_depth <= 1);
 
     try connection.exec(sql);
+    try add_columns(connection);
     try register_field_groups(connection);
 }
 
+/// A column added to a table after the table first shipped. `schema.sql` creates a table
+/// only when it is missing, so a database made before keeps its old table: the column is
+/// added there, every row kept, its value the default.
+const Added = struct {
+    table: []const u8,
+    column: []const u8,
+    definition: []const u8,
+};
+
+/// Every column added since its table first shipped, oldest first. A new column on an
+/// existing table goes in `schema.sql` and here; never a change to a column already there.
+const added_columns = [_]Added{
+    .{
+        .table = "ai_steps",
+        .column = "href",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "ai_conversations",
+        .column = "draft",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "ai_conversations",
+        .column = "cached_tokens",
+        .definition = "INTEGER NOT NULL DEFAULT 0",
+    },
+    .{
+        .table = "trash",
+        .column = "files",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "sandboxed_plugins",
+        .column = "remove_data",
+        .definition = "TEXT NOT NULL DEFAULT '[]'",
+    },
+};
+
+fn add_columns(connection: *db.Db) db.Error!void {
+    std.debug.assert(connection.transaction_depth <= 1);
+    std.debug.assert(added_columns.len > 0);
+
+    inline for (added_columns) |added| {
+        if (!try has_column(connection, added.table, added.column)) {
+            try connection.exec("ALTER TABLE " ++ added.table ++ " ADD COLUMN " ++
+                added.column ++ " " ++ added.definition);
+        }
+    }
+}
+
+pub fn has_column(connection: *db.Db, table: []const u8, column: []const u8) db.Error!bool {
+    std.debug.assert(table.len > 0);
+    std.debug.assert(column.len > 0);
+
+    var select = try connection.prepare(
+        "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, table);
+    try select.bind_text(2, column);
+
+    return select.step();
+}
+
 fn register_field_groups(connection: *db.Db) db.Error!void {
-    std.debug.assert(connection.transaction_depth == 0);
+    std.debug.assert(connection.transaction_depth <= 1);
     var transaction = try connection.transaction();
     defer transaction.rollback();
     var marker = try connection.prepare(
@@ -71,6 +150,38 @@ pub fn has_table(connection: *db.Db, table: []const u8) db.Error!bool {
     std.debug.assert(!found or select.read_int() == 1);
 
     return found;
+}
+
+test "a table made before a column was added gets it, its rows kept" {
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    const connection = &fixture.connection;
+
+    // The table as the first build that had it made it.
+    try connection.exec("DROP TABLE ai_steps");
+    try connection.exec(
+        "CREATE TABLE ai_steps (conversation_id TEXT NOT NULL, position INTEGER NOT NULL, " ++
+            "kind TEXT NOT NULL, summary TEXT NOT NULL, detail TEXT NOT NULL, " ++
+            "failed INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL, " ++
+            "PRIMARY KEY (conversation_id, position)) STRICT",
+    );
+    try connection.exec(
+        "INSERT INTO ai_steps (conversation_id, position, kind, summary, detail, at) " ++
+            "VALUES ('c', 1, 'ran', 's', 'd', 1)",
+    );
+    try std.testing.expect(!try has_column(connection, "ai_steps", "href"));
+
+    try apply(connection);
+    try apply(connection);
+
+    try std.testing.expect(try has_column(connection, "ai_steps", "href"));
+
+    var select = try connection.prepare("SELECT href FROM ai_steps WHERE position = 1");
+    defer select.finalize();
+
+    try std.testing.expect(try select.step());
 }
 
 test "apply creates every table and is idempotent" {

@@ -31,12 +31,17 @@ pub fn main(init: std.process.Init) !u8 {
 
     var checked: u32 = 0;
 
+    // Each operation's name is compared with each skip at comptime, a byte at a time.
+    @setEvalBranchQuota(SDK.operations.len * (skips.len + 2) * 64 * 2);
+
     inline for (SDK.operations) |Operation| {
         // Building a plugin needs the compiler, which the fixture binary does not carry;
         // smoke builds one with a binary that does.
         const builds = comptime std.mem.startsWith(u8, Operation.name, "plugin.build");
 
-        if (builds and !publr.toolchain.carried) {
+        const asks = comptime skipped(Operation.name);
+
+        if ((builds and !publr.toolchain.carried) or asks) {
             continue;
         }
 
@@ -48,6 +53,34 @@ pub fn main(init: std.process.Init) !u8 {
     std.debug.print("parity: ok ({d} operations)\n", .{checked});
 
     return 0;
+}
+
+/// The operations whose examples cannot run here. Asking a model starts an agent beside a
+/// server, which the examples run without (smoke asks one of a running server); a fetch
+/// goes out to the network, and only a plugin may send one; an import downloads; choosing,
+/// testing and setting up a provider need a provider plugin, which the seeded project does
+/// not have; an update needs a running server and the network; a stream needs an agent; a
+/// removal list is made by a device; a trash entry by a removal; a browser call is asked
+/// by an agent and answered by a workspace page.
+const skips = [_][]const u8{
+    "ai.ask",            "ai.reply",          "http.fetch",   "ai.choose",
+    "ai.test",           "ai.set_up",         "update.check", "update.apply",
+    "update.rollback",   "media.import",      "http.stream",  "http.read",
+    "ai.progress",       "removal.list",      "removal.get",  "removal.confirm",
+    "removal.decline",   "trash.restore",     "trash.remove", "ai.browsed",
+    "ai.browser_answer", "media.import_many", "apps.edit",
+};
+
+fn skipped(comptime name: []const u8) bool {
+    comptime std.debug.assert(name.len > 0);
+
+    for (skips) |skip| {
+        if (std.mem.eql(u8, skip, name)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn check(

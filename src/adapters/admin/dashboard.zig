@@ -1,37 +1,253 @@
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
-const plugin = @import("../../operations/plugin.zig");
+const definitions = @import("definitions.zig");
+const credentials = @import("../../server/credentials.zig");
+const identity_module = @import("../rest/identity.zig");
+const ai = @import("../../operations/ai.zig");
 
-const views = admin.views;
-const Shortcut = views.Dashboard.ShortcutsItem;
+const Props = admin.views.Dashboard.Props;
+const Earlier = admin.views.Dashboard.EarlierItem;
 
-pub fn shortcuts_of(session: *admin.Session) admin.Error![]const Shortcut {
+/// Which way of building the Overview shows, remembered per browser.
+pub const mode_cookie = "publr_admin_build_mode";
+const year_s: u32 = 365 * 24 * 60 * 60;
+
+/// Everything the Overview shows: the way of building, what an agent is told, and the
+/// person's conversations.
+pub fn props_of(session: *admin.Session) admin.Error!Props {
     std.debug.assert(session.signed_in());
-    std.debug.assert(session.identity.email.len > 0);
+    std.debug.assert(session.project.folder.len == 0 or session.project.binary.len > 0);
 
-    var shortcuts: std.ArrayList(Shortcut) = .empty;
-
-    if (!registry.SDK.may(&session.ctx, plugin.List)) {
-        return shortcuts.items;
-    }
-
-    const listed = registry.SDK.dispatch(&session.ctx, plugin.List, .{}) catch {
-        return error.OutOfMemory;
+    const connected = ai.connected(&session.ctx);
+    var props: Props = .{
+        .mode = try mode_of(session, connected),
+        .connected = connected,
+        .folder_command = "",
+        .install_command = "",
+        .login_command = "",
+        .earlier = &.{},
     };
-    var pending: u64 = 0;
 
-    for (listed.plugins) |row| {
-        pending += row.pending;
-    }
+    try fill_agents(session, &props);
+    try fill_conversations(session, &props);
 
-    if (pending > 0) {
-        try shortcuts.append(session.arena, .{
-            .label = "Approve plugin requests",
-            .count = try std.fmt.allocPrint(session.arena, "{d}", .{pending}),
-            .href = "/admin/settings/plugins",
+    return props;
+}
+
+/// `GET /admin/agents`: the Overview's agents step for a tool that opens the agent's terminal
+/// itself (the Companion's side panel): the folder to open it in and the commands to run there.
+pub fn agents_step(
+    request: *admin.Request,
+    response: *admin.Response,
+    ctx: *admin.Context,
+) admin.Error!void {
+    std.debug.assert(request.method() == .get or request.method() == .head);
+    std.debug.assert(ctx.user_data != null);
+
+    var session = admin.Session.open(request, response, ctx);
+
+    if (!session.signed_in() or !registry.SDK.reaches_admin(&session.ctx)) {
+        return response.json(.unauthorized, .{
+            .@"error" = "sign_in_required",
         });
     }
 
-    return shortcuts.items;
+    var props: Props = .{
+        .mode = "agents",
+        .connected = false,
+        .folder_command = "",
+        .install_command = "",
+        .login_command = "",
+        .earlier = &.{},
+    };
+
+    try fill_agents(&session, &props);
+
+    const here = props.folder_command.len > 0;
+
+    try response.json(.ok, .{
+        .folder = if (here) session.project.folder else null,
+        .binary = if (here) session.project.binary else null,
+        .folder_command = props.folder_command,
+        .install_command = props.install_command,
+        .login_command = props.login_command,
+    });
+}
+
+/// `?mode=` when given, remembered for the next visit; else the remembered one; else the
+/// person's own key once a provider is connected, their own agent before.
+fn mode_of(session: *admin.Session, connected: bool) admin.Error![]const u8 {
+    std.debug.assert(mode_cookie.len > 0);
+    std.debug.assert(year_s > 0);
+
+    if (admin.query_param(session, "mode")) |asked| {
+        if (known_mode(asked)) |mode| {
+            const cookie = try std.fmt.allocPrint(
+                session.arena,
+                "{s}={s}; Path=/admin; HttpOnly; SameSite=Lax; Max-Age={d}{s}",
+                .{ mode_cookie, mode, year_s, identity_module.secure_suffix(session.request) },
+            );
+
+            try session.response.set_header("Set-Cookie", cookie);
+
+            return mode;
+        }
+    }
+
+    const header = session.request.header("cookie") orelse "";
+    const kept = identity_module.cookie_value(header, mode_cookie) orelse "";
+
+    return known_mode(kept) orelse if (connected) "keys" else "agents";
+}
+
+fn known_mode(text: []const u8) ?[]const u8 {
+    std.debug.assert(text.len <= 64 << 10);
+
+    if (std.mem.eql(u8, text, "keys")) {
+        return "keys";
+    }
+
+    if (std.mem.eql(u8, text, "agents")) {
+        return "agents";
+    }
+
+    return null;
+}
+
+/// The commands that set an agent to work on this project. Opened on this machine, with
+/// the folder `serve` runs in known: work in that folder with its own binary. Otherwise:
+/// sign in at the address the browser used.
+fn fill_agents(session: *admin.Session, props: *Props) admin.Error!void {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(props.login_command.len == 0);
+
+    const arena = session.arena;
+    const project = session.project;
+    const host = session.request.header("host") orelse "";
+
+    if (project.folder.len == 0 or !local(host)) {
+        const host_url = try definitions.host_url_of(session);
+        const address = .{ host_url, project.admin_path() };
+
+        props.login_command = try std.fmt.allocPrint(arena, "publr login {s}{s}", address);
+
+        return;
+    }
+
+    const folder = try quoted(arena, project.folder);
+    const binary = try quoted(arena, project.binary);
+
+    props.folder_command = try std.fmt.allocPrint(arena, "cd {s}", .{folder});
+    props.install_command = try std.fmt.allocPrint(arena, "{s} skill install", .{binary});
+}
+
+/// The person's conversations, newest first, each leading to its workspace.
+fn fill_conversations(session: *admin.Session, props: *Props) admin.Error!void {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(props.earlier.len == 0);
+
+    const arena = session.arena;
+    const listed = registry.SDK.dispatch(&session.ctx, ai.List, .{}) catch |err| switch (err) {
+        error.Denied => return,
+        else => return error.OutOfMemory,
+    };
+    const earlier = try arena.alloc(Earlier, listed.conversations.len);
+
+    for (listed.conversations, earlier) |conversation, *item| {
+        item.* = .{
+            .id = conversation.id,
+            .prompt = conversation.prompt,
+            .label = try label_of(session, conversation.state),
+            .href = try std.fmt.allocPrint(arena, "/admin/ai/{s}", .{conversation.id}),
+        };
+    }
+
+    props.earlier = earlier;
+}
+
+/// A conversation's state as the Overview words it.
+fn label_of(session: *const admin.Session, state: []const u8) admin.Error![]const u8 {
+    std.debug.assert(state.len <= 64);
+
+    const labels = [_][2][]const u8{
+        .{ "running", try session.translated("Working") },
+        .{ "stopping", try session.translated("Stopping") },
+        .{ "finished", try session.translated("Done") },
+        .{ "stopped", try session.translated("Stopped") },
+        .{ "waiting", try session.translated("Waiting for you") },
+        .{ "failed", try session.translated("Failed") },
+    };
+
+    for (labels) |pair| {
+        if (std.mem.eql(u8, pair[0], state)) {
+            return pair[1];
+        }
+    }
+
+    return state;
+}
+
+/// Whether a `Host` header names this machine, its port aside.
+fn local(host: []const u8) bool {
+    std.debug.assert(host.len <= 64 << 10);
+    std.debug.assert(credentials.address_len_max > 0);
+
+    const bracket_end = if (host.len > 0 and host[0] == '[')
+        std.mem.indexOfScalar(u8, host, ']')
+    else
+        null;
+    const name_end = if (bracket_end) |end|
+        end + 1
+    else
+        std.mem.indexOfScalar(u8, host, ':') orelse host.len;
+    const name = host[0..name_end];
+
+    return name.len > 0 and name.len <= credentials.address_len_max and
+        credentials.on_this_machine(name);
+}
+
+/// A path as a shell word: as it is when nothing in it needs quoting, else in single quotes.
+fn quoted(arena: std.mem.Allocator, path: []const u8) admin.Error![]const u8 {
+    std.debug.assert(path.len > 0);
+    std.debug.assert(path.len <= std.fs.max_path_bytes);
+
+    for (path) |byte| {
+        const plain = std.ascii.isAlphanumeric(byte) or
+            std.mem.indexOfScalar(u8, "/._-+", byte) != null;
+
+        if (!plain) {
+            const escaped = try std.mem.replaceOwned(u8, arena, path, "'", "'\\''");
+
+            return std.fmt.allocPrint(arena, "'{s}'", .{escaped});
+        }
+    }
+
+    return path;
+}
+
+test "a path becomes one shell word" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    try std.testing.expectEqualStrings("/sites/blog", try quoted(arena, "/sites/blog"));
+    try std.testing.expectEqualStrings("'/my sites/blog'", try quoted(arena, "/my sites/blog"));
+    try std.testing.expectEqualStrings("'/Dawid'\\''s'", try quoted(arena, "/Dawid's"));
+}
+
+test "a host on this machine is told from one elsewhere" {
+    try std.testing.expect(local("localhost:8080"));
+    try std.testing.expect(local("blog.localhost"));
+    try std.testing.expect(local("publr.local:8080"));
+    try std.testing.expect(local("127.0.0.1:8096"));
+    try std.testing.expect(local("[::1]:8080"));
+    try std.testing.expect(!local("example.com"));
+    try std.testing.expect(!local("localhost.example.com:8080"));
+    try std.testing.expect(!local(""));
+}
+
+test "only the two ways of building are remembered" {
+    try std.testing.expectEqualStrings("keys", known_mode("keys").?);
+    try std.testing.expect(known_mode("cloud") == null);
 }

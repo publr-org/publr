@@ -1,0 +1,188 @@
+/** The working swirl: the Balatro shader (via reactbits.dev, on raw WebGL), as Publr
+ * Companion draws it over a page an agent works on. Over the preview while the agent works,
+ * the same all along: strong at the edges, a whisper across the middle. */
+
+/** Draws the swirl into `host`, filling it, until the function it answers is called. */
+export const start_swirl = (host: HTMLElement) => {
+  const vertex = `
+attribute vec2 position;
+varying vec2 vUv;
+void main() { vUv = position * 0.5 + 0.5; gl_Position = vec4(position, 0.0, 1.0); }`;
+  const fragment = `
+precision highp float;
+uniform float iTime;
+uniform vec3 iResolution;
+uniform float uSpinRotation, uSpinSpeed, uContrast, uLighting, uSpinAmount, uPixelFilter, uSpinEase;
+uniform vec2 uOffset;
+uniform vec4 uColor1, uColor2, uColor3;
+varying vec2 vUv;
+
+vec4 effect(vec2 screenSize, vec2 screen_coords) {
+  float pixel_size = length(screenSize.xy) / uPixelFilter;
+  vec2 uv = (floor(screen_coords.xy * (1.0 / pixel_size)) * pixel_size - 0.5 * screenSize.xy) / length(screenSize.xy) - uOffset;
+  float uv_len = length(uv);
+  float speed = iTime * (uSpinRotation * uSpinEase * 0.2) + 302.2;
+  float new_pixel_angle = atan(uv.y, uv.x) + speed - uSpinEase * 20.0 * (uSpinAmount * uv_len + (1.0 - uSpinAmount));
+  vec2 mid = (screenSize.xy / length(screenSize.xy)) / 2.0;
+  uv = (vec2(uv_len * cos(new_pixel_angle) + mid.x, uv_len * sin(new_pixel_angle) + mid.y) - mid);
+  uv *= 30.0;
+  speed = iTime * uSpinSpeed;
+  vec2 uv2 = vec2(uv.x + uv.y);
+  for (int i = 0; i < 5; i++) {
+    uv2 += sin(max(uv.x, uv.y)) + uv;
+    uv += 0.5 * vec2(cos(5.1123314 + 0.353 * uv2.y + speed * 0.131121), sin(uv2.x - 0.113 * speed));
+    uv -= cos(uv.x + uv.y) - sin(uv.x * 0.711 - uv.y);
+  }
+  float contrast_mod = (0.25 * uContrast + 0.5 * uSpinAmount + 1.2);
+  float paint_res = min(2.0, max(0.0, length(uv) * 0.035 * contrast_mod));
+  float c1p = max(0.0, 1.0 - contrast_mod * abs(1.0 - paint_res));
+  float c2p = max(0.0, 1.0 - contrast_mod * abs(paint_res));
+  float c3p = 1.0 - min(1.0, c1p + c2p);
+  float light = (uLighting - 0.2) * max(c1p * 5.0 - 4.0, 0.0) + uLighting * max(c2p * 5.0 - 4.0, 0.0);
+  return (0.3 / uContrast) * uColor1 + (1.0 - 0.3 / uContrast) * (uColor1 * c1p + uColor2 * c2p + vec4(c3p * uColor3.rgb, c3p * uColor1.a)) + light;
+}
+void main() { gl_FragColor = effect(iResolution.xy, vUv * iResolution.xy); }`;
+
+  const hex = (code: string) => {
+    const value = parseInt(code.replace("#", ""), 16);
+    return [(value >> 16 & 255) / 255, (value >> 8 & 255) / 255, (value & 255) / 255, 1];
+  };
+  // Monochrome, slower and calmer than the shader's own defaults, as the Companion has it.
+  const opacity = 0.9;
+  const fade_ms = 450;
+  const dpr_max = 1.5;
+  // The frame: an ease-out curve from `edge_max` on the edge to `edge_end` at `inset`, a short
+  // step down to `faint`, then a near-flat drift to `floor` in the middle; per axis, unioned.
+  const inset = 0.1;
+  const step = 0.03;
+  const edge_max = 0.8;
+  const edge_end = 0.14;
+  const curve = 2.2;
+  const faint = 0.035;
+  const floor = 0.0225;
+
+  const canvas = document.createElement("canvas");
+  const veil = document.createElement("div");
+  canvas.setAttribute("aria-hidden", "true");
+  veil.setAttribute("aria-hidden", "true");
+  canvas.style.cssText = `position:absolute;inset:0;width:100%;height:100%;display:block;opacity:0;transition:opacity ${fade_ms}ms ease;cursor:progress`;
+  veil.style.cssText = `position:absolute;inset:0;background:rgba(0,0,0,0.12);opacity:0;transition:opacity ${fade_ms}ms ease`;
+  host.appendChild(veil);
+  host.appendChild(canvas);
+
+  const stop_at = (alpha: number, at: number | string) =>
+    `rgba(0,0,0,${alpha}) ${typeof at === "number" ? `${at.toFixed(1)}px` : at}`;
+  const mask = () => {
+    const width = host.clientWidth;
+    const height = host.clientHeight;
+    const side = Math.min(width, height);
+    const band = side * inset;
+    const step_px = side * step;
+    const curve_stops = (length: number, mirror: boolean) => Array.from({ length: 7 }, (_, index) => {
+      const t = index / 6;
+      const alpha = Math.max(faint, edge_end + (edge_max - edge_end) * Math.pow(1 - t, curve));
+      return stop_at(alpha, mirror ? length - band * t : band * t);
+    });
+    const axis = (direction: string, length: number) => `linear-gradient(${direction}, ${[
+      ...curve_stops(length, false), stop_at(faint, band + step_px), stop_at(floor, "50%"),
+      stop_at(faint, length - band - step_px), ...curve_stops(length, true).reverse(),
+    ].join(", ")})`;
+    const frame_mask = `${axis("to right", width)}, ${axis("to bottom", height)}`;
+    canvas.style.maskImage = frame_mask;
+    canvas.style.setProperty("-webkit-mask-image", frame_mask);
+    canvas.style.setProperty("mask-composite", "add");
+    canvas.style.setProperty("-webkit-mask-composite", "source-over");
+  };
+
+  const gl = canvas.getContext("webgl", { alpha: false, antialias: false, premultipliedAlpha: false });
+  if (!gl) {
+    veil.style.opacity = "1";
+    return () => {
+      canvas.remove();
+      veil.remove();
+    };
+  }
+  const compile = (type: number, source: string) => {
+    const shader = gl.createShader(type) as WebGLShader;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    return shader;
+  };
+  const program = gl.createProgram() as WebGLProgram;
+  gl.attachShader(program, compile(gl.VERTEX_SHADER, vertex));
+  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragment));
+  gl.linkProgram(program);
+  gl.useProgram(program);
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const position = gl.getAttribLocation(program, "position");
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  const uniform = (name: string) => gl.getUniformLocation(program, name);
+  gl.uniform1f(uniform("uSpinRotation"), -0.9);
+  gl.uniform1f(uniform("uSpinSpeed"), 3.2);
+  gl.uniform2fv(uniform("uOffset"), [0, 0]);
+  gl.uniform4fv(uniform("uColor1"), hex("#f4f4f5"));
+  gl.uniform4fv(uniform("uColor2"), hex("#8a8a95"));
+  gl.uniform4fv(uniform("uColor3"), hex("#000000"));
+  gl.uniform1f(uniform("uContrast"), 3.5);
+  gl.uniform1f(uniform("uLighting"), 0.4);
+  gl.uniform1f(uniform("uSpinAmount"), 0.25);
+  gl.uniform1f(uniform("uPixelFilter"), 1300);
+  gl.uniform1f(uniform("uSpinEase"), 1);
+  const time_at = uniform("iTime");
+  const resolution = uniform("iResolution");
+
+  const resize = () => {
+    mask();
+    const ratio = Math.min(window.devicePixelRatio || 1, dpr_max);
+    canvas.width = Math.max(1, Math.floor(host.clientWidth * ratio));
+    canvas.height = Math.max(1, Math.floor(host.clientHeight * ratio));
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform3f(resolution, canvas.width, canvas.height, canvas.width / canvas.height);
+  };
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let frame = 0;
+  const draw = (time: number) => {
+    gl.uniform1f(time_at, still ? 0 : time * 0.001);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (!still) frame = requestAnimationFrame(draw);
+  };
+  const observer = new ResizeObserver(resize);
+  observer.observe(host);
+  resize();
+  frame = requestAnimationFrame(draw);
+  requestAnimationFrame(() => {
+    canvas.style.opacity = String(opacity);
+    veil.style.opacity = "1";
+  });
+  return () => {
+    observer.disconnect();
+    canvas.style.opacity = "0";
+    veil.style.opacity = "0";
+    window.setTimeout(() => {
+      cancelAnimationFrame(frame);
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+      canvas.remove();
+      veil.remove();
+    }, fade_ms);
+  };
+};
+
+export type SwirlFieldProps = {
+  /** Whether it shows; `start_swirl` draws into it while it does. */
+  shown: boolean;
+};
+
+/** Where the swirl is drawn: over its positioned parent, filling it, taking every pointer
+ * event while it shows. */
+export function SwirlField({ shown }: SwirlFieldProps) {
+  return (
+    <div
+      data-part="swirl"
+      aria-hidden="true"
+      class={shown ? "absolute inset-0 overflow-hidden" : "hidden"}
+    ></div>
+  );
+}

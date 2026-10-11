@@ -8,6 +8,7 @@ const device_module = @import("../../store/devices.zig");
 const device_model = @import("../../model/device.zig");
 const user_module = @import("../../store/users.zig");
 const csrf = @import("../../lib/auth.zig").csrf;
+const preview_token = @import("../../model/preview_token.zig");
 const http = @import("../../lib/http.zig");
 const Project = @import("../../server/project.zig").Project;
 
@@ -19,6 +20,38 @@ pub const cookie_name = "publr_session";
 /// A readable hint beside the session: no secret, only that someone signed in here, so the
 /// page's toolbar script stays idle for everyone else without asking the server.
 pub const hint_cookie_name = "publr_signed_in";
+/// On the site's host, when the admin has its own: a pass that only opens the toolbar.
+pub const member_cookie_name = "publr_member";
+/// How long the project's mark on its cookie names is, in hex characters.
+pub const cookie_mark_len: u32 = 8;
+
+/// A project's own cookie names: the defaults with a mark derived from its secret, so two
+/// projects on one host (`localhost:8080` and `localhost:8081`: cookies ignore the port)
+/// keep their sign-ins and visitors apart. Stable while the secret is; reveals nothing of it.
+pub const CookieNames = struct {
+    session: []const u8,
+    hint: []const u8,
+    visitor: []const u8,
+    member: []const u8,
+};
+
+pub fn cookie_names(arena: std.mem.Allocator, secret: []const u8) !CookieNames {
+    std.debug.assert(secret.len > 0);
+    std.debug.assert(cookie_mark_len % 2 == 0);
+
+    var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+
+    std.crypto.hash.sha2.Sha256.hash(secret, &digest, .{});
+
+    const mark = std.fmt.bytesToHex(digest[0 .. cookie_mark_len / 2].*, .lower);
+
+    return .{
+        .session = try std.fmt.allocPrint(arena, "{s}_{s}", .{ cookie_name, &mark }),
+        .hint = try std.fmt.allocPrint(arena, "{s}_{s}", .{ hint_cookie_name, &mark }),
+        .visitor = try std.fmt.allocPrint(arena, "publr_visitor_{s}", .{&mark}),
+        .member = try std.fmt.allocPrint(arena, "{s}_{s}", .{ member_cookie_name, &mark }),
+    };
+}
 pub const csrf_header = "x-csrf-token";
 
 pub const Identity = struct {
@@ -74,6 +107,124 @@ pub fn identify(
         },
         .session = session,
         .token = token,
+        .display_name = credentials.user.display_name,
+        .email = credentials.user.email,
+    };
+}
+
+/// A pass for a preview, signed for the signed-in user who opened it: the preview's frame
+/// carries it in its addresses, since the session cookie never reaches the frame.
+pub fn preview_pass(
+    project: *const Project,
+    arena: std.mem.Allocator,
+    record: []const u8,
+    user: []const u8,
+) ![]const u8 {
+    std.debug.assert(record.len > 0);
+    std.debug.assert(user.len > 0);
+
+    const now_ms = sdk.context.wall_clock_ms(project.io);
+
+    return preview_token.sign(arena, &project.auth.secret, .{
+        .record = record,
+        .user = user,
+        .expires_ms = now_ms + preview_token.lifetime_ms,
+    });
+}
+
+/// Who a preview pass is for, as the caller its pages are read as, and the record it opens;
+/// null for a pass that is forged, expired, or whose account is gone or disabled.
+pub fn identify_preview(
+    project: *const Project,
+    arena: std.mem.Allocator,
+    pass: []const u8,
+) ?struct {
+    caller: Caller,
+    record: []const u8,
+} {
+    std.debug.assert(project.connection.transaction_depth == 0);
+    std.debug.assert(project.auth.secret.len > 0);
+
+    const now_ms = sdk.context.wall_clock_ms(project.io);
+    const claims = preview_token.verify(pass, &project.auth.secret, now_ms) orelse return null;
+
+    if (std.mem.eql(u8, claims.record, member_claim)) {
+        return null;
+    }
+
+    const found = user_module.find_by_id(project.connection, arena, claims.user) catch return null;
+    const credentials = found orelse return null;
+
+    if (!credentials.user.active) {
+        return null;
+    }
+
+    return .{
+        .caller = .{
+            .user = .{
+                .id = credentials.user.id,
+                .roles = credentials.user.roles,
+            },
+        },
+        .record = claims.record,
+    };
+}
+
+/// What a member pass names where a preview pass names its record: it opens the toolbar on
+/// the site's host and nothing else.
+pub const member_claim = "toolbar";
+/// How long the toolbar stays on the site after the admin last sent someone there.
+pub const member_lifetime_ms: i64 = 12 * 60 * 60 * 1000;
+
+/// A pass for the site's host, signed for an administrator the admin's host sends there.
+pub fn member_pass(
+    project: *const Project,
+    arena: std.mem.Allocator,
+    user: []const u8,
+) ![]const u8 {
+    std.debug.assert(user.len > 0);
+    std.debug.assert(project.split());
+
+    const now_ms = sdk.context.wall_clock_ms(project.io);
+
+    return preview_token.sign(arena, &project.auth.secret, .{
+        .record = member_claim,
+        .user = user,
+        .expires_ms = now_ms + member_lifetime_ms,
+    });
+}
+
+/// Who the site's toolbar is for: the member pass's account, while it holds and the account
+/// is active; anonymous otherwise. Never a session: nothing it names opens more than the bar.
+pub fn identify_member(
+    project: *const Project,
+    arena: std.mem.Allocator,
+    pass: []const u8,
+) Identity {
+    std.debug.assert(project.connection.transaction_depth == 0);
+    std.debug.assert(project.split());
+
+    const now_ms = sdk.context.wall_clock_ms(project.io);
+    const claims = preview_token.verify(pass, &project.auth.secret, now_ms) orelse return .{};
+
+    if (!std.mem.eql(u8, claims.record, member_claim)) {
+        return .{};
+    }
+
+    const found = user_module.find_by_id(project.connection, arena, claims.user) catch return .{};
+    const credentials = found orelse return .{};
+
+    if (!credentials.user.active) {
+        return .{};
+    }
+
+    return .{
+        .caller = .{
+            .user = .{
+                .id = credentials.user.id,
+                .roles = credentials.user.roles,
+            },
+        },
         .display_name = credentials.user.display_name,
         .email = credentials.user.email,
     };
@@ -220,7 +371,7 @@ pub fn set_session_cookie(
     }) catch return error.OutOfMemory;
     const hint_template = "{s}=1; Path=/; SameSite=Lax; Max-Age={d}{s}{s}{s}";
     const hint = std.fmt.allocPrint(arena, hint_template, .{
-        hint_cookie_name,
+        project.hint_cookie,
         max_age,
         domain_label(project),
         domain_of(project),
@@ -248,14 +399,14 @@ pub fn repair_hint(
     const session = identity.session orelse return;
     const cookies = request.header("cookie") orelse "";
 
-    if (cookie_value(cookies, hint_cookie_name) != null or session.expires_at <= now_ms) {
+    if (cookie_value(cookies, project.hint_cookie) != null or session.expires_at <= now_ms) {
         return;
     }
 
     const max_age = @divTrunc(session.expires_at - now_ms, std.time.ms_per_s);
     const hint_template = "{s}=1; Path=/; SameSite=Lax; Max-Age={d}{s}{s}{s}";
     const hint = std.fmt.allocPrint(arena, hint_template, .{
-        hint_cookie_name,
+        project.hint_cookie,
         max_age,
         domain_label(project),
         domain_of(project),
@@ -283,7 +434,7 @@ pub fn clear_session_cookie(
     }) catch return error.OutOfMemory;
     const hint_template = "{s}=; Path=/; SameSite=Lax; Max-Age=0{s}{s}{s}";
     const hint = std.fmt.allocPrint(arena, hint_template, .{
-        hint_cookie_name,
+        project.hint_cookie,
         domain_label(project),
         domain_of(project),
         secure_suffix(request),
@@ -333,10 +484,16 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
     });
 
     ctx.sandboxed_plugins = project.sandboxed_plugins;
+    ctx.scratch_set_aside = project.scratch;
+    ctx.definitions = project.definitions;
     ctx.plugin_states = project.plugin_states;
     ctx.files = project.files;
     ctx.apps = if (project.apps_host) |host| host.folder() else null;
+    ctx.translations = if (project.languages) |languages| languages.view() else null;
     ctx.builder = project.builder;
+    ctx.agents = project.agents;
+    ctx.live = project.live;
+    ctx.updater = project.updater;
 
     return ctx;
 }
@@ -396,4 +553,21 @@ test "a device's bearer token: its account, its scope, no CSRF; revoked, anonymo
     const malformed = "GET /api/device/list HTTP/1.1\r\nHost: h\r\n" ++
         "Authorization: Basic x\r\n\r\n";
     try std.testing.expectEqual(@as(u16, 403), (try flow.call(malformed, "")).status.code());
+}
+
+test "a project's cookie names: its own, stable, and apart from another's" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const arena = arena_state.allocator();
+    const one = try cookie_names(arena, "1791635445059");
+    const again = try cookie_names(arena, "1791635445059");
+    const other = try cookie_names(arena, "1791635445060");
+
+    try std.testing.expectEqualStrings(one.session, again.session);
+    try std.testing.expect(!std.mem.eql(u8, one.session, other.session));
+    try std.testing.expect(std.mem.startsWith(u8, one.session, cookie_name ++ "_"));
+    try std.testing.expect(std.mem.startsWith(u8, one.hint, hint_cookie_name ++ "_"));
+    try std.testing.expect(std.mem.startsWith(u8, one.visitor, "publr_visitor_"));
+    try std.testing.expectEqual(cookie_name.len + 1 + cookie_mark_len, one.session.len);
 }
