@@ -54,7 +54,7 @@ export function ConfirmAction({
           <div class="flex justify-end gap-2">
             <DialogClose asChild>
               <Button type="button" hierarchy="secondary">
-                Cancel
+                {Publr.t("Cancel")}
               </Button>
             </DialogClose>
             <Button type="submit" intent="destructive">

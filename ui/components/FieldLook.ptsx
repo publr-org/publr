@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { ContainerAppearance } from "./FieldLook/ContainerAppearance.ptsx";
 import { NumberAppearance } from "./FieldLook/NumberAppearance.ptsx";
 import { BooleanAppearance } from "./FieldLook/BooleanAppearance.ptsx";
@@ -56,6 +57,11 @@ export type FieldLookProps = {
   media_link?: boolean;
   has_slug?: boolean;
   lock_on_publish?: boolean;
+  /** A rich text field: which formatting its editor offers. */
+  has_rich?: boolean;
+  rich_bold?: boolean;
+  rich_italic?: boolean;
+  rich_link?: boolean;
   has_email?: boolean;
   lowercase?: boolean;
 };
@@ -101,60 +107,64 @@ export function FieldLook({
   media_link = true,
   has_slug = false,
   lock_on_publish = false,
+  has_rich = false,
+  rich_bold = true,
+  rich_italic = true,
+  rich_link = true,
   has_email = false,
   lowercase = false,
 }: FieldLookProps) {
   return (
     <section class="border-t border-border pt-6">
       <Heading level={2} size="md">
-        Appearance
+        {Publr.t("Appearance")}
       </Heading>
       <div class="mt-5 flex flex-col gap-6">
         <HelpText help={help} help_count={help_count} />
         {has_placeholder && (
           <Field>
-            <FieldLabel htmlFor="placeholder">Placeholder</FieldLabel>
+            <FieldLabel htmlFor="placeholder">{Publr.t("Placeholder")}</FieldLabel>
             <Input id="placeholder" name="placeholder" value={placeholder} maxLength={255} />
-            <FieldDescription>Shown inside the empty control</FieldDescription>
+            <FieldDescription>{Publr.t("Shown inside the empty control")}</FieldDescription>
           </Field>
         )}
         {has_rows && (
           <Field>
-            <FieldLabel htmlFor="rows">Rows</FieldLabel>
+            <FieldLabel htmlFor="rows">{Publr.t("Rows")}</FieldLabel>
             <Input id="rows" name="rows" type="number" min="1" value={rows} classes="w-32" />
-            <FieldDescription>How tall the editor's box starts.</FieldDescription>
+            <FieldDescription>{Publr.t("How tall the editor's box starts.")}</FieldDescription>
           </Field>
         )}
         {has_text_format && (
           <Field>
-            <FieldLabel htmlFor="text_format">Format</FieldLabel>
+            <FieldLabel htmlFor="text_format">{Publr.t("Format")}</FieldLabel>
             <NativeSelect id="text_format" name="text_format">
               <option value="plain" selected={!markdown}>
-                Plain text
+                {Publr.t("Plain text")}
               </option>
               <option value="markdown" selected={markdown}>
-                Markdown
+                {Publr.t("Markdown")}
               </option>
             </NativeSelect>
             <FieldDescription>
-              How the text is meant to be read; the editor draws a plain box either way for now.
+              {Publr.t("How the text is meant to be read; the editor draws a plain box either way for now.")}
             </FieldDescription>
           </Field>
         )}
         {has_date_format && (
           <Field>
             <FieldLabel htmlFor="date_format" required>
-              Format
+              {Publr.t("Format")}
             </FieldLabel>
             <NativeSelect id="date_format" name="date_format">
               <option value="datetime" selected={!date_only}>
-                Date and time
+                {Publr.t("Date and time")}
               </option>
               <option value="date" selected={date_only}>
-                Date only
+                {Publr.t("Date only")}
               </option>
             </NativeSelect>
-            <FieldDescription>Times are entered and shown in UTC.</FieldDescription>
+            <FieldDescription>{Publr.t("Times are entered and shown in UTC.")}</FieldDescription>
           </Field>
         )}
         <BooleanAppearance
@@ -176,29 +186,29 @@ export function FieldLook({
 
         {has_select && (
           <Field>
-            <FieldLabel htmlFor="select_control">Control</FieldLabel>
+            <FieldLabel htmlFor="select_control">{Publr.t("Control")}</FieldLabel>
             <NativeSelect id="select_control" name="select_control">
               <option value="dropdown" selected={!select_list && !select_buttons}>
-                Dropdown
+                {Publr.t("Dropdown")}
               </option>
-              <option value="buttons" selected={select_buttons}>Buttons</option>
+              <option value="buttons" selected={select_buttons}>{Publr.t("Buttons")}</option>
               <option value="list" selected={select_list}>
-                Radio buttons, or checkboxes for multiple values
+                {Publr.t("Radio buttons, or checkboxes for multiple values")}
               </option>
             </NativeSelect>
           </Field>
         )}
         {has_reference && <CheckboxField id="reference_live_only" name="reference_live_only"
-          checked={reference_live_only} label="Published entries only" />}
+          checked={reference_live_only} label={Publr.t("Published entries only")} />}
         {has_reference && <CheckboxField id="reference_public_only" name="reference_public_only"
-          checked={reference_public_only} label="Public content types only" />}
+          checked={reference_public_only} label={Publr.t("Public content types only")} />}
         {has_reference && (
           <CheckboxField
             id="reference_create"
             name="reference_create"
             checked={reference_create}
-            label="Allow creating new records"
-            description="Editors can create a record of a target type and link it here."
+            label={Publr.t("Allow creating new records")}
+            description={Publr.t("Editors can create a record of a target type and link it here.")}
           />
         )}
         {has_reference && (
@@ -206,8 +216,8 @@ export function FieldLook({
             id="reference_link"
             name="reference_link"
             checked={reference_link}
-            label="Allow linking existing records"
-            description="Editors can pick a record that already exists."
+            label={Publr.t("Allow linking existing records")}
+            description={Publr.t("Editors can pick a record that already exists.")}
           />
         )}
         <ContainerAppearance
@@ -219,13 +229,24 @@ export function FieldLook({
           add_label={add_label}
         />
 
+        {has_rich && (
+          <CheckboxField
+            id="rich_bold"
+            name="rich_bold"
+            checked={rich_bold}
+            label={Publr.t("Bold")}
+            description={Publr.t("The editor's toolbar offers bold text.")}
+          />
+        )}
+        {has_rich && <CheckboxField id="rich_italic" name="rich_italic" checked={rich_italic} label={Publr.t("Italic")} />}
+        {has_rich && <CheckboxField id="rich_link" name="rich_link" checked={rich_link} label={Publr.t("Links")} />}
         {has_slug && (
           <CheckboxField
             id="lock_on_publish"
             name="lock_on_publish"
             checked={lock_on_publish}
-            label="Lock once published"
-            description="A live record keeps its slug whatever its source does, so its address never changes."
+            label={Publr.t("Lock once published")}
+            description={Publr.t("A live record keeps its slug whatever its source does, so its address never changes.")}
           />
         )}
         {has_email && (
@@ -233,8 +254,8 @@ export function FieldLook({
             id="lowercase"
             name="lowercase"
             checked={lowercase}
-            label="Lowercase on save"
-            description="Addresses are kept in lowercase, however they were typed."
+            label={Publr.t("Lowercase on save")}
+            description={Publr.t("Addresses are kept in lowercase, however they were typed.")}
           />
         )}
         {has_media && (
@@ -242,8 +263,8 @@ export function FieldLook({
             id="media_create"
             name="media_create"
             checked={media_create}
-            label="Allow uploading new files"
-            description="Editors can upload a file into the media library and link it here."
+            label={Publr.t("Allow uploading new files")}
+            description={Publr.t("Editors can upload a file into the media library and link it here.")}
           />
         )}
         {has_media && (
@@ -251,8 +272,8 @@ export function FieldLook({
             id="media_link"
             name="media_link"
             checked={media_link}
-            label="Allow linking existing files"
-            description="Editors can pick a file already in the media library."
+            label={Publr.t("Allow linking existing files")}
+            description={Publr.t("Editors can pick a file already in the media library.")}
           />
         )}
       </div>

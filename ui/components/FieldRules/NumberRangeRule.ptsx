@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -24,8 +25,8 @@ export function NumberRangeRule({
       id="limit_range"
       name="limit_range"
       checked={limit_range}
-      label="Accept only a specified range"
-      description="Specify a minimum and/or maximum allowed value, and the step between values"
+      label={Publr.t("Accept only a specified range")}
+      description={Publr.t("Specify a minimum and/or maximum allowed value, and the step between values")}
     >
       <div class="flex flex-wrap items-center gap-3">
         <Input
@@ -34,11 +35,11 @@ export function NumberRangeRule({
           type="number"
           step="any"
           value={min}
-          placeholder="Min"
+          placeholder={Publr.t("Min")}
           classes="w-32"
         />
         <Text as="span" variant="body-md">
-          and
+          {Publr.t("and")}
         </Text>
         <Input
           id="max"
@@ -46,11 +47,11 @@ export function NumberRangeRule({
           type="number"
           step="any"
           value={max}
-          placeholder="Max"
+          placeholder={Publr.t("Max")}
           classes="w-32"
         />
         <Text as="span" variant="body-md">
-          step
+          {Publr.t("step")}
         </Text>
         <Input
           id="step"
@@ -59,12 +60,12 @@ export function NumberRangeRule({
           step="any"
           min="0"
           value={step}
-          placeholder="Any"
+          placeholder={Publr.t("Any")}
           classes="w-32"
         />
       </div>
       <Field>
-        <FieldLabel htmlFor="range_message">Custom error message</FieldLabel>
+        <FieldLabel htmlFor="range_message">{Publr.t("Custom error message")}</FieldLabel>
         <Input id="range_message" name="range_message" value={range_message} maxLength={255} />
       </Field>
     </CheckboxField>

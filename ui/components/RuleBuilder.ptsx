@@ -48,7 +48,7 @@ const valuePicker = (field: HTMLSelectElement) => {
     return;
   }
   const select = field.cloneNode(false) as HTMLSelectElement;
-  select.name = previous.name; select.setAttribute("aria-label", "Value");
+  select.name = previous.name; select.setAttribute("aria-label", Publr.t("Value"));
   for (const choice of choices) select.add(new Option(choice.label, choice.value));
   if (previous.value && !choices.some((choice) => choice.value === previous.value))
     select.add(new Option(previous.value, previous.value));
@@ -94,7 +94,7 @@ export function RuleBuilder({ prefix, rows, subjects, location = false }: RuleBu
   return (
     <div class="flex flex-col gap-4" data-prefix={prefix} ref={root_ref} onChange={changed} onClick={action}>
       <input type="hidden" name={`${prefix}_present`} value="1" />
-      <div data-empty hidden={rows.length > 0}><Text variant="body-sm" tone="muted">Always shown at this destination.</Text></div>
+      <div data-empty hidden={rows.length > 0}><Text variant="body-sm" tone="muted">{Publr.t("Always shown at this destination.")}</Text></div>
       <div data-rows class="flex flex-col gap-4">
         {rows.map((row) => (
           <RuleRow prefix={prefix} group_index={row.group_index} index={row.index}
@@ -107,7 +107,7 @@ export function RuleBuilder({ prefix, rows, subjects, location = false }: RuleBu
           first last subjects={subjects} location={location} />
       </template>
       <div><Button type="button" hierarchy="secondary" name="rules-group"
-        disabled={subjects.length === 0}>Add rule group</Button></div>
+        disabled={subjects.length === 0}>{Publr.t("Add rule group")}</Button></div>
     </div>
   );
 }

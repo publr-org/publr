@@ -109,7 +109,7 @@ pub fn problems(
         const one = try session.arena.alloc(model.field.Problem, 1);
         one[0] = .{
             .path = "",
-            .message = "The field schema is too large or invalid.",
+            .message = try session.translated("The field schema is too large or invalid."),
         };
         return one;
     };

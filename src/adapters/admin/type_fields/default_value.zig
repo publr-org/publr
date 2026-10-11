@@ -49,7 +49,7 @@ fn control_of(kind: Kind, field: FieldDef) []const u8 {
     return switch (kind.control) {
         .input => "input",
         .number => "number",
-        .textarea => "textarea",
+        .textarea, .rich => "textarea",
         .checkbox => "switch",
         .select => "select",
         .datetime => if (field.options.date.format == .date) "date" else "datetime",

@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
@@ -23,41 +24,41 @@ export function PatternRule({
       id="limit_pattern"
       name="limit_pattern"
       checked={limit_pattern}
-      label="Match a specific shape"
-      description="Accept only text of a given shape: a preset, a pattern, or both"
+      label={Publr.t("Match a specific shape")}
+      description={Publr.t("Accept only text of a given shape: a preset, a pattern, or both")}
     >
       <div class="grid gap-4 sm:grid-cols-2">
         <Field>
-          <FieldLabel htmlFor="preset">Preset</FieldLabel>
+          <FieldLabel htmlFor="preset">{Publr.t("Preset")}</FieldLabel>
           <NativeSelect id="preset" name="preset">
             <option value="any" selected={preset === "any"}>
-              Anything
+              {Publr.t("Anything")}
             </option>
             <option value="digits" selected={preset === "digits"}>
-              Digits only
+              {Publr.t("Digits only")}
             </option>
             <option value="letters" selected={preset === "letters"}>
-              Letters only
+              {Publr.t("Letters only")}
             </option>
             <option value="alphanumeric" selected={preset === "alphanumeric"}>
-              Letters and digits
+              {Publr.t("Letters and digits")}
             </option>
             <option value="no_spaces" selected={preset === "no_spaces"}>
-              No spaces
+              {Publr.t("No spaces")}
             </option>
             <option value="lowercase" selected={preset === "lowercase"}>
-              Lowercase
+              {Publr.t("Lowercase")}
             </option>
             <option value="uppercase" selected={preset === "uppercase"}>
-              Uppercase
+              {Publr.t("Uppercase")}
             </option>
             <option value="phone" selected={preset === "phone"}>
-              Phone number
+              {Publr.t("Phone number")}
             </option>
           </NativeSelect>
         </Field>
         <Field>
-          <FieldLabel htmlFor="pattern">Pattern</FieldLabel>
+          <FieldLabel htmlFor="pattern">{Publr.t("Pattern")}</FieldLabel>
           <Input
             id="pattern"
             name="pattern"
@@ -66,12 +67,12 @@ export function PatternRule({
             maxLength={255}
           />
           <FieldDescription>
-            * any run of characters, ? one character, # a digit, @ a letter
+            {Publr.t("* any run of characters, ? one character, # a digit, @ a letter")}
           </FieldDescription>
         </Field>
       </div>
       <Field>
-        <FieldLabel htmlFor="pattern_message">Custom error message</FieldLabel>
+        <FieldLabel htmlFor="pattern_message">{Publr.t("Custom error message")}</FieldLabel>
         <Input
           id="pattern_message"
           name="pattern_message"

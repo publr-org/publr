@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -28,18 +29,18 @@ export function NumberAppearance({
       {has_number && (
         <div class="grid gap-4 sm:grid-cols-2">
           <Field>
-            <FieldLabel htmlFor="unit">Unit</FieldLabel>
-            <Input id="unit" name="unit" value={unit} placeholder="kg, $, %" maxLength={16} />
-            <FieldDescription>Shown beside the input</FieldDescription>
+            <FieldLabel htmlFor="unit">{Publr.t("Unit")}</FieldLabel>
+            <Input id="unit" name="unit" value={unit} placeholder={Publr.t("kg, $, %")} maxLength={16} />
+            <FieldDescription>{Publr.t("Shown beside the input")}</FieldDescription>
           </Field>
           <Field>
-            <FieldLabel htmlFor="unit_after">Unit position</FieldLabel>
+            <FieldLabel htmlFor="unit_after">{Publr.t("Unit position")}</FieldLabel>
             <NativeSelect id="unit_after" name="unit_after">
               <option value="1" selected={unit_after}>
-                After the number
+                {Publr.t("After the number")}
               </option>
               <option value="0" selected={!unit_after}>
-                Before the number
+                {Publr.t("Before the number")}
               </option>
             </NativeSelect>
           </Field>
@@ -47,7 +48,7 @@ export function NumberAppearance({
       )}
       {has_decimals && (
         <Field>
-          <FieldLabel htmlFor="decimals">Decimal places</FieldLabel>
+          <FieldLabel htmlFor="decimals">{Publr.t("Decimal places")}</FieldLabel>
           <Input
             id="decimals"
             name="decimals"
@@ -55,30 +56,30 @@ export function NumberAppearance({
             min="0"
             max="10"
             value={decimals}
-            placeholder="Any"
+            placeholder={Publr.t("Any")}
             classes="w-32"
           />
-          <FieldDescription>The input steps by this many places</FieldDescription>
+          <FieldDescription>{Publr.t("The input steps by this many places")}</FieldDescription>
         </Field>
       )}
       {has_number && (
         <Field>
-          <FieldLabel htmlFor="number_control">Control</FieldLabel>
+          <FieldLabel htmlFor="number_control">{Publr.t("Control")}</FieldLabel>
           <NativeSelect id="number_control" name="number_control">
             <option value="input" selected={number_control === "input"}>
-              Number input
+              {Publr.t("Number input")}
             </option>
             <option value="slider" selected={number_control === "slider"}>
-              Slider over the range
+              {Publr.t("Slider over the range")}
             </option>
             {can_rating && (
               <option value="rating" selected={number_control === "rating"}>
-                Rating, one to the maximum
+                {Publr.t("Rating, one to the maximum")}
               </option>
             )}
           </NativeSelect>
           <FieldDescription>
-            A slider or a rating needs a range; the maximum sets how far it goes.
+            {Publr.t("A slider or a rating needs a range; the maximum sets how far it goes.")}
           </FieldDescription>
         </Field>
       )}

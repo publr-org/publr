@@ -25,7 +25,7 @@ type Field = OperationFormProps["fields"][number];
 export const state = Publr.reactive({
   save: "",
   fields: [] as Field[],
-  status: "All changes saved",
+  status: Publr.t("All changes saved"),
   busy: false,
 });
 
@@ -35,10 +35,10 @@ const saveForm = call(() => state.save);
 Publr.effect(() => {
   state.busy = saveForm.isPending;
   state.status = state.busy
-    ? "Saving…"
+    ? Publr.t("Saving…")
     : saveForm.isError
-      ? `Not saved: ${(saveForm.error as Error).message}`
-      : "All changes saved";
+      ? Publr.t("Not saved: {reason}", { reason: (saveForm.error as Error).message })
+      : Publr.t("All changes saved");
 });
 
 export const typed = (event: Event) => {
@@ -62,17 +62,17 @@ export const save = () => {
 export function OperationForm({ title, operation, fields, note = "" }: OperationFormProps) {
   state.save = operation;
   state.fields = fields;
-  state.status = "All changes saved";
+  state.status = Publr.t("All changes saved");
   state.busy = false;
 
   return (
     <div class="flex grow flex-col" data-part="operation-form" onInput={typed} onChange={typed}>
       <FormBody
         title={title}
-        meta={<StatusStrip status="Saved" tone="success" note={state.status} />}
+        meta={<StatusStrip status={Publr.t("Saved")} tone="success" note={state.status} />}
         aside={
           <EditorAsideSection>
-            <Button classes="w-full" disabled={state.busy} onClick={save}>Save</Button>
+            <Button classes="w-full" disabled={state.busy} onClick={save}>{Publr.t("Save")}</Button>
             {note !== "" && <Text as="p" variant="body-xs" tone="muted">{note}</Text>}
           </EditorAsideSection>
         }

@@ -1,5 +1,6 @@
 import { Publr } from "publr-jsx";
 import { FormPage } from "../layouts/FormPage.ptsx";
+import { LanguageSwitch } from "../components/LanguageSwitch.ptsx";
 import { ConfirmAction } from "../components/ConfirmAction.ptsx";
 import { EditorAsideSection } from "../components/EditorAsideSection.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
@@ -35,6 +36,8 @@ export type UserFormProps = {
    * to the account, each field named `<group>.<field>`; absent for a new account, whose
    * roles are not known yet. */
   fields?: JSX.Element;
+  /** The site's languages, for the custom fields marked Translate. */
+  languages?: Array<{ code: string; label: string }>;
   /** The custom field values refused, by path, when the last post did not go through. */
   problems: Array<{ code: string; text: string }>;
 };
@@ -56,24 +59,24 @@ export function UserForm({
   delete_action,
   problem,
   fields,
+  languages = [],
   problems,
 }: UserFormProps) {
   return (
     <FormPage
       title={title}
-      parents={[{ label: "Users", href: "/admin/settings/users" }]}
+      parents={[{ label: Publr.t("Users"), href: "/admin/settings/users" }]}
       problems={problems}
-      problems_title="The custom fields were not saved."
+      problems_title={Publr.t("The custom fields were not saved.")}
       notice={
         (problem !== "" && (
-          <Callout tone="error" title="The user was not saved.">
+          <Callout tone="error" title={Publr.t("The user was not saved.")}>
             {problem}
           </Callout>
         )) ||
         (link !== "" && (
-          <Callout title="Set-password link">
-            Send this link to {name}; it works once, for an hour, and is shown only now. Prefix it
-            with the site's address.
+          <Callout title={Publr.t("Set-password link")}>
+            {Publr.t("Send this link to {name}; it works once, for an hour, and is shown only now. Prefix it with the site's address.", { name })}
           </Callout>
         ))
       }
@@ -81,23 +84,23 @@ export function UserForm({
         <div class="contents">
           <EditorAsideSection>
             <Button type="submit" form="user" classes="w-full">
-              {is_new ? "Create user" : "Save"}
+              {is_new ? Publr.t("Create user") : Publr.t("Save")}
             </Button>
             <Button href="/admin/settings/users" hierarchy="tertiary" classes="w-full">
-              Cancel
+              {Publr.t("Cancel")}
             </Button>
           </EditorAsideSection>
           {link !== "" && (
-            <EditorAsideSection title="Link">
+            <EditorAsideSection title={Publr.t("Link")}>
               <Code classes="break-all">{link}</Code>
             </EditorAsideSection>
           )}
           {!is_new && (
-            <EditorAsideSection title="Password">
+            <EditorAsideSection title={Publr.t("Password")}>
               <form method="post" action={link_action}>
                 <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
                 <Button type="submit" hierarchy="secondary" classes="w-full">
-                  {invited ? "New set-password link" : "Reset password by link"}
+                  {invited ? Publr.t("New set-password link") : Publr.t("Reset password by link")}
                 </Button>
               </form>
             </EditorAsideSection>
@@ -108,9 +111,9 @@ export function UserForm({
         !is_new &&
         !is_me && (
           <ConfirmAction
-            label="Delete user"
-            title={`Delete ${name}?`}
-            description="The account goes for good and is signed out everywhere. What they created stays."
+            label={Publr.t("Delete user")}
+            title={Publr.t("Delete {name}?", { name })}
+            description={Publr.t("The account goes for good and is signed out everywhere. What they created stays.")}
             action={delete_action}
           />
         )
@@ -119,11 +122,11 @@ export function UserForm({
       <form id="user" method="post" action={action} class="flex flex-col gap-5">
         <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
         <Field>
-          <FieldLabel htmlFor="display_name">Name</FieldLabel>
+          <FieldLabel htmlFor="display_name">{Publr.t("Name")}</FieldLabel>
           <Input id="display_name" name="display_name" value={name} required autocomplete="off" />
         </Field>
         <Field>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
+          <FieldLabel htmlFor="email">{Publr.t("Email")}</FieldLabel>
           <Input
             id="email"
             type="email"
@@ -133,9 +136,9 @@ export function UserForm({
             readOnly={!is_new}
             autocomplete="off"
           />
-          {!is_new && <FieldDescription>The email an account signs in with cannot change.</FieldDescription>}
+          {!is_new && <FieldDescription>{Publr.t("The email an account signs in with cannot change.")}</FieldDescription>}
         </Field>
-        <FieldSet legend="Roles">
+        <FieldSet legend={Publr.t("Roles")}>
           {roles.map((role) => (
             <CheckboxField
               id={`role-${role.name}`}
@@ -147,19 +150,20 @@ export function UserForm({
               description={role.description}
             />
           ))}
-          {is_me && <FieldDescription>Your own roles are changed by another admin.</FieldDescription>}
+          {is_me && <FieldDescription>{Publr.t("Your own roles are changed by another admin.")}</FieldDescription>}
         </FieldSet>
         {is_new && (
           <Field>
-            <FieldLabel htmlFor="password">Password</FieldLabel>
+            <FieldLabel htmlFor="password">{Publr.t("Password")}</FieldLabel>
             <Input id="password" type="password" name="password" autocomplete="new-password" />
             <FieldDescription>
-              Leave it empty to invite the person with a set-password link instead.
+              {Publr.t("Leave it empty to invite the person with a set-password link instead.")}
             </FieldDescription>
           </Field>
         )}
         {fields && (
           <div class="flex flex-col gap-5 border-t border-border pt-6" data-part="user-fields">
+            <LanguageSwitch languages={languages} />
             {fields}
           </div>
         )}

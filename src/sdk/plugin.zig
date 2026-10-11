@@ -10,6 +10,7 @@ const kinds = @import("../model/kinds.zig");
 const role = @import("../model/role.zig");
 const provider = @import("provider.zig");
 const runtime = @import("plugin/sandboxed.zig");
+const db = @import("../lib/db.zig");
 
 pub const PluginCtx = plugin_context.PluginCtx;
 pub const types = plugin_types;
@@ -36,9 +37,98 @@ pub const route = @import("plugin/route.zig");
 pub const Route = route.Route;
 pub const OperatorCommand = route.OperatorCommand;
 pub const admin_slots = @import("plugin/admin_slots.zig");
+pub const variants = @import("plugin/variants.zig");
+/// A PO file a plugin brings: the admin's words in one language. A language pack is a
+/// plugin of these alone; a plugin may bring its own words too.
+pub const Translation = struct {
+    /// `pl`, `pt-br`.
+    locale: []const u8,
+    /// The language in its own words: `Polski`.
+    label: []const u8,
+    /// The PO file, `@embedFile("i18n/pl.po")`.
+    po: []const u8,
+    /// Whose words it translates: `publr` for the core's, a plugin's name for that plugin's;
+    /// empty for the declaring plugin's own. A plugin of translations alone may fill or fix
+    /// any domain.
+    domain: []const u8 = "",
+    /// Publr's own translation of the core (`domain = "publr"`): it wins over any other.
+    /// A plugin translating its own words wins for them without saying so.
+    official: bool = false,
+    /// What a language pack says of its grammar: the cases and genders a type's name is
+    /// given in, for messages that decline it (`{type:accusative}`, `{type.gender, select,
+    /// …}`). Empty for a language that does not decline nouns, or a plugin's own words.
+    grammar: Grammar = .{},
+};
+
+/// A translation and the plugin that brings it.
+pub const OwnedTranslation = struct {
+    plugin: []const u8,
+    translation: Translation,
+
+    /// Whose words it translates, the declaring plugin's when it names none.
+    pub fn domain(owned: OwnedTranslation) []const u8 {
+        return if (owned.translation.domain.len > 0) owned.translation.domain else owned.plugin;
+    }
+
+    /// The words' owner's own translation: a plugin's of its own words, or Publr's official
+    /// one of the core's. It wins over any other plugin's.
+    pub fn first_party(owned: OwnedTranslation) bool {
+        const own = std.mem.eql(u8, owned.domain(), owned.plugin);
+        const core = std.mem.eql(u8, owned.domain(), "publr") and owned.translation.official;
+
+        return own or core;
+    }
+};
+
+pub const Grammar = struct {
+    /// Each by key (`genitive`) and as people know it (`Dopełniacz (kogo? czego?)`); the
+    /// first is the name itself.
+    cases: []const Word = &.{},
+    genders: []const Word = &.{},
+};
+
+pub const Word = struct {
+    key: []const u8,
+    label: []const u8,
+};
+pub const Variants = variants.Dimension;
+pub const Variant = variants.Variant;
 pub const SettingsPage = admin_slots.SettingsPage;
+pub const SettingsTab = admin_slots.SettingsTab;
 pub const RowAction = admin_slots.RowAction;
 pub const Page = admin_slots.Page;
+pub const Item = admin_slots.Item;
+pub const Section = admin_slots.Section;
+pub const Panel = admin_slots.Panel;
+
+/// A panel and the plugin it is of.
+pub const OwnedPanel = struct {
+    plugin: []const u8,
+    panel: Panel,
+};
+
+/// A section and the plugin it is of.
+pub const OwnedSection = struct {
+    plugin: []const u8,
+    section: Section,
+};
+
+/// An entry and the plugin it is of.
+/// A settings page and the plugin whose it is: pinned to the rail as that pair.
+pub const OwnedSettingsPage = struct {
+    plugin: []const u8,
+    page: SettingsPage,
+};
+
+pub const OwnedSettingsTab = struct {
+    plugin: []const u8,
+    tab: SettingsTab,
+};
+
+pub const OwnedItem = struct {
+    plugin: []const u8,
+    item: Item,
+};
 
 /// A page and the plugin it is of.
 pub const OwnedPage = struct {
@@ -483,6 +573,29 @@ fn lists(comptime list: []const []const u8, comptime name: []const u8) bool {
     }
 }
 
+/// A plugin's entries in `list`, each checked to name its own operations.
+fn owned_items(comptime Plugin: type, comptime list: []const u8) []const OwnedItem {
+    comptime {
+        var owned: []const OwnedItem = &.{};
+
+        for (admin_slots.items_of(Plugin, list)) |item| {
+            const counted = if (item.count) |Count| owns_operation(Plugin, Count) else true;
+
+            if (!owns_operation(Plugin, item.operation) or !counted) {
+                @compileError("plugin " ++ Plugin.manifest.name ++ ": entry " ++ item.label ++
+                    " names an operation not its own");
+            }
+
+            owned = owned ++ &[_]OwnedItem{.{
+                .plugin = Plugin.manifest.name,
+                .item = item,
+            }};
+        }
+
+        return owned;
+    }
+}
+
 /// Whether `Operation` is one the plugin declares.
 pub fn owns_operation(comptime Plugin: type, comptime Operation: type) bool {
     comptime {
@@ -545,6 +658,30 @@ pub fn schema_of(comptime Plugin: type) ?[:0]const u8 {
     }
 }
 
+/// A plugin's migrations, each its own: a plugin migrates only its own tables.
+pub fn migrations_of(comptime Plugin: type) []const db.migration.Migration {
+    comptime {
+        std.debug.assert(@hasDecl(Plugin, "manifest"));
+
+        if (!@hasDecl(Plugin, "migrations")) {
+            return &.{};
+        }
+
+        const list: []const db.migration.Migration = &Plugin.migrations;
+
+        for (list) |migration| {
+            if (!std.mem.eql(u8, migration.source, Plugin.manifest.name)) {
+                @compileError("plugin " ++ Plugin.manifest.name ++ ": migration " ++
+                    migration.name ++ " names `" ++ migration.source ++ "` as its source");
+            }
+        }
+
+        std.debug.assert(list.len <= db.migration.migrations_max);
+
+        return list;
+    }
+}
+
 /// What a plugin's routes may live under: its name and its namespaces.
 fn owned_of(comptime Plugin: type) []const []const u8 {
     comptime {
@@ -572,6 +709,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var middleware_owners: []const []const u8 = &.{};
         var internal_collections: []const OwnedCollection = &.{};
         var schemas: []const [:0]const u8 = &.{};
+        var migrations: []const db.migration.Migration = &.{};
         var statuses: []const status_module.Status = &.{};
         var transitions: []const status_module.Transition = &.{};
         var field_kinds: []const kinds.Kind = &.{};
@@ -582,12 +720,17 @@ pub fn Merged(comptime plugins: anytype) type {
         var roles: []const Role = &.{};
         var sign_in_providers: []const SignInProvider = &.{};
         var routes: []const route.Declared = &.{};
-        var settings_pages: []const SettingsPage = &.{};
+        var settings_pages: []const OwnedSettingsPage = &.{};
         var row_actions: []const RowAction = &.{};
         var pages: []const OwnedPage = &.{};
-        var top_bar: []const type = &.{};
+        var top_bar: []const OwnedItem = &.{};
+        var sections: []const OwnedSection = &.{};
+        var panels: []const OwnedPanel = &.{};
         var sign_in_at: []const type = &.{};
         var app_picker_segment: []const type = &.{};
+        var dimension: ?variants.Dimension = null;
+        var settings_tabs: []const OwnedSettingsTab = &.{};
+        var translations: []const OwnedTranslation = &.{};
         var operator_commands: []const route.DeclaredCommand = &.{};
         var before_command: []const type = &.{};
         var serving: []const type = &.{};
@@ -618,8 +761,27 @@ pub fn Merged(comptime plugins: anytype) type {
             const own_routes = route.routes_of(Plugin, owned_of(Plugin));
 
             routes = routes ++ own_routes;
-            settings_pages = settings_pages ++ admin_slots.settings_pages_of(Plugin, own_routes);
+            for (admin_slots.settings_pages_of(Plugin, own_routes)) |page| {
+                const owned: OwnedSettingsPage = .{
+                    .plugin = Plugin.manifest.name,
+                    .page = page,
+                };
+
+                settings_pages = settings_pages ++ &[_]OwnedSettingsPage{owned};
+            }
             row_actions = row_actions ++ admin_slots.row_actions_of(Plugin);
+
+            for (admin_slots.settings_tabs_of(Plugin)) |tab| {
+                if (!owns_operation(Plugin, tab.operation)) {
+                    @compileError("plugin " ++ Plugin.manifest.name ++ ": settings tab " ++
+                        tab.tab ++ " is gated by an operation not its own");
+                }
+
+                settings_tabs = settings_tabs ++ &[_]OwnedSettingsTab{.{
+                    .plugin = Plugin.manifest.name,
+                    .tab = tab,
+                }};
+            }
 
             for (admin_slots.pages_of(Plugin)) |page| {
                 const used = if (page.form) |form| [_]type{ form.read, form.save } else [_]type{
@@ -640,8 +802,27 @@ pub fn Merged(comptime plugins: anytype) type {
                 }};
             }
 
-            if (@hasDecl(Plugin, "top_bar")) {
-                top_bar = top_bar ++ &[_]type{Plugin};
+            top_bar = top_bar ++ owned_items(Plugin, "top_bar");
+
+            for (admin_slots.panels_of(Plugin)) |panel| {
+                if (!owns_operation(Plugin, panel.operation)) {
+                    @compileError("plugin " ++ Plugin.manifest.name ++ ": panel " ++
+                        panel.label ++ " is drawn by an operation not its own");
+                }
+
+                panels = panels ++ &[_]OwnedPanel{.{
+                    .plugin = Plugin.manifest.name,
+                    .panel = panel,
+                }};
+            }
+
+            for (admin_slots.sections_of(Plugin)) |section| {
+                const owned: OwnedSection = .{
+                    .plugin = Plugin.manifest.name,
+                    .section = section,
+                };
+
+                sections = sections ++ &[_]OwnedSection{owned};
             }
 
             if (@hasDecl(Plugin, "sign_in_at")) {
@@ -650,6 +831,28 @@ pub fn Merged(comptime plugins: anytype) type {
 
             if (@hasDecl(Plugin, "app_picker_segment")) {
                 app_picker_segment = app_picker_segment ++ &[_]type{Plugin};
+            }
+
+            if (@hasDecl(Plugin, "translations")) {
+                for (Plugin.translations) |translation| {
+                    translations = translations ++ &[_]OwnedTranslation{.{
+                        .plugin = Plugin.manifest.name,
+                        .translation = translation,
+                    }};
+                }
+            }
+
+            if (variants.of(Plugin)) |declared| {
+                if (dimension != null) {
+                    @compileError("two plugins declare `variants`; one dimension at a time");
+                }
+
+                if (!owns_operation(Plugin, declared.list)) {
+                    @compileError("plugin " ++ Plugin.manifest.name ++
+                        ": `variants.list` is one of its own operations");
+                }
+
+                dimension = declared;
             }
 
             operator_commands = operator_commands ++ route.operator_commands_of(Plugin);
@@ -678,6 +881,8 @@ pub fn Merged(comptime plugins: anytype) type {
             if (schema_of(Plugin)) |sql| {
                 schemas = schemas ++ &[_][:0]const u8{sql};
             }
+
+            migrations = migrations ++ migrations_of(Plugin);
 
             if (@hasDecl(Plugin, "statuses")) {
                 statuses = statuses ++ @as([]const status_module.Status, &Plugin.statuses);
@@ -762,6 +967,7 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_middleware_owners = middleware_owners;
             pub const merged_internal_collections = internal_collections;
             pub const merged_schemas = schemas;
+            pub const merged_migrations = migrations;
             pub const merged_statuses = statuses;
             pub const merged_transitions = transitions;
             pub const merged_field_kinds = field_kinds;
@@ -772,16 +978,26 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_sign_in_providers = sign_in_providers;
             pub const merged_routes = routes;
             pub const merged_settings_pages = settings_pages;
+            /// Every plugin's sections of System settings tabs, in name order.
+            pub const merged_settings_tabs = settings_tabs;
             /// Every plugin's actions on other pages' rows, in name order.
             pub const merged_row_actions = row_actions;
             /// Every plugin's own pages, in name order.
             pub const merged_pages = pages;
-            /// The plugins with a top bar item, in name order.
+            /// Every plugin's top bar entries, in name order.
             pub const merged_top_bar = top_bar;
+            /// Every plugin's sections, in name order.
+            pub const merged_sections = sections;
+            /// Every plugin's edit-form panels, in name order.
+            pub const merged_panels = panels;
             /// The plugins that may send someone who must sign in elsewhere, in name order.
             pub const merged_sign_in_at = sign_in_at;
             /// The plugins that join a segment to the app picker, in name order.
             pub const merged_app_picker_segment = app_picker_segment;
+            /// Every PO file the plugins bring, in plugin order.
+            pub const merged_translations = translations;
+            /// The variant dimension a plugin declares, if one does.
+            pub const merged_variants = dimension;
             /// The plugins that keep a `State`, in name order.
             pub const merged_stateful = state.stateful(plugins);
             pub const merged_operator_commands = operator_commands;

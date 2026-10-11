@@ -72,7 +72,8 @@ fn check_taxonomy(ctx: *Ctx, row: store.taxonomies.Row) Error!void {
     }
 }
 
-/// The shared rules, and every content type the taxonomy applies to is a record type.
+/// The shared rules, and every content type the taxonomy applies to holds records: a
+/// record type or a media type.
 fn check_taxonomy_def(
     ctx: *Ctx,
     def: store.taxonomies.Def,
@@ -92,8 +93,8 @@ fn check_taxonomy_def(
             continue;
         };
 
-        if (row.def.kind != .record) {
-            problems.add("applies_to", "only a record type takes terms");
+        if (row.def.kind != .record and row.def.kind != .media) {
+            problems.add("applies_to", "only a record or media type takes terms");
         }
     }
 }
@@ -246,13 +247,7 @@ pub fn has_parents(ctx: *Ctx, taxonomy_id: []const u8) Error!bool {
     std.debug.assert(taxonomy_id.len > 0);
     std.debug.assert(ctx.now_ms >= 0);
 
-    for (try terms.nodes(ctx.db, ctx.arena, taxonomy_id)) |node| {
-        if (node.parent_id != null) {
-            return true;
-        }
-    }
-
-    return false;
+    return terms.any_parented(ctx.db, taxonomy_id);
 }
 
 pub const Get = struct {
@@ -269,6 +264,7 @@ pub const Get = struct {
         id: []const u8,
         purpose: Purpose = .delivery,
         slot: ?[]const u8 = null,
+        variant: ?[]const u8 = null,
     };
     pub const Out = struct {
         term: Term,
@@ -289,6 +285,7 @@ pub const Get = struct {
         .id = "The term id",
         .purpose = "`delivery` or `edit`",
         .slot = "Read this copy instead (`live`, `pending`, ...); signed-in callers only",
+        .variant = "Read each field in this variant (a language code: `pl`), as `record get`",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -298,7 +295,12 @@ pub const Get = struct {
             return error.Invalid;
         }
 
-        const got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
+        var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
+
+        if (try domain.variants.code_of(ctx, in.variant)) |code| {
+            try domain.variants.resolve_one(ctx, &got.record, &got.document, code);
+        }
+
         const parent = try terms.parent_of(ctx.db, ctx.arena, got.record.id);
 
         return .{
@@ -400,6 +402,7 @@ pub const List = struct {
         order: Order = .title_asc,
         limit: u32 = 50,
         offset: u32 = 0,
+        variant: ?[]const u8 = null,
     };
     pub const Out = struct {
         terms: []const Term,
@@ -422,6 +425,7 @@ pub const List = struct {
         .order = "`title_asc` (default), `updated_desc` or `created_desc`",
         .limit = "Page size, up to 200",
         .offset = "Rows to skip",
+        .variant = "Titles and slugs in this variant (a language code: `pl`)",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -442,7 +446,18 @@ pub const List = struct {
             .order = in.order,
             .limit = in.limit,
             .offset = in.offset,
+            .variant = (try domain.variants.code_of(ctx, in.variant)) orelse "",
         });
+
+        if (try domain.variants.code_of(ctx, in.variant)) |code| {
+            if (code.len > 0) {
+                const texts = try domain.listed.documents_of(ctx, listed);
+
+                const writable = @constCast(texts);
+
+                try domain.variants.resolve_listed(ctx, @constCast(listed), writable, code);
+            }
+        }
 
         return .{
             .terms = listed,
@@ -461,18 +476,22 @@ pub const Node = struct {
 
 pub const Tree = struct {
     pub const name = "term.tree";
-    pub const description = "Every term of a taxonomy in tree order, with its depth";
+    pub const description = "A taxonomy's terms in tree order, with their depth, a page at a time";
     pub const details =
         \\Parents come before their children, siblings by title, each term with its depth
         \\from 0. A flat taxonomy is a tree of roots. Anonymous callers get live terms of
-        \\public taxonomies only; a hidden parent leaves its children at the root.
+        \\public taxonomies only; a hidden parent leaves its children at the root. A page of
+        \\the tree at a time; `total` counts every term it places.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         taxonomy: []const u8,
+        limit: u32 = 50,
+        offset: u32 = 0,
     };
     pub const Out = struct {
         terms: []const Node,
+        total: u32 = 0,
     };
     pub const example: In = .{
         .taxonomy = "topics",
@@ -499,6 +518,8 @@ pub const Tree = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .taxonomy = "The taxonomy, by handle or id",
+        .limit = "How many terms at most; 50 when omitted, up to 200",
+        .offset = "How many to pass over first, in tree order: the next page's start",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -508,46 +529,23 @@ pub const Tree = struct {
             return error.Invalid;
         }
 
+        if (in.limit == 0 or in.limit > sdk.operation.page_limit_max) {
+            return error.Invalid;
+        }
+
         const taxonomy = try domain.definition.get(ctx, granted, in.taxonomy);
-        const live_only = granted.record_filter.flags.live_only;
-        const all = try terms.nodes(ctx.db, ctx.arena, taxonomy.id);
-        var shown: std.ArrayList(terms.Node) = .empty;
+
+        const statuses = try shown_statuses(ctx, granted);
+        const placed = try terms.tree_page(ctx.db, ctx.arena, taxonomy.id, .{
+            .statuses_json = statuses,
+            .offset = in.offset,
+            .limit = in.limit,
+        });
+        const out = try ctx.arena.alloc(Node, placed.len);
 
         ctx.depend("type:", taxonomy.def.handle);
 
-        for (all) |node| {
-            if (live_only and !registry.Statuses.is_live(node.status)) {
-                continue;
-            }
-
-            if (!granted.allows_status(node.status)) {
-                continue;
-            }
-
-            try shown.append(ctx.arena, node);
-        }
-
-        return .{
-            .terms = try tree_of(ctx, shown.items),
-        };
-    }
-
-    fn tree_of(ctx: *Ctx, nodes: []const terms.Node) Error![]const Node {
-        std.debug.assert(nodes.len <= terms.tree_max);
-        std.debug.assert(ctx.now_ms >= 0);
-
-        const parents = try ctx.arena.alloc(u32, nodes.len);
-
-        for (nodes, parents) |node, *parent| {
-            parent.* = index_of(nodes, node.parent_id);
-        }
-
-        const placed = model.tree.order(ctx.arena, parents) catch return error.Invalid;
-        const out = try ctx.arena.alloc(Node, placed.len);
-
-        for (placed, out) |position, *item| {
-            const node = nodes[position.index];
-
+        for (placed, out) |node, *item| {
             ctx.depend(domain.depend_prefix, node.id);
             item.* = .{
                 .id = node.id,
@@ -555,26 +553,50 @@ pub const Tree = struct {
                 .title = node.title,
                 .slug = node.slug,
                 .status = node.status,
-                .depth = position.depth,
+                .depth = @intCast(node.depth),
             };
         }
 
-        return out;
+        return .{
+            .terms = out,
+            .total = try terms.tree_count(ctx.db, taxonomy.id, statuses),
+        };
     }
 
-    fn index_of(nodes: []const terms.Node, id: ?[]const u8) u32 {
-        std.debug.assert(nodes.len <= terms.tree_max);
-        std.debug.assert(model.tree.none > nodes.len);
+    /// The statuses the caller sees, as a JSON array; empty for every one.
+    fn shown_statuses(ctx: *Ctx, granted: *const Grant) Error![]const u8 {
+        const live_only = granted.record_filter.flags.live_only;
 
-        const wanted = id orelse return model.tree.none;
+        if (!live_only and granted.statuses == null) {
+            return "";
+        }
 
-        for (nodes, 0..) |node, index| {
-            if (std.mem.eql(u8, node.id, wanted)) {
-                return @intCast(index);
+        var names: std.ArrayList([]const u8) = .empty;
+
+        if (granted.statuses) |listed| {
+            for (listed) |status| {
+                if (!live_only or registry.Statuses.is_live(status)) {
+                    try names.append(ctx.arena, status);
+                }
+            }
+        } else {
+            for (registry.Statuses.all) |status| {
+                if (status.live) {
+                    try names.append(ctx.arena, status.id);
+                }
             }
         }
 
-        return model.tree.none;
+        // No status shown: a list that matches none.
+        if (names.items.len == 0) {
+            return "[\"\"]";
+        }
+
+        std.debug.assert(live_only or granted.statuses != null);
+
+        return std.json.Stringify.valueAlloc(ctx.arena, names.items, .{}) catch {
+            return error.OutOfMemory;
+        };
     }
 };
 

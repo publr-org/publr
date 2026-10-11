@@ -60,7 +60,7 @@ const add_level = (url: string, html: string | null, title: string, opener: HTML
   });
 };
 export const initial_ref = Publr.ref<HTMLElement>((element) => {
-  add_level(element.dataset.url ?? "", element.innerHTML, element.dataset.title ?? "Field", null);
+  add_level(element.dataset.url ?? "", element.innerHTML, element.dataset.title ?? Publr.t("Field"), null);
   state.initial_html = "";
 });
 
@@ -86,7 +86,7 @@ export const panel_ref = Publr.ref<HTMLElement>((element) => {
     Publr.untrack(() => {
       if (disposed || !stack.includes(level)) return;
       level.loading = pending;
-      level.error = error ? "Could not open this field. Try again." : "";
+      level.error = error ? Publr.t("Could not open this field. Try again.") : "";
       if (!pending && !error && value) {
         level.html = value.html;
         level.title = value.title;
@@ -121,7 +121,7 @@ const go = (href: string, push: boolean, replace = false, opener: HTMLElement | 
     const level = top();
     level.requested = true;
     level.url = wanted;
-  } else add_level(wanted, null, "Loading…", opener);
+  } else add_level(wanted, null, Publr.t("Loading…"), opener);
   settle(push);
 };
 export const onNavigate = (event: Event) => {
@@ -156,7 +156,7 @@ const write = mutation(async (form: HTMLFormElement, params: URLSearchParams) =>
     headers: { "Content-Type": "application/x-www-form-urlencoded", "Publr-Fragment": "panel", Accept: "application/json" },
   });
   if (disposed) return;
-  if (!response.ok || response.redirected) throw new Error("Could not save the field. Try again.");
+  if (!response.ok || response.redirected) throw new Error(Publr.t("Could not save the field. Try again."));
   const next = response.headers.get("Publr-Location");
   if (!next) {
     const answer = await response.json() as { html: string; title: string };
@@ -182,7 +182,7 @@ const write = mutation(async (form: HTMLFormElement, params: URLSearchParams) =>
 Publr.effect(() => {
   state.busy = write.isPending;
   state.refresh_error = columns.isError;
-  state.error = write.isError ? (write.error as Error).message : columns.isError ? "Could not refresh the fields." : "";
+  state.error = write.isError ? (write.error as Error).message : columns.isError ? Publr.t("Could not refresh the fields.") : "";
 });
 export const retryColumns = () => columns.refresh();
 export const submitted = (event: Event) => {
@@ -235,17 +235,17 @@ export function TypeColumns({ type_href, list, levels, open, preview }: TypeColu
           <div data-part="type-levels">
             {Publr.stores.navigation.structure.map((level) => (
               <div key={level.id} class="contents" data-part="type-level" data-url={level.url}>
-                <a href={type_href} aria-label="Back" class="absolute inset-0 bg-black/50"
+                <a href={type_href} aria-label={Publr.t("Back")} class="absolute inset-0 bg-black/50"
                   data-part="type-scrim" onClick={onBack}></a>
                 <div ref={panel_ref} data-level={level.id} data-part="type-panel" style={level.style}
                   class="drawer-enter absolute inset-y-0 right-0 overflow-y-auto border-l border-border bg-card shadow-2xl outline-none"
                   inert={level.inactive} focusScope={!level.inactive} tabindex={-1} aria-busy={level.loading}>
                   <div class="px-8 py-4" hidden={!level.loading} role="status">
-                    <Text variant="body-sm" tone="muted">Loading field…</Text>
+                    <Text variant="body-sm" tone="muted">{Publr.t("Loading field…")}</Text>
                   </div>
                   <div class="px-8 py-4" hidden={!level.error} role="alert">
                     <Text variant="body-sm">{level.error}</Text>
-                    <Button onClick={retryLevel} data-level={level.id} hierarchy="secondary">Retry</Button>
+                    <Button onClick={retryLevel} data-level={level.id} hierarchy="secondary">{Publr.t("Retry")}</Button>
                   </div>
                   <div class="flex min-h-full flex-col" data-part="type-panel-body" innerHTML={level.html}></div>
                 </div>
@@ -254,13 +254,13 @@ export function TypeColumns({ type_href, list, levels, open, preview }: TypeColu
           </div>
           <div class="absolute inset-x-0 bottom-0 px-8 py-4" hidden={!state.error} role="alert">
             <Text variant="body-sm">{state.error}</Text>
-            <Button onClick={retryColumns} hidden={!state.refresh_error} hierarchy="secondary">Retry refresh</Button>
+            <Button onClick={retryColumns} hidden={!state.refresh_error} hierarchy="secondary">{Publr.t("Retry refresh")}</Button>
           </div>
         </div>
         <div class="relative flex min-w-0 w-1/2 flex-col border-l border-border bg-card"
           hidden={!state.previewing} data-part="type-preview">
           <FormPreview note="" editor={preview}>
-            <Button type="button" hierarchy="tertiary" size="sm" label="Close preview" title="Close preview"
+            <Button type="button" hierarchy="tertiary" size="sm" label={Publr.t("Close preview")} title={Publr.t("Close preview")}
               onClick={closePreview}>
               <Icon name="x-close" size="sm" />
             </Button>

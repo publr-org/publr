@@ -14,9 +14,11 @@ else
     @import("server/sandboxed_plugins.zig");
 const SandboxHost = if (builtin.os.tag == .wasi) void else sandboxed_plugins.Host;
 const PluginStates = @import("server/plugin_states.zig").States;
+const Languages = @import("server/languages.zig").Languages;
+pub const gate = if (builtin.os.tag == .wasi) void else @import("server/gate.zig");
 
 pub const db_heap_bytes: u32 = 64 << 20;
-pub const request_arena_bytes: u32 = 4 << 20;
+pub const request_arena_bytes: u32 = @import("model/limits.zig").request_arena_bytes;
 
 pub const Server = struct {
     gpa: std.mem.Allocator,
@@ -30,6 +32,13 @@ pub const Server = struct {
     plugin_states: PluginStates,
     /// The media library's folder, beside the database.
     media: files.Disk,
+    /// The working memory every request's loops share (`sdk/scratch.zig`), made here once:
+    /// requests run one at a time, and each loop gives back what it took.
+    scratch_buffer: []u8,
+    scratch: sdk.Scratch,
+    definitions: sdk.DefinitionCache,
+    /// The admin's languages: a catalogue per language the plugins translate it into.
+    languages: Languages,
 
     pub fn init(server: *Server, process: std.process.Init, db_path: [:0]const u8) !void {
         std.debug.assert(db_path.len > 0);
@@ -41,6 +50,17 @@ pub const Server = struct {
         server.heap = try reserve_heap(process.gpa);
         errdefer release_heap(process.gpa, server.heap);
 
+        server.scratch_buffer = try process.gpa.alloc(u8, sdk.scratch.bytes_default);
+        errdefer process.gpa.free(server.scratch_buffer);
+
+        server.scratch = .{
+            .fixed = .init(server.scratch_buffer),
+        };
+        server.definitions = .{};
+
+        try server.languages.init(process.gpa);
+        errdefer server.languages.deinit();
+
         server.runtime = try db.Runtime.init(.{
             .heap = server.heap,
         });
@@ -49,13 +69,13 @@ pub const Server = struct {
         server.connection = try db.open(&server.runtime, db_path);
         errdefer server.connection.close();
 
-        try db.schema.apply(&server.connection);
-        try registry.SDK.apply_schemas(&server.connection);
+        try server.auth.init(process.gpa, process.io, .{});
+        errdefer server.auth.deinit();
+
+        try server.open_gate(process, db_path);
         server.index = try deps.Index.open(&server.connection, .{
             .quiet_ms = deps.quiet_ms,
         });
-        try server.auth.init(process.gpa, process.io, .{});
-        errdefer server.auth.deinit();
 
         server.media = try files.Disk.open(process.io, try sibling_dir(
             process.arena.allocator(),
@@ -84,6 +104,29 @@ pub const Server = struct {
         });
 
         std.debug.assert(server.runtime.open_count == 1);
+    }
+
+    /// The database brought up to this release, or refused (`gate.zig`); the browser build
+    /// has no files to back up, so its database is only brought up to date.
+    fn open_gate(server: *Server, process: std.process.Init, db_path: [:0]const u8) !void {
+        std.debug.assert(server.connection.transaction_depth == 0);
+        std.debug.assert(db_path.len > 0);
+
+        if (builtin.os.tag == .wasi) {
+            try db.schema.apply(&server.connection);
+            try registry.SDK.apply_schemas(&server.connection);
+            return;
+        }
+
+        _ = try gate.open(&server.connection, .{
+            .io = process.io,
+            .gpa = process.gpa,
+            .runtime = &server.runtime,
+            .db_path = db_path,
+            .release = @import("publr.zig").version,
+            .now_ms = sdk.context.wall_clock_ms(process.io),
+            .auth = &server.auth,
+        });
     }
 
     /// Where the media library's files are, for every context this server makes.
@@ -137,6 +180,8 @@ pub const Server = struct {
         }
 
         server.media.close();
+        server.languages.deinit();
+        server.gpa.free(server.scratch_buffer);
         server.auth.deinit();
         server.connection.close();
         server.runtime.deinit();
@@ -201,5 +246,6 @@ fn ensure_parent_dir(io: std.Io, path: []const u8) !void {
 test {
     if (SandboxHost != void) {
         _ = sandboxed_plugins;
+        _ = gate;
     }
 }

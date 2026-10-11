@@ -160,21 +160,21 @@ export function ContentList({
                       type="button"
                       hierarchy="tertiary"
                       size="md"
-                      label="Rename view"
-                      title="Rename view"
+                      label={Publr.t("Rename view")}
+                      title={Publr.t("Rename view")}
                     >
                       <Icon name="edit" size="sm" />
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
-                    <DialogTitle>Rename view</DialogTitle>
+                    <DialogTitle>{Publr.t("Rename view")}</DialogTitle>
                     <DialogDescription>
-                      The name is yours alone: views are private.
+                      {Publr.t("The name is yours alone: views are private.")}
                     </DialogDescription>
                     <form method="post" action={state.rename_href}>
                       <input type="hidden" name="csrf" value={csrf} />
                       <Field classes="mt-4">
-                        <FieldLabel htmlFor="rename-view-name">Name</FieldLabel>
+                        <FieldLabel htmlFor="rename-view-name">{Publr.t("Name")}</FieldLabel>
                         <Input
                           id="rename-view-name"
                           name="name"
@@ -186,10 +186,10 @@ export function ContentList({
                       <div class="mt-5 flex justify-end gap-2">
                         <DialogClose asChild>
                           <Button type="button" hierarchy="secondary">
-                            Cancel
+                            {Publr.t("Cancel")}
                           </Button>
                         </DialogClose>
-                        <Button type="submit">Rename</Button>
+                        <Button type="submit">{Publr.t("Rename")}</Button>
                       </div>
                     </form>
                   </DialogContent>
@@ -207,7 +207,7 @@ export function ContentList({
                         />
                       )}
                       <Icon name="bookmark" size="sm" />
-                      <span>View</span>
+                      <span>{Publr.t("View")}</span>
                       <Icon name="chevron-down" size="xs" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -220,7 +220,7 @@ export function ContentList({
                             <input type="hidden" name="filters" value={state.filters_query} />
                             <DropdownMenuItem type="submit">
                               <Icon name="bookmark" size="sm" />
-                              Save changes to this view
+                              {Publr.t("Save changes to this view")}
                             </DropdownMenuItem>
                           </form>
                         )}
@@ -229,19 +229,19 @@ export function ContentList({
                     <DialogTrigger asChild>
                       <DropdownMenuItem>
                         <Icon name="plus" size="sm" />
-                        {state.is_saved ? "Create new view" : "Copy view"}
+                        {state.is_saved ? Publr.t("Create new view") : Publr.t("Copy view")}
                       </DropdownMenuItem>
                     </DialogTrigger>
                     <DropdownMenuSeparator />
                     {state.view_changed ? (
                       <DropdownMenuItem onClick={onNavigate} href={state.base_href}>
                         <Icon name="reset" size="sm" />
-                        Clear changes
+                        {Publr.t("Clear changes")}
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem disabled>
                         <Icon name="reset" size="sm" />
-                        Clear changes
+                        {Publr.t("Clear changes")}
                       </DropdownMenuItem>
                     )}
                     {state.is_saved && (
@@ -249,22 +249,22 @@ export function ContentList({
                         <input type="hidden" name="csrf" value={csrf} />
                         <DropdownMenuItem type="submit" variant="destructive">
                           <Icon name="trash" size="sm" />
-                          Delete view
+                          {Publr.t("Delete view")}
                         </DropdownMenuItem>
                       </form>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <DialogContent>
-                  <DialogTitle>{state.is_saved ? "New view" : "Copy view"}</DialogTitle>
+                  <DialogTitle>{state.is_saved ? Publr.t("New view") : Publr.t("Copy view")}</DialogTitle>
                   <DialogDescription>
-                    The filters in force are saved under this name, for you alone.
+                    {Publr.t("The filters in force are saved under this name, for you alone.")}
                   </DialogDescription>
                   <form method="post" action="/admin/views/create">
                     <input type="hidden" name="csrf" value={csrf} />
                     <input type="hidden" name="filters" value={state.filters_query} />
                     <Field classes="mt-4">
-                      <FieldLabel htmlFor="new-view-name">Name</FieldLabel>
+                      <FieldLabel htmlFor="new-view-name">{Publr.t("Name")}</FieldLabel>
                       <Input
                         id="new-view-name"
                         name="name"
@@ -276,10 +276,10 @@ export function ContentList({
                     <div class="mt-5 flex justify-end gap-2">
                       <DialogClose asChild>
                         <Button type="button" hierarchy="secondary">
-                          Cancel
+                          {Publr.t("Cancel")}
                         </Button>
                       </DialogClose>
-                      <Button type="submit">Save view</Button>
+                      <Button type="submit">{Publr.t("Save view")}</Button>
                     </div>
                   </form>
                 </DialogContent>
@@ -303,7 +303,7 @@ export function ContentList({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="right">
                       {state.new_targets.length >= 8 && (
-                        <DropdownMenuSearch placeholder="Search types" />
+                        <DropdownMenuSearch placeholder={Publr.t("Search types")} />
                       )}
                       {state.new_targets.map((target) => (
                         <DropdownMenuItem key={target.href} href={target.href}>

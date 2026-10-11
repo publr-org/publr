@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -28,11 +29,11 @@ export function ImageDimensionsRule({
       id="limit_dimensions"
       name="limit_dimensions"
       checked={limit_dimensions}
-      label="Accept only specified image dimensions"
-      description="Specify a minimum and/or maximum allowed width and height, in pixels"
+      label={Publr.t("Accept only specified image dimensions")}
+      description={Publr.t("Specify a minimum and/or maximum allowed width and height, in pixels")}
     >
       <div class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-3">
-        <FieldLabel htmlFor="width_min">Width</FieldLabel>
+        <FieldLabel htmlFor="width_min">{Publr.t("Width")}</FieldLabel>
         <div class="flex flex-wrap items-center gap-3">
           <Input
             id="width_min"
@@ -40,11 +41,11 @@ export function ImageDimensionsRule({
             type="number"
             min="0"
             value={width_min}
-            placeholder="Min"
+            placeholder={Publr.t("Min")}
             classes="w-32"
           />
           <Text as="span" variant="body-md">
-            to
+            {Publr.t("to")}
           </Text>
           <Input
             id="width_max"
@@ -52,14 +53,14 @@ export function ImageDimensionsRule({
             type="number"
             min="0"
             value={width_max}
-            placeholder="Max"
+            placeholder={Publr.t("Max")}
             classes="w-32"
           />
           <Text as="span" variant="body-md" tone="muted">
             px
           </Text>
         </div>
-        <FieldLabel htmlFor="height_min">Height</FieldLabel>
+        <FieldLabel htmlFor="height_min">{Publr.t("Height")}</FieldLabel>
         <div class="flex flex-wrap items-center gap-3">
           <Input
             id="height_min"
@@ -67,11 +68,11 @@ export function ImageDimensionsRule({
             type="number"
             min="0"
             value={height_min}
-            placeholder="Min"
+            placeholder={Publr.t("Min")}
             classes="w-32"
           />
           <Text as="span" variant="body-md">
-            to
+            {Publr.t("to")}
           </Text>
           <Input
             id="height_max"
@@ -79,7 +80,7 @@ export function ImageDimensionsRule({
             type="number"
             min="0"
             value={height_max}
-            placeholder="Max"
+            placeholder={Publr.t("Max")}
             classes="w-32"
           />
           <Text as="span" variant="body-md" tone="muted">
@@ -88,7 +89,7 @@ export function ImageDimensionsRule({
         </div>
       </div>
       <Field>
-        <FieldLabel htmlFor="dimensions_message">Custom error message</FieldLabel>
+        <FieldLabel htmlFor="dimensions_message">{Publr.t("Custom error message")}</FieldLabel>
         <Input
           id="dimensions_message"
           name="dimensions_message"

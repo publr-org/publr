@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { onReference } from "../RecordEditor.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
@@ -52,19 +53,19 @@ export function RecordReferenceAdd({
             data-reshape={reshape}
           >
             <Icon name="plus" size="sm" />
-            <span>Link existing item</span>
+            <span>{Publr.t("Link existing item")}</span>
           </Button>
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" hierarchy="secondary" size="sm">
                 <Icon name="plus" size="sm" />
-                <span>Link existing item</span>
+                <span>{Publr.t("Link existing item")}</span>
                 <Icon name="chevron-down" size="xs" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              {pick_search && <DropdownMenuSearch placeholder="Search content type" />}
+              {pick_search && <DropdownMenuSearch placeholder={Publr.t("Search content type")} />}
               {targets.map((target) => (
                 <DropdownMenuItem
                   onClick={onReference}
@@ -96,19 +97,19 @@ export function RecordReferenceAdd({
             data-reshape={reshape}
           >
             <Icon name="plus" size="sm" />
-            <span>Create new item</span>
+            <span>{Publr.t("Create new item")}</span>
           </Button>
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" hierarchy="secondary" size="sm">
                 <Icon name="plus" size="sm" />
-                <span>Create new item</span>
+                <span>{Publr.t("Create new item")}</span>
                 <Icon name="chevron-down" size="xs" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              {pick_search && <DropdownMenuSearch placeholder="Search content type" />}
+              {pick_search && <DropdownMenuSearch placeholder={Publr.t("Search content type")} />}
               {targets.map((target) => (
                 <DropdownMenuItem
                   onClick={onReference}

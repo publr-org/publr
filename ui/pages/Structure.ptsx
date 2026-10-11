@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { HubPage } from "../layouts/HubPage.ptsx";
 import { HubGroup } from "../components/HubGroup.ptsx";
 import { LinkCard } from "@publr/ui/LinkCard.ptsx";
@@ -6,42 +7,42 @@ export type StructureProps = {};
 
 export function Structure({}: StructureProps) {
   return (
-    <HubPage title="Structure" description="Define your content and how it fits together.">
+    <HubPage title={Publr.t("Structure")} description={Publr.t("Define your content and how it fits together.")}>
       <div class="grid gap-5 sm:grid-cols-3">
         <LinkCard
           href="/admin/types"
-          title="Content Types"
+          title={Publr.t("Content Types")}
           icon_name="file"
           size="large"
-          description="Define the types of content your editors can create and the fields they contain."
+          description={Publr.t("Define the types of content your editors can create and the fields they contain.")}
         />
         <LinkCard
           href="/admin/structure/taxonomies"
-          title="Taxonomies"
+          title={Publr.t("Taxonomies")}
           icon_name="tag"
           size="large"
-          description="Organize content with categories, tags, and other classifications."
+          description={Publr.t("Organize content with categories, tags, and other classifications.")}
         />
         <LinkCard
           href="/admin/structure/settings"
-          title="Settings"
+          title={Publr.t("Settings")}
           icon_name="settings"
           size="large"
-          description="Define settings sections and the fields your editors can configure."
+          description={Publr.t("Define settings sections and the fields your editors can configure.")}
         />
       </div>
-      <HubGroup title="Advanced">
+      <HubGroup title={Publr.t("Advanced")}>
         <LinkCard
           href="/admin/components"
-          title="Components"
+          title={Publr.t("Components")}
           icon_name="components"
-          description="Build reusable components with typed props and composition rules."
+          description={Publr.t("Build reusable components with typed props and composition rules.")}
         />
         <LinkCard
           href="/admin/custom-fields"
-          title="Custom Fields"
+          title={Publr.t("Custom Fields")}
           icon_name="list-unordered"
-          description="Add fields to user profiles and media."
+          description={Publr.t("Add fields to user profiles and media.")}
         />
       </HubGroup>
     </HubPage>

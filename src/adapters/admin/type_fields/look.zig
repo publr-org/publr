@@ -26,7 +26,7 @@ pub fn node(arena: std.mem.Allocator, field: FieldDef) Error!admin.render.Node {
     };
 
     props.has_placeholder = kind.control == .input or kind.control == .number or
-        kind.control == .textarea;
+        kind.control == .textarea or kind.control == .rich;
     props.placeholder = set.placeholder;
     props.has_rows = kind.has.rows;
     props.rows = try rules.count_text(arena, set.rows);
@@ -34,6 +34,10 @@ pub fn node(arena: std.mem.Allocator, field: FieldDef) Error!admin.render.Node {
     props.markdown = set.text.format == .markdown;
     props.has_date_format = kind.has.dates;
     props.date_only = set.date.format == .date;
+    props.has_rich = kind.control == .rich;
+    props.rich_bold = allows(set.richtext, .bold);
+    props.rich_italic = allows(set.richtext, .italic);
+    props.rich_link = allows(set.richtext, .link);
     props.has_slug = std.mem.eql(u8, kind.id, "slug");
     props.lock_on_publish = set.slug.lock_on_publish;
     props.has_email = std.mem.eql(u8, kind.id, "email");
@@ -165,4 +169,12 @@ test "the look follows the kind" {
     try std.testing.expect(!boxed.label_field_none);
     try std.testing.expect(boxed.label_fields[0].selected);
     try std.testing.expectEqualStrings("Add question", boxed.add_label);
+}
+
+fn allows(rich: model.field.options.RichText, format: model.field.options.RichFormat) bool {
+    const formats = rich.formats orelse return true;
+
+    std.debug.assert(formats.len <= model.field.options.list_max);
+
+    return std.mem.indexOfScalar(model.field.options.RichFormat, formats, format) != null;
 }

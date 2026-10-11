@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
@@ -26,15 +27,15 @@ export function Content({ title, has_types, list }: ContentProps) {
         !has_types && (
           <Button href="/admin/types/new">
             <Icon name="plus" size="sm" />
-            <span>New content type</span>
+            <span>{Publr.t("New content type")}</span>
           </Button>
         )
       }
       empty={
         !has_types && (
           <Empty>
-            <EmptyTitle>No content types yet</EmptyTitle>
-            <EmptyDescription>Content is made of records of a type. Define a type first.</EmptyDescription>
+            <EmptyTitle>{Publr.t("No content types yet")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("Content is made of records of a type. Define a type first.")}</EmptyDescription>
           </Empty>
         )
       }

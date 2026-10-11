@@ -1,4 +1,6 @@
+import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Table } from "@publr/ui/Table.ptsx";
@@ -19,6 +21,8 @@ export type RevisionsProps = {
   updated: string;
   updated_by: string;
   rows: Array<{ href: string; seq: string; kind: string; title: string; at: string; by: string }>;
+  /** The page of older versions; empty past the oldest. */
+  older_href: string;
 };
 
 export function Revisions({
@@ -30,17 +34,24 @@ export function Revisions({
   updated,
   updated_by,
   rows,
+  older_href,
 }: RevisionsProps) {
   return (
     <IndexPage
       title={title}
       parents={[{ label: record_title, href: record_href }]}
-      description={`${rows.length + 1} kept`}
+      description={Publr.t("Every replaced live document is kept.")}
       footer={
-        rows.length === 0 && (
+        rows.length === 0 ? (
           <Text as="p" variant="body-sm" tone="muted">
-            No previous versions yet: one is kept every time the live document is replaced.
+            {Publr.t("No previous versions yet: one is kept every time the live document is replaced.")}
           </Text>
+        ) : (
+          older_href !== "" && (
+            <Button href={older_href} hierarchy="secondary" size="sm">
+              {Publr.t("Older")}
+            </Button>
+          )
         )
       }
     >
@@ -48,17 +59,17 @@ export function Revisions({
       <TableHeader>
         <TableRow>
           <TableHead>#</TableHead>
-          <TableHead>Kind</TableHead>
-          <TableHead>Title</TableHead>
-          <TableHead>Taken</TableHead>
-          <TableHead>By</TableHead>
+          <TableHead>{Publr.t("Kind")}</TableHead>
+          <TableHead>{Publr.t("Title")}</TableHead>
+          <TableHead>{Publr.t("Taken")}</TableHead>
+          <TableHead>{Publr.t("By")}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         <TableRow>
           <TableCell>
             <Text as="span" variant="body-sm">
-              current
+              {Publr.t("current")}
             </Text>
           </TableCell>
           <TableCell>
@@ -68,7 +79,7 @@ export function Revisions({
               ) : (
                 <Status tone="neutral">{status}</Status>
               )}
-              {changed && <Status tone="warning">pending changes aside</Status>}
+              {changed && <Status tone="warning">{Publr.t("pending changes aside")}</Status>}
             </div>
           </TableCell>
           <TableCell>

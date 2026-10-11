@@ -114,11 +114,11 @@ pub fn page(session: *Session, handle: []const u8, def: Def, top: ?Level) Error!
     const parents = try arena.alloc(views.TypeFields.ParentsItem, 2);
 
     parents[0] = .{
-        .label = "Structure",
+        .label = try session.translated("Structure"),
         .href = "/admin/structure",
     };
     parents[1] = .{
-        .label = spaces.of(session).title(),
+        .label = try spaces.of(session).title(session),
         .href = spaces.of(session).base(),
     };
 

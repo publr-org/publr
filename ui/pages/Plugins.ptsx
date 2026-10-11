@@ -1,5 +1,6 @@
 import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Pager } from "../components/Pager.ptsx";
 import { UploadPlugin } from "../components/UploadPlugin.ptsx";
 import { TabNav } from "@publr/ui/TabNav.ptsx";
 import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
@@ -37,41 +38,46 @@ export type PluginsProps = {
     update_href: string;
     disable_action: string;
   }>;
+  /** "51–100 of 230" when there is more than one page; empty otherwise. */
+  range: string;
+  previous_href: string;
+  next_href: string;
 };
 
 /** Every plugin added, running or not: enable one to review what it asks for, update one
  * a newer module was uploaded for, stop one. Removing one is on its own page. */
-export function Plugins({ tab, built_in, plugins }: PluginsProps) {
+export function Plugins({ tab, built_in, plugins, range, previous_href, next_href }: PluginsProps) {
   return (
     <IndexPage
-      title="Plugins"
+      title={Publr.t("Plugins")}
+      footer={range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
       description={
         tab === "installed"
-          ? "Installed at runtime. Each runs in a sandbox and can do only what you grant it."
-          : "Built into this binary: always running, with full access. A new build changes them."
+          ? Publr.t("Installed at runtime. Each runs in a sandbox and can do only what you grant it.")
+          : Publr.t("Built into this binary: always running, with full access. A new build changes them.")
       }
       actions={tab === "installed" && <UploadPlugin csrf={Publr.request.session.csrf} />}
       tabs={
-        <TabNav label="Plugins">
+        <TabNav label={Publr.t("Plugins")}>
           <TabNavLink href="/admin/settings/plugins" active={tab === "installed"}>
-            Installed
+            {Publr.t("Installed")}
           </TabNavLink>
           <TabNavLink href="/admin/settings/plugins/built-in" active={tab === "built_in"}>
-            Built-in
+            {Publr.t("Built-in")}
           </TabNavLink>
         </TabNav>
       }
       empty={
         (tab === "built_in" && built_in.length === 0 && (
           <Empty>
-            <EmptyTitle>No built-in plugins</EmptyTitle>
-            <EmptyDescription>This binary was built without plugins.</EmptyDescription>
+            <EmptyTitle>{Publr.t("No built-in plugins")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("This binary was built without plugins.")}</EmptyDescription>
           </Empty>
         )) ||
         (tab === "installed" && plugins.length === 0 && (
           <Empty>
-            <EmptyTitle>No plugins yet</EmptyTitle>
-            <EmptyDescription>Upload a plugin's .wasm file to add it.</EmptyDescription>
+            <EmptyTitle>{Publr.t("No plugins yet")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("Upload a plugin's .wasm file to add it.")}</EmptyDescription>
           </Empty>
         ))
       }
@@ -80,9 +86,9 @@ export function Plugins({ tab, built_in, plugins }: PluginsProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Plugin</TableHead>
-              <TableHead>Version</TableHead>
-              <TableHead>Brings</TableHead>
+              <TableHead>{Publr.t("Plugin")}</TableHead>
+              <TableHead>{Publr.t("Version")}</TableHead>
+              <TableHead>{Publr.t("Brings")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -115,10 +121,10 @@ export function Plugins({ tab, built_in, plugins }: PluginsProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Plugin</TableHead>
-              <TableHead>Version</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead align="right">Actions</TableHead>
+              <TableHead>{Publr.t("Plugin")}</TableHead>
+              <TableHead>{Publr.t("Version")}</TableHead>
+              <TableHead>{Publr.t("Status")}</TableHead>
+              <TableHead align="right">{Publr.t("Actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -140,13 +146,13 @@ export function Plugins({ tab, built_in, plugins }: PluginsProps) {
                 <TableCell>
                   <div class="flex flex-col items-start gap-1">
                     {row.enabled ? (
-                      <Status tone="success">Enabled</Status>
+                      <Status tone="success">{Publr.t("Enabled")}</Status>
                     ) : (
-                      <Status tone="neutral">Disabled</Status>
+                      <Status tone="neutral">{Publr.t("Disabled")}</Status>
                     )}
-                    {row.update !== "" && <Status tone="review">Update to {row.update} available</Status>}
+                    {row.update !== "" && <Status tone="review">{Publr.t("Update to {version} available", { version: row.update })}</Status>}
                     {row.enabled && row.pending !== "" && (
-                      <Status tone="warning">{row.pending} waiting for approval</Status>
+                      <Status tone="warning">{Publr.t("{pending} waiting for approval", { pending: row.pending })}</Status>
                     )}
                   </div>
                 </TableCell>
@@ -154,12 +160,12 @@ export function Plugins({ tab, built_in, plugins }: PluginsProps) {
                   <div class="flex flex-wrap items-center justify-end gap-2">
                     {!row.enabled && (
                       <Button href={row.enable_href} size="sm">
-                        Enable
+                        {Publr.t("Enable")}
                       </Button>
                     )}
                     {row.update !== "" && (
                       <Button href={row.update_href} size="sm" hierarchy="secondary">
-                        Update
+                        {Publr.t("Update")}
                       </Button>
                     )}
                     {row.enabled && (
@@ -167,7 +173,7 @@ export function Plugins({ tab, built_in, plugins }: PluginsProps) {
                         <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
                         <input type="hidden" name="next" value="list" />
                         <Button type="submit" size="sm" hierarchy="secondary">
-                          Disable
+                          {Publr.t("Disable")}
                         </Button>
                       </form>
                     )}

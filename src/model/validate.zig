@@ -1,6 +1,7 @@
 const std = @import("std");
 const field = @import("field.zig");
 const kinds = @import("kinds.zig");
+const variant = @import("variant.zig");
 
 const Def = field.Def;
 const Kind = kinds.Kind;
@@ -8,12 +9,59 @@ const Problems = field.Problems;
 const Value = std.json.Value;
 
 pub const string_len_max: u32 = kinds.string_len_max;
-pub const text_len_max: u32 = 4 << 20;
+pub const text_len_max: u32 = @import("limits.zig").entry_bytes_max;
 pub const id_len_max: u32 = 64;
 pub const repeater_items_max: u32 = 1000;
 pub const day_ms: i64 = 86_400_000;
 
 /// `now_ms` is the moment of the write, for the rules that are relative to it.
+/// Values one entry holds, every field's and every repeater item's: the build's limit.
+pub const values_max: u32 = @import("limits.zig").entry_values_max;
+const too_many_values = std.fmt.comptimePrint(
+    "too many values: an entry holds at most {d}; split it, or remove some",
+    .{values_max},
+);
+/// Past this deep, a document is refused by its parse already.
+const values_depth_max: u32 = 64;
+
+/// How many values a document holds: every text, number and yes or no in it, however deep;
+/// counted no further than one past `values_max`.
+pub fn values_in(value: Value, depth: u32) u32 {
+    std.debug.assert(depth <= values_depth_max);
+
+    return switch (value) {
+        .null => 0,
+        .bool, .integer, .float, .number_string, .string => 1,
+        .array => |items| blk: {
+            var count: u32 = 0;
+
+            for (items.items) |item| {
+                if (count > values_max or depth == values_depth_max) {
+                    break;
+                }
+
+                count += values_in(item, depth + 1);
+            }
+
+            break :blk count;
+        },
+        .object => |object| blk: {
+            var count: u32 = 0;
+            var entries = object.iterator();
+
+            while (entries.next()) |entry| {
+                if (count > values_max or depth == values_depth_max) {
+                    break;
+                }
+
+                count += values_in(entry.value_ptr.*, depth + 1);
+            }
+
+            break :blk count;
+        },
+    };
+}
+
 pub fn validate_document(
     known: []const Kind,
     defs: []const Def,
@@ -44,13 +92,77 @@ pub fn validate_document(
         validate_field(known, conditional(def, object), value, def.name, now_ms, problems);
     }
 
+    validate_variants(known, defs, object, "", now_ms, problems);
+
+    if (values_in(document, 0) > values_max) {
+        problems.add("", too_many_values);
+    }
+
     var keys = object.iterator();
 
     while (keys.next()) |entry| {
-        if (find(defs, entry.key_ptr.*) == null) {
+        if (find_key(defs, entry.key_ptr.*) == null) {
             problems.add(entry.key_ptr.*, "unknown field");
         }
     }
+}
+
+/// Each value a field holds for a variant (`name@pl`) is checked as the field's own would
+/// be, except that none is required: a variant left out reads its fallback.
+fn validate_variants(
+    known: []const Kind,
+    defs: []const Def,
+    object: std.json.ObjectMap,
+    prefix: []const u8,
+    now_ms: i64,
+    problems: *Problems,
+) void {
+    std.debug.assert(defs.len <= field.fields_max);
+    std.debug.assert(prefix.len <= field.path_len_max);
+
+    var keys = object.iterator();
+
+    while (keys.next()) |entry| {
+        const key = variant.split(entry.key_ptr.*);
+
+        if (key.code.len == 0) {
+            continue;
+        }
+
+        const def = find(defs, key.name) orelse continue;
+
+        if (!def.variants or !variant.valid_code(key.code)) {
+            continue;
+        }
+
+        var optional = def.*;
+
+        optional.required = false;
+        optional.options.items_min = null;
+
+        var path_buffer: [field.path_len_max]u8 = undefined;
+        const path = if (prefix.len == 0)
+            entry.key_ptr.*
+        else
+            std.fmt.bufPrint(&path_buffer, "{s}.{s}", .{ prefix, entry.key_ptr.* }) catch prefix;
+
+        validate_field(known, optional, entry.value_ptr.*, path, now_ms, problems);
+    }
+}
+
+/// The field a document key belongs to: its own name, or a variant of a field that holds them.
+fn find_key(defs: []const Def, key_text: []const u8) ?*const Def {
+    std.debug.assert(key_text.len <= string_len_max);
+    std.debug.assert(defs.len <= field.fields_max);
+
+    const key = variant.split(key_text);
+    const def = find(defs, key.name) orelse return null;
+
+    if (key.code.len == 0) {
+        return def;
+    }
+
+    return if (def.variants and variant.valid_code(key.code)) def else null;
 }
 
 fn conditional(def: Def, object: std.json.ObjectMap) Def {
@@ -498,6 +610,8 @@ fn validate_group(
             problems,
         );
     }
+
+    validate_variants(known, def.fields, object, path, now_ms, problems);
 }
 
 fn validate_repeater(
@@ -876,4 +990,27 @@ test "extended fields reject malformed values and layout elements cannot store d
         validate_document(&kinds.core, &defs, try parse(arena, case.text), 0, &problems);
         try std.testing.expectEqual(case.valid, problems.is_empty());
     }
+}
+
+test "a document's values are every leaf in it, and past the limit it is refused" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const text = "{\"title\":\"A\",\"items\":[{\"a\":1,\"b\":true},{\"a\":2,\"b\":null}]}";
+    const parsed = try std.json.parseFromSliceLeaky(Value, arena, text, .{});
+
+    try std.testing.expectEqual(@as(u32, 4), values_in(parsed, 0));
+
+    var many = std.json.Array.init(arena);
+    var made: u32 = 0;
+
+    while (made <= values_max) : (made += 1) {
+        try many.append(.{
+            .integer = made,
+        });
+    }
+
+    try std.testing.expectEqual(values_max + 1, values_in(.{
+        .array = many,
+    }, 0));
 }

@@ -1,0 +1,67 @@
+import { Publr } from "publr-jsx";
+import { TextToggle } from "@publr/ui/TextToggle.ptsx";
+
+export type LanguageSwitchProps = {
+  /** The site's languages, the main one first with an empty code. Fewer than two: nothing. */
+  languages: Array<{ code: string; label: string }>;
+};
+
+export const state = Publr.reactive({
+  language: "",
+  languages: [] as Array<{ code: string; label: string }>,
+});
+
+/** A field path's language: `bio@pl` is Polish; `bio` is none. */
+const languageOfPath = (path: string) => {
+  const last = path.slice(path.lastIndexOf(".") + 1);
+  const at = last.indexOf("@");
+  return at < 0 ? null : last.slice(at + 1).replace(/\[.*$/, "");
+};
+
+/** Shows the fields of the language chosen in the form around the switch: each translated
+ * field's value in that language, the fields every language shares as they are. */
+const apply = (form: HTMLElement) => {
+  const translated = new Set<string>();
+  const wrappers = Array.from(form.querySelectorAll<HTMLElement>("[data-field-path]"));
+  for (const element of wrappers) {
+    const path = element.dataset.fieldPath ?? "";
+    if (languageOfPath(path) !== null) translated.add(path.slice(0, path.lastIndexOf("@")));
+  }
+  for (const element of wrappers) {
+    const path = element.dataset.fieldPath ?? "";
+    const own = languageOfPath(path);
+    const out = own !== null ? own !== state.language : translated.has(path) && state.language !== "";
+    element.hidden = out;
+  }
+};
+
+/** On the page's first draw, the content language chosen top right (`<html data-variant>`),
+ * when the site has it; else the main language. */
+export const switch_ref = Publr.ref<HTMLElement>((element) => {
+  const chosen = document.documentElement.dataset.variant ?? "";
+  state.language = state.languages.some((language) => language.code === chosen) ? chosen : "";
+  const form = element.closest<HTMLElement>("form");
+  if (form) apply(form);
+});
+
+export const onLanguage = (event: MouseEvent) => {
+  const button = event.currentTarget as HTMLElement;
+  const label = button.textContent?.trim() ?? "";
+  state.language = state.languages.find((language) => language.label === label)?.code ?? "";
+  const form = button.closest<HTMLElement>("form");
+  if (form) apply(form);
+};
+
+/** The switch between the languages of the translated fields in the form it sits in. */
+export function LanguageSwitch({ languages }: LanguageSwitchProps) {
+  state.languages = languages;
+
+  return (
+    <div class="flex items-center gap-3" role="group" aria-label="Language" data-part="language-switch"
+      hidden={languages.length < 2} ref={switch_ref}>
+      {state.languages.map((language) => (
+        <TextToggle label={language.label} pressed={state.language === language.code} onClick={onLanguage} />
+      ))}
+    </div>
+  );
+}

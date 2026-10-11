@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
@@ -14,6 +15,10 @@ export type FieldSettingsProps = {
   is_title: boolean;
   can_search: boolean;
   searchable: boolean;
+  can_translate?: boolean;
+  translates?: boolean;
+  translate_label?: string;
+  translate_help?: string;
   has_target: boolean;
   targets: Array<{
     value: string;
@@ -39,6 +44,10 @@ export function FieldSettings({
   is_title,
   can_search,
   searchable,
+  can_translate = false,
+  translates = false,
+  translate_label = "",
+  translate_help = "",
   has_target,
   targets,
   has_taxonomy,
@@ -52,7 +61,7 @@ export function FieldSettings({
   return (
     <section class="border-t border-border pt-6">
       <Heading level={2} size="md">
-        Settings
+        {Publr.t("Settings")}
       </Heading>
       <div class="mt-5 flex flex-col gap-6">
         {can_title && (
@@ -61,8 +70,20 @@ export function FieldSettings({
               id="title"
               name="title"
               checked={is_title}
-              label="This field represents the record's title"
-              description="The name a record goes by in lists and references. One field of the type; ticking it here moves it."
+              label={Publr.t("This field represents the record's title")}
+              description={Publr.t("The name a record goes by in lists and references. One field of the type; ticking it here moves it.")}
+            />
+          </div>
+        )}
+        {can_translate && (
+          <div>
+            <input type="hidden" name="variants_offered" value="1" />
+            <CheckboxField
+              id="variants"
+              name="variants"
+              checked={translates}
+              label={translate_label}
+              description={translate_help}
             />
           </div>
         )}
@@ -71,15 +92,15 @@ export function FieldSettings({
             id="searchable"
             name="searchable"
             checked={searchable}
-            label="Searchable"
-            description="Indexed for full-text search in the content list and the API."
+            label={Publr.t("Searchable")}
+            description={Publr.t("Indexed for full-text search in the content list and the API.")}
           />
         )}
         {has_target && (
           <fieldset class="m-0 min-w-0 border-0 p-0">
             <legend class="mb-2 p-0">
               <Text as="span" variant="body-sm" tone="default">
-                Points at
+                {Publr.t("Points at")}
               </Text>
             </legend>
             <div class="flex flex-col gap-3">
@@ -95,7 +116,7 @@ export function FieldSettings({
             </div>
             <div class="mt-2">
               <FieldDescription>
-                Tick the record types it may point at; none ticked means any record type.
+                {Publr.t("Tick the record types it may point at; none ticked means any record type.")}
               </FieldDescription>
             </div>
           </fieldset>
@@ -103,7 +124,7 @@ export function FieldSettings({
         {has_taxonomy && (
           <Field>
             <FieldLabel htmlFor="taxonomy" required>
-              Taxonomy
+              {Publr.t("Taxonomy")}
             </FieldLabel>
             <NativeSelect id="taxonomy" name="taxonomy">
               {taxonomies.map((taxonomy) => (
@@ -113,32 +134,31 @@ export function FieldSettings({
               ))}
             </NativeSelect>
             <FieldDescription>
-              Records of this type select terms of the taxonomy in the editor's sidebar: a tree
-              of checkboxes for a hierarchical taxonomy, a combobox for a flat one.
+              {Publr.t("Records of this type select terms of the taxonomy in the editor's sidebar: a tree of checkboxes for a hierarchical taxonomy, a combobox for a flat one.")}
             </FieldDescription>
           </Field>
         )}
         {has_source && (
           <Field>
-            <FieldLabel htmlFor="source">Source field</FieldLabel>
+            <FieldLabel htmlFor="source">{Publr.t("Source field")}</FieldLabel>
             <Input id="source" name="source" value={source} placeholder="title" />
             <FieldDescription>
-              The field the slug is made from; the title when left empty.
+              {Publr.t("The field the slug is made from; the title when left empty.")}
             </FieldDescription>
           </Field>
         )}
         {has_target && (
           <Field>
-            <FieldLabel htmlFor="on_delete">When a linked record is purged</FieldLabel>
+            <FieldLabel htmlFor="on_delete">{Publr.t("When a linked record is purged")}</FieldLabel>
             <NativeSelect id="on_delete" name="on_delete">
               <option value="keep" selected={on_delete === "keep"}>
-                Keep the link as it is
+                {Publr.t("Keep the link as it is")}
               </option>
               <option value="block" selected={on_delete === "block"}>
-                Refuse to purge while linked here
+                {Publr.t("Refuse to purge while linked here")}
               </option>
               <option value="clear" selected={on_delete === "clear"}>
-                Clear the link
+                {Publr.t("Clear the link")}
               </option>
             </NativeSelect>
           </Field>
@@ -146,7 +166,7 @@ export function FieldSettings({
         {has_choices && (
           <Field>
             <FieldLabel htmlFor="choices" required>
-              Choices
+              {Publr.t("Choices")}
             </FieldLabel>
             <Textarea
               id="choices"
@@ -156,8 +176,7 @@ export function FieldSettings({
               placeholder={"draft\nreview | In review\nfinal"}
             />
             <FieldDescription>
-              One per line, in the order they are offered. Write `value | Label` to show a label
-              other than the value.
+              {Publr.t("One per line, in the order they are offered. Write `value | Label` to show a label other than the value.")}
             </FieldDescription>
           </Field>
         )}

@@ -28,7 +28,10 @@ pub fn list(
                     group.handle,
                 },
             ),
-            .status = if (group.active) "Active" else "Inactive",
+            .status = if (group.active)
+                try session.translated("Active")
+            else
+                try session.translated("Inactive"),
         };
     }
 

@@ -19,7 +19,7 @@ const Row = views.FieldList.RowsItem;
 const print = type_pages.print;
 const text_of = field_pages.text_of;
 
-/// What the preview calls a field the form has not named yet.
+/// What the preview calls a field the form has not named yet, in English.
 pub const untitled_label = "Untitled field";
 pub const untitled_name = "untitled";
 
@@ -40,9 +40,9 @@ pub fn list_node(session: *Session, handle: []const u8, def: Def) Error!admin.re
 
     const arena = session.arena;
     const kind_label = if (spaces.of(session) == .custom)
-        "Custom fields"
+        try session.translated("Custom fields")
     else
-        type_pages.kind_text(def.kind).label;
+        (try type_pages.kind_text(session, def.kind)).label;
     const hub = try spaces.hub(session, handle);
     const content_href: ?[]const u8 = if (spaces.of(session) == .taxonomies)
         try print(arena, "/admin/structure/taxonomies/{s}/terms", .{handle})
@@ -53,9 +53,15 @@ pub fn list_node(session: *Session, handle: []const u8, def: Def) Error!admin.re
     else
         try print(arena, "/admin/content?type={s}", .{handle});
 
+    const limit = try limit_of(session, def);
+    const all = all_fields(session);
+    const rows = try rows_of(arena, hub, def);
+    const shown = if (all) rows.len else @min(rows.len, @import("../fields.zig").fields_open);
+    const more = try print(arena, "{d}", .{rows.len});
+
     return admin.render.view(arena, views.FieldList, .{
         .csrf = session.csrf_token(),
-        .title = if (spaces.of(session) == .custom) "Fields" else def.name,
+        .title = if (spaces.of(session) == .custom) try session.translated("Fields") else def.name,
         .description = if (spaces.of(session) == .custom) "" else try print(
             arena,
             "{s} · {s}",
@@ -75,8 +81,99 @@ pub fn list_node(session: *Session, handle: []const u8, def: Def) Error!admin.re
             },
         ),
         .content_href = content_href,
-        .rows = try rows_of(arena, hub, def),
+        .rows = rows[0..shown],
+        .more_label = if (shown == rows.len) "" else try session.translated_with(
+            "Show all {count} fields",
+            &.{.{
+                .name = "count",
+                .value = more,
+            }},
+        ),
+        .more_href = if (shown == rows.len) "" else try print(arena, "{s}?fields=all", .{hub}),
+        .limit_title = limit.title,
+        .limit_text = limit.text,
+        .limit_full = limit.full,
     });
+}
+
+/// How near the fullest level of the type is to the most a level holds: nothing below three
+/// quarters, then its count, with what holds it when that is a group or repeater.
+const Limit = struct {
+    title: []const u8 = "",
+    text: []const u8 = "",
+    full: bool = false,
+};
+
+fn limit_of(session: *Session, def: Def) Error!Limit {
+    std.debug.assert(def.fields.len <= model.field.fields_max);
+
+    const max = model.field.fields_max;
+    var fullest: Fullest = .{
+        .count = @intCast(def.fields.len),
+    };
+
+    fullest.within(def.fields, "", 0);
+
+    if (!model.limits.near(fullest.count, max)) {
+        return .{};
+    }
+
+    const arena = session.arena;
+    const counted = try print(arena, "{d} of {d} fields", .{ fullest.count, max });
+
+    return .{
+        .title = if (fullest.holder.len == 0)
+            counted
+        else
+            try print(arena, "{s}: {s}", .{ fullest.holder, counted }),
+        .text = try print(
+            arena,
+            "A type holds at most {d} fields at one level, and as many again inside each " ++
+                "group or repeater. Past that, no field is added here.",
+            .{max},
+        ),
+        .full = fullest.count >= max,
+    };
+}
+
+/// The level holding the most fields, and the group or repeater holding it (empty for the
+/// type's own).
+const Fullest = struct {
+    count: u32,
+    holder: []const u8 = "",
+
+    fn within(
+        fullest: *Fullest,
+        fields: []const model.field.Def,
+        holder: []const u8,
+        depth: u32,
+    ) void {
+        std.debug.assert(depth <= model.field.depth_max);
+
+        if (fields.len > fullest.count) {
+            fullest.count = @intCast(fields.len);
+            fullest.holder = holder;
+        }
+
+        if (depth == model.field.depth_max) {
+            return;
+        }
+
+        for (fields) |field| {
+            if (field.fields.len > 0) {
+                fullest.within(field.fields, field.label, depth + 1);
+            }
+        }
+    }
+};
+
+/// Whether the page was asked for every field (`?fields=all`), past the fold too.
+pub fn all_fields(session: *const Session) bool {
+    std.debug.assert(session.signed_in());
+
+    const wanted = admin.query_param(session, "fields") orelse return false;
+
+    return std.mem.eql(u8, wanted, "all");
 }
 
 /// The preview column: the record editor for `def`, inert.
@@ -84,7 +181,7 @@ pub fn preview_node(session: *Session, def: Def) Error!admin.render.Node {
     std.debug.assert(def.handle.len > 0);
     std.debug.assert(session.signed_in());
 
-    return record_form.preview_node(session, def);
+    return record_form.preview_node(session, def, all_fields(session));
 }
 
 /// The preview alone, as the answer to a field form's post.
@@ -98,15 +195,15 @@ pub fn answer_preview(session: *Session, def: Def) Error!void {
 }
 
 /// A field as typed so far, made drawable: the editor needs a label and a name, which
-/// the form may not have yet.
-pub fn presentable(field: FieldDef) FieldDef {
+/// the form may not have yet; `untitled` is the label it is drawn with until it has one.
+pub fn presentable(field: FieldDef, untitled: []const u8) FieldDef {
     std.debug.assert(field.kind.len > 0);
-    std.debug.assert(untitled_label.len > 0);
+    std.debug.assert(untitled.len > 0);
 
     var shown = field;
 
     if (shown.label.len == 0) {
-        shown.label = untitled_label;
+        shown.label = untitled;
     }
 
     if (shown.name.len == 0) {
@@ -234,7 +331,7 @@ test "a field the form has not named yet is drawn as untitled" {
         .label = "",
         .kind = "string",
     };
-    const shown = presentable(blank);
+    const shown = presentable(blank, untitled_label);
     try std.testing.expectEqualStrings(untitled_label, shown.label);
     try std.testing.expectEqualStrings(untitled_name, shown.name);
 
@@ -243,8 +340,8 @@ test "a field the form has not named yet is drawn as untitled" {
         .label = "Title",
         .kind = "string",
     };
-    try std.testing.expectEqualStrings("Title", presentable(named).label);
-    try std.testing.expectEqualStrings("title", presentable(named).name);
+    try std.testing.expectEqualStrings("Title", presentable(named, untitled_label).label);
+    try std.testing.expectEqualStrings("title", presentable(named, untitled_label).name);
 }
 
 test {

@@ -7,6 +7,7 @@ const std = @import("std");
 const field = @import("field.zig");
 const kinds = @import("kinds.zig");
 const currency = @import("currency.zig");
+const variant = @import("variant.zig");
 
 const Def = field.Def;
 const Kind = kinds.Kind;
@@ -18,7 +19,8 @@ const find_field = content_type_rules.find_field;
 pub const path_len_max: u32 = 256;
 pub const items_max: u32 = 1000;
 pub const rows_max: u32 = 100_000;
-pub const flat_max: u32 = 4096;
+/// Values one document holds: the build's limit (`limits.zig`).
+pub const flat_max: u32 = @import("limits.zig").entry_values_max;
 pub const Error = error{ Invalid, OutOfMemory };
 
 pub const Stored = union(enum) {
@@ -43,16 +45,19 @@ pub const Flat = struct {
     searchable: bool,
 };
 
-/// The document as rows. Field paths point into memory owned by the flattener, valid as
-/// long as it is.
-pub fn flatten(
-    known: []const Kind,
-    fields: []const Def,
-    value: Value,
-    buffer: *[flat_max]Flat,
-) Error![]const Flat {
+/// Where `each_row` hands each row of a document: `row` runs while the walk is at the
+/// value, and the row's field path lives only during that call (copy it to keep it).
+pub const Sink = struct {
+    context: *anyopaque,
+    row: *const fn (context: *anyopaque, flat: Flat) Error!void,
+};
+
+/// Each row of the document handed to `sink` as the walk reaches it, in document order;
+/// how many there were. Past `flat_max` rows, or on a value the fields refuse, `Invalid`,
+/// with the rows before already handed over: check first (`count_rows`) when that matters.
+pub fn each_row(known: []const Kind, fields: []const Def, value: Value, sink: Sink) Error!u32 {
     std.debug.assert(fields.len <= field.fields_max);
-    std.debug.assert(buffer.len == flat_max);
+    std.debug.assert(flat_max > 0);
 
     if (value != .object) {
         return error.Invalid;
@@ -60,19 +65,35 @@ pub fn flatten(
 
     var flattener: Flattener = .{
         .known = known,
-        .out = buffer,
+        .sink = sink,
     };
 
     try flattener.walk(fields, value.object, "", 0);
 
-    return buffer[0..flattener.len];
+    return flattener.len;
+}
+
+/// How many rows the document makes, every value checked as `each_row` checks it.
+pub fn count_rows(known: []const Kind, fields: []const Def, value: Value) Error!u32 {
+    std.debug.assert(fields.len <= field.fields_max);
+
+    const Discard = struct {
+        fn row(_: *anyopaque, flat: Flat) Error!void {
+            std.debug.assert(flat.field.len > 0);
+        }
+    };
+    var nothing: u8 = 0;
+
+    return each_row(known, fields, value, .{
+        .context = &nothing,
+        .row = Discard.row,
+    });
 }
 
 const Flattener = struct {
     known: []const Kind,
-    out: *[flat_max]Flat,
+    sink: Sink,
     len: u32 = 0,
-    paths: [flat_max][path_len_max]u8 = undefined,
     fn walk(
         flattener: *Flattener,
         fields: []const Def,
@@ -84,26 +105,72 @@ const Flattener = struct {
         std.debug.assert(prefix.len <= path_len_max);
 
         for (fields) |def| {
-            const value = object.get(def.name) orelse continue;
+            if (object.get(def.name)) |value| {
+                try flattener.walk_value(def, value, prefix, def.name, ordinal);
+            }
 
-            if (value == .null) {
+            if (def.variants) {
+                try flattener.walk_variants(def, object, prefix, ordinal);
+            }
+        }
+    }
+
+    /// Each `name@code` key beside the field, stored under that key as its path.
+    fn walk_variants(
+        flattener: *Flattener,
+        def: Def,
+        object: std.json.ObjectMap,
+        prefix: []const u8,
+        ordinal: u32,
+    ) Error!void {
+        std.debug.assert(def.variants);
+        std.debug.assert(prefix.len <= path_len_max);
+
+        var entries = object.iterator();
+
+        while (entries.next()) |entry| {
+            const key = variant.split(entry.key_ptr.*);
+
+            if (key.code.len == 0 or !std.mem.eql(u8, key.name, def.name)) {
                 continue;
             }
 
-            var path_buffer: [path_len_max]u8 = undefined;
-            const path = try join(&path_buffer, prefix, def.name);
-
-            if (field.is_group(def.kind)) {
-                try flattener.walk_group(def, value, path, ordinal);
-            } else if (field.is_money(def.kind)) {
-                try flattener.walk_money(def, value, path, ordinal);
-            } else if (field.is_repeater(def.kind)) {
-                try flattener.walk_repeater(def, value, path);
-            } else if (def.many) {
-                try flattener.walk_many(def, value, path);
-            } else {
-                try flattener.leaf(def, value, path, ordinal);
+            if (!variant.valid_code(key.code)) {
+                return error.Invalid;
             }
+
+            try flattener.walk_value(def, entry.value_ptr.*, prefix, entry.key_ptr.*, ordinal);
+        }
+    }
+
+    fn walk_value(
+        flattener: *Flattener,
+        def: Def,
+        value: Value,
+        prefix: []const u8,
+        key: []const u8,
+        ordinal: u32,
+    ) Error!void {
+        std.debug.assert(key.len >= def.name.len);
+        std.debug.assert(std.mem.startsWith(u8, key, def.name));
+
+        if (value == .null) {
+            return;
+        }
+
+        var path_buffer: [path_len_max]u8 = undefined;
+        const path = try join(&path_buffer, prefix, key);
+
+        if (field.is_group(def.kind)) {
+            try flattener.walk_group(def, value, path, ordinal);
+        } else if (field.is_money(def.kind)) {
+            try flattener.walk_money(def, value, path, ordinal);
+        } else if (field.is_repeater(def.kind)) {
+            try flattener.walk_repeater(def, value, path);
+        } else if (def.many) {
+            try flattener.walk_many(def, value, path);
+        } else {
+            try flattener.leaf(def, value, path, ordinal);
         }
     }
 
@@ -210,17 +277,14 @@ const Flattener = struct {
             },
             .none => unreachable,
         };
-        const kept = flattener.paths[flattener.len][0..path.len];
-
-        @memcpy(kept, path);
-        flattener.out[flattener.len] = .{
-            .field = kept,
+        flattener.len += 1;
+        try flattener.sink.row(flattener.sink.context, .{
+            .field = path,
             .ordinal = ordinal,
             .column = kinds.column_of(kind.storage),
             .value = stored,
             .searchable = def.searchable and value == .string,
-        };
-        flattener.len += 1;
+        });
     }
 };
 
@@ -299,28 +363,103 @@ fn assemble_fields(
     var object: std.json.ObjectMap = .empty;
 
     for (fields) |def| {
-        var path_buffer: [path_len_max]u8 = undefined;
-        const path = try join(&path_buffer, prefix, def.name);
-        const value: ?Value = if (field.is_group(def.kind))
-            try assemble_group(known, arena, def, rows, path, ordinal)
-        else if (field.is_money(def.kind))
-            try assemble_money(arena, rows, path, ordinal)
-        else if (field.is_repeater(def.kind))
-            try assemble_repeater(known, arena, def, rows, path)
-        else if (def.many)
-            try assemble_many(known, arena, def, rows, path)
-        else
-            assemble_leaf(known, def, rows, path, ordinal);
+        try assemble_key(known, arena, def, rows, prefix, def.name, ordinal, &object);
 
-        if (value) |present| {
-            const key = arena.dupe(u8, def.name) catch return error.OutOfMemory;
-            object.put(arena, key, present) catch return error.OutOfMemory;
+        if (def.variants) {
+            const codes = try codes_under(arena, rows, prefix, def.name);
+
+            for (codes) |code| {
+                const key = try variant.key_of(arena, def.name, code);
+
+                try assemble_key(known, arena, def, rows, prefix, key, ordinal, &object);
+            }
         }
     }
 
     return .{
         .object = object,
     };
+}
+
+fn assemble_key(
+    known: []const Kind,
+    arena: std.mem.Allocator,
+    def: Def,
+    rows: []const Row,
+    prefix: []const u8,
+    key: []const u8,
+    ordinal: i64,
+    object: *std.json.ObjectMap,
+) Error!void {
+    std.debug.assert(std.mem.startsWith(u8, key, def.name));
+    std.debug.assert(ordinal >= 0);
+
+    var path_buffer: [path_len_max]u8 = undefined;
+    const path = try join(&path_buffer, prefix, key);
+    const value: ?Value = if (field.is_group(def.kind))
+        try assemble_group(known, arena, def, rows, path, ordinal)
+    else if (field.is_money(def.kind))
+        try assemble_money(arena, rows, path, ordinal)
+    else if (field.is_repeater(def.kind))
+        try assemble_repeater(known, arena, def, rows, path)
+    else if (def.many)
+        try assemble_many(known, arena, def, rows, path)
+    else
+        assemble_leaf(known, def, rows, path, ordinal);
+
+    if (value) |present| {
+        const kept = arena.dupe(u8, key) catch return error.OutOfMemory;
+        object.put(arena, kept, present) catch return error.OutOfMemory;
+    }
+}
+
+/// The variant codes rows hold for `name` at this level: `prefix.name@code`, alone or
+/// followed by a deeper path. Each once.
+fn codes_under(
+    arena: std.mem.Allocator,
+    rows: []const Row,
+    prefix: []const u8,
+    name: []const u8,
+) Error![]const []const u8 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(rows.len <= rows_max);
+
+    var head_buffer: [path_len_max]u8 = undefined;
+    const path = try join(&head_buffer, prefix, name);
+    var found: std.ArrayList([]const u8) = .empty;
+
+    for (rows) |row| {
+        const under = row.field.len > path.len + 1 and std.mem.startsWith(u8, row.field, path) and
+            row.field[path.len] == variant.separator;
+
+        if (!under) {
+            continue;
+        }
+
+        const rest = row.field[path.len + 1 ..];
+        const code = rest[0 .. std.mem.indexOfScalar(u8, rest, '.') orelse rest.len];
+
+        if (!variant.valid_code(code) or has_code(found.items, code)) {
+            continue;
+        }
+
+        found.append(arena, code) catch return error.OutOfMemory;
+    }
+
+    return found.items;
+}
+
+fn has_code(codes: []const []const u8, code: []const u8) bool {
+    std.debug.assert(code.len > 0);
+    std.debug.assert(codes.len <= rows_max);
+
+    for (codes) |known_code| {
+        if (std.mem.eql(u8, known_code, code)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn assemble_group(
@@ -577,8 +716,12 @@ pub fn find_path(fields: []const field.Def, path: []const u8) ?*const field.Def 
     std.debug.assert(path.len <= 64 << 10);
 
     const dot = std.mem.indexOfScalar(u8, path, '.');
-    const head = if (dot) |index| path[0..index] else path;
-    const found = find_field(fields, head) orelse return null;
+    const key = variant.split(if (dot) |index| path[0..index] else path);
+    const found = find_field(fields, key.name) orelse return null;
+
+    if (key.code.len > 0 and (!found.variants or !variant.valid_code(key.code))) {
+        return null;
+    }
 
     if (dot == null) {
         return if (field.is_leaf(found.kind)) found else null;
@@ -621,8 +764,7 @@ test "money: one row per currency, assembled back, and its paths" {
     }};
     const text = "{\"price\":{\"GBP\":850,\"EUR\":990}}";
     const value = try std.json.parseFromSliceLeaky(Value, arena, text, .{});
-    var buffer: [flat_max]Flat = undefined;
-    const flat = try flatten(&kinds.core, &fields, value, &buffer);
+    const flat = try collected(arena, &kinds.core, &fields, value);
 
     try std.testing.expectEqual(@as(usize, 2), flat.len);
     try std.testing.expectEqualStrings("price.GBP", flat[0].field);
@@ -644,4 +786,169 @@ test "money: one row per currency, assembled back, and its paths" {
     try std.testing.expectEqual(@as(i64, 990), price.object.get("EUR").?.integer);
     try std.testing.expect(find_path(&fields, "price.GBP") != null);
     try std.testing.expect(find_path(&fields, "price.ZZZ") == null);
+}
+
+test "variants: stored under name@code beside the field, nested too, and read back" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const items = [_]Def{.{
+        .name = "heading",
+        .label = "Heading",
+        .kind = "string",
+        .variants = true,
+    }};
+    const fields = [_]Def{
+        .{
+            .name = "name",
+            .label = "Name",
+            .kind = "string",
+            .variants = true,
+        },
+        .{
+            .name = "sku",
+            .label = "SKU",
+            .kind = "string",
+        },
+        .{
+            .name = "sections",
+            .label = "Sections",
+            .kind = "repeater",
+            .fields = &items,
+            .variants = true,
+        },
+    };
+    const text =
+        \\{"name":"Mug","name@pl":"Kubek","name@en-gb":"Mug","sku":"M1","sku@pl":"ignored",
+        \\"sections":[{"heading":"One","heading@pl":"Jeden"}],
+        \\"sections@de":[{"heading":"Eins"},{"heading":"Zwei"}]}
+    ;
+    const value = try std.json.parseFromSliceLeaky(Value, arena, text, .{});
+    const flat = try collected(arena, &kinds.core, &fields, value);
+
+    try std.testing.expectEqual(@as(usize, 8), flat.len);
+
+    const rows = try arena.alloc(Row, flat.len);
+
+    for (flat, rows) |one, *row| {
+        row.* = .{
+            .field = one.field,
+            .ordinal = one.ordinal,
+            .value = one.value,
+        };
+    }
+
+    const back = try assemble(&kinds.core, arena, &fields, rows);
+
+    try std.testing.expectEqualStrings("Kubek", back.object.get("name@pl").?.string);
+    try std.testing.expectEqualStrings("Mug", back.object.get("name@en-gb").?.string);
+    try std.testing.expect(back.object.get("sku@pl") == null);
+
+    const sections = back.object.get("sections").?.array.items;
+    const german = back.object.get("sections@de").?.array.items;
+
+    try std.testing.expectEqualStrings("Jeden", sections[0].object.get("heading@pl").?.string);
+    try std.testing.expectEqualStrings("Zwei", german[1].object.get("heading").?.string);
+    try std.testing.expect(find_path(&fields, "name@pl") != null);
+    try std.testing.expect(find_path(&fields, "sku@pl") == null);
+    try std.testing.expect(find_path(&fields, "name@PL") == null);
+    try std.testing.expect(find_path(&fields, "sections.heading@pl") != null);
+
+    const bad = try std.json.parseFromSliceLeaky(Value, arena, "{\"name@PL\":\"x\"}", .{});
+
+    try std.testing.expectError(error.Invalid, collected(arena, &kinds.core, &fields, bad));
+}
+
+/// The rows of a document, each path copied to outlive the walk: what a test reads.
+fn collected(
+    arena: std.mem.Allocator,
+    known: []const Kind,
+    fields: []const Def,
+    value: Value,
+) Error![]const Flat {
+    std.debug.assert(fields.len <= field.fields_max);
+
+    const Collect = struct {
+        arena: std.mem.Allocator,
+        rows: std.ArrayList(Flat) = .empty,
+
+        fn row(context: *anyopaque, flat: Flat) Error!void {
+            const collect: *@This() = @ptrCast(@alignCast(context));
+
+            std.debug.assert(flat.field.len > 0);
+
+            var kept = flat;
+
+            kept.field = try collect.arena.dupe(u8, flat.field);
+            try collect.rows.append(collect.arena, kept);
+        }
+    };
+    var collect: Collect = .{
+        .arena = arena,
+    };
+
+    _ = try each_row(known, fields, value, .{
+        .context = &collect,
+        .row = Collect.row,
+    });
+
+    return collect.rows.items;
+}
+
+test "a row's path is the one it was written at, however many rows follow" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const fields = [_]Def{.{
+        .name = "items",
+        .label = "Items",
+        .kind = "repeater",
+        .fields = &.{
+            .{
+                .name = "a",
+                .label = "A",
+                .kind = "string",
+            },
+            .{
+                .name = "b",
+                .label = "B",
+                .kind = "string",
+            },
+        },
+    }};
+    var items = std.json.Array.init(arena);
+    var made: u32 = 0;
+
+    while (made < 600) : (made += 1) {
+        var item: std.json.ObjectMap = .empty;
+
+        try item.put(arena, "a", .{
+            .string = "x",
+        });
+        try item.put(arena, "b", .{
+            .string = "y",
+        });
+        try items.append(.{
+            .object = item,
+        });
+    }
+
+    var document: std.json.ObjectMap = .empty;
+
+    try document.put(arena, "items", .{
+        .array = items,
+    });
+
+    const flat = try collected(arena, &kinds.core, &fields, .{
+        .object = document,
+    });
+
+    try std.testing.expectEqual(@as(usize, 1200), flat.len);
+    try std.testing.expectEqualStrings("items.a", flat[0].field);
+    try std.testing.expectEqualStrings("items.b", flat[1199].field);
+    try std.testing.expectEqual(@as(u32, 599), flat[1199].ordinal);
+    try std.testing.expectEqual(1200, try count_rows(&kinds.core, &fields, .{
+        .object = document,
+    }));
 }

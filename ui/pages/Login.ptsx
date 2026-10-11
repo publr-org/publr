@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CardPage } from "../layouts/CardPage.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
@@ -21,8 +22,8 @@ export type LoginProps = {
 export function Login({ notice, action = "/admin/login", providers = [] }: LoginProps) {
   return (
     <CardPage
-      title="Log in"
-      description="Welcome back to Publr."
+      title={Publr.t("Log in")}
+      description={Publr.t("Welcome back to Publr.")}
       notice={notice}
       footer={
         providers.length > 0 && (
@@ -32,7 +33,7 @@ export function Login({ notice, action = "/admin/login", providers = [] }: Login
                 <svg viewBox="0 0 24 24" class="size-4 shrink-0" fill="currentColor" aria-hidden="true">
                   <path d={provider.icon} />
                 </svg>
-                Continue with {provider.label}
+                {Publr.t("Continue with {provider}", { provider: provider.label })}
               </Button>
             ))}
           </div>
@@ -41,11 +42,11 @@ export function Login({ notice, action = "/admin/login", providers = [] }: Login
     >
       <form method="post" action={action} class="flex flex-col gap-4">
         <Field>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
+          <FieldLabel htmlFor="email">{Publr.t("Email")}</FieldLabel>
           <Input id="email" type="email" name="email" required autocomplete="username" />
         </Field>
         <Field>
-          <FieldLabel htmlFor="password">Password</FieldLabel>
+          <FieldLabel htmlFor="password">{Publr.t("Password")}</FieldLabel>
           <Input
             id="password"
             type="password"
@@ -55,7 +56,7 @@ export function Login({ notice, action = "/admin/login", providers = [] }: Login
           />
         </Field>
         <Button type="submit" size="lg" classes="mt-2 w-full">
-          Log in
+          {Publr.t("Log in")}
         </Button>
       </form>
     </CardPage>

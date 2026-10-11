@@ -1,4 +1,6 @@
+import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Pager } from "../components/Pager.ptsx";
 import { ConfirmAction } from "../components/ConfirmAction.ptsx";
 import { Code } from "@publr/ui/Code.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
@@ -28,22 +30,27 @@ export type DevicesProps = {
     /** Where Revoke posts. */
     revoke_action: string;
   }>;
+  /** "51–100 of 230" when there is more than one page; empty otherwise. */
+  range: string;
+  previous_href: string;
+  next_href: string;
 };
 
 /** The agents and tools acting for an account, each under the scope its person chose, and a
  * way to stop each one. A device is added from its own side, with `publr login`. */
-export function Devices({ everyone, devices }: DevicesProps) {
+export function Devices({ everyone, devices, range, previous_href, next_href }: DevicesProps) {
   return (
     <IndexPage
-      title="Devices"
-      description="Agents and tools that act for an account. Each does only what its person approved, and never deletes anything for good."
+      footer={range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
+      title={Publr.t("Devices")}
+      description={Publr.t("Agents and tools that act for an account. Each does only what its person approved, and never deletes anything for good.")}
       empty={
         devices.length === 0 && (
           <Empty>
-            <EmptyTitle>No devices</EmptyTitle>
+            <EmptyTitle>{Publr.t("No devices")}</EmptyTitle>
             <EmptyDescription>
-              An agent signs in with <Code>publr login</Code> and this site's address; you
-              approve it here.
+              {Publr.t("An agent signs in with")} <Code>publr login</Code>{" "}
+              {Publr.t("and this site's address; you approve it here.")}
             </EmptyDescription>
           </Empty>
         )
@@ -52,11 +59,11 @@ export function Devices({ everyone, devices }: DevicesProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Device</TableHead>
-            {everyone && <TableHead>Account</TableHead>}
-            <TableHead>May</TableHead>
-            <TableHead>Approved</TableHead>
-            <TableHead>Last used</TableHead>
+            <TableHead>{Publr.t("Device")}</TableHead>
+            {everyone && <TableHead>{Publr.t("Account")}</TableHead>}
+            <TableHead>{Publr.t("May")}</TableHead>
+            <TableHead>{Publr.t("Approved")}</TableHead>
+            <TableHead>{Publr.t("Last used")}</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
@@ -72,9 +79,9 @@ export function Devices({ everyone, devices }: DevicesProps) {
                 </TableCell>
               )}
               <TableCell>
-                {device.scope === "read" && <Status tone="neutral">Read</Status>}
-                {device.scope === "drafts" && <Status tone="info">Save drafts</Status>}
-                {device.scope === "write" && <Status tone="warning">Write and publish</Status>}
+                {device.scope === "read" && <Status tone="neutral">{Publr.t("Read")}</Status>}
+                {device.scope === "drafts" && <Status tone="info">{Publr.t("Save drafts")}</Status>}
+                {device.scope === "write" && <Status tone="warning">{Publr.t("Write and publish")}</Status>}
               </TableCell>
               <TableCell>
                 <Text as="span" variant="body-sm" tone="muted">{device.approved}</Text>
@@ -85,9 +92,9 @@ export function Devices({ everyone, devices }: DevicesProps) {
               <TableCell>
                 <ConfirmAction
                   inline
-                  label="Revoke"
-                  title={`Revoke ${device.name}?`}
-                  description="It stops working at once. What it changed stays."
+                  label={Publr.t("Revoke")}
+                  title={Publr.t("Revoke {name}?", { name: device.name })}
+                  description={Publr.t("It stops working at once. What it changed stays.")}
                   action={device.revoke_action}
                 />
               </TableCell>

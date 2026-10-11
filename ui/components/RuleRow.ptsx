@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
@@ -12,32 +13,32 @@ export function RuleRow({ first, last, prefix, group_index, index, field, operat
   return (
     <div class="flex flex-col gap-3" data-rule={index} data-rule-group={group_index}>
       <div data-first hidden={!first}>
-        <div data-show hidden={group_index !== 0}><Text variant="body-sm" as="strong">Show when</Text></div>
-        <div data-or hidden={group_index === 0}><Text variant="body-sm" as="strong">Or</Text></div>
+        <div data-show hidden={group_index !== 0}><Text variant="body-sm" as="strong">{Publr.t("Show when")}</Text></div>
+        <div data-or hidden={group_index === 0}><Text variant="body-sm" as="strong">{Publr.t("Or")}</Text></div>
       </div>
       <div class="flex items-center gap-2">
-              <div data-and hidden={index === 0}><Text variant="body-sm" tone="muted">And</Text></div>
-              <NativeSelect label="Field" name={`${prefix}.${group_index}.${index}.field`}
+              <div data-and hidden={index === 0}><Text variant="body-sm" tone="muted">{Publr.t("And")}</Text></div>
+              <NativeSelect label={Publr.t("Field")} name={`${prefix}.${group_index}.${index}.field`}
                >
                 {subjects.map((subject) => (
                   <option value={subject.value} data-choices={subject.choices} selected={field === subject.value}>{subject.label}</option>
                 ))}
               </NativeSelect>
-              <NativeSelect label="Operator" name={`${prefix}.${group_index}.${index}.operator`}
+              <NativeSelect label={Publr.t("Operator")} name={`${prefix}.${group_index}.${index}.operator`}
                >
-                <option value="equal" selected={operator === "equal"}>is</option>
-                <option value="not_equal" selected={operator === "not_equal"}>is not</option>
-                {!location && <option value="empty" selected={operator === "empty"}>is empty</option>}
-                {!location && <option value="not_empty" selected={operator === "not_empty"}>is not empty</option>}
-                {!location && <option value="contains" selected={operator === "contains"}>contains</option>}
+                <option value="equal" selected={operator === "equal"}>{Publr.t("is")}</option>
+                <option value="not_equal" selected={operator === "not_equal"}>{Publr.t("is not")}</option>
+                {!location && <option value="empty" selected={operator === "empty"}>{Publr.t("is empty")}</option>}
+                {!location && <option value="not_empty" selected={operator === "not_empty"}>{Publr.t("is not empty")}</option>}
+                {!location && <option value="contains" selected={operator === "contains"}>{Publr.t("contains")}</option>}
               </NativeSelect>
               
                 <Input name={`${prefix}.${group_index}.${index}.value`}
-                  value={value} placeholder="Value" />
-              <Button type="button" hierarchy="tertiary" name="rules-remove">Remove</Button>
+                  value={value} placeholder={Publr.t("Value")} />
+              <Button type="button" hierarchy="tertiary" name="rules-remove">{Publr.t("Remove")}</Button>
       </div>
       <div data-last hidden={!last}><Button type="button" hierarchy="secondary" name="rules-add"
-        disabled={index >= 7}>And</Button></div>
+        disabled={index >= 7}>{Publr.t("And")}</Button></div>
     </div>
   );
 }

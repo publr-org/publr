@@ -131,7 +131,7 @@ export function RecordTerms({ fields, selected_tokens, tree_tokens }: RecordTerm
               ))}
               {field.nodes.length === 0 && (
                 <Text as="p" variant="body-xs" tone="muted">
-                  No terms yet.
+                  {Publr.t("No terms yet.")}
                 </Text>
               )}
             </div>
@@ -142,7 +142,7 @@ export function RecordTerms({ fields, selected_tokens, tree_tokens }: RecordTerm
               name={field.name}
               form="record"
               defaultValues={field.selected}
-              placeholder="Pick terms"
+              placeholder={Publr.t("Pick terms")}
               label={field.label}
             >
               <MultiSelectContent>
@@ -155,7 +155,7 @@ export function RecordTerms({ fields, selected_tokens, tree_tokens }: RecordTerm
           {!field.many && (
             <NativeSelect id={`term-${field.name}`} name={field.name} form="record">
               <option value="" selected={field.selected === ""}>
-                None
+                {Publr.t("None")}
               </option>
               {field.nodes.map((node) => (
                 <option value={node.id} selected={node.selected}>

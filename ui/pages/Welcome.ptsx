@@ -1,0 +1,62 @@
+import { Publr } from "publr-jsx";
+import { CardPage } from "../layouts/CardPage.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+
+export type WelcomeProps = {
+  /** The invitation's token: the person sets their password here first. Empty once signed in. */
+  token: string;
+  /** English, then each language the administrators installed, each in its own name; the
+   * browser's language selected when the admin speaks it. */
+  languages: Array<{ locale: string; label: string; selected: boolean }>;
+  /** Where the person goes on. */
+  back: string;
+  notice?: string;
+};
+
+/** A new person's first screen: their password when they came by invitation, and the
+ * language the admin speaks to them, before anything else. */
+export function Welcome({ token, languages, back, notice }: WelcomeProps) {
+  const invited = token !== "";
+
+  return (
+    <CardPage
+      title={Publr.t("Welcome")}
+      description={invited
+        ? Publr.t("Choose your password and the language the admin speaks to you.")
+        : Publr.t("Choose the language the admin speaks to you.")}
+      notice={notice}
+    >
+      <form method="post" action="/admin/welcome" class="flex flex-col gap-4" data-part="welcome">
+        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+        <input type="hidden" name="token" value={token} />
+        <input type="hidden" name="back" value={back} />
+        {invited && (
+          <Field>
+            <FieldLabel htmlFor="password">{Publr.t("Password")}</FieldLabel>
+            <Input id="password" type="password" name="password" required minLength={12} autocomplete="new-password" />
+            <FieldDescription>{Publr.t("At least 12 characters.")}</FieldDescription>
+          </Field>
+        )}
+        <Field>
+          <FieldLabel htmlFor="language">{Publr.t("Language")}</FieldLabel>
+          <NativeSelect id="language" name="language">
+            {languages.map((language) => (
+              <option value={language.locale} selected={language.selected}>{language.label}</option>
+            ))}
+          </NativeSelect>
+          <FieldDescription>
+            {Publr.t("Missing your language? Ask an administrator to add it. You can continue in English until then, and change it later in your account menu.")}
+          </FieldDescription>
+        </Field>
+        <Button type="submit" size="lg" classes="mt-2 w-full">
+          {Publr.t("Continue")}
+        </Button>
+      </form>
+    </CardPage>
+  );
+}

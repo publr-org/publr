@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { Link } from "@publr/ui/Link.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
@@ -61,7 +62,7 @@ export function RecordImpactRow({
       <details class="mt-0.5">
         <summary class="inline-flex cursor-pointer">
           <Text as="span" variant="body-xs" tone="muted">
-            Why
+            {Publr.t("Why")}
           </Text>
         </summary>
         <ul class="mt-1 flex flex-col gap-0.5 border-l-2 border-border pl-3">

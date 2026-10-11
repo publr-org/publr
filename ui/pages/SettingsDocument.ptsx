@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { FormPage } from "../layouts/FormPage.ptsx";
 import { ReferenceDrawer } from "../components/ReferenceDrawer.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
@@ -21,7 +22,7 @@ export function SettingsDocument({ title, description, has_fields, schema_href, 
     <FormPage
       title={title}
       description={description}
-      actions={!has_fields && <Button href={schema_href}>Define fields</Button>}
+      actions={!has_fields && <Button href={schema_href}>{Publr.t("Define fields")}</Button>}
       editor={
         has_fields && (
           <div class="contents">
@@ -32,8 +33,8 @@ export function SettingsDocument({ title, description, has_fields, schema_href, 
       }
     >
       <Empty compact>
-        <EmptyTitle>No fields yet</EmptyTitle>
-        <EmptyDescription>Define its fields in Structure to start configuring it.</EmptyDescription>
+        <EmptyTitle>{Publr.t("No fields yet")}</EmptyTitle>
+        <EmptyDescription>{Publr.t("Define its fields in Structure to start configuring it.")}</EmptyDescription>
       </Empty>
     </FormPage>
   );

@@ -44,10 +44,24 @@ export type RecordPickProps = {
   via: string;
   parent: string;
   rows: Array<{ id: string; title: string; status: string; published: boolean; moves_from: string }>;
+  /** Where the next page starts, 0 when this is the last; the previous one's, -1 on the first. */
+  next_offset: number;
+  previous_offset: number;
 };
 
-export function RecordPick({ type, type_name, field, search, live, via, parent, rows }: RecordPickProps) {
-  state.title = `Link a ${type_name}`;
+export function RecordPick({
+  type,
+  type_name,
+  field,
+  search,
+  live,
+  via,
+  parent,
+  rows,
+  next_offset,
+  previous_offset,
+}: RecordPickProps) {
+  state.title = Publr.t("Link a {type}", { type: type_name });
   return (
     <div class="flex flex-col" data-part="record-pick" ref={root_ref}>
       <div class="px-8 py-7">
@@ -56,20 +70,20 @@ export function RecordPick({ type, type_name, field, search, live, via, parent, 
             type="button"
             hierarchy="secondary"
             size="md"
-            label="Back"
-            title="Back"
+            label={Publr.t("Back")}
+            title={Publr.t("Back")}
             data-part="drawer-back"
             onClick={onBack}
           >
             <Icon name="arrow-left" size="sm" />
           </Button>
-          <PageHeader title={`Link a ${type_name}`} classes="min-w-0 flex-1">
+          <PageHeader title={Publr.t("Link a {type}", { type: type_name })} classes="min-w-0 flex-1">
             <Button
               type="button"
               hierarchy="tertiary"
               size="sm"
-              label="Close"
-              title="Close"
+              label={Publr.t("Close")}
+              title={Publr.t("Close")}
               data-part="drawer-close"
               onClick={onClose}
             >
@@ -89,17 +103,17 @@ export function RecordPick({ type, type_name, field, search, live, via, parent, 
           <input type="hidden" name="field" value={field} />
           {via !== "" && <input type="hidden" name="via" value={via} />}
           {parent !== "" && <input type="hidden" name="parent" value={parent} />}
-          <Input type="search" name="q" value={search} placeholder="Search" classes="w-80" />
+          <Input type="search" name="q" value={search} placeholder={Publr.t("Search")} classes="w-80" />
           <Button type="submit" hierarchy="secondary">
-            Search
+            {Publr.t("Search")}
           </Button>
         </form>
       </div>
       {rows.length === 0 ? (
         <div class="mx-8">
           <Empty compact>
-            <EmptyTitle size="xs">Nothing to link</EmptyTitle>
-            <EmptyDescription>No {type_name} records match.</EmptyDescription>
+            <EmptyTitle size="xs">{Publr.t("Nothing to link")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("No {type} records match.", { type: type_name })}</EmptyDescription>
           </Empty>
         </div>
       ) : (
@@ -123,7 +137,7 @@ export function RecordPick({ type, type_name, field, search, live, via, parent, 
                   <TableCell>
                     {row.moves_from !== "" && (
                       <Text as="span" variant="body-sm" tone="muted">
-                        In {row.moves_from}
+                        {Publr.t("In {parent}", { parent: row.moves_from })}
                       </Text>
                     )}
                   </TableCell>
@@ -138,26 +152,25 @@ export function RecordPick({ type, type_name, field, search, live, via, parent, 
                         data-field={field}
                       >
                         <Icon name="link" size="sm" />
-                        <span>Link</span>
+                        <span>{Publr.t("Link")}</span>
                       </Button>
                     ) : (
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button type="button" hierarchy="secondary" size="sm">
                             <Icon name="link" size="sm" />
-                            <span>Link</span>
+                            <span>{Publr.t("Link")}</span>
                           </Button>
                         </DialogTrigger>
                         <DialogContent>
-                          <DialogTitle>Move {row.title} here?</DialogTitle>
+                          <DialogTitle>{Publr.t("Move {title} here?", { title: row.title })}</DialogTitle>
                           <DialogDescription>
-                            This {type_name} belongs to {row.moves_from}. Linking it here removes
-                            it from {row.moves_from}.
+                            {Publr.t("This {type} belongs to {parent}. Linking it here removes it from {parent}.", { type: type_name, parent: row.moves_from })}
                           </DialogDescription>
                           <div class="mt-5 flex justify-end gap-2">
                             <DialogClose asChild>
                               <Button type="button" hierarchy="secondary">
-                                Cancel
+                                {Publr.t("Cancel")}
                               </Button>
                             </DialogClose>
                             <Button
@@ -166,7 +179,7 @@ export function RecordPick({ type, type_name, field, search, live, via, parent, 
                               onClick={onPick}
                               data-field={field}
                             >
-                              Move it here
+                              {Publr.t("Move it here")}
                             </Button>
                           </div>
                         </DialogContent>
@@ -177,6 +190,38 @@ export function RecordPick({ type, type_name, field, search, live, via, parent, 
               ))}
             </TableBody>
           </Table>
+        </div>
+      )}
+      {(next_offset > 0 || previous_offset >= 0) && (
+        <div class="flex justify-end gap-2 border-t border-border px-8 py-4" data-part="pick-pages">
+          {previous_offset >= 0 && (
+            <form method="get" action="/admin/content/pick" onSubmit={submitted}>
+              {live && <input type="hidden" name="live" value="1" />}
+              <input type="hidden" name="type" value={type} />
+              <input type="hidden" name="field" value={field} />
+              {via !== "" && <input type="hidden" name="via" value={via} />}
+              {parent !== "" && <input type="hidden" name="parent" value={parent} />}
+              <input type="hidden" name="q" value={search} />
+              <input type="hidden" name="offset" value={`${previous_offset}`} />
+              <Button type="submit" hierarchy="secondary" size="sm">
+                {Publr.t("Previous")}
+              </Button>
+            </form>
+          )}
+          {next_offset > 0 && (
+            <form method="get" action="/admin/content/pick" onSubmit={submitted}>
+              {live && <input type="hidden" name="live" value="1" />}
+              <input type="hidden" name="type" value={type} />
+              <input type="hidden" name="field" value={field} />
+              {via !== "" && <input type="hidden" name="via" value={via} />}
+              {parent !== "" && <input type="hidden" name="parent" value={parent} />}
+              <input type="hidden" name="q" value={search} />
+              <input type="hidden" name="offset" value={`${next_offset}`} />
+              <Button type="submit" hierarchy="secondary" size="sm">
+                {Publr.t("Next")}
+              </Button>
+            </form>
+          )}
         </div>
       )}
     </div>

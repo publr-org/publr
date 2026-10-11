@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { onNavigate, submitted } from "../TypeColumns.ptsx";
 import type { IconName } from "@publr/ui/Icon.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
@@ -36,26 +37,26 @@ export function FieldChildren({ add_child_href, children, kind, csrf }: FieldChi
     <section class="mt-10 border-t border-border pt-6">
       <div class="flex flex-wrap items-end justify-between gap-4">
         <Heading level={2} size="md">
-          Fields inside
+          {Publr.t("Fields inside")}
         </Heading>
         <Button onClick={onNavigate} href={add_child_href} hierarchy="secondary" size="sm">
           <Icon name="plus" size="sm" />
-          <span>Add a field inside</span>
+          <span>{Publr.t("Add a field inside")}</span>
         </Button>
       </div>
       {children.length === 0 ? (
         <div class="mt-4">
           <Empty compact>
-            <EmptyTitle size="xs">Nothing inside yet</EmptyTitle>
+            <EmptyTitle size="xs">{Publr.t("Nothing inside yet")}</EmptyTitle>
             <EmptyDescription>
               {kind === "repeater"
-                ? "Each item repeats the fields you add here."
-                : "The group holds the fields you add here."}
+                ? Publr.t("Each item repeats the fields you add here.")
+                : Publr.t("The group holds the fields you add here.")}
             </EmptyDescription>
             <EmptyContent>
               <Button onClick={onNavigate} href={add_child_href}>
                 <Icon name="plus" size="sm" />
-                <span>Add the first field</span>
+                <span>{Publr.t("Add the first field")}</span>
               </Button>
             </EmptyContent>
           </Empty>
@@ -93,7 +94,7 @@ export function FieldChildren({ add_child_href, children, kind, csrf }: FieldChi
                   <TableCell align="right">
                     {row.locked ? (
                       <Text as="span" variant="body-sm" tone="muted">
-                        locked
+                        {Publr.t("locked")}
                       </Text>
                     ) : (
                       <span class="inline-flex items-center justify-end gap-1">
@@ -109,8 +110,8 @@ export function FieldChildren({ add_child_href, children, kind, csrf }: FieldChi
                             value="up"
                             hierarchy="tertiary"
                             size="sm"
-                            label="Move up"
-                            title="Move up"
+                            label={Publr.t("Move up")}
+                            title={Publr.t("Move up")}
                           >
                             <Icon name="chevron-up" size="sm" />
                           </Button>
@@ -120,8 +121,8 @@ export function FieldChildren({ add_child_href, children, kind, csrf }: FieldChi
                             value="down"
                             hierarchy="tertiary"
                             size="sm"
-                            label="Move down"
-                            title="Move down"
+                            label={Publr.t("Move down")}
+                            title={Publr.t("Move down")}
                           >
                             <Icon name="chevron-down" size="sm" />
                           </Button>
@@ -130,8 +131,8 @@ export function FieldChildren({ add_child_href, children, kind, csrf }: FieldChi
                           href={row.edit_href}
                           hierarchy="tertiary"
                           size="sm"
-                          label="Edit"
-                          title="Edit"
+                          label={Publr.t("Edit")}
+                          title={Publr.t("Edit")}
                         >
                           <Icon name="edit" size="sm" />
                         </Button>

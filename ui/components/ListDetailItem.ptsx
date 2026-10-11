@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
@@ -32,7 +33,7 @@ export function ListDetailItem({ label, href, current = false, marker = "" }: Li
             <Icon name="check" size="sm" />
           </Text>
         )}
-        {marker === "todo" && <span class="size-2 shrink-0 rounded-full bg-warning" aria-label="To resolve"></span>}
+        {marker === "todo" && <span class="size-2 shrink-0 rounded-full bg-warning" aria-label={Publr.t("To resolve")}></span>}
       </a>
     </li>
   );

@@ -1,11 +1,13 @@
 import { PanelTab } from "@publr/ui/PanelTab.ptsx";
 import { Heading } from "@publr/ui/Heading.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
 import { ChoiceButton } from "@publr/ui/ChoiceButton.ptsx";
 import { RecordSingle } from "./RecordEditor/RecordSingle.ptsx";
 import { RecordActions } from "./RecordEditor/RecordActions.ptsx";
 import { RecordHeader } from "./RecordEditor/RecordHeader.ptsx";
 import { RecordRepeater } from "./RecordEditor/RecordRepeater.ptsx";
 import { RecordGroup } from "./RecordEditor/RecordGroup.ptsx";
+import type { ItemLine, OpenedCell } from "./RecordEditor/RecordCell.ptsx";
 import { RecordMany } from "./RecordEditor/RecordMany.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { mutation } from "publr";
@@ -21,6 +23,7 @@ import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
+import { TextToggle } from "@publr/ui/TextToggle.ptsx";
 
 /** The editor's client half. The form autosaves: every input marks it dirty and, after a
  * pause, posts it as JSON, which answers the new version (or why it could not be saved).
@@ -48,6 +51,16 @@ export type RecordAction = {
 };
 
 export const state = Publr.reactive({
+  /** "Purge for good" was chosen: the confirm under the actions waits for a second word. */
+  purge_armed: false,
+  /** The record's type handle: what an opened item's fields are looked up in. */
+  type: "",
+  /** Past the fold, what the browser drew after the page: the fields of items and groups
+   * opened (`faq[60]`, `seo`) and the items of runs listed (`faq[59+]`), by path. */
+  opened: {} as Record<string, Array<OpenedCell>>,
+  listed: {} as Record<string, Array<ItemLine>>,
+  opening: "",
+  open_failed: "",
   id: "",
   version: "",
   save_url: "",
@@ -57,7 +70,7 @@ export const state = Publr.reactive({
   base_url: "",
   csrf: "",
   in_drawer: false,
-  saved_text: "All changes saved",
+  saved_text: Publr.t("All changes saved"),
   dirty: false,
   busy: false,
   submitting: false,
@@ -71,13 +84,67 @@ export const state = Publr.reactive({
   parks: false,
   has_destructive: false,
   actions: [] as RecordAction[],
+  /** How many values the form holds now, and the most an entry may: from three quarters
+   * of it, the editor says so, and past it a save is refused. */
+  values_count: 0,
+  values_max: 0,
+  values_near: false,
+  values_over: false,
+  values_text: "",
+  /** The language the translated fields show, by code; empty for the main one. */
+  language: "",
+  languages: [] as Array<{ code: string; label: string }>,
 });
 
-export const form_ref = Publr.ref<HTMLFormElement>();
+/** The form's own fields, not values of the entry. */
+const form_fields = new Set(["csrf", "type", "expected_version"]);
+
+/** The values the form holds now: every one a save would send, the form's own aside. */
+const recount = (form: HTMLFormElement) => {
+  let count = 0;
+  for (const [name] of new FormData(form)) {
+    if (!form_fields.has(name)) count += 1;
+  }
+  showValues(count);
+};
+
+const showValues = (count: number) => {
+  const max = state.values_max;
+  state.values_count = count;
+  state.values_near = max > 0 && count * 4 >= max * 3;
+  state.values_over = max > 0 && count > max;
+  state.values_text = Publr.t("{count} of {max} values", {
+    count: count.toLocaleString(),
+    max: max.toLocaleString(),
+  });
+};
+
+/** Counted again as the person types, picks, adds or removes: a repeater's new item, a
+ * list's new row. */
+export const form_ref = Publr.ref<HTMLFormElement>((form) => {
+  recount(form);
+  const again = () => recount(form);
+  form.addEventListener("input", again);
+  form.addEventListener("change", again);
+  const watcher = new MutationObserver(again);
+  watcher.observe(form, { childList: true, subtree: true });
+  return () => {
+    form.removeEventListener("input", again);
+    form.removeEventListener("change", again);
+    watcher.disconnect();
+  };
+});
 export const root_ref = Publr.ref<HTMLElement>((root) => {
+  state.language = languageOfAddress();
   arrangeLayout(root);
   refreshConditions(root);
-  return () => { clearTimeout(timer); disposed = true; };
+  // The visual editor switches the language from its own top bar; the form follows.
+  const follow = (event: Event) => {
+    state.language = String((event as CustomEvent).detail ?? "");
+    refreshConditions(root);
+  };
+  window.addEventListener("publr:language", follow);
+  return () => { clearTimeout(timer); disposed = true; window.removeEventListener("publr:language", follow); };
 });
 
 export const onLayoutTab = (event: MouseEvent) => {
@@ -146,16 +213,66 @@ const conditionValue = (form: HTMLFormElement, name: string): unknown => {
   if (!many && kind === "boolean") return values[0] ?? false;
   return many ? values : values[0];
 };
+/** The language asked for in the address (`?lang=pl`), else the content language chosen
+ * top right (`<html data-variant>`), when the site has it. */
+const languageOfAddress = () => {
+  const asked = new URLSearchParams(location.search).get("lang") ?? document.documentElement.dataset.variant ?? "";
+  return state.languages.some((language) => language.code === asked) ? asked : "";
+};
+
+/** Switching the language the translated fields show: the address keeps it, so a reload,
+ * a link or the editor drawn again stays in it. */
+export const onLanguage = (event: MouseEvent) => {
+  const label = (event.currentTarget as HTMLElement).textContent?.trim() ?? "";
+  state.language = state.languages.find((language) => language.label === label)?.code ?? "";
+  const address = new URL(location.href);
+  if (state.language === "") address.searchParams.delete("lang");
+  else address.searchParams.set("lang", state.language);
+  history.replaceState(history.state, "", address);
+  const root = root_of();
+  if (root) refreshConditions(root);
+};
+
+/** A field path's language: `name@pl` is Polish; `name` is none. */
+const languageOfPath = (path: string) => {
+  const last = path.slice(path.lastIndexOf(".") + 1);
+  const at = last.indexOf("@");
+  return at < 0 ? null : last.slice(at + 1).replace(/\[.*$/, "");
+};
+
+/** Whether a field is out of the language shown: another language's value, or the main
+ * value of a translated field while another language is shown. Fields shared by every
+ * language stay, marked as shared. */
+const outOfLanguage = (element: HTMLElement, translated: Set<string>) => {
+  const path = element.dataset.fieldPath ?? "";
+  const own = languageOfPath(path);
+  const shared = own === null && !translated.has(path);
+  const mark = element.querySelector<HTMLElement>(':scope > [data-part="shared-mark"]');
+  if (mark) mark.hidden = !(shared && state.language !== "" && state.languages.length > 1);
+  if (own !== null) return own !== state.language;
+  return !shared && state.language !== "";
+};
+
+const translatedPaths = (root: HTMLElement) => {
+  const paths = new Set<string>();
+  for (const element of root.querySelectorAll<HTMLElement>("[data-field-path]")) {
+    const path = element.dataset.fieldPath ?? "";
+    if (languageOfPath(path) !== null) paths.add(path.slice(0, path.lastIndexOf("@")));
+  }
+  return paths;
+};
+
 const refreshConditions = (root: HTMLElement) => {
   const form = root.querySelector<HTMLFormElement>('[data-part="record-form"]');
   if (!form) return;
+  const translated = translatedPaths(root);
   for (const element of root.querySelectorAll<HTMLElement>("[data-conditions]")) {
     const groups = JSON.parse(element.dataset.conditions ?? "[]") as Array<{
       rules: Array<{ field: string; operator: string; value: string }>
     }>;
     const path = element.dataset.fieldPath ?? "";
     const prefix = path.includes(".") ? path.slice(0, path.lastIndexOf(".") + 1) : "";
-    element.hidden = element.dataset.groupActive === "false" || groups.length > 0 && !groups.some((group) => group.rules.every((rule) => {
+    element.hidden = outOfLanguage(element, translated) || element.dataset.groupActive === "false" || groups.length > 0 && !groups.some((group) => group.rules.every((rule) => {
       const value = conditionValue(form, prefix + rule.field);
       const empty = value == null || value === "" || Array.isArray(value) && value.length === 0;
       const expected = typeof value === "number" ? Number(rule.value) : rule.value;
@@ -227,6 +344,9 @@ const replace = (
   if (!element) return;
   const fragment = document.createRange().createContextualFragment(html);
   const next = fragment.firstElementChild;
+  // Drawn again by the server, which draws what was opened (the form's `open` values).
+  state.opened = {};
+  state.listed = {};
   Publr.destroy(element);
   element.replaceWith(fragment);
   if (!next) return;
@@ -255,24 +375,53 @@ const post = async (url: string, params: URLSearchParams, answer: "editor" | "js
     credentials: "same-origin",
   });
 
+/** "Show fields" or "Show all" past the fold: the button's value is the path it opens; the
+ * value the form holds for it (saved or not) goes to the server, which answers its fields,
+ * or a run's items, for JSX to draw. */
+export const onOpen = async (event: Event) => {
+  const path = (event.currentTarget as HTMLButtonElement).value;
+  const form = form_of();
+  if (!form || path === "" || state.opening !== "") return;
+  state.opening = path;
+  state.open_failed = "";
+  try {
+    const held = new FormData(form).get(path);
+    const params = new URLSearchParams({
+      csrf: state.csrf,
+      type: state.type,
+      path,
+      value: typeof held === "string" ? held : "",
+    });
+    const response = await post(`${state.base_url}/cells`, params, "json");
+    if (!response.ok || response.redirected) throw new Error(Publr.t("Could not open"));
+    const answer = await response.json() as { cells?: Array<OpenedCell>; lines?: Array<ItemLine> };
+    if (answer.lines) state.listed = { ...state.listed, [path]: answer.lines };
+    else state.opened = { ...state.opened, [path]: answer.cells ?? [] };
+  } catch {
+    state.open_failed = path;
+  } finally {
+    state.opening = "";
+  }
+};
+
 const save = mutation(async () => {
   const form = form_of();
   if (!form || disposed) return false;
   const revision = state.edit_revision;
   const creating = state.id === "";
-  state.saved_text = "Saving…";
+  state.saved_text = Publr.t("Saving…");
   const response = await post(
     creating ? state.create_url : state.save_url,
     body_of(form, {}),
     "json",
   );
-  if (!response.ok || response.redirected) throw new Error("Could not save");
+  if (!response.ok || response.redirected) throw new Error(Publr.t("Could not save"));
   const answer = await response.json() as {
     saved: boolean; id?: string; version?: number; title?: string; reason?: string;
     status?: string; status_label?: string; changed?: boolean; parks?: boolean;
     has_destructive?: boolean; actions?: RecordAction[];
   };
-  if (!answer.saved) throw new Error(answer.reason ?? "Cannot save yet");
+  if (!answer.saved) throw new Error(answer.reason ?? Publr.t("Cannot save yet"));
   if (disposed) return false;
   state.version = String(answer.version ?? "");
   if (answer.actions) {
@@ -284,7 +433,7 @@ const save = mutation(async () => {
     state.actions = answer.actions;
   }
   state.dirty = state.edit_revision !== revision;
-  state.saved_text = state.dirty ? "Unsaved changes" : "All changes saved";
+  state.saved_text = state.dirty ? Publr.t("Unsaved changes") : Publr.t("All changes saved");
   invalidate("content");
   invalidate(`record:${answer.id ?? state.id}`);
   if (creating && answer.id) {
@@ -311,7 +460,7 @@ const drain = async () => {
     const fresh = await fetch(Publr.url(`${state.record_url}/editor`), {
       credentials: "same-origin", headers: headers_of("editor"),
     });
-    if (!fresh.ok || fresh.redirected) throw new Error("Could not refresh the editor");
+    if (!fresh.ok || fresh.redirected) throw new Error(Publr.t("Could not refresh the editor"));
     const html = await fresh.text();
     if (disposed) return false;
     if (state.edit_revision !== revision) continue;
@@ -329,7 +478,7 @@ const flush = () => {
     inflight = drain().catch((error: unknown) => {
       if (!disposed) {
         state.refresh_error = true;
-        state.saved_text = error instanceof Error ? error.message : "Could not save";
+        state.saved_text = error instanceof Error ? error.message : Publr.t("Could not save");
       }
       return false;
     }).finally(() => { inflight = null; });
@@ -339,12 +488,30 @@ const flush = () => {
 
 export const retrySave = () => { void flush(); };
 
+/** Preview draws the form as it stands, saved or not, in a new tab, and nothing is saved. The
+ * form goes in session storage, which the tab opened here starts with a copy of; the tab
+ * posts it into its frame, so reloading it never asks to send the form again. A new
+ * record's form names its type. */
+export const onPreview = (event: MouseEvent) => {
+  const link = event.currentTarget as HTMLAnchorElement;
+  const form = form_of();
+  if (!form) return;
+  event.preventDefault();
+  const pairs = [...new FormData(form)].filter(([, value]) => typeof value === "string");
+  try {
+    sessionStorage.setItem("publr-preview", JSON.stringify(pairs));
+  } catch {
+    // Without storage the tab draws what is saved.
+  }
+  window.open(link.href, "_blank");
+};
+
 /** An edit anywhere in the record's form: the form itself, or a control in the aside
  * that posts with it (`form="record"`). The autosave follows after a pause. */
 export const markDirty = () => {
   state.edit_revision++;
   state.dirty = true;
-  state.saved_text = "Unsaved changes";
+  state.saved_text = Publr.t("Unsaved changes");
   clearTimeout(timer);
   timer = window.setTimeout(() => { void flush(); }, 800);
 };
@@ -370,6 +537,13 @@ export const onSubmit = async (event: Event) => {
   if (!(form instanceof HTMLFormElement) || event.defaultPrevented) return;
   event.preventDefault();
   if (state.submitting) return;
+  // Purging is for good: the menu only arms it; the confirm under the actions does it.
+  const purges = form.querySelector('input[name="do"][value="purge"]') !== null;
+  if (purges && form.dataset.confirmed !== "true") {
+    state.purge_armed = true;
+    return;
+  }
+  state.purge_armed = false;
   const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
   const memo = focused();
   if (!await flush() || disposed) return;
@@ -384,6 +558,10 @@ export const onSubmit = async (event: Event) => {
   );
 };
 
+export const cancel_purge = () => {
+  state.purge_armed = false;
+};
+
 const submit = mutation(async (
   url: string,
   params: URLSearchParams,
@@ -391,7 +569,7 @@ const submit = mutation(async (
   then_save: boolean,
 ) => {
   const response = await post(url, params, "editor");
-  if (!response.ok || response.redirected) throw new Error("Could not complete the action. Try again.");
+  if (!response.ok || response.redirected) throw new Error(Publr.t("Could not complete the action. Try again."));
   const html = await response.text();
   if (disposed) return;
   const location = response.headers.get("Publr-Location");
@@ -408,7 +586,7 @@ Publr.effect(() => {
   state.busy = save.isPending || submit.isPending;
   state.save_error = save.isError || state.refresh_error;
   const error = submit.isError ? submit.error : save.isError ? save.error : null;
-  if (error) state.saved_text = error instanceof Error ? error.message : "Could not save";
+  if (error) state.saved_text = error instanceof Error ? error.message : Publr.t("Could not save");
 });
 
 export const onOpenReference = (event: Event) => {
@@ -495,12 +673,17 @@ export type RecordEditorProps = {
   action_route: string;
   type: string;
   type_name: string;
+  /** The type's schema page; empty when the person may not change types. */
+  type_href: string;
   title: string;
   expected_version: string;
   status: string;
   status_label: string;
   changed: boolean;
   versions_href: string;
+  /** The record's page drawn from its edit copy, for a type an app has a page for; empty
+   * otherwise. */
+  preview_href: string;
   /** What was refused, by path, when the last post did not go through. */
   problems: Array<{ code: string; text: string }>;
   /** The status actions, each its own form to the record's action route; the primary one
@@ -526,6 +709,14 @@ export type RecordEditorProps = {
   aside?: JSX.Element;
   /** The dependency dialog for the aside, rendered by the adapter under `serve --dev`. */
   impact?: JSX.Element;
+  /** The site's languages, the main one first with an empty code: the switch between the
+   * values of translated fields. Fewer than two: no switch. */
+  languages?: Array<{ code: string; label: string }>;
+  /** One column: the record's editor in a visual record's Entry panel. */
+  stacked?: boolean;
+  /** The values the entry holds, and the most it may; 0 for no count shown. */
+  values_count?: number;
+  values_max?: number;
 };
 
 export function RecordEditor({
@@ -541,23 +732,31 @@ export function RecordEditor({
   action_route,
   type,
   type_name,
+  type_href,
   title,
   expected_version,
   status,
   status_label,
   changed,
   versions_href,
+  preview_href,
   problems,
   actions,
   has_destructive,
   fields,
   parks,
   preview,
+  stacked = false,
   focus = true,
   aside,
   impact,
+  languages = [],
+  values_count = 0,
+  values_max = 0,
 }: RecordEditorProps) {
   state.id = id;
+  state.values_max = values_max;
+  showValues(values_count);
   state.title = title;
   state.version = expected_version;
   state.save_url = save_url;
@@ -566,6 +765,7 @@ export function RecordEditor({
   state.record_url = record_url;
   state.base_url = base_url;
   state.csrf = csrf;
+  state.type = type;
   state.in_drawer = in_drawer;
   state.status = status;
   state.status_label = status_label;
@@ -573,6 +773,7 @@ export function RecordEditor({
   state.parks = parks;
   state.has_destructive = has_destructive;
   state.actions = actions;
+  state.languages = languages;
 
   return (
     <div
@@ -586,26 +787,34 @@ export function RecordEditor({
       aria-busy={state.busy}
     >
       <FormBody
+        stacked={stacked}
         title={title}
         description={type_name}
         bare={preview}
         focus={focus}
         in_drawer={in_drawer}
-        header={<RecordHeader in_drawer={in_drawer} title={title} type_name={type_name} />}
+        header={<RecordHeader in_drawer={in_drawer} title={title} type_name={type_name} type_href={type_href} />}
         meta={
           <div class="contents">
             <StatusStrip
-              status={is_new ? "New" : state.status_label}
+              status={is_new ? Publr.t("New") : state.status_label}
               tone={is_new ? "neutral" : state.status === "published" ? "success" : "neutral"}
               note={state.saved_text}
             >
-              {state.changed && <Status tone="warning">unpublished changes</Status>}
+              {state.changed && <Status tone="warning">{Publr.t("unpublished changes")}</Status>}
             </StatusStrip>
-            <Button hierarchy="tertiary" size="sm" hidden={!state.save_error} onClick={retrySave}>Retry save</Button>
+            <Button hierarchy="tertiary" size="sm" hidden={!state.save_error} onClick={retrySave}>{Publr.t("Retry save")}</Button>
+            {state.languages.length > 1 && (
+              <div class="ml-auto flex items-center gap-3" role="group" aria-label={Publr.t("Language")} data-part="language-switch">
+                {state.languages.map((language) => (
+                  <TextToggle label={language.label} pressed={state.language === language.code} onClick={onLanguage} />
+                ))}
+              </div>
+            )}
           </div>
         }
         problems={problems}
-        problems_title="The record was not saved."
+        problems_title={Publr.t("The record was not saved.")}
         side={
           <RecordActions
             in_drawer={in_drawer}
@@ -615,8 +824,10 @@ export function RecordEditor({
             expected_version={expected_version}
             id={id}
             versions_href={versions_href}
+            preview_href={preview_href}
             aside={aside}
             impact={impact}
+            stacked={stacked}
           />
         }
       >
@@ -627,12 +838,28 @@ export function RecordEditor({
           class="flex flex-col gap-7"
           data-group-position={group_position}
           data-part="record-form"
+          data-type={type}
           ref={form_ref}
           inert={state.submitting}
         >
           <input type="hidden" name="csrf" value={csrf} />
           {is_new && <input type="hidden" name="type" value={type} />}
           {!is_new && <input type="hidden" name="expected_version" value={state.version} />}
+          {state.values_near && (
+            <div data-part="values-limit">
+              {state.values_over ? (
+                <Callout tone="error" title={state.values_text}>
+                  {Publr.t("This entry holds more values than an entry may, so it cannot be saved. Remove some, or move a part into an entry of its own.")}
+                </Callout>
+              ) : (
+                <Callout tone="warning" title={state.values_text}>
+                  {Publr.t("An entry holds at most {max} values. Past that, it cannot be saved.", {
+                    max: state.values_max.toLocaleString(),
+                  })}
+                </Callout>
+              )}
+            </div>
+          )}
           {fields}
         </form>
       </FormBody>

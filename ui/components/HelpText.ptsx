@@ -31,10 +31,10 @@ export function HelpText({ help, help_count }: HelpTextProps) {
   return (
     <div>
       <Field>
-        <FieldLabel htmlFor="help">Help text</FieldLabel>
+        <FieldLabel htmlFor="help">{Publr.t("Help text")}</FieldLabel>
         <Input id="help" name="help" value={state.help} maxLength={255} onInput={onHelp} />
         <div class="flex items-baseline justify-between gap-4">
-          <FieldDescription>This help text will show up below the field</FieldDescription>
+          <FieldDescription>{Publr.t("This help text will show up below the field")}</FieldDescription>
           <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
             {state.help_count}
           </Text>

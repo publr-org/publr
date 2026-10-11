@@ -31,11 +31,7 @@ pub fn home(request: *Request, response: *Response, ctx: *Context) Error!void {
         return response.redirect(.see_other, "/admin/login");
     }
 
-    const shortcuts = try dashboard.shortcuts_of(&session);
-
-    try admin.screen(&session, .ok, views.Dashboard, .{
-        .shortcuts = shortcuts,
-    });
+    try admin.screen(&session, .ok, views.Dashboard, try dashboard.props_of(&session));
 }
 
 fn initialised(session: *Session) Error!bool {
@@ -59,7 +55,7 @@ pub fn setup_page(request: *Request, response: *Response, ctx: *Context) Error!v
         return response.redirect(.see_other, "/admin/login");
     }
 
-    try render_setup(response, ctx.arena, session.project.base, null);
+    try render_setup(response, ctx.arena, session.project.admin_path(), null);
 }
 
 fn render_setup(
@@ -85,30 +81,42 @@ pub fn setup(request: *Request, response: *Response, ctx: *Context) Error!void {
     var session = Session.open(request, response, ctx);
     const arena = ctx.arena;
     const form = Form.parse(arena, request.body) orelse {
-        return render_setup(response, arena, session.project.base, "bad form");
+        const problem = try session.translated("bad form");
+
+        return render_setup(response, arena, session.project.admin_path(), problem);
     };
 
     if (!session.guard(&form)) {
-        return render_setup(response, arena, session.project.base, "cross-origin request refused");
+        const problem = try session.translated("cross-origin request refused");
+
+        return render_setup(response, arena, session.project.admin_path(), problem);
     }
 
     const email = form.text("email") orelse {
-        return render_setup(response, arena, session.project.base, "email is required");
+        const problem = try session.translated("email is required");
+
+        return render_setup(response, arena, session.project.admin_path(), problem);
     };
     const name = form.text("display_name") orelse {
-        return render_setup(response, arena, session.project.base, "name is required");
+        const problem = try session.translated("name is required");
+
+        return render_setup(response, arena, session.project.admin_path(), problem);
     };
     const password = form.get("password") orelse {
-        return render_setup(response, arena, session.project.base, "password is required");
+        const problem = try session.translated("password is required");
+
+        return render_setup(response, arena, session.project.admin_path(), problem);
     };
 
     _ = registry.SDK.dispatch(&session.ctx, project_operations.Init, .{
         .email = email,
         .display_name = name,
         .password = password,
-    }) catch |err| return render_setup(response, arena, session.project.base, @errorName(err));
+    }) catch |err| {
+        return render_setup(response, arena, session.project.admin_path(), @errorName(err));
+    };
 
-    try start_session(&session, email, password, "/admin/setup");
+    try start_session(&session, email, password, "/admin/setup", .{});
 }
 
 pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -122,7 +130,9 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
             return response.redirect(.see_other, "/admin/content");
         }
 
-        return render_login(&session, no_access);
+        const turned_back = try session.translated("This account has no access to the admin.");
+
+        return render_login(&session, turned_back);
     }
 
     if (try sign_in_elsewhere(&session)) |location| {
@@ -140,9 +150,9 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
     const declined = admin.query_param(&session, "sign_on") != null;
     const refused = admin.query_param(&session, "identity") != null;
     const notice: ?[]const u8 = if (declined)
-        "Sign in with your password."
+        try session.translated("Sign in with your password.")
     else if (refused)
-        "That account could not be signed in. Try your password."
+        try session.translated("That account could not be signed in. Try your password.")
     else
         null;
 
@@ -212,7 +222,7 @@ pub const no_access = "This account has no access to the admin.";
 fn render_login(session: *const Session, problem: ?[]const u8) Error!void {
     const response = session.response;
     const arena = session.arena;
-    const base = session.project.base;
+    const base = session.project.admin_path();
 
     std.debug.assert(response.body.len == 0);
     std.debug.assert(problem == null or problem.?.len > 0);
@@ -267,29 +277,37 @@ pub fn login(request: *Request, response: *Response, ctx: *Context) Error!void {
     var session = Session.open(request, response, ctx);
     const arena = ctx.arena;
     const form = Form.parse(arena, request.body) orelse {
-        return render_login(&session, "bad form");
+        return render_login(&session, try session.translated("bad form"));
     };
 
     if (!session.guard(&form)) {
-        return render_login(&session, "cross-origin request refused");
+        return render_login(&session, try session.translated("cross-origin request refused"));
     }
 
     const email = form.text("email") orelse {
-        return render_login(&session, "email is required");
+        return render_login(&session, try session.translated("email is required"));
     };
     const password = form.get("password") orelse {
-        return render_login(&session, "password is required");
+        return render_login(&session, try session.translated("password is required"));
     };
 
-    try start_session(&session, email, password, "/admin/login");
+    try start_session(&session, email, password, "/admin/login", .{});
 }
 
+pub const Started = struct {
+    /// The language the person chose while signing in (the welcome screen); null: none.
+    language: ?[]const u8 = null,
+    /// Where to go once signed in; null: where they were heading, else the content.
+    then: ?[]const u8 = null,
+};
+
 /// Sign in as the anonymous caller, set the cookie and go to the admin.
-fn start_session(
+pub fn start_session(
     session: *Session,
     email: []const u8,
     password: []const u8,
     back: []const u8,
+    started: Started,
 ) Error!void {
     std.debug.assert(email.len > 0);
     std.debug.assert(back.len > 0);
@@ -300,14 +318,14 @@ fn start_session(
         .password = password,
     }) catch |err| {
         const problem: []const u8 = if (err == error.BadCredentials)
-            "wrong email or password"
+            try session.translated("wrong email or password")
         else
             @errorName(err);
 
         return if (std.mem.eql(u8, back, "/admin/login"))
             render_login(session, problem)
         else
-            render_setup(session.response, session.arena, session.project.base, problem);
+            render_setup(session.response, session.arena, session.project.admin_path(), problem);
     };
     var signed_in = anonymous;
 
@@ -325,7 +343,17 @@ fn start_session(
             .token = out.token,
         }) catch |err| return admin.fail(session, err, back);
 
-        return render_login(session, no_access);
+        const turned_back = try session.translated("This account has no access to the admin.");
+
+        return render_login(session, turned_back);
+    }
+
+    if (started.language) |language| {
+        const SetLanguage = @import("../../operations/user/language.zig").SetLanguage;
+
+        _ = registry.SDK.dispatch(&signed_in, SetLanguage, .{
+            .language = language,
+        }) catch |err| return admin.fail(session, err, back);
     }
 
     try identity_module.set_session_cookie(
@@ -337,7 +365,9 @@ fn start_session(
         out.expires_at,
         anonymous.now_ms,
     );
-    try session.response.redirect(.see_other, coming_back(session) orelse "/admin/content");
+    const then = started.then orelse coming_back(session) orelse "/admin/content";
+
+    try session.response.redirect(.see_other, then);
 }
 
 pub fn logout(request: *Request, response: *Response, ctx: *Context) Error!void {

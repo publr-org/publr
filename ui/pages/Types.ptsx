@@ -1,4 +1,6 @@
+import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Pager } from "../components/Pager.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
@@ -34,6 +36,12 @@ export type TypesProps = {
     fields: number;
     content_href: string;
   }>;
+  /** How many there are in all. */
+  total: number;
+  /** "51–100 of 230" when there is more than one page; empty otherwise. */
+  range: string;
+  previous_href: string;
+  next_href: string;
 };
 
 export function Types({
@@ -45,12 +53,17 @@ export function Types({
   show_kind,
   manage_label,
   types,
+  total,
+  range,
+  previous_href,
+  next_href,
 }: TypesProps) {
   return (
     <IndexPage
       title={title}
-      parents={[{ label: "Structure", href: "/admin/structure" }]}
-      description={`${types.length} defined`}
+      parents={[{ label: Publr.t("Structure"), href: "/admin/structure" }]}
+      description={Publr.tn("{count} defined", "{count} defined", total)}
+      footer={range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
       actions={
         <Button href={new_href}>
           <Icon name="plus" size="sm" />
@@ -69,12 +82,12 @@ export function Types({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Handle</TableHead>
-            {show_kind && <TableHead>Kind</TableHead>}
-            <TableHead>Visibility</TableHead>
-            <TableHead>Owner</TableHead>
-            <TableHead align="right">Fields</TableHead>
+            <TableHead>{Publr.t("Name")}</TableHead>
+            <TableHead>{Publr.t("Handle")}</TableHead>
+            {show_kind && <TableHead>{Publr.t("Kind")}</TableHead>}
+            <TableHead>{Publr.t("Visibility")}</TableHead>
+            <TableHead>{Publr.t("Owner")}</TableHead>
+            <TableHead align="right">{Publr.t("Fields")}</TableHead>
             <TableHead align="right">{manage_label}</TableHead>
           </TableRow>
         </TableHeader>

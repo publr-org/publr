@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { Code } from "@publr/ui/Code.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
@@ -12,7 +13,7 @@ export function FieldProblems({ problems }: FieldProblemsProps) {
   return (
     <div class="mt-6 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4">
       <Text as="p" variant="body-sm" tone="error" classes="font-medium">
-        The field was not saved.
+        {Publr.t("The field was not saved.")}
       </Text>
       <ul class="mt-2 flex flex-col gap-1">
         {problems.map((problem) => (

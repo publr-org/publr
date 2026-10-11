@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -23,8 +24,8 @@ export function UrlSchemesRule({
       id="limit_schemes"
       name="limit_schemes"
       checked={limit_schemes}
-      label="Accept only specified schemes"
-      description="Without this rule, http and https links are accepted"
+      label={Publr.t("Accept only specified schemes")}
+      description={Publr.t("Without this rule, http and https links are accepted")}
     >
       <div class="flex flex-wrap gap-x-6 gap-y-3">
         {schemes.map((scheme) => (
@@ -38,7 +39,7 @@ export function UrlSchemesRule({
         ))}
       </div>
       <Field>
-        <FieldLabel htmlFor="scheme_message">Custom error message</FieldLabel>
+        <FieldLabel htmlFor="scheme_message">{Publr.t("Custom error message")}</FieldLabel>
         <Input id="scheme_message" name="scheme_message" value={scheme_message} maxLength={255} />
       </Field>
     </CheckboxField>

@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { onBack, onClose } from "../ReferenceDrawer.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
@@ -7,9 +8,11 @@ export type RecordHeaderProps = {
   in_drawer: boolean;
   title: string;
   type_name: string;
+  /** The type's schema page; empty when the person may not change types. */
+  type_href: string;
 };
 
-export function RecordHeader({ in_drawer, title, type_name }: RecordHeaderProps) {
+export function RecordHeader({ in_drawer, title, type_name, type_href }: RecordHeaderProps) {
   return (
     <div class="flex items-center gap-4 px-8 pt-7 pb-6" data-part="page-header">
       {in_drawer && (
@@ -17,22 +20,22 @@ export function RecordHeader({ in_drawer, title, type_name }: RecordHeaderProps)
           type="button"
           hierarchy="secondary"
           size="md"
-          label="Back"
-          title="Back"
+          label={Publr.t("Back")}
+          title={Publr.t("Back")}
           data-part="drawer-back"
           onClick={onBack}
         >
           <Icon name="arrow-left" size="sm" />
         </Button>
       )}
-      <PageHeader title={title} description={type_name} classes="min-w-0 flex-1">
+      <PageHeader title={title} description={type_name} description_href={type_href} classes="min-w-0 flex-1">
         {in_drawer && (
           <Button
             type="button"
             hierarchy="tertiary"
             size="sm"
-            label="Close"
-            title="Close"
+            label={Publr.t("Close")}
+            title={Publr.t("Close")}
             data-part="drawer-close"
             onClick={onClose}
           >

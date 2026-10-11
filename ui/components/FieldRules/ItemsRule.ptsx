@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -29,8 +30,8 @@ export function ItemsRule({
         id="limit_items"
         name="limit_items"
         checked={limit_items}
-        label="Limit the number of values"
-        description="Specify a minimum and/or maximum allowed number of values"
+        label={Publr.t("Limit the number of values")}
+        description={Publr.t("Specify a minimum and/or maximum allowed number of values")}
       >
         <div class="flex flex-wrap items-center gap-3">
           <Input
@@ -39,11 +40,11 @@ export function ItemsRule({
             type="number"
             min="0"
             value={items_min}
-            placeholder="Min"
+            placeholder={Publr.t("Min")}
             classes="w-32"
           />
           <Text as="span" variant="body-md">
-            and
+            {Publr.t("and")}
           </Text>
           <Input
             id="items_max"
@@ -51,12 +52,12 @@ export function ItemsRule({
             type="number"
             min="0"
             value={items_max}
-            placeholder="Max"
+            placeholder={Publr.t("Max")}
             classes="w-32"
           />
         </div>
         <Field>
-          <FieldLabel htmlFor="items_message">Custom error message</FieldLabel>
+          <FieldLabel htmlFor="items_message">{Publr.t("Custom error message")}</FieldLabel>
           <Input id="items_message" name="items_message" value={items_message} maxLength={255} />
         </Field>
       </CheckboxField>
@@ -64,8 +65,8 @@ export function ItemsRule({
         id="distinct"
         name="distinct"
         checked={distinct}
-        label="No value twice"
-        description="Refuse a list that holds the same value more than once"
+        label={Publr.t("No value twice")}
+        description={Publr.t("Refuse a list that holds the same value more than once")}
       />
     </div>
   );

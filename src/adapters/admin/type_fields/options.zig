@@ -41,6 +41,12 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
     field.required = !model.field.is_layout(field.kind) and form.get("required") != null;
     field.unique = kind.unique_allowed and form.get("unique") != null;
     field.searchable = field_pages.can_search(field.kind) and form.get("searchable") != null;
+
+    // Turned on and off only where the form offers it: a site with one language keeps it.
+    if (form.get("variants_offered") != null) {
+        field.variants = !model.field.is_layout(field.kind) and form.get("variants") != null;
+    }
+
     field.help = form.text("help") orelse "";
 
     if (form.get("conditions_present") != null) {

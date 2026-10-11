@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { onNavigate, submitted } from "../TypeColumns.ptsx";
 import type { IconName } from "@publr/ui/Icon.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
@@ -31,11 +32,21 @@ export type FieldRowsProps = {
     /** The picker for a child field; present on groups and repeaters. */
     add_child_href?: string;
   }>;
+  /** Past the fold: the fields not drawn, as a link to the page with all of them. */
+  more_label?: string;
+  more_href?: string;
 };
 
 /** One row per field in the order the editor shows them, each with its editor and its
  * place (up, down), groups and repeaters with a child; then a way to add another. */
-export function FieldRows({ csrf, standalone, add_href, rows }: FieldRowsProps) {
+export function FieldRows({
+  csrf,
+  standalone,
+  add_href,
+  rows,
+  more_label = "",
+  more_href = "",
+}: FieldRowsProps) {
   return (
     <div class="contents">
       <Table>
@@ -69,7 +80,7 @@ export function FieldRows({ csrf, standalone, add_href, rows }: FieldRowsProps) 
               <TableCell align="right">
                 {row.locked ? (
                   <Text as="span" variant="body-sm" tone="muted">
-                    locked
+                    {Publr.t("locked")}
                   </Text>
                 ) : (
                   <span class="inline-flex items-center justify-end gap-1">
@@ -78,8 +89,8 @@ export function FieldRows({ csrf, standalone, add_href, rows }: FieldRowsProps) 
                         href={row.add_child_href ?? "#"}
                         hierarchy="tertiary"
                         size="sm"
-                        label="Add a field inside"
-                        title="Add a field inside"
+                        label={Publr.t("Add a field inside")}
+                        title={Publr.t("Add a field inside")}
                       >
                         <Icon name="plus" size="sm" />
                       </Button>
@@ -96,8 +107,8 @@ export function FieldRows({ csrf, standalone, add_href, rows }: FieldRowsProps) 
                         value="up"
                         hierarchy="tertiary"
                         size="sm"
-                        label="Move up"
-                        title="Move up"
+                        label={Publr.t("Move up")}
+                        title={Publr.t("Move up")}
                       >
                         <Icon name="chevron-up" size="sm" />
                       </Button>
@@ -107,8 +118,8 @@ export function FieldRows({ csrf, standalone, add_href, rows }: FieldRowsProps) 
                         value="down"
                         hierarchy="tertiary"
                         size="sm"
-                        label="Move down"
-                        title="Move down"
+                        label={Publr.t("Move down")}
+                        title={Publr.t("Move down")}
                       >
                         <Icon name="chevron-down" size="sm" />
                       </Button>
@@ -117,8 +128,8 @@ export function FieldRows({ csrf, standalone, add_href, rows }: FieldRowsProps) 
                       href={row.edit_href}
                       hierarchy="tertiary"
                       size="sm"
-                      label="Edit"
-                      title="Edit"
+                      label={Publr.t("Edit")}
+                      title={Publr.t("Edit")}
                     >
                       <Icon name="edit" size="sm" />
                     </Button>
@@ -129,6 +140,13 @@ export function FieldRows({ csrf, standalone, add_href, rows }: FieldRowsProps) 
           ))}
         </TableBody>
       </Table>
+      {more_href !== "" && (
+        <div class="border-t border-border px-8 py-3">
+          <Link href={more_href} variant="body-sm" tone="default">
+            {more_label}
+          </Link>
+        </div>
+      )}
       <div class="border-t border-border bg-muted/40 px-8 py-4">
         <Link onClick={onNavigate}
           href={add_href}
@@ -137,7 +155,7 @@ export function FieldRows({ csrf, standalone, add_href, rows }: FieldRowsProps) 
           classes="inline-flex items-center gap-2"
         >
           <Icon name="plus" size="sm" />
-          {standalone ? "Add another field" : "Add another field to this type"}
+          {standalone ? Publr.t("Add another field") : Publr.t("Add another field to this type")}
         </Link>
       </div>
     </div>

@@ -102,10 +102,9 @@ export type TypeHeadProps = {
   /** A new type: the handle and the URL follow the name until edited by hand. */
   is_new: boolean;
   choose_kind: boolean;
-  /** A taxonomy has no kind and no URL: it is hierarchical or flat, public or not. */
+  /** A taxonomy has no kind and no URL: it is hierarchical or flat. */
   is_taxonomy: boolean;
   hierarchical: boolean;
-  is_public: boolean;
   single: boolean;
   applies_routed: Array<{ value: string; label: string; selected: boolean }>;
   applies_other: Array<{ value: string; label: string; selected: boolean }>;
@@ -136,7 +135,6 @@ export function TypeHead({
   choose_kind,
   is_taxonomy,
   hierarchical,
-  is_public,
   single,
   applies_routed,
   applies_other,
@@ -161,7 +159,7 @@ export function TypeHead({
       <fieldset class="m-0 min-w-0 border-0 p-0">
         <legend class="mb-2 p-0">
           <Text as="span" variant="body-sm" tone="default">
-            Kind
+            {Publr.t("Kind")}
           </Text>
         </legend>
         <div class="grid gap-3 sm:grid-cols-3">
@@ -169,24 +167,24 @@ export function TypeHead({
             name="kind"
             value="record"
             checked={is_record}
-            title="Record type"
-            description="Holds any number of records: posts, pages, hotels, players."
+            title={Publr.t("Record type")}
+            description={Publr.t("Holds any number of records: posts, pages, hotels, players.")}
             onChange={onKind}
           />
           <ChoiceCard
             name="kind"
             value="settings"
             checked={is_settings}
-            title="Settings"
-            description="Holds exactly one record: the homepage, the header, general options."
+            title={Publr.t("Settings")}
+            description={Publr.t("Holds exactly one record: the homepage, the header, general options.")}
             onChange={onKind}
           />
           <ChoiceCard
             name="kind"
             value="component"
             checked={is_component}
-            title="Component"
-            description="Holds no records of its own: a set of fields for other types to reuse."
+            title={Publr.t("Component")}
+            description={Publr.t("Holds no records of its own: a set of fields for other types to reuse.")}
             onChange={onKind}
           />
         </div>
@@ -194,7 +192,7 @@ export function TypeHead({
       )}
       <Field>
         <FieldLabel htmlFor="name" required>
-          Name
+          {Publr.t("Name")}
         </FieldLabel>
         <Input
           id="name"
@@ -202,7 +200,7 @@ export function TypeHead({
           value={state.name}
           required
           invalid={name_error !== ""}
-          placeholder={is_settings ? "For example Brand, Navigation, Website" : "For example Product, Blog Post, Author"}
+          placeholder={is_settings ? Publr.t("For example Brand, Navigation, Website") : Publr.t("For example Product, Blog Post, Author")}
           maxLength={50}
           onInput={onName}
         />
@@ -210,7 +208,7 @@ export function TypeHead({
           {name_error !== "" ? (
             <FieldError>{name_error}</FieldError>
           ) : (
-            <FieldDescription>Shown wherever this definition is named</FieldDescription>
+            <FieldDescription>{Publr.t("Shown wherever this definition is named")}</FieldDescription>
           )}
           <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
             {state.name_count}
@@ -219,7 +217,7 @@ export function TypeHead({
       </Field>
       <Field>
         <FieldLabel htmlFor="handle" required>
-          Handle
+          {Publr.t("Handle")}
         </FieldLabel>
         <Input
           id="handle"
@@ -235,8 +233,7 @@ export function TypeHead({
             <FieldError>{handle_error}</FieldError>
           ) : (
             <FieldDescription>
-              Generated from the name. Lowercase letters, digits and underscores; how this definition is
-              called in the API and templates
+              {Publr.t("Generated from the name. Lowercase letters, digits and underscores; how this definition is called in the API and templates")}
             </FieldDescription>
           )}
           <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
@@ -245,7 +242,7 @@ export function TypeHead({
         </div>
       </Field>
       <Field>
-        <FieldLabel htmlFor="description">Description</FieldLabel>
+        <FieldLabel htmlFor="description">{Publr.t("Description")}</FieldLabel>
         <Textarea
           id="description"
           name="description"
@@ -260,7 +257,7 @@ export function TypeHead({
             <FieldError>{description_error}</FieldError>
           ) : (
             <FieldDescription>
-              What this definition is for, for the people who build with it
+              {Publr.t("What this definition is for, for the people who build with it")}
             </FieldDescription>
           )}
           <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
@@ -272,11 +269,10 @@ export function TypeHead({
         <Field>
           <div class="flex items-center gap-2.5">
             <Switch id="hierarchical" name="hierarchical" value="1" checked={hierarchical} />
-            <FieldLabel htmlFor="hierarchical">Hierarchical</FieldLabel>
+            <FieldLabel htmlFor="hierarchical">{Publr.t("Hierarchical")}</FieldLabel>
           </div>
           <FieldDescription>
-            Terms may have a parent term, like categories; a flat taxonomy is a list, like tags.
-            A record filed under a term is filed under its parents too.
+            {Publr.t("Terms may have a parent term, like categories; a flat taxonomy is a list, like tags. A record filed under a term is filed under its parents too.")}
           </FieldDescription>
         </Field>
       )}
@@ -284,10 +280,10 @@ export function TypeHead({
         <Field>
           <div class="flex items-center gap-2.5">
             <Switch id="single" name="single" value="1" checked={single} />
-            <FieldLabel htmlFor="single">One term per record</FieldLabel>
+            <FieldLabel htmlFor="single">{Publr.t("One term per record")}</FieldLabel>
           </div>
           <FieldDescription>
-            Off, a record may be filed under several terms; on, under exactly one.
+            {Publr.t("Off, a record may be filed under several terms; on, under exactly one.")}
           </FieldDescription>
         </Field>
       )}
@@ -296,17 +292,17 @@ export function TypeHead({
           <div class="mb-3 flex items-center justify-between gap-4">
             <legend class="p-0">
               <Text as="span" variant="body-sm" tone="default">
-                Assign taxonomy to content types
+                {Publr.t("Assign taxonomy to content types")}
               </Text>
             </legend>
             <div class="flex items-center gap-2.5">
               <Switch id="show_all_types" checked={state.show_all_types} onChange={toggleAllTypes} />
-              <FieldLabel htmlFor="show_all_types">Show all types</FieldLabel>
+              <FieldLabel htmlFor="show_all_types">{Publr.t("Show all types")}</FieldLabel>
             </div>
           </div>
           <div class="flex flex-col gap-3" data-part="applies-to">
             <Text as="span" variant="body-xs" tone="muted">
-              Content types
+              {Publr.t("Content types")}
             </Text>
             {applies_routed.map((entry) => (
               <CheckboxField
@@ -319,14 +315,14 @@ export function TypeHead({
             ))}
             {applies_routed.length === 0 && (
               <Text as="p" variant="body-sm" tone="muted">
-                No content type has an address on the site yet.
+                {Publr.t("No content type has an address on the site yet.")}
               </Text>
             )}
           </div>
           <div class="hidden" hidden={!state.show_all_types}>
             <div class="mt-5 flex flex-col gap-3" data-part="applies-to-other">
               <Text as="span" variant="body-xs" tone="muted">
-                Other content types
+                {Publr.t("Other content types")}
               </Text>
               {applies_other.map((entry) => (
                 <CheckboxField
@@ -339,30 +335,17 @@ export function TypeHead({
               ))}
               {applies_other.length === 0 && (
                 <Text as="p" variant="body-sm" tone="muted">
-                  Every content type has an address on the site.
+                  {Publr.t("Every content type has an address on the site.")}
                 </Text>
               )}
             </div>
           </div>
           <div class="mt-2">
             <FieldDescription>
-              Records of the ticked types select terms of this taxonomy in the editor's
-              sidebar. Types whose records have pages of their own on the site are the
-              usual ones to classify; anything can be.
+              {Publr.t("Records of the ticked types select terms of this taxonomy in the editor's sidebar. Types whose records have pages of their own on the site are the usual ones to classify; anything can be.")}
             </FieldDescription>
           </div>
         </fieldset>
-      )}
-      {(is_taxonomy || is_settings) && (
-        <Field>
-          <div class="flex items-center gap-2.5">
-            <Switch id="public" name="public" value="1" checked={is_public} />
-            <FieldLabel htmlFor="public">Public</FieldLabel>
-          </div>
-          <FieldDescription>
-            Published values can be read by anyone through the API and the site.
-          </FieldDescription>
-        </Field>
       )}
       {!is_taxonomy && (
       <div class="hidden" hidden={!state.is_record}>
@@ -375,7 +358,7 @@ export function TypeHead({
               checked={state.has_url}
               onChange={toggleUrl}
             />
-            <FieldLabel htmlFor="has_url">Accessible via URL</FieldLabel>
+            <FieldLabel htmlFor="has_url">{Publr.t("Accessible via URL")}</FieldLabel>
           </div>
           <div class="hidden" hidden={!state.has_url}>
             <InputGroup leading={`${base_url}/`} trailing="/{slug}">

@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { onNavigate, submitted } from "../TypeColumns.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
@@ -35,28 +36,27 @@ export function FieldPanelFooter({
           <Dialog>
             <DialogTrigger asChild>
               <Button hierarchy="secondary" intent="destructive">
-                Delete field
+                {Publr.t("Delete field")}
               </Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogTitle>Delete {label}?</DialogTitle>
+              <DialogTitle>{Publr.t("Delete {label}?", { label })}</DialogTitle>
               <DialogDescription>
-                The field leaves the type for good. Records keep their values unless you delete them
-                too; while values are kept, the field cannot be deleted.
+                {Publr.t("The field leaves the type for good. Records keep their values unless you delete them too; while values are kept, the field cannot be deleted.")}
               </DialogDescription>
               <form onSubmit={submitted} method="post" action={delete_action ?? "#"} class="mt-5 space-y-5">
                 <input type="hidden" name="csrf" value={csrf} />
                 <CheckboxField
                   id="drop_content"
                   name="drop_content"
-                  label="Also delete its values in every record"
+                  label={Publr.t("Also delete its values in every record")}
                 />
                 <div class="flex justify-end gap-2">
                   <DialogClose asChild>
-                    <Button hierarchy="secondary">Cancel</Button>
+                    <Button hierarchy="secondary">{Publr.t("Cancel")}</Button>
                   </DialogClose>
                   <Button type="submit" intent="destructive">
-                    Delete field
+                    {Publr.t("Delete field")}
                   </Button>
                 </div>
               </form>
@@ -66,16 +66,16 @@ export function FieldPanelFooter({
       </div>
       <div class="flex items-center gap-2">
         <Button onClick={onNavigate} href={type_href} hierarchy="tertiary">
-          Cancel
+          {Publr.t("Cancel")}
         </Button>
         {is_new && !is_container && (
           <Button type="submit" form={form_id} name="next" value="another" hierarchy="secondary">
             <Icon name="plus" size="sm" />
-            <span>Add another field</span>
+            <span>{Publr.t("Add another field")}</span>
           </Button>
         )}
         <Button type="submit" form={form_id} name="next" value="finish">
-          {is_new ? (is_container ? "Create and add its fields" : "Finish") : "Save field"}
+          {is_new ? (is_container ? Publr.t("Create and add its fields") : Publr.t("Finish")) : Publr.t("Save field")}
         </Button>
       </div>
     </div>

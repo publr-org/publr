@@ -1,4 +1,6 @@
+import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Pager } from "../components/Pager.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
@@ -22,23 +24,30 @@ export type UsersProps = {
     /** The signed-in user's own row. */
     me: boolean;
   }>;
+  /** "51–100 of 230" when there is more than one page; empty otherwise. */
+  range: string;
+  /** The pages before and after this one; empty at either end. */
+  previous_href: string;
+  next_href: string;
 };
 
-/** Every account, oldest first, and a way to add one. There is always one: whoever looks. */
-export function Users({ users }: UsersProps) {
+/** The accounts, oldest first, a page at a time, and a way to add one. There is always one:
+ * whoever looks. */
+export function Users({ users, range, previous_href, next_href }: UsersProps) {
   return (
     <IndexPage
-      title="Users"
-      description="Who may sign in, and what they may do."
-      actions={<Button href="/admin/settings/users/new">Add user</Button>}
+      title={Publr.t("Users")}
+      description={Publr.t("Who may sign in, and what they may do.")}
+      actions={<Button href="/admin/settings/users/new">{Publr.t("Add user")}</Button>}
+      footer={range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
     >
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Roles</TableHead>
-            <TableHead>Status</TableHead>
+            <TableHead>{Publr.t("Name")}</TableHead>
+            <TableHead>{Publr.t("Email")}</TableHead>
+            <TableHead>{Publr.t("Roles")}</TableHead>
+            <TableHead>{Publr.t("Status")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -51,7 +60,7 @@ export function Users({ users }: UsersProps) {
                 {user.me && (
                   <Text as="span" variant="body-sm" tone="muted">
                     {" "}
-                    (you)
+                    {Publr.t("(you)")}
                   </Text>
                 )}
               </TableCell>
@@ -67,9 +76,9 @@ export function Users({ users }: UsersProps) {
               </TableCell>
               <TableCell>
                 {user.active ? (
-                  <Status tone="success">Active</Status>
+                  <Status tone="success">{Publr.t("Active")}</Status>
                 ) : (
-                  <Status tone="warning">Invited</Status>
+                  <Status tone="warning">{Publr.t("Invited")}</Status>
                 )}
               </TableCell>
             </TableRow>

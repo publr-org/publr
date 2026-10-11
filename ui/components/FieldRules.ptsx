@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { ImageDimensionsRule } from "./FieldRules/ImageDimensionsRule.ptsx";
 import { FileTypesRule } from "./FieldRules/FileTypesRule.ptsx";
 import { FileSizeRule } from "./FieldRules/FileSizeRule.ptsx";
@@ -175,7 +176,7 @@ export function FieldRules({
   return (
     <section class="border-t border-border pt-6">
       <Heading level={2} size="md">
-        Validation
+        {Publr.t("Validation")}
       </Heading>
       <div class="mt-5 flex flex-col gap-6">
         {can_require && (
@@ -183,8 +184,8 @@ export function FieldRules({
             id="required"
             name="required"
             checked={required}
-            label="Required field"
-            description="You won't be able to publish a record while this field is empty"
+            label={Publr.t("Required field")}
+            description={Publr.t("You won't be able to publish a record while this field is empty")}
           />
         )}
         {can_unique && (
@@ -193,8 +194,8 @@ export function FieldRules({
               id="unique"
               name="unique"
               checked={unique}
-              label="Unique field"
-              description="You won't be able to publish a record when another record already holds the same value"
+              label={Publr.t("Unique field")}
+              description={Publr.t("You won't be able to publish a record when another record already holds the same value")}
             />
           </div>
         )}
@@ -264,8 +265,8 @@ export function FieldRules({
             id="from_now"
             name="from_now"
             checked={from_now}
-            label="Not before today"
-            description="Refuse a moment earlier than the day the record is saved"
+            label={Publr.t("Not before today")}
+            description={Publr.t("Refuse a moment earlier than the day the record is saved")}
           />
         )}
         {has_reserved && (
@@ -297,8 +298,8 @@ export function FieldRules({
             id="live_only"
             name="live_only"
             checked={live_only}
-            label="Accept only published records"
-            description="A draft or archived record cannot be linked here"
+            label={Publr.t("Accept only published records")}
+            description={Publr.t("A draft or archived record cannot be linked here")}
           />
         )}
         {has_media && (

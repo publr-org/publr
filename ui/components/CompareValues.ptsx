@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { DiffText } from "@publr/ui/DiffText.ptsx";
 import { ReferenceCard } from "@publr/ui/ReferenceCard.ptsx";
 import type { IconName } from "@publr/ui/Icon.ptsx";
@@ -38,7 +39,7 @@ export type CompareValuesProps = {
 export function CompareValues({ values, draggable = false }: CompareValuesProps) {
   return (
     <div class="flex flex-col gap-2" data-part="compare-values">
-      {values.length === 0 && <Text as="p" variant="body-sm" tone="muted">Empty</Text>}
+      {values.length === 0 && <Text as="p" variant="body-sm" tone="muted">{Publr.t("Empty")}</Text>}
       {values.map((value) => (
         <div data-json={value.json} draggable={draggable ? "true" : "false"} class={draggable ? "cursor-grab" : ""}>
           {value.card ? (

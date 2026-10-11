@@ -11,7 +11,6 @@ pub const fixture = @import("record/fixture.zig");
 const lifecycle = @import("record/lifecycle.zig");
 const virtual = @import("record/virtual.zig");
 const virtual_edit = @import("record/virtual/edit.zig");
-const app_module = @import("record/app.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -60,15 +59,17 @@ fn with_taxonomies(ctx: *Ctx, row: store.content_types.Row) Error!store.content_
     std.debug.assert(row.id.len > 0);
     std.debug.assert(row.def.fields.len <= model.field.fields_max);
 
-    const applying = try store.taxonomies.list(ctx.db, ctx.arena);
+    const room = model.field.fields_max - @as(u32, @intCast(row.def.fields.len));
+    const applying = if (room == 0)
+        &.{}
+    else
+        try store.taxonomies.applying_to(ctx.db, ctx.arena, row.def.handle, room);
     var fields: std.ArrayList(model.field.Def) = .empty;
 
     try fields.appendSlice(ctx.arena, row.def.fields);
 
     for (applying) |taxonomy| {
-        if (!model.taxonomy.applies(taxonomy.def, row.def.handle)) {
-            continue;
-        }
+        std.debug.assert(model.taxonomy.applies(taxonomy.def, row.def.handle));
 
         if (fields.items.len == model.field.fields_max) {
             break;
@@ -120,7 +121,7 @@ fn check_kind(ctx: *Ctx, row: store.content_types.Row) Error!void {
     std.debug.assert(ctx.db.transaction_depth >= 1);
 
     switch (row.def.kind) {
-        .record => {},
+        .record, .media => {},
         .component => return error.Invalid,
         .settings => {
             if (settings_denied(ctx)) {
@@ -152,9 +153,9 @@ fn check_content_type(
         problems.add("applies_to", "only a taxonomy applies to content types");
     }
 
-    var buffer: [model.field.fields_max]model.field.Def = undefined;
+    var assigning = model.taxonomy.terms_fields(def.fields);
 
-    for (model.taxonomy.terms_fields(def.fields, &buffer)) |assigned| {
+    while (assigning.next()) |assigned| {
         if (try taxonomies.find(ctx, assigned.options.taxonomy) == null) {
             problems.add(assigned.name, "unknown taxonomy");
         }
@@ -170,13 +171,13 @@ fn check_record_document(
     std.debug.assert(parsed == .object);
     std.debug.assert(def.fields.len <= model.field.fields_max);
 
-    var buffer: [model.field.fields_max]model.field.Def = undefined;
+    var assigning = model.taxonomy.terms_fields(def.fields);
 
-    for (model.taxonomy.terms_fields(def.fields, &buffer)) |assigned| {
+    while (assigning.next()) |assigned| {
         const chosen = parsed.object.get(assigned.name) orelse continue;
 
         switch (chosen) {
-            .string => |id| try check_term(ctx, assigned, id),
+            .string => |id| try check_term(ctx, assigned.*, id),
             .array => |items| {
                 if (items.items.len > store.record_terms.ids_max) {
                     return error.Invalid;
@@ -184,7 +185,7 @@ fn check_record_document(
 
                 for (items.items) |item| {
                     if (item == .string) {
-                        try check_term(ctx, assigned, item.string);
+                        try check_term(ctx, assigned.*, item.string);
                     }
                 }
             },
@@ -217,7 +218,6 @@ pub const Publish = lifecycle.Publish;
 pub const DiscardChanges = lifecycle.DiscardChanges;
 pub const Delete = lifecycle.Delete;
 pub const Purge = lifecycle.Purge;
-pub const SetApp = app_module.SetApp;
 
 pub const example_id = "a1b2c3d4e5f60718293a4b5c";
 pub const example_changed_id = "b2c3d4e5f60718293a4b5c6d";
@@ -246,9 +246,9 @@ pub const Create = struct {
         \\the type's `title_field`. When the type has a `slug` field it is filled from
         \\its source (or the title) when the document leaves it empty, and made unique
         \\per type. The status defaults to the initial status (`draft`); a type may
-        \\restrict which statuses it accepts. `app` says which app the record belongs to
-        \\(an app's `.name`); a record made through an app belongs to it unless told,
-        \\anything else to the project.
+        \\restrict which statuses it accepts. A record lives where its type does; only the
+        \\design's records (templates, parts, patterns, moodboard cards), which each app has
+        \\its own of, take `app`: the one named, else the app the request came through.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -272,7 +272,7 @@ pub const Create = struct {
         .type = "The content type, by handle or id",
         .document = "The document as a JSON object",
         .status = "Initial status; the registry's initial status when omitted",
-        .app = "The app it belongs to, by `.name`; empty for the project's own",
+        .app = "A design record's app, by `.name`; refused for any other type",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -290,17 +290,20 @@ pub const Get = struct {
     pub const name = "record.get";
     pub const description = "Read one record with its document";
     pub const details =
-        \\`purpose` says why: `delivery` (default) is the live document, what a site or
-        \\API consumer wants; `edit` is what the admin editor wants: the pending copy
-        \\when the record has unpublished changes, else the live document. `slot` names a
-        \\copy explicitly (`live`, `pending`, or a plugin's own) for previews. Anonymous
-        \\callers only see live records of public types; anything else answers not found.
+        \\A signed-in caller reads the latest copy: the pending changes when the record has
+        \\some, else its live document; a page drawn for a visitor, and an anonymous caller,
+        \\the live document. `purpose` says how virtual fields come back: `delivery`
+        \\(default) worked out, as a site or API consumer wants them; `edit` as the admin
+        \\editor keeps them, to save back. `slot` names a copy explicitly (`live`,
+        \\`pending`, or a plugin's own). Anonymous callers only see live records of public
+        \\types; anything else answers not found.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         id: []const u8,
         purpose: Purpose = .delivery,
         slot: ?[]const u8 = null,
+        variant: ?[]const u8 = null,
     };
     pub const Out = crud_module.Got;
     pub const example: In = .{
@@ -315,6 +318,8 @@ pub const Get = struct {
         .id = "The record id",
         .purpose = "`delivery` or `edit`",
         .slot = "Read this copy instead (`live`, `pending`, ...); signed-in callers only",
+        .variant = "Read each field in this variant (a language code: `pl`), falling back " ++
+            "to the code without its region, then the main value; empty: the main values",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -325,6 +330,10 @@ pub const Get = struct {
         }
 
         var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
+
+        if (try domain.variants.code_of(ctx, in.variant)) |code| {
+            try domain.variants.resolve_one(ctx, &got.record, &got.document, code);
+        }
 
         // What a site or the API reads shows virtual fields worked out; the editor gets
         // what they keep, to save it back.
@@ -411,9 +420,11 @@ pub const List = struct {
         \\empty value asks nothing. Within one type, filter on any field by its path
         \\(`filter_field` + `filter_value`; `seo.title`, `faq.question` for nested ones;
         \\numbers and booleans compare as numbers, `true` = 1; references and images by
-        \\the target id); search uses fields marked `searchable` (full text). Filters,
-        \\search and order look at live values only. Anonymous callers get live records of
-        \\public types only.
+        \\the target id); search uses fields marked `searchable` (full text). A signed-in
+        \\caller's filters, search, order and documents read each record's latest copy (its
+        \\pending changes, else its live document); a page drawn for a visitor, and an
+        \\anonymous caller, read live ones. Anonymous callers get live records of public
+        \\types only.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -434,6 +445,7 @@ pub const List = struct {
         expand: bool = true,
         /// With `documents`: `edit` gives the pending copy of a record with changes.
         purpose: Purpose = .delivery,
+        variant: ?[]const u8 = null,
     };
     pub const Out = struct {
         records: []const Record,
@@ -465,6 +477,8 @@ pub const List = struct {
         .documents = "Also return each record's live document, read with the page in one go",
         .expand = "With documents: virtual fields as the records they stand for (default)",
         .purpose = "With documents: `edit` reads pending copies where there are changes",
+        .variant = "Titles, slugs and documents in this variant (a language code: `pl`); " ++
+            "`slug` then matches the variant's slug first",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -474,6 +488,7 @@ pub const List = struct {
 
         std.debug.assert(granted.allows());
 
+        const code = try domain.variants.code_of(ctx, in.variant);
         const listed = try crud.list(ctx, granted, .{
             .definition = in.type,
             .definitions = in.types,
@@ -487,28 +502,46 @@ pub const List = struct {
             .order = in.order,
             .limit = in.limit,
             .offset = in.offset,
+            .variant = code orelse "",
         });
+        const resolving = code != null and code.?.len > 0;
 
-        if (!in.documents) {
+        if (!in.documents and !resolving) {
             return .{
                 .records = listed,
             };
         }
 
-        const documents = switch (in.purpose) {
-            .delivery => try domain.listed.documents_of(ctx, listed),
-            .edit => try domain.listed.edit_documents_of(ctx, listed),
-        };
+        const read = if (crud.reads_latest(ctx))
+            try domain.listed.edit_documents_of(ctx, listed)
+        else
+            try domain.listed.documents_of(ctx, listed);
+        var records_shown: []const Record = listed;
+        var documents = read;
+
+        if (code) |variant_code| {
+            const kept = try domain.variants.kept_in(ctx, listed, read, variant_code);
+
+            try domain.variants.resolve_listed(ctx, kept.records, kept.texts, variant_code);
+            records_shown = kept.records;
+            documents = kept.texts;
+        }
+
+        if (!in.documents) {
+            return .{
+                .records = records_shown,
+            };
+        }
 
         if (in.expand) {
             const writable = @constCast(documents);
             const clauses = try virtual.kept_clauses(ctx.arena, in.filters);
 
-            try virtual.expand(ctx, listed, writable, clauses);
+            try virtual.expand(ctx, records_shown, writable, clauses);
         }
 
         return .{
-            .records = listed,
+            .records = records_shown,
             .documents = documents,
         };
     }
@@ -603,11 +636,16 @@ pub const Validate = struct {
 
 pub const Shown = @import("record/shown.zig").Shown(List, example_id);
 pub const Query = @import("record/query.zig").Query;
+pub const Reach = @import("record/reach.zig").Reach;
+
+test {
+    _ = @import("record/reach.zig");
+}
 
 pub const operations = [_]type{
     Create,    Get,    Save,           Transition, Publish,  List,
-    Referrers, Delete, DiscardChanges, Purge,      Validate, SetApp,
-    Shown,     Query,
+    Referrers, Delete, DiscardChanges, Purge,      Validate, Shown,
+    Query,     Reach,
 };
 
 const SDK = registry.SDK;

@@ -27,13 +27,13 @@ export async function send(file: File, csrf: string): Promise<{ name: string; up
     });
     if (!response.ok) {
       const answer = await response.json().catch(() => ({ error: "" }));
-      throw new Error(answer.message ?? answer.error ?? `stopped at ${offset} bytes`);
+      throw new Error(answer.message ?? answer.error ?? Publr.t("stopped at {offset} bytes", { offset }));
     }
     offset += piece.length;
-    state.note = `Uploading… ${Math.round((offset / bytes.length) * 100)}%`;
+    state.note = Publr.t("Uploading… {percent}%", { percent: Math.round((offset / bytes.length) * 100) });
     if (last) return (await response.json()).added;
   } while (offset < bytes.length);
-  throw new Error("the file is empty");
+  throw new Error(Publr.t("the file is empty"));
 }
 
 export const choose = () => input_ref.current?.click();
@@ -42,13 +42,13 @@ export const upload = async (event: Event) => {
   const file = (event.currentTarget as HTMLInputElement).files?.[0];
   if (!file) return;
   state.busy = true;
-  state.note = "Uploading…";
+  state.note = Publr.t("Uploading…");
   try {
     const added = await send(file, state.csrf);
     const page = added.update ? "update" : "enable";
     window.location.href = Publr.url(`/admin/settings/plugins/${added.name}/${page}`);
   } catch (error) {
-    state.note = `Not uploaded: ${(error as Error).message}`;
+    state.note = Publr.t("Not uploaded: {reason}", { reason: (error as Error).message });
   } finally {
     state.busy = false;
   }
@@ -64,7 +64,7 @@ export function UploadPlugin({ csrf }: UploadPluginProps) {
   return (
     <div class="flex items-center gap-3" data-part="upload-plugin">
       <input type="file" accept=".wasm" class="hidden" ref={input_ref} onChange={upload} />
-      <Button onClick={choose} disabled={state.busy}>Upload plugin</Button>
+      <Button onClick={choose} disabled={state.busy}>{Publr.t("Upload plugin")}</Button>
       <Text as="span" variant="body-sm" tone="muted">{state.note}</Text>
     </div>
   );

@@ -28,9 +28,15 @@ pub const find_by_text = Store.find_by_text;
 pub const find_by_integer = Store.find_by_integer;
 pub const read_integer = Store.read_integer;
 pub const delete_references = Store.delete_references;
+pub const Link = document_values.Link;
+pub const links_max = document_values.links_max;
+pub const LinkKey = document_values.LinkKey;
+pub const suspect_links = Store.suspect_links;
+pub const delete_reference = Store.delete_reference;
 pub const read_text = Store.read_text;
 pub const delete_field = Store.delete_field;
 pub const count_field = Store.count_field;
+pub const count_variants = Store.count_variants;
 
 const record_terms = @import("record_terms.zig");
 const taxonomy = @import("../model/taxonomy.zig");
@@ -50,9 +56,9 @@ pub fn write(
 
     try Store.write(known, connection, record_id, slot, type_id, fields, value);
 
-    var buffer: [field.fields_max]Def = undefined;
+    var assigning = taxonomy.terms_fields(fields);
 
-    for (taxonomy.terms_fields(fields, &buffer)) |assigned| {
+    while (assigning.next()) |assigned| {
         var ids: [record_terms.ids_max][]const u8 = undefined;
         const chosen = if (value == .object) value.object.get(assigned.name) else null;
         const assignment: record_terms.Assignment = .{

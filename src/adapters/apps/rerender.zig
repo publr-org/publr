@@ -8,6 +8,9 @@ const engine = @import("../../template.zig");
 const context_module = @import("context.zig");
 const build = @import("build.zig");
 const artifacts = @import("artifacts.zig");
+const languages = @import("languages.zig");
+const model_variant = @import("../../model/variant.zig");
+const Place = model_variant.Place;
 const Project = @import("../../server/project.zig").Project;
 const App = @import("state.zig").App;
 
@@ -31,7 +34,8 @@ pub fn artifact(
         return island(app, project, arena, batch, url);
     }
 
-    const matched = program.match(url) orelse {
+    const located = locate(project, arena, url);
+    const matched = program.match(located.path) orelse {
         remove_url(app, arena, url);
 
         return report(app, batch, url, .removed, "no route");
@@ -48,7 +52,9 @@ pub fn artifact(
     const params: context_module.Params = .{
         .slug = matched.slug,
     };
-    const rendered = build.render_url(app, project, matched.route, url, params, .when_changed);
+    const place = located.place;
+    const route = matched.route;
+    const rendered = build.render_url(app, project, route, url, params, place, .when_changed);
     const result = rendered catch |err| {
         if (err == error.EntryNotFound and matched.slug != null) {
             remove_url(app, arena, url);
@@ -89,6 +95,38 @@ fn island(
     remove_island(app, arena, key);
 
     return report(app, batch, url, .removed, "");
+}
+
+const Located = struct {
+    path: []const u8,
+    place: Place,
+};
+
+/// A built page's address as its language and the app's own path: `/pl/about` is `/about`
+/// in Polish.
+fn locate(project: *const Project, arena: std.mem.Allocator, url: []const u8) Located {
+    std.debug.assert(url.len > 0);
+    std.debug.assert(url[0] == '/');
+
+    const all = languages.places(project, arena) catch &.{};
+
+    for (all) |place| {
+        if (place.address.len < 2) {
+            continue;
+        }
+
+        if (model_variant.beneath(place.address, url)) |rest| {
+            return .{
+                .path = rest,
+                .place = place,
+            };
+        }
+    }
+
+    return .{
+        .path = url,
+        .place = if (all.len > 0) all[0] else .{},
+    };
 }
 
 /// The observer's window into a rebuild. A removal or a failure is always said: a file
@@ -136,20 +174,36 @@ pub fn record_pages(
             continue;
         }
 
-        var sdk_ctx = identity_module.context(project, arena, .anonymous);
-        const got = registry.SDK.dispatch(&sdk_ctx, record_operations.Get, .{
-            .id = key[prefix.len..],
-        }) catch continue;
-        const slug = got.record.slug orelse continue;
+        const listed = languages.places(project, arena) catch &.{};
+        const all: []const Place = if (listed.len == 0) &.{.{}} else listed;
 
-        written += routes_of(app, project, arena, slug);
+        for (all) |place| {
+            var sdk_ctx = identity_module.context(project, arena, .anonymous);
+            const got = registry.SDK.dispatch(&sdk_ctx, record_operations.Get, .{
+                .id = key[prefix.len..],
+                .variant = if (place.variant.len > 0) place.variant else null,
+            }) catch continue;
+            const slug = got.record.slug orelse continue;
+
+            written += routes_of(app, project, arena, got.record.type, slug, place);
+        }
     }
 
     return written;
 }
 
-fn routes_of(app: *App, project: *const Project, arena: std.mem.Allocator, slug: []const u8) u32 {
+/// The record's pages again: each `[slug]` route whose template reads the record's type, never
+/// another type's route that happens to take the same slug.
+fn routes_of(
+    app: *App,
+    project: *const Project,
+    arena: std.mem.Allocator,
+    type_handle: []const u8,
+    slug: []const u8,
+    place: Place,
+) u32 {
     std.debug.assert(slug.len > 0);
+    std.debug.assert(type_handle.len > 0);
     std.debug.assert(app.output != null);
 
     var written: u32 = 0;
@@ -159,11 +213,18 @@ fn routes_of(app: *App, project: *const Project, arena: std.mem.Allocator, slug:
             continue;
         }
 
-        const url = engine.substitute(arena, route.pattern, slug) catch return written;
+        const read = build.entry_type_of(&app.pages().templates[route.template]) orelse continue;
+
+        if (!std.mem.eql(u8, read, type_handle)) {
+            continue;
+        }
+
+        const in_app = engine.substitute(arena, route.pattern, slug) catch return written;
+        const url = model_variant.under(arena, place.address, in_app) catch return written;
         const params: context_module.Params = .{
             .slug = slug,
         };
-        const rendered = build.render_url(app, project, route, url, params, .when_changed);
+        const rendered = build.render_url(app, project, route, url, params, place, .when_changed);
         const result = rendered catch |err| {
             report_module.err_reason(reason_of(app), "apps: {s}: {s}: {s}", .{
                 app.spec.name,

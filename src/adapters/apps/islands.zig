@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const visitor = @import("visitor.zig");
+const framed = @import("framed.zig");
 const http = @import("../../lib/http.zig");
 const sdk = @import("../../sdk.zig");
 const apps_adapter = @import("../apps.zig");
@@ -17,6 +18,7 @@ const build = @import("build.zig");
 const Project = @import("../../server/project.zig").Project;
 const identity_module = @import("../rest/identity.zig");
 const App = @import("state.zig").App;
+const Place = @import("../../model/variant.zig").Place;
 const Island = @import("../../template.zig").Island;
 
 const Request = http.Request;
@@ -58,7 +60,7 @@ pub fn island(
 
     if (key.len == 0) {
         if (http.Form.query_param(ctx.arena, request.query(), "keys")) |keys| {
-            return batch(app, project, request, response, ctx, keys);
+            return batch(app, project, target.place, request, response, ctx, keys);
         }
     }
 
@@ -77,20 +79,21 @@ pub fn island(
     }
 
     if (door == .private) {
-        return private_island(app, project, request, response, ctx, found);
+        return private_island(app, project, target.place, request, response, ctx, found);
     }
 
     if (found.dynamic) {
-        return dynamic_island(app, project, request, response, ctx, found);
+        return dynamic_island(app, project, target.place, request, response, ctx, found);
     }
 
-    return static_island(app, project, key, request, response, ctx, found);
+    return static_island(app, project, target.place, key, request, response, ctx, found);
 }
 
 /// A public, static island: the built file when the last build wrote it, else rendered now.
 fn static_island(
     app: *App,
     project: *const Project,
+    place: Place,
     key: []const u8,
     request: *Request,
     response: *Response,
@@ -102,7 +105,9 @@ fn static_island(
 
     try response.set_header("Access-Control-Allow-Origin", "*");
 
-    if (build.built_island(app, ctx.arena, key)) |html| {
+    const built = if (place.variant.len == 0) build.built_island(app, ctx.arena, key) else null;
+
+    if (built) |html| {
         const cache: apps_adapter.Cache = .{
             .max_age = found.max_age,
         };
@@ -120,6 +125,7 @@ fn static_island(
         .project = project,
         .app = app,
         .request = request,
+        .place = place,
     });
 
     try response.set_body(.ok, "text/html; charset=utf-8", html);
@@ -129,6 +135,7 @@ fn static_island(
 fn dynamic_island(
     app: *App,
     project: *const Project,
+    place: Place,
     request: *Request,
     response: *Response,
     ctx: *HttpContext,
@@ -156,6 +163,7 @@ fn dynamic_island(
         .project = project,
         .app = app,
         .request = request,
+        .place = place,
         .live = true,
         .caller = Context.visitor(project, app, ctx.arena, request),
         .visitor_id = try visitor.ensure(project, request, response, ctx.arena),
@@ -169,6 +177,7 @@ fn dynamic_island(
 fn batch(
     app: *App,
     project: *const Project,
+    place: Place,
     request: *Request,
     response: *Response,
     ctx: *HttpContext,
@@ -211,12 +220,16 @@ fn batch(
             visitor_id = try visitor.ensure(project, request, response, ctx.arena);
         }
 
-        const built = if (found.dynamic) null else build.built_island(app, ctx.arena, key);
+        const built = if (found.dynamic or place.variant.len > 0)
+            null
+        else
+            build.built_island(app, ctx.arena, key);
         const html = built orelse try pages.render_fragment(ctx.arena, app, found, .{
             .arena = ctx.arena,
             .project = project,
             .app = app,
             .request = request,
+            .place = place,
             .live = found.dynamic,
             .caller = if (found.dynamic) caller else .anonymous,
             .visitor_id = if (found.dynamic) visitor_id else "",
@@ -246,6 +259,7 @@ fn batch(
 fn private_island(
     app: *App,
     project: *const Project,
+    place: Place,
     request: *Request,
     response: *Response,
     ctx: *HttpContext,
@@ -261,6 +275,7 @@ fn private_island(
         .project = project,
         .app = app,
         .request = request,
+        .place = place,
         .live = found.dynamic,
         .caller = if (found.dynamic)
             Context.visitor(project, app, ctx.arena, request)
@@ -277,6 +292,11 @@ fn cross_site(request: *const Request) bool {
     std.debug.assert(islands_prefix.len > 1);
 
     const from = request.header("sec-fetch-site") orelse return false;
+
+    // The administrator's frame, as a visitor (`framed.zig`).
+    if (framed.from_frame(request)) {
+        return false;
+    }
 
     return std.mem.eql(u8, from, "cross-site");
 }

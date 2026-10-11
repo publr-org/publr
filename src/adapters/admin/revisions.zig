@@ -27,20 +27,17 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     const full = registry.SDK.dispatch(&session.ctx, record_operations.Get, .{
         .id = id,
     }) catch |err| return admin.fail(&session, err, back);
-    const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
-        .type = full.record.type,
-    }) catch |err| return admin.fail(&session, err, back);
+    const asked = admin.query_param(&session, "before") orelse "0";
+    const before = std.fmt.parseInt(i64, asked, 10) catch 0;
     const listed = registry.SDK.dispatch(&session.ctx, snapshots.List, .{
         .id = id,
-        .limit = 1000,
+        .before = before,
     }) catch |err| return admin.fail(&session, err, back);
     const arena = session.arena;
     const record_title = if (full.record.title.len > 0) full.record.title else full.record.id;
     var rows: std.ArrayList(views.Revisions.RowsItem) = .empty;
-    var index = listed.snapshots.len;
 
-    while (index > 0) : (index -= 1) {
-        const item = listed.snapshots[index - 1];
+    for (listed.snapshots) |item| {
         const href = std.fmt.allocPrint(arena, "/admin/content/{s}/revisions/{d}", .{
             full.record.id,
             item.seq,
@@ -50,7 +47,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             .href = href,
             .seq = std.fmt.allocPrint(arena, "{d}", .{item.seq}) catch return error.OutOfMemory,
             .kind = item.kind,
-            .title = title_of(arena, item.document, got.definition.title_field),
+            .title = item.title,
             .at = admin.time_text(arena, item.at),
             .by = item.by orelse "",
         }) catch return error.OutOfMemory;
@@ -64,9 +61,10 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             },
         },
     }, .ok, views.Revisions, .{
-        .title = std.fmt.allocPrint(arena, "Versions of {s}", .{record_title}) catch {
-            return error.OutOfMemory;
-        },
+        .title = try session.translated_with("Versions of {record}", &.{.{
+            .name = "record",
+            .value = record_title,
+        }}),
         .record_title = record_title,
         .record_href = try record_href(arena, full.record.id),
         .status = full.record.status,
@@ -74,6 +72,13 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .updated = admin.time_text(arena, full.record.updated_at),
         .updated_by = full.record.updated_by orelse "",
         .rows = rows.items,
+        .older_href = if (listed.next_before == 0)
+            ""
+        else
+            try std.fmt.allocPrint(arena, "/admin/content/{s}/revisions?before={d}", .{
+                full.record.id,
+                listed.next_before,
+            }),
     });
 }
 
@@ -110,19 +115,27 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
             },
         },
     }, .ok, views.Revision, .{
-        .title = std.fmt.allocPrint(arena, "Version {d} of {s}", .{ seq, record_title }) catch {
-            return error.OutOfMemory;
-        },
-        .versions_title = std.fmt.allocPrint(arena, "Versions of {s}", .{record_title}) catch {
-            return error.OutOfMemory;
-        },
+        .title = try session.translated_with("Version {number} of {record}", &.{
+            .{
+                .name = "number",
+                .value = try std.fmt.allocPrint(arena, "{d}", .{seq}),
+            },
+            .{
+                .name = "record",
+                .value = record_title,
+            },
+        }),
+        .versions_title = try session.translated_with("Versions of {record}", &.{.{
+            .name = "record",
+            .value = record_title,
+        }}),
         .versions_href = std.fmt.allocPrint(arena, "/admin/content/{s}/revisions", .{
             full.record.id,
         }) catch return error.OutOfMemory,
         .record_href = try record_href(arena, full.record.id),
         .kind = item.kind,
         .at = admin.time_text(arena, item.at),
-        .by = item.by orelse "nobody",
+        .by = item.by orelse try session.translated("nobody"),
         .fields = fields,
         .restore_action = std.fmt.allocPrint(arena, "/admin/content/{s}/restore", .{
             full.record.id,
@@ -217,23 +230,6 @@ fn number_field(form: *const Form, name: []const u8) ?i64 {
     const text = form.text(name) orelse return null;
 
     return std.fmt.parseInt(i64, text, 10) catch null;
-}
-
-fn title_of(arena: std.mem.Allocator, document: []const u8, title_field: []const u8) []const u8 {
-    std.debug.assert(title_field.len > 0);
-    std.debug.assert(json_bytes_max > 0);
-
-    const parsed = @import("../../lib/json.zig").parse(std.json.Value, arena, document, .{}) catch {
-        return "";
-    };
-
-    if (parsed != .object) {
-        return "";
-    }
-
-    const title = parsed.object.get(title_field) orelse return "";
-
-    return if (title == .string) title.string else "";
 }
 
 fn snapshot_object(arena: std.mem.Allocator, text: []const u8) error{Invalid}!std.json.ObjectMap {

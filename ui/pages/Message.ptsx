@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { FormPage } from "../layouts/FormPage.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 
@@ -18,7 +19,7 @@ export function Message({ heading, text, problems, link_href, link_label }: Mess
       title={heading}
       description={text.length > 0 ? text : undefined}
       problems={problems}
-      problems_title="What was refused"
+      problems_title={Publr.t("What was refused")}
       actions={
         <Button href={link_href} hierarchy="secondary">
           {link_label}

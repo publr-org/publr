@@ -19,6 +19,7 @@ const Value = std.json.Value;
 const Problem = views.UserForm.ProblemsItem;
 
 pub const back = "/admin/settings/users";
+const page_size: u32 = 50;
 
 /// What the form shows: the account, or what was typed for a new one.
 const Shape = struct {
@@ -41,7 +42,11 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(ctx.user_data != null);
 
     var session = try admin.require(request, response, ctx) orelse return;
-    const listed = registry.SDK.dispatch(&session.ctx, user_operations.List, .{}) catch |err| {
+    const offset = admin.pager.offset_of(&session);
+    const listed = registry.SDK.dispatch(&session.ctx, user_operations.List, .{
+        .offset = offset,
+        .limit = page_size,
+    }) catch |err| {
         return admin.fail(&session, err, "/admin/settings");
     };
     const arena = session.arena;
@@ -59,8 +64,20 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         };
     }
 
+    const pages = try admin.pager.links(
+        arena,
+        back,
+        offset,
+        @intCast(rows.len),
+        listed.total,
+        page_size,
+    );
+
     try admin.screen(&session, .ok, views.Users, .{
         .users = rows,
+        .range = pages.range,
+        .previous_href = pages.previous_href,
+        .next_href = pages.next_href,
     });
 }
 
@@ -92,7 +109,9 @@ pub fn create(request: *Request, response: *Response, ctx: *Context) Error!void 
         .password = password,
         .password_link = password == null,
     }) catch |err| {
-        shape.problem = reason(err, .create) orelse return admin.fail(session, err, back);
+        const said = try reason(session, err, .create);
+
+        shape.problem = said orelse return admin.fail(session, err, back);
 
         return render_form(session, .unprocessable_content, shape);
     };
@@ -144,7 +163,8 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
         return;
     }
 
-    const document = fields.decode.document_of(session.arena, shape.defs, form) orelse {
+    const form_defs = try editor.varied(session, shape.defs, null);
+    const document = fields.decode.document_of(session.arena, form_defs, form) orelse {
         return admin.fail(session, error.Invalid, back);
     };
     _ = registry.SDK.dispatch(&session.ctx, user_operations.Update, .{
@@ -153,7 +173,9 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
         .roles = shape.roles,
         .document = document,
     }) catch |err| {
-        shape.problem = reason(err, .update) orelse return admin.fail(session, err, back);
+        const said = try reason(session, err, .update);
+
+        shape.problem = said orelse return admin.fail(session, err, back);
         shape.problems = try problems_of(session, id, document);
         shape.document = parse(session.arena, document);
 
@@ -195,7 +217,9 @@ pub fn delete(request: *Request, response: *Response, ctx: *Context) Error!void 
     }) catch |err| {
         var shape = try load(session, id) orelse return;
 
-        shape.problem = reason(err, .delete) orelse return admin.fail(session, err, back);
+        const said = try reason(session, err, .delete);
+
+        shape.problem = said orelse return admin.fail(session, err, back);
 
         return render_form(session, .unprocessable_content, shape);
     };
@@ -237,13 +261,14 @@ fn reshaped(session: *Session, shape: *Shape, form: *const admin.Form) Error!boo
     std.debug.assert(form.len <= admin.form_pairs_max);
 
     const verb = form.text("reshape") orelse return false;
-    const posted = fields.decode.value_of(session.arena, shape.defs, form) catch {
+    const form_defs = try editor.varied(session, shape.defs, null);
+    const posted = fields.decode.value_of(session.arena, form_defs, form) catch {
         try admin.fail(session, error.Invalid, back);
 
         return true;
     };
 
-    shape.document = fields.reshape.apply(session.arena, shape.defs, posted, verb, form) catch {
+    shape.document = fields.reshape.apply(session.arena, form_defs, posted, verb, form) catch {
         try admin.fail(session, error.Invalid, back);
 
         return true;
@@ -302,13 +327,16 @@ fn field_rows(session: *Session, shape: Shape) Error!?admin.render.Node {
     };
     const context: fields.Context = .{
         .arena = session.arena,
+        .session = session,
         .users = try editor.user_options(session, def.fields),
         .referenced = try editor.referenced_of(session, def, shape.document),
         .types = try editor.types_of(session, def),
         .terms = try editor.terms_of(session, def),
         .slug_prefix = "",
+        .files = try fields.media.files_of(session, def.fields, shape.document),
     };
-    const rows = try fields.rows_of(context, shape.defs, shape.document);
+    const form_defs = try editor.varied(session, shape.defs, shape.document);
+    const rows = try fields.rows_of(context, form_defs, shape.document);
 
     return try admin.render.view(session.arena, views.RecordFields, .{
         .fields = rows,
@@ -325,7 +353,7 @@ fn render_form(session: *Session, status: admin.Status, shape: Shape) Error!void
     const own = try std.fmt.allocPrint(arena, "{s}/{s}", .{ back, shape.id });
 
     try admin.screen(session, status, views.UserForm, .{
-        .title = if (is_new) "New user" else shape.name,
+        .title = if (is_new) try session.translated("New user") else shape.name,
         .action = if (is_new) back ++ "/create" else try std.mem.concat(arena, u8, &.{
             own,
             "/update",
@@ -341,6 +369,7 @@ fn render_form(session: *Session, status: admin.Status, shape: Shape) Error!void
         .delete_action = try std.mem.concat(arena, u8, &.{ own, "/delete" }),
         .problem = shape.problem,
         .fields = try field_rows(session, shape),
+        .languages = try editor.languages_of(views.UserForm.LanguagesItem, session),
         .problems = shape.problems,
     });
 }
@@ -349,7 +378,7 @@ const Verb = enum { create, update, delete };
 
 /// What a refused write is told in the form's own words; null for what is not the
 /// form's fault.
-fn reason(err: anyerror, verb: Verb) ?[]const u8 {
+fn reason(session: *const Session, err: anyerror, verb: Verb) Error!?[]const u8 {
     std.debug.assert(@errorName(err).len > 0);
     std.debug.assert(@typeInfo(Verb).@"enum".fields.len == 3);
 
@@ -357,13 +386,13 @@ fn reason(err: anyerror, verb: Verb) ?[]const u8 {
         error.Invalid => switch (verb) {
             .create => "the name or the email is not valid, no role is ticked, or the " ++
                 "password is shorter than 8 characters",
-            .update => "the name is not valid, or no role is ticked",
-            .delete => "you cannot delete yourself",
+            .update => try session.translated("the name is not valid, or no role is ticked"),
+            .delete => try session.translated("you cannot delete yourself"),
         },
         error.Conflict => switch (verb) {
-            .create => "an account with that email already exists",
-            .update => "the last admin must stay an admin",
-            .delete => "the last admin cannot be deleted",
+            .create => try session.translated("an account with that email already exists"),
+            .update => try session.translated("the last admin must stay an admin"),
+            .delete => try session.translated("the last admin cannot be deleted"),
         },
         else => null,
     };
@@ -493,7 +522,7 @@ test "users under settings: invite by link, rename, reissue, delete; the rail si
     );
     const invited = try flow.call("POST", back ++ "/create", invite);
     try std.testing.expectEqual(.ok, invited.status);
-    const link_prefix = "/api/auth/set-password?token=";
+    const link_prefix = "/admin/welcome?token=";
     try std.testing.expect(std.mem.indexOf(u8, invited.body, link_prefix) != null);
     const own_action = "action=\"" ++ back ++ "/";
     const own_start = std.mem.indexOf(u8, invited.body, own_action).? + own_action.len;

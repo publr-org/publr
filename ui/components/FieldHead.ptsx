@@ -64,19 +64,19 @@ export function FieldHead({ label, name, label_count, name_count, is_new }: Fiel
     <section class="space-y-5">
       <Field>
         <FieldLabel htmlFor="label" required>
-          Label
+          {Publr.t("Label")}
         </FieldLabel>
         <Input
           id="label"
           name="label"
           value={state.label}
           required
-          placeholder="For example Title, Author, Published at"
+          placeholder={Publr.t("For example Title, Author, Published at")}
           maxLength={128}
           onInput={onLabel}
         />
         <div class="flex items-baseline justify-between gap-4">
-          <FieldDescription>Shown above the field in the editor</FieldDescription>
+          <FieldDescription>{Publr.t("Shown above the field in the editor")}</FieldDescription>
           <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
             {state.label_count}
           </Text>
@@ -84,7 +84,7 @@ export function FieldHead({ label, name, label_count, name_count, is_new }: Fiel
       </Field>
       <Field>
         <FieldLabel htmlFor="name" required>
-          Name
+          {Publr.t("Name")}
         </FieldLabel>
         <Input
           id="name"
@@ -96,8 +96,7 @@ export function FieldHead({ label, name, label_count, name_count, is_new }: Fiel
         />
         <div class="flex items-baseline justify-between gap-4">
           <FieldDescription>
-            Generated from the label. Lowercase letters, digits and underscores; how the field is
-            called in the API and templates
+            {Publr.t("Generated from the label. Lowercase letters, digits and underscores; how the field is called in the API and templates")}
           </FieldDescription>
           <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
             {state.name_count}

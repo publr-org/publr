@@ -21,27 +21,37 @@ export function Crumbs({ title, parents }: CrumbsProps) {
         <BreadcrumbList>
           {Publr.request.admin.area === "overview" && (
             <BreadcrumbItem>
-              <BreadcrumbPage>Overview</BreadcrumbPage>
+              <BreadcrumbPage>{Publr.t("Overview")}</BreadcrumbPage>
             </BreadcrumbItem>
           )}
           {Publr.request.admin.area === "content" && (
             <BreadcrumbItem>
-              <BreadcrumbLink href="/admin/content">Content</BreadcrumbLink>
+              <BreadcrumbLink href="/admin/content">{Publr.t("Content")}</BreadcrumbLink>
             </BreadcrumbItem>
           )}
           {Publr.request.admin.area === "media" && title === "Media" && (
             <BreadcrumbItem>
-              <BreadcrumbPage>Media</BreadcrumbPage>
+              <BreadcrumbPage>{Publr.t("Media")}</BreadcrumbPage>
             </BreadcrumbItem>
           )}
           {Publr.request.admin.area === "media" && title !== "Media" && (
             <BreadcrumbItem>
-              <BreadcrumbLink href="/admin/media">Media</BreadcrumbLink>
+              <BreadcrumbLink href="/admin/media">{Publr.t("Media")}</BreadcrumbLink>
+            </BreadcrumbItem>
+          )}
+          {Publr.request.admin.area === "design" && (
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/admin/design/system">{Publr.t("Design")}</BreadcrumbLink>
+            </BreadcrumbItem>
+          )}
+          {Publr.request.admin.area === "section" && (
+            <BreadcrumbItem>
+              <BreadcrumbLink href={Publr.request.admin.section_href}>{Publr.request.admin.section}</BreadcrumbLink>
             </BreadcrumbItem>
           )}
           {Publr.request.admin.area === "settings" && (
             <BreadcrumbItem>
-              <BreadcrumbLink href="/admin/settings">Settings</BreadcrumbLink>
+              <BreadcrumbLink href="/admin/settings">{Publr.t("Settings")}</BreadcrumbLink>
             </BreadcrumbItem>
           )}
           {parents.map((parent) => (

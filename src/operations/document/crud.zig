@@ -54,6 +54,8 @@ pub const ListInput = struct {
     order: Order = .updated_desc,
     limit: u32 = 50,
     offset: u32 = 0,
+    /// `slug` matches this variant's slug (`slug@pl`) first, the main one when none does.
+    variant: []const u8 = "",
 };
 
 pub fn Of(comptime Domain: type) type {
@@ -82,13 +84,17 @@ pub fn Of(comptime Domain: type) type {
                 return error.Invalid;
             }
 
-            const app = try app_of(ctx, wanted_app);
-
             const row = try definitions.find(ctx, definition) orelse return error.NotFound;
+
+            if (!definitions.visible(granted, row.def)) {
+                return error.NotFound;
+            }
 
             if (!granted.allows_type(row.def.handle)) {
                 return error.Denied;
             }
+
+            const app = try app_of(ctx, row.def, wanted_app);
 
             try Domain.config.check_create(ctx, row);
 
@@ -128,10 +134,22 @@ pub fn Of(comptime Domain: type) type {
             };
         }
 
-        /// The app a new document belongs to: the one asked for (empty: the project's own),
-        /// else the app the request came through.
-        fn app_of(ctx: *const Ctx, wanted: ?[]const u8) Error!?[]const u8 {
+        /// The app a new document of a design type belongs to (each app has its own
+        /// templates, patterns and moodboard): the one asked for, else the app the request
+        /// came through. A document of any other type has none: its type says where it lives.
+        fn app_of(
+            ctx: *const Ctx,
+            def: model.content_type.Def,
+            wanted: ?[]const u8,
+        ) Error!?[]const u8 {
             std.debug.assert(ctx.app.len == 0 or model.app.valid_name(ctx.app));
+            std.debug.assert(def.handle.len > 0);
+
+            if (!model.design.is_design(def.handle)) {
+                const asked = wanted orelse "";
+
+                return if (asked.len == 0) null else error.Invalid;
+            }
 
             const app = wanted orelse ctx.app;
 
@@ -202,7 +220,9 @@ pub fn Of(comptime Domain: type) type {
                 return if (present) slot else error.NotFound;
             }
 
-            if (purpose == .edit and row.changed and ctx.caller != .anonymous) {
+            std.debug.assert(purpose == .edit or purpose == .delivery);
+
+            if (row.changed and reads_latest(ctx)) {
                 return values.pending;
             }
 
@@ -242,8 +262,15 @@ pub fn Of(comptime Domain: type) type {
 
             const constraints = try constraints_of(ctx, in.filters);
             var statuses_buffer: [model.status.statuses_max][]const u8 = undefined;
-            const query = try query_of(ctx, in, granted, span, constraints, &statuses_buffer);
-            const rows = try documents.list(ctx.db, ctx.arena, query);
+            var query = try query_of(ctx, in, granted, span, constraints, &statuses_buffer);
+            var rows = try documents.list(ctx.db, ctx.arena, query);
+
+            // A record not translated into the variant keeps its main slug there too.
+            if (rows.len == 0 and in.slug != null and in.variant.len > 0) {
+                query.filter.?.field = model.variant.split(query.filter.?.field).name;
+                rows = try documents.list(ctx.db, ctx.arena, query);
+            }
+
             var visible: std.ArrayList(Record) = .empty;
 
             for (rows) |record| {
@@ -335,10 +362,22 @@ pub fn Of(comptime Domain: type) type {
                         .name = name,
                     },
                 } else null,
+                .latest = reads_latest(ctx),
                 .order = in.order,
                 .limit = in.limit,
                 .offset = in.offset,
             };
+        }
+
+        /// Whose reads see each record's latest copy (its pending changes, else its live
+        /// document): anyone signed in, the admin and the API, unless the read is for a page
+        /// drawn for a visitor (`delivery`), which sees live copies only. A preview is not
+        /// delivery: it reads the latest.
+        pub fn reads_latest(ctx: *const Ctx) bool {
+            std.debug.assert(ctx.now_ms >= 0);
+            std.debug.assert(!(ctx.delivery and ctx.preview));
+
+            return !ctx.delivery and ctx.caller != .anonymous;
         }
 
         /// A grant limited to the caller's own records asks the store for exactly those, so a
@@ -428,9 +467,13 @@ pub fn Of(comptime Domain: type) type {
             }
 
             const slug_field = model.document.slug_field_of(def) orelse return error.Invalid;
+            const varied = in.variant.len > 0 and slug_field.variants;
 
             return .{
-                .field = slug_field.name,
+                .field = if (varied)
+                    try model.variant.key_of(arena, slug_field.name, in.variant)
+                else
+                    slug_field.name,
                 .text = slug,
             };
         }
@@ -500,13 +543,12 @@ pub fn Of(comptime Domain: type) type {
                 )) .taxonomy else if (row.def.kind == .settings) .settings else .content,
                 .type = row.def.handle,
             });
-            var checked: [model.field.fields_max]model.field.Def = undefined;
             model.validate.validate_document(
                 known,
-                model.field_group.checked_fields(
+                try model.field_group.checked_fields(
+                    ctx.arena,
                     row.def.fields,
                     active,
-                    &checked,
                 ),
                 parsed,
                 ctx.now_ms,

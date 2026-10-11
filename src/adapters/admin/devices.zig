@@ -14,6 +14,7 @@ const Error = admin.Error;
 const views = admin.views;
 
 pub const back = "/admin/settings/devices";
+const page_size: u32 = 50;
 
 pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .get or request.method() == .head);
@@ -21,8 +22,11 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     var session = try admin.require(request, response, ctx) orelse return;
     const everyone = session.ctx.caller.holds(role.admin);
+    const offset = admin.pager.offset_of(&session);
     const asked: people.List.In = .{
         .all = everyone,
+        .offset = offset,
+        .limit = page_size,
     };
     const listed = registry.SDK.dispatch(&session.ctx, people.List, asked) catch |err| {
         return admin.fail(&session, err, "/admin/settings");
@@ -41,9 +45,21 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         };
     }
 
+    const pages = try admin.pager.links(
+        arena,
+        back,
+        offset,
+        @intCast(rows.len),
+        listed.total,
+        page_size,
+    );
+
     try admin.screen(&session, .ok, views.Devices, .{
         .everyone = everyone,
         .devices = rows,
+        .range = pages.range,
+        .previous_href = pages.previous_href,
+        .next_href = pages.next_href,
     });
 }
 
@@ -111,10 +127,15 @@ pub fn decide(request: *Request, response: *Response, ctx: *Context) Error!void 
             .scope = scope,
         }) catch |err| return admin.fail(session, err, back);
 
-        const text = try std.fmt.allocPrint(session.arena, "{s} can act for you now. " ++
-            "Go back to it; this page can be closed.", .{asked.name});
+        const acts = try session.translated_with("{device} can act for you now.", &.{.{
+            .name = "device",
+            .value = asked.name,
+        }});
+        const close = try session.translated("Go back to it; this page can be closed.");
+        const text = try std.fmt.allocPrint(session.arena, "{s} {s}", .{ acts, close });
+        const heading = try session.translated("Device approved");
 
-        return admin.message(session, "Device approved", text, &[_]Problem{}, back);
+        return admin.message(session, heading, text, &[_]Problem{}, back);
     }
 
     _ = registry.SDK.dispatch(&session.ctx, people.Deny, .{
@@ -123,9 +144,13 @@ pub fn decide(request: *Request, response: *Response, ctx: *Context) Error!void 
         return admin.fail(session, err, back);
     };
 
-    const text = try std.fmt.allocPrint(session.arena, "{s} was turned away.", .{asked.name});
+    const text = try session.translated_with("{device} was turned away.", &.{.{
+        .name = "device",
+        .value = asked.name,
+    }});
+    const heading = try session.translated("Device denied");
 
-    try admin.message(session, "Device denied", text, &[_]Problem{}, back);
+    try admin.message(session, heading, text, &[_]Problem{}, back);
 }
 
 const Problem = struct {
@@ -137,12 +162,12 @@ fn gone(session: *const admin.Session) Error!void {
     std.debug.assert(session.signed_in());
     std.debug.assert(device_operations.approve_path.len > 0);
 
-    try admin.message(
-        session,
-        "This request is not waiting",
-        "It was approved or denied already, or ten minutes passed. Ask the device to sign " ++
-            "in again for a new link.",
-        &[_]Problem{},
-        back,
+    const passed = try session.translated(
+        "It was approved or denied already, or ten minutes passed.",
     );
+    const again = try session.translated("Ask the device to sign in again for a new link.");
+    const text = try std.fmt.allocPrint(session.arena, "{s} {s}", .{ passed, again });
+    const heading = try session.translated("This request is not waiting");
+
+    try admin.message(session, heading, text, &[_]Problem{}, back);
 }

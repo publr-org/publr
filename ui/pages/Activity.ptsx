@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
@@ -48,25 +49,25 @@ export type ActivityProps = {
 export function Activity({ tab, entries, older_href }: ActivityProps) {
   return (
     <IndexPage
-      title="Logs"
-      parents={[{ label: "System settings", href: "/admin/settings/system" }]}
-      description="Every change made, and every call refused or failed, kept for good. Nothing here can be changed."
+      title={Publr.t("Logs")}
+      parents={[{ label: Publr.t("System settings"), href: "/admin/settings/system" }]}
+      description={Publr.t("Every change made, and every call refused or failed, kept for good. Nothing here can be changed.")}
       tabs={
-        <TabNav label="Logs">
+        <TabNav label={Publr.t("Logs")}>
           <TabNavLink href="/admin/settings/system/activity" active={tab === "activity"}>
-            Activity log
+            {Publr.t("Activity log")}
           </TabNavLink>
           <TabNavLink href="/admin/settings/system/errors" active={tab === "errors"}>
-            Error log
+            {Publr.t("Error log")}
           </TabNavLink>
         </TabNav>
       }
       empty={
         entries.length === 0 && (
           <Empty>
-            <EmptyTitle>{tab === "errors" ? "No errors" : "No activity yet"}</EmptyTitle>
+            <EmptyTitle>{tab === "errors" ? Publr.t("No errors") : Publr.t("No activity yet")}</EmptyTitle>
             <EmptyDescription>
-              {tab === "errors" ? "Nothing has been refused or failed." : "Nothing has been done yet."}
+              {tab === "errors" ? Publr.t("Nothing has been refused or failed.") : Publr.t("Nothing has been done yet.")}
             </EmptyDescription>
           </Empty>
         )
@@ -74,7 +75,7 @@ export function Activity({ tab, entries, older_href }: ActivityProps) {
       footer={
         older_href !== "" && (
           <Button href={older_href} hierarchy="secondary" size="sm">
-            Older
+            {Publr.t("Older")}
           </Button>
         )
       }
@@ -82,12 +83,12 @@ export function Activity({ tab, entries, older_href }: ActivityProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Time</TableHead>
-            <TableHead>Who</TableHead>
-            <TableHead>Operation</TableHead>
-            <TableHead>{tab === "errors" ? "Error" : "Changed"}</TableHead>
-            <TableHead>Input</TableHead>
+            <TableHead>{Publr.t("Date")}</TableHead>
+            <TableHead>{Publr.t("Time")}</TableHead>
+            <TableHead>{Publr.t("Who")}</TableHead>
+            <TableHead>{Publr.t("Operation")}</TableHead>
+            <TableHead>{tab === "errors" ? Publr.t("Error") : Publr.t("Changed")}</TableHead>
+            <TableHead>{Publr.t("Input")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -98,18 +99,18 @@ export function Activity({ tab, entries, older_href }: ActivityProps) {
                   <DialogTrigger asChild>
                     <button
                       type="button"
-                      aria-label={`Open ${entry.operation} at ${entry.date} ${entry.time}`}
+                      aria-label={Publr.t("Open {operation} at {date} {time}", { operation: entry.operation, date: entry.date, time: entry.time })}
                       class="absolute inset-0 cursor-pointer"
                     />
                   </DialogTrigger>
                   <DialogContent classes="max-w-2xl">
                     <DialogTitle>{entry.operation}</DialogTitle>
-                    <DialogDescription>{`${entry.date} ${entry.time} UTC, ${entry.who}`}</DialogDescription>
+                    <DialogDescription>{Publr.t("{date} {time} UTC, {who}", { date: entry.date, time: entry.time, who: entry.who })}</DialogDescription>
                     <CodeBlock classes="mt-4 max-h-[60vh] overflow-y-auto">{entry.json}</CodeBlock>
                     <div class="mt-5 flex justify-end">
                       <DialogClose asChild>
                         <Button type="button" hierarchy="secondary">
-                          Close
+                          {Publr.t("Close")}
                         </Button>
                       </DialogClose>
                     </div>

@@ -3,6 +3,7 @@ const field = @import("field.zig");
 const kinds = @import("kinds.zig");
 const convert = @import("convert.zig");
 const document_module = @import("document.zig");
+const variant = @import("variant.zig");
 
 const Def = field.Def;
 const Kind = kinds.Kind;
@@ -16,6 +17,8 @@ pub const Plan = struct {
     allowed: bool,
     needs_rewrite: bool,
     removed: []const []const u8,
+    /// Fields that stop holding variants: their `@` values go with the rewrite.
+    unvaried: []const []const u8 = &.{},
 };
 
 const Leaf = struct {
@@ -51,21 +54,62 @@ pub fn plan(
         const same_kind = std.mem.eql(u8, before.def.kind, after.def.kind);
         const same_many = before.def.many == after.def.many;
         const same_search = before.def.searchable == after.def.searchable;
+        const same_variants = before.def.variants == after.def.variants;
 
         if (!same_kind and !convert.allowed(known, before.def.kind, after.def.kind)) {
             allowed = false;
         }
 
-        if (!same_kind or !same_many or !same_search) {
+        if (!same_kind or !same_many or !same_search or !same_variants) {
             needs_rewrite = true;
         }
     }
 
+    var unvaried: std.ArrayList([]const u8) = .empty;
+    const varied = try variants_changed(arena, old, new, "", &unvaried);
+
     return .{
         .allowed = allowed,
-        .needs_rewrite = needs_rewrite,
+        .needs_rewrite = needs_rewrite or varied,
         .removed = removed.items,
+        .unvaried = unvaried.items,
     };
+}
+
+/// Whether any field, at any depth, starts or stops holding variants; the paths of those that
+/// stop go in `unvaried`.
+fn variants_changed(
+    arena: std.mem.Allocator,
+    old: []const Def,
+    new: []const Def,
+    prefix: []const u8,
+    unvaried: *std.ArrayList([]const u8),
+) !bool {
+    std.debug.assert(prefix.len <= document_module.path_len_max);
+    std.debug.assert(new.len <= field.fields_max);
+
+    var changed = false;
+
+    for (new) |after| {
+        const before = find_def(old, after.name) orelse continue;
+        var buffer: [document_module.path_len_max]u8 = undefined;
+        const path = try arena.dupe(u8, try document_module.join(&buffer, prefix, after.name));
+
+        if (before.variants != after.variants) {
+            changed = true;
+        }
+
+        if (before.variants and !after.variants) {
+            try unvaried.append(arena, path);
+        }
+
+        if (field.is_container(after.kind) and field.is_container(before.kind)) {
+            changed = try variants_changed(arena, before.fields, after.fields, path, unvaried) or
+                changed;
+        }
+    }
+
+    return changed;
 }
 
 fn flatten(
@@ -118,16 +162,22 @@ pub fn convert_document(
 
     var object: std.json.ObjectMap = .empty;
 
-    for (new) |after| {
-        const before = find_def(old, after.name) orelse continue;
-        const value = document.object.get(after.name) orelse continue;
+    var entries = document.object.iterator();
 
-        if (value == .null) {
+    // Each value under its key: the field's own, and with its variants (`name@pl`) while
+    // the field still holds them; turning variants off drops them.
+    while (entries.next()) |entry| {
+        const key = variant.split(entry.key_ptr.*);
+        const after = find_def(new, key.name) orelse continue;
+        const before = find_def(old, key.name) orelse continue;
+        const value = entry.value_ptr.*;
+
+        if (value == .null or (key.code.len > 0 and !(before.variants and after.variants))) {
             continue;
         }
 
         const converted = try convert_value(known, arena, before, after, value);
-        try object.put(arena, try arena.dupe(u8, after.name), converted);
+        try object.put(arena, try arena.dupe(u8, entry.key_ptr.*), converted);
     }
 
     return .{

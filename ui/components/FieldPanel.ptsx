@@ -66,6 +66,12 @@ export type FieldPanelProps = {
   /** Only string, text and richtext fields can be searched. */
   can_search: boolean;
   searchable: boolean;
+  /** The site has a second language (or another variant): the field may hold a value in
+   * each. The setting's words are the plugin's: `Translate`. */
+  can_translate?: boolean;
+  translates?: boolean;
+  translate_label?: string;
+  translate_help?: string;
   /** A top-level text field may be the record's title, the name it goes by in lists. */
   can_title: boolean;
   is_title: boolean;
@@ -133,6 +139,10 @@ export function FieldPanel({
   many,
   can_search,
   searchable,
+  can_translate = false,
+  translates = false,
+  translate_label = "",
+  translate_help = "",
   can_title,
   is_title,
   has_target,
@@ -177,15 +187,15 @@ export function FieldPanel({
           <input type="hidden" name="csrf" value={csrf} />
           <input type="hidden" name="kind" value={kind} />
           <input type="hidden" name="parent" value={parent} />
-          <div role="tablist" aria-label="Field settings" onKeyDown={tabKeys} class="flex flex-wrap gap-1">
+          <div role="tablist" aria-label={Publr.t("Field settings")} onKeyDown={tabKeys} class="flex flex-wrap gap-1">
             <PanelTab id={`${form_id}-tab-general`} panel={`${form_id}-general`}
-              label="General" selected={state.tab === "general"} onClick={selectTab} />
+              label={Publr.t("General")} selected={state.tab === "general"} onClick={selectTab} />
             <PanelTab id={`${form_id}-tab-validation`} panel={`${form_id}-validation`}
-              label="Validation" selected={state.tab === "validation"} onClick={selectTab} />
+              label={Publr.t("Validation")} selected={state.tab === "validation"} onClick={selectTab} />
             <PanelTab id={`${form_id}-tab-presentation`} panel={`${form_id}-presentation`}
-              label="Presentation" selected={state.tab === "presentation"} onClick={selectTab} />
+              label={Publr.t("Presentation")} selected={state.tab === "presentation"} onClick={selectTab} />
             <PanelTab id={`${form_id}-tab-conditions`} panel={`${form_id}-conditions`}
-              label="Conditional Logic" selected={state.tab === "conditions"} onClick={selectTab} />
+              label={Publr.t("Conditional Logic")} selected={state.tab === "conditions"} onClick={selectTab} />
           </div>
           <div id={`${form_id}-general`} role="tabpanel" aria-labelledby={`${form_id}-tab-general`}
             hidden={state.tab !== "general"} class="space-y-8">
@@ -197,8 +207,12 @@ export function FieldPanel({
             is_new={is_new}
           />
           {can_be_many && <FieldMultiplicity many={many} is_new={is_new} />}
-          {(can_title || can_search || has_target || has_taxonomy || has_source || has_choices) && (
+          {(can_title || can_search || can_translate || has_target || has_taxonomy || has_source || has_choices) && (
             <FieldSettings
+              can_translate={can_translate}
+              translates={translates}
+              translate_label={translate_label}
+              translate_help={translate_help}
               can_title={can_title}
               can_be_many={can_be_many}
               is_title={is_title}
@@ -218,11 +232,11 @@ export function FieldPanel({
           {!is_layout && <div>{defaults}</div>}
           </div>
           <div id={`${form_id}-validation`} role="tabpanel" aria-labelledby={`${form_id}-tab-validation`}
-            hidden={state.tab !== "validation"}>{is_layout ? <Text variant="body-sm" tone="muted">Layout elements do not store values.</Text> : rules}</div>
+            hidden={state.tab !== "validation"}>{is_layout ? <Text variant="body-sm" tone="muted">{Publr.t("Layout elements do not store values.")}</Text> : rules}</div>
           <div id={`${form_id}-presentation`} role="tabpanel" aria-labelledby={`${form_id}-tab-presentation`}
             hidden={state.tab !== "presentation"}>{look}</div>
           <div id={`${form_id}-conditions`} role="tabpanel" aria-labelledby={`${form_id}-tab-conditions`}
-            hidden={state.tab !== "conditions"}>{is_layout ? <Text variant="body-sm" tone="muted">Apply conditions to the fields in this section.</Text> : conditions}</div>
+            hidden={state.tab !== "conditions"}>{is_layout ? <Text variant="body-sm" tone="muted">{Publr.t("Apply conditions to the fields in this section.")}</Text> : conditions}</div>
         </form>
         {is_container && !is_new && (
           <FieldChildren

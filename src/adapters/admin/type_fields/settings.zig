@@ -66,6 +66,10 @@ pub fn read(arena: std.mem.Allocator, form: *const Form, kind: Kind, field: *Fie
         set.text.format = std.meta.stringToEnum(settings_options.TextFormat, wanted) orelse .plain;
     }
 
+    if (kind.control == .rich) {
+        set.richtext.formats = try formats_of(arena, form);
+    }
+
     const is_slug = std.mem.eql(u8, kind.id, "slug");
 
     set.slug.lock_on_publish = is_slug and form.get("lock_on_publish") != null;
@@ -260,4 +264,27 @@ test "the look of a kind is read from its own controls" {
     try std.testing.expect(faq.options.container.collapsed);
     try std.testing.expectEqualStrings("question", faq.options.container.label_field);
     try std.testing.expectEqualStrings("Add question", faq.options.container.add_label);
+}
+
+/// The formats ticked on the form; null when all are, so the field keeps no list.
+fn formats_of(
+    arena: std.mem.Allocator,
+    form: *const Form,
+) Error!?[]const settings_options.RichFormat {
+    const all = std.enums.values(settings_options.RichFormat);
+    var ticked: std.ArrayList(settings_options.RichFormat) = .empty;
+
+    std.debug.assert(all.len <= settings_options.list_max);
+
+    for (all) |format| {
+        const name = try std.fmt.allocPrint(arena, "rich_{s}", .{@tagName(format)});
+
+        if (form.get(name) != null) {
+            try ticked.append(arena, format);
+        }
+    }
+
+    std.debug.assert(ticked.items.len <= all.len);
+
+    return if (ticked.items.len == all.len) null else ticked.items;
 }

@@ -13,14 +13,16 @@ export type DocumentProps = {
  * the project is served under, which the page's scripts build addresses with. */
 export function Document({ title, children }: DocumentProps) {
   return (
-    <html lang="en" class="h-full bg-background" data-publr-base={Publr.request.admin.base}>
+    <html lang={Publr.request.admin.locale} class="h-full bg-background" data-publr-base={Publr.request.admin.base} data-variant={Publr.request.admin.variant}>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="publr-csrf" content={Publr.request.session.csrf} />
         <title>{title} · Publr</title>
         <link rel="stylesheet" href="/admin/styles.css" />
+        {Publr.request.admin.messages !== "" && <script src={Publr.request.admin.messages}></script>}
         <script type="module" src="/admin/stores.js"></script>
+        <script type="module" src="/admin/editor/editor/host/admin.js"></script>
       </head>
       <body class="min-h-screen bg-background text-foreground antialiased">
         <Navigation>

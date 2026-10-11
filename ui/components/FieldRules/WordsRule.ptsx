@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -24,8 +25,8 @@ export function WordsRule({
       id="limit_words"
       name="limit_words"
       checked={limit_words}
-      label="Limit word count"
-      description="Specify a minimum and/or maximum allowed number of words"
+      label={Publr.t("Limit word count")}
+      description={Publr.t("Specify a minimum and/or maximum allowed number of words")}
     >
       <div class="flex flex-wrap items-center gap-3">
         <Input
@@ -34,11 +35,11 @@ export function WordsRule({
           type="number"
           min="0"
           value={words_min}
-          placeholder="Min"
+          placeholder={Publr.t("Min")}
           classes="w-32"
         />
         <Text as="span" variant="body-md">
-          and
+          {Publr.t("and")}
         </Text>
         <Input
           id="words_max"
@@ -46,12 +47,12 @@ export function WordsRule({
           type="number"
           min="0"
           value={words_max}
-          placeholder="Max"
+          placeholder={Publr.t("Max")}
           classes="w-32"
         />
       </div>
       <Field>
-        <FieldLabel htmlFor="words_message">Custom error message</FieldLabel>
+        <FieldLabel htmlFor="words_message">{Publr.t("Custom error message")}</FieldLabel>
         <Input id="words_message" name="words_message" value={words_message} maxLength={255} />
       </Field>
     </CheckboxField>

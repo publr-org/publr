@@ -91,9 +91,10 @@ Output: `{ "valid", "problems": [{ "path", "message" }] }`.
 
 ## `user delete`
 
-Delete a user and sign out every session they have; what they created
-stays, attributed to their id. Admins only. You cannot delete yourself or
-the last admin.
+Delete a user into the trash and sign out every session they have; what they
+created stays, attributed to their id. `trash restore` brings the account back
+with its roles and fields, signed out. Admins only. You cannot delete yourself
+or the last admin.
 
 | Field | Type | Default |
 |---|---|---|
@@ -116,10 +117,18 @@ Output: `{ "user_id" }`.
 
 ## `user list`
 
-List users. Admins only.
+List users, oldest first, a page at a time. Admins only.
 
-Output: `{ "users": [ { "id", "email", "display_name", "roles", "created_at", "active" } ] }`;
-`active` is false until a password is set.
+| Field | Type | Default |
+|---|---|---|
+| `--query` | text | every account; else those whose name or email holds it |
+| `--limit` | number | 50, up to 200 |
+| `--offset` | number | 0 |
+
+Output: `{ "users": [ { "id", "email", "display_name", "roles", "created_at", "active" } ],
+"total" }`; `active` is false until a password is set, `total` counts every account the
+query matches. `user options` (ids and names for pickers, for editors too) pages the same
+way.
 
 ## `user sign_in`
 
@@ -144,3 +153,17 @@ Sign out: revoke a session token. Anyone holding the token may call it.
 | `--token` | text | required |
 
 Output: `{ "destroyed" }` (false when the token was unknown or already expired).
+
+## `user language` and `user set_language`
+
+The language the admin speaks to the caller: `chosen` (empty: the site's), `site`, `shown`,
+the `choices` (English and every language a plugin translates the admin into) and whether
+the caller ever `answered` (the admin's welcome screen asks once). `set_language
+--language <code>` chooses one of the choices, or empty for the site's.
+
+## `user variant` and `user set_variant`
+
+The variant (with the languages plugin: the content language) the caller reads and edits
+content in, in the admin: `chosen`, empty for the main one, and the site's `variants`.
+`set_variant --variant <code>` chooses one, or empty for the main one; lists, the editor
+and the visual editor open in it.

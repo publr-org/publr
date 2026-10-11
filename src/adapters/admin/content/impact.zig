@@ -136,7 +136,10 @@ fn dialog(
     const title = if (full) |got|
         (if (got.title.len > 0) got.title else got.id)
     else
-        try print(arena, "a new {s}", .{def.name});
+        try session.translated_with("a new {type}", &.{.{
+            .name = "type",
+            .value = def.name,
+        }});
 
     return try admin.render.view(arena, Dialog, .{
         .title = title,

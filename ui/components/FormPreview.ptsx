@@ -41,8 +41,8 @@ export const retryPreview = () => { state.retry++; };
 
 Publr.effect(() => {
   state.busy = preview.isPending;
-  state.error = preview.isError ? "Could not update the preview" : "";
-  state.note = preview.isPending ? "Updating…" : state.error;
+  state.error = preview.isError ? Publr.t("Could not update the preview") : "";
+  state.note = preview.isPending ? Publr.t("Updating…") : state.error;
   if (preview.isLoaded) state.html = preview.value ?? null;
 });
 
@@ -62,11 +62,11 @@ export function FormPreview({ note, editor, children }: FormPreviewProps) {
 
   return (
     <div class="flex h-full min-h-0 flex-col" data-part="form-preview" ref={root_ref} aria-busy={state.busy}>
-      <SectionTitle title="Preview">
+      <SectionTitle title={Publr.t("Preview")}>
         <Text as="span" variant="body-xs" tone="muted">
           {state.note}
         </Text>
-        <Button size="sm" hierarchy="tertiary" hidden={!state.error} onClick={retryPreview}>Retry</Button>
+        <Button size="sm" hierarchy="tertiary" hidden={!state.error} onClick={retryPreview}>{Publr.t("Retry")}</Button>
         {children}
       </SectionTitle>
       <div class="min-h-0 flex-1 overflow-y-auto">

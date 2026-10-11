@@ -1,0 +1,55 @@
+import { Publr } from "publr-jsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { StatusButton } from "@publr/ui/StatusButton.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type VariantSwitcherProps = {
+  /** The dimension's word for the picker: "Content language". */
+  title: string;
+  /** The variant content shows in now: "Polski". */
+  current: string;
+  /** The site's variants, the main one first with an empty code. */
+  choices: Array<{ code: string; label: string; current: boolean }>;
+  /** The page to come back to. */
+  back: string;
+};
+
+/** Which variant the admin reads and edits content in, top right (with the languages
+ * plugin: the content language). The person's own choice, apart from the language the
+ * admin speaks to them; lists, the editor and the visual editor open in it. */
+export function VariantSwitcher({ title, current, choices, back }: VariantSwitcherProps) {
+  return (
+    <div class="inline-flex items-stretch" data-part="variant-switcher">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <StatusButton stripe={false} label={Publr.t("{title}: {current}. Switch", { title, current })}>
+            <span class="inline-flex items-center gap-2">
+              <Icon name="globe" size="sm" />
+              {current}
+            </span>
+          </StatusButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="right" classes="min-w-56">
+          <div class="px-2 py-1.5">
+            <Text as="span" variant="label-md-strong" tone="muted">{title}</Text>
+          </div>
+          {choices.map((choice) => (
+            <form method="post" action="/admin/variant" key={choice.code}>
+              <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+              <input type="hidden" name="variant" value={choice.code} />
+              <input type="hidden" name="back" value={back} />
+              <DropdownMenuItem type="submit">
+                <Text as="span" variant="body-md" classes="flex-1 truncate">{choice.label}</Text>
+                {choice.current && <Icon name="check" size="sm" />}
+              </DropdownMenuItem>
+            </form>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}

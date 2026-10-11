@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -20,8 +21,8 @@ export function UrlHostsRule({
       id="limit_hosts"
       name="limit_hosts"
       checked={limit_hosts}
-      label="Accept only specified hosts"
-      description="Only links to these hosts, one per line"
+      label={Publr.t("Accept only specified hosts")}
+      description={Publr.t("Only links to these hosts, one per line")}
     >
       <Textarea
         id="hosts"
@@ -31,7 +32,7 @@ export function UrlHostsRule({
         placeholder={"example.com\nwww.example.com"}
       />
       <Field>
-        <FieldLabel htmlFor="host_message">Custom error message</FieldLabel>
+        <FieldLabel htmlFor="host_message">{Publr.t("Custom error message")}</FieldLabel>
         <Input id="host_message" name="host_message" value={host_message} maxLength={255} />
       </Field>
     </CheckboxField>

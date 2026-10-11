@@ -36,7 +36,7 @@ pub fn render(
     const hub = try std.fmt.allocPrint(session.arena, "/admin/custom-fields/{s}", .{def.handle});
 
     try admin.screen(session, .ok, admin.views.FieldGroup, .{
-        .title = if (fresh) "New field group" else def.name,
+        .title = if (fresh) try session.translated("New field group") else def.name,
         .name = def.name,
         .handle = def.handle,
         .fresh = fresh,
@@ -121,7 +121,7 @@ fn subjects_of(session: *admin.Session) ![]const admin.views.RuleBuilder.Subject
 
     for (media, 0..) |kind, index| {
         values[index] = kind.id;
-        labels[index] = kind.label;
+        labels[index] = try session.declared(kind.label);
     }
 
     const roles = registry.Roles.all;
@@ -136,16 +136,19 @@ fn subjects_of(session: *admin.Session) ![]const admin.views.RuleBuilder.Subject
     const defs = [_]model.field.Def{
         .{
             .name = "destination",
-            .label = "Location",
+            .label = try session.translated("Location"),
             .kind = "select",
             .options = .{
                 .choices = &.{ "user", "media" },
-                .labels = &.{ "User", "Media" },
+                .labels = try session.arena.dupe([]const u8, &.{
+                    try session.translated("User"),
+                    try session.translated("Media"),
+                }),
             },
         },
         .{
             .name = "role",
-            .label = "User role",
+            .label = try session.translated("User role"),
             .kind = "select",
             .options = .{
                 .choices = role_names,
@@ -154,7 +157,7 @@ fn subjects_of(session: *admin.Session) ![]const admin.views.RuleBuilder.Subject
         },
         .{
             .name = "media_type",
-            .label = "Media type",
+            .label = try session.translated("Media type"),
             .kind = "select",
             .options = .{
                 .choices = values,

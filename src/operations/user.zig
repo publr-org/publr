@@ -26,7 +26,9 @@ pub const namespace: sdk.operation.Namespace = .{
     ,
 };
 
-pub const set_password_path = "/api/auth/set-password";
+/// The page an invited person opens to choose their password (`?token=`): the admin's
+/// welcome. Scripts set it with `POST /api/auth/set-password` instead.
+pub const invitation_path = "/admin/welcome";
 pub const password_link_lifetime_ms: i64 = 60 * 60 * 1000;
 pub const password_token_bytes: u32 = 32;
 pub const password_token_len: u32 = password_token_bytes * 2;
@@ -61,7 +63,7 @@ pub const Create = struct {
         \\  1. `--password <secret>`: you choose it (or set `PUBLR_PASSWORD`).
         \\  2. no password: a strong one is generated and returned once in the output.
         \\  3. `--password_link true`: the account is created inactive and you get a
-        \\     one-hour, single-use link (`/auth/set-password?token=...`) to send to the
+        \\     one-hour, single-use link (`/admin/welcome?token=...`) to send to the
         \\     person; prefix it with your site URL. Until they use it the account
         \\     cannot sign in. `user password_link` issues a new one at any time.
         \\
@@ -93,7 +95,7 @@ pub const Create = struct {
         .roles = &.{"editor"},
         .password = null,
         .link = .{
-            .path = "/auth/set-password?token=6f3a...",
+            .path = "/admin/welcome?token=6f3a...",
             .expires_at = 1789650000000,
         },
     };
@@ -259,13 +261,27 @@ pub const Options = struct {
     pub const details = "Signed-in editors and administrators can select users without reading " ++
         "their email addresses or account credentials.";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
+    pub const In = struct {
+        query: []const u8 = "",
+        limit: u32 = 50,
+        offset: u32 = 0,
+    };
     pub const Option = struct {
         id: []const u8,
         label: []const u8,
     };
     pub const Out = struct {
         users: []const Option,
+        total: u32 = 0,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .query = "Only the users whose name holds this; every one when empty",
+        .limit = "How many at most; 50 when omitted, up to 200",
+        .offset = "How many to pass over first: the next page's start",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .users = "Each user's id and display name",
+        .total = "How many users the query matches in all",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -285,9 +301,11 @@ pub const Options = struct {
         },
     };
 
-    pub fn run(ctx: *Ctx, _: In, granted: *const sdk.Grant) sdk.Error!Out {
+    pub fn run(ctx: *Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
-        const rows = try store.users.list(ctx.db, ctx.arena);
+
+        const window = try window_of(in.query, in.limit, in.offset);
+        const rows = try store.users.page(ctx.db, ctx.arena, window);
         const users = try ctx.arena.alloc(Option, rows.len);
 
         for (rows, 0..) |row, index| {
@@ -299,9 +317,25 @@ pub const Options = struct {
 
         return .{
             .users = users,
+            .total = try store.users.count_matching(ctx.db, window.query),
         };
     }
 };
+
+/// A page of users as asked for; `Invalid` past the bounds every list shares.
+fn window_of(query: []const u8, limit: u32, offset: u32) Error!store.users.Window {
+    if (limit == 0 or limit > sdk.operation.page_limit_max or query.len > 256) {
+        return error.Invalid;
+    }
+
+    std.debug.assert(limit <= store.users.list_max);
+
+    return .{
+        .query = query,
+        .limit = limit,
+        .offset = offset,
+    };
+}
 
 pub const List = struct {
     pub const name = "user.list";
@@ -311,9 +345,19 @@ pub const List = struct {
         \\that has not been redeemed yet; such accounts cannot sign in.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
+    pub const In = struct {
+        query: []const u8 = "",
+        limit: u32 = 50,
+        offset: u32 = 0,
+    };
     pub const Out = struct {
         users: []const Summary,
+        total: u32 = 0,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .query = "Only the accounts whose name or email holds this; every one when empty",
+        .limit = "How many at most; 50 when omitted, up to 200",
+        .offset = "How many to pass over first: the next page's start",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -337,14 +381,16 @@ pub const List = struct {
         },
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
-        .users = "Every account, oldest first; `created_at` is Unix milliseconds",
+        .users = "A page of accounts, oldest first; `created_at` is Unix milliseconds",
+        .total = "How many accounts the query matches in all",
     };
 
-    pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
+    pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.caller != .anonymous);
         std.debug.assert(store.users.list_max > 0);
 
-        const rows = try store.users.list(ctx.db, ctx.arena);
+        const window = try window_of(in.query, in.limit, in.offset);
+        const rows = try store.users.page(ctx.db, ctx.arena, window);
         const users = try ctx.arena.alloc(Summary, rows.len);
 
         for (rows, 0..) |row, index| {
@@ -353,6 +399,7 @@ pub const List = struct {
 
         return .{
             .users = users,
+            .total = try store.users.count_matching(ctx.db, window.query),
         };
     }
 };
@@ -525,7 +572,7 @@ fn issue_link(ctx: *Ctx, user_id: []const u8) Error!Link {
     try store.users.set_password_token(ctx.db, user_id, token_hash, expires_at);
 
     const path = try std.fmt.allocPrint(ctx.arena, "{s}?token={s}", .{
-        set_password_path,
+        invitation_path,
         token,
     });
 
@@ -578,8 +625,23 @@ pub const Delete = manage.Delete;
 pub const Get = fields.Get;
 pub const Validate = fields.Validate;
 
+pub const language = @import("user/language.zig");
+pub const variant = @import("user/variant.zig");
+
 pub const operations = [_]type{
-    Create, List, Get, Options, PasswordLink, SetPassword, Update, Delete, Validate,
+    Create,
+    List,
+    Get,
+    Options,
+    PasswordLink,
+    SetPassword,
+    Update,
+    Delete,
+    Validate,
+    language.Language,
+    language.SetLanguage,
+    variant.Variant,
+    variant.SetVariant,
 };
 
 pub fn summary_of(user: store.users.User) Summary {
@@ -667,7 +729,7 @@ test "password link: pending user cannot sign in, link activates once, new link 
         .password_link = true,
     });
     try std.testing.expect(invited.password == null);
-    const link_prefix = set_password_path ++ "?token=";
+    const link_prefix = invitation_path ++ "?token=";
     try std.testing.expect(std.mem.startsWith(u8, invited.link.?.path, link_prefix));
     try std.testing.expectEqual(password_link_lifetime_ms, invited.link.?.expires_at);
 
@@ -685,11 +747,11 @@ test "password link: pending user cannot sign in, link activates once, new link 
     });
     try std.testing.expectError(error.BadCredentials, login_pending);
 
-    const first_token = invited.link.?.path[set_password_path.len + 7 ..];
+    const first_token = invited.link.?.path[invitation_path.len + 7 ..];
     const reissued = try FullSDK.dispatch(&admin, PasswordLink, .{
         .user = "new@example.com",
     });
-    const second_token = reissued.link.path[set_password_path.len + 7 ..];
+    const second_token = reissued.link.path[invitation_path.len + 7 ..];
     try std.testing.expect(!std.mem.eql(u8, first_token, second_token));
 
     const stale_in: SetPassword.In = .{

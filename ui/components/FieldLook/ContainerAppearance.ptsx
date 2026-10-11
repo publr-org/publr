@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
@@ -33,16 +34,16 @@ export function ContainerAppearance({
           id="collapsed"
           name="collapsed"
           checked={collapsed}
-          label="Collapsed by default"
-          description="The fields inside are folded away until opened."
+          label={Publr.t("Collapsed by default")}
+          description={Publr.t("The fields inside are folded away until opened.")}
         />
       )}
       {has_label_field && (
         <Field>
-          <FieldLabel htmlFor="label_field">Item label</FieldLabel>
+          <FieldLabel htmlFor="label_field">{Publr.t("Item label")}</FieldLabel>
           <NativeSelect id="label_field" name="label_field">
             <option value="" selected={label_field_none}>
-              Item number
+              {Publr.t("Item number")}
             </option>
             {label_fields.map((entry) => (
               <option value={entry.value} selected={entry.selected}>
@@ -51,18 +52,18 @@ export function ContainerAppearance({
             ))}
           </NativeSelect>
           <FieldDescription>
-            The field inside whose value names each item in its header
+            {Publr.t("The field inside whose value names each item in its header")}
           </FieldDescription>
         </Field>
       )}
       {has_container && (
         <Field>
-          <FieldLabel htmlFor="add_label">Add button label</FieldLabel>
+          <FieldLabel htmlFor="add_label">{Publr.t("Add button label")}</FieldLabel>
           <Input
             id="add_label"
             name="add_label"
             value={add_label}
-            placeholder="Add item"
+            placeholder={Publr.t("Add item")}
             maxLength={64}
           />
         </Field>

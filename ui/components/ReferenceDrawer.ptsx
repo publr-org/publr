@@ -29,7 +29,7 @@ export const panel_ref = Publr.ref<HTMLElement>((element) => {
     Publr.untrack(() => {
       if (!stack.includes(level)) return;
       level.loading = pending;
-      level.error = failed ? "Could not open the reference" : "";
+      level.error = failed ? Publr.t("Could not open the reference") : "";
       if (failed) level.title = level.error;
       if (!pending && !failed && value) { level.html = value.html; state.focus++; }
     });
@@ -57,7 +57,7 @@ const open_level = (options: {
     field: options.field,
     opener: options.opener,
     deliver: options.deliver,
-    title: "Loading…",
+    title: Publr.t("Loading…"),
     html: "",
     error: "",
     panel: null,
@@ -150,11 +150,11 @@ export function ReferenceDrawer({ id }: ReferenceDrawerProps) {
               tabindex={-1}
             >
               <div class="px-8 py-7" hidden={!level.loading} role="status">
-                <Text variant="body-sm" tone="muted">Loading reference…</Text>
+                <Text variant="body-sm" tone="muted">{Publr.t("Loading reference…")}</Text>
               </div>
               <div class="px-8 py-7" hidden={!level.error} role="alert">
                 <Text variant="body-sm">{level.error}</Text>
-                <Button hierarchy="secondary" onClick={retryReference} data-level={level.id}>Retry</Button>
+                <Button hierarchy="secondary" onClick={retryReference} data-level={level.id}>{Publr.t("Retry")}</Button>
               </div>
               <div class="contents" innerHTML={level.html}></div>
             </div>

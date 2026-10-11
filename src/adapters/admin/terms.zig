@@ -23,6 +23,9 @@ const Value = std.json.Value;
 const print = fields.print;
 
 pub const back = "/admin/terms";
+const page_size: u32 = 50;
+/// The parents a term's aside offers: the first of the tree, and its own parent.
+const parents_shown: u32 = 200;
 
 const Editor = editor.Editor(.{
     .base = back,
@@ -42,6 +45,7 @@ pub const new_editor = Editor.new_editor;
 pub const edit = Editor.edit;
 pub const editor_fragment = Editor.editor;
 pub const create = Editor.create;
+pub const cells = Editor.cells;
 pub const save = Editor.save;
 pub const action = Editor.action;
 
@@ -71,8 +75,10 @@ fn aside_of(
     const current = try current_parent(session, own_id);
     const tree = registry.SDK.dispatch(&session.ctx, term_operations.Tree, .{
         .taxonomy = def.handle,
+        .limit = parents_shown,
     }) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else null;
     var parents: std.ArrayList(views.TermParent.ParentsItem) = .empty;
+    var current_shown = false;
     var below_depth: ?u32 = null;
 
     for (tree.terms) |term| {
@@ -90,10 +96,27 @@ fn aside_of(
             continue;
         }
 
+        const selected = current != null and std.mem.eql(u8, current.?, term.id);
+
+        current_shown = current_shown or selected;
         parents.append(session.arena, .{
             .id = term.id,
             .title = try titled(session.arena, term.title, term.depth),
-            .selected = current != null and std.mem.eql(u8, current.?, term.id),
+            .selected = selected,
+        }) catch return error.OutOfMemory;
+    }
+
+    // Past the first page: offered too, so saving keeps it where it is.
+    if (current != null and !current_shown) {
+        const parent = registry.SDK.dispatch(&session.ctx, term_operations.Get, .{
+            .id = current.?,
+            .purpose = .edit,
+        }) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else null;
+
+        parents.append(session.arena, .{
+            .id = current.?,
+            .title = parent.term.title,
+            .selected = true,
         }) catch return error.OutOfMemory;
     }
 
@@ -147,8 +170,11 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     var session = try admin.require(request, response, ctx) orelse return;
     const handle = try admin.param(&session, "handle", taxonomy_pages.back) orelse return;
     const got = try taxonomy_pages.load(&session, handle) orelse return;
+    const offset = admin.pager.offset_of(&session);
     const tree = registry.SDK.dispatch(&session.ctx, term_operations.Tree, .{
         .taxonomy = handle,
+        .offset = offset,
+        .limit = page_size,
     }) catch |err| return admin.fail(&session, err, taxonomy_pages.back);
     const arena = session.arena;
     const def = got.definition;
@@ -173,6 +199,15 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         };
     }
 
+    const pages = try admin.pager.links(
+        arena,
+        try print(arena, "{s}/{s}", .{ taxonomy_pages.back, handle }),
+        offset,
+        @intCast(rows.len),
+        tree.total,
+        page_size,
+    );
+
     try admin.screen(&session, .ok, views.Terms, .{
         .title = def.name,
         .handle = def.handle,
@@ -180,6 +215,10 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .settings_href = try print(arena, "{s}/{s}/settings", .{ taxonomy_pages.back, handle }),
         .new_href = try print(arena, "{s}/new?type={s}", .{ back, handle }),
         .terms = rows,
+        .total = @floatFromInt(tree.total),
+        .range = pages.range,
+        .previous_href = pages.previous_href,
+        .next_href = pages.next_href,
     });
 }
 

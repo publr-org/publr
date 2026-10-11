@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { onOpenReference } from "./RecordEditor.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Checkbox } from "@publr/ui/Checkbox.ptsx";
@@ -15,12 +16,19 @@ import { ReferenceCard } from "@publr/ui/ReferenceCard.ptsx";
 import { Switch } from "@publr/ui/Switch.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
+import { RichTextInput } from "@publr/ui/RichTextInput.ptsx";
+import { FieldColor } from "./RecordEditor/FieldColor.ptsx";
+import { FieldEmbed } from "./RecordEditor/FieldEmbed.ptsx";
+import { FieldMarkdown } from "./RecordEditor/FieldMarkdown.ptsx";
+import { RecordMedia } from "./RecordEditor/RecordMedia.ptsx";
+import { FieldRange } from "./RecordEditor/FieldRange.ptsx";
+import { FieldSecret } from "./RecordEditor/FieldSecret.ptsx";
 
 export type FieldControlProps = {
   /** The form field name: `title`, `tags[1]`, `seo.description`, `faq[0].question`. */
   name: string;
   /** input, number, range, datetime, date, textarea, switch, checkbox, radios, select,
-   * slug, card, json; `pick` (a reference pointing nowhere) is drawn by the page, which
+   * slug, card, rich, json; `pick` (a reference pointing nowhere) is drawn by the page, which
    * has the target types. Radios and select options come as children. */
   control: string;
   value: string;
@@ -44,6 +52,8 @@ export type FieldControlProps = {
   card_status: string;
   card_tone: string;
   card_href: string;
+  /** The formatting a rich text value's editor offers, comma separated; empty for plain. */
+  formats?: string;
   /** Set when removing the card deletes its record: why, for the confirmation. */
   delete_note?: string;
   /** The reshape actions of one value in a list; empty when the value stands alone. */
@@ -52,6 +62,24 @@ export type FieldControlProps = {
   down: string;
   /** The options of a select, rendered by the page. */
   children?: JSX.Element;
+  /** A media value inside a group or a repeater (`media`): its file, and its field's rules. */
+  files?: Array<{
+    id: string;
+    title: string;
+    thumb: string;
+    image: boolean;
+    kind: string;
+    icon: "video" | "audio" | "file";
+    facts: string;
+    missing: boolean;
+    slot: string;
+    place: string;
+    first: boolean;
+    last: boolean;
+  }>;
+  types?: Array<{ id: string; label: string }>;
+  accept?: string;
+  can_upload?: boolean;
 };
 
 /** One value of one field, drawn by its kind's control, with the move and remove
@@ -76,11 +104,16 @@ export function FieldControl({
   card_status,
   card_tone,
   card_href,
+  formats = "",
   delete_note = "",
   remove,
   up,
   down,
   children,
+  files = [],
+  types = [],
+  accept = "",
+  can_upload = true,
 }: FieldControlProps) {
   return (
     <div class="flex items-start gap-2">
@@ -94,9 +127,12 @@ export function FieldControl({
             readOnly={readonly}
           />
         )}
-        {control === "color" && <Input id={`field-${name}`} name={name} type="color" value={value} classes="h-11 max-w-24 p-1.5" />}
-        {control === "time" && <Input id={`field-${name}`} name={name} type="time" value={value} />}
-        {control === "password" && <Input id={`field-${name}`} name={name} type="password" value={value} />}
+        {control === "media" && (
+          <RecordMedia name={name} many={false} types={types} accept={accept} can_upload={can_upload} files={files} />
+        )}
+        {control === "color" && <FieldColor id={`field-${name}`} name={name} value={value} label={name} />}
+        {control === "time" && <Input id={`field-${name}`} name={name} type="time" value={value} classes="max-w-40" />}
+        {control === "password" && <FieldSecret id={`field-${name}`} name={name} value={value} />}
         {control === "number" && prefix === "" && suffix === "" && (
           <Input
             id={`field-${name}`}
@@ -140,28 +176,44 @@ export function FieldControl({
           </InputGroup>
         )}
         {control === "range" && (
-          <div class="flex items-center gap-3">
-            <Input
-              id={`field-${name}`}
-              type="range"
-              name={name}
-              value={value}
-              min={min}
-              max={max}
-              step={step}
-              classes="flex-1"
-            />
-            <Text as="span" variant="body-sm" tone="muted">
-              {min} to {max}
-            </Text>
+          <FieldRange
+            id={`field-${name}`}
+            name={name}
+            value={Number(value === "" ? min : value)}
+            min={Number(min)}
+            max={Number(max)}
+            step={Number(step === "" ? "1" : step)}
+          />
+        )}
+        {control === "rating" && (
+          <div
+            id={`field-${name}`}
+            role="radiogroup"
+            class="flex flex-row-reverse justify-end [&>label:has(input:checked)]:text-warning [&>label:has(input:checked)~label]:text-warning [&>label:has(input:checked)_svg]:fill-current [&>label:has(input:checked)~label_svg]:fill-current [&>label:hover]:text-warning/70"
+          >
+            {children}
           </div>
         )}
         {control === "datetime" && (
-          <Input id={`field-${name}`} type="datetime-local" name={name} value={value} />
+          <InputGroup trailing_text={suffix} classes="max-w-sm">
+            <Input id={`field-${name}`} type="datetime-local" name={name} value={value} inset />
+          </InputGroup>
         )}
-        {control === "date" && <Input id={`field-${name}`} type="date" name={name} value={value} />}
+        {control === "date" && <Input id={`field-${name}`} type="date" name={name} value={value} classes="max-w-xs" />}
+        {control === "embed" && <FieldEmbed id={`field-${name}`} name={name} value={value} placeholder={placeholder} />}
+        {control === "markdown" && <FieldMarkdown id={`field-${name}`} name={name} value={value} rows={rows} />}
         {control === "textarea" && (
           <Textarea id={`field-${name}`} name={name} value={value} rows={rows} />
+        )}
+        {control === "rich" && (
+          <RichTextInput
+            id={`field-${name}`}
+            name={name}
+            value={value}
+            rows={rows}
+            formats={formats}
+            placeholder={placeholder}
+          />
         )}
         {control === "json" && (
           <Textarea
@@ -241,8 +293,8 @@ export function FieldControl({
                 value={up}
                 hierarchy="tertiary"
                 size="xs"
-                label="Move up"
-                title="Move up"
+                label={Publr.t("Move up")}
+                title={Publr.t("Move up")}
               >
                 <Icon name="chevron-up" size="xs" />
               </Button>
@@ -254,8 +306,8 @@ export function FieldControl({
                 value={down}
                 hierarchy="tertiary"
                 size="xs"
-                label="Move down"
-                title="Move down"
+                label={Publr.t("Move down")}
+                title={Publr.t("Move down")}
               >
                 <Icon name="chevron-down" size="xs" />
               </Button>
@@ -267,8 +319,8 @@ export function FieldControl({
                 value={remove}
                 hierarchy="tertiary"
                 size="xs"
-                label="Remove"
-                title="Remove"
+                label={Publr.t("Remove")}
+                title={Publr.t("Remove")}
               >
                 <Icon name="x-close" size="xs" />
               </Button>
@@ -276,21 +328,21 @@ export function FieldControl({
             {remove !== "" && delete_note !== "" && (
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button type="button" hierarchy="tertiary" size="xs" label="Delete" title="Delete">
+                  <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Delete")} title={Publr.t("Delete")}>
                     <Icon name="trash" size="xs" />
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
-                  <DialogTitle>Delete {card_title}?</DialogTitle>
+                  <DialogTitle>{Publr.t("Delete {title}?", { title: card_title })}</DialogTitle>
                   <DialogDescription>{delete_note}</DialogDescription>
                   <div class="mt-5 flex justify-end gap-2">
                     <DialogClose asChild>
                       <Button type="button" hierarchy="secondary">
-                        Cancel
+                        {Publr.t("Cancel")}
                       </Button>
                     </DialogClose>
                     <Button type="submit" form="record" name="reshape" value={remove} intent="destructive">
-                      Delete
+                      {Publr.t("Delete")}
                     </Button>
                   </div>
                 </DialogContent>
@@ -307,8 +359,8 @@ export function FieldControl({
             value={up}
             hierarchy="tertiary"
             size="sm"
-            label="Move up"
-            title="Move up"
+            label={Publr.t("Move up")}
+            title={Publr.t("Move up")}
           >
             <Icon name="chevron-up" size="sm" />
           </Button>
@@ -318,8 +370,8 @@ export function FieldControl({
             value={down}
             hierarchy="tertiary"
             size="sm"
-            label="Move down"
-            title="Move down"
+            label={Publr.t("Move down")}
+            title={Publr.t("Move down")}
           >
             <Icon name="chevron-down" size="sm" />
           </Button>
@@ -329,8 +381,8 @@ export function FieldControl({
             value={remove}
             hierarchy="tertiary"
             size="sm"
-            label="Remove"
-            title="Remove"
+            label={Publr.t("Remove")}
+            title={Publr.t("Remove")}
           >
             <Icon name="x-close" size="sm" />
           </Button>

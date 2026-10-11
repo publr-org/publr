@@ -1,4 +1,6 @@
+import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Pager } from "../components/Pager.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
@@ -21,7 +23,7 @@ export type TermsProps = {
   hierarchical: boolean;
   settings_href: string;
   new_href: string;
-  /** Every term in tree order: parents before children, each with its depth from 0. */
+  /** A page of the terms in tree order: parents before children, each with its depth. */
   terms: Array<{
     href: string;
     title: string;
@@ -32,6 +34,12 @@ export type TermsProps = {
     indent: string;
     add_child_href: string;
   }>;
+  /** How many terms there are in all. */
+  total: number;
+  /** "51–100 of 230" when there is more than one page; empty otherwise. */
+  range: string;
+  previous_href: string;
+  next_href: string;
 };
 
 /** A taxonomy's page: its terms as a tree, one row each, with a way to add a term at the
@@ -43,33 +51,42 @@ export function Terms({
   settings_href,
   new_href,
   terms,
+  total,
+  range,
+  previous_href,
+  next_href,
 }: TermsProps) {
   return (
     <IndexPage
       title={title}
       parents={[
-        { label: "Structure", href: "/admin/structure" },
-        { label: "Taxonomies", href: "/admin/structure/taxonomies" },
+        { label: Publr.t("Structure"), href: "/admin/structure" },
+        { label: Publr.t("Taxonomies"), href: "/admin/structure/taxonomies" },
       ]}
-      description={`${handle} · ${hierarchical ? "hierarchical" : "flat"} · ${terms.length} terms`}
+      description={
+        hierarchical
+          ? Publr.tn("{handle} · hierarchical · {count} term", "{handle} · hierarchical · {count} terms", total, { handle })
+          : Publr.tn("{handle} · flat · {count} term", "{handle} · flat · {count} terms", total, { handle })
+      }
+      footer={range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
       actions={
         <div class="contents">
           <Button href={settings_href} hierarchy="secondary">
             <Icon name="settings" size="sm" />
-            <span>Settings</span>
+            <span>{Publr.t("Settings")}</span>
           </Button>
           <Button href={new_href}>
             <Icon name="plus" size="sm" />
-            <span>New term</span>
+            <span>{Publr.t("New term")}</span>
           </Button>
         </div>
       }
       empty={
         terms.length === 0 && (
           <Empty>
-            <EmptyTitle>No terms yet</EmptyTitle>
+            <EmptyTitle>{Publr.t("No terms yet")}</EmptyTitle>
             <EmptyDescription>
-              A term is what records get filed under. Create the first one.
+              {Publr.t("A term is what records get filed under. Create the first one.")}
             </EmptyDescription>
           </Empty>
         )
@@ -78,10 +95,10 @@ export function Terms({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Term</TableHead>
-            <TableHead>Slug</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead align="right">Children</TableHead>
+            <TableHead>{Publr.t("Term")}</TableHead>
+            <TableHead>{Publr.t("Slug")}</TableHead>
+            <TableHead>{Publr.t("Status")}</TableHead>
+            <TableHead align="right">{Publr.t("Children")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -111,7 +128,7 @@ export function Terms({
                 {term.add_child_href !== "" && (
                   <Button href={term.add_child_href} hierarchy="secondary" size="sm">
                     <Icon name="plus" size="xs" />
-                    <span>Add child</span>
+                    <span>{Publr.t("Add child")}</span>
                   </Button>
                 )}
               </TableCell>

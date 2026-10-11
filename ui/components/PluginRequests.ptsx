@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Code } from "@publr/ui/Code.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
@@ -41,7 +42,7 @@ export function PluginRequests({ csrf, action, requests }: PluginRequestsProps) 
               <div class="flex min-w-0 flex-col gap-1 py-1.5" data-key={request.key}>
                 <Text as="p" variant="body-md" classes="font-medium">{request.sentence}</Text>
                 {request.reason !== "" && (
-                  <Text as="p" variant="body-sm" tone="muted">{`because it: “${request.reason}”`}</Text>
+                  <Text as="p" variant="body-sm" tone="muted">{Publr.t("because it: “{reason}”", { reason: request.reason })}</Text>
                 )}
                 <div class="flex flex-wrap items-center gap-2 pt-1">
                   <Code>{request.key}</Code>
@@ -52,22 +53,22 @@ export function PluginRequests({ csrf, action, requests }: PluginRequestsProps) 
             <TableCell align="right">
               <div class="flex flex-wrap items-center justify-end gap-3">
                 {request.tier === "high" ? (
-                  <Status tone="error">High risk</Status>
+                  <Status tone="error">{Publr.t("High risk")}</Status>
                 ) : request.tier === "medium" ? (
-                  <Status tone="warning">Medium risk</Status>
+                  <Status tone="warning">{Publr.t("Medium risk")}</Status>
                 ) : (
-                  <Status tone="neutral">Low risk</Status>
+                  <Status tone="neutral">{Publr.t("Low risk")}</Status>
                 )}
-                {request.state === "granted" && <Status tone="success">Granted</Status>}
-                {request.state === "pending" && <Status tone="review">Pending</Status>}
-                {request.state === "denied" && <Status tone="error">Denied</Status>}
-                {request.state === "unavailable" && <Status tone="neutral">Unavailable</Status>}
+                {request.state === "granted" && <Status tone="success">{Publr.t("Granted")}</Status>}
+                {request.state === "pending" && <Status tone="review">{Publr.t("Pending")}</Status>}
+                {request.state === "denied" && <Status tone="error">{Publr.t("Denied")}</Status>}
+                {request.state === "unavailable" && <Status tone="neutral">{Publr.t("Unavailable")}</Status>}
                 {action !== "" && request.can_grant && (
                   <form method="post" action={action}>
                     <input type="hidden" name="csrf" value={csrf} />
                     <input type="hidden" name="key" value={request.key} />
                     <input type="hidden" name="change" value="grant" />
-                    <Button type="submit" size="sm" hierarchy="secondary">Grant</Button>
+                    <Button type="submit" size="sm" hierarchy="secondary">{Publr.t("Grant")}</Button>
                   </form>
                 )}
                 {action !== "" && request.can_revoke && (
@@ -75,7 +76,7 @@ export function PluginRequests({ csrf, action, requests }: PluginRequestsProps) 
                     <input type="hidden" name="csrf" value={csrf} />
                     <input type="hidden" name="key" value={request.key} />
                     <input type="hidden" name="change" value="revoke" />
-                    <Button type="submit" size="sm" hierarchy="secondary">Revoke</Button>
+                    <Button type="submit" size="sm" hierarchy="secondary">{Publr.t("Revoke")}</Button>
                   </form>
                 )}
                 {action !== "" && request.can_deny && (
@@ -83,7 +84,7 @@ export function PluginRequests({ csrf, action, requests }: PluginRequestsProps) 
                     <input type="hidden" name="csrf" value={csrf} />
                     <input type="hidden" name="key" value={request.key} />
                     <input type="hidden" name="change" value="deny" />
-                    <Button type="submit" size="sm" hierarchy="tertiary">Deny</Button>
+                    <Button type="submit" size="sm" hierarchy="tertiary">{Publr.t("Deny")}</Button>
                   </form>
                 )}
               </div>

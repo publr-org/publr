@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -22,22 +23,22 @@ export function BooleanAppearance({
       {has_boolean && (
         <div class="grid gap-4 sm:grid-cols-2">
           <Field>
-            <FieldLabel htmlFor="true_label">Label when on</FieldLabel>
+            <FieldLabel htmlFor="true_label">{Publr.t("Label when on")}</FieldLabel>
             <Input
               id="true_label"
               name="true_label"
               value={true_label}
-              placeholder="Yes"
+              placeholder={Publr.t("Yes")}
               maxLength={64}
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="false_label">Label when off</FieldLabel>
+            <FieldLabel htmlFor="false_label">{Publr.t("Label when off")}</FieldLabel>
             <Input
               id="false_label"
               name="false_label"
               value={false_label}
-              placeholder="No"
+              placeholder={Publr.t("No")}
               maxLength={64}
             />
           </Field>
@@ -45,20 +46,20 @@ export function BooleanAppearance({
       )}
       {has_boolean && (
         <Field>
-          <FieldLabel htmlFor="boolean_control">Control</FieldLabel>
+          <FieldLabel htmlFor="boolean_control">{Publr.t("Control")}</FieldLabel>
           <NativeSelect id="boolean_control" name="boolean_control">
             <option value="toggle" selected={boolean_control === "toggle"}>
-              Switch
+              {Publr.t("Switch")}
             </option>
             <option value="checkbox" selected={boolean_control === "checkbox"}>
-              Checkbox
+              {Publr.t("Checkbox")}
             </option>
             <option value="radio" selected={boolean_control === "radio"}>
-              Two radio buttons
+              {Publr.t("Two radio buttons")}
             </option>
           </NativeSelect>
           <FieldDescription>
-            Radio buttons suit a choice where neither state is the obvious default.
+            {Publr.t("Radio buttons suit a choice where neither state is the obvious default.")}
           </FieldDescription>
         </Field>
       )}

@@ -1,3 +1,5 @@
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Publr } from "publr-jsx";
 import { IndexHeader } from "./IndexHeader.ptsx";
 import { IndexSection } from "./IndexSection.ptsx";
 import { FieldListActions } from "./FieldList/FieldListActions.ptsx";
@@ -36,6 +38,15 @@ export type FieldListProps = {
     /** The picker for a child field; present on groups and repeaters. */
     add_child_href?: string;
   }>;
+  /** How near the fullest level is to the most a level holds, empty below three quarters:
+   * "198 of 256 fields", or "Gallery: 200 of 256 fields" inside a group or repeater. */
+  limit_title?: string;
+  limit_text?: string;
+  /** No field more fits there. */
+  limit_full?: boolean;
+  /** Past the fold: the fields not drawn, as a link to the page with all of them. */
+  more_label?: string;
+  more_href?: string;
 };
 
 /** A content type's fields: on its page, the title band with the preview and Add field,
@@ -51,6 +62,11 @@ export function FieldList({
   settings_href,
   content_href,
   rows,
+  limit_title = "",
+  limit_text = "",
+  limit_full = false,
+  more_label = "",
+  more_href = "",
 }: FieldListProps) {
   return (
     <div class="flex flex-1 flex-col" data-part="field-list" data-standalone={standalone}>
@@ -70,7 +86,8 @@ export function FieldList({
           }
         >
           {rows.length > 0 && (
-            <FieldRows csrf={csrf} standalone={standalone} add_href={add_href} rows={rows} />
+            <FieldRows csrf={csrf} standalone={standalone} add_href={add_href} rows={rows}
+              more_label={more_label} more_href={more_href} />
           )}
         </IndexSection>
       ) : (
@@ -88,16 +105,24 @@ export function FieldList({
               />
             }
           />
+          {limit_title !== "" && (
+            <div class="px-6 pb-4" data-part="fields-limit">
+              <Callout tone={limit_full ? "error" : "warning"} title={limit_title}>
+                {limit_text}
+              </Callout>
+            </div>
+          )}
           {rows.length === 0 ? (
             <Empty>
-              <EmptyTitle>No fields yet</EmptyTitle>
+              <EmptyTitle>{Publr.t("No fields yet")}</EmptyTitle>
               <EmptyDescription>
-                Pick a kind, name the field, and keep going to build the form.
+                {Publr.t("Pick a kind, name the field, and keep going to build the form.")}
               </EmptyDescription>
             </Empty>
           ) : (
             <div class="border-t border-border">
-              <FieldRows csrf={csrf} standalone={standalone} add_href={add_href} rows={rows} />
+              <FieldRows csrf={csrf} standalone={standalone} add_href={add_href} rows={rows}
+              more_label={more_label} more_href={more_href} />
             </div>
           )}
         </div>

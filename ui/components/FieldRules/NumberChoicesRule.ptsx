@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -20,8 +21,8 @@ export function NumberChoicesRule({
       id="limit_choices"
       name="limit_choices"
       checked={limit_choices}
-      label="Accept only listed values"
-      description="The field becomes a choice among these numbers"
+      label={Publr.t("Accept only listed values")}
+      description={Publr.t("The field becomes a choice among these numbers")}
     >
       <Textarea
         id="number_choices"
@@ -31,7 +32,7 @@ export function NumberChoicesRule({
         placeholder={"1\n2\n5"}
       />
       <Field>
-        <FieldLabel htmlFor="choices_message">Custom error message</FieldLabel>
+        <FieldLabel htmlFor="choices_message">{Publr.t("Custom error message")}</FieldLabel>
         <Input
           id="choices_message"
           name="choices_message"

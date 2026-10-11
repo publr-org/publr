@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { onNavigate, openPreview } from "../TypeColumns.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
@@ -29,7 +30,7 @@ export function FieldListActions({
     {!standalone && (
       <Button type="button" hierarchy="secondary" onClick={openPreview}>
         <Icon name="columns" size="sm" />
-        <span>Preview</span>
+        <span>{Publr.t("Preview")}</span>
       </Button>
     )}
     {group_href || settings_href || content_href ? (
@@ -37,26 +38,26 @@ export function FieldListActions({
         <SplitButton>
           <Button onClick={onNavigate} href={add_href} attach="start">
             <Icon name="plus" size="sm" />
-            <span>Add field</span>
+            <span>{Publr.t("Add field")}</span>
           </Button>
           <DropdownMenuTrigger asChild>
-            <Button type="button" attach="end" label="More" title="More">
+            <Button type="button" attach="end" label={Publr.t("More")} title={Publr.t("More")}>
               <Icon name="chevron-down" size="sm" />
             </Button>
           </DropdownMenuTrigger>
         </SplitButton>
         <DropdownMenuContent align="right">
-          {group_href && <DropdownMenuItem href={group_href}>Field group</DropdownMenuItem>}
+          {group_href && <DropdownMenuItem href={group_href}>{Publr.t("Field group")}</DropdownMenuItem>}
           {content_href && (
             <DropdownMenuItem onClick={onNavigate} href={content_href ?? "#"}>
               <Icon name="file" size="sm" />
-              See content
+              {Publr.t("See content")}
             </DropdownMenuItem>
           )}
           {settings_href && (
             <DropdownMenuItem onClick={onNavigate} href={settings_href ?? "#"}>
               <Icon name="settings" size="sm" />
-              Settings
+              {Publr.t("Settings")}
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>
@@ -64,7 +65,7 @@ export function FieldListActions({
     ) : (
       <Button onClick={onNavigate} href={add_href}>
         <Icon name="plus" size="sm" />
-        <span>Add field</span>
+        <span>{Publr.t("Add field")}</span>
       </Button>
     )}
   </div>

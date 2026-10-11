@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { FormPage } from "../layouts/FormPage.ptsx";
 import { ConfirmAction } from "../components/ConfirmAction.ptsx";
 import { EditorAsideSection } from "../components/EditorAsideSection.ptsx";
@@ -43,32 +44,32 @@ export function FieldGroup({
     <FormPage
       title={title}
       parents={[
-        { label: "Structure", href: "/admin/structure" },
-        { label: "Custom Fields", href: "/admin/custom-fields" },
+        { label: Publr.t("Structure"), href: "/admin/structure" },
+        { label: Publr.t("Custom Fields"), href: "/admin/custom-fields" },
       ]}
       aside={
         <EditorAsideSection>
           <Button type="submit" form="group-settings-form" classes="w-full">
-            {fresh ? "Create field group" : "Save changes"}
+            {fresh ? Publr.t("Create field group") : Publr.t("Save changes")}
           </Button>
           <Button href={back} hierarchy="tertiary" classes="w-full">
-            Cancel
+            {Publr.t("Cancel")}
           </Button>
         </EditorAsideSection>
       }
       danger={
         !fresh && (
           <ConfirmAction
-            label="Delete field group"
-            title={`Delete ${name}?`}
-            description="The group and its fields go for good."
+            label={Publr.t("Delete field group")}
+            title={Publr.t("Delete {name}?", { name })}
+            description={Publr.t("The group and its fields go for good.")}
             action={delete_action}
           />
         )
       }
     >
       <Field>
-        <FieldLabel htmlFor="group-name">Group name</FieldLabel>
+        <FieldLabel htmlFor="group-name">{Publr.t("Group name")}</FieldLabel>
         <Input id="group-name" name="name" value={name} form="group-settings-form" required />
       </Field>
       {!fresh && fields}

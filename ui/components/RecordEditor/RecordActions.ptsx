@@ -1,4 +1,6 @@
-import { state, onSubmit } from "../RecordEditor.ptsx";
+import { Publr } from "publr-jsx";
+import { state, onSubmit, cancel_purge, onPreview } from "../RecordEditor.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
 import { EditorAside } from "../EditorAside.ptsx";
 import { EditorAsideSection } from "../EditorAsideSection.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
@@ -20,11 +22,15 @@ export type RecordActionsProps = {
   expected_version: string;
   id: string;
   versions_href: string;
+  /** The record's page as it will read once published; empty when no app shows the type. */
+  preview_href: string;
   /** Sections the adapter draws for the thing being edited: a record's terms (RecordTerms),
    * a term's parent (TermParent). */
   aside?: JSX.Element;
   /** The dependency dialog (RecordImpact), present under `serve --dev` only. */
   impact?: JSX.Element;
+  /** Under the form in one column (a visual record's panel in the block editor). */
+  stacked?: boolean;
 };
 
 export function RecordActions({
@@ -35,11 +41,13 @@ export function RecordActions({
   expected_version,
   id,
   versions_href,
+  preview_href,
   aside,
   impact,
+  stacked = false,
 }: RecordActionsProps) {
   return (
-    <EditorAside in_drawer={in_drawer}>
+    <EditorAside in_drawer={in_drawer} stacked={stacked}>
       {!is_new && (
         <EditorAsideSection>
           <DropdownMenu>
@@ -63,7 +71,7 @@ export function RecordActions({
                   ),
               )}
               <DropdownMenuTrigger asChild>
-                <Button type="button" attach="end" label="More actions" title="More actions" disabled={state.submitting}>
+                <Button type="button" attach="end" label={Publr.t("More actions")} title={Publr.t("More actions")} disabled={state.submitting}>
                   <Icon name="chevron-down" size="sm" />
                 </Button>
               </DropdownMenuTrigger>
@@ -97,17 +105,57 @@ export function RecordActions({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          {state.purge_armed && (
+            <Callout tone="error" title={Publr.t("Purge “{title}” for good?", { title: state.title })}>
+              <div class="flex flex-col gap-3">
+                <Text as="p" variant="body-sm">
+                  {Publr.t("It goes with its changes and versions, and can never be restored. To keep a way back, move it to the trash instead.")}
+                </Text>
+                <form method="post" action={action_route} onSubmit={onSubmit} data-confirmed="true" class="flex gap-2">
+                  <input type="hidden" name="csrf" value={csrf} />
+                  <input type="hidden" name="expected_version" value={state.version} />
+                  <input type="hidden" name="do" value="purge" />
+                  <Button type="submit" size="sm" intent="destructive" disabled={state.submitting}>
+                    {Publr.t("Purge for good")}
+                  </Button>
+                  <Button type="button" size="sm" hierarchy="secondary" onClick={cancel_purge}>
+                    {Publr.t("Cancel")}
+                  </Button>
+                </form>
+              </div>
+            </Callout>
+          )}
           {state.parks && (
             <Text as="p" variant="body-xs" tone="muted">
-              Edits are saved as pending changes; the live version stays until you publish.
+              {Publr.t("Edits are saved as pending changes; the live version stays until you publish.")}
             </Text>
           )}
-          {versions_href !== "" && (
-            <Link href={versions_href} tone="quiet" classes="inline-flex items-center gap-1.5">
-              <Icon name="clock-rewind" size="xs" />
-              Versions
-            </Link>
+          {(versions_href !== "" || preview_href !== "") && (
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {preview_href !== "" && (
+                <Link href={preview_href} tone="quiet" external
+                  classes="inline-flex items-center gap-1.5" onClick={onPreview}>
+                  <Icon name="external" size="xs" />
+                  {Publr.t("Preview")}
+                </Link>
+              )}
+              {versions_href !== "" && (
+                <Link href={versions_href} tone="quiet" classes="inline-flex items-center gap-1.5">
+                  <Icon name="clock-rewind" size="xs" />
+                  {Publr.t("Versions")}
+                </Link>
+              )}
+            </div>
           )}
+        </EditorAsideSection>
+      )}
+      {is_new && preview_href !== "" && (
+        <EditorAsideSection>
+          <Link href={preview_href} tone="quiet" external
+            classes="inline-flex items-center gap-1.5" onClick={onPreview}>
+            <Icon name="external" size="xs" />
+            {Publr.t("Preview")}
+          </Link>
         </EditorAsideSection>
       )}
       {aside}

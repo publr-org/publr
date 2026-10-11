@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -20,8 +21,8 @@ export function ReservedSlugsRule({
       id="limit_reserved"
       name="limit_reserved"
       checked={limit_reserved}
-      label="Reserve slugs the site keeps for itself"
-      description="A record cannot take any of these slugs"
+      label={Publr.t("Reserve slugs the site keeps for itself")}
+      description={Publr.t("A record cannot take any of these slugs")}
     >
       <Textarea
         id="reserved"
@@ -31,7 +32,7 @@ export function ReservedSlugsRule({
         placeholder={"admin\napi\nsearch"}
       />
       <Field>
-        <FieldLabel htmlFor="reserved_message">Custom error message</FieldLabel>
+        <FieldLabel htmlFor="reserved_message">{Publr.t("Custom error message")}</FieldLabel>
         <Input
           id="reserved_message"
           name="reserved_message"

@@ -1,0 +1,37 @@
+import { Publr } from "publr-jsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type LanguageMenuProps = {
+  /** Where the page goes back to once the language is chosen. */
+  back: string;
+  /** "Site default", then English and every language a plugin translates the admin into. */
+  choices: Array<{ locale: string; label: string; current: boolean }>;
+};
+
+/** The account menu's languages: the one the admin speaks to you, ticked. */
+export function LanguageMenu({ back, choices }: LanguageMenuProps) {
+  return (
+    <div class="contents" data-part="language-menu">
+      <DropdownMenuSeparator />
+      <div class="px-2 py-1.5">
+        <Text as="span" variant="label-md-strong" tone="muted">{Publr.t("Language")}</Text>
+      </div>
+      {choices.map((choice) => (
+        <form method="post" action="/admin/language">
+          <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+          <input type="hidden" name="language" value={choice.locale} />
+          <input type="hidden" name="back" value={back} />
+          <DropdownMenuItem type="submit">
+            <span class="inline-flex size-4 items-center justify-center">
+              {choice.current && <Icon name="check" size="sm" />}
+            </span>
+            {choice.label}
+          </DropdownMenuItem>
+        </form>
+      ))}
+    </div>
+  );
+}

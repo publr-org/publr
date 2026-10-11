@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
 import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
@@ -44,10 +45,10 @@ export function AppSwitcher({ current, current_href, choices, csrf, back, after,
         <DropdownMenuTrigger asChild>
           <StatusButton
             stripe={false}
-            prefix={linked ? "App" : undefined}
+            prefix={linked ? Publr.t("App") : undefined}
             attach={linked || extended ? "start" : "none"}
             merge={linked ? "next" : "none"}
-            label={`Showing: ${current}. Switch app`}
+            label={Publr.t("Showing: {current}. Switch app", { current })}
           >
             {current}
           </StatusButton>
@@ -73,8 +74,8 @@ export function AppSwitcher({ current, current_href, choices, csrf, back, after,
                     hierarchy="tertiary"
                     href={choice.href}
                     target="_blank"
-                    label={`Open ${choice.label}`}
-                    title={`Open ${choice.label}`}
+                    label={Publr.t("Open {name}", { name: choice.label })}
+                    title={Publr.t("Open {name}", { name: choice.label })}
                   >
                     <Icon name="external" size="sm" />
                   </Button>
@@ -92,7 +93,7 @@ export function AppSwitcher({ current, current_href, choices, csrf, back, after,
           icon_name="external"
           attach={extended ? "middle" : "end"}
           merge="previous"
-          label={`Open ${current}`}
+          label={Publr.t("Open {name}", { name: current })}
         />
       )}
       {after}

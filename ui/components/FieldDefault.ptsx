@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
@@ -34,21 +35,19 @@ export function FieldDefault({
   return (
     <section class="border-t border-border pt-6">
       <Heading level={2} size="md">
-        Default value
+        {Publr.t("Default value")}
       </Heading>
       <div class="mt-5 flex flex-col gap-6">
         {blocked === "" && can_unique && (
           <div data-when="unique">
-            <Callout title="You cannot set a default value for unique fields.">
-              Default values cannot be set for fields with the unique validation enabled: every
-              record would start with the same value.
+            <Callout title={Publr.t("You cannot set a default value for unique fields.")}>
+              {Publr.t("Default values cannot be set for fields with the unique validation enabled: every record would start with the same value.")}
             </Callout>
           </div>
         )}
         {blocked === "kind" && (
-          <Callout title="Not available for this field type">
-            You can only set a default value for text, boolean, date and time, number and select
-            fields.
+          <Callout title={Publr.t("Not available for this field type")}>
+            {Publr.t("You can only set a default value for text, boolean, date and time, number and select fields.")}
           </Callout>
         )}
         {blocked === "" && can_now && (
@@ -56,15 +55,15 @@ export function FieldDefault({
             id="default_now"
             name="default_now"
             checked={now}
-            label="Start with the moment of creation"
-            description="A new record takes the time it is created instead of a fixed moment"
+            label={Publr.t("Start with the moment of creation")}
+            description={Publr.t("A new record takes the time it is created instead of a fixed moment")}
           />
         )}
         {blocked === "" && (
           <div data-when={can_unique ? "not-unique" : undefined}>
             <div data-when={can_now ? "not-now" : undefined}>
               <Field>
-                <FieldLabel htmlFor="field-default">What a new record starts with</FieldLabel>
+                <FieldLabel htmlFor="field-default">{Publr.t("What a new record starts with")}</FieldLabel>
                 <FieldControl
                   name="default"
                   control={control}

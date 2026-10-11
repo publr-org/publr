@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
@@ -21,20 +22,20 @@ export type CustomFieldsProps = {
 export function CustomFields({ groups }: CustomFieldsProps) {
   return (
     <IndexPage
-      title="Custom Fields"
-      parents={[{ label: "Structure", href: "/admin/structure" }]}
-      description="Create field groups and choose where they appear."
+      title={Publr.t("Custom Fields")}
+      parents={[{ label: Publr.t("Structure"), href: "/admin/structure" }]}
+      description={Publr.t("Create field groups and choose where they appear.")}
       actions={
         <Button href="/admin/custom-fields/new">
           <Icon name="plus" size="sm" />
-          <span>Add field group</span>
+          <span>{Publr.t("Add field group")}</span>
         </Button>
       }
       empty={
         groups.length === 0 && (
           <Empty>
-            <EmptyTitle>No field groups yet</EmptyTitle>
-            <EmptyDescription>Add a group to extend users or media.</EmptyDescription>
+            <EmptyTitle>{Publr.t("No field groups yet")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("Add a group to extend users or media.")}</EmptyDescription>
           </Empty>
         )
       }
@@ -42,9 +43,9 @@ export function CustomFields({ groups }: CustomFieldsProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Handle</TableHead>
-            <TableHead>Status</TableHead>
+            <TableHead>{Publr.t("Name")}</TableHead>
+            <TableHead>{Publr.t("Handle")}</TableHead>
+            <TableHead>{Publr.t("Status")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

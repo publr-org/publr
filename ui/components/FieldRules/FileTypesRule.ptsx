@@ -1,3 +1,4 @@
+import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -23,8 +24,8 @@ export function FileTypesRule({
       id="limit_types"
       name="limit_types"
       checked={limit_types}
-      label="Accept only specified file types"
-      description="Make this field only accept the ticked kinds of file"
+      label={Publr.t("Accept only specified file types")}
+      description={Publr.t("Make this field only accept the ticked kinds of file")}
     >
       <div class="flex flex-wrap gap-x-6 gap-y-3">
         {media_types.map((media_type) => (
@@ -38,7 +39,7 @@ export function FileTypesRule({
         ))}
       </div>
       <Field>
-        <FieldLabel htmlFor="types_message">Custom error message</FieldLabel>
+        <FieldLabel htmlFor="types_message">{Publr.t("Custom error message")}</FieldLabel>
         <Input id="types_message" name="types_message" value={types_message} maxLength={255} />
       </Field>
     </CheckboxField>
