@@ -120,18 +120,13 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-  # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
-  # kind of CPU (for any CPU of that kind: baseline). Linux is cross-compiled against musl.
-  build:
+  # Before anything is built for release, with a plain Debug binary (the quickest to make):
+  # this version's fixture, the lived site carried on, every earlier fixture updated, and
+  # the previous minor running on the result. A release that would break a site's database
+  # builds nothing.
+  upgrade:
     needs: version
-    strategy:
-      matrix:
-        include:
-          - { runner: ubuntu-latest, target: x86_64-linux-musl, file: publr-linux-x86_64 }
-          - { runner: ubuntu-latest, target: aarch64-linux-musl, file: publr-linux-aarch64 }
-          - { runner: macos-latest, target: native, file: publr-macos-aarch64 }
-          - { runner: macos-15-intel, target: native, file: publr-macos-x86_64 }
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
     env: { VERSION: "${{ needs.version.outputs.version }}" }
     steps:
       - uses: actions/checkout@v4
@@ -155,28 +150,15 @@ jobs:
 
       - uses: ./publr/.github/actions/workspace
         with:
-          target: ${{ matrix.target }}
           commits: ${{ needs.version.outputs.commits }}
 
-      - name: zig build
-        working-directory: publr
-        run: |
-          zig build -Dtarget=${{ matrix.target }} -Dcpu=baseline -Doptimize=ReleaseSafe \
-            -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --prefix ../out
-          cp ../out/bin/publr ../${{ matrix.file }}
-
-      - name: Check it reports the version
-        if: matrix.target != 'aarch64-linux-musl'
-        run: test "$(./${{ matrix.file }} --version)" = "publr $VERSION"
-
-      # With the release binary itself: its fixture, the lived site carried on, every
-      # earlier fixture updated, and the previous minor running on the result.
       - name: Upgrade fixtures and tests
-        if: matrix.file == 'publr-linux-x86_64'
         working-directory: publr
         env: { PREVIOUS: "${{ needs.version.outputs.previous }}" }
         run: |
-          binary="$PWD/../${{ matrix.file }}"
+          zig build -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --prefix ../out
+          binary="$PWD/../out/bin/publr"
+          test "$("$binary" --version)" = "publr $VERSION"
           previous_binary=""
           if [ -n "$PREVIOUS" ]; then
             mkdir -p ../previous
@@ -193,18 +175,54 @@ jobs:
           test "${PIPESTATUS[0]}" -eq 0
 
       - uses: actions/upload-artifact@v4
-        if: matrix.file == 'publr-linux-x86_64'
         with:
           name: upgrade
           path: |
             publr/fixtures/upgrade/*.tar.gz
             upgrade.txt
 
+  # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
+  # kind of CPU (for any CPU of that kind: baseline). Linux is cross-compiled against musl.
+  build:
+    needs: [version, upgrade]
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-latest, target: x86_64-linux-musl, file: publr-linux-x86_64 }
+          - { runner: ubuntu-latest, target: aarch64-linux-musl, file: publr-linux-aarch64 }
+          - { runner: macos-latest, target: native, file: publr-macos-aarch64 }
+          - { runner: macos-15-intel, target: native, file: publr-macos-x86_64 }
+    runs-on: ${{ matrix.runner }}
+    env: { VERSION: "${{ needs.version.outputs.version }}" }
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: publr, fetch-depth: 0 }
+
+      - name: Write the version
+        working-directory: publr
+        run: *write_version
+
+      - uses: ./publr/.github/actions/workspace
+        with:
+          target: ${{ matrix.target }}
+          commits: ${{ needs.version.outputs.commits }}
+
+      - name: zig build
+        working-directory: publr
+        run: |
+          zig build -Dtarget=${{ matrix.target }} -Dcpu=baseline -Doptimize=ReleaseSafe \
+            -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --prefix ../out
+          cp ../out/bin/publr ../${{ matrix.file }}
+
+      - name: Check it reports the version
+        if: matrix.target != 'aarch64-linux-musl'
+        run: test "$(./${{ matrix.file }} --version)" = "publr $VERSION"
+
       - uses: actions/upload-artifact@v4
         with: { name: "${{ matrix.file }}", path: "${{ matrix.file }}" }
 
   release:
-    needs: [version, build]
+    needs: [version, upgrade, build]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
