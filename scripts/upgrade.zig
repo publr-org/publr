@@ -14,10 +14,17 @@ const facts_module = @import("upgrade/facts.zig");
 const seed = @import("upgrade/seed.zig");
 const check_module = @import("upgrade/check.zig");
 const frozen = @import("upgrade/frozen.zig");
+const smoke = @import("smoke.zig");
 
 const lived_name = "lived";
 const port: u16 = 8093;
 const fixtures_max: u32 = 4096;
+/// Readers are tolerant from here on: a release before it cannot run on a newer database.
+const step_back_baseline: std.SemanticVersion = .{
+    .major = 0,
+    .minor = 3,
+    .patch = 0,
+};
 
 const Args = struct {
     command: []const u8,
@@ -92,11 +99,14 @@ fn parse(init: std.process.Init) !Args {
 }
 
 /// Every fixture, oldest first, then the lived site.
-fn matrix(init: std.process.Init, args: Args) !u8 {
-    std.debug.assert(args.fixtures.len > 0);
+fn matrix(init: std.process.Init, given: Args) !u8 {
+    std.debug.assert(given.fixtures.len > 0);
     std.debug.assert(port > 0);
 
     const arena = init.arena.allocator();
+    var args = given;
+
+    args.previous = try stepping_back(init, given);
 
     if (!try frozen.expect_unchanged(init, args.fixtures, args.releasing)) {
         return 1;
@@ -135,6 +145,31 @@ fn matrix(init: std.process.Init, args: Args) !u8 {
     std.debug.print("{d} passed, {d} failed\n", .{ passed, failed });
 
     return if (failed == 0) 0 else 1;
+}
+
+/// The release to step back to, unless it predates tolerant readers: a step back is promised
+/// from the baseline on.
+fn stepping_back(init: std.process.Init, args: Args) !?[]const u8 {
+    std.debug.assert(args.work.len > 0);
+    std.debug.assert(args.version.len > 0);
+
+    const previous = args.previous orelse return null;
+    const result = try smoke.run_publr(init, previous, ".", &.{"--version"});
+    const printed = std.mem.trim(u8, result.stdout, " \n");
+    const name = if (std.mem.startsWith(u8, printed, "publr ")) printed["publr ".len..] else "";
+    const version = std.SemanticVersion.parse(name) catch {
+        std.debug.print("upgrade: {s} reports no version: {s}\n", .{ previous, printed });
+        return error.UnknownPrevious;
+    };
+
+    if (version.order(step_back_baseline) == .lt) {
+        std.debug.print("upgrade: no step back to {s}: readers are tolerant from 0.3.0\n", .{
+            name,
+        });
+        return null;
+    }
+
+    return previous;
 }
 
 /// One fixture unpacked and checked, its line printed; whether it passed.
