@@ -27,27 +27,27 @@ export function MediaFileHeader({ id, title, filename, facts, uploaded, url, sav
     <div class="flex flex-wrap items-center gap-3 px-6 py-3" data-part="media-file-header">
       <div class="flex min-w-0 flex-1 flex-col">
         <Heading level={1} size="sm" classes="truncate">{title}</Heading>
-        <Text as="span" variant="body-xs" tone="muted" classes="truncate">{`${filename} · ${facts} · uploaded ${uploaded}`}</Text>
+        <Text as="span" variant="body-xs" tone="muted" classes="truncate">{Publr.t("{filename} · {facts} · uploaded {uploaded}", { filename, facts, uploaded })}</Text>
       </div>
-      {saved && <Status tone="success">Saved</Status>}
+      {saved && <Status tone="success">{Publr.t("Saved")}</Status>}
       <Button href={url} target="_blank" hierarchy="secondary" size="sm">
         <Icon name="external" size="sm" />
-        <span>Open file</span>
+        <span>{Publr.t("Open file")}</span>
       </Button>
       <Dialog>
         <DialogTrigger asChild>
           <Button type="button" hierarchy="secondary" intent="destructive" size="sm">
             <Icon name="trash" size="sm" />
-            <span>Delete</span>
+            <span>{Publr.t("Delete")}</span>
           </Button>
         </DialogTrigger>
         <DialogContent>
-          <DialogTitle>{`Delete ${title}?`}</DialogTitle>
-          <DialogDescription>The file and its resized copies are removed for good.</DialogDescription>
+          <DialogTitle>{Publr.t("Delete {title}?", { title })}</DialogTitle>
+          <DialogDescription>{Publr.t("The file and its resized copies are removed for good.")}</DialogDescription>
           <form method="post" action={`/admin/media/${id}/delete`} class="mt-4 flex justify-end gap-2">
             <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
-            <DialogClose asChild><Button type="button" hierarchy="secondary">Cancel</Button></DialogClose>
-            <Button type="submit" intent="destructive">Delete file</Button>
+            <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+            <Button type="submit" intent="destructive">{Publr.t("Delete file")}</Button>
           </form>
         </DialogContent>
       </Dialog>

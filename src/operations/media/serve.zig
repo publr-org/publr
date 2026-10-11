@@ -1,4 +1,5 @@
 const std = @import("std");
+const tags = @import("tags.zig");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
@@ -128,32 +129,12 @@ pub const FolderDelete = struct {
             return error.Invalid;
         }
 
-        const tree = try registry.SDK.dispatch(ctx, term.Tree, .{
-            .taxonomy = model.media.folders_handle,
-        });
-        const folder = node_of(tree.terms, in.folder) orelse return error.NotFound;
-        const parent = folder.parent orelse "";
-        var moved: u32 = 0;
-
-        for (tree.terms) |node| {
-            const below = node.parent != null and std.mem.eql(u8, node.parent.?, folder.id);
-
-            if (below) {
-                _ = try registry.SDK.dispatch(ctx, term.Save, .{
-                    .id = node.id,
-                    .document = "{}",
-                    .parent = parent,
-                });
-                moved += 1;
-            }
-        }
-
-        for (try store.media.filed_in(ctx.db, ctx.arena, folder.id)) |record| {
-            try library.save(ctx, record, edit.Changes{
-                .folder = parent,
-            });
-            moved += 1;
-        }
+        const folders = try tags.taxonomy_id(ctx, model.media.folders_handle);
+        const folder = try store.terms.node(ctx.db, ctx.arena, folders, in.folder) orelse {
+            return error.NotFound;
+        };
+        const parent = folder.parent_id orelse "";
+        const moved = try move_up(ctx, folder.id, parent);
 
         _ = try registry.SDK.dispatch(ctx, term.Purge, .{
             .id = folder.id,
@@ -165,16 +146,86 @@ pub const FolderDelete = struct {
     }
 };
 
-fn node_of(nodes: []const term.Node, id: []const u8) ?term.Node {
-    std.debug.assert(id.len > 0);
+/// Moved up in batches: a folder's own folders and files go to its parent, each move
+/// taking one out of it, until none is left; how many moved.
+fn move_up(ctx: *Ctx, folder: []const u8, parent: []const u8) Error!u32 {
+    std.debug.assert(folder.len > 0);
+    std.debug.assert(ctx.db.transaction_depth >= 1);
 
-    for (nodes) |node| {
-        if (std.mem.eql(u8, node.id, id)) {
-            return node;
+    const scratch = try ctx.scratch();
+    var moved: u32 = 0;
+    var progress: Progress = .{};
+
+    while (true) {
+        const begun = scratch.mark();
+        defer scratch.rewind(begun);
+
+        const children = try store.terms.child_ids(ctx.db, scratch.allocator(), folder, batch);
+
+        try progress.past(children);
+
+        for (children) |child| {
+            _ = try registry.SDK.dispatch(ctx, term.Save, .{
+                .id = child,
+                .document = "{}",
+                .parent = parent,
+            });
+        }
+
+        moved += @intCast(children.len);
+
+        if (children.len < batch) {
+            break;
         }
     }
 
-    return null;
+    while (true) {
+        const begun = scratch.mark();
+        defer scratch.rewind(begun);
+
+        const filed = try store.media.filed_in(ctx.db, scratch.allocator(), folder, batch);
+
+        try progress.past(filed);
+
+        for (filed) |record| {
+            try library.save(ctx, record, edit.Changes{
+                .folder = parent,
+            });
+        }
+
+        moved += @intCast(filed.len);
+
+        if (filed.len < batch) {
+            return moved;
+        }
+    }
 }
+
+const batch: u32 = 50;
+
+/// A batch that starts where the last one did moved nothing: stopped, never looped on.
+const Progress = struct {
+    first: [128]u8 = undefined,
+    first_len: u32 = 0,
+
+    fn past(progress: *Progress, ids: []const []const u8) Error!void {
+        if (ids.len == 0) {
+            return;
+        }
+
+        const first = ids[0];
+
+        std.debug.assert(first.len <= progress.first.len);
+
+        const last = progress.first[0..progress.first_len];
+
+        if (progress.first_len > 0 and std.mem.eql(u8, last, first)) {
+            return error.Failed;
+        }
+
+        @memcpy(progress.first[0..first.len], first);
+        progress.first_len = @intCast(first.len);
+    }
+};
 
 pub const operations = [_]type{ File, FolderDelete };

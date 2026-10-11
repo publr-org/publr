@@ -1,0 +1,18 @@
+import { Publr } from "publr-jsx";
+import { choose, chosen, file_ref, state } from "./MediaLibrary.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+
+/** Upload: picks files from this computer into the media library's type, and the open
+ * folder for the library's own. */
+export function MediaLibraryUpload() {
+  return (
+    <div class="flex items-center">
+      <input type="file" multiple class="hidden" ref={file_ref} onChange={chosen} />
+      <Button type="button" size="sm" onClick={choose} disabled={state.busy}>
+        <Icon name="upload" size="sm" />
+        <span>{Publr.t("Upload")}</span>
+      </Button>
+    </div>
+  );
+}

@@ -54,7 +54,7 @@ export function MediaFocal({ src, focal_x, focal_y, image, shown, file, kind }: 
           <audio src={file} controls preload="metadata" class="w-full" />
         </div>
       ) : shown === "pdf" ? (
-        <iframe src={file} title="The document" class="block aspect-[3/4] w-full rounded-md border border-border bg-muted" />
+        <iframe src={file} title={Publr.t("The document")} class="block aspect-[3/4] w-full rounded-md border border-border bg-muted" />
       ) : (
         <div class="flex aspect-video w-full items-center justify-center rounded-md bg-muted">
           <AssetCardFile label={kind}>
@@ -64,7 +64,7 @@ export function MediaFocal({ src, focal_x, focal_y, image, shown, file, kind }: 
       )}
       {image && (
         <Text as="span" variant="body-xs" tone="muted">
-          {`Focal point ${state.x}% across, ${state.y}% down. Click the image to move it; crops keep it in view.`}
+          {Publr.t("Focal point {x}% across, {y}% down. Click the image to move it; crops keep it in view.", { x: state.x, y: state.y })}
         </Text>
       )}
       <input type="hidden" name="focal_x" value={`${state.x}`} />

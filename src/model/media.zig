@@ -48,6 +48,10 @@ pub const kinds = [_]Kind{
     known("txt", "text/plain; charset=utf-8", "text", "", 0),
     known("csv", "text/csv; charset=utf-8", "spreadsheet", "", 0),
     known("zip", "application/zip", "archive", "PK\x03\x04", 0),
+    known("woff2", "font/woff2", "font", "wOF2", 0),
+    known("woff", "font/woff", "font", "wOFF", 0),
+    known("ttf", "font/ttf", "font", "\x00\x01\x00\x00", 0),
+    known("otf", "font/otf", "font", "OTTO", 0),
 };
 
 fn known(
@@ -122,9 +126,12 @@ pub fn matches(kind: Kind, bytes: []const u8) bool {
 }
 
 /// Where an upload is kept: `YYYY/MM/<stem>-<random><.ext>`, the stem the file name's,
-/// lowercased, every run of other characters a dash, at most 60 long.
+/// lowercased, every run of other characters a dash, at most 60 long. A file of another
+/// media type is kept under its type's handle (`ai_picture/YYYY/MM/...`), apart from the
+/// library's folder that people put files into.
 pub fn key_of(
     buffer: *[files.key_len_max]u8,
+    type_handle_of: []const u8,
     now_ms: i64,
     filename: []const u8,
     random: *const [random_len]u8,
@@ -140,8 +147,10 @@ pub fn key_of(
     const month = year_day.calculateMonthDay().month.numeric();
     var stem_buffer: [60]u8 = undefined;
     const stem = stem_of(&stem_buffer, filename);
-    const key = std.fmt.bufPrint(buffer, "{d}/{d:0>2}/{s}-{s}.{s}", .{
-        year_day.year, month, stem, random, kind.extension,
+    const area = if (is_library(type_handle_of)) "" else type_handle_of;
+    const slash = if (area.len > 0) "/" else "";
+    const key = std.fmt.bufPrint(buffer, "{s}{s}{d}/{d:0>2}/{s}-{s}.{s}", .{
+        area, slash, year_day.year, month, stem, random, kind.extension,
     }) catch unreachable;
 
     std.debug.assert(files.valid_key(key));
@@ -207,6 +216,7 @@ pub const type_def: content_type.Def = .{
     .handle = type_handle,
     .name = "Media",
     .description = "Files in the media library: what each shows, and who made it.",
+    .kind = .media,
     .icon = "image",
     .system = true,
     .owner = "publr",
@@ -217,16 +227,19 @@ pub const type_def: content_type.Def = .{
             .label = "Title",
             .kind = "string",
             .required = true,
+            .variants = true,
         },
         .{
             .name = "alt",
             .label = "Alt text",
             .kind = "string",
+            .variants = true,
         },
         .{
             .name = "caption",
             .label = "Caption",
             .kind = "text",
+            .variants = true,
         },
         .{
             .name = "credit",
@@ -260,7 +273,6 @@ pub const tags_definition =
     \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
 ;
 
-/// Whether a content type is the library's: its records are files, kept out of Content.
 /// Where a file put into the media folder by hand belongs: its name, and the library
 /// folders its directories name, outermost first and no deeper than folders nest. A top
 /// directory of four digits is the library's own dated layout and names no folder.
@@ -308,6 +320,7 @@ pub fn placed_of(buffer: *[folder_depth_max][]const u8, path: []const u8) Placed
     };
 }
 
+/// Whether a media type is the library's own, the one the Media page shows.
 pub fn is_library(handle: []const u8) bool {
     const library = std.mem.eql(u8, handle, type_handle);
 
@@ -347,6 +360,9 @@ test "matches: signatures, readable images, SVG markup" {
     try std.testing.expect(!matches(kind_of("a.svg").?, "<html></html>"));
     try std.testing.expect(matches(kind_of("a.txt").?, "hello"));
     try std.testing.expect(!matches(kind_of("a.txt").?, ""));
+    try std.testing.expect(matches(kind_of("Inter.woff2").?, "wOF2\x00\x01\x00\x00"));
+    try std.testing.expect(!matches(kind_of("Inter.woff2").?, "wOFF\x00\x01\x00\x00"));
+    try std.testing.expectEqualStrings("font", kind_of("Inter.OTF").?.family);
 }
 
 test "key_of: dated, slugged, random, keeps the extension" {
@@ -357,11 +373,15 @@ test "key_of: dated, slugged, random, keeps the extension" {
 
     try std.testing.expectEqualStrings(
         "2026/10/summer-in-krakow-a1b2c3.jpg",
-        key_of(&buffer, now_ms, "Summer in  KRAKOW!.JPG", random),
+        key_of(&buffer, type_handle, now_ms, "Summer in  KRAKOW!.JPG", random),
     );
     try std.testing.expectEqualStrings(
         "2026/10/file-a1b2c3.png",
-        key_of(&buffer, now_ms, "---.png", random),
+        key_of(&buffer, type_handle, now_ms, "---.png", random),
+    );
+    try std.testing.expectEqualStrings(
+        "ai_picture/2026/10/pasted-a1b2c3.png",
+        key_of(&buffer, "ai_picture", now_ms, "Pasted.png", random),
     );
 }
 

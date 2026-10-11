@@ -78,6 +78,34 @@ pub fn get(connection: *db.Db, arena: std.mem.Allocator, record: []const u8) db.
     return try select.read(Row, arena);
 }
 
+/// The handle of the media type a file is of.
+pub fn type_of(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    record: []const u8,
+) db.Error!?[]const u8 {
+    std.debug.assert(record.len > 0);
+    std.debug.assert(record.len <= 128);
+
+    var select = try connection.prepare(
+        "SELECT c.handle FROM records r JOIN content_types c ON c.id = r.type_id " ++
+            "WHERE r.id = ?1",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, record);
+
+    if (!try select.step()) {
+        return null;
+    }
+
+    const Found = struct {
+        handle: []const u8,
+    };
+
+    return (try select.read(Found, arena)).handle;
+}
+
 pub fn by_key(connection: *db.Db, arena: std.mem.Allocator, key: []const u8) db.Error!?Row {
     std.debug.assert(key.len > 0);
     std.debug.assert(key.len <= 256);
@@ -216,26 +244,31 @@ pub fn focal(connection: *db.Db, arena: std.mem.Allocator, record: []const u8) d
 }
 
 /// The files filed straight in a folder, not through one below it.
+/// The first `limit` files filed in a folder.
 pub fn filed_in(
     connection: *db.Db,
     arena: std.mem.Allocator,
     folder: []const u8,
+    limit: u32,
 ) db.Error![]const []const u8 {
     std.debug.assert(folder.len > 0);
-    std.debug.assert(folder.len <= 128);
+    std.debug.assert(folder.len <= 128 and limit > 0);
 
     var select = try connection.prepare(
         "SELECT t.record FROM record_terms t JOIN media m ON m.record = t.record " ++
             "WHERE t.term = ?1 AND t.slot = 'live' AND t.field = 'media_folders' " ++
-            "AND t.explicit = 1 LIMIT 10000",
+            "AND t.explicit = 1 ORDER BY t.record LIMIT ?2",
     );
     defer select.finalize();
 
     try select.bind_text(1, folder);
+    try select.bind_int(2, limit);
 
     var found: std.ArrayList([]const u8) = .empty;
 
     while (try select.step()) {
+        std.debug.assert(found.items.len < limit);
+
         const row = try select.read(struct {
             record: []const u8,
         }, arena);

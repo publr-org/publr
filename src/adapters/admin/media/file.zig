@@ -2,6 +2,8 @@
 //! by one to `/delete` under it.
 
 const std = @import("std");
+const variants = @import("../../../operations/variants.zig");
+const editor = @import("../editor.zig");
 const admin = @import("../../admin.zig");
 const registry = @import("../../../server/registry.zig");
 const media = @import("../../../operations/media.zig");
@@ -33,7 +35,7 @@ pub fn show(
         return admin.fail(&session, err, back);
     };
     const arena = session.arena;
-    const sides = try library.sides_of(views.MediaFile, arena, .{}, listed);
+    const sides = try library.sides_of(views.MediaFile, &session, .{}, listed);
     const item = detail.media;
     const image = std.mem.eql(u8, item.family, "image");
     var names: std.ArrayList([]const u8) = .empty;
@@ -71,6 +73,8 @@ pub fn show(
         .unsorted = @floatFromInt(listed.unsorted),
         .unreviewed = @floatFromInt(listed.unreviewed),
         .on_server = library.on_server(&session),
+        .languages = try editor.languages_of(views.MediaFile.LanguagesItem, &session),
+        .translations = try translations_shown(arena, detail.translations),
     });
 }
 
@@ -129,6 +133,7 @@ pub fn save(
         .folder = form.get("folder") orelse "",
         .tags = tags,
         .private = form.get("private") != null,
+        .translations = try translations_posted(session, form),
     }) catch |err| return admin.fail(session, err, back);
 
     try response.redirect(.see_other, try std.fmt.allocPrint(
@@ -201,4 +206,60 @@ test "percent_of: 0 to 100 or nothing" {
     try std.testing.expectEqual(@as(?u8, 30), percent_of("30"));
     try std.testing.expectEqual(@as(?u8, null), percent_of("130"));
     try std.testing.expectEqual(@as(?u8, null), percent_of(null));
+}
+
+fn translations_shown(
+    arena: std.mem.Allocator,
+    translations: []const media.edit.Translation,
+) admin.Error![]const views.MediaFile.TranslationsItem {
+    std.debug.assert(translations.len <= media.edit.translations_max);
+
+    const items = try arena.alloc(views.MediaFile.TranslationsItem, translations.len);
+
+    for (translations, items) |translation, *item| {
+        item.* = .{
+            .code = translation.code,
+            .title = translation.title,
+            .alt = translation.alt,
+            .caption = translation.caption,
+        };
+    }
+
+    return items;
+}
+
+/// `title@pl`, `alt@pl`, `caption@pl` for each of the site's other languages.
+fn translations_posted(
+    session: *admin.Session,
+    form: *const admin.Form,
+) admin.Error![]const media.edit.Translation {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(form.len <= admin.form_pairs_max);
+
+    const others = variants.others(&session.ctx) catch return &.{};
+    const out = try session.arena.alloc(media.edit.Translation, others.len);
+
+    for (others, out) |variant, *translation| {
+        translation.* = .{
+            .code = variant.code,
+            .title = try posted(session.arena, form, "title", variant.code),
+            .alt = try posted(session.arena, form, "alt", variant.code),
+            .caption = try posted(session.arena, form, "caption", variant.code),
+        };
+    }
+
+    return out;
+}
+
+fn posted(
+    arena: std.mem.Allocator,
+    form: *const admin.Form,
+    comptime name: []const u8,
+    code: []const u8,
+) admin.Error![]const u8 {
+    std.debug.assert(code.len > 0);
+
+    const key = try std.fmt.allocPrint(arena, name ++ "@{s}", .{code});
+
+    return form.get(key) orelse "";
 }

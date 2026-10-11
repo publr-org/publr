@@ -1,0 +1,38 @@
+import { Publr } from "publr-jsx";
+import { follow, state } from "./MediaLibrary.ptsx";
+import { Pagination } from "@publr/ui/Pagination.ptsx";
+import { PaginationContent } from "@publr/ui/PaginationContent.ptsx";
+import { PaginationItem } from "@publr/ui/PaginationItem.ptsx";
+import { PaginationNext } from "@publr/ui/PaginationNext.ptsx";
+import { PaginationPrevious } from "@publr/ui/PaginationPrevious.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+/** A media library's pages, while there is more than one: previous, where this one is,
+ * next. */
+export function MediaLibraryPager() {
+  return (
+    <div class="contents">
+      {state.pages > 1 && (
+        <div class="border-t border-border px-6 py-4" data-part="media-pages">
+          <Pagination label={Publr.t("Pages")}>
+            <PaginationContent>
+              {state.prev_href !== "" && (
+                <PaginationItem>
+                  <PaginationPrevious href={state.prev_href} onClick={follow} />
+                </PaginationItem>
+              )}
+              <PaginationItem>
+                <Text as="span" variant="body-sm" tone="muted">{state.page_text}</Text>
+              </PaginationItem>
+              {state.next_href !== "" && (
+                <PaginationItem>
+                  <PaginationNext href={state.next_href} onClick={follow} />
+                </PaginationItem>
+              )}
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
+    </div>
+  );
+}

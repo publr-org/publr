@@ -1,7 +1,7 @@
 //! What a template reads beyond its route's records: `get(type, id)`, `findOne` and
 //! `find(type, { field: value })` (one field, by equality), `query(groq, params)` (GROQ,
 //! through `record.query`), and `call(name, input)`, which runs a plugin's `app.*` read for
-//! the visitor.
+//! the visitor, and `media(id)`, the file a media field names.
 
 const std = @import("std");
 const registry = @import("../../server/registry.zig");
@@ -10,6 +10,7 @@ const identity_module = @import("../rest/identity.zig");
 const json = @import("../../lib/json.zig");
 const context_module = @import("context.zig");
 const changes = @import("../../operations/project/changes.zig");
+const media_view = @import("../../operations/media/view.zig");
 
 const Context = context_module.Context;
 const Entry = Context.Entry;
@@ -95,6 +96,31 @@ pub fn run_query(ctx: *const Context, groq: []const u8, params: []const u8) ![]c
     return answered.result.text;
 }
 
+/// `media(id)`: the file a media field names, as JSON (its address, alt text, size), or
+/// null when there is none the visitor may see.
+pub fn media(ctx: *const Context, id: []const u8) !?[]const u8 {
+    std.debug.assert(id.len <= std.math.maxInt(u32));
+    std.debug.assert(ctx.app.spec.name.len > 0);
+
+    if (id.len == 0 or id.len > 64) {
+        return null;
+    }
+
+    if (ctx.deps) |deps| {
+        deps.record_key(id);
+    }
+
+    var sdk_ctx = ctx.sdk_context();
+    const viewed = registry.SDK.dispatch(&sdk_ctx, media_view.View, .{
+        .id = id,
+    }) catch |err| switch (err) {
+        error.NotFound, error.Invalid => return null,
+        else => return err,
+    };
+
+    return try std.json.Stringify.valueAlloc(sdk_ctx.arena, viewed, .{});
+}
+
 /// `call(name, input)`: a plugin's `app.*` read, installed or built in, as the visitor for
 /// the app; or a built-in operation that allows frontmatter calls. Its output is the
 /// entry's `data`; a refusal is a blank entry.
@@ -116,6 +142,7 @@ pub fn call_with(ctx: *const Context, operation: []const u8, input: []const u8) 
 
     sdk_ctx.app = ctx.app.spec.name;
     sdk_ctx.app_plugins = ctx.app.spec.plugins;
+    sdk_ctx.app_reach = ctx.app.spec.name;
     sdk_ctx.visitor = ctx.visitor_id;
 
     const given = if (input.len > 0) input else "{}";

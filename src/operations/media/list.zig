@@ -36,26 +36,31 @@ pub const Period = struct {
 
 pub const List = struct {
     pub const name = "media.list";
-    pub const description = "The library's files a filter keeps, with the explorer's counts";
+    pub const description = "A media type's files a filter keeps, with the explorer's counts";
     pub const details =
-        \\Newest first, `limit` a page (25 by default). `folder` is a folder's id (its files
-        \\and those of the folders below it), `unsorted` (files in no folder), `unreviewed`
-        \\(files taken in from the media folder that no one has looked at), or empty for
-        \\all. Every tag in `tags` must be on a file; `search` matches its name or title;
-        \\`year` and `month` its upload date; `kind`, `size` and `visibility` the file
-        \\itself. Beside the page: the folder tree, each folder with the files it would show
-        \\keeping the rest of the filter; the tags, each with what adding it would leave;
-        \\the months files were uploaded in; and what All files, Unsorted and Unreviewed
-        \\would hold. Signed-in callers only.
+        \\The files of one media type: the library (`media`) unless `type` names another; one type's
+        \\files never show among another's. Newest first, `limit` a page (25 by default). `folder`
+        \\is a folder's id (its files and those of the folders below it), `unsorted` (files in no
+        \\folder), `unreviewed` (files taken in from the media folder that no one has looked at), or
+        \\empty for all. Every tag in `tags` must be on a file; `search` matches its name or title;
+        \\`year` and `month` its upload date; `kind`, `size` and `visibility` the file itself;
+        \\`families` keeps a media field's file families. Beside the page: the folder tree, each
+        \\folder with the files it would show keeping the rest of the filter; the tags, each with
+        \\what adding it would leave; the months files were uploaded in; and what All files,
+        \\Unsorted and Unreviewed would hold. Folders and tags are the library's alone. Signed-in
+        \\callers only.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
+        type: []const u8 = model.media.type_handle,
         folder: []const u8 = "",
         tags: []const []const u8 = &.{},
         search: []const u8 = "",
         year: ?u32 = null,
         month: ?u32 = null,
         kind: []const u8 = "",
+        /// A media field's `types`, so a picker offers only what the field takes.
+        families: []const []const u8 = &.{},
         size: []const u8 = "",
         visibility: []const u8 = "",
         limit: u32 = page_size_default,
@@ -97,12 +102,14 @@ pub const List = struct {
         }},
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
+        .type = "The media type, by handle; `media`, the library, by default",
         .folder = "A folder's id, `unsorted`, `unreviewed`, or empty for every file",
         .tags = "Tag ids; a file must carry each one",
         .search = "Part of a file's name or title",
         .year = "Uploaded in this year",
         .month = "With `year`: uploaded in this month, 1 to 12",
         .kind = "`image`, `video`, `audio`, `pdf` or `other`; empty for any",
+        .families = "File families, as a media field's types name them; empty for any",
         .size = "`small` (under 1 MiB), `medium` (1 to 10 MiB) or `large`; empty for any",
         .visibility = "`public` or `private`; empty for both",
         .limit = "Page size, up to 200",
@@ -123,7 +130,17 @@ pub const List = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.now_ms >= 0);
 
-        const filter = try filter_of(in);
+        const media_type = try library.media_type_for(ctx, granted, in.type);
+        const library_type = model.media.is_library(media_type.def.handle);
+
+        if (!library_type and (in.folder.len > 0 or in.tags.len > 0)) {
+            return error.Invalid;
+        }
+
+        var filter = try filter_of(in);
+
+        filter.type_id = media_type.id;
+
         const limit = @max(1, @min(in.limit, listing.page_max));
         const rows = try listing.items(ctx.db, ctx.arena, filter, limit, in.offset);
         const items = try ctx.arena.alloc(library.Item, rows.len);
@@ -138,8 +155,8 @@ pub const List = struct {
             .all = try listing.all_count(ctx.db, ctx.arena, filter),
             .unsorted = try listing.unsorted_count(ctx.db, ctx.arena, filter),
             .unreviewed = try listing.unreviewed_count(ctx.db, ctx.arena, filter),
-            .folders = try folders_of(ctx, filter),
-            .tags = try tags_of(ctx, filter),
+            .folders = if (library_type) try folders_of(ctx, filter) else &.{},
+            .tags = if (library_type) try tags_of(ctx, filter) else &.{},
             .periods = try periods_of(ctx, filter),
         };
     }
@@ -150,6 +167,16 @@ fn filter_of(in: List.In) Error!listing.Filter {
 
     if (in.tags.len > listing.tags_max or in.search.len > listing.search_len_max) {
         return error.Invalid;
+    }
+
+    if (in.families.len > model.field.options.media_types_max) {
+        return error.Invalid;
+    }
+
+    for (in.families) |family| {
+        if (!model.field.options.valid_media_type(family)) {
+            return error.Invalid;
+        }
     }
 
     if (in.folder.len > 64 or (in.month != null and (in.month.? < 1 or in.month.? > 12))) {
@@ -188,6 +215,7 @@ fn filter_of(in: List.In) Error!listing.Filter {
 
     return .{
         .kind = kind,
+        .families = in.families,
         .size = size,
         .private = private,
         .folder = folder,
@@ -211,13 +239,30 @@ fn count_of(counts: []const listing.TermCount, id: []const u8) u32 {
     return 0;
 }
 
+/// The terms' ids as a JSON array, for a query of their counts.
+fn ids_json(ctx: *Ctx, nodes: []const term.Node) Error![]const u8 {
+    std.debug.assert(nodes.len <= sdk.operation.page_limit_max);
+
+    const ids = try ctx.arena.alloc([]const u8, nodes.len);
+
+    for (nodes, ids) |node, *id| {
+        id.* = node.id;
+    }
+
+    return std.json.Stringify.valueAlloc(ctx.arena, ids, .{}) catch error.OutOfMemory;
+}
+
 fn folders_of(ctx: *Ctx, filter: listing.Filter) Error![]const Folder {
     std.debug.assert(filter.tags.len <= listing.tags_max);
 
     const tree = try registry.SDK.dispatch(ctx, term.Tree, .{
         .taxonomy = model.media.folders_handle,
+        .limit = sdk.operation.page_limit_max,
     });
-    const counts = try listing.term_counts(ctx.db, ctx.arena, filter, .folders);
+    const counts = try listing.term_counts(ctx.db, ctx.arena, filter, .folders, try ids_json(
+        ctx,
+        tree.terms,
+    ));
     const folders = try ctx.arena.alloc(Folder, tree.terms.len);
 
     for (tree.terms, folders) |node, *folder| {
@@ -240,8 +285,12 @@ fn tags_of(ctx: *Ctx, filter: listing.Filter) Error![]const Tag {
 
     const tree = try registry.SDK.dispatch(ctx, term.Tree, .{
         .taxonomy = model.media.tags_handle,
+        .limit = sdk.operation.page_limit_max,
     });
-    const counts = try listing.term_counts(ctx.db, ctx.arena, filter, .tags);
+    const counts = try listing.term_counts(ctx.db, ctx.arena, filter, .tags, try ids_json(
+        ctx,
+        tree.terms,
+    ));
     const tags = try ctx.arena.alloc(Tag, tree.terms.len);
 
     for (tree.terms, tags) |node, *tag| {

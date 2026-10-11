@@ -1,0 +1,98 @@
+import { Publr } from "publr-jsx";
+import { file_deleted, file_saved, follow, state } from "./MediaLibrary.ptsx";
+import { AssetCardFile } from "@publr/ui/AssetCardFile.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type MediaLibraryFileProps = {
+  /** More fields, under the title in the same form: one Save sends the form, and a page's
+   * own handler for `submit` around the library saves them (`data-part="media-file-form"`). */
+  children?: JSX.Element;
+};
+
+/** The file a media library has open, in place of the tiles: back to the files, its name
+ * and facts, Open file, Delete behind a confirm, its preview and its title. */
+export function MediaLibraryFile({ children }: MediaLibraryFileProps) {
+  return (
+    <div class="flex flex-1 flex-col" data-part="media-file">
+      <div class="flex flex-wrap items-center gap-3 border-b border-border px-6 py-3">
+        <Button href={state.file_back} onClick={follow} hierarchy="tertiary" size="sm" label={Publr.t("Back to the files")} title={Publr.t("Back to the files")}>
+          <Icon name="arrow-left" size="sm" />
+        </Button>
+        <div class="flex min-w-0 flex-1 flex-col">
+          <Heading level={2} size="sm" classes="truncate">{state.file_title}</Heading>
+          <Text as="span" variant="body-xs" tone="muted" classes="truncate">
+            {Publr.t("{filename} · {facts} · uploaded {uploaded}", { filename: state.file_name, facts: state.file_facts, uploaded: state.file_uploaded })}
+          </Text>
+        </div>
+        <Button href={state.file_src} target="_blank" hierarchy="secondary" size="sm">
+          <Icon name="external" size="sm" />
+          <span>{Publr.t("Open file")}</span>
+        </Button>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button type="button" hierarchy="secondary" intent="destructive" size="sm">
+              <Icon name="trash" size="sm" />
+              <span>{Publr.t("Delete")}</span>
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogTitle>{Publr.t("Delete {title}?", { title: state.file_title })}</DialogTitle>
+            <DialogDescription>{Publr.t("The file goes to the trash, where it can be restored.")}</DialogDescription>
+            <form class="mt-4 flex justify-end gap-2" onSubmit={file_deleted}>
+              <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+              <DialogClose asChild><Button type="submit" intent="destructive">{Publr.t("Delete file")}</Button></DialogClose>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+      <div class="grid gap-8 p-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div class="flex flex-col" data-part="media-file-preview">
+          {state.file_shown === "image" ? (
+            <div class="overflow-hidden rounded-md bg-muted">
+              <img src={state.file_preview} alt="" class="block h-auto w-full" />
+            </div>
+          ) : state.file_shown === "video" ? (
+            <video src={state.file_src} controls playsinline preload="metadata" class="block w-full rounded-md bg-black" />
+          ) : state.file_shown === "audio" ? (
+            <div class="flex flex-col gap-4 rounded-md bg-muted p-6">
+              <AssetCardFile label={state.file_kind}>
+                <Icon name="audio" size="lg" />
+              </AssetCardFile>
+              <audio src={state.file_src} controls preload="metadata" class="w-full" />
+            </div>
+          ) : state.file_shown === "pdf" ? (
+            <iframe src={state.file_src} title={Publr.t("The document")} class="block aspect-[3/4] w-full rounded-md border border-border bg-muted" />
+          ) : (
+            <div class="flex aspect-video w-full items-center justify-center rounded-md bg-muted">
+              <AssetCardFile label={state.file_kind}>
+                <Icon name="file" size="lg" />
+              </AssetCardFile>
+            </div>
+          )}
+        </div>
+        <form class="flex flex-col gap-5" data-part="media-file-form" onSubmit={file_saved}>
+          <Field>
+            <FieldLabel htmlFor="media-file-title" required>{Publr.t("Title")}</FieldLabel>
+            <Input id="media-file-title" name="title" value={state.file_title} required maxLength={200} />
+          </Field>
+          {children}
+          <div class="flex justify-end">
+            <Button type="submit" disabled={state.busy}>{Publr.t("Save")}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

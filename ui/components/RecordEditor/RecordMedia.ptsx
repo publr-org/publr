@@ -1,0 +1,324 @@
+import { Publr } from "publr-jsx";
+import type { NavigationStore, PickedMedia } from "../Navigation.ptsx";
+import { MediaTile, media_takes, send_media, shown_media } from "../MediaTile.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { DropOverlay } from "@publr/ui/DropOverlay.ptsx";
+import { DropZone } from "@publr/ui/DropZone.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+/** A file of the library as the field shows it. The server fills these from the record; a
+ * pick or an upload adds more from what the media operations answer. */
+export type MediaFile = {
+  id: string;
+  title: string;
+  /** A square copy for the tile; empty for a file that is not an image. */
+  thumb: string;
+  image: boolean;
+  /** Its type as people say it: `PDF`, `MP4`. */
+  kind: string;
+  icon: "video" | "audio" | "file";
+  /** `JPG · 2400 × 1600 · 1.2 MB`. */
+  facts: string;
+  /** Its record is gone from the library, or its bytes from the media folder. */
+  missing: boolean;
+  /** The form name it posts under: `gallery[2]`, or the field's own name for one file. */
+  slot: string;
+  /** Its place, as the move and remove buttons carry it. */
+  place: string;
+  first: boolean;
+  last: boolean;
+};
+
+export type MediaType = { id: string; label: string };
+
+export const state = Publr.reactive({
+  name: "",
+  many: false,
+  /** The file families the field takes, with their labels; none takes any file. */
+  types: [] as MediaType[],
+  accept: "",
+  can_upload: true,
+  files: [] as MediaFile[],
+  empty: true,
+  /** Files from the computer are held over the field. */
+  over: false,
+  /** The place of the tile being dragged to a new one, and of the tile it is held over;
+   * empty while none is. */
+  dragged: "",
+  target: "",
+  progress: "",
+  note: "",
+});
+
+export const root = Publr.ref<HTMLElement>();
+
+const navigation = Publr.stores.navigation as NavigationStore;
+
+/** Each file's form name and place, after any change to the list. */
+const restamp = (files: MediaFile[]) =>
+  files.map((file, index) => ({
+    ...file,
+    slot: state.many ? `${state.name}[${index}]` : state.name,
+    place: String(index),
+    first: index === 0,
+    last: index === files.length - 1,
+  }));
+
+/** The list changed: the hidden inputs follow, and the editor hears an edit and saves. */
+const keep = (files: MediaFile[]) => {
+  state.files = restamp(state.many ? files : files.slice(-1));
+  state.empty = state.files.length === 0;
+  queueMicrotask(() => {
+    root.current?.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+};
+
+const added = (more: PickedMedia[]) => {
+  const have = new Set(state.files.map((file) => file.id));
+  const fresh = more
+    .filter((file) => !have.has(file.id))
+    .map((file) => ({ ...file, missing: false, slot: "", place: "", first: false, last: false }));
+  keep(state.many ? [...state.files, ...fresh] : fresh);
+};
+
+/** Opens the page's media library over the field; what is chosen there lands here. */
+export const pick = () => {
+  navigation.pickMedia({
+    many: state.many,
+    types: state.types,
+    accept: state.accept,
+    can_upload: state.can_upload,
+    held: state.files.map((file) => file.id),
+    deliver: added,
+  });
+};
+
+/** Uploads what was dropped on the field, one file after another, adding each as it lands. */
+const upload = async (list: FileList | null) => {
+  const families = state.types.map((type) => type.id);
+  const all = Array.from(list ?? []);
+  const wanted = state.many ? all : all.slice(0, 1);
+  const refused = wanted.filter((file) => !media_takes(families, file.type));
+  const sending = wanted.filter((file) => media_takes(families, file.type));
+  state.note = refused.length ? Publr.t("This field does not take {files}.", { files: refused.map((file) => file.name).join(", ") }) : "";
+  for (const [index, file] of sending.entries()) {
+    state.progress = sending.length > 1
+      ? Publr.t("Uploading {number} of {count}…", { number: index + 1, count: sending.length })
+      : Publr.t("Uploading {name}…", { name: file.name });
+    try {
+      added([shown_media(await send_media(file))]);
+    } catch (error) {
+      state.note = Publr.t("Could not upload {name}: {reason}", { name: file.name, reason: (error as Error).message });
+    }
+  }
+  state.progress = "";
+};
+
+/** The place a tile (`data-place`) or one of its buttons (`value`) stands for. */
+const place_of = (event: Event) => {
+  const target = event.currentTarget as HTMLElement;
+  return Number(target.dataset.place ?? (target as HTMLButtonElement).value ?? "-1");
+};
+
+export const remove = (event: Event) => {
+  event.stopPropagation();
+  const place = place_of(event);
+  keep(state.files.filter((_, index) => index !== place));
+};
+
+export const clear = () => {
+  keep([]);
+};
+
+const moved = (from: number, to: number) => {
+  if (from < 0 || to < 0 || from >= state.files.length || to >= state.files.length || from === to) return;
+  const files = [...state.files];
+  const [file] = files.splice(from, 1);
+  files.splice(to, 0, file);
+  keep(files);
+};
+
+export const earlier = (event: Event) => {
+  const place = place_of(event);
+  moved(place, place - 1);
+};
+
+export const later = (event: Event) => {
+  const place = place_of(event);
+  moved(place, place + 1);
+};
+
+const carries_files = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes("Files");
+
+export const drag_start = (event: DragEvent) => {
+  state.dragged = String(place_of(event));
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", state.dragged);
+  }
+};
+
+export const drag_end = () => {
+  state.dragged = "";
+  state.target = "";
+};
+
+export const tile_over = (event: DragEvent) => {
+  if (state.dragged === "") return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+  state.target = String(place_of(event));
+};
+
+export const tile_drop = (event: DragEvent) => {
+  if (state.dragged === "") return;
+  event.preventDefault();
+  event.stopPropagation();
+  moved(Number(state.dragged), place_of(event));
+  state.dragged = "";
+  state.target = "";
+};
+
+export const field_over = (event: DragEvent) => {
+  if (!state.can_upload || !carries_files(event)) return;
+  event.preventDefault();
+  state.over = true;
+};
+
+export const field_leave = (event: DragEvent) => {
+  const next = event.relatedTarget as Node | null;
+  if (!next || !root.current?.contains(next)) state.over = false;
+};
+
+export const field_drop = (event: DragEvent) => {
+  if (!state.can_upload || !carries_files(event)) return;
+  event.preventDefault();
+  state.over = false;
+  void upload(event.dataTransfer?.files ?? null);
+};
+
+export type RecordMediaProps = {
+  name: string;
+  /** A gallery: any number of files, in order. */
+  many: boolean;
+  /** The file families the field's rules take, with their labels; none takes any file. */
+  types: MediaType[];
+  /** What the computer's file chooser offers: `image/*`. */
+  accept: string;
+  /** The field's rules let people upload new files, not only pick ones in the library. */
+  can_upload: boolean;
+  files: MediaFile[];
+};
+
+/** A media field: the files it holds as tiles (one, or a gallery to reorder) and a dashed
+ * area. A click on the area, or on a single file, opens the media library to pick or upload
+ * in; files dropped on the field upload straight into it. The ids post with the record's
+ * form as hidden inputs; the server resolves them again on load. */
+export function RecordMedia({ name, many, types, accept, can_upload, files }: RecordMediaProps) {
+  state.name = name;
+  state.many = many;
+  state.types = types;
+  state.accept = accept;
+  state.can_upload = can_upload;
+  state.files = files;
+  state.empty = files.length === 0;
+
+  return (
+    <div
+      id={`field-${name}`}
+      class="relative flex flex-col gap-3"
+      data-part="record-media"
+      ref={root}
+      onDragOver={field_over}
+      onDragLeave={field_leave}
+      onDrop={field_drop}
+    >
+      {state.files.map((file) => <input type="hidden" name={file.slot} value={file.id} />)}
+      {state.empty && <input type="hidden" name={name} value="" />}
+      {!state.empty && many && (
+        <div class="grid grid-cols-2 overflow-hidden rounded-xl sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {state.files.map((file) => (
+            <div
+              key={file.id}
+              data-place={file.place}
+              draggable="true"
+              class={[
+                "relative cursor-grab transition-opacity active:cursor-grabbing",
+                file.place === state.dragged ? "opacity-40" : "",
+                file.place === state.target && file.place !== state.dragged
+                  ? "after:pointer-events-none after:absolute after:inset-0 after:z-30 after:border-3 after:border-primary after:content-['']" : "",
+              ]}
+              onDragStart={drag_start}
+              onDragEnd={drag_end}
+              onDragOver={tile_over}
+              onDrop={tile_drop}
+            >
+              <MediaTile title={file.title} thumb={file.thumb} image={file.image} kind={file.kind}
+                icon={file.icon} facts={file.facts} missing={file.missing}>
+                {!file.first && (
+                  <Button type="button" hierarchy="secondary" size="mini" label={Publr.t("Move {title} earlier", { title: file.title })}
+                    title={Publr.t("Move earlier")} value={file.place} onClick={earlier}>
+                    <Icon name="chevron-left" size="sm" />
+                  </Button>
+                )}
+                {!file.last && (
+                  <Button type="button" hierarchy="secondary" size="mini" label={Publr.t("Move {title} later", { title: file.title })}
+                    title={Publr.t("Move later")} value={file.place} onClick={later}>
+                    <Icon name="chevron-right" size="sm" />
+                  </Button>
+                )}
+                <Button type="button" hierarchy="secondary" size="mini" label={Publr.t("Remove {title}", { title: file.title })}
+                  title={Publr.t("Remove")} value={file.place} onClick={remove}>
+                  <Icon name="x-close" size="sm" />
+                </Button>
+              </MediaTile>
+            </div>
+          ))}
+        </div>
+      )}
+      {!state.empty && !many && (
+        <div class="w-full max-w-72 cursor-pointer overflow-hidden rounded-xl" onClick={pick}>
+          {state.files.map((file) => (
+            <MediaTile title={file.title} thumb={file.thumb} image={file.image} kind={file.kind}
+              icon={file.icon} facts={file.facts} missing={file.missing}>
+              <Button type="button" hierarchy="secondary" size="mini" label={Publr.t("Remove {title}", { title: file.title })}
+                title={Publr.t("Remove")} value={file.place} onClick={remove}>
+                <Icon name="x-close" size="sm" />
+              </Button>
+            </MediaTile>
+          ))}
+        </div>
+      )}
+      {(many || state.empty) && (
+        <DropZone
+          browse={false}
+          title={!can_upload ? (many ? Publr.t("No files yet") : Publr.t("No file yet"))
+            : !state.empty ? Publr.t("Drop more files here")
+            : many ? Publr.t("Drop files here") : Publr.t("Drop a file here")}
+          description={!can_upload ? Publr.t("Click to pick from the media library.")
+            : many ? Publr.t("Files dropped here upload into the media library.") : Publr.t("A file dropped here uploads into the media library.")}
+          classes={state.empty ? "min-h-40 p-6" : "min-h-28 p-5"}
+          onClick={pick}
+        >
+          <Button type="button" hierarchy="secondary" size="sm">
+            <Icon name="image" size="sm" />
+            <span>{!state.empty ? Publr.t("Add media") : can_upload ? Publr.t("Select or upload media") : Publr.t("Select media")}</span>
+          </Button>
+        </DropZone>
+      )}
+      {!many && !state.empty && (
+        <div class="flex flex-wrap items-center gap-2">
+          <Button type="button" hierarchy="secondary" size="sm" onClick={pick}>
+            <Icon name="replace" size="sm" />
+            <span>{Publr.t("Replace")}</span>
+          </Button>
+          <Button type="button" hierarchy="tertiary" size="sm" onClick={clear}>{Publr.t("Remove")}</Button>
+        </div>
+      )}
+      {state.over && <DropOverlay label={many ? Publr.t("Drop to upload and add") : Publr.t("Drop to upload")} bleed />}
+      {state.progress !== "" && <Text as="p" variant="body-sm" tone="muted">{state.progress}</Text>}
+      {state.note !== "" && <Text as="p" variant="body-sm" tone="error">{state.note}</Text>}
+    </div>
+  );
+}

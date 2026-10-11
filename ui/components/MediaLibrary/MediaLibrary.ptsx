@@ -1,0 +1,921 @@
+import { Publr } from "publr-jsx";
+import { send } from "publr/operations";
+import { ListDetailBand } from "../ListDetailBand.ptsx";
+import { ListDetailColumns } from "../ListDetailColumns.ptsx";
+import { ListDetailDetail } from "../ListDetailDetail.ptsx";
+import { ListDetailList } from "../ListDetailList.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { MediaLibraryFile } from "./MediaLibraryFile.ptsx";
+import { MediaLibraryFilterBar } from "./MediaLibraryFilterBar.ptsx";
+import { MediaLibraryGrid } from "./MediaLibraryGrid.ptsx";
+import { MediaLibraryPager } from "./MediaLibraryPager.ptsx";
+import { MediaLibrarySelection } from "./MediaLibrarySelection.ptsx";
+import { MediaLibrarySidebar } from "./MediaLibrarySidebar.ptsx";
+import { MediaLibraryUpload } from "./MediaLibraryUpload.ptsx";
+
+/** A file as a tile draws it. The server may fill these for the first page; `load` again
+ * from what `media list` answers, so the markup reads fields, never works anything out. */
+export type MediaItem = {
+  id: string;
+  title: string;
+  /** Its page (`/admin/media/<id>`), or `?file=<id>` for the library's own panel. */
+  href: string;
+  /** A square copy for the tile; empty for a file that is not an image. */
+  thumb: string;
+  image: boolean;
+  /** A video: the tile shows its first frame from `src`. */
+  video: boolean;
+  /** The file itself: `/media/<key>`. */
+  src: string;
+  /** Its type as people say it: `PDF`, `MP4`. */
+  kind: string;
+  /** The icon a file without a preview shows. */
+  icon: "video" | "audio" | "file";
+  /** `JPG · 2400 × 1600 · 1.2 MB`. */
+  facts: string;
+  /** Its bytes are gone from the media folder. */
+  missing: boolean;
+  selected: boolean;
+};
+export type MediaFolder = {
+  id: string;
+  name: string;
+  parent: string;
+  depth: number;
+  /** Its indent in the tree, `"1"` to `"5"`. */
+  level: "0" | "1" | "2" | "3" | "4" | "5";
+  /** Its name indented by its depth, for the folder pickers. */
+  label: string;
+  count: number;
+  href: string;
+  current: boolean;
+  /** Whether a folder may still be made inside it. */
+  nests: boolean;
+};
+export type MediaTag = {
+  id: string;
+  name: string;
+  count: number;
+  /** Choosing it, or dropping it when chosen. */
+  href: string;
+  selected: boolean;
+  enabled: boolean;
+};
+/** One filter in the bar, drawn as Content's are: its name, `is`, its value, a menu of the
+ * values it may take (each a link the page follows in place), and a way to drop it. */
+export type MediaPill = {
+  id: string;
+  label: string;
+  value: string;
+  options: Array<{ label: string; href: string; selected: boolean }>;
+  /** Dropping it; empty while it is at Any. */
+  remove_href: string;
+};
+export type MediaPeriod = { year: number; month: number; count: number };
+export type MediaOption = { value: string; label: string; selected: boolean };
+export type MediaAddFilter = { label: string; href: string; added: boolean };
+
+export const state = Publr.reactive({
+  /** The media type whose files these are. */
+  type: "media",
+  /** Where a file's own page is, its id after it; empty opens a file in the panel. */
+  files_at: "",
+  /** Files of this type are filed in folders and under tags (the library's). */
+  filed: true,
+  /** The server drew the first page; otherwise the library asks for it once on the page. */
+  seeded: false,
+  folder: "",
+  tags: [] as string[],
+  search: "",
+  year: 0,
+  month: 0,
+  page: 1,
+  page_size: 25,
+  items: [] as MediaItem[],
+  total: 0,
+  all: 0,
+  unsorted: 0,
+  unreviewed: 0,
+  /** Unreviewed is listed while it holds files or is the folder looked at. */
+  unreviewed_shown: false,
+  all_href: "/admin/media",
+  unsorted_href: "/admin/media?folder=unsorted",
+  unreviewed_href: "/admin/media?folder=unreviewed",
+  /** The files live in a folder on a server, which people can put files into by hand. */
+  on_server: false,
+  server_busy: false,
+  /** What the last check of that folder found, or the hint before one. */
+  server_note: Publr.t("Pick up files put into the media folder outside the admin."),
+  server_new: 0,
+  server_skipped: [] as string[],
+  folders: [] as MediaFolder[],
+  tag_list: [] as MediaTag[],
+  periods: [] as MediaPeriod[],
+  pills: [] as MediaPill[],
+  add_filters: [] as MediaAddFilter[],
+  years: [] as MediaOption[],
+  months: [] as MediaOption[],
+  /** The bar's filters on the file itself: empty while not in the bar, `any` at Any. */
+  kind: "",
+  size_filter: "",
+  visibility: "",
+  pages: 1,
+  prev_href: "",
+  next_href: "",
+  page_text: "",
+  selected_count: 0,
+  details: false,
+  size: "md" as "sm" | "md" | "lg",
+  busy: false,
+  note: "",
+  dragging: false,
+  /** On the library page the explorer filters in place; elsewhere its links navigate. */
+  live: true,
+  /** The file open in the panel, by id; empty for none. */
+  file: "",
+  file_title: "",
+  file_name: "",
+  file_facts: "",
+  file_uploaded: "",
+  /** Where the file is served: `/media/<key>`. */
+  file_src: "",
+  file_preview: "",
+  file_image: false,
+  file_kind: "",
+  /** How the panel previews it, as a file's page does. */
+  file_shown: "other" as "image" | "video" | "audio" | "pdf" | "other",
+  file_back: "",
+});
+
+const depth_max = 5;
+const month_names = () => ["", Publr.t("January"), Publr.t("February"), Publr.t("March"),
+  Publr.t("April"), Publr.t("May"), Publr.t("June"), Publr.t("July"), Publr.t("August"),
+  Publr.t("September"), Publr.t("October"), Publr.t("November"), Publr.t("December")];
+
+const size_text = (bytes: number): string => {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+};
+
+type Filter = { folder: string; tags: string[]; search: string; year: number; month: number; page: number;
+  kind: string; size: string; visibility: string; file: string };
+
+/** The address of a filter on the page the library is on: its query alone, so the same
+ * links work wherever a page puts the library. */
+const href_of = (change: Partial<Filter>): string => {
+  const next: Filter = { folder: state.folder, tags: state.tags, search: state.search,
+    year: state.year, month: state.month, page: 1, kind: state.kind, size: state.size_filter,
+    visibility: state.visibility, file: "", ...change };
+  const query = new URLSearchParams();
+  if (next.folder !== "") query.set("folder", next.folder);
+  for (const tag of next.tags) query.append("tag", tag);
+  if (next.search !== "") query.set("search", next.search);
+  if (next.year > 0) query.set("year", String(next.year));
+  if (next.year > 0 && next.month > 0) query.set("month", String(next.month));
+  if (next.kind !== "") query.set("type", next.kind);
+  if (next.size !== "") query.set("size", next.size);
+  if (next.visibility !== "") query.set("visibility", next.visibility);
+  if (next.page > 1) query.set("page", String(next.page));
+  if (next.file !== "") query.set("file", next.file);
+  return `?${query.toString()}`;
+};
+
+const toggled_tags = (id: string): string[] =>
+  state.tags.includes(id) ? state.tags.filter((tag) => tag !== id) : [...state.tags, id];
+
+type Choice = { value: string; label: string };
+const kinds = (): Choice[] => [{ value: "image", label: Publr.t("Images") }, { value: "video", label: Publr.t("Videos") },
+  { value: "audio", label: Publr.t("Audio") }, { value: "pdf", label: Publr.t("PDFs") }, { value: "other", label: Publr.t("Other files") }];
+const sizes = (): Choice[] => [{ value: "small", label: Publr.t("Under 1 MB") }, { value: "medium", label: Publr.t("1 to 10 MB") },
+  { value: "large", label: Publr.t("Over 10 MB") }];
+const visibilities = (): Choice[] => [{ value: "public", label: Publr.t("Public") }, { value: "private", label: Publr.t("Private") }];
+
+const pill_of = (field: "kind" | "size" | "visibility", label: string, choices: Choice[]): MediaPill => {
+  const current = field === "size" ? state.size_filter : state[field];
+  const any = current === "" || current === "any";
+  return {
+    id: field,
+    label,
+    value: choices.find((choice) => choice.value === current)?.label ?? Publr.t("Any"),
+    options: [
+      { label: Publr.t("Any"), href: href_of({ [field]: "any" }), selected: any },
+      ...choices.map((choice) => ({ label: choice.label, href: href_of({ [field]: choice.value }), selected: choice.value === current })),
+    ],
+    // Type stays in the bar at Any; the others leave it.
+    remove_href: field === "kind" && any ? "" : href_of({ [field]: "" }),
+  };
+};
+
+/** The bar's filters on the file itself, drawn as Content's, and Filter's menu. */
+const restamp_pills = () => {
+  const pills = [pill_of("kind", Publr.t("Type"), kinds())];
+  if (state.size_filter !== "") pills.push(pill_of("size", Publr.t("Size"), sizes()));
+  if (state.visibility !== "") pills.push(pill_of("visibility", Publr.t("Visibility"), visibilities()));
+  state.pills = pills;
+  state.add_filters = [
+    { label: Publr.t("Size"), href: `${href_of({ size: "any" })}#filter-size`, added: state.size_filter !== "" },
+    { label: Publr.t("Visibility"), href: `${href_of({ visibility: "any" })}#filter-visibility`, added: state.visibility !== "" },
+  ];
+  const years = [...new Set(state.periods.map((period) => period.year))];
+  state.years = [{ value: "0", label: Publr.t("Any year"), selected: state.year === 0 },
+    ...years.map((year) => ({ value: String(year), label: String(year), selected: year === state.year }))];
+  state.months = [{ value: "0", label: Publr.t("Any month"), selected: state.month === 0 },
+    ...state.periods.filter((period) => period.year === state.year).map((period) => ({
+      value: String(period.month),
+      label: `${month_names()[period.month] ?? ""} · ${period.count}`,
+      selected: period.month === state.month,
+    }))];
+};
+
+const restamp_selection = (selected: string[]) => {
+  state.items = state.items.map((item) => ({ ...item, selected: selected.includes(item.id) }));
+  state.selected_count = selected.length;
+};
+
+const selection = (): string[] => state.items.filter((item) => item.selected).map((item) => item.id);
+
+/** Everything the markup reads that follows from the filter and the counts. */
+const restamp = () => {
+  state.all_href = href_of({ folder: "" });
+  state.unsorted_href = href_of({ folder: "unsorted" });
+  state.unreviewed_href = href_of({ folder: "unreviewed" });
+  state.unreviewed_shown = state.unreviewed > 0 || state.folder === "unreviewed";
+  state.folders = state.folders.map((folder) => ({
+    ...folder,
+    href: href_of({ folder: folder.id }),
+    current: folder.id === state.folder,
+  }));
+  state.tag_list = state.tag_list.map((tag) => ({
+    ...tag,
+    href: href_of({ tags: toggled_tags(tag.id) }),
+    selected: state.tags.includes(tag.id),
+    enabled: state.tags.includes(tag.id) || tag.count > 0,
+  }));
+  restamp_pills();
+  state.pages = Math.max(1, Math.ceil(state.total / state.page_size));
+  state.prev_href = state.page > 1 ? href_of({ page: state.page - 1 }) : "";
+  state.next_href = state.page < state.pages ? href_of({ page: state.page + 1 }) : "";
+  state.page_text = Publr.tn("Page {page} of {pages} · {count} file", "Page {page} of {pages} · {count} files", state.total, { page: state.page, pages: state.pages });
+  state.items = state.items.map((item) => ({ ...item, href: file_href(item.id) }));
+  state.file_back = href_of({ page: state.page });
+};
+
+const file_href = (id: string): string =>
+  state.files_at !== "" ? `${state.files_at}${id}` : href_of({ page: state.page, file: id });
+
+const filter_from = (address: string) => {
+  const query = new URL(address, location.href).searchParams;
+  state.folder = query.get("folder") ?? "";
+  state.tags = query.getAll("tag");
+  state.search = query.get("search") ?? "";
+  state.year = Number(query.get("year") ?? 0) || 0;
+  state.month = Number(query.get("month") ?? 0) || 0;
+  state.page = Math.max(1, Number(query.get("page") ?? 1) || 1);
+  state.kind = query.get("type") ?? "";
+  state.size_filter = query.get("size") ?? "";
+  state.visibility = query.get("visibility") ?? "";
+  state.file = query.get("file") ?? "";
+};
+
+type Listed = {
+  items: Array<{ id: string; title: string; filename: string; family: string; size: number;
+    width: number | null; height: number | null; key: string; missing: boolean }>;
+  total: number;
+  all: number;
+  unsorted: number;
+  unreviewed: number;
+  folders: Array<{ id: string; name: string; parent: string | null; depth: number; count: number }>;
+  tags: Array<{ id: string; name: string; count: number }>;
+  periods: MediaPeriod[];
+};
+
+type Listed_item = Listed["items"][number];
+
+const extension_of = (item: Listed_item): string => (item.filename.split(".").pop() ?? "").toUpperCase();
+
+const facts_of = (item: Listed_item): string => {
+  const dimensions = item.width ? ` · ${item.width} × ${item.height}` : "";
+  return `${extension_of(item)}${dimensions} · ${size_text(item.size)}`;
+};
+
+const shaped = (listed: Listed) => {
+  state.items = listed.items.map((item) => {
+    const extension = extension_of(item);
+    return {
+      id: item.id,
+      title: item.title,
+      href: file_href(item.id),
+      thumb: item.family === "image" ? `/media/${item.key}?w=480&h=480&fit=cover` : "",
+      image: item.family === "image" && !item.missing,
+      video: item.family === "video" && !item.missing,
+      src: `/media/${item.key}`,
+      kind: extension,
+      icon: item.family === "video" ? "video" : item.family === "audio" ? "audio" : "file",
+      facts: facts_of(item),
+      missing: item.missing,
+      selected: false,
+    };
+  });
+  state.total = listed.total;
+  state.all = listed.all;
+  state.unsorted = listed.unsorted;
+  state.unreviewed = listed.unreviewed;
+  state.unreviewed_shown = listed.unreviewed > 0 || state.folder === "unreviewed";
+  state.folders = listed.folders.map((folder) => ({
+    id: folder.id,
+    name: folder.name,
+    parent: folder.parent ?? "",
+    depth: folder.depth,
+    level: String(Math.min(folder.depth + 1, depth_max)) as MediaFolder["level"],
+    label: `${"— ".repeat(folder.depth)}${folder.name}`,
+    count: folder.count,
+    href: "",
+    current: false,
+    nests: folder.depth < depth_max - 1,
+  }));
+  state.tag_list = listed.tags.map((tag) => ({ ...tag, href: "", selected: false, enabled: true }));
+  state.periods = listed.periods;
+};
+
+/** Every read and write goes through Publr's operations, so the library works the same on
+ * an admin page and in a plugin's frame. */
+const write = (operation: string, input: unknown) => send(operation, input);
+
+let latest = 0;
+
+/** Asks the server for the files and counts of the current filter and shows them. */
+export const load = async () => {
+  const chosen = (value: string) => (value === "any" ? "" : value);
+  const input: Record<string, unknown> = {
+    type: state.type,
+    limit: state.page_size,
+    offset: (state.page - 1) * state.page_size,
+  };
+  if (state.folder !== "") input.folder = state.folder;
+  if (state.tags.length > 0) input.tags = state.tags;
+  if (state.search !== "") input.search = state.search;
+  if (state.year > 0) input.year = state.year;
+  if (state.year > 0 && state.month > 0) input.month = state.month;
+  if (chosen(state.kind) !== "") input.kind = chosen(state.kind);
+  if (chosen(state.size_filter) !== "") input.size = chosen(state.size_filter);
+  if (chosen(state.visibility) !== "") input.visibility = chosen(state.visibility);
+  const asked = ++latest;
+  const kept = selection();
+  if (state.file !== "") open_file();
+  try {
+    const listed = (await write("media.list", input)) as Listed;
+    if (asked !== latest) return;
+    shaped(listed);
+    restamp();
+    restamp_selection(kept.filter((id) => state.items.some((item) => item.id === id)));
+  } catch (error) {
+    if (asked === latest) state.note = Publr.t("Could not load the library: {reason}", { reason: (error as Error).message });
+  }
+};
+
+type Got = { media: Listed_item & { created_at: number } };
+
+/** Reads the file open in the panel. */
+const open_file = async () => {
+  const id = state.file;
+  try {
+    const got = (await write("media.get", { id })) as Got;
+    if (state.file !== id) return;
+    const item = got.media;
+    state.file_title = item.title;
+    state.file_name = item.filename;
+    state.file_facts = facts_of(item);
+    state.file_uploaded = new Date(item.created_at).toLocaleString();
+    state.file_src = `/media/${item.key}`;
+    state.file_image = item.family === "image" && !item.missing;
+    state.file_preview = state.file_image ? `/media/${item.key}?w=1600` : "";
+    state.file_kind = extension_of(item);
+    state.file_shown = item.missing ? "other" : state.file_image ? "image" : item.family === "video" ? "video" :
+      item.family === "audio" ? "audio" : item.family === "pdf" ? "pdf" : "other";
+  } catch (error) {
+    state.note = Publr.t("Could not open the file: {reason}", { reason: (error as Error).message });
+  }
+};
+
+/** Saves the title written in the panel. */
+export const file_saved = (event: Event) => {
+  event.preventDefault();
+  const title = named_field(event.currentTarget as HTMLFormElement, "title");
+  if (title === "") return;
+  return done(() => write("media.update", { id: state.file, title }), Publr.t("Saved"));
+};
+
+/** Deletes the file open in the panel, into the trash, and goes back to the files. */
+export const file_deleted = async (event: Event) => {
+  event.preventDefault();
+  const ids = [state.file];
+  const back = state.file_back;
+  await done(() => write("media.delete", { ids }), Publr.tn("{count} deleted", "{count} deleted", 1));
+  go(back, true);
+};
+
+const go = (address: string, push: boolean) => {
+  const target = new URL(address, location.href).href;
+  if (push) history.pushState(null, "", target);
+  else history.replaceState(null, "", target);
+  filter_from(location.href);
+  restamp();
+  load();
+};
+
+/** Follows a filter link in place: the address changes, the page asks for its files. */
+export const follow = (event: MouseEvent) => {
+  const link = event.currentTarget as HTMLAnchorElement;
+  if (!state.live || event.metaKey || event.ctrlKey || event.shiftKey || !link.href) return;
+  const target = new URL(link.href);
+  // A file's own page, or anywhere else, is a page of its own.
+  if (target.pathname !== location.pathname) return;
+  event.preventDefault();
+  history.pushState(null, "", target.pathname + target.search);
+  filter_from(link.href);
+  restamp();
+  load();
+  // Added from Filter's menu: its value menu opens at once, as the bar does on a page load.
+  if (target.hash.startsWith("#filter-")) requestAnimationFrame(() => open_value(target.hash.slice(1)));
+};
+
+/** The bar's own rule: a pill's value is its last menu trigger outside the operator. */
+const open_value = (id: string) => {
+  const pill = document.getElementById(id);
+  if (!pill) return;
+  const triggers = [...pill.querySelectorAll<HTMLElement>("[data-part='trigger']")].filter(
+    (trigger) => !trigger.closest("[data-part='filter-pill-operator']"),
+  );
+  triggers[triggers.length - 1]?.click();
+};
+
+export const came_back = () => {
+  if (!state.live) return;
+  filter_from(location.href);
+  restamp();
+  load();
+};
+
+let typing = 0;
+
+export const searched = (event: Event) => {
+  const value = (event.currentTarget as HTMLInputElement).value.trim();
+  window.clearTimeout(typing);
+  typing = window.setTimeout(() => go(href_of({ search: value }), false), 250);
+};
+
+export const dated = (event: Event) => {
+  const select = event.currentTarget as HTMLSelectElement;
+  const value = Number(select.value) || 0;
+  go(href_of(select.name === "year" ? { year: value, month: 0 } : { month: value }), true);
+};
+
+export const toggled = (event: Event) => {
+  const box = event.currentTarget as HTMLInputElement;
+  const others = selection().filter((id) => id !== box.value);
+  restamp_selection(box.checked ? [...others, box.value] : others);
+};
+
+export const select_page = () => restamp_selection(state.items.map((item) => item.id));
+
+export const clear_selection = () => restamp_selection([]);
+
+const done = async (work: () => Promise<unknown>, note: string) => {
+  state.busy = true;
+  state.note = "";
+  try {
+    await work();
+    state.note = note;
+  } catch (error) {
+    state.note = Publr.t("Not done: {reason}", { reason: (error as Error).message });
+  } finally {
+    state.busy = false;
+  }
+  await load();
+};
+
+export const delete_selected = async () => {
+  const ids = selection();
+  await done(() => write("media.delete", { ids }), Publr.tn("{count} deleted", "{count} deleted", ids.length));
+  restamp_selection([]);
+};
+
+export const move_selected = (event: Event) => {
+  const folder = (event.currentTarget as HTMLElement).dataset.folder ?? "";
+  const ids = selection();
+  return done(() => write("media.move", { ids, folder }), Publr.tn("{count} moved", "{count} moved", ids.length));
+};
+
+export const tag_ref = Publr.ref<HTMLInputElement>();
+
+export const tagged = (event: Event) => {
+  event.preventDefault();
+  const name = (tag_ref.current?.value ?? "").trim();
+  const ids = selection();
+  if (name === "" || ids.length === 0) return;
+  if (tag_ref.current) tag_ref.current.value = "";
+  return done(() => write("media.tag", { ids, tag: name }), Publr.t("Tagged {name}", { name }));
+};
+
+const named_field = (form: HTMLFormElement, field: string): string =>
+  String(new FormData(form).get(field) ?? "").trim();
+
+const named = (form: HTMLFormElement): string => named_field(form, "name");
+
+export const folder_made = (event: Event) => {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const name = named(form);
+  const parent = form.dataset.parent ?? "";
+  form.reset();
+  if (name === "") return;
+  return done(() => write("term.create", {
+    taxonomy: "media_folders",
+    document: JSON.stringify({ name }),
+    status: "published",
+    ...(parent !== "" ? { parent } : {}),
+  }), Publr.t("Folder {name} made", { name }));
+};
+
+export const folder_renamed = (event: Event) => {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const name = named(form);
+  const id = form.dataset.folder ?? "";
+  if (name === "") return;
+  return done(() => write("term.save", { id, document: JSON.stringify({ name }), status: "published" }), Publr.t("Renamed"));
+};
+
+export const folder_moved = (event: Event) => {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const id = form.dataset.folder ?? "";
+  const parent = String(new FormData(form).get("parent") ?? "");
+  return done(() => write("term.save", { id, document: "{}", parent }), Publr.t("Moved"));
+};
+
+export const folder_deleted = async (event: Event) => {
+  event.preventDefault();
+  const id = (event.currentTarget as HTMLFormElement).dataset.folder ?? "";
+  if (state.folder === id) {
+    history.pushState(null, "", new URL(href_of({ folder: "" }), location.href).href);
+    filter_from(location.href);
+  }
+  await done(() => write("media.folder_delete", { folder: id }), Publr.t("Folder removed"));
+};
+
+type Synced = { new: number; added: number; missing: number; skipped_count: number;
+  skipped: Array<{ path: string; reason: string }>; more: boolean };
+
+const sync_summary = (out: Synced, check: boolean) => {
+  const parts = [check ? Publr.tn("{count} new", "{count} new", out.new) : Publr.tn("{count} added", "{count} added", out.added)];
+  if (out.missing > 0) parts.push(Publr.tn("{count} missing", "{count} missing", out.missing));
+  if (out.skipped_count > 0) parts.push(Publr.tn("{count} skipped", "{count} skipped", out.skipped_count));
+  if (check && out.new === 0 && out.missing === 0 && out.skipped_count === 0) return Publr.t("Up to date.");
+  return out.more ? Publr.t("{summary}, and more to look at.", { summary: parts.join(" · ") }) : `${parts.join(" · ")}.`;
+};
+
+/** Looks at the media folder on the server, or takes in what is new there. */
+const synced = async (check: boolean) => {
+  state.server_busy = true;
+  try {
+    const out = (await write("media.sync", { check })) as Synced;
+    state.server_note = sync_summary(out, check);
+    state.server_new = check ? out.new : 0;
+    state.server_skipped = out.skipped.slice(0, 5).map((skip) => `${skip.path}: ${skip.reason}`);
+  } catch (error) {
+    state.server_note = Publr.t("Not done: {reason}", { reason: (error as Error).message });
+  } finally {
+    state.server_busy = false;
+  }
+  if (!check) await load();
+};
+
+export const server_checked = () => synced(true);
+export const server_taken = () => synced(false);
+
+export const tag_made = (event: Event) => {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const name = named(form);
+  form.reset();
+  if (name === "") return;
+  return done(() => write("term.create", {
+    taxonomy: "media_tags",
+    document: JSON.stringify({ name }),
+    status: "published",
+  }), Publr.t("Tag {name} made", { name }));
+};
+
+/** Sends one file as it is, the request's body, into the open folder; the server takes it
+ * as it arrives. */
+const sent = (file: File, position: number, total: number) => new Promise<void>((resolve, reject) => {
+  const query = new URLSearchParams({ filename: file.name, type: state.type });
+  if (state.filed && state.folder !== "" && state.folder !== "unsorted" && state.folder !== "unreviewed") query.set("folder", state.folder);
+  const csrf = document.querySelector<HTMLMetaElement>('meta[name="publr-csrf"]')?.content ?? "";
+  const request = new XMLHttpRequest();
+  request.open("POST", Publr.url(`/media/upload?${query}`));
+  request.setRequestHeader("X-Csrf-Token", csrf);
+  request.upload.onprogress = (event) => {
+    if (!event.lengthComputable) return;
+    const percent = Math.round((event.loaded / Math.max(event.total, 1)) * 100);
+    state.note = total <= 1 ? Publr.t("Uploading {name}… {percent}%", { name: file.name, percent }) : Publr.t("Uploading {position} of {total}: {name}… {percent}%", { position, total, name: file.name, percent });
+  };
+  request.onload = () => {
+    if (request.status >= 200 && request.status < 300) return resolve();
+    const failed = (() => { try { return JSON.parse(request.responseText); } catch { return {}; } })();
+    reject(new Error(failed.message ?? failed.error ?? `${request.status}`));
+  };
+  request.onerror = () => reject(new Error(Publr.t("the connection failed")));
+  request.send(file);
+});
+
+const upload = async (files: File[]) => {
+  if (files.length === 0) return;
+  state.busy = true;
+  let failed = "";
+  for (const [index, file] of files.entries()) {
+    try {
+      await sent(file, index + 1, files.length);
+    } catch (error) {
+      failed = Publr.t("{name} was not uploaded: {reason}", { name: file.name, reason: (error as Error).message });
+    }
+  }
+  state.busy = false;
+  state.note = failed !== "" ? failed : files.length === 1 ? Publr.t("Uploaded") : Publr.tn("{count} uploaded", "{count} uploaded", files.length);
+  await load();
+};
+
+export const file_ref = Publr.ref<HTMLInputElement>();
+
+export const choose = () => file_ref.current?.click();
+
+export const chosen = (event: Event) => {
+  const input = event.currentTarget as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = "";
+  upload(files);
+};
+
+export const dragged = (event: DragEvent) => {
+  if (!event.dataTransfer?.types.includes("Files")) return;
+  event.preventDefault();
+  state.dragging = true;
+};
+
+export const left = (event: DragEvent) => {
+  if (event.currentTarget === event.target) state.dragging = false;
+};
+
+export const dropped = (event: DragEvent) => {
+  event.preventDefault();
+  state.dragging = false;
+  upload(Array.from(event.dataTransfer?.files ?? []));
+};
+
+const view_key = "publr.media.view";
+
+const remember_view = () => {
+  try {
+    localStorage.setItem(view_key, JSON.stringify({ details: state.details, size: state.size }));
+  } catch {
+    // A browser that keeps nothing still shows the view chosen until the page goes.
+  }
+};
+
+/** The view this browser chose last time, once the header is on the page. */
+export const view_ref = Publr.ref<HTMLElement>(() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(view_key) ?? "{}");
+    if (typeof saved.details === "boolean") state.details = saved.details;
+    if (saved.size === "sm" || saved.size === "md" || saved.size === "lg") state.size = saved.size;
+  } catch {
+    // Nothing kept, or a browser that keeps nothing: the default view.
+  }
+  if (!state.seeded) {
+    filter_from(location.href);
+    restamp();
+    load();
+  }
+});
+
+export const toggle_details = () => {
+  state.details = !state.details;
+  remember_view();
+};
+
+export const sized = (event: Event) => {
+  const size = (event.currentTarget as HTMLElement).dataset.size;
+  if (size === "sm" || size === "md" || size === "lg") state.size = size;
+  remember_view();
+};
+
+
+export type MediaLibraryProps = {
+  /** The media type whose files it shows: the library's (`media`) unless it names another. */
+  type?: string;
+  /** Where a file's own page is, its id after it (`/admin/media/`); empty opens a file in
+   * the library's panel. */
+  files_at?: string;
+  /** The server drew the first page with the values below; otherwise the library asks for
+   * the files of the address once it is on the page. */
+  seeded?: boolean;
+  folder?: string;
+  tags?: Array<string>;
+  search?: string;
+  year?: number;
+  month?: number;
+  page?: number;
+  page_size?: number;
+  pages?: number;
+  prev_href?: string;
+  next_href?: string;
+  page_text?: string;
+  pills?: Array<{
+    id: string;
+    label: string;
+    value: string;
+    options: Array<{ label: string; href: string; selected: boolean }>;
+    remove_href: string;
+  }>;
+  add_filters?: Array<{ label: string; href: string; added: boolean }>;
+  kind?: string;
+  size_filter?: string;
+  visibility?: string;
+  items?: Array<{
+    id: string;
+    title: string;
+    href: string;
+    thumb: string;
+    image: boolean;
+    video: boolean;
+    src: string;
+    kind: string;
+    icon: "video" | "audio" | "file";
+    facts: string;
+    missing: boolean;
+    selected: boolean;
+  }>;
+  total?: number;
+  all?: number;
+  unsorted?: number;
+  unreviewed?: number;
+  all_href?: string;
+  unsorted_href?: string;
+  unreviewed_href?: string;
+  on_server?: boolean;
+  folders?: Array<{
+    id: string;
+    name: string;
+    parent: string;
+    depth: number;
+    level: "0" | "1" | "2" | "3" | "4" | "5";
+    label: string;
+    count: number;
+    href: string;
+    current: boolean;
+    nests: boolean;
+  }>;
+  tag_list?: Array<{
+    id: string;
+    name: string;
+    count: number;
+    href: string;
+    selected: boolean;
+    enabled: boolean;
+  }>;
+  periods?: Array<{ year: number; month: number; count: number }>;
+  years?: Array<{ value: string; label: string; selected: boolean }>;
+  months?: Array<{ value: string; label: string; selected: boolean }>;
+  /** Filters in place (the default); false makes the explorer's links go to their pages. */
+  live?: boolean;
+  /** How large the tiles are until this browser's own choice is read. */
+  size?: "sm" | "md" | "lg";
+  /** The library's parts, laid out as the page wants; none draws the whole library. */
+  children?: JSX.Element;
+};
+
+/** One media type's files, as Media shows the library's: across the top the search, the
+ * filters in force, the view and Upload; on the left every file, the folder tree, the tags
+ * and the upload month (folders and tags for the library alone); beside it the files as
+ * square tiles, selectable for the bulk bar, and a file opened in place. Files dropped
+ * anywhere on it are uploaded. Following a filter asks the server for that page's files
+ * and draws them in place. Its parts (`MediaLibraryFilterBar`, `MediaLibrarySidebar`,
+ * `MediaLibraryGrid`, `MediaLibrarySelection`, `MediaLibraryPager`, `MediaLibraryUpload`,
+ * `MediaLibraryFile`) may be laid out instead, or beside a page's own, which read `state`
+ * and call the actions this module exports. */
+export function MediaLibrary({
+  type = "media",
+  files_at = "",
+  seeded = false,
+  folder = "",
+  tags = [],
+  search = "",
+  year = 0,
+  month = 0,
+  page = 1,
+  page_size = 25,
+  pages = 1,
+  prev_href = "",
+  next_href = "",
+  page_text = "",
+  pills = [],
+  add_filters = [],
+  kind = "",
+  size_filter = "",
+  visibility = "",
+  items = [],
+  total = 0,
+  all = 0,
+  unsorted = 0,
+  unreviewed = 0,
+  all_href = "?",
+  unsorted_href = "?folder=unsorted",
+  unreviewed_href = "?folder=unreviewed",
+  on_server = false,
+  folders = [],
+  tag_list = [],
+  periods = [],
+  years = [],
+  months = [],
+  live = true,
+  size = "md",
+  children,
+}: MediaLibraryProps) {
+  state.type = type;
+  state.files_at = files_at;
+  state.filed = type === "media";
+  state.seeded = seeded;
+  state.folder = folder;
+  state.tags = tags;
+  state.search = search;
+  state.year = year;
+  state.month = month;
+  state.page = page;
+  state.page_size = page_size;
+  state.pages = pages;
+  state.prev_href = prev_href;
+  state.next_href = next_href;
+  state.page_text = page_text;
+  state.pills = pills;
+  state.add_filters = add_filters;
+  state.kind = kind;
+  state.size_filter = size_filter;
+  state.visibility = visibility;
+  state.years = years;
+  state.months = months;
+  state.items = items;
+  state.total = total;
+  state.all = all;
+  state.unsorted = unsorted;
+  state.all_href = all_href;
+  state.unsorted_href = unsorted_href;
+  state.unreviewed = unreviewed;
+  state.unreviewed_shown = unreviewed > 0 || folder === "unreviewed";
+  state.unreviewed_href = unreviewed_href;
+  state.on_server = on_server;
+  state.folders = folders;
+  state.tag_list = tag_list;
+  state.periods = periods;
+  state.live = live;
+  state.size = size;
+
+  return (
+    <div class="relative flex flex-1 flex-col" data-part="media-library" ref={view_ref} onWindowPopState={came_back}
+      onDragOver={dragged} onDragLeave={left} onDrop={dropped}>
+      {children ? (
+        children
+      ) : (
+        <div class="flex flex-1 flex-col">
+          <ListDetailBand>
+            <MediaLibraryFilterBar>
+              <MediaLibraryUpload />
+            </MediaLibraryFilterBar>
+          </ListDetailBand>
+          <ListDetailColumns>
+            <ListDetailList label={Publr.t("Media")}>
+              <MediaLibrarySidebar />
+            </ListDetailList>
+            <ListDetailDetail>
+              {state.file !== "" ? (
+                <MediaLibraryFile />
+              ) : (
+                <div class="flex flex-1 flex-col">
+                  <MediaLibrarySelection />
+                  <MediaLibraryGrid />
+                  <MediaLibraryPager />
+                </div>
+              )}
+            </ListDetailDetail>
+          </ListDetailColumns>
+        </div>
+      )}
+      {state.dragging && (
+        <div class="pointer-events-none absolute inset-0 z-30 flex items-center justify-center border-2 border-dashed border-primary bg-primary/10" data-part="media-drop">
+          <Text as="span" variant="heading-sm">{Publr.t("Drop to upload")}</Text>
+        </div>
+      )}
+    </div>
+  );
+}

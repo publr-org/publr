@@ -8,6 +8,7 @@ import { Input } from "@publr/ui/Input.ptsx";
 import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
 import { Switch } from "@publr/ui/Switch.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
+import { TextToggle } from "@publr/ui/TextToggle.ptsx";
 
 export type MediaFileFormProps = {
   id: string;
@@ -26,6 +27,22 @@ export type MediaFileFormProps = {
   tags: string;
   restricted: boolean;
   folders: Array<{ id: string; label: string }>;
+  /** The site's languages, the main one first with an empty code: the switch between the
+   * title, alt text and caption in each. Fewer than two: no switch. */
+  languages?: Array<{ code: string; label: string }>;
+  /** The words in each other language; empty ones read the main language's. */
+  translations?: Array<{ code: string; title: string; alt: string; caption: string }>;
+};
+
+export const state = Publr.reactive({
+  language: "",
+  languages: [] as Array<{ code: string; label: string }>,
+});
+
+/** Switching the language the title, alt text and caption are written in. */
+export const onLanguage = (event: MouseEvent) => {
+  const label = (event.currentTarget as HTMLElement).textContent?.trim() ?? "";
+  state.language = state.languages.find((language) => language.label === label)?.code ?? "";
 };
 
 /** What is written about one file, where it is filed and who may open it: the preview with
@@ -47,52 +64,85 @@ export function MediaFileForm({
   tags,
   restricted,
   folders,
+  languages = [],
+  translations = [],
 }: MediaFileFormProps) {
+  state.languages = languages;
+
   return (
   <form method="post" action={`/admin/media/${id}`} class="grid gap-8 p-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
     <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
     <MediaFocal src={preview} focal_x={focal_x} focal_y={focal_y} image={image} shown={shown} file={file} kind={kind} />
     <div class="flex flex-col gap-5">
+      {state.languages.length > 1 && (
+        <div class="flex items-center gap-3" role="group" aria-label={Publr.t("Language")} data-part="language-switch">
+          {state.languages.map((language) => (
+            <TextToggle label={language.label} pressed={state.language === language.code} onClick={onLanguage} />
+          ))}
+        </div>
+      )}
+      <div class="flex flex-col gap-5" hidden={state.language !== ""}>
+        <Field>
+          <FieldLabel htmlFor="media-title" required>{Publr.t("Title")}</FieldLabel>
+          <Input id="media-title" name="title" value={title} required maxLength={200} />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="media-alt">{Publr.t("Alt text")}</FieldLabel>
+          <Input id="media-alt" name="alt" value={alt} maxLength={500} />
+          <FieldDescription>{Publr.t("What the image shows, for people who cannot see it.")}</FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="media-caption">{Publr.t("Caption")}</FieldLabel>
+          <Textarea id="media-caption" name="caption" value={caption} rows={3} />
+        </Field>
+      </div>
+      {translations.map((translation) => (
+        <div class="flex flex-col gap-5" hidden={state.language !== translation.code}>
+          <Field>
+            <FieldLabel htmlFor={`media-title-${translation.code}`}>{Publr.t("Title")}</FieldLabel>
+            <Input id={`media-title-${translation.code}`} name={`title@${translation.code}`}
+              value={translation.title} placeholder={title} maxLength={200} />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`media-alt-${translation.code}`}>{Publr.t("Alt text")}</FieldLabel>
+            <Input id={`media-alt-${translation.code}`} name={`alt@${translation.code}`}
+              value={translation.alt} placeholder={alt} maxLength={500} />
+            <FieldDescription>{Publr.t("Left empty, the main language's is used.")}</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`media-caption-${translation.code}`}>{Publr.t("Caption")}</FieldLabel>
+            <Textarea id={`media-caption-${translation.code}`} name={`caption@${translation.code}`}
+              value={translation.caption} placeholder={caption} rows={3} />
+          </Field>
+        </div>
+      ))}
       <Field>
-        <FieldLabel htmlFor="media-title" required>Title</FieldLabel>
-        <Input id="media-title" name="title" value={title} required maxLength={200} />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="media-alt">Alt text</FieldLabel>
-        <Input id="media-alt" name="alt" value={alt} maxLength={500} />
-        <FieldDescription>What the image shows, for people who cannot see it.</FieldDescription>
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="media-caption">Caption</FieldLabel>
-        <Textarea id="media-caption" name="caption" value={caption} rows={3} />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="media-credit">Credit</FieldLabel>
+        <FieldLabel htmlFor="media-credit">{Publr.t("Credit")}</FieldLabel>
         <Input id="media-credit" name="credit" value={credit} maxLength={200} />
       </Field>
       <Field>
-        <FieldLabel htmlFor="media-folder">Folder</FieldLabel>
+        <FieldLabel htmlFor="media-folder">{Publr.t("Folder")}</FieldLabel>
         <NativeSelect id="media-folder" name="folder">
-          <option value="" selected={folder === ""}>Unsorted</option>
+          <option value="" selected={folder === ""}>{Publr.t("Unsorted")}</option>
           {folders.map((entry) => (
             <option value={entry.id} selected={entry.id === folder}>{entry.label}</option>
           ))}
         </NativeSelect>
       </Field>
       <Field>
-        <FieldLabel htmlFor="media-tags">Tags</FieldLabel>
-        <Input id="media-tags" name="tags" value={tags} placeholder="harbour, boats" />
-        <FieldDescription>Separated by commas; new ones are made.</FieldDescription>
+        <FieldLabel htmlFor="media-tags">{Publr.t("Tags")}</FieldLabel>
+        <Input id="media-tags" name="tags" value={tags} placeholder={Publr.t("harbour, boats")} />
+        <FieldDescription>{Publr.t("Separated by commas; new ones are made.")}</FieldDescription>
       </Field>
       <Field>
         <div class="flex items-center justify-between gap-4">
-          <FieldLabel htmlFor="media-private">Private</FieldLabel>
+          <FieldLabel htmlFor="media-private">{Publr.t("Private")}</FieldLabel>
           <Switch id="media-private" name="private" value="1" checked={restricted} />
         </div>
-        <FieldDescription>Only signed-in users can open a private file.</FieldDescription>
+        <FieldDescription>{Publr.t("Only signed-in users can open a private file.")}</FieldDescription>
       </Field>
       <div class="flex justify-end">
-        <Button type="submit">Save</Button>
+        <Button type="submit">{Publr.t("Save")}</Button>
       </div>
     </div>
   </form>

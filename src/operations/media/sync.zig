@@ -1,4 +1,5 @@
 const std = @import("std");
+const tags = @import("tags.zig");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
@@ -29,7 +30,8 @@ pub const Sync = struct {
     pub const name = "media.sync";
     pub const description = "Take in the files put into the media folder by hand";
     pub const details =
-        \\Walks the media folder beside the database (never its hidden areas) for files the
+        \\Walks the media folder beside the database (never its hidden areas, nor the ones
+        \\other media types keep their files in, named after them) for files the
         \\library does not have yet and adds each as a published `media` record marked
         \\unreviewed. A file whose path can serve as its key (lowercase letters, digits,
         \\`.-_`, up to four parts) stays where it is; any other is moved under a dated key.
@@ -94,12 +96,11 @@ pub const Sync = struct {
             .more = walked.more,
         };
         var skipped: std.ArrayList(Skipped) = .empty;
-        var folders: Folders = .{
-            .nodes = .empty,
-        };
+        var folders: Folders = .{};
+        const areas = try areas_of(ctx);
 
         for (walked.found) |found| {
-            if (try known(ctx, found.path)) {
+            if (in_area(areas, found.path) or try known(ctx, found.path)) {
                 continue;
             }
 
@@ -135,6 +136,39 @@ const no_folder: sdk.operation.Failure = .{
     .status = 503,
     .message = "Only a server keeps a media folder to put files into",
 };
+
+/// The handles of the media types other than the library: each keeps its files under a
+/// directory of its name, which no one puts files into by hand.
+fn areas_of(ctx: *Ctx) Error![]const []const u8 {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const briefs = store.content_types.list_briefs(ctx.db, ctx.arena) catch {
+        return error.Unavailable;
+    };
+    var areas: std.ArrayList([]const u8) = .empty;
+
+    for (briefs) |brief| {
+        if (brief.kind == .media and !media.is_library(brief.handle)) {
+            try areas.append(ctx.arena, brief.handle);
+        }
+    }
+
+    return areas.items;
+}
+
+fn in_area(areas: []const []const u8, path: []const u8) bool {
+    std.debug.assert(path.len > 0);
+
+    const slash = std.mem.indexOfScalar(u8, path, '/') orelse return false;
+
+    for (areas) |area| {
+        if (std.mem.eql(u8, area, path[0..slash])) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 fn known(ctx: *Ctx, path: []const u8) Error!bool {
     std.debug.assert(path.len > 0);
@@ -238,14 +272,16 @@ fn key_of(ctx: *Ctx, placed: media.Placed) Error![]const u8 {
     var buffer: [files_module.key_len_max]u8 = undefined;
     const random = ids.random(ctx.io, &random_hex)[0..media.random_len];
 
-    return ctx.arena.dupe(u8, media.key_of(&buffer, ctx.now_ms, placed.filename, random));
+    const key = media.key_of(&buffer, media.type_handle, ctx.now_ms, placed.filename, random);
+
+    return ctx.arena.dupe(u8, key);
 }
 
 /// The library's folders by name and parent, made on the way when a directory names one
 /// that is not there yet.
 const Folders = struct {
-    nodes: std.ArrayList(term.Node),
-    loaded: bool = false,
+    /// The folders taxonomy's id, read the first time a folder is looked for.
+    taxonomy: []const u8 = "",
 
     fn of(folders: *Folders, ctx: *Ctx, names: []const []const u8) Error!?[]const u8 {
         std.debug.assert(names.len <= media.folder_depth_max);
@@ -254,13 +290,8 @@ const Folders = struct {
             return null;
         }
 
-        if (!folders.loaded) {
-            const tree = try registry.SDK.dispatch(ctx, term.Tree, .{
-                .taxonomy = media.folders_handle,
-            });
-
-            try folders.nodes.appendSlice(ctx.arena, tree.terms);
-            folders.loaded = true;
+        if (folders.taxonomy.len == 0) {
+            folders.taxonomy = try tags.taxonomy_id(ctx, media.folders_handle);
         }
 
         var parent: ?[]const u8 = null;
@@ -272,35 +303,24 @@ const Folders = struct {
                 break;
             }
 
-            parent = folders.named(wanted, parent) orelse try folders.made(ctx, wanted, parent);
+            const under: store.terms.Under = if (parent) |id| .{
+                .parent = id,
+            } else .root;
+            const found = try store.terms.find_named(
+                ctx.db,
+                ctx.arena,
+                folders.taxonomy,
+                under,
+                wanted,
+            );
+
+            parent = found orelse try made(ctx, wanted, parent);
         }
 
         return parent;
     }
 
-    fn named(folders: *const Folders, wanted: []const u8, parent: ?[]const u8) ?[]const u8 {
-        std.debug.assert(wanted.len > 0);
-
-        for (folders.nodes.items) |node| {
-            const same_parent = if (parent) |id|
-                node.parent != null and std.mem.eql(u8, node.parent.?, id)
-            else
-                node.parent == null;
-
-            if (same_parent and std.ascii.eqlIgnoreCase(node.title, wanted)) {
-                return node.id;
-            }
-        }
-
-        return null;
-    }
-
-    fn made(
-        folders: *Folders,
-        ctx: *Ctx,
-        wanted: []const u8,
-        parent: ?[]const u8,
-    ) Error![]const u8 {
+    fn made(ctx: *Ctx, wanted: []const u8, parent: ?[]const u8) Error![]const u8 {
         std.debug.assert(wanted.len > 0 and wanted.len <= folder_name_len_max);
 
         const document = std.json.Stringify.valueAlloc(ctx.arena, .{
@@ -314,14 +334,7 @@ const Folders = struct {
             .parent = parent,
         });
 
-        try folders.nodes.append(ctx.arena, .{
-            .id = created.id,
-            .parent = parent,
-            .title = wanted,
-            .slug = created.slug,
-            .status = created.status,
-            .depth = 0,
-        });
+        std.debug.assert(created.id.len > 0);
 
         return created.id;
     }

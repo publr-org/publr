@@ -1,0 +1,112 @@
+import { Publr } from "publr-jsx";
+import { AssetCard } from "@publr/ui/AssetCard.ptsx";
+import { AssetCardActions } from "@publr/ui/AssetCardActions.ptsx";
+import { AssetCardCaption } from "@publr/ui/AssetCardCaption.ptsx";
+import { AssetCardFile } from "@publr/ui/AssetCardFile.ptsx";
+import { AssetCardMeta } from "@publr/ui/AssetCardMeta.ptsx";
+import { AssetCardPreview } from "@publr/ui/AssetCardPreview.ptsx";
+import { AssetCardTitle } from "@publr/ui/AssetCardTitle.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+
+/** A file as `media list` and the upload answer with it. */
+export type ListedMedia = {
+  id: string;
+  title: string;
+  filename: string;
+  family: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  key: string;
+  missing: boolean;
+};
+
+export const media_size_text = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+/** A listed file as a field and the picker draw it. */
+export const shown_media = (item: ListedMedia) => {
+  const kind = (item.filename.split(".").pop() ?? "").toUpperCase();
+  const dimensions = item.width ? ` · ${item.width} × ${item.height}` : "";
+  return {
+    id: item.id,
+    title: item.title || item.filename,
+    thumb: item.family === "image" ? Publr.url(`/media/${item.key}?w=480&h=480&fit=cover`) : "",
+    image: item.family === "image" && !item.missing,
+    kind,
+    icon: (item.family === "video" ? "video" : item.family === "audio" ? "audio" : "file") as
+      "video" | "audio" | "file",
+    facts: `${kind}${dimensions} · ${media_size_text(item.size)}`,
+  };
+};
+
+/** Sends one file into the media library, as its Upload does, into `folder` when given; the
+ * library's answer. */
+export const send_media = (file: File, folder = "") =>
+  new Promise<ListedMedia>((resolve, reject) => {
+    const query = new URLSearchParams({ filename: file.name });
+    if (folder !== "") query.set("folder", folder);
+    const csrf = document.querySelector<HTMLMetaElement>('meta[name="publr-csrf"]')?.content ?? "";
+    const request = new XMLHttpRequest();
+    request.open("POST", Publr.url(`/media/upload?${query}`));
+    request.setRequestHeader("X-Csrf-Token", csrf);
+    request.onload = () => {
+      const answer = (() => { try { return JSON.parse(request.responseText); } catch { return {}; } })();
+      if (request.status >= 200 && request.status < 300) return resolve(answer);
+      reject(new Error(answer.message ?? answer.error ?? `${request.status}`));
+    };
+    request.onerror = () => reject(new Error(Publr.t("the connection failed")));
+    request.send(file);
+  });
+
+/** Whether a file of this mime type is in one of the families (none: any). Families the
+ * browser cannot tell from the mime type alone are left to the server. */
+export const media_takes = (families: string[], mime: string) => {
+  if (families.length === 0) return true;
+  const family = mime.startsWith("image/") ? "image"
+    : mime.startsWith("video/") ? "video"
+    : mime.startsWith("audio/") ? "audio"
+    : mime === "application/pdf" ? "pdf"
+    : "";
+  return family === "" ? !families.every((one) => ["image", "video", "audio", "pdf"].includes(one))
+    : families.includes(family);
+};
+
+export type MediaTileProps = {
+  title: string;
+  thumb: string;
+  image: boolean;
+  kind: string;
+  icon: "video" | "audio" | "file";
+  facts: string;
+  missing: boolean;
+  /** The buttons in its corner. */
+  children?: JSX.Element;
+};
+
+/** A file a media field holds, drawn as the library draws it: a square tile, its picture
+ * (or its type for anything else), its name and facts over the bottom, the field's buttons
+ * in the corner. */
+export function MediaTile({ title, thumb, image, kind, icon, facts, missing, children }: MediaTileProps) {
+  return (
+    <AssetCard look="tile">
+      <AssetCardPreview>
+        {image ? (
+          <img src={thumb} alt={title} class="size-full object-cover" draggable={false} />
+        ) : (
+          <AssetCardFile label={missing ? Publr.t("MISSING") : kind}>
+            <Icon name={icon} size="lg" />
+          </AssetCardFile>
+        )}
+      </AssetCardPreview>
+      <AssetCardCaption always>
+        <AssetCardTitle tone="overlay">{title}</AssetCardTitle>
+        <AssetCardMeta tone="overlay">{missing ? Publr.t("No longer in the library") : facts}</AssetCardMeta>
+      </AssetCardCaption>
+      <AssetCardActions>{children}</AssetCardActions>
+    </AssetCard>
+  );
+}

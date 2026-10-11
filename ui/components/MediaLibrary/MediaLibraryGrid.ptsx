@@ -1,0 +1,68 @@
+import { Publr } from "publr-jsx";
+import { follow, state, toggled } from "./MediaLibrary.ptsx";
+import { AssetCard } from "@publr/ui/AssetCard.ptsx";
+import { AssetCardBadge } from "@publr/ui/AssetCardBadge.ptsx";
+import { AssetCardCaption } from "@publr/ui/AssetCardCaption.ptsx";
+import { AssetCardFile } from "@publr/ui/AssetCardFile.ptsx";
+import { AssetCardGrid } from "@publr/ui/AssetCardGrid.ptsx";
+import { AssetCardMeta } from "@publr/ui/AssetCardMeta.ptsx";
+import { AssetCardPreview } from "@publr/ui/AssetCardPreview.ptsx";
+import { AssetCardSelect } from "@publr/ui/AssetCardSelect.ptsx";
+import { AssetCardTitle } from "@publr/ui/AssetCardTitle.ptsx";
+import { Checkbox } from "@publr/ui/Checkbox.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+
+/** A media library's files on this page as square tiles edge to edge, each naming itself
+ * on hover or always, selectable, and leading to the file. */
+export function MediaLibraryGrid() {
+  return (
+    <div class="flex flex-1 flex-col" data-part="media-grid">
+      {state.items.length === 0 ? (
+        <Empty mark="files">
+          <EmptyTitle>{Publr.t("No files here")}</EmptyTitle>
+          <EmptyDescription>{Publr.t("Drop files anywhere on this page, or use Upload.")}</EmptyDescription>
+        </Empty>
+      ) : (
+        <AssetCardGrid size={state.size}>
+          {state.items.map((item) => (
+            <AssetCard look="tile" key={item.id}>
+              <AssetCardSelect>
+                <Checkbox value={item.id} checked={item.selected} onChange={toggled} />
+              </AssetCardSelect>
+              <a href={item.href} onClick={follow} class="block outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" aria-label={item.title}>
+                <AssetCardPreview>
+                  {item.image ? (
+                    <img src={item.thumb} alt="" loading="lazy" class="size-full object-cover" />
+                  ) : item.video ? (
+                    <video src={`${item.src}#t=0.1`} muted playsinline preload="metadata" class="size-full object-cover" />
+                  ) : (
+                    <AssetCardFile label={item.kind}>
+                      <Icon name={item.icon} size="lg" />
+                    </AssetCardFile>
+                  )}
+                </AssetCardPreview>
+                {item.video && (
+                  <AssetCardBadge label={item.kind}>
+                    <Icon name="video" size="sm" />
+                  </AssetCardBadge>
+                )}
+                {item.missing && (
+                  <AssetCardBadge label={Publr.t("Missing")}>
+                    <Icon name="alert-triangle" size="sm" />
+                  </AssetCardBadge>
+                )}
+                <AssetCardCaption always={state.details}>
+                  <AssetCardTitle tone="overlay">{item.title}</AssetCardTitle>
+                  <AssetCardMeta tone="overlay">{item.facts}</AssetCardMeta>
+                </AssetCardCaption>
+              </a>
+            </AssetCard>
+          ))}
+        </AssetCardGrid>
+      )}
+    </div>
+  );
+}

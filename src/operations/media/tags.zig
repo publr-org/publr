@@ -5,6 +5,7 @@ const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const term = @import("../term.zig");
+const store = @import("../../store.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -23,21 +24,20 @@ pub fn named(ctx: *Ctx, ids: []const []const u8) Error![]const TagRef {
         return &.{};
     }
 
-    const taxonomy = model.media.tags_handle;
-    const tree = try registry.SDK.dispatch(ctx, term.Tree, .{
-        .taxonomy = taxonomy,
-    });
+    const taxonomy = try taxonomy_id(ctx, model.media.tags_handle);
     var found: std.ArrayList(TagRef) = .empty;
 
     for (ids) |id| {
-        for (tree.terms) |node| {
-            if (std.mem.eql(u8, node.id, id)) {
-                try found.append(ctx.arena, .{
-                    .id = node.id,
-                    .name = node.title,
-                });
-            }
+        if (id.len == 0 or id.len > 128) {
+            continue;
         }
+
+        const node = try store.terms.node(ctx.db, ctx.arena, taxonomy, id) orelse continue;
+
+        try found.append(ctx.arena, .{
+            .id = node.id,
+            .name = node.title,
+        });
     }
 
     return found.items;
@@ -52,10 +52,7 @@ pub fn ensure(ctx: *Ctx, names: []const []const u8) Error![]const []const u8 {
         return error.Invalid;
     }
 
-    const taxonomy = model.media.tags_handle;
-    const tree = try registry.SDK.dispatch(ctx, term.Tree, .{
-        .taxonomy = taxonomy,
-    });
+    const taxonomy = try taxonomy_id(ctx, model.media.tags_handle);
     var ids: std.ArrayList([]const u8) = .empty;
 
     for (names) |raw| {
@@ -65,7 +62,8 @@ pub fn ensure(ctx: *Ctx, names: []const []const u8) Error![]const []const u8 {
             return error.Invalid;
         }
 
-        const id = existing(tree.terms, wanted) orelse try create(ctx, wanted);
+        const found = try store.terms.find_named(ctx.db, ctx.arena, taxonomy, .anywhere, wanted);
+        const id = found orelse try create(ctx, wanted);
 
         if (!contains(ids.items, id)) {
             try ids.append(ctx.arena, id);
@@ -77,16 +75,17 @@ pub fn ensure(ctx: *Ctx, names: []const []const u8) Error![]const []const u8 {
     return ids.items;
 }
 
-fn existing(nodes: []const term.Node, wanted: []const u8) ?[]const u8 {
-    std.debug.assert(wanted.len > 0);
+/// The id of the taxonomy with this handle; `Unavailable` when the library's own is missing.
+pub fn taxonomy_id(ctx: *Ctx, handle: []const u8) Error![]const u8 {
+    std.debug.assert(handle.len > 0);
 
-    for (nodes) |node| {
-        if (std.ascii.eqlIgnoreCase(node.title, wanted)) {
-            return node.id;
-        }
-    }
+    const row = try store.taxonomies.get_by_handle(ctx.db, ctx.arena, handle) orelse {
+        return error.Unavailable;
+    };
 
-    return null;
+    std.debug.assert(row.id.len > 0);
+
+    return row.id;
 }
 
 fn create(ctx: *Ctx, wanted: []const u8) Error![]const u8 {

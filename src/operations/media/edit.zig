@@ -5,7 +5,9 @@ const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const record = @import("../record.zig");
 const library = @import("library.zig");
+const trash = @import("../trash.zig");
 const tags = @import("tags.zig");
+const variants = @import("../variants.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -19,11 +21,24 @@ pub const TagRef = struct {
     name: []const u8,
 };
 
+/// What is written about a file in one of the site's other languages: empty where it
+/// reads the main language's.
+pub const Translation = struct {
+    code: []const u8,
+    title: []const u8 = "",
+    alt: []const u8 = "",
+    caption: []const u8 = "",
+};
+
+pub const translations_max: u32 = 64;
+
 pub const Detail = struct {
     media: library.Item,
     alt: []const u8,
     caption: []const u8,
     credit: []const u8,
+    /// The title, alt text and caption in each of the site's other languages.
+    translations: []const Translation = &.{},
     /// The subject, in percent across and down; resized crops keep it in view.
     focal_x: u8,
     focal_y: u8,
@@ -69,6 +84,7 @@ pub const Get = struct {
         .focal_y = "The subject's place down, in percent",
         .folder = "Its folder's id; none when unsorted",
         .tags = "Its tags",
+        .translations = "The title, alt text and caption in each other language (`code`)",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -77,6 +93,7 @@ pub const Get = struct {
 
         const row = try library.row_of(ctx, in.id);
         const written = try library.written_of(ctx, row.record);
+        const translated = try translations_of(ctx, row.record);
         const title = if (written.title.len > 0) written.title else row.filename;
 
         return .{
@@ -88,9 +105,57 @@ pub const Get = struct {
             .focal_y = percent_of(written.focal_y),
             .folder = written.media_folders,
             .tags = try tags.named(ctx, written.media_tags),
+            .translations = translated,
         };
     }
 };
+
+/// The file's words in each of the site's other languages, as the record holds them.
+fn translations_of(ctx: *Ctx, id: []const u8) Error![]const Translation {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const others = try variants.others(ctx);
+
+    if (others.len == 0) {
+        return &.{};
+    }
+
+    const got = try registry.SDK.dispatch(ctx, record.Get, .{
+        .id = id,
+    });
+    const Value = std.json.Value;
+    const document = std.json.parseFromSliceLeaky(Value, ctx.arena, got.document, .{}) catch {
+        return error.Invalid;
+    };
+    const out = ctx.arena.alloc(Translation, others.len) catch return error.OutOfMemory;
+
+    for (others, out) |variant, *translation| {
+        translation.* = .{
+            .code = variant.code,
+            .title = try text_in(ctx, document, "title", variant.code),
+            .alt = try text_in(ctx, document, "alt", variant.code),
+            .caption = try text_in(ctx, document, "caption", variant.code),
+        };
+    }
+
+    return out;
+}
+
+fn text_in(
+    ctx: *Ctx,
+    document: std.json.Value,
+    name: []const u8,
+    code: []const u8,
+) Error![]const u8 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(code.len > 0);
+
+    const key = try model.variant.key_of(ctx.arena, name, code);
+    const value = if (document == .object) document.object.get(key) else null;
+
+    return if (value != null and value.? == .string) value.?.string else "";
+}
 
 fn percent_of(value: ?i64) u8 {
     const known = value orelse return focal_default;
@@ -121,6 +186,8 @@ pub const Update = struct {
         folder: ?[]const u8 = null,
         tags: ?[]const []const u8 = null,
         private: ?bool = null,
+        /// The words in other languages; an empty one reads the main language's again.
+        translations: []const Translation = &.{},
     };
     pub const Out = struct {
         id: []const u8,
@@ -173,9 +240,14 @@ pub const Update = struct {
             .focal_y = in.focal_y,
             .folder = in.folder,
             .tag_ids = tag_ids,
+            .translations = in.translations,
         });
 
         if (in.private) |private| {
+            if (!private) {
+                try library.may_be_public(ctx, row.record);
+            }
+
             try store.media.set_private(ctx.db, row.record, private);
         }
 
@@ -200,6 +272,7 @@ pub const Changes = struct {
     focal_y: ?u8 = null,
     folder: ?[]const u8 = null,
     tag_ids: ?[]const []const u8 = null,
+    translations: []const Translation = &.{},
 
     pub fn jsonStringify(changes: Changes, writer: anytype) !void {
         std.debug.assert(changes.focal_x == null or changes.focal_x.? <= 100);
@@ -223,19 +296,51 @@ pub const Changes = struct {
             try writer.write(ids);
         }
 
+        for (changes.translations) |translation| {
+            try write_translation(writer, translation);
+        }
+
         try writer.endObject();
     }
 };
 
+/// `title@pl`, `alt@pl`, `caption@pl`: an empty one written as null, cleared, so the
+/// file reads the main language's there again.
+fn write_translation(writer: anytype, translation: Translation) !void {
+    std.debug.assert(translation.code.len > 0);
+
+    if (!model.variant.valid_code(translation.code)) {
+        return error.WriteFailed;
+    }
+
+    var buffer: [64]u8 = undefined;
+
+    inline for (.{ "title", "alt", "caption" }) |field| {
+        const key = std.fmt.bufPrint(&buffer, field ++ "@{s}", .{translation.code}) catch {
+            return error.WriteFailed;
+        };
+        const value = @field(translation, field);
+
+        try writer.objectField(key);
+
+        if (value.len == 0) {
+            try writer.write(null);
+        } else {
+            try writer.write(value);
+        }
+    }
+}
+
 pub const Delete = struct {
     pub const name = "media.delete";
-    pub const description = "Remove files from the library for good, with their copies";
+    pub const description = "Remove files from the library into the trash";
     pub const details =
-        \\Each file's record, its row and its bytes go, with every resized copy. A file a
-        \\record still points at is refused like any record that is referenced.
+        \\Each file leaves the library: its record and row, kept in the trash with the file
+        \\itself, which `trash restore` brings back as it was. Resized copies go (they are made
+        \\again). A file a record still points at is refused like any record that is
+        \\referenced.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const destroys = true;
     pub const In = struct {
         ids: []const []const u8,
     };
@@ -263,26 +368,53 @@ pub const Delete = struct {
             return error.Invalid;
         }
 
-        const files = try library.files_of(ctx);
-        const keys = try ctx.arena.alloc([]const u8, in.ids.len);
+        _ = try library.files_of(ctx);
 
-        for (in.ids, keys) |id, *key| {
+        const kept = ctx.kept;
+        defer ctx.kept = kept;
+
+        // Each file into the trash first, with its record; then the record's purge is part
+        // of a removal that can be undone.
+        for (in.ids) |id| {
             const row = try library.row_of(ctx, id);
+            const key = std.fmt.allocPrint(ctx.arena, "[\"{s}\"]", .{row.record}) catch {
+                return error.OutOfMemory;
+            };
 
+            _ = try trash.keep(ctx, .{
+                .kind = "media",
+                .key = row.record,
+                .label = std.fmt.allocPrint(ctx.arena, "File {s}", .{row.filename}) catch {
+                    return error.OutOfMemory;
+                },
+                .roots = &.{
+                    .{
+                        .table = "records",
+                        .column = "id",
+                        .keys = key,
+                    },
+                    .{
+                        .table = "record_search",
+                        .column = "record",
+                        .keys = key,
+                    },
+                    .{
+                        .table = "snapshots",
+                        .column = "record",
+                        .keys = key,
+                    },
+                },
+                .files = &.{row.storage_key},
+            });
+            ctx.kept = true;
             _ = try registry.SDK.dispatch(ctx, record.Purge, .{
                 .id = row.record,
             });
-            key.* = row.storage_key;
-        }
-
-        // Last, once every record went: a refusal above leaves every file in place.
-        for (keys) |key| {
-            files.remove(.files, key);
-            files.clear_copies(key);
+            ctx.kept = kept;
         }
 
         return .{
-            .deleted = @intCast(keys.len),
+            .deleted = @intCast(in.ids.len),
         };
     }
 };

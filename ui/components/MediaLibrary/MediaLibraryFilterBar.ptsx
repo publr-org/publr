@@ -1,0 +1,112 @@
+import { Publr } from "publr-jsx";
+import { follow, searched, sized, state, toggle_details } from "./MediaLibrary.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuCheckboxItem } from "@publr/ui/DropdownMenuCheckboxItem.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { FilterBar } from "@publr/ui/FilterBar.ptsx";
+import { FilterPill } from "@publr/ui/FilterPill.ptsx";
+import { FilterPillBody } from "@publr/ui/FilterPillBody.ptsx";
+import { FilterPillLabel } from "@publr/ui/FilterPillLabel.ptsx";
+import { FilterPillOperator } from "@publr/ui/FilterPillOperator.ptsx";
+import { FilterPillRemove } from "@publr/ui/FilterPillRemove.ptsx";
+import { FilterPillValue } from "@publr/ui/FilterPillValue.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type MediaLibraryFilterBarProps = {
+  /** Drawn at the bar's end: `MediaLibraryUpload`, or a page's own actions. */
+  children?: JSX.Element;
+};
+
+/** A media library's bar: the filters in force on the file itself, the search, what the
+ * last action did, Filter's menu of filters to add, and the view. */
+export function MediaLibraryFilterBar({ children }: MediaLibraryFilterBarProps) {
+  return (
+    <FilterBar classes="pl-8 pr-5">
+      {state.pills.map((pill) => (
+        <FilterPill key={pill.id} id={`filter-${pill.id}`}>
+          <FilterPillLabel>{pill.label}</FilterPillLabel>
+          <FilterPillOperator fixed>{Publr.t("is")}</FilterPillOperator>
+          <FilterPillBody attached>
+            {pill.options.length > 0 ? (
+              <DropdownMenu classes="flex">
+                <DropdownMenuTrigger asChild>
+                  <FilterPillValue attached>{pill.value}</FilterPillValue>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent classes="max-h-80 overflow-y-auto">
+                  {pill.options.map((option) => (
+                    <DropdownMenuCheckboxItem key={option.href} onClick={follow} href={option.href} checked={option.selected}>
+                      {option.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <FilterPillValue attached>{pill.value}</FilterPillValue>
+            )}
+            {pill.remove_href !== "" && (
+              <FilterPillRemove onClick={follow} href={pill.remove_href} label={Publr.t("Remove the {filter} filter", { filter: pill.label })} />
+            )}
+          </FilterPillBody>
+        </FilterPill>
+      ))}
+      <div class="flex min-w-40 flex-1 items-stretch">
+        <Input type="search" name="search" inset size="sm" aria-label={Publr.t("Search files")} value={state.search}
+          placeholder={Publr.t("Type to search")} onInput={searched} classes="px-0" />
+      </div>
+      {state.note !== "" && (
+        <Text as="span" variant="body-sm" tone="muted" classes="self-center whitespace-nowrap" data-part="media-note">{state.note}</Text>
+      )}
+      <div class="flex items-center" data-part="filter-bar-adder">
+      <DropdownMenu classes="flex items-center">
+        <DropdownMenuTrigger asChild>
+          <Button type="button" hierarchy="tertiary" size="sm">
+            <Icon name="filter-lines" size="sm" />
+            <span>{Publr.t("Filter")}</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="right">
+          {state.add_filters.map((item) => (
+            <span key={item.label} class="contents">
+              {item.added ? (
+                <DropdownMenuItem disabled>{item.label}</DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={follow} href={item.href}>{item.label}</DropdownMenuItem>
+              )}
+            </span>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      </div>
+      <DropdownMenu classes="flex items-center">
+        <DropdownMenuTrigger asChild>
+          <Button type="button" hierarchy="tertiary" size="sm">
+            <Icon name="grid" size="sm" />
+            <span>{Publr.t("View")}</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="right" classes="min-w-56">
+          <DropdownMenuCheckboxItem checked={state.details} onClick={toggle_details}>
+            {Publr.t("Always show details")}
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem checked={state.size === "sm"} data-size="sm" onClick={sized}>
+            {Publr.t("Small tiles")}
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem checked={state.size === "md"} data-size="md" onClick={sized}>
+            {Publr.t("Medium tiles")}
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem checked={state.size === "lg"} data-size="lg" onClick={sized}>
+            {Publr.t("Large tiles")}
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {children}
+    </FilterBar>
+  );
+}

@@ -19,7 +19,6 @@ pub const prefix = "/media/";
 pub const routes_count: u32 = 1;
 pub const upload_path = "/media/upload";
 const side_requested_max: u32 = 4096;
-const file_allocator = media.library.file_allocator;
 
 pub fn register(router: *http.Router) void {
     std.debug.assert(router.routes_len < 256 - routes_count);
@@ -96,7 +95,7 @@ fn serve(request: *http.Request, response: *http.Response, ctx: *http.Context) a
 
     params.format = format;
 
-    const bytes = copy(ctx.arena, files, key, params, suffix) catch |err| {
+    const bytes = media.read.copy(ctx.arena, files, key, params, suffix) catch |err| {
         return switch (err) {
             error.Needed, error.Storage => response.text(.service_unavailable, "Unavailable"),
             error.NotFound => response.text(.not_found, "Not Found"),
@@ -200,58 +199,6 @@ fn ranged(
     try response.set_body(.partial_content, facts.mime_type, bytes);
 }
 
-/// The resized copy: from the cache when it was made before, else made from the original
-/// and cached. The bytes are the request's.
-fn copy(
-    arena: std.mem.Allocator,
-    files: files_module.Files,
-    key: []const u8,
-    params: image.Params,
-    suffix: []const u8,
-) (files_module.Error || image.Error)![]const u8 {
-    std.debug.assert(suffix.len > 0);
-    std.debug.assert(files_module.valid_key(key));
-
-    const name = try cache_key(arena, key, suffix);
-
-    if (files.read(arena, .cache, name, files_module.bytes_max)) |cached| {
-        return cached;
-    } else |err| switch (err) {
-        error.NotFound => {},
-        else => return err,
-    }
-
-    const source = try files.read(file_allocator, .files, key, files_module.bytes_max);
-    defer file_allocator.free(source);
-
-    const processed = try image.process(file_allocator, source, params);
-    defer file_allocator.free(processed.bytes);
-
-    files.write(.cache, name, processed.bytes) catch |err| {
-        std.log.warn("media: could not cache {s}: {t}", .{ name, err });
-    };
-
-    return arena.dupe(u8, processed.bytes);
-}
-
-/// `2026/10/cat-a1b2c3.jpg` resized to `_w400` is cached as `2026/10/cat-a1b2c3_w400.jpg`;
-/// a WebP copy's suffix carries its own extension.
-fn cache_key(arena: std.mem.Allocator, key: []const u8, suffix: []const u8) ![]const u8 {
-    std.debug.assert(suffix.len > 0);
-    std.debug.assert(files_module.valid_key(key));
-
-    const dot = std.mem.lastIndexOfScalar(u8, key, '.') orelse key.len;
-    const converted = std.mem.indexOfScalar(u8, suffix, '.') != null;
-    const extension = if (converted) "" else key[dot..];
-    const name = try std.fmt.allocPrint(arena, "{s}{s}{s}", .{ key[0..dot], suffix, extension });
-
-    if (!files_module.valid_key(name)) {
-        return error.InvalidKey;
-    }
-
-    return name;
-}
-
 /// What the query asks of the image; null when it asks for the file as it is.
 fn params_of(
     arena: std.mem.Allocator,
@@ -322,22 +269,6 @@ fn focal_of(text: []const u8, params: *image.Params) !void {
 
     params.focal_x = across;
     params.focal_y = down;
-}
-
-test "cache_key: the stem, the suffix, the extension unless the suffix converts" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-
-    const arena = arena_state.allocator();
-
-    try std.testing.expectEqualStrings(
-        "2026/10/cat-a1_w400.jpg",
-        try cache_key(arena, "2026/10/cat-a1.jpg", "_w400"),
-    );
-    try std.testing.expectEqualStrings(
-        "2026/10/cat-a1_w400.webp",
-        try cache_key(arena, "2026/10/cat-a1.jpg", "_w400.webp"),
-    );
 }
 
 test "matches_etag: exact, weak, listed, any" {

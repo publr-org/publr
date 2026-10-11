@@ -34,7 +34,7 @@ pub fn library(
         .offset = (filter.page - 1) * explorer.page_size,
     }) catch |err| return admin.fail(&session, err, "/admin");
     const arena = session.arena;
-    const sides = try sides_of(views.Media, arena, filter, listed);
+    const sides = try sides_of(views.Media, &session, filter, listed);
     const pages = @max(1, (listed.total + explorer.page_size - 1) / explorer.page_size);
     var next = filter;
     var previous = filter;
@@ -53,11 +53,9 @@ pub fn library(
         .pages = @floatFromInt(pages),
         .prev_href = if (filter.page > 1) try explorer.href_of(arena, previous) else "",
         .next_href = if (filter.page < pages) try explorer.href_of(arena, next) else "",
-        .page_text = try std.fmt.allocPrint(arena, "Page {d} of {d} · {d} files", .{
-            filter.page, pages, listed.total,
-        }),
-        .pills = try pills_of(arena, filter),
-        .add_filters = try add_filters_of(arena, filter),
+        .page_text = try page_text_of(&session, filter.page, pages, listed.total),
+        .pills = try pills_of(&session, filter),
+        .add_filters = try add_filters_of(&session, filter),
         .kind = filter.kind,
         .size_filter = filter.size,
         .visibility = filter.visibility,
@@ -155,12 +153,14 @@ pub fn Sides(comptime View: type) type {
 
 pub fn sides_of(
     comptime View: type,
-    arena: std.mem.Allocator,
+    session: *const admin.Session,
     filter: explorer.Filter,
     listed: media.List.Out,
 ) admin.Error!Sides(View) {
     std.debug.assert(filter.page >= 1);
     std.debug.assert(listed.folders.len <= 1 << 16);
+
+    const arena = session.arena;
 
     var everywhere = filter;
     var unsorted = filter;
@@ -181,8 +181,8 @@ pub fn sides_of(
         .folders = try folders_of(View.FoldersItem, arena, filter, listed.folders),
         .tags = try tags_of(View.Tag_listItem, arena, filter, listed.tags),
         .periods = try periods_of(View.PeriodsItem, arena, listed.periods),
-        .years = try years_of(View.YearsItem, arena, filter, listed.periods),
-        .months = try months_of(View.MonthsItem, arena, filter, listed.periods),
+        .years = try years_of(View.YearsItem, session, filter, listed.periods),
+        .months = try months_of(View.MonthsItem, session, filter, listed.periods),
     };
 }
 
@@ -280,17 +280,18 @@ fn periods_of(
 
 fn years_of(
     comptime Option: type,
-    arena: std.mem.Allocator,
+    session: *const admin.Session,
     filter: explorer.Filter,
     periods: []const media.list.Period,
 ) admin.Error![]const Option {
     std.debug.assert(periods.len <= 240);
 
+    const arena = session.arena;
     var out: std.ArrayList(Option) = .empty;
 
     try out.append(arena, .{
         .value = "0",
-        .label = "Any year",
+        .label = try session.translated("Any year"),
         .selected = filter.year == 0,
     });
 
@@ -313,17 +314,18 @@ fn years_of(
 
 fn months_of(
     comptime Option: type,
-    arena: std.mem.Allocator,
+    session: *const admin.Session,
     filter: explorer.Filter,
     periods: []const media.list.Period,
 ) admin.Error![]const Option {
     std.debug.assert(periods.len <= 240);
 
+    const arena = session.arena;
     var out: std.ArrayList(Option) = .empty;
 
     try out.append(arena, .{
         .value = "0",
-        .label = "Any month",
+        .label = try session.translated("Any month"),
         .selected = filter.month == 0,
     });
 
@@ -335,13 +337,62 @@ fn months_of(
         try out.append(arena, .{
             .value = try std.fmt.allocPrint(arena, "{d}", .{period.month}),
             .label = try std.fmt.allocPrint(arena, "{s} · {d}", .{
-                explorer.month_name(period.month), period.count,
+                try month_name(session, period.month), period.count,
             }),
             .selected = period.month == filter.month,
         });
     }
 
     return out.items;
+}
+
+/// "Page 2 of 5 · 112 files".
+fn page_text_of(
+    session: *const admin.Session,
+    page: u32,
+    pages: u32,
+    total: u32,
+) admin.Error![]const u8 {
+    std.debug.assert(page >= 1);
+    std.debug.assert(pages >= 1);
+
+    const arena = session.arena;
+    const values: []const admin.Placeholder = &.{
+        .{
+            .name = "page",
+            .value = try std.fmt.allocPrint(arena, "{d}", .{page}),
+        },
+        .{
+            .name = "pages",
+            .value = try std.fmt.allocPrint(arena, "{d}", .{pages}),
+        },
+    };
+    const where = try session.translated_with("Page {page} of {pages}", values);
+    const files = try session.translated_count("{count} file", "{count} files", total);
+
+    return std.fmt.allocPrint(arena, "{s} · {s}", .{ where, files });
+}
+
+/// A month's name, as the year's periods list it.
+fn month_name(session: *const admin.Session, month: u32) admin.Error![]const u8 {
+    std.debug.assert(month <= 12);
+    std.debug.assert(session.signed_in());
+
+    return switch (month) {
+        1 => session.translated_in("month", "January"),
+        2 => session.translated_in("month", "February"),
+        3 => session.translated_in("month", "March"),
+        4 => session.translated_in("month", "April"),
+        5 => session.translated_in("month", "May"),
+        6 => session.translated_in("month", "June"),
+        7 => session.translated_in("month", "July"),
+        8 => session.translated_in("month", "August"),
+        9 => session.translated_in("month", "September"),
+        10 => session.translated_in("month", "October"),
+        11 => session.translated_in("month", "November"),
+        12 => session.translated_in("month", "December"),
+        else => "",
+    };
 }
 
 const Pill = views.Media.PillsItem;
@@ -351,71 +402,75 @@ const Choice = struct {
     label: []const u8,
 };
 
-const kinds = [_]Choice{
-    .{
-        .value = "image",
-        .label = "Images",
-    },
-    .{
-        .value = "video",
-        .label = "Videos",
-    },
-    .{
-        .value = "audio",
-        .label = "Audio",
-    },
-    .{
-        .value = "pdf",
-        .label = "PDFs",
-    },
-    .{
-        .value = "other",
-        .label = "Other files",
-    },
-};
-const sizes = [_]Choice{
-    .{
-        .value = "small",
-        .label = "Under 1 MB",
-    },
-    .{
-        .value = "medium",
-        .label = "1 to 10 MB",
-    },
-    .{
-        .value = "large",
-        .label = "Over 10 MB",
-    },
-};
-const visibilities = [_]Choice{
-    .{
-        .value = "public",
-        .label = "Public",
-    },
-    .{
-        .value = "private",
-        .label = "Private",
-    },
-};
-
 const Field = enum { kind, size, visibility };
 
 /// The bar's filters, drawn as Content's: on the file itself, each with the values it
 /// takes and a way back to Any. Type is always there; Size and Visibility once added.
-fn pills_of(arena: std.mem.Allocator, filter: explorer.Filter) admin.Error![]const Pill {
+fn pills_of(session: *const admin.Session, filter: explorer.Filter) admin.Error![]const Pill {
     std.debug.assert(filter.page >= 1);
-    std.debug.assert(kinds.len > 0);
+    std.debug.assert(session.signed_in());
 
+    const arena = session.arena;
     var pills: std.ArrayList(Pill) = .empty;
+    const kinds = [_]Choice{
+        .{
+            .value = "image",
+            .label = try session.translated("Images"),
+        },
+        .{
+            .value = "video",
+            .label = try session.translated("Videos"),
+        },
+        .{
+            .value = "audio",
+            .label = try session.translated("Audio"),
+        },
+        .{
+            .value = "pdf",
+            .label = try session.translated("PDFs"),
+        },
+        .{
+            .value = "other",
+            .label = try session.translated("Other files"),
+        },
+    };
+    const type_label = try session.translated("Type");
 
-    try pills.append(arena, try pill_of(arena, filter, .kind, "Type", &kinds));
+    try pills.append(arena, try pill_of(session, filter, .kind, type_label, &kinds));
 
     if (filter.size.len > 0) {
-        try pills.append(arena, try pill_of(arena, filter, .size, "Size", &sizes));
+        const sizes = [_]Choice{
+            .{
+                .value = "small",
+                .label = try session.translated("Under 1 MB"),
+            },
+            .{
+                .value = "medium",
+                .label = try session.translated("1 to 10 MB"),
+            },
+            .{
+                .value = "large",
+                .label = try session.translated("Over 10 MB"),
+            },
+        };
+        const label = try session.translated("Size");
+
+        try pills.append(arena, try pill_of(session, filter, .size, label, &sizes));
     }
 
     if (filter.visibility.len > 0) {
-        const pill = try pill_of(arena, filter, .visibility, "Visibility", &visibilities);
+        const visibilities = [_]Choice{
+            .{
+                .value = "public",
+                .label = try session.translated("Public"),
+            },
+            .{
+                .value = "private",
+                .label = try session.translated("Private"),
+            },
+        };
+        const label = try session.translated("Visibility");
+        const pill = try pill_of(session, filter, .visibility, label, &visibilities);
 
         try pills.append(arena, pill);
     }
@@ -440,7 +495,7 @@ fn with(filter: explorer.Filter, field: Field, value: []const u8) explorer.Filte
 }
 
 fn pill_of(
-    arena: std.mem.Allocator,
+    session: *const admin.Session,
     filter: explorer.Filter,
     field: Field,
     label: []const u8,
@@ -454,12 +509,14 @@ fn pill_of(
         .size => filter.size,
         .visibility => filter.visibility,
     };
+    const arena = session.arena;
     const any = current.len == 0 or std.mem.eql(u8, current, "any");
     const options = try arena.alloc(PillOption, choices.len + 1);
-    var value: []const u8 = "Any";
+    const any_label = try session.translated("Any");
+    var value: []const u8 = any_label;
 
     options[0] = .{
-        .label = "Any",
+        .label = any_label,
         .href = try explorer.href_of(arena, with(filter, field, "any")),
         .selected = any,
     };
@@ -494,20 +551,25 @@ fn pill_of(
 const AddFilter = views.Media.Add_filtersItem;
 
 /// Filter's menu: the bar's filters that are not in it yet.
-fn add_filters_of(arena: std.mem.Allocator, filter: explorer.Filter) admin.Error![]const AddFilter {
+fn add_filters_of(
+    session: *const admin.Session,
+    filter: explorer.Filter,
+) admin.Error![]const AddFilter {
     std.debug.assert(filter.page >= 1);
+    std.debug.assert(session.signed_in());
 
+    const arena = session.arena;
     const out = try arena.alloc(AddFilter, 2);
 
     out[0] = .{
-        .label = "Size",
+        .label = try session.translated("Size"),
         .href = try std.fmt.allocPrint(arena, "{s}#filter-size", .{
             try explorer.href_of(arena, with(filter, .size, "any")),
         }),
         .added = filter.size.len > 0,
     };
     out[1] = .{
-        .label = "Visibility",
+        .label = try session.translated("Visibility"),
         .href = try std.fmt.allocPrint(arena, "{s}#filter-visibility", .{
             try explorer.href_of(arena, with(filter, .visibility, "any")),
         }),
@@ -657,6 +719,16 @@ test "media over http: the library, a file's page and its form, the file served"
     );
 
     try std.testing.expectEqual(.forbidden, (try flow.inner.call(forged, png)).status);
+
+    // Other instances on the same host add their cookies to the header.
+    const crowded = try std.fmt.allocPrint(
+        arena,
+        "POST /media/upload?filename=crowded.png HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
+            "Cookie: other={s}; {s}\r\nX-Csrf-Token: {s}\r\nContent-Length: {d}\r\n\r\n",
+        .{ "x" ** 600, flow.cookie, csrf, png.len },
+    );
+
+    try std.testing.expectEqual(.created, (try flow.inner.call(crowded, png)).status);
 
     const saved = try flow.call("POST", page_path, form);
 

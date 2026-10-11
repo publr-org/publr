@@ -10,6 +10,7 @@ const registry = @import("../../server/registry.zig");
 const files_module = @import("../../lib/files.zig");
 const plugin_types = @import("../../sdk/plugin/types.zig");
 const taxonomy = @import("../taxonomy.zig");
+const content_types = @import("../content_type.zig");
 const record = @import("../record.zig");
 
 const Ctx = sdk.Ctx;
@@ -64,31 +65,107 @@ pub fn bootstrap(ctx: *Ctx) Error!void {
         .def = media.type_def,
     }});
 
-    const listed = try registry.SDK.dispatch(ctx, taxonomy.List, .{});
-
-    try ensure_taxonomy(ctx, listed.taxonomies, media.folders_handle, media.folders_definition);
-    try ensure_taxonomy(ctx, listed.taxonomies, media.tags_handle, media.tags_definition);
+    try ensure_taxonomy(ctx, media.folders_handle, media.folders_definition);
+    try ensure_taxonomy(ctx, media.tags_handle, media.tags_definition);
 }
 
-fn ensure_taxonomy(
-    ctx: *Ctx,
-    listed: []const taxonomy.Summary,
-    handle: []const u8,
-    definition: []const u8,
-) Error!void {
+/// The library's taxonomy of this handle, made from its definition when it is missing.
+fn ensure_taxonomy(ctx: *Ctx, handle: []const u8, definition: []const u8) Error!void {
     std.debug.assert(handle.len > 0);
     std.debug.assert(definition.len > 0);
 
-    for (listed) |summary| {
-        if (std.mem.eql(u8, summary.handle, handle)) {
-            return;
+    const found = store.taxonomies.get_by_handle(ctx.db, ctx.arena, handle) catch {
+        return error.Unavailable;
+    };
+
+    if (found == null) {
+        _ = try registry.SDK.dispatch(ctx, taxonomy.Create, .{
+            .definition = definition,
+        });
+    }
+}
+
+/// The media type of this handle as the caller reaches it: `NotFound` when there is none or
+/// the grant does not reach it, `Invalid` when its records are not files.
+pub fn media_type_for(
+    ctx: *Ctx,
+    granted: *const sdk.Grant,
+    handle: []const u8,
+) Error!store.content_types.Row {
+    std.debug.assert(granted.allows());
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const row = try media_type(ctx, handle);
+
+    if (!content_types.visible(granted, row.def)) {
+        return error.NotFound;
+    }
+
+    return row;
+}
+
+/// The media type of this handle: `NotFound` when there is none, `Invalid` when its records
+/// are not files.
+pub fn media_type(ctx: *Ctx, handle: []const u8) Error!store.content_types.Row {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    if (handle.len == 0 or handle.len > model.content_type.handle_len_max) {
+        return error.Invalid;
+    }
+
+    const row = try content_types.find_raw(ctx, handle) orelse return error.NotFound;
+
+    if (row.def.kind != .media) {
+        return error.Invalid;
+    }
+
+    std.debug.assert(row.def.handle.len > 0);
+
+    return row;
+}
+
+/// Whether a media type takes a file of this family: any the library takes when it names
+/// none.
+pub fn takes(def: model.content_type.Def, family: []const u8) bool {
+    std.debug.assert(def.kind == .media);
+    std.debug.assert(family.len > 0);
+
+    if (def.families.len == 0) {
+        return true;
+    }
+
+    for (def.families) |taken| {
+        if (std.mem.eql(u8, taken, family)) {
+            return true;
         }
     }
 
-    _ = try registry.SDK.dispatch(ctx, taxonomy.Create, .{
-        .definition = definition,
-    });
+    return false;
 }
+
+/// A file of a Private media type stays private; the library's files are each their own.
+pub fn may_be_public(ctx: *Ctx, record_id: []const u8) Error!void {
+    std.debug.assert(record_id.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const handle = try store.media.type_of(ctx.db, ctx.arena, record_id) orelse {
+        return error.NotFound;
+    };
+
+    if (media.is_library(handle)) {
+        return;
+    }
+
+    if (!(try media_type(ctx, handle)).def.public) {
+        return ctx.fail(private_type);
+    }
+}
+
+const private_type: sdk.operation.Failure = .{
+    .name = "PrivateType",
+    .status = 422,
+    .message = "A file of a Private media type is private",
+};
 
 pub fn files_of(ctx: *const Ctx) Error!files_module.Files {
     std.debug.assert(ctx.now_ms >= 0);

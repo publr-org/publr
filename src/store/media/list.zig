@@ -6,10 +6,11 @@
 const std = @import("std");
 const db = @import("../../lib/db.zig");
 const Row = @import("../media.zig").Row;
+const media_model = @import("../../model/media.zig");
 
 pub const tags_max: u32 = 16;
 pub const search_len_max: u32 = 200;
-const binds_max: u32 = tags_max + 8;
+const binds_max: u32 = tags_max + 9;
 
 pub const Folder = union(enum) {
     any,
@@ -22,6 +23,9 @@ pub const Folder = union(enum) {
 };
 
 pub const Filter = struct {
+    /// The media type's id: one type's files never show among another's. Empty only in
+    /// tests of the clauses.
+    type_id: []const u8 = "",
     folder: Folder = .any,
     /// Term ids; a file must carry every one.
     tags: []const []const u8 = &.{},
@@ -32,6 +36,8 @@ pub const Filter = struct {
     month: ?u32 = null,
     /// What kind of file: an image, a video, a sound, a PDF, or anything else.
     kind: ?Kind = null,
+    /// Only files of these families (a media field's `types`); empty for any.
+    families: []const []const u8 = &.{},
     /// How large: under 1 MiB, 1 to 10 MiB, over 10 MiB.
     size: ?Size = null,
     /// Only the files signed-in users alone may open, or only the others.
@@ -88,6 +94,30 @@ const Where = struct {
     }
 };
 
+/// The mime types of the kinds the library takes in the families named; the literals come
+/// from the kinds table, never from the caller. A family with no kind matches nothing.
+fn families_clause(arena: std.mem.Allocator, families: []const []const u8) ![]const u8 {
+    std.debug.assert(families.len > 0);
+    std.debug.assert(media_model.kinds.len > 0);
+
+    var clause: std.ArrayList(u8) = .empty;
+
+    try clause.appendSlice(arena, "m.mime_type IN (''");
+
+    for (media_model.kinds) |kind| {
+        for (families) |family| {
+            if (std.mem.eql(u8, kind.family, family)) {
+                try clause.print(arena, ", '{s}'", .{kind.mime_type});
+                break;
+            }
+        }
+    }
+
+    try clause.appendSlice(arena, ")");
+
+    return clause.items;
+}
+
 const from = " FROM media m JOIN records r ON r.id = m.record WHERE r.status <> 'deleted'";
 const in_term = " SELECT 1 FROM record_terms t WHERE t.record = m.record AND t.slot = 'live'";
 const title_value = "SELECT v.value FROM record_values v WHERE v.record = m.record " ++
@@ -98,6 +128,12 @@ fn where_of(arena: std.mem.Allocator, filter: Filter, leave: Leave) !Where {
     std.debug.assert(filter.search.len <= search_len_max);
 
     var where: Where = .{};
+
+    if (filter.type_id.len > 0) {
+        try where.add(arena, "r.type_id = ?N", .{
+            .text = filter.type_id,
+        });
+    }
 
     if (leave != .folder) {
         switch (filter.folder) {
@@ -128,6 +164,10 @@ fn where_of(arena: std.mem.Allocator, filter: Filter, leave: Leave) !Where {
             .other => "m.mime_type NOT LIKE 'image/%' AND m.mime_type NOT LIKE 'video/%' " ++
                 "AND m.mime_type NOT LIKE 'audio/%' AND m.mime_type <> 'application/pdf'",
         }, null);
+    }
+
+    if (filter.families.len > 0) {
+        try where.add(arena, try families_clause(arena, filter.families), null);
     }
 
     if (filter.size) |size| {
@@ -367,18 +407,25 @@ pub const Classification = enum { folders, tags };
 
 /// How many of the filter's files each folder or tag would hold: a folder's count leaves
 /// the chosen folder out, a tag's keeps the chosen tags (a file must carry them and it).
+/// How many files each of `terms` (a JSON array of ids: the folders or tags a page shows)
+/// holds under the filter.
 pub fn term_counts(
     connection: *db.Db,
     arena: std.mem.Allocator,
     filter: Filter,
     classification: Classification,
+    terms: []const u8,
 ) ![]const TermCount {
     std.debug.assert(filter.tags.len <= tags_max);
     std.debug.assert(filter.search.len <= search_len_max);
 
     const leave: Leave = if (classification == .folders) .folder else .nothing;
     const field = if (classification == .folders) "media_folders" else "media_tags";
-    const where = try where_of(arena, filter, leave);
+    var where = try where_of(arena, filter, leave);
+
+    try where.add(arena, "c.term IN (SELECT value FROM json_each(?N))", .{
+        .text = terms,
+    });
     const sql = try std.fmt.allocPrint(
         arena,
         "SELECT c.term, COUNT(*) FROM media m JOIN records r ON r.id = m.record " ++
@@ -485,5 +532,25 @@ test "like_pattern: wildcards in the search are taken literally" {
     try std.testing.expectEqualStrings(
         "%50\\%\\_off%",
         try like_pattern(arena_state.allocator(), "50%_off"),
+    );
+}
+
+test "families_clause: the kinds of the families named, nothing for one without kinds" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const arena = arena_state.allocator();
+    const pdf = try families_clause(arena, &.{"pdf"});
+
+    try std.testing.expectEqualStrings("m.mime_type IN ('', 'application/pdf')", pdf);
+
+    const images = try families_clause(arena, &.{ "image", "font" });
+
+    try std.testing.expect(std.mem.indexOf(u8, images, "'image/png'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, images, "'font/woff2'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, images, "'video/mp4'") == null);
+    try std.testing.expectEqualStrings(
+        "m.mime_type IN ('')",
+        try families_clause(arena, &.{"presentation"}),
     );
 }

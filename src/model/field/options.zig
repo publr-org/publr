@@ -57,6 +57,13 @@ pub const Text = struct {
     format: TextFormat = .plain,
 };
 
+pub const RichFormat = enum { bold, italic, link };
+
+pub const RichText = struct {
+    /// The formatting its editor offers; null for all of it, empty for plain paragraphs.
+    formats: ?[]const RichFormat = null,
+};
+
 pub const Slug = struct {
     /// Once the record is live the slug stays as it is, whatever the source does.
     lock_on_publish: bool = false,
@@ -176,6 +183,7 @@ pub const Options = struct {
     words_max: ?u32 = null,
     messages: Messages = .{},
     text: Text = .{},
+    richtext: RichText = .{},
     date: Date = .{},
     slug: Slug = .{},
     email: Email = .{},
@@ -267,6 +275,10 @@ pub const media_types = [_]MediaType{
         .id = "archive",
         .label = "Archive",
     },
+    .{
+        .id = "font",
+        .label = "Font",
+    },
 };
 
 /// The schemes a url field can be limited to; the first two are what an empty list means.
@@ -338,7 +350,8 @@ pub fn ordered(comptime Bound: type, low: ?Bound, high: ?Bound) bool {
 test "media types, schemes and bounds" {
     try std.testing.expect(valid_media_type("image"));
     try std.testing.expect(valid_media_type("archive"));
-    try std.testing.expect(!valid_media_type("font"));
+    try std.testing.expect(valid_media_type("font"));
+    try std.testing.expect(!valid_media_type("typeface"));
     try std.testing.expect(!valid_media_type(""));
 
     try std.testing.expect(valid_scheme("mailto"));
@@ -387,10 +400,14 @@ test "options are written sparsely and read back whole" {
         .media = .{
             .types = &.{"image"},
         },
+        .richtext = .{
+            .formats = &.{.bold},
+        },
     };
     const text = try std.json.Stringify.valueAlloc(arena, set, .{});
     const expected = "{\"max_len\":12,\"messages\":{\"length\":\"Short\"}," ++
-        "\"reference\":{\"on_delete\":\"clear\"},\"media\":{\"types\":[\"image\"]}}";
+        "\"richtext\":{\"formats\":[\"bold\"]},\"reference\":{\"on_delete\":\"clear\"}," ++
+        "\"media\":{\"types\":[\"image\"]}}";
     try std.testing.expectEqualStrings(expected, text);
 
     const parsed = try std.json.parseFromSliceLeaky(Options, arena, text, .{});
@@ -398,4 +415,6 @@ test "options are written sparsely and read back whole" {
     try std.testing.expectEqual(OnDelete.clear, parsed.reference.on_delete);
     try std.testing.expect(parsed.reference.create and parsed.media.link);
     try std.testing.expectEqualStrings("image", parsed.media.types[0]);
+    try std.testing.expectEqual(RichFormat.bold, parsed.richtext.formats.?[0]);
+    try std.testing.expect(bare.richtext.formats == null);
 }

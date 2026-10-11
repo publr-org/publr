@@ -1,0 +1,57 @@
+import { Publr } from "publr-jsx";
+import { clear_selection, delete_selected, move_selected, select_page, state, tag_ref, tagged } from "./MediaLibrary.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+/** A media library's bar for the files ticked, while any are: how many, the page or none,
+ * and what to do with them (tag and move for the library's own, delete for any). */
+export function MediaLibrarySelection() {
+  return (
+    <div class="contents">
+      {state.selected_count > 0 && (
+        <div class="sticky top-[var(--sheet-top,3.5rem)] z-20 flex flex-wrap items-center gap-2 border-b border-border bg-card px-6 py-2" data-part="media-bulk">
+          <Text as="span" variant="heading-xs">{Publr.tn("{count} selected", "{count} selected", state.selected_count)}</Text>
+          <Button type="button" hierarchy="tertiary" size="sm" onClick={select_page}>{Publr.t("Select page")}</Button>
+          <Button type="button" hierarchy="tertiary" size="sm" onClick={clear_selection}>{Publr.t("Clear")}</Button>
+          <div class="ml-auto flex items-center gap-2">
+            {state.filed && (
+              <form class="flex items-center gap-1" onSubmit={tagged}>
+                <Input name="tag" size="sm" placeholder={Publr.t("Tag")} classes="w-32" ref={tag_ref} />
+                <Button type="submit" hierarchy="secondary" size="sm" disabled={state.busy}>
+                  <Icon name="tag" size="sm" />
+                  <span>{Publr.t("Tag")}</span>
+                </Button>
+              </form>
+            )}
+            {state.filed && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" hierarchy="secondary" size="sm" disabled={state.busy}>
+                    <Icon name="folder" size="sm" />
+                    <span>{Publr.t("Move to")}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="right" classes="max-h-80 min-w-56 overflow-y-auto">
+                  <DropdownMenuItem data-folder="" onClick={move_selected}>{Publr.t("Unsorted")}</DropdownMenuItem>
+                  {state.folders.map((target) => (
+                    <DropdownMenuItem data-folder={target.id} onClick={move_selected}>{target.label}</DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            <Button type="button" hierarchy="secondary" intent="destructive" size="sm" disabled={state.busy} onClick={delete_selected}>
+              <Icon name="trash" size="sm" />
+              <span>{Publr.t("Delete")}</span>
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,236 @@
+import { Publr } from "publr-jsx";
+import {
+  dated,
+  folder_deleted,
+  folder_made,
+  folder_moved,
+  folder_renamed,
+  follow,
+  server_checked,
+  server_taken,
+  state,
+  tag_made,
+} from "./MediaLibrary.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
+import { FilterChip } from "@publr/ui/FilterChip.ptsx";
+import { FolderNav } from "@publr/ui/FolderNav.ptsx";
+import { FolderNavItem } from "@publr/ui/FolderNavItem.ptsx";
+import { FolderNavItemActions } from "@publr/ui/FolderNavItemActions.ptsx";
+import { FolderNavItemCount } from "@publr/ui/FolderNavItemCount.ptsx";
+import { FolderNavItemLink } from "@publr/ui/FolderNavItemLink.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+/** A media library's explorer: every file, the unsorted and unreviewed ones and the folder
+ * tree (each with what it holds under the rest of the filter), the tags (choosing several
+ * narrows to files carrying them all), the upload month, and the media folder on the
+ * server. Folders, tags and the server's folder are the library's own. */
+export function MediaLibrarySidebar() {
+  return (
+    <div class="contents">
+      <div class="flex flex-col gap-1">
+        <div class="flex items-center justify-between px-2">
+          <Text as="span" variant="eyebrow-xs" tone="muted">{state.filed ? Publr.t("Folders") : Publr.t("Files")}</Text>
+          {state.filed && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("New folder")} title={Publr.t("New folder")}>
+                  <Icon name="folder-plus" size="sm" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogTitle>{Publr.t("New folder")}</DialogTitle>
+                <form class="mt-4 flex flex-col gap-4" data-parent="" onSubmit={folder_made}>
+                  <Input name="name" placeholder={Publr.t("Name")} required maxLength={64} />
+                  <div class="flex justify-end gap-2">
+                    <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+                    <DialogClose asChild><Button type="submit">{Publr.t("Create")}</Button></DialogClose>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
+        <FolderNav label={Publr.t("Folders")}>
+          <FolderNavItem>
+            <FolderNavItemLink href={state.all_href} current={state.folder === ""} onClick={follow}>
+              <Icon name="grid" size="sm" />
+              {Publr.t("All files")}
+            </FolderNavItemLink>
+            <FolderNavItemCount persistent>{`${state.all}`}</FolderNavItemCount>
+          </FolderNavItem>
+          {state.filed && (
+            <FolderNavItem>
+              <FolderNavItemLink href={state.unsorted_href} current={state.folder === "unsorted"} onClick={follow}>
+                <Icon name="file" size="sm" />
+                {Publr.t("Unsorted")}
+              </FolderNavItemLink>
+              <FolderNavItemCount persistent>{`${state.unsorted}`}</FolderNavItemCount>
+            </FolderNavItem>
+          )}
+          {state.unreviewed_shown && (
+            <FolderNavItem>
+              <FolderNavItemLink href={state.unreviewed_href} current={state.folder === "unreviewed"} onClick={follow}>
+                <Icon name="search" size="sm" />
+                {Publr.t("Unreviewed")}
+              </FolderNavItemLink>
+              <FolderNavItemCount persistent>{`${state.unreviewed}`}</FolderNavItemCount>
+            </FolderNavItem>
+          )}
+          {state.folders.map((entry) => (
+            <FolderNavItem level={entry.level} key={entry.id}>
+              <FolderNavItemLink href={entry.href} current={entry.current} onClick={follow}>
+                <Icon name="folder" size="sm" />
+                {entry.name}
+              </FolderNavItemLink>
+              <FolderNavItemCount>{`${entry.count}`}</FolderNavItemCount>
+              <FolderNavItemActions>
+                {entry.nests && (
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("New folder in {name}", { name: entry.name })} title={Publr.t("New folder inside")}>
+                        <Icon name="folder-plus" size="sm" />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogTitle>{Publr.t("New folder in {name}", { name: entry.name })}</DialogTitle>
+                      <form class="mt-4 flex flex-col gap-4" data-parent={entry.id} onSubmit={folder_made}>
+                        <Input name="name" placeholder={Publr.t("Name")} required maxLength={64} />
+                        <div class="flex justify-end gap-2">
+                          <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+                          <DialogClose asChild><Button type="submit">{Publr.t("Create")}</Button></DialogClose>
+                        </div>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                )}
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Rename {name}", { name: entry.name })} title={Publr.t("Rename")}>
+                      <Icon name="edit" size="sm" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogTitle>{Publr.t("Rename {name}", { name: entry.name })}</DialogTitle>
+                    <form class="mt-4 flex flex-col gap-4" data-folder={entry.id} onSubmit={folder_renamed}>
+                      <Input name="name" value={entry.name} required maxLength={64} />
+                      <div class="flex justify-end gap-2">
+                        <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+                        <DialogClose asChild><Button type="submit">{Publr.t("Rename")}</Button></DialogClose>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Move {name}", { name: entry.name })} title={Publr.t("Move")}>
+                      <Icon name="folder" size="sm" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogTitle>{Publr.t("Move {name}", { name: entry.name })}</DialogTitle>
+                    <DialogDescription>{Publr.t("Not into itself or a folder inside it.")}</DialogDescription>
+                    <form class="mt-4 flex flex-col gap-4" data-folder={entry.id} onSubmit={folder_moved}>
+                      <NativeSelect name="parent" label={Publr.t("Into")}>
+                        <option value="">{Publr.t("The top level")}</option>
+                        {state.folders.map((home) => (
+                          <option value={home.id} selected={home.id === entry.parent}>{home.label}</option>
+                        ))}
+                      </NativeSelect>
+                      <div class="flex justify-end gap-2">
+                        <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+                        <DialogClose asChild><Button type="submit">{Publr.t("Move")}</Button></DialogClose>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Delete {name}", { name: entry.name })} title={Publr.t("Delete")}>
+                      <Icon name="trash" size="sm" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogTitle>{Publr.t("Delete {name}?", { name: entry.name })}</DialogTitle>
+                    <DialogDescription>
+                      {Publr.t("Its files and folders move up a level; files in a top-level folder become unsorted.")}
+                    </DialogDescription>
+                    <form class="mt-4 flex justify-end gap-2" data-folder={entry.id} onSubmit={folder_deleted}>
+                      <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+                      <DialogClose asChild><Button type="submit" intent="destructive">{Publr.t("Delete folder")}</Button></DialogClose>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </FolderNavItemActions>
+            </FolderNavItem>
+          ))}
+        </FolderNav>
+      </div>
+      {state.filed && (
+        <div class="flex flex-col gap-2">
+          <Text as="span" variant="eyebrow-xs" tone="muted" classes="px-2">{Publr.t("Tags")}</Text>
+          <div class="flex flex-wrap gap-1.5 px-2">
+            {state.tag_list.map((tag) => (
+              tag.enabled ? (
+                <FilterChip href={tag.href} onClick={follow} count={`${tag.count}`} selected={tag.selected}>
+                  {tag.name}
+                </FilterChip>
+              ) : (
+                <FilterChip count="0" disabled>{tag.name}</FilterChip>
+              )
+            ))}
+          </div>
+          <form class="flex items-center gap-1 px-2" onSubmit={tag_made}>
+            <Input name="name" size="sm" placeholder={Publr.t("New tag")} maxLength={64} classes="min-w-0 flex-1" />
+            <Button type="submit" hierarchy="tertiary" size="sm" label={Publr.t("Add tag")} title={Publr.t("Add tag")}>
+              <Icon name="plus" size="sm" />
+            </Button>
+          </form>
+        </div>
+      )}
+      <div class="flex flex-col gap-2">
+        <Text as="span" variant="eyebrow-xs" tone="muted" classes="px-2">{Publr.t("Uploaded")}</Text>
+        <div class="flex gap-2 px-2">
+          <NativeSelect name="year" label={Publr.t("Year")} size="sm" onChange={dated} classes="flex-1">
+            {state.years.map((option) => (
+              <option value={option.value} selected={option.selected}>{option.label}</option>
+            ))}
+          </NativeSelect>
+          <NativeSelect name="month" label={Publr.t("Month")} size="sm" onChange={dated} disabled={state.year === 0} classes="flex-1">
+            {state.months.map((option) => (
+              <option value={option.value} selected={option.selected}>{option.label}</option>
+            ))}
+          </NativeSelect>
+        </div>
+      </div>
+      {state.filed && state.on_server && (
+        <div class="flex flex-col gap-2 px-2" data-part="media-server">
+          <Text as="span" variant="eyebrow-xs" tone="muted">{Publr.t("On the server")}</Text>
+          <Text as="p" variant="body-sm" tone="muted">{state.server_note}</Text>
+          {state.server_skipped.map((line) => (
+            <Text as="p" variant="body-xs" tone="muted" classes="break-all">{line}</Text>
+          ))}
+          <div class="flex gap-2">
+            <Button type="button" hierarchy="secondary" size="sm" disabled={state.server_busy} onClick={server_checked}>
+              <Icon name="sync" size="sm" />
+              <span>{Publr.t("Check")}</span>
+            </Button>
+            {state.server_new > 0 && (
+              <Button type="button" size="sm" disabled={state.server_busy} onClick={server_taken}>
+                {Publr.t("Add {count}", { count: state.server_new })}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

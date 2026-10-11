@@ -1,0 +1,719 @@
+import { Publr } from "publr-jsx";
+import type { MediaPickOptions, NavigationStore, PickedMedia } from "./Navigation.ptsx";
+import { media_takes, send_media, shown_media } from "./MediaTile.ptsx";
+import type { ListedMedia } from "./MediaTile.ptsx";
+import { AssetCard } from "@publr/ui/AssetCard.ptsx";
+import { AssetCardBadge } from "@publr/ui/AssetCardBadge.ptsx";
+import { AssetCardCaption } from "@publr/ui/AssetCardCaption.ptsx";
+import { AssetCardFile } from "@publr/ui/AssetCardFile.ptsx";
+import { AssetCardGrid } from "@publr/ui/AssetCardGrid.ptsx";
+import { AssetCardMeta } from "@publr/ui/AssetCardMeta.ptsx";
+import { AssetCardPreview } from "@publr/ui/AssetCardPreview.ptsx";
+import { AssetCardSelect } from "@publr/ui/AssetCardSelect.ptsx";
+import { AssetCardTitle } from "@publr/ui/AssetCardTitle.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Checkbox } from "@publr/ui/Checkbox.ptsx";
+import { DropOverlay } from "@publr/ui/DropOverlay.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuCheckboxItem } from "@publr/ui/DropdownMenuCheckboxItem.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { FilterBar } from "@publr/ui/FilterBar.ptsx";
+import { FilterChip } from "@publr/ui/FilterChip.ptsx";
+import { FilterPill } from "@publr/ui/FilterPill.ptsx";
+import { FilterPillBody } from "@publr/ui/FilterPillBody.ptsx";
+import { FilterPillLabel } from "@publr/ui/FilterPillLabel.ptsx";
+import { FilterPillOperator } from "@publr/ui/FilterPillOperator.ptsx";
+import { FilterPillRemove } from "@publr/ui/FilterPillRemove.ptsx";
+import { FilterPillValue } from "@publr/ui/FilterPillValue.ptsx";
+import { FolderNav } from "@publr/ui/FolderNav.ptsx";
+import { FolderNavItem } from "@publr/ui/FolderNavItem.ptsx";
+import { FolderNavItemCount } from "@publr/ui/FolderNavItemCount.ptsx";
+import { FolderNavItemLink } from "@publr/ui/FolderNavItemLink.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Modal } from "@publr/ui/Modal.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+/** A file as a tile of the picker draws it. */
+export type PickerItem = {
+  id: string;
+  title: string;
+  thumb: string;
+  image: boolean;
+  video: boolean;
+  src: string;
+  kind: string;
+  icon: "video" | "audio" | "file";
+  facts: string;
+  /** Ticked to be handed to the field. */
+  selected: boolean;
+  /** The field holds it already. */
+  held: boolean;
+};
+export type PickerFolder = {
+  id: string;
+  name: string;
+  level: "0" | "1" | "2" | "3" | "4" | "5";
+  count: number;
+  current: boolean;
+};
+export type PickerTag = { id: string; name: string; count: number; selected: boolean; enabled: boolean };
+export type PickerOption = { value: string; label: string; selected: boolean };
+/** A filter in the bar: its name, its value, the values it may take, and whether it can go. */
+export type PickerPill = { id: string; label: string; value: string; options: PickerOption[]; removable: boolean };
+
+type Listed = {
+  items: ListedMedia[];
+  total: number;
+  all: number;
+  unsorted: number;
+  folders: Array<{ id: string; name: string; parent: string | null; depth: number; count: number }>;
+  tags: Array<{ id: string; name: string; count: number }>;
+  periods: Array<{ year: number; month: number; count: number }>;
+};
+
+const page_size = 60;
+const month_names = [Publr.t("January"), Publr.t("February"), Publr.t("March"), Publr.t("April"),
+  Publr.t("May"), Publr.t("June"), Publr.t("July"), Publr.t("August"), Publr.t("September"),
+  Publr.t("October"), Publr.t("November"), Publr.t("December")];
+/** What the bar's Type means when the field takes any file: the library's own kinds. */
+const any_kinds = [
+  { id: "image", label: Publr.t("Image") },
+  { id: "video", label: Publr.t("Video") },
+  { id: "audio", label: Publr.t("Audio") },
+  { id: "pdf", label: Publr.t("PDF") },
+  { id: "other", label: Publr.t("Other") },
+];
+const extra_filters: Array<{ id: string; label: string; options: Array<{ value: string; label: string }> }> = [
+  { id: "size", label: Publr.t("Size"), options: [
+    { value: "", label: Publr.t("Any") },
+    { value: "small", label: Publr.t("Under 1 MB") },
+    { value: "medium", label: Publr.t("1 to 10 MB") },
+    { value: "large", label: Publr.t("Over 10 MB") },
+  ] },
+  { id: "visibility", label: Publr.t("Visibility"), options: [
+    { value: "", label: Publr.t("Any") },
+    { value: "public", label: Publr.t("Public") },
+    { value: "private", label: Publr.t("Private") },
+  ] },
+];
+
+export const state = Publr.reactive({
+  open: false,
+  title: Publr.t("Choose media"),
+  many: false,
+  can_upload: true,
+  accept: "",
+  /** The families the field takes; none for any file. */
+  families: [] as string[],
+  /** What Type may be set to: the field's families, or the library's kinds. */
+  types: [] as Array<{ id: string; label: string }>,
+  type: "",
+  folder: "",
+  tags: [] as string[],
+  search: "",
+  year: 0,
+  month: 0,
+  size_filter: "",
+  visibility: "",
+  /** The extra filters added to the bar from Filter. */
+  added: [] as string[],
+  type_pill: { id: "type", label: "Type", value: "Any", options: [] as PickerOption[], removable: false } as PickerPill,
+  pills: [] as PickerPill[],
+  add_filters: [] as Array<{ id: string; label: string; added: boolean }>,
+  items: [] as PickerItem[],
+  total: 0,
+  all: 0,
+  unsorted: 0,
+  more: false,
+  loading: false,
+  folders: [] as PickerFolder[],
+  tag_list: [] as PickerTag[],
+  periods: [] as Array<{ year: number; month: number; count: number }>,
+  years: [] as PickerOption[],
+  months: [] as PickerOption[],
+  tile_size: "md" as "sm" | "md" | "lg",
+  details: false,
+  /** What is ticked, in the order it was, kept across filters. */
+  chosen: [] as PickedMedia[],
+  chosen_count: 0,
+  take_label: Publr.t("Choose"),
+  footer_text: "",
+  dragging: false,
+  progress: "",
+  note: "",
+});
+
+export const file_ref = Publr.ref<HTMLInputElement>();
+
+let held = new Set<string>();
+let deliver: (files: PickedMedia[]) => void = () => {};
+let latest = 0;
+let typing = 0;
+
+const navigation = Publr.stores.navigation as NavigationStore;
+
+/** Everything the markup reads that follows from the filter, the answer and the ticks. */
+const restamp = () => {
+  const chosen = new Set(state.chosen.map((file) => file.id));
+  state.items = state.items.map((item) => ({ ...item, selected: chosen.has(item.id), held: held.has(item.id) }));
+  const type_label = state.types.find((type) => type.id === state.type)?.label;
+  const restricted = state.families.length > 0;
+  state.type_pill = {
+    id: "type",
+    label: Publr.t("Type"),
+    value: type_label ?? (restricted && state.types.length === 1 ? state.types[0].label : Publr.t("Any")),
+    options: state.types.length > 1
+      ? [{ value: "", label: Publr.t("Any"), selected: state.type === "" },
+        ...state.types.map((type) => ({ value: type.id, label: type.label, selected: type.id === state.type }))]
+      : [],
+    removable: state.type !== "",
+  };
+  const values: Record<string, string> = { size: state.size_filter, visibility: state.visibility };
+  state.pills = extra_filters.filter((filter) => state.added.includes(filter.id)).map((filter) => ({
+    id: filter.id,
+    label: filter.label,
+    value: filter.options.find((option) => option.value === values[filter.id])?.label ?? Publr.t("Any"),
+    options: filter.options.map((option) => ({ ...option, selected: option.value === values[filter.id] })),
+    removable: true,
+  }));
+  state.add_filters = extra_filters.map((filter) => ({ id: filter.id, label: filter.label, added: state.added.includes(filter.id) }));
+  state.folders = state.folders.map((folder) => ({ ...folder, current: folder.id === state.folder }));
+  state.tag_list = state.tag_list.map((tag) => ({ ...tag, selected: state.tags.includes(tag.id) }));
+  const years = [...new Set(state.periods.map((period) => period.year))];
+  state.years = [{ value: "0", label: Publr.t("Any year"), selected: state.year === 0 },
+    ...years.map((year) => ({ value: String(year), label: String(year), selected: year === state.year }))];
+  state.months = [{ value: "0", label: Publr.t("Any month"), selected: state.month === 0 },
+    ...state.periods.filter((period) => period.year === state.year).map((period) => ({
+      value: String(period.month), label: month_names[period.month - 1] ?? "", selected: period.month === state.month,
+    }))];
+  state.chosen_count = state.chosen.length;
+  state.take_label = !state.many ? Publr.t("Choose")
+    : state.chosen_count > 0 ? Publr.tn("Add {count} file", "Add {count} files", state.chosen_count)
+    : Publr.t("Add");
+  state.footer_text = state.progress !== "" ? state.progress
+    : state.chosen_count > 0 ? Publr.t("{count} selected", { count: state.chosen_count })
+    : Publr.tn("{count} file", "{count} files", state.total);
+};
+
+const tile_of = (item: ListedMedia): PickerItem => ({
+  ...shown_media(item),
+  video: item.family === "video" && !item.missing,
+  src: Publr.url(`/media/${item.key}`),
+  selected: false,
+  held: false,
+});
+
+const answer = async (response: Response) => {
+  if (response.ok) return response.json();
+  const failed = await response.json().catch(() => ({}));
+  throw new Error(failed.message ?? failed.error ?? `${response.status}`);
+};
+
+/** Asks the library for the files the filter keeps, within the families the field takes;
+ * `more` adds the next page to those shown. */
+const load = async (more = false) => {
+  const query = new URLSearchParams();
+  if (state.folder !== "") query.set("folder", state.folder);
+  for (const tag of state.tags) query.append("tags", tag);
+  if (state.search !== "") query.set("search", state.search);
+  if (state.year > 0) query.set("year", String(state.year));
+  if (state.year > 0 && state.month > 0) query.set("month", String(state.month));
+  if (state.families.length > 0) {
+    for (const family of state.type !== "" ? [state.type] : state.families) query.append("families", family);
+  } else if (state.type !== "") {
+    query.set("kind", state.type);
+  }
+  if (state.size_filter !== "") query.set("size", state.size_filter);
+  if (state.visibility !== "") query.set("visibility", state.visibility);
+  query.set("limit", String(page_size));
+  query.set("offset", String(more ? state.items.length : 0));
+  const asked = ++latest;
+  state.loading = true;
+  try {
+    const listed: Listed = await answer(await fetch(Publr.url(`/api/media/list?${query}`), { credentials: "same-origin" }));
+    if (asked !== latest) return;
+    const tiles = listed.items.map(tile_of);
+    state.items = more ? [...state.items, ...tiles] : tiles;
+    state.total = listed.total;
+    state.all = listed.all;
+    state.unsorted = listed.unsorted;
+    state.more = state.items.length < listed.total;
+    state.folders = listed.folders.map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+      level: String(Math.min(folder.depth + 1, 5)) as PickerFolder["level"],
+      count: folder.count,
+      current: false,
+    }));
+    state.tag_list = listed.tags.map((tag) => ({ ...tag, selected: false, enabled: tag.count > 0 }));
+    state.periods = listed.periods;
+    state.note = "";
+  } catch (error) {
+    if (asked === latest) state.note = Publr.t("Could not load the library: {message}", { message: (error as Error).message });
+  } finally {
+    if (asked === latest) state.loading = false;
+  }
+  restamp();
+};
+
+const open = (options: MediaPickOptions) => {
+  deliver = options.deliver;
+  held = new Set(options.held);
+  state.many = options.many;
+  state.can_upload = options.can_upload;
+  state.accept = options.accept;
+  state.families = options.types.map((type) => type.id);
+  state.types = options.types.length > 0 ? options.types : any_kinds;
+  state.title = options.many ? Publr.t("Add media") : Publr.t("Choose media");
+  state.type = "";
+  state.folder = "";
+  state.tags = [];
+  state.search = "";
+  state.year = 0;
+  state.month = 0;
+  state.size_filter = "";
+  state.visibility = "";
+  state.added = [];
+  state.chosen = [];
+  state.items = [];
+  state.note = "";
+  state.progress = "";
+  state.open = true;
+  restamp();
+  void load();
+};
+
+export const root_ref = Publr.ref<HTMLElement>(() => navigation.bindMedia({ open }));
+
+export const close = () => {
+  state.open = false;
+};
+
+/** Hands what is ticked to the field, in the order it was ticked. */
+export const take = () => {
+  const files = state.chosen;
+  state.open = false;
+  deliver(files);
+};
+
+const value_of = (event: Event, key: string) => (event.currentTarget as HTMLElement).dataset[key] ?? "";
+
+const refilter = () => {
+  restamp();
+  void load();
+};
+
+export const typed = (event: Event) => {
+  state.type = value_of(event, "value");
+  refilter();
+};
+
+export const type_cleared = (event: Event) => {
+  event.preventDefault();
+  state.type = "";
+  refilter();
+};
+
+export const filter_added = (event: Event) => {
+  const id = value_of(event, "pill");
+  if (!state.added.includes(id)) state.added = [...state.added, id];
+  restamp();
+};
+
+export const pill_set = (event: Event) => {
+  const value = value_of(event, "value");
+  if (value_of(event, "pill") === "size") state.size_filter = value;
+  else state.visibility = value;
+  refilter();
+};
+
+export const pill_removed = (event: Event) => {
+  event.preventDefault();
+  const id = value_of(event, "pill");
+  state.added = state.added.filter((added) => added !== id);
+  if (id === "size") state.size_filter = "";
+  else state.visibility = "";
+  refilter();
+};
+
+export const searched = (event: Event) => {
+  state.search = (event.currentTarget as HTMLInputElement).value;
+  clearTimeout(typing);
+  typing = window.setTimeout(() => { void load(); }, 250);
+};
+
+export const foldered = (event: Event) => {
+  event.preventDefault();
+  state.folder = value_of(event, "folder");
+  refilter();
+};
+
+export const tag_toggled = (event: Event) => {
+  event.preventDefault();
+  const id = value_of(event, "tag");
+  state.tags = state.tags.includes(id) ? state.tags.filter((tag) => tag !== id) : [...state.tags, id];
+  refilter();
+};
+
+export const dated = (event: Event) => {
+  const select = event.currentTarget as HTMLSelectElement;
+  if (select.name === "year") {
+    state.year = Number(select.value);
+    state.month = 0;
+  } else {
+    state.month = Number(select.value);
+  }
+  refilter();
+};
+
+export const sized = (event: Event) => {
+  state.tile_size = value_of(event, "size") as "sm" | "md" | "lg";
+};
+
+export const toggle_details = () => {
+  state.details = !state.details;
+};
+
+export const more = () => {
+  void load(true);
+};
+
+/** Ticks or unticks a file; a field that takes one file keeps only the last ticked. */
+const toggle = (id: string) => {
+  const item = state.items.find((entry) => entry.id === id);
+  if (!item) return;
+  const ticked = state.chosen.some((file) => file.id === id);
+  const picked: PickedMedia = { id: item.id, title: item.title, thumb: item.thumb, image: item.image,
+    kind: item.kind, icon: item.icon, facts: item.facts };
+  state.chosen = ticked ? state.chosen.filter((file) => file.id !== id)
+    : state.many ? [...state.chosen, picked] : [picked];
+  restamp();
+};
+
+export const toggled = (event: Event) => {
+  toggle((event.currentTarget as HTMLInputElement).value);
+};
+
+export const tile_clicked = (event: Event) => {
+  toggle(value_of(event, "id"));
+};
+
+/** A double click on a file of a single-file field picks it at once. */
+export const tile_twice = (event: Event) => {
+  if (state.many) return;
+  const id = value_of(event, "id");
+  if (!state.chosen.some((file) => file.id === id)) toggle(id);
+  take();
+};
+
+/** Uploads into the folder looked at, ticking each file as it lands. */
+const upload = async (list: FileList | null) => {
+  const all = Array.from(list ?? []);
+  const refused = all.filter((file) => !media_takes(state.families, file.type));
+  const sending = all.filter((file) => media_takes(state.families, file.type));
+  state.note = refused.length ? Publr.t("This field does not take {files}.", { files: refused.map((file) => file.name).join(", ") }) : "";
+  const folder = state.folder === "unsorted" ? "" : state.folder;
+  for (const [index, file] of sending.entries()) {
+    state.progress = Publr.t("Uploading {index} of {total}…", { index: index + 1, total: sending.length });
+    restamp();
+    try {
+      const tile = tile_of(await send_media(file, folder));
+      state.items = [tile, ...state.items.filter((item) => item.id !== tile.id)];
+      state.total += 1;
+      toggle(tile.id);
+    } catch (error) {
+      state.note = Publr.t("Could not upload {name}: {message}", { name: file.name, message: (error as Error).message });
+    }
+  }
+  state.progress = "";
+  restamp();
+};
+
+export const browse = () => {
+  file_ref.current?.click();
+};
+
+export const chosen_files = (event: Event) => {
+  const input = event.currentTarget as HTMLInputElement;
+  void upload(input.files);
+  input.value = "";
+};
+
+const carries_files = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes("Files");
+
+export const dragged = (event: DragEvent) => {
+  if (!state.can_upload || !carries_files(event)) return;
+  event.preventDefault();
+  state.dragging = true;
+};
+
+export const left = (event: DragEvent) => {
+  const next = event.relatedTarget as Node | null;
+  if (!next || !(event.currentTarget as HTMLElement).contains(next)) state.dragging = false;
+};
+
+export const dropped = (event: DragEvent) => {
+  if (!state.can_upload || !carries_files(event)) return;
+  event.preventDefault();
+  state.dragging = false;
+  void upload(event.dataTransfer?.files ?? null);
+};
+
+/** The media library over the page, for the media fields on it: the library's filters,
+ * folders, tags and tiles, kept to the families the field asking takes, with upload when
+ * its rules allow. Nothing of the library is managed here. Mounted once per page; a field
+ * opens it through the navigation store and gets the ticked files back. */
+export function MediaPicker() {
+  return (
+    <div class="contents" data-part="media-picker" ref={root_ref}>
+      {state.open && (
+        <Modal
+          title={state.title}
+          size="screen"
+          flush
+          onClose={close}
+          footer={
+            <div class="flex w-full items-center justify-between gap-4">
+              <Text as="span" variant="body-sm" tone="muted">{state.footer_text}</Text>
+              <div class="flex items-center gap-2">
+                <Button type="button" hierarchy="secondary" onClick={close}>{Publr.t("Cancel")}</Button>
+                <Button type="button" disabled={state.chosen_count === 0} onClick={take}>{state.take_label}</Button>
+              </div>
+            </div>
+          }
+        >
+          <FilterBar classes="border-b border-border pl-5 pr-3">
+            <FilterPill id="picker-type">
+              <FilterPillLabel>{state.type_pill.label}</FilterPillLabel>
+              <FilterPillOperator fixed>{Publr.t("is")}</FilterPillOperator>
+              <FilterPillBody attached>
+                {state.type_pill.options.length > 0 ? (
+                  <DropdownMenu classes="flex">
+                    <DropdownMenuTrigger asChild>
+                      <FilterPillValue attached>{state.type_pill.value}</FilterPillValue>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {state.type_pill.options.map((option) => (
+                        <DropdownMenuCheckboxItem checked={option.selected} data-value={option.value} onClick={typed}>
+                          {option.label}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <FilterPillValue attached>{state.type_pill.value}</FilterPillValue>
+                )}
+                {state.type_pill.removable && (
+                  <FilterPillRemove href="#" label={Publr.t("Remove the Type filter")} onClick={type_cleared} />
+                )}
+              </FilterPillBody>
+            </FilterPill>
+            {state.pills.map((pill) => (
+              <FilterPill id={`picker-${pill.id}`}>
+                <FilterPillLabel>{pill.label}</FilterPillLabel>
+                <FilterPillOperator fixed>{Publr.t("is")}</FilterPillOperator>
+                <FilterPillBody attached>
+                  <DropdownMenu classes="flex">
+                    <DropdownMenuTrigger asChild>
+                      <FilterPillValue attached>{pill.value}</FilterPillValue>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {pill.options.map((option) => (
+                        <DropdownMenuCheckboxItem checked={option.selected} data-pill={pill.id} data-value={option.value} onClick={pill_set}>
+                          {option.label}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <FilterPillRemove href="#" label={Publr.t("Remove the {filter} filter", { filter: pill.label })} data-pill={pill.id} onClick={pill_removed} />
+                </FilterPillBody>
+              </FilterPill>
+            ))}
+            <div class="flex min-w-40 flex-1 items-stretch">
+              <Input type="search" name="picker-search" inset size="sm" aria-label={Publr.t("Search files")} value={state.search}
+                placeholder={Publr.t("Type to search")} onInput={searched} classes="px-0" />
+            </div>
+            {state.note !== "" && (
+              <Text as="span" variant="body-sm" tone="error" classes="self-center">{state.note}</Text>
+            )}
+            <div class="flex items-center">
+              <DropdownMenu classes="flex items-center">
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" hierarchy="tertiary" size="sm">
+                    <Icon name="filter-lines" size="sm" />
+                    <span>{Publr.t("Filter")}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="right">
+                  {state.add_filters.map((item) => (
+                    <span class="contents">
+                      {item.added ? (
+                        <DropdownMenuItem disabled>{item.label}</DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem data-pill={item.id} onClick={filter_added}>{item.label}</DropdownMenuItem>
+                      )}
+                    </span>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <DropdownMenu classes="flex items-center">
+              <DropdownMenuTrigger asChild>
+                <Button type="button" hierarchy="tertiary" size="sm">
+                  <Icon name="grid" size="sm" />
+                  <span>{Publr.t("View")}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="right" classes="min-w-56">
+                <DropdownMenuCheckboxItem checked={state.details} onClick={toggle_details}>
+                  {Publr.t("Always show details")}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem checked={state.tile_size === "sm"} data-size="sm" onClick={sized}>
+                  {Publr.t("Small tiles")}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={state.tile_size === "md"} data-size="md" onClick={sized}>
+                  {Publr.t("Medium tiles")}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={state.tile_size === "lg"} data-size="lg" onClick={sized}>
+                  {Publr.t("Large tiles")}
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {state.can_upload && (
+              <div class="flex items-center">
+                <input type="file" multiple={state.many} accept={state.accept} class="hidden" ref={file_ref} onChange={chosen_files} />
+                <Button type="button" size="sm" onClick={browse} disabled={state.progress !== ""}>
+                  <Icon name="upload" size="sm" />
+                  <span>{Publr.t("Upload")}</span>
+                </Button>
+              </div>
+            )}
+          </FilterBar>
+          <div class="flex min-h-0 flex-1">
+            <aside class="flex w-64 shrink-0 flex-col gap-6 overflow-y-auto border-r border-border bg-muted/30 px-3 py-5">
+              <div class="flex flex-col gap-1">
+                <Text as="span" variant="eyebrow-xs" tone="muted" classes="px-2">{Publr.t("Folders")}</Text>
+                <FolderNav label={Publr.t("Folders")}>
+                  <FolderNavItem>
+                    <FolderNavItemLink href="#" current={state.folder === ""} data-folder="" onClick={foldered}>
+                      <Icon name="grid" size="sm" />
+                      {Publr.t("All files")}
+                    </FolderNavItemLink>
+                    <FolderNavItemCount persistent>{`${state.all}`}</FolderNavItemCount>
+                  </FolderNavItem>
+                  <FolderNavItem>
+                    <FolderNavItemLink href="#" current={state.folder === "unsorted"} data-folder="unsorted" onClick={foldered}>
+                      <Icon name="file" size="sm" />
+                      {Publr.t("Unsorted")}
+                    </FolderNavItemLink>
+                    <FolderNavItemCount persistent>{`${state.unsorted}`}</FolderNavItemCount>
+                  </FolderNavItem>
+                  {state.folders.map((entry) => (
+                    <FolderNavItem level={entry.level} key={entry.id}>
+                      <FolderNavItemLink href="#" current={entry.current} data-folder={entry.id} onClick={foldered}>
+                        <Icon name="folder" size="sm" />
+                        {entry.name}
+                      </FolderNavItemLink>
+                      <FolderNavItemCount>{`${entry.count}`}</FolderNavItemCount>
+                    </FolderNavItem>
+                  ))}
+                </FolderNav>
+              </div>
+              {state.tag_list.length > 0 && (
+                <div class="flex flex-col gap-2">
+                  <Text as="span" variant="eyebrow-xs" tone="muted" classes="px-2">{Publr.t("Tags")}</Text>
+                  <div class="flex flex-wrap gap-1.5 px-2">
+                    {state.tag_list.map((tag) => (
+                      tag.enabled || tag.selected ? (
+                        <FilterChip href="#" data-tag={tag.id} onClick={tag_toggled} count={`${tag.count}`} selected={tag.selected}>
+                          {tag.name}
+                        </FilterChip>
+                      ) : (
+                        <FilterChip count="0" disabled>{tag.name}</FilterChip>
+                      )
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div class="flex flex-col gap-2">
+                <Text as="span" variant="eyebrow-xs" tone="muted" classes="px-2">{Publr.t("Uploaded")}</Text>
+                <div class="flex gap-2 px-2">
+                  <NativeSelect name="year" label={Publr.t("Year")} size="sm" onChange={dated} classes="flex-1">
+                    {state.years.map((option) => (
+                      <option value={option.value} selected={option.selected}>{option.label}</option>
+                    ))}
+                  </NativeSelect>
+                  <NativeSelect name="month" label={Publr.t("Month")} size="sm" onChange={dated} disabled={state.year === 0} classes="flex-1">
+                    {state.months.map((option) => (
+                      <option value={option.value} selected={option.selected}>{option.label}</option>
+                    ))}
+                  </NativeSelect>
+                </div>
+              </div>
+            </aside>
+            <div class="relative min-h-0 flex-1 overflow-y-auto" data-part="picker-grid" onDragOver={dragged} onDragLeave={left} onDrop={dropped}>
+              {state.items.length === 0 && !state.loading ? (
+                <Empty mark="files">
+                  <EmptyTitle>{Publr.t("No files here")}</EmptyTitle>
+                  <EmptyDescription>{state.can_upload ? Publr.t("Drop files here, or use Upload.") : Publr.t("Try another folder or filter.")}</EmptyDescription>
+                </Empty>
+              ) : (
+                <AssetCardGrid size={state.tile_size}>
+                  {state.items.map((item) => (
+                    <AssetCard look="tile" key={item.id}>
+                      <AssetCardSelect>
+                        <Checkbox value={item.id} checked={item.selected} onChange={toggled} />
+                      </AssetCardSelect>
+                      <button type="button" class="block w-full cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                        aria-label={item.title} aria-pressed={item.selected} data-id={item.id} onClick={tile_clicked} onDblClick={tile_twice}>
+                        <AssetCardPreview>
+                          {item.image ? (
+                            <img src={item.thumb} alt="" loading="lazy" class="size-full object-cover" />
+                          ) : item.video ? (
+                            <video src={`${item.src}#t=0.1`} muted playsinline preload="metadata" class="size-full object-cover" />
+                          ) : (
+                            <AssetCardFile label={item.kind}>
+                              <Icon name={item.icon} size="lg" />
+                            </AssetCardFile>
+                          )}
+                        </AssetCardPreview>
+                        {item.held && (
+                          <AssetCardBadge label={Publr.t("In the field")}>
+                            <Icon name="check" size="sm" />
+                          </AssetCardBadge>
+                        )}
+                        <AssetCardCaption always={state.details}>
+                          <AssetCardTitle tone="overlay">{item.title}</AssetCardTitle>
+                          <AssetCardMeta tone="overlay">{item.facts}</AssetCardMeta>
+                        </AssetCardCaption>
+                      </button>
+                    </AssetCard>
+                  ))}
+                </AssetCardGrid>
+              )}
+              {state.more && (
+                <div class="flex justify-center border-t border-border p-4">
+                  <Button type="button" hierarchy="secondary" size="sm" onClick={more} disabled={state.loading}>
+                    <span>{Publr.t("Load more")}</span>
+                  </Button>
+                </div>
+              )}
+              {state.dragging && (
+                <DropOverlay label={Publr.t("Drop to upload")} />
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}

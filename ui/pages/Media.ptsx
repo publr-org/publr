@@ -1,6 +1,6 @@
 import { Publr } from "publr-jsx";
 import { ListDetailPage } from "@publr/admin/ListDetailPage.ptsx";
-import { MediaLibrary } from "../components/MediaLibrary.ptsx";
+import { MediaLibrary } from "../components/MediaLibrary/MediaLibrary.ptsx";
 
 export type MediaProps = {
   folder: string;
@@ -107,9 +107,11 @@ export function Media({
   months,
 }: MediaProps) {
   return (
-    <ListDetailPage title="Media">
+    <ListDetailPage title={Publr.t("Media")}>
       <MediaLibrary
-        csrf={Publr.request.session.csrf}
+        type="media"
+        files_at="/admin/media/"
+        seeded={true}
         folder={folder}
         tags={tags}
         search={search}

@@ -12,6 +12,29 @@ type ReferenceController = {
 };
 type StructureController = { to: (depth: number) => void };
 
+/** A file the media picker hands back, as a media field shows it. */
+export type PickedMedia = {
+  id: string;
+  title: string;
+  thumb: string;
+  image: boolean;
+  kind: string;
+  icon: "video" | "audio" | "file";
+  facts: string;
+};
+/** What a media field asks the picker for: one file or many, the families its rules take
+ * (each with its label; none for any), whether new files may be uploaded, the files it
+ * holds already, and where the chosen ones go. */
+export type MediaPickOptions = {
+  many: boolean;
+  types: Array<{ id: string; label: string }>;
+  accept: string;
+  can_upload: boolean;
+  held: string[];
+  deliver: (files: PickedMedia[]) => void;
+};
+type MediaController = { open: (options: MediaPickOptions) => void };
+
 export type ReferenceLevel = {
   id: number;
   url: string;
@@ -50,6 +73,7 @@ const navigation = Publr.createStore(
   ({ state: shared }: { state: NavigationState }) => {
     let references: ReferenceController | undefined = undefined;
     let structure: StructureController | undefined = undefined;
+    let media: MediaController | undefined = undefined;
     return {
       state: {
         previewHtml: null as string | null,
@@ -113,6 +137,16 @@ const navigation = Publr.createStore(
         },
         openReference(options: ReferenceOptions) {
           return references?.open(options);
+        },
+        /** The page's media picker, mounted once, answers every media field on it. */
+        bindMedia(controller: MediaController) {
+          media = controller;
+          return () => {
+            if (media === controller) media = undefined;
+          };
+        },
+        pickMedia(options: MediaPickOptions) {
+          media?.open(options);
         },
         back(data: { depth?: string } = {}, context?: { event: Event }) {
           context?.event.preventDefault();

@@ -7,10 +7,6 @@ const media = @import("../../../operations/media.zig");
 
 pub const page_size: u32 = 25;
 const depth_max: u32 = 5;
-const month_names = [_][]const u8{
-    "",       "January",   "February", "March",    "April",    "May", "June", "July",
-    "August", "September", "October",  "November", "December",
-};
 
 pub const Filter = struct {
     folder: []const u8 = "",
@@ -152,12 +148,6 @@ pub fn facts_of(arena: std.mem.Allocator, item: media.Item) ![]const u8 {
     }
 
     return std.fmt.allocPrint(arena, "{s} · {s}", .{ upper, size });
-}
-
-pub fn month_name(month: u32) []const u8 {
-    std.debug.assert(month_names.len == 13);
-
-    return if (month <= 12) month_names[month] else "";
 }
 
 pub fn icon_of(family: []const u8) []const u8 {

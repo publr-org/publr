@@ -26,15 +26,19 @@ pub const Upload = struct {
         \\What the library's Upload does after it sends a file's bytes to `/media/upload`,
         \\which keeps them under a token: the file is checked (its bytes must be what its
         \\extension says; an SVG is cleaned of scripts), kept under a dated key and added
-        \\as a published `media` record titled after its name, in `folder` when given. Up
-        \\to 32 MiB; the file types are the library's own (images, video, audio, PDF,
-        \\text, CSV, ZIP). `/media/upload` calls it itself; the token alone is no use.
+        \\as a published record of the media type `type` (the library, `media`, unless it
+        \\names another) titled after its name, in `folder` when given (the library's
+        \\only). Up to 32 MiB; the file types are the library's own (images, video, audio,
+        \\PDF, text, CSV, ZIP, fonts), narrowed to the families the type takes. A file of
+        \\a Private media type other than the library is private. `/media/upload` calls it
+        \\itself; the token alone is no use.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         upload: []const u8,
         filename: []const u8,
         folder: ?[]const u8 = null,
+        type: []const u8 = media.type_handle,
     };
     pub const Out = library.Item;
     pub const example: In = .{
@@ -46,6 +50,7 @@ pub const Upload = struct {
         .upload = "The token the upload's bytes are kept under: 8 to 40 of a-z and 0-9",
         .filename = "The file's name, with its extension",
         .folder = "The folder to file it in (a `media_folders` term id); none leaves it unsorted",
+        .type = "The media type it is a file of, by handle; `media`, the library, by default",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -56,6 +61,8 @@ pub const Upload = struct {
             return error.Invalid;
         }
 
+        const def = (try library.media_type(ctx, in.type)).def;
+
         const files = try library.files_of(ctx);
         const limit = files_module.bytes_max;
         const allocator = library.file_allocator;
@@ -64,7 +71,7 @@ pub const Upload = struct {
         };
         defer library.file_allocator.free(bytes);
 
-        const item = try add(ctx, files, in.filename, bytes, in.folder);
+        const item = try add(ctx, files, def, in.filename, bytes, in.folder);
 
         files.remove(.incoming, in.upload);
 
@@ -85,6 +92,7 @@ pub const Add = struct {
         file: []const u8,
         filename: ?[]const u8 = null,
         folder: ?[]const u8 = null,
+        type: []const u8 = media.type_handle,
     };
     pub const Out = library.Item;
     pub const example: In = .{
@@ -95,6 +103,7 @@ pub const Add = struct {
         .file = "The file's path",
         .filename = "The name it is kept under; the path's own name when left out",
         .folder = "The folder to file it in (a `media_folders` term id)",
+        .type = "The media type it is a file of, by handle; `media`, the library, by default",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -115,6 +124,7 @@ pub const Add = struct {
             return error.Invalid;
         }
 
+        const def = (try library.media_type(ctx, in.type)).def;
         const limit: std.Io.Limit = .limited(files_module.bytes_max);
         const allocator = library.file_allocator;
         const cwd = std.Io.Dir.cwd();
@@ -127,7 +137,7 @@ pub const Add = struct {
         };
         defer library.file_allocator.free(bytes);
 
-        return add(ctx, try library.files_of(ctx), filename, bytes, in.folder);
+        return add(ctx, try library.files_of(ctx), def, filename, bytes, in.folder);
     }
 };
 
@@ -147,36 +157,66 @@ pub fn valid_token(token: []const u8) bool {
     return true;
 }
 
+const not_taken: sdk.operation.Failure = .{
+    .name = "NotTaken",
+    .status = 422,
+    .message = "This media type does not take files of this kind",
+};
+
+const no_folders: sdk.operation.Failure = .{
+    .name = "NoFolders",
+    .status = 422,
+    .message = "Only the media library files into folders",
+};
+
 const not_what_it_says: sdk.operation.Failure = .{
     .name = "NotWhatItSays",
     .status = 422,
     .message = "The file's contents are not what its extension says",
 };
 
-/// Checks the file, keeps its bytes under a new key, and adds its record and row.
-fn add(
+/// Checks the file is one the media type takes, keeps its bytes under a new key, and adds
+/// its record and row.
+pub fn add(
     ctx: *Ctx,
     files: files_module.Files,
+    def: model.content_type.Def,
     filename: []const u8,
     bytes: []const u8,
     folder: ?[]const u8,
 ) Error!library.Item {
     std.debug.assert(bytes.len <= files_module.bytes_max);
     std.debug.assert(media.valid_filename(filename));
+    std.debug.assert(def.kind == .media);
+
+    const library_type = media.is_library(def.handle);
+
+    if (!library_type and folder != null and folder.?.len > 0) {
+        return ctx.fail(no_folders);
+    }
+
+    if (!library.takes(def, media.kind_of(filename).?.family)) {
+        return ctx.fail(not_taken);
+    }
 
     const kept = try checked(ctx, filename, bytes);
     var random_hex: [ids.len]u8 = undefined;
     var key_buffer: [files_module.key_len_max]u8 = undefined;
     const random = ids.random(ctx.io, &random_hex)[0..media.random_len];
-    const key = try ctx.arena.dupe(u8, media.key_of(&key_buffer, ctx.now_ms, filename, random));
+    const key = try ctx.arena.dupe(
+        u8,
+        media.key_of(&key_buffer, def.handle, ctx.now_ms, filename, random),
+    );
 
     files.write(.files, key, kept) catch |err| return library.fail(err);
 
     return added(ctx, .{
+        .type = def.handle,
         .filename = filename,
         .key = key,
         .bytes = kept,
         .folder = folder,
+        .private = !library_type and !def.public,
     });
 }
 
@@ -200,12 +240,16 @@ pub fn checked(ctx: *Ctx, filename: []const u8, bytes: []const u8) Error![]const
 }
 
 pub const Kept = struct {
+    /// The media type, by handle.
+    type: []const u8 = media.type_handle,
     filename: []const u8,
     key: []const u8,
     bytes: []const u8,
     folder: ?[]const u8 = null,
     /// Taken in from the media folder rather than uploaded.
     unreviewed: bool = false,
+    /// Only signed-in users may open it.
+    private: bool = false,
 };
 
 /// The record and row of a file whose bytes are kept under its key.
@@ -217,7 +261,7 @@ pub fn added(ctx: *Ctx, kept: Kept) Error!library.Item {
     const size = image.size_of(kept.bytes);
     const hash = hash_of(kept.bytes);
     const created = try registry.SDK.dispatch(ctx, record.Create, .{
-        .type = media.type_handle,
+        .type = kept.type,
         .document = try document_of(ctx, kept.filename, kept.folder),
         .status = "published",
     });
@@ -230,7 +274,7 @@ pub fn added(ctx: *Ctx, kept: Kept) Error!library.Item {
         .height = if (size) |known| known.height else null,
         .storage_key = kept.key,
         .hash = &hash,
-        .private = false,
+        .private = kept.private,
         .created_at = ctx.now_ms,
         .unreviewed = kept.unreviewed,
     };

@@ -1,4 +1,5 @@
-//! `POST /media/upload?filename=<name>[&folder=<id>]`: a file for the media library, its
+//! `POST /media/upload?filename=<name>[&folder=<id>][&type=<handle>]`: a file for the media
+//! library or another media type, its
 //! bytes the request's body as they are. The body is taken as it arrives and written into
 //! the library's uploads area a piece at a time, so a file of any size the library takes
 //! never sits in memory; once it is in, `media.upload` checks it and adds it. Signed-in
@@ -14,8 +15,8 @@ const Project = @import("../../server/project.zig").Project;
 const identity = @import("../rest/identity.zig");
 const registry = @import("../../server/registry.zig");
 const media = @import("../../operations/media.zig");
+const sessions = @import("../../store/sessions.zig");
 
-const cookie_len_max: u32 = 256;
 const token_len: u32 = 20;
 
 /// One upload under way: what `finish` needs once the request's head is gone.
@@ -28,8 +29,10 @@ const Upload = struct {
     filename_len: u32,
     folder_buffer: [64]u8 = undefined,
     folder_len: u32,
-    cookie_buffer: [cookie_len_max]u8 = undefined,
-    cookie_len: u32,
+    type_buffer: [model.content_type.handle_len_max]u8 = undefined,
+    type_len: u32,
+    session_buffer: [sessions.token_len]u8 = undefined,
+    session_len: u32,
 
     fn filename(state: *const Upload) []const u8 {
         std.debug.assert(state.filename_len > 0);
@@ -72,9 +75,17 @@ fn open(request: *http.Request, response: *http.Response, ctx: *http.Context) an
 
     const filename = http.Form.query_param(ctx.arena, request.query(), "filename") orelse "";
     const folder = http.Form.query_param(ctx.arena, request.query(), "folder") orelse "";
+    const type_handle = http.Form.query_param(ctx.arena, request.query(), "type") orelse
+        model.media.type_handle;
+    // Only the session cookie: the whole header carries every cookie the host has, and on
+    // a shared host such as 127.0.0.1 that is every other instance's too.
     const cookie = request.header("cookie") orelse "";
+    const session = identity.cookie_value(cookie, project.session_cookie) orelse "";
+    const valid = model.media.valid_filename(filename) and folder.len <= 64 and
+        session.len <= sessions.token_len and type_handle.len > 0 and
+        type_handle.len <= model.content_type.handle_len_max;
 
-    if (!model.media.valid_filename(filename) or folder.len > 64 or cookie.len > cookie_len_max) {
+    if (!valid) {
         try response.json(.unprocessable_content, .{
             .@"error" = "Invalid",
         });
@@ -89,12 +100,14 @@ fn open(request: *http.Request, response: *http.Response, ctx: *http.Context) an
         .token = undefined,
         .filename_len = @intCast(filename.len),
         .folder_len = @intCast(folder.len),
-        .cookie_len = @intCast(cookie.len),
+        .type_len = @intCast(type_handle.len),
+        .session_len = @intCast(session.len),
     };
     token_of(ctx, &state.token);
     @memcpy(state.filename_buffer[0..filename.len], filename);
     @memcpy(state.folder_buffer[0..folder.len], folder);
-    @memcpy(state.cookie_buffer[0..cookie.len], cookie);
+    @memcpy(state.type_buffer[0..type_handle.len], type_handle);
+    @memcpy(state.session_buffer[0..session.len], session);
 
     return state;
 }
@@ -140,6 +153,7 @@ fn finish(context: *anyopaque, response: *http.Response, ctx: *http.Context) any
         .upload = &state.token,
         .filename = state.filename(),
         .folder = if (folder.len > 0) folder else null,
+        .type = state.type_buffer[0..state.type_len],
     }) catch |err| {
         state.files.remove(.incoming, &state.token);
         return refusal(response, &sdk_ctx, err);
@@ -148,14 +162,18 @@ fn finish(context: *anyopaque, response: *http.Response, ctx: *http.Context) any
     try response.json(.created, added);
 }
 
-/// Who the upload is for, worked out again from the cookie its head carried.
+/// Who the upload is for, worked out again from the session cookie its head carried.
 fn caller_of(state: *const Upload, arena: std.mem.Allocator) @import("../../sdk.zig").Caller {
-    std.debug.assert(state.cookie_len <= cookie_len_max);
+    std.debug.assert(state.session_len <= sessions.token_len);
 
     const head = std.fmt.allocPrint(
         arena,
-        "POST {s} HTTP/1.1\r\nHost: h\r\nCookie: {s}\r\n\r\n",
-        .{ "/media/upload", state.cookie_buffer[0..state.cookie_len] },
+        "POST {s} HTTP/1.1\r\nHost: h\r\nCookie: {s}={s}\r\n\r\n",
+        .{
+            "/media/upload",
+            state.project.session_cookie,
+            state.session_buffer[0..state.session_len],
+        },
     ) catch return .anonymous;
     const parsed = http.parse(head) catch return .anonymous;
     const request: http.Request = .{
