@@ -1,0 +1,18 @@
+import { Publr } from "publr-jsx";
+export type WorkspaceAsideProps = {
+  label?: string;
+  children?: JSX.Element;
+};
+
+/** WorkspacePage's narrow column on the right, from the top of the sheet to its bottom. */
+export function WorkspaceAside({ label = "", children }: WorkspaceAsideProps) {
+  return (
+    <aside
+      aria-label={label !== "" ? label : Publr.t("Conversation")}
+      class="flex w-96 shrink-0 flex-col border-l border-border bg-card"
+      data-part="workspace-aside"
+    >
+      {children}
+    </aside>
+  );
+}

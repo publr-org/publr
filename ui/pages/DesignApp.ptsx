@@ -1,0 +1,64 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { DesignTabs } from "../components/DesignTabs.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+
+export type DesignAppProps = {
+  /** `system` (the design system builder) or `moodboard`. */
+  tab: string;
+  title: string;
+  description: string;
+  /** The app the page works on; empty while one is to be chosen. */
+  app: string;
+  app_label: string;
+  /** With several apps and none chosen: each, and where its page is. */
+  choices: Array<{ label: string; href: string }>;
+  /** The design system: the app's fonts and its site for the canvas, JSON. */
+  fonts: string;
+  editor_site: string;
+};
+
+/** The design system builder's Design page: the element it mounts on, carrying the app's
+ * data, filling the sheet under the tabs; and, with no app chosen, the choice of one for
+ * the builder or the moodboard (DesignMoodboard draws the board itself). */
+export function DesignApp({
+  tab,
+  title,
+  description,
+  app,
+  app_label,
+  choices,
+  fonts,
+  editor_site,
+}: DesignAppProps) {
+  return (
+    <IndexPage
+      title={title}
+      description={description}
+      tabs={<DesignTabs current={tab} />}
+      empty={
+        app === "" && (
+          <Empty>
+            <EmptyTitle>{Publr.t("Choose an app")}</EmptyTitle>
+            <EmptyDescription>
+              {choices.length === 0 ? Publr.t("The project has no apps yet.") : Publr.t("Which app's design to work on:")}
+            </EmptyDescription>
+            {choices.map((choice) => (
+              <Link href={choice.href}>{choice.label}</Link>
+            ))}
+          </Empty>
+        )
+      }
+    >
+      <div
+        class="flex min-h-[720px] flex-1 flex-col"
+        data-design-system={app}
+        data-fonts={fonts}
+        data-editor-site={editor_site}
+      />
+    </IndexPage>
+  );
+}

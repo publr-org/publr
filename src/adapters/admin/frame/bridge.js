@@ -28,7 +28,13 @@
     },
     navigate(to) { send({ kind: "navigate", to: String(to) }); },
   };
-  const height = () => send({ kind: "height", height: document.documentElement.scrollHeight });
+  // What it shows, not the frame's own size: a panel shrinks to its content as well as grows.
+  const height = () => {
+    const body = document.body;
+    const style = getComputedStyle(body);
+    const margins = parseFloat(style.marginTop) + parseFloat(style.marginBottom);
+    send({ kind: "height", height: Math.ceil(body.getBoundingClientRect().height + margins) });
+  };
   addEventListener("load", () => {
     height();
     new ResizeObserver(height).observe(document.body);

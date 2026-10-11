@@ -1,11 +1,15 @@
-//! Every `record.*` notice becomes changed keys in the dependency index, so the built site
-//! (`adapters/site`) rebuilds exactly the pages and fragments that read the record or its
-//! type. Raised inside the operation's transaction: a rolled-back write raises nothing.
+//! A `record.*` notice that changes what visitors see becomes changed keys in the dependency
+//! index, so the built site (`adapters/site`) rebuilds exactly the pages and fragments that
+//! read the record or its type. The built site holds live documents only: an edit kept as
+//! pending changes, or written into a record no visitor sees, rebuilds nothing (a preview
+//! renders those on request). Raised inside the operation's transaction: a rolled-back
+//! write raises nothing.
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const deps = @import("../../lib/deps.zig");
 const records = @import("../../store/records.zig");
+const registry = @import("../../server/registry.zig");
 
 const Ctx = sdk.Ctx;
 const Event = sdk.Event;
@@ -31,7 +35,7 @@ pub const RecordChanged = struct {
             return;
         }
 
-        raise(ctx, notice.subject) catch |err| {
+        raise(ctx, notice.name[notice_prefix.len..], notice.subject) catch |err| {
             ctx.dependency_failure = true;
             std.log.debug("site changes: {s} not raised: {s}", .{
                 notice.subject,
@@ -41,9 +45,35 @@ pub const RecordChanged = struct {
     }
 };
 
+/// Whether a record notice changes what visitors see. Pending changes never do; a save, a
+/// creation or a status move does only while the record is live afterwards (going out of
+/// live has its own notices); publishing, unpublishing, deleting, restoring and purging
+/// always do.
+pub fn touches_live(action: []const u8, live_now: bool) bool {
+    std.debug.assert(action.len > 0);
+    std.debug.assert(std.mem.indexOfScalar(u8, action, '.') == null);
+
+    const pending = [_][]const u8{ "changed", "changes_saved", "changes_discarded" };
+    const while_live = [_][]const u8{ "saved", "created", "transitioned" };
+
+    for (pending) |name| {
+        if (std.mem.eql(u8, action, name)) {
+            return false;
+        }
+    }
+
+    for (while_live) |name| {
+        if (std.mem.eql(u8, action, name)) {
+            return live_now;
+        }
+    }
+
+    return true;
+}
+
 /// `record:<id>` and `type:<handle>` for a record that still exists; `records` for one
 /// that is gone (a purge), which every listing depends on.
-fn raise(ctx: *Ctx, record_id: []const u8) !void {
+fn raise(ctx: *Ctx, action: []const u8, record_id: []const u8) !void {
     std.debug.assert(record_id.len > 0);
     std.debug.assert(record_id.len <= records.id_len);
 
@@ -56,6 +86,11 @@ fn raise(ctx: *Ctx, record_id: []const u8) !void {
         },
     };
     const found = try records.get(ctx.db, ctx.arena, record_id);
+    const live_now = if (found) |record| registry.Statuses.is_live(record.status) else false;
+
+    if (action.len == 0 or !touches_live(action, live_now)) {
+        return;
+    }
 
     if (found) |record| {
         const keys = [_][]const u8{
@@ -93,4 +128,17 @@ test "keys name the record and its type; a buffer too small refuses" {
 
     const long = "x" ** key_len_max;
     try std.testing.expectError(error.NoSpaceLeft, record_key(&buffer, long));
+}
+
+test "only what visitors see raises: pending changes never, saves while live" {
+    try std.testing.expect(!touches_live("changed", true));
+    try std.testing.expect(!touches_live("changes_saved", true));
+    try std.testing.expect(!touches_live("changes_discarded", true));
+    try std.testing.expect(!touches_live("saved", false));
+    try std.testing.expect(touches_live("saved", true));
+    try std.testing.expect(!touches_live("created", false));
+    try std.testing.expect(touches_live("unpublished", false));
+    try std.testing.expect(touches_live("deleted", false));
+    try std.testing.expect(touches_live("purged", false));
+    try std.testing.expect(touches_live("published", true));
 }

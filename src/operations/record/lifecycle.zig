@@ -263,10 +263,11 @@ test "pending edits: save on a live record parks, publish applies, discard drops
         .document = "{\"title\":\"Three\",\"body\":\"third\"}",
     });
     try std.testing.expect(still_parked.changed);
+    // Signed in, a read is the latest copy, pending changes and all.
     const own_view = try SDK.dispatch(&editor, record_operations.Get, .{
         .id = created.id,
     });
-    try std.testing.expectEqualStrings("One", own_view.record.title);
+    try std.testing.expectEqualStrings("Three", own_view.record.title);
 
     const published = try SDK.dispatch(&editor, Publish, .{
         .id = created.id,
@@ -384,7 +385,7 @@ fn hear(ctx: *Ctx, notice: sdk.Event.Notice) void {
     std.debug.assert(notice.name.len > 0);
     std.debug.assert(ctx.trail != null);
 
-    ctx.trail.?.noticed(ctx, .{
+    ctx.trail.?.noticed(.{
         .name = notice.name,
         .subject = notice.subject,
     });
@@ -443,6 +444,7 @@ test "a document whose rows were replaced from outside lands as a person's move 
 
     var trail: sdk.trail.Trail = .{
         .root = 1,
+        .arena = system.arena,
     };
 
     system.parent = 1;
@@ -500,4 +502,86 @@ test "a document whose rows were replaced from outside lands as a person's move 
         try replace_live(&system, created.id, "{\"title\":\"Hello\",\"slug\":\"taken\"}");
         try std.testing.expectError(error.Conflict, lifecycle.landed(&system, created.id, before));
     }
+}
+
+test "signed-in reads match the latest copy; a preview reads it too and writes nothing" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try SDK.bootstrap(&system);
+    try record_operations.fixture.post_type(&system);
+
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
+    const live = try SDK.dispatch(&editor, record_operations.Create, .{
+        .type = "post",
+        .document = "{\"title\":\"One\",\"body\":\"first\"}",
+    });
+    _ = try SDK.dispatch(&editor, Publish, .{
+        .id = live.id,
+    });
+    _ = try SDK.dispatch(&editor, record_operations.Save, .{
+        .id = live.id,
+        .document = "{\"title\":\"Two\",\"body\":\"pendingword\"}",
+    });
+    _ = try SDK.dispatch(&editor, record_operations.Create, .{
+        .type = "post",
+        .document = "{\"title\":\"Draft\"}",
+    });
+
+    // Signed in, search and field filters match the latest copy; a visitor's, the live one.
+    const searched = try SDK.dispatch(&editor, record_operations.List, .{
+        .type = "post",
+        .search = "pendingword",
+    });
+    try std.testing.expectEqual(@as(usize, 1), searched.records.len);
+    try std.testing.expectEqualStrings("Two", searched.records[0].title);
+
+    const filtered = try SDK.dispatch(&editor, record_operations.List, .{
+        .type = "post",
+        .filter_field = "title",
+        .filter_value = "Two",
+    });
+    try std.testing.expectEqual(@as(usize, 1), filtered.records.len);
+
+    var anon = harness.ctx(.anonymous);
+    const unseen = try SDK.dispatch(&anon, record_operations.List, .{
+        .type = "post",
+        .search = "pendingword",
+    });
+    try std.testing.expectEqual(@as(usize, 0), unseen.records.len);
+
+    var preview = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
+    preview.preview = true;
+
+    const got = try SDK.dispatch(&preview, record_operations.Get, .{
+        .id = live.id,
+    });
+    try std.testing.expectEqualStrings("Two", got.record.title);
+
+    const listed = try SDK.dispatch(&preview, record_operations.List, .{
+        .type = "post",
+        .documents = true,
+        .order = .title_asc,
+    });
+    try std.testing.expectEqual(@as(usize, 2), listed.records.len);
+    try std.testing.expectEqualStrings("Draft", listed.records[0].title);
+    try std.testing.expectEqualStrings("Two", listed.records[1].title);
+
+    const refused = SDK.dispatch(&preview, record_operations.Save, .{
+        .id = live.id,
+        .document = "{\"title\":\"Three\"}",
+    });
+    try std.testing.expect(std.meta.isError(refused));
 }

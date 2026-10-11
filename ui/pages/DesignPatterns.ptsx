@@ -1,0 +1,117 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { ConfirmAction } from "../components/ConfirmAction.ptsx";
+import { DesignTabs } from "../components/DesignTabs.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type DesignPatternsProps = {
+  patterns: Array<{
+    name: string;
+    label: string;
+    category: string;
+    app: string;
+    app_label: string;
+    /** `file` (the app's own), `overridden` (a file a record replaces) or `added`. */
+    source: string;
+  }>;
+};
+
+/** The Design area's patterns: starting points the block editor copies into a page, from
+ * the app's `design/patterns/` and from records saved in the editor. Reset brings back a
+ * file's own; Remove takes away one only a record holds. */
+export function DesignPatterns({ patterns }: DesignPatternsProps) {
+  return (
+    <IndexPage
+      title={Publr.t("Patterns")}
+      description={Publr.t("Starting points the block editor copies into a page. Editing a placed copy changes only that page.")}
+      tabs={<DesignTabs current="patterns" />}
+      empty={
+        patterns.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("No patterns")}</EmptyTitle>
+            <EmptyDescription>
+              {Publr.t("An app's patterns are files in")} <Code>design/patterns/</Code>
+              {Publr.t(", or designs saved from the block editor's library.")}
+            </EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("Pattern")}</TableHead>
+            <TableHead>{Publr.t("Category")}</TableHead>
+            <TableHead>{Publr.t("App")}</TableHead>
+            <TableHead>{Publr.t("Source")}</TableHead>
+            <TableHead> </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {patterns.map((pattern) => (
+            <TableRow>
+              <TableCell>
+                <div class="flex flex-col">
+                  <Text as="span" variant="body-sm">{pattern.label}</Text>
+                  <Text as="span" variant="body-xs" tone="muted">{pattern.name}</Text>
+                </div>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">{pattern.category}</Text>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">{pattern.app_label}</Text>
+              </TableCell>
+              <TableCell>
+                {pattern.source === "file" && <Status tone="neutral">{Publr.t("File")}</Status>}
+                {pattern.source === "overridden" && <Status tone="info">{Publr.t("Overridden")}</Status>}
+                {pattern.source === "added" && <Status tone="success">{Publr.t("Added")}</Status>}
+              </TableCell>
+              <TableCell>
+                {pattern.source === "overridden" && (
+                  <ConfirmAction
+                    inline
+                    label={Publr.t("Reset")}
+                    title={Publr.t("Reset {name}?", { name: pattern.label })}
+                    description={Publr.t("The editor offers the file's pattern again. Copies already placed stay as they are.")}
+                    action="/admin/design/override"
+                    fields={[
+                      { name: "kind", value: "remove-pattern" },
+                      { name: "name", value: pattern.name },
+                      { name: "app", value: pattern.app },
+                    ]}
+                  />
+                )}
+                {pattern.source === "added" && (
+                  <ConfirmAction
+                    inline
+                    label={Publr.t("Remove")}
+                    title={Publr.t("Remove {name}?", { name: pattern.label })}
+                    description={Publr.t("The editor no longer offers it. Copies already placed stay as they are.")}
+                    action="/admin/design/override"
+                    fields={[
+                      { name: "kind", value: "remove-pattern" },
+                      { name: "name", value: pattern.name },
+                      { name: "app", value: pattern.app },
+                    ]}
+                  />
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

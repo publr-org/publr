@@ -13,21 +13,22 @@ export const state = Publr.reactive({
  * `notes?week=2`. Nothing else leaves the frame as an address. */
 const page_address = /^([a-z0-9-]{1,48})?(\?[^#]*)?$/;
 
-export function go(to: string) {
+export function go(to: string, plugin: string = state.plugin, current: string = state.page) {
   const match = page_address.exec(to);
   if (to === "" || !match) return;
-  const page = match[1] ?? state.page;
-  window.location.href = Publr.url(`/admin/plugin/${state.plugin}/${page}${match[2] ?? ""}`);
+  const page = match[1] ?? current;
+  if (page === "") return;
+  window.location.href = Publr.url(`/admin/plugin/${plugin}/${page}${match[2] ?? ""}`);
 }
 
-export async function run(operation: string, input: unknown): Promise<unknown> {
+export async function run(operation: string, input: unknown, csrf: string): Promise<unknown> {
   const dot = operation.indexOf(".");
   const response = await fetch(
     Publr.url(`/api/${operation.slice(0, dot)}/${operation.slice(dot + 1)}`),
     {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },
+      headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf },
       body: JSON.stringify(input ?? {}),
     },
   );
@@ -37,12 +38,19 @@ export async function run(operation: string, input: unknown): Promise<unknown> {
 }
 
 /** A GROQ read the frame asks for, run by the admin as the plugin for the person looking. */
-export async function read(frame: HTMLIFrameElement, id: number, query: string, params: unknown) {
+export async function read(
+  frame: HTMLIFrameElement,
+  id: number,
+  query: string,
+  params: unknown,
+  plugin: string,
+  csrf: string,
+) {
   try {
-    const response = await fetch(Publr.url(`/admin/plugin/${state.plugin}/query`), {
+    const response = await fetch(Publr.url(`/admin/plugin/${plugin}/query`), {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },
+      headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf },
       body: JSON.stringify({ query, params: params ?? {} }),
     });
     const answer = await response.json().catch(() => ({}));
@@ -59,13 +67,20 @@ export function reply(frame: HTMLIFrameElement, answer: object) {
 
 /** Runs what the frame asks when it is one of the plugin's own operations, as the person
  * looking at it, through the same checks as any call. */
-export async function answer(frame: HTMLIFrameElement, id: number, operation: string, input: unknown) {
-  if (!state.operations.includes(operation)) {
+export async function answer(
+  frame: HTMLIFrameElement,
+  id: number,
+  operation: string,
+  input: unknown,
+  operations: string[],
+  csrf: string,
+) {
+  if (!operations.includes(operation)) {
     reply(frame, { id, ok: false, error: `${operation} is not one of this plugin's operations` });
     return;
   }
   try {
-    reply(frame, { id, ok: true, value: await run(operation, input) });
+    reply(frame, { id, ok: true, value: await run(operation, input, csrf) });
   } catch (error) {
     reply(frame, { id, ok: false, error: (error as Error).message });
   }
@@ -77,8 +92,9 @@ export const received = (event: MessageEvent) => {
   if (!frame || event.source !== frame.contentWindow || !message || message.publr !== 1) return;
   if (message.kind === "height") state.height = Math.min(Math.max(Number(message.height) || 0, 0), 100000);
   if (message.kind === "navigate") go(String(message.to));
-  if (message.kind === "call") answer(frame, Number(message.id), String(message.operation), message.input);
-  if (message.kind === "query") read(frame, Number(message.id), String(message.query), message.params);
+  const id = Number(message.id);
+  if (message.kind === "call") answer(frame, id, String(message.operation), message.input, state.operations, state.csrf);
+  if (message.kind === "query") read(frame, id, String(message.query), message.params, state.plugin, state.csrf);
 };
 
 export type PluginFrameProps = {

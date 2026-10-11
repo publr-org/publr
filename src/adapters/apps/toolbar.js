@@ -12,15 +12,33 @@
 // A theme that wants no toolbar (an app whose users never see the admin) says so in its
 // head: <meta name="publr-toolbar" content="off">.
 //
+// The admin has an origin of its own, so a page's scripts never run as the administrator: on
+// the site the bar shows for someone sent from the admin (a member pass), and in a frame
+// (a preview on the admin's host) it shows nothing.
+//
 // The bar lives in a shadow root, so the page's styles never reach it and its own never
 // leak out; PublrJS binds each element directly, so its directives work inside.
+//
+// Tools from outside the page (the Publr extension's select, comment and send) join the
+// bar rather than drawing their own: a child of `<publr-toolbar>` with `slot="tools"` shows
+// after the edit link. Once the bar is up, the window gets a `publr:toolbar` event; a tool
+// that came later finds the element. Hidden, the bar takes its tools with it.
 
-const hint = 'publr_signed_in';
+// The project's own name for it (`publr_signed_in_<mark>`), from the script tag.
+const hint = document.querySelector('script[data-publr-hint]')?.dataset.publrHint ??
+  'publr_signed_in';
 const place_key = 'publr-toolbar-place';
 const hidden_key = 'publr-toolbar-hidden';
 const margin = 12;
 
-const signed_in = () => document.cookie.split('; ').includes(hint + '=1');
+// An opaque origin (a sandboxed frame) throws on any cookie read.
+const signed_in = () => {
+  try {
+    return document.cookie.split('; ').includes(hint + '=1');
+  } catch {
+    return false;
+  }
+};
 
 const opted_out = () =>
   document.querySelector('meta[name="publr-toolbar"]')?.getAttribute('content') === 'off';
@@ -116,6 +134,7 @@ const styles = `
   a:focus-visible, button:focus-visible, .corner:focus-visible {
     outline: 2px solid var(--rail-foreground); outline-offset: 1px;
   }
+  ::slotted(*) { display: flex; align-items: center; }
   .close { width: 32px; padding: 0; justify-content: center; font-size: 16px; }
 
   /* Hidden, the bar leaves this: a corner nobody notices until the pointer reaches it. The
@@ -146,6 +165,7 @@ const markup = `
     <a data-p-bind="href:$publr-toolbar::admin">Admin</a>
     <a class="hidden" data-p-show="$publr-toolbar::edit" data-p-bind="href:$publr-toolbar::edit"
        data-p-text="$publr-toolbar::editLabel"></a>
+    <slot name="tools"></slot>
     <button class="close" type="button" title="Hide the toolbar" aria-label="Hide the toolbar"
             data-p-on="click:publr-toolbar::hide">&times;</button>
   </div>
@@ -169,17 +189,21 @@ const clamp = (left, top, bar) => {
 // scripts state; empty at the root.
 const base = document.querySelector('script[data-publr-base]')?.dataset.publrBase ?? '';
 
-const start = async () => {
-  if (!signed_in() || opted_out() || window.top !== window) {
-    return;
-  }
-
-  const answer = await fetch(base + '/_publr/toolbar?path=' + encodeURIComponent(location.pathname), {
+const ask = (path) =>
+  fetch(base + '/_publr/toolbar?path=' + encodeURIComponent(path), {
     credentials: 'same-origin',
     headers: { accept: 'application/json' },
   })
     .then((response) => (response.ok ? response.json() : null))
     .catch(() => null);
+
+const start = async () => {
+  // In a frame (a preview on the admin's host), no bar: the admin around it has its own.
+  if (window.top !== window || !signed_in() || opted_out()) {
+    return;
+  }
+
+  const answer = await ask(location.pathname);
 
   if (!answer) {
     return;
@@ -210,7 +234,9 @@ const start = async () => {
       state.top = top + 'px';
     };
 
-    const keep = () => place([parseFloat(state.left), parseFloat(state.top)]);
+    // Never moved, the bar stays centred, however wide it grows.
+    const keep = () =>
+      place(read(place_key) ? [parseFloat(state.left), parseFloat(state.top)] : null);
 
     return {
       state: {
@@ -224,13 +250,20 @@ const start = async () => {
       },
 
       init() {
+        // A tool joining the bar widens it: it stays whole on screen.
+        const grown = new ResizeObserver(() => keep());
+
         requestAnimationFrame(() => {
           bar = shadow.querySelector('.bar');
           place(saved);
+          grown.observe(bar);
         });
         addEventListener('resize', keep);
 
-        return () => removeEventListener('resize', keep);
+        return () => {
+          grown.disconnect();
+          removeEventListener('resize', keep);
+        };
       },
 
       actions: {
@@ -283,6 +316,7 @@ const start = async () => {
   shadow.innerHTML = `<style>${styles}</style>${markup}`;
   document.body.append(host);
   hydrate(shadow);
+  dispatchEvent(new CustomEvent('publr:toolbar'));
 };
 
 if (document.readyState === 'loading') {

@@ -1,0 +1,28 @@
+import { Publr } from "publr-jsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
+
+export type DesignTabsProps = {
+  /** `templates`, `patterns`, `system` or `moodboard`. */
+  current: string;
+};
+
+/** The Design area's pages, one tab each. */
+export function DesignTabs({ current }: DesignTabsProps) {
+  return (
+    <TabNav label={Publr.t("Design")}>
+      <TabNavLink href="/admin/design/templates" active={current === "templates"}>
+        {Publr.t("Templates")}
+      </TabNavLink>
+      <TabNavLink href="/admin/design/patterns" active={current === "patterns"}>
+        {Publr.t("Patterns")}
+      </TabNavLink>
+      <TabNavLink href="/admin/design/system" active={current === "system"}>
+        {Publr.t("Design system")}
+      </TabNavLink>
+      <TabNavLink href="/admin/design/moodboard" active={current === "moodboard"}>
+        {Publr.t("Moodboard")}
+      </TabNavLink>
+    </TabNav>
+  );
+}

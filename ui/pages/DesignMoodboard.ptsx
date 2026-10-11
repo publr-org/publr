@@ -1,0 +1,26 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+
+export type DesignMoodboardProps = {
+  /** The app whose board this is. */
+  app: string;
+  app_label: string;
+  /** The board's cards, JSON. */
+  items: string;
+};
+
+/** Design › Moodboard: the board filling the sheet under the crumbs. The board draws its
+ * own header (its name and the way to the other design apps) and redraws in place, so
+ * the page has no title band of its own and no tabs that squeeze it. */
+export function DesignMoodboard({ app, app_label, items }: DesignMoodboardProps) {
+  return (
+    <IndexPage title={Publr.t("Moodboard")} own_header>
+      <div
+        class="flex min-h-0 flex-1 flex-col"
+        data-moodboard={app}
+        data-site-label={app_label}
+        data-items={items}
+      />
+    </IndexPage>
+  );
+}

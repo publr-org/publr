@@ -1,0 +1,73 @@
+import { Publr } from "publr-jsx";
+import { FormPage } from "../layouts/FormPage.ptsx";
+
+export type DesignSystemProps = {
+  /** The app the builder works on. */
+  app: string;
+  app_label: string;
+  /** What `design.system` read: the tokens, fonts and structure, JSON. */
+  system: string;
+  /** The app as the editor's previews draw it, JSON (`data-editor-site`). */
+  editor_site: string;
+  /** The app's patterns, templates and parts, and where edits are saved, JSON. */
+  library: string;
+  moodboard_count: number;
+  /** An AI provider is set up, so Build can start a conversation. */
+  ai_ready: boolean;
+  ai_settings_href: string;
+  /** Where Build posts the brief: the admin's AI ask, which opens the conversation. */
+  ask_href: string;
+  moodboard_href: string;
+  /** Where the Editor button leads when no visual record was opened yet. */
+  content_href: string;
+  agent_href: string;
+  devices_href: string;
+  /** Where a person's own agent signs in: `publr login <site>`. */
+  site: string;
+};
+
+/** The design system builder ("Site theme"): an editor app filling the sheet under the
+ * top band, as the block editor fills a visual record's. It mounts on the element and
+ * saves through `design.save_system`. */
+export function DesignSystem({
+  app,
+  app_label,
+  system,
+  editor_site,
+  library,
+  moodboard_count,
+  ai_ready,
+  ai_settings_href,
+  ask_href,
+  moodboard_href,
+  content_href,
+  agent_href,
+  devices_href,
+  site,
+}: DesignSystemProps) {
+  return (
+    <FormPage
+      title={Publr.t("Design system")}
+      focus
+      editor={
+        <div
+          class="flex min-h-0 flex-1 flex-col"
+          data-design-system={app}
+          data-app-label={app_label}
+          data-system={system}
+          data-editor-site={editor_site}
+          data-library={library}
+          data-moodboard-count={moodboard_count}
+          data-ai-ready={ai_ready ? "true" : "false"}
+          data-ai-settings={ai_settings_href}
+          data-ask-href={ask_href}
+          data-moodboard-href={moodboard_href}
+          data-content-href={content_href}
+          data-agent-href={agent_href}
+          data-devices-href={devices_href}
+          data-site={site}
+        />
+      }
+    />
+  );
+}

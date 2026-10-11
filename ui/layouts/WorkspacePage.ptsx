@@ -1,0 +1,22 @@
+import { Chrome } from "./Chrome.ptsx";
+
+export type WorkspacePageProps = {
+  title: string;
+  parents?: Array<{ label: string; href: string }>;
+  /** One island drawing both sides from the layout's parts: WorkspaceMain, where the work
+   * shows, and WorkspaceAside, the narrow column beside it. */
+  children?: JSX.Element;
+};
+
+/** A page where something is done and watched at once: the work filling the sheet, a
+ * narrow column on the right to direct it. No section sidebar. The AI workspace shows the
+ * admin page the agent is working on, beside the conversation. */
+export function WorkspacePage({ title, parents = [], children }: WorkspacePageProps) {
+  return (
+    <Chrome title={title} parents={parents} focus>
+      <div class="flex min-h-0 flex-1" data-part="workspace-page">
+        {children}
+      </div>
+    </Chrome>
+  );
+}

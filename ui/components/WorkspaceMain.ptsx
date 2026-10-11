@@ -1,0 +1,12 @@
+export type WorkspaceMainProps = {
+  children?: JSX.Element;
+};
+
+/** WorkspacePage's main side: what is being worked on, filling the sheet. */
+export function WorkspaceMain({ children }: WorkspaceMainProps) {
+  return (
+    <section class="relative flex min-w-0 flex-1 flex-col bg-muted/40" data-part="workspace-main">
+      {children}
+    </section>
+  );
+}

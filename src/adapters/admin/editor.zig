@@ -4,15 +4,21 @@
 //! header, for the editor drawn again (`editor`) or for a JSON verdict (`json`, the
 //! autosave) instead of a redirect. `content/form.zig` and `terms.zig` instantiate it.
 const std = @import("std");
+const variants_module = @import("../../operations/variants.zig");
+const nouns = @import("nouns.zig");
+const sdk_operation = @import("../../sdk/operation.zig");
 const admin = @import("../admin.zig");
 const fields = @import("fields.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
+const editor_site = @import("editor_site.zig");
+const design_hand = @import("design.zig").hand;
 const types = @import("../../operations/content_type.zig");
 const record_operations = @import("../../operations/record.zig");
 const term_operations = @import("../../operations/term.zig");
 const definitions = @import("definitions.zig");
 const display = @import("display.zig");
+const schema_space = @import("schema_space.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -43,6 +49,11 @@ pub const Shape = struct {
     loaded: ?Loaded,
     /// Drawn as a preview of the definition: the form alone, nothing posts.
     preview: bool = false,
+    /// Items and groups past the fold drawn open: the form's `open` values, what the
+    /// browser opened before the editor was drawn again.
+    open: []const []const u8 = &.{},
+    /// A preview drawn up to the fold only: past it, no field.
+    cut: bool = false,
 };
 
 pub const Domain = struct {
@@ -72,6 +83,23 @@ pub const Domain = struct {
     /// The record's revisions page, when the domain keeps one.
     versions: bool,
 };
+
+/// The definition's schema page, where its fields are changed: empty for a settings
+/// group, whose line is its description, and for a person who may not change types.
+fn type_href_of(session: *Session, def: Def, taxonomy: bool) Error![]const u8 {
+    std.debug.assert(def.handle.len > 0);
+    std.debug.assert(session.signed_in());
+
+    if (def.kind == .settings or !registry.SDK.may(&session.ctx, types.Create)) {
+        return "";
+    }
+
+    const base = if (taxonomy)
+        schema_space.Space.taxonomies.base()
+    else
+        schema_space.Space.content.base();
+    return print(session.arena, "{s}/{s}", .{ base, def.handle });
+}
 
 /// Where the answer goes: the whole page, or the editor fragment alone.
 const Answer = enum { page, fragment };
@@ -108,7 +136,8 @@ pub fn Editor(comptime domain: Domain) type {
         /// The editor as a preview of `def` for the definition's fields page: a new
         /// document with every default filled in, without the title band, the status
         /// strip and the aside.
-        pub fn preview_node(session: *Session, def: Def) Error!admin.render.Node {
+        /// Past the fold the preview stops, unless `all` asks for every field.
+        pub fn preview_node(session: *Session, def: Def, all: bool) Error!admin.render.Node {
             std.debug.assert(def.handle.len > 0);
             std.debug.assert(session.signed_in());
 
@@ -116,6 +145,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .def = def,
                 .loaded = null,
                 .preview = true,
+                .cut = !all,
             };
             const document = try seeded(session.arena, def, session.ctx.now_ms);
 
@@ -164,7 +194,8 @@ pub fn Editor(comptime domain: Domain) type {
                 return;
             }
 
-            const document = fields.decode.document_of(session.arena, def.fields, form) orelse {
+            const form_defs = try varied(session, def.fields, null);
+            const document = fields.decode.document_of(session.arena, form_defs, form) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
             var in = keyed(operations.Create.In, domain.key, handle, .{
@@ -175,12 +206,8 @@ pub fn Editor(comptime domain: Domain) type {
                 in.parent = form.get("parent");
             }
 
-            if (@hasField(operations.Create.In, "app")) {
-                in.app = admin.app_scope.of(session).app_name();
-            }
-
             const created = registry.SDK.dispatch(&session.ctx, operations.Create, in) catch |err| {
-                return refused(session, shape, err, document);
+                return refused(session, shape, form, err, document);
             };
 
             try saved(session, created.id);
@@ -200,7 +227,7 @@ pub fn Editor(comptime domain: Domain) type {
                 return;
             }
 
-            const defs = shape.def.fields;
+            const defs = try varied(session, shape.def.fields, null);
             const document = fields.decode.document_of(session.arena, defs, form) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
@@ -219,7 +246,7 @@ pub fn Editor(comptime domain: Domain) type {
             }
 
             _ = registry.SDK.dispatch(&session.ctx, operations.Save, in) catch |err| {
-                return refused(session, shape, err, document);
+                return refused(session, shape, form, err, document);
             };
 
             try saved(session, id);
@@ -426,7 +453,7 @@ pub fn Editor(comptime domain: Domain) type {
 
             const status = registry.Statuses.find(row.status);
             const may_purge = registry.SDK.may(&session.ctx, operations.Purge);
-            const actions = try actions_of(session.arena, row, may_purge);
+            const actions = try actions_of(session, row, may_purge);
 
             session.response.json(.ok, .{
                 .saved = true,
@@ -434,7 +461,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .version = row.version,
                 .title = row.title,
                 .status = row.status,
-                .status_label = if (status) |known| known.label else row.status,
+                .status_label = try status_label_of(session, status, row.status),
                 .changed = row.changed,
                 .parks = row.changed or registry.Statuses.is_live(row.status),
                 .actions = actions,
@@ -475,22 +502,49 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(form.len <= admin.form_pairs_max);
 
             const verb = form.text("reshape") orelse return false;
-            const posted = fields.decode.value_of(session.arena, shape.def.fields, form) catch {
+            const defs = try varied(session, shape.def.fields, null);
+            const posted = fields.decode.value_of(session.arena, defs, form) catch {
                 try admin.fail(session, error.Invalid, back);
 
                 return true;
             };
-            const defs = shape.def.fields;
             const document = fields.reshape.apply(session.arena, defs, posted, verb, form) catch {
                 try admin.fail(session, error.Invalid, back);
 
                 return true;
             };
             const how: Answer = if (wants_fragment(session)) .fragment else .page;
+            var opened = shape;
 
-            try answer(session, shape, document, &.{}, how);
+            opened.open = try open_of(session.arena, form, verb);
+
+            try answer(session, opened, document, &.{}, how);
 
             return true;
+        }
+
+        /// The items and groups the form keeps open past the fold, where `verb` moves them.
+        fn open_of(
+            arena: std.mem.Allocator,
+            form: *const Form,
+            verb: []const u8,
+        ) Error![]const []const u8 {
+            std.debug.assert(form.len <= admin.form_pairs_max);
+
+            var open: std.ArrayList([]const u8) = .empty;
+
+            for (form.pairs[0..form.len]) |pair| {
+                if (!std.mem.eql(u8, pair.name, "open") or pair.value.len == 0) {
+                    continue;
+                }
+
+                // An item moved or removed takes its place in the list with it.
+                const path = try fields.reshape.moved_path(arena, pair.value, verb) orelse continue;
+
+                open.append(arena, path) catch return error.OutOfMemory;
+            }
+
+            return open.items;
         }
 
         /// A refused write: the JSON reason for the autosave, else the editor again with
@@ -498,6 +552,7 @@ pub fn Editor(comptime domain: Domain) type {
         fn refused(
             session: *Session,
             shape: Shape,
+            form: *const Form,
             err: anyerror,
             document: []const u8,
         ) Error!void {
@@ -517,8 +572,21 @@ pub fn Editor(comptime domain: Domain) type {
                 return admin.fail(session, error.Invalid, back);
             };
             const how: Answer = if (wants_fragment(session)) .fragment else .page;
+            var open: std.ArrayList([]const u8) = .empty;
+            var opened = shape;
 
-            try answer(session, shape, value, problems, how);
+            // An item or group past the fold holding a problem is drawn open, so it shows.
+            open.appendSlice(session.arena, try open_of(session.arena, form, "")) catch {
+                return error.OutOfMemory;
+            };
+
+            for (problems) |problem| {
+                open.append(session.arena, problem.code) catch return error.OutOfMemory;
+            }
+
+            opened.open = open.items;
+
+            try answer(session, opened, value, problems, how);
         }
 
         fn json_refused(
@@ -550,22 +618,31 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(shape.def.handle.len > 0);
 
             if (err == error.Conflict) {
-                return "Not saved: changed elsewhere, reload the page";
+                return session.translated("Not saved: changed elsewhere, reload the page");
             }
 
             if (err != error.Invalid) {
-                return "Not saved";
+                return session.translated("Not saved");
             }
 
             const problems = try problems_of(session, shape, document);
 
             if (problems.len == 0) {
-                return "Not saved: the document is not valid";
+                return session.translated("Not saved: the document is not valid");
             }
 
             const first = problems[0];
 
-            return print(session.arena, "Not saved: {s} {s}", .{ first.code, first.text });
+            return session.translated_with("Not saved: {field} {problem}", &.{
+                .{
+                    .name = "field",
+                    .value = first.code,
+                },
+                .{
+                    .name = "problem",
+                    .value = first.text,
+                },
+            });
         }
 
         fn problems_of(
@@ -631,7 +708,7 @@ pub fn Editor(comptime domain: Domain) type {
             const title = if (shape.loaded) |full|
                 (if (full.row.title.len > 0) full.row.title else full.row.id)
             else
-                try print(arena, "New {s}", .{def.name});
+                try session.translated_with("New {type}", try nouns.values(session, def));
 
             const parents = try arena.alloc(views.RecordForm.ParentsItem, 1);
 
@@ -640,12 +717,154 @@ pub fn Editor(comptime domain: Domain) type {
                 .href = try domain.crumb(arena, def),
             };
 
-            try admin.screen(session, .ok, views.RecordForm, .{
+            const one_type: admin.chrome.Options = .{
+                .content = .{
+                    .filters = .{
+                        .types = &.{def.handle},
+                        .type_view = true,
+                    },
+                },
+            };
+
+            // A visual type's record, new or saved: the block editor fills the sheet over its
+            // field. A saved one also gets its template, parts and patterns.
+            const visual = model.editor.field_of(def.editor, def.editor_config, def.fields);
+            const record_app = if (shape.loaded) |full| full.row.app else null;
+            const none: design_hand.Handed = .{};
+            const handed = if (visual != null) handed_of(session, shape, title, document) else none;
+
+            try admin.screen_with(session, one_type, .ok, views.RecordForm, .{
                 .title = title,
                 .parents = parents,
                 .focus = std.mem.eql(u8, domain.section, "content"),
                 .editor = editor_panel,
+                .visual_field = if (visual) |field| field.name else "",
+                .editor_site = try editor_site.json(session, record_app),
+                .editor_templates = handed.templates,
+                .editor_patterns = handed.patterns,
             });
+        }
+
+        /// A visual record's template, parts and patterns for the block editor, a new one's
+        /// too (its type's template, drawn without a record of its own); a page that cannot
+        /// read them edits without.
+        fn handed_of(
+            session: *Session,
+            shape: Shape,
+            title: []const u8,
+            document: ?Value,
+        ) design_hand.Handed {
+            std.debug.assert(shape.def.handle.len > 0);
+            std.debug.assert(session.signed_in());
+
+            const row = if (shape.loaded) |full| full.row else null;
+
+            return design_hand.of(session, .{
+                .handle = shape.def.handle,
+                .app = if (row) |known| known.app else null,
+                .slug = if (row) |known| known.slug else null,
+                .title = title,
+                .id = if (row) |known| known.id else "",
+                .entry_title = if (row) |known| known.title else "",
+                .document = document,
+            }) catch .{};
+        }
+
+        /// What drawing `document`'s fields needs: the records, files, terms and choices
+        /// it points at, looked up once.
+        fn context_of(
+            session: *Session,
+            shape: Shape,
+            document: ?Value,
+            fold: ?*fields.Fold,
+        ) Error!fields.Context {
+            std.debug.assert(shape.def.handle.len > 0);
+            std.debug.assert(session.signed_in());
+
+            const def = shape.def;
+            const status_now = if (shape.loaded) |full| full.row.status else "";
+            const live = shape.loaded != null and registry.Statuses.is_live(status_now);
+
+            return .{
+                .arena = session.arena,
+                .session = session,
+                .users = try user_options(session, def.fields),
+                .referenced = try referenced_of(session, def, document),
+                .types = try types_of(session, def),
+                .terms = try terms_of(session, def),
+                .slug_prefix = try slug_prefix_of(session, def),
+                .slug_prefixes = try slug_prefixes_of(session, def),
+                .live = live,
+                .currencies = try currencies_of(session),
+                .record_id = if (shape.loaded) |full| full.row.id else "",
+                .fixed = if (shape.loaded == null) fixed_of(session, def) else "",
+                .delete_notes = try delete_notes_of(session, def),
+                .files = try fields.media.files_of(session, def.fields, document),
+                .fold = fold,
+                .open = shape.open,
+                .cut = shape.cut,
+            };
+        }
+
+        /// The fields of an item, group or run drawn closed past the fold, as JSON for the
+        /// browser to draw when it is opened: `path` (`faq[60]`, `seo`, `faq[59+]`) and
+        /// `value`, what the form holds for it, saved or not.
+        pub fn cells(request: *Request, response: *Response, ctx: *Context) Error!void {
+            std.debug.assert(request.method() == .post);
+            std.debug.assert(ctx.user_data != null);
+
+            var post = try admin.accept(request, response, ctx, back) orelse return;
+            var session = &post.session;
+            const form = &post.form;
+            const handle = form.text("type") orelse return admin.fail(session, error.Invalid, back);
+            const path = form.text("path") orelse return admin.fail(session, error.Invalid, back);
+            const def = try definition_of(session, handle) orelse return;
+            const text = form.get("value") orelse "";
+            // A closed group that had no value holds nothing: its fields are drawn empty.
+            const value: Value = if (text.len == 0) .null else @import("../../lib/json.zig").parse(
+                Value,
+                session.arena,
+                text,
+                .{},
+            ) catch return admin.fail(session, error.Invalid, back);
+            const defs = try varied(session, def.fields, null);
+            const base = path[0 .. std.mem.indexOfScalar(u8, path, '[') orelse path.len];
+            var document: std.json.ObjectMap = .empty;
+            var held = std.json.Array.init(session.arena);
+
+            // Lookups (records, files) run over a document holding only this value.
+            if (value == .array) {
+                held.appendSlice(value.array.items) catch return error.OutOfMemory;
+            } else {
+                held.append(value) catch return error.OutOfMemory;
+            }
+
+            const placed: Value = if (base.len == path.len) value else .{
+                .array = held,
+            };
+
+            document.put(session.arena, base, placed) catch return error.OutOfMemory;
+
+            const shape: Shape = .{
+                .def = def,
+                .loaded = null,
+            };
+            const context = try context_of(session, shape, .{
+                .object = document,
+            }, null);
+            const opened = fields.opened_of(context, defs, path, value) catch |err| switch (err) {
+                error.Invalid => return admin.fail(session, error.Invalid, back),
+                else => |other| return other,
+            };
+
+            switch (opened) {
+                .cells => |list| session.response.json(.ok, .{
+                    .cells = list,
+                }) catch return error.OutOfMemory,
+                .lines => |list| session.response.json(.ok, .{
+                    .lines = list,
+                }) catch return error.OutOfMemory,
+            }
         }
 
         fn editor_node(
@@ -659,22 +878,10 @@ pub fn Editor(comptime domain: Domain) type {
 
             const arena = session.arena;
             const def = shape.def;
-            const status_now = if (shape.loaded) |full| full.row.status else "";
-            const live = shape.loaded != null and registry.Statuses.is_live(status_now);
-            const context: fields.Context = .{
-                .arena = arena,
-                .users = try user_options(session, def.fields),
-                .referenced = try referenced_of(session, def, document),
-                .types = try types_of(session, def),
-                .terms = try terms_of(session, def),
-                .slug_prefix = try slug_prefix_of(session, def),
-                .live = live,
-                .currencies = try currencies_of(session),
-                .record_id = if (shape.loaded) |full| full.row.id else "",
-                .fixed = if (shape.loaded == null) fixed_of(session, def) else "",
-                .delete_notes = try delete_notes_of(session, def),
-            };
-            const rows = try fields.rows_of(context, def.fields, document);
+            var fold: fields.Fold = .{};
+            const context = try context_of(session, shape, document, &fold);
+            const form_defs = try varied(session, def.fields, document);
+            const rows = try fields.rows_of(context, form_defs, document);
             const field_rows = try admin.render.view(arena, views.RecordFields, .{
                 .group_visible = model.field_group.applies(def.group, .{
                     .destination = if (comptime std.mem.eql(
@@ -689,6 +896,12 @@ pub fn Editor(comptime domain: Domain) type {
                 .fields = rows,
             });
             const drawer = in_drawer(session);
+            const taxonomy = comptime std.mem.eql(u8, domain.key, "taxonomy");
+            // What the form opens with; the page counts again as values are added.
+            const values_count: u32 = if (document) |value|
+                model.validate.values_in(value, 0)
+            else
+                0;
             const aside = if (shape.preview)
                 null
             else
@@ -699,13 +912,20 @@ pub fn Editor(comptime domain: Domain) type {
                 const parks = row.changed or registry.Statuses.is_live(row.status);
                 const status = registry.Statuses.find(row.status);
                 const may_purge = registry.SDK.may(&session.ctx, operations.Purge);
-                const actions = try actions_of(arena, row, may_purge);
+                const actions = try actions_of(session, row, may_purge);
                 const versions_href = if (domain.versions)
                     try print(arena, "{s}/{s}/revisions", .{ back, row.id })
                 else
                     "";
+                const previewed = admin.preview_pages.page_for(session.project, row.app, row.type);
+                const preview_href = if (previewed != null)
+                    try print(arena, "/admin/preview/{s}", .{row.id})
+                else
+                    "";
 
                 return admin.render.view(arena, views.RecordEditor, .{
+                    .values_count = @floatFromInt(values_count),
+                    .values_max = @floatFromInt(model.validate.values_max),
                     .group_position = @tagName(def.group.presentation.position),
                     .csrf = session.csrf_token(),
                     .id = row.id,
@@ -718,6 +938,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .action_route = try print(arena, "{s}/{s}/action", .{ back, row.id }),
                     .type = row.type,
                     .type_name = if (def.kind == .settings) def.description else def.name,
+                    .type_href = try type_href_of(session, def, taxonomy),
                     .title = if (def.kind == .settings)
                         def.name
                     else if (row.title.len > 0)
@@ -726,22 +947,28 @@ pub fn Editor(comptime domain: Domain) type {
                         row.id,
                     .expected_version = try print(arena, "{d}", .{row.version}),
                     .status = row.status,
-                    .status_label = if (status) |known| known.label else row.status,
+                    .status_label = try status_label_of(session, status, row.status),
                     .changed = row.changed,
                     .versions_href = versions_href,
+                    .preview_href = preview_href,
                     .problems = problems,
                     .actions = actions,
                     .has_destructive = has_destructive(actions),
                     .fields = field_rows,
                     .parks = parks,
                     .preview = shape.preview,
+                    .stacked = !drawer and
+                        model.editor.field_of(def.editor, def.editor_config, def.fields) != null,
                     .focus = def.kind != .settings,
                     .aside = aside,
                     .impact = null,
+                    .languages = try languages_of(views.RecordEditor.LanguagesItem, session),
                 });
             }
 
             return admin.render.view(arena, views.RecordEditor, .{
+                .values_count = @floatFromInt(values_count),
+                .values_max = @floatFromInt(model.validate.values_max),
                 .group_position = @tagName(def.group.presentation.position),
                 .csrf = session.csrf_token(),
                 .id = "",
@@ -754,24 +981,32 @@ pub fn Editor(comptime domain: Domain) type {
                 .action_route = "",
                 .type = def.handle,
                 .type_name = if (def.kind == .settings) def.description else def.name,
-                .title = if (def.kind == .settings) def.name else try print(
-                    arena,
-                    "New {s}",
-                    .{
-                        def.name,
-                    },
+                .type_href = try type_href_of(session, def, taxonomy),
+                .title = if (def.kind == .settings) def.name else try session.translated_with(
+                    "New {type}",
+                    try nouns.values(session, def),
                 ),
                 .expected_version = "",
                 .status = "",
                 .status_label = "",
                 .changed = false,
                 .versions_href = "",
+                .preview_href = if (admin.preview_pages.page_for(
+                    session.project,
+                    null,
+                    def.handle,
+                ) != null)
+                    try print(arena, "{s}?type={s}", .{ admin.preview_pages.new_path, def.handle })
+                else
+                    "",
                 .problems = problems,
                 .actions = &.{},
                 .has_destructive = false,
                 .fields = field_rows,
                 .parks = false,
                 .preview = shape.preview,
+                .stacked = !drawer and
+                    model.editor.field_of(def.editor, def.editor_config, def.fields) != null,
                 .aside = aside,
                 .impact = null,
             });
@@ -781,22 +1016,29 @@ pub fn Editor(comptime domain: Domain) type {
 
 /// The status actions a document offers from where it is: publish, discard, every
 /// transition out of the current status, and purge for whoever may purge.
-pub fn actions_of(arena: std.mem.Allocator, row: Record, may_purge: bool) Error![]const Action {
+pub fn actions_of(session: *const Session, row: Record, may_purge: bool) Error![]const Action {
     std.debug.assert(row.id.len > 0);
     std.debug.assert(row.status.len > 0);
 
+    const arena = session.arena;
     const status = row.status;
     const live = registry.Statuses.is_live(status);
     var actions: std.ArrayList(Action) = .empty;
 
     if (live and row.changed) {
-        try add_action(arena, &actions, "do", "publish", "Publish changes", false);
+        const label = try session.translated("Publish changes");
+
+        try add_action(arena, &actions, "do", "publish", label, false);
     } else if (!live and registry.Statuses.allows(status, "published")) {
-        try add_action(arena, &actions, "do", "publish", "Publish", false);
+        const label = try session.translated_in("verb", "Publish");
+
+        try add_action(arena, &actions, "do", "publish", label, false);
     }
 
     if (row.changed) {
-        try add_action(arena, &actions, "do", "discard", "Discard changes", true);
+        const label = try session.translated("Discard changes");
+
+        try add_action(arena, &actions, "do", "discard", label, true);
     }
 
     for (registry.Statuses.all_transitions) |transition| {
@@ -811,11 +1053,15 @@ pub fn actions_of(arena: std.mem.Allocator, row: Record, may_purge: bool) Error!
 
         const destructive = std.mem.eql(u8, transition.to, "deleted");
 
-        try add_action(arena, &actions, "to", transition.to, transition.label, destructive);
+        const label = try session.declared(transition.label);
+
+        try add_action(arena, &actions, "to", transition.to, label, destructive);
     }
 
     if (may_purge) {
-        try add_action(arena, &actions, "do", "purge", "Purge for good", true);
+        const label = try session.translated("Purge for good");
+
+        try add_action(arena, &actions, "do", "purge", label, true);
     }
 
     mark_primary(actions.items);
@@ -899,11 +1145,7 @@ fn delete_notes_of(session: *Session, def: Def) Error![]const fields.DeleteNote 
             const named = std.mem.eql(u8, child_field.name, field.options.via);
 
             if (named and child_field.required and !child_field.many) {
-                const note = try print(session.arena, "A {s} cannot be left without its {s}, " ++
-                    "so removing it from here deletes it. You can restore it from Deleted.", .{
-                    got.definition.name,
-                    child_field.label,
-                });
+                const note = try delete_note(session, got.definition.name, child_field.label);
 
                 try notes.append(session.arena, .{
                     .field = field.name,
@@ -914,6 +1156,30 @@ fn delete_notes_of(session: *Session, def: Def) Error![]const fields.DeleteNote 
     }
 
     return notes.items;
+}
+
+/// Why removing a record from a virtual field deletes it: it cannot be left without the
+/// record it is removed from.
+fn delete_note(session: *const Session, type_name: []const u8, field: []const u8) Error![]const u8 {
+    std.debug.assert(type_name.len > 0);
+    std.debug.assert(field.len > 0);
+
+    const deletes = try session.translated_with(
+        "A {type} cannot be left without its {field}, so removing it from here deletes it.",
+        &.{
+            .{
+                .name = "type",
+                .value = type_name,
+            },
+            .{
+                .name = "field",
+                .value = field,
+            },
+        },
+    );
+    const restore = try session.translated("You can restore it from Deleted.");
+
+    return print(session.arena, "{s} {s}", .{ deletes, restore });
 }
 
 /// The reference a virtual field's "Create new item" sets (`via`, `parent`), when the
@@ -1039,20 +1305,137 @@ pub fn referenced_of(
         .limit = @intCast(wanted.len),
     }) catch return &.{};
     const titles = try display.titles(&session.ctx, listed.records);
-    const seen = try session.arena.alloc(fields.Referenced, listed.records.len);
+    const reachable = try reached_names(session, def);
+    var seen: std.ArrayList(fields.Referenced) = .empty;
 
-    for (listed.records, titles, seen) |record, title, *card| {
+    for (listed.records, titles) |record, title| {
         var shown = record;
 
         shown.title = title;
-        card.* = .{
+        try seen.append(session.arena, .{
             .id = record.id,
             .record = shown,
             .type_name = name_of(names, record.type),
-        };
+            .notice = if (summary_of(reachable, record.type) == null)
+                try unshared_notice(session, def)
+            else
+                "",
+        });
     }
 
-    return seen;
+    for (wanted) |id| {
+        if (listed_has(listed.records, id)) {
+            continue;
+        }
+
+        const restricted = try restricted_card(session, names, id) orelse continue;
+
+        try seen.append(session.arena, restricted);
+    }
+
+    return seen.items;
+}
+
+fn listed_has(listed: []const record_operations.Record, id: []const u8) bool {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(listed.len <= record_operations.list_max);
+
+    for (listed) |record| {
+        if (std.mem.eql(u8, record.id, id)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn summary_of(names: []const types.Summary, handle: []const u8) ?types.Summary {
+    std.debug.assert(handle.len > 0);
+    std.debug.assert(names.len <= 4096);
+
+    for (names) |summary| {
+        if (std.mem.eql(u8, summary.handle, handle)) {
+            return summary;
+        }
+    }
+
+    return null;
+}
+
+/// What a card says of a record its type's app no longer reaches.
+fn unshared_notice(session: *Session, def: Def) Error![]const u8 {
+    std.debug.assert(def.handle.len > 0);
+    std.debug.assert(session.signed_in());
+
+    if (def.app.len == 0) {
+        return session.translated("Not a Global type");
+    }
+
+    const app = session.project.find(def.app);
+    const label = if (app) |found| found.spec.label else def.app;
+
+    return session.translated_with("No longer shared with {app}", &.{.{
+        .name = "app",
+        .value = label,
+    }});
+}
+
+/// The card of a record a reference holds that the admin cannot list: deleted (leading to
+/// it in the trash while it is there), or not readable here; null when it is simply not
+/// published yet.
+fn restricted_card(
+    session: *Session,
+    names: []const types.Summary,
+    id: []const u8,
+) Error!?fields.Referenced {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(session.signed_in());
+
+    const reach = registry.SDK.dispatch(&session.ctx, record_operations.Reach, .{
+        .id = id,
+    }) catch return null;
+    const reason = reach.reason orelse return null;
+    const gone = reach.type.len == 0;
+    const type_name = if (gone) "" else name_of(names, reach.type);
+    const notice = switch (reason) {
+        .deleted => if (gone)
+            try session.translated("Deleted for good")
+        else
+            try session.translated("Deleted, in the trash"),
+        .access => try session.translated("Not readable here"),
+        .not_shared => try session.translated("Not shared with this app"),
+    };
+
+    // The admin may read a record in the trash: its card keeps its title.
+    const trashed = if (reason == .deleted and !gone)
+        registry.SDK.dispatch(&session.ctx, record_operations.Get, .{
+            .id = id,
+        }) catch null
+    else
+        null;
+    const fallback = if (gone) try session.translated("Removed record") else type_name;
+    const title = if (trashed) |got| got.record.title else fallback;
+
+    return .{
+        .id = id,
+        .record = .{
+            .id = id,
+            .type_id = "",
+            .type = reach.type,
+            .status = "deleted",
+            .changed = false,
+            .version = 0,
+            .title = if (title.len > 0) title else fallback,
+            .slug = null,
+            .created_by = null,
+            .updated_by = null,
+            .created_at = 0,
+            .updated_at = 0,
+        },
+        .type_name = type_name,
+        .notice = notice,
+        .link = reason == .deleted and !gone,
+    };
 }
 
 fn collect_ids(
@@ -1102,9 +1485,44 @@ fn type_names(session: *Session) Error![]const types.Summary {
     std.debug.assert(session.signed_in());
     std.debug.assert(fields.items_max > 0);
 
-    const listed = registry.SDK.dispatch(&session.ctx, types.List, .{}) catch return &.{};
+    const listed = registry.SDK.dispatch(&session.ctx, types.List, .{
+        .limit = sdk_operation.page_limit_max,
+    }) catch return &.{};
 
     return listed.types;
+}
+
+/// The content types a record of `def` may link to: what its app reaches, as the app itself
+/// would, whatever app the admin is narrowed to.
+fn reached_names(session: *Session, def: Def) Error![]const types.Summary {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(def.app.len <= 64);
+
+    // Set aside before the copy, so the copy and every later read of the request share one.
+    _ = try session.ctx.scratch();
+
+    var reach = session.ctx;
+
+    reach.app_reach = def.app;
+    reach.app_plugins = null;
+
+    const listed = registry.SDK.dispatch(&reach, types.List, .{
+        .limit = sdk_operation.page_limit_max,
+    }) catch return &.{};
+
+    if (def.app.len > 0) {
+        return listed.types;
+    }
+
+    var global: std.ArrayList(types.Summary) = .empty;
+
+    for (listed.types) |summary| {
+        if (summary.app.len == 0) {
+            global.append(session.arena, summary) catch return error.OutOfMemory;
+        }
+    }
+
+    return global.items;
 }
 
 fn name_of(names: []const types.Summary, handle: []const u8) []const u8 {
@@ -1121,12 +1539,13 @@ fn name_of(names: []const types.Summary, handle: []const u8) []const u8 {
 }
 
 /// The record types every reference field may point at, by field path: the ones it
-/// names, or every record type when it names none.
+/// names, or every record type when it names none; of those, only the ones the type's app
+/// reaches (a Global type's: Global ones).
 pub fn types_of(session: *Session, def: Def) Error![]const fields.PathTypes {
     std.debug.assert(def.fields.len <= model.field.fields_max);
     std.debug.assert(session.signed_in());
 
-    const names = try type_names(session);
+    const names = try reached_names(session, def);
     var entries: std.ArrayList(fields.PathTypes) = .empty;
 
     for (def.fields) |field| {
@@ -1165,9 +1584,9 @@ fn add_path_types(
     for (names) |summary| {
         const wanted = field.options.to.len == 0 or names_target(field.options.to, summary.handle);
 
-        const library = model.media.is_library(summary.handle);
+        const design = model.design.is_design(summary.handle);
 
-        if (summary.kind == .record and wanted and !library and
+        if (summary.kind == .record and wanted and !design and
             (!field.options.reference.public_only or summary.public))
         {
             options.append(session.arena, .{
@@ -1238,6 +1657,7 @@ fn add_path_terms(
         field.name;
     const tree = registry.SDK.dispatch(&session.ctx, term_operations.Tree, .{
         .taxonomy = field.options.taxonomy,
+        .limit = sdk_operation.page_limit_max,
     }) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else {};
     const terms = try session.arena.alloc(fields.TermOption, tree.terms.len);
 
@@ -1269,6 +1689,33 @@ fn slug_prefix_of(session: *Session, def: Def) Error![]const u8 {
     const base_url = try definitions.host_url_of(session);
 
     return print(session.arena, "{s}/{s}/", .{ base_url, def.url });
+}
+
+/// Each other language's address before a translated slug: `https://site/pl/posts/`.
+fn slug_prefixes_of(session: *Session, def: Def) Error![]const fields.SlugPrefix {
+    std.debug.assert(def.handle.len > 0);
+    std.debug.assert(session.signed_in());
+
+    if (def.url.len == 0) {
+        return &.{};
+    }
+
+    const others = variants_module.others(&session.ctx) catch return &.{};
+    const base_url = try definitions.host_url_of(session);
+    const out = try session.arena.alloc(fields.SlugPrefix, others.len);
+
+    for (others, out) |variant, *entry| {
+        entry.* = .{
+            .code = variant.code,
+            .prefix = try print(session.arena, "{s}{s}/{s}/", .{
+                base_url,
+                variant.address,
+                def.url,
+            }),
+        };
+    }
+
+    return out;
 }
 
 fn parse(arena: std.mem.Allocator, text: []const u8) ?Value {
@@ -1327,4 +1774,61 @@ pub fn user_options(
         return &.{};
     };
     return got.users;
+}
+
+/// The fields as the form draws and reads them: each varied field followed by its variants
+/// (`name@pl`) on a site with more than one.
+pub fn varied(
+    session: *Session,
+    defs: []const model.field.Def,
+    document: ?Value,
+) Error![]const model.field.Def {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(defs.len <= model.field.fields_max);
+
+    const codes = try variant_codes(session);
+
+    return fields.variants.expanded(session.arena, defs, codes, document);
+}
+
+/// The codes of the site's variants other than the main one; none on a site with one.
+pub fn variant_codes(session: *Session) Error![]const []const u8 {
+    std.debug.assert(session.signed_in());
+
+    const others = variants_module.others(&session.ctx) catch return &.{};
+    const codes = try session.arena.alloc([]const u8, others.len);
+
+    for (others, codes) |variant, *code| {
+        code.* = variant.code;
+    }
+
+    return codes;
+}
+
+/// The site's languages for the editor's switch, the main one first under an empty code.
+pub fn languages_of(comptime Item: type, session: *Session) Error![]const Item {
+    std.debug.assert(session.signed_in());
+
+    const listed = variants_module.listed(&session.ctx) catch return &.{};
+    const items = try session.arena.alloc(Item, listed.len);
+
+    for (listed, items) |variant, *item| {
+        item.* = .{
+            .code = if (variant.main) "" else variant.code,
+            .label = variant.label,
+        };
+    }
+
+    return items;
+}
+
+/// A status as the person reads it: its declared label in their language, else its id.
+fn status_label_of(
+    session: *const Session,
+    status: anytype,
+    id: []const u8,
+) Error![]const u8 {
+    std.debug.assert(id.len > 0);
+
+    return if (status) |known| session.declared(known.label) else id;
 }

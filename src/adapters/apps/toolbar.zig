@@ -15,6 +15,7 @@ const build = @import("build.zig");
 const Project = @import("../../server/project.zig").Project;
 const App = @import("state.zig").App;
 const model_app = @import("../../model/app.zig");
+const split = @import("../../server/split.zig");
 
 const Request = http.Request;
 const Response = http.Response;
@@ -53,7 +54,11 @@ pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerr
     try response.set_header("Vary", "Cookie");
 
     const project = Project.of(ctx);
-    const identity = identity_module.identify(request, ctx.arena, project);
+    // On the site's host, when the admin has its own, the member pass and never a session.
+    const identity = if (project.split() and !project.on_admin_host(request))
+        split.member_identity(project, ctx.arena, request)
+    else
+        identity_module.identify(request, ctx.arena, project);
 
     if (identity.caller.user_id() == null) {
         return response.json(.ok, Answer{
@@ -87,7 +92,11 @@ pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerr
     return response.json(.ok, Answer{
         .signed_in = true,
         .name = if (identity.display_name.len > 0) identity.display_name else identity.email,
-        .admin = try std.fmt.allocPrint(ctx.arena, "{s}{s}", .{ project.base, admin_path }),
+        .admin = try std.fmt.allocPrint(ctx.arena, "{s}{s}{s}", .{
+            project.admin_origin,
+            project.admin_path(),
+            admin_path,
+        }),
         .edit = if (edit) |found| found.url else null,
         .edit_label = if (edit) |found| found.label else "",
     });
@@ -133,8 +142,9 @@ fn edit_link(
     }
 
     return .{
-        .url = try std.fmt.allocPrint(arena, "{s}/admin/content/{s}", .{
-            project.base,
+        .url = try std.fmt.allocPrint(arena, "{s}{s}/admin/content/{s}", .{
+            project.admin_origin,
+            project.admin_path(),
             listed.records[0].id,
         }),
         .label = try label_of(&sdk_ctx, query.type_id),
@@ -153,7 +163,7 @@ fn label_of(sdk_ctx: *sdk.Ctx, handle: []const u8) ![]const u8 {
 
 fn entry_query_of(template: *const engine.Template) ?engine.ast.Decl.EntryQuery {
     std.debug.assert(template.compiled);
-    std.debug.assert(build.entry_type_of(template) == null or template.decls.len > 0);
+    std.debug.assert(template.rel.len > 0);
 
     for (template.decls) |decl| {
         switch (decl.value) {

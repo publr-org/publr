@@ -1,0 +1,148 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { ConfirmAction } from "../components/ConfirmAction.ptsx";
+import { DesignTabs } from "../components/DesignTabs.ptsx";
+import { IndexSection } from "../components/IndexSection.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type DesignTemplatesProps = {
+  /** Every route whose file marks a template region, then every template part, per app. */
+  templates: Array<{
+    /** The route's file, `content/posts/[slug].publr`. */
+    name: string;
+    app: string;
+    app_label: string;
+    overridden: boolean;
+  }>;
+  parts: Array<{
+    name: string;
+    app: string;
+    app_label: string;
+    overridden: boolean;
+  }>;
+};
+
+/** The Design area's templates: each route's template and each template part, with the
+ * file as the default and an edit saved from the block editor as its override. Reset goes
+ * back to the file. */
+export function DesignTemplates({ templates, parts }: DesignTemplatesProps) {
+  return (
+    <IndexPage
+      title={Publr.t("Templates")}
+      description={Publr.t("What the pages of a route are drawn in, and the parts several of them share. The app's files are the default; an edit in the block editor overrides them once published.")}
+      tabs={<DesignTabs current="templates" />}
+      empty={
+        templates.length === 0 &&
+        parts.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("No templates")}</EmptyTitle>
+            <EmptyDescription>
+              {Publr.t("A route's file marks the region it lets you edit with")}{" "}
+              <Code>data-publr-template</Code>
+              {Publr.t(", and a shared part with")}{" "}
+              <Code>data-publr-template-part="header"</Code>.
+            </EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <IndexSection title={Publr.t("Templates")} empty={templates.length === 0 ? Publr.t("No route marks a template region.") : undefined}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{Publr.t("Route")}</TableHead>
+              <TableHead>{Publr.t("App")}</TableHead>
+              <TableHead>{Publr.t("Status")}</TableHead>
+              <TableHead> </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {templates.map((template) => (
+              <TableRow>
+                <TableCell>
+                  <Code>{template.name}</Code>
+                </TableCell>
+                <TableCell>
+                  <Text as="span" variant="body-sm" tone="muted">{template.app_label}</Text>
+                </TableCell>
+                <TableCell>
+                  {template.overridden ? <Status tone="info">{Publr.t("Overridden")}</Status> : <Status tone="neutral">{Publr.t("Default")}</Status>}
+                </TableCell>
+                <TableCell>
+                  {template.overridden && (
+                    <ConfirmAction
+                      inline
+                      label={Publr.t("Reset")}
+                      title={Publr.t("Reset {name}?", { name: template.name })}
+                      description={Publr.t("Its pages are drawn from the file again. The override goes to the trash.")}
+                      action="/admin/design/override"
+                      fields={[
+                        { name: "kind", value: "reset-template" },
+                        { name: "name", value: template.name },
+                        { name: "app", value: template.app },
+                      ]}
+                    />
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </IndexSection>
+      <IndexSection title={Publr.t("Template parts")} empty={parts.length === 0 ? Publr.t("No file places a template part.") : undefined}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{Publr.t("Part")}</TableHead>
+              <TableHead>{Publr.t("App")}</TableHead>
+              <TableHead>{Publr.t("Status")}</TableHead>
+              <TableHead> </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {parts.map((part) => (
+              <TableRow>
+                <TableCell>
+                  <Code>{part.name}</Code>
+                </TableCell>
+                <TableCell>
+                  <Text as="span" variant="body-sm" tone="muted">{part.app_label}</Text>
+                </TableCell>
+                <TableCell>
+                  {part.overridden ? <Status tone="info">{Publr.t("Overridden")}</Status> : <Status tone="neutral">{Publr.t("Default")}</Status>}
+                </TableCell>
+                <TableCell>
+                  {part.overridden && (
+                    <ConfirmAction
+                      inline
+                      label={Publr.t("Reset")}
+                      title={Publr.t("Reset {name}?", { name: part.name })}
+                      description={Publr.t("Every page placing it shows the file's part again. The override goes to the trash.")}
+                      action="/admin/design/override"
+                      fields={[
+                        { name: "kind", value: "reset-part" },
+                        { name: "name", value: part.name },
+                        { name: "app", value: part.app },
+                      ]}
+                    />
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </IndexSection>
+    </IndexPage>
+  );
+}

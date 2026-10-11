@@ -4,6 +4,8 @@ const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const pages = @import("frame/pages.zig");
+const panels = @import("frame/panels.zig");
+const records = @import("../../operations/record.zig");
 const document = @import("frame/document.zig");
 const identity_module = @import("../rest/identity.zig");
 
@@ -21,6 +23,7 @@ pub fn register(router: anytype) void {
 
     router.get(prefix ++ "/:plugin/:page", &show);
     router.get(prefix ++ "/:plugin/:page/frame", &frame);
+    router.get(prefix ++ "/:plugin/panels/:operation/frame", &panel_frame);
     router.post(prefix ++ "/:plugin/query", &read_query);
 }
 
@@ -40,7 +43,7 @@ pub fn read_query(request: *Request, response: *Response, ctx: *Context) Error!v
 
     const plugin = request.param("plugin") orelse return response.text(.not_found, "Not Found");
 
-    if (!try shows_pages(&session, plugin)) {
+    if (!try shows_pages(&session, plugin) and !panels.any_of(&session, plugin)) {
         return response.json(.not_found, .{
             .@"error" = "no_such_plugin",
         });
@@ -127,7 +130,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     };
 
     try admin.screen_with(&session, options, .ok, admin.views.PluginPage, .{
-        .title = page.label,
+        .title = try session.declared(page.label),
         .src = src,
         .plugin = page.plugin,
         .page = page.path,
@@ -149,8 +152,54 @@ pub fn frame(request: *Request, response: *Response, ctx: *Context) Error!void {
         return response.text(.not_found, "Not Found");
     }
 
-    const base = session.project.base;
-    const html = drawn(&session, page.operation, request.query(), base) catch |err| blk: {
+    const asked = .{
+        .query = request.query(),
+        .base = session.project.admin_path(),
+    };
+
+    try serve_frame(&session, page.operation, asked);
+}
+
+/// A panel's document, `?record=<id>`: the panel's read told the record and the base path.
+/// The record decides the type, so a panel shows only on records of its own type.
+pub fn panel_frame(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .get or request.method() == .head);
+    std.debug.assert(ctx.user_data != null);
+
+    var session = try admin.require(request, response, ctx) orelse return;
+    const plugin = request.param("plugin") orelse "";
+    const operation = request.param("operation") orelse "";
+    const record = admin.query_param(&session, "record") orelse "";
+
+    if (plugin.len == 0 or operation.len == 0 or record.len == 0) {
+        return response.text(.not_found, "Not Found");
+    }
+
+    var reading = session;
+    const got = registry.SDK.dispatch(&reading.ctx, records.Get, .{
+        .id = record,
+        .purpose = .edit,
+    }) catch return response.text(.not_found, "Not Found");
+    const panel = try panels.find(&session, plugin, operation, got.record.type) orelse {
+        return response.text(.not_found, "Not Found");
+    };
+    const asked = .{
+        .record = record,
+        .base = session.project.admin_path(),
+    };
+
+    try serve_frame(&session, panel.operation, asked);
+}
+
+/// The frame's document, drawn by `operation` from `asked`; a failure is told inside the
+/// frame, which keeps the admin around it.
+fn serve_frame(session: *Session, operation: []const u8, asked: anytype) Error!void {
+    std.debug.assert(operation.len > 0);
+    std.debug.assert(session.signed_in());
+
+    const response = session.response;
+    const base = session.project.admin_path();
+    const html = drawn(session, operation, asked) catch |err| blk: {
         const text = if (err == error.Failed and session.ctx.failure != null)
             session.ctx.failure.?.message
         else
@@ -173,9 +222,10 @@ pub fn frame(request: *Request, response: *Response, ctx: *Context) Error!void {
 fn absent(session: *const Session) Error!void {
     std.debug.assert(session.signed_in());
 
-    const text = "No page of a plugin you may open is at this address.";
+    const text = try session.translated("No page of a plugin you may open is at this address.");
+    const heading = try session.translated("No such page");
 
-    try admin.message(session, "No such page", text, &.{}, "/admin/settings");
+    try admin.message(session, heading, text, &.{}, "/admin/settings");
 }
 
 fn found(session: *const Session) Error!?pages.Page {
@@ -190,19 +240,10 @@ fn found(session: *const Session) Error!?pages.Page {
 }
 
 /// What the plugin's read answers as `html`.
-fn drawn(
-    session: *Session,
-    operation: []const u8,
-    query: []const u8,
-    base: []const u8,
-) ![]const u8 {
+fn drawn(session: *Session, operation: []const u8, asked: anytype) ![]const u8 {
     std.debug.assert(operation.len > 0);
     std.debug.assert(session.signed_in());
 
-    const asked = .{
-        .query = query,
-        .base = base,
-    };
     const input = try std.json.Stringify.valueAlloc(session.arena, asked, .{});
     const output = try registry.SDK.call_json(&session.ctx, operation, input);
     const Drawn = struct {

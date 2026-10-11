@@ -1,4 +1,5 @@
 import { FormPage } from "../layouts/FormPage.ptsx";
+import { MediaPicker } from "../components/MediaPicker.ptsx";
 import { ReferenceDrawer } from "../components/ReferenceDrawer.ptsx";
 
 /** One record, new or existing: the editor (RecordEditor, rendered by the adapter and
@@ -9,18 +10,43 @@ export type RecordFormProps = {
   parents: Array<{ label: string; href: string }>;
   focus: boolean;
   editor: JSX.Element;
+  /** A visual type's rich text field: the block editor fills the sheet over it. Empty: a form. */
+  visual_field?: string;
+  /** The record's app as the block editor draws it: stylesheets and design tokens, JSON. */
+  editor_site?: string;
+  /** The template the record's route is drawn in and the parts it may place, JSON. */
+  editor_templates?: string;
+  /** The app's patterns for the editor's library, JSON. */
+  editor_patterns?: string;
 };
 
-export function RecordForm({ title, parents, focus, editor }: RecordFormProps) {
+export function RecordForm({
+  title,
+  parents,
+  focus,
+  editor,
+  visual_field = "",
+  editor_site = "",
+  editor_templates = "",
+  editor_patterns = "",
+}: RecordFormProps) {
   return (
     <FormPage
       title={title}
       parents={parents}
       focus={focus}
       editor={
-        <div class="contents">
+        <div
+          class="contents"
+          data-visual-record={visual_field}
+          data-visual-field={visual_field}
+          data-editor-site={editor_site}
+          data-editor-templates={editor_templates}
+          data-editor-patterns={editor_patterns}
+        >
           {editor}
           <ReferenceDrawer />
+          <MediaPicker />
         </div>
       }
     />
