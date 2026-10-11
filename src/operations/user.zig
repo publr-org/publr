@@ -171,7 +171,7 @@ pub const PasswordLink = struct {
     pub const example_out: Out = .{
         .user_id = "9b1e7c3d5a2f4e6b8d0c1a3f",
         .link = .{
-            .path = "/auth/set-password?token=c41d...",
+            .path = "/admin/welcome?token=c41d...",
             .expires_at = 1789650000000,
         },
     };

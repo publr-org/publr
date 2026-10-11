@@ -24,10 +24,15 @@ pub fn expect_native_admin(
         "init", "--email", email, "--display_name", "Native", "--password", password,
     };
     const note = [_][]const u8{ "--as", email, "sampler", "note", "--note", "kept" };
+    // The account's language chosen, so the admin does not welcome it first.
+    const language = [_][]const u8{
+        "--as", email, "user", "set_language", "--language", "en",
+    };
 
     try std.Io.Dir.cwd().createDirPath(init.io, dir);
     try smoke.expect_contains(init, binary, dir, &setup, "\"roles\": [");
     try smoke.expect_contains(init, binary, dir, &note, "\"note\": \"KEPT\"");
+    try smoke.expect_contains(init, binary, dir, &language, "\"language\": \"en\"");
 
     var child = try std.process.spawn(init.io, .{
         .argv = &.{ binary, "serve", "--port", "8092" },

@@ -25,7 +25,7 @@ const example_items = [_]Item{.{
     .down = 32,
     .width = 220,
     .text = "Calm, lots of white space",
-    .note = "The client's own words",
+    .note = "In the client brief",
 }};
 
 pub const Moodboard = struct {
@@ -47,8 +47,9 @@ pub const Moodboard = struct {
     pub const example: In = .{
         .app = "www",
     };
+    // An app whose board has no cards yet.
     pub const example_out: Out = .{
-        .items = &example_items,
+        .items = &.{},
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .app = "The app's `.name`",

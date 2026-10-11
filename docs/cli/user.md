@@ -31,7 +31,7 @@ $ publr --as ada@example.com users create --email new@example.com --display_name
   "user_id": "9b1e...",
   "roles": ["editor"],
   "password": null,
-  "link": { "path": "/auth/set-password?token=6f3a...", "expires_at": 1789650000000 }
+  "link": { "path": "/admin/welcome?token=6f3a...", "expires_at": 1789650000000 }
 }
 ```
 

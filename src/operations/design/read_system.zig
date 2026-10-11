@@ -36,19 +36,12 @@ pub const System = struct {
     pub const example: In = .{
         .app = "www",
     };
+    // An app that declares no tokens or design system yet: the first a site has.
     pub const example_out: Out = .{
-        .tokens = &.{.{
-            .name = "color-palette-brand",
-            .value = "#2f5d54",
-        }},
+        .tokens = &.{},
         .fonts = &.{},
-        .system = .{
-            .contexts = &.{.{
-                .key = "default",
-                .label = "Default",
-            }},
-        },
-        .saved = true,
+        .system = null,
+        .saved = false,
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .app = "The app's `.name`",

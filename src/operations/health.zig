@@ -105,8 +105,9 @@ pub const List = struct {
         next: []const u8 = "",
     };
     pub const example: In = .{};
+    // A site with nothing wrong yet.
     pub const example_out: Out = .{
-        .cases = &.{cases_module.example},
+        .cases = &.{},
         .kept = 0,
     };
     pub const field_docs: sdk.operation.Docs(In) = .{

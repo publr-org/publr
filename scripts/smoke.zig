@@ -192,8 +192,8 @@ fn expect_auth(init: std.process.Init, binary: []const u8, work_dir: []const u8)
     try expect_contains(init, binary, work_dir, &list, "smoke@example.com");
     try expect_failure(init, binary, work_dir, &denied, "denied for an anonymous caller");
     try expect_contains(init, binary, work_dir, &generated, "\"password\": \"");
-    try expect_contains(init, binary, work_dir, &invited, "/auth/set-password?token=");
-    try expect_contains(init, binary, work_dir, &relink, "/auth/set-password?token=");
+    try expect_contains(init, binary, work_dir, &invited, "/admin/welcome?token=");
+    try expect_contains(init, binary, work_dir, &relink, "/admin/welcome?token=");
     try expect_failure(init, binary, work_dir, &forged, "not found");
     try expect_content(init, binary, work_dir, email);
 }
@@ -467,7 +467,7 @@ fn expect_serve(
     const login_body = "{\"email\":\"smoke@example.com\",\"password\":\"smoke test pass\"}";
     const login = try http_post(init, port, "/api/auth/sign-in", login_body);
 
-    if (std.mem.indexOf(u8, login, "Set-Cookie: publr_session=") == null) {
+    if (std.mem.indexOf(u8, login, "Set-Cookie: publr_session_") == null) {
         std.debug.print("smoke: serve: login did not set a session cookie: {s}\n", .{login});
         return error.SmokeFailed;
     }
@@ -547,7 +547,8 @@ fn expect_site(init: std.process.Init, port: u16) !void {
         },
         .{
             .path = "/_app/app.css",
-            .needle = ".bg-canvas",
+            // Classes compile to short names; the app's own token is what must arrive.
+            .needle = "var(--color-canvas)",
         },
         .{
             .path = "/sitemap.xml",
@@ -567,7 +568,7 @@ fn expect_site(init: std.process.Init, port: u16) !void {
         },
         .{
             .path = "/docs/_app/app.css",
-            .needle = ".bg-paper",
+            .needle = "var(--color-paper)",
         },
         .{
             .path = "/x",
@@ -750,7 +751,23 @@ pub fn http_get(init: std.process.Init, port: u16, path: []const u8) ![]const u8
     std.debug.assert(port > 0);
     std.debug.assert(path.len > 0);
 
-    return http_get_host(init, port, "smoke", path);
+    return http_get_host(init, port, try host_for(init, port, path), path);
+}
+
+/// The admin is on an origin of its own (`serve`'s default, `admin.localhost:<port>`): its
+/// pages are asked for there, everything else on the site's host.
+fn host_for(init: std.process.Init, port: u16, path: []const u8) ![]const u8 {
+    std.debug.assert(port > 0);
+    std.debug.assert(path.len > 0);
+
+    const admin = std.mem.eql(u8, path, "/admin") or std.mem.startsWith(u8, path, "/admin/") or
+        std.mem.startsWith(u8, path, "/api/") or std.mem.startsWith(u8, path, "/auth/");
+
+    if (!admin) {
+        return "smoke";
+    }
+
+    return std.fmt.allocPrint(init.arena.allocator(), "admin.localhost:{d}", .{port});
 }
 
 fn http_get_host(
@@ -780,11 +797,12 @@ pub fn http_post(
     std.debug.assert(port > 0);
     std.debug.assert(path.len > 0);
 
+    const host = try host_for(init, port, path);
     const request = try std.fmt.allocPrint(
         init.arena.allocator(),
-        "POST {s} HTTP/1.1\r\nHost: smoke\r\nOrigin: http://smoke\r\n" ++
+        "POST {s} HTTP/1.1\r\nHost: {s}\r\nOrigin: http://{s}\r\n" ++
             "Content-Type: application/json\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n{s}",
-        .{ path, body.len, body },
+        .{ path, host, host, body.len, body },
     );
 
     return http_exchange(init, port, request);
@@ -803,9 +821,9 @@ pub fn http_post_headers(
 
     const request = try std.fmt.allocPrint(
         init.arena.allocator(),
-        "POST {s} HTTP/1.1\r\nHost: smoke\r\n{s}Content-Type: application/json\r\n" ++
+        "POST {s} HTTP/1.1\r\nHost: {s}\r\n{s}Content-Type: application/json\r\n" ++
             "Content-Length: {d}\r\nConnection: close\r\n\r\n{s}",
-        .{ path, headers, body.len, body },
+        .{ path, try host_for(init, port, path), headers, body.len, body },
     );
 
     return http_exchange(init, port, request);
@@ -823,8 +841,8 @@ pub fn http_get_cookie(
 
     const request = try std.fmt.allocPrint(
         init.arena.allocator(),
-        "GET {s} HTTP/1.1\r\nHost: smoke\r\nCookie: {s}\r\nConnection: close\r\n\r\n",
-        .{ path, cookie },
+        "GET {s} HTTP/1.1\r\nHost: {s}\r\nCookie: {s}\r\nConnection: close\r\n\r\n",
+        .{ path, try host_for(init, port, path), cookie },
     );
 
     return http_exchange(init, port, request);

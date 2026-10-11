@@ -61,14 +61,38 @@ pub fn main(init: std.process.Init) !u8 {
 /// testing and setting up a provider need a provider plugin, which the seeded project does
 /// not have; an update needs a running server and the network; a stream needs an agent; a
 /// removal list is made by a device; a trash entry by a removal; a browser call is asked
-/// by an agent and answered by a workspace page.
+/// by an agent and answered by a workspace page; a health case kept or unlinked needs a
+/// broken reference, which the seeded project has none of; choosing between translations,
+/// or listing what one leaves untranslated, needs plugins translating the admin, and it has
+/// none.
 const skips = [_][]const u8{
-    "ai.ask",            "ai.reply",          "http.fetch",   "ai.choose",
-    "ai.test",           "ai.set_up",         "update.check", "update.apply",
-    "update.rollback",   "media.import",      "http.stream",  "http.read",
-    "ai.progress",       "removal.list",      "removal.get",  "removal.confirm",
-    "removal.decline",   "trash.restore",     "trash.remove", "ai.browsed",
-    "ai.browser_answer", "media.import_many", "apps.edit",
+    "ai.ask",
+    "ai.reply",
+    "http.fetch",
+    "ai.choose",
+    "ai.test",
+    "ai.set_up",
+    "update.check",
+    "update.apply",
+    "update.rollback",
+    "media.import",
+    "http.stream",
+    "http.read",
+    "ai.progress",
+    "removal.list",
+    "removal.get",
+    "removal.confirm",
+    "removal.decline",
+    "trash.restore",
+    "trash.remove",
+    "ai.browsed",
+    "ai.browser_answer",
+    "media.import_many",
+    "apps.edit",
+    "health.keep",
+    "health.unlink",
+    "health.choose_translation",
+    "health.missing_translations",
 };
 
 fn skipped(comptime name: []const u8) bool {

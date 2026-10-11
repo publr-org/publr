@@ -28,13 +28,10 @@ pub const Variant = struct {
         variants: []const variants.Variant,
     };
     pub const example: In = .{};
+    // As a site with one variant answers: none to choose, and nobody chose.
     pub const example_out: Out = .{
-        .chosen = "pl",
-        .variants = &.{.{
-            .code = "en",
-            .label = "English",
-            .main = true,
-        }},
+        .chosen = "",
+        .variants = &.{},
     };
     pub const field_docs: sdk.operation.Docs(In) = .{};
     pub const output_docs: sdk.operation.Docs(Out) = .{
@@ -69,17 +66,18 @@ pub const SetVariant = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
+    /// Open, but about the account asking: its example names one.
+    pub const example_signed_in = true;
     pub const In = struct {
-        variant: []const u8,
+        variant: []const u8 = "",
     };
     pub const Out = struct {
         variant: []const u8,
     };
-    pub const example: In = .{
-        .variant = "pl",
-    };
+    // As a site with one variant takes it: back to the main one.
+    pub const example: In = .{};
     pub const example_out: Out = .{
-        .variant = "pl",
+        .variant = "",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .variant = "A variant's code (`pl`), or empty for the main one",

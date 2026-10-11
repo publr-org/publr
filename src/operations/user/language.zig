@@ -68,6 +68,8 @@ pub const Language = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
+    /// Open, but about the account asking: its example names one.
+    pub const example_signed_in = true;
     pub const In = struct {};
     pub const Out = struct {
         chosen: []const u8,
@@ -83,12 +85,13 @@ pub const Language = struct {
     pub const example: In = .{};
     pub const example_out: Out = .{
         .chosen = "",
-        .site = "pl",
-        .shown = "pl",
+        .site = "",
+        .shown = "en",
         .choices = &.{.{
             .locale = "en",
             .label = "English",
         }},
+        .answered = false,
     };
     pub const field_docs: sdk.operation.Docs(In) = .{};
     pub const output_docs: sdk.operation.Docs(Out) = .{
@@ -146,6 +149,8 @@ pub const SetLanguage = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
+    /// Open, but about the account asking: its example names one.
+    pub const example_signed_in = true;
     pub const In = struct {
         language: []const u8,
     };
@@ -153,10 +158,10 @@ pub const SetLanguage = struct {
         language: []const u8,
     };
     pub const example: In = .{
-        .language = "pl",
+        .language = "en",
     };
     pub const example_out: Out = .{
-        .language = "pl",
+        .language = "en",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .language = "A language's code (`pl`), or empty for the site's",
@@ -196,10 +201,10 @@ pub const SetSiteLanguage = struct {
         language: []const u8,
     };
     pub const example: In = .{
-        .language = "pl",
+        .language = "en",
     };
     pub const example_out: Out = .{
-        .language = "pl",
+        .language = "en",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .language = "A language's code (`pl`), or empty for English",

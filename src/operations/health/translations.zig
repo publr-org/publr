@@ -153,7 +153,7 @@ pub const MissingTranslations = struct {
     };
     pub const example: In = .{
         .locale = "pl",
-        .domain = "ai_usage",
+        .domain = "publr",
     };
     pub const example_out: Out = .{
         .template = "msgid \"AI usage\"\nmsgstr \"\"\n",

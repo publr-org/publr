@@ -277,6 +277,9 @@ fn fill_media(ctx: *Ctx) Error!void {
 
     // What `/media/upload` would have left for the `media upload` example.
     ctx.files.?.write(.incoming, "u7f3a9c2e1", &tiny_png) catch return error.Unavailable;
+    // The library file itself, for `media read`: an image is never read larger, so one pixel
+    // is enough to resize and convert.
+    ctx.files.?.write(.files, item.key, &tiny_png) catch return error.Unavailable;
 }
 
 /// A one-pixel PNG: the file the media examples add.
