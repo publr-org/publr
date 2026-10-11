@@ -3,6 +3,7 @@ const sdk = @import("../sdk.zig");
 const auth = @import("../lib/auth.zig");
 const settings = @import("../store/settings.zig");
 const user = @import("user.zig");
+const language = @import("user/language.zig");
 const store = @import("../store.zig");
 pub const changes = @import("project/changes.zig");
 pub const impact = @import("project/impact.zig");
@@ -41,12 +42,18 @@ pub const Init = struct {
         \\
         \\Omit `--password` to have a strong one generated and printed once, or set the
         \\`PUBLR_PASSWORD` environment variable to keep it out of your shell history.
+        \\
+        \\`--language` is the site's: the language the admin speaks to everyone who chose
+        \\none (one of `user language`'s choices; empty keeps English). It is the first
+        \\account's own choice too, so the admin never asks it; later accounts choose theirs
+        \\on their first visit.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         email: []const u8,
         display_name: []const u8,
         password: ?[]const u8 = null,
+        language: []const u8 = "",
     };
     pub const Out = struct {
         user_id: []const u8,
@@ -66,6 +73,8 @@ pub const Init = struct {
         .email = "Sign-in email; stored lowercased and trimmed",
         .display_name = "Name shown in the admin",
         .password = "8 to 256 characters; generated and shown once when omitted",
+        .language = "The site's language (`pl`), one of `user language`'s choices; " ++
+            "empty keeps English",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .user_id = "The new account's id",
@@ -88,8 +97,14 @@ pub const Init = struct {
             return error.Conflict;
         }
 
+        if (!try language.valid(ctx, in.language)) {
+            return error.Invalid;
+        }
+
         const admin: []const []const u8 = &.{role.admin};
         const created = try user.create_user(ctx, in.email, in.display_name, in.password, admin);
+
+        try language.set_first(ctx, created.user_id, in.language);
         var stamp_buffer: [24]u8 = undefined;
         const stamp = std.fmt.bufPrint(&stamp_buffer, "{d}", .{ctx.now_ms}) catch unreachable;
 
@@ -188,4 +203,38 @@ test "init without a password generates one and returns it once" {
     var system = harness.ctx(.system);
     const listed = try UserSDK.dispatch(&system, user.List, .{});
     try std.testing.expect(listed.users[0].active);
+}
+
+test "init sets the site language and the first admin's own, never asked again; unknown refused" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var anon = harness.ctx(.anonymous);
+
+    try std.testing.expectError(error.Invalid, TestSDK.dispatch(&anon, Init, .{
+        .email = "a@example.com",
+        .display_name = "A",
+        .password = "correct horse battery",
+        .language = "xx",
+    }));
+
+    // Refused before anything is made: the project can still be set up.
+    const first = try TestSDK.dispatch(&anon, Init, .{
+        .email = "a@example.com",
+        .display_name = "A",
+        .password = "correct horse battery",
+        .language = "en",
+    });
+    var ada = harness.ctx(.{
+        .user = .{
+            .id = first.user_id,
+            .roles = &.{"admin"},
+        },
+    });
+    const shown = try UserSDK.dispatch(&ada, language.Language, .{});
+
+    try std.testing.expect(shown.answered);
+    try std.testing.expectEqualStrings("en", shown.site);
+    try std.testing.expectEqualStrings("en", shown.shown);
 }

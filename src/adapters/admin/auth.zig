@@ -8,6 +8,8 @@ const identity_operations = @import("../../operations/identity.zig");
 const identity_module = @import("../rest/identity.zig");
 const rest_auth = @import("../rest/auth.zig");
 const dashboard = @import("dashboard.zig");
+const language_operations = @import("../../operations/user/language.zig");
+const language_module = @import("language.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -55,22 +57,68 @@ pub fn setup_page(request: *Request, response: *Response, ctx: *Context) Error!v
         return response.redirect(.see_other, "/admin/login");
     }
 
-    try render_setup(response, ctx.arena, session.project.admin_path(), null);
+    const asked = admin.query_param(&session, "language") orelse "";
+
+    try render_setup(&session, response, asked, null);
 }
 
+/// Setting up is two steps: the site's language, then its first account, in that language.
+/// With English the only one the admin speaks, there is nothing to choose: the account at once.
 fn render_setup(
+    session: *Session,
     response: *Response,
-    arena: std.mem.Allocator,
-    base: []const u8,
+    asked: []const u8,
     problem: ?[]const u8,
 ) Error!void {
     std.debug.assert(response.body.len == 0);
     std.debug.assert(problem == null or problem.?.len > 0);
 
-    const request = try admin.chrome.signed_out_at(arena, base);
+    const arena = session.arena;
+    const choices = language_operations.choices(arena) catch return error.OutOfMemory;
+    const known = for (choices) |choice| {
+        if (std.mem.eql(u8, choice.locale, asked)) {
+            break true;
+        }
+    } else false;
+    const language = if (known) asked else if (choices.len == 1) choices[0].locale else "";
+    const signed_out = try admin.chrome.signed_out_at(arena, session.project.admin_path());
+    const request = try arena.create(@TypeOf(signed_out.*));
+
+    request.* = signed_out.*;
+
+    // The account step speaks the language just chosen.
+    if (language.len > 0) {
+        const spoken = try language_module.in(session, language);
+
+        request.admin.locale = spoken.locale;
+        request.admin.messages = spoken.messages;
+        request.publr_translations = spoken.translator;
+        request.publr_catalogue = spoken.script;
+    }
+
+    // The browser's language first, as the welcome offers it.
+    const preferred = @import("welcome.zig").preferred_of(session, choices);
+    const languages = try arena.alloc(views.Setup.LanguagesItem, choices.len);
+    var label: []const u8 = "";
+
+    for (choices, languages) |choice, *shown| {
+        shown.* = .{
+            .locale = choice.locale,
+            .label = choice.label,
+            .selected = std.mem.eql(u8, choice.locale, preferred),
+        };
+
+        if (std.mem.eql(u8, choice.locale, language)) {
+            label = choice.label;
+        }
+    }
 
     try admin.render.page(response, arena, request, .ok, views.Setup, .{
         .notice = problem,
+        .language = language,
+        .language_label = label,
+        .languages = languages,
+        .choosing = choices.len > 1,
     });
 }
 
@@ -80,40 +128,43 @@ pub fn setup(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     var session = Session.open(request, response, ctx);
     const arena = ctx.arena;
-    const form = Form.parse(arena, request.body) orelse {
+    const parsed = Form.parse(arena, request.body);
+    const chosen = if (parsed) |posted| posted.text("language") orelse "" else "";
+    const form = parsed orelse {
         const problem = try session.translated("bad form");
 
-        return render_setup(response, arena, session.project.admin_path(), problem);
+        return render_setup(&session, response, chosen, problem);
     };
 
     if (!session.guard(&form)) {
         const problem = try session.translated("cross-origin request refused");
 
-        return render_setup(response, arena, session.project.admin_path(), problem);
+        return render_setup(&session, response, chosen, problem);
     }
 
     const email = form.text("email") orelse {
         const problem = try session.translated("email is required");
 
-        return render_setup(response, arena, session.project.admin_path(), problem);
+        return render_setup(&session, response, chosen, problem);
     };
     const name = form.text("display_name") orelse {
         const problem = try session.translated("name is required");
 
-        return render_setup(response, arena, session.project.admin_path(), problem);
+        return render_setup(&session, response, chosen, problem);
     };
     const password = form.get("password") orelse {
         const problem = try session.translated("password is required");
 
-        return render_setup(response, arena, session.project.admin_path(), problem);
+        return render_setup(&session, response, chosen, problem);
     };
 
     _ = registry.SDK.dispatch(&session.ctx, project_operations.Init, .{
         .email = email,
         .display_name = name,
         .password = password,
+        .language = chosen,
     }) catch |err| {
-        return render_setup(response, arena, session.project.admin_path(), @errorName(err));
+        return render_setup(&session, response, chosen, @errorName(err));
     };
 
     try start_session(&session, email, password, "/admin/setup", .{});
@@ -325,7 +376,7 @@ pub fn start_session(
         return if (std.mem.eql(u8, back, "/admin/login"))
             render_login(session, problem)
         else
-            render_setup(session.response, session.arena, session.project.admin_path(), problem);
+            render_setup(session, session.response, "", problem);
     };
     var signed_in = anonymous;
 

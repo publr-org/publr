@@ -91,7 +91,6 @@ pub const Language = struct {
             .locale = "en",
             .label = "English",
         }},
-        .answered = false,
     };
     pub const field_docs: sdk.operation.Docs(In) = .{};
     pub const output_docs: sdk.operation.Docs(Out) = .{
@@ -224,6 +223,29 @@ pub const SetSiteLanguage = struct {
         };
     }
 };
+
+/// Whether `language` is one the admin speaks; empty is: the site's own, English.
+pub fn valid(ctx: *Ctx, language: []const u8) Error!bool {
+    std.debug.assert(language.len <= 64 << 10);
+
+    return language.len == 0 or known(try choices(ctx.arena), language);
+}
+
+/// A fresh site's language, chosen as it is set up: the site's default, and its first
+/// account's own choice, so that account is never asked. Empty keeps English.
+pub fn set_first(ctx: *Ctx, user_id: []const u8, language: []const u8) Error!void {
+    std.debug.assert(user_id.len > 0);
+
+    if (language.len > 0) {
+        try save(ctx, site_key, language);
+    }
+
+    const key = std.mem.concat(ctx.arena, u8, &.{ person_prefix, user_id }) catch {
+        return error.OutOfMemory;
+    };
+
+    try save(ctx, key, language);
+}
 
 fn save(ctx: *Ctx, key: []const u8, language: []const u8) Error!void {
     std.debug.assert(key.len > 0);

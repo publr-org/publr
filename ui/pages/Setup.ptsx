@@ -5,39 +5,85 @@ import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
 
 export type SetupProps = {
   notice?: string;
+  /** The site's language, chosen in the first step; empty while it is still to choose. */
+  language: string;
+  /** Its own name ("Polski"), for the second step. */
+  language_label: string;
+  /** English, then each language a plugin translates the admin into; the browser's selected. */
+  languages: Array<{ locale: string; label: string; selected: boolean }>;
+  /** More than English to choose from: the first step can be gone back to. */
+  choosing: boolean;
 };
 
-export function Setup({ notice }: SetupProps) {
+/** Setting up: the site's language first, then the first administrator, who speaks it and
+ * is never asked again. */
+export function Setup({ notice, language, language_label, languages, choosing }: SetupProps) {
+  const chosen = language !== "";
+
   return (
-    <CardPage title={Publr.t("Set up Publr")} description={Publr.t("Create the first administrator.")} notice={notice}>
-      <form method="post" action="/admin/setup" class="flex flex-col gap-4">
-        <Field>
-          <FieldLabel htmlFor="email">{Publr.t("Email")}</FieldLabel>
-          <Input id="email" type="email" name="email" required autocomplete="username" />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="display_name">{Publr.t("Name")}</FieldLabel>
-          <Input id="display_name" name="display_name" required />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="password">{Publr.t("Password")}</FieldLabel>
-          <Input
-            id="password"
-            type="password"
-            name="password"
-            required
-            minLength={12}
-            autocomplete="new-password"
-          />
-          <FieldDescription>{Publr.t("At least 12 characters.")}</FieldDescription>
-        </Field>
-        <Button type="submit" size="lg" classes="mt-2 w-full">
-          {Publr.t("Create administrator")}
-        </Button>
-      </form>
+    <CardPage
+      title={Publr.t("Set up Publr")}
+      description={chosen
+        ? Publr.t("Create the first administrator.")
+        : Publr.t("Choose the site's language: the admin speaks it to everyone who chooses none.")}
+      notice={notice}
+    >
+      {chosen ? (
+        <form method="post" action="/admin/setup" class="flex flex-col gap-4">
+          <input type="hidden" name="language" value={language} />
+          {choosing && (
+            <Text variant="body-sm" tone="muted">
+              {Publr.t("Site language")}: {language_label} · <Link href="/admin/setup">{Publr.t("Change")}</Link>
+            </Text>
+          )}
+          <Field>
+            <FieldLabel htmlFor="email">{Publr.t("Email")}</FieldLabel>
+            <Input id="email" type="email" name="email" required autocomplete="username" />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="display_name">{Publr.t("Name")}</FieldLabel>
+            <Input id="display_name" name="display_name" required />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="password">{Publr.t("Password")}</FieldLabel>
+            <Input
+              id="password"
+              type="password"
+              name="password"
+              required
+              minLength={12}
+              autocomplete="new-password"
+            />
+            <FieldDescription>{Publr.t("At least 12 characters.")}</FieldDescription>
+          </Field>
+          <Button type="submit" size="lg" classes="mt-2 w-full">
+            {Publr.t("Create administrator")}
+          </Button>
+        </form>
+      ) : (
+        <form method="get" action="/admin/setup" class="flex flex-col gap-4">
+          <Field>
+            <FieldLabel htmlFor="language">{Publr.t("Language")}</FieldLabel>
+            <NativeSelect id="language" name="language">
+              {languages.map((choice) => (
+                <option value={choice.locale} selected={choice.selected}>{choice.label}</option>
+              ))}
+            </NativeSelect>
+            <FieldDescription>
+              {Publr.t("Everyone you add later chooses their own the first time they sign in.")}
+            </FieldDescription>
+          </Field>
+          <Button type="submit" size="lg" classes="mt-2 w-full">
+            {Publr.t("Continue")}
+          </Button>
+        </form>
+      )}
     </CardPage>
   );
 }

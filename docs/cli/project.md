@@ -17,6 +17,11 @@ same command under its namespace.
 | `--email` | text | required |
 | `--display_name` | text | required |
 | `--password` | text | generated when omitted (or `PUBLR_PASSWORD`) |
+| `--language` | text | empty: English |
+
+`--language` is the site's: the admin speaks it to everyone who chose none (one of
+`publr user language`'s choices). It is the first admin's own choice too, so they are
+never asked; accounts added later choose theirs on their first visit.
 
 Output: `{ "user_id", "roles", "password" }` (`password` only when generated).
 

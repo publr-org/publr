@@ -79,7 +79,7 @@ fn draw(session: *Session, token: []const u8, back: []const u8, problem: ?[]cons
 
 /// The language to start from: the person's choice once signed in, else the browser's
 /// first that the admin speaks, else English.
-fn preferred_of(session: *Session, choices: []const language_operations.Choice) []const u8 {
+pub fn preferred_of(session: *Session, choices: []const language_operations.Choice) []const u8 {
     std.debug.assert(choices.len > 0);
 
     const accepted = session.request.header("accept-language") orelse "";
