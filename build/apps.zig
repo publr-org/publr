@@ -112,7 +112,9 @@ fn app_module(
     module.addImport("app_assets", embed.assets(builder, app_dir, interactive.stores));
     module.addImport("app_interactive", interactive.module);
     module.addImport("app_middleware", middleware(builder, library, app_dir));
-    module.addAnonymousImport("app_style_css", .{ .root_source_file = style });
+    module.addAnonymousImport("app_style_css", .{
+        .root_source_file = style,
+    });
     module.addAnonymousImport("app_interactive_classes", .{
         .root_source_file = interactive.classes,
     });
@@ -163,7 +165,9 @@ fn discover(builder: *std.Build, dir: []const u8, apps_max: u32) []const []const
     std.debug.assert(apps_max > 0);
 
     const io = builder.graph.io;
-    var root = builder.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch {
+    var root = builder.build_root.handle.openDir(io, dir, .{
+        .iterate = true,
+    }) catch {
         if (!std.mem.eql(u8, dir, dir_default)) {
             diagnostic.fail("-Dapps: no folder at {s}", .{dir});
         }

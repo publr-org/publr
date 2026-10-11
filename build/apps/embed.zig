@@ -11,7 +11,10 @@ const templates_max: u32 = 4096;
 const template_bytes_max: u32 = 4 << 20;
 
 /// A template to embed: its name in the app and where it is, from the build root.
-const Embedded = struct { rel: []const u8, path: []const u8 };
+const Embedded = struct {
+    rel: []const u8,
+    path: []const u8,
+};
 
 pub const Interactive = struct {
     module: *std.Build.Module,
@@ -39,7 +42,9 @@ pub fn interactive(
         const empty = placeholders.add("interactive.zig", "");
 
         return .{
-            .module = builder.createModule(.{ .root_source_file = empty }),
+            .module = builder.createModule(.{
+                .root_source_file = empty,
+            }),
             .classes = placeholders.add("interactive-classes.txt", ""),
             .stores = placeholders.add("stores.js", ""),
         };
@@ -62,8 +67,14 @@ pub fn interactive(
     const module = builder.createModule(.{
         .root_source_file = out.path(builder, "views.zig"),
         .imports = &.{
-            .{ .name = "runtime", .module = runtime },
-            .{ .name = "request", .module = request },
+            .{
+                .name = "runtime",
+                .module = runtime,
+            },
+            .{
+                .name = "request",
+                .module = request,
+            },
         },
     });
 
@@ -122,7 +133,10 @@ pub fn templates(builder: *std.Build, app_dir: []const u8) *std.Build.Module {
         }
 
         write_entry(builder, writer, files, rel, path, @intCast(own.items.len));
-        own.append(builder.allocator, .{ .rel = rel, .path = path }) catch
+        own.append(builder.allocator, .{
+            .rel = rel,
+            .path = path,
+        }) catch
             diagnostic.fail("build input: out of memory", .{});
     }
 
@@ -176,7 +190,10 @@ fn write_imported(
             }
 
             write_entry(builder, writer, files, target, path, @intCast(queue.items.len));
-            queue.append(builder.allocator, .{ .rel = target, .path = path }) catch
+            queue.append(builder.allocator, .{
+                .rel = target,
+                .path = path,
+            }) catch
                 diagnostic.fail("build input: out of memory", .{});
         }
     }
@@ -291,7 +308,9 @@ fn module_of(
 
     const root = files.add("files.zig", source);
 
-    return builder.createModule(.{ .root_source_file = root });
+    return builder.createModule(.{
+        .root_source_file = root,
+    });
 }
 
 /// Every file with `extension` under `dir`, as build-root-relative paths with forward
@@ -302,7 +321,9 @@ pub fn files_under(builder: *std.Build, dir: []const u8, extension: []const u8) 
     std.debug.assert(extension.len <= 16);
 
     const io = builder.graph.io;
-    const opened = builder.build_root.handle.openDir(io, dir, .{ .iterate = true });
+    const opened = builder.build_root.handle.openDir(io, dir, .{
+        .iterate = true,
+    });
     var handle = opened catch |err| return missing_or_fail(dir, err);
     defer handle.close(io);
     var walker = handle.walk(builder.allocator) catch

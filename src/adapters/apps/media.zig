@@ -7,7 +7,10 @@ const apps_adapter = @import("../apps.zig");
 
 const headers_reserved: u32 = 1024;
 const path_bytes_max: u32 = 1024;
-pub const Range = struct { start: u64, end: u64 };
+pub const Range = struct {
+    start: u64,
+    end: u64,
+};
 
 pub fn serve(
     request: *http.Request,
@@ -90,7 +93,10 @@ pub fn parse_range(value: []const u8, size: u64, cap: u32) ?Range {
 
     end = start + @min(end - start, cap - 1);
 
-    return .{ .start = start, .end = end };
+    return .{
+        .start = start,
+        .end = end,
+    };
 }
 
 /// Open one component at a time, refusing hidden segments and every symlink.
@@ -118,7 +124,9 @@ fn open_file(io: std.Io, root: []const u8, path: []const u8) !std.Io.File {
             });
         }
 
-        const next = try directory.openDir(io, part, .{ .follow_symlinks = false });
+        const next = try directory.openDir(io, part, .{
+            .follow_symlinks = false,
+        });
 
         directory.close(io);
         directory = next;

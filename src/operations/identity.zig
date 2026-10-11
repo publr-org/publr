@@ -143,7 +143,10 @@ pub const SignIn = struct {
     }
 };
 
-const Resolved = struct { user_id: []const u8, created: bool };
+const Resolved = struct {
+    user_id: []const u8,
+    created: bool,
+};
 
 /// Whose identity this is, linking or creating on the way; `BadCredentials` when nobody's.
 fn resolve(ctx: *Ctx, identity: model.Identity) Error!Resolved {
@@ -155,7 +158,10 @@ fn resolve(ctx: *Ctx, identity: model.Identity) Error!Resolved {
 
         try store.identities.touch(ctx.db, identity.provider, identity.id, email, ctx.now_ms);
 
-        return .{ .user_id = row.user_id, .created = false };
+        return .{
+            .user_id = row.user_id,
+            .created = false,
+        };
     }
 
     const email = verified_email(ctx, identity) orelse {
@@ -168,7 +174,10 @@ fn resolve(ctx: *Ctx, identity: model.Identity) Error!Resolved {
         try link(ctx, existing.user.id, identity);
         ctx.notice("auth.identity_linked", existing.user.id);
 
-        return .{ .user_id = existing.user.id, .created = false };
+        return .{
+            .user_id = existing.user.id,
+            .created = false,
+        };
     }
 
     const open_role = try store.settings.get(ctx.db, ctx.arena, open_sign_up_key) orelse {
@@ -192,7 +201,10 @@ fn resolve(ctx: *Ctx, identity: model.Identity) Error!Resolved {
     try link(ctx, user_id, identity);
     ctx.notice("auth.user_created", user_id);
 
-    return .{ .user_id = user_id, .created = true };
+    return .{
+        .user_id = user_id,
+        .created = true,
+    };
 }
 
 /// The identity's email, normalised, when the provider vouches for it.
@@ -247,10 +259,18 @@ pub const Configure = struct {
         \\is the default.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { open_sign_up: []const u8 = "" };
-    pub const Out = struct { open_sign_up: []const u8 };
-    pub const example: In = .{ .open_sign_up = "editor" };
-    pub const example_out: Out = .{ .open_sign_up = "editor" };
+    pub const In = struct {
+        open_sign_up: []const u8 = "",
+    };
+    pub const Out = struct {
+        open_sign_up: []const u8,
+    };
+    pub const example: In = .{
+        .open_sign_up = "editor",
+    };
+    pub const example_out: Out = .{
+        .open_sign_up = "editor",
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .open_sign_up = "The role new accounts get, or empty to sign in existing accounts only",
     };
@@ -265,7 +285,9 @@ pub const Configure = struct {
         if (in.open_sign_up.len == 0) {
             try store.settings.delete(ctx.db, open_sign_up_key);
 
-            return .{ .open_sign_up = "" };
+            return .{
+                .open_sign_up = "",
+            };
         }
 
         const declared = registry.Roles.get(in.open_sign_up) != null;
@@ -276,7 +298,9 @@ pub const Configure = struct {
 
         try store.settings.set(ctx.db, open_sign_up_key, in.open_sign_up, ctx.now_ms);
 
-        return .{ .open_sign_up = in.open_sign_up };
+        return .{
+            .open_sign_up = in.open_sign_up,
+        };
     }
 };
 
@@ -286,9 +310,13 @@ pub const Status = struct {
     pub const details = "Administrators only. Nothing is written.";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { open_sign_up: []const u8 };
+    pub const Out = struct {
+        open_sign_up: []const u8,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .open_sign_up = "" };
+    pub const example_out: Out = .{
+        .open_sign_up = "",
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{};
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .open_sign_up = "The role new accounts get, empty when only existing accounts sign in",
@@ -300,7 +328,9 @@ pub const Status = struct {
 
         const open_role = try store.settings.get(ctx.db, ctx.arena, open_sign_up_key) orelse "";
 
-        return .{ .open_sign_up = open_role };
+        return .{
+            .open_sign_up = open_role,
+        };
     }
 };
 
@@ -331,7 +361,12 @@ test "an identity signs in its linked account, links by verified email, else is 
         .password = "correct horse battery",
     });
 
-    var editor = harness.ctx(.{ .user = .{ .id = ada.user_id, .roles = &.{"editor"} } });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = ada.user_id,
+            .roles = &.{"editor"},
+        },
+    });
     try std.testing.expectError(error.Denied, SDK.dispatch(&anon, SignIn, example_in));
     try std.testing.expectError(error.Denied, SDK.dispatch(&editor, SignIn, example_in));
 
@@ -378,8 +413,12 @@ test "open sign-up creates an account with the role, from a verified email only"
     try std.testing.expectError(error.Denied, SDK.dispatch(&anon, Status, .{}));
     try std.testing.expectError(error.Denied, SDK.dispatch(&anon, Configure, Configure.example));
 
-    const admin: Configure.In = .{ .open_sign_up = "admin" };
-    const unknown: Configure.In = .{ .open_sign_up = "nobody" };
+    const admin: Configure.In = .{
+        .open_sign_up = "admin",
+    };
+    const unknown: Configure.In = .{
+        .open_sign_up = "nobody",
+    };
     try std.testing.expectError(error.Invalid, SDK.dispatch(&system, Configure, admin));
     try std.testing.expectError(error.Invalid, SDK.dispatch(&system, Configure, unknown));
 

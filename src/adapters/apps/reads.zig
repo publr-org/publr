@@ -130,7 +130,10 @@ pub fn call_with(ctx: *const Context, operation: []const u8, input: []const u8) 
 
     var result = blank;
 
-    result.data = .{ .arena = ctx.arena, .document = document };
+    result.data = .{
+        .arena = ctx.arena,
+        .document = document,
+    };
 
     return result;
 }

@@ -21,10 +21,20 @@ pub const MoveApp = struct {
         \\only: it is the project's, not one record's.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { from: []const u8, to: []const u8 = "" };
-    pub const Out = struct { moved: u32 };
-    pub const example: In = .{ .from = "www", .to = "site" };
-    pub const example_out: Out = .{ .moved = 42 };
+    pub const In = struct {
+        from: []const u8,
+        to: []const u8 = "",
+    };
+    pub const Out = struct {
+        moved: u32,
+    };
+    pub const example: In = .{
+        .from = "www",
+        .to = "site",
+    };
+    pub const example_out: Out = .{
+        .moved = 42,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .from = "The app's old `.name`",
         .to = "Its new `.name`; empty for the project's own",
@@ -40,7 +50,9 @@ pub const MoveApp = struct {
         const from = try record_app.app_or_project(in.from) orelse return error.Invalid;
         const to = try record_app.app_or_project(in.to);
 
-        return .{ .moved = try store.records.move_app(ctx.db, from, to) };
+        return .{
+            .moved = try store.records.move_app(ctx.db, from, to),
+        };
     }
 };
 
@@ -55,22 +67,45 @@ test "move_app hands every record of an app to another, or to the project; admin
     try SDK.bootstrap(&system);
     try record_operations.fixture.post_type(&system);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
-    var admin = harness.ctx(.{ .user = .{ .id = "u_ad", .roles = &.{"admin"} } });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_ad",
+            .roles = &.{"admin"},
+        },
+    });
     const created = try SDK.dispatch(&editor, record_operations.Create, .{
         .type = "post",
         .document = record_operations.example_document,
         .app = "www",
     });
 
-    try std.testing.expectError(error.Denied, SDK.dispatch(&editor, MoveApp, .{ .from = "www" }));
-    try std.testing.expectError(error.Invalid, SDK.dispatch(&admin, MoveApp, .{ .from = "" }));
+    try std.testing.expectError(error.Denied, SDK.dispatch(&editor, MoveApp, .{
+        .from = "www",
+    }));
+    try std.testing.expectError(error.Invalid, SDK.dispatch(&admin, MoveApp, .{
+        .from = "",
+    }));
 
-    const moved = try SDK.dispatch(&admin, MoveApp, .{ .from = "www", .to = "site" });
+    const moved = try SDK.dispatch(&admin, MoveApp, .{
+        .from = "www",
+        .to = "site",
+    });
     try std.testing.expectEqual(1, moved.moved);
-    const again = try SDK.dispatch(&editor, record_operations.Get, .{ .id = created.id });
+    const again = try SDK.dispatch(&editor, record_operations.Get, .{
+        .id = created.id,
+    });
     try std.testing.expectEqualStrings("site", again.record.app.?);
-    try std.testing.expectEqual(1, (try SDK.dispatch(&admin, MoveApp, .{ .from = "site" })).moved);
-    const cleared = try SDK.dispatch(&editor, record_operations.Get, .{ .id = created.id });
+    try std.testing.expectEqual(1, (try SDK.dispatch(&admin, MoveApp, .{
+        .from = "site",
+    })).moved);
+    const cleared = try SDK.dispatch(&editor, record_operations.Get, .{
+        .id = created.id,
+    });
     try std.testing.expect(cleared.record.app == null);
 }

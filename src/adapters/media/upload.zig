@@ -52,13 +52,17 @@ fn open(request: *http.Request, response: *http.Response, ctx: *http.Context) an
 
     const project = Project.of(ctx);
     const files = project.files orelse {
-        try response.json(.service_unavailable, .{ .@"error" = "Unavailable" });
+        try response.json(.service_unavailable, .{
+            .@"error" = "Unavailable",
+        });
         return null;
     };
     const who = identity.identify(request, ctx.arena, project);
 
     if (who.session == null) {
-        try response.json(.unauthorized, .{ .@"error" = "Unauthorized" });
+        try response.json(.unauthorized, .{
+            .@"error" = "Unauthorized",
+        });
         return null;
     }
 
@@ -71,7 +75,9 @@ fn open(request: *http.Request, response: *http.Response, ctx: *http.Context) an
     const cookie = request.header("cookie") orelse "";
 
     if (!model.media.valid_filename(filename) or folder.len > 64 or cookie.len > cookie_len_max) {
-        try response.json(.unprocessable_content, .{ .@"error" = "Invalid" });
+        try response.json(.unprocessable_content, .{
+            .@"error" = "Invalid",
+        });
         return null;
     }
 
@@ -122,7 +128,9 @@ fn finish(context: *anyopaque, response: *http.Response, ctx: *http.Context) any
 
     if (state.received == 0) {
         state.files.remove(.incoming, &state.token);
-        return response.json(.unprocessable_content, .{ .@"error" = "Empty" });
+        return response.json(.unprocessable_content, .{
+            .@"error" = "Empty",
+        });
     }
 
     const caller = caller_of(state, ctx.arena);
@@ -150,7 +158,10 @@ fn caller_of(state: *const Upload, arena: std.mem.Allocator) @import("../../sdk.
         .{ "/media/upload", state.cookie_buffer[0..state.cookie_len] },
     ) catch return .anonymous;
     const parsed = http.parse(head) catch return .anonymous;
-    const request: http.Request = .{ .inner = &parsed.complete, .body = "" };
+    const request: http.Request = .{
+        .inner = &parsed.complete,
+        .body = "",
+    };
 
     return identity.identify(&request, arena, state.project).caller;
 }
@@ -165,7 +176,10 @@ fn refusal(
     if (ctx.failure) |failure| {
         const status: http.Status = @enumFromInt(failure.status);
 
-        return response.json(status, .{ .@"error" = failure.name, .message = failure.message });
+        return response.json(status, .{
+            .@"error" = failure.name,
+            .message = failure.message,
+        });
     }
 
     const status: http.Status = switch (err) {
@@ -176,7 +190,9 @@ fn refusal(
         else => .internal_server_error,
     };
 
-    try response.json(status, .{ .@"error" = @errorName(err) });
+    try response.json(status, .{
+        .@"error" = @errorName(err),
+    });
 }
 
 fn abort(context: *anyopaque) void {

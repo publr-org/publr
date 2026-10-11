@@ -40,7 +40,10 @@ pub const Def = struct {
     fields: []const Def = &.{},
 };
 
-pub const Problem = struct { path: []const u8, message: []const u8 };
+pub const Problem = struct {
+    path: []const u8,
+    message: []const u8,
+};
 
 pub const problems_max: u32 = 64;
 pub const path_len_max: u32 = 256;
@@ -65,7 +68,10 @@ pub const Problems = struct {
         const slot = &problems.paths[problems.len];
 
         @memcpy(slot[0..kept], path[0..kept]);
-        problems.items[problems.len] = .{ .path = slot[0..kept], .message = message };
+        problems.items[problems.len] = .{
+            .path = slot[0..kept],
+            .message = message,
+        };
         problems.len += 1;
     }
 
@@ -580,56 +586,135 @@ test "containers and names" {
 test "definitions: duplicates, select without choices, unknown kind, nesting depth" {
     var problems: Problems = .{};
     const good = [_]Def{
-        .{ .name = "title", .label = "Title", .kind = "string", .required = true },
+        .{
+            .name = "title",
+            .label = "Title",
+            .kind = "string",
+            .required = true,
+        },
         .{
             .name = "tags",
             .label = "Tags",
             .kind = "reference",
             .many = true,
-            .options = .{ .to = &.{"tag"} },
+            .options = .{
+                .to = &.{"tag"},
+            },
         },
-        .{ .name = "gallery", .label = "Gallery", .kind = "repeater", .fields = &.{
-            .{ .name = "image", .label = "Image", .kind = "media" },
-            .{ .name = "caption", .label = "Caption", .kind = "string" },
-        } },
+        .{
+            .name = "gallery",
+            .label = "Gallery",
+            .kind = "repeater",
+            .fields = &.{
+                .{
+                    .name = "image",
+                    .label = "Image",
+                    .kind = "media",
+                },
+                .{
+                    .name = "caption",
+                    .label = "Caption",
+                    .kind = "string",
+                },
+            },
+        },
     };
     validate_defs(&kinds.core, &good, 0, &problems);
     try std.testing.expect(problems.is_empty());
 
     var bad_problems: Problems = .{};
     const bad = [_]Def{
-        .{ .name = "title", .label = "Title", .kind = "string" },
-        .{ .name = "title", .label = "Again", .kind = "text" },
-        .{ .name = "kind", .label = "Kind", .kind = "select" },
+        .{
+            .name = "title",
+            .label = "Title",
+            .kind = "string",
+        },
+        .{
+            .name = "title",
+            .label = "Again",
+            .kind = "text",
+        },
+        .{
+            .name = "kind",
+            .label = "Kind",
+            .kind = "select",
+        },
         .{
             .name = "author",
             .label = "Author",
             .kind = "reference",
-            .options = .{ .to = &.{"x"} },
-        },
-        .{ .name = "many_slug", .label = "Many", .kind = "slug", .many = true },
-        .{ .name = "views", .label = "Views", .kind = "integer", .searchable = true },
-        .{ .name = "point", .label = "Point", .kind = "geo.point" },
-        .{ .name = "faq", .label = "FAQ", .kind = "repeater", .fields = &.{
-            .{
-                .name = "links",
-                .label = "Links",
-                .kind = "reference",
-                .many = true,
-                .options = .{ .to = &.{"x"} },
+            .options = .{
+                .to = &.{"x"},
             },
-        } },
+        },
+        .{
+            .name = "many_slug",
+            .label = "Many",
+            .kind = "slug",
+            .many = true,
+        },
+        .{
+            .name = "views",
+            .label = "Views",
+            .kind = "integer",
+            .searchable = true,
+        },
+        .{
+            .name = "point",
+            .label = "Point",
+            .kind = "geo.point",
+        },
+        .{
+            .name = "faq",
+            .label = "FAQ",
+            .kind = "repeater",
+            .fields = &.{
+                .{
+                    .name = "links",
+                    .label = "Links",
+                    .kind = "reference",
+                    .many = true,
+                    .options = .{
+                        .to = &.{"x"},
+                    },
+                },
+            },
+        },
     };
     validate_defs(&kinds.core, &bad, 0, &bad_problems);
     try std.testing.expectEqual(@as(u32, 6), bad_problems.len);
     try std.testing.expectEqualStrings("unknown kind", bad_problems.items[4].message);
 
     var deep_problems: Problems = .{};
-    const level4 = [_]Def{.{ .name = "v", .label = "V", .kind = "string" }};
-    const level3 = [_]Def{.{ .name = "z", .label = "Z", .kind = "group", .fields = &level4 }};
-    const level2 = [_]Def{.{ .name = "y", .label = "Y", .kind = "group", .fields = &level3 }};
-    const level1 = [_]Def{.{ .name = "x", .label = "X", .kind = "group", .fields = &level2 }};
-    const deep = [_]Def{.{ .name = "w", .label = "W", .kind = "group", .fields = &level1 }};
+    const level4 = [_]Def{.{
+        .name = "v",
+        .label = "V",
+        .kind = "string",
+    }};
+    const level3 = [_]Def{.{
+        .name = "z",
+        .label = "Z",
+        .kind = "group",
+        .fields = &level4,
+    }};
+    const level2 = [_]Def{.{
+        .name = "y",
+        .label = "Y",
+        .kind = "group",
+        .fields = &level3,
+    }};
+    const level1 = [_]Def{.{
+        .name = "x",
+        .label = "X",
+        .kind = "group",
+        .fields = &level2,
+    }};
+    const deep = [_]Def{.{
+        .name = "w",
+        .label = "W",
+        .kind = "group",
+        .fields = &level1,
+    }};
     validate_defs(&kinds.core, &deep, 0, &deep_problems);
     try std.testing.expect(!deep_problems.is_empty());
 }
@@ -637,13 +722,30 @@ test "definitions: duplicates, select without choices, unknown kind, nesting dep
 test "unique, help, default and the kind's own option rules" {
     var problems: Problems = .{};
     const good = [_]Def{
-        .{ .name = "sku", .label = "SKU", .kind = "string", .unique = true, .help = "As printed" },
-        .{ .name = "title", .label = "Title", .kind = "string", .default = "Untitled" },
+        .{
+            .name = "sku",
+            .label = "SKU",
+            .kind = "string",
+            .unique = true,
+            .help = "As printed",
+        },
+        .{
+            .name = "title",
+            .label = "Title",
+            .kind = "string",
+            .default = "Untitled",
+        },
         .{
             .name = "cover",
             .label = "Cover",
             .kind = "media",
-            .options = .{ .media = .{ .types = &.{"image"}, .width_min = 100, .size_max = 1000 } },
+            .options = .{
+                .media = .{
+                    .types = &.{"image"},
+                    .width_min = 100,
+                    .size_max = 1000,
+                },
+            },
         },
     };
     validate_defs(&kinds.core, &good, 0, &problems);
@@ -651,22 +753,59 @@ test "unique, help, default and the kind's own option rules" {
 
     var bad_problems: Problems = .{};
     const bad = [_]Def{
-        .{ .name = "views", .label = "Views", .kind = "number", .unique = true },
-        .{ .name = "tags", .label = "Tags", .kind = "string", .many = true, .unique = true },
-        .{ .name = "link", .label = "Link", .kind = "reference", .default = "x" },
-        .{ .name = "code", .label = "Code", .kind = "string", .unique = true, .default = "x" },
-        .{ .name = "count", .label = "Count", .kind = "integer", .default = "many" },
+        .{
+            .name = "views",
+            .label = "Views",
+            .kind = "number",
+            .unique = true,
+        },
+        .{
+            .name = "tags",
+            .label = "Tags",
+            .kind = "string",
+            .many = true,
+            .unique = true,
+        },
+        .{
+            .name = "link",
+            .label = "Link",
+            .kind = "reference",
+            .default = "x",
+        },
+        .{
+            .name = "code",
+            .label = "Code",
+            .kind = "string",
+            .unique = true,
+            .default = "x",
+        },
+        .{
+            .name = "count",
+            .label = "Count",
+            .kind = "integer",
+            .default = "many",
+        },
         .{
             .name = "short",
             .label = "Short",
             .kind = "string",
-            .options = .{ .min_len = 5, .max_len = 2 },
+            .options = .{
+                .min_len = 5,
+                .max_len = 2,
+            },
         },
-        .{ .name = "cover", .label = "Cover", .kind = "media", .options = .{ .media = .{
-            .types = &.{"font"},
-            .create = false,
-            .link = false,
-        } } },
+        .{
+            .name = "cover",
+            .label = "Cover",
+            .kind = "media",
+            .options = .{
+                .media = .{
+                    .types = &.{"font"},
+                    .create = false,
+                    .link = false,
+                },
+            },
+        },
     };
     validate_defs(&kinds.core, &bad, 0, &bad_problems);
     try std.testing.expectEqual(@as(u32, 8), bad_problems.len);
@@ -676,50 +815,130 @@ test "unique, help, default and the kind's own option rules" {
 test "shapes, lists and the kind groups' own option rules" {
     var problems: Problems = .{};
     const good = [_]Def{
-        .{ .name = "code", .label = "Code", .kind = "string", .options = .{
-            .pattern = "SKU-####",
-        } },
-        .{ .name = "tags", .label = "Tags", .kind = "string", .many = true, .options = .{
-            .items_min = 1,
-            .items_max = 5,
-            .distinct = true,
-        } },
-        .{ .name = "size", .label = "Size", .kind = "integer", .options = .{
-            .choices = &.{ "1", "2" },
-        } },
-        .{ .name = "faq", .label = "FAQ", .kind = "repeater", .options = .{
-            .items_max = 10,
-            .container = .{ .label_field = "question" },
-        }, .fields = &.{
-            .{ .name = "question", .label = "Question", .kind = "string" },
-        } },
-        .{ .name = "site", .label = "Site", .kind = "url", .options = .{
-            .url = .{ .schemes = &.{"https"} },
-        } },
+        .{
+            .name = "code",
+            .label = "Code",
+            .kind = "string",
+            .options = .{
+                .pattern = "SKU-####",
+            },
+        },
+        .{
+            .name = "tags",
+            .label = "Tags",
+            .kind = "string",
+            .many = true,
+            .options = .{
+                .items_min = 1,
+                .items_max = 5,
+                .distinct = true,
+            },
+        },
+        .{
+            .name = "size",
+            .label = "Size",
+            .kind = "integer",
+            .options = .{
+                .choices = &.{ "1", "2" },
+            },
+        },
+        .{
+            .name = "faq",
+            .label = "FAQ",
+            .kind = "repeater",
+            .options = .{
+                .items_max = 10,
+                .container = .{
+                    .label_field = "question",
+                },
+            },
+            .fields = &.{
+                .{
+                    .name = "question",
+                    .label = "Question",
+                    .kind = "string",
+                },
+            },
+        },
+        .{
+            .name = "site",
+            .label = "Site",
+            .kind = "url",
+            .options = .{
+                .url = .{
+                    .schemes = &.{"https"},
+                },
+            },
+        },
     };
     validate_defs(&kinds.core, &good, 0, &problems);
     try std.testing.expect(problems.is_empty());
 
     var bad_problems: Problems = .{};
     const bad = [_]Def{
-        .{ .name = "views", .label = "Views", .kind = "integer", .options = .{ .pattern = "#" } },
-        .{ .name = "one", .label = "One", .kind = "string", .options = .{ .items_max = 3 } },
-        .{ .name = "size", .label = "Size", .kind = "integer", .options = .{
-            .choices = &.{"big"},
-        } },
-        .{ .name = "kind", .label = "Kind", .kind = "select", .options = .{
-            .choices = &.{ "a", "b" },
-            .labels = &.{"A"},
-        } },
-        .{ .name = "faq", .label = "FAQ", .kind = "repeater", .options = .{
-            .container = .{ .label_field = "nope" },
-        } },
-        .{ .name = "site", .label = "Site", .kind = "url", .options = .{
-            .url = .{ .schemes = &.{"ftp"} },
-        } },
-        .{ .name = "slug", .label = "Slug", .kind = "slug", .options = .{
-            .slug = .{ .reserved = &.{"Bad Slug"} },
-        } },
+        .{
+            .name = "views",
+            .label = "Views",
+            .kind = "integer",
+            .options = .{
+                .pattern = "#",
+            },
+        },
+        .{
+            .name = "one",
+            .label = "One",
+            .kind = "string",
+            .options = .{
+                .items_max = 3,
+            },
+        },
+        .{
+            .name = "size",
+            .label = "Size",
+            .kind = "integer",
+            .options = .{
+                .choices = &.{"big"},
+            },
+        },
+        .{
+            .name = "kind",
+            .label = "Kind",
+            .kind = "select",
+            .options = .{
+                .choices = &.{ "a", "b" },
+                .labels = &.{"A"},
+            },
+        },
+        .{
+            .name = "faq",
+            .label = "FAQ",
+            .kind = "repeater",
+            .options = .{
+                .container = .{
+                    .label_field = "nope",
+                },
+            },
+        },
+        .{
+            .name = "site",
+            .label = "Site",
+            .kind = "url",
+            .options = .{
+                .url = .{
+                    .schemes = &.{"ftp"},
+                },
+            },
+        },
+        .{
+            .name = "slug",
+            .label = "Slug",
+            .kind = "slug",
+            .options = .{
+                .slug = .{
+                    .reserved = &.{"Bad Slug"},
+                },
+            },
+        },
     };
     validate_defs(&kinds.core, &bad, 0, &bad_problems);
     try std.testing.expectEqual(@as(u32, 7), bad_problems.len);
@@ -728,9 +947,14 @@ test "shapes, lists and the kind groups' own option rules" {
 pub fn contains_kind(defs: []const Def, kind: []const u8) bool {
     std.debug.assert(defs.len <= fields_max);
     std.debug.assert(kind.len > 0);
-    const Frame = struct { fields: []const Def, index: u32 = 0 };
+    const Frame = struct {
+        fields: []const Def,
+        index: u32 = 0,
+    };
     var frames: [depth_max + 1]Frame = undefined;
-    frames[0] = .{ .fields = defs };
+    frames[0] = .{
+        .fields = defs,
+    };
     var depth: u32 = 0;
 
     while (true) {
@@ -753,7 +977,9 @@ pub fn contains_kind(defs: []const Def, kind: []const u8) bool {
 
         if (def.fields.len > 0 and depth < depth_max) {
             depth += 1;
-            frames[depth] = .{ .fields = def.fields };
+            frames[depth] = .{
+                .fields = def.fields,
+            };
         }
     }
 }

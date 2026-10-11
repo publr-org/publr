@@ -39,7 +39,9 @@ pub fn add_tests(
     std.debug.assert(builder.build_root.path != null);
     std.debug.assert(library.root_source_file != null);
 
-    const tests = builder.addTest(.{ .root_module = entry(builder, library, fixture_plugins) });
+    const tests = builder.addTest(.{
+        .root_module = entry(builder, library, fixture_plugins),
+    });
 
     test_step.dependOn(&builder.addRunArtifact(tests).step);
 }

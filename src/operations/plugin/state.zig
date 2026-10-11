@@ -201,10 +201,22 @@ test "requests show where each one stands" {
         .version = "0.1.0",
         .summary = "Greets",
         .permissions = &.{
-            .{ .key = "content.write", .reason = "Keeps greetings" },
-            .{ .key = "users.read", .reason = "Greets by name" },
-            .{ .key = "http.fetch", .reason = "Fetches greetings" },
-            .{ .key = "newsletter.send", .reason = "Mails them" },
+            .{
+                .key = "content.write",
+                .reason = "Keeps greetings",
+            },
+            .{
+                .key = "users.read",
+                .reason = "Greets by name",
+            },
+            .{
+                .key = "http.fetch",
+                .reason = "Fetches greetings",
+            },
+            .{
+                .key = "newsletter.send",
+                .reason = "Mails them",
+            },
         },
     };
     const shown = try requests_of(arena, &manifest, &.{"content.write"}, &.{"http.fetch"});

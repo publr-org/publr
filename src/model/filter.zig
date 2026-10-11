@@ -18,13 +18,22 @@ pub const Clause = struct {
 };
 
 /// Who asks and when: what `me` and a duration resolve against.
-pub const Context = struct { user_id: ?[]const u8, now_ms: i64 };
+pub const Context = struct {
+    user_id: ?[]const u8,
+    now_ms: i64,
+};
 
 /// Who created or last saved a record: this user, or (`exclude`) anyone but this user.
-pub const Author = struct { id: []const u8, exclude: bool = false };
+pub const Author = struct {
+    id: []const u8,
+    exclude: bool = false,
+};
 
 /// Which app's records: one app's (by its `.name`), or the project's own.
-pub const App = union(enum) { none, name: []const u8 };
+pub const App = union(enum) {
+    none,
+    name: []const u8,
+};
 
 /// What the clauses of a list add up to: everything the store can be asked beyond the
 /// types and the search. A plugin's filter sets these too; a constraint the store cannot
@@ -92,21 +101,55 @@ pub const Definition = struct {
     }
 };
 
-pub const Choice = struct { id: []const u8, label: []const u8 };
+pub const Choice = struct {
+    id: []const u8,
+    label: []const u8,
+};
 
-pub const is: Operator = .{ .id = "is", .label = "is", .takes = .choice };
-pub const is_not: Operator = .{ .id = "not", .label = "is not", .takes = .choice };
-pub const are: Operator = .{ .id = "is", .label = "are", .takes = .choice };
-pub const by: Operator = .{ .id = "by", .label = "by", .takes = .choice, .slot = "author" };
+pub const is: Operator = .{
+    .id = "is",
+    .label = "is",
+    .takes = .choice,
+};
+pub const is_not: Operator = .{
+    .id = "not",
+    .label = "is not",
+    .takes = .choice,
+};
+pub const are: Operator = .{
+    .id = "is",
+    .label = "are",
+    .takes = .choice,
+};
+pub const by: Operator = .{
+    .id = "by",
+    .label = "by",
+    .takes = .choice,
+    .slot = "author",
+};
 pub const within: Operator = .{
     .id = "within",
     .label = "in the last",
     .takes = .duration,
     .slot = "since",
 };
-pub const after: Operator = .{ .id = "after", .label = "after", .takes = .day, .slot = "since" };
-pub const before: Operator = .{ .id = "before", .label = "before", .takes = .day, .slot = "until" };
-pub const project_own: Operator = .{ .id = "none", .label = "is none", .takes = .nothing };
+pub const after: Operator = .{
+    .id = "after",
+    .label = "after",
+    .takes = .day,
+    .slot = "since",
+};
+pub const before: Operator = .{
+    .id = "before",
+    .label = "before",
+    .takes = .day,
+    .slot = "until",
+};
+pub const project_own: Operator = .{
+    .id = "none",
+    .label = "is none",
+    .takes = .nothing,
+};
 
 pub const core = [_]Definition{
     .{
@@ -236,10 +279,16 @@ fn apply_app(clause: Clause, context: Context, out: *Constraints) Error!void {
         return error.Invalid;
     }
 
-    out.app = .{ .name = clause.value };
+    out.app = .{
+        .name = clause.value,
+    };
 }
 
-const Moment = struct { author: ?Author = null, after_ms: ?i64 = null, before_ms: ?i64 = null };
+const Moment = struct {
+    author: ?Author = null,
+    after_ms: ?i64 = null,
+    before_ms: ?i64 = null,
+};
 
 /// `by me` is whoever asks (nobody asking means nobody to be); `within 7d` is since seven
 /// days ago; `after` and `before` name a day, the day itself counted in for `after` and
@@ -258,23 +307,33 @@ fn moment_of(clause: Clause, context: Context) Error!Moment {
         else
             clause.value;
 
-        return .{ .author = .{ .id = id } };
+        return .{
+            .author = .{
+                .id = id,
+            },
+        };
     }
 
     if (std.mem.eql(u8, clause.operator, within.id)) {
         const span = duration_ms(clause.value) orelse return error.Invalid;
 
-        return .{ .after_ms = @max(0, context.now_ms - span) };
+        return .{
+            .after_ms = @max(0, context.now_ms - span),
+        };
     }
 
     const day = day_ms(clause.value) orelse return error.Invalid;
 
     if (std.mem.eql(u8, clause.operator, after.id)) {
-        return .{ .after_ms = day };
+        return .{
+            .after_ms = day,
+        };
     }
 
     if (std.mem.eql(u8, clause.operator, before.id)) {
-        return .{ .before_ms = day };
+        return .{
+            .before_ms = day,
+        };
     }
 
     return error.Invalid;
@@ -306,20 +365,41 @@ pub fn parse_clause(text: []const u8) ?Clause {
 
 /// The choices of the `changes` source.
 pub const changes = [_]Choice{
-    .{ .id = "pending", .label = "Pending" },
-    .{ .id = "none", .label = "None" },
+    .{
+        .id = "pending",
+        .label = "Pending",
+    },
+    .{
+        .id = "none",
+        .label = "None",
+    },
 };
 
 /// The durations offered to an operator that takes one.
 pub const durations = [_]Choice{
-    .{ .id = "24h", .label = "24 hours" },
-    .{ .id = "7d", .label = "7 days" },
-    .{ .id = "30d", .label = "30 days" },
-    .{ .id = "90d", .label = "90 days" },
+    .{
+        .id = "24h",
+        .label = "24 hours",
+    },
+    .{
+        .id = "7d",
+        .label = "7 days",
+    },
+    .{
+        .id = "30d",
+        .label = "30 days",
+    },
+    .{
+        .id = "90d",
+        .label = "90 days",
+    },
 };
 
 /// The user who asks, as a choice of the `users` source.
-pub const me: Choice = .{ .id = "me", .label = "Me" };
+pub const me: Choice = .{
+    .id = "me",
+    .label = "Me",
+};
 
 /// `24h` or `7d` as milliseconds; null when it is neither.
 pub fn duration_ms(text: []const u8) ?i64 {
@@ -496,7 +576,10 @@ test "the core registry finds its filters and their operators" {
 test "clauses parse from text and constrain the list through the registry" {
     const Core = Registry(&core);
     const day: i64 = 86_400_000;
-    const context: Context = .{ .user_id = "u_1", .now_ms = 10 * day };
+    const context: Context = .{
+        .user_id = "u_1",
+        .now_ms = 10 * day,
+    };
     var out: Constraints = .{};
 
     try Core.apply(parse_clause("status:not:draft").?, context, &out);
@@ -534,10 +617,16 @@ test "clauses parse from text and constrain the list through the registry" {
 
     var untouched: Constraints = .{};
     try Core.apply(parse_clause("status:is:").?, context, &untouched);
-    try Core.apply(.{ .key = "updated", .operator = "after" }, context, &untouched);
+    try Core.apply(.{
+        .key = "updated",
+        .operator = "after",
+    }, context, &untouched);
     try std.testing.expect(untouched.status == null and untouched.updated_after_ms == null);
 
-    const nobody: Context = .{ .user_id = null, .now_ms = 0 };
+    const nobody: Context = .{
+        .user_id = null,
+        .now_ms = 0,
+    };
     const refused = [_][]const u8{
         "status:within:7d", "nope:is:x", "updated:within:soon", "changed:is:maybe",
     };
@@ -557,7 +646,10 @@ test "clauses parse from text and constrain the list through the registry" {
 
 test "app: one app's records by name, or the project's own" {
     const Core = Registry(&core);
-    const context: Context = .{ .user_id = "u_1", .now_ms = 0 };
+    const context: Context = .{
+        .user_id = "u_1",
+        .now_ms = 0,
+    };
     var out: Constraints = .{};
 
     try Core.apply(parse_clause("app:is:").?, context, &out);
@@ -581,5 +673,9 @@ test "durations, days, and what fits an operator" {
     try std.testing.expect(fits(is, "draft") and fits(is, ""));
     try std.testing.expect(fits(within, "30d") and !fits(within, "2026-01-01"));
     try std.testing.expect(fits(before, "2026-01-01") and !fits(before, "7d"));
-    try std.testing.expect(!fits(.{ .id = "x", .label = "x", .takes = .nothing }, "y"));
+    try std.testing.expect(!fits(.{
+        .id = "x",
+        .label = "x",
+        .takes = .nothing,
+    }, "y"));
 }

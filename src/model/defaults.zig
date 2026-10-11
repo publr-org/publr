@@ -27,11 +27,15 @@ pub fn value_of(kind: Kind, def: Def, now_ms: i64) ?Value {
     }
 
     if (kind.control == .datetime and std.mem.eql(u8, text, now_text)) {
-        return .{ .integer = now_ms };
+        return .{
+            .integer = now_ms,
+        };
     }
 
     return switch (kind.storage) {
-        .text, .long => .{ .string = text },
+        .text, .long => .{
+            .string = text,
+        },
         .bool => parse_bool(text),
         .int => if (kind.control == .datetime) parse_datetime(text) else parse_integer(text),
         .real => parse_number(text),
@@ -71,7 +75,9 @@ pub fn apply(
             var list = std.json.Array.init(arena);
 
             try list.append(value);
-            try object.put(arena, key, .{ .array = list });
+            try object.put(arena, key, .{
+                .array = list,
+            });
         } else {
             try object.put(arena, key, value);
         }
@@ -83,11 +89,15 @@ fn parse_bool(text: []const u8) ?Value {
     std.debug.assert(text.len <= default_len_max);
 
     if (std.mem.eql(u8, text, "1") or std.mem.eql(u8, text, "true")) {
-        return .{ .bool = true };
+        return .{
+            .bool = true,
+        };
     }
 
     if (std.mem.eql(u8, text, "0") or std.mem.eql(u8, text, "false")) {
-        return .{ .bool = false };
+        return .{
+            .bool = false,
+        };
     }
 
     return null;
@@ -99,7 +109,9 @@ fn parse_integer(text: []const u8) ?Value {
 
     const number = std.fmt.parseInt(i64, text, 10) catch return null;
 
-    return .{ .integer = number };
+    return .{
+        .integer = number,
+    };
 }
 
 fn parse_number(text: []const u8) ?Value {
@@ -112,7 +124,9 @@ fn parse_number(text: []const u8) ?Value {
         return null;
     }
 
-    return .{ .float = number };
+    return .{
+        .float = number,
+    };
 }
 
 /// A date and time default is a `datetime-local` text or a day, whichever the control
@@ -123,30 +137,62 @@ fn parse_datetime(text: []const u8) ?Value {
 
     const ms = time.parse_datetime_local(text) orelse time.parse_date(text) orelse return null;
 
-    return .{ .integer = ms };
+    return .{
+        .integer = ms,
+    };
 }
 
 test "defaults read as their kind's value, or not at all" {
     const string = kinds.find(&kinds.core, "string").?;
-    const titled: Def = .{ .name = "title", .label = "Title", .kind = "string", .default = "Hi" };
+    const titled: Def = .{
+        .name = "title",
+        .label = "Title",
+        .kind = "string",
+        .default = "Hi",
+    };
     try std.testing.expectEqualStrings("Hi", value_of(string, titled, 0).?.string);
     try std.testing.expect(fits(string, titled));
 
     const integer = kinds.find(&kinds.core, "integer").?;
-    const count: Def = .{ .name = "count", .label = "Count", .kind = "integer", .default = "3" };
+    const count: Def = .{
+        .name = "count",
+        .label = "Count",
+        .kind = "integer",
+        .default = "3",
+    };
     try std.testing.expectEqual(@as(i64, 3), value_of(integer, count, 0).?.integer);
-    const wrong: Def = .{ .name = "count", .label = "Count", .kind = "integer", .default = "x" };
+    const wrong: Def = .{
+        .name = "count",
+        .label = "Count",
+        .kind = "integer",
+        .default = "x",
+    };
     try std.testing.expect(value_of(integer, wrong, 0) == null);
     try std.testing.expect(!fits(integer, wrong));
 
     const number = kinds.find(&kinds.core, "number").?;
-    const price: Def = .{ .name = "price", .label = "Price", .kind = "number", .default = "1.5" };
+    const price: Def = .{
+        .name = "price",
+        .label = "Price",
+        .kind = "number",
+        .default = "1.5",
+    };
     try std.testing.expectEqual(@as(f64, 1.5), value_of(number, price, 0).?.float);
 
     const boolean = kinds.find(&kinds.core, "boolean").?;
-    const shown: Def = .{ .name = "shown", .label = "Shown", .kind = "boolean", .default = "1" };
+    const shown: Def = .{
+        .name = "shown",
+        .label = "Shown",
+        .kind = "boolean",
+        .default = "1",
+    };
     try std.testing.expect(value_of(boolean, shown, 0).?.bool);
-    const hidden: Def = .{ .name = "shown", .label = "Shown", .kind = "boolean", .default = "no" };
+    const hidden: Def = .{
+        .name = "shown",
+        .label = "Shown",
+        .kind = "boolean",
+        .default = "no",
+    };
     try std.testing.expect(value_of(boolean, hidden, 0) == null);
 
     const datetime = kinds.find(&kinds.core, "datetime").?;
@@ -162,18 +208,36 @@ test "defaults read as their kind's value, or not at all" {
         .label = "At",
         .kind = "datetime",
         .default = "1970-01-02",
-        .options = .{ .date = .{ .format = .date } },
+        .options = .{
+            .date = .{
+                .format = .date,
+            },
+        },
     };
     try std.testing.expectEqual(@as(i64, 86_400_000), value_of(datetime, day, 0).?.integer);
 
     const media = kinds.find(&kinds.core, "media").?;
-    const cover: Def = .{ .name = "cover", .label = "Cover", .kind = "media", .default = "m1" };
+    const cover: Def = .{
+        .name = "cover",
+        .label = "Cover",
+        .kind = "media",
+        .default = "m1",
+    };
     try std.testing.expect(value_of(media, cover, 0) == null);
     try std.testing.expect(!fits(media, cover));
-    const none: Def = .{ .name = "cover", .label = "Cover", .kind = "media" };
+    const none: Def = .{
+        .name = "cover",
+        .label = "Cover",
+        .kind = "media",
+    };
     try std.testing.expect(fits(media, none));
 
-    const stamp: Def = .{ .name = "at", .label = "At", .kind = "datetime", .default = "now" };
+    const stamp: Def = .{
+        .name = "at",
+        .label = "At",
+        .kind = "datetime",
+        .default = "now",
+    };
     try std.testing.expectEqual(@as(i64, 4242), value_of(datetime, stamp, 4242).?.integer);
     try std.testing.expect(fits(datetime, stamp));
 }
@@ -184,14 +248,37 @@ test "a new document takes the defaults of the fields it leaves out" {
     const arena = arena_state.allocator();
 
     const defs = [_]Def{
-        .{ .name = "title", .label = "Title", .kind = "string", .default = "Untitled" },
-        .{ .name = "tags", .label = "Tags", .kind = "string", .many = true, .default = "new" },
-        .{ .name = "views", .label = "Views", .kind = "integer", .default = "0" },
-        .{ .name = "body", .label = "Body", .kind = "richtext", .default = "ignored" },
+        .{
+            .name = "title",
+            .label = "Title",
+            .kind = "string",
+            .default = "Untitled",
+        },
+        .{
+            .name = "tags",
+            .label = "Tags",
+            .kind = "string",
+            .many = true,
+            .default = "new",
+        },
+        .{
+            .name = "views",
+            .label = "Views",
+            .kind = "integer",
+            .default = "0",
+        },
+        .{
+            .name = "body",
+            .label = "Body",
+            .kind = "richtext",
+            .default = "ignored",
+        },
     };
     var object: std.json.ObjectMap = .empty;
 
-    try object.put(arena, "title", .{ .string = "Given" });
+    try object.put(arena, "title", .{
+        .string = "Given",
+    });
     try apply(&kinds.core, &defs, arena, &object, 0);
     try std.testing.expectEqualStrings("Given", object.get("title").?.string);
     try std.testing.expectEqualStrings("new", object.get("tags").?.array.items[0].string);

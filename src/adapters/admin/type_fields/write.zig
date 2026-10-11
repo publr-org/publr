@@ -51,7 +51,11 @@ pub fn create(request: *Request, response: *Response, ctx: *Context) Error!void 
         return admin.fail(session, error.NotFound, hub);
     };
     const preview = columns.wants_preview(session);
-    const typed = try field_of(session.arena, form, .{ .name = "", .label = "", .kind = kind.id });
+    const typed = try field_of(session.arena, form, .{
+        .name = "",
+        .label = "",
+        .kind = kind.id,
+    });
     const field = if (preview) columns.presentable(typed) else typed;
     const grown = try session.arena.alloc(FieldDef, siblings.len + 1);
 

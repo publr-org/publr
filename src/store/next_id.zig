@@ -34,7 +34,9 @@ pub fn next(
     if (try select.step()) {
         var scratch: [256]u8 = undefined;
         var fixed = std.heap.FixedBufferAllocator.init(&scratch);
-        const Row = struct { id: ?[]const u8 };
+        const Row = struct {
+            id: ?[]const u8,
+        };
         const row = try select.read(Row, fixed.allocator());
 
         if (row.id) |found| {

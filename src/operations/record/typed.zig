@@ -38,7 +38,10 @@ pub fn Ref(comptime Doc: type, comptime type_handle: []const u8) type {
         pub const handle = type_handle;
         pub const reference = true;
 
-        const Resolved = struct { id: []const u8, value: ?Doc = null };
+        const Resolved = struct {
+            id: []const u8,
+            value: ?Doc = null,
+        };
 
         /// An id, as callers send it, or `{ id, value }`, as core hands it on.
         pub fn jsonParse(
@@ -49,12 +52,17 @@ pub fn Ref(comptime Doc: type, comptime type_handle: []const u8) type {
             if (try source.peekNextTokenType() == .string) {
                 const id = try std.json.innerParse([]const u8, allocator, source, options);
 
-                return .{ .id = id };
+                return .{
+                    .id = id,
+                };
             }
 
             const resolved = try std.json.innerParse(Resolved, allocator, source, options);
 
-            return .{ .id = resolved.id, .value = resolved.value };
+            return .{
+                .id = resolved.id,
+                .value = resolved.value,
+            };
         }
 
         pub fn jsonParseFromValue(
@@ -63,12 +71,17 @@ pub fn Ref(comptime Doc: type, comptime type_handle: []const u8) type {
             options: std.json.ParseOptions,
         ) std.json.ParseFromValueError!@This() {
             if (source == .string) {
-                return .{ .id = source.string };
+                return .{
+                    .id = source.string,
+                };
             }
 
             const resolved = try std.json.innerParseFromValue(Resolved, allocator, source, options);
 
-            return .{ .id = resolved.id, .value = resolved.value };
+            return .{
+                .id = resolved.id,
+                .value = resolved.value,
+            };
         }
 
         /// The id alone until resolved; then `{ id, value }`.
@@ -79,7 +92,10 @@ pub fn Ref(comptime Doc: type, comptime type_handle: []const u8) type {
                 return writer.write(self.id);
             }
 
-            return writer.write(Resolved{ .id = self.id, .value = self.value });
+            return writer.write(Resolved{
+                .id = self.id,
+                .value = self.value,
+            });
         }
     };
 }
@@ -110,7 +126,9 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
         pub fn get(ctx: *PluginCtx, id: []const u8) Error!Item {
             std.debug.assert(id.len > 0);
 
-            const got = try ctx.call(record.Get, .{ .id = id });
+            const got = try ctx.call(record.Get, .{
+                .id = id,
+            });
 
             if (!std.mem.eql(u8, got.record.type, handle)) {
                 return error.NotFound;
@@ -276,7 +294,9 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
 }
 
 fn encode(ctx: *PluginCtx, value: anytype) Error![]const u8 {
-    const options: std.json.Stringify.Options = .{ .emit_null_optional_fields = false };
+    const options: std.json.Stringify.Options = .{
+        .emit_null_optional_fields = false,
+    };
     const text = std.json.Stringify.valueAlloc(ctx.arena(), value, options) catch {
         return error.OutOfMemory;
     };
@@ -324,18 +344,28 @@ test "typed records: create, get, save a field, find one, find many" {
     try fixture.post_type(&system);
 
     system.parent = system.allocate_operation_id();
-    var ctx: PluginCtx = .{ .inner = &system };
-    const first = try posts.create(&ctx, .{ .title = "One", .body = "first", .views = 1 }, .{
+    var ctx: PluginCtx = .{
+        .inner = &system,
+    };
+    const first = try posts.create(&ctx, .{
+        .title = "One",
+        .body = "first",
+        .views = 1,
+    }, .{
         .status = "published",
     });
-    _ = try posts.create(&ctx, .{ .title = "Two" }, .{});
+    _ = try posts.create(&ctx, .{
+        .title = "Two",
+    }, .{});
 
     const got = try posts.get(&ctx, first);
     try std.testing.expectEqualStrings("One", got.value.title);
     try std.testing.expectEqualStrings("published", got.status);
     try std.testing.expectEqual(@as(i64, 1), got.value.views);
 
-    _ = try posts.save(&ctx, first, .{ .views = 9 }, .{
+    _ = try posts.save(&ctx, first, .{
+        .views = 9,
+    }, .{
         .expected_version = got.version,
         .status = "published",
     });
@@ -343,20 +373,28 @@ test "typed records: create, get, save a field, find one, find many" {
     try std.testing.expectEqual(@as(i64, 9), saved.value.views);
     try std.testing.expectEqualStrings("first", saved.value.body);
 
-    const stale = posts.save(&ctx, first, .{ .views = 10 }, .{ .expected_version = got.version });
+    const stale = posts.save(&ctx, first, .{
+        .views = 10,
+    }, .{
+        .expected_version = got.version,
+    });
     try std.testing.expectError(error.Conflict, stale);
 
     const found = (try posts.find_one(&ctx, .views, 9)).?;
     try std.testing.expectEqualStrings(first, found.id);
     try std.testing.expect(try posts.find_one(&ctx, .title, "Nobody") == null);
 
-    _ = try posts.create(&ctx, .{ .title = "Two" }, .{});
+    _ = try posts.create(&ctx, .{
+        .title = "Two",
+    }, .{});
     try std.testing.expectError(error.Conflict, posts.find_one(&ctx, .title, "Two"));
 
     const every = try posts.find(&ctx, .{}, .{});
     try std.testing.expectEqual(@as(usize, 3), every.len);
 
-    const viewed = try posts.find(&ctx, .{ .views = 9 }, .{});
+    const viewed = try posts.find(&ctx, .{
+        .views = 9,
+    }, .{});
     try std.testing.expectEqual(@as(usize, 1), viewed.len);
     try std.testing.expectEqualStrings("One", viewed[0].value.title);
 }
@@ -371,9 +409,15 @@ test "typed records: another type's record is not found" {
     try fixture.post_type(&system);
 
     system.parent = system.allocate_operation_id();
-    var ctx: PluginCtx = .{ .inner = &system };
-    const id = try posts.create(&ctx, .{ .title = "One" }, .{});
-    const others = of(struct { title: []const u8 }, "page");
+    var ctx: PluginCtx = .{
+        .inner = &system,
+    };
+    const id = try posts.create(&ctx, .{
+        .title = "One",
+    }, .{});
+    const others = of(struct {
+        title: []const u8,
+    }, "page");
 
     try std.testing.expectError(error.NotFound, others.get(&ctx, id));
 }
@@ -386,10 +430,23 @@ const Takes = struct {
     pub const description = "Test operation: the titles of the posts named";
     pub const kind: sdk_root.operation.Kind = .read;
     pub const open = true;
-    pub const In = struct { post: Ref(Post, "post"), more: []const Ref(Post, "post") = &.{} };
-    pub const Out = struct { title: []const u8, more: u32 };
-    pub const example: In = .{ .post = .{ .id = "x" } };
-    pub const example_out: Out = .{ .title = "x", .more = 0 };
+    pub const In = struct {
+        post: Ref(Post, "post"),
+        more: []const Ref(Post, "post") = &.{},
+    };
+    pub const Out = struct {
+        title: []const u8,
+        more: u32,
+    };
+    pub const example: In = .{
+        .post = .{
+            .id = "x",
+        },
+    };
+    pub const example_out: Out = .{
+        .title = "x",
+        .more = 0,
+    };
 
     pub fn run(_: *sdk_root.Ctx, in: In, _: *const sdk_root.Grant) Error!Out {
         std.debug.assert(in.post.id.len > 0);
@@ -398,7 +455,10 @@ const Takes = struct {
             std.debug.assert(more.value != null);
         }
 
-        return .{ .title = in.post.value.?.title, .more = @intCast(in.more.len) };
+        return .{
+            .title = in.post.value.?.title,
+            .more = @intCast(in.more.len),
+        };
     }
 };
 
@@ -412,26 +472,54 @@ test "references: core reads the record named, as the caller may see it" {
     try fixture.post_type(&system);
 
     system.parent = system.allocate_operation_id();
-    var ctx: PluginCtx = .{ .inner = &system };
-    const live = try posts.create(&ctx, .{ .title = "Live" }, .{ .status = "published" });
-    const other = try posts.create(&ctx, .{ .title = "Other" }, .{ .status = "published" });
-    const draft = try posts.create(&ctx, .{ .title = "Draft" }, .{});
+    var ctx: PluginCtx = .{
+        .inner = &system,
+    };
+    const live = try posts.create(&ctx, .{
+        .title = "Live",
+    }, .{
+        .status = "published",
+    });
+    const other = try posts.create(&ctx, .{
+        .title = "Other",
+    }, .{
+        .status = "published",
+    });
+    const draft = try posts.create(&ctx, .{
+        .title = "Draft",
+    }, .{});
 
     const operations = record_operations.operations ++ [_]type{Takes};
-    const Checked = sdk_root.SDK(.{ .operations = &operations });
+    const Checked = sdk_root.SDK(.{
+        .operations = &operations,
+    });
     var visitor = harness.ctx(.anonymous);
 
     const read = try Checked.dispatch(&visitor, Takes, .{
-        .post = .{ .id = live },
-        .more = &.{ .{ .id = other }, .{ .id = live } },
+        .post = .{
+            .id = live,
+        },
+        .more = &.{ .{
+            .id = other,
+        }, .{
+            .id = live,
+        } },
     });
     try std.testing.expectEqualStrings("Live", read.title);
     try std.testing.expectEqual(@as(u32, 2), read.more);
 
-    const unseen = Checked.dispatch(&visitor, Takes, .{ .post = .{ .id = draft } });
+    const unseen = Checked.dispatch(&visitor, Takes, .{
+        .post = .{
+            .id = draft,
+        },
+    });
     try std.testing.expectError(error.NotFound, unseen);
 
-    const unknown = Checked.dispatch(&visitor, Takes, .{ .post = .{ .id = "nope" } });
+    const unknown = Checked.dispatch(&visitor, Takes, .{
+        .post = .{
+            .id = "nope",
+        },
+    });
     try std.testing.expectError(error.NotFound, unknown);
 
     const Pages = Ref(Post, "page");

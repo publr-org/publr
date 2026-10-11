@@ -43,20 +43,30 @@ pub const Configure = struct {
         \\id in its tokens. Configuring again replaces the issuer.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { issuer: []const u8, public_key: []const u8, audience: []const u8 };
-    pub const Out = struct { configured: bool };
+    pub const In = struct {
+        issuer: []const u8,
+        public_key: []const u8,
+        audience: []const u8,
+    };
+    pub const Out = struct {
+        configured: bool,
+    };
     pub const example: In = .{
         .issuer = "https://publr.app",
         .public_key = "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
         .audience = "a1b2c3d4e5f6a7b8",
     };
-    pub const example_out: Out = .{ .configured = true };
+    pub const example_out: Out = .{
+        .configured = true,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .issuer = "The issuer's address, http(s)://host[:port], no path",
         .public_key = "Its Ed25519 public key, 64 hex characters",
         .audience = "This site's id in its tokens",
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .configured = "Always true" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .configured = "Always true",
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -73,7 +83,9 @@ pub const Configure = struct {
 
         std.debug.assert(in.public_key.len == token_model.key_hex_len);
 
-        return .{ .configured = true };
+        return .{
+            .configured = true,
+        };
     }
 };
 
@@ -87,7 +99,11 @@ pub const Status = struct {
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
     pub const In = struct {};
-    pub const Out = struct { configured: bool, issuer: []const u8, audience: []const u8 };
+    pub const Out = struct {
+        configured: bool,
+        issuer: []const u8,
+        audience: []const u8,
+    };
     pub const example: In = .{};
     pub const example_out: Out = .{
         .configured = true,
@@ -107,7 +123,11 @@ pub const Status = struct {
         const issuer = try store.settings.get(ctx.db, ctx.arena, issuer_key) orelse "";
         const audience = try store.settings.get(ctx.db, ctx.arena, audience_key) orelse "";
 
-        return .{ .configured = issuer.len > 0, .issuer = issuer, .audience = audience };
+        return .{
+            .configured = issuer.len > 0,
+            .issuer = issuer,
+            .audience = audience,
+        };
     }
 };
 
@@ -124,15 +144,25 @@ pub const Redeem = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
-    pub const In = struct { token: []const u8 };
-    pub const Out = struct { token: []const u8, user_id: []const u8, expires_at: i64 };
-    pub const example: In = .{ .token = "eyJhdWQiOiJhMWIyYzNkNGU1ZjZhN2I4Ii4uLn0.c2lnbmF0dXJl..." };
+    pub const In = struct {
+        token: []const u8,
+    };
+    pub const Out = struct {
+        token: []const u8,
+        user_id: []const u8,
+        expires_at: i64,
+    };
+    pub const example: In = .{
+        .token = "eyJhdWQiOiJhMWIyYzNkNGU1ZjZhN2I4Ii4uLn0.c2lnbmF0dXJl...",
+    };
     pub const example_out: Out = .{
         .token = "56a0794f6b1c67062563204a.ea477bba173fbbd2cd5fc9808892da24d65b38...",
         .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
         .expires_at = 1792232000000,
     };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .token = "The token the issuer signed" };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .token = "The token the issuer signed",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .token = "The session token, `id.secret`; treat it like a password",
         .user_id = "The signed-in account",
@@ -300,14 +330,22 @@ test "an issuer's token signs its account in once; anything else does not" {
     const ahead = try issue(arena, seed, "site-one", "ada@example.com", ahead_ms, "j6");
     const far_ms = anon.now_ms + token_model.lifetime_ms + token_model.clock_skew_ms + 1;
     const far = try issue(arena, seed, "site-one", "ada@example.com", far_ms, "j7");
-    const signed = try SDK.dispatch(&anon, Redeem, .{ .token = good });
+    const signed = try SDK.dispatch(&anon, Redeem, .{
+        .token = good,
+    });
 
     try std.testing.expect(signed.token.len > 0);
-    try std.testing.expectError(error.Conflict, SDK.dispatch(&anon, Redeem, .{ .token = good }));
-    try std.testing.expect((try SDK.dispatch(&anon, Redeem, .{ .token = ahead })).token.len > 0);
+    try std.testing.expectError(error.Conflict, SDK.dispatch(&anon, Redeem, .{
+        .token = good,
+    }));
+    try std.testing.expect((try SDK.dispatch(&anon, Redeem, .{
+        .token = ahead,
+    })).token.len > 0);
 
     for ([_][]const u8{ other_site, expired, stranger, forged, far }) |refused| {
-        const answer = SDK.dispatch(&anon, Redeem, .{ .token = refused });
+        const answer = SDK.dispatch(&anon, Redeem, .{
+            .token = refused,
+        });
         try std.testing.expectError(error.BadCredentials, answer);
     }
 

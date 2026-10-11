@@ -24,7 +24,9 @@ pub fn open(runtime: *Runtime, path: [*:0]const u8) Error!Db {
     std.debug.assert(path[0] != 0);
     std.debug.assert(busy_timeout_ms <= sqlite.busy_timeout_ms_max);
 
-    var connection = try Db.open(runtime, path, .{ .busy_timeout_ms = busy_timeout_ms });
+    var connection = try Db.open(runtime, path, .{
+        .busy_timeout_ms = busy_timeout_ms,
+    });
     errdefer connection.close();
 
     try connection.exec("PRAGMA journal_mode = WAL");
@@ -93,7 +95,9 @@ pub const testing = struct {
             errdefer fixture.connection.close();
 
             try schema.apply(&fixture.connection);
-            _ = try deps.Index.open(&fixture.connection, .{ .quiet_ms = deps.quiet_ms });
+            _ = try deps.Index.open(&fixture.connection, .{
+                .quiet_ms = deps.quiet_ms,
+            });
         }
 
         pub fn deinit(fixture: *Fixture) void {
@@ -125,7 +129,9 @@ test "open enforces foreign keys and journals in WAL" {
     var select = try connection.prepare("PRAGMA journal_mode");
     defer select.finalize();
 
-    const Mode = struct { mode: []const u8 };
+    const Mode = struct {
+        mode: []const u8,
+    };
 
     try std.testing.expect(try select.step());
     const journal = try select.read(Mode, arena_state.allocator());

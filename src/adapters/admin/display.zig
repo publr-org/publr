@@ -76,10 +76,19 @@ test "an installed display hook: one call per batch, text back, no writes while 
     const note = "{\"note\":\"hi\"}";
     const fields = try std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, note, .{});
     var items = [_]Item{
-        .{ .id = "a", .value = "First", .fields = fields },
-        .{ .id = "b", .value = "Second" },
+        .{
+            .id = "a",
+            .value = "First",
+            .fields = fields,
+        },
+        .{
+            .id = "b",
+            .value = "Second",
+        },
     };
-    var batch: Batch = .{ .items = &items };
+    var batch: Batch = .{
+        .items = &items,
+    };
 
     try std.testing.expect(registry.SDK.displayed(&ctx, point, "salutation"));
     try std.testing.expect(!registry.SDK.displayed(&ctx, point, "post"));

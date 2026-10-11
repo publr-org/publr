@@ -14,7 +14,10 @@ pub fn name(arena: std.mem.Allocator, app: *const App, url: []const u8) ![]const
 }
 
 /// An artifact's app and URL; null for a name no app wrote.
-pub const Parts = struct { app: []const u8, url: []const u8 };
+pub const Parts = struct {
+    app: []const u8,
+    url: []const u8,
+};
 
 pub fn split(artifact: []const u8) ?Parts {
     std.debug.assert(artifact.len > 0);
@@ -25,7 +28,10 @@ pub fn split(artifact: []const u8) ?Parts {
         return null;
     }
 
-    return .{ .app = artifact[0..colon], .url = artifact[colon + 1 ..] };
+    return .{
+        .app = artifact[0..colon],
+        .url = artifact[colon + 1 ..],
+    };
 }
 
 /// Writes `data` at `path` inside the app's output folder, making the folders it needs.
@@ -43,7 +49,10 @@ pub fn write(app: *const App, path: []const u8, data: []const u8) !void {
         try out.createDirPath(app.io, path[0..cut]);
     }
 
-    try out.writeFile(app.io, .{ .sub_path = path, .data = data });
+    try out.writeFile(app.io, .{
+        .sub_path = path,
+        .data = data,
+    });
 }
 
 /// A built page for `serve`, or null when it was never built.

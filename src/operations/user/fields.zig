@@ -34,7 +34,9 @@ pub fn definition(ctx: *Ctx, roles: []const []const u8) Error![]const Def {
             break;
         }
 
-        const got = try registry.SDK.dispatch(ctx, custom_fields.Get, .{ .group = item.handle });
+        const got = try registry.SDK.dispatch(ctx, custom_fields.Get, .{
+            .group = item.handle,
+        });
         const applies = applies_to_any(got.definition.group, roles);
 
         if (!applies or got.definition.fields.len == 0) {
@@ -57,7 +59,10 @@ fn applies_to_any(group: model.field_group.Options, roles: []const []const u8) b
     std.debug.assert(model.role.user_roles_max > 0);
 
     for (roles) |name| {
-        const context: model.field_group.Context = .{ .destination = .user, .role = name };
+        const context: model.field_group.Context = .{
+            .destination = .user,
+            .role = name,
+        };
 
         if (model.field_group.applies(group, context)) {
             return true;
@@ -82,7 +87,10 @@ pub fn read(ctx: *Ctx, user_id: []const u8, defs: []const Def) Error!Value {
     };
 }
 
-pub const Checked = struct { document: ?Value, problems: []const Problem };
+pub const Checked = struct {
+    document: ?Value,
+    problems: []const Problem,
+};
 
 /// The document as text, parsed and validated against the fields; the problems when it
 /// is refused.
@@ -95,20 +103,29 @@ pub fn check(ctx: *Ctx, defs: []const Def, text: []const u8) Error!Checked {
     if (text.len > document_bytes_max) {
         problems.add("", "document is too large");
 
-        return .{ .document = null, .problems = try document_module.copy_problems(ctx, &problems) };
+        return .{
+            .document = null,
+            .problems = try document_module.copy_problems(ctx, &problems),
+        };
     }
 
     const parsed = @import("../../lib/json.zig").parse(Value, ctx.arena, text, .{}) catch {
         problems.add("", "document is not valid JSON");
 
-        return .{ .document = null, .problems = try document_module.copy_problems(ctx, &problems) };
+        return .{
+            .document = null,
+            .problems = try document_module.copy_problems(ctx, &problems),
+        };
     };
 
     model.validate.validate_document(registry.Kinds.all, defs, parsed, ctx.now_ms, &problems);
 
     const copied = try document_module.copy_problems(ctx, &problems);
 
-    return .{ .document = if (problems.is_empty()) parsed else null, .problems = copied };
+    return .{
+        .document = if (problems.is_empty()) parsed else null,
+        .problems = copied,
+    };
 }
 
 /// Replace the account's document; `error.Invalid` when the fields refuse it.
@@ -141,13 +158,17 @@ pub const Get = struct {
         \\in `document` is `<group handle>.<field name>`.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { user: []const u8 };
+    pub const In = struct {
+        user: []const u8,
+    };
     pub const Out = struct {
         user: user_operations.Summary,
         fields: []const Def,
         document: []const u8,
     };
-    pub const example: In = .{ .user = "editor@example.com" };
+    pub const example: In = .{
+        .user = "editor@example.com",
+    };
     pub const example_out: Out = .{
         .user = .{
             .id = "9b1e7c3d5a2f4e6b8d0c1a3f",
@@ -160,7 +181,9 @@ pub const Get = struct {
         .fields = &.{},
         .document = "{}",
     };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .user = "The user's id or email" };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .user = "The user's id or email",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .user = "The account",
         .fields = "The groups that apply, each with its fields",
@@ -191,10 +214,22 @@ pub const Validate = struct {
     pub const description = "Check an account's custom field values without saving";
     pub const details = "Admins only. The same rules `user update --document` applies.";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { user: []const u8, document: []const u8 };
-    pub const Out = struct { valid: bool, problems: []const Problem };
-    pub const example: In = .{ .user = "editor@example.com", .document = "{}" };
-    pub const example_out: Out = .{ .valid = true, .problems = &.{} };
+    pub const In = struct {
+        user: []const u8,
+        document: []const u8,
+    };
+    pub const Out = struct {
+        valid: bool,
+        problems: []const Problem,
+    };
+    pub const example: In = .{
+        .user = "editor@example.com",
+        .document = "{}",
+    };
+    pub const example_out: Out = .{
+        .valid = true,
+        .problems = &.{},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The user's id or email",
         .document = "The values, as JSON, one object per group",
@@ -212,7 +247,10 @@ pub const Validate = struct {
         const defs = try definition(ctx, found.user.roles);
         const checked = try check(ctx, defs, in.document);
 
-        return .{ .valid = checked.document != null, .problems = checked.problems };
+        return .{
+            .valid = checked.document != null,
+            .problems = checked.problems,
+        };
     }
 };
 
@@ -239,7 +277,10 @@ fn seed_group(ctx: *Ctx, handle: []const u8, role: []const u8) Error!void {
         .{ handle, handle, role_rule },
     );
 
-    _ = try TestSDK.dispatch(ctx, custom_fields.Create, .{ .group = handle, .definition = text });
+    _ = try TestSDK.dispatch(ctx, custom_fields.Create, .{
+        .group = handle,
+        .definition = text,
+    });
 }
 
 test "get: one namespaced group per applicable custom field group; update writes values" {
@@ -250,23 +291,38 @@ test "get: one namespaced group per applicable custom field group; update writes
     var system = harness.ctx(.system);
     try user_operations.seed_admin(&system);
     const admin_id = (try user_operations.find_user(&system, "admin@example.com")).?.user.id;
-    var admin = harness.ctx(.{ .user = .{ .id = admin_id, .roles = &.{"admin"} } });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = admin_id,
+            .roles = &.{"admin"},
+        },
+    });
     try seed_group(&admin, "basic", "");
     try seed_group(&admin, "staff", "editor");
     const Create = user_operations.Create;
     const created = try TestSDK.dispatch(&admin, Create, Create.example);
 
-    const editor = try TestSDK.dispatch(&admin, Get, .{ .user = created.user_id });
+    const editor = try TestSDK.dispatch(&admin, Get, .{
+        .user = created.user_id,
+    });
     try std.testing.expectEqual(@as(usize, 2), editor.fields.len);
     try std.testing.expectEqualStrings("basic", editor.fields[0].name);
     try std.testing.expectEqualStrings("Group staff", editor.fields[1].label);
     try std.testing.expectEqualStrings("{}", editor.document);
-    const own = try TestSDK.dispatch(&admin, Get, .{ .user = admin_id });
+    const own = try TestSDK.dispatch(&admin, Get, .{
+        .user = admin_id,
+    });
     try std.testing.expectEqual(@as(usize, 1), own.fields.len);
 
-    const empty: Validate.In = .{ .user = created.user_id, .document = "{}" };
+    const empty: Validate.In = .{
+        .user = created.user_id,
+        .document = "{}",
+    };
     try std.testing.expect((try TestSDK.dispatch(&admin, Validate, empty)).valid);
-    const blank: Validate.In = .{ .user = created.user_id, .document = "{\"basic\":{}}" };
+    const blank: Validate.In = .{
+        .user = created.user_id,
+        .document = "{\"basic\":{}}",
+    };
     const missing = try TestSDK.dispatch(&admin, Validate, blank);
     try std.testing.expect(!missing.valid);
     try std.testing.expectEqualStrings("basic.bio", missing.problems[0].path);
@@ -279,7 +335,9 @@ test "get: one namespaced group per applicable custom field group; update writes
         .document = filled,
     };
     _ = try TestSDK.dispatch(&admin, user_operations.Update, update);
-    const after = try TestSDK.dispatch(&admin, Get, .{ .user = created.user_id });
+    const after = try TestSDK.dispatch(&admin, Get, .{
+        .user = created.user_id,
+    });
     try std.testing.expect(std.mem.indexOf(u8, after.document, "\"bio\":\"Writes\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, after.document, "\"bio\":\"Edits\"") != null);
 
@@ -287,14 +345,18 @@ test "get: one namespaced group per applicable custom field group; update writes
     refused.document = "{\"basic\":{}}";
     const refusal = TestSDK.dispatch(&admin, user_operations.Update, refused);
     try std.testing.expectError(error.Invalid, refusal);
-    const kept = try TestSDK.dispatch(&admin, Get, .{ .user = created.user_id });
+    const kept = try TestSDK.dispatch(&admin, Get, .{
+        .user = created.user_id,
+    });
     try std.testing.expectEqualStrings(after.document, kept.document);
 
     var promoted = update;
     promoted.roles = &.{"admin"};
     promoted.document = "{\"basic\":{\"bio\":\"Leads\"}}";
     _ = try TestSDK.dispatch(&admin, user_operations.Update, promoted);
-    const as_admin = try TestSDK.dispatch(&admin, Get, .{ .user = created.user_id });
+    const as_admin = try TestSDK.dispatch(&admin, Get, .{
+        .user = created.user_id,
+    });
     try std.testing.expectEqual(@as(usize, 1), as_admin.fields.len);
     try std.testing.expect(std.mem.indexOf(u8, as_admin.document, "staff") == null);
 }

@@ -93,12 +93,29 @@ test "a field's place is found by its dotted path; a sibling list is swapped" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const def: Def = .{ .handle = "post", .name = "Post", .fields = &.{
-        .{ .name = "title", .label = "Title", .kind = "string" },
-        .{ .name = "gallery", .label = "Gallery", .kind = "repeater", .fields = &.{
-            .{ .name = "caption", .label = "Caption", .kind = "string" },
-        } },
-    } };
+    const def: Def = .{
+        .handle = "post",
+        .name = "Post",
+        .fields = &.{
+            .{
+                .name = "title",
+                .label = "Title",
+                .kind = "string",
+            },
+            .{
+                .name = "gallery",
+                .label = "Gallery",
+                .kind = "repeater",
+                .fields = &.{
+                    .{
+                        .name = "caption",
+                        .label = "Caption",
+                        .kind = "string",
+                    },
+                },
+            },
+        },
+    };
     const caption = locate(def, "gallery.caption").?;
     try std.testing.expectEqual(@as(u32, 0), caption.index);
     try std.testing.expectEqualStrings("gallery", caption.parent);

@@ -85,12 +85,32 @@ const HeadErrors = struct {
 /// The fields a new definition starts with: a taxonomy's terms have a name and a slug; a
 /// content type accessible via URL starts with a slug field.
 const slug_field = [_]model.field.Def{
-    .{ .name = "slug", .label = "Slug", .kind = "slug" },
+    .{
+        .name = "slug",
+        .label = "Slug",
+        .kind = "slug",
+    },
 };
 const term_fields = [_]model.field.Def{
-    .{ .name = "name", .label = "Name", .kind = "string", .required = true },
-    .{ .name = "slug", .label = "Slug", .kind = "slug", .options = .{ .source = "name" } },
-    .{ .name = "description", .label = "Description", .kind = "text" },
+    .{
+        .name = "name",
+        .label = "Name",
+        .kind = "string",
+        .required = true,
+    },
+    .{
+        .name = "slug",
+        .label = "Slug",
+        .kind = "slug",
+        .options = .{
+            .source = "name",
+        },
+    },
+    .{
+        .name = "description",
+        .label = "Description",
+        .kind = "text",
+    },
 };
 
 /// An operation's input with the definition under the domain's key, the rest from
@@ -120,7 +140,11 @@ pub fn Pages(comptime domain: Domain) type {
     return struct {
         const operations = domain.operations;
         const back = domain.base;
-        const empty_def: Def = .{ .handle = "", .name = "", .fields = &.{} };
+        const empty_def: Def = .{
+            .handle = "",
+            .name = "",
+            .fields = &.{},
+        };
 
         pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             std.debug.assert(request.method() == .get or request.method() == .head);
@@ -434,7 +458,9 @@ pub fn Pages(comptime domain: Domain) type {
             const handle = try admin.param(session, "handle", back) orelse return;
             _ = try load(session, handle) orelse return;
             const force = form.get("force") != null;
-            const in = keyed(operations.Delete.In, domain.key, handle, .{ .force = force });
+            const in = keyed(operations.Delete.In, domain.key, handle, .{
+                .force = force,
+            });
 
             _ = registry.SDK.dispatch(&session.ctx, operations.Delete, in) catch |err| {
                 return admin.fail(session, err, back);
@@ -466,7 +492,10 @@ pub fn Pages(comptime domain: Domain) type {
                     else => @errorName(err),
                 };
 
-                one[0] = .{ .path = "", .message = message };
+                one[0] = .{
+                    .path = "",
+                    .message = message,
+                };
 
                 return one;
             }
@@ -523,7 +552,10 @@ fn has_pages(session: *Session, handle: []const u8) !bool {
 
 /// The record types a taxonomy may apply to, the chosen ones ticked: the ones with pages
 /// of their own on the site (`routed`), or the rest.
-const Applicable = struct { routed: []const Routed = &.{}, other: []const Other = &.{} };
+const Applicable = struct {
+    routed: []const Routed = &.{},
+    other: []const Other = &.{},
+};
 
 fn applies_of(session: *Session, def: Def) !Applicable {
     std.debug.assert(session.signed_in());
@@ -555,7 +587,10 @@ fn applies_of(session: *Session, def: Def) !Applicable {
         }
     }
 
-    return .{ .routed = routed.items, .other = other.items };
+    return .{
+        .routed = routed.items,
+        .other = other.items,
+    };
 }
 
 /// The problems of the name, the handle and the description go under their fields (the
@@ -596,11 +631,17 @@ fn parents_of(
 
     const items = try arena.alloc(views.TypeForm.ParentsItem, if (name == null) 2 else 3);
 
-    items[0] = .{ .label = "Structure", .href = "/admin/structure" };
+    items[0] = .{
+        .label = "Structure",
+        .href = "/admin/structure",
+    };
     items[1] = list;
 
     if (name) |own_name| {
-        items[2] = .{ .label = own_name, .href = own_href.? };
+        items[2] = .{
+            .label = own_name,
+            .href = own_href.?,
+        };
     }
 
     return items;
@@ -616,7 +657,10 @@ fn problem_items(
     const items = try arena.alloc(views.TypeForm.ProblemsItem, problems.len);
 
     for (problems, 0..) |problem, index| {
-        items[index] = .{ .code = problem.path, .text = problem.message };
+        items[index] = .{
+            .code = problem.path,
+            .text = problem.message,
+        };
     }
 
     return items;
@@ -664,10 +708,22 @@ test "the head's own problems go under their fields, the rest stay listed" {
     defer arena_state.deinit();
 
     const problems = [_]model.field.Problem{
-        .{ .path = "name", .message = "name must be 1 to 50 characters" },
-        .{ .path = "url", .message = "a type with a url is public" },
-        .{ .path = "handle", .message = "handle must be [a-z][a-z0-9_]*, up to 64 characters" },
-        .{ .path = "name", .message = "second, kept in the list" },
+        .{
+            .path = "name",
+            .message = "name must be 1 to 50 characters",
+        },
+        .{
+            .path = "url",
+            .message = "a type with a url is public",
+        },
+        .{
+            .path = "handle",
+            .message = "handle must be [a-z][a-z0-9_]*, up to 64 characters",
+        },
+        .{
+            .path = "name",
+            .message = "second, kept in the list",
+        },
     };
     const errors = try head_errors(arena_state.allocator(), &problems);
     try std.testing.expectEqualStrings("name must be 1 to 50 characters", errors.name);
@@ -686,8 +742,14 @@ test "handles are made from names; an input is keyed under the domain's name" {
     try std.testing.expectEqualStrings("faq_2", try handle_of(arena, " FAQ (2) "));
     try std.testing.expectEqualStrings("record", try handle_of(arena, ""));
 
-    const In = struct { taxonomy: []const u8, definition: []const u8, drop_content: bool = false };
-    const in = keyed(In, "taxonomy", "topics", .{ .definition = "{}" });
+    const In = struct {
+        taxonomy: []const u8,
+        definition: []const u8,
+        drop_content: bool = false,
+    };
+    const in = keyed(In, "taxonomy", "topics", .{
+        .definition = "{}",
+    });
     try std.testing.expectEqualStrings("topics", in.taxonomy);
     try std.testing.expectEqualStrings("{}", in.definition);
     try std.testing.expect(!in.drop_content);

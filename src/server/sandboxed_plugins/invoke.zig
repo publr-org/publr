@@ -9,10 +9,26 @@ const wire = @import("../../sdk/plugin/wire.zig");
 const Loaded = @import("loaded.zig").Loaded;
 
 pub const imports = [_]wasm.Import{
-    .{ .name = "publr_call", .signature = "(iiiii)i", .function = &publr_call },
-    .{ .name = "publr_notice", .signature = "(iiii)", .function = &publr_notice },
-    .{ .name = "publr_log", .signature = "(ii)", .function = &publr_log },
-    .{ .name = "publr_fail", .signature = "(iiii)", .function = &publr_fail },
+    .{
+        .name = "publr_call",
+        .signature = "(iiiii)i",
+        .function = &publr_call,
+    },
+    .{
+        .name = "publr_notice",
+        .signature = "(iiii)",
+        .function = &publr_notice,
+    },
+    .{
+        .name = "publr_log",
+        .signature = "(ii)",
+        .function = &publr_log,
+    },
+    .{
+        .name = "publr_fail",
+        .signature = "(iiii)",
+        .function = &publr_fail,
+    },
 };
 
 /// What a host function finds through the call's user data.
@@ -68,13 +84,15 @@ fn invoke_shaped(
     ctx.plugin = loaded.name();
     defer ctx.plugin = running;
 
-    ctx.caller = .{ .plugin = .{
-        .name = loaded.name(),
-        .capabilities = &.{},
-        .on_behalf_of = saved.user_id(),
-        .access = access,
-        .roles = saved.roles() orelse if (saved == .plugin) saved.plugin.roles else null,
-    } };
+    ctx.caller = .{
+        .plugin = .{
+            .name = loaded.name(),
+            .capabilities = &.{},
+            .on_behalf_of = saved.user_id(),
+            .access = access,
+            .roles = saved.roles() orelse if (saved == .plugin) saved.plugin.roles else null,
+        },
+    };
     defer ctx.caller = saved;
 
     var invocation: Invocation = .{
@@ -273,7 +291,10 @@ fn reply(env: *wasm.Env, output: []const u8, result_ptr: u32) u32 {
         return wire.code_of(error.OutOfMemory);
     };
     const cell = env.bytes(result_ptr, wire.result_bytes) orelse return wire.code_of(error.Invalid);
-    const result: wire.Result = .{ .ptr = offset, .len = @intCast(output.len) };
+    const result: wire.Result = .{
+        .ptr = offset,
+        .len = @intCast(output.len),
+    };
 
     @memcpy(target, output);
     @memcpy(cell, std.mem.asBytes(&result));
@@ -343,6 +364,10 @@ fn publr_fail(
     std.debug.assert(invocation.loaded.name().len > 0);
 
     if (name.len > 0) {
-        ctx.failure = .{ .name = name, .status = 409, .message = message };
+        ctx.failure = .{
+            .name = name,
+            .status = 409,
+            .message = message,
+        };
     }
 }

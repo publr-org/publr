@@ -14,8 +14,14 @@ const Project = @import("project.zig").Project;
 pub const route = "/api/cli";
 const body_bytes_max: u32 = 1 << 20;
 
-pub const Envelope = struct { args: []const []const u8 };
-pub const Answer = struct { code: u8, out: []const u8, err: []const u8 };
+pub const Envelope = struct {
+    args: []const []const u8,
+};
+pub const Answer = struct {
+    code: u8,
+    out: []const u8,
+    err: []const u8,
+};
 
 /// `POST /api/cli`: a device's command, run as the device; answered with its exit code,
 /// output and errors. Anyone else is told to sign in.
@@ -38,11 +44,15 @@ pub fn handle(
     }
 
     if (request.body.len > body_bytes_max) {
-        return response.json(.payload_too_large, .{ .@"error" = "too_large" });
+        return response.json(.payload_too_large, .{
+            .@"error" = "too_large",
+        });
     }
 
     const envelope = std.json.parseFromSliceLeaky(Envelope, ctx.arena, request.body, .{}) catch {
-        return response.json(.bad_request, .{ .@"error" = "invalid_body" });
+        return response.json(.bad_request, .{
+            .@"error" = "invalid_body",
+        });
     };
     var out: std.Io.Writer.Allocating = .init(ctx.arena);
     var err: std.Io.Writer.Allocating = .init(ctx.arena);
@@ -66,7 +76,11 @@ pub fn handle(
         break :blk 1;
     };
 
-    try response.json(.ok, Answer{ .code = code, .out = out.written(), .err = err.written() });
+    try response.json(.ok, Answer{
+        .code = code,
+        .out = out.written(),
+        .err = err.written(),
+    });
 }
 
 /// The command run by the Publr at `address` with the token this machine keeps for it: its
@@ -88,7 +102,9 @@ pub fn forward(
         });
         return 1;
     };
-    const payload = try std.json.Stringify.valueAlloc(arena, Envelope{ .args = args }, .{});
+    const payload = try std.json.Stringify.valueAlloc(arena, Envelope{
+        .args = args,
+    }, .{});
     const reply = try post(init.io, arena, .{
         .url = try std.fmt.allocPrint(arena, "{s}{s}", .{ site.address, route }),
         .payload = payload,
@@ -116,8 +132,15 @@ pub fn forward(
     return answer.code;
 }
 
-pub const Post = struct { url: []const u8, payload: []const u8, token: ?[]const u8 = null };
-pub const Reply = struct { status: std.http.Status, body: []const u8 };
+pub const Post = struct {
+    url: []const u8,
+    payload: []const u8,
+    token: ?[]const u8 = null,
+};
+pub const Reply = struct {
+    status: std.http.Status,
+    body: []const u8,
+};
 
 /// A JSON body posted to `url`, with a device's token when there is one.
 pub fn post(io: std.Io, arena: std.mem.Allocator, request: Post) !Reply {
@@ -125,7 +148,10 @@ pub fn post(io: std.Io, arena: std.mem.Allocator, request: Post) !Reply {
     std.debug.assert(request.payload.len > 0);
 
     var body: std.Io.Writer.Allocating = .init(arena);
-    var client: std.http.Client = .{ .allocator = arena, .io = io };
+    var client: std.http.Client = .{
+        .allocator = arena,
+        .io = io,
+    };
     defer client.deinit();
 
     const bearer = if (request.token) |token|
@@ -133,20 +159,32 @@ pub fn post(io: std.Io, arena: std.mem.Allocator, request: Post) !Reply {
     else
         "";
     const authorization: []const std.http.Header = if (request.token != null)
-        &.{.{ .name = "Authorization", .value = bearer }}
+        &.{.{
+            .name = "Authorization",
+            .value = bearer,
+        }}
     else
         &.{};
     const result = try client.fetch(.{
-        .location = .{ .url = request.url },
+        .location = .{
+            .url = request.url,
+        },
         .method = .POST,
         .payload = request.payload,
         .keep_alive = false,
-        .headers = .{ .content_type = .{ .override = "application/json" } },
+        .headers = .{
+            .content_type = .{
+                .override = "application/json",
+            },
+        },
         .extra_headers = authorization,
         .response_writer = &body.writer,
     });
 
-    return .{ .status = result.status, .body = body.written() };
+    return .{
+        .status = result.status,
+        .body = body.written(),
+    };
 }
 
 /// The address to use for `address`. An `https://` one whose port answers plain HTTP (a
@@ -195,7 +233,9 @@ fn plain_http(io: std.Io, host: []const u8, port: u16) bool {
     std.debug.assert(port > 0);
 
     const name = std.Io.net.HostName.init(host) catch return false;
-    const stream = name.connect(io, port, .{ .mode = .stream }) catch return false;
+    const stream = name.connect(io, port, .{
+        .mode = .stream,
+    }) catch return false;
     defer stream.close(io);
 
     var write_buffer: [64]u8 = undefined;

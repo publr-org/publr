@@ -20,7 +20,10 @@ pub const skipped_listed_max: u32 = 50;
 const kept_page: u32 = 500;
 const folder_name_len_max: u32 = 64;
 
-pub const Skipped = struct { path: []const u8, reason: []const u8 };
+pub const Skipped = struct {
+    path: []const u8,
+    reason: []const u8,
+};
 
 pub const Sync = struct {
     pub const name = "media.sync";
@@ -39,7 +42,9 @@ pub const Sync = struct {
         \\Only a server keeps such a folder; in the browser it is `Unavailable`.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { check: bool = false };
+    pub const In = struct {
+        check: bool = false,
+    };
     pub const Out = struct {
         new: u32,
         added: u32,
@@ -48,7 +53,9 @@ pub const Sync = struct {
         skipped_count: u32,
         more: bool,
     };
-    pub const example: In = .{ .check = true };
+    pub const example: In = .{
+        .check = true,
+    };
     pub const example_out: Out = .{
         .new = 0,
         .added = 0,
@@ -87,7 +94,9 @@ pub const Sync = struct {
             .more = walked.more,
         };
         var skipped: std.ArrayList(Skipped) = .empty;
-        var folders: Folders = .{ .nodes = .empty };
+        var folders: Folders = .{
+            .nodes = .empty,
+        };
 
         for (walked.found) |found| {
             if (try known(ctx, found.path)) {
@@ -101,7 +110,10 @@ pub const Sync = struct {
                 out.skipped_count += 1;
 
                 if (skipped.items.len < skipped_listed_max) {
-                    try skipped.append(ctx.arena, .{ .path = found.path, .reason = why });
+                    try skipped.append(ctx.arena, .{
+                        .path = found.path,
+                        .reason = why,
+                    });
                 }
 
                 continue;
@@ -198,7 +210,9 @@ fn take(
     const key = if (files_module.valid_key(path) and !cleaned) path else try key_of(ctx, placed);
 
     if (cleaned) {
-        const stored: files_module.Files = .{ .disk = disk };
+        const stored: files_module.Files = .{
+            .disk = disk,
+        };
 
         stored.write(.files, key, kept) catch |err| return library.fail(err);
         dropped.remove(disk, path);
@@ -289,7 +303,9 @@ const Folders = struct {
     ) Error![]const u8 {
         std.debug.assert(wanted.len > 0 and wanted.len <= folder_name_len_max);
 
-        const document = std.json.Stringify.valueAlloc(ctx.arena, .{ .name = wanted }, .{}) catch
+        const document = std.json.Stringify.valueAlloc(ctx.arena, .{
+            .name = wanted,
+        }, .{}) catch
             return error.OutOfMemory;
         const created = try registry.SDK.dispatch(ctx, term.Create, .{
             .taxonomy = media.folders_handle,
@@ -363,7 +379,9 @@ test "sync: files put in by hand are checked, taken in, filed by directory, miss
     defer disk.close();
 
     var system = harness.ctx(.system);
-    system.files = .{ .disk = &disk };
+    system.files = .{
+        .disk = &disk,
+    };
     try registry.SDK.bootstrap(&system);
 
     const png = try encode.sample_png(std.testing.allocator, 8, 4);
@@ -372,12 +390,26 @@ test "sync: files put in by hand are checked, taken in, filed by directory, miss
     const io = std.testing.io;
 
     try disk.root.createDirPath(io, "Photos/Trips");
-    try disk.root.writeFile(io, .{ .sub_path = "Photos/Trips/Beach Day.png", .data = png });
-    try disk.root.writeFile(io, .{ .sub_path = "cat.png", .data = png });
-    try disk.root.writeFile(io, .{ .sub_path = "notes.docx", .data = "words" });
-    try disk.root.writeFile(io, .{ .sub_path = "fake.png", .data = "not a png" });
+    try disk.root.writeFile(io, .{
+        .sub_path = "Photos/Trips/Beach Day.png",
+        .data = png,
+    });
+    try disk.root.writeFile(io, .{
+        .sub_path = "cat.png",
+        .data = png,
+    });
+    try disk.root.writeFile(io, .{
+        .sub_path = "notes.docx",
+        .data = "words",
+    });
+    try disk.root.writeFile(io, .{
+        .sub_path = "fake.png",
+        .data = "not a png",
+    });
 
-    const checked = try registry.SDK.dispatch(&system, Sync, .{ .check = true });
+    const checked = try registry.SDK.dispatch(&system, Sync, .{
+        .check = true,
+    });
 
     try std.testing.expectEqual(@as(u32, 2), checked.new);
     try std.testing.expectEqual(@as(u32, 0), checked.added);
@@ -400,7 +432,9 @@ test "sync: files put in by hand are checked, taken in, filed by directory, miss
     try std.testing.expectEqualStrings("Trips", unreviewed.folders[1].name);
     try std.testing.expectEqual(@as(u32, 1), unreviewed.folders[1].count);
 
-    const again = try registry.SDK.dispatch(&system, Sync, .{ .check = true });
+    const again = try registry.SDK.dispatch(&system, Sync, .{
+        .check = true,
+    });
 
     try std.testing.expectEqual(@as(u32, 0), again.new);
 

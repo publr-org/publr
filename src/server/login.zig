@@ -15,8 +15,13 @@ const Started = struct {
     expires_at: i64,
     interval_s: u32,
 };
-const Polled = struct { state: []const u8 };
-const Claimed = struct { token: []const u8, scope: []const u8 };
+const Polled = struct {
+    state: []const u8,
+};
+const Claimed = struct {
+    token: []const u8,
+    scope: []const u8,
+};
 const Item = struct {
     id: []const u8,
     name: []const u8,
@@ -24,7 +29,9 @@ const Item = struct {
     email: []const u8,
     current: bool,
 };
-const Listed = struct { devices: []const Item };
+const Listed = struct {
+    devices: []const Item,
+};
 
 const Options = struct {
     address: ?[]const u8 = null,
@@ -134,7 +141,11 @@ fn login(init: std.process.Init, out: *std.Io.Writer, options: Options) !u8 {
     }, .{});
     const claimed = try call(init, Claimed, address, "/api/device/claim", code_body, null);
     const scope = claimed.scope;
-    const site: credentials.Site = .{ .address = address, .token = claimed.token, .scope = scope };
+    const site: credentials.Site = .{
+        .address = address,
+        .token = claimed.token,
+        .scope = scope,
+    };
     const who = try current(init, site);
 
     try credentials.put(init, .{
@@ -194,11 +205,17 @@ fn logout(init: std.process.Init, out: *std.Io.Writer, address: ?[]const u8) !u8
 
     const arena = init.arena.allocator();
     const id = site.token[0..@min(site.token.len, 24)];
-    const body = try std.json.Stringify.valueAlloc(arena, .{ .id = id }, .{});
+    const body = try std.json.Stringify.valueAlloc(arena, .{
+        .id = id,
+    }, .{});
     const url = try std.fmt.allocPrint(arena, "{s}/api/device/revoke", .{site.address});
 
     // Forgotten here whatever the answer: a device already revoked there is gone either way.
-    const revoke: remote.Post = .{ .url = url, .payload = body, .token = site.token };
+    const revoke: remote.Post = .{
+        .url = url,
+        .payload = body,
+        .token = site.token,
+    };
 
     if (remote.post(init.io, arena, revoke)) |reply| {
         if (reply.status != .ok) {
@@ -260,7 +277,11 @@ fn call(
 
     const arena = init.arena.allocator();
     const url = try std.fmt.allocPrint(arena, "{s}{s}", .{ address, path });
-    const reply = try remote.post(init.io, arena, .{ .url = url, .payload = body, .token = token });
+    const reply = try remote.post(init.io, arena, .{
+        .url = url,
+        .payload = body,
+        .token = token,
+    });
 
     if (reply.status != .ok) {
         std.debug.print("publr: {s} answered {d}: {s}\n", .{

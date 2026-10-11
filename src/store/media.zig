@@ -136,7 +136,11 @@ pub fn set_missing(connection: *db.Db, record: []const u8, missing: bool) db.Err
     try update.exec();
 }
 
-pub const Kept = struct { record: []const u8, storage_key: []const u8, missing: bool };
+pub const Kept = struct {
+    record: []const u8,
+    storage_key: []const u8,
+    missing: bool,
+};
 
 /// A page of the library's files by record, after `after`: where each is kept.
 pub fn kept_after(
@@ -185,7 +189,10 @@ pub fn by_hash(connection: *db.Db, arena: std.mem.Allocator, hash: []const u8) d
     return try select.read(Row, arena);
 }
 
-pub const Focal = struct { across: ?i64, down: ?i64 };
+pub const Focal = struct {
+    across: ?i64,
+    down: ?i64,
+};
 
 /// The focal point written on a file's live record, for cropping around it.
 pub fn focal(connection: *db.Db, arena: std.mem.Allocator, record: []const u8) db.Error!Focal {
@@ -229,7 +236,9 @@ pub fn filed_in(
     var found: std.ArrayList([]const u8) = .empty;
 
     while (try select.step()) {
-        const row = try select.read(struct { record: []const u8 }, arena);
+        const row = try select.read(struct {
+            record: []const u8,
+        }, arena);
 
         try found.append(arena, row.record);
     }

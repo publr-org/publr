@@ -288,7 +288,11 @@ fn years_of(
 
     var out: std.ArrayList(Option) = .empty;
 
-    try out.append(arena, .{ .value = "0", .label = "Any year", .selected = filter.year == 0 });
+    try out.append(arena, .{
+        .value = "0",
+        .label = "Any year",
+        .selected = filter.year == 0,
+    });
 
     for (periods, 0..) |period, index| {
         if (index > 0 and periods[index - 1].year == period.year) {
@@ -317,7 +321,11 @@ fn months_of(
 
     var out: std.ArrayList(Option) = .empty;
 
-    try out.append(arena, .{ .value = "0", .label = "Any month", .selected = filter.month == 0 });
+    try out.append(arena, .{
+        .value = "0",
+        .label = "Any month",
+        .selected = filter.month == 0,
+    });
 
     for (periods) |period| {
         if (period.year != filter.year) {
@@ -338,23 +346,56 @@ fn months_of(
 
 const Pill = views.Media.PillsItem;
 const PillOption = views.Media.OptionsItem;
-const Choice = struct { value: []const u8, label: []const u8 };
+const Choice = struct {
+    value: []const u8,
+    label: []const u8,
+};
 
 const kinds = [_]Choice{
-    .{ .value = "image", .label = "Images" },
-    .{ .value = "video", .label = "Videos" },
-    .{ .value = "audio", .label = "Audio" },
-    .{ .value = "pdf", .label = "PDFs" },
-    .{ .value = "other", .label = "Other files" },
+    .{
+        .value = "image",
+        .label = "Images",
+    },
+    .{
+        .value = "video",
+        .label = "Videos",
+    },
+    .{
+        .value = "audio",
+        .label = "Audio",
+    },
+    .{
+        .value = "pdf",
+        .label = "PDFs",
+    },
+    .{
+        .value = "other",
+        .label = "Other files",
+    },
 };
 const sizes = [_]Choice{
-    .{ .value = "small", .label = "Under 1 MB" },
-    .{ .value = "medium", .label = "1 to 10 MB" },
-    .{ .value = "large", .label = "Over 10 MB" },
+    .{
+        .value = "small",
+        .label = "Under 1 MB",
+    },
+    .{
+        .value = "medium",
+        .label = "1 to 10 MB",
+    },
+    .{
+        .value = "large",
+        .label = "Over 10 MB",
+    },
 };
 const visibilities = [_]Choice{
-    .{ .value = "public", .label = "Public" },
-    .{ .value = "private", .label = "Private" },
+    .{
+        .value = "public",
+        .label = "Public",
+    },
+    .{
+        .value = "private",
+        .label = "Private",
+    },
 };
 
 const Field = enum { kind, size, visibility };
@@ -545,14 +586,18 @@ test "media over http: the library, a file's page and its form, the file served"
     var disk = try files_module.Disk.open(std.testing.io, root);
     defer disk.close();
 
-    var flow: admin.Flow = .{ .inner = undefined };
+    var flow: admin.Flow = .{
+        .inner = undefined,
+    };
     var project: routes.Project = .{
         .connection = &harness.fixture.connection,
         .auth = &harness.auth,
         .io = std.testing.io,
     };
 
-    project.files = .{ .disk = &disk };
+    project.files = .{
+        .disk = &disk,
+    };
     flow.inner.init(project, arena);
     _ = try flow.call(
         "POST",
@@ -617,7 +662,9 @@ test "media over http: the library, a file's page and its form, the file served"
 
     try std.testing.expect(std.mem.endsWith(u8, saved.header("Location").?, "?saved=1"));
 
-    const detail = try registry.SDK.dispatch(&system, media.Get, .{ .id = uploaded.id });
+    const detail = try registry.SDK.dispatch(&system, media.Get, .{
+        .id = uploaded.id,
+    });
 
     try std.testing.expectEqualStrings("Boats", detail.alt);
     try std.testing.expectEqual(@as(u8, 80), detail.focal_y);
@@ -629,7 +676,10 @@ test "media over http: the library, a file's page and its form, the file served"
     try std.testing.expectEqual(.ok, served.status);
     try std.testing.expectEqualStrings("image/png", served.header("Content-Type").?);
     try std.testing.expect(std.mem.startsWith(u8, served.body, "\x89PNG"));
-    _ = try registry.SDK.dispatch(&system, media.Update, .{ .id = uploaded.id, .private = true });
+    _ = try registry.SDK.dispatch(&system, media.Update, .{
+        .id = uploaded.id,
+        .private = true,
+    });
     flow.cookie = "";
 
     const hidden = try flow.call("GET", served_path, "");

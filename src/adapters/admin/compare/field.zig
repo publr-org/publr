@@ -25,7 +25,10 @@ pub const Shown = struct {
     details: []const []const u8 = &.{},
 };
 
-pub const Segment = struct { text: []const u8, mark: []const u8 };
+pub const Segment = struct {
+    text: []const u8,
+    mark: []const u8,
+};
 
 const said = [_][]const u8{ "name", "label", "kind", "many", "required", "options", "fields" };
 const options_said = [_][]const u8{ "to", "taxonomy", "choices" };
@@ -44,7 +47,9 @@ pub fn of(arena: std.mem.Allocator, json: []const u8) !?Shown {
     };
     const name = text_in(parsed.object, "name") orelse return null;
     const kind_id = text_in(parsed.object, "kind") orelse return null;
-    const options = parsed.object.get("options") orelse std.json.Value{ .null = {} };
+    const options = parsed.object.get("options") orelse std.json.Value{
+        .null = {},
+    };
 
     std.debug.assert(name.len > 0 and kind_id.len > 0);
 
@@ -91,7 +96,9 @@ fn summary_of(
     } else if (kind.has.choices) {
         try summary.print(arena, ", {d} choices", .{count_in(options, "choices")});
     } else if (model_field.is_container(kind_id)) {
-        const fields = count_in(.{ .object = definition }, "fields");
+        const fields = count_in(.{
+            .object = definition,
+        }, "fields");
 
         try summary.print(arena, ", {d} fields", .{fields});
     }

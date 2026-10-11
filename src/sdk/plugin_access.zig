@@ -63,7 +63,9 @@ pub fn grant(name: []const u8, access: *const Access, request: Request) Grant {
     const own_record = permission.contains(&permission.own_records, operation_name);
 
     if (own_record and own_type) {
-        return .{ .types = access.own_types };
+        return .{
+            .types = access.own_types,
+        };
     }
 
     // Without a permission, a record operation still reaches the plugin's own types; one
@@ -71,14 +73,18 @@ pub fn grant(name: []const u8, access: *const Access, request: Request) Grant {
     const keyed = granting(access, operation_name) orelse {
         const unnamed = request.type_id == null;
 
-        return if (own_record and unnamed) .{ .types = access.own_types } else Grant.deny;
+        return if (own_record and unnamed) .{
+            .types = access.own_types,
+        } else Grant.deny;
     };
 
     if (!keyed.content) {
         return Grant.allow_all;
     }
 
-    var granted: Grant = .{ .types = access.types };
+    var granted: Grant = .{
+        .types = access.types,
+    };
 
     if (request.kind == .read and !access.has("content.drafts")) {
         granted.record_filter.flags.live_only = true;
@@ -154,7 +160,11 @@ fn granting(access: *const Access, operation_name: []const u8) ?*const permissio
 }
 
 test "own namespace and harmless calls need nothing; never is never" {
-    const access: Access = .{ .granted = &.{}, .own_types = &.{"greeting"}, .types = null };
+    const access: Access = .{
+        .granted = &.{},
+        .own_types = &.{"greeting"},
+        .types = null,
+    };
 
     try std.testing.expect(grant("greeter", &access, .{
         .operation_name = "greeter.greet",
@@ -190,7 +200,11 @@ test "own namespace and harmless calls need nothing; never is never" {
 }
 
 test "records: own types without asking, others through content permissions and access" {
-    const bare: Access = .{ .granted = &.{}, .own_types = &.{"greeting"}, .types = &.{"post"} };
+    const bare: Access = .{
+        .granted = &.{},
+        .own_types = &.{"greeting"},
+        .types = &.{"post"},
+    };
     const own_list = grant("greeter", &bare, .{
         .operation_name = "record.list",
         .kind = .read,
@@ -207,7 +221,10 @@ test "records: own types without asking, others through content permissions and 
         .own_types = &.{"greeting"},
         .types = &.{ "greeting", "post" },
     };
-    const posts = grant("greeter", &reader, .{ .operation_name = "record.list", .kind = .read });
+    const posts = grant("greeter", &reader, .{
+        .operation_name = "record.list",
+        .kind = .read,
+    });
 
     try std.testing.expect(posts.allows_type("post"));
     try std.testing.expect(!posts.allows_type("page"));
@@ -241,7 +258,10 @@ test "an exact plugin call needs both its grant and a declared parent" {
         .own_types = &.{},
         .types = &.{},
     };
-    const request: Request = .{ .operation_name = "app.provider.adjust", .kind = .write };
+    const request: Request = .{
+        .operation_name = "app.provider.adjust",
+        .kind = .write,
+    };
     try std.testing.expect(!grant("child", &access, request).allows());
     access.depends_on = &.{"provider@^0.3"};
     try std.testing.expect(grant("child", &access, request).allows());

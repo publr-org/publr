@@ -31,7 +31,10 @@ pub fn run(init: std.process.Init, args: []const []const u8) !u8 {
     return 0;
 }
 
-pub const Counts = struct { vendor_lines: u32 = 0, uncached: u32 = 0 };
+pub const Counts = struct {
+    vendor_lines: u32 = 0,
+    uncached: u32 = 0,
+};
 
 pub fn count_vendor_lines(summary: []const u8, report: bool) Counts {
     std.debug.assert(summary.len <= summary_bytes_max);
@@ -68,7 +71,9 @@ fn run_build(init: std.process.Init, zig_exe: []const u8, build_root: []const u8
 
     const result = try std.process.run(init.arena.allocator(), init.io, .{
         .argv = &.{ zig_exe, "build", "verify", "--summary", "all" },
-        .cwd = .{ .path = build_root },
+        .cwd = .{
+            .path = build_root,
+        },
         .stdout_limit = .limited(summary_bytes_max),
         .stderr_limit = .limited(summary_bytes_max),
     });

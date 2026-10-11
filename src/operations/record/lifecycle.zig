@@ -22,10 +22,25 @@ pub const Transition = struct {
         \\Bumps `version`; `expected_version` works as in save.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8, to: []const u8, expected_version: ?i64 = null };
-    pub const Out = struct { status: []const u8, changed: bool, version: i64 };
-    pub const example: In = .{ .id = record_operations.example_draft_id, .to = "published" };
-    pub const example_out: Out = .{ .status = "published", .changed = false, .version = 2 };
+    pub const In = struct {
+        id: []const u8,
+        to: []const u8,
+        expected_version: ?i64 = null,
+    };
+    pub const Out = struct {
+        status: []const u8,
+        changed: bool,
+        version: i64,
+    };
+    pub const example: In = .{
+        .id = record_operations.example_draft_id,
+        .to = "published",
+    };
+    pub const example_out: Out = .{
+        .status = "published",
+        .changed = false,
+        .version = 2,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The record id",
         .to = "The target status id",
@@ -47,7 +62,11 @@ fn moved_out(moved: @import("../document/lifecycle.zig").Moved) Transition.Out {
     std.debug.assert(moved.status.len > 0);
     std.debug.assert(moved.version >= 1);
 
-    return .{ .status = moved.status, .changed = moved.changed, .version = moved.version };
+    return .{
+        .status = moved.status,
+        .changed = moved.changed,
+        .version = moved.version,
+    };
 }
 
 pub const Publish = struct {
@@ -60,10 +79,19 @@ pub const Publish = struct {
         \\`record.published` notice. Refused when there is nothing to publish.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8, expected_version: ?i64 = null };
+    pub const In = struct {
+        id: []const u8,
+        expected_version: ?i64 = null,
+    };
     pub const Out = Transition.Out;
-    pub const example: In = .{ .id = record_operations.example_changed_id };
-    pub const example_out: Out = .{ .status = "published", .changed = false, .version = 2 };
+    pub const example: In = .{
+        .id = record_operations.example_changed_id,
+    };
+    pub const example_out: Out = .{
+        .status = "published",
+        .changed = false,
+        .version = 2,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The record id",
         .expected_version = "The `version` you read; refuse if it changed",
@@ -84,10 +112,19 @@ pub const DiscardChanges = struct {
     pub const name = "record.discard_changes";
     pub const description = "Drop a record's pending edits; the document stays as it is";
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8, expected_version: ?i64 = null };
-    pub const Out = struct { version: i64 };
-    pub const example: In = .{ .id = record_operations.example_changed_id };
-    pub const example_out: Out = .{ .version = 4 };
+    pub const In = struct {
+        id: []const u8,
+        expected_version: ?i64 = null,
+    };
+    pub const Out = struct {
+        version: i64,
+    };
+    pub const example: In = .{
+        .id = record_operations.example_changed_id,
+    };
+    pub const example_out: Out = .{
+        .version = 4,
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -96,7 +133,9 @@ pub const DiscardChanges = struct {
             return error.Invalid;
         }
 
-        return .{ .version = try lifecycle.discard(ctx, granted, in.id, in.expected_version) };
+        return .{
+            .version = try lifecycle.discard(ctx, granted, in.id, in.expected_version),
+        };
     }
 };
 
@@ -104,10 +143,19 @@ pub const Delete = struct {
     pub const name = "record.delete";
     pub const description = "Move a record to `deleted` (reversible: transition back to draft)";
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8, expected_version: ?i64 = null };
+    pub const In = struct {
+        id: []const u8,
+        expected_version: ?i64 = null,
+    };
     pub const Out = Transition.Out;
-    pub const example: In = .{ .id = example_id };
-    pub const example_out: Out = .{ .status = "deleted", .changed = false, .version = 2 };
+    pub const example: In = .{
+        .id = example_id,
+    };
+    pub const example_out: Out = .{
+        .status = "deleted",
+        .changed = false,
+        .version = 2,
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -125,10 +173,18 @@ pub const Purge = struct {
     pub const description = "Remove a record for good: document, pending edits and snapshots";
     pub const kind: sdk.operation.Kind = .write;
     pub const destroys = true;
-    pub const In = struct { id: []const u8 };
-    pub const Out = struct { purged: bool };
-    pub const example: In = .{ .id = example_id };
-    pub const example_out: Out = .{ .purged = true };
+    pub const In = struct {
+        id: []const u8,
+    };
+    pub const Out = struct {
+        purged: bool,
+    };
+    pub const example: In = .{
+        .id = example_id,
+    };
+    pub const example_out: Out = .{
+        .purged = true,
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -137,7 +193,9 @@ pub const Purge = struct {
             return error.Invalid;
         }
 
-        return .{ .purged = try lifecycle.purge(ctx, granted, in.id) };
+        return .{
+            .purged = try lifecycle.purge(ctx, granted, in.id),
+        };
     }
 };
 
@@ -152,20 +210,29 @@ test "pending edits: save on a live record parks, publish applies, discard drops
     try SDK.bootstrap(&system);
     try record_operations.fixture.post_type(&system);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
     var anon = harness.ctx(.anonymous);
     const created = try SDK.dispatch(&editor, record_operations.Create, .{
         .type = "post",
         .document = "{\"title\":\"One\",\"body\":\"first\"}",
     });
-    _ = try SDK.dispatch(&editor, Publish, .{ .id = created.id });
+    _ = try SDK.dispatch(&editor, Publish, .{
+        .id = created.id,
+    });
 
     const parked = try SDK.dispatch(&editor, record_operations.Save, .{
         .id = created.id,
         .document = "{\"title\":\"Two\",\"body\":\"second\"}",
     });
     try std.testing.expect(parked.changed);
-    const public_view = try SDK.dispatch(&anon, record_operations.Get, .{ .id = created.id });
+    const public_view = try SDK.dispatch(&anon, record_operations.Get, .{
+        .id = created.id,
+    });
     try std.testing.expectEqualStrings("One", public_view.record.title);
     const editing = try SDK.dispatch(&editor, record_operations.Get, .{
         .id = created.id,
@@ -186,36 +253,51 @@ test "pending edits: save on a live record parks, publish applies, discard drops
     });
     try std.testing.expectEqual(@as(usize, 1), flagged.records.len);
 
-    const unpublished = try SDK.dispatch(&editor, Transition, .{ .id = created.id, .to = "draft" });
+    const unpublished = try SDK.dispatch(&editor, Transition, .{
+        .id = created.id,
+        .to = "draft",
+    });
     try std.testing.expect(unpublished.changed);
     const still_parked = try SDK.dispatch(&editor, record_operations.Save, .{
         .id = created.id,
         .document = "{\"title\":\"Three\",\"body\":\"third\"}",
     });
     try std.testing.expect(still_parked.changed);
-    const own_view = try SDK.dispatch(&editor, record_operations.Get, .{ .id = created.id });
+    const own_view = try SDK.dispatch(&editor, record_operations.Get, .{
+        .id = created.id,
+    });
     try std.testing.expectEqualStrings("One", own_view.record.title);
 
-    const published = try SDK.dispatch(&editor, Publish, .{ .id = created.id });
+    const published = try SDK.dispatch(&editor, Publish, .{
+        .id = created.id,
+    });
     try std.testing.expect(!published.changed);
     try std.testing.expectEqualStrings("published", published.status);
-    const public_again = try SDK.dispatch(&anon, record_operations.Get, .{ .id = created.id });
+    const public_again = try SDK.dispatch(&anon, record_operations.Get, .{
+        .id = created.id,
+    });
     try std.testing.expectEqualStrings("Three", public_again.record.title);
-    const nothing_to_publish = SDK.dispatch(&editor, Publish, .{ .id = created.id });
+    const nothing_to_publish = SDK.dispatch(&editor, Publish, .{
+        .id = created.id,
+    });
     try std.testing.expectError(error.Invalid, nothing_to_publish);
 
     _ = try SDK.dispatch(&editor, record_operations.Save, .{
         .id = created.id,
         .document = "{\"title\":\"Four\",\"body\":\"x\"}",
     });
-    _ = try SDK.dispatch(&editor, DiscardChanges, .{ .id = created.id });
+    _ = try SDK.dispatch(&editor, DiscardChanges, .{
+        .id = created.id,
+    });
     const after = try SDK.dispatch(&editor, record_operations.Get, .{
         .id = created.id,
         .purpose = .edit,
     });
     try std.testing.expectEqualStrings("Three", after.record.title);
     try std.testing.expect(!after.record.changed);
-    const nothing_to_discard = SDK.dispatch(&editor, DiscardChanges, .{ .id = created.id });
+    const nothing_to_discard = SDK.dispatch(&editor, DiscardChanges, .{
+        .id = created.id,
+    });
     try std.testing.expectError(error.Invalid, nothing_to_discard);
 
     const revisions = try store.snapshots.list(
@@ -228,17 +310,35 @@ test "pending edits: save on a live record parks, publish applies, discard drops
     try std.testing.expectEqual(@as(usize, 1), revisions.len);
     try std.testing.expect(std.mem.indexOf(u8, revisions[0].document, "\"One\"") != null);
 
-    const deleted = try SDK.dispatch(&editor, Delete, .{ .id = created.id });
+    const deleted = try SDK.dispatch(&editor, Delete, .{
+        .id = created.id,
+    });
     try std.testing.expectEqualStrings("deleted", deleted.status);
-    const gone_for_anon = SDK.dispatch(&anon, record_operations.Get, .{ .id = created.id });
+    const gone_for_anon = SDK.dispatch(&anon, record_operations.Get, .{
+        .id = created.id,
+    });
     try std.testing.expectError(error.NotFound, gone_for_anon);
-    const restored = try SDK.dispatch(&editor, Transition, .{ .id = created.id, .to = "draft" });
+    const restored = try SDK.dispatch(&editor, Transition, .{
+        .id = created.id,
+        .to = "draft",
+    });
     try std.testing.expectEqualStrings("draft", restored.status);
-    try std.testing.expectError(error.Denied, SDK.dispatch(&editor, Purge, .{ .id = created.id }));
+    try std.testing.expectError(error.Denied, SDK.dispatch(&editor, Purge, .{
+        .id = created.id,
+    }));
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_ad", .roles = &.{"admin"} } });
-    try std.testing.expect((try SDK.dispatch(&admin, Purge, .{ .id = created.id })).purged);
-    const gone_for_good = SDK.dispatch(&admin, record_operations.Get, .{ .id = created.id });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_ad",
+            .roles = &.{"admin"},
+        },
+    });
+    try std.testing.expect((try SDK.dispatch(&admin, Purge, .{
+        .id = created.id,
+    })).purged);
+    const gone_for_good = SDK.dispatch(&admin, record_operations.Get, .{
+        .id = created.id,
+    });
     try std.testing.expectError(error.NotFound, gone_for_good);
 }
 
@@ -284,7 +384,10 @@ fn hear(ctx: *Ctx, notice: sdk.Event.Notice) void {
     std.debug.assert(notice.name.len > 0);
     std.debug.assert(ctx.trail != null);
 
-    ctx.trail.?.noticed(ctx, .{ .name = notice.name, .subject = notice.subject });
+    ctx.trail.?.noticed(ctx, .{
+        .name = notice.name,
+        .subject = notice.subject,
+    });
 }
 
 fn heard(trail: *const sdk.trail.Trail, name: []const u8) bool {
@@ -327,14 +430,20 @@ test "a document whose rows were replaced from outside lands as a person's move 
         .type = "post",
         .document = "{\"title\":\"Hello\",\"slug\":\"hello\"}",
     });
-    _ = try registry.SDK.dispatch(&system, Publish, .{ .id = created.id });
+    _ = try registry.SDK.dispatch(&system, Publish, .{
+        .id = created.id,
+    });
     const other = try registry.SDK.dispatch(&system, record_operations.Create, .{
         .type = "post",
         .document = "{\"title\":\"Taken\",\"slug\":\"taken\"}",
     });
-    _ = try registry.SDK.dispatch(&system, Publish, .{ .id = other.id });
+    _ = try registry.SDK.dispatch(&system, Publish, .{
+        .id = other.id,
+    });
 
-    var trail: sdk.trail.Trail = .{ .root = 1 };
+    var trail: sdk.trail.Trail = .{
+        .root = 1,
+    };
 
     system.parent = 1;
     system.trail = &trail;

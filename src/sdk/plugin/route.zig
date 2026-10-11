@@ -18,7 +18,11 @@ pub const Route = struct {
 };
 
 /// A route with the plugin that declares it and the prefix it owns (`/api/sampler`).
-pub const Declared = struct { owner: []const u8, prefix: []const u8, route: Route };
+pub const Declared = struct {
+    owner: []const u8,
+    prefix: []const u8,
+    route: Route,
+};
 
 /// The routes a plugin declares, each checked: under a prefix it owns, at most
 /// `routes_max`, none twice.
@@ -49,7 +53,11 @@ pub fn routes_of(comptime Plugin: type, comptime owned: []const []const u8) []co
                     " is under " ++ prefix ++ ", which is neither its name nor a namespace");
             }
 
-            list = list ++ &[_]Declared{.{ .owner = name, .prefix = prefix, .route = route }};
+            list = list ++ &[_]Declared{.{
+                .owner = name,
+                .prefix = prefix,
+                .route = route,
+            }};
         }
 
         return list;
@@ -79,10 +87,17 @@ pub const operator_commands_max: u32 = 8;
 
 /// What the CLI next to a running server asks it, with the server's operator key:
 /// `POST /_publr/<plugin>/<name>`. Only a process of this user on this machine has the key.
-pub const OperatorCommand = struct { name: []const u8, handler: Handler };
+pub const OperatorCommand = struct {
+    name: []const u8,
+    handler: Handler,
+};
 
 /// An operator command at its path.
-pub const DeclaredCommand = struct { owner: []const u8, path: []const u8, handler: Handler };
+pub const DeclaredCommand = struct {
+    owner: []const u8,
+    path: []const u8,
+    handler: Handler,
+};
 
 /// The operator commands a plugin declares, each at `/_publr/<plugin>/<name>`.
 pub fn operator_commands_of(comptime Plugin: type) []const DeclaredCommand {

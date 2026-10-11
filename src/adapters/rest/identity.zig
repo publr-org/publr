@@ -66,7 +66,12 @@ pub fn identify(
     const credentials = found orelse return .{};
 
     return .{
-        .caller = .{ .user = .{ .id = credentials.user.id, .roles = credentials.user.roles } },
+        .caller = .{
+            .user = .{
+                .id = credentials.user.id,
+                .roles = credentials.user.roles,
+            },
+        },
         .session = session,
         .token = token,
         .display_name = credentials.user.display_name,
@@ -107,13 +112,15 @@ fn identify_device(
     std.debug.assert(device.revoked_at == null);
 
     return .{
-        .caller = .{ .token = .{
-            .id = device.id,
-            .user_id = device.user_id,
-            .roles = credentials.user.roles,
-            .scope = scope,
-            .name = device.name,
-        } },
+        .caller = .{
+            .token = .{
+                .id = device.id,
+                .user_id = device.user_id,
+                .roles = credentials.user.roles,
+                .scope = scope,
+                .name = device.name,
+            },
+        },
         .display_name = credentials.user.display_name,
         .email = credentials.user.email,
     };
@@ -159,7 +166,9 @@ pub fn guard(
     const origin = origin_of(request);
 
     if (origin == .foreign) {
-        try response.json(.forbidden, .{ .@"error" = "cross_origin" });
+        try response.json(.forbidden, .{
+            .@"error" = "cross_origin",
+        });
 
         return false;
     }
@@ -167,7 +176,9 @@ pub fn guard(
     const session = identity.session orelse return true;
 
     if (origin == .absent) {
-        try response.json(.forbidden, .{ .@"error" = "origin_required" });
+        try response.json(.forbidden, .{
+            .@"error" = "origin_required",
+        });
 
         return false;
     }
@@ -175,7 +186,9 @@ pub fn guard(
     const provided = request.header(csrf_header) orelse "";
 
     if (!csrf.verify(project.auth.secret, session.id, provided)) {
-        try response.json(.forbidden, .{ .@"error" = "csrf_token_invalid" });
+        try response.json(.forbidden, .{
+            .@"error" = "csrf_token_invalid",
+        });
 
         return false;
     }

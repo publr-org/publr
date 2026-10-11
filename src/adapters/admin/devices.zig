@@ -21,7 +21,9 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     var session = try admin.require(request, response, ctx) orelse return;
     const everyone = session.ctx.caller.holds(role.admin);
-    const asked: people.List.In = .{ .all = everyone };
+    const asked: people.List.In = .{
+        .all = everyone,
+    };
     const listed = registry.SDK.dispatch(&session.ctx, people.List, asked) catch |err| {
         return admin.fail(&session, err, "/admin/settings");
     };
@@ -39,7 +41,10 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         };
     }
 
-    try admin.screen(&session, .ok, views.Devices, .{ .everyone = everyone, .devices = rows });
+    try admin.screen(&session, .ok, views.Devices, .{
+        .everyone = everyone,
+        .devices = rows,
+    });
 }
 
 pub fn revoke(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -50,7 +55,9 @@ pub fn revoke(request: *Request, response: *Response, ctx: *Context) Error!void 
     const session = &post.session;
     const id = try admin.param(session, "id", back) orelse return;
 
-    _ = registry.SDK.dispatch(&session.ctx, people.Revoke, .{ .id = id }) catch |err| {
+    _ = registry.SDK.dispatch(&session.ctx, people.Revoke, .{
+        .id = id,
+    }) catch |err| {
         return admin.fail(session, err, back);
     };
 
@@ -65,7 +72,9 @@ pub fn approve_page(request: *Request, response: *Response, ctx: *Context) Error
 
     var session = try admin.require(request, response, ctx) orelse return;
     const code = admin.query_param(&session, "code") orelse "";
-    const waiting = registry.SDK.dispatch(&session.ctx, people.Request, .{ .code = code });
+    const waiting = registry.SDK.dispatch(&session.ctx, people.Request, .{
+        .code = code,
+    });
     const asked = waiting catch |err| switch (err) {
         error.NotFound => return gone(&session),
         else => return admin.fail(&session, err, back),
@@ -88,7 +97,9 @@ pub fn decide(request: *Request, response: *Response, ctx: *Context) Error!void 
     const session = &post.session;
     const code = post.form.text("code") orelse "";
     const approving = std.mem.eql(u8, post.form.text("decision") orelse "", "approve");
-    const asked = registry.SDK.dispatch(&session.ctx, people.Request, .{ .code = code }) catch {
+    const asked = registry.SDK.dispatch(&session.ctx, people.Request, .{
+        .code = code,
+    }) catch {
         return gone(session);
     };
 
@@ -106,7 +117,9 @@ pub fn decide(request: *Request, response: *Response, ctx: *Context) Error!void 
         return admin.message(session, "Device approved", text, &[_]Problem{}, back);
     }
 
-    _ = registry.SDK.dispatch(&session.ctx, people.Deny, .{ .code = code }) catch |err| {
+    _ = registry.SDK.dispatch(&session.ctx, people.Deny, .{
+        .code = code,
+    }) catch |err| {
         return admin.fail(session, err, back);
     };
 
@@ -115,7 +128,10 @@ pub fn decide(request: *Request, response: *Response, ctx: *Context) Error!void 
     try admin.message(session, "Device denied", text, &[_]Problem{}, back);
 }
 
-const Problem = struct { path: []const u8, message: []const u8 };
+const Problem = struct {
+    path: []const u8,
+    message: []const u8,
+};
 
 fn gone(session: *const admin.Session) Error!void {
     std.debug.assert(session.signed_in());

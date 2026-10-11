@@ -43,7 +43,11 @@ pub const public_read_namespaces = [_][]const u8{ "heartbeat", "record", "term" 
 
 const delivery_grant: Grant = .{
     .read_only = true,
-    .record_filter = .{ .flags = .{ .live_only = true } },
+    .record_filter = .{
+        .flags = .{
+            .live_only = true,
+        },
+    },
 };
 
 /// What the core allows before any plugin narrows it: anonymous callers read live public
@@ -148,7 +152,12 @@ fn anonymous_grant(request: Request) Grant {
 
     const granted: Grant = .{
         .read_only = true,
-        .record_filter = .{ .flags = .{ .live_only = true, .public_types_only = true } },
+        .record_filter = .{
+            .flags = .{
+                .live_only = true,
+                .public_types_only = true,
+            },
+        },
     };
 
     std.debug.assert(granted.allows());
@@ -230,7 +239,9 @@ pub fn authorize(
 
     if (ctx.app_plugins) |plugins| {
         if (result.allows()) {
-            result = try Grant.intersect(result, .{ .plugins = plugins }, ctx.arena);
+            result = try Grant.intersect(result, .{
+                .plugins = plugins,
+            }, ctx.arena);
         }
     }
 
@@ -250,8 +261,16 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
     try harness.init();
     defer harness.deinit();
 
-    const read: Request = .{ .operation_name = "record.get", .kind = .read, .resource = .{} };
-    const write: Request = .{ .operation_name = "record.save", .kind = .write, .resource = .{} };
+    const read: Request = .{
+        .operation_name = "record.get",
+        .kind = .read,
+        .resource = .{},
+    };
+    const write: Request = .{
+        .operation_name = "record.save",
+        .kind = .write,
+        .resource = .{},
+    };
 
     var anon = harness.ctx(.anonymous);
     const granted = try authorize(&anon, read, &.{}, &role.core);
@@ -260,12 +279,20 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
     try std.testing.expect(granted.record_filter.flags.public_types_only);
     try std.testing.expectError(error.Denied, authorize(&anon, write, &.{}, &role.core));
 
-    var user = harness.ctx(.{ .user = .{ .id = "u_1" } });
+    var user = harness.ctx(.{
+        .user = .{
+            .id = "u_1",
+        },
+    });
     const full = try authorize(&user, write, &.{}, &role.core);
     try std.testing.expect(!full.read_only);
     try std.testing.expectEqual(@as(?[]const []const u8, null), full.types);
 
-    const setup: Request = .{ .operation_name = "project.init", .kind = .write, .resource = .{} };
+    const setup: Request = .{
+        .operation_name = "project.init",
+        .kind = .write,
+        .resource = .{},
+    };
     const login: Request = .{
         .operation_name = "user.sign_in",
         .kind = .write,
@@ -289,7 +316,12 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
     try std.testing.expectError(error.Denied, authorize(&anon, closed, &.{}, &role.core));
     try std.testing.expectError(error.Denied, authorize(&anon, signup, &.{&deny_all}, &role.core));
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .roles = &.{"editor"} } });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_2",
+            .roles = &.{"editor"},
+        },
+    });
     const sign_out: Request = .{
         .operation_name = "user.sign_out",
         .kind = .write,
@@ -303,11 +335,28 @@ test "delivery narrows any caller to live, read-only records and keeps the calle
     try harness.init();
     defer harness.deinit();
 
-    const read: Request = .{ .operation_name = "record.list", .kind = .read, .resource = .{} };
-    const write: Request = .{ .operation_name = "record.save", .kind = .write, .resource = .{} };
-    const users_list: Request = .{ .operation_name = "user.list", .kind = .read, .resource = .{} };
+    const read: Request = .{
+        .operation_name = "record.list",
+        .kind = .read,
+        .resource = .{},
+    };
+    const write: Request = .{
+        .operation_name = "record.save",
+        .kind = .write,
+        .resource = .{},
+    };
+    const users_list: Request = .{
+        .operation_name = "user.list",
+        .kind = .read,
+        .resource = .{},
+    };
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_1", .roles = &.{"admin"} } });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_1",
+            .roles = &.{"admin"},
+        },
+    });
     admin.delivery = true;
     const granted = try authorize(&admin, read, &.{}, &role.core);
     try std.testing.expect(granted.read_only);
@@ -315,7 +364,12 @@ test "delivery narrows any caller to live, read-only records and keeps the calle
     try std.testing.expect(!granted.record_filter.flags.public_types_only);
     try std.testing.expectError(error.Denied, authorize(&admin, write, &.{}, &role.core));
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .roles = &.{"editor"} } });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_2",
+            .roles = &.{"editor"},
+        },
+    });
     editor.delivery = true;
     try std.testing.expectError(error.Denied, authorize(&editor, users_list, &.{}, &role.core));
     const posts_only = try authorize(&editor, read, &.{&only_posts}, &role.core);
@@ -332,9 +386,23 @@ test "roles: editors are denied the users and settings namespaces, admins are no
     try harness.init();
     defer harness.deinit();
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .roles = &.{"editor"} } });
-    var admin = harness.ctx(.{ .user = .{ .id = "u_1", .roles = &.{"admin"} } });
-    const users_list: Request = .{ .operation_name = "user.list", .kind = .read, .resource = .{} };
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_2",
+            .roles = &.{"editor"},
+        },
+    });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_1",
+            .roles = &.{"admin"},
+        },
+    });
+    const users_list: Request = .{
+        .operation_name = "user.list",
+        .kind = .read,
+        .resource = .{},
+    };
     const entries_save: Request = .{
         .operation_name = "record.save",
         .kind = .write,
@@ -353,25 +421,37 @@ test "devices: their account's roles, a read device reads only" {
     try harness.init();
     defer harness.deinit();
 
-    const save: Request = .{ .operation_name = "record.save", .kind = .write, .resource = .{} };
-    const users_list: Request = .{ .operation_name = "user.list", .kind = .read, .resource = .{} };
+    const save: Request = .{
+        .operation_name = "record.save",
+        .kind = .write,
+        .resource = .{},
+    };
+    const users_list: Request = .{
+        .operation_name = "user.list",
+        .kind = .read,
+        .resource = .{},
+    };
     const editor_roles: []const []const u8 = &.{"editor"};
 
-    var writer = harness.ctx(.{ .token = .{
-        .id = "d_1",
-        .user_id = "u_1",
-        .roles = editor_roles,
-        .scope = .write,
-    } });
+    var writer = harness.ctx(.{
+        .token = .{
+            .id = "d_1",
+            .user_id = "u_1",
+            .roles = editor_roles,
+            .scope = .write,
+        },
+    });
     try std.testing.expect((try authorize(&writer, save, &.{}, &role.core)).allows());
     try std.testing.expectError(error.Denied, authorize(&writer, users_list, &.{}, &role.core));
 
-    var reader = harness.ctx(.{ .token = .{
-        .id = "d_2",
-        .user_id = "u_1",
-        .roles = &.{"admin"},
-        .scope = .read,
-    } });
+    var reader = harness.ctx(.{
+        .token = .{
+            .id = "d_2",
+            .user_id = "u_1",
+            .roles = &.{"admin"},
+            .scope = .read,
+        },
+    });
     try std.testing.expectError(error.Denied, authorize(&reader, save, &.{}, &role.core));
     try std.testing.expect((try authorize(&reader, users_list, &.{}, &role.core)).allows());
 }
@@ -381,8 +461,16 @@ test "plugin policies intersect and can deny" {
     try harness.init();
     defer harness.deinit();
 
-    var user = harness.ctx(.{ .user = .{ .id = "u_1" } });
-    const write: Request = .{ .operation_name = "record.save", .kind = .write, .resource = .{} };
+    var user = harness.ctx(.{
+        .user = .{
+            .id = "u_1",
+        },
+    });
+    const write: Request = .{
+        .operation_name = "record.save",
+        .kind = .write,
+        .resource = .{},
+    };
 
     const constrained = try authorize(&user, write, &.{&only_posts}, &role.core);
     try std.testing.expect(constrained.allows_type("post"));
@@ -393,7 +481,9 @@ test "plugin policies intersect and can deny" {
 }
 
 fn only_posts(_: *const Ctx, _: Request) Grant {
-    return .{ .types = &.{"post"} };
+    return .{
+        .types = &.{"post"},
+    };
 }
 
 fn deny_all(_: *const Ctx, _: Request) Grant {

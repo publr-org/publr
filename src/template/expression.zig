@@ -17,7 +17,10 @@ pub fn expression(compiler: *Compiler, text: []const u8) Error!Expr {
         return @import("javascript/compile.zig").expression(compiler, text);
     }
 
-    var parser: Parser = .{ .compiler = compiler, .text = std.mem.trim(u8, text, " \t\r\n") };
+    var parser: Parser = .{
+        .compiler = compiler,
+        .text = std.mem.trim(u8, text, " \t\r\n"),
+    };
     const value = try parser.ternary();
     parser.skip_whitespace();
 
@@ -50,7 +53,9 @@ pub fn write_value(compiler: *Compiler, value: Expr) Error!void {
     std.debug.assert(compiler.template.compiling);
 
     switch (value.type) {
-        .javascript, .string, .opt_string, .int, .boolean => try compiler.push(.{ .value = value }),
+        .javascript, .string, .opt_string, .int, .boolean => try compiler.push(.{
+            .value = value,
+        }),
         .null => {},
         else => return compiler.fail(
             "a {s} cannot be written as text",
@@ -228,14 +233,19 @@ const Parser = struct {
 
         try check_truthy(compiler, condition);
 
-        const node: Expr.Form = .{ .ternary = .{
-            .condition = try compiler.box(condition),
-            .consequent = try compiler.box(consequent),
-            .alternate = try compiler.box(alternate),
-        } };
+        const node: Expr.Form = .{
+            .ternary = .{
+                .condition = try compiler.box(condition),
+                .consequent = try compiler.box(consequent),
+                .alternate = try compiler.box(alternate),
+            },
+        };
 
         if (consequent.type == alternate.type) {
-            return .{ .type = consequent.type, .node = node };
+            return .{
+                .type = consequent.type,
+                .node = node,
+            };
         }
 
         if (consequent.type == .null or alternate.type == .null) {
@@ -248,7 +258,10 @@ const Parser = struct {
                 );
             }
 
-            return .{ .type = .opt_string, .node = node };
+            return .{
+                .type = .opt_string,
+                .node = node,
+            };
         }
 
         return compiler.fail(
@@ -292,11 +305,16 @@ const Parser = struct {
             // Boxed before the assignment, as for `??`.
             const boxed_left = try compiler.box(left);
             const boxed_right = try compiler.box(right);
-            left = .{ .type = .boolean, .node = .{ .logical = .{
-                .left = boxed_left,
-                .right = boxed_right,
-                .operator = operator,
-            } } };
+            left = .{
+                .type = .boolean,
+                .node = .{
+                    .logical = .{
+                        .left = boxed_left,
+                        .right = boxed_right,
+                        .operator = operator,
+                    },
+                },
+            };
         }
 
         return left;
@@ -330,7 +348,12 @@ const Parser = struct {
             const boxed_right = try compiler.box(right);
             left = .{
                 .type = right.type,
-                .node = .{ .nullish = .{ .left = boxed_left, .right = boxed_right } },
+                .node = .{
+                    .nullish = .{
+                        .left = boxed_left,
+                        .right = boxed_right,
+                    },
+                },
             };
         }
 
@@ -368,7 +391,10 @@ const Parser = struct {
                 return compiler.fail("comparing a {s} with null", .{@tagName(subject.type)});
             }
 
-            const null_expr: Expr = .{ .type = .null, .node = .null };
+            const null_expr: Expr = .{
+                .type = .null,
+                .node = .null,
+            };
 
             return parser.comparison(subject, null_expr, negated, .null_check);
         }
@@ -404,22 +430,42 @@ const Parser = struct {
 
         std.debug.assert(mode != .null_check or right.type == .null);
 
-        return .{ .type = .boolean, .node = .{ .equality = .{
-            .left = try compiler.box(left),
-            .right = try compiler.box(right),
-            .negated = negated,
-            .mode = mode,
-        } } };
+        return .{
+            .type = .boolean,
+            .node = .{
+                .equality = .{
+                    .left = try compiler.box(left),
+                    .right = try compiler.box(right),
+                    .negated = negated,
+                    .mode = mode,
+                },
+            },
+        };
     }
 
     fn relational(parser: *Parser) Error!Expr {
         const compiler = parser.compiler;
         const left = try parser.unary();
-        const operators = [_]struct { text: []const u8, operator: Expr.Relational.Operator }{
-            .{ .text = "<=", .operator = .le },
-            .{ .text = ">=", .operator = .ge },
-            .{ .text = "<", .operator = .lt },
-            .{ .text = ">", .operator = .gt },
+        const operators = [_]struct {
+            text: []const u8,
+            operator: Expr.Relational.Operator,
+        }{
+            .{
+                .text = "<=",
+                .operator = .le,
+            },
+            .{
+                .text = ">=",
+                .operator = .ge,
+            },
+            .{
+                .text = "<",
+                .operator = .lt,
+            },
+            .{
+                .text = ">",
+                .operator = .gt,
+            },
         };
 
         std.debug.assert(operators.len == 4);
@@ -438,11 +484,16 @@ const Parser = struct {
                 );
             }
 
-            return .{ .type = .boolean, .node = .{ .relational = .{
-                .left = try compiler.box(left),
-                .right = try compiler.box(right),
-                .operator = candidate.operator,
-            } } };
+            return .{
+                .type = .boolean,
+                .node = .{
+                    .relational = .{
+                        .left = try compiler.box(left),
+                        .right = try compiler.box(right),
+                        .operator = candidate.operator,
+                    },
+                },
+            };
         }
 
         return left;
@@ -464,7 +515,12 @@ const Parser = struct {
 
         try check_truthy(parser.compiler, operand);
 
-        return .{ .type = .boolean, .node = .{ .not = try parser.compiler.box(operand) } };
+        return .{
+            .type = .boolean,
+            .node = .{
+                .not = try parser.compiler.box(operand),
+            },
+        };
     }
 
     fn postfix(parser: *Parser) Error!Expr {
@@ -490,7 +546,14 @@ const Parser = struct {
             .entry => entry_member(compiler, boxed, field),
             .data => .{
                 .type = .opt_string,
-                .node = .{ .member = .{ .object = boxed, .kind = .{ .data_text = field } } },
+                .node = .{
+                    .member = .{
+                        .object = boxed,
+                        .kind = .{
+                            .data_text = field,
+                        },
+                    },
+                },
             },
             .session => session_member(compiler, boxed, field),
             .collection, .string => length_member(compiler, boxed, object.type, field),
@@ -536,7 +599,14 @@ const Parser = struct {
 
         return .{
             .type = .opt_string,
-            .node = .{ .member = .{ .object = boxed, .kind = .{ .prop = field } } },
+            .node = .{
+                .member = .{
+                    .object = boxed,
+                    .kind = .{
+                        .prop = field,
+                    },
+                },
+            },
         };
     }
 
@@ -614,7 +684,12 @@ const Parser = struct {
         const literal = parser.text[parser.position + 1 .. end];
         parser.position = @intCast(end + 1);
 
-        return .{ .type = .string, .node = .{ .string = literal } };
+        return .{
+            .type = .string,
+            .node = .{
+                .string = literal,
+            },
+        };
     }
 
     fn number(parser: *Parser) Error!Expr {
@@ -637,7 +712,12 @@ const Parser = struct {
 
         std.debug.assert(digits.len > 0);
 
-        return .{ .type = .int, .node = .{ .int = value } };
+        return .{
+            .type = .int,
+            .node = .{
+                .int = value,
+            },
+        };
     }
 
     fn word_expression(parser: *Parser) Error!Expr {
@@ -647,15 +727,28 @@ const Parser = struct {
         std.debug.assert(word.len > 0);
 
         if (std.mem.eql(u8, word, "null")) {
-            return .{ .type = .null, .node = .null };
+            return .{
+                .type = .null,
+                .node = .null,
+            };
         }
 
         if (std.mem.eql(u8, word, "true")) {
-            return .{ .type = .boolean, .node = .{ .boolean = true } };
+            return .{
+                .type = .boolean,
+                .node = .{
+                    .boolean = true,
+                },
+            };
         }
 
         if (std.mem.eql(u8, word, "false")) {
-            return .{ .type = .boolean, .node = .{ .boolean = false } };
+            return .{
+                .type = .boolean,
+                .node = .{
+                    .boolean = false,
+                },
+            };
         }
 
         if (std.mem.eql(u8, word, "props")) {
@@ -663,7 +756,10 @@ const Parser = struct {
                 return compiler.fail("`props` belong to layouts; pages read `ctx`", .{});
             }
 
-            return .{ .type = .props, .node = .props };
+            return .{
+                .type = .props,
+                .node = .props,
+            };
         }
 
         if (std.mem.eql(u8, word, "Publr") or std.mem.eql(u8, word, "Astro")) {
@@ -680,7 +776,12 @@ const Parser = struct {
             return compiler.fail("`{s}` is not declared", .{word});
         };
 
-        return .{ .type = found.type, .node = .{ .local = word } };
+        return .{
+            .type = found.type,
+            .node = .{
+                .local = word,
+            },
+        };
     }
 
     /// A template string: literal runs and holes.
@@ -715,12 +816,19 @@ const Parser = struct {
         }
 
         if (text.items.len > 0) {
-            try parts.append(compiler.arena, .{ .text = try compiler.arena.dupe(u8, text.items) });
+            try parts.append(compiler.arena, .{
+                .text = try compiler.arena.dupe(u8, text.items),
+            });
         }
 
         std.debug.assert(parser.position <= parser.text.len);
 
-        return .{ .type = .string, .node = .{ .template = parts.items } };
+        return .{
+            .type = .string,
+            .node = .{
+                .template = parts.items,
+            },
+        };
     }
 
     fn template_hole(
@@ -749,11 +857,15 @@ const Parser = struct {
         }
 
         if (text.items.len > 0) {
-            try parts.append(compiler.arena, .{ .text = try compiler.arena.dupe(u8, text.items) });
+            try parts.append(compiler.arena, .{
+                .text = try compiler.arena.dupe(u8, text.items),
+            });
             text.clearRetainingCapacity();
         }
 
-        try parts.append(compiler.arena, .{ .hole = try compiler.box(value) });
+        try parts.append(compiler.arena, .{
+            .hole = try compiler.box(value),
+        });
         parser.position = end + 1;
     }
 };
@@ -762,14 +874,46 @@ fn entry_member(compiler: *Compiler, boxed: *const Expr, name: []const u8) Error
     std.debug.assert(boxed.type == .entry);
 
     const Access = Expr.Member.Access;
-    const members = [_]struct { name: []const u8, type: Type, access: Access }{
-        .{ .name = "title", .type = .string, .access = .entry_title },
-        .{ .name = "created_at", .type = .string, .access = .entry_created_at },
-        .{ .name = "updated_at", .type = .string, .access = .entry_updated_at },
-        .{ .name = "slug", .type = .opt_string, .access = .entry_slug },
-        .{ .name = "id", .type = .string, .access = .entry_id },
-        .{ .name = "type", .type = .string, .access = .entry_type },
-        .{ .name = "data", .type = .data, .access = .entry_data },
+    const members = [_]struct {
+        name: []const u8,
+        type: Type,
+        access: Access,
+    }{
+        .{
+            .name = "title",
+            .type = .string,
+            .access = .entry_title,
+        },
+        .{
+            .name = "created_at",
+            .type = .string,
+            .access = .entry_created_at,
+        },
+        .{
+            .name = "updated_at",
+            .type = .string,
+            .access = .entry_updated_at,
+        },
+        .{
+            .name = "slug",
+            .type = .opt_string,
+            .access = .entry_slug,
+        },
+        .{
+            .name = "id",
+            .type = .string,
+            .access = .entry_id,
+        },
+        .{
+            .name = "type",
+            .type = .string,
+            .access = .entry_type,
+        },
+        .{
+            .name = "data",
+            .type = .data,
+            .access = .entry_data,
+        },
     };
 
     std.debug.assert(members.len == 7);
@@ -778,7 +922,12 @@ fn entry_member(compiler: *Compiler, boxed: *const Expr, name: []const u8) Error
         if (std.mem.eql(u8, candidate.name, name)) {
             return .{
                 .type = candidate.type,
-                .node = .{ .member = .{ .object = boxed, .kind = candidate.access } },
+                .node = .{
+                    .member = .{
+                        .object = boxed,
+                        .kind = candidate.access,
+                    },
+                },
             };
         }
     }
@@ -795,7 +944,12 @@ fn session_member(compiler: *Compiler, boxed: *const Expr, name: []const u8) Err
     if (std.mem.eql(u8, name, "email")) {
         return .{
             .type = .opt_string,
-            .node = .{ .member = .{ .object = boxed, .kind = .session_email } },
+            .node = .{
+                .member = .{
+                    .object = boxed,
+                    .kind = .session_email,
+                },
+            },
         };
     }
 
@@ -813,7 +967,15 @@ fn length_member(compiler: *Compiler, boxed: *const Expr, kind: Type, name: []co
             return compiler.script("JavaScript UTF-16 string length", .{});
         }
 
-        return .{ .type = .int, .node = .{ .member = .{ .object = boxed, .kind = .length } } };
+        return .{
+            .type = .int,
+            .node = .{
+                .member = .{
+                    .object = boxed,
+                    .kind = .length,
+                },
+            },
+        };
     }
 
     return compiler.script("`.{s}` of a {s}", .{ name, @tagName(kind) });
@@ -821,7 +983,10 @@ fn length_member(compiler: *Compiler, boxed: *const Expr, kind: Type, name: []co
 
 // ---- text helpers ------------------------------------------------------------------
 
-pub const Parts = struct { frontmatter: []const u8, body: []const u8 };
+pub const Parts = struct {
+    frontmatter: []const u8,
+    body: []const u8,
+};
 
 /// `---` fences at column 0 delimit the frontmatter; without a first-line fence, the
 /// whole file is body.
@@ -831,7 +996,10 @@ pub fn split_template(source: []const u8) Parts {
     std.debug.assert(first_end <= source.len);
 
     if (!is_fence(source[0..first_end])) {
-        return .{ .frontmatter = "", .body = source };
+        return .{
+            .frontmatter = "",
+            .body = source,
+        };
     }
 
     const frontmatter_start = past_newline(source, first_end);
@@ -850,7 +1018,10 @@ pub fn split_template(source: []const u8) Parts {
         position = past_newline(source, end);
     }
 
-    return .{ .frontmatter = "", .body = source };
+    return .{
+        .frontmatter = "",
+        .body = source,
+    };
 }
 
 fn is_fence(text: []const u8) bool {

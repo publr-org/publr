@@ -31,7 +31,9 @@ pub fn expect_native_admin(
 
     var child = try std.process.spawn(init.io, .{
         .argv = &.{ binary, "serve", "--port", "8092" },
-        .cwd = .{ .path = dir },
+        .cwd = .{
+            .path = dir,
+        },
         .stdout = .ignore,
         .stderr = .pipe,
     });

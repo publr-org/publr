@@ -14,7 +14,11 @@ pub const rebuild_max: u32 = 10_000;
 pub const members_max: u32 = 1000;
 
 /// One assignment of the document: the explicit terms of one field in one slot.
-pub const Assignment = struct { record: []const u8, slot: []const u8, field: []const u8 };
+pub const Assignment = struct {
+    record: []const u8,
+    slot: []const u8,
+    field: []const u8,
+};
 
 /// Replace one field's assignments in a slot: the ids given, and every ancestor of each.
 pub fn write(
@@ -176,7 +180,9 @@ pub fn members(
     try select.bind_text(1, term_id);
     try select.bind_int(2, members_max);
 
-    const Found = struct { record: []const u8 };
+    const Found = struct {
+        record: []const u8,
+    };
     var found: std.ArrayList([]const u8) = .empty;
 
     while (try select.step()) {
@@ -256,7 +262,9 @@ fn explicit_of(
     try select.bind_text(3, assignment.field);
     try select.bind_int(4, ids_max);
 
-    const Found = struct { term: []const u8 };
+    const Found = struct {
+        term: []const u8,
+    };
     var found: std.ArrayList([]const u8) = .empty;
 
     while (try select.step()) {
@@ -268,7 +276,11 @@ fn explicit_of(
     return found.items;
 }
 
-const Row = struct { term: []const u8, explicit: bool, ordinal: i64 };
+const Row = struct {
+    term: []const u8,
+    explicit: bool,
+    ordinal: i64,
+};
 
 fn rows_of(connection: *db.Db, arena: std.mem.Allocator, assignment: Assignment) ![]Row {
     std.debug.assert(assignment.record.len > 0);
@@ -331,7 +343,13 @@ fn seed(fixture: *db.testing.Fixture, arena: std.mem.Allocator) !Seeded {
     try terms.set_parent(connection, ids[1], ids[0]);
     try terms.set_parent(connection, ids[2], ids[1]);
 
-    return .{ .record = record, .root = ids[0], .middle = ids[1], .leaf = ids[2], .aside = ids[3] };
+    return .{
+        .record = record,
+        .root = ids[0],
+        .middle = ids[1],
+        .leaf = ids[2],
+        .aside = ids[3],
+    };
 }
 
 test "an assignment holds the explicit terms and every ancestor; a rewrite replaces it" {
@@ -344,7 +362,11 @@ test "an assignment holds the explicit terms and every ancestor; a rewrite repla
     const arena = arena_state.allocator();
     const connection = &fixture.connection;
     const seeded = try seed(&fixture, arena);
-    const assignment: Assignment = .{ .record = seeded.record, .slot = "live", .field = "topics" };
+    const assignment: Assignment = .{
+        .record = seeded.record,
+        .slot = "live",
+        .field = "topics",
+    };
 
     try write(connection, assignment, &.{ seeded.leaf, seeded.aside });
 
@@ -381,8 +403,16 @@ test "a selected ancestor stays explicit; slots promote and clear; a reparent re
     const arena = arena_state.allocator();
     const connection = &fixture.connection;
     const seeded = try seed(&fixture, arena);
-    const pending: Assignment = .{ .record = seeded.record, .slot = "pending", .field = "topics" };
-    const live: Assignment = .{ .record = seeded.record, .slot = "live", .field = "topics" };
+    const pending: Assignment = .{
+        .record = seeded.record,
+        .slot = "pending",
+        .field = "topics",
+    };
+    const live: Assignment = .{
+        .record = seeded.record,
+        .slot = "live",
+        .field = "topics",
+    };
 
     try write(connection, pending, &.{ seeded.leaf, seeded.root });
     const rows = try rows_of(connection, arena, pending);

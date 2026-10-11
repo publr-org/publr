@@ -69,7 +69,10 @@ pub const RecordFilter = struct {
     }
 };
 
-pub const Transition = struct { from: []const u8, to: []const u8 };
+pub const Transition = struct {
+    from: []const u8,
+    to: []const u8,
+};
 
 pub const Grant = struct {
     decision: Decision = .allow,
@@ -83,7 +86,9 @@ pub const Grant = struct {
     transitions: ?[]const Transition = null,
     record_filter: RecordFilter = .{},
 
-    pub const deny: Grant = .{ .decision = .deny };
+    pub const deny: Grant = .{
+        .decision = .deny,
+    };
     pub const allow_all: Grant = .{};
 
     pub fn allows(grant: *const Grant) bool {
@@ -225,13 +230,21 @@ test "intersect: deny wins, lists intersect, masks union, flags or" {
     const left: Grant = .{
         .types = &.{ "post", "page" },
         .field_mask = &.{"secret"},
-        .record_filter = .{ .flags = .{ .own_only = true } },
+        .record_filter = .{
+            .flags = .{
+                .own_only = true,
+            },
+        },
     };
     const right: Grant = .{
         .types = &.{ "page", "tag" },
         .statuses = &.{"published"},
         .field_mask = &.{ "secret", "internal" },
-        .record_filter = .{ .flags = .{ .live_only = true } },
+        .record_filter = .{
+            .flags = .{
+                .live_only = true,
+            },
+        },
     };
 
     const both = try Grant.intersect(left, right, arena);
@@ -256,14 +269,18 @@ test "plugins: the project's own types always, a plugin's only when listed" {
     var fixed = std.heap.FixedBufferAllocator.init(&buffer);
     const arena = fixed.allocator();
     const every: Grant = .{};
-    const site: Grant = .{ .plugins = &.{ "newsletter", "seo" } };
+    const site: Grant = .{
+        .plugins = &.{ "newsletter", "seo" },
+    };
 
     try std.testing.expect(every.allows_owner("shop"));
     try std.testing.expect(site.allows_owner(""));
     try std.testing.expect(site.allows_owner("seo"));
     try std.testing.expect(!site.allows_owner("shop"));
 
-    const narrowed = try Grant.intersect(site, .{ .plugins = &.{"seo"} }, arena);
+    const narrowed = try Grant.intersect(site, .{
+        .plugins = &.{"seo"},
+    }, arena);
     try std.testing.expect(narrowed.allows_owner("seo"));
     try std.testing.expect(!narrowed.allows_owner("newsletter"));
     try std.testing.expect((try Grant.intersect(every, site, arena)).allows_owner("newsletter"));
@@ -274,9 +291,17 @@ test "record filter: own_only and resolver chain" {
     try harness.init();
     defer harness.deinit();
 
-    var ctx = harness.ctx(.{ .user = .{ .id = "u_1" } });
+    var ctx = harness.ctx(.{
+        .user = .{
+            .id = "u_1",
+        },
+    });
 
-    var filter: RecordFilter = .{ .flags = .{ .own_only = true } };
+    var filter: RecordFilter = .{
+        .flags = .{
+            .own_only = true,
+        },
+    };
     const mine: Row = .{
         .record_id = "e_1",
         .type_id = "post",

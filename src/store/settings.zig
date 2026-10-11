@@ -17,7 +17,9 @@ pub fn get(connection: *db.Db, arena: std.mem.Allocator, key: []const u8) db.Err
         return null;
     }
 
-    const Found = struct { value: []const u8 };
+    const Found = struct {
+        value: []const u8,
+    };
     return (try select.read(Found, arena)).value;
 }
 

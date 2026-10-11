@@ -15,7 +15,12 @@ width: u32,
 height: u32,
 channels: u32,
 
-pub const View = struct { bytes: []const u8, width: u32, height: u32, channels: u32 };
+pub const View = struct {
+    bytes: []const u8,
+    width: u32,
+    height: u32,
+    channels: u32,
+};
 
 pub fn decode(source: []const u8) image.Error!Pixels {
     std.debug.assert(source.len > 0);
@@ -78,7 +83,10 @@ pub fn apply(pixels: *Pixels, allocator: std.mem.Allocator, params: image.Params
     std.debug.assert(pixels.width > 0 and pixels.height > 0);
     std.debug.assert(params.focal_x <= 100 and params.focal_y <= 100);
 
-    const focal: Focal = .{ .x_percent = params.focal_x, .y_percent = params.focal_y };
+    const focal: Focal = .{
+        .x_percent = params.focal_x,
+        .y_percent = params.focal_y,
+    };
 
     if (params.width != null and params.height != null) {
         const width = @max(params.width.?, 1);
@@ -162,7 +170,10 @@ fn resize(pixels: *Pixels, allocator: std.mem.Allocator, width: u32, height: u32
     pixels.replace(allocator, out, width, height);
 }
 
-pub const Focal = struct { x_percent: u8, y_percent: u8 };
+pub const Focal = struct {
+    x_percent: u8,
+    y_percent: u8,
+};
 
 /// Cut `width` × `height` with the focal point as near the middle as the edges allow.
 pub fn crop(

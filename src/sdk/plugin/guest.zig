@@ -64,11 +64,13 @@ pub const SandboxApi = struct {
         std.debug.assert(self.now >= 0);
         std.debug.assert(self.name.len > 0);
 
-        return .{ .plugin = .{
-            .name = self.name,
-            .capabilities = &.{},
-            .on_behalf_of = self.on_behalf_of,
-        } };
+        return .{
+            .plugin = .{
+                .name = self.name,
+                .capabilities = &.{},
+                .on_behalf_of = self.on_behalf_of,
+            },
+        };
     }
 
     pub fn now_ms(self: *const SandboxApi) i64 {
@@ -103,7 +105,10 @@ pub const SandboxApi = struct {
         const input = std.json.Stringify.valueAlloc(self.arena_allocator, in, .{}) catch {
             return error.OutOfMemory;
         };
-        var result: wire.Result = .{ .ptr = 0, .len = 0 };
+        var result: wire.Result = .{
+            .ptr = 0,
+            .len = 0,
+        };
         const status = publr_call(
             Operation.name.ptr,
             Operation.name.len,
@@ -172,10 +177,18 @@ pub fn export_all(comptime Plugin: type) void {
 
         const Generated = Exports(Plugin);
 
-        @export(&Generated.alloc, .{ .name = "publr_alloc" });
-        @export(&Generated.free, .{ .name = "publr_free" });
-        @export(&Generated.invoke, .{ .name = "publr_invoke" });
-        @export(&Generated.manifest, .{ .name = "publr_manifest" });
+        @export(&Generated.alloc, .{
+            .name = "publr_alloc",
+        });
+        @export(&Generated.free, .{
+            .name = "publr_free",
+        });
+        @export(&Generated.invoke, .{
+            .name = "publr_invoke",
+        });
+        @export(&Generated.manifest, .{
+            .name = "publr_manifest",
+        });
     }
 }
 
@@ -222,7 +235,10 @@ pub fn Exports(comptime Plugin: type) type {
             const bytes = output.toOwnedSlice() catch return wire.code_of(error.OutOfMemory);
 
             std.debug.assert(bytes.len > 0);
-            result.* = .{ .ptr = @intCast(@intFromPtr(bytes.ptr)), .len = @intCast(bytes.len) };
+            result.* = .{
+                .ptr = @intCast(@intFromPtr(bytes.ptr)),
+                .len = @intCast(bytes.len),
+            };
 
             return wire.ok;
         }
@@ -235,9 +251,15 @@ pub fn Exports(comptime Plugin: type) type {
             var arena_state = std.heap.ArenaAllocator.init(allocator);
             defer arena_state.deinit();
 
-            result.* = .{ .ptr = 0, .len = 0 };
+            result.* = .{
+                .ptr = 0,
+                .len = 0,
+            };
 
-            const input = take(.{ .ptr = in_ptr, .len = in_len });
+            const input = take(.{
+                .ptr = in_ptr,
+                .len = in_len,
+            });
 
             inline for (entries, 0..) |item, index| {
                 if (entry == index) {
@@ -356,7 +378,10 @@ fn reply(value: anytype, result: *wire.Result) Error!void {
 
     std.debug.assert(output.len <= std.math.maxInt(u32));
 
-    result.* = .{ .ptr = @intCast(@intFromPtr(output.ptr)), .len = @intCast(output.len) };
+    result.* = .{
+        .ptr = @intCast(@intFromPtr(output.ptr)),
+        .len = @intCast(output.len),
+    };
 
     std.debug.assert(result.ptr != 0);
 }
@@ -371,18 +396,26 @@ fn as_event(event: wire.Event) middleware.Event {
     };
 
     return switch (event.kind) {
-        .completed => .{ .completed = .{
-            .operation_name = event.name,
-            .operation_id = 1,
-            .duration_ns = 0,
-        } },
-        .rejected => .{ .rejected = failed },
-        .failed => .{ .failed = failed },
-        .notice => .{ .notice = .{
-            .operation_id = 1,
-            .name = event.name,
-            .subject = event.subject,
-        } },
+        .completed => .{
+            .completed = .{
+                .operation_name = event.name,
+                .operation_id = 1,
+                .duration_ns = 0,
+            },
+        },
+        .rejected => .{
+            .rejected = failed,
+        },
+        .failed => .{
+            .failed = failed,
+        },
+        .notice => .{
+            .notice = .{
+                .operation_id = 1,
+                .name = event.name,
+                .subject = event.subject,
+            },
+        },
     };
 }
 

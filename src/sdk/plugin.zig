@@ -17,7 +17,10 @@ pub const ContentTypeDef = content_type.Def;
 pub const DeclaredType = plugin_types.Declared;
 pub const InternalCollection = @import("../model/internal_record.zig").Collection;
 /// An internal record collection with the plugin that declared it.
-pub const OwnedCollection = struct { owner: []const u8, collection: InternalCollection };
+pub const OwnedCollection = struct {
+    owner: []const u8,
+    collection: InternalCollection,
+};
 pub const Role = role.Role;
 pub const SignInProvider = provider.SignInProvider;
 /// What a plugin declares to run in the sandbox: see `plugin/sandboxed.zig`.
@@ -38,7 +41,10 @@ pub const RowAction = admin_slots.RowAction;
 pub const Page = admin_slots.Page;
 
 /// A page and the plugin it is of.
-pub const OwnedPage = struct { plugin: []const u8, page: Page };
+pub const OwnedPage = struct {
+    plugin: []const u8,
+    page: Page,
+};
 pub const state = @import("plugin/state.zig");
 pub const depends_on = @import("plugin/depends_on.zig");
 pub const Process = state.Process;
@@ -628,7 +634,10 @@ pub fn Merged(comptime plugins: anytype) type {
                     }
                 }
 
-                pages = pages ++ &[_]OwnedPage{.{ .plugin = Plugin.manifest.name, .page = page }};
+                pages = pages ++ &[_]OwnedPage{.{
+                    .plugin = Plugin.manifest.name,
+                    .page = page,
+                }};
             }
 
             if (@hasDecl(Plugin, "top_bar")) {
@@ -804,7 +813,12 @@ pub const testing = struct {
             .handle = "greeting",
             .name = "Greeting",
             .title_field = "note",
-            .fields = &.{.{ .name = "note", .label = "Note", .kind = "string", .required = true }},
+            .fields = &.{.{
+                .name = "note",
+                .label = "Note",
+                .kind = "string",
+                .required = true,
+            }},
         }};
         pub const permissions = [_]Permission{.{
             .key = "content.write",
@@ -817,11 +831,22 @@ pub const testing = struct {
             pub const name = "greeter.greet";
             pub const description = "Greet someone";
             pub const kind: sdk.operation.Kind = .write;
-            pub const In = struct { who: []const u8, times: u32 = 1 };
-            pub const Out = struct { text: []const u8 };
-            pub const example: In = .{ .who = "world" };
-            pub const example_out: Out = .{ .text = "hello, world" };
-            pub const field_docs: sdk.operation.Docs(In) = .{ .who = "Whom to greet" };
+            pub const In = struct {
+                who: []const u8,
+                times: u32 = 1,
+            };
+            pub const Out = struct {
+                text: []const u8,
+            };
+            pub const example: In = .{
+                .who = "world",
+            };
+            pub const example_out: Out = .{
+                .text = "hello, world",
+            };
+            pub const field_docs: sdk.operation.Docs(In) = .{
+                .who = "Whom to greet",
+            };
 
             pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
                 std.debug.assert(in.who.len > 0);
@@ -831,7 +856,9 @@ pub const testing = struct {
                     return error.OutOfMemory;
                 };
 
-                return .{ .text = text };
+                return .{
+                    .text = text,
+                };
             }
         };
 
@@ -857,7 +884,12 @@ pub const testing = struct {
             .handle = "greeting",
             .name = "Greeting",
             .title_field = "note",
-            .fields = &.{.{ .name = "note", .label = "Note", .kind = "string", .required = true }},
+            .fields = &.{.{
+                .name = "note",
+                .label = "Note",
+                .kind = "string",
+                .required = true,
+            }},
         }};
         pub const field_kinds = [_]kinds.Kind{.{
             .id = "hello.mood",
@@ -876,8 +908,15 @@ pub const testing = struct {
         pub const middleware = [_]type{Counted};
         pub const policies = [_]sdk.Policy{&no_shouting};
         pub const routes = [_]Route{
-            .{ .path = "/api/hello/greeting", .handler = &greeting },
-            .{ .method = .post, .path = "/api/hello/greeting", .handler = &greeting },
+            .{
+                .path = "/api/hello/greeting",
+                .handler = &greeting,
+            },
+            .{
+                .method = .post,
+                .path = "/api/hello/greeting",
+                .handler = &greeting,
+            },
         };
 
         /// Who is asking, as the route sees them.
@@ -891,10 +930,16 @@ pub const testing = struct {
 
             std.debug.assert(request.path().len > 0);
 
-            try response.json(.ok, .{ .caller = @tagName(found.caller) });
+            try response.json(.ok, .{
+                .caller = @tagName(found.caller),
+            });
         }
         pub const roles = [_]Role{
-            .{ .name = "editor", .label = "Editor", .grants = &.{"hello.*"} },
+            .{
+                .name = "editor",
+                .label = "Editor",
+                .grants = &.{"hello.*"},
+            },
             .{
                 .name = "greeter",
                 .label = "Greeter",
@@ -906,10 +951,18 @@ pub const testing = struct {
             pub const name = "hello.record";
             pub const description = "Record a greeting";
             pub const kind: sdk.operation.Kind = .write;
-            pub const In = struct { note: []const u8 };
-            pub const Out = struct { rows: u32 };
-            pub const example: In = .{ .note = "hi" };
-            pub const example_out: Out = .{ .rows = 1 };
+            pub const In = struct {
+                note: []const u8,
+            };
+            pub const Out = struct {
+                rows: u32,
+            };
+            pub const example: In = .{
+                .note = "hi",
+            };
+            pub const example_out: Out = .{
+                .rows = 1,
+            };
 
             pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
                 std.debug.assert(in.note.len > 0);
@@ -918,15 +971,25 @@ pub const testing = struct {
                 const record = @import("../operations/record.zig");
                 const document = try std.json.Stringify.valueAlloc(
                     ctx.arena(),
-                    .{ .note = in.note },
+                    .{
+                        .note = in.note,
+                    },
                     .{},
                 );
 
-                _ = try ctx.call(record.Create, .{ .type = "greeting", .document = document });
+                _ = try ctx.call(record.Create, .{
+                    .type = "greeting",
+                    .document = document,
+                });
 
-                const all = try ctx.call(record.List, .{ .type = "greeting", .limit = 200 });
+                const all = try ctx.call(record.List, .{
+                    .type = "greeting",
+                    .limit = 200,
+                });
 
-                return .{ .rows = @intCast(all.records.len) };
+                return .{
+                    .rows = @intCast(all.records.len),
+                };
             }
         };
 
@@ -970,16 +1033,35 @@ test "the test plugin passes the contract and merges into a registry" {
     var system = harness.ctx(.system);
     try plugin_types.apply(&system, Bundle.merged_content_types);
 
-    var ctx = harness.ctx(.{ .user = .{ .id = "u_1", .roles = &.{"editor"} } });
-    const first = try TestSDK.dispatch(&ctx, testing.Hello.Record, .{ .note = "hi" });
-    const second = try TestSDK.dispatch(&ctx, testing.Hello.Record, .{ .note = "again" });
+    var ctx = harness.ctx(.{
+        .user = .{
+            .id = "u_1",
+            .roles = &.{"editor"},
+        },
+    });
+    const first = try TestSDK.dispatch(&ctx, testing.Hello.Record, .{
+        .note = "hi",
+    });
+    const second = try TestSDK.dispatch(&ctx, testing.Hello.Record, .{
+        .note = "again",
+    });
 
     try std.testing.expectEqual(@as(u32, 1), first.rows);
     try std.testing.expectEqual(@as(u32, 2), second.rows);
 
     // A plugin's role reaches what it grants; an account holding no role, nothing.
-    var greeter = harness.ctx(.{ .user = .{ .id = "u_2", .roles = &.{"greeter"} } });
-    var nobody = harness.ctx(.{ .user = .{ .id = "u_3", .roles = &.{} } });
+    var greeter = harness.ctx(.{
+        .user = .{
+            .id = "u_2",
+            .roles = &.{"greeter"},
+        },
+    });
+    var nobody = harness.ctx(.{
+        .user = .{
+            .id = "u_3",
+            .roles = &.{},
+        },
+    });
     try std.testing.expect(TestSDK.may(&greeter, testing.Hello.Record));
     try std.testing.expect(!TestSDK.may(&nobody, testing.Hello.Record));
     try std.testing.expectError(error.Denied, TestSDK.dispatch(&nobody, testing.Hello.Record, .{
@@ -1015,13 +1097,29 @@ test "a remote operation that fits the compiled-in one it names; the manifest ca
             pub const name = "provider.adjust";
             pub const description = "Adjust a count";
             pub const kind: sdk.operation.Kind = .write;
-            pub const In = struct { sku: []const u8, delta: i64, note: ?[]const u8 = null };
-            pub const Out = struct { total: i64, sku: []const u8 };
-            pub const example: In = .{ .sku = "a", .delta = 1 };
-            pub const example_out: Out = .{ .total = 1, .sku = "a" };
+            pub const In = struct {
+                sku: []const u8,
+                delta: i64,
+                note: ?[]const u8 = null,
+            };
+            pub const Out = struct {
+                total: i64,
+                sku: []const u8,
+            };
+            pub const example: In = .{
+                .sku = "a",
+                .delta = 1,
+            };
+            pub const example_out: Out = .{
+                .total = 1,
+                .sku = "a",
+            };
 
             pub fn run(_: *sdk.Ctx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-                return .{ .total = in.delta, .sku = in.sku };
+                return .{
+                    .total = in.delta,
+                    .sku = in.sku,
+                };
             }
         };
     };
@@ -1035,8 +1133,13 @@ test "a remote operation that fits the compiled-in one it names; the manifest ca
         pub const remotes = [_]type{Adjust};
         pub const Adjust = Remote(
             "provider.adjust",
-            struct { sku: []const u8, delta: i64 },
-            struct { total: i64 },
+            struct {
+                sku: []const u8,
+                delta: i64,
+            },
+            struct {
+                total: i64,
+            },
         );
     };
     const Bundle = Merged(.{ Provider, User });

@@ -46,10 +46,18 @@ pub const Get = struct {
     pub const name = "custom_fields.get";
     pub const description = "Read the field schema for users or media";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { group: []const u8 };
-    pub const Out = struct { definition: model.content_type.Def };
-    pub const example: In = .{ .group = "user" };
-    pub const example_out: Out = .{ .definition = Destination.user.definition() };
+    pub const In = struct {
+        group: []const u8,
+    };
+    pub const Out = struct {
+        definition: model.content_type.Def,
+    };
+    pub const example: In = .{
+        .group = "user",
+    };
+    pub const example_out: Out = .{
+        .definition = Destination.user.definition(),
+    };
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
@@ -78,7 +86,9 @@ pub const Get = struct {
             return error.NotFound;
         }
 
-        return .{ .definition = def };
+        return .{
+            .definition = def,
+        };
     }
 };
 
@@ -86,10 +96,19 @@ pub const Validate = struct {
     pub const name = "custom_fields.validate";
     pub const description = "Check a destination's field schema without saving";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { group: []const u8, definition: []const u8 };
+    pub const In = struct {
+        group: []const u8,
+        definition: []const u8,
+    };
     pub const Out = types.Validate.Out;
-    pub const example: In = .{ .group = "user", .definition = example_definition };
-    pub const example_out: Out = .{ .valid = true, .problems = &.{} };
+    pub const example: In = .{
+        .group = "user",
+        .definition = example_definition,
+    };
+    pub const example_out: Out = .{
+        .valid = true,
+        .problems = &.{},
+    };
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
@@ -122,7 +141,10 @@ pub const Validate = struct {
                     "for the selected destination",
             };
 
-            return .{ .valid = false, .problems = problems };
+            return .{
+                .valid = false,
+                .problems = problems,
+            };
         }
 
         return checked;
@@ -136,11 +158,17 @@ pub const Update = struct {
     pub const In = Validate.In;
     pub const Out = Get.Out;
     pub const example = Validate.example;
-    pub const example_out: Out = .{ .definition = blk: {
-        var def = Destination.user.definition();
-        def.fields = &.{.{ .name = "biography", .label = "Biography", .kind = "text" }};
-        break :blk def;
-    } };
+    pub const example_out: Out = .{
+        .definition = blk: {
+            var def = Destination.user.definition();
+            def.fields = &.{.{
+                .name = "biography",
+                .label = "Biography",
+                .kind = "text",
+            }};
+            break :blk def;
+        },
+    };
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
@@ -171,7 +199,9 @@ pub const Update = struct {
 
         ctx.notice(if (created) "custom_fields.created" else "custom_fields.updated", in.group);
 
-        return .{ .definition = canonical };
+        return .{
+            .definition = canonical,
+        };
     }
 };
 
@@ -206,8 +236,14 @@ pub const List = struct {
     pub const description = "List custom field groups";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Item = struct { handle: []const u8, name: []const u8, active: bool };
-    pub const Out = struct { groups: []const Item };
+    pub const Item = struct {
+        handle: []const u8,
+        name: []const u8,
+        active: bool,
+    };
+    pub const Out = struct {
+        groups: []const Item,
+    };
     pub const example: In = .{};
     pub const example_out: Out = .{
         .groups = &.{
@@ -225,7 +261,9 @@ pub const List = struct {
         const groups = try ctx.arena.alloc(Item, rows.len);
 
         for (rows, 0..) |row, index| {
-            const got = try Get.run(ctx, .{ .group = row.owner }, granted);
+            const got = try Get.run(ctx, .{
+                .group = row.owner,
+            }, granted);
             groups[index] = .{
                 .handle = row.owner,
                 .name = got.definition.name,
@@ -233,7 +271,9 @@ pub const List = struct {
             };
         }
 
-        return .{ .groups = groups };
+        return .{
+            .groups = groups,
+        };
     }
 };
 
@@ -248,13 +288,15 @@ pub const Create = struct {
         .definition = "{\"handle\":\"profile\",\"name\":\"Profile\"," ++
             "\"kind\":\"component\",\"fields\":[]}",
     };
-    pub const example_out: Out = .{ .definition = .{
-        .handle = "profile",
-        .name = "Profile",
-        .title_field = "",
-        .kind = .component,
-        .fields = &.{},
-    } };
+    pub const example_out: Out = .{
+        .definition = .{
+            .handle = "profile",
+            .name = "Profile",
+            .title_field = "",
+            .kind = .component,
+            .fields = &.{},
+        },
+    };
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
@@ -280,9 +322,15 @@ pub const Delete = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const destroys = true;
     pub const In = Get.In;
-    pub const Out = struct { deleted: bool };
-    pub const example: In = .{ .group = "user" };
-    pub const example_out: Out = .{ .deleted = true };
+    pub const Out = struct {
+        deleted: bool,
+    };
+    pub const example: In = .{
+        .group = "user",
+    };
+    pub const example_out: Out = .{
+        .deleted = true,
+    };
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
@@ -295,7 +343,9 @@ pub const Delete = struct {
 
         try store.field_groups.delete(ctx.db, .custom_fields, in.group);
         ctx.notice("custom_fields.deleted", in.group);
-        return .{ .deleted = true };
+        return .{
+            .deleted = true,
+        };
     }
 };
 
@@ -342,9 +392,14 @@ fn bound_location(
         }
 
         const rules = try arena.alloc(conditions.Rule, existing.len + 1);
-        rules[0] = .{ .field = "destination", .value = destination };
+        rules[0] = .{
+            .field = "destination",
+            .value = destination,
+        };
         @memcpy(rules[1..], existing);
-        group.* = .{ .rules = rules };
+        group.* = .{
+            .rules = rules,
+        };
     }
 
     return groups;

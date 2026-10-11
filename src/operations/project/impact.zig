@@ -40,9 +40,18 @@ pub const Impact = struct {
         \\"www:/posts/hello", "keys": ["record:<id>", "type:post", "records"] }`.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { type: []const u8, id: ?[]const u8 = null };
-    pub const Out = struct { keys: []const []const u8, artifacts: []const Artifact };
-    pub const example: In = .{ .type = "post", .id = "a1b2c3d4e5f60718293a4b5c" };
+    pub const In = struct {
+        type: []const u8,
+        id: ?[]const u8 = null,
+    };
+    pub const Out = struct {
+        keys: []const []const u8,
+        artifacts: []const Artifact,
+    };
+    pub const example: In = .{
+        .type = "post",
+        .id = "a1b2c3d4e5f60718293a4b5c",
+    };
     pub const example_out: Out = .{
         .keys = &.{ "record:a1b2c3d4e5f60718293a4b5c", "type:post", "records" },
         .artifacts = &.{},
@@ -72,7 +81,12 @@ pub const Impact = struct {
         }
 
         const keys = try keys_of(ctx.arena, in);
-        var index: deps.Index = .{ .db = ctx.db, .options = .{ .quiet_ms = deps.quiet_ms } };
+        var index: deps.Index = .{
+            .db = ctx.db,
+            .options = .{
+                .quiet_ms = deps.quiet_ms,
+            },
+        };
         var artifacts: std.ArrayList(Artifact) = .empty;
 
         for (keys) |key| {
@@ -94,7 +108,10 @@ pub const Impact = struct {
 
         std.debug.assert(keys.len == 2 or keys.len == 3);
 
-        return .{ .keys = keys, .artifacts = artifacts.items };
+        return .{
+            .keys = keys,
+            .artifacts = artifacts.items,
+        };
     }
 };
 
@@ -125,7 +142,10 @@ fn add(
         return error.Invalid;
     }
 
-    try artifacts.append(arena, .{ .name = name, .keys = try arena.dupe([]const u8, &.{key}) });
+    try artifacts.append(arena, .{
+        .name = name,
+        .keys = try arena.dupe([]const u8, &.{key}),
+    });
 }
 
 fn by_name(_: void, left: Artifact, right: Artifact) bool {
@@ -162,7 +182,9 @@ fn keys_of(arena: std.mem.Allocator, in: Impact.In) Error![]const []const u8 {
     return keys.items;
 }
 
-const TestSDK = sdk.SDK(.{ .operations = &.{Impact} });
+const TestSDK = sdk.SDK(.{
+    .operations = &.{Impact},
+});
 
 test "the keys of a record and of a type alone; the artifacts the index recorded for them" {
     var harness: sdk.testing.Harness = undefined;
@@ -177,8 +199,16 @@ test "the keys of a record and of a type alone; the artifacts the index recorded
     try index.record("/posts/hello", &.{ "record:abc", "type:post", "records" });
     try index.record("/about", &.{"template:content/about.publr"});
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u1", .roles = &.{"editor"} } });
-    const with_id = try TestSDK.dispatch(&editor, Impact, .{ .type = "post", .id = "abc" });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u1",
+            .roles = &.{"editor"},
+        },
+    });
+    const with_id = try TestSDK.dispatch(&editor, Impact, .{
+        .type = "post",
+        .id = "abc",
+    });
     try std.testing.expectEqual(@as(usize, 3), with_id.keys.len);
     try std.testing.expectEqualStrings("record:abc", with_id.keys[0]);
     try std.testing.expectEqualStrings("type:post", with_id.keys[1]);
@@ -193,7 +223,9 @@ test "the keys of a record and of a type alone; the artifacts the index recorded
     try std.testing.expectEqual(@as(usize, 3), with_id.artifacts[2].keys.len);
     try std.testing.expectEqualStrings("record:abc", with_id.artifacts[2].keys[0]);
 
-    const new_record = try TestSDK.dispatch(&editor, Impact, .{ .type = "note" });
+    const new_record = try TestSDK.dispatch(&editor, Impact, .{
+        .type = "note",
+    });
     try std.testing.expectEqual(@as(usize, 2), new_record.keys.len);
     try std.testing.expectEqualStrings("type:note", new_record.keys[0]);
     try std.testing.expectEqual(@as(usize, 3), new_record.artifacts.len);

@@ -18,7 +18,10 @@ pub const Plan = struct {
     removed: []const []const u8,
 };
 
-const Leaf = struct { path: []const u8, def: Def };
+const Leaf = struct {
+    path: []const u8,
+    def: Def,
+};
 
 pub fn plan(
     known: []const Kind,
@@ -58,7 +61,11 @@ pub fn plan(
         }
     }
 
-    return .{ .allowed = allowed, .needs_rewrite = needs_rewrite, .removed = removed.items };
+    return .{
+        .allowed = allowed,
+        .needs_rewrite = needs_rewrite,
+        .removed = removed.items,
+    };
 }
 
 fn flatten(
@@ -76,7 +83,10 @@ fn flatten(
         const owned = try arena.dupe(u8, path);
 
         if (field.is_leaf(def.kind)) {
-            try out.append(arena, .{ .path = owned, .def = def });
+            try out.append(arena, .{
+                .path = owned,
+                .def = def,
+            });
         } else {
             try flatten(arena, def.fields, owned, out);
         }
@@ -120,7 +130,9 @@ pub fn convert_document(
         try object.put(arena, try arena.dupe(u8, after.name), converted);
     }
 
-    return .{ .object = object };
+    return .{
+        .object = object,
+    };
 }
 
 fn convert_value(
@@ -158,7 +170,9 @@ fn convert_value(
             try array.append(converted);
         }
 
-        return .{ .array = array };
+        return .{
+            .array = array,
+        };
     }
 
     return error.NotConvertible;
@@ -184,18 +198,43 @@ test "plan: removed leaves, allowed and refused kind changes, rewrite when neede
     const known = &kinds.core;
 
     const old = [_]Def{
-        .{ .name = "title", .label = "T", .kind = "string" },
-        .{ .name = "views", .label = "V", .kind = "integer" },
-        .{ .name = "seo", .label = "S", .kind = "group", .fields = &.{
-            .{ .name = "description", .label = "D", .kind = "text" },
-        } },
+        .{
+            .name = "title",
+            .label = "T",
+            .kind = "string",
+        },
+        .{
+            .name = "views",
+            .label = "V",
+            .kind = "integer",
+        },
+        .{
+            .name = "seo",
+            .label = "S",
+            .kind = "group",
+            .fields = &.{
+                .{
+                    .name = "description",
+                    .label = "D",
+                    .kind = "text",
+                },
+            },
+        },
     };
     const same = try plan(known, arena, &old, &old);
     try std.testing.expect(same.allowed and !same.needs_rewrite and same.removed.len == 0);
 
     const widened = [_]Def{
-        .{ .name = "title", .label = "T", .kind = "text" },
-        .{ .name = "views", .label = "V", .kind = "number" },
+        .{
+            .name = "title",
+            .label = "T",
+            .kind = "text",
+        },
+        .{
+            .name = "views",
+            .label = "V",
+            .kind = "number",
+        },
     };
     const widen = try plan(known, arena, &old, &widened);
     try std.testing.expect(widen.allowed and widen.needs_rewrite);
@@ -206,7 +245,9 @@ test "plan: removed leaves, allowed and refused kind changes, rewrite when neede
         .name = "title",
         .label = "T",
         .kind = "reference",
-        .options = .{ .to = &.{"x"} },
+        .options = .{
+            .to = &.{"x"},
+        },
     }};
     try std.testing.expect(!(try plan(known, arena, &old, &shape)).allowed);
 }

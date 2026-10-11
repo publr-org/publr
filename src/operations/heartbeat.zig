@@ -26,10 +26,22 @@ pub const Check = struct {
         \\cookie over HTTP, where it backs `GET /api/health`).
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { echo: []const u8 = "" };
-    pub const Out = struct { version: []const u8, echo: []const u8, caller: []const u8 };
-    pub const example: In = .{ .echo = "hello" };
-    pub const example_out: Out = .{ .version = version, .echo = "hello", .caller = "system" };
+    pub const In = struct {
+        echo: []const u8 = "",
+    };
+    pub const Out = struct {
+        version: []const u8,
+        echo: []const u8,
+        caller: []const u8,
+    };
+    pub const example: In = .{
+        .echo = "hello",
+    };
+    pub const example_out: Out = .{
+        .version = version,
+        .echo = "hello",
+        .caller = "system",
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .echo = "Any text; it comes back unchanged, handy for tracing a request",
     };
@@ -46,7 +58,11 @@ pub const Check = struct {
             return error.Invalid;
         }
 
-        return .{ .version = version, .echo = in.echo, .caller = ctx.caller.label() };
+        return .{
+            .version = version,
+            .echo = in.echo,
+            .caller = ctx.caller.label(),
+        };
     }
 };
 
@@ -54,13 +70,21 @@ pub const echo_len_max: u32 = 256;
 pub const operations = [_]type{Check};
 
 test "heartbeat.check echoes and names the caller" {
-    const TestSDK = sdk.SDK(.{ .operations = &operations });
+    const TestSDK = sdk.SDK(.{
+        .operations = &operations,
+    });
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
 
-    var ctx = harness.ctx(.{ .user = .{ .id = "u_1" } });
-    const out = try TestSDK.dispatch(&ctx, Check, .{ .echo = "hi" });
+    var ctx = harness.ctx(.{
+        .user = .{
+            .id = "u_1",
+        },
+    });
+    const out = try TestSDK.dispatch(&ctx, Check, .{
+        .echo = "hi",
+    });
 
     try std.testing.expectEqualStrings(version, out.version);
     try std.testing.expectEqualStrings("hi", out.echo);

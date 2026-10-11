@@ -60,7 +60,9 @@ pub fn of(session: *const Session) Scope {
 
     std.debug.assert(std.mem.eql(u8, app.spec.name, value));
 
-    return .{ .app = app };
+    return .{
+        .app = app,
+    };
 }
 
 /// The list narrowed to the scope, unless its own filters already ask about the app.
@@ -111,7 +113,12 @@ pub fn switcher(session: *const Session, after: ?Node) ?Node {
     const Choice = admin.views.AppSwitcher.ChoicesItem;
     const choices = arena.alloc(Choice, apps.len + 1) catch return null;
 
-    choices[0] = .{ .value = "", .label = "All apps", .current = scope == .all, .href = "" };
+    choices[0] = .{
+        .value = "",
+        .label = "All apps",
+        .current = scope == .all,
+        .href = "",
+    };
 
     for (apps, choices[1..]) |*app, *choice| {
         choice.* = .{
@@ -177,12 +184,20 @@ pub fn aside(session: *const Session, id: []const u8, app: ?[]const u8) Error!?N
     const Choice = admin.views.RecordApp.ChoicesItem;
     const choices = arena.alloc(Choice, apps.len + 1) catch return error.OutOfMemory;
 
-    choices[0] = .{ .value = "", .label = "Project only", .current = app == null };
+    choices[0] = .{
+        .value = "",
+        .label = "Project only",
+        .current = app == null,
+    };
 
     for (apps, choices[1..]) |*known, *choice| {
         const current = app != null and std.mem.eql(u8, app.?, known.spec.name);
 
-        choice.* = .{ .value = known.spec.name, .label = known.spec.label, .current = current };
+        choice.* = .{
+            .value = known.spec.name,
+            .label = known.spec.label,
+            .current = current,
+        };
     }
 
     return try admin.render.view(arena, admin.views.RecordApp, .{
@@ -367,7 +382,9 @@ test "the switcher narrows the list, and new records belong to the app chosen" {
     const Get = record_operations.Get;
     try std.testing.expectEqualStrings(
         "www",
-        (try registry.SDK.dispatch(&system, Get, .{ .id = id })).record.app.?,
+        (try registry.SDK.dispatch(&system, Get, .{
+            .id = id,
+        })).record.app.?,
     );
 
     const editor = try admin_call(&harness, "GET", location, session, "");
@@ -376,7 +393,9 @@ test "the switcher narrows the list, and new records belong to the app chosen" {
     const move_body = try std.fmt.allocPrint(arena, "csrf={s}&app=", .{csrf});
     const moved = try admin_call(&harness, "POST", move_path, session, move_body);
     try std.testing.expectEqualStrings(location, moved.header("Location").?);
-    const after = try registry.SDK.dispatch(&system, Get, .{ .id = id });
+    const after = try registry.SDK.dispatch(&system, Get, .{
+        .id = id,
+    });
     try std.testing.expect(after.record.app == null);
 
     const unknown = try std.fmt.allocPrint(arena, "csrf={s}&app=nope", .{csrf});

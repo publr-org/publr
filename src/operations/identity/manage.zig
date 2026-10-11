@@ -29,7 +29,9 @@ pub const Link = struct {
         name: ?[]const u8 = null,
         avatar: ?[]const u8 = null,
     };
-    pub const Out = struct { linked: bool };
+    pub const Out = struct {
+        linked: bool,
+    };
     pub const example: In = .{
         .user = "ada@example.com",
         .provider = "google",
@@ -37,7 +39,9 @@ pub const Link = struct {
         .email = identity_operations.example_in.email,
         .verified = true,
     };
-    pub const example_out: Out = .{ .linked = true };
+    pub const example_out: Out = .{
+        .linked = true,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The account to link to, by id or email",
         .provider = identity_operations.in_docs.provider,
@@ -47,7 +51,9 @@ pub const Link = struct {
         .name = identity_operations.in_docs.name,
         .avatar = identity_operations.in_docs.avatar,
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .linked = "Always true" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .linked = "Always true",
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -71,7 +77,9 @@ pub const Link = struct {
         try identity_operations.link(ctx, user_id, identity);
         ctx.notice("auth.identity_linked", user_id);
 
-        return .{ .linked = true };
+        return .{
+            .linked = true,
+        };
     }
 };
 
@@ -91,16 +99,22 @@ pub const List = struct {
         \\and administrators. Nothing is written.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { user: ?[]const u8 = null };
-    pub const Out = struct { identities: []const Summary };
+    pub const In = struct {
+        user: ?[]const u8 = null,
+    };
+    pub const Out = struct {
+        identities: []const Summary,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .identities = &.{.{
-        .provider = "github",
-        .id = "583231",
-        .email = "ada@example.com",
-        .created_at = 1789640000000,
-        .last_used_at = 1792232000000,
-    }} };
+    pub const example_out: Out = .{
+        .identities = &.{.{
+            .provider = "github",
+            .id = "583231",
+            .email = "ada@example.com",
+            .created_at = 1789640000000,
+            .last_used_at = 1792232000000,
+        }},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The account's id; the caller's own when omitted",
     };
@@ -128,7 +142,9 @@ pub const List = struct {
 
         std.debug.assert(identities.len <= store.identities.per_user_max);
 
-        return .{ .identities = identities };
+        return .{
+            .identities = identities,
+        };
     }
 };
 
@@ -142,16 +158,29 @@ pub const Unlink = struct {
         \\not hold is not found.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { provider: []const u8, id: []const u8, user: ?[]const u8 = null };
-    pub const Out = struct { unlinked: bool };
-    pub const example: In = .{ .provider = "github", .id = "583231" };
-    pub const example_out: Out = .{ .unlinked = true };
+    pub const In = struct {
+        provider: []const u8,
+        id: []const u8,
+        user: ?[]const u8 = null,
+    };
+    pub const Out = struct {
+        unlinked: bool,
+    };
+    pub const example: In = .{
+        .provider = "github",
+        .id = "583231",
+    };
+    pub const example_out: Out = .{
+        .unlinked = true,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .provider = identity_operations.in_docs.provider,
         .id = identity_operations.in_docs.id,
         .user = "The account's id; the caller's own when omitted",
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .unlinked = "Always true" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .unlinked = "Always true",
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -182,7 +211,9 @@ pub const Unlink = struct {
 
         ctx.notice("auth.identity_unlinked", user_id);
 
-        return .{ .unlinked = true };
+        return .{
+            .unlinked = true,
+        };
     }
 };
 
@@ -237,8 +268,18 @@ test "an account links, lists and unlinks its own identities, never the last way
         .roles = &.{"editor"},
         .password = "correct horse battery",
     });
-    var as_ada = harness.ctx(.{ .user = .{ .id = ada.user_id, .roles = &.{"editor"} } });
-    var as_eve = harness.ctx(.{ .user = .{ .id = eve.user_id, .roles = &.{"editor"} } });
+    var as_ada = harness.ctx(.{
+        .user = .{
+            .id = ada.user_id,
+            .roles = &.{"editor"},
+        },
+    });
+    var as_eve = harness.ctx(.{
+        .user = .{
+            .id = eve.user_id,
+            .roles = &.{"editor"},
+        },
+    });
     var to_ada = Link.example;
     to_ada.user = ada.user_id;
 
@@ -260,14 +301,21 @@ test "an account links, lists and unlinks its own identities, never the last way
     try std.testing.expectEqualStrings(Link.example.id, mine.identities[0].id);
     const eves = try SDK.dispatch(&as_eve, List, .{});
     try std.testing.expectEqual(@as(usize, 0), eves.identities.len);
-    const peek = SDK.dispatch(&as_eve, List, .{ .user = ada.user_id });
+    const peek = SDK.dispatch(&as_eve, List, .{
+        .user = ada.user_id,
+    });
     try std.testing.expectError(error.Denied, peek);
     try std.testing.expectError(error.Denied, SDK.dispatch(&anon, List, .{}));
     try std.testing.expectError(error.Invalid, SDK.dispatch(&system, List, .{}));
-    const named = try SDK.dispatch(&system, List, .{ .user = ada.user_id });
+    const named = try SDK.dispatch(&system, List, .{
+        .user = ada.user_id,
+    });
     try std.testing.expectEqual(@as(usize, 1), named.identities.len);
 
-    const drop: Unlink.In = .{ .provider = Link.example.provider, .id = Link.example.id };
+    const drop: Unlink.In = .{
+        .provider = Link.example.provider,
+        .id = Link.example.id,
+    };
     try std.testing.expectError(error.NotFound, SDK.dispatch(&as_eve, Unlink, drop));
     try std.testing.expect((try SDK.dispatch(&as_ada, Unlink, drop)).unlinked);
     try std.testing.expectError(error.NotFound, SDK.dispatch(&as_ada, Unlink, drop));
@@ -284,10 +332,17 @@ test "the last identity of an account without a password cannot be dropped" {
     var system = harness.ctx(.system);
 
     try SDK.bootstrap(&system);
-    _ = try SDK.dispatch(&system, identity_operations.Configure, .{ .open_sign_up = "editor" });
+    _ = try SDK.dispatch(&system, identity_operations.Configure, .{
+        .open_sign_up = "editor",
+    });
     const sign_in = identity_operations.SignIn;
     const created = try SDK.dispatch(&system, sign_in, identity_operations.example_in);
-    var as_created = harness.ctx(.{ .user = .{ .id = created.user_id, .roles = &.{"editor"} } });
+    var as_created = harness.ctx(.{
+        .user = .{
+            .id = created.user_id,
+            .roles = &.{"editor"},
+        },
+    });
 
     try std.testing.expectError(error.Conflict, SDK.dispatch(&as_created, Unlink, Unlink.example));
 

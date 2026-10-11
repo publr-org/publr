@@ -103,7 +103,13 @@ fn map_loop(compiler: *Compiler, text: []const u8) Error!bool {
 
     std.debug.assert(compiler.locals.items.len == locals_before);
 
-    try compiler.push(.{ .loop = .{ .collection = collection, .param = param, .body = body } });
+    try compiler.push(.{
+        .loop = .{
+            .collection = collection,
+            .param = param,
+            .body = body,
+        },
+    });
 
     return true;
 }
@@ -149,11 +155,13 @@ fn conditional(compiler: *Compiler, text: []const u8) Error!bool {
     const then_nodes = try branch(compiler, consequent);
     const else_nodes = try branch(compiler, alternate);
 
-    try compiler.push(.{ .cond = .{
-        .condition = condition,
-        .consequent = then_nodes,
-        .alternate = else_nodes,
-    } });
+    try compiler.push(.{
+        .cond = .{
+            .condition = condition,
+            .consequent = then_nodes,
+            .alternate = else_nodes,
+        },
+    });
 
     return true;
 }

@@ -115,22 +115,51 @@ test "the look follows the kind" {
     const arena = arena_state.allocator();
 
     const integer = model.kinds.find(&model.kinds.core, "integer").?;
-    const stars: FieldDef = .{ .name = "stars", .label = "Stars", .kind = "integer", .options = .{
-        .number = .{ .unit = "*", .control = .rating },
-    } };
-    var props: Props = .{ .help = "", .help_count = "", .label_fields = &.{} };
+    const stars: FieldDef = .{
+        .name = "stars",
+        .label = "Stars",
+        .kind = "integer",
+        .options = .{
+            .number = .{
+                .unit = "*",
+                .control = .rating,
+            },
+        },
+    };
+    var props: Props = .{
+        .help = "",
+        .help_count = "",
+        .label_fields = &.{},
+    };
     try fill_numbers(&props, arena, integer, stars);
     try std.testing.expect(props.has_number and props.can_rating and !props.has_decimals);
     try std.testing.expectEqualStrings("rating", props.number_control);
 
     const repeater = model.kinds.find(&model.kinds.core, "repeater").?;
-    const faq: FieldDef = .{ .name = "faq", .label = "FAQ", .kind = "repeater", .options = .{
-        .container = .{ .label_field = "question", .add_label = "Add question" },
-    }, .fields = &.{
-        .{ .name = "question", .label = "Question", .kind = "string" },
-    } };
+    const faq: FieldDef = .{
+        .name = "faq",
+        .label = "FAQ",
+        .kind = "repeater",
+        .options = .{
+            .container = .{
+                .label_field = "question",
+                .add_label = "Add question",
+            },
+        },
+        .fields = &.{
+            .{
+                .name = "question",
+                .label = "Question",
+                .kind = "string",
+            },
+        },
+    };
     const label_fields = try label_fields_of(arena, faq);
-    var boxed: Props = .{ .help = "", .help_count = "", .label_fields = label_fields };
+    var boxed: Props = .{
+        .help = "",
+        .help_count = "",
+        .label_fields = label_fields,
+    };
     fill_controls(&boxed, repeater, faq);
     try std.testing.expect(boxed.has_container and boxed.has_label_field);
     try std.testing.expect(!boxed.label_field_none);

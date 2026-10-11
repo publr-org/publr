@@ -184,7 +184,10 @@ fn run_command(
         }, args, out);
     }
 
-    var commands: publr.operator.Commands = .{ .init = init, .db_path = db_path };
+    var commands: publr.operator.Commands = .{
+        .init = init,
+        .db_path = db_path,
+    };
     defer commands.deinit();
 
     return commands.run(args, out);

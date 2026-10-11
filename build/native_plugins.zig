@@ -23,15 +23,27 @@ pub fn native_of(builder: *std.Build, plugins_dir: []const u8) Native {
     const limit: std.Io.Limit = .limited(1 << 16);
     const handle = builder.build_root.handle;
     const text = handle.readFileAllocOptions(io, path, builder.allocator, limit, .of(u8), 0) catch {
-        return .{ .names = &.{} };
+        return .{
+            .names = &.{},
+        };
     };
-    const Listed = struct { plugins: struct { native: []const []const u8 = &.{} } = .{} };
-    const Every = struct { plugins: struct { native: enum { all } } };
+    const Listed = struct {
+        plugins: struct {
+            native: []const []const u8 = &.{},
+        } = .{},
+    };
+    const Every = struct {
+        plugins: struct {
+            native: enum { all },
+        },
+    };
     // Strict: a misspelt field fails the build rather than compiling nothing in.
     const options: std.zon.parse.Options = .{};
 
     if (std.zon.parse.fromSliceAlloc(Listed, builder.allocator, text, null, options)) |listed| {
-        return .{ .names = listed.plugins.native };
+        return .{
+            .names = listed.plugins.native,
+        };
     } else |_| {}
 
     _ = std.zon.parse.fromSliceAlloc(Every, builder.allocator, text, null, options) catch {
@@ -196,7 +208,9 @@ pub fn add_tests(builder: *std.Build, library: *std.Build.Module, test_step: *st
         @panic("native plugins not added");
 
     for (listing.import_table.values()) |module| {
-        const tests = builder.addTest(.{ .root_module = module });
+        const tests = builder.addTest(.{
+            .root_module = module,
+        });
 
         test_step.dependOn(&builder.addRunArtifact(tests).step);
     }
@@ -211,7 +225,9 @@ pub fn discover(
     std.debug.assert(dir.len > 0);
 
     const io = builder.graph.io;
-    var root = builder.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch {
+    var root = builder.build_root.handle.openDir(io, dir, .{
+        .iterate = true,
+    }) catch {
         if (!std.mem.eql(u8, dir, dir_default)) {
             diagnostic.fail("-Dplugins: no folder at {s}", .{dir});
         }

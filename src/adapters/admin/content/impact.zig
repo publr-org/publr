@@ -48,7 +48,10 @@ pub fn node_of(
         .id = record_id,
     }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        else => Impact.Out{ .keys = &.{}, .artifacts = &.{} },
+        else => Impact.Out{
+            .keys = &.{},
+            .artifacts = &.{},
+        },
     };
     var rows: std.ArrayList(Row) = .empty;
     var failed = false;
@@ -107,7 +110,10 @@ fn artifacts_of(
         const parts = apps_artifacts.split(artifact.name) orelse continue;
 
         if (std.mem.eql(u8, parts.app, app)) {
-            own.append(arena, .{ .name = parts.url, .keys = artifact.keys }) catch
+            own.append(arena, .{
+                .name = parts.url,
+                .keys = artifact.keys,
+            }) catch
                 return error.OutOfMemory;
         }
     }
@@ -241,7 +247,9 @@ fn keys_of(arena: std.mem.Allocator, keys: []const []const u8) Error![]const Dia
     const items = arena.alloc(Dialog.KeysItem, keys.len) catch return error.OutOfMemory;
 
     for (keys, items) |key, *item| {
-        item.* = .{ .key = key };
+        item.* = .{
+            .key = key,
+        };
     }
 
     return items;
@@ -285,8 +293,14 @@ const test_islands = [_]template_module.impact.Island{.{
     .reads = .query,
     .via = "",
     .placed = &.{
-        .{ .route = "/visit", .prerendered = true },
-        .{ .route = "/posts/:slug", .prerendered = false },
+        .{
+            .route = "/visit",
+            .prerendered = true,
+        },
+        .{
+            .route = "/posts/:slug",
+            .prerendered = false,
+        },
     },
     .inside = &.{"outer"},
 }};
@@ -296,12 +310,25 @@ test "rows: the theme's pages, then its fragments, then what only the index know
     defer arena_state.deinit();
     const source: Source = .{
         .arena = arena_state.allocator(),
-        .def = .{ .handle = "post", .name = "Post", .fields = &.{} },
+        .def = .{
+            .handle = "post",
+            .name = "Post",
+            .fields = &.{},
+        },
         .base_url = "http://h",
         .artifacts = &.{
-            .{ .name = "/", .keys = &.{ "type:post", "records" } },
-            .{ .name = "/posts/hello", .keys = &.{"record:abc"} },
-            .{ .name = "/tags", .keys = &.{"records"} },
+            .{
+                .name = "/",
+                .keys = &.{ "type:post", "records" },
+            },
+            .{
+                .name = "/posts/hello",
+                .keys = &.{"record:abc"},
+            },
+            .{
+                .name = "/tags",
+                .keys = &.{"records"},
+            },
         },
     };
     const found: template_module.impact.Impact = .{

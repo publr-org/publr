@@ -56,15 +56,25 @@ pub const Request = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
-    pub const In = struct { code: []const u8 };
-    pub const Out = struct { name: []const u8, scope: []const u8, expires_at: i64 };
-    pub const example: In = .{ .code = example_code };
+    pub const In = struct {
+        code: []const u8,
+    };
+    pub const Out = struct {
+        name: []const u8,
+        scope: []const u8,
+        expires_at: i64,
+    };
+    pub const example: In = .{
+        .code = example_code,
+    };
     pub const example_out: Out = .{
         .name = "An agent on Ada's laptop",
         .scope = "drafts",
         .expires_at = 1792232000000,
     };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .code = "The user code, `WXZB-CDFG`" };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .code = "The user code, `WXZB-CDFG`",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .name = "What the device calls itself",
         .scope = "What it asks to do",
@@ -76,7 +86,11 @@ pub const Request = struct {
 
         const request = try waiting(ctx, in.code);
 
-        return .{ .name = request.name, .scope = request.scope, .expires_at = request.expires_at };
+        return .{
+            .name = request.name,
+            .scope = request.scope,
+            .expires_at = request.expires_at,
+        };
     }
 };
 
@@ -91,15 +105,27 @@ pub const Approve = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
-    pub const In = struct { code: []const u8, scope: []const u8 };
-    pub const Out = struct { approved: bool };
-    pub const example: In = .{ .code = example_code, .scope = "drafts" };
-    pub const example_out: Out = .{ .approved = true };
+    pub const In = struct {
+        code: []const u8,
+        scope: []const u8,
+    };
+    pub const Out = struct {
+        approved: bool,
+    };
+    pub const example: In = .{
+        .code = example_code,
+        .scope = "drafts",
+    };
+    pub const example_out: Out = .{
+        .approved = true,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .code = "The user code, `WXZB-CDFG`",
         .scope = "`read`, `drafts` or `write`, no more than it asked",
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .approved = "Always true" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .approved = "Always true",
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         const user_id = try person_of(ctx);
@@ -124,7 +150,9 @@ pub const Approve = struct {
             return error.NotFound;
         }
 
-        return .{ .approved = true };
+        return .{
+            .approved = true,
+        };
     }
 };
 
@@ -136,12 +164,24 @@ pub const Deny = struct {
     pub const details = "A signed-in account. The device learns it on its next poll.";
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
-    pub const In = struct { code: []const u8 };
-    pub const Out = struct { denied: bool };
-    pub const example: In = .{ .code = example_code };
-    pub const example_out: Out = .{ .denied = true };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .code = "The user code, `WXZB-CDFG`" };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .denied = "Always true" };
+    pub const In = struct {
+        code: []const u8,
+    };
+    pub const Out = struct {
+        denied: bool,
+    };
+    pub const example: In = .{
+        .code = example_code,
+    };
+    pub const example_out: Out = .{
+        .denied = true,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .code = "The user code, `WXZB-CDFG`",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .denied = "Always true",
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         const user_id = try person_of(ctx);
@@ -159,7 +199,9 @@ pub const Deny = struct {
             return error.NotFound;
         }
 
-        return .{ .denied = true };
+        return .{
+            .denied = true,
+        };
     }
 };
 
@@ -187,23 +229,31 @@ pub const List = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
-    pub const In = struct { all: bool = false };
-    pub const Out = struct { devices: []const Item };
+    pub const In = struct {
+        all: bool = false,
+    };
+    pub const Out = struct {
+        devices: []const Item,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .devices = &.{.{
-        .id = example_device_id,
-        .name = "An agent on Ada's laptop",
-        .scope = "drafts",
-        .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
-        .email = "ada@example.com",
-        .created_at = 1792232000000,
-        .last_used_at = 1792235600000,
-        .current = false,
-    }} };
+    pub const example_out: Out = .{
+        .devices = &.{.{
+            .id = example_device_id,
+            .name = "An agent on Ada's laptop",
+            .scope = "drafts",
+            .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
+            .email = "ada@example.com",
+            .created_at = 1792232000000,
+            .last_used_at = 1792235600000,
+            .current = false,
+        }},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .all = "Every account's devices (administrators only)",
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .devices = "Up to 256, newest first" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .devices = "Up to 256, newest first",
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         const user_id = ctx.caller.user_id() orelse return error.Denied;
@@ -234,7 +284,9 @@ pub const List = struct {
 
         std.debug.assert(items.len <= store.devices.listed_max);
 
-        return .{ .devices = items };
+        return .{
+            .devices = items,
+        };
     }
 };
 
@@ -249,14 +301,24 @@ pub const Revoke = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
-    pub const In = struct { id: []const u8 };
-    pub const Out = struct { revoked: bool };
-    pub const example: In = .{ .id = example_device_id };
-    pub const example_out: Out = .{ .revoked = true };
+    pub const In = struct {
+        id: []const u8,
+    };
+    pub const Out = struct {
+        revoked: bool,
+    };
+    pub const example: In = .{
+        .id = example_device_id,
+    };
+    pub const example_out: Out = .{
+        .revoked = true,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The device, as `device list` shows it",
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .revoked = "Always true" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .revoked = "Always true",
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         const user_id = ctx.caller.user_id() orelse return error.Denied;
@@ -286,6 +348,8 @@ pub const Revoke = struct {
 
         ctx.notice("auth.device_revoked", device.id);
 
-        return .{ .revoked = true };
+        return .{
+            .revoked = true,
+        };
     }
 };

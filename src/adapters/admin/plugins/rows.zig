@@ -151,5 +151,8 @@ pub fn access_of(
         }
     }
 
-    return .{ .scope = scope, .types = ticked.items };
+    return .{
+        .scope = scope,
+        .types = ticked.items,
+    };
 }

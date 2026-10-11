@@ -58,9 +58,13 @@ pub fn apply(
 
     const key = arena.dupe(u8, base) catch return error.OutOfMemory;
 
-    object.put(arena, key, .{ .array = array }) catch return error.OutOfMemory;
+    object.put(arena, key, .{
+        .array = array,
+    }) catch return error.OutOfMemory;
 
-    return .{ .object = object };
+    return .{
+        .object = object,
+    };
 }
 
 fn change(
@@ -127,14 +131,18 @@ fn single_change(
     }
 
     const value: Value = if (std.mem.eql(u8, verb, "set"))
-        (try blank_of(arena, def, form)) orelse return .{ .object = object.* }
+        (try blank_of(arena, def, form)) orelse return .{
+            .object = object.*,
+        }
     else
         .null;
     const key = arena.dupe(u8, def.name) catch return error.OutOfMemory;
 
     object.put(arena, key, value) catch return error.OutOfMemory;
 
-    return .{ .object = object.* };
+    return .{
+        .object = object.*,
+    };
 }
 
 /// What a new value starts as: an empty item for a repeater, the picked record for a
@@ -144,7 +152,9 @@ fn blank_of(arena: std.mem.Allocator, def: Def, form: *const Form) Error!?Value 
     std.debug.assert(form.len <= admin.form_pairs_max);
 
     if (model.field.is_repeater(def.kind)) {
-        return .{ .object = .empty };
+        return .{
+            .object = .empty,
+        };
     }
 
     const kind = model.kinds.lookup(registry.Kinds.all, def.kind);
@@ -159,11 +169,15 @@ fn blank_of(arena: std.mem.Allocator, def: Def, form: *const Form) Error!?Value 
         };
         const picked = form.text(pick_name) orelse return null;
 
-        return .{ .string = picked };
+        return .{
+            .string = picked,
+        };
     }
 
     return switch (kind.storage) {
-        .text, .long, .ref => .{ .string = "" },
+        .text, .long, .ref => .{
+            .string = "",
+        },
         else => .null,
     };
 }
@@ -187,14 +201,41 @@ const test_fields = [_]Def{
         .label = "Tags",
         .kind = "reference",
         .many = true,
-        .options = .{ .to = &.{"tag"} },
+        .options = .{
+            .to = &.{"tag"},
+        },
     },
-    .{ .name = "names", .label = "Names", .kind = "string", .many = true },
-    .{ .name = "faq", .label = "FAQ", .kind = "repeater", .fields = &.{
-        .{ .name = "question", .label = "Q", .kind = "string" },
-    } },
-    .{ .name = "title", .label = "Title", .kind = "string" },
-    .{ .name = "hotel", .label = "Hotel", .kind = "reference", .options = .{ .to = &.{"hotel"} } },
+    .{
+        .name = "names",
+        .label = "Names",
+        .kind = "string",
+        .many = true,
+    },
+    .{
+        .name = "faq",
+        .label = "FAQ",
+        .kind = "repeater",
+        .fields = &.{
+            .{
+                .name = "question",
+                .label = "Q",
+                .kind = "string",
+            },
+        },
+    },
+    .{
+        .name = "title",
+        .label = "Title",
+        .kind = "string",
+    },
+    .{
+        .name = "hotel",
+        .label = "Hotel",
+        .kind = "reference",
+        .options = .{
+            .to = &.{"hotel"},
+        },
+    },
 };
 
 fn parse(arena: std.mem.Allocator, text: []const u8) !Value {

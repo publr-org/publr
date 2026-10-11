@@ -38,7 +38,10 @@ pub const Summary = struct {
 };
 
 pub const Write = enum { always, when_changed };
-pub const Rendered = struct { bytes: u64, wrote: bool };
+pub const Rendered = struct {
+    bytes: u64,
+    wrote: bool,
+};
 
 /// Every app as files. Batches pending in the index are moot afterwards and drained.
 pub fn build_all(project: *const Project) !Summary {
@@ -71,7 +74,9 @@ pub fn build_or_fail(app: *App, project: *const Project) Summary {
     const summary = build(app, project) catch |err| {
         fail(app, err);
 
-        return .{ .failed = 1 };
+        return .{
+            .failed = 1,
+        };
     };
 
     app.build_ready = true;
@@ -165,7 +170,9 @@ fn build_route(
 
             for (slugs, 1..) |slug, done| {
                 const url = try engine.substitute(arena, route.pattern, slug);
-                const params: context_module.Params = .{ .slug = slug };
+                const params: context_module.Params = .{
+                    .slug = slug,
+                };
 
                 report_progress(url, @intCast(done), @intCast(slugs.len));
 
@@ -291,7 +298,10 @@ pub fn render_url(
     var arena_state = std.heap.ArenaAllocator.init(app.gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var recorded: Deps = .{ .arena = arena, .app = app.spec.name };
+    var recorded: Deps = .{
+        .arena = arena,
+        .app = app.spec.name,
+    };
     const html = try pages.render_page(arena, app, route.template, .{
         .arena = arena,
         .project = project,
@@ -307,12 +317,18 @@ pub fn render_url(
     const unchanged = try app.index.unchanged(artifact, html);
 
     if (unchanged and when == .when_changed) {
-        return .{ .bytes = html.len, .wrote = false };
+        return .{
+            .bytes = html.len,
+            .wrote = false,
+        };
     }
 
     try artifacts.write(app, try artifacts.page_path(arena, url), html);
 
-    return .{ .bytes = html.len, .wrote = true };
+    return .{
+        .bytes = html.len,
+        .wrote = true,
+    };
 }
 
 /// The 404 page: built, never indexed, refreshed with every full build.
@@ -347,7 +363,10 @@ pub fn render_island(
     var arena_state = std.heap.ArenaAllocator.init(app.gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var recorded: Deps = .{ .arena = arena, .app = app.spec.name };
+    var recorded: Deps = .{
+        .arena = arena,
+        .app = app.spec.name,
+    };
     const html = try pages.render_fragment(arena, app, island, .{
         .arena = arena,
         .project = project,
@@ -362,12 +381,18 @@ pub fn render_island(
     const unchanged = try app.index.unchanged(artifact, html);
 
     if (unchanged and when == .when_changed) {
-        return .{ .bytes = html.len, .wrote = false };
+        return .{
+            .bytes = html.len,
+            .wrote = false,
+        };
     }
 
     try artifacts.write(app, try artifacts.island_path(arena, island.key), html);
 
-    return .{ .bytes = html.len, .wrote = true };
+    return .{
+        .bytes = html.len,
+        .wrote = true,
+    };
 }
 
 const batches_per_drain_max: u32 = 1024;

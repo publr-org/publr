@@ -17,7 +17,9 @@ const layouts = @import("pjsx_gen/layouts.zig");
 
 const Module = pjsx.compiler.ModuleIR;
 /// Stands for the render runtime's node while the request's fields are read.
-const ShapeNode = struct { render_fn: ?*const anyopaque };
+const ShapeNode = struct {
+    render_fn: ?*const anyopaque,
+};
 
 const file_bytes_max = 4 << 20;
 const modules_max: u32 = 512;
@@ -66,7 +68,10 @@ const Set = struct {
 
         try imports.appendSlice(set.arena, set.admin_views.items);
 
-        var resolver = pjsx.FileResolver{ .io = set.io, .imports = imports.items };
+        var resolver = pjsx.FileResolver{
+            .io = set.io,
+            .imports = imports.items,
+        };
         const module = pjsx.compiler.createPjsxModuleWithResolver(
             set.arena,
             source,
@@ -139,7 +144,9 @@ fn run(init: std.process.Init) !u8 {
         .arena = arena,
         .io = io,
         .components_dir_path = components_dir_path,
-        .components_dir = try cwd.openDir(io, components_dir_path, .{ .iterate = true }),
+        .components_dir = try cwd.openDir(io, components_dir_path, .{
+            .iterate = true,
+        }),
     };
     defer set.components_dir.close(io);
 
@@ -243,7 +250,9 @@ fn compile_ui(set: *Set, ui_dir_path: []const u8, owner: enum { admin, plugin })
     std.debug.assert(ui_dir_path.len > 0);
     std.debug.assert((owner == .admin) == (set.modules.items.len == 0));
 
-    var ui_dir = try std.Io.Dir.cwd().openDir(set.io, ui_dir_path, .{ .iterate = true });
+    var ui_dir = try std.Io.Dir.cwd().openDir(set.io, ui_dir_path, .{
+        .iterate = true,
+    });
     defer ui_dir.close(set.io);
 
     var paths: std.ArrayList([]const u8) = .empty;
@@ -547,7 +556,10 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
         const name = module.component.name;
         const code = program.lower(arena, name) catch |err| return report(err, name);
         const file_name = try std.fmt.allocPrint(arena, "{s}.zig", .{name});
-        try out_dir.writeFile(set.io, .{ .sub_path = file_name, .data = code });
+        try out_dir.writeFile(set.io, .{
+            .sub_path = file_name,
+            .data = code,
+        });
     }
 
     const views = program.viewsFile(arena) catch |err| return report(err, "views.zig");
@@ -556,9 +568,18 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
     try browser_imports(set, &browser.writer);
     try browser.writer.writeAll(try program.storesFile(arena));
     const stores = browser.written();
-    try out_dir.writeFile(set.io, .{ .sub_path = "views.zig", .data = views });
-    try out_dir.writeFile(set.io, .{ .sub_path = "classes.txt", .data = classes });
-    try out_dir.writeFile(set.io, .{ .sub_path = "stores.js", .data = stores });
+    try out_dir.writeFile(set.io, .{
+        .sub_path = "views.zig",
+        .data = views,
+    });
+    try out_dir.writeFile(set.io, .{
+        .sub_path = "classes.txt",
+        .data = classes,
+    });
+    try out_dir.writeFile(set.io, .{
+        .sub_path = "stores.js",
+        .data = stores,
+    });
 }
 
 fn is_runtime(source: []const u8) bool {

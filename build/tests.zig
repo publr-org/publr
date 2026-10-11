@@ -38,19 +38,25 @@ pub fn add(
     // Whatever the project compiles in (`plugins/`, `publr.zon`) never reaches the checks:
     // core is tested with none, the test plugins being installed where a check wants them.
     fixture_from.plugins_dir = sandboxed_plugins.fixture_dir;
-    fixture_from.native = .{ .names = &.{} };
+    fixture_from.native = .{
+        .names = &.{},
+    };
 
     const fixture = core.add_module(builder, target, optimize, fixture_from);
     const fixture_exe = builder.addExecutable(.{
         .name = "publr-fixture",
         .root_module = core.add_entry(builder, "src/main.zig", fixture),
     });
-    const tests = builder.addTest(.{ .root_module = fixture });
+    const tests = builder.addTest(.{
+        .root_module = fixture,
+    });
 
     for (fixture_plugins.names, fixture_plugins.files) |name, file| {
         const import_name = builder.fmt("sandboxed_plugin_{s}", .{name});
 
-        fixture.addAnonymousImport(import_name, .{ .root_source_file = file });
+        fixture.addAnonymousImport(import_name, .{
+            .root_source_file = file,
+        });
     }
 
     const test_step = builder.step("test", "Run all tests");

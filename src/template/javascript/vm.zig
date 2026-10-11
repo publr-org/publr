@@ -30,7 +30,11 @@ pub const VM = struct {
         api.JS_SetMemoryLimit(runtime, memory_bytes_max);
         api.JS_SetMaxStackSize(runtime, stack_bytes_max);
         const context = api.JS_NewContext(runtime) orelse return error.OutOfMemory;
-        return .{ .runtime = runtime, .context = context, .arena = arena };
+        return .{
+            .runtime = runtime,
+            .context = context,
+            .arena = arena,
+        };
     }
 
     pub fn start(vm: *VM) Error!void {

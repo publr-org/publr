@@ -35,7 +35,9 @@ pub fn sign_in(request: *Request, response: *Response, ctx: *Context) Error!void
     }
 
     const in = parse_body(sign_in_operations.SignIn.In, ctx.arena, request.body) orelse {
-        return response.json(.bad_request, .{ .@"error" = "invalid_body" });
+        return response.json(.bad_request, .{
+            .@"error" = "invalid_body",
+        });
     };
     var sdk_ctx = context(project, ctx.arena, .anonymous);
     const out = registry.SDK.dispatch(&sdk_ctx, sign_in_operations.SignIn, in) catch |err| {
@@ -73,7 +75,9 @@ pub fn sign_on(request: *Request, response: *Response, ctx: *Context) Error!void
     const back = if (local_path(wanted)) wanted else "/admin";
     var sdk_ctx = context(project, ctx.arena, .anonymous);
     const redeem = sign_on_operations.Redeem;
-    const out = registry.SDK.dispatch(&sdk_ctx, redeem, .{ .token = token }) catch {
+    const out = registry.SDK.dispatch(&sdk_ctx, redeem, .{
+        .token = token,
+    }) catch {
         try response.set_header("Cache-Control", "no-store");
         return response.redirect(.see_other, "/admin/login?sign_on=refused");
     };
@@ -121,14 +125,18 @@ pub fn set_password(request: *Request, response: *Response, ctx: *Context) Error
     }
 
     const in = parse_body(user_operations.SetPassword.In, ctx.arena, request.body) orelse {
-        return response.json(.bad_request, .{ .@"error" = "invalid_body" });
+        return response.json(.bad_request, .{
+            .@"error" = "invalid_body",
+        });
     };
     var sdk_ctx = context(project, ctx.arena, .anonymous);
     const out = registry.SDK.dispatch(&sdk_ctx, user_operations.SetPassword, in) catch |err| {
         return respond_error(response, err, &sdk_ctx);
     };
 
-    try response.json(.ok, .{ .user_id = out.user_id });
+    try response.json(.ok, .{
+        .user_id = out.user_id,
+    });
 }
 
 pub fn sign_out(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -145,13 +153,17 @@ pub fn sign_out(request: *Request, response: *Response, ctx: *Context) Error!voi
     if (identity.token) |token| {
         var sdk_ctx = context(project, ctx.arena, identity.caller);
         const sign_out_operation = sign_in_operations.SignOut;
-        _ = registry.SDK.dispatch(&sdk_ctx, sign_out_operation, .{ .token = token }) catch |err| {
+        _ = registry.SDK.dispatch(&sdk_ctx, sign_out_operation, .{
+            .token = token,
+        }) catch |err| {
             return respond_error(response, err, &sdk_ctx);
         };
     }
 
     try clear_session_cookie(project, request, response, ctx.arena);
-    try response.json(.ok, .{ .signed_out = identity.token != null });
+    try response.json(.ok, .{
+        .signed_out = identity.token != null,
+    });
 }
 
 pub fn whoami(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -198,7 +210,9 @@ pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) E
 
     if (err == error.Failed) {
         const failure = ctx.failure orelse {
-            return response.json(.internal_server_error, .{ .@"error" = "Failed" });
+            return response.json(.internal_server_error, .{
+                .@"error" = "Failed",
+            });
         };
         const declared = std.enums.fromInt(http.Status, failure.status) orelse
             .unprocessable_content;
@@ -229,7 +243,9 @@ pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) E
         => .internal_server_error,
     };
 
-    try response.json(status, .{ .@"error" = @errorName(err) });
+    try response.json(status, .{
+        .@"error" = @errorName(err),
+    });
 }
 
 const routes = @import("../../server/routes.zig");
@@ -248,7 +264,9 @@ test "a plugin's failure answers with its declared status, name and message" {
 
     try std.testing.expectError(error.Failed, @as(sdk.Error!void, ctx.fail(unverified)));
 
-    var response: Response = .{ .arena = ctx.arena };
+    var response: Response = .{
+        .arena = ctx.arena,
+    };
     try respond_error(&response, error.Failed, &ctx);
     try std.testing.expectEqual(@as(u16, 403), response.status.code());
     try std.testing.expectEqualStrings(
@@ -258,7 +276,9 @@ test "a plugin's failure answers with its declared status, name and message" {
 
     // Failed with nothing declared is the operation's bug: a server error, never a guess.
     var bare = harness.ctx(.anonymous);
-    var unknown: Response = .{ .arena = bare.arena };
+    var unknown: Response = .{
+        .arena = bare.arena,
+    };
     try respond_error(&unknown, error.Failed, &bare);
     try std.testing.expectEqual(@as(u16, 500), unknown.status.code());
 }

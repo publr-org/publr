@@ -166,7 +166,11 @@ pub const Ctx = struct {
         std.debug.assert(ctx.parent != null);
 
         const emit = ctx.notify orelse return;
-        emit(ctx, .{ .operation_id = ctx.parent.?, .name = name, .subject = subject });
+        emit(ctx, .{
+            .operation_id = ctx.parent.?,
+            .name = name,
+            .subject = subject,
+        });
     }
 
     pub fn allocate_operation_id(ctx: *Ctx) OperationId {
@@ -207,7 +211,9 @@ test "operation ids are unique and increasing within a ctx" {
 
     var auth_state: AuthState = undefined;
     const params = @import("../lib/auth.zig").password.params_test;
-    try auth_state.init(std.testing.allocator, std.testing.io, .{ .params = params });
+    try auth_state.init(std.testing.allocator, std.testing.io, .{
+        .params = params,
+    });
     defer auth_state.deinit();
 
     var buffer: [256]u8 = undefined;

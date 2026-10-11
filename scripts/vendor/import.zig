@@ -36,7 +36,9 @@ pub fn run(init: std.process.Init, raw_args: []const []const u8) !u8 {
     };
 
     const staging = try cwd.createDirPathOpen(io, staging_root, .{
-        .open_options = .{ .iterate = true },
+        .open_options = .{
+            .iterate = true,
+        },
     });
 
     try extract_archive(io, init.gpa, args.archive_path, staging);
@@ -131,7 +133,9 @@ fn extract_archive(io: std.Io, gpa: std.mem.Allocator, path: []const u8, dest: s
 
     var decompress = std.compress.flate.Decompress.init(&file_reader.interface, .gzip, window);
 
-    try std.tar.extract(io, dest, &decompress.reader, .{ .mode_mode = .ignore });
+    try std.tar.extract(io, dest, &decompress.reader, .{
+        .mode_mode = .ignore,
+    });
 }
 
 fn open_single_top_dir(io: std.Io, staging: std.Io.Dir) !std.Io.Dir {
@@ -160,7 +164,9 @@ fn open_single_top_dir(io: std.Io, staging: std.Io.Dir) !std.Io.Dir {
     std.debug.assert(entries == 1);
     std.debug.assert(name.len > 0);
 
-    return staging.openDir(io, name, .{ .iterate = true });
+    return staging.openDir(io, name, .{
+        .iterate = true,
+    });
 }
 
 fn copy_path(
@@ -173,13 +179,17 @@ fn copy_path(
     const stat = try source.statFile(io, sub_path, .{});
 
     if (stat.kind == .file) {
-        try source.copyFile(sub_path, target, sub_path, io, .{ .make_path = true });
+        try source.copyFile(sub_path, target, sub_path, io, .{
+            .make_path = true,
+        });
         return 1;
     }
 
     std.debug.assert(stat.kind == .directory);
 
-    const source_sub = try source.openDir(io, sub_path, .{ .iterate = true });
+    const source_sub = try source.openDir(io, sub_path, .{
+        .iterate = true,
+    });
     defer source_sub.close(io);
 
     const target_sub = try target.createDirPathOpen(io, sub_path, .{});
@@ -224,7 +234,10 @@ fn write_version(
     std.debug.assert(args.keep.len > 0);
 
     try render_version(&writer, args, sha256_hex, files_copied);
-    try target.writeFile(io, .{ .sub_path = "VERSION.zon", .data = writer.buffered() });
+    try target.writeFile(io, .{
+        .sub_path = "VERSION.zon",
+        .data = writer.buffered(),
+    });
 }
 
 fn render_version(

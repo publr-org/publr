@@ -275,7 +275,11 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
     const form = Form.parse(arena, "label=SKU&required=1&unique=1&limit_length=1&min_len=2" ++
         "&max_len=12&length_message=Two+to+twelve&help=As+printed&default=x&limit_pattern=1" ++
         "&preset=uppercase&pattern=SKU-%23%23%23%23&placeholder=SKU-0000").?;
-    const sku = try field_of(arena, &form, .{ .name = "", .label = "", .kind = "string" });
+    const sku = try field_of(arena, &form, .{
+        .name = "",
+        .label = "",
+        .kind = "string",
+    });
     try std.testing.expectEqualStrings("sku", sku.name);
     try std.testing.expect(sku.required and sku.unique);
     try std.testing.expectEqual(@as(u32, 2), sku.options.min_len.?);
@@ -296,7 +300,11 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
 
     const dated = Form.parse(arena, "label=When&limit_range=1&min=1970-01-02&max=1970-01-02" ++
         "&date_format=date&from_now=1&default_now=1&default=1970-01-02").?;
-    const when = try field_of(arena, &dated, .{ .name = "", .label = "", .kind = "datetime" });
+    const when = try field_of(arena, &dated, .{
+        .name = "",
+        .label = "",
+        .kind = "datetime",
+    });
     try std.testing.expectEqual(@as(f64, 86_400_000), when.options.min.?);
     try std.testing.expectEqual(@as(f64, 2 * 86_400_000 - 1), when.options.max.?);
     try std.testing.expectEqual(model.field.options.DateFormat.date, when.options.date.format);
@@ -306,7 +314,11 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
     const filed = Form.parse(arena, "label=Cover&limit_size=1&size_max=2&size_max_unit=mb" ++
         "&limit_types=1&media_types=image&media_types=video&limit_dimensions=1&width_min=800" ++
         "&media_link=1").?;
-    const cover = try field_of(arena, &filed, .{ .name = "", .label = "", .kind = "media" });
+    const cover = try field_of(arena, &filed, .{
+        .name = "",
+        .label = "",
+        .kind = "media",
+    });
     try std.testing.expectEqual(@as(u64, 2 * mib), cover.options.media.size_max.?);
     try std.testing.expect(cover.options.media.size_min == null);
     try std.testing.expectEqual(@as(usize, 2), cover.options.media.types.len);
@@ -321,31 +333,51 @@ test "lists, listed numbers and the number of values" {
 
     const tags = Form.parse(arena, "label=Tags&many=1&limit_items=1&items_min=1&items_max=5" ++
         "&distinct=1&items_message=One+to+five").?;
-    const tagged = try field_of(arena, &tags, .{ .name = "", .label = "", .kind = "string" });
+    const tagged = try field_of(arena, &tags, .{
+        .name = "",
+        .label = "",
+        .kind = "string",
+    });
     try std.testing.expectEqual(@as(u32, 5), tagged.options.items_max.?);
     try std.testing.expect(tagged.options.distinct);
     try std.testing.expectEqualStrings("One to five", tagged.options.messages.items);
 
     const sizes = Form.parse(arena, "label=Size&limit_choices=1&number_choices=1%0A2%0A5").?;
-    const sized = try field_of(arena, &sizes, .{ .name = "", .label = "", .kind = "integer" });
+    const sized = try field_of(arena, &sizes, .{
+        .name = "",
+        .label = "",
+        .kind = "integer",
+    });
     try std.testing.expectEqual(@as(usize, 3), sized.options.choices.len);
     try std.testing.expectEqualStrings("5", sized.options.choices[2]);
 
     const link = Form.parse(arena, "label=Site&limit_schemes=1&schemes=https&schemes=mailto" ++
         "&limit_hosts=1&hosts=a.io%0Ab.io&host_message=Ours+only").?;
-    const site = try field_of(arena, &link, .{ .name = "", .label = "", .kind = "url" });
+    const site = try field_of(arena, &link, .{
+        .name = "",
+        .label = "",
+        .kind = "url",
+    });
     try std.testing.expectEqual(@as(usize, 2), site.options.url.schemes.len);
     try std.testing.expectEqualStrings("b.io", site.options.url.hosts[1]);
     try std.testing.expectEqualStrings("Ours only", site.options.messages.host);
 
     const mail = Form.parse(arena, "label=Mail&limit_domains=1&domains=publr.dev&lowercase=1").?;
-    const mailed = try field_of(arena, &mail, .{ .name = "", .label = "", .kind = "email" });
+    const mailed = try field_of(arena, &mail, .{
+        .name = "",
+        .label = "",
+        .kind = "email",
+    });
     try std.testing.expectEqualStrings("publr.dev", mailed.options.email.domains[0]);
     try std.testing.expect(mailed.options.email.lowercase);
 
     const path = Form.parse(arena, "label=Slug&limit_reserved=1&reserved=admin%0Aapi" ++
         "&lock_on_publish=1").?;
-    const slugged = try field_of(arena, &path, .{ .name = "", .label = "", .kind = "slug" });
+    const slugged = try field_of(arena, &path, .{
+        .name = "",
+        .label = "",
+        .kind = "slug",
+    });
     try std.testing.expectEqual(@as(usize, 2), slugged.options.slug.reserved.len);
     try std.testing.expect(slugged.options.slug.lock_on_publish);
 }

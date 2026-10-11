@@ -36,5 +36,8 @@ pub fn write(init: std.process.Init, dir: []const u8, manifest: []const u8) !voi
 
     const path = try std.fs.path.join(arena, &.{ ui_dir, "operations.d.ts" });
 
-    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = path, .data = out.written() });
+    try std.Io.Dir.cwd().writeFile(init.io, .{
+        .sub_path = path,
+        .data = out.written(),
+    });
 }

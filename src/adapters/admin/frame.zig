@@ -41,13 +41,17 @@ pub fn read_query(request: *Request, response: *Response, ctx: *Context) Error!v
     const plugin = request.param("plugin") orelse return response.text(.not_found, "Not Found");
 
     if (!try shows_pages(&session, plugin)) {
-        return response.json(.not_found, .{ .@"error" = "no_such_plugin" });
+        return response.json(.not_found, .{
+            .@"error" = "no_such_plugin",
+        });
     }
 
     const asked = std.json.parseFromSliceLeaky(Asked, session.arena, request.body, .{
         .ignore_unknown_fields = true,
         .allocate = .alloc_always,
-    }) catch return response.json(.bad_request, .{ .@"error" = "invalid_input" });
+    }) catch return response.json(.bad_request, .{
+        .@"error" = "invalid_input",
+    });
     const params = try std.json.Stringify.valueAlloc(session.arena, asked.params, .{});
     const input = try std.json.Stringify.valueAlloc(session.arena, .{
         .query = asked.query,
@@ -55,13 +59,18 @@ pub fn read_query(request: *Request, response: *Response, ctx: *Context) Error!v
         .perspective = "all",
     }, .{});
     const output = read_as(&session, plugin, input) catch |err| {
-        return response.json(.unprocessable_content, .{ .@"error" = @errorName(err) });
+        return response.json(.unprocessable_content, .{
+            .@"error" = @errorName(err),
+        });
     };
 
     try response.set_body(.ok, "application/json", output);
 }
 
-const Asked = struct { query: []const u8, params: std.json.Value = .null };
+const Asked = struct {
+    query: []const u8,
+    params: std.json.Value = .null,
+};
 
 fn read_as(session: *Session, plugin: []const u8, input: []const u8) ![]const u8 {
     std.debug.assert(plugin.len > 0);
@@ -113,7 +122,9 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         query,
     });
 
-    const options: admin.chrome.Options = .{ .settings_path = request.path() };
+    const options: admin.chrome.Options = .{
+        .settings_path = request.path(),
+    };
 
     try admin.screen_with(&session, options, .ok, admin.views.PluginPage, .{
         .title = page.label,
@@ -188,10 +199,15 @@ fn drawn(
     std.debug.assert(operation.len > 0);
     std.debug.assert(session.signed_in());
 
-    const asked = .{ .query = query, .base = base };
+    const asked = .{
+        .query = query,
+        .base = base,
+    };
     const input = try std.json.Stringify.valueAlloc(session.arena, asked, .{});
     const output = try registry.SDK.call_json(&session.ctx, operation, input);
-    const Drawn = struct { html: []const u8 };
+    const Drawn = struct {
+        html: []const u8,
+    };
     const parsed = try std.json.parseFromSliceLeaky(Drawn, session.arena, output, .{
         .ignore_unknown_fields = true,
         .allocate = .alloc_always,

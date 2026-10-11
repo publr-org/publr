@@ -6,15 +6,32 @@ pub fn children(kind: []const u8) []const field.Def {
 
     if (std.mem.eql(u8, kind, "link")) {
         return &.{
-            .{ .name = "url", .label = "URL", .kind = "url", .required = true },
-            .{ .name = "label", .label = "Link text", .kind = "string" },
-            .{ .name = "new_window", .label = "Open in a new tab", .kind = "boolean" },
+            .{
+                .name = "url",
+                .label = "URL",
+                .kind = "url",
+                .required = true,
+            },
+            .{
+                .name = "label",
+                .label = "Link text",
+                .kind = "string",
+            },
+            .{
+                .name = "new_window",
+                .label = "Open in a new tab",
+                .kind = "boolean",
+            },
         };
     }
 
     if (std.mem.eql(u8, kind, "location")) {
         return &.{
-            .{ .name = "address", .label = "Address", .kind = "string" },
+            .{
+                .name = "address",
+                .label = "Address",
+                .kind = "string",
+            },
             .{
                 .name = "latitude",
                 .label = "Latitude",
@@ -55,10 +72,15 @@ pub fn apply(
         return defs;
     }
 
-    const Frame = struct { fields: []field.Def, index: u32 = 0 };
+    const Frame = struct {
+        fields: []field.Def,
+        index: u32 = 0,
+    };
     var frames: [field.depth_max + 1]Frame = undefined;
     const root = try arena.dupe(field.Def, defs);
-    frames[0] = .{ .fields = root };
+    frames[0] = .{
+        .fields = root,
+    };
     var depth: u32 = 0;
 
     while (true) {
@@ -79,7 +101,9 @@ pub fn apply(
             const copy = try arena.dupe(field.Def, def.fields);
             def.fields = copy;
             depth += 1;
-            frames[depth] = .{ .fields = copy };
+            frames[depth] = .{
+                .fields = copy,
+            };
         }
     }
 }

@@ -71,7 +71,11 @@ pub const HostApi = struct {
         std.debug.assert(name.len > 0);
         std.debug.assert(self.inner.now_ms >= 0);
 
-        return self.inner.fail(.{ .name = name, .status = 409, .message = message });
+        return self.inner.fail(.{
+            .name = name,
+            .status = 409,
+            .message = message,
+        });
     }
 
     /// A line in the log, attributed to the plugin.

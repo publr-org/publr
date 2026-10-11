@@ -75,7 +75,9 @@ pub fn delete(request: *Request, response: *Response, ctx: *Context) Error!void 
     const session = &post.session;
     const id = try admin.param(session, "id", back) orelse return;
 
-    _ = registry.SDK.dispatch(&session.ctx, saved_views.Delete, .{ .id = id }) catch |err| {
+    _ = registry.SDK.dispatch(&session.ctx, saved_views.Delete, .{
+        .id = id,
+    }) catch |err| {
         return admin.fail(session, err, back);
     };
 

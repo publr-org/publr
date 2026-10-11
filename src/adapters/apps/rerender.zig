@@ -45,7 +45,9 @@ pub fn artifact(
 
     // Only a `[slug]` page has a record to lose; anywhere else "not found" is a failed
     // render, and the file it had stays.
-    const params: context_module.Params = .{ .slug = matched.slug };
+    const params: context_module.Params = .{
+        .slug = matched.slug,
+    };
     const rendered = build.render_url(app, project, matched.route, url, params, .when_changed);
     const result = rendered catch |err| {
         if (err == error.EntryNotFound and matched.slug != null) {
@@ -158,7 +160,9 @@ fn routes_of(app: *App, project: *const Project, arena: std.mem.Allocator, slug:
         }
 
         const url = engine.substitute(arena, route.pattern, slug) catch return written;
-        const params: context_module.Params = .{ .slug = slug };
+        const params: context_module.Params = .{
+            .slug = slug,
+        };
         const rendered = build.render_url(app, project, route, url, params, .when_changed);
         const result = rendered catch |err| {
             report_module.err_reason(reason_of(app), "apps: {s}: {s}: {s}", .{

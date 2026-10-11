@@ -25,7 +25,11 @@ pub const Event = union(enum) {
         operation_id: u64,
         err: operation.Error,
     };
-    pub const Notice = struct { operation_id: u64, name: []const u8, subject: []const u8 };
+    pub const Notice = struct {
+        operation_id: u64,
+        name: []const u8,
+        subject: []const u8,
+    };
 };
 
 pub fn validate(comptime Middleware: type) void {

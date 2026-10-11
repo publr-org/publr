@@ -59,7 +59,9 @@ pub fn parse(
         }
     }
 
-    return std.json.Stringify.valueAlloc(arena, std.json.Value{ .object = object }, .{}) catch {
+    return std.json.Stringify.valueAlloc(arena, std.json.Value{
+        .object = object,
+    }, .{}) catch {
         return error.OutOfMemory;
     };
 }
@@ -95,19 +97,31 @@ fn value_of(arena: std.mem.Allocator, field: Field, text: []const u8) !std.json.
     }
 
     return switch (field.shape) {
-        .string => .{ .string = text },
-        .integer => .{ .integer = try std.fmt.parseInt(i64, text, 10) },
-        .number => .{ .float = try std.fmt.parseFloat(f64, text) },
-        .boolean => .{ .bool = try parse_bool(text) },
+        .string => .{
+            .string = text,
+        },
+        .integer => .{
+            .integer = try std.fmt.parseInt(i64, text, 10),
+        },
+        .number => .{
+            .float = try std.fmt.parseFloat(f64, text),
+        },
+        .boolean => .{
+            .bool = try parse_bool(text),
+        },
         .strings => strings: {
             var list: std.json.Array = .init(arena);
             var parts = std.mem.splitScalar(u8, text, ',');
 
             while (parts.next()) |part| {
-                try list.append(.{ .string = part });
+                try list.append(.{
+                    .string = part,
+                });
             }
 
-            break :strings .{ .array = list };
+            break :strings .{
+                .array = list,
+            };
         },
         .json => try std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}),
     };
@@ -153,7 +167,9 @@ pub fn print_json(arena: std.mem.Allocator, text: []const u8, out: *std.Io.Write
         return error.Invalid;
     };
 
-    const options: std.json.Stringify.Options = .{ .whitespace = .indent_2 };
+    const options: std.json.Stringify.Options = .{
+        .whitespace = .indent_2,
+    };
 
     std.json.Stringify.value(value, options, out) catch return error.WriteFailed;
     out.writeByte('\n') catch return error.WriteFailed;
@@ -230,9 +246,24 @@ test "flags become JSON by the field shapes; unknown and missing flags are named
         .sandboxed_plugin = 0,
         .entry = 0,
         .fields = &.{
-            .{ .name = "note", .shape = .string, .required = true, .label = "text" },
-            .{ .name = "times", .shape = .integer, .required = false, .label = "integer" },
-            .{ .name = "tags", .shape = .strings, .required = false, .label = "list of text" },
+            .{
+                .name = "note",
+                .shape = .string,
+                .required = true,
+                .label = "text",
+            },
+            .{
+                .name = "times",
+                .shape = .integer,
+                .required = false,
+                .label = "integer",
+            },
+            .{
+                .name = "tags",
+                .shape = .strings,
+                .required = false,
+                .label = "list of text",
+            },
         },
     };
     var problem: cli.Problem = .{};

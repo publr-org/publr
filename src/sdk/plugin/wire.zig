@@ -12,7 +12,10 @@ pub const ok: u32 = 0;
 pub const import_module = "env";
 
 /// A result the host writes into the guest's memory: where its output is and how long.
-pub const Result = extern struct { ptr: u32, len: u32 };
+pub const Result = extern struct {
+    ptr: u32,
+    len: u32,
+};
 
 pub const result_bytes: u32 = @sizeOf(Result);
 

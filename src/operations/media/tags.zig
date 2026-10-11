@@ -24,13 +24,18 @@ pub fn named(ctx: *Ctx, ids: []const []const u8) Error![]const TagRef {
     }
 
     const taxonomy = model.media.tags_handle;
-    const tree = try registry.SDK.dispatch(ctx, term.Tree, .{ .taxonomy = taxonomy });
+    const tree = try registry.SDK.dispatch(ctx, term.Tree, .{
+        .taxonomy = taxonomy,
+    });
     var found: std.ArrayList(TagRef) = .empty;
 
     for (ids) |id| {
         for (tree.terms) |node| {
             if (std.mem.eql(u8, node.id, id)) {
-                try found.append(ctx.arena, .{ .id = node.id, .name = node.title });
+                try found.append(ctx.arena, .{
+                    .id = node.id,
+                    .name = node.title,
+                });
             }
         }
     }
@@ -48,7 +53,9 @@ pub fn ensure(ctx: *Ctx, names: []const []const u8) Error![]const []const u8 {
     }
 
     const taxonomy = model.media.tags_handle;
-    const tree = try registry.SDK.dispatch(ctx, term.Tree, .{ .taxonomy = taxonomy });
+    const tree = try registry.SDK.dispatch(ctx, term.Tree, .{
+        .taxonomy = taxonomy,
+    });
     var ids: std.ArrayList([]const u8) = .empty;
 
     for (names) |raw| {
@@ -85,8 +92,12 @@ fn existing(nodes: []const term.Node, wanted: []const u8) ?[]const u8 {
 fn create(ctx: *Ctx, wanted: []const u8) Error![]const u8 {
     std.debug.assert(wanted.len > 0 and wanted.len <= name_len_max);
 
-    const Document = struct { name: []const u8 };
-    const document = std.json.Stringify.valueAlloc(ctx.arena, Document{ .name = wanted }, .{}) catch
+    const Document = struct {
+        name: []const u8,
+    };
+    const document = std.json.Stringify.valueAlloc(ctx.arena, Document{
+        .name = wanted,
+    }, .{}) catch
         return error.OutOfMemory;
     const created = try registry.SDK.dispatch(ctx, term.Create, .{
         .taxonomy = model.media.tags_handle,

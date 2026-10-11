@@ -50,7 +50,12 @@ pub fn new_page(
     var def = operations.Destination.user.definition();
     def.name = "";
     def.handle = "";
-    def.group.location = &.{.{ .rules = &.{.{ .field = "destination", .value = "user" }} }};
+    def.group.location = &.{.{
+        .rules = &.{.{
+            .field = "destination",
+            .value = "user",
+        }},
+    }};
     try @import("field_group.zig").render(&session, def, true);
 }
 

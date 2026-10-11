@@ -16,7 +16,10 @@ pub const log_bytes_max: u32 = 256 << 10;
 
 pub const operations = [_]type{ Build, BuildLog };
 
-pub const Source = struct { path: []const u8, content: []const u8 };
+pub const Source = struct {
+    path: []const u8,
+    content: []const u8,
+};
 
 pub const Build = struct {
     pub const name = "plugin.build";
@@ -31,13 +34,25 @@ pub const Build = struct {
         \\Next to the project, edit the files and run `publr plugin build --name <name>`.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { name: []const u8, files: []const Source };
-    pub const Out = struct { started: bool, log: []const u8 };
-    pub const example: In = .{ .name = "guestbook", .files = &.{.{
-        .path = "main.zig",
-        .content = "const publr = @import(\"publr\");\n",
-    }} };
-    pub const example_out: Out = .{ .started = true, .log = "data/builds/guestbook.log" };
+    pub const In = struct {
+        name: []const u8,
+        files: []const Source,
+    };
+    pub const Out = struct {
+        started: bool,
+        log: []const u8,
+    };
+    pub const example: In = .{
+        .name = "guestbook",
+        .files = &.{.{
+            .path = "main.zig",
+            .content = "const publr = @import(\"publr\");\n",
+        }},
+    };
+    pub const example_out: Out = .{
+        .started = true,
+        .log = "data/builds/guestbook.log",
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .name = "The plugin's name, `[a-z][a-z0-9_]*`",
         .files = "Up to 64 files as `{ path, content }`, paths inside the plugin's folder",
@@ -73,7 +88,10 @@ pub const Build = struct {
 
         const log = std.fmt.allocPrint(ctx.arena, "{s}/{s}.log", .{ builder.logs_dir, in.name });
 
-        return .{ .started = true, .log = log catch return error.OutOfMemory };
+        return .{
+            .started = true,
+            .log = log catch return error.OutOfMemory,
+        };
     }
 
     fn check_files(ctx: *Ctx, in: In) Error!void {
@@ -111,7 +129,10 @@ pub const Build = struct {
                 root.createDirPath(ctx.io, dir) catch return error.Unavailable;
             }
 
-            root.writeFile(ctx.io, .{ .sub_path = file.path, .data = file.content }) catch {
+            root.writeFile(ctx.io, .{
+                .sub_path = file.path,
+                .data = file.content,
+            }) catch {
                 return error.Unavailable;
             };
         }
@@ -126,12 +147,24 @@ pub const BuildLog = struct {
         \\while the build has written nothing yet. Not found before any build.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { name: []const u8 };
-    pub const Out = struct { log: []const u8 };
-    pub const example: In = .{ .name = "guestbook" };
-    pub const example_out: Out = .{ .log = "{\n  \"enabled\": [\"guestbook\"]\n}\n" };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .name = "The plugin's name" };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .log = "Up to its last 256 KiB" };
+    pub const In = struct {
+        name: []const u8,
+    };
+    pub const Out = struct {
+        log: []const u8,
+    };
+    pub const example: In = .{
+        .name = "guestbook",
+    };
+    pub const example_out: Out = .{
+        .log = "{\n  \"enabled\": [\"guestbook\"]\n}\n",
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .name = "The plugin's name",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .log = "Up to its last 256 KiB",
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         const builder = ctx.builder orelse return error.Unavailable;
@@ -148,10 +181,12 @@ pub const BuildLog = struct {
         const where = path catch return error.OutOfMemory;
         const log = cwd.readFileAlloc(ctx.io, where, ctx.arena, limit);
 
-        return .{ .log = log catch |err| switch (err) {
-            error.FileNotFound => return error.NotFound,
-            error.OutOfMemory => return error.OutOfMemory,
-            else => return error.Unavailable,
-        } };
+        return .{
+            .log = log catch |err| switch (err) {
+                error.FileNotFound => return error.NotFound,
+                error.OutOfMemory => return error.OutOfMemory,
+                else => return error.Unavailable,
+            },
+        };
     }
 };

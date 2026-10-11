@@ -99,7 +99,9 @@ fn spec_of(comptime App: type) Spec {
             .plugins = config.plugins,
             .templates = files_of(App.templates),
             .assets = files_of(App.assets),
-            .tokens = jit.extendTheme(jit.default_theme, .{ .tokens = tokens_of(config.tokens) }),
+            .tokens = jit.extendTheme(jit.default_theme, .{
+                .tokens = tokens_of(config.tokens),
+            }),
             .style_css = App.style_css,
             .interactive_classes = App.interactive_classes,
             .pjsx_components = components_of(App.interactive),
@@ -176,7 +178,10 @@ fn files_of(comptime embedded: anytype) []const File {
         var files: [embedded.len]File = undefined;
 
         for (embedded, 0..) |file, index| {
-            files[index] = .{ .path = file.path, .data = file.data };
+            files[index] = .{
+                .path = file.path,
+                .data = file.data,
+            };
         }
 
         const final = files;
@@ -196,7 +201,10 @@ fn tokens_of(comptime declared: []const model_app.Token) []const jit.Token {
         var tokens: [declared.len]jit.Token = undefined;
 
         for (declared, 0..) |token, index| {
-            tokens[index] = .{ .name = token.name, .value = token.value };
+            tokens[index] = .{
+                .name = token.name,
+                .value = token.value,
+            };
         }
 
         const final = tokens;
@@ -309,7 +317,11 @@ fn component_of(comptime name: []const u8, comptime Component: type) engine.Pjsx
 
         const kept = props[0..count].*;
 
-        return .{ .name = name, .props = &kept, .takes_children = takes_children };
+        return .{
+            .name = name,
+            .props = &kept,
+            .takes_children = takes_children,
+        };
     }
 }
 

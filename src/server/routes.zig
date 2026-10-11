@@ -150,7 +150,11 @@ pub const testing = struct {
         pub fn init(flow: *Flow, project: Project, arena: std.mem.Allocator) void {
             std.debug.assert(project.connection.transaction_depth == 0);
 
-            flow.* = .{ .app = http.App.offline(.{}), .project = project, .arena = arena };
+            flow.* = .{
+                .app = http.App.offline(.{}),
+                .project = project,
+                .arena = arena,
+            };
             flow.app.user_data = &flow.project;
             register(flow.app.router());
 
@@ -170,7 +174,10 @@ pub const testing = struct {
 
             const parsed = try http.parse(head_text);
             const wire = parsed.complete;
-            var request: http.Request = .{ .inner = &wire, .body = body };
+            var request: http.Request = .{
+                .inner = &wire,
+                .body = body,
+            };
 
             return flow.app.handle(flow.arena, &request);
         }
@@ -213,7 +220,9 @@ test "the admin's door: an account whose roles reach none of its operations stay
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    var flow: admin.Flow = .{ .inner = undefined };
+    var flow: admin.Flow = .{
+        .inner = undefined,
+    };
     flow.inner.init(.{
         .connection = &harness.fixture.connection,
         .auth = &harness.auth,
@@ -279,7 +288,9 @@ test "the rail shows an editor Content, and an administrator Structure and Setti
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    var flow: admin.Flow = .{ .inner = undefined };
+    var flow: admin.Flow = .{
+        .inner = undefined,
+    };
     flow.inner.init(.{
         .connection = &harness.fixture.connection,
         .auth = &harness.auth,

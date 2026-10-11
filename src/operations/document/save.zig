@@ -16,7 +16,11 @@ const Record = store.documents.Record;
 const Def = store.definitions.Def;
 const Value = std.json.Value;
 
-pub const Saved = struct { version: i64, slug: ?[]const u8, changed: bool };
+pub const Saved = struct {
+    version: i64,
+    slug: ?[]const u8,
+    changed: bool,
+};
 
 pub fn Of(comptime Domain: type) type {
     return struct {
@@ -88,7 +92,11 @@ pub fn Of(comptime Domain: type) type {
                 ctx.notice(notice_name("changes_saved"), row.id);
             }
 
-            return .{ .version = version, .slug = slug, .changed = kept };
+            return .{
+                .version = version,
+                .slug = slug,
+                .changed = kept,
+            };
         }
 
         /// Whether the pending copy holds exactly what the live one does, field by field.
@@ -167,7 +175,11 @@ pub fn Of(comptime Domain: type) type {
                 version = (try lifecycle.settle(ctx, row, to, granted)).version;
             }
 
-            return .{ .version = version, .slug = slug, .changed = row.changed };
+            return .{
+                .version = version,
+                .slug = slug,
+                .changed = row.changed,
+            };
         }
 
         fn write(ctx: *Ctx, row: Record, def: Def, slot: []const u8, parsed: Value) Error!void {
@@ -266,7 +278,9 @@ fn published_post(ctx: *Ctx, document_text: []const u8) Error![]const u8 {
         .document = document_text,
     });
 
-    _ = try SDK.dispatch(ctx, records.Publish, .{ .id = created.id });
+    _ = try SDK.dispatch(ctx, records.Publish, .{
+        .id = created.id,
+    });
 
     return created.id;
 }
@@ -289,7 +303,10 @@ test "a save writes only the fields it is given" {
         .document = "{\"title\":\"Two\"}",
     });
 
-    const got = try SDK.dispatch(&system, records.Get, .{ .id = created.id, .purpose = .edit });
+    const got = try SDK.dispatch(&system, records.Get, .{
+        .id = created.id,
+        .purpose = .edit,
+    });
     try std.testing.expectEqualStrings("Two", got.record.title);
     try std.testing.expect(std.mem.indexOf(u8, got.document, "\"first\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, got.document, "\"views\":5") != null);
@@ -326,17 +343,26 @@ test "a save with the live status writes live and pending, and publishes nothing
     });
     try std.testing.expect(live.changed);
 
-    const public_view = try SDK.dispatch(&anon, records.Get, .{ .id = id });
+    const public_view = try SDK.dispatch(&anon, records.Get, .{
+        .id = id,
+    });
     try std.testing.expectEqualStrings("One", public_view.record.title);
     try std.testing.expect(std.mem.indexOf(u8, public_view.document, "\"views\":9") != null);
 
-    const editing = try SDK.dispatch(&system, records.Get, .{ .id = id, .purpose = .edit });
+    const editing = try SDK.dispatch(&system, records.Get, .{
+        .id = id,
+        .purpose = .edit,
+    });
     try std.testing.expectEqualStrings("Draft title", editing.record.title);
     try std.testing.expect(std.mem.indexOf(u8, editing.document, "\"views\":9") != null);
 
-    _ = try SDK.dispatch(&system, records.Publish, .{ .id = id });
+    _ = try SDK.dispatch(&system, records.Publish, .{
+        .id = id,
+    });
 
-    const after = try SDK.dispatch(&anon, records.Get, .{ .id = id });
+    const after = try SDK.dispatch(&anon, records.Get, .{
+        .id = id,
+    });
     try std.testing.expectEqualStrings("Draft title", after.record.title);
     try std.testing.expect(std.mem.indexOf(u8, after.document, "\"views\":9") != null);
 }
@@ -364,7 +390,10 @@ test "an edit taken back leaves the record unchanged" {
     });
     try std.testing.expect(!back.changed);
 
-    const got = try SDK.dispatch(&system, records.Get, .{ .id = id, .purpose = .edit });
+    const got = try SDK.dispatch(&system, records.Get, .{
+        .id = id,
+        .purpose = .edit,
+    });
     try std.testing.expect(!got.record.changed);
     try std.testing.expectEqualStrings("Test", got.record.title);
 
@@ -402,11 +431,16 @@ test "a save with another status moves along a registered transition only" {
         .document = "{\"title\":\"Two\"}",
         .status = "published",
     });
-    const shown = try SDK.dispatch(&anon, records.Get, .{ .id = created.id });
+    const shown = try SDK.dispatch(&anon, records.Get, .{
+        .id = created.id,
+    });
     try std.testing.expectEqualStrings("Two", shown.record.title);
     try std.testing.expectEqualStrings("published", shown.record.status);
 
-    _ = try SDK.dispatch(&system, records.Transition, .{ .id = created.id, .to = "archived" });
+    _ = try SDK.dispatch(&system, records.Transition, .{
+        .id = created.id,
+        .to = "archived",
+    });
     const unregistered = SDK.dispatch(&system, records.Save, .{
         .id = created.id,
         .document = "{\"title\":\"Three\"}",

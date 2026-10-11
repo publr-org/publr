@@ -86,7 +86,9 @@ const Scenario = struct {
     /// The `total` a greeter operation answers.
     fn total(scenario: *Scenario, who: sdk.Caller, name: []const u8, input: []const u8) !i64 {
         const answer = try scenario.call(who, name, input);
-        const Total = struct { total: i64 };
+        const Total = struct {
+            total: i64,
+        };
         const arena = scenario.harness.fixed.allocator();
         const parsed = try std.json.parseFromSliceLeaky(Total, arena, answer, .{});
 
@@ -114,19 +116,38 @@ const Scenario = struct {
 
         std.debug.assert(path.len > 0);
 
-        return registry.SDK.dispatch(&system, plugin_operations.Add, .{ .file = path });
+        return registry.SDK.dispatch(&system, plugin_operations.Add, .{
+            .file = path,
+        });
     }
 
     fn by_name(scenario: *Scenario, comptime Operation: type) !plugin_operations.Detail {
         var system = scenario.ctx(.system);
 
-        return registry.SDK.dispatch(&system, Operation, .{ .name = "greeter" });
+        return registry.SDK.dispatch(&system, Operation, .{
+            .name = "greeter",
+        });
     }
 };
 
-const admin: sdk.Caller = .{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } };
-const editor: sdk.Caller = .{ .user = .{ .id = "u_editor", .roles = &.{"editor"} } };
-const nobody: sdk.Caller = .{ .user = .{ .id = "u_nobody", .roles = &.{} } };
+const admin: sdk.Caller = .{
+    .user = .{
+        .id = "u_admin",
+        .roles = &.{"admin"},
+    },
+};
+const editor: sdk.Caller = .{
+    .user = .{
+        .id = "u_editor",
+        .roles = &.{"editor"},
+    },
+};
+const nobody: sdk.Caller = .{
+    .user = .{
+        .id = "u_nobody",
+        .roles = &.{},
+    },
+};
 const greet = "greeter.greet";
 
 test "installed, a plugin's operations run in the sandbox through the one dispatch" {
@@ -161,7 +182,9 @@ test "installed, a plugin's operations run in the sandbox through the one dispat
     // The records it keeps are records like any other, of the type it declared.
     var system = scenario.ctx(.system);
     const records = @import("../../operations/record.zig");
-    const listed = try registry.SDK.dispatch(&system, records.List, .{ .type = "salutation" });
+    const listed = try registry.SDK.dispatch(&system, records.List, .{
+        .type = "salutation",
+    });
 
     try std.testing.expectEqual(@as(usize, 3), listed.records.len);
 }
@@ -219,13 +242,17 @@ test "installing twice conflicts; removing unloads its operations and keeps its 
     try std.testing.expectEqual(@as(u32, 0), greeter.pending);
 
     var removing = scenario.ctx(.system);
-    _ = try registry.SDK.dispatch(&removing, plugin_operations.Remove, .{ .name = "greeter" });
+    _ = try registry.SDK.dispatch(&removing, plugin_operations.Remove, .{
+        .name = "greeter",
+    });
 
     try std.testing.expectError(error.NotFound, scenario.call(admin, greet, "{\"note\":\"x\"}"));
 
     var reading = scenario.ctx(.system);
     const records = @import("../../operations/record.zig");
-    const kept = try registry.SDK.dispatch(&reading, records.List, .{ .type = "salutation" });
+    const kept = try registry.SDK.dispatch(&reading, records.List, .{
+        .type = "salutation",
+    });
 
     try std.testing.expectEqual(@as(usize, 1), kept.records.len);
 }
@@ -382,7 +409,9 @@ test "the admin reviews, installs, grants and removes a plugin through plain for
     defer arena_state.deinit();
 
     const admin_adapter = @import("../../adapters/admin.zig");
-    var flow: admin_adapter.Flow = .{ .inner = undefined };
+    var flow: admin_adapter.Flow = .{
+        .inner = undefined,
+    };
 
     flow.inner.init(.{
         .connection = &scenario.harness.fixture.connection,

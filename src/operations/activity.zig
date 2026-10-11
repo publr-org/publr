@@ -24,7 +24,10 @@ pub const namespace: sdk.operation.Namespace = .{
 };
 
 /// The log seam the registry hands the SDK.
-pub const log: sdk.trail.Log = .{ .activity = &write_activity, .failure = &write_failure };
+pub const log: sdk.trail.Log = .{
+    .activity = &write_activity,
+    .failure = &write_failure,
+};
 
 pub const Item = struct {
     id: i64,
@@ -55,21 +58,30 @@ pub const List = struct {
         before: ?i64 = null,
         limit: u32 = 50,
     };
-    pub const Out = struct { entries: []const Item };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .limit = .{ .min = 1, .max = store.activity.list_max },
+    pub const Out = struct {
+        entries: []const Item,
     };
-    pub const example: In = .{ .operation = "plugin.enable" };
-    pub const example_out: Out = .{ .entries = &.{.{
-        .id = 42,
-        .at = 1_790_000_000_000,
-        .actor = "u_admin",
-        .app = "",
+    pub const rules: sdk.operation.Rules(In) = .{
+        .limit = .{
+            .min = 1,
+            .max = store.activity.list_max,
+        },
+    };
+    pub const example: In = .{
         .operation = "plugin.enable",
-        .input = "{\"names\":[\"greeter\"],\"content_access\":\"public\",\"types\":[]}",
-        .units = &.{"plugin:greeter"},
-        .calls = &.{},
-    }} };
+    };
+    pub const example_out: Out = .{
+        .entries = &.{.{
+            .id = 42,
+            .at = 1_790_000_000_000,
+            .actor = "u_admin",
+            .app = "",
+            .operation = "plugin.enable",
+            .input = "{\"names\":[\"greeter\"],\"content_access\":\"public\",\"types\":[]}",
+            .units = &.{"plugin:greeter"},
+            .calls = &.{},
+        }},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .actor = "Who: a user id, `system`, `anonymous` or `plugin:<name>`",
         .operation = "One operation, `plugin.disable`",
@@ -110,7 +122,9 @@ pub const List = struct {
             };
         }
 
-        return .{ .entries = items };
+        return .{
+            .entries = items,
+        };
     }
 };
 
@@ -316,9 +330,14 @@ test "logs: a write and what it set off, secrets masked, failures apart, never c
         .document = "{\"title\":\"Two\"}",
         .status = "published",
     });
-    _ = try registry.SDK.dispatch(&system, snapshots.Restore, .{ .id = created.id, .seq = 1 });
+    _ = try registry.SDK.dispatch(&system, snapshots.Restore, .{
+        .id = created.id,
+        .seq = 1,
+    });
 
-    const restored = try registry.SDK.dispatch(&system, List, .{ .operation = "snapshot.restore" });
+    const restored = try registry.SDK.dispatch(&system, List, .{
+        .operation = "snapshot.restore",
+    });
     const unit = try std.fmt.allocPrint(system.arena, "record:{s}", .{created.id});
 
     try std.testing.expectEqual(@as(usize, 1), restored.entries.len);
@@ -326,7 +345,9 @@ test "logs: a write and what it set off, secrets masked, failures apart, never c
     try std.testing.expectEqualStrings("record.save", restored.entries[0].calls[0]);
     try std.testing.expect(listed(restored.entries[0].units, unit));
 
-    const saves = try registry.SDK.dispatch(&system, List, .{ .operation = "record.save" });
+    const saves = try registry.SDK.dispatch(&system, List, .{
+        .operation = "record.save",
+    });
     try std.testing.expectEqual(@as(usize, 1), saves.entries.len);
 
     _ = try registry.SDK.dispatch(&system, users.Create, .{
@@ -334,7 +355,9 @@ test "logs: a write and what it set off, secrets masked, failures apart, never c
         .display_name = "Ada",
         .password = "correct horse battery",
     });
-    const made = try registry.SDK.dispatch(&system, List, .{ .operation = "user.create" });
+    const made = try registry.SDK.dispatch(&system, List, .{
+        .operation = "user.create",
+    });
     try std.testing.expect(std.mem.indexOf(u8, made.entries[0].input, "horse") == null);
     try std.testing.expect(std.mem.indexOf(u8, made.entries[0].input, model.secret.mark) != null);
 
@@ -348,7 +371,9 @@ test "logs: a write and what it set off, secrets masked, failures apart, never c
     const denied = registry.SDK.dispatch(&anonymous, List, .{});
     try std.testing.expectError(error.Denied, denied);
 
-    const creates = try registry.SDK.dispatch(&system, List, .{ .operation = "record.create" });
+    const creates = try registry.SDK.dispatch(&system, List, .{
+        .operation = "record.create",
+    });
     try std.testing.expectEqual(@as(usize, 1), creates.entries.len);
 
     const failed = try registry.SDK.dispatch(&system, errors.List, .{});

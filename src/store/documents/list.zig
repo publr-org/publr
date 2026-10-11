@@ -36,7 +36,10 @@ pub const Record = struct {
 const list_ids = " AND r.id IN (SELECT value FROM json_each(?{d}))";
 
 /// Which app's documents a list keeps: one app's, or the project's own (no app).
-pub const App = union(enum) { none, name: []const u8 };
+pub const App = union(enum) {
+    none,
+    name: []const u8,
+};
 
 pub const Order = enum { updated_desc, created_desc, title_asc };
 
@@ -53,7 +56,10 @@ pub const Filter = struct {
 };
 
 /// Who created or last saved a document: this user, or (`exclude`) anyone but this user.
-pub const Author = struct { id: []const u8, exclude: bool = false };
+pub const Author = struct {
+    id: []const u8,
+    exclude: bool = false,
+};
 
 pub const Query = struct {
     /// The definitions the list spans, never empty: one for a type's own list, every type
@@ -80,17 +86,37 @@ pub const Query = struct {
 };
 
 /// One bound on a timestamp column, in the order they are written and bound.
-const Bound = struct { column: []const u8, operator: []const u8, value: ?i64 };
+const Bound = struct {
+    column: []const u8,
+    operator: []const u8,
+    value: ?i64,
+};
 
 fn bounds_of(query: Query) [4]Bound {
     std.debug.assert(query.type_ids.len > 0);
     std.debug.assert(query.limit <= list_max);
 
     return .{
-        .{ .column = "created_at", .operator = ">=", .value = query.created_after_ms },
-        .{ .column = "created_at", .operator = "<", .value = query.created_before_ms },
-        .{ .column = "updated_at", .operator = ">=", .value = query.updated_after_ms },
-        .{ .column = "updated_at", .operator = "<", .value = query.updated_before_ms },
+        .{
+            .column = "created_at",
+            .operator = ">=",
+            .value = query.created_after_ms,
+        },
+        .{
+            .column = "created_at",
+            .operator = "<",
+            .value = query.created_before_ms,
+        },
+        .{
+            .column = "updated_at",
+            .operator = ">=",
+            .value = query.updated_after_ms,
+        },
+        .{
+            .column = "updated_at",
+            .operator = "<",
+            .value = query.updated_before_ms,
+        },
     };
 }
 

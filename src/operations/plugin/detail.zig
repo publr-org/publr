@@ -58,7 +58,10 @@ pub const Detail = struct {
     /// installed now, with why; an optional one's hook is off until it fits.
     contracts: []const []const u8 = &.{},
 
-    pub const Next = struct { version: []const u8, requests: []const Request };
+    pub const Next = struct {
+        version: []const u8,
+        requests: []const Request,
+    };
 };
 
 const example_hash = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
@@ -71,13 +74,16 @@ pub const example_request: Request = .{
     .state = .granted,
 };
 
-const example_next: Detail.Next = .{ .version = "0.2.0", .requests = &.{.{
-    .key = "users.read",
-    .sentence = "Access user accounts and email addresses",
-    .reason = "Greets people by their email address too",
-    .tier = .high,
-    .state = .granted,
-}} };
+const example_next: Detail.Next = .{
+    .version = "0.2.0",
+    .requests = &.{.{
+        .key = "users.read",
+        .sentence = "Access user accounts and email addresses",
+        .reason = "Greets people by their email address too",
+        .tier = .high,
+        .state = .granted,
+    }},
+};
 
 /// `greeter` as it runs: enabled, 0.2.0 offered, 0.2.0 behind it to roll back to.
 pub const example_detail: Detail = .{
@@ -103,9 +109,16 @@ pub const example_updated: Detail = with(.{
     .update = no_update,
     .previous = "0.1.0",
 });
-pub const example_cancelled: Detail = with(.{ .update = no_update });
-pub const example_rolled_back: Detail = with(.{ .version = "0.2.0", .previous = "0.1.0" });
-pub const example_disabled: Detail = with(.{ .enabled = false });
+pub const example_cancelled: Detail = with(.{
+    .update = no_update,
+});
+pub const example_rolled_back: Detail = with(.{
+    .version = "0.2.0",
+    .previous = "0.1.0",
+});
+pub const example_disabled: Detail = with(.{
+    .enabled = false,
+});
 
 pub const example_enabled: Detail = .{
     .name = "farewell",

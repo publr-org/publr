@@ -70,7 +70,10 @@ pub const core = [_]Kind{
         .icon = "paragraph",
         .storage = .text,
         .control = .input,
-        .has = .{ .length = true, .pattern = true },
+        .has = .{
+            .length = true,
+            .pattern = true,
+        },
         .searchable_allowed = true,
         .title_allowed = true,
         .unique_allowed = true,
@@ -84,7 +87,12 @@ pub const core = [_]Kind{
         .icon = "text-align-left",
         .storage = .long,
         .control = .textarea,
-        .has = .{ .length = true, .rows = true, .pattern = true, .words = true },
+        .has = .{
+            .length = true,
+            .rows = true,
+            .pattern = true,
+            .words = true,
+        },
         .searchable_allowed = true,
         .default_allowed = true,
         .convert_from = &.{ "string", "richtext", "slug", "email", "url", "select" },
@@ -96,7 +104,10 @@ pub const core = [_]Kind{
         .icon = "quote",
         .storage = .long,
         .control = .textarea,
-        .has = .{ .length = true, .rows = true },
+        .has = .{
+            .length = true,
+            .rows = true,
+        },
         .searchable_allowed = true,
         .convert_from = &.{ "string", "text" },
     },
@@ -108,7 +119,10 @@ pub const core = [_]Kind{
         .storage = .text,
         .control = .input,
         .placeholder = "generated when empty",
-        .has = .{ .length = true, .source = true },
+        .has = .{
+            .length = true,
+            .source = true,
+        },
         .many_allowed = false,
         .title_allowed = true,
         .check = &checks.slug,
@@ -121,7 +135,9 @@ pub const core = [_]Kind{
         .icon = "user",
         .storage = .text,
         .control = .input,
-        .has = .{ .length = true },
+        .has = .{
+            .length = true,
+        },
         .unique_allowed = true,
         .title_allowed = true,
         .default_allowed = true,
@@ -135,7 +151,9 @@ pub const core = [_]Kind{
         .icon = "globe",
         .storage = .text,
         .control = .input,
-        .has = .{ .length = true },
+        .has = .{
+            .length = true,
+        },
         .unique_allowed = true,
         .default_allowed = true,
         .check = &checks.url,
@@ -157,7 +175,10 @@ pub const core = [_]Kind{
         .icon = "math",
         .storage = .int,
         .control = .number,
-        .has = .{ .range = true, .choices = true },
+        .has = .{
+            .range = true,
+            .choices = true,
+        },
         .unique_allowed = true,
         .default_allowed = true,
         .convert_from = &.{ "string", "number", "datetime" },
@@ -169,7 +190,10 @@ pub const core = [_]Kind{
         .icon = "chart",
         .storage = .real,
         .control = .number,
-        .has = .{ .range = true, .choices = true },
+        .has = .{
+            .range = true,
+            .choices = true,
+        },
         .default_allowed = true,
         .convert_from = &.{ "string", "integer" },
     },
@@ -180,7 +204,10 @@ pub const core = [_]Kind{
         .icon = "calendar-check",
         .storage = .int,
         .control = .datetime,
-        .has = .{ .range = true, .dates = true },
+        .has = .{
+            .range = true,
+            .dates = true,
+        },
         .default_allowed = true,
         .check = &checks.datetime,
     },
@@ -191,7 +218,9 @@ pub const core = [_]Kind{
         .icon = "list-unordered",
         .storage = .text,
         .control = .select,
-        .has = .{ .choices = true },
+        .has = .{
+            .choices = true,
+        },
         .default_allowed = true,
         .check = &checks.select,
         .convert_from = &.{"string"},
@@ -203,7 +232,9 @@ pub const core = [_]Kind{
         .icon = "image",
         .storage = .ref,
         .control = .input,
-        .has = .{ .media = true },
+        .has = .{
+            .media = true,
+        },
     },
     .{
         .id = "reference",
@@ -212,7 +243,9 @@ pub const core = [_]Kind{
         .icon = "link",
         .storage = .ref,
         .control = .input,
-        .has = .{ .target = true },
+        .has = .{
+            .target = true,
+        },
     },
     .{
         .id = "virtual",
@@ -222,7 +255,9 @@ pub const core = [_]Kind{
         // What it keeps: the records' ids in the order they are shown.
         .storage = .ref,
         .control = .input,
-        .has = .{ .target = true },
+        .has = .{
+            .target = true,
+        },
     },
     .{
         .id = "terms",
@@ -231,7 +266,9 @@ pub const core = [_]Kind{
         .icon = "tag",
         .storage = .ref,
         .control = .select,
-        .has = .{ .taxonomy = true },
+        .has = .{
+            .taxonomy = true,
+        },
     },
     .{
         .id = "user",
@@ -277,7 +314,9 @@ pub const core = [_]Kind{
         .icon = "lock",
         .storage = .text,
         .control = .input,
-        .has = .{ .length = true },
+        .has = .{
+            .length = true,
+        },
         .many_allowed = false,
     },
     .{

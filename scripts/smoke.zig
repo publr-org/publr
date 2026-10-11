@@ -84,7 +84,9 @@ pub fn run_publr(
 
     return std.process.run(init.arena.allocator(), init.io, .{
         .argv = argv[0 .. args.len + 1],
-        .cwd = .{ .path = work_dir },
+        .cwd = .{
+            .path = work_dir,
+        },
         .stdout_limit = .limited(output_bytes_max),
         .stderr_limit = .limited(output_bytes_max),
     });
@@ -256,7 +258,10 @@ fn expect_taxonomies(
 
     const shot_list = try std.fs.path.join(init.arena.allocator(), &.{ work_dir, "shot-list.txt" });
 
-    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = shot_list, .data = "Shot list\n" });
+    try std.Io.Dir.cwd().writeFile(init.io, .{
+        .sub_path = shot_list,
+        .data = "Shot list\n",
+    });
 
     const upload = [_][]const u8{ "--as-admin", "media", "add", "--file", shot_list };
     const listed_media = [_][]const u8{ "--as", admin, "media", "list", "--folder", "unsorted" };
@@ -281,7 +286,10 @@ fn expect_media_sync(
     const brief = try std.fs.path.join(arena, &.{ folder, "Brief.txt" });
 
     try std.Io.Dir.cwd().createDirPath(init.io, folder);
-    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = brief, .data = "Brief\n" });
+    try std.Io.Dir.cwd().writeFile(init.io, .{
+        .sub_path = brief,
+        .data = "Brief\n",
+    });
 
     const check = [_][]const u8{ "--as", admin, "media", "sync", "--check", "true" };
     const sync = [_][]const u8{ "--as", admin, "media", "sync" };
@@ -409,7 +417,9 @@ fn expect_serve(
 
     var child = try std.process.spawn(init.io, .{
         .argv = &.{ binary, "serve", "--port", "8090" },
-        .cwd = .{ .path = work_dir },
+        .cwd = .{
+            .path = work_dir,
+        },
         .stdout = .ignore,
         .stderr = .pipe,
     });
@@ -499,19 +509,60 @@ fn expect_site(init: std.process.Init, port: u16) !void {
     std.debug.assert(port > 0);
     std.debug.assert(output_bytes_max > 0);
 
-    const checks = [_]struct { path: []const u8, needle: []const u8, host: []const u8 = "smoke" }{
-        .{ .path = "/", .needle = "X-Publr-Served: file" },
-        .{ .path = "/", .needle = "<title>Publr</title>" },
-        .{ .path = "/posts/hello-site", .needle = "<code>hello-site</code>" },
-        .{ .path = "/posts", .needle = "Hello site" },
-        .{ .path = "/_islands/signed-in", .needle = "<template patchfor=\"signed-in\">" },
-        .{ .path = "/_app/app.css", .needle = ".bg-canvas" },
-        .{ .path = "/sitemap.xml", .needle = "<urlset" },
-        .{ .path = "/nowhere", .needle = "404 Not Found" },
-        .{ .path = "/nowhere", .needle = "Nothing lives at this address." },
-        .{ .path = "/docs/guide", .needle = "The guide" },
-        .{ .path = "/docs/_app/app.css", .needle = ".bg-paper" },
-        .{ .path = "/x", .needle = "\"app\":\"portal\"", .host = "portal.127.0.0.1" },
+    const checks = [_]struct {
+        path: []const u8,
+        needle: []const u8,
+        host: []const u8 = "smoke",
+    }{
+        .{
+            .path = "/",
+            .needle = "X-Publr-Served: file",
+        },
+        .{
+            .path = "/",
+            .needle = "<title>Publr</title>",
+        },
+        .{
+            .path = "/posts/hello-site",
+            .needle = "<code>hello-site</code>",
+        },
+        .{
+            .path = "/posts",
+            .needle = "Hello site",
+        },
+        .{
+            .path = "/_islands/signed-in",
+            .needle = "<template patchfor=\"signed-in\">",
+        },
+        .{
+            .path = "/_app/app.css",
+            .needle = ".bg-canvas",
+        },
+        .{
+            .path = "/sitemap.xml",
+            .needle = "<urlset",
+        },
+        .{
+            .path = "/nowhere",
+            .needle = "404 Not Found",
+        },
+        .{
+            .path = "/nowhere",
+            .needle = "Nothing lives at this address.",
+        },
+        .{
+            .path = "/docs/guide",
+            .needle = "The guide",
+        },
+        .{
+            .path = "/docs/_app/app.css",
+            .needle = ".bg-paper",
+        },
+        .{
+            .path = "/x",
+            .needle = "\"app\":\"portal\"",
+            .host = "portal.127.0.0.1",
+        },
     };
 
     for (checks) |check| {
@@ -589,10 +640,19 @@ fn expect_apps_folder(init: std.process.Init, binary: []const u8, work_dir: []co
     const site = ".{ .name = \"site\", .mount = .{ .path = \"/\" } }\n";
 
     try cwd.createDirPath(init.io, content);
-    try cwd.writeFile(init.io, .{ .sub_path = zon, .data = site });
-    try cwd.writeFile(init.io, .{ .sub_path = page, .data = "<html><body>Hi</body></html>\n" });
+    try cwd.writeFile(init.io, .{
+        .sub_path = zon,
+        .data = site,
+    });
+    try cwd.writeFile(init.io, .{
+        .sub_path = page,
+        .data = "<html><body>Hi</body></html>\n",
+    });
     try expect_contains(init, binary, dir, &load, "1 apps load from apps");
-    try cwd.writeFile(init.io, .{ .sub_path = broken, .data = "<p>{oops(</p>\n" });
+    try cwd.writeFile(init.io, .{
+        .sub_path = broken,
+        .data = "<p>{oops(</p>\n",
+    });
     try expect_failure(init, binary, dir, &load, "content/broken.publr");
 }
 
@@ -607,7 +667,9 @@ fn expect_bare(init: std.process.Init, binary: []const u8, work_dir: []const u8)
 
     var child = try std.process.spawn(init.io, .{
         .argv = &.{ binary, "serve", "--port", "8090" },
-        .cwd = .{ .path = bare_dir },
+        .cwd = .{
+            .path = bare_dir,
+        },
         .stdout = .ignore,
         .stderr = .pipe,
     });
@@ -761,7 +823,10 @@ fn http_exchange(init: std.process.Init, port: u16, request: []const u8) ![]cons
     std.debug.assert(port > 0);
 
     const address = try std.Io.net.IpAddress.parseIp4("127.0.0.1", port);
-    const stream = try address.connect(init.io, .{ .mode = .stream, .protocol = .tcp });
+    const stream = try address.connect(init.io, .{
+        .mode = .stream,
+        .protocol = .tcp,
+    });
     defer stream.close(init.io);
 
     var write_buffer: [1024]u8 = undefined;

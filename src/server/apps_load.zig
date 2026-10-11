@@ -10,7 +10,11 @@ const Project = @import("project.zig").Project;
 
 pub const route = "/_publr/apps/load";
 
-const Answer = struct { loaded: u32 = 0, dir: []const u8 = "", @"error": ?[]const u8 = null };
+const Answer = struct {
+    loaded: u32 = 0,
+    dir: []const u8 = "",
+    @"error": ?[]const u8 = null,
+};
 
 pub fn run(init: std.process.Init, db_path: []const u8, args: []const []const u8) !u8 {
     std.debug.assert(db_path.len > 0);
@@ -70,7 +74,11 @@ pub const Checker = struct {
 
         std.debug.assert(checker.dir.len > 0);
 
-        return .{ .context = checker, .dir = checker.dir, .reload = &check };
+        return .{
+            .context = checker,
+            .dir = checker.dir,
+            .reload = &check,
+        };
     }
 
     fn check(context: *anyopaque) ?[]const u8 {
@@ -93,15 +101,22 @@ fn check_here(init: std.process.Init, dir: []const u8) !Answer {
     var source = apps_adapter.folder.project_apps(init.gpa, init.io, dir, &reason) catch |err| {
         const why = if (reason.len > 0) reason.text() else @errorName(err);
 
-        return .{ .@"error" = try arena.dupe(u8, why) };
+        return .{
+            .@"error" = try arena.dupe(u8, why),
+        };
     };
     defer source.deinit();
 
     if (try apps_adapter.check_specs(init.gpa, arena, source.specs)) |problem| {
-        return .{ .@"error" = problem };
+        return .{
+            .@"error" = problem,
+        };
     }
 
-    return .{ .loaded = @intCast(source.specs.len), .dir = dir };
+    return .{
+        .loaded = @intCast(source.specs.len),
+        .dir = dir,
+    };
 }
 
 fn print(init: std.process.Init, answer: Answer, where: []const u8) !u8 {
@@ -146,8 +161,13 @@ pub fn handle(
     host.reload() catch |err| {
         const why = if (host.reason.len > 0) host.reason.text() else @errorName(err);
 
-        return response.json(.ok, Answer{ .@"error" = why });
+        return response.json(.ok, Answer{
+            .@"error" = why,
+        });
     };
 
-    try response.json(.ok, Answer{ .loaded = @intCast(host.apps.len), .dir = host.dir });
+    try response.json(.ok, Answer{
+        .loaded = @intCast(host.apps.len),
+        .dir = host.dir,
+    });
 }

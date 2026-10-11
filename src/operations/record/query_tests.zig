@@ -13,13 +13,22 @@ const author_type: model.content_type.Def = .{
     .name = "Author",
     .public = true,
     .fields = &.{
-        .{ .name = "name", .label = "Name", .kind = "string", .required = true },
+        .{
+            .name = "name",
+            .label = "Name",
+            .kind = "string",
+            .required = true,
+        },
         .{
             .name = "books",
             .label = "Books",
             .kind = "virtual",
             .many = true,
-            .options = .{ .virtual = "referenced_by", .to = &.{"book"}, .via = "author" },
+            .options = .{
+                .virtual = "referenced_by",
+                .to = &.{"book"},
+                .via = "author",
+            },
         },
     },
 };
@@ -28,20 +37,35 @@ const book_type: model.content_type.Def = .{
     .name = "Book",
     .public = true,
     .fields = &.{
-        .{ .name = "title", .label = "Title", .kind = "string", .required = true },
-        .{ .name = "views", .label = "Views", .kind = "integer" },
+        .{
+            .name = "title",
+            .label = "Title",
+            .kind = "string",
+            .required = true,
+        },
+        .{
+            .name = "views",
+            .label = "Views",
+            .kind = "integer",
+        },
         .{
             .name = "author",
             .label = "Author",
             .kind = "reference",
-            .options = .{ .to = &.{"author"} },
+            .options = .{
+                .to = &.{"author"},
+            },
         },
         .{
             .name = "chapters",
             .label = "Chapters",
             .kind = "virtual",
             .many = true,
-            .options = .{ .virtual = "referenced_by", .to = &.{"chapter"}, .via = "book" },
+            .options = .{
+                .virtual = "referenced_by",
+                .to = &.{"chapter"},
+                .via = "book",
+            },
         },
     },
 };
@@ -50,20 +74,32 @@ const chapter_type: model.content_type.Def = .{
     .name = "Chapter",
     .public = true,
     .fields = &.{
-        .{ .name = "title", .label = "Title", .kind = "string", .required = true },
+        .{
+            .name = "title",
+            .label = "Title",
+            .kind = "string",
+            .required = true,
+        },
         .{
             .name = "book",
             .label = "Book",
             .kind = "reference",
             .required = true,
-            .options = .{ .to = &.{"book"} },
+            .options = .{
+                .to = &.{"book"},
+            },
         },
     },
 };
 const ledger_type: model.content_type.Def = .{
     .handle = "ledger",
     .name = "Ledger",
-    .fields = &.{.{ .name = "title", .label = "Title", .kind = "string", .required = true }},
+    .fields = &.{.{
+        .name = "title",
+        .label = "Title",
+        .kind = "string",
+        .required = true,
+    }},
 };
 
 const Library = struct {
@@ -88,7 +124,9 @@ const Library = struct {
         }) |def| {
             const definition = try model.content_type.encode(system.arena, def);
 
-            _ = try SDK.dispatch(&system, types.Create, .{ .definition = definition });
+            _ = try SDK.dispatch(&system, types.Create, .{
+                .definition = definition,
+            });
         }
 
         var admin = library.as_admin();
@@ -106,7 +144,12 @@ const Library = struct {
     }
 
     fn as_admin(library: *Library) sdk.Ctx {
-        return library.harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
+        return library.harness.ctx(.{
+            .user = .{
+                .id = "u_admin",
+                .roles = &.{"admin"},
+            },
+        });
     }
 
     fn deinit(library: *Library) void {
@@ -146,7 +189,9 @@ fn create(
 fn ask(ctx: *sdk.Ctx, query: []const u8) !Query.Out {
     std.debug.assert(query.len > 0);
 
-    return SDK.dispatch(ctx, Query, .{ .query = query });
+    return SDK.dispatch(ctx, Query, .{
+        .query = query,
+    });
 }
 
 fn contains(text: []const u8, part: []const u8) bool {
@@ -218,8 +263,12 @@ test "query: a hidden field is as if the type had none; own records are the call
 
     admin.parent = admin.allocate_operation_id();
 
-    const masked: sdk.Grant = .{ .field_mask = &.{"views"} };
-    const spread = try Query.run(&admin, .{ .query = "*[_type == \"book\"][0]{ ... }" }, &masked);
+    const masked: sdk.Grant = .{
+        .field_mask = &.{"views"},
+    };
+    const spread = try Query.run(&admin, .{
+        .query = "*[_type == \"book\"][0]{ ... }",
+    }, &masked);
 
     try std.testing.expect(!contains(spread.result.text, "views"));
     try std.testing.expect(contains(spread.result.text, "title"));
@@ -231,13 +280,26 @@ test "query: a hidden field is as if the type had none; own records are the call
 
     try std.testing.expectEqualStrings("[]", by_hidden.result.text);
 
-    var bob = library.harness.ctx(.{ .user = .{ .id = "u_bob", .roles = &.{"editor"} } });
+    var bob = library.harness.ctx(.{
+        .user = .{
+            .id = "u_bob",
+            .roles = &.{"editor"},
+        },
+    });
 
     bob.parent = bob.allocate_operation_id();
     _ = try create(&bob, "book", try book(&bob, "Bob's", 1, library.ada), "published");
 
-    const own: sdk.Grant = .{ .record_filter = .{ .flags = .{ .own_only = true } } };
-    const mine = try Query.run(&bob, .{ .query = "*[_type == \"book\"]{ title }" }, &own);
+    const own: sdk.Grant = .{
+        .record_filter = .{
+            .flags = .{
+                .own_only = true,
+            },
+        },
+    };
+    const mine = try Query.run(&bob, .{
+        .query = "*[_type == \"book\"]{ title }",
+    }, &own);
 
     try std.testing.expectEqualStrings("[{\"title\":\"Bob's\"}]", mine.result.text);
 }
@@ -262,9 +324,14 @@ test "virtual: an author's books are the books pointing at it, in the order kept
         first.result.text,
     });
 
-    _ = try SDK.dispatch(&admin, record.Save, .{ .id = library.ada, .document = order });
+    _ = try SDK.dispatch(&admin, record.Save, .{
+        .id = library.ada,
+        .document = order,
+    });
     // Ada is published: the new order is a pending change until it is published too.
-    _ = try SDK.dispatch(&admin, record.Publish, .{ .id = library.ada });
+    _ = try SDK.dispatch(&admin, record.Publish, .{
+        .id = library.ada,
+    });
 
     const kept = try ask(&admin, titles);
 
@@ -292,9 +359,15 @@ test "virtual: saving the list repoints the records it adds and leaves out" {
         first.result.text,
     });
 
-    _ = try SDK.dispatch(&admin, record.Save, .{ .id = library.ada, .document = list });
+    _ = try SDK.dispatch(&admin, record.Save, .{
+        .id = library.ada,
+        .document = list,
+    });
 
-    const got = try SDK.dispatch(&admin, record.Get, .{ .id = library.ada, .purpose = .edit });
+    const got = try SDK.dispatch(&admin, record.Get, .{
+        .id = library.ada,
+        .purpose = .edit,
+    });
     const expected = try std.fmt.allocPrint(admin.arena, "\"books\":[{s},{s}]", .{
         orphan.result.text,
         first.result.text,
@@ -327,14 +400,23 @@ test "virtual: leaving out a record that needs its parent deletes it, restorable
     }), "published");
     const kept = try std.fmt.allocPrint(admin.arena, "{{\"chapters\":[\"{s}\"]}}", .{one});
 
-    _ = try SDK.dispatch(&admin, record.Save, .{ .id = book_id, .document = kept });
+    _ = try SDK.dispatch(&admin, record.Save, .{
+        .id = book_id,
+        .document = kept,
+    });
 
-    const gone = try SDK.dispatch(&admin, record.Get, .{ .id = two, .purpose = .edit });
+    const gone = try SDK.dispatch(&admin, record.Get, .{
+        .id = two,
+        .purpose = .edit,
+    });
 
     try std.testing.expectEqualStrings("deleted", gone.record.status);
     try std.testing.expect(contains(gone.document, book_id));
 
-    const got = try SDK.dispatch(&admin, record.Get, .{ .id = book_id, .purpose = .edit });
+    const got = try SDK.dispatch(&admin, record.Get, .{
+        .id = book_id,
+        .purpose = .edit,
+    });
 
     try std.testing.expect(!contains(got.document, two));
 }

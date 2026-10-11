@@ -56,7 +56,10 @@ pub const Collector = struct {
     }
 };
 
-pub const Scope = struct { project: []const u8, authority: []const u8 };
+pub const Scope = struct {
+    project: []const u8,
+    authority: []const u8,
+};
 
 /// Opaque tokens never expose record ids or permit reuse across sites/authorities.
 pub fn token(
@@ -96,8 +99,14 @@ test "nested collection remains complete or explicitly fails closed" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    var parent: Collector = .{ .arena = arena.allocator() };
-    var child: Collector = .{ .arena = arena.allocator(), .parent = &parent, .limit = 1 };
+    var parent: Collector = .{
+        .arena = arena.allocator(),
+    };
+    var child: Collector = .{
+        .arena = arena.allocator(),
+        .parent = &parent,
+        .limit = 1,
+    };
 
     child.depend("record:", "one");
     child.depend("record:", "two");

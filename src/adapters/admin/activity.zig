@@ -115,7 +115,9 @@ fn render(
 fn devices_of(session: *admin.Session) admin.Error![]const devices.Item {
     std.debug.assert(session.signed_in());
 
-    const listed = registry.SDK.dispatch(&session.ctx, devices.List, .{ .all = true }) catch {
+    const listed = registry.SDK.dispatch(&session.ctx, devices.List, .{
+        .all = true,
+    }) catch {
         return &.{};
     };
 
@@ -184,7 +186,9 @@ fn json_of(arena: std.mem.Allocator, item: anytype) admin.Error![]const u8 {
         try shown.put(arena, field.name, as_json);
     }
 
-    return std.json.Stringify.valueAlloc(arena, std.json.Value{ .object = shown }, .{
+    return std.json.Stringify.valueAlloc(arena, std.json.Value{
+        .object = shown,
+    }, .{
         .whitespace = .indent_2,
     });
 }
@@ -197,7 +201,10 @@ fn value_of(arena: std.mem.Allocator, value: anytype) admin.Error!std.json.Value
     return std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch .null;
 }
 
-const When = struct { date: []const u8, time: []const u8 };
+const When = struct {
+    date: []const u8,
+    time: []const u8,
+};
 
 /// The day and the time of day, UTC, from one stored moment.
 fn when_of(arena: std.mem.Allocator, at: i64) admin.Error!When {
@@ -205,11 +212,20 @@ fn when_of(arena: std.mem.Allocator, at: i64) admin.Error!When {
 
     const text = time.datetime_text(arena, at) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        else => return .{ .date = "", .time = "" },
+        else => return .{
+            .date = "",
+            .time = "",
+        },
     };
-    const space = std.mem.indexOfScalar(u8, text, ' ') orelse return .{ .date = text, .time = "" };
+    const space = std.mem.indexOfScalar(u8, text, ' ') orelse return .{
+        .date = text,
+        .time = "",
+    };
 
-    return .{ .date = text[0..space], .time = text[space + 1 ..] };
+    return .{
+        .date = text[0..space],
+        .time = text[space + 1 ..],
+    };
 }
 
 /// `before=<id>` from the query, the page asked for.
@@ -245,7 +261,9 @@ test "activity pages: what was done and what was refused, read only" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    var flow: admin.Flow = .{ .inner = undefined };
+    var flow: admin.Flow = .{
+        .inner = undefined,
+    };
     flow.inner.init(.{
         .connection = &harness.fixture.connection,
         .auth = &harness.auth,

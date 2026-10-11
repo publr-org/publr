@@ -57,7 +57,9 @@ pub fn get(
         return null;
     }
 
-    const row = try statement.read(struct { definition: []const u8 }, arena);
+    const row = try statement.read(struct {
+        definition: []const u8,
+    }, arena);
     const group = @import("../lib/json.zig").parse(Def, arena, row.definition, .{}) catch |err| {
         return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
     };
@@ -128,7 +130,10 @@ test "existing owner schemas convert once without losing fields or custom destin
     );
 }
 
-pub const Item = struct { owner: []const u8, definition: []const u8 };
+pub const Item = struct {
+    owner: []const u8,
+    definition: []const u8,
+};
 
 pub fn list(connection: *db.Db, arena: std.mem.Allocator, scope: Scope) Error![]const Item {
     std.debug.assert(@intFromEnum(scope) <= 2);

@@ -21,7 +21,11 @@ pub const rows_max: u32 = 100_000;
 pub const flat_max: u32 = 4096;
 pub const Error = error{ Invalid, OutOfMemory };
 
-pub const Stored = union(enum) { integer: i64, real: f64, text: []const u8 };
+pub const Stored = union(enum) {
+    integer: i64,
+    real: f64,
+    text: []const u8,
+};
 
 /// One stored value, typed by its storage class.
 pub const Row = struct {
@@ -54,7 +58,10 @@ pub fn flatten(
         return error.Invalid;
     }
 
-    var flattener: Flattener = .{ .known = known, .out = buffer };
+    var flattener: Flattener = .{
+        .known = known,
+        .out = buffer,
+    };
 
     try flattener.walk(fields, value.object, "", 0);
 
@@ -192,9 +199,15 @@ const Flattener = struct {
 
         const kind = kinds.find(flattener.known, def.kind) orelse return error.Invalid;
         const stored: Stored = switch (kind.storage) {
-            .text, .ref, .long => .{ .text = try expect_string(value) },
-            .int, .bool => .{ .integer = try expect_int(kind.storage, value) },
-            .real => .{ .real = try expect_real(value) },
+            .text, .ref, .long => .{
+                .text = try expect_string(value),
+            },
+            .int, .bool => .{
+                .integer = try expect_int(kind.storage, value),
+            },
+            .real => .{
+                .real = try expect_real(value),
+            },
             .none => unreachable,
         };
         const kept = flattener.paths[flattener.len][0..path.len];
@@ -305,7 +318,9 @@ fn assemble_fields(
         }
     }
 
-    return .{ .object = object };
+    return .{
+        .object = object,
+    };
 }
 
 fn assemble_group(
@@ -348,10 +363,14 @@ fn assemble_money(
 
         const code = arena.dupe(u8, row.field[path.len + 1 ..]) catch return error.OutOfMemory;
 
-        object.put(arena, code, .{ .integer = row.value.integer }) catch return error.OutOfMemory;
+        object.put(arena, code, .{
+            .integer = row.value.integer,
+        }) catch return error.OutOfMemory;
     }
 
-    return if (object.count() == 0) null else .{ .object = object };
+    return if (object.count() == 0) null else .{
+        .object = object,
+    };
 }
 
 fn assemble_repeater(
@@ -378,7 +397,9 @@ fn assemble_repeater(
         array.append(item) catch return error.OutOfMemory;
     }
 
-    return .{ .array = array };
+    return .{
+        .array = array,
+    };
 }
 
 fn assemble_many(
@@ -404,7 +425,9 @@ fn assemble_many(
         return null;
     }
 
-    return .{ .array = array };
+    return .{
+        .array = array,
+    };
 }
 
 fn assemble_leaf(
@@ -433,12 +456,20 @@ fn leaf_value(storage: kinds.Storage, row: Row) Value {
     std.debug.assert(row.field.len > 0);
 
     return switch (row.value) {
-        .text => |text| .{ .string = text },
-        .real => |number| .{ .float = number },
+        .text => |text| .{
+            .string = text,
+        },
+        .real => |number| .{
+            .float = number,
+        },
         .integer => |number| if (storage == .bool)
-            .{ .bool = number != 0 }
+            .{
+                .bool = number != 0,
+            }
         else
-            .{ .integer = number },
+            .{
+                .integer = number,
+            },
     };
 }
 
@@ -583,7 +614,11 @@ test "money: one row per currency, assembled back, and its paths" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const fields = [_]Def{.{ .name = "price", .label = "Price", .kind = "money" }};
+    const fields = [_]Def{.{
+        .name = "price",
+        .label = "Price",
+        .kind = "money",
+    }};
     const text = "{\"price\":{\"GBP\":850,\"EUR\":990}}";
     const value = try std.json.parseFromSliceLeaky(Value, arena, text, .{});
     var buffer: [flat_max]Flat = undefined;
@@ -595,7 +630,11 @@ test "money: one row per currency, assembled back, and its paths" {
     var rows: [2]Row = undefined;
 
     for (flat, &rows) |one, *row| {
-        row.* = .{ .field = one.field, .ordinal = 0, .value = one.value };
+        row.* = .{
+            .field = one.field,
+            .ordinal = 0,
+            .value = one.value,
+        };
     }
 
     const back = try assemble(&kinds.core, arena, &fields, &rows);

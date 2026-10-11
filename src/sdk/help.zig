@@ -196,7 +196,9 @@ fn print_example(comptime Operation: type, out: *std.Io.Writer) Error!void {
 
     var buffer: [8 << 10]u8 = undefined;
     var json: std.Io.Writer = .fixed(&buffer);
-    const options: std.json.Stringify.Options = .{ .whitespace = .indent_2 };
+    const options: std.json.Stringify.Options = .{
+        .whitespace = .indent_2,
+    };
 
     std.json.Stringify.value(Operation.example_out, options, &json) catch
         return error.WriteFailed;

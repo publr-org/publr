@@ -8,7 +8,11 @@ const identity = @import("../adapters/rest/identity.zig");
 const Project = @import("project.zig").Project;
 
 /// A core route a plugin's prefix covers.
-pub const Conflict = struct { owner: []const u8, prefix: []const u8, pattern: []const u8 };
+pub const Conflict = struct {
+    owner: []const u8,
+    prefix: []const u8,
+    pattern: []const u8,
+};
 
 pub fn Routes(comptime declared: []const route.Declared) type {
     return struct {
@@ -139,7 +143,10 @@ const Served = struct {
 
         const parsed = try http.parse(head);
         const wire = parsed.complete;
-        var request: http.Request = .{ .inner = &wire, .body = "" };
+        var request: http.Request = .{
+            .inner = &wire,
+            .body = "",
+        };
 
         return served.app.handle(arena, &request);
     }

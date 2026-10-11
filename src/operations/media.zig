@@ -61,7 +61,9 @@ test "media: upload in pieces, list and count, write, tag, move, fold a folder, 
     defer disk.close();
 
     var system = harness.ctx(.system);
-    system.files = .{ .disk = &disk };
+    system.files = .{
+        .disk = &disk,
+    };
     try registry.SDK.bootstrap(&system);
 
     const photos = try registry.SDK.dispatch(&system, term.Create, .{
@@ -119,7 +121,9 @@ test "media: upload in pieces, list and count, write, tag, move, fold a folder, 
     try std.testing.expectEqual(@as(u32, 1), everything.folders[0].count);
     try std.testing.expectEqual(@as(u32, 1), everything.folders[1].depth);
 
-    const in_photos = try registry.SDK.dispatch(&system, List, .{ .folder = photos.id });
+    const in_photos = try registry.SDK.dispatch(&system, List, .{
+        .folder = photos.id,
+    });
 
     try std.testing.expectEqual(@as(u32, 1), in_photos.total);
     try std.testing.expectEqualStrings(harbour.id, in_photos.items[0].id);
@@ -131,7 +135,9 @@ test "media: upload in pieces, list and count, write, tag, move, fold a folder, 
         .tags = &.{ "Sea", "boats" },
     });
 
-    const detail = try registry.SDK.dispatch(&system, Get, .{ .id = harbour.id });
+    const detail = try registry.SDK.dispatch(&system, Get, .{
+        .id = harbour.id,
+    });
 
     try std.testing.expectEqualStrings("Boats at dawn", detail.alt);
     try std.testing.expectEqual(@as(u8, 30), detail.focal_x);
@@ -148,34 +154,53 @@ test "media: upload in pieces, list and count, write, tag, move, fold a folder, 
 
     const sea = detail.tags[0].id;
     const boats = detail.tags[1].id;
-    const both = try registry.SDK.dispatch(&system, List, .{ .tags = &.{ sea, boats } });
-    const only_sea = try registry.SDK.dispatch(&system, List, .{ .tags = &.{sea} });
+    const both = try registry.SDK.dispatch(&system, List, .{
+        .tags = &.{ sea, boats },
+    });
+    const only_sea = try registry.SDK.dispatch(&system, List, .{
+        .tags = &.{sea},
+    });
 
     try std.testing.expectEqual(@as(u32, 1), both.total);
     try std.testing.expectEqual(@as(u32, 2), only_sea.total);
 
-    const searched = try registry.SDK.dispatch(&system, List, .{ .search = "harb" });
+    const searched = try registry.SDK.dispatch(&system, List, .{
+        .search = "harb",
+    });
 
     try std.testing.expectEqual(@as(u32, 1), searched.total);
 
-    _ = try registry.SDK.dispatch(&system, FolderDelete, .{ .folder = trips.id });
+    _ = try registry.SDK.dispatch(&system, FolderDelete, .{
+        .folder = trips.id,
+    });
 
-    const moved_up = try registry.SDK.dispatch(&system, Get, .{ .id = harbour.id });
+    const moved_up = try registry.SDK.dispatch(&system, Get, .{
+        .id = harbour.id,
+    });
 
     try std.testing.expectEqualStrings(photos.id, moved_up.folder.?);
 
-    _ = try registry.SDK.dispatch(&system, Move, .{ .ids = &.{harbour.id}, .folder = "" });
+    _ = try registry.SDK.dispatch(&system, Move, .{
+        .ids = &.{harbour.id},
+        .folder = "",
+    });
 
-    const unsorted = try registry.SDK.dispatch(&system, List, .{ .folder = "unsorted" });
+    const unsorted = try registry.SDK.dispatch(&system, List, .{
+        .folder = "unsorted",
+    });
 
     try std.testing.expectEqual(@as(u32, 2), unsorted.total);
 
-    const served = try registry.SDK.dispatch(&system, File, .{ .key = harbour.key });
+    const served = try registry.SDK.dispatch(&system, File, .{
+        .key = harbour.key,
+    });
 
     try std.testing.expectEqualStrings("image/png", served.mime_type);
     try std.testing.expectEqual(@as(u8, 30), served.focal_x);
 
-    _ = try registry.SDK.dispatch(&system, Delete, .{ .ids = &.{ harbour.id, notes.id } });
+    _ = try registry.SDK.dispatch(&system, Delete, .{
+        .ids = &.{ harbour.id, notes.id },
+    });
 
     const emptied = try registry.SDK.dispatch(&system, List, .{});
 

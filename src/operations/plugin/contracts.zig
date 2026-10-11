@@ -58,7 +58,11 @@ pub fn check_user(ctx: *Ctx, manifest: *const Manifest, there: []const fit.Provi
                 why,
             }) catch return error.OutOfMemory;
 
-            return ctx.fail(.{ .name = "ContractMismatch", .status = 409, .message = message });
+            return ctx.fail(.{
+                .name = "ContractMismatch",
+                .status = 409,
+                .message = message,
+            });
         }
     }
 }
@@ -138,7 +142,10 @@ fn installed(ctx: *Ctx) Error![]const Manifest {
 
 const contract = model.contract;
 
-const Reserve = struct { sku: []const u8, quantity: u32 };
+const Reserve = struct {
+    sku: []const u8,
+    quantity: u32,
+};
 
 fn test_manifest(
     comptime Sends: type,
@@ -157,7 +164,9 @@ fn test_manifest(
         .remotes = &.{.{
             .operation = "app.inventory.reserve",
             .input = comptime contract.describe(Sends),
-            .output = comptime contract.describe(struct { held: bool }),
+            .output = comptime contract.describe(struct {
+                held: bool,
+            }),
         }},
     };
 }
@@ -174,17 +183,24 @@ test "contracts: a required misfit refuses, an optional one does not" {
         .operations = &.{.{
             .name = "app.inventory.reserve",
             .input = comptime contract.describe(Reserve),
-            .output = comptime contract.describe(struct { held: bool, left: u32 }),
+            .output = comptime contract.describe(struct {
+                held: bool,
+                left: u32,
+            }),
         }},
     }};
 
     const fits = test_manifest(Reserve, &.{"inventory@^1"}, &.{});
     try check_user(&ctx, &fits, &there);
 
-    const required = test_manifest(struct { sku: []const u8 }, &.{"inventory@^1"}, &.{});
+    const required = test_manifest(struct {
+        sku: []const u8,
+    }, &.{"inventory@^1"}, &.{});
     try std.testing.expectError(error.Failed, check_user(&ctx, &required, &there));
 
-    const optional = test_manifest(struct { sku: []const u8 }, &.{}, &.{"inventory"});
+    const optional = test_manifest(struct {
+        sku: []const u8,
+    }, &.{}, &.{"inventory"});
     try check_user(&ctx, &optional, &there);
 
     const too_new = test_manifest(Reserve, &.{"inventory@^2"}, &.{});

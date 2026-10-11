@@ -51,7 +51,10 @@ pub const Start = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
-    pub const In = struct { name: []const u8, scope: []const u8 = "drafts" };
+    pub const In = struct {
+        name: []const u8,
+        scope: []const u8 = "drafts",
+    };
     pub const Out = struct {
         device_code: []const u8,
         user_code: []const u8,
@@ -59,7 +62,10 @@ pub const Start = struct {
         expires_at: i64,
         interval_s: u32,
     };
-    pub const example: In = .{ .name = "An agent on Ada's laptop", .scope = "drafts" };
+    pub const example: In = .{
+        .name = "An agent on Ada's laptop",
+        .scope = "drafts",
+    };
     pub const example_out: Out = .{
         .device_code = example_device_code,
         .user_code = "WXZB-CDFG",
@@ -176,9 +182,16 @@ fn approved(harness: *sdk.testing.Harness, asked: []const u8, given: []const u8)
 
     var system = harness.ctx(.system);
     const editor = (try registry.SDK.dispatch(&system, user_operations.List, .{})).users[0];
-    var person = harness.ctx(.{ .user = .{ .id = editor.id, .roles = editor.roles } });
+    var person = harness.ctx(.{
+        .user = .{
+            .id = editor.id,
+            .roles = editor.roles,
+        },
+    });
     const typed = try std.ascii.allocLowerString(person.arena, started.user_code);
-    const shown = try registry.SDK.dispatch(&person, people.Request, .{ .code = typed });
+    const shown = try registry.SDK.dispatch(&person, people.Request, .{
+        .code = typed,
+    });
 
     try std.testing.expectEqualStrings("laptop", shown.name);
     _ = try registry.SDK.dispatch(&person, people.Approve, .{
@@ -186,8 +199,12 @@ fn approved(harness: *sdk.testing.Harness, asked: []const u8, given: []const u8)
         .scope = given,
     });
 
-    const code: collect.Poll.In = .{ .device_code = started.device_code };
-    const claim: collect.Claim.In = .{ .device_code = started.device_code };
+    const code: collect.Poll.In = .{
+        .device_code = started.device_code,
+    };
+    const claim: collect.Claim.In = .{
+        .device_code = started.device_code,
+    };
     const decided = try registry.SDK.dispatch(&anonymous, Poll, code);
     const claimed = try registry.SDK.dispatch(&anonymous, Claim, claim);
     const again = try registry.SDK.dispatch(&anonymous, Poll, code);
@@ -207,13 +224,15 @@ fn device_ctx(harness: *sdk.testing.Harness, token: []const u8) !Ctx {
     const device = try store.devices.validate(probe.db, probe.arena, token, 0);
     const account = (try store.users.find_by_id(probe.db, probe.arena, device.user_id)).?;
 
-    return harness.ctx(.{ .token = .{
-        .id = device.id,
-        .user_id = device.user_id,
-        .roles = account.user.roles,
-        .scope = model.Scope.parse(device.scope).?,
-        .name = device.name,
-    } });
+    return harness.ctx(.{
+        .token = .{
+            .id = device.id,
+            .user_id = device.user_id,
+            .roles = account.user.roles,
+            .scope = model.Scope.parse(device.scope).?,
+            .name = device.name,
+        },
+    });
 }
 
 test "a device signs in by link: asked, approved with less, collected once" {
@@ -248,9 +267,16 @@ test "a person denies a device; a lapsed request is gone" {
     var anonymous = harness.ctx(.anonymous);
     const started = try registry.SDK.dispatch(&anonymous, Start, Start.example);
     const editor = (try registry.SDK.dispatch(&system, user_operations.List, .{})).users[0];
-    var person = harness.ctx(.{ .user = .{ .id = editor.id, .roles = editor.roles } });
+    var person = harness.ctx(.{
+        .user = .{
+            .id = editor.id,
+            .roles = editor.roles,
+        },
+    });
 
-    _ = try registry.SDK.dispatch(&person, people.Deny, .{ .code = started.user_code });
+    _ = try registry.SDK.dispatch(&person, people.Deny, .{
+        .code = started.user_code,
+    });
     try std.testing.expectError(error.NotFound, registry.SDK.dispatch(&person, people.Approve, .{
         .code = started.user_code,
         .scope = "read",
@@ -313,7 +339,9 @@ test "a device never destroys, a drafts device never publishes, a revoked one st
     try std.testing.expectEqualStrings("draft", current.record.status);
 
     const id = device.caller.token.id;
-    _ = try registry.SDK.dispatch(&device, people.Revoke, .{ .id = id });
+    _ = try registry.SDK.dispatch(&device, people.Revoke, .{
+        .id = id,
+    });
     try std.testing.expectError(
         error.DeviceNotFound,
         store.devices.validate(system.db, system.arena, token, 0),

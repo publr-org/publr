@@ -55,10 +55,20 @@ pub const Create = struct {
         \\kind `terms`. Use `taxonomy validate` to see problems.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { definition: []const u8 };
-    pub const Out = struct { id: []const u8, handle: []const u8 };
-    pub const example: In = .{ .definition = new_definition };
-    pub const example_out: Out = .{ .id = example_id, .handle = "regions" };
+    pub const In = struct {
+        definition: []const u8,
+    };
+    pub const Out = struct {
+        id: []const u8,
+        handle: []const u8,
+    };
+    pub const example: In = .{
+        .definition = new_definition,
+    };
+    pub const example_out: Out = .{
+        .id = example_id,
+        .handle = "regions",
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .definition = "The taxonomy definition as JSON",
     };
@@ -76,7 +86,10 @@ pub const Create = struct {
 
         const row = try definition.create(ctx, in.definition);
 
-        return .{ .id = row.id, .handle = row.def.handle };
+        return .{
+            .id = row.id,
+            .handle = row.def.handle,
+        };
     }
 };
 
@@ -102,7 +115,10 @@ pub const Update = struct {
         terms_rewritten: u32,
         values_dropped: u32,
     };
-    pub const example: In = .{ .taxonomy = "topics", .definition = example_definition };
+    pub const example: In = .{
+        .taxonomy = "topics",
+        .definition = example_definition,
+    };
     pub const example_out: Out = .{
         .id = example_id,
         .handle = "topics",
@@ -198,16 +214,27 @@ pub const Get = struct {
     pub const name = "taxonomy.get";
     pub const description = "Read a taxonomy's full definition";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { taxonomy: []const u8 };
-    pub const Out = struct { id: []const u8, definition: Def, created_at: i64, updated_at: i64 };
-    pub const example: In = .{ .taxonomy = "topics" };
+    pub const In = struct {
+        taxonomy: []const u8,
+    };
+    pub const Out = struct {
+        id: []const u8,
+        definition: Def,
+        created_at: i64,
+        updated_at: i64,
+    };
+    pub const example: In = .{
+        .taxonomy = "topics",
+    };
     pub const example_out: Out = .{
         .id = example_id,
         .definition = model.taxonomy.test_topics,
         .created_at = 1789650000000,
         .updated_at = 1789650000000,
     };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .taxonomy = "Handle or id" };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .taxonomy = "Handle or id",
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         if (in.taxonomy.len > 64 << 10) {
@@ -232,19 +259,23 @@ pub const List = struct {
     pub const description = "List taxonomies";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { taxonomies: []const Summary };
+    pub const Out = struct {
+        taxonomies: []const Summary,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .taxonomies = &.{.{
-        .id = example_id,
-        .handle = "topics",
-        .name = "Topics",
-        .kind = .record,
-        .public = true,
-        .system = false,
-        .owner = "",
-        .editor = "form",
-        .fields = 2,
-    }} };
+    pub const example_out: Out = .{
+        .taxonomies = &.{.{
+            .id = example_id,
+            .handle = "topics",
+            .name = "Topics",
+            .kind = .record,
+            .public = true,
+            .system = false,
+            .owner = "",
+            .editor = "form",
+            .fields = 2,
+        }},
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .taxonomies = "Sorted by name",
     };
@@ -253,7 +284,9 @@ pub const List = struct {
         std.debug.assert(ctx.now_ms >= 0);
         std.debug.assert(granted.allows());
 
-        return .{ .taxonomies = try definition.list(ctx, granted) };
+        return .{
+            .taxonomies = try definition.list(ctx, granted),
+        };
     }
 };
 
@@ -267,10 +300,21 @@ pub const Delete = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const destroys = true;
-    pub const In = struct { taxonomy: []const u8, force: bool = false };
-    pub const Out = struct { deleted: bool, terms_removed: u32 };
-    pub const example: In = .{ .taxonomy = "tags" };
-    pub const example_out: Out = .{ .deleted = true, .terms_removed = 0 };
+    pub const In = struct {
+        taxonomy: []const u8,
+        force: bool = false,
+    };
+    pub const Out = struct {
+        deleted: bool,
+        terms_removed: u32,
+    };
+    pub const example: In = .{
+        .taxonomy = "tags",
+    };
+    pub const example_out: Out = .{
+        .deleted = true,
+        .terms_removed = 0,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .taxonomy = "Handle or id",
         .force = "Also delete every term of the taxonomy",
@@ -285,7 +329,10 @@ pub const Delete = struct {
 
         const deleted = try definition.delete(ctx, in.taxonomy, in.force);
 
-        return .{ .deleted = deleted.deleted, .terms_removed = deleted.removed };
+        return .{
+            .deleted = deleted.deleted,
+            .terms_removed = deleted.removed,
+        };
     }
 };
 
@@ -293,15 +340,26 @@ pub const Validate = struct {
     pub const name = "taxonomy.validate";
     pub const description = "Check a JSON definition and list every problem without saving";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { definition: []const u8 };
-    pub const Out = struct { valid: bool, problems: []const Problem };
+    pub const In = struct {
+        definition: []const u8,
+    };
+    pub const Out = struct {
+        valid: bool,
+        problems: []const Problem,
+    };
     pub const example: In = .{
         .definition = "{\"handle\":\"topics\",\"name\":\"Topics\",\"kind\":\"settings\"," ++
             "\"fields\":[]}",
     };
-    pub const example_out: Out = .{ .valid = false, .problems = &.{
-        .{ .path = "kind", .message = "a taxonomy holds terms: its kind is record" },
-    } };
+    pub const example_out: Out = .{
+        .valid = false,
+        .problems = &.{
+            .{
+                .path = "kind",
+                .message = "a taxonomy holds terms: its kind is record",
+            },
+        },
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
@@ -312,7 +370,10 @@ pub const Validate = struct {
 
         const report = try definition.validate(ctx, in.definition);
 
-        return .{ .valid = report.valid, .problems = report.problems };
+        return .{
+            .valid = report.valid,
+            .problems = report.problems,
+        };
     }
 };
 
@@ -326,22 +387,38 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     try harness.init();
     defer harness.deinit();
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_admin",
+            .roles = &.{"admin"},
+        },
+    });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
     var anon = harness.ctx(.anonymous);
 
-    const created = try SDK.dispatch(&admin, Create, .{ .definition = example_definition });
+    const created = try SDK.dispatch(&admin, Create, .{
+        .definition = example_definition,
+    });
     try std.testing.expectEqualStrings("topics", created.handle);
     try std.testing.expectError(
         error.Denied,
-        SDK.dispatch(&editor, Create, .{ .definition = example_definition }),
+        SDK.dispatch(&editor, Create, .{
+            .definition = example_definition,
+        }),
     );
     try std.testing.expectError(error.Denied, SDK.dispatch(&anon, List, .{}));
 
     const listed = try SDK.dispatch(&editor, List, .{});
     try std.testing.expectEqual(@as(usize, 1), listed.taxonomies.len);
     try std.testing.expectEqualStrings("Topics", listed.taxonomies[0].name);
-    const got = try SDK.dispatch(&editor, Get, .{ .taxonomy = "topics" });
+    const got = try SDK.dispatch(&editor, Get, .{
+        .taxonomy = "topics",
+    });
     try std.testing.expect(got.definition.hierarchical);
     try std.testing.expectEqualStrings(created.id, got.id);
 
@@ -351,9 +428,11 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
         .definition = "{\"handle\":\"tags\",\"name\":\"Tags\",\"kind\":\"settings\",\"fields\":[]}",
     });
     try std.testing.expectError(error.Invalid, settings_kind);
-    const nested_terms = SDK.dispatch(&admin, Create, .{ .definition =
+    const nested_terms = SDK.dispatch(&admin, Create, .{
+        .definition =
         \\{"handle":"tags","name":"Tags","fields":[{"name":"topics","label":"Topics",
         \\"kind":"terms","options":{"taxonomy":"topics"}}]}
+        ,
     });
     try std.testing.expectError(error.Invalid, nested_terms);
 
@@ -370,16 +449,24 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     try std.testing.expectEqual(@as(u32, 0), updated.terms_rewritten);
     try std.testing.expectEqualStrings(
         "Subjects",
-        (try SDK.dispatch(&editor, Get, .{ .taxonomy = created.id })).definition.name,
+        (try SDK.dispatch(&editor, Get, .{
+            .taxonomy = created.id,
+        })).definition.name,
     );
 
     const content_types = @import("content_type.zig");
     try std.testing.expectError(
         error.NotFound,
-        SDK.dispatch(&editor, content_types.Get, .{ .type = "topics" }),
+        SDK.dispatch(&editor, content_types.Get, .{
+            .type = "topics",
+        }),
     );
 
-    try std.testing.expect((try SDK.dispatch(&admin, Delete, .{ .taxonomy = "topics" })).deleted);
-    const gone = SDK.dispatch(&editor, Get, .{ .taxonomy = "topics" });
+    try std.testing.expect((try SDK.dispatch(&admin, Delete, .{
+        .taxonomy = "topics",
+    })).deleted);
+    const gone = SDK.dispatch(&editor, Get, .{
+        .taxonomy = "topics",
+    });
     try std.testing.expectError(error.NotFound, gone);
 }

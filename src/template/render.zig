@@ -58,7 +58,10 @@ pub fn Renderer(comptime Ctx: type) type {
             vm: ?*javascript.VM = null,
             entries: std.ArrayList(Ctx.Entry) = .empty,
         };
-        pub const JavaScriptProp = struct { name: []const u8, value: javascript.Value };
+        pub const JavaScriptProp = struct {
+            name: []const u8,
+            value: javascript.Value,
+        };
 
         pub const Value = union(enum) {
             javascript: javascript.Value,
@@ -74,10 +77,16 @@ pub fn Renderer(comptime Ctx: type) type {
             null,
         };
 
-        const Binding = struct { name: []const u8, value: Value };
+        const Binding = struct {
+            name: []const u8,
+            value: Value,
+        };
 
         /// An entry a call site passes, for a prop the component declares as one.
-        pub const EntryProp = struct { name: []const u8, value: Ctx.Entry };
+        pub const EntryProp = struct {
+            name: []const u8,
+            value: Ctx.Entry,
+        };
 
         /// The props of one template render: the call site's values and the children
         /// it rendered.
@@ -168,7 +177,9 @@ pub fn Renderer(comptime Ctx: type) type {
                 return error.InvalidTemplate;
             }
 
-            var execution: Execution = .{ .templates = renderer.templates };
+            var execution: Execution = .{
+                .templates = renderer.templates,
+            };
             defer if (execution.vm) |vm| vm.deinit();
             return renderer.render_at(writer, index, ctx, props, 0, &execution) catch |err| {
                 if (execution.vm) |vm| {
@@ -231,7 +242,10 @@ pub fn Renderer(comptime Ctx: type) type {
                     return err;
                 };
 
-                try frame.locals.append(renderer.arena, .{ .name = decl.name, .value = value });
+                try frame.locals.append(renderer.arena, .{
+                    .name = decl.name,
+                    .value = value,
+                });
             }
 
             try renderer.nodes(writer, &frame, page.body);
@@ -249,16 +263,30 @@ pub fn Renderer(comptime Ctx: type) type {
                 .build_now => .{
                     .string = try time.datetime_text(renderer.arena, ctx.build_time()),
                 },
-                .request_now => .{ .string = try time.datetime_text(renderer.arena, ctx.now()) },
-                .session => .{ .session = try ctx.session() },
-                .header => |name| .{ .opt_string = ctx.header(name) },
-                .cookie => |name| .{ .opt_string = ctx.cookie(name) },
-                .random => |bound| .{ .int = ctx.random(bound) },
+                .request_now => .{
+                    .string = try time.datetime_text(renderer.arena, ctx.now()),
+                },
+                .session => .{
+                    .session = try ctx.session(),
+                },
+                .header => |name| .{
+                    .opt_string = ctx.header(name),
+                },
+                .cookie => |name| .{
+                    .opt_string = ctx.cookie(name),
+                },
+                .random => |bound| .{
+                    .int = ctx.random(bound),
+                },
                 .money => |access| .{
                     .string = try money(ctx, frame.lookup(access.object), access),
                 },
-                .user_field => |path| .{ .opt_string = try ctx.user_field(path) },
-                .call => |operation| .{ .entry = try ctx.call(operation) },
+                .user_field => |path| .{
+                    .opt_string = try ctx.user_field(path),
+                },
+                .call => |operation| .{
+                    .entry = try ctx.call(operation),
+                },
                 .redirect => |target| try renderer.redirect(frame, target),
                 .entry => |query| .{
                     .entry = if (query.first) try ctx.first(query.type_id) else try ctx.entry(
@@ -266,33 +294,43 @@ pub fn Renderer(comptime Ctx: type) type {
                         query.slug orelse ctx.param("slug") orelse "unknown",
                     ),
                 },
-                .query => |query| .{ .collection = try ctx.query(type_id_of(query), .{
-                    .limit = query.limit,
-                    .offset = query.offset,
-                }) },
+                .query => |query| .{
+                    .collection = try ctx.query(type_id_of(query), .{
+                        .limit = query.limit,
+                        .offset = query.offset,
+                    }),
+                },
                 .data_text => |access| blk: {
                     const owner = frame.lookup(access.object);
                     const text = owner.entry.data.getText(access.key) orelse access.fallback;
 
-                    break :blk .{ .string = text };
+                    break :blk .{
+                        .string = text,
+                    };
                 },
                 .data_items => |access| blk: {
                     const owner = frame.lookup(access.object);
                     const items = try owner.entry.data.getItems(renderer.arena, access.key);
 
-                    break :blk .{ .collection = items };
+                    break :blk .{
+                        .collection = items,
+                    };
                 },
                 .references => |access| blk: {
                     const owner = frame.lookup(access.object);
                     const ids = try owner.entry.data.getIds(renderer.arena, access.key);
 
-                    break :blk .{ .collection = try ctx.references(ids) };
+                    break :blk .{
+                        .collection = try ctx.references(ids),
+                    };
                 },
                 .reference => |access| blk: {
                     const owner = frame.lookup(access.object);
                     const ids = try owner.entry.data.getIds(renderer.arena, access.key);
 
-                    break :blk .{ .entry = try ctx.reference(ids) };
+                    break :blk .{
+                        .entry = try ctx.reference(ids),
+                    };
                 },
                 .prop_text => |access| .{
                     .string = frame.props.get(access.key) orelse access.fallback,
@@ -322,7 +360,9 @@ pub fn Renderer(comptime Ctx: type) type {
                 return error.Redirect;
             }
 
-            return .{ .string = "" };
+            return .{
+                .string = "",
+            };
         }
 
         fn type_id_of(query: ast.Decl.Query) []const u8 {
@@ -428,7 +468,10 @@ pub fn Renderer(comptime Ctx: type) type {
                 .javascript => |value| try Bridge.attribute(
                     frame.execution.vm.?,
                     writer,
-                    .{ .name = attr.name, .base = frame.ctx.url_base() },
+                    .{
+                        .name = attr.name,
+                        .base = frame.ctx.url_base(),
+                    },
                     value,
                 ),
                 .boolean => |flag| if (flag) {
@@ -475,7 +518,12 @@ pub fn Renderer(comptime Ctx: type) type {
             const locals_before = frame.locals.items.len;
 
             for (collection) |entry| {
-                const binding: Binding = .{ .name = loop.param, .value = .{ .entry = entry } };
+                const binding: Binding = .{
+                    .name = loop.param,
+                    .value = .{
+                        .entry = entry,
+                    },
+                };
 
                 try frame.locals.append(renderer.arena, binding);
                 try renderer.nested(writer, frame, loop.body);
@@ -569,7 +617,9 @@ pub fn Renderer(comptime Ctx: type) type {
             if (use.dynamic and frame.ctx.live) {
                 const inner = frame.depth + 1;
 
-                const only: Props = .{ .values = props };
+                const only: Props = .{
+                    .values = props,
+                };
 
                 return renderer.render_at(
                     writer,
@@ -630,7 +680,9 @@ pub fn Renderer(comptime Ctx: type) type {
                 writer,
                 use.callee,
                 &ctx,
-                .{ .values = props },
+                .{
+                    .values = props,
+                },
                 frame.depth + 1,
                 frame.execution,
             );
@@ -656,7 +708,10 @@ pub fn Renderer(comptime Ctx: type) type {
                     .expr => |expr| switch (try renderer.eval(frame, expr)) {
                         .javascript => |value| try js_values.append(
                             renderer.arena,
-                            .{ .name = arg.name, .value = value },
+                            .{
+                                .name = arg.name,
+                                .value = value,
+                            },
                         ),
                         .int => |value| try values.append(renderer.arena, .{
                             .name = arg.name,
@@ -741,10 +796,18 @@ pub fn Renderer(comptime Ctx: type) type {
             std.debug.assert(frame.depth < compile.nesting_max);
 
             return switch (expr.node) {
-                .javascript => |index| .{ .javascript = try Bridge.eval(renderer, frame, index) },
-                .string => |text| .{ .string = text },
-                .int => |number| .{ .int = number },
-                .boolean => |flag| .{ .boolean = flag },
+                .javascript => |index| .{
+                    .javascript = try Bridge.eval(renderer, frame, index),
+                },
+                .string => |text| .{
+                    .string = text,
+                },
+                .int => |number| .{
+                    .int = number,
+                },
+                .boolean => |flag| .{
+                    .boolean = flag,
+                },
                 .null => .null,
                 .local => |name| frame.lookup(name),
                 .props => .props,
@@ -753,7 +816,9 @@ pub fn Renderer(comptime Ctx: type) type {
                 .ternary => |choice| renderer.ternary(frame, expr.type, choice),
                 .equality => |compare| renderer.equality(frame, compare),
                 .relational => |compare| renderer.relational(frame, compare),
-                .not => |operand| .{ .boolean = !truthy(try renderer.eval(frame, operand.*)) },
+                .not => |operand| .{
+                    .boolean = !truthy(try renderer.eval(frame, operand.*)),
+                },
                 .logical => |both| renderer.logical(frame, both),
                 .template => |parts| renderer.template_string(frame, parts),
             };
@@ -767,10 +832,14 @@ pub fn Renderer(comptime Ctx: type) type {
             const settled = if (both.operator == .@"and") !left else left;
 
             if (settled) {
-                return .{ .boolean = left };
+                return .{
+                    .boolean = left,
+                };
             }
 
-            return .{ .boolean = truthy(try renderer.eval(frame, both.right.*)) };
+            return .{
+                .boolean = truthy(try renderer.eval(frame, both.right.*)),
+            };
         }
 
         fn nullish_value(renderer: *const Self, frame: *Frame, binary: Expr.Binary) anyerror!Value {
@@ -783,10 +852,14 @@ pub fn Renderer(comptime Ctx: type) type {
             // it optional.
 
             if (binary.right.type == .string) {
-                return .{ .string = present };
+                return .{
+                    .string = present,
+                };
             }
 
-            return .{ .opt_string = present };
+            return .{
+                .opt_string = present,
+            };
         }
 
         fn ternary(
@@ -810,8 +883,12 @@ pub fn Renderer(comptime Ctx: type) type {
             }
 
             return switch (value) {
-                .string => |text| .{ .opt_string = text },
-                .null => .{ .opt_string = null },
+                .string => |text| .{
+                    .opt_string = text,
+                },
+                .null => .{
+                    .opt_string = null,
+                },
                 else => value,
             };
         }
@@ -832,7 +909,9 @@ pub fn Renderer(comptime Ctx: type) type {
                 .booleans => left.boolean == (try renderer.eval(frame, compare.right.*)).boolean,
             };
 
-            return .{ .boolean = equal != compare.negated };
+            return .{
+                .boolean = equal != compare.negated,
+            };
         }
 
         fn relational(
@@ -846,12 +925,14 @@ pub fn Renderer(comptime Ctx: type) type {
             const left = (try renderer.eval(frame, compare.left.*)).int;
             const right = (try renderer.eval(frame, compare.right.*)).int;
 
-            return .{ .boolean = switch (compare.operator) {
-                .lt => left < right,
-                .le => left <= right,
-                .gt => left > right,
-                .ge => left >= right,
-            } };
+            return .{
+                .boolean = switch (compare.operator) {
+                    .lt => left < right,
+                    .le => left <= right,
+                    .gt => left > right,
+                    .ge => left >= right,
+                },
+            };
         }
 
         fn template_string(
@@ -874,7 +955,9 @@ pub fn Renderer(comptime Ctx: type) type {
                 }
             }
 
-            return .{ .string = out.written() };
+            return .{
+                .string = out.written(),
+            };
         }
 
         fn member_value(renderer: *const Self, frame: *Frame, access: Expr.Member) anyerror!Value {
@@ -883,21 +966,45 @@ pub fn Renderer(comptime Ctx: type) type {
             std.debug.assert(frame.depth < compile.nesting_max);
 
             return switch (access.kind) {
-                .entry_title => .{ .string = object.entry.title },
-                .entry_created_at => .{ .string = object.entry.created_at },
-                .entry_updated_at => .{ .string = object.entry.updated_at },
-                .entry_slug => .{ .opt_string = object.entry.slug },
-                .entry_id => .{ .string = object.entry.id },
-                .entry_type => .{ .string = object.entry.type },
-                .entry_data => .{ .data = object.entry.data },
-                .data_text => |key| .{ .opt_string = object.data.getText(key) },
-                .session_email => .{ .opt_string = object.session.email },
+                .entry_title => .{
+                    .string = object.entry.title,
+                },
+                .entry_created_at => .{
+                    .string = object.entry.created_at,
+                },
+                .entry_updated_at => .{
+                    .string = object.entry.updated_at,
+                },
+                .entry_slug => .{
+                    .opt_string = object.entry.slug,
+                },
+                .entry_id => .{
+                    .string = object.entry.id,
+                },
+                .entry_type => .{
+                    .string = object.entry.type,
+                },
+                .entry_data => .{
+                    .data = object.entry.data,
+                },
+                .data_text => |key| .{
+                    .opt_string = object.data.getText(key),
+                },
+                .session_email => .{
+                    .opt_string = object.session.email,
+                },
                 .length => switch (object) {
-                    .collection => |list| .{ .int = @intCast(list.len) },
-                    .string => |text| .{ .int = @intCast(text.len) },
+                    .collection => |list| .{
+                        .int = @intCast(list.len),
+                    },
+                    .string => |text| .{
+                        .int = @intCast(text.len),
+                    },
                     else => unreachable,
                 },
-                .prop => |name| .{ .opt_string = frame.props.get(name) },
+                .prop => |name| .{
+                    .opt_string = frame.props.get(name),
+                },
             };
         }
     };

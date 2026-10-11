@@ -213,7 +213,11 @@ test "the look of a kind is read from its own controls" {
     const arena = arena_state.allocator();
 
     const boolean = model.kinds.find(&model.kinds.core, "boolean").?;
-    var shown: FieldDef = .{ .name = "shown", .label = "Shown", .kind = "boolean" };
+    var shown: FieldDef = .{
+        .name = "shown",
+        .label = "Shown",
+        .kind = "boolean",
+    };
     const flags = Form.parse(arena, "true_label=Yes&false_label=No&boolean_control=radio").?;
     try read(arena, &flags, boolean, &shown);
     try std.testing.expectEqualStrings("Yes", shown.options.boolean.true_label);
@@ -221,7 +225,11 @@ test "the look of a kind is read from its own controls" {
     try std.testing.expectEqual(radio, shown.options.boolean.control);
 
     const number = model.kinds.find(&model.kinds.core, "number").?;
-    var price: FieldDef = .{ .name = "price", .label = "Price", .kind = "number" };
+    var price: FieldDef = .{
+        .name = "price",
+        .label = "Price",
+        .kind = "number",
+    };
     const money = Form.parse(arena, "unit=%24&unit_after=0&decimals=2&number_control=rating").?;
     try read(arena, &money, number, &price);
     try std.testing.expectEqualStrings("$", price.options.number.unit);
@@ -230,7 +238,11 @@ test "the look of a kind is read from its own controls" {
     try std.testing.expectEqual(settings_options.NumberControl.input, price.options.number.control);
 
     const reference = model.kinds.find(&model.kinds.core, "reference").?;
-    var author: FieldDef = .{ .name = "author", .label = "Author", .kind = "reference" };
+    var author: FieldDef = .{
+        .name = "author",
+        .label = "Author",
+        .kind = "reference",
+    };
     const linked = Form.parse(arena, "to=author&reference_link=1&on_delete=clear").?;
     try read(arena, &linked, reference, &author);
     try std.testing.expect(!author.options.reference.create and author.options.reference.link);
@@ -238,7 +250,11 @@ test "the look of a kind is read from its own controls" {
     try std.testing.expectEqual(clear, author.options.reference.on_delete);
 
     const repeater = model.kinds.find(&model.kinds.core, "repeater").?;
-    var faq: FieldDef = .{ .name = "faq", .label = "FAQ", .kind = "repeater" };
+    var faq: FieldDef = .{
+        .name = "faq",
+        .label = "FAQ",
+        .kind = "repeater",
+    };
     const boxed = Form.parse(arena, "collapsed=1&label_field=question&add_label=Add+question").?;
     try read(arena, &boxed, repeater, &faq);
     try std.testing.expect(faq.options.container.collapsed);

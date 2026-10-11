@@ -27,7 +27,9 @@ pub fn view(arena: std.mem.Allocator, comptime View: type, props: View.Props) Er
     std.debug.assert(@hasDecl(View, "render"));
     std.debug.assert(page_bytes_max > 0);
 
-    const Capture = struct { props: View.Props };
+    const Capture = struct {
+        props: View.Props,
+    };
     const Body = struct {
         pub fn render(
             capture: Capture,
@@ -44,7 +46,9 @@ pub fn view(arena: std.mem.Allocator, comptime View: type, props: View.Props) Er
     };
     const kept = arena.create(Capture) catch return error.OutOfMemory;
 
-    kept.* = .{ .props = props };
+    kept.* = .{
+        .props = props,
+    };
 
     return runtime.viewed(kept, Body);
 }
@@ -57,7 +61,9 @@ pub const lazy = runtime.viewed;
 pub fn all(arena: std.mem.Allocator, nodes: []const Node) Error!Node {
     std.debug.assert(nodes.len <= 64);
 
-    const Capture = struct { nodes: []const Node };
+    const Capture = struct {
+        nodes: []const Node,
+    };
     const Body = struct {
         pub fn render(
             capture: Capture,
@@ -72,7 +78,9 @@ pub fn all(arena: std.mem.Allocator, nodes: []const Node) Error!Node {
     };
     const kept = arena.create(Capture) catch return error.OutOfMemory;
 
-    kept.* = .{ .nodes = nodes };
+    kept.* = .{
+        .nodes = nodes,
+    };
 
     return runtime.viewed(kept, Body);
 }

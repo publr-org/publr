@@ -111,7 +111,9 @@ pub fn count_by_user(connection: *db.Db, user_id: []const u8) Error!u32 {
         return 0;
     }
 
-    const Count = struct { count: i64 };
+    const Count = struct {
+        count: i64,
+    };
     var buffer: [64]u8 = undefined;
     var fixed = std.heap.FixedBufferAllocator.init(&buffer);
     const counted = try select.read(Count, fixed.allocator());

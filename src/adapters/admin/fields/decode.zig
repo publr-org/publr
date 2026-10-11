@@ -55,7 +55,9 @@ fn object_of(
         object.put(arena, def.name, value) catch return error.OutOfMemory;
     }
 
-    return .{ .object = object };
+    return .{
+        .object = object,
+    };
 }
 
 /// Null when the field was left empty; an error when what was typed does not parse.
@@ -129,7 +131,9 @@ fn entries_value(
         array.append(item) catch return error.OutOfMemory;
     }
 
-    return if (array.items.len == 0) null else .{ .array = array };
+    return if (array.items.len == 0) null else .{
+        .array = array,
+    };
 }
 
 /// A list's values, `name[0]`, `name[1]`, until an index the form does not carry; a
@@ -167,7 +171,9 @@ fn list_value(
         array.append(value) catch return error.OutOfMemory;
     }
 
-    return if (array.items.len == 0) null else .{ .array = array };
+    return if (array.items.len == 0) null else .{
+        .array = array,
+    };
 }
 
 /// A terms field's controls post the field's name once per selected term (a checkbox
@@ -193,7 +199,9 @@ fn terms_value(
             return error.Invalid;
         }
 
-        array.append(.{ .string = pair.value }) catch return error.OutOfMemory;
+        array.append(.{
+            .string = pair.value,
+        }) catch return error.OutOfMemory;
     }
 
     if (array.items.len == 0) {
@@ -204,7 +212,9 @@ fn terms_value(
         return array.items[0];
     }
 
-    return .{ .array = array };
+    return .{
+        .array = array,
+    };
 }
 
 fn json_value(arena: std.mem.Allocator, form: *const Form, name: []const u8) Error!?Value {
@@ -225,20 +235,32 @@ fn leaf_value(def: Def, kind: Kind, form: *const Form, name: []const u8) Error!?
     std.debug.assert(kind.storage != .none);
 
     if (kind.storage == .bool) {
-        const posted = form.get(name) orelse return .{ .bool = false };
+        const posted = form.get(name) orelse return .{
+            .bool = false,
+        };
 
-        return .{ .bool = !std.mem.eql(u8, posted, "0") };
+        return .{
+            .bool = !std.mem.eql(u8, posted, "0"),
+        };
     }
 
     const text = form.text(name) orelse return null;
 
     return switch (kind.storage) {
         .int => if (kind.control == .datetime)
-            .{ .integer = moment_of(def, text) orelse return error.Invalid }
+            .{
+                .integer = moment_of(def, text) orelse return error.Invalid,
+            }
         else
-            .{ .integer = std.fmt.parseInt(i64, text, 10) catch return error.Invalid },
-        .real => .{ .float = std.fmt.parseFloat(f64, text) catch return error.Invalid },
-        else => .{ .string = text },
+            .{
+                .integer = std.fmt.parseInt(i64, text, 10) catch return error.Invalid,
+            },
+        .real => .{
+            .float = std.fmt.parseFloat(f64, text) catch return error.Invalid,
+        },
+        else => .{
+            .string = text,
+        },
     };
 }
 
@@ -273,10 +295,14 @@ fn money_value(arena: std.mem.Allocator, form: *const Form, name: []const u8) Er
             return error.Invalid;
         };
 
-        object.put(arena, code, .{ .integer = amount }) catch return error.OutOfMemory;
+        object.put(arena, code, .{
+            .integer = amount,
+        }) catch return error.OutOfMemory;
     }
 
-    return if (object.count() == 0) null else .{ .object = object };
+    return if (object.count() == 0) null else .{
+        .object = object,
+    };
 }
 
 /// Whether the form names exactly this field: a money field edited as JSON.
@@ -313,30 +339,82 @@ fn print(arena: std.mem.Allocator, comptime template: []const u8, args: anytype)
 }
 
 const test_fields = [_]Def{
-    .{ .name = "title", .label = "Title", .kind = "string" },
-    .{ .name = "live", .label = "Live", .kind = "boolean" },
-    .{ .name = "at", .label = "At", .kind = "datetime" },
-    .{ .name = "views", .label = "Views", .kind = "integer" },
+    .{
+        .name = "title",
+        .label = "Title",
+        .kind = "string",
+    },
+    .{
+        .name = "live",
+        .label = "Live",
+        .kind = "boolean",
+    },
+    .{
+        .name = "at",
+        .label = "At",
+        .kind = "datetime",
+    },
+    .{
+        .name = "views",
+        .label = "Views",
+        .kind = "integer",
+    },
     .{
         .name = "tags",
         .label = "Tags",
         .kind = "reference",
         .many = true,
-        .options = .{ .to = &.{"tag"} },
+        .options = .{
+            .to = &.{"tag"},
+        },
     },
-    .{ .name = "seo", .label = "SEO", .kind = "group", .fields = &.{
-        .{ .name = "description", .label = "Description", .kind = "text" },
-        .{ .name = "keywords", .label = "Keywords", .kind = "string", .many = true },
-    } },
-    .{ .name = "faq", .label = "FAQ", .kind = "repeater", .fields = &.{
-        .{ .name = "question", .label = "Q", .kind = "string" },
-    } },
-    .{ .name = "topics", .label = "Topics", .kind = "terms", .many = true, .options = .{
-        .taxonomy = "topics",
-    } },
-    .{ .name = "section", .label = "Section", .kind = "terms", .options = .{
-        .taxonomy = "sections",
-    } },
+    .{
+        .name = "seo",
+        .label = "SEO",
+        .kind = "group",
+        .fields = &.{
+            .{
+                .name = "description",
+                .label = "Description",
+                .kind = "text",
+            },
+            .{
+                .name = "keywords",
+                .label = "Keywords",
+                .kind = "string",
+                .many = true,
+            },
+        },
+    },
+    .{
+        .name = "faq",
+        .label = "FAQ",
+        .kind = "repeater",
+        .fields = &.{
+            .{
+                .name = "question",
+                .label = "Q",
+                .kind = "string",
+            },
+        },
+    },
+    .{
+        .name = "topics",
+        .label = "Topics",
+        .kind = "terms",
+        .many = true,
+        .options = .{
+            .taxonomy = "topics",
+        },
+    },
+    .{
+        .name = "section",
+        .label = "Section",
+        .kind = "terms",
+        .options = .{
+            .taxonomy = "sections",
+        },
+    },
 };
 
 test "the form's paths become the document: lists, groups, repeaters, JSON inside" {

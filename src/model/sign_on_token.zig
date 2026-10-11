@@ -117,7 +117,12 @@ test "a token signed by the issuer verifies, any change or other key does not" {
 
     const seed = [_]u8{7} ** 32;
     const other = [_]u8{9} ** 32;
-    const claims: Claims = .{ .aud = "site", .sub = "ada@example.com", .exp = 5000, .jti = "j1" };
+    const claims: Claims = .{
+        .aud = "site",
+        .sub = "ada@example.com",
+        .exp = 5000,
+        .jti = "j1",
+    };
     const token = try sign(arena, seed, claims);
     const public_key = try key_from_hex(&try public_key_hex(seed));
     const got = try verify(arena, token, public_key);

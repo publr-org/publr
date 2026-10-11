@@ -197,7 +197,11 @@ fn settle(
 }
 
 /// What the cookie kept between the two routes.
-const Pending = struct { state: []const u8, verifier: []const u8, next: []const u8 };
+const Pending = struct {
+    state: []const u8,
+    verifier: []const u8,
+    next: []const u8,
+};
 
 fn pending(request: *const Request, arena: std.mem.Allocator) ?Pending {
     std.debug.assert(verifier_len == 48);
@@ -376,7 +380,10 @@ const Flow = struct {
         );
         const parsed = try http.parse(head);
         const wire = parsed.complete;
-        var request: http.Request = .{ .inner = &wire, .body = "" };
+        var request: http.Request = .{
+            .inner = &wire,
+            .body = "",
+        };
 
         return flow.app.handle(flow.arena, &request);
     }
@@ -393,7 +400,10 @@ const Flow = struct {
     }
 
     /// The start route's cookie pair and its state.
-    fn begin(flow: *Flow, path: []const u8) !struct { cookie: []const u8, state: []const u8 } {
+    fn begin(flow: *Flow, path: []const u8) !struct {
+        cookie: []const u8,
+        state: []const u8,
+    } {
         std.debug.assert(std.mem.startsWith(u8, path, "/auth/"));
 
         const started = try flow.get(path, "");
@@ -403,7 +413,10 @@ const Flow = struct {
         const pair = set[0..std.mem.indexOfScalar(u8, set, ';').?];
         const state = pair[cookie_name.len + 1 ..][0..ids.len];
 
-        return .{ .cookie = pair, .state = state };
+        return .{
+            .cookie = pair,
+            .state = state,
+        };
     }
 };
 
@@ -496,7 +509,9 @@ test "callback signs in with the right state, refuses everything else, and links
 
     const admin = (try registry.SDK.dispatch(&system, user_operations.List, .{})).users[0];
     const list = identity_operations.List;
-    const mine = try registry.SDK.dispatch(&system, list, .{ .user = admin.id });
+    const mine = try registry.SDK.dispatch(&system, list, .{
+        .user = admin.id,
+    });
     try std.testing.expectEqual(@as(usize, 2), mine.identities.len);
     try std.testing.expectEqualStrings("8", mine.identities[1].id);
 }
@@ -509,7 +524,10 @@ test "an advertised origin replaces the request's own in the callback" {
     const head = "GET /auth/github HTTP/1.1\r\nHost: publr.localhost:8085\r\n\r\n";
     const parsed = try http.parse(head);
     const wire = parsed.complete;
-    const request: http.Request = .{ .inner = &wire, .body = "" };
+    const request: http.Request = .{
+        .inner = &wire,
+        .body = "",
+    };
 
     const own = try callback_url_at(arena, null, &request, "github");
     try std.testing.expectEqualStrings("http://publr.localhost:8085/auth/github/callback", own);

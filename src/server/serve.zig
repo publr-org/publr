@@ -97,7 +97,10 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     const session = try claim(init, db_path, bound, &apps, browser_dir == null);
     defer if (session != null) operator.close(init.io, init.arena.allocator(), db_path);
 
-    var builder: plugin_build.Builder = .{ .io = init.io, .db_path = db_path };
+    var builder: plugin_build.Builder = .{
+        .io = init.io,
+        .db_path = db_path,
+    };
     project.operator_key = if (session) |*owned| &owned.key else null;
     project.builder = try builder_of(init, &builder, session != null);
     announce(bound, browser_dir);
@@ -132,7 +135,12 @@ fn started(init: std.process.Init, project: *routes.Project, port: u16) !void {
 
     const arena = init.arena.allocator();
 
-    try plugin_hooks.serving(.{ .io = init.io, .arena = arena, .project = project, .port = port });
+    try plugin_hooks.serving(.{
+        .io = init.io,
+        .arena = arena,
+        .project = project,
+        .port = port,
+    });
 }
 
 fn project_of(
@@ -173,7 +181,11 @@ fn apps_mode(arena: std.mem.Allocator, flags: Flags, bound: u16) !apps_host.Mode
         options.base_url = try std.fmt.allocPrint(arena, "http://127.0.0.1:{d}", .{bound});
     }
 
-    return .{ .options = options, .static = flags.static, .full = flags.full };
+    return .{
+        .options = options,
+        .static = flags.static,
+        .full = flags.full,
+    };
 }
 
 /// Whether a server already runs for this database, said when it does: one project, one
@@ -236,7 +248,10 @@ fn run_loop(listener: *http.App, project: *routes.Project, idle_stop_ms: i64) !v
     std.debug.assert(tick_ms > 0);
     std.debug.assert(idle_stop_ms >= 0);
 
-    var idle: Idle = .{ .stop_ms = idle_stop_ms, .last_ms = sdk.context.wall_clock_ms(project.io) };
+    var idle: Idle = .{
+        .stop_ms = idle_stop_ms,
+        .last_ms = sdk.context.wall_clock_ms(project.io),
+    };
 
     // The loop is the server's, interleaved with the apps' rebuild queue: a batch that
     // went quiet (an admin's publish, a CLI's) is rebuilt between requests, never inside
@@ -318,7 +333,10 @@ fn retry_build(app: *apps_adapter.App, project: *const routes.Project, now_ms: i
     const summary = apps_adapter.build.build_or_fail(app, project);
 
     if (app.build_ready) {
-        build_command.announce(.{ .outcome = .built, .full = summary }, app.options.output_dir);
+        build_command.announce(.{
+            .outcome = .built,
+            .full = summary,
+        }, app.options.output_dir);
     }
 }
 
@@ -391,7 +409,9 @@ const help =
 
 fn parse_flags(args: []const []const u8) Flags {
     if (args.len >= 64) {
-        return .{ .refused = "too many arguments" };
+        return .{
+            .refused = "too many arguments",
+        };
     }
 
     var flags: Flags = .{};
@@ -403,15 +423,21 @@ fn parse_flags(args: []const []const u8) Flags {
         if (std.mem.eql(u8, arg, "--port")) {
             index += 1;
             if (index == args.len) {
-                return .{ .refused = "--port needs a value" };
+                return .{
+                    .refused = "--port needs a value",
+                };
             }
             flags.port = std.fmt.parseInt(u16, args[index], 10) catch
-                return .{ .refused = "--port must be a number (0 picks a free port)" };
+                return .{
+                    .refused = "--port must be a number (0 picks a free port)",
+                };
         } else if (std.mem.eql(u8, arg, "--idle-stop")) {
             index += 1;
             const text = if (index < args.len) args[index] else "";
             flags.idle_stop_s = std.fmt.parseInt(u32, text, 10) catch
-                return .{ .refused = "--idle-stop needs a number of seconds" };
+                return .{
+                    .refused = "--idle-stop needs a number of seconds",
+                };
         } else if (std.mem.eql(u8, arg, "--static")) {
             flags.static = true;
         } else if (std.mem.eql(u8, arg, "--full")) {
@@ -421,7 +447,9 @@ fn parse_flags(args: []const []const u8) Flags {
         } else if (text_option(&flags, arg)) |option| {
             index += 1;
             if (index == args.len) {
-                return .{ .refused = "--out, --url and --apps need a value" };
+                return .{
+                    .refused = "--out, --url and --apps need a value",
+                };
             }
             option.* = args[index];
             flags.url_given = flags.url_given or std.mem.eql(u8, arg, "--url");
@@ -429,7 +457,9 @@ fn parse_flags(args: []const []const u8) Flags {
             index += 1;
             const text = if (index < args.len) args[index] else "";
             flags.apps.edge_max_age = std.fmt.parseInt(u32, text, 10) catch
-                return .{ .refused = "--edge-max-age needs a number of seconds" };
+                return .{
+                    .refused = "--edge-max-age needs a number of seconds",
+                };
         } else if (std.mem.eql(u8, arg, "--browser")) {
             flags.browser_dir = browser_dir_default;
             if (index + 1 < args.len and !std.mem.startsWith(u8, args[index + 1], "--")) {
@@ -437,22 +467,30 @@ fn parse_flags(args: []const []const u8) Flags {
                 flags.browser_dir = args[index];
             }
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            return .{ .help = true };
+            return .{
+                .help = true,
+            };
         } else {
-            return .{ .unknown = arg };
+            return .{
+                .unknown = arg,
+            };
         }
     }
 
     flags.apps.base_url = std.mem.trimEnd(u8, flags.apps.base_url, "/");
 
     if (!apps_adapter.valid_options(flags.apps)) {
-        return .{ .refused = "--out and --apps need a directory, --url an absolute HTTP(S) " ++
-            "address" };
+        return .{
+            .refused = "--out and --apps need a directory, --url an absolute HTTP(S) " ++
+                "address",
+        };
     }
 
     if (flags.browser_dir) |dir| {
         if (dir.len == 0) {
-            return .{ .refused = "--browser needs a nonempty directory" };
+            return .{
+                .refused = "--browser needs a nonempty directory",
+            };
         }
     }
 
@@ -575,7 +613,10 @@ test "a failed static build keeps the apps for recovery and releases them on shu
     };
     var scratch = std.testing.tmpDir(.{});
     defer scratch.cleanup();
-    try scratch.dir.writeFile(std.testing.io, .{ .sub_path = "file", .data = "occupied" });
+    try scratch.dir.writeFile(std.testing.io, .{
+        .sub_path = "file",
+        .data = "occupied",
+    });
     const path = try scratch.dir.realPathFileAlloc(std.testing.io, "file", std.testing.allocator);
     defer std.testing.allocator.free(path);
     var host: apps_host.AppsHost = .{
@@ -584,7 +625,10 @@ test "a failed static build keeps the apps for recovery and releases them on shu
         .project = &project,
         .mode = .{
             .static = true,
-            .options = .{ .output_dir = path, .apps_dir = "fixtures/apps" },
+            .options = .{
+                .output_dir = path,
+                .apps_dir = "fixtures/apps",
+            },
         },
     };
     try host.reload();
@@ -620,8 +664,12 @@ test "an app whose build fails answers 503 until a publish lets it build" {
     const homepage = "{\"handle\":\"homepage\",\"name\":\"Homepage\",\"kind\":\"settings\"," ++
         "\"public\":true,\"title_field\":\"\",\"fields\":[" ++
         "{\"name\":\"hero\",\"label\":\"Hero\",\"kind\":\"string\"}]}";
-    _ = try registry.SDK.dispatch(&system, types.Create, .{ .definition = homepage });
-    var index = try deps.Index.open(system.db, .{ .quiet_ms = deps.quiet_ms });
+    _ = try registry.SDK.dispatch(&system, types.Create, .{
+        .definition = homepage,
+    });
+    var index = try deps.Index.open(system.db, .{
+        .quiet_ms = deps.quiet_ms,
+    });
     var scratch = std.testing.tmpDir(.{});
     defer scratch.cleanup();
     const path = try scratch.dir.realPathFileAlloc(std.testing.io, ".", system.arena);
@@ -632,7 +680,9 @@ test "an app whose build fails answers 503 until a publish lets it build" {
         .apps_dir = "fixtures/apps",
     }, 0);
     defer app.deinit();
-    var diagnostic: engine.Diagnostic = .{ .arena = system.arena };
+    var diagnostic: engine.Diagnostic = .{
+        .arena = system.arena,
+    };
     const program = try engine.load(std.testing.allocator, &.{.{
         .rel = "content/index.publr",
         .source = "---\nconst home = Publr.build.getEntry({ type: 'homepage' });\n" ++

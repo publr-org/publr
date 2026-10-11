@@ -90,7 +90,11 @@ fn type_pill(page: *const Page) Error!Pill {
         .operator = "is",
         .operator_id = "is",
         .operator_name = "types_operator",
-        .operators = &.{.{ .label = "is", .href = "", .selected = true }},
+        .operators = &.{.{
+            .label = "is",
+            .href = "",
+            .selected = true,
+        }},
         .value = label,
         .value_kind = "choice",
         .day = "",
@@ -141,7 +145,11 @@ fn pill_of(page: *const Page, def: Definition, clause: Clause, index: u32) Error
 
     for (choices) |choice| {
         const selected = std.mem.eql(u8, choice.id, clause.value);
-        const chosen: Clause = .{ .key = def.key, .operator = operator.id, .value = choice.id };
+        const chosen: Clause = .{
+            .key = def.key,
+            .operator = operator.id,
+            .value = choice.id,
+        };
 
         if (selected) {
             value = choice.label;
@@ -206,14 +214,20 @@ fn choices_of(
         .choice => {},
     }
 
-    out.append(arena, .{ .id = "", .label = "Any" }) catch return error.OutOfMemory;
+    out.append(arena, .{
+        .id = "",
+        .label = "Any",
+    }) catch return error.OutOfMemory;
 
     switch (def.source) {
         .none => {},
         .changes => out.appendSlice(arena, &model.filter.changes) catch return error.OutOfMemory,
         .statuses => {
             for (registry.Statuses.all) |status| {
-                out.append(arena, .{ .id = status.id, .label = status.label }) catch {
+                out.append(arena, .{
+                    .id = status.id,
+                    .label = status.label,
+                }) catch {
                     return error.OutOfMemory;
                 };
             }
@@ -221,7 +235,10 @@ fn choices_of(
         .users => try append_users(page, &out),
         .apps => {
             for (page.session.project.apps) |*app| {
-                out.append(arena, .{ .id = app.spec.name, .label = app.spec.label }) catch {
+                out.append(arena, .{
+                    .id = app.spec.name,
+                    .label = app.spec.label,
+                }) catch {
                     return error.OutOfMemory;
                 };
             }
@@ -240,7 +257,9 @@ fn append_users(page: *const Page, out: *std.ArrayList(model.filter.Choice)) Err
 
     out.append(arena, model.filter.me) catch return error.OutOfMemory;
 
-    const nobody: users.List.Out = .{ .users = &.{} };
+    const nobody: users.List.Out = .{
+        .users = &.{},
+    };
     const everyone = registry.SDK.dispatch(&page.session.ctx, users.List, .{}) catch |err| blk: {
         if (err != error.Denied) {
             return error.OutOfMemory;
@@ -254,7 +273,10 @@ fn append_users(page: *const Page, out: *std.ArrayList(model.filter.Choice)) Err
             continue;
         }
 
-        out.append(arena, .{ .id = account.id, .label = account.display_name }) catch {
+        out.append(arena, .{
+            .id = account.id,
+            .label = account.display_name,
+        }) catch {
             return error.OutOfMemory;
         };
     }
@@ -327,7 +349,11 @@ fn adders(page: *const Page) Error![]const views.ContentList.Add_filtersItem {
         for (def.operators) |operator| {
             const takes_default = model.filter.fits(operator, def.default_value);
             const value = if (takes_default) def.default_value else "";
-            const candidate: Clause = .{ .key = def.key, .operator = operator.id, .value = value };
+            const candidate: Clause = .{
+                .key = def.key,
+                .operator = operator.id,
+                .value = value,
+            };
 
             if (!taken(page.effective, candidate, past_end)) {
                 fresh = candidate;
@@ -336,7 +362,11 @@ fn adders(page: *const Page) Error![]const views.ContentList.Add_filtersItem {
         }
 
         const clause = fresh orelse {
-            items.append(arena, .{ .label = def.label, .href = "", .added = true }) catch {
+            items.append(arena, .{
+                .label = def.label,
+                .href = "",
+                .added = true,
+            }) catch {
                 return error.OutOfMemory;
             };
 
@@ -349,7 +379,11 @@ fn adders(page: *const Page) Error![]const views.ContentList.Add_filtersItem {
             return error.OutOfMemory;
         };
 
-        items.append(arena, .{ .label = def.label, .href = href, .added = false }) catch {
+        items.append(arena, .{
+            .label = def.label,
+            .href = href,
+            .added = false,
+        }) catch {
             return error.OutOfMemory;
         };
     }

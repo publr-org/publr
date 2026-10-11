@@ -53,7 +53,9 @@ pub fn owners_of(
 
         // Pointing here by its live value but not listed: taken out, pending; free again.
         if (held == .string and held.string.len > 0 and !std.mem.eql(u8, held.string, parent)) {
-            owner.* = .{ .elsewhere = held.string };
+            owner.* = .{
+                .elsewhere = held.string,
+            };
             try others.append(arena, held.string);
         }
     }
@@ -84,7 +86,9 @@ fn name_others(session: *Session, owners: []Owner, ids: []const []const u8) Erro
 
         for (listed.records, titles) |record, title| {
             if (std.mem.eql(u8, record.id, owner.elsewhere)) {
-                owner.* = .{ .elsewhere = title };
+                owner.* = .{
+                    .elsewhere = title,
+                };
             }
         }
     }

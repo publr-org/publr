@@ -232,7 +232,9 @@ pub const Harness = struct {
             options.output_dir = try scratch.realPathFileAlloc(std.testing.io, ".", arena);
         }
 
-        harness.index = try deps.Index.open(connection, .{ .quiet_ms = deps.quiet_ms });
+        harness.index = try deps.Index.open(connection, .{
+            .quiet_ms = deps.quiet_ms,
+        });
         try harness.load(options, now_ms);
         errdefer harness.unload();
 
@@ -383,7 +385,9 @@ const middleware_testing = struct {
         }
 
         if (std.mem.eql(u8, request.path(), "/count")) {
-            const listed = try request.call(record_operations.List, .{ .type = "post" });
+            const listed = try request.call(record_operations.List, .{
+                .type = "post",
+            });
 
             return request.json(.{
                 .method = request.method(),
@@ -457,7 +461,9 @@ test "a per-request render reads as the visitor, live records only; a shared one
     private.public = false;
     const definition = try @import("../model.zig").content_type.encode(arena, private);
     const types = @import("../operations/content_type.zig");
-    _ = try registry.SDK.dispatch(&system, types.Create, .{ .definition = definition });
+    _ = try registry.SDK.dispatch(&system, types.Create, .{
+        .definition = definition,
+    });
     _ = try registry.SDK.dispatch(&system, record_operations.Create, .{
         .type = "note",
         .document = "{\"title\":\"Mine, live\",\"body\":\"x\"}",
@@ -477,7 +483,12 @@ test "a per-request render reads as the visitor, live records only; a shared one
 
     var visitor = shared;
     visitor.live = true;
-    visitor.caller = .{ .user = .{ .id = "u_1", .roles = &.{"editor"} } };
+    visitor.caller = .{
+        .user = .{
+            .id = "u_1",
+            .roles = &.{"editor"},
+        },
+    };
     const seen = try visitor.query("note", .{});
     try std.testing.expectEqual(@as(usize, 1), seen.len);
     try std.testing.expectEqualStrings("Mine, live", seen[0].title);
@@ -540,7 +551,12 @@ fn members_only(delivery: *const sdk.delivery.Delivery) sdk.Error!sdk.delivery.V
         return .private;
     }
 
-    return .{ .refuse = .{ .status = 403, .body = "<p>Members only</p>" } };
+    return .{
+        .refuse = .{
+            .status = 403,
+            .body = "<p>Members only</p>",
+        },
+    };
 }
 
 test "delivery gates: members see the site, privately; everyone else the gate's answer" {
@@ -622,7 +638,9 @@ const edge_testing = struct {
 
 test "a CDN keeps built pages and static islands longer, never what a gate made private" {
     var harness: Harness = undefined;
-    try harness.init(.{ .edge_max_age = 86_400 });
+    try harness.init(.{
+        .edge_max_age = 86_400,
+    });
     defer harness.deinit();
 
     var scratch = std.testing.tmpDir(.{});
@@ -640,7 +658,9 @@ test "a CDN keeps built pages and static islands longer, never what a gate made 
 
     // A static island is a built file too.
     const io = std.testing.io;
-    var fragments = try scratch.dir.openDir(io, "_islands", .{ .iterate = true });
+    var fragments = try scratch.dir.openDir(io, "_islands", .{
+        .iterate = true,
+    });
     defer fragments.close(io);
 
     var iterator = fragments.iterate();
@@ -663,7 +683,9 @@ test "a CDN keeps built pages and static islands longer, never what a gate made 
 
 test "behind a CDN: built files carry their keys, a write answers with the keys it raised" {
     var harness: Harness = undefined;
-    try harness.init(.{ .edge_max_age = 86_400 });
+    try harness.init(.{
+        .edge_max_age = 86_400,
+    });
     defer harness.deinit();
 
     var scratch = std.testing.tmpDir(.{});
@@ -820,7 +842,10 @@ test "refresh: a current build is left alone, a publish rebuilds its pages, anot
 
     // A folder another app (or address) built is another site: built whole.
     const foreign = "0000000000000000\n";
-    try scratch.dir.writeFile(io, .{ .sub_path = rebuild.marker_path, .data = foreign });
+    try scratch.dir.writeFile(io, .{
+        .sub_path = rebuild.marker_path,
+        .data = foreign,
+    });
     try std.testing.expect(!rebuild.marker_matches(harness.app));
 
     const other = try rebuild.refresh(project);
@@ -830,7 +855,9 @@ test "refresh: a current build is left alone, a publish rebuilds its pages, anot
 
 test "a path mount answers below its path, with its own islands, assets and 404" {
     var harness: Harness = undefined;
-    try harness.init(.{ .base_url = "http://example.test" });
+    try harness.init(.{
+        .base_url = "http://example.test",
+    });
     defer harness.deinit();
 
     _ = try harness.publish("Counted");
@@ -874,7 +901,9 @@ test "a path mount answers below its path, with its own islands, assets and 404"
 
 test "a subdomain answers with its own app, whose middleware sees the path inside it" {
     var harness: Harness = undefined;
-    try harness.init(.{ .base_url = "http://example.test:8080" });
+    try harness.init(.{
+        .base_url = "http://example.test:8080",
+    });
     defer harness.deinit();
 
     const head = try harness.flow.head(
@@ -900,7 +929,9 @@ test "a subdomain answers with its own app, whose middleware sees the path insid
 
 test "an app that names roles sees an account holding none of them as nobody" {
     var harness: Harness = undefined;
-    try harness.init(.{ .base_url = "http://example.test" });
+    try harness.init(.{
+        .base_url = "http://example.test",
+    });
     defer harness.deinit();
 
     const users = @import("../operations/user.zig");
@@ -920,9 +951,18 @@ test "an app that names roles sees an account holding none of them as nobody" {
         });
     }
 
-    const cases = [_]struct { email: []const u8, signed_in: []const u8 }{
-        .{ .email = "editor@x.test", .signed_in = "true" },
-        .{ .email = "admin@x.test", .signed_in = "false" },
+    const cases = [_]struct {
+        email: []const u8,
+        signed_in: []const u8,
+    }{
+        .{
+            .email = "editor@x.test",
+            .signed_in = "true",
+        },
+        .{
+            .email = "admin@x.test",
+            .signed_in = "false",
+        },
     };
 
     for (cases) |case| {
@@ -949,7 +989,9 @@ test "an app that names roles sees an account holding none of them as nobody" {
 
 test "with an app on a subdomain, one sign-in holds on every app of the domain" {
     var harness: Harness = undefined;
-    try harness.init(.{ .base_url = "https://example.test" });
+    try harness.init(.{
+        .base_url = "https://example.test",
+    });
     defer harness.deinit();
 
     const users = @import("../operations/user.zig");
@@ -978,7 +1020,9 @@ test "with an app on a subdomain, one sign-in holds on every app of the domain" 
 
 test "every app builds into its own folder, its sitemap at its own address" {
     var harness: Harness = undefined;
-    try harness.init(.{ .base_url = "https://example.test" });
+    try harness.init(.{
+        .base_url = "https://example.test",
+    });
     defer harness.deinit();
 
     _ = try harness.publish("Built");
@@ -1010,7 +1054,9 @@ test "every app builds into its own folder, its sitemap at its own address" {
 }
 
 fn query_posts(ctx: *sdk.Ctx) !record_operations.List.Out {
-    return registry.SDK.dispatch(ctx, record_operations.List, .{ .type = "post" });
+    return registry.SDK.dispatch(ctx, record_operations.List, .{
+        .type = "post",
+    });
 }
 
 test "operation results collect empty membership and replay only committed scoped tokens" {
@@ -1019,7 +1065,10 @@ test "operation results collect empty membership and replay only committed scope
     defer harness.deinit();
     var system = harness.inner.ctx(.system);
     const secret = "test-secret-" ** 4;
-    const scope: sdk.dependencies.Scope = .{ .project = "example", .authority = "public" };
+    const scope: sdk.dependencies.Scope = .{
+        .project = "example",
+        .authority = "public",
+    };
     const initial = try query.execute(query_posts, &system, .{}, secret, scope, 60000);
     try std.testing.expectEqual(@as(usize, 0), initial.value.records.len);
     try std.testing.expect(!initial.policy.no_store);

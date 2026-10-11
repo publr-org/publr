@@ -193,13 +193,15 @@ fn call_as(
     var access = try access_of(loaded, ctx);
     const saved = ctx.caller;
 
-    ctx.caller = .{ .plugin = .{
-        .name = loaded.name(),
-        .capabilities = &.{},
-        .on_behalf_of = saved.user_id(),
-        .access = &access,
-        .roles = saved.roles(),
-    } };
+    ctx.caller = .{
+        .plugin = .{
+            .name = loaded.name(),
+            .capabilities = &.{},
+            .on_behalf_of = saved.user_id(),
+            .access = &access,
+            .roles = saved.roles(),
+        },
+    };
     defer ctx.caller = saved;
 
     return @import("../registry.zig").SDK.call_json(ctx, name, input);
@@ -376,10 +378,25 @@ fn event_json(ctx: *sdk.Ctx, happened: sdk.Event, name: []const u8) sdk.Error![]
 
     const wire = @import("../../sdk/plugin/wire.zig");
     const shaped: wire.Event = switch (happened) {
-        .completed => .{ .kind = .completed, .name = name },
-        .rejected => |failed| .{ .kind = .rejected, .name = name, .err = @errorName(failed.err) },
-        .failed => |failed| .{ .kind = .failed, .name = name, .err = @errorName(failed.err) },
-        .notice => |notice| .{ .kind = .notice, .name = name, .subject = notice.subject },
+        .completed => .{
+            .kind = .completed,
+            .name = name,
+        },
+        .rejected => |failed| .{
+            .kind = .rejected,
+            .name = name,
+            .err = @errorName(failed.err),
+        },
+        .failed => |failed| .{
+            .kind = .failed,
+            .name = name,
+            .err = @errorName(failed.err),
+        },
+        .notice => |notice| .{
+            .kind = .notice,
+            .name = name,
+            .subject = notice.subject,
+        },
     };
 
     return sdk.stringify(ctx.arena, shaped);

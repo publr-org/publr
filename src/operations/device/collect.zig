@@ -48,10 +48,18 @@ pub const Poll = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
-    pub const In = struct { device_code: []const u8 };
-    pub const Out = struct { state: []const u8 };
-    pub const example: In = .{ .device_code = device.example_device_code };
-    pub const example_out: Out = .{ .state = "pending" };
+    pub const In = struct {
+        device_code: []const u8,
+    };
+    pub const Out = struct {
+        state: []const u8,
+    };
+    pub const example: In = .{
+        .device_code = device.example_device_code,
+    };
+    pub const example_out: Out = .{
+        .state = "pending",
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .device_code = "What `device start` answered",
     };
@@ -62,11 +70,15 @@ pub const Poll = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
 
-        const request = try request_of(ctx, in.device_code) orelse return .{ .state = "expired" };
+        const request = try request_of(ctx, in.device_code) orelse return .{
+            .state = "expired",
+        };
         const known = std.mem.eql(u8, request.state, "pending") or
             std.mem.eql(u8, request.state, "approved");
 
-        return .{ .state = if (known) request.state else "denied" };
+        return .{
+            .state = if (known) request.state else "denied",
+        };
     }
 };
 
@@ -82,9 +94,17 @@ pub const Claim = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
-    pub const In = struct { device_code: []const u8 };
-    pub const Out = struct { token: []const u8, user_id: []const u8, scope: []const u8 };
-    pub const example: In = .{ .device_code = device.example_device_code };
+    pub const In = struct {
+        device_code: []const u8,
+    };
+    pub const Out = struct {
+        token: []const u8,
+        user_id: []const u8,
+        scope: []const u8,
+    };
+    pub const example: In = .{
+        .device_code = device.example_device_code,
+    };
     pub const example_out: Out = .{
         .token = "56a0794f6b1c67062563204a.ea477bba173fbbd2cd5fc9808892da24d65b38...",
         .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
@@ -139,8 +159,16 @@ pub const Redeem = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
-    pub const In = struct { token: []const u8, name: []const u8, scope: []const u8 };
-    pub const Out = struct { token: []const u8, user_id: []const u8, device_id: []const u8 };
+    pub const In = struct {
+        token: []const u8,
+        name: []const u8,
+        scope: []const u8,
+    };
+    pub const Out = struct {
+        token: []const u8,
+        user_id: []const u8,
+        device_id: []const u8,
+    };
     pub const example: In = .{
         .token = "eyJhdWQiOiJhMWIyYzNkNGU1ZjZhN2I4Ii4uLn0.c2lnbmF0dXJl...",
         .name = "A chat app",

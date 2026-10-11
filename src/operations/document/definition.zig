@@ -30,9 +30,20 @@ pub const Summary = struct {
     editor: []const u8,
     fields: u32,
 };
-pub const Updated = struct { id: []const u8, handle: []const u8, rewritten: u32, dropped: u32 };
-pub const Deleted = struct { deleted: bool, removed: u32 };
-pub const Report = struct { valid: bool, problems: []const Problem };
+pub const Updated = struct {
+    id: []const u8,
+    handle: []const u8,
+    rewritten: u32,
+    dropped: u32,
+};
+pub const Deleted = struct {
+    deleted: bool,
+    removed: u32,
+};
+pub const Report = struct {
+    valid: bool,
+    problems: []const Problem,
+};
 
 pub fn Of(comptime Domain: type) type {
     return struct {
@@ -132,7 +143,12 @@ pub fn Of(comptime Domain: type) type {
 
             ctx.notice(notice ++ ".created", def.handle);
 
-            return .{ .id = id, .def = def, .created_at = ctx.now_ms, .updated_at = ctx.now_ms };
+            return .{
+                .id = id,
+                .def = def,
+                .created_at = ctx.now_ms,
+                .updated_at = ctx.now_ms,
+            };
         }
 
         pub fn update(
@@ -257,7 +273,10 @@ pub fn Of(comptime Domain: type) type {
             const deleted = try definitions.delete(ctx.db, row.id);
             ctx.notice(notice ++ ".deleted", row.def.handle);
 
-            return .{ .deleted = deleted, .removed = held };
+            return .{
+                .deleted = deleted,
+                .removed = held,
+            };
         }
 
         pub fn validate(ctx: *Ctx, definition: []const u8) Error!Report {
@@ -271,19 +290,28 @@ pub fn Of(comptime Domain: type) type {
             const def = content_type.decode(ctx.arena, definition) catch {
                 problems.add("", "definition is not valid JSON for a definition");
 
-                return .{ .valid = false, .problems = try copy_problems(ctx, &problems) };
+                return .{
+                    .valid = false,
+                    .problems = try copy_problems(ctx, &problems),
+                };
             };
 
             content_type.validate_def(registry.Kinds.all, def, &problems);
 
             if (!problems.is_empty()) {
-                return .{ .valid = false, .problems = try copy_problems(ctx, &problems) };
+                return .{
+                    .valid = false,
+                    .problems = try copy_problems(ctx, &problems),
+                };
             }
 
             check_statuses(def, &problems);
             try Domain.config.check_def(ctx, def, &problems);
 
-            return .{ .valid = problems.is_empty(), .problems = try copy_problems(ctx, &problems) };
+            return .{
+                .valid = problems.is_empty(),
+                .problems = try copy_problems(ctx, &problems),
+            };
         }
 
         /// A slug field that just appeared: existing documents get theirs from its source

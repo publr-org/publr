@@ -8,7 +8,10 @@ const valid_mount = app.valid_mount;
 pub const host_len_max: u32 = 255;
 
 /// The request's app, and the path inside it (`/` and on).
-pub const Resolved = struct { index: u32, path: []const u8 };
+pub const Resolved = struct {
+    index: u32,
+    path: []const u8,
+};
 
 /// The app a request is for: a subdomain of `domain` goes to the app mounted there;
 /// anything else to the path mount with the longest prefix. Null when nothing answers.
@@ -24,7 +27,10 @@ pub fn resolve(
     if (subdomain_of(host, domain)) |label| {
         for (mounts, 0..) |mount, index| {
             if (mount == .subdomain and std.ascii.eqlIgnoreCase(mount.subdomain, label)) {
-                return .{ .index = @intCast(index), .path = path };
+                return .{
+                    .index = @intCast(index),
+                    .path = path,
+                };
             }
         }
     }
@@ -41,7 +47,10 @@ pub fn resolve(
         const length: u32 = @intCast(mount.path.len);
 
         if (best == null or length > best_len) {
-            best = .{ .index = @intCast(index), .path = inside };
+            best = .{
+                .index = @intCast(index),
+                .path = inside,
+            };
             best_len = length;
         }
     }
@@ -266,9 +275,15 @@ test "a path the browser shows loses the base, and only the base" {
 
 test "resolve: the subdomain first, then the longest path, the path seen from inside" {
     const mounts = [_]Mount{
-        .{ .path = "/" },
-        .{ .path = "/newsletter" },
-        .{ .subdomain = "app" },
+        .{
+            .path = "/",
+        },
+        .{
+            .path = "/newsletter",
+        },
+        .{
+            .subdomain = "app",
+        },
     };
     const domain = "example.com";
 
@@ -299,7 +314,9 @@ test "resolve: the subdomain first, then the longest path, the path seen from in
         try std.testing.expectEqual(@as(u32, 0), resolve(&mounts, pair[0], pair[1], "/").?.index);
     }
 
-    const nothing_at_root = [_]Mount{.{ .path = "/newsletter" }};
+    const nothing_at_root = [_]Mount{.{
+        .path = "/newsletter",
+    }};
     try std.testing.expect(resolve(&nothing_at_root, domain, "example.com", "/") == null);
     try std.testing.expect(resolve(&.{}, domain, "example.com", "/") == null);
 }
@@ -308,13 +325,23 @@ test "an app's address: under the project's for a path, before its host for a su
     var buffer: [128]u8 = undefined;
 
     const base = "https://example.com";
-    try std.testing.expectEqualStrings(base, url(&buffer, base, .{ .path = "/" }).?);
-    const letter = url(&buffer, base, .{ .path = "/newsletter" }).?;
+    try std.testing.expectEqualStrings(base, url(&buffer, base, .{
+        .path = "/",
+    }).?);
+    const letter = url(&buffer, base, .{
+        .path = "/newsletter",
+    }).?;
     try std.testing.expectEqualStrings("https://example.com/newsletter", letter);
-    const sub = url(&buffer, "http://localhost:8080", .{ .subdomain = "app" }).?;
+    const sub = url(&buffer, "http://localhost:8080", .{
+        .subdomain = "app",
+    }).?;
     try std.testing.expectEqualStrings("http://app.localhost:8080", sub);
-    try std.testing.expect(url(&buffer, "example.com", .{ .path = "/" }) == null);
-    try std.testing.expect(url(buffer[0..4], base, .{ .path = "/" }) == null);
+    try std.testing.expect(url(&buffer, "example.com", .{
+        .path = "/",
+    }) == null);
+    try std.testing.expect(url(buffer[0..4], base, .{
+        .path = "/",
+    }) == null);
 
     try std.testing.expectEqualStrings("example.com", domain_of("https://example.com:8443/x"));
     try std.testing.expectEqualStrings("localhost", domain_of("http://localhost:8080"));

@@ -66,7 +66,9 @@ pub fn add_step(
 
         const install = builder.addInstallFileWithDir(
             file,
-            .{ .custom = "sandboxed-plugins" },
+            .{
+                .custom = "sandboxed-plugins",
+            },
             builder.fmt("{s}.wasm", .{name}),
         );
 
@@ -103,7 +105,10 @@ pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8)
         }
     }
 
-    return .{ .names = names, .files = files };
+    return .{
+        .names = names,
+        .files = files,
+    };
 }
 
 /// The SDK a plugin is built against, as `publr plugin build` finds it: `src/` (the Zig
@@ -160,7 +165,9 @@ fn discover(builder: *std.Build, dir: []const u8) []const []const u8 {
     std.debug.assert(sandboxed_plugins_max > 0);
 
     const io = builder.graph.io;
-    var root = builder.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch {
+    var root = builder.build_root.handle.openDir(io, dir, .{
+        .iterate = true,
+    }) catch {
         const optional = std.mem.eql(u8, dir, dir_default) or std.mem.eql(u8, dir, fixture_dir) or
             std.mem.endsWith(u8, dir, "/" ++ dir_default);
 

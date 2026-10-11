@@ -112,7 +112,11 @@ pub fn built_in(request: *Request, response: *Response, ctx: *Context) Error!voi
 fn brings_of(comptime Plugin: type) []const u8 {
     comptime {
         const contract = @import("../../sdk/plugin.zig");
-        const Count = struct { count: u32, one: []const u8, many: []const u8 };
+        const Count = struct {
+            count: u32,
+            one: []const u8,
+            many: []const u8,
+        };
         const counts = [_]Count{
             .{
                 .count = contract.operations_of(Plugin).len,
@@ -124,8 +128,16 @@ fn brings_of(comptime Plugin: type) []const u8 {
                 .one = "content type",
                 .many = "content types",
             },
-            .{ .count = contract.middleware_of(Plugin).len, .one = "hook", .many = "hooks" },
-            .{ .count = contract.roles_of(Plugin).len, .one = "role", .many = "roles" },
+            .{
+                .count = contract.middleware_of(Plugin).len,
+                .one = "hook",
+                .many = "hooks",
+            },
+            .{
+                .count = contract.roles_of(Plugin).len,
+                .one = "role",
+                .many = "roles",
+            },
         };
 
         std.debug.assert(Plugin.manifest.name.len > 0);
@@ -335,7 +347,10 @@ pub fn decide(request: *Request, response: *Response, ctx: *Context) Error!void 
     const name = try admin.param(session, "name", back) orelse return;
     const key = post.form.text("key") orelse return admin.fail(session, error.Invalid, back);
     const change = post.form.text("change") orelse "";
-    const in: plugin_operations.Revoke.In = .{ .name = name, .key = key };
+    const in: plugin_operations.Revoke.In = .{
+        .name = name,
+        .key = key,
+    };
 
     std.debug.assert(request.method() == .post);
 
@@ -426,7 +441,9 @@ const remove = Change(plugin_operations.Remove).handle;
 fn get(session: *Session, name: []const u8) Error!?plugin_operations.Detail {
     std.debug.assert(name.len > 0);
 
-    const in: plugin_operations.Get.In = .{ .name = name };
+    const in: plugin_operations.Get.In = .{
+        .name = name,
+    };
 
     return registry.SDK.dispatch(&session.ctx, plugin_operations.Get, in) catch |err| {
         try admin.fail(session, err, back);

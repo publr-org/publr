@@ -43,7 +43,9 @@ pub fn serve(
     const token = http.Form.query_param(ctx.arena, request.query(), "v");
     const max_age: u32 = if (app.fingerprinted(token)) immutable_max_age else 0;
 
-    try apps_adapter.serve(response, app, .memory, .{ .max_age = max_age });
+    try apps_adapter.serve(response, app, .memory, .{
+        .max_age = max_age,
+    });
 
     if (stylesheet) {
         return response.set_body(.ok, "text/css; charset=utf-8", app.css);

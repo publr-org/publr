@@ -35,7 +35,11 @@ pub const Created = struct {
     }
 };
 
-pub const New = struct { user_id: []const u8, name: []const u8, scope: []const u8 };
+pub const New = struct {
+    user_id: []const u8,
+    name: []const u8,
+    scope: []const u8,
+};
 
 pub fn create(
     connection: *db.Db,
@@ -274,7 +278,11 @@ test "create, validate, touch to the minute, revoke" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const user_id = try seed_user(&fixture, arena);
-    const new: New = .{ .user_id = user_id, .name = "laptop", .scope = "drafts" };
+    const new: New = .{
+        .user_id = user_id,
+        .name = "laptop",
+        .scope = "drafts",
+    };
 
     const created = try create(&fixture.connection, std.testing.io, arena, new, 1_000);
     const token = created.token_text();

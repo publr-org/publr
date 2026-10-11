@@ -34,34 +34,53 @@ pub fn execute(
     var transaction = try ctx.db.transaction();
     defer transaction.rollback();
 
-    var index: deps.Index = .{ .db = ctx.db, .options = .{} };
+    var index: deps.Index = .{
+        .db = ctx.db,
+        .options = .{},
+    };
     const revision = try index.revision();
-    var collected: tracking.Collector = .{ .arena = ctx.arena };
+    var collected: tracking.Collector = .{
+        .arena = ctx.arena,
+    };
     var owned = ctx.collecting(&collected);
     const value = try @call(.auto, operation, .{&owned} ++ arguments);
     const tokens = try tag_tokens(ctx.arena, secret, scope, collected.keys.items);
 
-    return .{ .value = value, .policy = .{
-        .revision = revision,
-        .revalidate = false,
-        .no_store = !collected.complete,
-        .expires = if (ttl_ms) |ttl| ctx.now_ms + ttl else null,
-        .tags = tokens,
-    } };
+    return .{
+        .value = value,
+        .policy = .{
+            .revision = revision,
+            .revalidate = false,
+            .no_store = !collected.complete,
+            .expires = if (ttl_ms) |ttl| ctx.now_ms + ttl else null,
+            .tags = tokens,
+        },
+    };
 }
 
-pub const Replay = struct { revision: u64, reset: bool, tags: []const []const u8 };
+pub const Replay = struct {
+    revision: u64,
+    reset: bool,
+    tags: []const []const u8,
+};
 
 /// Poll only after commit. Reconnect from the last revision; reset expires every retained result.
 pub fn replay(ctx: *sdk.Ctx, after: u64, secret: []const u8, scope: tracking.Scope) !Replay {
     std.debug.assert(secret.len > 0);
     std.debug.assert(scope.project.len > 0);
 
-    var index: deps.Index = .{ .db = ctx.db, .options = .{} };
+    var index: deps.Index = .{
+        .db = ctx.db,
+        .options = .{},
+    };
     const changes = try index.changes_since(ctx.arena, after);
     const tokens = try tag_tokens(ctx.arena, secret, scope, changes.keys);
 
-    return .{ .revision = changes.revision, .reset = changes.reset, .tags = tokens };
+    return .{
+        .revision = changes.revision,
+        .reset = changes.reset,
+        .tags = tokens,
+    };
 }
 
 fn tag_tokens(

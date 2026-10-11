@@ -161,7 +161,10 @@ pub const Create = struct {
         version: i64,
         parent: ?[]const u8,
     };
-    pub const example: In = .{ .taxonomy = "topics", .document = example_document };
+    pub const example: In = .{
+        .taxonomy = "topics",
+        .document = example_document,
+    };
     pub const example_out: Out = .{
         .id = example_id,
         .status = "draft",
@@ -273,7 +276,9 @@ pub const Get = struct {
         slot: []const u8,
         document: []const u8,
     };
-    pub const example: In = .{ .id = example_id };
+    pub const example: In = .{
+        .id = example_id,
+    };
     pub const example_out: Out = .{
         .term = example_term,
         .parent = example_parent_id,
@@ -325,8 +330,16 @@ pub const Save = struct {
         status: ?[]const u8 = null,
         parent: ?[]const u8 = null,
     };
-    pub const Out = struct { version: i64, slug: ?[]const u8, changed: bool, parent: ?[]const u8 };
-    pub const example: In = .{ .id = example_id, .document = example_edit };
+    pub const Out = struct {
+        version: i64,
+        slug: ?[]const u8,
+        changed: bool,
+        parent: ?[]const u8,
+    };
+    pub const example: In = .{
+        .id = example_id,
+        .document = example_edit,
+    };
     pub const example_out: Out = .{
         .version = 3,
         .slug = "engineering",
@@ -388,9 +401,16 @@ pub const List = struct {
         limit: u32 = 50,
         offset: u32 = 0,
     };
-    pub const Out = struct { terms: []const Term };
-    pub const example: In = .{ .taxonomy = "topics", .filters = &.{"status:is:published"} };
-    pub const example_out: Out = .{ .terms = &.{example_term} };
+    pub const Out = struct {
+        terms: []const Term,
+    };
+    pub const example: In = .{
+        .taxonomy = "topics",
+        .filters = &.{"status:is:published"},
+    };
+    pub const example_out: Out = .{
+        .terms = &.{example_term},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .taxonomy = "One taxonomy, by handle or id",
         .taxonomies = "Several taxonomies, by handle or id; neither: every readable one",
@@ -424,7 +444,9 @@ pub const List = struct {
             .offset = in.offset,
         });
 
-        return .{ .terms = listed };
+        return .{
+            .terms = listed,
+        };
     }
 };
 
@@ -446,28 +468,38 @@ pub const Tree = struct {
         \\public taxonomies only; a hidden parent leaves its children at the root.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { taxonomy: []const u8 };
-    pub const Out = struct { terms: []const Node };
-    pub const example: In = .{ .taxonomy = "topics" };
-    pub const example_out: Out = .{ .terms = &.{
-        .{
-            .id = example_parent_id,
-            .parent = null,
-            .title = "Technology",
-            .slug = "technology",
-            .status = "published",
-            .depth = 0,
+    pub const In = struct {
+        taxonomy: []const u8,
+    };
+    pub const Out = struct {
+        terms: []const Node,
+    };
+    pub const example: In = .{
+        .taxonomy = "topics",
+    };
+    pub const example_out: Out = .{
+        .terms = &.{
+            .{
+                .id = example_parent_id,
+                .parent = null,
+                .title = "Technology",
+                .slug = "technology",
+                .status = "published",
+                .depth = 0,
+            },
+            .{
+                .id = example_id,
+                .parent = example_parent_id,
+                .title = "Engineering",
+                .slug = "engineering",
+                .status = "published",
+                .depth = 1,
+            },
         },
-        .{
-            .id = example_id,
-            .parent = example_parent_id,
-            .title = "Engineering",
-            .slug = "engineering",
-            .status = "published",
-            .depth = 1,
-        },
-    } };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .taxonomy = "The taxonomy, by handle or id" };
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .taxonomy = "The taxonomy, by handle or id",
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -495,7 +527,9 @@ pub const Tree = struct {
             try shown.append(ctx.arena, node);
         }
 
-        return .{ .terms = try tree_of(ctx, shown.items) };
+        return .{
+            .terms = try tree_of(ctx, shown.items),
+        };
     }
 
     fn tree_of(ctx: *Ctx, nodes: []const terms.Node) Error![]const Node {
@@ -548,13 +582,28 @@ pub const Validate = struct {
     pub const name = "term.validate";
     pub const description = "Check a document against a taxonomy and list every problem";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { taxonomy: []const u8, document: []const u8 };
+    pub const In = struct {
+        taxonomy: []const u8,
+        document: []const u8,
+    };
     pub const Out = crud_module.Report;
-    pub const example: In = .{ .taxonomy = "topics", .document = "{\"slug\":\"no name\"}" };
-    pub const example_out: Out = .{ .valid = false, .problems = &.{
-        .{ .path = "name", .message = "required" },
-        .{ .path = "slug", .message = "must be [a-z0-9] and hyphens" },
-    } };
+    pub const example: In = .{
+        .taxonomy = "topics",
+        .document = "{\"slug\":\"no name\"}",
+    };
+    pub const example_out: Out = .{
+        .valid = false,
+        .problems = &.{
+            .{
+                .path = "name",
+                .message = "required",
+            },
+            .{
+                .path = "slug",
+                .message = "must be [a-z0-9] and hyphens",
+            },
+        },
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         if (in.taxonomy.len > 64 << 10) {
@@ -593,7 +642,12 @@ test "terms: create with a parent, tree order, save moves, get shows the parent"
     defer harness.deinit();
     try seed_topics(&harness);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
     const tech = try SDK.dispatch(&editor, Create, .{
         .taxonomy = "topics",
         .document = "{\"name\":\"Technology\"}",
@@ -611,14 +665,18 @@ test "terms: create with a parent, tree order, save moves, get shows the parent"
         .document = "{\"name\":\"Art\"}",
     });
 
-    const tree = try SDK.dispatch(&editor, Tree, .{ .taxonomy = "topics" });
+    const tree = try SDK.dispatch(&editor, Tree, .{
+        .taxonomy = "topics",
+    });
     try std.testing.expectEqual(@as(usize, 3), tree.terms.len);
     try std.testing.expectEqualStrings("Art", tree.terms[0].title);
     try std.testing.expectEqualStrings("Technology", tree.terms[1].title);
     try std.testing.expectEqualStrings("Engineering", tree.terms[2].title);
     try std.testing.expectEqual(@as(u32, 1), tree.terms[2].depth);
 
-    const got = try SDK.dispatch(&editor, Get, .{ .id = engineering.id });
+    const got = try SDK.dispatch(&editor, Get, .{
+        .id = engineering.id,
+    });
     try std.testing.expectEqualStrings(tech.id, got.parent.?);
     try std.testing.expectEqualStrings("topics", got.term.type);
 
@@ -654,7 +712,9 @@ test "terms: create with a parent, tree order, save moves, get shows the parent"
     });
     try std.testing.expectError(error.Invalid, stranger);
 
-    const listed = try SDK.dispatch(&editor, List, .{ .taxonomy = "topics" });
+    const listed = try SDK.dispatch(&editor, List, .{
+        .taxonomy = "topics",
+    });
     try std.testing.expectEqual(@as(usize, 3), listed.terms.len);
     try std.testing.expectEqualStrings("Art", listed.terms[0].title);
     const by_slug = try SDK.dispatch(&editor, List, .{
@@ -664,9 +724,13 @@ test "terms: create with a parent, tree order, save moves, get shows the parent"
     try std.testing.expectEqual(@as(usize, 1), by_slug.terms.len);
 
     var anon = harness.ctx(.anonymous);
-    const public_tree = try SDK.dispatch(&anon, Tree, .{ .taxonomy = "topics" });
+    const public_tree = try SDK.dispatch(&anon, Tree, .{
+        .taxonomy = "topics",
+    });
     try std.testing.expectEqual(@as(usize, 1), public_tree.terms.len);
-    try std.testing.expectError(error.NotFound, SDK.dispatch(&anon, Get, .{ .id = art.id }));
+    try std.testing.expectError(error.NotFound, SDK.dispatch(&anon, Get, .{
+        .id = art.id,
+    }));
 }
 
 test "a flat taxonomy refuses parents; the hierarchy is bounded" {
@@ -675,10 +739,17 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
     defer harness.deinit();
     try seed_topics(&harness);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
-    _ = try SDK.dispatch(&admin, taxonomy_operations.Create, .{ .definition =
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_admin",
+            .roles = &.{"admin"},
+        },
+    });
+    _ = try SDK.dispatch(&admin, taxonomy_operations.Create, .{
+        .definition =
         \\{"handle":"tags","name":"Tags","title_field":"name",
         \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
+        ,
     });
     const one = try SDK.dispatch(&admin, Create, .{
         .taxonomy = "tags",
@@ -712,7 +783,9 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
     });
     try std.testing.expectError(error.Invalid, too_deep);
 
-    const tree = try SDK.dispatch(&admin, Tree, .{ .taxonomy = "topics" });
+    const tree = try SDK.dispatch(&admin, Tree, .{
+        .taxonomy = "topics",
+    });
     try std.testing.expectEqual(@as(usize, terms.depth_max), tree.terms.len);
     try std.testing.expectEqual(terms.depth_max - 1, tree.terms[tree.terms.len - 1].depth);
 

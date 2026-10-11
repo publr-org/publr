@@ -190,7 +190,11 @@ test "an installed plugin's page drawn by another's operation is not sound" {
         .name = "notes",
         .version = "0.1.0",
         .summary = "Notes",
-        .operations = &.{.{ .name = "notes.page", .kind = .read, .description = "Draws" }},
+        .operations = &.{.{
+            .name = "notes.page",
+            .kind = .read,
+            .description = "Draws",
+        }},
     };
     const page: ManifestPage = .{
         .path = "all",

@@ -140,7 +140,10 @@ pub fn Of(comptime Domain: type) type {
                     single = if (named.len == 1) row.def else null;
                 }
 
-                return .{ .briefs = briefs.items, .single = single };
+                return .{
+                    .briefs = briefs.items,
+                    .single = single,
+                };
             }
 
             for (try Domain.definitions.list_briefs(ctx.db, ctx.arena)) |brief| {
@@ -167,7 +170,10 @@ pub fn Of(comptime Domain: type) type {
 
             std.debug.assert((single != null) == (briefs.items.len == 1));
 
-            return .{ .briefs = briefs.items, .single = single };
+            return .{
+                .briefs = briefs.items,
+                .single = single,
+            };
         }
 
         /// The statuses a list may show: the one requested, every listed one but the one

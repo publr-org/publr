@@ -64,7 +64,9 @@ fn dispatch(
     const notify = ctx.notify;
 
     const within = ctx.within;
-    var trail_state: @import("trail.zig").Trail = .{ .root = operation_id };
+    var trail_state: @import("trail.zig").Trail = .{
+        .root = operation_id,
+    };
     const opened = SDK.trail_open(ctx, &trail_state);
 
     defer SDK.trail_close(ctx, opened);
@@ -78,11 +80,13 @@ fn dispatch(
     defer ctx.plugin_depth -= 1;
 
     admit(SDK, ctx, found, input) catch |err| {
-        SDK.emit(ctx, .{ .rejected = .{
-            .operation_name = found.name,
-            .operation_id = operation_id,
-            .err = err,
-        } });
+        SDK.emit(ctx, .{
+            .rejected = .{
+                .operation_name = found.name,
+                .operation_id = operation_id,
+                .err = err,
+            },
+        });
         SDK.log_failure(ctx, found.name, input, found.secret, err);
 
         return err;
@@ -93,17 +97,21 @@ fn dispatch(
     const result = run(SDK, ctx, sandboxed, found, input);
 
     if (result) |_| {
-        SDK.emit(ctx, .{ .completed = .{
-            .operation_name = found.name,
-            .operation_id = operation_id,
-            .duration_ns = 0,
-        } });
+        SDK.emit(ctx, .{
+            .completed = .{
+                .operation_name = found.name,
+                .operation_id = operation_id,
+                .duration_ns = 0,
+            },
+        });
     } else |err| {
-        SDK.emit(ctx, .{ .failed = .{
-            .operation_name = found.name,
-            .operation_id = operation_id,
-            .err = err,
-        } });
+        SDK.emit(ctx, .{
+            .failed = .{
+                .operation_name = found.name,
+                .operation_id = operation_id,
+                .err = err,
+            },
+        });
         SDK.log_failure(ctx, found.name, input, found.secret, err);
     }
 
@@ -297,11 +305,18 @@ fn record_for(comptime SDK: type, ctx: *Ctx, handle: []const u8, id: Value) Erro
         return error.Invalid;
     }
 
-    const asked = std.json.Stringify.valueAlloc(ctx.arena, .{ .id = id.string }, .{}) catch {
+    const asked = std.json.Stringify.valueAlloc(ctx.arena, .{
+        .id = id.string,
+    }, .{}) catch {
         return error.OutOfMemory;
     };
     const answer = try call(SDK, ctx, "record.get", asked);
-    const Got = struct { record: struct { type: []const u8 }, document: []const u8 };
+    const Got = struct {
+        record: struct {
+            type: []const u8,
+        },
+        document: []const u8,
+    };
     const got = std.json.parseFromSliceLeaky(Got, ctx.arena, answer, .{
         .ignore_unknown_fields = true,
     }) catch return error.Invalid;
@@ -318,5 +333,7 @@ fn record_for(comptime SDK: type, ctx: *Ctx, handle: []const u8, id: Value) Erro
     pair.put(ctx.arena, "id", id) catch return error.OutOfMemory;
     pair.put(ctx.arena, "value", document) catch return error.OutOfMemory;
 
-    return .{ .object = pair };
+    return .{
+        .object = pair,
+    };
 }

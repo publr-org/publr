@@ -81,7 +81,11 @@ fn expand_field(
     }
 }
 
-const Child = struct { id: []const u8, type: []const u8, fields: Value };
+const Child = struct {
+    id: []const u8,
+    type: []const u8,
+    fields: Value,
+};
 
 /// The records of the field's type whose reference points at one of `parents`, as the
 /// caller may read them.
@@ -185,7 +189,9 @@ fn placed(
         items.append(try object_of(arena, child)) catch return error.OutOfMemory;
     }
 
-    document.object.put(arena, def.name, .{ .array = items }) catch return error.OutOfMemory;
+    document.object.put(arena, def.name, .{
+        .array = items,
+    }) catch return error.OutOfMemory;
 
     return std.json.Stringify.valueAlloc(arena, document, .{}) catch error.OutOfMemory;
 }
@@ -243,8 +249,12 @@ fn object_of(arena: std.mem.Allocator, child: Child) Error!Value {
 
     var object: std.json.ObjectMap = .empty;
 
-    object.put(arena, "_id", .{ .string = child.id }) catch return error.OutOfMemory;
-    object.put(arena, "_type", .{ .string = child.type }) catch return error.OutOfMemory;
+    object.put(arena, "_id", .{
+        .string = child.id,
+    }) catch return error.OutOfMemory;
+    object.put(arena, "_type", .{
+        .string = child.type,
+    }) catch return error.OutOfMemory;
 
     if (child.fields == .object) {
         var entries = child.fields.object.iterator();
@@ -254,7 +264,9 @@ fn object_of(arena: std.mem.Allocator, child: Child) Error!Value {
         }
     }
 
-    return .{ .object = object };
+    return .{
+        .object = object,
+    };
 }
 
 /// The clauses of a list a virtual field's children keep: its statuses and owner.

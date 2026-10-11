@@ -22,13 +22,18 @@ pub const Disk = struct {
 
         try cwd.createDirPath(io, path);
 
-        var root = try cwd.openDir(io, path, .{ .iterate = true });
+        var root = try cwd.openDir(io, path, .{
+            .iterate = true,
+        });
         errdefer root.close(io);
 
         try root.createDirPath(io, ".incoming");
         try root.createDirPath(io, ".cache");
 
-        return .{ .io = io, .root = root };
+        return .{
+            .io = io,
+            .root = root,
+        };
     }
 
     pub fn close(disk: *Disk) void {
@@ -102,7 +107,10 @@ pub const Disk = struct {
             unreachable;
 
         disk.make_parent(path) catch return error.Storage;
-        disk.root.writeFile(disk.io, .{ .sub_path = temporary, .data = bytes }) catch
+        disk.root.writeFile(disk.io, .{
+            .sub_path = temporary,
+            .data = bytes,
+        }) catch
             return error.Storage;
         disk.root.rename(temporary, disk.root, path, disk.io) catch return error.Storage;
     }
@@ -144,10 +152,14 @@ pub const Disk = struct {
         std.debug.assert(offset <= files.bytes_max);
 
         if (offset == 0) {
-            return disk.root.createFile(disk.io, path, .{ .truncate = true });
+            return disk.root.createFile(disk.io, path, .{
+                .truncate = true,
+            });
         }
 
-        return disk.root.openFile(disk.io, path, .{ .mode = .read_write });
+        return disk.root.openFile(disk.io, path, .{
+            .mode = .read_write,
+        });
     }
 
     pub fn remove(disk: *Disk, area: Area, key: []const u8) void {
@@ -172,7 +184,9 @@ pub const Disk = struct {
         const slash = std.mem.lastIndexOfScalar(u8, key, '/');
         const folder = if (slash) |index| key[0..index] else "";
         const path = std.fmt.bufPrint(&buffer, ".cache/{s}", .{folder}) catch unreachable;
-        var dir = disk.root.openDir(disk.io, path, .{ .iterate = true }) catch return;
+        var dir = disk.root.openDir(disk.io, path, .{
+            .iterate = true,
+        }) catch return;
         defer dir.close(disk.io);
 
         const stem = files.stem_of(key);
@@ -234,7 +248,9 @@ test "disk: write, read, pieces in order, copies cleared, nothing outside the fo
     var disk = try Disk.open(io, media_path);
     defer disk.close();
 
-    const stored: files.Files = .{ .disk = &disk };
+    const stored: files.Files = .{
+        .disk = &disk,
+    };
 
     try stored.write(.files, "2026/10/cat-abc123.jpg", "meow");
 

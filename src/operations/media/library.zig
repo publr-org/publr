@@ -59,7 +59,10 @@ pub fn bootstrap(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.caller == .system);
     std.debug.assert(ctx.db.transaction_depth == 0);
 
-    try plugin_types.apply(ctx, &.{.{ .owner = "publr", .def = media.type_def }});
+    try plugin_types.apply(ctx, &.{.{
+        .owner = "publr",
+        .def = media.type_def,
+    }});
 
     const listed = try registry.SDK.dispatch(ctx, taxonomy.List, .{});
 
@@ -82,7 +85,9 @@ fn ensure_taxonomy(
         }
     }
 
-    _ = try registry.SDK.dispatch(ctx, taxonomy.Create, .{ .definition = definition });
+    _ = try registry.SDK.dispatch(ctx, taxonomy.Create, .{
+        .definition = definition,
+    });
 }
 
 pub fn files_of(ctx: *const Ctx) Error!files_module.Files {
@@ -148,7 +153,9 @@ pub fn written_of(ctx: *Ctx, id: []const u8) Error!Written {
     std.debug.assert(id.len > 0);
     std.debug.assert(ctx.now_ms >= 0);
 
-    const got = try registry.SDK.dispatch(ctx, record.Get, .{ .id = id });
+    const got = try registry.SDK.dispatch(ctx, record.Get, .{
+        .id = id,
+    });
     const parsed = std.json.parseFromSliceLeaky(Written, ctx.arena, got.document, .{
         .ignore_unknown_fields = true,
     }) catch return error.Invalid;

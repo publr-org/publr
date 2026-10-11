@@ -144,7 +144,11 @@ pub const AppsHost = struct {
         else
             apps_adapter.folder.resolve_dir(host.project.io, host.mode.options.apps_dir);
 
-        return .{ .context = host, .dir = dir, .reload = &reload_reason };
+        return .{
+            .context = host,
+            .dir = dir,
+            .reload = &reload_reason,
+        };
     }
 
     fn reload_reason(context: *anyopaque) ?[]const u8 {

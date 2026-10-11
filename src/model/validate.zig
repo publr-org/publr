@@ -544,29 +544,66 @@ const test_defs = [_]Def{
         .label = "Title",
         .kind = "string",
         .required = true,
-        .options = .{ .max_len = 10 },
+        .options = .{
+            .max_len = 10,
+        },
     },
-    .{ .name = "slug", .label = "Slug", .kind = "slug" },
-    .{ .name = "count", .label = "Count", .kind = "integer", .options = .{ .min = 0, .max = 5 } },
+    .{
+        .name = "slug",
+        .label = "Slug",
+        .kind = "slug",
+    },
+    .{
+        .name = "count",
+        .label = "Count",
+        .kind = "integer",
+        .options = .{
+            .min = 0,
+            .max = 5,
+        },
+    },
     .{
         .name = "kind",
         .label = "Kind",
         .kind = "select",
-        .options = .{ .choices = &.{ "a", "b" } },
+        .options = .{
+            .choices = &.{ "a", "b" },
+        },
     },
     .{
         .name = "tags",
         .label = "Tags",
         .kind = "reference",
         .many = true,
-        .options = .{ .to = &.{"tag"} },
+        .options = .{
+            .to = &.{"tag"},
+        },
     },
-    .{ .name = "gallery", .label = "Gallery", .kind = "repeater", .fields = &.{
-        .{ .name = "image", .label = "Image", .kind = "media", .required = true },
-    } },
-    .{ .name = "seo", .label = "SEO", .kind = "group", .fields = &.{
-        .{ .name = "description", .label = "Description", .kind = "text" },
-    } },
+    .{
+        .name = "gallery",
+        .label = "Gallery",
+        .kind = "repeater",
+        .fields = &.{
+            .{
+                .name = "image",
+                .label = "Image",
+                .kind = "media",
+                .required = true,
+            },
+        },
+    },
+    .{
+        .name = "seo",
+        .label = "SEO",
+        .kind = "group",
+        .fields = &.{
+            .{
+                .name = "description",
+                .label = "Description",
+                .kind = "text",
+            },
+        },
+    },
 };
 
 fn parse(arena: std.mem.Allocator, text: []const u8) !Value {
@@ -611,13 +648,22 @@ test "a valid document passes; every kind of mistake is reported at its path" {
         .name = "title",
         .label = "Title",
         .kind = "string",
-        .options = .{ .max_len = 3, .messages = .{ .length = "Keep it short" } },
+        .options = .{
+            .max_len = 3,
+            .messages = .{
+                .length = "Keep it short",
+            },
+        },
     }};
     validate_document(&kinds.core, &worded, try parse(arena, "{\"title\":\"long\"}"), 0, &custom);
     try std.testing.expectEqualStrings("Keep it short", custom.items[0].message);
 
     var unknown: Problems = .{};
-    const point = [_]Def{.{ .name = "at", .label = "At", .kind = "geo.point" }};
+    const point = [_]Def{.{
+        .name = "at",
+        .label = "At",
+        .kind = "geo.point",
+    }};
     validate_document(&kinds.core, &point, try parse(arena, "{\"at\":\"x\"}"), 0, &unknown);
     try std.testing.expectEqualStrings("unknown kind", unknown.items[0].message);
 }
@@ -628,23 +674,55 @@ test "lists, shapes, listed numbers and days from now" {
     const arena = arena_state.allocator();
 
     const defs = [_]Def{
-        .{ .name = "tags", .label = "Tags", .kind = "string", .many = true, .options = .{
-            .items_min = 1,
-            .items_max = 2,
-            .distinct = true,
-            .messages = .{ .items = "One or two different tags" },
-        } },
-        .{ .name = "code", .label = "Code", .kind = "string", .options = .{ .pattern = "@@-###" } },
-        .{ .name = "bio", .label = "Bio", .kind = "text", .options = .{
-            .words_max = 3,
-            .preset = .lowercase,
-        } },
-        .{ .name = "size", .label = "Size", .kind = "integer", .options = .{
-            .choices = &.{ "1", "2" },
-        } },
-        .{ .name = "when", .label = "When", .kind = "datetime", .options = .{
-            .date = .{ .from_now = true },
-        } },
+        .{
+            .name = "tags",
+            .label = "Tags",
+            .kind = "string",
+            .many = true,
+            .options = .{
+                .items_min = 1,
+                .items_max = 2,
+                .distinct = true,
+                .messages = .{
+                    .items = "One or two different tags",
+                },
+            },
+        },
+        .{
+            .name = "code",
+            .label = "Code",
+            .kind = "string",
+            .options = .{
+                .pattern = "@@-###",
+            },
+        },
+        .{
+            .name = "bio",
+            .label = "Bio",
+            .kind = "text",
+            .options = .{
+                .words_max = 3,
+                .preset = .lowercase,
+            },
+        },
+        .{
+            .name = "size",
+            .label = "Size",
+            .kind = "integer",
+            .options = .{
+                .choices = &.{ "1", "2" },
+            },
+        },
+        .{
+            .name = "when",
+            .label = "When",
+            .kind = "datetime",
+            .options = .{
+                .date = .{
+                    .from_now = true,
+                },
+            },
+        },
     };
     const today: i64 = 5 * day_ms + 1000;
 
@@ -676,7 +754,11 @@ test "conditional requiredness is evaluated on the server and hidden values rema
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const defs = [_]Def{
-        .{ .name = "enabled", .label = "Enabled", .kind = "boolean" },
+        .{
+            .name = "enabled",
+            .label = "Enabled",
+            .kind = "boolean",
+        },
         .{
             .name = "caption",
             .label = "Caption",
@@ -697,11 +779,26 @@ test "conditional requiredness is evaluated on the server and hidden values rema
             },
         },
     };
-    const cases = [_]struct { text: []const u8, valid: bool }{
-        .{ .text = "{\"enabled\":false}", .valid = true },
-        .{ .text = "{\"enabled\":true}", .valid = false },
-        .{ .text = "{\"enabled\":true,\"caption\":\"Hello\"}", .valid = true },
-        .{ .text = "{\"enabled\":false,\"caption\":\"Too long\"}", .valid = false },
+    const cases = [_]struct {
+        text: []const u8,
+        valid: bool,
+    }{
+        .{
+            .text = "{\"enabled\":false}",
+            .valid = true,
+        },
+        .{
+            .text = "{\"enabled\":true}",
+            .valid = false,
+        },
+        .{
+            .text = "{\"enabled\":true,\"caption\":\"Hello\"}",
+            .valid = true,
+        },
+        .{
+            .text = "{\"enabled\":false,\"caption\":\"Too long\"}",
+            .valid = false,
+        },
     };
 
     for (cases) |case| {
@@ -712,7 +809,12 @@ test "conditional requiredness is evaluated on the server and hidden values rema
     }
 
     var invalid = defs;
-    invalid[0].conditions = &.{.{ .rules = &.{.{ .field = "caption", .value = "Hello" }} }};
+    invalid[0].conditions = &.{.{
+        .rules = &.{.{
+            .field = "caption",
+            .value = "Hello",
+        }},
+    }};
     var problems: Problems = .{};
     field.validate_defs(&kinds.core, &invalid, 0, &problems);
     try std.testing.expect(!problems.is_empty());
@@ -723,17 +825,50 @@ test "extended fields reject malformed values and layout elements cannot store d
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const defs = [_]Def{
-        .{ .name = "color", .label = "Color", .kind = "color" },
-        .{ .name = "time", .label = "Time", .kind = "time" },
-        .{ .name = "section", .label = "Section", .kind = "tab" },
+        .{
+            .name = "color",
+            .label = "Color",
+            .kind = "color",
+        },
+        .{
+            .name = "time",
+            .label = "Time",
+            .kind = "time",
+        },
+        .{
+            .name = "section",
+            .label = "Section",
+            .kind = "tab",
+        },
     };
-    const cases = [_]struct { text: []const u8, valid: bool }{
-        .{ .text = "{}", .valid = true },
-        .{ .text = "{\"color\":\"#aBc012\",\"time\":\"23:59\"}", .valid = true },
-        .{ .text = "{\"color\":\"#12345g\"}", .valid = false },
-        .{ .text = "{\"time\":\"24:00\"}", .valid = false },
-        .{ .text = "{\"time\":\"+1:00\"}", .valid = false },
-        .{ .text = "{\"section\":\"injected\"}", .valid = false },
+    const cases = [_]struct {
+        text: []const u8,
+        valid: bool,
+    }{
+        .{
+            .text = "{}",
+            .valid = true,
+        },
+        .{
+            .text = "{\"color\":\"#aBc012\",\"time\":\"23:59\"}",
+            .valid = true,
+        },
+        .{
+            .text = "{\"color\":\"#12345g\"}",
+            .valid = false,
+        },
+        .{
+            .text = "{\"time\":\"24:00\"}",
+            .valid = false,
+        },
+        .{
+            .text = "{\"time\":\"+1:00\"}",
+            .valid = false,
+        },
+        .{
+            .text = "{\"section\":\"injected\"}",
+            .valid = false,
+        },
     };
 
     for (cases) |case| {

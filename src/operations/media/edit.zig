@@ -14,7 +14,10 @@ const Error = sdk.Error;
 pub const ids_max: u32 = 200;
 const focal_default: u8 = 50;
 
-pub const TagRef = struct { id: []const u8, name: []const u8 };
+pub const TagRef = struct {
+    id: []const u8,
+    name: []const u8,
+};
 
 pub const Detail = struct {
     media: library.Item,
@@ -37,9 +40,13 @@ pub const Get = struct {
         \\callers only.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { id: []const u8 };
+    pub const In = struct {
+        id: []const u8,
+    };
     pub const Out = Detail;
-    pub const example: In = .{ .id = library.example_item.id };
+    pub const example: In = .{
+        .id = library.example_item.id,
+    };
     pub const example_out: Out = .{
         .media = library.example_item,
         .alt = "Fishing boats in the harbour",
@@ -50,7 +57,9 @@ pub const Get = struct {
         .folder = null,
         .tags = &.{},
     };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .id = "The file's record id" };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .id = "The file's record id",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .media = "The file as the library lists it",
         .alt = "What the image shows, for people who cannot see it",
@@ -113,9 +122,16 @@ pub const Update = struct {
         tags: ?[]const []const u8 = null,
         private: ?bool = null,
     };
-    pub const Out = struct { id: []const u8 };
-    pub const example: In = .{ .id = library.example_item.id, .alt = "Boats at dawn" };
-    pub const example_out: Out = .{ .id = library.example_item.id };
+    pub const Out = struct {
+        id: []const u8,
+    };
+    pub const example: In = .{
+        .id = library.example_item.id,
+        .alt = "Boats at dawn",
+    };
+    pub const example_out: Out = .{
+        .id = library.example_item.id,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The file's record id",
         .title = "Its title",
@@ -128,7 +144,9 @@ pub const Update = struct {
         .tags = "Every tag it should carry, by name",
         .private = "Whether only signed-in users may see it",
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .id = "The file's record id" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .id = "The file's record id",
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -165,7 +183,9 @@ pub const Update = struct {
             (try library.files_of(ctx)).clear_copies(row.storage_key);
         }
 
-        return .{ .id = row.record };
+        return .{
+            .id = row.record,
+        };
     }
 };
 
@@ -216,12 +236,24 @@ pub const Delete = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const destroys = true;
-    pub const In = struct { ids: []const []const u8 };
-    pub const Out = struct { deleted: u32 };
-    pub const example: In = .{ .ids = &.{library.example_item.id} };
-    pub const example_out: Out = .{ .deleted = 1 };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .ids = "The files' record ids, up to 200" };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .deleted = "How many files went" };
+    pub const In = struct {
+        ids: []const []const u8,
+    };
+    pub const Out = struct {
+        deleted: u32,
+    };
+    pub const example: In = .{
+        .ids = &.{library.example_item.id},
+    };
+    pub const example_out: Out = .{
+        .deleted = 1,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .ids = "The files' record ids, up to 200",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .deleted = "How many files went",
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -237,7 +269,9 @@ pub const Delete = struct {
         for (in.ids, keys) |id, *key| {
             const row = try library.row_of(ctx, id);
 
-            _ = try registry.SDK.dispatch(ctx, record.Purge, .{ .id = row.record });
+            _ = try registry.SDK.dispatch(ctx, record.Purge, .{
+                .id = row.record,
+            });
             key.* = row.storage_key;
         }
 
@@ -247,7 +281,9 @@ pub const Delete = struct {
             files.clear_copies(key);
         }
 
-        return .{ .deleted = @intCast(keys.len) };
+        return .{
+            .deleted = @intCast(keys.len),
+        };
     }
 };
 
@@ -255,15 +291,27 @@ pub const Move = struct {
     pub const name = "media.move";
     pub const description = "File several files in one folder, or in none";
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { ids: []const []const u8, folder: []const u8 = "" };
-    pub const Out = struct { moved: u32 };
-    pub const example: In = .{ .ids = &.{library.example_item.id}, .folder = "" };
-    pub const example_out: Out = .{ .moved = 1 };
+    pub const In = struct {
+        ids: []const []const u8,
+        folder: []const u8 = "",
+    };
+    pub const Out = struct {
+        moved: u32,
+    };
+    pub const example: In = .{
+        .ids = &.{library.example_item.id},
+        .folder = "",
+    };
+    pub const example_out: Out = .{
+        .moved = 1,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .ids = "The files' record ids, up to 200",
         .folder = "The folder's id; empty for none",
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .moved = "How many files moved" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .moved = "How many files moved",
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -276,10 +324,14 @@ pub const Move = struct {
         for (in.ids) |id| {
             const row = try library.row_of(ctx, id);
 
-            try library.save(ctx, row.record, Changes{ .folder = in.folder });
+            try library.save(ctx, row.record, Changes{
+                .folder = in.folder,
+            });
         }
 
-        return .{ .moved = @intCast(in.ids.len) };
+        return .{
+            .moved = @intCast(in.ids.len),
+        };
     }
 };
 
@@ -291,16 +343,29 @@ pub const Tag = struct {
         \\file does not carry leaves the file as it is.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { ids: []const []const u8, tag: []const u8, remove: bool = false };
-    pub const Out = struct { changed: u32 };
-    pub const example: In = .{ .ids = &.{library.example_item.id}, .tag = "Harbour" };
-    pub const example_out: Out = .{ .changed = 1 };
+    pub const In = struct {
+        ids: []const []const u8,
+        tag: []const u8,
+        remove: bool = false,
+    };
+    pub const Out = struct {
+        changed: u32,
+    };
+    pub const example: In = .{
+        .ids = &.{library.example_item.id},
+        .tag = "Harbour",
+    };
+    pub const example_out: Out = .{
+        .changed = 1,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .ids = "The files' record ids, up to 200",
         .tag = "The tag's name",
         .remove = "Take the tag off instead",
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .changed = "How many files changed" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .changed = "How many files changed",
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -319,12 +384,16 @@ pub const Tag = struct {
             const next = try tags.toggled(ctx.arena, written.media_tags, tag_id, in.remove);
 
             if (next.len != written.media_tags.len) {
-                try library.save(ctx, row.record, Changes{ .tag_ids = next });
+                try library.save(ctx, row.record, Changes{
+                    .tag_ids = next,
+                });
                 changed += 1;
             }
         }
 
-        return .{ .changed = changed };
+        return .{
+            .changed = changed,
+        };
     }
 };
 

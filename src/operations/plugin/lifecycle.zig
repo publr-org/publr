@@ -42,7 +42,10 @@ pub fn stage(ctx: *Ctx, file: []const u8, anywhere: bool) Error!Checked {
 
     try check(ctx, &manifest);
 
-    return .{ .staged = staged, .manifest = manifest };
+    return .{
+        .staged = staged,
+        .manifest = manifest,
+    };
 }
 
 /// What a manifest must hold to be installed at all, whatever an administrator grants.
@@ -187,16 +190,26 @@ pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!
     defer ctx.caller = saved;
 
     for (manifest.content_types) |def| {
-        try plugin_types.apply_one(ctx, .{ .owner = manifest.name, .def = def });
+        try plugin_types.apply_one(ctx, .{
+            .owner = manifest.name,
+            .def = def,
+        });
     }
 
     for (manifest.custom_fields) |def| {
-        try plugin_types.apply_group(ctx, .{ .owner = manifest.name, .def = def });
+        try plugin_types.apply_group(ctx, .{
+            .owner = manifest.name,
+            .def = def,
+        });
     }
 }
 
 /// What adding a module did: a plugin new to the list, or a newer version of one there.
-pub const Added = struct { name: []const u8, version: []const u8, update: bool };
+pub const Added = struct {
+    name: []const u8,
+    version: []const u8,
+    update: bool,
+};
 
 /// Adds a checked module to the list: a new plugin, disabled; or, for a plugin there
 /// already, its next version, waiting to be applied. Nothing runs yet.
@@ -204,7 +217,11 @@ pub fn add(ctx: *Ctx, checked: Checked) Error!Added {
     std.debug.assert(checked.staged.hash.len > 0);
 
     const manifest = checked.manifest;
-    const added: Added = .{ .name = manifest.name, .version = manifest.version, .update = false };
+    const added: Added = .{
+        .name = manifest.name,
+        .version = manifest.version,
+        .update = false,
+    };
 
     if (try store.sandboxed_plugins.get(ctx.db, ctx.arena, manifest.name)) |row| {
         var decoded = try state.decode(ctx.arena, row);
@@ -219,7 +236,11 @@ pub fn add(ctx: *Ctx, checked: Checked) Error!Added {
         try state.save(ctx, decoded);
         ctx.notice("plugin.update_added", added.name);
 
-        return .{ .name = added.name, .version = added.version, .update = true };
+        return .{
+            .name = added.name,
+            .version = added.version,
+            .update = true,
+        };
     }
 
     if (try store.sandboxed_plugins.count(ctx.db) >= sandboxed_plugin.sandboxed_plugins_max) {
@@ -248,7 +269,9 @@ pub fn add(ctx: *Ctx, checked: Checked) Error!Added {
         .manifest = manifest,
         .granted = &.{},
         .denied = &.{},
-        .content_access = .{ .scope = manifest.content_access.recommend },
+        .content_access = .{
+            .scope = manifest.content_access.recommend,
+        },
     });
     ctx.notice("plugin.added", added.name);
 

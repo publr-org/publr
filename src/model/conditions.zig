@@ -10,7 +10,9 @@ pub const Rule = struct {
     operator: Operator = .equal,
     value: []const u8 = "",
 };
-pub const Group = struct { rules: []const Rule };
+pub const Group = struct {
+    rules: []const Rule,
+};
 pub const Set = []const Group;
 
 pub fn valid(groups: Set) bool {
@@ -122,20 +124,48 @@ test "conditions require every rule in any group and distinguish false from empt
         .{},
     );
     const groups: Set = &.{
-        .{ .rules = &.{.{ .field = "format", .value = "image" }} },
-        .{ .rules = &.{
-            .{ .field = "format", .value = "video" },
-            .{ .field = "enabled", .value = "false" },
-            .{ .field = "tags", .operator = .contains, .value = "news" },
-        } },
+        .{
+            .rules = &.{.{
+                .field = "format",
+                .value = "image",
+            }},
+        },
+        .{
+            .rules = &.{
+                .{
+                    .field = "format",
+                    .value = "video",
+                },
+                .{
+                    .field = "enabled",
+                    .value = "false",
+                },
+                .{
+                    .field = "tags",
+                    .operator = .contains,
+                    .value = "news",
+                },
+            },
+        },
     };
     try std.testing.expect(valid(groups));
     try std.testing.expect(matches(groups, document.object));
-    try std.testing.expect(!matches(&.{.{ .rules = &.{
-        .{ .field = "enabled", .operator = .empty },
-    } }}, document.object));
-    try std.testing.expect(!valid(&.{.{ .rules = &.{} }}));
-    try std.testing.expect(!valid(&.{.{ .rules = &.{.{ .field = "" }} }}));
+    try std.testing.expect(!matches(&.{.{
+        .rules = &.{
+            .{
+                .field = "enabled",
+                .operator = .empty,
+            },
+        },
+    }}, document.object));
+    try std.testing.expect(!valid(&.{.{
+        .rules = &.{},
+    }}));
+    try std.testing.expect(!valid(&.{.{
+        .rules = &.{.{
+            .field = "",
+        }},
+    }}));
 }
 
 pub fn validate_fields(defs: anytype, problems: anytype) void {

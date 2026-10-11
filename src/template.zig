@@ -114,7 +114,10 @@ pub const Program = struct {
 
         for (program.routes) |*route| {
             if (match_pattern(route.pattern, path)) |slug| {
-                return .{ .route = route, .slug = slug };
+                return .{
+                    .route = route,
+                    .slug = slug,
+                };
             }
         }
 
@@ -124,7 +127,10 @@ pub const Program = struct {
 
 /// Where a refusal's message goes: the caller's allocator, and the message naming the
 /// template and the construct once `load` has refused.
-pub const Diagnostic = struct { arena: std.mem.Allocator, message: []const u8 = "" };
+pub const Diagnostic = struct {
+    arena: std.mem.Allocator,
+    message: []const u8 = "",
+};
 
 /// Reads every source, compiles them all, and builds the tables. `sources` and
 /// everything they point at are copied into the app's own arena.
@@ -149,7 +155,11 @@ pub fn load(
     const arena = arena_state.allocator();
 
     const templates = try copy_sources(arena, sources, diagnostic);
-    var context: compile.Context = .{ .arena = arena, .templates = templates, .options = options };
+    var context: compile.Context = .{
+        .arena = arena,
+        .templates = templates,
+        .options = options,
+    };
 
     for (templates, 0..) |_, index| {
         context.compile(@intCast(index)) catch |err| {
@@ -254,7 +264,10 @@ fn copy_sources(
     return templates;
 }
 
-const RouteTable = struct { routes: []const Route, error_404: ?u32 };
+const RouteTable = struct {
+    routes: []const Route,
+    error_404: ?u32,
+};
 
 fn route_table(arena: std.mem.Allocator, templates: []const Template) LoadError!RouteTable {
     std.debug.assert(templates.len <= templates_max);
@@ -287,7 +300,10 @@ fn route_table(arena: std.mem.Allocator, templates: []const Template) LoadError!
 
     std.mem.sort(Route, list.items, {}, routes.route_less_than);
 
-    return .{ .routes = list.items, .error_404 = error_404 };
+    return .{
+        .routes = list.items,
+        .error_404 = error_404,
+    };
 }
 
 fn islands_of(arena: std.mem.Allocator, uses: []const compile.IslandUse) LoadError![]const Island {
@@ -299,7 +315,10 @@ fn islands_of(arena: std.mem.Allocator, uses: []const compile.IslandUse) LoadErr
         const props = try arena.alloc(Prop, use.props.len);
 
         for (use.props, props) |arg, *prop| {
-            prop.* = .{ .name = arg.name, .value = arg.value.literal };
+            prop.* = .{
+                .name = arg.name,
+                .value = arg.value.literal,
+            };
         }
 
         island.* = .{
@@ -390,7 +409,9 @@ test "JavaScript renders the seeded marketing components without client code" {
         ),
     }, .{});
     defer destroy(program);
-    const ctx: TestContext = .{ .arena = arena };
+    const ctx: TestContext = .{
+        .arena = arena,
+    };
     const index = program.find("content/index.publr").?;
     const first = try render_test(arena, program, index, &ctx);
     const second = try render_test(arena, program, index, &ctx);
@@ -419,7 +440,9 @@ test "JavaScript keeps lexical helpers, operand semantics, structured props and 
         \\<p>{'' || 'fallback'}{false && <b>hidden</b>}</p>
     )}, .{});
     defer destroy(program);
-    const ctx: TestContext = .{ .arena = arena };
+    const ctx: TestContext = .{
+        .arena = arena,
+    };
     const html = try render_test(arena, program, program.find("content/index.publr").?, &ctx);
     try testing.expect(contains(html, "<text x=\"1.25\" data-state=\"cold\">&lt;hello&gt;</text>"));
     try testing.expect(contains(html, "<text x=\"2.5\" data-state=\"hot\">&amp;bye</text>"));
@@ -442,7 +465,10 @@ test "JavaScript data reads use the host and retain conservative impact" {
     )}, .{});
     defer destroy(program);
     var templates: std.ArrayList([]const u8) = .empty;
-    const ctx: TestContext = .{ .arena = arena, .templates = &templates };
+    const ctx: TestContext = .{
+        .arena = arena,
+        .templates = &templates,
+    };
     const html = try render_test(arena, program, program.find("content/index.publr").?, &ctx);
     try testing.expect(contains(html, "SECOND &lt;POST&gt;"));
     try testing.expect(contains(html, "ALPHA,BETA"));
@@ -470,7 +496,9 @@ test "JavaScript passes typed props between native and computed components" {
         source("components/label.publr", "<b>{props.text}</b>"),
     }, .{});
     defer destroy(program);
-    const ctx: TestContext = .{ .arena = arena };
+    const ctx: TestContext = .{
+        .arena = arena,
+    };
     const html = try render_test(arena, program, program.find("content/index.publr").?, &ctx);
     try testing.expect(contains(html, "<p>number:<b>#7</b><b>#8</b></p>"));
 }
@@ -487,7 +515,10 @@ test "static JavaScript cannot reach request data through an alias" {
         \\<p>{email}</p>
     )}, .{});
     defer destroy(program);
-    const ctx: TestContext = .{ .arena = arena, .email = "private@example.com" };
+    const ctx: TestContext = .{
+        .arena = arena,
+        .email = "private@example.com",
+    };
     try testing.expectError(
         error.StaticRequestAccess,
         render_test(arena, program, program.find("content/index.publr").?, &ctx),
@@ -514,7 +545,10 @@ test "helper modules preserve live bindings and track transitive imports" {
     }, .{});
     defer destroy(program);
     var templates: std.ArrayList([]const u8) = .empty;
-    const ctx: TestContext = .{ .arena = arena, .templates = &templates };
+    const ctx: TestContext = .{
+        .arena = arena,
+        .templates = &templates,
+    };
     const index = program.find("content/index.publr").?;
     const html = try render_test(arena, program, index, &ctx);
     try testing.expect(contains(html, "<p>1</p>"));
@@ -530,7 +564,9 @@ test "JavaScript expression boundaries include regex, comments and nested templa
         "{`outer ${`inner ${2}`}`}|{1 /* } */ + 2}{/* } */}</p>";
     const program = try load_test(&.{source("content/index.publr", markup)}, .{});
     defer destroy(program);
-    const html = try render_test(arena, program, program.routes[0].template, &.{ .arena = arena });
+    const html = try render_test(arena, program, program.routes[0].template, &.{
+        .arena = arena,
+    });
     try testing.expectEqualStrings("<p>1|yes|outer inner 2|3</p>", html);
 }
 
@@ -550,7 +586,9 @@ test "JavaScript entry props reach native components" {
         card_component,
     }, .{});
     defer destroy(program);
-    const html = try render_test(arena, program, program.routes[0].template, &.{ .arena = arena });
+    const html = try render_test(arena, program, program.routes[0].template, &.{
+        .arena = arena,
+    });
     try testing.expect(contains(html, "Second &lt;post&gt;!"));
 }
 
@@ -573,7 +611,9 @@ test "JavaScript entry props keep the entry namespace in computed components" {
         )),
     }, .{});
     defer destroy(program);
-    const html = try render_test(arena, program, program.routes[0].template, &.{ .arena = arena });
+    const html = try render_test(arena, program, program.routes[0].template, &.{
+        .arena = arena,
+    });
     try testing.expect(contains(html, "SECOND &lt;POST&gt;"));
 }
 
@@ -590,7 +630,9 @@ test "JavaScript cannot treat an ordinary object as raw markup" {
     defer destroy(program);
     try testing.expectError(
         error.InvalidJavaScriptChild,
-        render_test(arena, program, program.routes[0].template, &.{ .arena = arena }),
+        render_test(arena, program, program.routes[0].template, &.{
+            .arena = arena,
+        }),
     );
 }
 
@@ -611,7 +653,11 @@ test "JavaScript supports nested conditional declarations in frontmatter" {
     )}, .{});
     defer destroy(program);
     const index = program.routes[0].template;
-    const ctx: TestContext = .{ .arena = arena, .live = true, .email = "ada@example.com" };
+    const ctx: TestContext = .{
+        .arena = arena,
+        .live = true,
+        .email = "ada@example.com",
+    };
     try testing.expect(program.templates[index].javascript != null);
     try testing.expectEqualStrings(
         "<p>ada@example.com</p>",
@@ -622,7 +668,9 @@ test "JavaScript supports nested conditional declarations in frontmatter" {
 fn load_test(sources: []const Source, options: Options) !*Program {
     std.debug.assert(sources.len > 0);
 
-    var diagnostic: Diagnostic = .{ .arena = testing.allocator };
+    var diagnostic: Diagnostic = .{
+        .arena = testing.allocator,
+    };
 
     return load(testing.allocator, sources, options, &diagnostic) catch |err| {
         defer testing.allocator.free(diagnostic.message);
@@ -636,7 +684,9 @@ fn load_test(sources: []const Source, options: Options) !*Program {
 fn refuse(sources: []const Source, options: Options) ![]const u8 {
     std.debug.assert(sources.len > 0);
 
-    var diagnostic: Diagnostic = .{ .arena = testing.allocator };
+    var diagnostic: Diagnostic = .{
+        .arena = testing.allocator,
+    };
 
     if (load(testing.allocator, sources, options, &diagnostic)) |program| {
         destroy(program);
@@ -690,10 +740,14 @@ pub const TestContext = struct {
 
         pub fn javascript_value(data: Data, arena: std.mem.Allocator) !std.json.Value {
             std.debug.assert(data.rows.len <= 65536);
-            var rows: std.ArrayList(struct { content: []const u8 }) = .empty;
+            var rows: std.ArrayList(struct {
+                content: []const u8,
+            }) = .empty;
 
             for (data.rows) |text| {
-                try rows.append(arena, .{ .content = text });
+                try rows.append(arena, .{
+                    .content = text,
+                });
             }
 
             const text = try std.json.Stringify.valueAlloc(arena, .{
@@ -701,13 +755,17 @@ pub const TestContext = struct {
                 .excerpt = "an excerpt",
                 .related = data.related,
                 .rows = rows.items,
-                .price = .{ .GBP = 925 },
+                .price = .{
+                    .GBP = 925,
+                },
             }, .{});
             return (try std.json.parseFromSlice(
                 std.json.Value,
                 arena,
                 text,
-                .{ .allocate = .alloc_always },
+                .{
+                    .allocate = .alloc_always,
+                },
             )).value;
         }
 
@@ -760,15 +818,22 @@ pub const TestContext = struct {
                     .title = "",
                     .created_at = "",
                     .updated_at = "",
-                    .data = .{ .content = text },
+                    .data = .{
+                        .content = text,
+                    },
                 };
             }
 
             return items;
         }
     };
-    pub const Session = struct { email: ?[]const u8 = null };
-    pub const QueryOptions = struct { limit: ?u32 = null, offset: ?u32 = null };
+    pub const Session = struct {
+        email: ?[]const u8 = null,
+    };
+    pub const QueryOptions = struct {
+        limit: ?u32 = null,
+        offset: ?u32 = null,
+    };
 
     const posts = [_]Entry{
         .{
@@ -789,16 +854,25 @@ pub const TestContext = struct {
             .title = "First",
             .created_at = "2026-01-01",
             .updated_at = "2026-01-01",
-            .data = .{ .content = "<p>One</p><script>alert(1)</script>" },
+            .data = .{
+                .content = "<p>One</p><script>alert(1)</script>",
+            },
         },
     };
 
     pub fn prerender(ctx: *const TestContext) TestContext {
-        return .{ .arena = ctx.arena, .slug = ctx.slug, .templates = ctx.templates };
+        return .{
+            .arena = ctx.arena,
+            .slug = ctx.slug,
+            .templates = ctx.templates,
+        };
     }
 
     pub fn stale(ctx: *const TestContext) TestContext {
-        return .{ .arena = ctx.arena, .slug = ctx.slug };
+        return .{
+            .arena = ctx.arena,
+            .slug = ctx.slug,
+        };
     }
 
     pub fn head_assets(ctx: *const TestContext, writer: *std.Io.Writer) !void {
@@ -903,7 +977,9 @@ pub const TestContext = struct {
             .title = "",
             .created_at = "",
             .updated_at = "",
-            .data = .{ .content = "" },
+            .data = .{
+                .content = "",
+            },
         };
     }
 
@@ -932,7 +1008,9 @@ pub const TestContext = struct {
     }
 
     pub fn session(ctx: *const TestContext) !Session {
-        return .{ .email = ctx.email };
+        return .{
+            .email = ctx.email,
+        };
     }
 
     pub fn header(ctx: *const TestContext, name: []const u8) ?[]const u8 {
@@ -1076,7 +1154,10 @@ fn contains(page: []const u8, needle: []const u8) bool {
 }
 
 fn source(rel: []const u8, text: []const u8) Source {
-    return .{ .rel = rel, .source = text };
+    return .{
+        .rel = rel,
+        .source = text,
+    };
 }
 
 /// A frontmatter of one statement over a body: the shape most test templates take.
@@ -1151,7 +1232,10 @@ test "an app loads: queries, a loop, set:html, a layout with slot and props, rou
 
     // A post page: the entry by slug, the title escaped, the body raw.
     const single_index = program.routes[2].template;
-    const second_ctx: TestContext = .{ .arena = arena, .slug = "second" };
+    const second_ctx: TestContext = .{
+        .arena = arena,
+        .slug = "second",
+    };
     const single = try render_test(arena, program, single_index, &second_ctx);
     const head = "<!DOCTYPE html>\n<html><head><title>Second &lt;post&gt;</title>" ++
         "<style>/* css */</style></head>";
@@ -1160,20 +1244,27 @@ test "an app loads: queries, a loop, set:html, a layout with slot and props, rou
     try testing.expect(contains(single, "<p data-id=\"p2\">2026-02-03</p>"));
     try testing.expect(contains(single, "<div class=\"body prose\"><p>Two</p></div>"));
     try testing.expect(contains(single, "<footer>1970-01-01 00:00:01</footer>"));
-    const nope_ctx: TestContext = .{ .arena = arena, .slug = "nope" };
+    const nope_ctx: TestContext = .{
+        .arena = arena,
+        .slug = "nope",
+    };
     const missing = render_test(arena, program, single_index, &nope_ctx);
     try testing.expectError(error.EntryNotFound, missing);
 
     // The listing: the loop, the template literal, the conditional's null arm.
     const listing_index = program.routes[1].template;
-    const listing = try render_test(arena, program, listing_index, &.{ .arena = arena });
+    const listing = try render_test(arena, program, listing_index, &.{
+        .arena = arena,
+    });
     try testing.expect(contains(listing, "<title>Site</title>"));
     try testing.expect(!contains(listing, "<p>None</p>"));
     const second_item = "<li><a href=\"/posts/second\">Second &lt;post&gt;</a></li>";
     try testing.expect(contains(listing, second_item));
     try testing.expect(contains(listing, "<li><a href=\"/posts/first\">First</a></li>"));
 
-    const home = try render_test(arena, program, program.routes[0].template, &.{ .arena = arena });
+    const home = try render_test(arena, program, program.routes[0].template, &.{
+        .arena = arena,
+    });
     try testing.expect(contains(home, "<main><h1>Hi &amp; bye</h1></main>"));
 }
 
@@ -1253,7 +1344,10 @@ test "references: getReferences follows a field, a component takes an entry, ent
 
     // "gone" is left out; "p2" points back at the page's own entry, whose related list
     // is followed one level down by the card.
-    const ctx: TestContext = .{ .arena = arena, .slug = "second" };
+    const ctx: TestContext = .{
+        .arena = arena,
+        .slug = "second",
+    };
     const single = program.find("content/posts/[slug].publr").?;
     const page = try render_test(arena, program, single, &ctx);
     try testing.expect(contains(page, "<p>post</p>"));
@@ -1291,7 +1385,10 @@ test "repeaters: a data field with no fallback is the rows, each read as an entr
     }, .{});
     defer destroy(program);
 
-    const ctx: TestContext = .{ .arena = arena, .slug = "second" };
+    const ctx: TestContext = .{
+        .arena = arena,
+        .slug = "second",
+    };
     const page_index = program.find("content/posts/[slug].publr").?;
     const page = try render_test(arena, program, page_index, &ctx);
     try testing.expectEqualStrings("<ol><li>alpha</li><li>beta</li></ol>\n<i>2/0</i>", page);
@@ -1332,7 +1429,10 @@ test "money: a field written as the site writes it, natively and in script" {
     }, .{});
     defer destroy(program);
 
-    const ctx: TestContext = .{ .arena = arena, .slug = "second" };
+    const ctx: TestContext = .{
+        .arena = arena,
+        .slug = "second",
+    };
     const page_index = program.find("content/posts/[slug].publr").?;
     try testing.expect(program.templates[page_index].javascript == null);
     const page = try render_test(arena, program, page_index, &ctx);
@@ -1376,7 +1476,10 @@ test "set:html: whatever a page prints as markup is sanitized, natively and in s
     }, .{});
     defer destroy(program);
 
-    const ctx: TestContext = .{ .arena = arena, .slug = "first" };
+    const ctx: TestContext = .{
+        .arena = arena,
+        .slug = "first",
+    };
     const native_index = program.find("content/posts/[slug].publr").?;
     try testing.expect(program.templates[native_index].javascript == null);
     const native = try render_test(arena, program, native_index, &ctx);
@@ -1411,7 +1514,10 @@ test "queries: a GROQ answer is plain JSON; param reads the address's query stri
     }, .{});
     defer destroy(program);
 
-    const ctx: TestContext = .{ .arena = arena, .live = true };
+    const ctx: TestContext = .{
+        .arena = arena,
+        .live = true,
+    };
     const listed_page = program.find("content/index.publr").?;
     const listing = try render_test(arena, program, listed_page, &ctx);
 
@@ -1449,7 +1555,9 @@ test "reads: get, findOne and find by one field run as script; more than one fie
     }, .{});
     defer destroy(program);
 
-    const ctx: TestContext = .{ .arena = arena };
+    const ctx: TestContext = .{
+        .arena = arena,
+    };
     const index = program.find("content/index.publr").?;
     try testing.expect(program.templates[index].javascript != null);
     const page = try render_test(arena, program, index, &ctx);
@@ -1534,7 +1642,9 @@ test "islands: dynamic is inferred from Publr.request, `island` defers, dynamic 
     try testing.expect(home_template.page_islands());
     try testing.expectEqual(@as(usize, 2), home_template.static_island_keys.len);
     try testing.expectEqualStrings("greeting", home_template.dynamic_eager_keys[0]);
-    const home = try render_test(arena, program, home_index, &.{ .arena = arena });
+    const home = try render_test(arena, program, home_index, &.{
+        .arena = arena,
+    });
     const placeholder = "<publr-island src=\"/_islands/greeting\" credentials>" ++
         "<span>…</span></publr-island>";
     try testing.expect(contains(home, placeholder));
@@ -1545,7 +1655,11 @@ test "islands: dynamic is inferred from Publr.request, `island` defers, dynamic 
     const styles = std.mem.count(u8, home, "<style>/* css */</style></head>");
     try testing.expectEqual(@as(usize, 1), styles);
     // Rendered live, the dynamic island is flattened into the page.
-    const live_ctx: TestContext = .{ .arena = arena, .live = true, .email = "a@example.com" };
+    const live_ctx: TestContext = .{
+        .arena = arena,
+        .live = true,
+        .email = "a@example.com",
+    };
     const home_live = try render_test(arena, program, home_index, &live_ctx);
     try testing.expect(!contains(home_live, "/_islands/greeting"));
     try testing.expect(contains(home_live, "<b>Hi a@example.com</b>"));
@@ -1554,7 +1668,11 @@ test "islands: dynamic is inferred from Publr.request, `island` defers, dynamic 
     const whoami_index = program.find("content/whoami.dynamic.publr").?;
     try testing.expect(program.templates[whoami_index].dynamic);
     try testing.expect(!program.templates[whoami_index].page_islands());
-    const browser_ctx: TestContext = .{ .arena = arena, .live = true, .user_agent = "TestBrowser" };
+    const browser_ctx: TestContext = .{
+        .arena = arena,
+        .live = true,
+        .user_agent = "TestBrowser",
+    };
     const whoami = try render_test(arena, program, whoami_index, &browser_ctx);
     try testing.expect(contains(whoami, "<a href=\"/admin\">Sign in</a><p>TestBrowser</p>"));
 
@@ -1571,7 +1689,9 @@ test "islands: dynamic is inferred from Publr.request, `island` defers, dynamic 
     // `prerender`: the build-time render is the placeholder, the same props in hand;
     // the component decides the precedence.
     const guest_index = program.find("content/guest.publr").?;
-    const guest = try render_test(arena, program, guest_index, &.{ .arena = arena });
+    const guest = try render_test(arena, program, guest_index, &.{
+        .arena = arena,
+    });
     const prerendered = "credentials prerendered><p>For the best person ever:\n" ++
         "<b>Second &lt;post&gt;</b></p></publr-island>";
     try testing.expect(contains(guest, prerendered));
@@ -1579,7 +1699,11 @@ test "islands: dynamic is inferred from Publr.request, `island` defers, dynamic 
     const welcome_key = try compile.island_key(arena, welcome_source.rel, &.{who});
     const guest_keys = program.templates[guest_index].dynamic_idle_keys;
     try testing.expectEqualStrings(guest_keys[0], welcome_key);
-    const me_ctx: TestContext = .{ .arena = arena, .live = true, .email = "me@example.com" };
+    const me_ctx: TestContext = .{
+        .arena = arena,
+        .live = true,
+        .email = "me@example.com",
+    };
     const guest_live = try render_test(arena, program, guest_index, &me_ctx);
     try testing.expect(contains(guest_live, "<p>For me@example.com:\n"));
 
@@ -1587,7 +1711,10 @@ test "islands: dynamic is inferred from Publr.request, `island` defers, dynamic 
     // `stale()`, which records nothing, and nothing on screen waits.
     const stale_index = program.find("content/stale.publr").?;
     var recorded: std.ArrayList([]const u8) = .empty;
-    const stale_ctx: TestContext = .{ .arena = arena, .templates = &recorded };
+    const stale_ctx: TestContext = .{
+        .arena = arena,
+        .templates = &recorded,
+    };
     const stale = try render_test(arena, program, stale_index, &stale_ctx);
     const stale_copy = "<publr-island src=\"/_islands/latest\" prerendered><h2>Latest</h2>";
     try testing.expect(contains(stale, stale_copy));
@@ -1597,7 +1724,10 @@ test "islands: dynamic is inferred from Publr.request, `island` defers, dynamic 
     try testing.expectEqualStrings("content/stale.publr", recorded.items[0]);
 }
 
-const Refusal = struct { sources: []const Source, message: []const u8 };
+const Refusal = struct {
+    sources: []const Source,
+    message: []const u8,
+};
 
 const index_page = source("content/index.publr", "");
 const latest_component = source(
@@ -2068,7 +2198,11 @@ test "redirect: a page answers with the path its expression gives, or renders" {
         .email = "ada@example.com",
         .redirected = &target,
     };
-    const visitor: TestContext = .{ .arena = arena, .live = true, .redirected = &target };
+    const visitor: TestContext = .{
+        .arena = arena,
+        .live = true,
+        .redirected = &target,
+    };
 
     try testing.expect(program.templates[index].dynamic);
     try testing.expectError(error.Redirect, render_test(arena, program, index, &signed_in));
@@ -2145,7 +2279,11 @@ test "conditions: `!`, `&&` and `||` read truthiness and give true or false" {
         .email = "a@b.c",
         .user_agent = "x",
     };
-    const half: TestContext = .{ .arena = arena, .live = true, .user_agent = "x" };
+    const half: TestContext = .{
+        .arena = arena,
+        .live = true,
+        .user_agent = "x",
+    };
 
     try testing.expect(contains(try render_test(arena, program, index, &full), "[both|none]"));
     try testing.expect(contains(try render_test(arena, program, index, &half), "[not both|gap]"));
@@ -2171,7 +2309,10 @@ test "userField: the signed-in user's custom field as text, null when not there"
         .live = true,
         .user_fields = &.{.{ "cloud.welcomed", "true" }},
     };
-    const nobody: TestContext = .{ .arena = arena, .live = true };
+    const nobody: TestContext = .{
+        .arena = arena,
+        .live = true,
+    };
 
     try testing.expect(program.templates[index].dynamic);
     try testing.expect(contains(try render_test(arena, program, index, &member), "[true|none]"));
@@ -2193,7 +2334,9 @@ test "unsupported constructs fail naming them" {
 }
 
 test "the limits refuse an app that is too big, naming what" {
-    var diagnostic: Diagnostic = .{ .arena = testing.allocator };
+    var diagnostic: Diagnostic = .{
+        .arena = testing.allocator,
+    };
     const long = try testing.allocator.alloc(u8, source_bytes_max + 1);
     defer testing.allocator.free(long);
     @memset(long, 'x');
@@ -2240,7 +2383,9 @@ test "`.dynamic` on a component reading only the store: a credentialed island, n
     try testing.expect(!fresh.reads_request);
     try testing.expect(program.islands[0].dynamic);
     try testing.expectEqual(@as(u32, 0), program.islands[0].max_age);
-    const page = try render_test(arena, program, program.routes[0].template, &.{ .arena = arena });
+    const page = try render_test(arena, program, program.routes[0].template, &.{
+        .arena = arena,
+    });
     const placeholder = "<publr-island src=\"/_islands/fresh\" credentials></publr-island>";
     try testing.expect(contains(page, placeholder));
 }
@@ -2261,7 +2406,9 @@ test "dynamic-if: a dynamic island the browser fetches only when its condition h
 
     try testing.expect(program.islands[0].dynamic);
 
-    const page = try render_test(arena, program, program.routes[0].template, &.{ .arena = arena });
+    const page = try render_test(arena, program, program.routes[0].template, &.{
+        .arena = arena,
+    });
     const placeholder = "<publr-island src=\"/_islands/fresh\" credentials if=\"signedIn\">" ++
         "</publr-island>";
     try testing.expect(contains(page, placeholder));
@@ -2287,10 +2434,14 @@ test "minify: markup collapses, whitespace that is content does not" {
             \\  </body>
             \\</html>
         ),
-    }, .{ .minify = true });
+    }, .{
+        .minify = true,
+    });
     defer destroy(program);
 
-    const page = try render_test(arena, program, 0, &.{ .arena = arena });
+    const page = try render_test(arena, program, 0, &.{
+        .arena = arena,
+    });
     const expected = "<html> <body> <p class=\"lead\"> Some words </p> <a href=\"/one\">one</a> " ++
         "<a href=\"/two\">two</a> <pre>  keep\n  this  </pre> </body> </html>";
     try testing.expectEqualStrings(expected, page);
@@ -2314,12 +2465,17 @@ test "dynamic site: every template is live and `island` embeds, plain server ren
             \\---
             \\<Greeting dynamic>…</Greeting><Latest island>more</Latest>
         ),
-    }, .{ .dynamic = true });
+    }, .{
+        .dynamic = true,
+    });
     defer destroy(program);
 
     try testing.expect(program.routes[0].live);
     try testing.expectEqual(@as(usize, 0), program.islands.len);
-    const live_ctx: TestContext = .{ .arena = arena, .live = true };
+    const live_ctx: TestContext = .{
+        .arena = arena,
+        .live = true,
+    };
     const page = try render_test(arena, program, program.routes[0].template, &live_ctx);
     try testing.expectEqualStrings("nobody<b>2</b>more", page);
 }
@@ -2334,7 +2490,11 @@ test "overrides: an added page becomes a route, an added component an importable
             "import Note from '../components/note.publr';",
             "<Note who=\"you\" />",
         )),
-        .{ .rel = "content/about.publr", .source = "<p>added</p>", .origin = .added },
+        .{
+            .rel = "content/about.publr",
+            .source = "<p>added</p>",
+            .origin = .added,
+        },
         .{
             .rel = "components/note.publr",
             .source = "<i>hi {props.who ?? \"there\"}</i>",
@@ -2347,14 +2507,18 @@ test "overrides: an added page becomes a route, an added component an importable
     try testing.expectEqualStrings("/about", program.routes[1].pattern);
     const added = program.templates[program.routes[1].template].origin;
     try testing.expectEqual(Template.Origin.added, added);
-    const home = try render_test(arena, program, program.routes[0].template, &.{ .arena = arena });
+    const home = try render_test(arena, program, program.routes[0].template, &.{
+        .arena = arena,
+    });
     try testing.expectEqualStrings("<i>hi you</i>", home);
 }
 
 test "invalid app paths and error-only apps fail loading gracefully" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
-    var diagnostic: Diagnostic = .{ .arena = arena_state.allocator() };
+    var diagnostic: Diagnostic = .{
+        .arena = arena_state.allocator(),
+    };
 
     for ([_][]const u8{
         "",
@@ -2364,7 +2528,10 @@ test "invalid app paths and error-only apps fail loading gracefully" {
         "content/index",
         "content/" ++ "x" ** 1024 ++ ".publr",
     }) |rel| {
-        const sources = [_]Source{.{ .rel = rel, .source = "<p>Hi</p>" }};
+        const sources = [_]Source{.{
+            .rel = rel,
+            .source = "<p>Hi</p>",
+        }};
         try testing.expectError(
             error.Unsupported,
             load(
@@ -2376,7 +2543,10 @@ test "invalid app paths and error-only apps fail loading gracefully" {
         );
     }
 
-    const only_error = [_]Source{.{ .rel = "content/404.publr", .source = "<p>Missing</p>" }};
+    const only_error = [_]Source{.{
+        .rel = "content/404.publr",
+        .source = "<p>Missing</p>",
+    }};
     try testing.expectError(error.NoPages, load(testing.allocator, &only_error, .{}, &diagnostic));
 }
 
@@ -2404,10 +2574,15 @@ fn check_load_allocation_failure(gpa: std.mem.Allocator) !void {
     std.debug.assert(templates_max > 0);
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
-    var diagnostic: Diagnostic = .{ .arena = arena_state.allocator() };
+    var diagnostic: Diagnostic = .{
+        .arena = arena_state.allocator(),
+    };
     const loaded = try load(
         gpa,
-        &.{.{ .rel = "content/index.publr", .source = "<p>Hi</p>" }},
+        &.{.{
+            .rel = "content/index.publr",
+            .source = "<p>Hi</p>",
+        }},
         .{},
         &diagnostic,
     );

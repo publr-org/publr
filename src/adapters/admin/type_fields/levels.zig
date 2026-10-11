@@ -17,7 +17,11 @@ const Def = model.content_type.Def;
 const print = type_pages.print;
 
 /// One level: the page it shows and its panel.
-pub const Level = struct { url: []const u8, title: []const u8, panel: admin.render.Node };
+pub const Level = struct {
+    url: []const u8,
+    title: []const u8,
+    panel: admin.render.Node,
+};
 
 /// Whether the request asks for the panel alone, for the page's script.
 pub fn wants_panel(session: *const Session) bool {
@@ -64,7 +68,10 @@ pub fn answer(session: *Session, handle: []const u8, def: Def, level: Level) Err
         try session.response.set_header("Cache-Control", "private, no-store");
 
         if (std.mem.eql(u8, accept, "application/json")) {
-            return session.response.json(.ok, .{ .html = html, .title = level.title });
+            return session.response.json(.ok, .{
+                .html = html,
+                .title = level.title,
+            });
         }
 
         return session.response.set_body(.ok, "text/html; charset=utf-8", html);
@@ -106,8 +113,14 @@ pub fn page(session: *Session, handle: []const u8, def: Def, top: ?Level) Error!
 
     const parents = try arena.alloc(views.TypeFields.ParentsItem, 2);
 
-    parents[0] = .{ .label = "Structure", .href = "/admin/structure" };
-    parents[1] = .{ .label = spaces.of(session).title(), .href = spaces.of(session).base() };
+    parents[0] = .{
+        .label = "Structure",
+        .href = "/admin/structure",
+    };
+    parents[1] = .{
+        .label = spaces.of(session).title(),
+        .href = spaces.of(session).base(),
+    };
 
     try admin.screen(session, .ok, views.TypeFields, .{
         .title = def.name,

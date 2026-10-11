@@ -164,7 +164,12 @@ fn read_attribute(
             );
         }
 
-        const literal: ast.PropArg = .{ .name = attr.name, .value = .{ .literal = text } };
+        const literal: ast.PropArg = .{
+            .name = attr.name,
+            .value = .{
+                .literal = text,
+            },
+        };
 
         try site.props.append(compiler.arena, literal);
         const pair = try std.fmt.allocPrint(compiler.arena, "{s}={s}", .{ attr.name, text });
@@ -224,7 +229,12 @@ fn expression_prop(
         ),
     }
 
-    const computed: ast.PropArg = .{ .name = prop_name, .value = .{ .expr = value } };
+    const computed: ast.PropArg = .{
+        .name = prop_name,
+        .value = .{
+            .expr = value,
+        },
+    };
 
     try site.props.append(compiler.arena, computed);
 }
@@ -444,12 +454,24 @@ fn embed(
     const props = site.props.items;
 
     if (self_closing) {
-        return compiler.push(.{ .embed = .{ .callee = index, .props = props, .children = null } });
+        return compiler.push(.{
+            .embed = .{
+                .callee = index,
+                .props = props,
+                .children = null,
+            },
+        });
     }
 
     const children = try markup.children_list(compiler, name);
 
-    try compiler.push(.{ .embed = .{ .callee = index, .props = props, .children = children } });
+    try compiler.push(.{
+        .embed = .{
+            .callee = index,
+            .props = props,
+            .children = children,
+        },
+    });
 }
 
 /// The islands a nested template will place, on this template's lists.
@@ -542,16 +564,18 @@ fn emit_island(
     else
         try markup.sub_list(compiler, fallback_source);
 
-    try compiler.push(.{ .island = .{
-        .callee = index,
-        .key = key,
-        .props = site.props.items,
-        .dynamic = callee.dynamic,
-        .prerender = site.prerender,
-        .deferred = !site.eager,
-        .condition = site.condition,
-        .fallback = fallback,
-    } });
+    try compiler.push(.{
+        .island = .{
+            .callee = index,
+            .key = key,
+            .props = site.props.items,
+            .dynamic = callee.dynamic,
+            .prerender = site.prerender,
+            .deferred = !site.eager,
+            .condition = site.condition,
+            .fallback = fallback,
+        },
+    });
 }
 
 fn register_island(
@@ -653,11 +677,13 @@ fn pjsx_component(
     const filled = props.items;
 
     if (self_closing) {
-        return compiler.push(.{ .pjsx = .{
-            .component = component_index,
-            .props = filled,
-            .children = null,
-        } });
+        return compiler.push(.{
+            .pjsx = .{
+                .component = component_index,
+                .props = filled,
+                .children = null,
+            },
+        });
     }
 
     if (!lowered.takes_children) {
@@ -666,11 +692,13 @@ fn pjsx_component(
 
     const children = try markup.children_list(compiler, name);
 
-    try compiler.push(.{ .pjsx = .{
-        .component = component_index,
-        .props = filled,
-        .children = children,
-    } });
+    try compiler.push(.{
+        .pjsx = .{
+            .component = component_index,
+            .props = filled,
+            .children = children,
+        },
+    });
 }
 
 fn pjsx_attribute(
@@ -715,7 +743,12 @@ fn pjsx_attribute(
     }
 
     if (attr.literal) |text| {
-        try props.append(compiler.arena, .{ .name = attr.name, .value = .{ .literal = text } });
+        try props.append(compiler.arena, .{
+            .name = attr.name,
+            .value = .{
+                .literal = text,
+            },
+        });
 
         // A PJSX component spells its class prop `classes`; what a call site passes is
         // the app's, so the JIT has to see it.
@@ -733,7 +766,12 @@ fn pjsx_attribute(
         );
     };
     const value = try expression.expression(compiler, text);
-    const computed: ast.PropArg = .{ .name = attr.name, .value = .{ .expr = value } };
+    const computed: ast.PropArg = .{
+        .name = attr.name,
+        .value = .{
+            .expr = value,
+        },
+    };
 
     switch (value.type) {
         .javascript => try props.append(compiler.arena, computed),

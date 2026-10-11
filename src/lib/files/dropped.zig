@@ -55,7 +55,10 @@ pub fn walk(disk: *Disk, arena: std.mem.Allocator) Error!Walked {
         }
 
         if (found.items.len == found_max) {
-            return .{ .found = found.items, .more = true };
+            return .{
+                .found = found.items,
+                .more = true,
+            };
         }
 
         const stat = entry.dir.statFile(disk.io, entry.basename, .{}) catch continue;
@@ -68,7 +71,10 @@ pub fn walk(disk: *Disk, arena: std.mem.Allocator) Error!Walked {
 
     std.debug.assert(found.items.len <= found_max);
 
-    return .{ .found = found.items, .more = false };
+    return .{
+        .found = found.items,
+        .more = false,
+    };
 }
 
 fn slashed(arena: std.mem.Allocator, path: []const u8) Error![]const u8 {
@@ -179,9 +185,18 @@ test "dropped: walked without hidden areas, read, moved under a key, found gone"
     const arena = arena_state.allocator();
 
     try disk.root.createDirPath(io, "Photos/Trips");
-    try disk.root.writeFile(io, .{ .sub_path = "Photos/Trips/Beach Day.JPG", .data = "sand" });
-    try disk.root.writeFile(io, .{ .sub_path = ".DS_Store", .data = "x" });
-    try disk.root.writeFile(io, .{ .sub_path = ".cache/copy.jpg", .data = "x" });
+    try disk.root.writeFile(io, .{
+        .sub_path = "Photos/Trips/Beach Day.JPG",
+        .data = "sand",
+    });
+    try disk.root.writeFile(io, .{
+        .sub_path = ".DS_Store",
+        .data = "x",
+    });
+    try disk.root.writeFile(io, .{
+        .sub_path = ".cache/copy.jpg",
+        .data = "x",
+    });
 
     const walked = try walk(&disk, arena);
 

@@ -107,7 +107,9 @@ pub fn SDK(comptime registry: Registry) type {
             const parent = ctx.parent;
             const started = std.Io.Clock.awake.now(ctx.io);
             const notify = ctx.notify;
-            var trail_state: trail.Trail = .{ .root = operation_id };
+            var trail_state: trail.Trail = .{
+                .root = operation_id,
+            };
             const opened = trail_open(ctx, &trail_state);
 
             ctx.publishes = ctx.publishes and parent != null;
@@ -118,11 +120,13 @@ pub fn SDK(comptime registry: Registry) type {
             defer trail_close(ctx, opened);
 
             const granted = admit(ctx, Operation, in) catch |err| {
-                emit(ctx, .{ .rejected = .{
-                    .operation_name = Operation.name,
-                    .operation_id = operation_id,
-                    .err = err,
-                } });
+                emit(ctx, .{
+                    .rejected = .{
+                        .operation_name = Operation.name,
+                        .operation_id = operation_id,
+                        .err = err,
+                    },
+                });
                 const secret = comptime trail.secret_of(Operation);
 
                 log_failure(ctx, Operation.name, input_text(ctx, in), secret, err);
@@ -148,17 +152,21 @@ pub fn SDK(comptime registry: Registry) type {
             if (result) |_| {
                 const ended = std.Io.Clock.awake.now(ctx.io);
                 const elapsed: u64 = @intCast(@max(0, started.durationTo(ended).nanoseconds));
-                emit(ctx, .{ .completed = .{
-                    .operation_name = Operation.name,
-                    .operation_id = operation_id,
-                    .duration_ns = elapsed,
-                } });
+                emit(ctx, .{
+                    .completed = .{
+                        .operation_name = Operation.name,
+                        .operation_id = operation_id,
+                        .duration_ns = elapsed,
+                    },
+                });
             } else |err| {
-                emit(ctx, .{ .failed = .{
-                    .operation_name = Operation.name,
-                    .operation_id = operation_id,
-                    .err = err,
-                } });
+                emit(ctx, .{
+                    .failed = .{
+                        .operation_name = Operation.name,
+                        .operation_id = operation_id,
+                        .err = err,
+                    },
+                });
                 const secret = comptime trail.secret_of(Operation);
 
                 log_failure(ctx, Operation.name, input_text(ctx, in), secret, err);
@@ -628,7 +636,9 @@ pub fn SDK(comptime registry: Registry) type {
                 return error.Invalid;
             }
 
-            const got = try dispatch(ctx, Get, .{ .id = id });
+            const got = try dispatch(ctx, Get, .{
+                .id = id,
+            });
 
             if (!std.mem.eql(u8, got.record.type, Reference.handle)) {
                 return error.NotFound;
@@ -650,7 +660,9 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.parent != null);
 
             if (comptime plugin_context.takes_plugin_ctx(Operation.run)) {
-                var wrapped: PluginCtx = .{ .inner = ctx };
+                var wrapped: PluginCtx = .{
+                    .inner = ctx,
+                };
 
                 return Operation.run(&wrapped, in, granted) catch |err| as_outcome(err);
             }
@@ -688,7 +700,9 @@ pub fn SDK(comptime registry: Registry) type {
             defer ctx.plugin = running;
 
             if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
-                var wrapped: PluginCtx = .{ .inner = ctx };
+                var wrapped: PluginCtx = .{
+                    .inner = ctx,
+                };
 
                 return @call(.auto, Middleware.run, .{&wrapped} ++ args);
             }
@@ -799,7 +813,9 @@ pub fn SDK(comptime registry: Registry) type {
 
             ctx.plugin = owner;
 
-            var wrapped: PluginCtx = .{ .inner = ctx };
+            var wrapped: PluginCtx = .{
+                .inner = ctx,
+            };
 
             Middleware.run(&wrapped, batch) catch |err| {
                 const point = Middleware.point;
@@ -904,7 +920,9 @@ pub fn SDK(comptime registry: Registry) type {
                 ctx.publishes = true;
             }
 
-            emit(ctx, .{ .notice = notice });
+            emit(ctx, .{
+                .notice = notice,
+            });
         }
 
         /// A write about to commit for a `drafts` device: refused when it changed what
@@ -934,7 +952,9 @@ pub fn SDK(comptime registry: Registry) type {
             inline for (registry.middleware) |Middleware| {
                 if (Middleware.stage == .on and hears(Middleware, event)) {
                     if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
-                        var wrapped: PluginCtx = .{ .inner = ctx };
+                        var wrapped: PluginCtx = .{
+                            .inner = ctx,
+                        };
                         Middleware.run(&wrapped, event);
                     } else {
                         Middleware.run(ctx, event);
@@ -1118,7 +1138,11 @@ pub fn refuse_broken(ctx: *Ctx, shape: []const contract.Node, value: std.json.Va
     const why = contract.rules_broken(shape, value, &buffer) orelse return;
     const message = ctx.arena.dupe(u8, why) catch return error.OutOfMemory;
 
-    return ctx.fail(.{ .name = "InvalidInput", .status = 400, .message = message });
+    return ctx.fail(.{
+        .name = "InvalidInput",
+        .status = 400,
+        .message = message,
+    });
 }
 
 fn is_reference(comptime Type: type) bool {
@@ -1191,7 +1215,9 @@ pub const testing = struct {
             harness.buffer = try std.testing.allocator.alloc(u8, harness_arena_bytes);
             errdefer std.testing.allocator.free(harness.buffer);
 
-            const params: AuthState.Options = .{ .params = auth_params_test };
+            const params: AuthState.Options = .{
+                .params = auth_params_test,
+            };
             try harness.auth.init(std.testing.allocator, std.testing.io, params);
             harness.fixed = std.heap.FixedBufferAllocator.init(harness.buffer);
         }
@@ -1220,10 +1246,19 @@ pub const testing = struct {
         pub const name = "hello.record";
         pub const description = "Test operation: insert a note";
         pub const kind: operation.Kind = .write;
-        pub const In = struct { note: []const u8, fail_after_insert: bool = false };
-        pub const Out = struct { rows: u32 };
-        pub const example: In = .{ .note = "example" };
-        pub const example_out: Out = .{ .rows = 1 };
+        pub const In = struct {
+            note: []const u8,
+            fail_after_insert: bool = false,
+        };
+        pub const Out = struct {
+            rows: u32,
+        };
+        pub const example: In = .{
+            .note = "example",
+        };
+        pub const example_out: Out = .{
+            .rows = 1,
+        };
 
         pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
             std.debug.assert(in.note.len > 0);
@@ -1241,7 +1276,9 @@ pub const testing = struct {
                 return error.Invalid;
             }
 
-            return .{ .rows = try count(ctx, "notes") };
+            return .{
+                .rows = try count(ctx, "notes"),
+            };
         }
     };
 
@@ -1320,11 +1357,15 @@ test "pre middleware runs before authorization and a denial is journaled as reje
 
     var blocked = harness.ctx(.system);
     blocked.request_id = "blocked";
-    const vetoed = TestSDK.dispatch(&blocked, testing.Record, .{ .note = "x" });
+    const vetoed = TestSDK.dispatch(&blocked, testing.Record, .{
+        .note = "x",
+    });
     try std.testing.expectError(error.Vetoed, vetoed);
 
     var anon = harness.ctx(.anonymous);
-    const denied = TestSDK.dispatch(&anon, testing.Record, .{ .note = "x" });
+    const denied = TestSDK.dispatch(&anon, testing.Record, .{
+        .note = "x",
+    });
     try std.testing.expectError(error.Denied, denied);
 
     var select = try anon.db.prepare("SELECT count(*) FROM journal WHERE ok = 0");
@@ -1339,17 +1380,23 @@ test "write operation: anonymous denied, system commits, before-middleware, even
     defer harness.deinit();
 
     var anon = harness.ctx(.anonymous);
-    const denied = TestSDK.dispatch(&anon, testing.Record, .{ .note = "x" });
+    const denied = TestSDK.dispatch(&anon, testing.Record, .{
+        .note = "x",
+    });
     try std.testing.expectError(error.Denied, denied);
 
     var admin = harness.ctx(.system);
-    const out = try TestSDK.dispatch(&admin, testing.Record, .{ .note = "kept" });
+    const out = try TestSDK.dispatch(&admin, testing.Record, .{
+        .note = "kept",
+    });
     try std.testing.expectEqual(@as(u32, 1), out.rows);
 
     var select = try admin.db.prepare("SELECT note FROM notes");
     defer select.finalize();
     try std.testing.expect(try select.step());
-    const Note = struct { note: []const u8 };
+    const Note = struct {
+        note: []const u8,
+    };
     const row = try select.read(Note, harness.fixed.allocator());
     try std.testing.expectEqualStrings("KEPT", row.note);
 
@@ -1362,7 +1409,9 @@ test "write operation failure rolls back and journals a failed event" {
     defer harness.deinit();
 
     var admin = harness.ctx(.system);
-    _ = try TestSDK.dispatch(&admin, testing.Record, .{ .note = "kept" });
+    _ = try TestSDK.dispatch(&admin, testing.Record, .{
+        .note = "kept",
+    });
 
     const failed = TestSDK.dispatch(&admin, testing.Record, .{
         .note = "lost",
@@ -1386,8 +1435,12 @@ test "an operation called through what its plugin publishes: by name, the same c
 
     const Published = struct {
         pub const name = testing.Record.name;
-        pub const In = struct { note: []const u8 };
-        pub const Out = struct { rows: u32 };
+        pub const In = struct {
+            note: []const u8,
+        };
+        pub const Out = struct {
+            rows: u32,
+        };
     };
     const Missing = struct {
         pub const name = "nobody.nothing";
@@ -1396,12 +1449,16 @@ test "an operation called through what its plugin publishes: by name, the same c
     };
 
     var admin = harness.ctx(.system);
-    const out = try TestSDK.call(&admin, Published, .{ .note = "kept" });
+    const out = try TestSDK.call(&admin, Published, .{
+        .note = "kept",
+    });
     try std.testing.expectEqual(@as(u32, 1), out.rows);
     try std.testing.expectError(error.NotFound, TestSDK.call(&admin, Missing, .{}));
 
     var anon = harness.ctx(.anonymous);
-    try std.testing.expectError(error.Denied, TestSDK.call(&anon, Published, .{ .note = "x" }));
+    try std.testing.expectError(error.Denied, TestSDK.call(&anon, Published, .{
+        .note = "x",
+    }));
 }
 
 const Subscribe = struct {
@@ -1409,15 +1466,21 @@ const Subscribe = struct {
     pub const description = "Test operation an app calls";
     pub const kind: operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { ok: bool };
+    pub const Out = struct {
+        ok: bool,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .ok = true };
+    pub const example_out: Out = .{
+        .ok = true,
+    };
 
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.now_ms >= 0);
 
-        return .{ .ok = true };
+        return .{
+            .ok = true,
+        };
     }
 };
 
@@ -1427,22 +1490,32 @@ const ListRecords = struct {
     pub const description = "Test operation: the read app pages make";
     pub const kind: operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { count: u32 };
+    pub const Out = struct {
+        count: u32,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .count = 0 };
+    pub const example_out: Out = .{
+        .count = 0,
+    };
 
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.now_ms >= 0);
 
-        return .{ .count = 0 };
+        return .{
+            .count = 0,
+        };
     }
 };
 
 const RolesSDK = SDK(.{
     .operations = &.{ testing.Record, Subscribe, ListRecords },
     .roles = &(role.core ++ [_]role.Role{
-        .{ .name = "subscriber", .label = "Subscriber", .grants = &.{"app.news.*"} },
+        .{
+            .name = "subscriber",
+            .label = "Subscriber",
+            .grants = &.{"app.news.*"},
+        },
     }),
 });
 
@@ -1451,10 +1524,30 @@ test "roles: an account calls what its roles grant; one granted only apps never 
     try harness.init();
     defer harness.deinit();
 
-    var subscriber = harness.ctx(.{ .user = .{ .id = "u_1", .roles = &.{"subscriber"} } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_2", .roles = &.{"editor"} } });
-    var both = harness.ctx(.{ .user = .{ .id = "u_3", .roles = &.{ "subscriber", "admin" } } });
-    var ghost = harness.ctx(.{ .user = .{ .id = "u_4", .roles = &.{"unknown"} } });
+    var subscriber = harness.ctx(.{
+        .user = .{
+            .id = "u_1",
+            .roles = &.{"subscriber"},
+        },
+    });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_2",
+            .roles = &.{"editor"},
+        },
+    });
+    var both = harness.ctx(.{
+        .user = .{
+            .id = "u_3",
+            .roles = &.{ "subscriber", "admin" },
+        },
+    });
+    var ghost = harness.ctx(.{
+        .user = .{
+            .id = "u_4",
+            .roles = &.{"unknown"},
+        },
+    });
 
     try std.testing.expect((try RolesSDK.dispatch(&subscriber, Subscribe, .{})).ok);
     try std.testing.expectError(error.Denied, RolesSDK.dispatch(&subscriber, testing.Record, .{
@@ -1488,7 +1581,10 @@ test "a failing after hook rolls back the operation body and earlier hooks" {
             return error.Conflict;
         }
     };
-    const Checked = SDK(.{ .operations = &.{testing.Record}, .middleware = &.{After} });
+    const Checked = SDK(.{
+        .operations = &.{testing.Record},
+        .middleware = &.{After},
+    });
     var harness: testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -1513,8 +1609,12 @@ test "a caught nested write failure undoes only itself" {
             std.debug.assert(ctx.db.transaction_depth > 0);
             std.debug.assert(ctx.parent != null);
 
-            const Nested = SDK(.{ .operations = &.{testing.Record} });
-            _ = try Nested.dispatch(ctx, testing.Record, .{ .note = "earlier" });
+            const Nested = SDK(.{
+                .operations = &.{testing.Record},
+            });
+            _ = try Nested.dispatch(ctx, testing.Record, .{
+                .note = "earlier",
+            });
             var copied = ctx.*;
             _ = Nested.dispatch(&copied, testing.Record, .{
                 .note = "failure",
@@ -1525,7 +1625,9 @@ test "a caught nested write failure undoes only itself" {
             return .{};
         }
     };
-    const Checked = SDK(.{ .operations = &.{Outer} });
+    const Checked = SDK(.{
+        .operations = &.{Outer},
+    });
     var harness: testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -1576,7 +1678,9 @@ test "ctx.plugin: an operation's plugin, a hook's own, kept by a core call" {
 
         pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
             try Seen.note(ctx);
-            _ = try SDK(.{ .operations = &.{Peek} }).dispatch(ctx, Peek, .{});
+            _ = try SDK(.{
+                .operations = &.{Peek},
+            }).dispatch(ctx, Peek, .{});
 
             return .{};
         }
@@ -1610,7 +1714,9 @@ test "ctx.plugin: an operation's plugin, a hook's own, kept by a core call" {
 
     for (expected) |who| {
         try std.testing.expect(try select.step());
-        const row = try select.read(struct { who: []const u8 }, harness.fixed.allocator());
+        const row = try select.read(struct {
+            who: []const u8,
+        }, harness.fixed.allocator());
 
         try std.testing.expectEqualStrings(who, row.who);
     }
@@ -1623,34 +1729,60 @@ test "rules: a field that breaks one refuses the call before it runs, naming the
         pub const name = "shop.order";
         pub const description = "Test operation: order some";
         pub const kind: operation.Kind = .write;
-        pub const In = struct { quantity: u32, code: []const u8 = "AB" };
-        pub const Out = struct { quantity: u32 };
-        pub const rules: operation.Rules(In) = .{
-            .quantity = .{ .min = 1, .max = 20 },
-            .code = .{ .min_len = 2, .preset = .uppercase },
+        pub const In = struct {
+            quantity: u32,
+            code: []const u8 = "AB",
         };
-        pub const example: In = .{ .quantity = 1 };
-        pub const example_out: Out = .{ .quantity = 1 };
+        pub const Out = struct {
+            quantity: u32,
+        };
+        pub const rules: operation.Rules(In) = .{
+            .quantity = .{
+                .min = 1,
+                .max = 20,
+            },
+            .code = .{
+                .min_len = 2,
+                .preset = .uppercase,
+            },
+        };
+        pub const example: In = .{
+            .quantity = 1,
+        };
+        pub const example_out: Out = .{
+            .quantity = 1,
+        };
 
         pub fn run(_: *Ctx, in: In, _: *const Grant) Error!Out {
             std.debug.assert(in.quantity >= 1 and in.quantity <= 20);
 
-            return .{ .quantity = in.quantity };
+            return .{
+                .quantity = in.quantity,
+            };
         }
     };
-    const Checked = SDK(.{ .operations = &.{Order} });
+    const Checked = SDK(.{
+        .operations = &.{Order},
+    });
     var harness: testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
 
     var ctx = harness.ctx(.system);
-    const kept = try Checked.dispatch(&ctx, Order, .{ .quantity = 3 });
+    const kept = try Checked.dispatch(&ctx, Order, .{
+        .quantity = 3,
+    });
     try std.testing.expectEqual(@as(u32, 3), kept.quantity);
 
-    try std.testing.expectError(error.Failed, Checked.dispatch(&ctx, Order, .{ .quantity = 21 }));
+    try std.testing.expectError(error.Failed, Checked.dispatch(&ctx, Order, .{
+        .quantity = 21,
+    }));
     try std.testing.expect(std.mem.indexOf(u8, ctx.failure.?.message, "quantity") != null);
 
-    const lowercase = Checked.dispatch(&ctx, Order, .{ .quantity = 2, .code = "ab" });
+    const lowercase = Checked.dispatch(&ctx, Order, .{
+        .quantity = 2,
+        .code = "ab",
+    });
     try std.testing.expectError(error.Failed, lowercase);
     try std.testing.expect(std.mem.indexOf(u8, ctx.failure.?.message, "code") != null);
 }

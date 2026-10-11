@@ -34,7 +34,10 @@ pub const PjsxComponent = struct {
     takes_children: bool,
 };
 
-pub const PjsxProp = struct { name: []const u8, has_default: bool };
+pub const PjsxProp = struct {
+    name: []const u8,
+    has_default: bool,
+};
 
 /// One `<X ... island />` call site, by fragment key: the component and the literal
 /// props it is rendered with. Two call sites with the same key share one fragment.
@@ -52,7 +55,10 @@ pub const IslandUse = struct {
 pub const static_island_max_age: u32 = 60;
 
 /// A named run of bytes: a template's text, a generated asset.
-pub const File = struct { path: []const u8, data: []const u8 };
+pub const File = struct {
+    path: []const u8,
+    data: []const u8,
+};
 
 /// The compiled stylesheet's name under `/_app/`, beside the generated assets.
 pub const stylesheet = "app.css";
@@ -252,7 +258,11 @@ pub const Local = struct {
 
 /// A local name bound by an `import` in the frontmatter: a `.publr` template by index,
 /// or a PJSX component.
-pub const Import = struct { local: []const u8, index: u32 = 0, pjsx: ?u32 = null };
+pub const Import = struct {
+    local: []const u8,
+    index: u32 = 0,
+    pjsx: ?u32 = null,
+};
 
 /// One template's read, statement by statement, into node lists.
 pub const Compiler = struct {
@@ -460,7 +470,9 @@ pub const Compiler = struct {
             return;
         }
 
-        try compiler.out.append(compiler.arena, .{ .text = text });
+        try compiler.out.append(compiler.arena, .{
+            .text = text,
+        });
     }
 
     /// Markup with every run of whitespace collapsed to a single space, never dropped:
@@ -523,7 +535,10 @@ pub const Compiler = struct {
             }
         }
 
-        try compiler.locals.append(compiler.arena, .{ .name = name, .type = kind });
+        try compiler.locals.append(compiler.arena, .{
+            .name = name,
+            .type = kind,
+        });
     }
 
     pub fn find_local(compiler: *Compiler, name: []const u8) ?*Local {

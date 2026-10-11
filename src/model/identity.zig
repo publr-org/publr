@@ -92,7 +92,10 @@ test "a provider is a plugin-like name, an id is opaque but printable" {
 }
 
 test "an identity is valid when its parts are" {
-    try std.testing.expect(valid(.{ .provider = "github", .id = "1" }));
+    try std.testing.expect(valid(.{
+        .provider = "github",
+        .id = "1",
+    }));
     try std.testing.expect(valid(.{
         .provider = "github",
         .id = "1",
@@ -101,8 +104,22 @@ test "an identity is valid when its parts are" {
         .name = "Ada",
         .avatar = "https://example.com/ada.png",
     }));
-    try std.testing.expect(!valid(.{ .provider = "", .id = "1" }));
-    try std.testing.expect(!valid(.{ .provider = "github", .id = "" }));
-    try std.testing.expect(!valid(.{ .provider = "github", .id = "1", .name = "n" ** 200 }));
-    try std.testing.expect(!valid(.{ .provider = "github", .id = "1", .avatar = "a" ** 3000 }));
+    try std.testing.expect(!valid(.{
+        .provider = "",
+        .id = "1",
+    }));
+    try std.testing.expect(!valid(.{
+        .provider = "github",
+        .id = "",
+    }));
+    try std.testing.expect(!valid(.{
+        .provider = "github",
+        .id = "1",
+        .name = "n" ** 200,
+    }));
+    try std.testing.expect(!valid(.{
+        .provider = "github",
+        .id = "1",
+        .avatar = "a" ** 3000,
+    }));
 }

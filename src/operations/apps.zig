@@ -48,12 +48,17 @@ fn open_root(ctx: *const Ctx, folder: sdk.context.AppsFolder, make: bool) Error!
         cwd.createDirPath(ctx.io, folder.dir) catch return error.Unavailable;
     }
 
-    return cwd.openDir(ctx.io, folder.dir, .{ .iterate = true }) catch |err| {
+    return cwd.openDir(ctx.io, folder.dir, .{
+        .iterate = true,
+    }) catch |err| {
         return if (err == error.FileNotFound) error.NotFound else error.Unavailable;
     };
 }
 
-pub const Entry = struct { path: []const u8, bytes: u64 };
+pub const Entry = struct {
+    path: []const u8,
+    bytes: u64,
+};
 
 pub const Files = struct {
     pub const name = "apps.files";
@@ -61,18 +66,32 @@ pub const Files = struct {
     pub const details = "Administrators only. Paths are `<app>/<path>`, sorted.";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { files: []const Entry };
+    pub const Out = struct {
+        files: []const Entry,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .files = &.{
-        .{ .path = "www/app.zon", .bytes = 112 },
-        .{ .path = "www/content/index.publr", .bytes = 640 },
-    } };
+    pub const example_out: Out = .{
+        .files = &.{
+            .{
+                .path = "www/app.zon",
+                .bytes = 112,
+            },
+            .{
+                .path = "www/content/index.publr",
+                .bytes = 640,
+            },
+        },
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{};
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .files = "Up to 4096 files" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .files = "Up to 4096 files",
+    };
 
     pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
         var root = open_root(ctx, try folder_of(ctx), false) catch |err| {
-            return if (err == error.NotFound) .{ .files = &.{} } else err;
+            return if (err == error.NotFound) .{
+                .files = &.{},
+            } else err;
         };
         defer root.close(ctx.io);
 
@@ -92,7 +111,10 @@ pub const Files = struct {
             const stat = root.statFile(ctx.io, item.path, .{}) catch continue;
             const path = ctx.arena.dupe(u8, item.path) catch return error.OutOfMemory;
 
-            found.append(ctx.arena, .{ .path = path, .bytes = stat.size }) catch {
+            found.append(ctx.arena, .{
+                .path = path,
+                .bytes = stat.size,
+            }) catch {
                 return error.OutOfMemory;
             };
         }
@@ -100,7 +122,9 @@ pub const Files = struct {
         std.mem.sort(Entry, found.items, {}, earlier);
         std.debug.assert(found.items.len <= files_max);
 
-        return .{ .files = found.items };
+        return .{
+            .files = found.items,
+        };
     }
 
     fn earlier(_: void, left: Entry, right: Entry) bool {
@@ -113,11 +137,23 @@ pub const Read = struct {
     pub const description = "One file of the project's apps, as text";
     pub const details = "Administrators only. Not found when there is no such file.";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { path: []const u8 };
-    pub const Out = struct { path: []const u8, content: []const u8 };
-    pub const example: In = .{ .path = "www/content/index.publr" };
-    pub const example_out: Out = .{ .path = "www/content/index.publr", .content = "<h1>Hi</h1>\n" };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .path = "`<app>/<path>`" };
+    pub const In = struct {
+        path: []const u8,
+    };
+    pub const Out = struct {
+        path: []const u8,
+        content: []const u8,
+    };
+    pub const example: In = .{
+        .path = "www/content/index.publr",
+    };
+    pub const example_out: Out = .{
+        .path = "www/content/index.publr",
+        .content = "<h1>Hi</h1>\n",
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .path = "`<app>/<path>`",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .path = "The file",
         .content = "What it holds, up to 1 MiB",
@@ -143,7 +179,10 @@ pub const Read = struct {
 
         std.debug.assert(content.len <= file_path.bytes_max);
 
-        return .{ .path = in.path, .content = content };
+        return .{
+            .path = in.path,
+            .content = content,
+        };
     }
 };
 
@@ -156,10 +195,22 @@ pub const Write = struct {
         \\may save drafts only is refused.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { path: []const u8, content: []const u8 };
-    pub const Out = struct { path: []const u8, bytes: u64 };
-    pub const example: In = .{ .path = "www/content/index.publr", .content = "<h1>Hi</h1>\n" };
-    pub const example_out: Out = .{ .path = "www/content/index.publr", .bytes = 12 };
+    pub const In = struct {
+        path: []const u8,
+        content: []const u8,
+    };
+    pub const Out = struct {
+        path: []const u8,
+        bytes: u64,
+    };
+    pub const example: In = .{
+        .path = "www/content/index.publr",
+        .content = "<h1>Hi</h1>\n",
+    };
+    pub const example_out: Out = .{
+        .path = "www/content/index.publr",
+        .bytes = 12,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .path = "`<app>/<path>`",
         .content = "The whole file, as text",
@@ -192,11 +243,17 @@ pub const Write = struct {
             root.createDirPath(ctx.io, dir) catch return error.Unavailable;
         }
 
-        root.writeFile(ctx.io, .{ .sub_path = in.path, .data = in.content }) catch {
+        root.writeFile(ctx.io, .{
+            .sub_path = in.path,
+            .data = in.content,
+        }) catch {
             return error.Unavailable;
         };
 
-        return .{ .path = in.path, .bytes = in.content.len };
+        return .{
+            .path = in.path,
+            .bytes = in.content.len,
+        };
     }
 };
 
@@ -220,12 +277,24 @@ pub const Remove = struct {
         \\there is no such file. `apps load` makes the change live.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { path: []const u8 };
-    pub const Out = struct { removed: bool };
-    pub const example: In = .{ .path = "www/content/old.publr" };
-    pub const example_out: Out = .{ .removed = true };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .path = "`<app>/<path>`" };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .removed = "Always true" };
+    pub const In = struct {
+        path: []const u8,
+    };
+    pub const Out = struct {
+        removed: bool,
+    };
+    pub const example: In = .{
+        .path = "www/content/old.publr",
+    };
+    pub const example_out: Out = .{
+        .removed = true,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .path = "`<app>/<path>`",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .removed = "Always true",
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -244,7 +313,9 @@ pub const Remove = struct {
             return if (err == error.FileNotFound) error.NotFound else error.Unavailable;
         };
 
-        return .{ .removed = true };
+        return .{
+            .removed = true,
+        };
     }
 };
 
@@ -259,20 +330,32 @@ pub const Load = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { loaded: bool };
+    pub const Out = struct {
+        loaded: bool,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .loaded = true };
+    pub const example_out: Out = .{
+        .loaded = true,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{};
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .loaded = "Always true" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .loaded = "Always true",
+    };
 
     pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
         const folder = try folder_of(ctx);
 
         std.debug.assert(ctx.db.transaction_depth == 0);
 
-        const problem = folder.reload(folder.context) orelse return .{ .loaded = true };
+        const problem = folder.reload(folder.context) orelse return .{
+            .loaded = true,
+        };
         const message = ctx.arena.dupe(u8, problem) catch return error.OutOfMemory;
 
-        return ctx.fail(.{ .name = "NotLoaded", .status = 422, .message = message });
+        return ctx.fail(.{
+            .name = "NotLoaded",
+            .status = 422,
+            .message = message,
+        });
     }
 };

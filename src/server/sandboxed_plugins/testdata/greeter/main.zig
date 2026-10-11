@@ -37,23 +37,38 @@ pub const compatible_with = .{"sampler@^0.1"};
 pub const remotes = [_]type{SamplerHello};
 pub const SamplerHello = publr.plugin.Remote(
     "sampler.hello",
-    struct { who: []const u8 },
-    struct { text: []const u8 },
+    struct {
+        who: []const u8,
+    },
+    struct {
+        text: []const u8,
+    },
 );
 
 pub const internal_records = [_]publr.plugin.InternalCollection{
-    .{ .kind = "visit", .indexed = &.{"name"} },
+    .{
+        .kind = "visit",
+        .indexed = &.{"name"},
+    },
 };
 
 pub const content_types = [_]publr.plugin.ContentTypeDef{.{
     .handle = "salutation",
     .name = "Salutation",
     .title_field = "note",
-    .fields = &.{.{ .name = "note", .label = "Note", .kind = "string", .required = true }},
+    .fields = &.{.{
+        .name = "note",
+        .label = "Note",
+        .kind = "string",
+        .required = true,
+    }},
 }};
 
 pub const permissions = [_]publr.plugin.Permission{
-    .{ .key = "users.names", .reason = "Greets the people on the site by name" },
+    .{
+        .key = "users.names",
+        .reason = "Greets the people on the site by name",
+    },
 };
 
 pub const roles = [_]publr.plugin.Role{.{
@@ -71,18 +86,34 @@ pub const Recall = struct {
     pub const description = "The title of a post, read by core before greeter runs";
     pub const details = "Editors and administrators may call it. An unknown post is not found.";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { post: publr.records.Ref(struct { title: []const u8 }, "post") };
-    pub const Out = struct { title: []const u8 };
-    pub const example: In = .{ .post = .{ .id = "a1b2c3d4e5f60718293a4b5c" } };
-    pub const example_out: Out = .{ .title = "Hello, world" };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .post = "The post, by id" };
+    pub const In = struct {
+        post: publr.records.Ref(struct {
+            title: []const u8,
+        }, "post"),
+    };
+    pub const Out = struct {
+        title: []const u8,
+    };
+    pub const example: In = .{
+        .post = .{
+            .id = "a1b2c3d4e5f60718293a4b5c",
+        },
+    };
+    pub const example_out: Out = .{
+        .title = "Hello, world",
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .post = "The post, by id",
+    };
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
 
         const post = in.post.value orelse return error.Invalid;
 
-        return .{ .title = post.title };
+        return .{
+            .title = post.title,
+        };
     }
 };
 
@@ -98,15 +129,23 @@ pub const Wave = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
     pub const In = struct {};
-    pub const Out = struct { visitor: []const u8, waves: u32 };
+    pub const Out = struct {
+        visitor: []const u8,
+        waves: u32,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .visitor = "0123456789abcdef01234567", .waves = 1 };
+    pub const example_out: Out = .{
+        .visitor = "0123456789abcdef01234567",
+        .waves = 1,
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .visitor = "The visitor's id",
         .waves = "How many times this visitor has waved",
     };
 
-    const Visit = struct { name: []const u8 };
+    const Visit = struct {
+        name: []const u8,
+    };
     const visits = publr.internal.of(Visit, "visit");
 
     pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
@@ -118,11 +157,20 @@ pub const Wave = struct {
             return ctx.fail("NoVisitor", "Wave from an app's page: there is no visitor here.");
         }
 
-        _ = try visits.create(ctx, .{ .name = visitor });
+        _ = try visits.create(ctx, .{
+            .name = visitor,
+        });
 
-        const mine = try visits.find(ctx, .{ .name = visitor }, .{ .limit = 200 });
+        const mine = try visits.find(ctx, .{
+            .name = visitor,
+        }, .{
+            .limit = 200,
+        });
 
-        return .{ .visitor = visitor, .waves = @intCast(mine.len) };
+        return .{
+            .visitor = visitor,
+            .waves = @intCast(mine.len),
+        };
     }
 };
 
@@ -137,15 +185,29 @@ pub const Greet = struct {
         \\found: there is no one to greet.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { note: []const u8 };
-    pub const Out = struct { total: u32 };
-    pub const rules: sdk.operation.Rules(In) = .{ .note = .{ .max_len = 200 } };
-    pub const example: In = .{ .note = "hello from the sandbox" };
-    pub const example_out: Out = .{ .total = 1 };
+    pub const In = struct {
+        note: []const u8,
+    };
+    pub const Out = struct {
+        total: u32,
+    };
+    pub const rules: sdk.operation.Rules(In) = .{
+        .note = .{
+            .max_len = 200,
+        },
+    };
+    pub const example: In = .{
+        .note = "hello from the sandbox",
+    };
+    pub const example_out: Out = .{
+        .total = 1,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .note = "The greeting",
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .total = "How many greetings exist now" };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .total = "How many greetings exist now",
+    };
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
@@ -158,12 +220,17 @@ pub const Greet = struct {
             return error.NotFound;
         }
 
-        const note = .{ .note = in.note };
+        const note = .{
+            .note = in.note,
+        };
         const document = std.json.Stringify.valueAlloc(ctx.arena(), note, .{}) catch {
             return error.OutOfMemory;
         };
 
-        _ = try ctx.call(record.Create, .{ .type = "salutation", .document = document });
+        _ = try ctx.call(record.Create, .{
+            .type = "salutation",
+            .document = document,
+        });
 
         return count(ctx);
     }
@@ -176,8 +243,12 @@ pub const Count = struct {
     pub const In = struct {};
     pub const Out = Greet.Out;
     pub const example: In = .{};
-    pub const example_out: Out = .{ .total = 1 };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .total = "How many greetings exist" };
+    pub const example_out: Out = .{
+        .total = 1,
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .total = "How many greetings exist",
+    };
 
     pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
@@ -194,10 +265,16 @@ pub const People = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { greetings: []const []const u8 };
+    pub const Out = struct {
+        greetings: []const []const u8,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .greetings = &.{"hello, Admin"} };
-    pub const output_docs: sdk.operation.Docs(Out) = .{ .greetings = "One greeting per person" };
+    pub const example_out: Out = .{
+        .greetings = &.{"hello, Admin"},
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .greetings = "One greeting per person",
+    };
 
     pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
@@ -214,14 +291,21 @@ pub const People = struct {
             };
         }
 
-        return .{ .greetings = greetings };
+        return .{
+            .greetings = greetings,
+        };
     }
 };
 
 fn count(ctx: *PluginCtx) sdk.Error!Greet.Out {
-    const all = try ctx.call(record.List, .{ .type = "salutation", .limit = 200 });
+    const all = try ctx.call(record.List, .{
+        .type = "salutation",
+        .limit = 200,
+    });
 
-    return .{ .total = @intCast(all.records.len) };
+    return .{
+        .total = @intCast(all.records.len),
+    };
 }
 
 pub const Announce = struct {
@@ -243,13 +327,17 @@ pub const Shown = struct {
     pub const content_type = "salutation";
     pub const reason = "Shows a salutation the way a test needs to see it";
 
-    const Visit = struct { name: []const u8 };
+    const Visit = struct {
+        name: []const u8,
+    };
     const visits = publr.internal.of(Visit, "visit");
 
     pub fn run(ctx: *PluginCtx, in: *sdk.display_hooks.Batch) sdk.Error!void {
         std.debug.assert(in.items.len <= sdk.display_hooks.batch_items_max);
 
-        const created = visits.create(ctx, .{ .name = "display" });
+        const created = visits.create(ctx, .{
+            .name = "display",
+        });
         const wrote = if (created) |_| "wrote" else |err| @errorName(err);
 
         for (in.items) |*item| {

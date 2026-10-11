@@ -219,21 +219,54 @@ fn write_sparse(comptime Struct: type, value: Struct, writer: anytype) !void {
     try writer.endObject();
 }
 
-pub const MediaType = struct { id: []const u8, label: []const u8 };
+pub const MediaType = struct {
+    id: []const u8,
+    label: []const u8,
+};
 
 /// The file families a media field can be limited to; a file's family is decided by its
 /// mime type when it is uploaded.
 pub const media_types = [_]MediaType{
-    .{ .id = "image", .label = "Image" },
-    .{ .id = "video", .label = "Video" },
-    .{ .id = "audio", .label = "Audio" },
-    .{ .id = "pdf", .label = "PDF document" },
-    .{ .id = "document", .label = "Document" },
-    .{ .id = "spreadsheet", .label = "Spreadsheet" },
-    .{ .id = "presentation", .label = "Presentation" },
-    .{ .id = "text", .label = "Plain text" },
-    .{ .id = "code", .label = "Code" },
-    .{ .id = "archive", .label = "Archive" },
+    .{
+        .id = "image",
+        .label = "Image",
+    },
+    .{
+        .id = "video",
+        .label = "Video",
+    },
+    .{
+        .id = "audio",
+        .label = "Audio",
+    },
+    .{
+        .id = "pdf",
+        .label = "PDF document",
+    },
+    .{
+        .id = "document",
+        .label = "Document",
+    },
+    .{
+        .id = "spreadsheet",
+        .label = "Spreadsheet",
+    },
+    .{
+        .id = "presentation",
+        .label = "Presentation",
+    },
+    .{
+        .id = "text",
+        .label = "Plain text",
+    },
+    .{
+        .id = "code",
+        .label = "Code",
+    },
+    .{
+        .id = "archive",
+        .label = "Archive",
+    },
 };
 
 /// The schemes a url field can be limited to; the first two are what an empty list means.
@@ -312,8 +345,12 @@ test "media types, schemes and bounds" {
     try std.testing.expect(!valid_scheme("ftp"));
     try std.testing.expect(scheme_allowed(.{}, "https"));
     try std.testing.expect(!scheme_allowed(.{}, "mailto"));
-    try std.testing.expect(scheme_allowed(.{ .schemes = &.{"mailto"} }, "mailto"));
-    try std.testing.expect(!scheme_allowed(.{ .schemes = &.{"mailto"} }, "https"));
+    try std.testing.expect(scheme_allowed(.{
+        .schemes = &.{"mailto"},
+    }, "mailto"));
+    try std.testing.expect(!scheme_allowed(.{
+        .schemes = &.{"mailto"},
+    }, "https"));
 
     try std.testing.expect(ordered(u32, null, null));
     try std.testing.expect(ordered(u32, 1, null));
@@ -341,9 +378,15 @@ test "options are written sparsely and read back whole" {
 
     const set: Options = .{
         .max_len = 12,
-        .messages = .{ .length = "Short" },
-        .reference = .{ .on_delete = .clear },
-        .media = .{ .types = &.{"image"} },
+        .messages = .{
+            .length = "Short",
+        },
+        .reference = .{
+            .on_delete = .clear,
+        },
+        .media = .{
+            .types = &.{"image"},
+        },
     };
     const text = try std.json.Stringify.valueAlloc(arena, set, .{});
     const expected = "{\"max_len\":12,\"messages\":{\"length\":\"Short\"}," ++

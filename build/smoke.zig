@@ -50,8 +50,12 @@ fn version(builder: *std.Build) []const u8 {
     const handle = builder.build_root.handle;
     const text = handle.readFileAllocOptions(io, "build.zig.zon", gpa, limit, .of(u8), 0) catch
         @panic("build.zig.zon is unreadable");
-    const Manifest = struct { version: []const u8 };
-    const options: std.zon.parse.Options = .{ .ignore_unknown_fields = true };
+    const Manifest = struct {
+        version: []const u8,
+    };
+    const options: std.zon.parse.Options = .{
+        .ignore_unknown_fields = true,
+    };
     const manifest = std.zon.parse.fromSliceAlloc(Manifest, gpa, text, null, options) catch
         @panic("build.zig.zon has no .version");
 

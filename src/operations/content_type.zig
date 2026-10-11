@@ -63,11 +63,23 @@ pub const Create = struct {
         \\`content_type validate` to see problems.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { definition: []const u8 };
-    pub const Out = struct { id: []const u8, handle: []const u8 };
-    pub const example: In = .{ .definition = new_definition };
-    pub const example_out: Out = .{ .id = "7c2d9e4f1a8b3c5d6e7f8a9b", .handle = "note" };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .definition = "The type definition as JSON" };
+    pub const In = struct {
+        definition: []const u8,
+    };
+    pub const Out = struct {
+        id: []const u8,
+        handle: []const u8,
+    };
+    pub const example: In = .{
+        .definition = new_definition,
+    };
+    pub const example_out: Out = .{
+        .id = "7c2d9e4f1a8b3c5d6e7f8a9b",
+        .handle = "note",
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .definition = "The type definition as JSON",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .id = "The new type's id",
         .handle = "Its handle",
@@ -82,7 +94,10 @@ pub const Create = struct {
 
         const row = try definition.create(ctx, in.definition);
 
-        return .{ .id = row.id, .handle = row.def.handle };
+        return .{
+            .id = row.id,
+            .handle = row.def.handle,
+        };
     }
 };
 
@@ -101,14 +116,21 @@ pub const Update = struct {
         \\remove and re-add instead. Toggling `searchable` re-indexes the field.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { type: []const u8, definition: []const u8, drop_content: bool = false };
+    pub const In = struct {
+        type: []const u8,
+        definition: []const u8,
+        drop_content: bool = false,
+    };
     pub const Out = struct {
         id: []const u8,
         handle: []const u8,
         records_rewritten: u32,
         values_dropped: u32,
     };
-    pub const example: In = .{ .type = "post", .definition = example_definition };
+    pub const example: In = .{
+        .type = "post",
+        .definition = example_definition,
+    };
     pub const example_out: Out = .{
         .id = "7c2d9e4f1a8b3c5d6e7f8a9b",
         .handle = "post",
@@ -149,16 +171,27 @@ pub const Get = struct {
     pub const name = "content_type.get";
     pub const description = "Read a content type's full definition";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { type: []const u8 };
-    pub const Out = struct { id: []const u8, definition: Def, created_at: i64, updated_at: i64 };
-    pub const example: In = .{ .type = "post" };
+    pub const In = struct {
+        type: []const u8,
+    };
+    pub const Out = struct {
+        id: []const u8,
+        definition: Def,
+        created_at: i64,
+        updated_at: i64,
+    };
+    pub const example: In = .{
+        .type = "post",
+    };
     pub const example_out: Out = .{
         .id = "7c2d9e4f1a8b3c5d6e7f8a9b",
         .definition = content_type.test_post,
         .created_at = 1789650000000,
         .updated_at = 1789650000000,
     };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .type = "Handle or id" };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .type = "Handle or id",
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         if (in.type.len > 64 << 10) {
@@ -183,19 +216,23 @@ pub const List = struct {
     pub const description = "List content types";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { types: []const Summary };
+    pub const Out = struct {
+        types: []const Summary,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .types = &.{.{
-        .id = "7c2d9e4f1a8b3c5d6e7f8a9b",
-        .handle = "post",
-        .name = "Post",
-        .kind = .record,
-        .public = true,
-        .system = false,
-        .owner = "",
-        .editor = "form",
-        .fields = 2,
-    }} };
+    pub const example_out: Out = .{
+        .types = &.{.{
+            .id = "7c2d9e4f1a8b3c5d6e7f8a9b",
+            .handle = "post",
+            .name = "Post",
+            .kind = .record,
+            .public = true,
+            .system = false,
+            .owner = "",
+            .editor = "form",
+            .fields = 2,
+        }},
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .types = "Sorted by name; anonymous callers see public types only",
     };
@@ -204,7 +241,9 @@ pub const List = struct {
         std.debug.assert(ctx.now_ms >= 0);
         std.debug.assert(granted.allows());
 
-        return .{ .types = try definition.list(ctx, granted) };
+        return .{
+            .types = try definition.list(ctx, granted),
+        };
     }
 };
 
@@ -213,10 +252,21 @@ pub const Delete = struct {
     pub const description = "Delete a content type; refuses while it has records unless forced";
     pub const kind: sdk.operation.Kind = .write;
     pub const destroys = true;
-    pub const In = struct { type: []const u8, force: bool = false };
-    pub const Out = struct { deleted: bool, records_removed: u32 };
-    pub const example: In = .{ .type = "page" };
-    pub const example_out: Out = .{ .deleted = true, .records_removed = 0 };
+    pub const In = struct {
+        type: []const u8,
+        force: bool = false,
+    };
+    pub const Out = struct {
+        deleted: bool,
+        records_removed: u32,
+    };
+    pub const example: In = .{
+        .type = "page",
+    };
+    pub const example_out: Out = .{
+        .deleted = true,
+        .records_removed = 0,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .type = "Handle or id",
         .force = "Also delete every record of the type",
@@ -231,7 +281,10 @@ pub const Delete = struct {
 
         const deleted = try definition.delete(ctx, in.type, in.force);
 
-        return .{ .deleted = deleted.deleted, .records_removed = deleted.removed };
+        return .{
+            .deleted = deleted.deleted,
+            .records_removed = deleted.removed,
+        };
     }
 };
 
@@ -239,15 +292,29 @@ pub const Validate = struct {
     pub const name = "content_type.validate";
     pub const description = "Check a JSON definition and list every problem without saving";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { definition: []const u8 };
-    pub const Out = struct { valid: bool, problems: []const Problem };
+    pub const In = struct {
+        definition: []const u8,
+    };
+    pub const Out = struct {
+        valid: bool,
+        problems: []const Problem,
+    };
     pub const example: In = .{
         .definition = "{\"handle\":\"Post\",\"name\":\"\",\"fields\":[]}",
     };
-    pub const example_out: Out = .{ .valid = false, .problems = &.{
-        .{ .path = "handle", .message = "handle must be [a-z][a-z0-9_]*, up to 64 characters" },
-        .{ .path = "name", .message = "name must be 1 to 128 characters" },
-    } };
+    pub const example_out: Out = .{
+        .valid = false,
+        .problems = &.{
+            .{
+                .path = "handle",
+                .message = "handle must be [a-z][a-z0-9_]*, up to 64 characters",
+            },
+            .{
+                .path = "name",
+                .message = "name must be 1 to 128 characters",
+            },
+        },
+    };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
@@ -258,7 +325,10 @@ pub const Validate = struct {
 
         const report = try definition.validate(ctx, in.definition);
 
-        return .{ .valid = report.valid, .problems = report.problems };
+        return .{
+            .valid = report.valid,
+            .problems = report.problems,
+        };
     }
 };
 

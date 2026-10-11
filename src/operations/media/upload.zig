@@ -37,7 +37,10 @@ pub const Upload = struct {
         folder: ?[]const u8 = null,
     };
     pub const Out = library.Item;
-    pub const example: In = .{ .upload = "u7f3a9c2e1", .filename = "harbour.png" };
+    pub const example: In = .{
+        .upload = "u7f3a9c2e1",
+        .filename = "harbour.png",
+    };
     pub const example_out: Out = library.example_item;
     pub const field_docs: sdk.operation.Docs(In) = .{
         .upload = "The token the upload's bytes are kept under: 8 to 40 of a-z and 0-9",
@@ -84,7 +87,9 @@ pub const Add = struct {
         folder: ?[]const u8 = null,
     };
     pub const Out = library.Item;
-    pub const example: In = .{ .file = "harbour.png" };
+    pub const example: In = .{
+        .file = "harbour.png",
+    };
     pub const example_out: Out = library.example_item;
     pub const field_docs: sdk.operation.Docs(In) = .{
         .file = "The file's path",
@@ -167,7 +172,12 @@ fn add(
 
     files.write(.files, key, kept) catch |err| return library.fail(err);
 
-    return added(ctx, .{ .filename = filename, .key = key, .bytes = kept, .folder = folder });
+    return added(ctx, .{
+        .filename = filename,
+        .key = key,
+        .bytes = kept,
+        .folder = folder,
+    });
 }
 
 /// The bytes the library keeps of a file: what its extension says they are, an SVG
@@ -272,13 +282,18 @@ fn document_of(ctx: *Ctx, filename: []const u8, folder: ?[]const u8) Error![]con
     std.debug.assert(filename.len > 0);
     std.debug.assert(folder == null or folder.?.len <= 64);
 
-    const Document = struct { title: []const u8, media_folders: ?[]const u8 };
+    const Document = struct {
+        title: []const u8,
+        media_folders: ?[]const u8,
+    };
     const filed = if (folder) |chosen| (if (chosen.len > 0) chosen else null) else null;
 
     return std.json.Stringify.valueAlloc(ctx.arena, Document{
         .title = title_of(filename),
         .media_folders = filed,
-    }, .{ .emit_null_optional_fields = false }) catch error.OutOfMemory;
+    }, .{
+        .emit_null_optional_fields = false,
+    }) catch error.OutOfMemory;
 }
 
 test "valid_token: lowercase letters and digits, 8 to 40" {

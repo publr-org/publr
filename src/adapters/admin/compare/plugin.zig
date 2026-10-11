@@ -30,7 +30,11 @@ pub fn values_of(arena: std.mem.Allocator, row: Row) !RowValues {
     std.debug.assert(row.granted.len > 0 and row.denied.len > 0);
 
     if (row.manifest.len == 0) {
-        return .{ .plugin = &.{}, .enabled = &.{}, .requests = &.{} };
+        return .{
+            .plugin = &.{},
+            .enabled = &.{},
+            .requests = &.{},
+        };
     }
 
     const manifest = try plugin_state.parse_manifest(arena, row.manifest);
@@ -71,7 +75,9 @@ pub fn values_of(arena: std.mem.Allocator, row: Row) !RowValues {
 fn names_in(arena: std.mem.Allocator, text: []const u8) ![]const []const u8 {
     std.debug.assert(text.len > 0);
 
-    const options: std.json.ParseOptions = .{ .allocate = .alloc_always };
+    const options: std.json.ParseOptions = .{
+        .allocate = .alloc_always,
+    };
 
     return std.json.parseFromSliceLeaky([]const []const u8, arena, text, options) catch {
         return error.Invalid;

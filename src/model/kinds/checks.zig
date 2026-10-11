@@ -157,58 +157,124 @@ pub fn valid_slug(text: []const u8) bool {
 
 test "the kinds' own checks" {
     var problems: Problems = .{};
-    const mail_def: Def = .{ .name = "mail", .label = "Mail", .kind = "email" };
+    const mail_def: Def = .{
+        .name = "mail",
+        .label = "Mail",
+        .kind = "email",
+    };
     const select_def: Def = .{
         .name = "kind",
         .label = "Kind",
         .kind = "select",
-        .options = .{ .choices = &.{ "a", "b" } },
+        .options = .{
+            .choices = &.{ "a", "b" },
+        },
     };
 
-    email(mail_def, .{ .string = "x@y" }, "mail", &problems);
-    url(mail_def, .{ .string = "https://x" }, "url", &problems);
-    select(select_def, .{ .string = "b" }, "kind", &problems);
-    datetime(mail_def, .{ .integer = 0 }, "at", &problems);
-    slug(mail_def, .{ .string = "a-1" }, "slug", &problems);
+    email(mail_def, .{
+        .string = "x@y",
+    }, "mail", &problems);
+    url(mail_def, .{
+        .string = "https://x",
+    }, "url", &problems);
+    select(select_def, .{
+        .string = "b",
+    }, "kind", &problems);
+    datetime(mail_def, .{
+        .integer = 0,
+    }, "at", &problems);
+    slug(mail_def, .{
+        .string = "a-1",
+    }, "slug", &problems);
     try std.testing.expect(problems.is_empty());
 
-    email(mail_def, .{ .string = "nope" }, "mail", &problems);
-    url(mail_def, .{ .string = "ftp://x" }, "url", &problems);
-    select(select_def, .{ .string = "z" }, "kind", &problems);
-    datetime(mail_def, .{ .integer = -1 }, "at", &problems);
-    slug(mail_def, .{ .string = "Bad Slug" }, "slug", &problems);
+    email(mail_def, .{
+        .string = "nope",
+    }, "mail", &problems);
+    url(mail_def, .{
+        .string = "ftp://x",
+    }, "url", &problems);
+    select(select_def, .{
+        .string = "z",
+    }, "kind", &problems);
+    datetime(mail_def, .{
+        .integer = -1,
+    }, "at", &problems);
+    slug(mail_def, .{
+        .string = "Bad Slug",
+    }, "slug", &problems);
     try std.testing.expectEqual(@as(u32, 5), problems.len);
     try std.testing.expect(valid_slug("hello-1"));
     try std.testing.expect(!valid_slug("-x"));
 
     var strict: Problems = .{};
-    const work_mail: Def = .{ .name = "mail", .label = "Mail", .kind = "email", .options = .{
-        .email = .{ .domains = &.{"publr.dev"} },
-        .messages = .{ .domain = "Work addresses only" },
-    } };
-    email(work_mail, .{ .string = "ada@publr.dev" }, "mail", &strict);
+    const work_mail: Def = .{
+        .name = "mail",
+        .label = "Mail",
+        .kind = "email",
+        .options = .{
+            .email = .{
+                .domains = &.{"publr.dev"},
+            },
+            .messages = .{
+                .domain = "Work addresses only",
+            },
+        },
+    };
+    email(work_mail, .{
+        .string = "ada@publr.dev",
+    }, "mail", &strict);
     try std.testing.expect(strict.is_empty());
-    email(work_mail, .{ .string = "ada@example.com" }, "mail", &strict);
+    email(work_mail, .{
+        .string = "ada@example.com",
+    }, "mail", &strict);
     try std.testing.expectEqualStrings("Work addresses only", strict.items[0].message);
 
     var linked: Problems = .{};
-    const phone: Def = .{ .name = "call", .label = "Call", .kind = "url", .options = .{
-        .url = .{ .schemes = &.{ "tel", "https" }, .hosts = &.{"publr.dev"} },
-    } };
-    url(phone, .{ .string = "tel:+4812345678" }, "call", &linked);
-    url(phone, .{ .string = "https://publr.dev/docs?x=1" }, "call", &linked);
+    const phone: Def = .{
+        .name = "call",
+        .label = "Call",
+        .kind = "url",
+        .options = .{
+            .url = .{
+                .schemes = &.{ "tel", "https" },
+                .hosts = &.{"publr.dev"},
+            },
+        },
+    };
+    url(phone, .{
+        .string = "tel:+4812345678",
+    }, "call", &linked);
+    url(phone, .{
+        .string = "https://publr.dev/docs?x=1",
+    }, "call", &linked);
     try std.testing.expect(linked.is_empty());
-    url(phone, .{ .string = "http://publr.dev" }, "call", &linked);
-    url(phone, .{ .string = "https://example.com" }, "call", &linked);
+    url(phone, .{
+        .string = "http://publr.dev",
+    }, "call", &linked);
+    url(phone, .{
+        .string = "https://example.com",
+    }, "call", &linked);
     try std.testing.expectEqual(@as(u32, 2), linked.len);
     try std.testing.expectEqualStrings("not an allowed host", linked.items[1].message);
-    url(mail_def, .{ .string = "mailto:x@y" }, "url", &linked);
+    url(mail_def, .{
+        .string = "mailto:x@y",
+    }, "url", &linked);
     try std.testing.expectEqual(@as(u32, 3), linked.len);
 
     var kept: Problems = .{};
-    const home: Def = .{ .name = "slug", .label = "Slug", .kind = "slug", .options = .{
-        .slug = .{ .reserved = &.{ "admin", "api" } },
-    } };
-    slug(home, .{ .string = "api" }, "slug", &kept);
+    const home: Def = .{
+        .name = "slug",
+        .label = "Slug",
+        .kind = "slug",
+        .options = .{
+            .slug = .{
+                .reserved = &.{ "admin", "api" },
+            },
+        },
+    };
+    slug(home, .{
+        .string = "api",
+    }, "slug", &kept);
     try std.testing.expectEqualStrings("this slug is reserved", kept.items[0].message);
 }

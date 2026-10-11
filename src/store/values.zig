@@ -119,27 +119,83 @@ pub fn promote(
 }
 
 const test_fields = [_]Def{
-    .{ .name = "title", .label = "Title", .kind = "string", .searchable = true },
-    .{ .name = "views", .label = "Views", .kind = "integer" },
-    .{ .name = "score", .label = "Score", .kind = "number" },
-    .{ .name = "live", .label = "Live", .kind = "boolean" },
-    .{ .name = "body", .label = "Body", .kind = "richtext" },
-    .{ .name = "cover", .label = "Cover", .kind = "media" },
+    .{
+        .name = "title",
+        .label = "Title",
+        .kind = "string",
+        .searchable = true,
+    },
+    .{
+        .name = "views",
+        .label = "Views",
+        .kind = "integer",
+    },
+    .{
+        .name = "score",
+        .label = "Score",
+        .kind = "number",
+    },
+    .{
+        .name = "live",
+        .label = "Live",
+        .kind = "boolean",
+    },
+    .{
+        .name = "body",
+        .label = "Body",
+        .kind = "richtext",
+    },
+    .{
+        .name = "cover",
+        .label = "Cover",
+        .kind = "media",
+    },
     .{
         .name = "tags",
         .label = "Tags",
         .kind = "reference",
         .many = true,
-        .options = .{ .to = &.{"tag"} },
+        .options = .{
+            .to = &.{"tag"},
+        },
     },
-    .{ .name = "seo", .label = "SEO", .kind = "group", .fields = &.{
-        .{ .name = "description", .label = "Description", .kind = "text" },
-    } },
-    .{ .name = "faq", .label = "FAQ", .kind = "repeater", .fields = &.{
-        .{ .name = "question", .label = "Q", .kind = "string" },
-        .{ .name = "answer", .label = "A", .kind = "text" },
-        .{ .name = "link", .label = "Link", .kind = "reference", .options = .{ .to = &.{"post"} } },
-    } },
+    .{
+        .name = "seo",
+        .label = "SEO",
+        .kind = "group",
+        .fields = &.{
+            .{
+                .name = "description",
+                .label = "Description",
+                .kind = "text",
+            },
+        },
+    },
+    .{
+        .name = "faq",
+        .label = "FAQ",
+        .kind = "repeater",
+        .fields = &.{
+            .{
+                .name = "question",
+                .label = "Q",
+                .kind = "string",
+            },
+            .{
+                .name = "answer",
+                .label = "A",
+                .kind = "text",
+            },
+            .{
+                .name = "link",
+                .label = "Link",
+                .kind = "reference",
+                .options = .{
+                    .to = &.{"post"},
+                },
+            },
+        },
+    },
 };
 
 fn seed_record(

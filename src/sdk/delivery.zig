@@ -61,7 +61,9 @@ pub fn decide(gates: []const Gate, delivery: *const Delivery) operation.Error!Ve
                     return error.Invalid;
                 }
 
-                return .{ .refuse = refusal };
+                return .{
+                    .refuse = refusal,
+                };
             },
         }
     }
@@ -89,19 +91,39 @@ const testing = struct {
             return .private;
         }
 
-        return .{ .refuse = .{ .status = 403, .body = "members only" } };
+        return .{
+            .refuse = .{
+                .status = 403,
+                .body = "members only",
+            },
+        };
     }
 
     fn broken(_: *const Delivery) operation.Error!Verdict {
-        return .{ .refuse = .{ .status = 200, .body = "not a refusal" } };
+        return .{
+            .refuse = .{
+                .status = 200,
+                .body = "not a refusal",
+            },
+        };
     }
 };
 
 test "the first refusal wins, a private say keeps it private, silence changes nothing" {
     var ctx: context.Ctx = undefined;
-    const anonymous: Delivery = .{ .ctx = &ctx, .visitor = .anonymous, .path = "/", .kind = .page };
+    const anonymous: Delivery = .{
+        .ctx = &ctx,
+        .visitor = .anonymous,
+        .path = "/",
+        .kind = .page,
+    };
     var member = anonymous;
-    member.visitor = .{ .user = .{ .id = "ada", .roles = &.{"editor"} } };
+    member.visitor = .{
+        .user = .{
+            .id = "ada",
+            .roles = &.{"editor"},
+        },
+    };
 
     try std.testing.expectEqual(Verdict.open, try decide(&.{}, &anonymous));
     try std.testing.expectEqual(Verdict.open, try decide(&.{testing.silent}, &anonymous));

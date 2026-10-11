@@ -14,21 +14,40 @@ const views = admin.views;
 const Filters = model.view.Filters;
 
 /// Where the page stands: the saved view it shows, if one, and the filters in force.
-pub const Current = struct { view_id: ?[]const u8 = null, filters: Filters = .{} };
+pub const Current = struct {
+    view_id: ?[]const u8 = null,
+    filters: Filters = .{},
+};
 
 const Clause = model.filter.Clause;
 
 pub const recent: Filters = .{
-    .clauses = &.{.{ .key = "updated", .operator = "within", .value = "7d" }},
+    .clauses = &.{.{
+        .key = "updated",
+        .operator = "within",
+        .value = "7d",
+    }},
 };
 pub const created_by_me: Filters = .{
-    .clauses = &.{.{ .key = "created", .operator = "by", .value = model.view.me }},
+    .clauses = &.{.{
+        .key = "created",
+        .operator = "by",
+        .value = model.view.me,
+    }},
 };
 pub const updated_by_me: Filters = .{
-    .clauses = &.{.{ .key = "updated", .operator = "by", .value = model.view.me }},
+    .clauses = &.{.{
+        .key = "updated",
+        .operator = "by",
+        .value = model.view.me,
+    }},
 };
 pub const changed_only: Filters = .{
-    .clauses = &.{.{ .key = "changed", .operator = "is", .value = "pending" }},
+    .clauses = &.{.{
+        .key = "changed",
+        .operator = "is",
+        .value = "pending",
+    }},
 };
 
 const Row = views.ContentNav.StatusesItem;
@@ -51,8 +70,14 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
     try append_saved(session, &private, current.view_id);
 
     for (registry.Statuses.all) |status| {
-        const clauses = [_]Clause{.{ .key = "status", .operator = "is", .value = status.id }};
-        const by_status: Filters = .{ .clauses = &clauses };
+        const clauses = [_]Clause{.{
+            .key = "status",
+            .operator = "is",
+            .value = status.id,
+        }};
+        const by_status: Filters = .{
+            .clauses = &clauses,
+        };
         const row = try row_of(arena, status.label, by_status, address, on_view);
         statuses.append(arena, row) catch return error.OutOfMemory;
     }
@@ -66,7 +91,10 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
             continue;
         }
 
-        const one_type: Filters = .{ .types = &.{summary.handle}, .type_view = true };
+        const one_type: Filters = .{
+            .types = &.{summary.handle},
+            .type_view = true,
+        };
         const row = try row_of(arena, summary.name, one_type, address, on_view);
         const appended = switch (summary.kind) {
             .record => record_types.append(arena, .{
@@ -109,7 +137,11 @@ fn row_of(
 
     const href = try filters.format(arena, filter, null);
 
-    return .{ .label = label, .href = href, .active = !on_view and std.mem.eql(u8, href, address) };
+    return .{
+        .label = label,
+        .href = href,
+        .active = !on_view and std.mem.eql(u8, href, address),
+    };
 }
 
 /// The two private views everyone has, locked: what the caller created, what they saved.
@@ -122,9 +154,18 @@ fn append_built_in(
     std.debug.assert(private.items.len == 0);
     std.debug.assert(std.mem.startsWith(u8, address, "/admin/content"));
 
-    const built_in = [_]struct { label: []const u8, filter: Filters }{
-        .{ .label = "Created by me", .filter = created_by_me },
-        .{ .label = "Updated by me", .filter = updated_by_me },
+    const built_in = [_]struct {
+        label: []const u8,
+        filter: Filters,
+    }{
+        .{
+            .label = "Created by me",
+            .filter = created_by_me,
+        },
+        .{
+            .label = "Updated by me",
+            .filter = updated_by_me,
+        },
     };
 
     for (built_in) |entry| {

@@ -173,7 +173,9 @@ pub const App = struct {
             var arena_state = std.heap.ArenaAllocator.init(app.gpa);
             defer arena_state.deinit();
             const arena = arena_state.allocator();
-            var diagnostic: engine.Diagnostic = .{ .arena = arena };
+            var diagnostic: engine.Diagnostic = .{
+                .arena = arena,
+            };
             const loaded = engine.load(
                 app.gpa,
                 try sources(arena, app.spec),
@@ -357,7 +359,9 @@ fn check_app(gpa: std.mem.Allocator, arena: std.mem.Allocator, spec: *const Spec
     defer if (program) |loaded| destroy(gpa, loaded);
 
     if (spec.templates.len > 0) {
-        var diagnostic: engine.Diagnostic = .{ .arena = arena };
+        var diagnostic: engine.Diagnostic = .{
+            .arena = arena,
+        };
         const options = engine_options(spec);
 
         program = engine.load(gpa, try sources(arena, spec), options, &diagnostic) catch |err| {
@@ -398,7 +402,11 @@ fn sources(arena: std.mem.Allocator, spec: *const Spec) ![]const engine.Source {
     const list = try arena.alloc(engine.Source, spec.templates.len);
 
     for (spec.templates, list) |file, *source| {
-        source.* = .{ .rel = file.path, .source = file.data, .origin = .app };
+        source.* = .{
+            .rel = file.path,
+            .source = file.data,
+            .origin = .app,
+        };
     }
 
     return list;
@@ -429,7 +437,9 @@ pub fn compile_css(
         try classes.append(arena, class);
     }
 
-    const utilities = try jit.compile(arena, spec.tokens, classes.items, .{ .minify = minify });
+    const utilities = try jit.compile(arena, spec.tokens, classes.items, .{
+        .minify = minify,
+    });
     const separator: []const u8 = if (minify) "" else "\n";
     const parts = [_][]const u8{ preflight_css, separator, spec.style_css, separator, utilities };
 
@@ -437,8 +447,12 @@ pub fn compile_css(
 }
 
 test "options reject empty paths and malformed base addresses" {
-    try std.testing.expect(!valid_options(.{ .output_dir = "" }));
-    try std.testing.expect(!valid_options(.{ .apps_dir = "" }));
+    try std.testing.expect(!valid_options(.{
+        .output_dir = "",
+    }));
+    try std.testing.expect(!valid_options(.{
+        .apps_dir = "",
+    }));
 
     for ([_][]const u8{
         "",
@@ -449,8 +463,12 @@ test "options reject empty paths and malformed base addresses" {
         "ftp://example.com",
         "https://example.com\n",
     }) |url| {
-        try std.testing.expect(!valid_options(.{ .base_url = url }));
+        try std.testing.expect(!valid_options(.{
+            .base_url = url,
+        }));
     }
 
-    try std.testing.expect(valid_options(.{ .base_url = "https://example.com/site" }));
+    try std.testing.expect(valid_options(.{
+        .base_url = "https://example.com/site",
+    }));
 }

@@ -47,7 +47,10 @@ const mebibyte: i64 = 1 << 20;
 /// folder, a month's everything but the date.
 const Leave = enum { nothing, folder, date };
 
-const Bind = union(enum) { text: []const u8, int: i64 };
+const Bind = union(enum) {
+    text: []const u8,
+    int: i64,
+};
 
 const Where = struct {
     sql: std.ArrayList(u8) = .empty,
@@ -103,13 +106,17 @@ fn where_of(arena: std.mem.Allocator, filter: Filter, leave: Leave) !Where {
                 " AND t.field = 'media_folders')", null),
             .unreviewed => try where.add(arena, "m.unreviewed = 1", null),
             .term => |term| try where.add(arena, "EXISTS (" ++ in_term ++
-                " AND t.field = 'media_folders' AND t.term = ?N)", .{ .text = term }),
+                " AND t.field = 'media_folders' AND t.term = ?N)", .{
+                .text = term,
+            }),
         }
     }
 
     for (filter.tags) |tag| {
         try where.add(arena, "EXISTS (" ++ in_term ++ " AND t.field = 'media_tags' AND " ++
-            "t.term = ?N)", .{ .text = tag });
+            "t.term = ?N)", .{
+            .text = tag,
+        });
     }
 
     if (filter.kind) |kind| {
@@ -125,12 +132,20 @@ fn where_of(arena: std.mem.Allocator, filter: Filter, leave: Leave) !Where {
 
     if (filter.size) |size| {
         switch (size) {
-            .small => try where.add(arena, "m.size < ?N", .{ .int = mebibyte }),
+            .small => try where.add(arena, "m.size < ?N", .{
+                .int = mebibyte,
+            }),
             .medium => {
-                try where.add(arena, "m.size >= ?N", .{ .int = mebibyte });
-                try where.add(arena, "m.size <= ?N", .{ .int = 10 * mebibyte });
+                try where.add(arena, "m.size >= ?N", .{
+                    .int = mebibyte,
+                });
+                try where.add(arena, "m.size <= ?N", .{
+                    .int = 10 * mebibyte,
+                });
             },
-            .large => try where.add(arena, "m.size > ?N", .{ .int = 10 * mebibyte }),
+            .large => try where.add(arena, "m.size > ?N", .{
+                .int = 10 * mebibyte,
+            }),
         }
     }
 
@@ -142,13 +157,19 @@ fn where_of(arena: std.mem.Allocator, filter: Filter, leave: Leave) !Where {
         const pattern = try like_pattern(arena, filter.search);
 
         try where.add(arena, "(m.filename LIKE ?N ESCAPE '\\' OR EXISTS (" ++ title_value ++
-            " AND v.value LIKE ?N ESCAPE '\\'))", .{ .text = pattern });
+            " AND v.value LIKE ?N ESCAPE '\\'))", .{
+            .text = pattern,
+        });
     }
 
     if (leave != .date) {
         if (range_of(filter)) |range| {
-            try where.add(arena, "m.created_at >= ?N", .{ .int = range.start_ms });
-            try where.add(arena, "m.created_at < ?N", .{ .int = range.end_ms });
+            try where.add(arena, "m.created_at >= ?N", .{
+                .int = range.start_ms,
+            });
+            try where.add(arena, "m.created_at < ?N", .{
+                .int = range.end_ms,
+            });
         }
     }
 
@@ -176,7 +197,10 @@ fn like_pattern(arena: std.mem.Allocator, search: []const u8) ![]const u8 {
     return pattern.items;
 }
 
-const Range = struct { start_ms: i64, end_ms: i64 };
+const Range = struct {
+    start_ms: i64,
+    end_ms: i64,
+};
 
 fn range_of(filter: Filter) ?Range {
     std.debug.assert(filter.month == null or (filter.month.? >= 1 and filter.month.? <= 12));
@@ -196,7 +220,10 @@ fn range_of(filter: Filter) ?Range {
 
     std.debug.assert(end > start);
 
-    return .{ .start_ms = start * std.time.ms_per_day, .end_ms = end * std.time.ms_per_day };
+    return .{
+        .start_ms = start * std.time.ms_per_day,
+        .end_ms = end * std.time.ms_per_day,
+    };
 }
 
 /// Days from 1970-01-01 to the first of `month` in `year`.
@@ -331,7 +358,10 @@ pub fn all_count(connection: *db.Db, arena: std.mem.Allocator, filter: Filter) !
     return count(connection, arena, everywhere);
 }
 
-pub const TermCount = struct { term: []const u8, count: i64 };
+pub const TermCount = struct {
+    term: []const u8,
+    count: i64,
+};
 
 pub const Classification = enum { folders, tags };
 
@@ -370,7 +400,11 @@ pub fn term_counts(
     return found.items;
 }
 
-pub const Period = struct { year: i64, month: i64, count: i64 };
+pub const Period = struct {
+    year: i64,
+    month: i64,
+    count: i64,
+};
 
 /// The months the filter's files were uploaded in, newest first, ignoring its date.
 pub fn periods(connection: *db.Db, arena: std.mem.Allocator, filter: Filter) ![]const Period {
@@ -422,15 +456,25 @@ pub fn seed_record(connection: *db.Db, record: []const u8) !void {
 }
 
 test "range_of: a year, a month, December into the next year" {
-    const year = range_of(.{ .year = 2026 }).?;
-    const october = range_of(.{ .year = 2026, .month = 10 }).?;
-    const december = range_of(.{ .year = 2026, .month = 12 }).?;
+    const year = range_of(.{
+        .year = 2026,
+    }).?;
+    const october = range_of(.{
+        .year = 2026,
+        .month = 10,
+    }).?;
+    const december = range_of(.{
+        .year = 2026,
+        .month = 12,
+    }).?;
 
     try std.testing.expectEqual(@as(i64, 1_767_225_600_000), year.start_ms);
     try std.testing.expectEqual(@as(i64, 1_798_761_600_000), year.end_ms);
     try std.testing.expectEqual(@as(i64, 1_790_812_800_000), october.start_ms);
     try std.testing.expectEqual(year.end_ms, december.end_ms);
-    try std.testing.expect(range_of(.{ .month = 3 }) == null);
+    try std.testing.expect(range_of(.{
+        .month = 3,
+    }) == null);
 }
 
 test "like_pattern: wildcards in the search are taken literally" {

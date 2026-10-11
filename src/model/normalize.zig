@@ -28,11 +28,15 @@ pub fn apply(
         const entry = object.getPtr(def.name) orelse continue;
 
         switch (entry.*) {
-            .string => |text| entry.* = .{ .string = try lowered(arena, text) },
+            .string => |text| entry.* = .{
+                .string = try lowered(arena, text),
+            },
             .array => |*items| {
                 for (items.items) |*item| {
                     if (item.* == .string) {
-                        item.* = .{ .string = try lowered(arena, item.string) };
+                        item.* = .{
+                            .string = try lowered(arena, item.string),
+                        };
                     }
                 }
             },
@@ -60,21 +64,48 @@ test "emails are lowercased when the field says so, single and many" {
     const arena = arena_state.allocator();
 
     const defs = [_]Def{
-        .{ .name = "mail", .label = "Mail", .kind = "email", .options = .{
-            .email = .{ .lowercase = true },
-        } },
-        .{ .name = "cc", .label = "CC", .kind = "email", .many = true, .options = .{
-            .email = .{ .lowercase = true },
-        } },
-        .{ .name = "kept", .label = "Kept", .kind = "email" },
+        .{
+            .name = "mail",
+            .label = "Mail",
+            .kind = "email",
+            .options = .{
+                .email = .{
+                    .lowercase = true,
+                },
+            },
+        },
+        .{
+            .name = "cc",
+            .label = "CC",
+            .kind = "email",
+            .many = true,
+            .options = .{
+                .email = .{
+                    .lowercase = true,
+                },
+            },
+        },
+        .{
+            .name = "kept",
+            .label = "Kept",
+            .kind = "email",
+        },
     };
     var object: std.json.ObjectMap = .empty;
     var list = std.json.Array.init(arena);
 
-    try list.append(.{ .string = "One@X.io" });
-    try object.put(arena, "mail", .{ .string = "Ada@Example.COM" });
-    try object.put(arena, "cc", .{ .array = list });
-    try object.put(arena, "kept", .{ .string = "Keep@Case" });
+    try list.append(.{
+        .string = "One@X.io",
+    });
+    try object.put(arena, "mail", .{
+        .string = "Ada@Example.COM",
+    });
+    try object.put(arena, "cc", .{
+        .array = list,
+    });
+    try object.put(arena, "kept", .{
+        .string = "Keep@Case",
+    });
     try apply(&kinds.core, &defs, arena, &object);
     try std.testing.expectEqualStrings("ada@example.com", object.get("mail").?.string);
     try std.testing.expectEqualStrings("one@x.io", object.get("cc").?.array.items[0].string);

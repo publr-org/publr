@@ -15,7 +15,10 @@ pub const Caller = union(enum) {
     plugin: Plugin,
 
     /// A signed-in account and the names of the roles it holds.
-    pub const User = struct { id: []const u8, roles: []const []const u8 = &.{role.admin} };
+    pub const User = struct {
+        id: []const u8,
+        roles: []const []const u8 = &.{role.admin},
+    };
     /// A device acting for an account: the account's roles, narrowed by the device's scope.
     pub const Token = struct {
         id: []const u8,
@@ -25,7 +28,10 @@ pub const Caller = union(enum) {
         /// What the person approved it as.
         name: []const u8 = "",
     };
-    pub const Machine = struct { id: []const u8, scopes: []const []const u8 };
+    pub const Machine = struct {
+        id: []const u8,
+        scopes: []const []const u8,
+    };
     pub const Plugin = struct {
         name: []const u8,
         capabilities: []const []const u8,
@@ -168,8 +174,17 @@ fn contains(list: []const []const u8, item: []const u8) bool {
 
 test "authentication and user id per caller kind" {
     const anon: Caller = .anonymous;
-    const user: Caller = .{ .user = .{ .id = "u_1" } };
-    const token: Caller = .{ .token = .{ .id = "t_1", .user_id = "u_2" } };
+    const user: Caller = .{
+        .user = .{
+            .id = "u_1",
+        },
+    };
+    const token: Caller = .{
+        .token = .{
+            .id = "t_1",
+            .user_id = "u_2",
+        },
+    };
     const system: Caller = .system;
 
     try std.testing.expect(!anon.is_authenticated());
@@ -189,9 +204,23 @@ test "authentication and user id per caller kind" {
 }
 
 test "capabilities: system has all, plugins and machine tokens only listed ones, users none" {
-    const plugin: Caller = .{ .plugin = .{ .name = "drafts", .capabilities = &.{"record.read"} } };
-    const machine: Caller = .{ .machine = .{ .id = "m_1", .scopes = &.{"record"} } };
-    const user: Caller = .{ .user = .{ .id = "u_1" } };
+    const plugin: Caller = .{
+        .plugin = .{
+            .name = "drafts",
+            .capabilities = &.{"record.read"},
+        },
+    };
+    const machine: Caller = .{
+        .machine = .{
+            .id = "m_1",
+            .scopes = &.{"record"},
+        },
+    };
+    const user: Caller = .{
+        .user = .{
+            .id = "u_1",
+        },
+    };
     const system: Caller = .system;
 
     try std.testing.expect(plugin.has_capability("record.read"));

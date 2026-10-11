@@ -157,7 +157,9 @@ fn capture(
 
     const result = try std.process.run(init.arena.allocator(), init.io, .{
         .argv = argv[0 .. args.len + 1],
-        .cwd = .{ .path = dir },
+        .cwd = .{
+            .path = dir,
+        },
         .stdout_limit = .limited(output_bytes_max),
         .stderr_limit = .limited(output_bytes_max),
     });

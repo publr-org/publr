@@ -29,9 +29,13 @@ pub const Providers = struct {
     /// A login page reads it while rendering; opening the page changes nothing.
     pub const allow_frontmatter_calls = true;
     pub const In = struct {};
-    pub const Out = struct { providers: []const Offered };
+    pub const Out = struct {
+        providers: []const Offered,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .providers = &.{} };
+    pub const example_out: Out = .{
+        .providers = &.{},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{};
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .providers = "Each offered provider, in name order: `name` (`github`), `label` " ++
@@ -42,7 +46,9 @@ pub const Providers = struct {
     pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
 
-        return .{ .providers = try offered(ctx.arena, registry.sign_in_providers) };
+        return .{
+            .providers = try offered(ctx.arena, registry.sign_in_providers),
+        };
     }
 };
 

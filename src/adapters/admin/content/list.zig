@@ -119,7 +119,10 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     const list_panel = try admin.render.view(arena, views.ContentList, props);
 
     try admin.screen_with(&session, .{
-        .content = .{ .view_id = view_id, .filters = effective },
+        .content = .{
+            .view_id = view_id,
+            .filters = effective,
+        },
     }, .ok, views.Content, .{
         .title = props.title,
         .has_types = has_record_type(page.types),
@@ -176,7 +179,9 @@ fn redirect_by_kind(session: *Session, address: Filters) Error!bool {
     }
 
     const handle = address.types[0];
-    const got = registry.SDK.dispatch(&session.ctx, types.Get, .{ .type = handle }) catch |err| {
+    const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
+        .type = handle,
+    }) catch |err| {
         try admin.fail(session, err, back);
 
         return true;
@@ -208,7 +213,9 @@ fn saved_of(session: *Session, view_id: ?[]const u8) Error!?saved_views.Saved {
 
     std.debug.assert(id.len > 0);
 
-    const got = registry.SDK.dispatch(&session.ctx, saved_views.Get, .{ .id = id }) catch |err| {
+    const got = registry.SDK.dispatch(&session.ctx, saved_views.Get, .{
+        .id = id,
+    }) catch |err| {
         try admin.fail(session, err, back);
 
         return null;
@@ -266,7 +273,10 @@ fn default_base(
     std.debug.assert(listed.len <= 4096);
 
     if (effective.type_view) {
-        return .{ .types = effective.types, .type_view = true };
+        return .{
+            .types = effective.types,
+            .type_view = true,
+        };
     }
 
     for (built_in_views) |candidate| {
@@ -278,11 +288,26 @@ fn default_base(
     return .{};
 }
 
-const built_in_views = [_]struct { name: []const u8, filter: Filters }{
-    .{ .name = "Recent", .filter = admin.nav.recent },
-    .{ .name = "Created by me", .filter = admin.nav.created_by_me },
-    .{ .name = "Updated by me", .filter = admin.nav.updated_by_me },
-    .{ .name = "Changed", .filter = admin.nav.changed_only },
+const built_in_views = [_]struct {
+    name: []const u8,
+    filter: Filters,
+}{
+    .{
+        .name = "Recent",
+        .filter = admin.nav.recent,
+    },
+    .{
+        .name = "Created by me",
+        .filter = admin.nav.created_by_me,
+    },
+    .{
+        .name = "Updated by me",
+        .filter = admin.nav.updated_by_me,
+    },
+    .{
+        .name = "Changed",
+        .filter = admin.nav.changed_only,
+    },
 };
 
 /// Where "Clear changes" goes: the saved view as saved, or the view the filters rest on.

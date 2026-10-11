@@ -42,7 +42,9 @@ pub fn convert(
         var array = std.json.Array.init(arena);
         array.append(value) catch return error.OutOfMemory;
 
-        return .{ .array = array };
+        return .{
+            .array = array,
+        };
     }
 
     return convert_scalar(known, arena, from, to, value);
@@ -98,7 +100,9 @@ fn coerce(arena: std.mem.Allocator, storage: kinds.Storage, value: Value) Error!
             },
             .float => |number| if (std.math.isFinite(number) and number == @trunc(number) and
                 number >= -0x1p63 and number < 0x1p63)
-                .{ .integer = @intFromFloat(number) }
+                .{
+                    .integer = @intFromFloat(number),
+                }
             else
                 error.DataDoesNotFit,
             .integer => value,
@@ -108,15 +112,23 @@ fn coerce(arena: std.mem.Allocator, storage: kinds.Storage, value: Value) Error!
             .string => |text| .{
                 .float = try finite_number(text),
             },
-            .integer => |number| .{ .float = @floatFromInt(number) },
+            .integer => |number| .{
+                .float = @floatFromInt(number),
+            },
             .float => value,
             else => error.DataDoesNotFit,
         },
         .text, .long => switch (value) {
             .string => value,
-            .integer => |number| .{ .string = try print(arena, "{d}", .{number}) },
-            .float => |number| .{ .string = try print(arena, "{d}", .{number}) },
-            .bool => |flag| .{ .string = if (flag) "true" else "false" },
+            .integer => |number| .{
+                .string = try print(arena, "{d}", .{number}),
+            },
+            .float => |number| .{
+                .string = try print(arena, "{d}", .{number}),
+            },
+            .bool => |flag| .{
+                .string = if (flag) "true" else "false",
+            },
             else => error.DataDoesNotFit,
         },
         .ref, .bool, .none => error.NotConvertible,
@@ -146,51 +158,100 @@ test "values convert when they fit and are refused when they do not" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const known = &kinds.core;
-    const text: field.Def = .{ .name = "n", .label = "N", .kind = "string" };
-    const integer: field.Def = .{ .name = "n", .label = "N", .kind = "integer" };
+    const text: field.Def = .{
+        .name = "n",
+        .label = "N",
+        .kind = "string",
+    };
+    const integer: field.Def = .{
+        .name = "n",
+        .label = "N",
+        .kind = "integer",
+    };
     const select: field.Def = .{
         .name = "n",
         .label = "N",
         .kind = "select",
-        .options = .{ .choices = &.{"a"} },
+        .options = .{
+            .choices = &.{"a"},
+        },
     };
-    const slug: field.Def = .{ .name = "n", .label = "N", .kind = "slug" };
+    const slug: field.Def = .{
+        .name = "n",
+        .label = "N",
+        .kind = "slug",
+    };
 
-    const forty_two = try convert(known, arena, text, integer, .{ .string = "42" });
+    const forty_two = try convert(known, arena, text, integer, .{
+        .string = "42",
+    });
     try std.testing.expectEqual(@as(i64, 42), forty_two.integer);
     try std.testing.expectError(
         error.DataDoesNotFit,
-        convert(known, arena, text, integer, .{ .string = "x" }),
+        convert(known, arena, text, integer, .{
+            .string = "x",
+        }),
     );
     try std.testing.expectError(
         error.DataDoesNotFit,
-        convert(known, arena, text, select, .{ .string = "b" }),
+        convert(known, arena, text, select, .{
+            .string = "b",
+        }),
     );
     try std.testing.expectError(
         error.DataDoesNotFit,
-        convert(known, arena, text, slug, .{ .string = "Not A Slug" }),
+        convert(known, arena, text, slug, .{
+            .string = "Not A Slug",
+        }),
     );
 
-    const as_text = try convert(known, arena, integer, text, .{ .integer = 7 });
+    const as_text = try convert(known, arena, integer, text, .{
+        .integer = 7,
+    });
     try std.testing.expectEqualStrings("7", as_text.string);
 
-    const one: field.Def = .{ .name = "r", .label = "R", .kind = "reference" };
-    const many: field.Def = .{ .name = "r", .label = "R", .kind = "reference", .many = true };
-    const wrapped = try convert(known, arena, one, many, .{ .string = "t1" });
+    const one: field.Def = .{
+        .name = "r",
+        .label = "R",
+        .kind = "reference",
+    };
+    const many: field.Def = .{
+        .name = "r",
+        .label = "R",
+        .kind = "reference",
+        .many = true,
+    };
+    const wrapped = try convert(known, arena, one, many, .{
+        .string = "t1",
+    });
     try std.testing.expectEqual(@as(usize, 1), wrapped.array.items.len);
 
     var two = std.json.Array.init(arena);
-    try two.append(.{ .string = "a" });
-    try two.append(.{ .string = "b" });
+    try two.append(.{
+        .string = "a",
+    });
+    try two.append(.{
+        .string = "b",
+    });
     try std.testing.expectError(
         error.DataDoesNotFit,
-        convert(known, arena, many, one, .{ .array = two }),
+        convert(known, arena, many, one, .{
+            .array = two,
+        }),
     );
 }
 
 test "numeric conversion refuses out-of-range floats and preserves absent values" {
-    const number: field.Def = .{ .name = "n", .label = "N", .kind = "number" };
-    const integer: field.Def = .{ .name = "n", .label = "N", .kind = "integer" };
+    const number: field.Def = .{
+        .name = "n",
+        .label = "N",
+        .kind = "number",
+    };
+    const integer: field.Def = .{
+        .name = "n",
+        .label = "N",
+        .kind = "integer",
+    };
 
     for ([_]f64{ 0x1p63, -0x1p64, std.math.inf(f64), std.math.nan(f64), 1.5 }) |value| {
         try std.testing.expectError(

@@ -30,9 +30,13 @@ pub const List = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { roles: []const role.Role };
+    pub const Out = struct {
+        roles: []const role.Role,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .roles = &role.core };
+    pub const example_out: Out = .{
+        .roles = &role.core,
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .roles = "name, label, description and grants, in the order declared",
     };
@@ -41,7 +45,9 @@ pub const List = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.now_ms >= 0);
 
-        return .{ .roles = registry.SDK.roles_in_force(ctx) };
+        return .{
+            .roles = registry.SDK.roles_in_force(ctx),
+        };
     }
 };
 

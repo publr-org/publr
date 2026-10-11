@@ -47,7 +47,9 @@ fn call(request: *Request, response: *Response, ctx: *Context) Error!void {
 
         if (same_namespace and same_verb) {
             if (is_read and Operation.kind != .read) {
-                return response.json(.method_not_allowed, .{ .@"error" = "use POST" });
+                return response.json(.method_not_allowed, .{
+                    .@"error" = "use POST",
+                });
             }
 
             return invoke(request, response, ctx, identity.caller, Operation, is_read);
@@ -78,11 +80,15 @@ fn invoke_runtime(
     const found = sandboxed.find(name) orelse return not_found(response);
 
     if (is_read and found.kind != .read) {
-        return response.json(.method_not_allowed, .{ .@"error" = "use POST" });
+        return response.json(.method_not_allowed, .{
+            .@"error" = "use POST",
+        });
     }
 
     const input = runtime_input(request, ctx.arena, found, is_read) orelse {
-        return response.json(.bad_request, .{ .@"error" = "invalid_input" });
+        return response.json(.bad_request, .{
+            .@"error" = "invalid_input",
+        });
     };
     var sdk_ctx = identity_module.context(project, ctx.arena, caller);
     const output = registry.SDK.call_json(&sdk_ctx, name, input) catch |err| {
@@ -132,7 +138,9 @@ fn invoke(
     else
         parse_body(Operation.In, ctx.arena, request.body);
     const in = parsed orelse {
-        return response.json(.bad_request, .{ .@"error" = "invalid_input" });
+        return response.json(.bad_request, .{
+            .@"error" = "invalid_input",
+        });
     };
     var sdk_ctx = identity_module.context(Project.of(ctx), ctx.arena, caller);
     const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch |err| {
@@ -210,7 +218,9 @@ fn not_found(response: *Response) Error!void {
     std.debug.assert(response.headers_len <= 32);
     std.debug.assert(response.body.len == 0);
 
-    return response.json(.not_found, .{ .@"error" = "unknown_operation" });
+    return response.json(.not_found, .{
+        .@"error" = "unknown_operation",
+    });
 }
 
 const routes = @import("../server/routes.zig");

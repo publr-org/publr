@@ -27,19 +27,36 @@ const text_rows: f64 = 8;
 const json_rows: f64 = 6;
 
 /// A record a reference points at, resolved once so every card can name it.
-pub const Referenced = struct { id: []const u8, record: Record, type_name: []const u8 };
+pub const Referenced = struct {
+    id: []const u8,
+    record: Record,
+    type_name: []const u8,
+};
 
 /// A record type a reference field may point at.
-pub const TypeOption = struct { handle: []const u8, name: []const u8 };
+pub const TypeOption = struct {
+    handle: []const u8,
+    name: []const u8,
+};
 
 /// The record types the reference field at `path` (`tags`, `faq.link`) may point at.
-pub const PathTypes = struct { path: []const u8, types: []const TypeOption };
+pub const PathTypes = struct {
+    path: []const u8,
+    types: []const TypeOption,
+};
 
 /// A term of the taxonomy a terms field draws from, in tree order.
-pub const TermOption = struct { id: []const u8, title: []const u8, depth: u32 };
+pub const TermOption = struct {
+    id: []const u8,
+    title: []const u8,
+    depth: u32,
+};
 
 /// The terms the terms field at `path` may select from.
-pub const PathTerms = struct { path: []const u8, terms: []const TermOption };
+pub const PathTerms = struct {
+    path: []const u8,
+    terms: []const TermOption,
+};
 
 /// How many target types a dropdown lists before it gets a search box.
 pub const search_from: u32 = 8;
@@ -66,9 +83,16 @@ pub const Context = struct {
 };
 
 /// Why removing a virtual field's record deletes it, by field name.
-pub const DeleteNote = struct { field: []const u8, note: []const u8 };
+pub const DeleteNote = struct {
+    field: []const u8,
+    note: []const u8,
+};
 
-const Option = struct { value: []const u8, label: []const u8, selected: bool };
+const Option = struct {
+    value: []const u8,
+    label: []const u8,
+    selected: bool,
+};
 
 /// One value as the form shows it, before it becomes an item, a part or a cell.
 const Instance = struct {
@@ -281,7 +305,9 @@ fn money_entries(context: Context, current: ?Value) Error![]const model.money.En
     const entries = try context.arena.alloc(model.money.Entry, held.len);
 
     for (held, entries) |code, *entry| {
-        entry.* = .{ .code = code };
+        entry.* = .{
+            .code = code,
+        };
     }
 
     return entries;
@@ -549,8 +575,16 @@ fn fill_boolean(context: Context, instance: *Instance, def: Def, current: ?Value
         .radio => {
             const options = try context.arena.alloc(Option, 2);
 
-            options[0] = .{ .value = "1", .label = yes, .selected = on };
-            options[1] = .{ .value = "0", .label = no, .selected = current != null and !on };
+            options[0] = .{
+                .value = "1",
+                .label = yes,
+                .selected = on,
+            };
+            options[1] = .{
+                .value = "0",
+                .label = no,
+                .selected = current != null and !on,
+            };
             instance.control = "radios";
             instance.options = options;
         },
@@ -633,7 +667,11 @@ fn rating_options(arena: std.mem.Allocator, def: Def, current: ?Value) Error![]c
 
         const picked = chosen != null and chosen.? == star;
 
-        option.* = .{ .value = text, .label = text, .selected = picked };
+        option.* = .{
+            .value = text,
+            .label = text,
+            .selected = picked,
+        };
     }
 
     return options;
@@ -696,7 +734,11 @@ fn term_options(context: Context, path: []const u8, current: ?Value) Error![]con
     const terms = path_terms(context, path);
     const options = try context.arena.alloc(Option, terms.len + 1);
 
-    options[0] = .{ .value = "", .label = "", .selected = chosen == null };
+    options[0] = .{
+        .value = "",
+        .label = "",
+        .selected = chosen == null,
+    };
 
     for (terms, 1..) |term, index| {
         options[index] = .{
@@ -909,7 +951,10 @@ fn type_items(context: Context, path: []const u8) Error![]const views.TargetsIte
     const items = try context.arena.alloc(views.TargetsItem, types.len);
 
     for (types, 0..) |option, index| {
-        items[index] = .{ .handle = option.handle, .name = option.name };
+        items[index] = .{
+            .handle = option.handle,
+            .name = option.name,
+        };
     }
 
     return items;
@@ -961,7 +1006,11 @@ fn choice_options(arena: std.mem.Allocator, def: Def, current: ?Value) Error![]c
     };
     const options = try arena.alloc(Option, def.options.choices.len + 1);
 
-    options[0] = .{ .value = "", .label = "", .selected = chosen == null };
+    options[0] = .{
+        .value = "",
+        .label = "",
+        .selected = chosen == null,
+    };
 
     const labels = def.options.labels;
 

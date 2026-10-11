@@ -103,7 +103,9 @@ fn static_island(
     try response.set_header("Access-Control-Allow-Origin", "*");
 
     if (build.built_island(app, ctx.arena, key)) |html| {
-        const cache: apps_adapter.Cache = .{ .max_age = found.max_age };
+        const cache: apps_adapter.Cache = .{
+            .max_age = found.max_age,
+        };
         const url = try std.fmt.allocPrint(ctx.arena, "{s}{s}", .{ islands_prefix, key });
 
         try edge.tag(response, app, ctx.arena, url);
@@ -139,7 +141,9 @@ fn dynamic_island(
         return response.text(.forbidden, "Forbidden");
     }
 
-    try apps_adapter.serve(response, app, .render, .{ .max_age = found.max_age });
+    try apps_adapter.serve(response, app, .render, .{
+        .max_age = found.max_age,
+    });
     try response.set_header("Vary", "Cookie");
 
     const identity = identity_module.identify(request, ctx.arena, project);

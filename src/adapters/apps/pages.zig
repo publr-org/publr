@@ -184,7 +184,10 @@ fn render(
 
     if (!route.live) {
         if (build.built_page(app, ctx.arena, target.path)) |html| {
-            const cache: apps_adapter.Cache = .{ .max_age = page_max_age, .stale = page_stale };
+            const cache: apps_adapter.Cache = .{
+                .max_age = page_max_age,
+                .stale = page_stale,
+            };
 
             try edge.tag(response, app, ctx.arena, target.path);
 
@@ -206,7 +209,9 @@ fn render(
         .project = project,
         .app = app,
         .request = request,
-        .params = .{ .slug = matched.slug },
+        .params = .{
+            .slug = matched.slug,
+        },
         .live = route.live,
         .caller = caller,
         .visitor_id = visitor_id,
@@ -260,7 +265,10 @@ pub fn not_found(
     }
 
     if (build.built_404(app, ctx.arena)) |html| {
-        const cache: apps_adapter.Cache = .{ .max_age = page_max_age, .stale = page_stale };
+        const cache: apps_adapter.Cache = .{
+            .max_age = page_max_age,
+            .stale = page_stale,
+        };
 
         // Never indexed: whatever changes, a page might now live where it answered.
         try edge.tag(response, app, ctx.arena, null);

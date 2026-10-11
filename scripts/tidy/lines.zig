@@ -10,13 +10,34 @@ pub const Rule = struct {
 };
 
 pub const rules = [_]Rule{
-    .{ .message = "line is over 100 columns", .check = line_too_long },
-    .{ .message = "trailing whitespace", .check = trailing_whitespace },
-    .{ .message = "top-level var (global mutable state)", .check = top_level_var },
-    .{ .message = "usize in a declaration: use u32/u64", .check = sized_declaration },
-    .{ .message = "empty catch swallows an error", .check = swallowed_error },
-    .{ .message = "single-letter identifier: use a full name", .check = short_identifier },
-    .{ .message = "abbreviated identifier: use a full name", .check = abbreviated_identifier },
+    .{
+        .message = "line is over 100 columns",
+        .check = line_too_long,
+    },
+    .{
+        .message = "trailing whitespace",
+        .check = trailing_whitespace,
+    },
+    .{
+        .message = "top-level var (global mutable state)",
+        .check = top_level_var,
+    },
+    .{
+        .message = "usize in a declaration: use u32/u64",
+        .check = sized_declaration,
+    },
+    .{
+        .message = "empty catch swallows an error",
+        .check = swallowed_error,
+    },
+    .{
+        .message = "single-letter identifier: use a full name",
+        .check = short_identifier,
+    },
+    .{
+        .message = "abbreviated identifier: use a full name",
+        .check = abbreviated_identifier,
+    },
 };
 
 const banned_abbreviations = [_][]const u8{

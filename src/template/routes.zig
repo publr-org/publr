@@ -16,7 +16,10 @@ pub const Route = struct {
 };
 
 /// A route matched against a path: the route and its `:slug`.
-pub const Match = struct { route: *const Route, slug: ?[]const u8 = null };
+pub const Match = struct {
+    route: *const Route,
+    slug: ?[]const u8 = null,
+};
 
 pub const pattern_len_max: u32 = 1024;
 
@@ -185,10 +188,30 @@ test "route patterns follow the content/ tree, index dropped, [x] to :x, [...x] 
 
 test "routes sort static, then dynamic, then catch-all, each by pattern" {
     var routes = [_]Route{
-        .{ .pattern = "/docs/*", .kind = .catch_all, .template = 0, .live = false },
-        .{ .pattern = "/posts/:slug", .kind = .dynamic, .template = 1, .live = false },
-        .{ .pattern = "/posts", .kind = .static, .template = 2, .live = false },
-        .{ .pattern = "/", .kind = .static, .template = 3, .live = false },
+        .{
+            .pattern = "/docs/*",
+            .kind = .catch_all,
+            .template = 0,
+            .live = false,
+        },
+        .{
+            .pattern = "/posts/:slug",
+            .kind = .dynamic,
+            .template = 1,
+            .live = false,
+        },
+        .{
+            .pattern = "/posts",
+            .kind = .static,
+            .template = 2,
+            .live = false,
+        },
+        .{
+            .pattern = "/",
+            .kind = .static,
+            .template = 3,
+            .live = false,
+        },
     };
     std.mem.sort(Route, &routes, {}, route_less_than);
     try std.testing.expectEqualStrings("/", routes[0].pattern);

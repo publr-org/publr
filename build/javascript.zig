@@ -40,13 +40,18 @@ pub fn tests(
         .link_libc = true,
     });
     add(builder, module);
-    const parser = builder.dependency("pjsx", .{ .target = target, .optimize = optimize });
+    const parser = builder.dependency("pjsx", .{
+        .target = target,
+        .optimize = optimize,
+    });
     module.addImport("pjsx_syntax", builder.createModule(.{
         .root_source_file = parser.path("src/syntax.zig"),
         .target = target,
         .optimize = optimize,
     }));
-    const artifact = builder.addTest(.{ .root_module = module });
+    const artifact = builder.addTest(.{
+        .root_module = module,
+    });
     const run = builder.addRunArtifact(artifact);
     builder.step(
         "test-templates",

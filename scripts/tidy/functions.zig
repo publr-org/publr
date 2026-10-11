@@ -14,6 +14,8 @@ const FunctionFrame = struct {
     start_line: u32,
     indent: u32,
     body_lines: u32 = 0,
+    /// Lines that only lay out a struct, left out of the length.
+    layout_lines: u32 = 0,
     assertions: u32 = 0,
     is_container: bool,
 };
@@ -56,7 +58,9 @@ pub fn check_assertion_density(
 
         if (depth > 0) {
             const frame = &frames[depth - 1];
-            if (trimmed.len > 0) {
+            if (trimmed.len > 0 and layout_only(trimmed)) {
+                frame.layout_lines += 1;
+            } else if (trimmed.len > 0) {
                 frame.body_lines += 1;
             }
             if (std.mem.indexOf(u8, line, "assert(") != null) {
@@ -87,6 +91,36 @@ pub fn check_assertion_density(
     }
 
     return violations;
+}
+
+/// A line that only lays out a struct (one field, or closing braces): struct values stand
+/// one field per line (`literals.zig`), so the length limits count logic, not layout.
+fn layout_only(trimmed: []const u8) bool {
+    std.debug.assert(trimmed.len > 0);
+
+    const closes = std.mem.trimEnd(u8, trimmed, "})];, ");
+
+    if (closes.len == 0) {
+        return true;
+    }
+
+    if (trimmed[0] != '.' or trimmed.len < 2 or !std.ascii.isAlphabetic(trimmed[1])) {
+        return false;
+    }
+
+    const assigns = std.mem.indexOf(u8, trimmed, " = ") != null;
+    const ends = std.mem.endsWith(u8, trimmed, ",") or std.mem.endsWith(u8, trimmed, "{");
+
+    return assigns and ends;
+}
+
+test "layout lines are a struct's fields and closing braces" {
+    try std.testing.expect(layout_only(".name = \"x\","));
+    try std.testing.expect(layout_only(".group = .{"));
+    try std.testing.expect(layout_only("}},"));
+    try std.testing.expect(layout_only("});"));
+    try std.testing.expect(!layout_only("const count = 1;"));
+    try std.testing.expect(!layout_only("return .{"));
 }
 
 /// An assertion that cannot fail or restates what the compiler checks: padding.
@@ -172,14 +206,16 @@ fn report_function(
         }
     }
 
-    if (end_line - frame.start_line > function_lines_max) {
+    const length = end_line - frame.start_line - frame.layout_lines;
+
+    if (length > function_lines_max) {
         violations += 1;
 
         if (report) {
             std.debug.print("{s}:{d}: function is {d} lines, maximum {d}{s}\n", .{
                 path,
                 frame.start_line,
-                end_line - frame.start_line,
+                length,
                 function_lines_max,
                 hint,
             });

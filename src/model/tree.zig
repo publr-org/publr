@@ -7,7 +7,10 @@ pub const nodes_max: u32 = 10_000;
 pub const depth_max: u32 = 16;
 pub const none: u32 = std.math.maxInt(u32);
 
-pub const Placed = struct { index: u32, depth: u32 };
+pub const Placed = struct {
+    index: u32,
+    depth: u32,
+};
 
 pub const Error = error{ OutOfMemory, TooMany };
 
@@ -82,7 +85,10 @@ fn walk(
     var root = roots_first;
 
     while (root != none) : (root = next_sibling[root]) {
-        stack[stack_len] = .{ .index = root, .depth = 0 };
+        stack[stack_len] = .{
+            .index = root,
+            .depth = 0,
+        };
         stack_len += 1;
 
         while (stack_len > 0) {
@@ -132,7 +138,10 @@ fn push_children(
             return error.TooMany;
         }
 
-        stack[stack_len.*] = .{ .index = reversed[children], .depth = parent.depth + 1 };
+        stack[stack_len.*] = .{
+            .index = reversed[children],
+            .depth = parent.depth + 1,
+        };
         stack_len.* += 1;
     }
 }

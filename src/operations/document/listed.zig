@@ -179,12 +179,16 @@ test "listed documents: read with their page, the same as one read each, in list
     try std.testing.expectEqual(@as(usize, 3), listed.records.len);
 
     for (listed.records, listed.documents) |record, text| {
-        const one = try registry.SDK.dispatch(&system, records.Get, .{ .id = record.id });
+        const one = try registry.SDK.dispatch(&system, records.Get, .{
+            .id = record.id,
+        });
 
         try std.testing.expectEqualStrings(one.document, text);
     }
 
-    const plain = try registry.SDK.dispatch(&system, records.List, .{ .type = "note" });
+    const plain = try registry.SDK.dispatch(&system, records.List, .{
+        .type = "note",
+    });
     try std.testing.expectEqual(@as(usize, 0), plain.documents.len);
     try std.testing.expect(first.id.len > 0);
 }

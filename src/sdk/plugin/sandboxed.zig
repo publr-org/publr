@@ -43,7 +43,10 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
                 continue;
             }
 
-            entries = entries ++ &[_]Entry{.{ .stage = .operation, .declaration = Operation }};
+            entries = entries ++ &[_]Entry{.{
+                .stage = .operation,
+                .declaration = Operation,
+            }};
         }
 
         for (contract.middleware_of(Plugin)) |Middleware| {
@@ -346,7 +349,11 @@ fn asks_for(comptime Plugin: type, comptime key: []const u8) bool {
 
 test "what the sandbox cannot run is left out and named, never refused" {
     const Plugin = struct {
-        pub const manifest = .{ .name = "tables", .version = "0.1.0", .summary = "Own tables" };
+        pub const manifest = .{
+            .name = "tables",
+            .version = "0.1.0",
+            .summary = "Own tables",
+        };
         pub const schema_sql = "CREATE TABLE tables_rows (id INTEGER PRIMARY KEY)";
         pub const policies = [_]type{};
     };

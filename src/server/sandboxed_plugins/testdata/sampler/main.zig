@@ -13,9 +13,15 @@ const publr = @import("publr");
 const sdk = publr.sdk;
 const PluginCtx = publr.plugin.PluginCtx;
 const record = publr.operations.record;
-const notes = publr.records.of(struct { note: []const u8 }, "sample_note");
-const logs = publr.records.of(struct { line: []const u8 }, "sample_log");
-const tallies = publr.internal.of(struct { word: []const u8 }, "tally");
+const notes = publr.records.of(struct {
+    note: []const u8,
+}, "sample_note");
+const logs = publr.records.of(struct {
+    line: []const u8,
+}, "sample_log");
+const tallies = publr.internal.of(struct {
+    word: []const u8,
+}, "tally");
 
 pub const manifest: publr.plugin.Manifest = .{
     .name = "sampler",
@@ -34,21 +40,42 @@ pub const content_types = [_]publr.plugin.ContentTypeDef{
         .handle = "sample_note",
         .name = "Sample note",
         .title_field = "note",
-        .fields = &.{.{ .name = "note", .label = "Note", .kind = "string", .required = true }},
+        .fields = &.{.{
+            .name = "note",
+            .label = "Note",
+            .kind = "string",
+            .required = true,
+        }},
     },
     .{
         .handle = "sample_log",
         .name = "Sample log",
         .title_field = "line",
-        .fields = &.{.{ .name = "line", .label = "Line", .kind = "string", .required = true }},
+        .fields = &.{.{
+            .name = "line",
+            .label = "Line",
+            .kind = "string",
+            .required = true,
+        }},
     },
 };
 
 pub const custom_fields = [_]publr.plugin.ContentTypeDef{.{
     .handle = "sampler_profile",
     .name = "Sampler profile",
-    .fields = &.{.{ .name = "motto", .label = "Motto", .kind = "string" }},
-    .group = .{ .location = &.{.{ .rules = &.{.{ .field = "destination", .value = "user" }} }} },
+    .fields = &.{.{
+        .name = "motto",
+        .label = "Motto",
+        .kind = "string",
+    }},
+    .group = .{
+        .location = &.{.{
+            .rules = &.{.{
+                .field = "destination",
+                .value = "user",
+            }},
+        }},
+    },
 }};
 
 pub const operations = [_]type{ Hello, Echo, Note, Logs, Page };
@@ -61,10 +88,18 @@ pub const pages = [_]publr.plugin.Page{.{
 }};
 
 pub const internal_records = [_]publr.plugin.InternalCollection{
-    .{ .kind = "tally", .indexed = &.{"word"}, .append_only = true, .shared = true },
+    .{
+        .kind = "tally",
+        .indexed = &.{"word"},
+        .append_only = true,
+        .shared = true,
+    },
 };
 
-pub const routes = [_]publr.plugin.Route{.{ .path = "/admin/sampler", .handler = &settings }};
+pub const routes = [_]publr.plugin.Route{.{
+    .path = "/admin/sampler",
+    .handler = &settings,
+}};
 
 pub const settings_pages = [_]publr.plugin.SettingsPage{.{
     .label = "Sampler",
@@ -82,12 +117,17 @@ pub const State = struct {
     pub fn init(state: *State, process: publr.plugin.Process) anyerror!void {
         std.debug.assert(process.db_path.len > 0);
 
-        state.* = .{ .db_path = try process.arena.dupe(u8, process.db_path) };
+        state.* = .{
+            .db_path = try process.arena.dupe(u8, process.db_path),
+        };
     }
 };
 
 pub const operator_commands = [_]publr.plugin.OperatorCommand{
-    .{ .name = "ping", .handler = &ping },
+    .{
+        .name = "ping",
+        .handler = &ping,
+    },
 };
 
 /// `publr --sampler-in <folder> <command>`: the command runs in that folder.
@@ -130,7 +170,11 @@ fn ping(
 
     state.pings += 1;
 
-    try response.json(.ok, .{ .port = state.port, .db_path = state.db_path, .pings = state.pings });
+    try response.json(.ok, .{
+        .port = state.port,
+        .db_path = state.db_path,
+        .pings = state.pings,
+    });
 }
 
 /// How many notes there are, for whoever may read them.
@@ -181,10 +225,16 @@ pub const Hello = struct {
     pub const details = "Anyone may call it, signed in or not.";
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
-    pub const In = struct { who: []const u8 = "world" };
-    pub const Out = struct { text: []const u8 };
+    pub const In = struct {
+        who: []const u8 = "world",
+    };
+    pub const Out = struct {
+        text: []const u8,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .text = "hello, world" };
+    pub const example_out: Out = .{
+        .text = "hello, world",
+    };
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
@@ -197,11 +247,16 @@ pub const Hello = struct {
             return error.OutOfMemory;
         };
 
-        return .{ .text = text };
+        return .{
+            .text = text,
+        };
     }
 };
 
-const Point = struct { across: i64, down: i64 };
+const Point = struct {
+    across: i64,
+    down: i64,
+};
 
 /// Every shape a field may take, answered back as it arrived.
 pub const Echo = struct {
@@ -220,7 +275,12 @@ pub const Echo = struct {
         points: []const Point = &.{},
     };
     pub const Out = In;
-    pub const example: In = .{ .text = "a", .count = 2, .ratio = 0.5, .flag = true };
+    pub const example: In = .{
+        .text = "a",
+        .count = 2,
+        .ratio = 0.5,
+        .flag = true,
+    };
     pub const example_out: Out = example;
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
@@ -236,10 +296,20 @@ pub const Note = struct {
     pub const description = "Keep a note, in capitals";
     pub const details = "Administrators may call it. The before hook puts the note in capitals.";
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { note: []const u8 };
-    pub const Out = struct { note: []const u8, total: u32 };
-    pub const example: In = .{ .note = "hello" };
-    pub const example_out: Out = .{ .note = "HELLO", .total = 1 };
+    pub const In = struct {
+        note: []const u8,
+    };
+    pub const Out = struct {
+        note: []const u8,
+        total: u32,
+    };
+    pub const example: In = .{
+        .note = "hello",
+    };
+    pub const example_out: Out = .{
+        .note = "HELLO",
+        .total = 1,
+    };
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
@@ -248,16 +318,28 @@ pub const Note = struct {
             return error.Invalid;
         }
 
-        _ = try notes.create(ctx, .{ .note = in.note }, .{});
-        _ = try tallies.create(ctx, .{ .word = in.note });
+        _ = try notes.create(ctx, .{
+            .note = in.note,
+        }, .{});
+        _ = try tallies.create(ctx, .{
+            .word = in.note,
+        });
 
-        const counted = try tallies.find(ctx, .{ .word = in.note }, .{});
+        const counted = try tallies.find(ctx, .{
+            .word = in.note,
+        }, .{});
 
         std.debug.assert(counted.len > 0);
 
-        const all = try ctx.call(record.List, .{ .type = "sample_note", .limit = 200 });
+        const all = try ctx.call(record.List, .{
+            .type = "sample_note",
+            .limit = 200,
+        });
 
-        return .{ .note = in.note, .total = @intCast(all.records.len) };
+        return .{
+            .note = in.note,
+            .total = @intCast(all.records.len),
+        };
     }
 };
 
@@ -266,14 +348,20 @@ pub const Logs = struct {
     pub const description = "The lines the notes' notices left";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { lines: []const []const u8 };
+    pub const Out = struct {
+        lines: []const []const u8,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .lines = &.{"noted HELLO"} };
+    pub const example_out: Out = .{
+        .lines = &.{"noted HELLO"},
+    };
 
     pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
 
-        const all = try logs.find(ctx, .{}, .{ .limit = 200 });
+        const all = try logs.find(ctx, .{}, .{
+            .limit = 200,
+        });
         const lines = ctx.arena().alloc([]const u8, all.len) catch {
             return error.OutOfMemory;
         };
@@ -284,7 +372,9 @@ pub const Logs = struct {
 
         std.mem.sort([]const u8, lines, {}, before);
 
-        return .{ .lines = lines };
+        return .{
+            .lines = lines,
+        };
     }
 };
 
@@ -293,10 +383,17 @@ pub const Page = struct {
     pub const name = "sampler.page";
     pub const description = "Draws the sampler's page: the log, and a way to add a note";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { query: []const u8 = "", base: []const u8 = "" };
-    pub const Out = struct { html: []const u8 };
+    pub const In = struct {
+        query: []const u8 = "",
+        base: []const u8 = "",
+    };
+    pub const Out = struct {
+        html: []const u8,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .html = "<ul><li>noted HELLO</li></ul>" };
+    pub const example_out: Out = .{
+        .html = "<ul><li>noted HELLO</li></ul>",
+    };
 
     pub fn run(ctx: *PluginCtx, in: In, grant: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
@@ -315,10 +412,14 @@ pub const Page = struct {
                 .lines = listed.lines,
             }) catch return error.OutOfMemory;
 
-            return .{ .html = html };
+            return .{
+                .html = html,
+            };
         }
 
-        return .{ .html = try own_markup(ctx, listed.lines) };
+        return .{
+            .html = try own_markup(ctx, listed.lines),
+        };
     }
 };
 
@@ -390,7 +491,9 @@ pub const Log = struct {
         };
         const line = std.fmt.allocPrint(ctx.arena(), "noted {s}", .{subject}) catch return;
 
-        _ = logs.create(ctx, .{ .line = line }, .{}) catch |err| {
+        _ = logs.create(ctx, .{
+            .line = line,
+        }, .{}) catch |err| {
             ctx.log(@errorName(err));
         };
     }

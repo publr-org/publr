@@ -24,7 +24,11 @@ pub const Effect = struct {
     bytes: []u8 = &.{},
 };
 
-const Attachment = struct { area: Area, key: []u8, bytes: []u8 };
+const Attachment = struct {
+    area: Area,
+    key: []u8,
+    bytes: []u8,
+};
 
 pub const Wanted = struct {
     area: Area,
@@ -51,7 +55,9 @@ pub const Deferred = struct {
         std.debug.assert(attachments_max > 0);
         std.debug.assert(effects_max > 0);
 
-        return .{ .gpa = gpa };
+        return .{
+            .gpa = gpa,
+        };
     }
 
     pub fn deinit(deferred: *Deferred) void {
@@ -100,7 +106,11 @@ pub const Deferred = struct {
                 continue;
             }
 
-            slot.* = .{ .area = area, .key = try deferred.gpa.dupe(u8, key), .bytes = bytes };
+            slot.* = .{
+                .area = area,
+                .key = try deferred.gpa.dupe(u8, key),
+                .bytes = bytes,
+            };
 
             return;
         }
@@ -146,7 +156,10 @@ pub const Deferred = struct {
             return bytes;
         }
 
-        var wanted: Wanted = .{ .area = area, .key_len = @intCast(key.len) };
+        var wanted: Wanted = .{
+            .area = area,
+            .key_len = @intCast(key.len),
+        };
 
         @memcpy(wanted.key_buffer[0..key.len], key);
 
@@ -306,7 +319,9 @@ test "deferred: a missing file is named, an attached one read, writes kept as ef
     var deferred = Deferred.init(gpa);
     defer deferred.deinit();
 
-    const stored: files.Files = .{ .deferred = &deferred };
+    const stored: files.Files = .{
+        .deferred = &deferred,
+    };
 
     deferred.begin();
     try std.testing.expectError(error.Needed, stored.read(gpa, .files, "2026/10/cat.jpg", 64));

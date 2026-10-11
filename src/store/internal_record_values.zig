@@ -7,7 +7,10 @@ const model = @import("../model/internal_record.zig");
 
 pub const Error = db.Error;
 
-pub const Value = struct { field: []const u8, value: []const u8 };
+pub const Value = struct {
+    field: []const u8,
+    value: []const u8,
+};
 
 /// Replaces what the record is found by.
 pub fn replace(connection: *db.Db, record: []const u8, values: []const Value) Error!void {

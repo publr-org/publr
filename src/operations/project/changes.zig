@@ -49,7 +49,12 @@ fn raise(ctx: *Ctx, record_id: []const u8) !void {
 
     var record_buffer: [key_len_max]u8 = undefined;
     var type_buffer: [key_len_max]u8 = undefined;
-    var index: deps.Index = .{ .db = ctx.db, .options = .{ .quiet_ms = deps.quiet_ms } };
+    var index: deps.Index = .{
+        .db = ctx.db,
+        .options = .{
+            .quiet_ms = deps.quiet_ms,
+        },
+    };
     const found = try records.get(ctx.db, ctx.arena, record_id);
 
     if (found) |record| {

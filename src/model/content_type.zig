@@ -203,7 +203,9 @@ pub fn decode(arena: std.mem.Allocator, text: []const u8) Error!Def {
         return error.Invalid;
     }
 
-    const options: std.json.ParseOptions = .{ .allocate = .alloc_always };
+    const options: std.json.ParseOptions = .{
+        .allocate = .alloc_always,
+    };
 
     var def = @import("../lib/json.zig").parse(Def, arena, text, options) catch |err| {
         return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
@@ -221,16 +223,39 @@ pub const test_post: Def = .{
     .name = "Post",
     .public = true,
     .fields = &.{
-        .{ .name = "title", .label = "Title", .kind = "string", .required = true },
-        .{ .name = "slug", .label = "Slug", .kind = "slug", .options = .{ .source = "title" } },
-        .{ .name = "body", .label = "Body", .kind = "richtext", .searchable = true },
-        .{ .name = "views", .label = "Views", .kind = "integer" },
+        .{
+            .name = "title",
+            .label = "Title",
+            .kind = "string",
+            .required = true,
+        },
+        .{
+            .name = "slug",
+            .label = "Slug",
+            .kind = "slug",
+            .options = .{
+                .source = "title",
+            },
+        },
+        .{
+            .name = "body",
+            .label = "Body",
+            .kind = "richtext",
+            .searchable = true,
+        },
+        .{
+            .name = "views",
+            .label = "Views",
+            .kind = "integer",
+        },
         .{
             .name = "tags",
             .label = "Tags",
             .kind = "reference",
             .many = true,
-            .options = .{ .to = &.{"tag"} },
+            .options = .{
+                .to = &.{"tag"},
+            },
         },
     },
 };
@@ -246,7 +271,11 @@ test "definition validation" {
         .name = "",
         .description = "x" ** 501,
         .title_field = "body",
-        .fields = &.{.{ .name = "body", .label = "Body", .kind = "text" }},
+        .fields = &.{.{
+            .name = "body",
+            .label = "Body",
+            .kind = "text",
+        }},
     };
     validate_def(&kinds.core, wrong, &bad);
     try std.testing.expectEqual(@as(u32, 4), bad.len);
@@ -258,7 +287,12 @@ test "an email field may title a record, a long text field may not" {
         .handle = "signup",
         .name = "Signup",
         .title_field = "email",
-        .fields = &.{.{ .name = "email", .label = "Email", .kind = "email", .unique = true }},
+        .fields = &.{.{
+            .name = "email",
+            .label = "Email",
+            .kind = "email",
+            .unique = true,
+        }},
     };
     validate_def(&kinds.core, signup, &problems);
     try std.testing.expect(problems.is_empty());
@@ -266,7 +300,11 @@ test "an email field may title a record, a long text field may not" {
     var refused: field.Problems = .{};
     var untitled = signup;
     untitled.title_field = "note";
-    untitled.fields = &.{.{ .name = "note", .label = "Note", .kind = "text" }};
+    untitled.fields = &.{.{
+        .name = "note",
+        .label = "Note",
+        .kind = "text",
+    }};
     validate_def(&kinds.core, untitled, &refused);
     try std.testing.expectEqual(@as(u32, 1), refused.len);
     try std.testing.expectEqualStrings("title_field", refused.items[0].path);
@@ -289,7 +327,11 @@ test "a type may start empty, and its title field is whichever field the name fi
         .name = "Hotel",
         .kind = .settings,
         .title_field = "name",
-        .fields = &.{.{ .name = "name", .label = "Name", .kind = "string" }},
+        .fields = &.{.{
+            .name = "name",
+            .label = "Name",
+            .kind = "string",
+        }},
     };
     try std.testing.expectEqualStrings("name", title_field_of(titled).?.name);
 
@@ -318,7 +360,11 @@ test "a type may start empty, and its title field is whichever field the name fi
     listed.kind = .record;
     listed.url = "hotels";
     listed.public = true;
-    listed.fields = &.{.{ .name = "slug", .label = "Slug", .kind = "slug" }};
+    listed.fields = &.{.{
+        .name = "slug",
+        .label = "Slug",
+        .kind = "slug",
+    }};
     listed.title_field = "";
     validate_def(&kinds.core, listed, &sluggable);
     try std.testing.expect(sluggable.is_empty());
@@ -336,7 +382,12 @@ test "malformed definitions are rejected before internal field assumptions" {
             .name = "Post",
             .fields = &([_]field.Def{test_post.fields[0]} ** (field.fields_max + 1)),
         },
-        .{ .handle = "post", .name = "Post", .fields = test_post.fields, .title_field = "x" ** 65 },
+        .{
+            .handle = "post",
+            .name = "Post",
+            .fields = test_post.fields,
+            .title_field = "x" ** 65,
+        },
         .{
             .handle = "post",
             .name = "Post",

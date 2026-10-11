@@ -41,7 +41,10 @@ pub const Island = struct {
     inside: []const []const u8,
 };
 
-pub const Impact = struct { pages: []const Page, islands: []const Island };
+pub const Impact = struct {
+    pages: []const Page,
+    islands: []const Island,
+};
 
 pub const Error = std.mem.Allocator.Error || error{TooManyPending};
 
@@ -93,7 +96,10 @@ pub fn of(arena: std.mem.Allocator, program: *const Program, type_id: []const u8
     std.debug.assert(pages.items.len <= program.routes.len);
     std.debug.assert(islands.items.len <= program.islands.len);
 
-    return .{ .pages = pages.items, .islands = islands.items };
+    return .{
+        .pages = pages.items,
+        .islands = islands.items,
+    };
 }
 
 /// Classify a type without allocating an impact report or visiting islands. Scratch
@@ -120,7 +126,10 @@ pub fn has_entry_page(
     return false;
 }
 
-const Found = struct { reads: Reads, via: []const u8 };
+const Found = struct {
+    reads: Reads,
+    via: []const u8,
+};
 
 /// The strongest read of `type_id` from `start` through every template it embeds,
 /// breadth first, each template once. Islands are fragments of their own: not followed.
@@ -137,7 +146,10 @@ fn reach(
     var queue: [templates_max]u32 = undefined;
     var head: u32 = 0;
     var tail: u32 = 1;
-    var found: Found = .{ .reads = .none, .via = "" };
+    var found: Found = .{
+        .reads = .none,
+        .via = "",
+    };
 
     queue[0] = start;
     visited.set(start);
@@ -148,7 +160,10 @@ fn reach(
         const own = direct(template, type_id);
 
         if (@intFromEnum(own) > @intFromEnum(found.reads)) {
-            found = .{ .reads = own, .via = if (index == start) "" else template.rel };
+            found = .{
+                .reads = own,
+                .via = if (index == start) "" else template.rel,
+            };
         }
 
         for (try embeds_of(arena, template)) |callee| {
@@ -348,7 +363,10 @@ fn contains(keys: []const []const u8, key: []const u8) bool {
 const testing = std.testing;
 
 fn source(rel: []const u8, text: []const u8) template_module.Source {
-    return .{ .rel = rel, .source = text };
+    return .{
+        .rel = rel,
+        .source = text,
+    };
 }
 
 fn load_test(sources: []const template_module.Source) !*Program {
@@ -357,7 +375,9 @@ fn load_test(sources: []const template_module.Source) !*Program {
 
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
-    var diagnostic: template_module.Diagnostic = .{ .arena = arena_state.allocator() };
+    var diagnostic: template_module.Diagnostic = .{
+        .arena = arena_state.allocator(),
+    };
 
     return template_module.load(testing.allocator, sources, .{}, &diagnostic) catch |err| {
         std.debug.print("load failed: {s}\n", .{diagnostic.message});
@@ -473,7 +493,9 @@ test "the pending budget refuses, the callee set keeps each template once" {
     const arena = arena_state.allocator();
 
     var pending: std.ArrayList([]const ast.Node) = .empty;
-    const nodes = [_]ast.Node{.{ .text = "x" }};
+    const nodes = [_]ast.Node{.{
+        .text = "x",
+    }};
 
     try push(arena, &pending, &.{});
     try testing.expectEqual(@as(usize, 0), pending.items.len);

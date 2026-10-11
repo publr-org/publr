@@ -20,7 +20,9 @@ const Grant = sdk.Grant;
 pub const documents_max: u32 = 50_000;
 const page_size: u32 = records.list_max;
 
-pub const Type = struct { handle: []const u8 };
+pub const Type = struct {
+    handle: []const u8,
+};
 
 pub const Source = struct {
     ctx: *Ctx,
@@ -47,7 +49,10 @@ pub const Source = struct {
     };
 
     pub fn dataset(source: *Source) groq.Dataset {
-        return .{ .context = source, .vtable = &vtable };
+        return .{
+            .context = source,
+            .vtable = &vtable,
+        };
     }
 
     fn of(context: *anyopaque) *Source {
@@ -195,24 +200,32 @@ pub const Source = struct {
         const stored = store.records.get(source.ctx.db, arena, id) catch return error.DatasetFailed;
         const row = stored orelse return .missing;
         const readable = type_named(source.types, row.type) orelse {
-            return .{ .unreadable = "type" };
+            return .{
+                .unreadable = "type",
+            };
         };
         var found: std.ArrayList(Value) = .empty;
 
         try source.read_type(arena, readable, ids, null, &found);
 
         if (found.items.len == 1) {
-            return .{ .document = found.items[0] };
+            return .{
+                .document = found.items[0],
+            };
         }
 
-        const statuses = source.live orelse return .{ .unreadable = "owner" };
+        const statuses = source.live orelse return .{
+            .unreadable = "owner",
+        };
         var live = false;
 
         for (statuses) |status| {
             live = live or std.mem.eql(u8, status, row.status);
         }
 
-        return .{ .unreadable = if (live) "owner" else "status" };
+        return .{
+            .unreadable = if (live) "owner" else "status",
+        };
     }
 };
 
@@ -342,8 +355,12 @@ fn document_of(
     var builder: groq.values.ObjectBuilder = .{};
     var buffer: [40]u8 = undefined;
 
-    try builder.put(arena, "_id", .{ .string = record.id });
-    try builder.put(arena, "_type", .{ .string = record.type });
+    try builder.put(arena, "_id", .{
+        .string = record.id,
+    });
+    try builder.put(arena, "_type", .{
+        .string = record.type,
+    });
     try builder.put(arena, "_createdAt", .{
         .string = try arena.dupe(u8, groq.datetimes.format(&buffer, .{
             .seconds = @divFloor(record.created_at, 1000),
@@ -370,7 +387,9 @@ fn document_of(
         }
     }
 
-    return .{ .object = builder.object() };
+    return .{
+        .object = builder.object(),
+    };
 }
 
 /// Whether the grant hides a field: named itself, or a field inside it (`seo.title` hides

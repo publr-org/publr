@@ -414,7 +414,9 @@ test "an address parses to filters and formats back in one order; junk is droppe
     try std.testing.expectEqualStrings("changed:is:", in.filters[3]);
     try std.testing.expectEqual(Order.title_asc, in.order);
     try std.testing.expectEqual(@as(u32, 20), in.limit);
-    const one = try list_in(arena, .{ .types = &.{"post"} });
+    const one = try list_in(arena, .{
+        .types = &.{"post"},
+    });
     try std.testing.expectEqualStrings("post", one.type.?);
     try std.testing.expectEqual(@as(usize, 0), one.filters.len);
 

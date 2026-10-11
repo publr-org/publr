@@ -9,7 +9,10 @@ const operation = @import("operation.zig");
 pub const calls_max: u32 = 1024;
 pub const notices_max: u32 = 4096;
 
-pub const Notice = struct { name: []const u8, subject: []const u8 };
+pub const Notice = struct {
+    name: []const u8,
+    subject: []const u8,
+};
 
 /// A finished top-level call, as the log receives it.
 pub const Entry = struct {

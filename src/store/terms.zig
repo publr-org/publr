@@ -58,7 +58,9 @@ pub fn parent_of(connection: *db.Db, arena: std.mem.Allocator, id: []const u8) E
         return error.NotFound;
     }
 
-    const Found = struct { parent_id: ?[]const u8 };
+    const Found = struct {
+        parent_id: ?[]const u8,
+    };
     return (try select.read(Found, arena)).parent_id;
 }
 
@@ -94,7 +96,9 @@ pub fn ancestors(connection: *db.Db, arena: std.mem.Allocator, id: []const u8) E
     try select.bind_text(1, id);
     try select.bind_int(2, depth_max);
 
-    const Found = struct { id: []const u8 };
+    const Found = struct {
+        id: []const u8,
+    };
     var found: std.ArrayList([]const u8) = .empty;
 
     while (try select.step()) {

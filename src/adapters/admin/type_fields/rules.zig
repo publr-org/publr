@@ -23,7 +23,10 @@ const mib: u64 = 1024 * 1024;
 
 /// A file size as the number and the unit the form shows: the largest unit that
 /// divides it, so `2 MB` comes back as typed.
-const Size = struct { amount: []const u8, unit: []const u8 };
+const Size = struct {
+    amount: []const u8,
+    unit: []const u8,
+};
 
 pub fn node(arena: std.mem.Allocator, field: FieldDef) Error!admin.render.Node {
     std.debug.assert(field.kind.len <= model.kinds.string_len_max);
@@ -224,17 +227,29 @@ fn size_of(arena: std.mem.Allocator, bytes: ?u64) Error!Size {
     std.debug.assert(mib > kib);
     std.debug.assert(kib > 1);
 
-    const value = bytes orelse return .{ .amount = "", .unit = "b" };
+    const value = bytes orelse return .{
+        .amount = "",
+        .unit = "b",
+    };
 
     if (value > 0 and value % mib == 0) {
-        return .{ .amount = try print(arena, "{d}", .{value / mib}), .unit = "mb" };
+        return .{
+            .amount = try print(arena, "{d}", .{value / mib}),
+            .unit = "mb",
+        };
     }
 
     if (value > 0 and value % kib == 0) {
-        return .{ .amount = try print(arena, "{d}", .{value / kib}), .unit = "kb" };
+        return .{
+            .amount = try print(arena, "{d}", .{value / kib}),
+            .unit = "kb",
+        };
     }
 
-    return .{ .amount = try print(arena, "{d}", .{value}), .unit = "b" };
+    return .{
+        .amount = try print(arena, "{d}", .{value}),
+        .unit = "b",
+    };
 }
 
 pub fn join_lines(arena: std.mem.Allocator, lines: []const []const u8) Error![]const u8 {
@@ -290,32 +305,66 @@ test "sizes come back in the unit they were typed in; groups follow the kind" {
         .name = "at",
         .label = "At",
         .kind = "datetime",
-        .options = .{ .date = .{ .format = .date, .from_now = true }, .min = 86_400_000 },
+        .options = .{
+            .date = .{
+                .format = .date,
+                .from_now = true,
+            },
+            .min = 86_400_000,
+        },
     };
     const earliest = try bound_text(arena, datetime, day.options.min);
     try std.testing.expectEqualStrings("1970-01-02", earliest);
-    var dated: Props = .{ .schemes = &.{}, .media_types = &.{} };
+    var dated: Props = .{
+        .schemes = &.{},
+        .media_types = &.{},
+    };
     try fill_numbers(&dated, arena, datetime, day);
     try std.testing.expect(dated.has_dates and dated.from_now and dated.limit_range);
 
     const group = model.kinds.find(&model.kinds.core, "group").?;
-    const seo: FieldDef = .{ .name = "seo", .label = "SEO", .kind = "group" };
-    var grouped: Props = .{ .schemes = &.{}, .media_types = &.{} };
+    const seo: FieldDef = .{
+        .name = "seo",
+        .label = "SEO",
+        .kind = "group",
+    };
+    var grouped: Props = .{
+        .schemes = &.{},
+        .media_types = &.{},
+    };
     try fill_common(&grouped, arena, group, seo);
     try std.testing.expect(!grouped.can_require and !grouped.has_items);
     const string = model.kinds.find(&model.kinds.core, "string").?;
-    const one: FieldDef = .{ .name = "one", .label = "One", .kind = "string" };
-    var single: Props = .{ .schemes = &.{}, .media_types = &.{} };
+    const one: FieldDef = .{
+        .name = "one",
+        .label = "One",
+        .kind = "string",
+    };
+    var single: Props = .{
+        .schemes = &.{},
+        .media_types = &.{},
+    };
     try fill_common(&single, arena, string, one);
     try std.testing.expect(single.has_items and !single.limit_items);
     try std.testing.expect(single.many_choice and single.can_unique);
 
     const url = model.kinds.find(&model.kinds.core, "url").?;
-    const site: FieldDef = .{ .name = "site", .label = "Site", .kind = "url", .options = .{
-        .url = .{ .schemes = &.{"https"}, .hosts = &.{ "a.io", "b.io" } },
-    } };
+    const site: FieldDef = .{
+        .name = "site",
+        .label = "Site",
+        .kind = "url",
+        .options = .{
+            .url = .{
+                .schemes = &.{"https"},
+                .hosts = &.{ "a.io", "b.io" },
+            },
+        },
+    };
     const schemes = try schemes_of(arena, site.options.url.schemes);
-    var linked: Props = .{ .schemes = schemes, .media_types = &.{} };
+    var linked: Props = .{
+        .schemes = schemes,
+        .media_types = &.{},
+    };
     try fill_links(&linked, arena, url, site);
     try std.testing.expect(linked.has_url and linked.limit_schemes and linked.limit_hosts);
     try std.testing.expectEqualStrings("a.io\nb.io", linked.hosts);

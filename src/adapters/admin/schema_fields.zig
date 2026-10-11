@@ -31,10 +31,17 @@ pub fn load(session: *admin.Session, handle: []const u8) !types.Get.Out {
         const got = try registry.SDK.dispatch(&session.ctx, custom.Get, .{
             .group = handle,
         });
-        return .{ .id = handle, .definition = got.definition, .created_at = 0, .updated_at = 0 };
+        return .{
+            .id = handle,
+            .definition = got.definition,
+            .created_at = 0,
+            .updated_at = 0,
+        };
     }
 
-    const got = try registry.SDK.dispatch(&session.ctx, types.Get, .{ .type = handle });
+    const got = try registry.SDK.dispatch(&session.ctx, types.Get, .{
+        .type = handle,
+    });
 
     if (got.definition.kind != space.kind()) {
         return error.NotFound;
@@ -100,7 +107,10 @@ pub fn problems(
         }
 
         const one = try session.arena.alloc(model.field.Problem, 1);
-        one[0] = .{ .path = "", .message = "The field schema is too large or invalid." };
+        one[0] = .{
+            .path = "",
+            .message = "The field schema is too large or invalid.",
+        };
         return one;
     };
     return report.problems;

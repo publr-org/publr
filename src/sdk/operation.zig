@@ -108,19 +108,27 @@ pub fn Docs(comptime Shape: type) type {
             null,
             std.meta.fieldNames(Shape),
             &@splat([]const u8),
-            &@splat(.{ .default_value_ptr = default_ptr }),
+            &@splat(.{
+                .default_value_ptr = default_ptr,
+            }),
         );
     }
 }
 
 /// The one way a list is paged: `limit` (1 to 200) and `offset`, and what a page answers.
-pub const Page = struct { limit: u32 = 50, offset: u32 = 0 };
+pub const Page = struct {
+    limit: u32 = 50,
+    offset: u32 = 0,
+};
 pub const page_limit_max: u32 = 200;
 
 pub fn PageOut(comptime Item: type) type {
     comptime std.debug.assert(@sizeOf(Item) > 0);
 
-    return struct { items: []const Item, next_offset: ?u32 = null };
+    return struct {
+        items: []const Item,
+        next_offset: ?u32 = null,
+    };
 }
 
 /// The bounds an operation declares on its input's fields (`pub const rules`), checked by
@@ -138,7 +146,9 @@ pub fn Rules(comptime Shape: type) type {
             null,
             std.meta.fieldNames(Shape),
             &@splat(Rule),
-            &@splat(.{ .default_value_ptr = default_ptr }),
+            &@splat(.{
+                .default_value_ptr = default_ptr,
+            }),
         );
     }
 }
@@ -347,7 +357,9 @@ pub const Json = struct {
             return error.OutOfMemory;
         };
 
-        return .{ .text = text };
+        return .{
+            .text = text,
+        };
     }
 };
 
@@ -433,7 +445,11 @@ test "serialisable types are accepted, pointers to single items rejected at comp
 }
 
 test "a failure is a name of letters, a 4xx or 5xx status and a short message" {
-    const good: Failure = .{ .name = "Unverified", .status = 403, .message = "Verify first" };
+    const good: Failure = .{
+        .name = "Unverified",
+        .status = 403,
+        .message = "Verify first",
+    };
 
     try std.testing.expect(valid_failure(good));
 

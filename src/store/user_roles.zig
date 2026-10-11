@@ -50,7 +50,9 @@ pub fn of(
     var names: std.ArrayList([]const u8) = .empty;
 
     while (try select.step()) {
-        const row = try select.read(struct { role: []const u8 }, arena);
+        const row = try select.read(struct {
+            role: []const u8,
+        }, arena);
 
         names.append(arena, row.role) catch return error.OutOfMemory;
     }

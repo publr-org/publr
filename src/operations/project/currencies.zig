@@ -19,7 +19,10 @@ const key = "currencies";
 const Entry = model.money.Entry;
 
 const example_entries: []const Entry = &.{
-    .{ .code = "GBP", .symbol = "£" },
+    .{
+        .code = "GBP",
+        .symbol = "£",
+    },
     .{
         .code = "EUR",
         .symbol = "€",
@@ -39,9 +42,13 @@ pub const Currencies = struct {
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
     pub const In = struct {};
-    pub const Out = struct { currencies: []const Entry };
+    pub const Out = struct {
+        currencies: []const Entry,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .currencies = example_entries };
+    pub const example_out: Out = .{
+        .currencies = example_entries,
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .currencies = "each with its symbol and how amounts are written, the default first",
     };
@@ -49,7 +56,9 @@ pub const Currencies = struct {
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        return .{ .currencies = try of(ctx) };
+        return .{
+            .currencies = try of(ctx),
+        };
     }
 };
 
@@ -67,13 +76,23 @@ pub const SetCurrencies = struct {
         \\and a save that keeps one is refused. Pages that write amounts are rebuilt.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { currencies: []const Entry };
-    pub const Out = struct { currencies: []const Entry };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .currencies = .{ .items_max = currencies_max },
+    pub const In = struct {
+        currencies: []const Entry,
     };
-    pub const example: In = .{ .currencies = example_entries };
-    pub const example_out: Out = .{ .currencies = example_entries };
+    pub const Out = struct {
+        currencies: []const Entry,
+    };
+    pub const rules: sdk.operation.Rules(In) = .{
+        .currencies = .{
+            .items_max = currencies_max,
+        },
+    };
+    pub const example: In = .{
+        .currencies = example_entries,
+    };
+    pub const example_out: Out = .{
+        .currencies = example_entries,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .currencies = "each { code, symbol, format, decimal, thousands }, the default first",
     };
@@ -89,7 +108,11 @@ pub const SetCurrencies = struct {
                     problem,
                 }) catch return error.OutOfMemory;
 
-                return ctx.fail(.{ .name = "InvalidInput", .status = 400, .message = message });
+                return ctx.fail(.{
+                    .name = "InvalidInput",
+                    .status = 400,
+                    .message = message,
+                });
             }
 
             for (in.currencies[0..index]) |earlier| {
@@ -106,14 +129,21 @@ pub const SetCurrencies = struct {
         const stored = std.json.Stringify.valueAlloc(ctx.arena, in.currencies, .{}) catch {
             return error.OutOfMemory;
         };
-        var index: deps.Index = .{ .db = ctx.db, .options = .{ .quiet_ms = deps.quiet_ms } };
+        var index: deps.Index = .{
+            .db = ctx.db,
+            .options = .{
+                .quiet_ms = deps.quiet_ms,
+            },
+        };
 
         try store.settings.set(ctx.db, key, stored, ctx.now_ms);
         index.invalidate(&.{dependency_key}, ctx.now_ms) catch {
             ctx.dependency_failure = true;
         };
 
-        return .{ .currencies = in.currencies };
+        return .{
+            .currencies = in.currencies,
+        };
     }
 };
 
@@ -172,10 +202,16 @@ pub fn refuse_others(
         return;
     }
 
-    const Level = struct { fields: []const model.field.Def, object: std.json.ObjectMap };
+    const Level = struct {
+        fields: []const model.field.Def,
+        object: std.json.ObjectMap,
+    };
     var pending: std.ArrayList(Level) = .empty;
 
-    pending.append(ctx.arena, .{ .fields = fields, .object = document.object }) catch {
+    pending.append(ctx.arena, .{
+        .fields = fields,
+        .object = document.object,
+    }) catch {
         return error.OutOfMemory;
     };
 
@@ -186,7 +222,10 @@ pub fn refuse_others(
             if (model.field.is_money(field.kind) and value == .object) {
                 try refuse_codes(listed, value.object);
             } else if (model.field.is_group(field.kind) and value == .object) {
-                const inner: Level = .{ .fields = field.fields, .object = value.object };
+                const inner: Level = .{
+                    .fields = field.fields,
+                    .object = value.object,
+                };
 
                 pending.append(ctx.arena, inner) catch return error.OutOfMemory;
             } else if (model.field.is_repeater(field.kind) and value == .array) {
@@ -216,7 +255,10 @@ fn push_items(
 
     for (items) |item| {
         if (item == .object) {
-            pending.append(ctx.arena, .{ .fields = fields, .object = item.object }) catch {
+            pending.append(ctx.arena, .{
+                .fields = fields,
+                .object = item.object,
+            }) catch {
                 return error.OutOfMemory;
             };
         }
@@ -240,7 +282,9 @@ test "money: amounts per currency, only the site's, found and sorted by one" {
         \\ {"name":"title","label":"Title","kind":"string","required":true},
         \\ {"name":"price","label":"Price","kind":"money"}]}
     ;
-    _ = try registry.SDK.dispatch(&system, content_types.Create, .{ .definition = definition });
+    _ = try registry.SDK.dispatch(&system, content_types.Create, .{
+        .definition = definition,
+    });
 
     const cheap = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "product",
@@ -253,7 +297,9 @@ test "money: amounts per currency, only the site's, found and sorted by one" {
         .status = "published",
     });
 
-    const got = try registry.SDK.dispatch(&system, records.Get, .{ .id = cheap.id });
+    const got = try registry.SDK.dispatch(&system, records.Get, .{
+        .id = cheap.id,
+    });
     try std.testing.expect(std.mem.indexOf(u8, got.document, "\"JPY\":1500") != null);
 
     const found = try registry.SDK.dispatch(&system, records.List, .{
@@ -269,7 +315,9 @@ test "money: amounts per currency, only the site's, found and sorted by one" {
     });
     try std.testing.expectError(error.Invalid, not_iso);
 
-    _ = try registry.SDK.dispatch(&system, SetCurrencies, .{ .currencies = example_entries });
+    _ = try registry.SDK.dispatch(&system, SetCurrencies, .{
+        .currencies = example_entries,
+    });
 
     const listed = try registry.SDK.dispatch(&system, Currencies, .{});
     try std.testing.expectEqualStrings("GBP", listed.currencies[0].code);
@@ -305,12 +353,17 @@ test "money: amounts per currency, only the site's, found and sorted by one" {
     try std.testing.expectError(error.Invalid, nested_yen);
 
     const unknown = registry.SDK.dispatch(&system, SetCurrencies, .{
-        .currencies = &.{.{ .code = "ZZZ" }},
+        .currencies = &.{.{
+            .code = "ZZZ",
+        }},
     });
     try std.testing.expectError(error.Failed, unknown);
 
     const no_amount = registry.SDK.dispatch(&system, SetCurrencies, .{
-        .currencies = &.{.{ .code = "GBP", .format = "{symbol}" }},
+        .currencies = &.{.{
+            .code = "GBP",
+            .format = "{symbol}",
+        }},
     });
     try std.testing.expectError(error.Failed, no_amount);
 }

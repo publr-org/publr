@@ -347,8 +347,16 @@ test "the core roles: an editor writes content, not structure, users or settings
 
 test "a plugin's role is new, or adds its grants to one of the same name" {
     const added = [_]Role{
-        .{ .name = "subscriber", .label = "Subscriber", .grants = &.{"app.newsletter.*"} },
-        .{ .name = editor, .label = "Editor", .grants = &.{"newsletter.*"} },
+        .{
+            .name = "subscriber",
+            .label = "Subscriber",
+            .grants = &.{"app.newsletter.*"},
+        },
+        .{
+            .name = editor,
+            .label = "Editor",
+            .grants = &.{"newsletter.*"},
+        },
     };
     const Roles = Registry(comptime merge(&core, &added));
 
@@ -364,11 +372,27 @@ test "a plugin's role is new, or adds its grants to one of the same name" {
 test "problems: a bad name, a bad grant, a duplicate" {
     try std.testing.expect(problem(&core) == null);
 
-    const bad_name = [_]Role{.{ .name = "X", .label = "X", .grants = &.{} }};
-    const bad_grant = [_]Role{.{ .name = "x", .label = "X", .grants = &.{"x."} }};
+    const bad_name = [_]Role{.{
+        .name = "X",
+        .label = "X",
+        .grants = &.{},
+    }};
+    const bad_grant = [_]Role{.{
+        .name = "x",
+        .label = "X",
+        .grants = &.{"x."},
+    }};
     const twice = [_]Role{
-        .{ .name = "x", .label = "X", .grants = &.{} },
-        .{ .name = "x", .label = "X", .grants = &.{} },
+        .{
+            .name = "x",
+            .label = "X",
+            .grants = &.{},
+        },
+        .{
+            .name = "x",
+            .label = "X",
+            .grants = &.{},
+        },
     };
 
     try std.testing.expect(problem(&bad_name) != null);

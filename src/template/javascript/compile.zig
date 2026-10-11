@@ -24,7 +24,12 @@ pub fn expression(compiler: *Compiler, source: []const u8) core.Error!ast.Expr {
     const lowered = lower(compiler, wrapped) catch |err| return failure(compiler, err);
     const index: u32 = @intCast(compiler.js_expressions.items.len);
     try compiler.js_expressions.append(compiler.arena, lowered);
-    return .{ .type = .javascript, .node = .{ .javascript = index } };
+    return .{
+        .type = .javascript,
+        .node = .{
+            .javascript = index,
+        },
+    };
 }
 
 fn failure(compiler: *Compiler, err: anyerror) core.Error {
@@ -151,7 +156,11 @@ fn lower(compiler: *Compiler, source: []const u8) anyerror![]const u8 {
     const stripped = try syntax.dom.stripTypes(compiler.arena, source, compiler.template.rel);
     const tree = try syntax.syntax.parse(compiler.arena, stripped, compiler.template.rel);
     var output: std.Io.Writer.Allocating = .init(compiler.arena);
-    var emitter: Emitter = .{ .compiler = compiler, .source = stripped, .out = &output.writer };
+    var emitter: Emitter = .{
+        .compiler = compiler,
+        .source = stripped,
+        .out = &output.writer,
+    };
     try emitter.node(tree);
     return output.written();
 }

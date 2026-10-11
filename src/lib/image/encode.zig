@@ -54,7 +54,9 @@ fn stb(
     std.debug.assert(format != .webp);
     std.debug.assert(pixels.channels == 3 or pixels.channels == 4);
 
-    var sink: Sink = .{ .allocator = allocator };
+    var sink: Sink = .{
+        .allocator = allocator,
+    };
     errdefer sink.list.deinit(allocator);
 
     const width: c_int = @intCast(pixels.width);

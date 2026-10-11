@@ -22,12 +22,23 @@ pub const content_types = [_]publr.plugin.ContentTypeDef{.{
     .handle = "salutation",
     .name = "Salutation",
     .title_field = "note",
-    .fields = &.{.{ .name = "note", .label = "Note", .kind = "string", .required = true }},
+    .fields = &.{.{
+        .name = "note",
+        .label = "Note",
+        .kind = "string",
+        .required = true,
+    }},
 }};
 
 pub const permissions = [_]publr.plugin.Permission{
-    .{ .key = "users.names", .reason = "Greets the people on the site by name" },
-    .{ .key = "users.read", .reason = "Greets people by their email address too" },
+    .{
+        .key = "users.names",
+        .reason = "Greets the people on the site by name",
+    },
+    .{
+        .key = "users.read",
+        .reason = "Greets people by their email address too",
+    },
 };
 
 pub const operations = [_]type{Count};
@@ -37,16 +48,25 @@ pub const Count = struct {
     pub const description = "Count the greetings";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { total: u32 };
+    pub const Out = struct {
+        total: u32,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .total = 1 };
+    pub const example_out: Out = .{
+        .total = 1,
+    };
 
     pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
 
         const record = publr.operations.record;
-        const all = try ctx.call(record.List, .{ .type = "salutation", .limit = 200 });
+        const all = try ctx.call(record.List, .{
+            .type = "salutation",
+            .limit = 200,
+        });
 
-        return .{ .total = @intCast(all.records.len) };
+        return .{
+            .total = @intCast(all.records.len),
+        };
     }
 };

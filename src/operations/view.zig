@@ -58,9 +58,13 @@ pub const List = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { views: []const Saved };
+    pub const Out = struct {
+        views: []const Saved,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .views = &.{example_saved} };
+    pub const example_out: Out = .{
+        .views = &.{example_saved},
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -76,7 +80,9 @@ pub const List = struct {
             saved.* = saved_of(row);
         }
 
-        return .{ .views = out };
+        return .{
+            .views = out,
+        };
     }
 };
 
@@ -87,11 +93,21 @@ pub const Get = struct {
         \\Not found unless the view is the caller's own.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { id: []const u8 };
-    pub const Out = struct { view: Saved };
-    pub const example: In = .{ .id = example_id };
-    pub const example_out: Out = .{ .view = example_saved };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .id = "The view's id" };
+    pub const In = struct {
+        id: []const u8,
+    };
+    pub const Out = struct {
+        view: Saved,
+    };
+    pub const example: In = .{
+        .id = example_id,
+    };
+    pub const example_out: Out = .{
+        .view = example_saved,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .id = "The view's id",
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -102,7 +118,9 @@ pub const Get = struct {
 
         const row = try own(ctx, in.id);
 
-        return .{ .view = saved_of(row) };
+        return .{
+            .view = saved_of(row),
+        };
     }
 };
 
@@ -117,9 +135,15 @@ pub const Create = struct {
         \\`order` (`updated_desc`, `created_desc`, `title_asc`). Up to 64 views per user.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { name: []const u8, query: []const u8 = "{}" };
+    pub const In = struct {
+        name: []const u8,
+        query: []const u8 = "{}",
+    };
     pub const Out = Saved;
-    pub const example: In = .{ .name = "My drafts", .query = example_query };
+    pub const example: In = .{
+        .name = "My drafts",
+        .query = example_query,
+    };
     pub const example_out: Out = example_saved;
     pub const field_docs: sdk.operation.Docs(In) = .{
         .name = "The view's name, as the sidebar shows it",
@@ -158,9 +182,16 @@ pub const Update = struct {
         \\Fields left out keep their value. The caller's own views only.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8, name: ?[]const u8 = null, query: ?[]const u8 = null };
+    pub const In = struct {
+        id: []const u8,
+        name: ?[]const u8 = null,
+        query: ?[]const u8 = null,
+    };
     pub const Out = Saved;
-    pub const example: In = .{ .id = example_id, .name = "My drafts" };
+    pub const example: In = .{
+        .id = example_id,
+        .name = "My drafts",
+    };
     pub const example_out: Out = example_saved;
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The view's id",
@@ -197,11 +228,21 @@ pub const Delete = struct {
         \\looking at the content.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8 };
-    pub const Out = struct { deleted: bool };
-    pub const example: In = .{ .id = example_id };
-    pub const example_out: Out = .{ .deleted = true };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .id = "The view's id" };
+    pub const In = struct {
+        id: []const u8,
+    };
+    pub const Out = struct {
+        deleted: bool,
+    };
+    pub const example: In = .{
+        .id = example_id,
+    };
+    pub const example_out: Out = .{
+        .deleted = true,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .id = "The view's id",
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -215,7 +256,9 @@ pub const Delete = struct {
 
         ctx.notice("view.deleted", row.id);
 
-        return .{ .deleted = deleted };
+        return .{
+            .deleted = deleted,
+        };
     }
 };
 
@@ -305,7 +348,12 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
     var system = harness.ctx(.system);
     try SDK.bootstrap(&system);
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_admin",
+            .roles = &.{"admin"},
+        },
+    });
     const users = @import("user.zig");
     const ada_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "ada@example.com",
@@ -315,19 +363,38 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
         .email = "bob@example.com",
         .display_name = "Bob",
     });
-    var ada = harness.ctx(.{ .user = .{ .id = ada_account.user_id, .roles = &.{"editor"} } });
-    var bob = harness.ctx(.{ .user = .{ .id = bob_account.user_id, .roles = &.{"editor"} } });
+    var ada = harness.ctx(.{
+        .user = .{
+            .id = ada_account.user_id,
+            .roles = &.{"editor"},
+        },
+    });
+    var bob = harness.ctx(.{
+        .user = .{
+            .id = bob_account.user_id,
+            .roles = &.{"editor"},
+        },
+    });
     var anon = harness.ctx(.anonymous);
 
     const drafts_query = "{\"clauses\":[" ++
         "{\"key\":\"status\",\"operator\":\"is\",\"value\":\"draft\"}]}";
-    const created = try SDK.dispatch(&ada, Create, .{ .name = "  Drafts ", .query = drafts_query });
+    const created = try SDK.dispatch(&ada, Create, .{
+        .name = "  Drafts ",
+        .query = drafts_query,
+    });
     try std.testing.expectEqualStrings("Drafts", created.name);
     try std.testing.expect(std.mem.indexOf(u8, created.query, "\"value\":\"draft\"") != null);
-    _ = try SDK.dispatch(&ada, Create, .{ .name = "All", .query = "{}" });
+    _ = try SDK.dispatch(&ada, Create, .{
+        .name = "All",
+        .query = "{}",
+    });
     const mine_query = "{\"clauses\":[" ++
         "{\"key\":\"created\",\"operator\":\"by\",\"value\":\"me\"}]}";
-    _ = try SDK.dispatch(&bob, Create, .{ .name = "Bob's", .query = mine_query });
+    _ = try SDK.dispatch(&bob, Create, .{
+        .name = "Bob's",
+        .query = mine_query,
+    });
 
     const mine = try SDK.dispatch(&ada, List, .{});
     try std.testing.expectEqual(@as(usize, 2), mine.views.len);
@@ -336,12 +403,21 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
     try std.testing.expectError(error.Denied, SDK.dispatch(&anon, List, .{}));
     try std.testing.expectError(error.Denied, SDK.dispatch(&anon, Create, Create.example));
 
-    const got = try SDK.dispatch(&ada, Get, .{ .id = created.id });
+    const got = try SDK.dispatch(&ada, Get, .{
+        .id = created.id,
+    });
     try std.testing.expectEqualStrings("Drafts", got.view.name);
-    try std.testing.expectError(error.NotFound, SDK.dispatch(&bob, Get, .{ .id = created.id }));
-    try std.testing.expectError(error.NotFound, SDK.dispatch(&ada, Get, .{ .id = "nope" }));
+    try std.testing.expectError(error.NotFound, SDK.dispatch(&bob, Get, .{
+        .id = created.id,
+    }));
+    try std.testing.expectError(error.NotFound, SDK.dispatch(&ada, Get, .{
+        .id = "nope",
+    }));
 
-    const renamed = try SDK.dispatch(&ada, Update, .{ .id = created.id, .name = "My drafts" });
+    const renamed = try SDK.dispatch(&ada, Update, .{
+        .id = created.id,
+        .name = "My drafts",
+    });
     try std.testing.expectEqualStrings("My drafts", renamed.name);
     try std.testing.expectEqualStrings(created.query, renamed.query);
     const refiltered = try SDK.dispatch(&ada, Update, .{
@@ -352,30 +428,53 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
     try std.testing.expect(std.mem.indexOf(u8, refiltered.query, "title_asc") != null);
     try std.testing.expectError(
         error.NotFound,
-        SDK.dispatch(&bob, Update, .{ .id = created.id, .name = "Stolen" }),
+        SDK.dispatch(&bob, Update, .{
+            .id = created.id,
+            .name = "Stolen",
+        }),
     );
     try std.testing.expectError(
         error.Invalid,
-        SDK.dispatch(&ada, Update, .{ .id = created.id, .query = "{\"order\":\"nope\"}" }),
+        SDK.dispatch(&ada, Update, .{
+            .id = created.id,
+            .query = "{\"order\":\"nope\"}",
+        }),
     );
-    try std.testing.expectError(error.Invalid, SDK.dispatch(&ada, Create, .{ .name = "" }));
+    try std.testing.expectError(error.Invalid, SDK.dispatch(&ada, Create, .{
+        .name = "",
+    }));
     try std.testing.expectError(
         error.Invalid,
-        SDK.dispatch(&ada, Create, .{ .name = "Bad", .query = "not json" }),
+        SDK.dispatch(&ada, Create, .{
+            .name = "Bad",
+            .query = "not json",
+        }),
     );
     const unknown = "{\"clauses\":[{\"key\":\"nope\",\"operator\":\"is\"}]}";
     try std.testing.expectError(
         error.Invalid,
-        SDK.dispatch(&ada, Create, .{ .name = "Bad", .query = unknown }),
+        SDK.dispatch(&ada, Create, .{
+            .name = "Bad",
+            .query = unknown,
+        }),
     );
     const wrong_operator = "{\"clauses\":[{\"key\":\"status\",\"operator\":\"within\"}]}";
     try std.testing.expectError(
         error.Invalid,
-        SDK.dispatch(&ada, Create, .{ .name = "Bad", .query = wrong_operator }),
+        SDK.dispatch(&ada, Create, .{
+            .name = "Bad",
+            .query = wrong_operator,
+        }),
     );
 
-    try std.testing.expectError(error.NotFound, SDK.dispatch(&bob, Delete, .{ .id = created.id }));
-    try std.testing.expect((try SDK.dispatch(&ada, Delete, .{ .id = created.id })).deleted);
-    try std.testing.expectError(error.NotFound, SDK.dispatch(&ada, Get, .{ .id = created.id }));
+    try std.testing.expectError(error.NotFound, SDK.dispatch(&bob, Delete, .{
+        .id = created.id,
+    }));
+    try std.testing.expect((try SDK.dispatch(&ada, Delete, .{
+        .id = created.id,
+    })).deleted);
+    try std.testing.expectError(error.NotFound, SDK.dispatch(&ada, Get, .{
+        .id = created.id,
+    }));
     try std.testing.expectEqual(@as(usize, 1), (try SDK.dispatch(&ada, List, .{})).views.len);
 }

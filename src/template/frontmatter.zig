@@ -75,7 +75,9 @@ fn branch(compiler: *Compiler, line: []const u8, block: *?ast.Decl.When) Error!b
         const condition = try expression.expression(compiler, line[open + 1 .. close]);
 
         try expression.check_truthy(compiler, condition);
-        block.* = .{ .condition = condition };
+        block.* = .{
+            .condition = condition,
+        };
 
         return true;
     }
@@ -87,7 +89,10 @@ fn branch(compiler: *Compiler, line: []const u8, block: *?ast.Decl.When) Error!b
             return compiler.fail("an `if` block takes one `else`", .{});
         }
 
-        block.* = .{ .condition = when.condition, .otherwise = true };
+        block.* = .{
+            .condition = when.condition,
+            .otherwise = true,
+        };
 
         return true;
     }
@@ -236,7 +241,9 @@ fn entry_prop(compiler: *Compiler, name: []const u8, field: []const u8) Error!vo
 
     try compiler.prop_names.append(compiler.arena, field);
     try compiler.entry_props.append(compiler.arena, field);
-    try declare(compiler, name, .entry, .{ .entry_prop = field });
+    try declare(compiler, name, .entry, .{
+        .entry_prop = field,
+    });
 }
 
 /// `const mode = props.mode ?? 'card';`: a string prop with its fallback, as a local.
@@ -279,7 +286,12 @@ fn prop_text(compiler: *Compiler, name: []const u8, line: []const u8, rest: []co
         try compiler.prop_names.append(compiler.arena, key);
     }
 
-    try declare(compiler, name, .string, .{ .prop_text = .{ .key = key, .fallback = fallback } });
+    try declare(compiler, name, .string, .{
+        .prop_text = .{
+            .key = key,
+            .fallback = fallback,
+        },
+    });
 }
 
 fn is_dump(line: []const u8) bool {
@@ -327,7 +339,10 @@ fn data_access(
         }
 
         return declare(compiler, name, .collection, .{
-            .data_items = .{ .object = object, .key = rest },
+            .data_items = .{
+                .object = object,
+                .key = rest,
+            },
         });
     };
     const key = std.mem.trim(u8, rest[0..nullish], " \t");
@@ -340,14 +355,22 @@ fn data_access(
     const fallback = try expression.js_string(compiler, fallback_text);
 
     try declare(compiler, name, .string, .{
-        .data_text = .{ .object = object, .key = key, .fallback = fallback },
+        .data_text = .{
+            .object = object,
+            .key = key,
+            .fallback = fallback,
+        },
     });
 }
 
 fn declare(compiler: *Compiler, name: []const u8, kind: Type, value: ast.Decl.Value) Error!void {
     std.debug.assert(name.len > 0);
 
-    try compiler.decls.append(compiler.arena, .{ .name = name, .type = kind, .value = value });
+    try compiler.decls.append(compiler.arena, .{
+        .name = name,
+        .type = kind,
+        .value = value,
+    });
     try compiler.add_local(name, kind);
 
     std.debug.assert(compiler.decls.items.len <= compiler.locals.items.len);
@@ -512,7 +535,9 @@ fn redirect_call(
         return compiler.fail("redirect() takes a path, a string: empty for no redirect", .{});
     }
 
-    try declare(compiler, name, .string, .{ .redirect = target });
+    try declare(compiler, name, .string, .{
+        .redirect = target,
+    });
 }
 
 /// The reads of records: an entry, a collection, or what an entry points at.
@@ -578,7 +603,11 @@ fn money_call(compiler: *Compiler, name: []const u8, args: []const u8) Error!voi
     }
 
     try declare(compiler, name, .string, .{
-        .money = .{ .object = object, .key = key, .currency = currency },
+        .money = .{
+            .object = object,
+            .key = key,
+            .currency = currency,
+        },
     });
 }
 
@@ -623,12 +652,18 @@ fn references_call(
 
     if (arity == .one) {
         return declare(compiler, name, .entry, .{
-            .reference = .{ .object = object, .key = key },
+            .reference = .{
+                .object = object,
+                .key = key,
+            },
         });
     }
 
     try declare(compiler, name, .collection, .{
-        .references = .{ .object = object, .key = key },
+        .references = .{
+            .object = object,
+            .key = key,
+        },
     });
 }
 
@@ -679,7 +714,9 @@ fn header_call(
         return compiler.fail("header() needs a nonempty name", .{});
     }
 
-    return declare(compiler, name, .opt_string, .{ .header = header });
+    return declare(compiler, name, .opt_string, .{
+        .header = header,
+    });
 }
 
 fn cookie_call(
@@ -703,7 +740,9 @@ fn cookie_call(
         return compiler.fail("cookie() needs a nonempty name", .{});
     }
 
-    return declare(compiler, name, .opt_string, .{ .cookie = cookie });
+    return declare(compiler, name, .opt_string, .{
+        .cookie = cookie,
+    });
 }
 
 /// `const seen = Publr.request.call('app.cloud.welcome');`: the page runs an operation as the
@@ -742,7 +781,9 @@ fn operation_call(
             "`app.<feature>.<verb>`: {s}", .{operation});
     }
 
-    return declare(compiler, name, .entry, .{ .call = operation });
+    return declare(compiler, name, .entry, .{
+        .call = operation,
+    });
 }
 
 /// `Publr.request.userField('cloud.welcomed')`: one custom field of the signed-in user,
@@ -772,7 +813,9 @@ fn user_field_call(
         return compiler.fail("userField() names `<group>.<field>`: {s}", .{path});
     }
 
-    return declare(compiler, name, .opt_string, .{ .user_field = path });
+    return declare(compiler, name, .opt_string, .{
+        .user_field = path,
+    });
 }
 
 fn random_call(
@@ -798,7 +841,9 @@ fn random_call(
         return compiler.fail("Publr.request.random(n) takes a positive number: {s}", .{call});
     }
 
-    return declare(compiler, name, .int, .{ .random = value });
+    return declare(compiler, name, .int, .{
+        .random = value,
+    });
 }
 
 /// `getEntry()`: the record the route names. `getEntry({ type: 'post' })` reads another
@@ -815,13 +860,17 @@ fn entry_call(compiler: *Compiler, name: []const u8, args: []const u8) Error!voi
             return compiler.fail("getEntry({{ slug }}) names its type too: {{ type, slug }}", .{});
         }
 
-        return declare(compiler, name, .entry, .{ .entry = query });
+        return declare(compiler, name, .entry, .{
+            .entry = query,
+        });
     }
 
     if (query.type_id.len > 0 and !at_slug_route(compiler.template.rel)) {
         query.first = true;
 
-        return declare(compiler, name, .entry, .{ .entry = query });
+        return declare(compiler, name, .entry, .{
+            .entry = query,
+        });
     }
 
     const route = try route_context(compiler);
@@ -840,7 +889,9 @@ fn entry_call(compiler: *Compiler, name: []const u8, args: []const u8) Error!voi
 
     std.debug.assert(query.type_id.len > 0);
 
-    return declare(compiler, name, .entry, .{ .entry = query });
+    return declare(compiler, name, .entry, .{
+        .entry = query,
+    });
 }
 
 fn at_slug_route(rel: []const u8) bool {
@@ -852,7 +903,9 @@ fn at_slug_route(rel: []const u8) bool {
 
 /// `{ type: 'post', slug: 'hello' }`: both string literals, both optional.
 fn entry_options(compiler: *Compiler, args: []const u8) Error!ast.Decl.EntryQuery {
-    var query: ast.Decl.EntryQuery = .{ .type_id = "" };
+    var query: ast.Decl.EntryQuery = .{
+        .type_id = "",
+    };
 
     if (args.len == 0) {
         return query;
@@ -919,10 +972,15 @@ fn collection_call(compiler: *Compiler, name: []const u8, args: []const u8) Erro
         query.type_id = route.type_id;
     }
 
-    return declare(compiler, name, .collection, .{ .query = query });
+    return declare(compiler, name, .collection, .{
+        .query = query,
+    });
 }
 
-const RouteContext = struct { type_id: []const u8, is_entry: bool };
+const RouteContext = struct {
+    type_id: []const u8,
+    is_entry: bool,
+};
 
 /// `content/posts/[slug].publr` is a single "post"; `content/pages/index.publr` the
 /// "page" collection; `content/[slug].publr` the core "page" type.
@@ -962,12 +1020,18 @@ fn route_context(compiler: *Compiler) Error!RouteContext {
             );
         }
 
-        return .{ .type_id = "page", .is_entry = true };
+        return .{
+            .type_id = "page",
+            .is_entry = true,
+        };
     }
 
     std.debug.assert(last_dir.len > 0);
 
-    return .{ .type_id = singular(last_dir), .is_entry = is_entry };
+    return .{
+        .type_id = singular(last_dir),
+        .is_entry = is_entry,
+    };
 }
 
 fn singular(dir: []const u8) []const u8 {
@@ -983,7 +1047,9 @@ fn singular(dir: []const u8) []const u8 {
 /// `{ type: 'post', limit: 100, offset: 10 }`: the type, and the numbers the store's
 /// query takes.
 fn collection_options(compiler: *Compiler, args: []const u8) Error!ast.Decl.Query {
-    var query: ast.Decl.Query = .{ .type_id = "" };
+    var query: ast.Decl.Query = .{
+        .type_id = "",
+    };
 
     if (args.len == 0) {
         return query;

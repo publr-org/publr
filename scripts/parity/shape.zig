@@ -63,39 +63,87 @@ fn same_pointer(
 }
 
 test "matching shapes pass, differing optionals and flags fail" {
-    const Out = struct { id: []const u8, live: bool, note: ?[]const u8 };
+    const Out = struct {
+        id: []const u8,
+        live: bool,
+        note: ?[]const u8,
+    };
 
-    try same(Out{ .id = "abc", .live = true, .note = "x" }, .{
+    try same(Out{
+        .id = "abc",
+        .live = true,
+        .note = "x",
+    }, .{
         .id = "zz",
         .live = true,
         .note = "other",
     });
 
     try std.testing.expectError(Error.ShapeMismatch, same(
-        Out{ .id = "abc", .live = true, .note = "x" },
-        .{ .id = "zz", .live = true, .note = null },
+        Out{
+            .id = "abc",
+            .live = true,
+            .note = "x",
+        },
+        .{
+            .id = "zz",
+            .live = true,
+            .note = null,
+        },
     ));
     try std.testing.expectError(Error.ShapeMismatch, same(
-        Out{ .id = "abc", .live = true, .note = null },
-        .{ .id = "zz", .live = false, .note = null },
+        Out{
+            .id = "abc",
+            .live = true,
+            .note = null,
+        },
+        .{
+            .id = "zz",
+            .live = false,
+            .note = null,
+        },
     ));
 }
 
 test "a documented list is a sample: only emptiness is promised" {
-    const Out = struct { tags: []const []const u8, title: []const u8 };
+    const Out = struct {
+        tags: []const []const u8,
+        title: []const u8,
+    };
 
-    try same(Out{ .tags = &.{"a"}, .title = "Hello" }, .{ .tags = &.{"b"}, .title = "Other" });
-    try same(Out{ .tags = &.{"a"}, .title = "Hello" }, .{
+    try same(Out{
+        .tags = &.{"a"},
+        .title = "Hello",
+    }, .{
+        .tags = &.{"b"},
+        .title = "Other",
+    });
+    try same(Out{
+        .tags = &.{"a"},
+        .title = "Hello",
+    }, .{
         .tags = &.{ "b", "c", "d" },
         .title = "Other",
     });
 
     try std.testing.expectError(Error.ShapeMismatch, same(
-        Out{ .tags = &.{"a"}, .title = "Hello" },
-        .{ .tags = &.{}, .title = "Other" },
+        Out{
+            .tags = &.{"a"},
+            .title = "Hello",
+        },
+        .{
+            .tags = &.{},
+            .title = "Other",
+        },
     ));
     try std.testing.expectError(Error.ShapeMismatch, same(
-        Out{ .tags = &.{"a"}, .title = "Hello" },
-        .{ .tags = &.{"b"}, .title = "" },
+        Out{
+            .tags = &.{"a"},
+            .title = "Hello",
+        },
+        .{
+            .tags = &.{"b"},
+            .title = "",
+        },
     ));
 }

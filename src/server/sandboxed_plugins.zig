@@ -20,7 +20,10 @@ pub const hash_len = files_module.hash_len;
 pub const heap_bytes: u32 = 32 << 20;
 pub const sandboxed_plugins_max: u32 = model.sandboxed_plugin.sandboxed_plugins_max;
 
-pub const Target = struct { sandboxed_plugin: u32, entry: u32 };
+pub const Target = struct {
+    sandboxed_plugin: u32,
+    entry: u32,
+};
 
 pub const Host = struct {
     gpa: std.mem.Allocator,
@@ -46,7 +49,10 @@ pub const Host = struct {
         host.heap = try gpa.alloc(u8, heap_bytes);
         errdefer gpa.free(host.heap);
 
-        try host.runtime.init(.{ .heap = host.heap, .imports = &invoke_module.imports });
+        try host.runtime.init(.{
+            .heap = host.heap,
+            .imports = &invoke_module.imports,
+        });
         errdefer host.runtime.deinit();
 
         host.files = try Files.open(io, dir);
@@ -56,7 +62,10 @@ pub const Host = struct {
         host.index_arena = std.heap.ArenaAllocator.init(gpa);
         host.roles = null;
         host.manifests = &.{};
-        host.interface = .{ .context = host, .vtable = &interface.vtable };
+        host.interface = .{
+            .context = host,
+            .vtable = &interface.vtable,
+        };
     }
 
     pub fn deinit(host: *Host) void {
@@ -153,7 +162,10 @@ pub const Host = struct {
             manifests[plugin_index] = manifest.*;
 
             for (manifest.operations, 0..) |operation, entry| {
-                const target: Target = .{ .sandboxed_plugin = index, .entry = @intCast(entry) };
+                const target: Target = .{
+                    .sandboxed_plugin = index,
+                    .entry = @intCast(entry),
+                };
 
                 try host.operations.put(arena, operation.name, target);
             }
@@ -170,7 +182,10 @@ pub const Host = struct {
                     });
                 } else if (loaded.holds(key)) {
                     const entry: u32 = @intCast(manifest.operations.len + position);
-                    const target: Target = .{ .sandboxed_plugin = index, .entry = entry };
+                    const target: Target = .{
+                        .sandboxed_plugin = index,
+                        .entry = entry,
+                    };
 
                     try add_hook(&host.hooks, arena, key, target);
                 }

@@ -178,7 +178,13 @@ fn line(code: []const u8, tail: []const u8, nested: bool) Line {
     std.debug.assert(code.len > 0);
     std.debug.assert(tail.len > 0);
 
-    return .{ .text = "", .code = code, .href = "", .tail = tail, .nested = nested };
+    return .{
+        .text = "",
+        .code = code,
+        .href = "",
+        .tail = tail,
+        .nested = nested,
+    };
 }
 
 /// The status of a built artifact, and the keys it recorded as a line when it is there.
@@ -236,11 +242,21 @@ fn print(arena: std.mem.Allocator, comptime template: []const u8, args: anytype)
 
 const test_source: Source = .{
     .arena = undefined,
-    .def = .{ .handle = "post", .name = "Post", .fields = &.{} },
+    .def = .{
+        .handle = "post",
+        .name = "Post",
+        .fields = &.{},
+    },
     .base_url = "http://h",
     .artifacts = &.{
-        .{ .name = "/", .keys = &.{ "type:post", "records" } },
-        .{ .name = "/posts/hello", .keys = &.{"record:abc"} },
+        .{
+            .name = "/",
+            .keys = &.{ "type:post", "records" },
+        },
+        .{
+            .name = "/posts/hello",
+            .keys = &.{"record:abc"},
+        },
     },
 };
 
@@ -305,8 +321,14 @@ test "a fragment row: placements with the prerender note, parents, the index; an
         .reads = .query,
         .via = "",
         .placed = &.{
-            .{ .route = "/visit", .prerendered = true },
-            .{ .route = "/posts/:slug", .prerendered = false },
+            .{
+                .route = "/visit",
+                .prerendered = true,
+            },
+            .{
+                .route = "/posts/:slug",
+                .prerendered = false,
+            },
         },
         .inside = &.{"outer"},
     }, "/_islands/latest");
@@ -321,11 +343,17 @@ test "a fragment row: placements with the prerender note, parents, the index; an
     try std.testing.expectEqualStrings("/_islands/outer", latest.why[3].code);
     try std.testing.expectEqual(@as(usize, 4), latest.why.len);
 
-    const extra = try index_row(source, .{ .name = "/tags", .keys = &.{"records"} });
+    const extra = try index_row(source, .{
+        .name = "/tags",
+        .keys = &.{"records"},
+    });
     try std.testing.expectEqualStrings("page", extra.kind);
     try std.testing.expect(extra.rebuild);
     try std.testing.expectEqualStrings("records", extra.why[0].code);
-    const fragment = try index_row(source, .{ .name = "/_islands/x", .keys = &.{"records"} });
+    const fragment = try index_row(source, .{
+        .name = "/_islands/x",
+        .keys = &.{"records"},
+    });
     try std.testing.expectEqualStrings("fragment", fragment.kind);
     try std.testing.expectEqualStrings("", fragment.href);
     try std.testing.expectEqualStrings("http://h/tags", extra.href);

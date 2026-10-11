@@ -44,7 +44,10 @@ pub const Summary = struct {
     active: bool,
 };
 
-pub const Link = struct { path: []const u8, expires_at: i64 };
+pub const Link = struct {
+    path: []const u8,
+    expires_at: i64,
+};
 
 pub const Create = struct {
     pub const name = "user.create";
@@ -89,7 +92,10 @@ pub const Create = struct {
         .user_id = "9b1e7c3d5a2f4e6b8d0c1a3f",
         .roles = &.{"editor"},
         .password = null,
-        .link = .{ .path = "/auth/set-password?token=6f3a...", .expires_at = 1789650000000 },
+        .link = .{
+            .path = "/auth/set-password?token=6f3a...",
+            .expires_at = 1789650000000,
+        },
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .email = "Sign-in email; must be unique, stored lowercased and trimmed",
@@ -120,7 +126,12 @@ pub const Create = struct {
 
             ctx.notice("auth.user_created", created);
 
-            return .{ .user_id = created, .roles = in.roles, .password = null, .link = link };
+            return .{
+                .user_id = created,
+                .roles = in.roles,
+                .password = null,
+                .link = link,
+            };
         }
 
         const created = try create_user(ctx, in.email, in.display_name, in.password, in.roles);
@@ -145,12 +156,22 @@ pub const PasswordLink = struct {
         \\Redeeming it sets the password and signs out every session of that account.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { user: []const u8 };
-    pub const Out = struct { user_id: []const u8, link: Link };
-    pub const example: In = .{ .user = "invited@example.com" };
+    pub const In = struct {
+        user: []const u8,
+    };
+    pub const Out = struct {
+        user_id: []const u8,
+        link: Link,
+    };
+    pub const example: In = .{
+        .user = "invited@example.com",
+    };
     pub const example_out: Out = .{
         .user_id = "9b1e7c3d5a2f4e6b8d0c1a3f",
-        .link = .{ .path = "/auth/set-password?token=c41d...", .expires_at = 1789650000000 },
+        .link = .{
+            .path = "/auth/set-password?token=c41d...",
+            .expires_at = 1789650000000,
+        },
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The user's id or email",
@@ -169,7 +190,10 @@ pub const PasswordLink = struct {
 
         ctx.notice("auth.password_link_issued", credentials.user.id);
 
-        return .{ .user_id = credentials.user.id, .link = link };
+        return .{
+            .user_id = credentials.user.id,
+            .link = link,
+        };
     }
 };
 
@@ -187,13 +211,20 @@ pub const SetPassword = struct {
         \\answers `not found`. Existing sessions of the account are signed out.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { token: []const u8, password: []const u8 };
-    pub const Out = struct { user_id: []const u8 };
+    pub const In = struct {
+        token: []const u8,
+        password: []const u8,
+    };
+    pub const Out = struct {
+        user_id: []const u8,
+    };
     pub const example: In = .{
         .token = "0000000000000000000000000000000000000000000000000000000000000000",
         .password = "correct horse battery",
     };
-    pub const example_out: Out = .{ .user_id = "9b1e7c3d5a2f4e6b8d0c1a3f" };
+    pub const example_out: Out = .{
+        .user_id = "9b1e7c3d5a2f4e6b8d0c1a3f",
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .token = "The 64-character token from the link",
         .password = "The new password, 8 to 256 characters (or `PUBLR_PASSWORD`)",
@@ -216,7 +247,9 @@ pub const SetPassword = struct {
         _ = try store.sessions.destroy_all(ctx.db, credentials.user.id);
         ctx.notice("auth.password_set", credentials.user.id);
 
-        return .{ .user_id = credentials.user.id };
+        return .{
+            .user_id = credentials.user.id,
+        };
     }
 };
 
@@ -227,14 +260,30 @@ pub const Options = struct {
         "their email addresses or account credentials.";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Option = struct { id: []const u8, label: []const u8 };
-    pub const Out = struct { users: []const Option };
+    pub const Option = struct {
+        id: []const u8,
+        label: []const u8,
+    };
+    pub const Out = struct {
+        users: []const Option,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .users = &.{
-        .{ .id = "3f9c1e0a5b7d2c4e6f8a9b0c", .label = "Ada" },
-        .{ .id = "9b1e7c3d5a2f4e6b8d0c1a3f", .label = "Editor" },
-        .{ .id = "7d1e7c3d5a2f4e6b8d0c1a3f", .label = "Invited" },
-    } };
+    pub const example_out: Out = .{
+        .users = &.{
+            .{
+                .id = "3f9c1e0a5b7d2c4e6f8a9b0c",
+                .label = "Ada",
+            },
+            .{
+                .id = "9b1e7c3d5a2f4e6b8d0c1a3f",
+                .label = "Editor",
+            },
+            .{
+                .id = "7d1e7c3d5a2f4e6b8d0c1a3f",
+                .label = "Invited",
+            },
+        },
+    };
 
     pub fn run(ctx: *Ctx, _: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
@@ -242,10 +291,15 @@ pub const Options = struct {
         const users = try ctx.arena.alloc(Option, rows.len);
 
         for (rows, 0..) |row, index| {
-            users[index] = .{ .id = row.id, .label = row.display_name };
+            users[index] = .{
+                .id = row.id,
+                .label = row.display_name,
+            };
         }
 
-        return .{ .users = users };
+        return .{
+            .users = users,
+        };
     }
 };
 
@@ -258,26 +312,30 @@ pub const List = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { users: []const Summary };
+    pub const Out = struct {
+        users: []const Summary,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .users = &.{
-        .{
-            .id = "3f9c1e0a5b7d2c4e6f8a9b0c",
-            .email = "ada@example.com",
-            .display_name = "Ada",
-            .roles = &.{"admin"},
-            .created_at = 1789640000000,
-            .active = true,
+    pub const example_out: Out = .{
+        .users = &.{
+            .{
+                .id = "3f9c1e0a5b7d2c4e6f8a9b0c",
+                .email = "ada@example.com",
+                .display_name = "Ada",
+                .roles = &.{"admin"},
+                .created_at = 1789640000000,
+                .active = true,
+            },
+            .{
+                .id = "9b1e7c3d5a2f4e6b8d0c1a3f",
+                .email = "editor@example.com",
+                .display_name = "Editor",
+                .roles = &.{"editor"},
+                .created_at = 1789646400000,
+                .active = false,
+            },
         },
-        .{
-            .id = "9b1e7c3d5a2f4e6b8d0c1a3f",
-            .email = "editor@example.com",
-            .display_name = "Editor",
-            .roles = &.{"editor"},
-            .created_at = 1789646400000,
-            .active = false,
-        },
-    } };
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .users = "Every account, oldest first; `created_at` is Unix milliseconds",
     };
@@ -293,11 +351,16 @@ pub const List = struct {
             users[index] = summary_of(row);
         }
 
-        return .{ .users = users };
+        return .{
+            .users = users,
+        };
     }
 };
 
-pub const CreatedUser = struct { user_id: []const u8, password: ?[]const u8 };
+pub const CreatedUser = struct {
+    user_id: []const u8,
+    password: ?[]const u8,
+};
 
 pub fn create_user(
     ctx: *Ctx,
@@ -314,7 +377,10 @@ pub fn create_user(
     const password_hash = try hash_password(ctx, password);
     const user_id = try insert_user(ctx, raw_email, raw_display_name, password_hash, roles);
 
-    return .{ .user_id = user_id, .password = generated };
+    return .{
+        .user_id = user_id,
+        .password = generated,
+    };
 }
 
 /// For tests: `editor@example.com` who can sign in with `correct horse battery`.
@@ -463,7 +529,10 @@ fn issue_link(ctx: *Ctx, user_id: []const u8) Error!Link {
         token,
     });
 
-    return .{ .path = path, .expires_at = expires_at };
+    return .{
+        .path = path,
+        .expires_at = expires_at,
+    };
 }
 
 pub fn hash_token(token: []const u8) ?[store.users.token_hash_len]u8 {
@@ -527,15 +596,27 @@ pub fn summary_of(user: store.users.User) Summary {
     };
 }
 
-const TestSDK = sdk.SDK(.{ .operations = &operations });
+const TestSDK = sdk.SDK(.{
+    .operations = &operations,
+});
 
 test "create: admins only, duplicates conflict, weak input invalid, generated password" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
 
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .roles = &.{"editor"} } });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_admin",
+            .roles = &.{"admin"},
+        },
+    });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_editor",
+            .roles = &.{"editor"},
+        },
+    });
     var anon = harness.ctx(.anonymous);
 
     const created = try TestSDK.dispatch(&admin, Create, Create.example);
@@ -555,7 +636,10 @@ test "create: admins only, duplicates conflict, weak input invalid, generated pa
     bad_email.email = "not-an-email";
     try std.testing.expectError(error.Invalid, TestSDK.dispatch(&admin, Create, bad_email));
 
-    const no_password: Create.In = .{ .email = "gen@example.com", .display_name = "Gen" };
+    const no_password: Create.In = .{
+        .email = "gen@example.com",
+        .display_name = "Gen",
+    };
     const generated = try TestSDK.dispatch(&admin, Create, no_password);
     try std.testing.expectEqual(@as(usize, generated_password_len), generated.password.?.len);
 }
@@ -566,8 +650,15 @@ test "password link: pending user cannot sign in, link activates once, new link 
     defer harness.deinit();
 
     const sign_in = @import("sign_in.zig");
-    const FullSDK = sdk.SDK(.{ .operations = &(operations ++ sign_in.operations) });
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
+    const FullSDK = sdk.SDK(.{
+        .operations = &(operations ++ sign_in.operations),
+    });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_admin",
+            .roles = &.{"admin"},
+        },
+    });
     var anon = harness.ctx(.anonymous);
 
     const invited = try FullSDK.dispatch(&admin, Create, .{
@@ -595,11 +686,16 @@ test "password link: pending user cannot sign in, link activates once, new link 
     try std.testing.expectError(error.BadCredentials, login_pending);
 
     const first_token = invited.link.?.path[set_password_path.len + 7 ..];
-    const reissued = try FullSDK.dispatch(&admin, PasswordLink, .{ .user = "new@example.com" });
+    const reissued = try FullSDK.dispatch(&admin, PasswordLink, .{
+        .user = "new@example.com",
+    });
     const second_token = reissued.link.path[set_password_path.len + 7 ..];
     try std.testing.expect(!std.mem.eql(u8, first_token, second_token));
 
-    const stale_in: SetPassword.In = .{ .token = first_token, .password = "correct horse battery" };
+    const stale_in: SetPassword.In = .{
+        .token = first_token,
+        .password = "correct horse battery",
+    };
     const stale = FullSDK.dispatch(&anon, SetPassword, stale_in);
     try std.testing.expectError(error.NotFound, stale);
 
@@ -624,7 +720,9 @@ test "password link: pending user cannot sign in, link activates once, new link 
     });
     try std.testing.expectEqualStrings(invited.user_id, signed_in.user_id);
 
-    const ghost = FullSDK.dispatch(&admin, PasswordLink, .{ .user = "ghost@example.com" });
+    const ghost = FullSDK.dispatch(&admin, PasswordLink, .{
+        .user = "ghost@example.com",
+    });
     try std.testing.expectError(error.NotFound, ghost);
 }
 
@@ -632,8 +730,18 @@ test "user field options are available to editors without account details" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
-    var admin = harness.ctx(.{ .user = .{ .id = "u_admin", .roles = &.{"admin"} } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .roles = &.{"editor"} } });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_admin",
+            .roles = &.{"admin"},
+        },
+    });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_editor",
+            .roles = &.{"editor"},
+        },
+    });
     var anon = harness.ctx(.anonymous);
     const created = try TestSDK.dispatch(&admin, Create, Create.example);
     const options = try TestSDK.dispatch(&editor, Options, .{});

@@ -38,25 +38,35 @@ pub fn call(
     std.debug.assert(ctx.user_data != null);
 
     if (request.method() != .post) {
-        return response.json(.method_not_allowed, .{ .@"error" = "use POST" });
+        return response.json(.method_not_allowed, .{
+            .@"error" = "use POST",
+        });
     }
 
     if (identity.origin_of(request) != .same) {
-        return response.json(.forbidden, .{ .@"error" = "cross_origin" });
+        return response.json(.forbidden, .{
+            .@"error" = "cross_origin",
+        });
     }
 
     const name = operation_of(ctx.arena, target.path[prefix.len..]) orelse {
-        return response.json(.not_found, .{ .@"error" = "not_found" });
+        return response.json(.not_found, .{
+            .@"error" = "not_found",
+        });
     };
     const content_type = request.header("content-type") orelse "";
     const as_form = std.mem.startsWith(u8, content_type, "application/x-www-form-urlencoded");
 
     if (!as_form and !std.mem.eql(u8, request.header(request_header) orelse "", "1")) {
-        return response.json(.forbidden, .{ .@"error" = "publr_request_header_missing" });
+        return response.json(.forbidden, .{
+            .@"error" = "publr_request_header_missing",
+        });
     }
 
     if (request.body.len > body_bytes_max) {
-        return response.json(.payload_too_large, .{ .@"error" = "too_large" });
+        return response.json(.payload_too_large, .{
+            .@"error" = "too_large",
+        });
     }
 
     const app = target.app;
@@ -128,7 +138,9 @@ fn form_call(
 
     const arena = sdk_ctx.arena;
     const form = Form.parse(arena, request.body) orelse {
-        return response.json(.bad_request, .{ .@"error" = "invalid_form" });
+        return response.json(.bad_request, .{
+            .@"error" = "invalid_form",
+        });
     };
     const back = back_of(&form, request, target);
     const input = try input_of(sdk_ctx, name, &form) orelse {

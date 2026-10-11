@@ -4,6 +4,7 @@ const functions = @import("tidy/functions.zig");
 const kinds = @import("tidy/kinds.zig");
 const prose = @import("tidy/prose.zig");
 const lines_module = @import("tidy/lines.zig");
+const literals = @import("tidy/literals.zig");
 
 const limits = @import("tidy/limits.zig");
 
@@ -36,14 +37,18 @@ pub fn main(init: std.process.Init) !u8 {
             continue;
         }
 
-        var dir = try cwd.openDir(init.io, root, .{ .iterate = true });
+        var dir = try cwd.openDir(init.io, root, .{
+            .iterate = true,
+        });
         defer dir.close(init.io);
 
         var walker = try dir.walk(init.gpa);
         defer walker.deinit();
 
         while (try walker.next(init.io)) |entry| {
-            if (entry.kind != .file) {
+            const cached = std.mem.indexOf(u8, entry.path, ".zig-cache") != null;
+
+            if (entry.kind != .file or cached) {
                 continue;
             }
             if (files_seen == files_max) {
@@ -117,8 +122,30 @@ fn check_file(
     violations += functions.check_assertion_density(text, path, hint, true, singles);
     violations += kinds.check(text, path, hint, true);
     violations += try control_flow.check(init.gpa, text, path, hint, true);
+    violations += try check_literals(init.gpa, text, path, hint);
 
     return violations;
+}
+
+fn check_literals(
+    gpa: std.mem.Allocator,
+    text: []const u8,
+    path: []const u8,
+    hint: []const u8,
+) !u32 {
+    std.debug.assert(path.len > 0);
+
+    const source = try gpa.dupeZ(u8, text);
+    defer gpa.free(source);
+
+    const missing = try literals.find(gpa, source);
+    defer gpa.free(missing);
+
+    for (missing) |place| {
+        std.debug.print("{s}:{d}: {s}{s}\n", .{ path, place.line, literals.message, hint });
+    }
+
+    return @intCast(missing.len);
 }
 
 const hint_variable = "PUBLR_TIDY_HINT";
@@ -129,4 +156,5 @@ test {
     _ = functions;
     _ = prose;
     _ = lines_module;
+    _ = literals;
 }

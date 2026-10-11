@@ -64,8 +64,20 @@ pub const test_topics: Def = .{
     .title_field = "name",
     .hierarchical = true,
     .fields = &.{
-        .{ .name = "name", .label = "Name", .kind = "string", .required = true },
-        .{ .name = "slug", .label = "Slug", .kind = "slug", .options = .{ .source = "name" } },
+        .{
+            .name = "name",
+            .label = "Name",
+            .kind = "string",
+            .required = true,
+        },
+        .{
+            .name = "slug",
+            .label = "Slug",
+            .kind = "slug",
+            .options = .{
+                .source = "name",
+            },
+        },
     },
 };
 
@@ -79,8 +91,19 @@ test "a taxonomy is a record-kind definition without a url and without terms fie
     wrong.kind = .settings;
     wrong.url = "topics";
     wrong.fields = &.{
-        .{ .name = "name", .label = "Name", .kind = "string" },
-        .{ .name = "tags", .label = "Tags", .kind = "terms", .options = .{ .taxonomy = "tags" } },
+        .{
+            .name = "name",
+            .label = "Name",
+            .kind = "string",
+        },
+        .{
+            .name = "tags",
+            .label = "Tags",
+            .kind = "terms",
+            .options = .{
+                .taxonomy = "tags",
+            },
+        },
     };
     var bad: field.Problems = .{};
     validate_def(wrong, &bad);
@@ -97,10 +120,20 @@ test "a terms field names a taxonomy, may sit anywhere, and takes no choices" {
         .handle = "post",
         .name = "Post",
         .fields = &.{
-            .{ .name = "title", .label = "Title", .kind = "string" },
-            .{ .name = "topics", .label = "Topics", .kind = "terms", .many = true, .options = .{
-                .taxonomy = "topics",
-            } },
+            .{
+                .name = "title",
+                .label = "Title",
+                .kind = "string",
+            },
+            .{
+                .name = "topics",
+                .label = "Topics",
+                .kind = "terms",
+                .many = true,
+                .options = .{
+                    .taxonomy = "topics",
+                },
+            },
         },
     };
     content_type.validate_def(&kinds.core, post, &problems);
@@ -111,15 +144,34 @@ test "a terms field names a taxonomy, may sit anywhere, and takes no choices" {
         .handle = "post",
         .name = "Post",
         .fields = &.{
-            .{ .name = "topics", .label = "Topics", .kind = "terms" },
-            .{ .name = "seo", .label = "SEO", .kind = "group", .fields = &.{
-                .{ .name = "tags", .label = "Tags", .kind = "terms", .options = .{
+            .{
+                .name = "topics",
+                .label = "Topics",
+                .kind = "terms",
+            },
+            .{
+                .name = "seo",
+                .label = "SEO",
+                .kind = "group",
+                .fields = &.{
+                    .{
+                        .name = "tags",
+                        .label = "Tags",
+                        .kind = "terms",
+                        .options = .{
+                            .taxonomy = "tags",
+                        },
+                    },
+                },
+            },
+            .{
+                .name = "title",
+                .label = "Title",
+                .kind = "string",
+                .options = .{
                     .taxonomy = "tags",
-                } },
-            } },
-            .{ .name = "title", .label = "Title", .kind = "string", .options = .{
-                .taxonomy = "tags",
-            } },
+                },
+            },
         },
     };
     content_type.validate_def(&kinds.core, wrong, &bad);
@@ -139,7 +191,9 @@ pub fn implicit_field(def: Def) field.Def {
         .many = !def.single,
         .locked = true,
         .help = def.description,
-        .options = .{ .taxonomy = def.handle },
+        .options = .{
+            .taxonomy = def.handle,
+        },
     };
 }
 

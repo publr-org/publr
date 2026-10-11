@@ -133,7 +133,9 @@ pub fn key_of(
     std.debug.assert(filename.len > 0 and filename.len <= filename_len_max);
 
     const kind = kind_of(filename).?;
-    const seconds: std.time.epoch.EpochSeconds = .{ .secs = @intCast(@divTrunc(now_ms, 1000)) };
+    const seconds: std.time.epoch.EpochSeconds = .{
+        .secs = @intCast(@divTrunc(now_ms, 1000)),
+    };
     const year_day = seconds.getEpochDay().calculateYearDay();
     const month = year_day.calculateMonthDay().month.numeric();
     var stem_buffer: [60]u8 = undefined;
@@ -210,12 +212,37 @@ pub const type_def: content_type.Def = .{
     .owner = "publr",
     .title_field = "title",
     .fields = &.{
-        .{ .name = "title", .label = "Title", .kind = "string", .required = true },
-        .{ .name = "alt", .label = "Alt text", .kind = "string" },
-        .{ .name = "caption", .label = "Caption", .kind = "text" },
-        .{ .name = "credit", .label = "Credit", .kind = "string" },
-        .{ .name = "focal_x", .label = "Focal point across", .kind = "integer" },
-        .{ .name = "focal_y", .label = "Focal point down", .kind = "integer" },
+        .{
+            .name = "title",
+            .label = "Title",
+            .kind = "string",
+            .required = true,
+        },
+        .{
+            .name = "alt",
+            .label = "Alt text",
+            .kind = "string",
+        },
+        .{
+            .name = "caption",
+            .label = "Caption",
+            .kind = "text",
+        },
+        .{
+            .name = "credit",
+            .label = "Credit",
+            .kind = "string",
+        },
+        .{
+            .name = "focal_x",
+            .label = "Focal point across",
+            .kind = "integer",
+        },
+        .{
+            .name = "focal_y",
+            .label = "Focal point down",
+            .kind = "integer",
+        },
     },
 };
 
@@ -237,14 +264,20 @@ pub const tags_definition =
 /// Where a file put into the media folder by hand belongs: its name, and the library
 /// folders its directories name, outermost first and no deeper than folders nest. A top
 /// directory of four digits is the library's own dated layout and names no folder.
-pub const Placed = struct { filename: []const u8, folders: []const []const u8 };
+pub const Placed = struct {
+    filename: []const u8,
+    folders: []const []const u8,
+};
 
 pub fn placed_of(buffer: *[folder_depth_max][]const u8, path: []const u8) Placed {
     std.debug.assert(path.len > 0);
     std.debug.assert(path[path.len - 1] != '/');
 
     const slash = std.mem.lastIndexOfScalar(u8, path, '/') orelse
-        return .{ .filename = path, .folders = &.{} };
+        return .{
+            .filename = path,
+            .folders = &.{},
+        };
     var directories = std.mem.splitScalar(u8, path[0..slash], '/');
     var count: u32 = 0;
     const first = directories.first();
@@ -269,7 +302,10 @@ pub fn placed_of(buffer: *[folder_depth_max][]const u8, path: []const u8) Placed
         }
     }
 
-    return .{ .filename = path[slash + 1 ..], .folders = buffer[0..count] };
+    return .{
+        .filename = path[slash + 1 ..],
+        .folders = buffer[0..count],
+    };
 }
 
 pub fn is_library(handle: []const u8) bool {

@@ -221,7 +221,10 @@ test "amounts: written and read back by the currency's digits" {
 
 test "entries: the site's symbol, format and separators" {
     var buffer: [64]u8 = undefined;
-    const pound: Entry = .{ .code = "GBP", .symbol = "£" };
+    const pound: Entry = .{
+        .code = "GBP",
+        .symbol = "£",
+    };
     const euro: Entry = .{
         .code = "EUR",
         .symbol = "€",
@@ -233,17 +236,34 @@ test "entries: the site's symbol, format and separators" {
     try std.testing.expectEqualStrings("£9.25", format(&buffer, 925, pound));
     try std.testing.expectEqualStrings("£1,234.56", format(&buffer, 123456, pound));
     try std.testing.expectEqualStrings("1 234,56 €", format(&buffer, 123456, euro));
-    try std.testing.expectEqualStrings("JPY1,500", format(&buffer, 1500, .{ .code = "JPY" }));
+    try std.testing.expectEqualStrings("JPY1,500", format(&buffer, 1500, .{
+        .code = "JPY",
+    }));
     try std.testing.expectEqualStrings(
         "9.25 GBP",
-        format(&buffer, 925, .{ .code = "GBP", .format = "{amount} {code}" }),
+        format(&buffer, 925, .{
+            .code = "GBP",
+            .format = "{amount} {code}",
+        }),
     );
     try std.testing.expectEqualStrings("-£0.05", format(&buffer, -5, pound));
     try std.testing.expect(entry_problem(pound) == null);
-    try std.testing.expect(entry_problem(.{ .code = "GBP", .format = "{symbol}" }) != null);
-    try std.testing.expect(entry_problem(.{ .code = "ZZZ" }) != null);
-    try std.testing.expect(entry_problem(.{ .code = "GBP", .decimal = ";" }) != null);
-    const same: Entry = .{ .code = "GBP", .thousands = ".", .decimal = "." };
+    try std.testing.expect(entry_problem(.{
+        .code = "GBP",
+        .format = "{symbol}",
+    }) != null);
+    try std.testing.expect(entry_problem(.{
+        .code = "ZZZ",
+    }) != null);
+    try std.testing.expect(entry_problem(.{
+        .code = "GBP",
+        .decimal = ";",
+    }) != null);
+    const same: Entry = .{
+        .code = "GBP",
+        .thousands = ".",
+        .decimal = ".",
+    };
     try std.testing.expect(entry_problem(same) != null);
     try std.testing.expect(entry_problem(euro) == null);
 }

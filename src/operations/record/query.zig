@@ -63,7 +63,11 @@ pub const Query = struct {
         .query = "*[_type == \"post\" && slug == $slug][0]{ title }",
         .params = "{\"slug\":\"hello-world\"}",
     };
-    pub const example_out: Out = .{ .result = .{ .text = "{\"title\":\"Hello, world\"}" } };
+    pub const example_out: Out = .{
+        .result = .{
+            .text = "{\"title\":\"Hello, world\"}",
+        },
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .query = "The GROQ query",
         .params = "Its `$name` values, as a JSON object",
@@ -107,7 +111,12 @@ pub const Query = struct {
 
         const problems = try problems_of(arena, answered.problems);
 
-        return .{ .result = .{ .text = text }, .problems = problems };
+        return .{
+            .result = .{
+                .text = text,
+            },
+            .problems = problems,
+        };
     }
 };
 
@@ -221,7 +230,9 @@ fn source_of(
         const visible = !public_only or row.def.public;
 
         if (in_reach and visible and kind_readable(ctx, row.def.kind)) {
-            readable.append(arena, .{ .handle = row.def.handle }) catch return error.OutOfMemory;
+            readable.append(arena, .{
+                .handle = row.def.handle,
+            }) catch return error.OutOfMemory;
         } else {
             out_of_reach.append(arena, row.def.handle) catch return error.OutOfMemory;
         }

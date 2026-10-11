@@ -31,7 +31,11 @@ const keyed = definitions.keyed;
 pub const Record = fields.Record;
 
 /// A loaded document: its row, the slot it was read from, its document as JSON text.
-pub const Loaded = struct { row: Record, slot: []const u8, document: []const u8 };
+pub const Loaded = struct {
+    row: Record,
+    slot: []const u8,
+    document: []const u8,
+};
 
 /// What the editor is about: the definition, and the document when there is one.
 pub const Shape = struct {
@@ -108,7 +112,11 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(def.handle.len > 0);
             std.debug.assert(session.signed_in());
 
-            const shape: Shape = .{ .def = def, .loaded = null, .preview = true };
+            const shape: Shape = .{
+                .def = def,
+                .loaded = null,
+                .preview = true,
+            };
             const document = try seeded(session.arena, def, session.ctx.now_ms);
 
             return editor_node(session, shape, document, &.{});
@@ -147,7 +155,10 @@ pub fn Editor(comptime domain: Domain) type {
             const form = &post.form;
             const handle = form.text("type") orelse return admin.fail(session, error.Invalid, back);
             const def = try definition_of(session, handle) orelse return;
-            const shape: Shape = .{ .def = def, .loaded = null };
+            const shape: Shape = .{
+                .def = def,
+                .loaded = null,
+            };
 
             if (try reshaped(session, shape, form)) {
                 return;
@@ -156,7 +167,9 @@ pub fn Editor(comptime domain: Domain) type {
             const document = fields.decode.document_of(session.arena, def.fields, form) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
-            var in = keyed(operations.Create.In, domain.key, handle, .{ .document = document });
+            var in = keyed(operations.Create.In, domain.key, handle, .{
+                .document = document,
+            });
 
             if (@hasField(operations.Create.In, "parent")) {
                 in.parent = form.get("parent");
@@ -279,7 +292,10 @@ pub fn Editor(comptime domain: Domain) type {
             };
             const def = try definition_of(session, handle) orelse return null;
 
-            return .{ .def = def, .loaded = null };
+            return .{
+                .def = def,
+                .loaded = null,
+            };
         }
 
         fn definition_of(session: *Session, handle: []const u8) Error!?Def {
@@ -315,7 +331,10 @@ pub fn Editor(comptime domain: Domain) type {
             const shape: Shape = if (listed.records.len > 0)
                 try load(&session, listed.records[0].id) orelse return
             else
-                .{ .def = def, .loaded = null };
+                .{
+                    .def = def,
+                    .loaded = null,
+                };
             const document = if (shape.loaded) |full|
                 parse(session.arena, full.document)
             else
@@ -339,11 +358,14 @@ pub fn Editor(comptime domain: Domain) type {
             const row: Record = @field(full, domain.row);
             const def = try definition_of(session, row.type) orelse return null;
 
-            return .{ .def = def, .loaded = .{
-                .row = row,
-                .slot = full.slot,
-                .document = full.document,
-            } };
+            return .{
+                .def = def,
+                .loaded = .{
+                    .row = row,
+                    .slot = full.slot,
+                    .document = full.document,
+                },
+            };
         }
 
         /// Whether the post came from the editor's script asking for the editor drawn again.
@@ -509,7 +531,10 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(session.signed_in());
 
             const reason = try reason_of(session, shape, err, document);
-            const verdict = .{ .saved = false, .reason = reason };
+            const verdict = .{
+                .saved = false,
+                .reason = reason,
+            };
 
             session.response.json(.ok, verdict) catch return error.OutOfMemory;
         }
@@ -552,7 +577,9 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(shape.def.handle.len > 0);
 
             const Validate = operations.Validate;
-            const in = keyed(Validate.In, domain.key, shape.def.handle, .{ .document = document });
+            const in = keyed(Validate.In, domain.key, shape.def.handle, .{
+                .document = document,
+            });
             const checked = registry.SDK.dispatch(&session.ctx, Validate, in) catch |inner| {
                 try admin.fail(session, inner, back);
 
@@ -561,7 +588,10 @@ pub fn Editor(comptime domain: Domain) type {
             const problems = try session.arena.alloc(Problem, checked.problems.len);
 
             for (checked.problems, 0..) |problem, index| {
-                problems[index] = .{ .code = problem.path, .text = problem.message };
+                problems[index] = .{
+                    .code = problem.path,
+                    .text = problem.message,
+                };
             }
 
             return problems;
@@ -605,7 +635,10 @@ pub fn Editor(comptime domain: Domain) type {
 
             const parents = try arena.alloc(views.RecordForm.ParentsItem, 1);
 
-            parents[0] = .{ .label = def.name, .href = try domain.crumb(arena, def) };
+            parents[0] = .{
+                .label = def.name,
+                .href = try domain.crumb(arena, def),
+            };
 
             try admin.screen(session, .ok, views.RecordForm, .{
                 .title = title,
@@ -872,7 +905,10 @@ fn delete_notes_of(session: *Session, def: Def) Error![]const fields.DeleteNote 
                     child_field.label,
                 });
 
-                try notes.append(session.arena, .{ .field = field.name, .note = note });
+                try notes.append(session.arena, .{
+                    .field = field.name,
+                    .note = note,
+                });
             }
         }
     }
@@ -912,9 +948,13 @@ fn pointed(session: *Session, def: Def, document: ?Value) Error!?Value {
     const parent = admin.query_param(session, "parent") orelse return document;
     var object: std.json.ObjectMap = if (document) |given| given.object else .empty;
 
-    object.put(session.arena, via, .{ .string = parent }) catch return error.OutOfMemory;
+    object.put(session.arena, via, .{
+        .string = parent,
+    }) catch return error.OutOfMemory;
 
-    return .{ .object = object };
+    return .{
+        .object = object,
+    };
 }
 
 /// What a new document starts with: the defaults of the definition's fields, or nothing
@@ -931,7 +971,9 @@ fn seeded(arena: std.mem.Allocator, def: Def, now: i64) Error!?Value {
         return null;
     }
 
-    return .{ .object = object };
+    return .{
+        .object = object,
+    };
 }
 
 fn fragment_answer(session: *Session, html: []const u8) Error!void {
@@ -944,7 +986,9 @@ fn fragment_answer(session: *Session, html: []const u8) Error!void {
     try session.response.set_header("Vary", "Accept, Publr-Fragment, Publr-Drawer");
 
     if (std.mem.eql(u8, accept, "application/json")) {
-        return session.response.json(.ok, .{ .html = html });
+        return session.response.json(.ok, .{
+            .html = html,
+        });
     }
 
     return session.response.set_body(.ok, "text/html; charset=utf-8", html);
@@ -1001,7 +1045,11 @@ pub fn referenced_of(
         var shown = record;
 
         shown.title = title;
-        card.* = .{ .id = record.id, .record = shown, .type_name = name_of(names, record.type) };
+        card.* = .{
+            .id = record.id,
+            .record = shown,
+            .type_name = name_of(names, record.type),
+        };
     }
 
     return seen;
@@ -1129,7 +1177,10 @@ fn add_path_types(
         }
     }
 
-    entries.append(session.arena, .{ .path = path, .types = options.items }) catch {
+    entries.append(session.arena, .{
+        .path = path,
+        .types = options.items,
+    }) catch {
         return error.OutOfMemory;
     };
 }
@@ -1191,10 +1242,17 @@ fn add_path_terms(
     const terms = try session.arena.alloc(fields.TermOption, tree.terms.len);
 
     for (tree.terms, terms) |term, *option| {
-        option.* = .{ .id = term.id, .title = term.title, .depth = term.depth };
+        option.* = .{
+            .id = term.id,
+            .title = term.title,
+            .depth = term.depth,
+        };
     }
 
-    entries.append(session.arena, .{ .path = path, .terms = terms }) catch {
+    entries.append(session.arena, .{
+        .path = path,
+        .terms = terms,
+    }) catch {
         return error.OutOfMemory;
     };
 }

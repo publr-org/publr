@@ -159,21 +159,37 @@ fn frontmatter(source: []const u8) ?[]const u8 {
     return after[0..end];
 }
 
-const Case = struct { wanted: []const u8, from: []const u8, spec: []const u8 };
+const Case = struct {
+    wanted: []const u8,
+    from: []const u8,
+    spec: []const u8,
+};
 
 test "an import resolves inside the app, out to the apps folder, and back into the app" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const cases = [_]Case{
-        .{ .wanted = "layouts/b.publr", .from = "content/a.publr", .spec = "../layouts/b.publr" },
-        .{ .wanted = "content/x.publr", .from = "content/a.publr", .spec = "./x.publr" },
+        .{
+            .wanted = "layouts/b.publr",
+            .from = "content/a.publr",
+            .spec = "../layouts/b.publr",
+        },
+        .{
+            .wanted = "content/x.publr",
+            .from = "content/a.publr",
+            .spec = "./x.publr",
+        },
         .{
             .wanted = "../shared/a.publr",
             .from = "layouts/b.publr",
             .spec = "../../shared/a.publr",
         },
-        .{ .wanted = "../shared/mark.publr", .from = "../shared/nav.publr", .spec = "mark.publr" },
+        .{
+            .wanted = "../shared/mark.publr",
+            .from = "../shared/nav.publr",
+            .spec = "mark.publr",
+        },
         .{
             .wanted = "layouts/b.publr",
             .from = "../shared/a.publr",

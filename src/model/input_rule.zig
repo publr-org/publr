@@ -110,17 +110,41 @@ fn list_broken(rule: Rule, size: u32) ?[]const u8 {
 }
 
 test "rules: numbers, texts and lists, each held to its own" {
-    const quantity: Rule = .{ .min = 1, .max = 20 };
-    const code: Rule = .{ .min_len = 2, .max_len = 4, .preset = .uppercase };
-    const lines: Rule = .{ .items_min = 1, .items_max = 2 };
+    const quantity: Rule = .{
+        .min = 1,
+        .max = 20,
+    };
+    const code: Rule = .{
+        .min_len = 2,
+        .max_len = 4,
+        .preset = .uppercase,
+    };
+    const lines: Rule = .{
+        .items_min = 1,
+        .items_max = 2,
+    };
 
-    try std.testing.expect(broken(quantity, .{ .integer = 5 }) == null);
-    try std.testing.expect(broken(quantity, .{ .integer = 0 }) != null);
-    try std.testing.expect(broken(quantity, .{ .integer = 21 }) != null);
-    try std.testing.expect(broken(code, .{ .string = "ABC" }) == null);
-    try std.testing.expect(broken(code, .{ .string = "A" }) != null);
-    try std.testing.expect(broken(code, .{ .string = "abc" }) != null);
-    try std.testing.expect(broken(lines, .{ .array = .init(std.testing.allocator) }) != null);
+    try std.testing.expect(broken(quantity, .{
+        .integer = 5,
+    }) == null);
+    try std.testing.expect(broken(quantity, .{
+        .integer = 0,
+    }) != null);
+    try std.testing.expect(broken(quantity, .{
+        .integer = 21,
+    }) != null);
+    try std.testing.expect(broken(code, .{
+        .string = "ABC",
+    }) == null);
+    try std.testing.expect(broken(code, .{
+        .string = "A",
+    }) != null);
+    try std.testing.expect(broken(code, .{
+        .string = "abc",
+    }) != null);
+    try std.testing.expect(broken(lines, .{
+        .array = .init(std.testing.allocator),
+    }) != null);
     try std.testing.expect((Rule{}).empty());
     try std.testing.expect(!quantity.empty());
 }

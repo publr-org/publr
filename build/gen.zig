@@ -32,7 +32,9 @@ pub fn add(
 ) Generated {
     std.debug.assert(builder.build_root.path != null);
 
-    const pjsx_host = builder.dependency("pjsx", .{ .target = builder.graph.host });
+    const pjsx_host = builder.dependency("pjsx", .{
+        .target = builder.graph.host,
+    });
     const tool = builder.addExecutable(.{
         .name = "pjsx_gen",
         .root_module = builder.createModule(.{
@@ -40,11 +42,17 @@ pub fn add(
             .target = builder.graph.host,
             .optimize = .Debug,
             .imports = &.{
-                .{ .name = "pjsx", .module = pjsx_host.module("pjsx") },
+                .{
+                    .name = "pjsx",
+                    .module = pjsx_host.module("pjsx"),
+                },
                 // Only `Shape` is read here, so the render runtime is not needed.
-                .{ .name = "request", .module = builder.createModule(.{
-                    .root_source_file = builder.path("ui/request.zig"),
-                }) },
+                .{
+                    .name = "request",
+                    .module = builder.createModule(.{
+                        .root_source_file = builder.path("ui/request.zig"),
+                    }),
+                },
             },
         }),
     });
@@ -75,15 +83,24 @@ pub fn add(
         .root_source_file = builder.path("ui/request.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "runtime", .module = runtime }},
+        .imports = &.{.{
+            .name = "runtime",
+            .module = runtime,
+        }},
     });
     const views = builder.createModule(.{
         .root_source_file = out.path(builder, "views.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "runtime", .module = runtime },
-            .{ .name = "request", .module = request },
+            .{
+                .name = "runtime",
+                .module = runtime,
+            },
+            .{
+                .name = "request",
+                .module = request,
+            },
         },
     });
 
@@ -107,12 +124,18 @@ fn add_runtime(
 ) *std.Build.Module {
     std.debug.assert(builder.build_root.path != null);
 
-    const jit = builder.dependency("publr_jit", .{ .target = target, .optimize = optimize });
+    const jit = builder.dependency("publr_jit", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const class_merge = builder.createModule(.{
         .root_source_file = builder.path("src/ui/class_merge.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "publr_jit", .module = jit.module("publr_jit") }},
+        .imports = &.{.{
+            .name = "publr_jit",
+            .module = jit.module("publr_jit"),
+        }},
     });
     class_merge.addAnonymousImport("ui_theme", .{
         .root_source_file = builder.path("ui/styles/theme.zon"),
@@ -122,7 +145,10 @@ fn add_runtime(
         .root_source_file = pjsx_host.path("src/template_runtime.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "class_merge", .module = class_merge }},
+        .imports = &.{.{
+            .name = "class_merge",
+            .module = class_merge,
+        }},
     });
 
     std.debug.assert(runtime.root_source_file != null);
@@ -143,7 +169,9 @@ fn declare_inputs(
 
     const io = builder.graph.io;
     const base = if (dir.len > 0) builder.pathJoin(&.{ root, dir }) else root;
-    var handle = std.Io.Dir.cwd().openDir(io, base, .{ .iterate = true }) catch {
+    var handle = std.Io.Dir.cwd().openDir(io, base, .{
+        .iterate = true,
+    }) catch {
         diagnostic.fail("pjsx_gen inputs: cannot open {s}", .{base});
     };
     defer handle.close(io);
@@ -157,7 +185,9 @@ fn declare_inputs(
         if (entry.kind == .file and std.mem.endsWith(u8, entry.basename, extension)) {
             const path = builder.pathJoin(&.{ base, builder.dupe(entry.path) });
 
-            run.addFileInput(.{ .cwd_relative = path });
+            run.addFileInput(.{
+                .cwd_relative = path,
+            });
         }
     }
 }

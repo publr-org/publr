@@ -15,25 +15,83 @@ pub const Status = struct {
     initial: bool = false,
 };
 
-pub const Transition = struct { from: []const u8, to: []const u8, label: []const u8 };
+pub const Transition = struct {
+    from: []const u8,
+    to: []const u8,
+    label: []const u8,
+};
 
 pub const core_statuses = [_]Status{
-    .{ .id = "draft", .label = "Draft", .initial = true },
-    .{ .id = "published", .label = "Published", .color = .success, .live = true },
-    .{ .id = "archived", .label = "Archived", .listed = false },
-    .{ .id = "deleted", .label = "Deleted", .color = .danger, .listed = false },
+    .{
+        .id = "draft",
+        .label = "Draft",
+        .initial = true,
+    },
+    .{
+        .id = "published",
+        .label = "Published",
+        .color = .success,
+        .live = true,
+    },
+    .{
+        .id = "archived",
+        .label = "Archived",
+        .listed = false,
+    },
+    .{
+        .id = "deleted",
+        .label = "Deleted",
+        .color = .danger,
+        .listed = false,
+    },
 };
 
 pub const core_transitions = [_]Transition{
-    .{ .from = "draft", .to = "published", .label = "Publish" },
-    .{ .from = "published", .to = "draft", .label = "Unpublish" },
-    .{ .from = "draft", .to = "archived", .label = "Archive" },
-    .{ .from = "published", .to = "archived", .label = "Archive" },
-    .{ .from = "archived", .to = "draft", .label = "Restore" },
-    .{ .from = "draft", .to = "deleted", .label = "Delete" },
-    .{ .from = "published", .to = "deleted", .label = "Delete" },
-    .{ .from = "archived", .to = "deleted", .label = "Delete" },
-    .{ .from = "deleted", .to = "draft", .label = "Restore" },
+    .{
+        .from = "draft",
+        .to = "published",
+        .label = "Publish",
+    },
+    .{
+        .from = "published",
+        .to = "draft",
+        .label = "Unpublish",
+    },
+    .{
+        .from = "draft",
+        .to = "archived",
+        .label = "Archive",
+    },
+    .{
+        .from = "published",
+        .to = "archived",
+        .label = "Archive",
+    },
+    .{
+        .from = "archived",
+        .to = "draft",
+        .label = "Restore",
+    },
+    .{
+        .from = "draft",
+        .to = "deleted",
+        .label = "Delete",
+    },
+    .{
+        .from = "published",
+        .to = "deleted",
+        .label = "Delete",
+    },
+    .{
+        .from = "archived",
+        .to = "deleted",
+        .label = "Delete",
+    },
+    .{
+        .from = "deleted",
+        .to = "draft",
+        .label = "Restore",
+    },
 };
 
 pub fn Registry(comptime statuses: []const Status, comptime transitions: []const Transition) type {
@@ -179,8 +237,16 @@ test "plugins extend the registry" {
         .color = .info,
     }};
     const more = core_transitions ++ [_]Transition{
-        .{ .from = "draft", .to = "in_review", .label = "Request review" },
-        .{ .from = "in_review", .to = "published", .label = "Approve" },
+        .{
+            .from = "draft",
+            .to = "in_review",
+            .label = "Request review",
+        },
+        .{
+            .from = "in_review",
+            .to = "published",
+            .label = "Approve",
+        },
     };
     const Extended = Registry(&extended, &more);
 

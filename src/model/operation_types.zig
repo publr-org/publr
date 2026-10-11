@@ -168,7 +168,10 @@ test "an operation's shapes become TypeScript: optional fields, lists, enums, nu
         tags: []const []const u8 = &.{},
         note: ?[]const u8 = null,
     };
-    const Out = struct { id: []const u8, position: i64 };
+    const Out = struct {
+        id: []const u8,
+        position: i64,
+    };
     const text = try type_of(arena, comptime contract.describe(In));
 
     try std.testing.expectEqualStrings(
@@ -192,12 +195,17 @@ test "the module adds every operation to publr/operations' Operations" {
     const arena = arena_state.allocator();
     var buffer: [4096]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
-    const In = struct { id: []const u8, position: i64 };
+    const In = struct {
+        id: []const u8,
+        position: i64,
+    };
 
     try write(&writer, arena, &.{.{
         .name = "lms.move_chapter",
         .input = comptime contract.describe(In),
-        .output = comptime contract.describe(struct { position: i64 }),
+        .output = comptime contract.describe(struct {
+            position: i64,
+        }),
     }});
 
     const text = writer.buffered();

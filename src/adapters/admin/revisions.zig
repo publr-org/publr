@@ -57,7 +57,12 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     }
 
     try admin.screen_with(&session, .{
-        .content = .{ .filters = .{ .types = &.{full.record.type}, .type_view = true } },
+        .content = .{
+            .filters = .{
+                .types = &.{full.record.type},
+                .type_view = true,
+            },
+        },
     }, .ok, views.Revisions, .{
         .title = std.fmt.allocPrint(arena, "Versions of {s}", .{record_title}) catch {
             return error.OutOfMemory;
@@ -98,7 +103,12 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     const record_title = if (full.record.title.len > 0) full.record.title else full.record.id;
 
     try admin.screen_with(&session, .{
-        .content = .{ .filters = .{ .types = &.{full.record.type}, .type_view = true } },
+        .content = .{
+            .filters = .{
+                .types = &.{full.record.type},
+                .type_view = true,
+            },
+        },
     }, .ok, views.Revision, .{
         .title = std.fmt.allocPrint(arena, "Version {d} of {s}", .{ seq, record_title }) catch {
             return error.OutOfMemory;
@@ -137,13 +147,18 @@ fn fields_of(
 
     for (definitions) |def| {
         const value: []const u8 = if (document.get(def.name)) |present|
-            std.json.Stringify.valueAlloc(arena, present, .{ .whitespace = .indent_2 }) catch {
+            std.json.Stringify.valueAlloc(arena, present, .{
+                .whitespace = .indent_2,
+            }) catch {
                 return error.OutOfMemory;
             }
         else
             "";
 
-        fields.append(arena, .{ .label = def.label, .value = value }) catch {
+        fields.append(arena, .{
+            .label = def.label,
+            .value = value,
+        }) catch {
             return error.OutOfMemory;
         };
     }

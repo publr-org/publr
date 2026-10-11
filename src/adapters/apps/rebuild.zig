@@ -45,7 +45,9 @@ pub fn refresh(project: *const Project) !Refreshed {
     std.debug.assert(project.connection.transaction_depth == 0);
     std.debug.assert(project.apps.len > 0);
 
-    var result: Refreshed = .{ .outcome = .current };
+    var result: Refreshed = .{
+        .outcome = .current,
+    };
     var stale: u32 = 0;
 
     for (project.apps) |*app| {
@@ -70,7 +72,10 @@ pub fn refresh(project: *const Project) !Refreshed {
     }
 
     const replayed = replay(project) catch |err| switch (err) {
-        error.FanOutExceeded => return .{ .outcome = .built, .full = try build.build_all(project) },
+        error.FanOutExceeded => return .{
+            .outcome = .built,
+            .full = try build.build_all(project),
+        },
         else => return err,
     };
 
@@ -78,7 +83,10 @@ pub fn refresh(project: *const Project) !Refreshed {
     result.removed += replayed.removed;
 
     if (replayed.too_many) {
-        return .{ .outcome = .built, .full = try build.build_all(project) };
+        return .{
+            .outcome = .built,
+            .full = try build.build_all(project),
+        };
     }
 
     if (result.outcome == .current and (result.written > 0 or result.removed > 0)) {
@@ -103,7 +111,11 @@ fn add(total: *build.Summary, summary: build.Summary) void {
     total.failed += summary.failed;
 }
 
-const Replayed = struct { written: u32 = 0, removed: u32 = 0, too_many: bool = false };
+const Replayed = struct {
+    written: u32 = 0,
+    removed: u32 = 0,
+    too_many: bool = false,
+};
 
 /// Every queued change, due now: a quiet period is for a server that keeps running.
 fn replay(project: *const Project) !Replayed {
@@ -155,7 +167,10 @@ pub fn write_marker(app: *const App) !void {
 
     std.debug.assert(line.len == marker_len_max);
 
-    try app.output.?.writeFile(app.io, .{ .sub_path = marker_path, .data = line });
+    try app.output.?.writeFile(app.io, .{
+        .sub_path = marker_path,
+        .data = line,
+    });
 }
 
 /// Takes every due batch and rebuilds its plan. Best effort: a failure leaves a stale file
@@ -217,7 +232,10 @@ fn built(project: *const Project) bool {
     return false;
 }
 
-const Counts = struct { written: u32 = 0, removed: u32 = 0 };
+const Counts = struct {
+    written: u32 = 0,
+    removed: u32 = 0,
+};
 
 /// One batch through its plan and marked done: each artifact rendered again by the app
 /// that wrote it. A plan the index refuses (`error.FanOutExceeded`) leaves the batch

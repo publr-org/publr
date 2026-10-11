@@ -34,7 +34,10 @@ const Answer = struct {
     edit_label: []const u8 = "",
 };
 
-const Edit = struct { url: []const u8, label: []const u8 };
+const Edit = struct {
+    url: []const u8,
+    label: []const u8,
+};
 
 pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerror!void {
     std.debug.assert(std.mem.eql(u8, request.path(), toolbar_path));
@@ -53,14 +56,18 @@ pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerr
     const identity = identity_module.identify(request, ctx.arena, project);
 
     if (identity.caller.user_id() == null) {
-        return response.json(.ok, Answer{ .signed_in = false });
+        return response.json(.ok, Answer{
+            .signed_in = false,
+        });
     }
 
     var door = identity_module.context(project, ctx.arena, identity.caller);
 
     // An app's visitor is signed in to the app, not to Publr: no bar, no way to the admin.
     if (!registry.SDK.reaches_admin(&door)) {
-        return response.json(.ok, Answer{ .signed_in = false });
+        return response.json(.ok, Answer{
+            .signed_in = false,
+        });
     }
 
     const shown = http.Form.query_param(ctx.arena, request.query(), "path") orelse "/";

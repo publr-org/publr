@@ -70,12 +70,18 @@ pub fn project_apps(
     std.debug.assert(dir.len > 0);
 
     const loaded = try read(gpa, io, dir, reason) orelse {
-        return .{ .loaded = null, .specs = spec_module.all };
+        return .{
+            .loaded = null,
+            .specs = spec_module.all,
+        };
     };
 
     std.debug.assert(loaded.specs.len > 0);
 
-    return .{ .loaded = loaded, .specs = loaded.specs };
+    return .{
+        .loaded = loaded,
+        .specs = loaded.specs,
+    };
 }
 
 /// The apps under `dir`, or null when it holds none: the binary's own are served then. A
@@ -88,7 +94,10 @@ pub fn read(
 ) !?Loaded {
     std.debug.assert(dir.len > 0);
 
-    var loaded: Loaded = .{ .arena = .init(gpa), .specs = &.{} };
+    var loaded: Loaded = .{
+        .arena = .init(gpa),
+        .specs = &.{},
+    };
     errdefer loaded.arena.deinit();
 
     const arena = loaded.arena.allocator();
@@ -112,7 +121,9 @@ pub fn read(
 
 /// Every folder under `dir` with an `app.zon`, sorted; null when there is none.
 fn app_folders(arena: std.mem.Allocator, io: std.Io, dir: []const u8) !?[]const []const u8 {
-    var root = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return null;
+    var root = std.Io.Dir.cwd().openDir(io, dir, .{
+        .iterate = true,
+    }) catch return null;
     defer root.close(io);
 
     var names: std.ArrayList([]const u8) = .empty;
@@ -171,7 +182,10 @@ fn read_app(
     const tokens = try arena.alloc(jit.Token, config.tokens.len);
 
     for (config.tokens, 0..) |token, index| {
-        tokens[index] = .{ .name = token.name, .value = token.value };
+        tokens[index] = .{
+            .name = token.name,
+            .value = token.value,
+        };
     }
 
     return .{
@@ -190,7 +204,9 @@ fn read_app(
             templates_max,
         ),
         .assets = if (compiled) |built| built.assets else spec_module.common_assets,
-        .tokens = try jit.extendThemeRuntime(arena, jit.default_theme, .{ .tokens = tokens }),
+        .tokens = try jit.extendThemeRuntime(arena, jit.default_theme, .{
+            .tokens = tokens,
+        }),
         .style_css = style_css,
         .interactive_classes = if (compiled) |built| built.interactive_classes else "",
         .pjsx_components = if (compiled) |built| built.pjsx_components else &.{},
@@ -248,7 +264,9 @@ fn refuse_compiled_parts(
 /// `**/*.publr` under the app, by their app-relative paths; `public/` and `interactive/` hold
 /// no templates, and a template sits in a folder, never at the app's root.
 fn read_templates(arena: std.mem.Allocator, io: std.Io, app_dir: []const u8) ![]const File {
-    var root = try std.Io.Dir.cwd().openDir(io, app_dir, .{ .iterate = true });
+    var root = try std.Io.Dir.cwd().openDir(io, app_dir, .{
+        .iterate = true,
+    });
     defer root.close(io);
 
     var files: std.ArrayList(File) = .empty;
@@ -271,7 +289,10 @@ fn read_templates(arena: std.mem.Allocator, io: std.Io, app_dir: []const u8) ![]
 
         const data = try root.readFileAlloc(io, entry.path, arena, .limited(template_bytes_max));
 
-        try files.append(arena, .{ .path = try arena.dupe(u8, entry.path), .data = data });
+        try files.append(arena, .{
+            .path = try arena.dupe(u8, entry.path),
+            .data = data,
+        });
     }
 
     std.mem.sort(File, files.items, {}, file_less_than);
@@ -359,7 +380,10 @@ test "an app is known by its `.name`, whatever its folder; two of one name are r
     var reason: report.Reason = .{};
 
     try scratch.dir.createDirPath(io, "apps/site-2024/content");
-    try scratch.dir.writeFile(io, .{ .sub_path = "apps/site-2024/app.zon", .data = zon });
+    try scratch.dir.writeFile(io, .{
+        .sub_path = "apps/site-2024/app.zon",
+        .data = zon,
+    });
 
     const root = try scratch.dir.realPathFileAlloc(io, "apps", gpa);
     defer gpa.free(root);
@@ -372,7 +396,10 @@ test "an app is known by its `.name`, whatever its folder; two of one name are r
     loaded.deinit();
 
     try scratch.dir.createDirPath(io, "apps/copy/content");
-    try scratch.dir.writeFile(io, .{ .sub_path = "apps/copy/app.zon", .data = again });
+    try scratch.dir.writeFile(io, .{
+        .sub_path = "apps/copy/app.zon",
+        .data = again,
+    });
     try std.testing.expectError(error.InvalidApp, read(gpa, io, root, &reason));
     try std.testing.expect(std.mem.indexOf(u8, reason.text(), "copy and site-2024") != null);
 }

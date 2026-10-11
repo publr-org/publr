@@ -48,7 +48,9 @@ fn serve(request: *http.Request, response: *http.Response, ctx: *http.Context) a
     const files = project.files orelse return response.text(.service_unavailable, "No files");
     const who = identity.identify(request, ctx.arena, project);
     var sdk_ctx = identity.context(project, ctx.arena, who.caller);
-    const facts = registry.SDK.dispatch(&sdk_ctx, media.File, .{ .key = key }) catch |err| {
+    const facts = registry.SDK.dispatch(&sdk_ctx, media.File, .{
+        .key = key,
+    }) catch |err| {
         return switch (err) {
             error.NotFound, error.Invalid => response.text(.not_found, "Not Found"),
             else => err,

@@ -290,7 +290,9 @@ pub fn write(
 
     complete.operations = &operations;
 
-    try std.json.Stringify.value(complete, .{ .emit_null_optional_fields = false }, writer);
+    try std.json.Stringify.value(complete, .{
+        .emit_null_optional_fields = false,
+    }, writer);
 }
 
 /// The operations' declarations, in the manifest's order.

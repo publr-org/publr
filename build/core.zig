@@ -146,19 +146,40 @@ pub fn add_module(
         .target = target,
         .release = optimize != .Debug,
     });
-    const publr_jit = builder.dependency("publr_jit", .{ .target = target, .optimize = optimize });
+    const publr_jit = builder.dependency("publr_jit", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const module = builder.createModule(.{
         .root_source_file = builder.path("src/publr.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
         .imports = &.{
-            .{ .name = "publr_sqlite", .module = publr_sqlite.module("publr_sqlite") },
-            .{ .name = "publr_http", .module = publr_http.module("publr_http") },
-            .{ .name = "publr_auth", .module = publr_auth.module("publr_auth") },
-            .{ .name = "publr_groq", .module = publr_groq.module("publr_groq") },
-            .{ .name = "publr_deps", .module = publr_deps.module("publr_deps") },
-            .{ .name = "publr_jit", .module = publr_jit.module("publr_jit") },
+            .{
+                .name = "publr_sqlite",
+                .module = publr_sqlite.module("publr_sqlite"),
+            },
+            .{
+                .name = "publr_http",
+                .module = publr_http.module("publr_http"),
+            },
+            .{
+                .name = "publr_auth",
+                .module = publr_auth.module("publr_auth"),
+            },
+            .{
+                .name = "publr_groq",
+                .module = publr_groq.module("publr_groq"),
+            },
+            .{
+                .name = "publr_deps",
+                .module = publr_deps.module("publr_deps"),
+            },
+            .{
+                .name = "publr_jit",
+                .module = publr_jit.module("publr_jit"),
+            },
         },
     });
 
@@ -236,7 +257,10 @@ fn add_compiler(
             .@"toolchain-archive" = archive,
         })
     else
-        builder.dependency("publr_zig", .{ .target = target, .release = release });
+        builder.dependency("publr_zig", .{
+            .target = target,
+            .release = release,
+        });
 
     module.addImport("publr_zig", publr_zig.module("publr_zig"));
     module.addAnonymousImport("sdk_archive", .{
@@ -254,7 +278,9 @@ fn add_admin_scripts(
     std.debug.assert(module.root_source_file != null);
     std.debug.assert(builder.build_root.path != null);
 
-    module.addAnonymousImport("admin_stores_js", .{ .root_source_file = stores });
+    module.addAnonymousImport("admin_stores_js", .{
+        .root_source_file = stores,
+    });
 
     inline for (@import("../src/ui/client_files.zig").names) |name| {
         module.addAnonymousImport(name, .{
@@ -269,7 +295,9 @@ fn engine_stamp(builder: *std.Build) []const u8 {
     std.debug.assert(builder.build_root.path != null);
 
     const io = builder.graph.io;
-    var dir = builder.build_root.handle.openDir(io, "src", .{ .iterate = true }) catch
+    var dir = builder.build_root.handle.openDir(io, "src", .{
+        .iterate = true,
+    }) catch
         @panic("src/ is missing");
     defer dir.close(io);
 
@@ -322,7 +350,9 @@ fn add_apps(
     std.debug.assert(module.root_source_file != null);
     std.debug.assert(from.apps_max > 0);
 
-    const jit_host = builder.dependency("publr_jit", .{ .target = builder.graph.host });
+    const jit_host = builder.dependency("publr_jit", .{
+        .target = builder.graph.host,
+    });
     const options = builder.addOptions();
 
     options.addOption(u32, "apps_max", from.apps_max);

@@ -37,7 +37,9 @@ pub fn system(
 
     var session = try admin.require(request, response, ctx) orelse return;
 
-    try render(&session, .ok, .{ .tab = "general" });
+    try render(&session, .ok, .{
+        .tab = "general",
+    });
 }
 
 /// The Currencies tab: the site's currencies, editable in place.
@@ -189,7 +191,10 @@ fn render(session: *admin.Session, status: admin.Status, shown: Shown) admin.Err
     }
 
     for (digits, model.currency.all) |*item, currency| {
-        item.* = .{ .code = currency.code, .digits = @floatFromInt(currency.digits) };
+        item.* = .{
+            .code = currency.code,
+            .digits = @floatFromInt(currency.digits),
+        };
     }
 
     try admin.screen(session, status, views.SettingsSystem, .{
@@ -239,7 +244,9 @@ test "currencies under system settings: shown, saved with a new default, refused
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    var flow: admin.Flow = .{ .inner = undefined };
+    var flow: admin.Flow = .{
+        .inner = undefined,
+    };
     flow.inner.init(.{
         .connection = &harness.fixture.connection,
         .auth = &harness.auth,

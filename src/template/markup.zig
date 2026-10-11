@@ -446,7 +446,12 @@ fn read_attribute(compiler: *Compiler, name: []const u8) Error!Attr {
     }
 
     if (compiler.position >= source.len or source[compiler.position] != '=') {
-        return .{ .name = attr_name, .verbatim = attr_name, .literal = null, .expression = null };
+        return .{
+            .name = attr_name,
+            .verbatim = attr_name,
+            .literal = null,
+            .expression = null,
+        };
     }
 
     compiler.position += 1;
@@ -539,7 +544,9 @@ fn write_literal_attribute(compiler: *Compiler, attr: Attr, verbatim: []const u8
             try compiler.static(" ");
             try compiler.static(attr.name);
             try compiler.static("=\"");
-            try compiler.push(.{ .asset = value });
+            try compiler.push(.{
+                .asset = value,
+            });
             try compiler.static("\"");
 
             return;
@@ -615,7 +622,12 @@ fn attribute_expression(compiler: *Compiler, name: []const u8, text: []const u8)
 
     switch (value.type) {
         .javascript, .boolean, .opt_string, .string, .int => {
-            try compiler.push(.{ .attr = .{ .name = name, .expr = value } });
+            try compiler.push(.{
+                .attr = .{
+                    .name = name,
+                    .expr = value,
+                },
+            });
         },
         else => return compiler.fail(
             "attribute {s} has a value of type {s}, which cannot be written",
@@ -631,7 +643,9 @@ fn write_raw(compiler: *Compiler, text: []const u8) Error!void {
     const value = try expression.expression(compiler, text);
 
     switch (value.type) {
-        .javascript, .string, .opt_string => try compiler.push(.{ .raw = value }),
+        .javascript, .string, .opt_string => try compiler.push(.{
+            .raw = value,
+        }),
         else => return compiler.fail(
             "set:html needs a string; got a {s}",
             .{@tagName(value.type)},

@@ -134,18 +134,33 @@ fn subjects_of(session: *admin.Session) ![]const admin.views.RuleBuilder.Subject
     }
 
     const defs = [_]model.field.Def{
-        .{ .name = "destination", .label = "Location", .kind = "select", .options = .{
-            .choices = &.{ "user", "media" },
-            .labels = &.{ "User", "Media" },
-        } },
-        .{ .name = "role", .label = "User role", .kind = "select", .options = .{
-            .choices = role_names,
-            .labels = role_labels,
-        } },
-        .{ .name = "media_type", .label = "Media type", .kind = "select", .options = .{
-            .choices = values,
-            .labels = labels,
-        } },
+        .{
+            .name = "destination",
+            .label = "Location",
+            .kind = "select",
+            .options = .{
+                .choices = &.{ "user", "media" },
+                .labels = &.{ "User", "Media" },
+            },
+        },
+        .{
+            .name = "role",
+            .label = "User role",
+            .kind = "select",
+            .options = .{
+                .choices = role_names,
+                .labels = role_labels,
+            },
+        },
+        .{
+            .name = "media_type",
+            .label = "Media type",
+            .kind = "select",
+            .options = .{
+                .choices = values,
+                .labels = labels,
+            },
+        },
     };
     const subjects = try session.arena.alloc(admin.views.RuleBuilder.SubjectsItem, defs.len);
 

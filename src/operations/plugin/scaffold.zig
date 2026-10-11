@@ -29,13 +29,23 @@ pub const Scaffold = struct {
         \\`plugins/<name>/` and run `publr plugin build --name <name>`.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { name: []const u8, page: Shape = .list };
-    pub const Out = struct { files: []const sources.Source };
-    pub const example: In = .{ .name = "notes", .page = .list };
-    pub const example_out: Out = .{ .files = &.{.{
-        .path = "main.zig",
-        .content = "//! Notes: entries people add and remove…",
-    }} };
+    pub const In = struct {
+        name: []const u8,
+        page: Shape = .list,
+    };
+    pub const Out = struct {
+        files: []const sources.Source,
+    };
+    pub const example: In = .{
+        .name = "notes",
+        .page = .list,
+    };
+    pub const example_out: Out = .{
+        .files = &.{.{
+            .path = "main.zig",
+            .content = "//! Notes: entries people add and remove…",
+        }},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .name = "The plugin's name, `[a-z][a-z0-9_]*`",
         .page = "`list` (entries added and removed) or `form` (one set of settings)",
@@ -51,7 +61,9 @@ pub const Scaffold = struct {
             return error.Invalid;
         }
 
-        return .{ .files = try files_of(ctx.arena, in.name, in.page) };
+        return .{
+            .files = try files_of(ctx.arena, in.name, in.page),
+        };
     }
 };
 
@@ -87,7 +99,10 @@ fn add(
 ) Error!void {
     std.debug.assert(path.len > 0);
 
-    files.append(arena, .{ .path = path, .content = content }) catch return error.OutOfMemory;
+    files.append(arena, .{
+        .path = path,
+        .content = content,
+    }) catch return error.OutOfMemory;
 }
 
 fn path_of(arena: std.mem.Allocator, pascal: []const u8, part: []const u8) Error![]const u8 {

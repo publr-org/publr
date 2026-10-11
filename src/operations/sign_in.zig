@@ -26,14 +26,20 @@ pub const SignIn = struct {
         \\attempts`. Inactive accounts (link not redeemed yet) cannot sign in.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { email: []const u8, password: []const u8 };
+    pub const In = struct {
+        email: []const u8,
+        password: []const u8,
+    };
     pub const Out = struct {
         token: []const u8,
         user_id: []const u8,
         roles: []const []const u8,
         expires_at: i64,
     };
-    pub const example: In = .{ .email = "editor@example.com", .password = "correct horse battery" };
+    pub const example: In = .{
+        .email = "editor@example.com",
+        .password = "correct horse battery",
+    };
     pub const example_out: Out = .{
         .token = "56a0794f6b1c67062563204a.ea477bba173fbbd2cd5fc9808892da24d65b38...",
         .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
@@ -117,10 +123,18 @@ pub const SignOut = struct {
         \\an error: `destroyed` is simply false.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { token: []const u8 };
-    pub const Out = struct { destroyed: bool };
-    pub const example: In = .{ .token = "0123456789abcdef01234567.not-a-real-secret" };
-    pub const example_out: Out = .{ .destroyed = false };
+    pub const In = struct {
+        token: []const u8,
+    };
+    pub const Out = struct {
+        destroyed: bool,
+    };
+    pub const example: In = .{
+        .token = "0123456789abcdef01234567.not-a-real-secret",
+    };
+    pub const example_out: Out = .{
+        .destroyed = false,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .token = "The session token from `user sign_in`",
     };
@@ -137,20 +151,26 @@ pub const SignOut = struct {
 
         const lookup = store.sessions.validate(ctx.db, ctx.arena, in.token, ctx.now_ms);
         const validated = lookup catch |err| switch (err) {
-            error.SessionNotFound, error.SessionExpired => return .{ .destroyed = false },
+            error.SessionNotFound, error.SessionExpired => return .{
+                .destroyed = false,
+            },
             else => |other| return other,
         };
 
         try store.sessions.destroy(ctx.db, validated.id);
         ctx.notice("auth.sign_out", validated.user_id);
 
-        return .{ .destroyed = true };
+        return .{
+            .destroyed = true,
+        };
     }
 };
 
 pub const operations = [_]type{ SignIn, SignOut };
 
-const TestSDK = sdk.SDK(.{ .operations = &operations });
+const TestSDK = sdk.SDK(.{
+    .operations = &operations,
+});
 
 test "create: right password signs in, wrong password and unknown email fail alike; destroy" {
     var harness: sdk.testing.Harness = undefined;
@@ -173,9 +193,13 @@ test "create: right password signs in, wrong password and unknown email fail ali
     unknown.email = "nobody@example.com";
     try std.testing.expectError(error.BadCredentials, TestSDK.dispatch(&anon, SignIn, unknown));
 
-    const destroyed = try TestSDK.dispatch(&anon, SignOut, .{ .token = signed_in.token });
+    const destroyed = try TestSDK.dispatch(&anon, SignOut, .{
+        .token = signed_in.token,
+    });
     try std.testing.expect(destroyed.destroyed);
-    const again = try TestSDK.dispatch(&anon, SignOut, .{ .token = signed_in.token });
+    const again = try TestSDK.dispatch(&anon, SignOut, .{
+        .token = signed_in.token,
+    });
     try std.testing.expect(!again.destroyed);
 }
 

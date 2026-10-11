@@ -24,10 +24,16 @@ pub const Write = struct {
     pub const name = "postcard.write";
     pub const description = "Write a postcard from somewhere";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { from: []const u8 = "here" };
-    pub const Out = struct { text: []const u8 };
+    pub const In = struct {
+        from: []const u8 = "here",
+    };
+    pub const Out = struct {
+        text: []const u8,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .text = "greetings from here" };
+    pub const example_out: Out = .{
+        .text = "greetings from here",
+    };
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now_ms() >= 0);
@@ -40,6 +46,8 @@ pub const Write = struct {
             return error.OutOfMemory;
         };
 
-        return .{ .text = text };
+        return .{
+            .text = text,
+        };
     }
 };

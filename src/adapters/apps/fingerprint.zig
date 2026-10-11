@@ -8,7 +8,10 @@ pub const version_len: u32 = 16;
 pub const assets_max = spec_module.assets_max;
 
 /// An embedded asset under the fingerprint, owned by the app.
-pub const Asset = struct { path: []const u8, data: []const u8 };
+pub const Asset = struct {
+    path: []const u8,
+    data: []const u8,
+};
 
 /// The generated code and the CSS as one token: `?v=` on every generated URL.
 pub fn stamp(spec: *const Spec, css: []const u8) [version_len]u8 {
@@ -200,21 +203,37 @@ fn contains(list: []const []const u8, wanted: []const u8) bool {
 }
 
 const test_files = [_]File{
-    .{ .path = "a.js", .data = "import './b.js';" },
-    .{ .path = "b.js", .data = "export const bee = 1;" },
-    .{ .path = "c.css", .data = "import './b.js';" },
+    .{
+        .path = "a.js",
+        .data = "import './b.js';",
+    },
+    .{
+        .path = "b.js",
+        .data = "export const bee = 1;",
+    },
+    .{
+        .path = "c.css",
+        .data = "import './b.js';",
+    },
 };
 
 const test_spec: Spec = .{
     .name = "test",
     .label = "test",
     .folder = "test",
-    .mount = .{ .path = "/" },
+    .mount = .{
+        .path = "/",
+    },
     .roles = &.{},
     .plugins = null,
-    .templates = &.{.{ .path = "content/index.publr", .data = "<p>hi</p>" }},
+    .templates = &.{.{
+        .path = "content/index.publr",
+        .data = "<p>hi</p>",
+    }},
     .assets = &test_files,
-    .tokens = .{ .tokens = &.{} },
+    .tokens = .{
+        .tokens = &.{},
+    },
     .style_css = "",
     .interactive_classes = "",
     .pjsx_components = &.{},

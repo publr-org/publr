@@ -65,7 +65,11 @@ pub const Reason = enum { missing, unknown, kind, nullable, value };
 
 /// Where two shapes disagree: a node of the user's side (or of the provider's, for a field
 /// the user leaves out), and why.
-pub const Problem = struct { node: u32, on_user_side: bool, reason: Reason };
+pub const Problem = struct {
+    node: u32,
+    on_user_side: bool,
+    reason: Reason,
+};
 
 /// The shape of a type an operation takes or answers, built when it compiles: one pass,
 /// breadth first, each node written once into a fixed-size list.
@@ -76,13 +80,23 @@ pub fn describe(comptime Type: type) []const Node {
         // shape small enough to describe is never cut short.
         @setEvalBranchQuota(nodes_max * branches_per_node);
 
-        const Pending = struct { type: type, parent: i32, name: []const u8, required: bool };
+        const Pending = struct {
+            type: type,
+            parent: i32,
+            name: []const u8,
+            required: bool,
+        };
         var pending: [nodes_max]Pending = undefined;
         var nodes: [nodes_max]Node = undefined;
         var queued: u32 = 1;
         var count: u32 = 0;
 
-        pending[0] = .{ .type = Type, .parent = -1, .name = "", .required = true };
+        pending[0] = .{
+            .type = Type,
+            .parent = -1,
+            .name = "",
+            .required = true,
+        };
 
         while (count < queued) : (count += 1) {
             const next = pending[count];
@@ -119,7 +133,11 @@ pub fn describe(comptime Type: type) []const Node {
     }
 }
 
-const Child = struct { type: type, name: []const u8, required: bool };
+const Child = struct {
+    type: type,
+    name: []const u8,
+    required: bool,
+};
 
 /// What sits inside a type: an object's fields, a list's items; nothing for a scalar.
 fn children_of(comptime Type: type) []const Child {
@@ -130,7 +148,11 @@ fn children_of(comptime Type: type) []const Child {
             .pointer => |info| if (info.child == u8)
                 &.{}
             else
-                &.{.{ .type = info.child, .name = "[]", .required = true }},
+                &.{.{
+                    .type = info.child,
+                    .name = "[]",
+                    .required = true,
+                }},
             .@"struct" => |info| if (@hasDecl(Type, "reference")) &.{} else fields: {
                 var children: [info.fields.len]Child = undefined;
 
@@ -183,13 +205,22 @@ fn values_of(comptime Type: type) []const []const u8 {
     }
 }
 
-fn unwrap(comptime Type: type) struct { type: type, optional: bool } {
+fn unwrap(comptime Type: type) struct {
+    type: type,
+    optional: bool,
+} {
     comptime {
         std.debug.assert(@typeInfo(Type) != .void);
 
         return switch (@typeInfo(Type)) {
-            .optional => |info| .{ .type = info.child, .optional = true },
-            else => .{ .type = Type, .optional = false },
+            .optional => |info| .{
+                .type = info.child,
+                .optional = true,
+            },
+            else => .{
+                .type = Type,
+                .optional = false,
+            },
         };
     }
 }
@@ -216,20 +247,36 @@ pub fn check_input(sent: []const Node, accepted: []const Node) ?Problem {
 
     for (sent, 0..) |node, index| {
         const provider = counterpart(sent, @intCast(index), accepted) orelse {
-            return .{ .node = @intCast(index), .on_user_side = true, .reason = .unknown };
+            return .{
+                .node = @intCast(index),
+                .on_user_side = true,
+                .reason = .unknown,
+            };
         };
         const theirs = accepted[provider];
 
         if (theirs.kind != node.kind or !std.mem.eql(u8, theirs.to, node.to)) {
-            return .{ .node = @intCast(index), .on_user_side = true, .reason = .kind };
+            return .{
+                .node = @intCast(index),
+                .on_user_side = true,
+                .reason = .kind,
+            };
         }
 
         if (node.optional and !theirs.optional) {
-            return .{ .node = @intCast(index), .on_user_side = true, .reason = .nullable };
+            return .{
+                .node = @intCast(index),
+                .on_user_side = true,
+                .reason = .nullable,
+            };
         }
 
         if (!subset(node.values, theirs.values)) {
-            return .{ .node = @intCast(index), .on_user_side = true, .reason = .value };
+            return .{
+                .node = @intCast(index),
+                .on_user_side = true,
+                .reason = .value,
+            };
         }
     }
 
@@ -242,7 +289,11 @@ pub fn check_input(sent: []const Node, accepted: []const Node) ?Problem {
         const parent_sent = counterpart(accepted, parent, sent) != null;
 
         if (parent_sent and counterpart(accepted, @intCast(index), sent) == null) {
-            return .{ .node = @intCast(index), .on_user_side = false, .reason = .missing };
+            return .{
+                .node = @intCast(index),
+                .on_user_side = false,
+                .reason = .missing,
+            };
         }
     }
 
@@ -257,20 +308,36 @@ pub fn check_output(read: []const Node, given: []const Node) ?Problem {
 
     for (read, 0..) |node, index| {
         const provider = counterpart(read, @intCast(index), given) orelse {
-            return .{ .node = @intCast(index), .on_user_side = true, .reason = .missing };
+            return .{
+                .node = @intCast(index),
+                .on_user_side = true,
+                .reason = .missing,
+            };
         };
         const theirs = given[provider];
 
         if (theirs.kind != node.kind or !std.mem.eql(u8, theirs.to, node.to)) {
-            return .{ .node = @intCast(index), .on_user_side = true, .reason = .kind };
+            return .{
+                .node = @intCast(index),
+                .on_user_side = true,
+                .reason = .kind,
+            };
         }
 
         if (theirs.optional and !node.optional) {
-            return .{ .node = @intCast(index), .on_user_side = true, .reason = .nullable };
+            return .{
+                .node = @intCast(index),
+                .on_user_side = true,
+                .reason = .nullable,
+            };
         }
 
         if (!subset(theirs.values, node.values)) {
-            return .{ .node = @intCast(index), .on_user_side = true, .reason = .value };
+            return .{
+                .node = @intCast(index),
+                .on_user_side = true,
+                .reason = .value,
+            };
         }
     }
 
@@ -385,12 +452,27 @@ test "shapes: described from types, compatible as subsets" {
         sku: []const u8,
         quantity: u32,
         note: ?[]const u8 = null,
-        lines: []const struct { id: []const u8, size: enum { small, large } } = &.{},
+        lines: []const struct {
+            id: []const u8,
+            size: enum { small, large },
+        } = &.{},
     };
-    const Sends = struct { sku: []const u8, quantity: u32 };
-    const Forgets = struct { sku: []const u8 };
-    const Invents = struct { sku: []const u8, quantity: u32, colour: []const u8 };
-    const Retyped = struct { sku: []const u8, quantity: []const u8 };
+    const Sends = struct {
+        sku: []const u8,
+        quantity: u32,
+    };
+    const Forgets = struct {
+        sku: []const u8,
+    };
+    const Invents = struct {
+        sku: []const u8,
+        quantity: u32,
+        colour: []const u8,
+    };
+    const Retyped = struct {
+        sku: []const u8,
+        quantity: []const u8,
+    };
 
     const provider = comptime describe(Provider);
 
@@ -404,9 +486,19 @@ test "shapes: described from types, compatible as subsets" {
     try std.testing.expectEqual(Reason.unknown, invents.reason);
     try std.testing.expectEqual(Reason.kind, retyped.reason);
 
-    const Reads = struct { lines: []const struct { size: enum { small, large, huge } } };
-    const ReadsTooFew = struct { lines: []const struct { size: enum { small } } };
-    const ReadsAbsent = struct { total: u32 };
+    const Reads = struct {
+        lines: []const struct {
+            size: enum { small, large, huge },
+        },
+    };
+    const ReadsTooFew = struct {
+        lines: []const struct {
+            size: enum { small },
+        },
+    };
+    const ReadsAbsent = struct {
+        total: u32,
+    };
 
     try std.testing.expect(check_output(comptime describe(Reads), provider) == null);
     const too_few = check_output(comptime describe(ReadsTooFew), provider).?;

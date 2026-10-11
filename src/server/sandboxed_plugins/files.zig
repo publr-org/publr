@@ -21,12 +21,17 @@ pub const Files = struct {
 
         try cwd.createDirPath(io, path);
 
-        var dir = try cwd.openDir(io, path, .{ .iterate = true });
+        var dir = try cwd.openDir(io, path, .{
+            .iterate = true,
+        });
         errdefer dir.close(io);
 
         try dir.createDirPath(io, uploads_dir);
 
-        return .{ .dir = dir, .io = io };
+        return .{
+            .dir = dir,
+            .io = io,
+        };
     }
 
     pub fn close(files: *Files) void {
@@ -72,7 +77,10 @@ pub const Files = struct {
         const name = std.fmt.bufPrint(&name_buffer, "{s}.wasm", .{hash_out}) catch unreachable;
 
         files.dir.access(files.io, name, .{}) catch {
-            try files.dir.writeFile(files.io, .{ .sub_path = name, .data = bytes });
+            try files.dir.writeFile(files.io, .{
+                .sub_path = name,
+                .data = bytes,
+            });
         };
     }
 
@@ -95,9 +103,13 @@ pub const Files = struct {
         var part_buffer: [160]u8 = undefined;
         const part = try std.fmt.bufPrint(&part_buffer, "{s}.part", .{name});
         var file = if (offset == 0)
-            try dir.createFile(files.io, part, .{ .truncate = true })
+            try dir.createFile(files.io, part, .{
+                .truncate = true,
+            })
         else
-            try dir.openFile(files.io, part, .{ .mode = .read_write });
+            try dir.openFile(files.io, part, .{
+                .mode = .read_write,
+            });
         defer file.close(files.io);
 
         const size = (try file.stat(files.io)).size;

@@ -23,10 +23,20 @@ pub const SetApp = struct {
         \\not see.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8, app: []const u8 = "" };
-    pub const Out = struct { app: ?[]const u8 };
-    pub const example: In = .{ .id = example_id, .app = "www" };
-    pub const example_out: Out = .{ .app = "www" };
+    pub const In = struct {
+        id: []const u8,
+        app: []const u8 = "",
+    };
+    pub const Out = struct {
+        app: ?[]const u8,
+    };
+    pub const example: In = .{
+        .id = example_id,
+        .app = "www",
+    };
+    pub const example_out: Out = .{
+        .app = "www",
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The record id",
         .app = "The app's `.name`; empty for the project's own",
@@ -48,7 +58,9 @@ pub const SetApp = struct {
 
         try store.records.set_app(ctx.db, in.id, app);
 
-        return .{ .app = app };
+        return .{
+            .app = app,
+        };
     }
 };
 
@@ -78,7 +90,12 @@ test "a record belongs to the app it was made in, to the one named, or to the pr
     try SDK.bootstrap(&system);
     try record_operations.fixture.post_type(&system);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
     const document = record_operations.example_document;
     const own = try SDK.dispatch(&editor, record_operations.Create, .{
         .type = "post",
@@ -108,17 +125,25 @@ test "a record belongs to the app it was made in, to the one named, or to the pr
     editor.app = "";
 
     const Get = record_operations.Get;
-    try std.testing.expect((try SDK.dispatch(&editor, Get, .{ .id = own.id })).record.app == null);
+    try std.testing.expect((try SDK.dispatch(&editor, Get, .{
+        .id = own.id,
+    })).record.app == null);
     try std.testing.expectEqualStrings(
         "saas",
-        (try SDK.dispatch(&editor, Get, .{ .id = named.id })).record.app.?,
+        (try SDK.dispatch(&editor, Get, .{
+            .id = named.id,
+        })).record.app.?,
     );
     try std.testing.expectEqualStrings(
         "www",
-        (try SDK.dispatch(&editor, Get, .{ .id = made_there.id })).record.app.?,
+        (try SDK.dispatch(&editor, Get, .{
+            .id = made_there.id,
+        })).record.app.?,
     );
     try std.testing.expect(
-        (try SDK.dispatch(&editor, Get, .{ .id = told_otherwise.id })).record.app == null,
+        (try SDK.dispatch(&editor, Get, .{
+            .id = told_otherwise.id,
+        })).record.app == null,
     );
 }
 
@@ -131,16 +156,26 @@ test "set_app moves one record without a new version, within what the caller may
     try SDK.bootstrap(&system);
     try record_operations.fixture.post_type(&system);
 
-    var editor = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
     var anonymous = harness.ctx(.anonymous);
     const created = try SDK.dispatch(&editor, record_operations.Create, .{
         .type = "post",
         .document = record_operations.example_document,
     });
-    const set = try SDK.dispatch(&editor, SetApp, .{ .id = created.id, .app = "www" });
+    const set = try SDK.dispatch(&editor, SetApp, .{
+        .id = created.id,
+        .app = "www",
+    });
 
     try std.testing.expectEqualStrings("www", set.app.?);
-    const got = try SDK.dispatch(&editor, record_operations.Get, .{ .id = created.id });
+    const got = try SDK.dispatch(&editor, record_operations.Get, .{
+        .id = created.id,
+    });
     try std.testing.expectEqual(1, got.record.version);
     try std.testing.expectError(error.NotFound, SDK.dispatch(&editor, SetApp, .{
         .id = "a1b2c3d4e5f60718293a4b5c",
@@ -184,7 +219,12 @@ test "an app's plugins: a type another plugin owns is out of reach, the project'
         .document = document,
     });
 
-    var site = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
+    var site = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
     site.app_plugins = &.{"newsletter"};
     const listed = try SDK.dispatch(&site, record_operations.List, .{});
     try std.testing.expectEqual(1, listed.records.len);
@@ -197,9 +237,16 @@ test "an app's plugins: a type another plugin owns is out of reach, the project'
         try std.testing.expect(!std.mem.eql(u8, summary.handle, "order"));
     }
 
-    var shop = harness.ctx(.{ .user = .{ .id = "u_ed", .roles = &.{"editor"} } });
+    var shop = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
     shop.app_plugins = &.{"shop"};
     const everything = try SDK.dispatch(&shop, record_operations.List, .{});
     try std.testing.expectEqual(2, everything.records.len);
-    _ = try SDK.dispatch(&shop, record_operations.Get, .{ .id = bought.id });
+    _ = try SDK.dispatch(&shop, record_operations.Get, .{
+        .id = bought.id,
+    });
 }

@@ -11,7 +11,11 @@ const Error = sdk.Error;
 
 /// One record: its id and version, and its document as `Document`.
 pub fn Record(comptime Document: type) type {
-    return struct { id: []const u8, version: i64, value: Document };
+    return struct {
+        id: []const u8,
+        version: i64,
+        value: Document,
+    };
 }
 
 pub const Page = sdk.operation.Page;
@@ -27,7 +31,10 @@ pub fn of(comptime Document: type, comptime kind: []const u8) type {
         pub fn get(ctx: *PluginCtx, id: []const u8) Error!Item {
             std.debug.assert(id.len > 0);
 
-            const got = try ctx.call(internal.Get, .{ .kind = kind, .id = id });
+            const got = try ctx.call(internal.Get, .{
+                .kind = kind,
+                .id = id,
+            });
 
             return item(ctx, got);
         }
@@ -117,7 +124,10 @@ pub fn of(comptime Document: type, comptime kind: []const u8) type {
         pub fn delete(ctx: *PluginCtx, id: []const u8) Error!bool {
             std.debug.assert(id.len > 0);
 
-            const deleted = try ctx.call(internal.Delete, .{ .kind = kind, .id = id });
+            const deleted = try ctx.call(internal.Delete, .{
+                .kind = kind,
+                .id = id,
+            });
 
             return deleted.deleted;
         }
@@ -131,7 +141,11 @@ pub fn of(comptime Document: type, comptime kind: []const u8) type {
                 .allocate = .alloc_always,
             }) catch return error.Invalid;
 
-            return .{ .id = record.id, .version = record.version, .value = value };
+            return .{
+                .id = record.id,
+                .version = record.version,
+                .value = value,
+            };
         }
 
         fn check_fields(comptime Fields: type) void {
@@ -153,7 +167,9 @@ pub fn of(comptime Document: type, comptime kind: []const u8) type {
 }
 
 fn encode(ctx: *PluginCtx, value: anytype) Error![]const u8 {
-    const options: std.json.Stringify.Options = .{ .emit_null_optional_fields = false };
+    const options: std.json.Stringify.Options = .{
+        .emit_null_optional_fields = false,
+    };
     const text = std.json.Stringify.valueAlloc(ctx.arena(), value, options) catch {
         return error.OutOfMemory;
     };
@@ -181,7 +197,10 @@ fn filter_text(ctx: *PluginCtx, value: anytype) Error![]const u8 {
     };
 }
 
-const Visit = struct { name: []const u8, count: i64 = 0 };
+const Visit = struct {
+    name: []const u8,
+    count: i64 = 0,
+};
 const visits = of(Visit, "visit");
 
 test "typed internal records: create, get, save a field, find one, find many, delete" {
@@ -193,11 +212,20 @@ test "typed internal records: create, get, save a field, find one, find many, de
     running.plugin = "greeter";
     running.parent = running.allocate_operation_id();
 
-    var ctx: PluginCtx = .{ .inner = &running };
-    const ada = try visits.create(&ctx, .{ .name = "Ada", .count = 1 });
-    _ = try visits.create(&ctx, .{ .name = "Bob" });
+    var ctx: PluginCtx = .{
+        .inner = &running,
+    };
+    const ada = try visits.create(&ctx, .{
+        .name = "Ada",
+        .count = 1,
+    });
+    _ = try visits.create(&ctx, .{
+        .name = "Bob",
+    });
 
-    const version = try visits.save(&ctx, ada, .{ .count = 5 }, 1);
+    const version = try visits.save(&ctx, ada, .{
+        .count = 5,
+    }, 1);
     try std.testing.expectEqual(@as(i64, 2), version);
 
     const got = try visits.get(&ctx, ada);
@@ -211,7 +239,9 @@ test "typed internal records: create, get, save a field, find one, find many, de
     const every = try visits.find(&ctx, .{}, .{});
     try std.testing.expectEqual(@as(usize, 2), every.len);
 
-    const named = try visits.find(&ctx, .{ .name = "Bob" }, .{});
+    const named = try visits.find(&ctx, .{
+        .name = "Bob",
+    }, .{});
     try std.testing.expectEqual(@as(usize, 1), named.len);
 
     try std.testing.expect(try visits.delete(&ctx, ada));

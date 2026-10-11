@@ -190,7 +190,9 @@ pub fn delete(request: *Request, response: *Response, ctx: *Context) Error!void 
     var post = try admin.accept(request, response, ctx, back) orelse return;
     const session = &post.session;
     const id = try admin.param(session, "id", back) orelse return;
-    _ = registry.SDK.dispatch(&session.ctx, user_operations.Delete, .{ .user = id }) catch |err| {
+    _ = registry.SDK.dispatch(&session.ctx, user_operations.Delete, .{
+        .user = id,
+    }) catch |err| {
         var shape = try load(session, id) orelse return;
 
         shape.problem = reason(err, .delete) orelse return admin.fail(session, err, back);
@@ -207,7 +209,9 @@ fn load(session: *Session, id: []const u8) Error!?Shape {
     std.debug.assert(session.signed_in());
     std.debug.assert(id.len > 0);
 
-    const in: user_operations.Get.In = .{ .user = id };
+    const in: user_operations.Get.In = .{
+        .user = id,
+    };
     const got = registry.SDK.dispatch(&session.ctx, user_operations.Get, in) catch |err| {
         try admin.fail(session, err, back);
 
@@ -262,7 +266,10 @@ fn problems_of(session: *Session, id: []const u8, document: []const u8) Error![]
     const problems = try session.arena.alloc(Problem, checked.problems.len);
 
     for (checked.problems, problems) |problem, *out| {
-        out.* = .{ .code = problem.path, .text = problem.message };
+        out.* = .{
+            .code = problem.path,
+            .text = problem.message,
+        };
     }
 
     return problems;
@@ -303,7 +310,9 @@ fn field_rows(session: *Session, shape: Shape) Error!?admin.render.Node {
     };
     const rows = try fields.rows_of(context, shape.defs, shape.document);
 
-    return try admin.render.view(session.arena, views.RecordFields, .{ .fields = rows });
+    return try admin.render.view(session.arena, views.RecordFields, .{
+        .fields = rows,
+    });
 }
 
 fn render_form(session: *Session, status: admin.Status, shape: Shape) Error!void {
@@ -447,7 +456,9 @@ test "users under settings: invite by link, rename, reissue, delete; the rail si
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    var flow: admin.Flow = .{ .inner = undefined };
+    var flow: admin.Flow = .{
+        .inner = undefined,
+    };
     flow.inner.init(.{
         .connection = &harness.fixture.connection,
         .auth = &harness.auth,

@@ -33,7 +33,9 @@ pub fn home(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     const shortcuts = try dashboard.shortcuts_of(&session);
 
-    try admin.screen(&session, .ok, views.Dashboard, .{ .shortcuts = shortcuts });
+    try admin.screen(&session, .ok, views.Dashboard, .{
+        .shortcuts = shortcuts,
+    });
 }
 
 fn initialised(session: *Session) Error!bool {
@@ -309,7 +311,12 @@ fn start_session(
     };
     var signed_in = anonymous;
 
-    signed_in.caller = .{ .user = .{ .id = out.user_id, .roles = out.roles } };
+    signed_in.caller = .{
+        .user = .{
+            .id = out.user_id,
+            .roles = out.roles,
+        },
+    };
 
     // The admin's door: an account that may call none of its operations gets no session
     // here; the one just made is ended at once.
@@ -347,7 +354,9 @@ pub fn logout(request: *Request, response: *Response, ctx: *Context) Error!void 
     if (session.identity.token) |token| {
         const sign_out = sign_in_operations.SignOut;
 
-        _ = registry.SDK.dispatch(&session.ctx, sign_out, .{ .token = token }) catch |err| {
+        _ = registry.SDK.dispatch(&session.ctx, sign_out, .{
+            .token = token,
+        }) catch |err| {
             return admin.fail(&session, err, "/admin");
         };
     }

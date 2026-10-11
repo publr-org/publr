@@ -282,7 +282,10 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 
             for (names) |name| {
                 const item = try vm.hold(try vm.get(attributes, name));
-                try props.append(renderer.arena, .{ .name = name, .value = item });
+                try props.append(renderer.arena, .{
+                    .name = name,
+                    .value = item,
+                });
             }
 
             var inner: std.Io.Writer.Allocating = .init(renderer.arena);
@@ -322,7 +325,10 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
                         index >= frame.execution.entries.items.len) return error.InvalidEntry;
                     try entries.append(
                         renderer.arena,
-                        .{ .name = prop.name, .value = frame.execution.entries.items[index] },
+                        .{
+                            .name = prop.name,
+                            .value = frame.execution.entries.items[index],
+                        },
                     );
                     continue;
                 }
@@ -362,7 +368,10 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 
         /// An attribute's name, and the path the project is served under, which a root path
         /// in a URL attribute goes under.
-        pub const Named = struct { name: []const u8, base: []const u8 };
+        pub const Named = struct {
+            name: []const u8,
+            base: []const u8,
+        };
 
         pub fn attribute(vm: *VM, writer: *std.Io.Writer, named: Named, value: Value) !void {
             std.debug.assert(!api.JS_IsException(value));
@@ -416,7 +425,10 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 
                 const value = try vm.get(attributes, name);
                 defer vm.free(value);
-                try attribute(vm, writer, .{ .name = name, .base = base }, value);
+                try attribute(vm, writer, .{
+                    .name = name,
+                    .base = base,
+                }, value);
             }
         }
     };

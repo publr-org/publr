@@ -30,7 +30,10 @@ pub const Mount = union(enum) {
 };
 
 /// A design token over the stylesheet's defaults: `color-accent`, `#2f5d54`.
-pub const Token = struct { name: []const u8, value: []const u8 };
+pub const Token = struct {
+    name: []const u8,
+    value: []const u8,
+};
 
 /// What `app.zon` declares.
 pub const Config = struct {
@@ -274,41 +277,93 @@ test "an app's plugins: names, none twice; null for every plugin" {
 
 test "mounts: the root, plain paths and plain subdomains; never core's own paths" {
     for ([_]Mount{
-        .{ .path = "/" },
-        .{ .path = "/newsletter" },
-        .{ .path = "/docs/v2" },
-        .{ .subdomain = "app" },
-        .{ .subdomain = "my-app2" },
+        .{
+            .path = "/",
+        },
+        .{
+            .path = "/newsletter",
+        },
+        .{
+            .path = "/docs/v2",
+        },
+        .{
+            .subdomain = "app",
+        },
+        .{
+            .subdomain = "my-app2",
+        },
     }) |good| {
         try std.testing.expect(valid_mount(good));
     }
 
     for ([_]Mount{
-        .{ .path = "" },
-        .{ .path = "newsletter" },
-        .{ .path = "/newsletter/" },
-        .{ .path = "/News" },
-        .{ .path = "/a//b" },
-        .{ .path = "/admin" },
-        .{ .path = "/api/v1" },
-        .{ .path = "/_islands" },
-        .{ .path = "/a/b/c/d/e/f/g/h/i" },
-        .{ .subdomain = "" },
-        .{ .subdomain = "-app" },
-        .{ .subdomain = "a.b" },
-        .{ .subdomain = "App" },
-        .{ .subdomain = "www" },
+        .{
+            .path = "",
+        },
+        .{
+            .path = "newsletter",
+        },
+        .{
+            .path = "/newsletter/",
+        },
+        .{
+            .path = "/News",
+        },
+        .{
+            .path = "/a//b",
+        },
+        .{
+            .path = "/admin",
+        },
+        .{
+            .path = "/api/v1",
+        },
+        .{
+            .path = "/_islands",
+        },
+        .{
+            .path = "/a/b/c/d/e/f/g/h/i",
+        },
+        .{
+            .subdomain = "",
+        },
+        .{
+            .subdomain = "-app",
+        },
+        .{
+            .subdomain = "a.b",
+        },
+        .{
+            .subdomain = "App",
+        },
+        .{
+            .subdomain = "www",
+        },
     }) |bad| {
         try std.testing.expect(!valid_mount(bad));
     }
 }
 
 test "an app's own URLs start with its path, never with a subdomain's" {
-    try std.testing.expectEqualStrings("", base_path(.{ .path = "/" }));
-    try std.testing.expectEqualStrings("/newsletter", base_path(.{ .path = "/newsletter" }));
-    try std.testing.expectEqualStrings("", base_path(.{ .subdomain = "app" }));
-    try std.testing.expect(same_place(.{ .path = "/a" }, .{ .path = "/a" }));
-    try std.testing.expect(!same_place(.{ .path = "/a" }, .{ .subdomain = "a" }));
+    try std.testing.expectEqualStrings("", base_path(.{
+        .path = "/",
+    }));
+    try std.testing.expectEqualStrings("/newsletter", base_path(.{
+        .path = "/newsletter",
+    }));
+    try std.testing.expectEqualStrings("", base_path(.{
+        .subdomain = "app",
+    }));
+    try std.testing.expect(same_place(.{
+        .path = "/a",
+    }, .{
+        .path = "/a",
+    }));
+    try std.testing.expect(!same_place(.{
+        .path = "/a",
+    }, .{
+        .subdomain = "a",
+    }));
 }
 
 test {

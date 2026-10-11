@@ -125,7 +125,11 @@ fn fetched(
 
     const job = try std.heap.page_allocator.create(Job);
 
-    job.* = .{ .files = files, .io = session.project.io, .hash = hash[0..hash_len].* };
+    job.* = .{
+        .files = files,
+        .io = session.project.io,
+        .hash = hash[0..hash_len].*,
+    };
 
     const thread = std.Thread.spawn(.{}, Job.run, .{job}) catch |err| {
         std.log.warn("avatar: could not ask Gravatar: {t}", .{err});
@@ -177,11 +181,16 @@ fn download(arena: std.mem.Allocator, io: std.Io, hash: []const u8) ![]const u8 
         .{ hash, picture_size },
     );
     var body: std.Io.Writer.Allocating = .init(arena);
-    var client: std.http.Client = .{ .allocator = arena, .io = io };
+    var client: std.http.Client = .{
+        .allocator = arena,
+        .io = io,
+    };
     defer client.deinit();
 
     const result = try client.fetch(.{
-        .location = .{ .url = url },
+        .location = .{
+            .url = url,
+        },
         .keep_alive = false,
         .response_writer = &body.writer,
     });

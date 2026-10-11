@@ -22,10 +22,14 @@ pub fn show(
 
     var session = try admin.require(request, response, ctx) orelse return;
     const id = try admin.param(&session, "id", back) orelse return;
-    const detail = registry.SDK.dispatch(&session.ctx, media.Get, .{ .id = id }) catch |err| {
+    const detail = registry.SDK.dispatch(&session.ctx, media.Get, .{
+        .id = id,
+    }) catch |err| {
         return admin.fail(&session, err, back);
     };
-    const listed = registry.SDK.dispatch(&session.ctx, media.List, .{ .limit = 1 }) catch |err| {
+    const listed = registry.SDK.dispatch(&session.ctx, media.List, .{
+        .limit = 1,
+    }) catch |err| {
         return admin.fail(&session, err, back);
     };
     const arena = session.arena;
@@ -174,7 +178,9 @@ pub fn remove(
     const session = &post.session;
     const id = try admin.param(session, "id", back) orelse return;
 
-    _ = registry.SDK.dispatch(&session.ctx, media.Delete, .{ .ids = &.{id} }) catch |err| {
+    _ = registry.SDK.dispatch(&session.ctx, media.Delete, .{
+        .ids = &.{id},
+    }) catch |err| {
         return admin.fail(session, err, back);
     };
 

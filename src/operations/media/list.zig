@@ -22,9 +22,17 @@ pub const Folder = struct {
     count: u32,
 };
 
-pub const Tag = struct { id: []const u8, name: []const u8, count: u32 };
+pub const Tag = struct {
+    id: []const u8,
+    name: []const u8,
+    count: u32,
+};
 
-pub const Period = struct { year: u32, month: u32, count: u32 };
+pub const Period = struct {
+    year: u32,
+    month: u32,
+    count: u32,
+};
 
 pub const List = struct {
     pub const name = "media.list";
@@ -64,7 +72,10 @@ pub const List = struct {
         tags: []const Tag,
         periods: []const Period,
     };
-    pub const example: In = .{ .folder = "unsorted", .limit = 25 };
+    pub const example: In = .{
+        .folder = "unsorted",
+        .limit = 25,
+    };
     pub const example_out: Out = .{
         .items = &.{library.example_item},
         .total = 1,
@@ -79,7 +90,11 @@ pub const List = struct {
             .count = 0,
         }},
         .tags = &.{},
-        .periods = &.{.{ .year = 2026, .month = 10, .count = 3 }},
+        .periods = &.{.{
+            .year = 2026,
+            .month = 10,
+            .count = 3,
+        }},
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .folder = "A folder's id, `unsorted`, `unreviewed`, or empty for every file",
@@ -148,7 +163,9 @@ fn filter_of(in: List.In) Error!listing.Filter {
     else if (std.mem.eql(u8, in.folder, "unreviewed"))
         .unreviewed
     else
-        .{ .term = in.folder };
+        .{
+            .term = in.folder,
+        };
 
     std.debug.assert(folder != .term or folder.term.len > 0);
 
@@ -228,7 +245,11 @@ fn tags_of(ctx: *Ctx, filter: listing.Filter) Error![]const Tag {
     const tags = try ctx.arena.alloc(Tag, tree.terms.len);
 
     for (tree.terms, tags) |node, *tag| {
-        tag.* = .{ .id = node.id, .name = node.title, .count = count_of(counts, node.id) };
+        tag.* = .{
+            .id = node.id,
+            .name = node.title,
+            .count = count_of(counts, node.id),
+        };
     }
 
     std.debug.assert(tags.len == tree.terms.len);

@@ -63,7 +63,10 @@ pub const Project = struct {
     }
 
     /// The app a request is for, and its path inside the app.
-    pub const Target = struct { app: *App, path: []const u8 };
+    pub const Target = struct {
+        app: *App,
+        path: []const u8,
+    };
 
     /// Which app answers `path` on `host`: the subdomain's app, else the longest path mount.
     pub fn resolve(project: *const Project, host: []const u8, path: []const u8) ?Target {
@@ -82,7 +85,10 @@ pub const Project = struct {
 
         std.debug.assert(resolved.index < project.apps.len);
 
-        return .{ .app = &project.apps[resolved.index], .path = resolved.path };
+        return .{
+            .app = &project.apps[resolved.index],
+            .path = resolved.path,
+        };
     }
 
     /// The domain the session cookie is set for, so one sign-in holds on every app: the

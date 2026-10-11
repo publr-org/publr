@@ -21,10 +21,22 @@ const session_bytes_max: u32 = 1024;
 /// `build` stamps the binary the server runs (`build_stamp`): one started from an older
 /// build of the file has another, and 0 when it is not known. `url` is where people and
 /// agents reach it (`--url`, else `http://127.0.0.1:<port>`); empty when not known.
-pub const Session = struct { port: u16, key: [key_len]u8, build: u64 = 0, url: []const u8 = "" };
+pub const Session = struct {
+    port: u16,
+    key: [key_len]u8,
+    build: u64 = 0,
+    url: []const u8 = "",
+};
 
-const Envelope = struct { args: []const []const u8, password: ?[]const u8 = null };
-const Answer = struct { code: u8, out: []const u8, err: []const u8 };
+const Envelope = struct {
+    args: []const []const u8,
+    password: ?[]const u8 = null,
+};
+const Answer = struct {
+    code: u8,
+    out: []const u8,
+    err: []const u8,
+};
 
 pub fn path_of(arena: std.mem.Allocator, db_path: []const u8) ![]const u8 {
     std.debug.assert(db_path.len > 0);
@@ -115,7 +127,12 @@ fn parse(text: []const u8) ?Session {
         return null;
     }
 
-    return .{ .port = port, .key = key[0..key_len].*, .build = build, .url = url };
+    return .{
+        .port = port,
+        .key = key[0..key_len].*,
+        .build = build,
+        .url = url,
+    };
 }
 
 /// The binary at this process's path as it is now: its file's modification time. A rebuild
@@ -135,7 +152,9 @@ fn answers(io: std.Io, port: u16) bool {
     std.debug.assert(port > 0);
 
     const address = std.Io.net.IpAddress.parse("127.0.0.1", port) catch return false;
-    const stream = address.connect(io, .{ .mode = .stream }) catch return false;
+    const stream = address.connect(io, .{
+        .mode = .stream,
+    }) catch return false;
 
     stream.close(io);
 
@@ -181,15 +200,23 @@ pub fn post(
 
     const url = try std.fmt.allocPrint(arena, "http://127.0.0.1:{d}{s}", .{ session.port, path });
     var body: std.Io.Writer.Allocating = .init(arena);
-    var client: std.http.Client = .{ .allocator = arena, .io = io };
+    var client: std.http.Client = .{
+        .allocator = arena,
+        .io = io,
+    };
     defer client.deinit();
 
     const result = try client.fetch(.{
-        .location = .{ .url = url },
+        .location = .{
+            .url = url,
+        },
         .method = .POST,
         .payload = payload,
         .keep_alive = false,
-        .extra_headers = &.{.{ .name = "X-Publr-Operator", .value = &session.key }},
+        .extra_headers = &.{.{
+            .name = "X-Publr-Operator",
+            .value = &session.key,
+        }},
         .response_writer = &body.writer,
     });
 
@@ -267,7 +294,11 @@ pub fn handle(
         break :blk 1;
     };
 
-    try response.json(.ok, Answer{ .code = code, .out = out.written(), .err = err.written() });
+    try response.json(.ok, Answer{
+        .code = code,
+        .out = out.written(),
+        .err = err.written(),
+    });
 }
 
 fn same_key(key: []const u8, given: []const u8) bool {
@@ -301,8 +332,13 @@ pub const Commands = struct {
         const application = try commands.open_local();
         var fixed = std.heap.FixedBufferAllocator.init(commands.arena_bytes);
 
-        commands.checker = .{ .init = commands.init };
-        commands.builder = .{ .io = commands.init.io, .db_path = commands.db_path };
+        commands.checker = .{
+            .init = commands.init,
+        };
+        commands.builder = .{
+            .io = commands.init.io,
+            .db_path = commands.db_path,
+        };
 
         std.debug.assert(commands.arena_bytes.len == server.request_arena_bytes);
 

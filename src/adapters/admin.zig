@@ -34,7 +34,10 @@ pub const Form = http.Form;
 
 /// A POST that may change something: a signed-in session, a parseable form, from our own
 /// page (same origin, valid CSRF token). `accept` answers null after responding otherwise.
-pub const Post = struct { session: Session, form: Form };
+pub const Post = struct {
+    session: Session,
+    form: Form,
+};
 
 pub fn accept(request: *Request, response: *Response, ctx: *Context, back: []const u8) Error!?Post {
     std.debug.assert(request.method() == .post);
@@ -53,7 +56,10 @@ pub fn accept(request: *Request, response: *Response, ctx: *Context, back: []con
         return null;
     }
 
-    return .{ .session = session, .form = form };
+    return .{
+        .session = session,
+        .form = form,
+    };
 }
 
 /// The login for someone who must sign in, with the page they asked for (`return`) when a
@@ -407,7 +413,10 @@ pub fn screen_with(
 }
 
 /// One row action, resolved for a row: what the menu item says and where it goes.
-pub const RowLink = struct { label: []const u8, href: []const u8 };
+pub const RowLink = struct {
+    label: []const u8,
+    href: []const u8,
+};
 
 /// The actions compiled-in plugins put on the rows of `slot`, for a row named `name` of
 /// `kind`: those whose operation the viewer may call, `{name}` in their paths filled in.
@@ -429,7 +438,10 @@ pub fn row_actions(
         if (here and fits and registry.SDK.may(&session.ctx, action.operation)) {
             const href = try std.mem.replaceOwned(u8, session.arena, action.path, "{name}", name);
 
-            try links.append(session.arena, .{ .label = action.label, .href = href });
+            try links.append(session.arena, .{
+                .label = action.label,
+                .href = href,
+            });
         }
     }
 
@@ -492,7 +504,10 @@ pub fn message(
     var items: std.ArrayList(views.Message.ProblemsItem) = .empty;
 
     for (problems) |problem| {
-        items.append(session.arena, .{ .code = problem.path, .text = problem.message }) catch {
+        items.append(session.arena, .{
+            .code = problem.path,
+            .text = problem.message,
+        }) catch {
             return error.OutOfMemory;
         };
     }
@@ -515,7 +530,9 @@ pub fn time_text(arena: std.mem.Allocator, ms: i64) []const u8 {
     std.debug.assert(ms >= 0);
     std.debug.assert(ms < 1 << 50);
 
-    const epoch: std.time.epoch.EpochSeconds = .{ .secs = @intCast(@divFloor(ms, 1000)) };
+    const epoch: std.time.epoch.EpochSeconds = .{
+        .secs = @intCast(@divFloor(ms, 1000)),
+    };
     const year_day = epoch.getEpochDay().calculateYearDay();
     const month_day = year_day.calculateMonthDay();
     const day_seconds = epoch.getDaySeconds();
@@ -635,7 +652,9 @@ test "admin over http: setup, login, types and content through plain forms" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    var flow: Flow = .{ .inner = undefined };
+    var flow: Flow = .{
+        .inner = undefined,
+    };
     flow.inner.init(.{
         .connection = &harness.fixture.connection,
         .auth = &harness.auth,
@@ -1128,7 +1147,9 @@ test "a settings type uses the shared editor and publishes only after a guarded 
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var flow: Flow = .{ .inner = undefined };
+    var flow: Flow = .{
+        .inner = undefined,
+    };
     flow.inner.init(.{
         .connection = &harness.fixture.connection,
         .auth = &harness.auth,
@@ -1151,10 +1172,23 @@ test "a settings type uses the shared editor and publishes only after a guarded 
         .kind = .settings,
         .title_field = "",
         .fields = &.{
-            .{ .name = "hero_title", .label = "Hero title", .kind = "text" },
-            .{ .name = "fees", .label = "Fee rows", .kind = "repeater", .fields = &.{
-                .{ .name = "label", .label = "Label", .kind = "string" },
-            } },
+            .{
+                .name = "hero_title",
+                .label = "Hero title",
+                .kind = "text",
+            },
+            .{
+                .name = "fees",
+                .label = "Fee rows",
+                .kind = "repeater",
+                .fields = &.{
+                    .{
+                        .name = "label",
+                        .label = "Label",
+                        .kind = "string",
+                    },
+                },
+            },
         },
     };
     try records.fixture.post_type(&system);
@@ -1178,18 +1212,26 @@ test "a settings type uses the shared editor and publishes only after a guarded 
         "/admin/content/create",
         "csrf=wrong&type=website&hero_title=Welcome+home",
     );
-    const before = try registry.SDK.dispatch(&system, records.List, .{ .type = "website" });
+    const before = try registry.SDK.dispatch(&system, records.List, .{
+        .type = "website",
+    });
     try std.testing.expectEqual(@as(usize, 0), before.records.len);
     _ = try flow.call(
         "POST",
         "/admin/content/create",
         try std.fmt.allocPrint(arena, "csrf={s}&type=website&hero_title=Welcome+home", .{csrf}),
     );
-    const after = try registry.SDK.dispatch(&system, records.List, .{ .type = "website" });
+    const after = try registry.SDK.dispatch(&system, records.List, .{
+        .type = "website",
+    });
     try std.testing.expectEqual(@as(usize, 1), after.records.len);
     try std.testing.expectEqualStrings("draft", after.records[0].status);
-    _ = try registry.SDK.dispatch(&system, records.Publish, .{ .id = after.records[0].id });
-    const home = try registry.SDK.dispatch(&system, records.Get, .{ .id = after.records[0].id });
+    _ = try registry.SDK.dispatch(&system, records.Publish, .{
+        .id = after.records[0].id,
+    });
+    const home = try registry.SDK.dispatch(&system, records.Get, .{
+        .id = after.records[0].id,
+    });
     try std.testing.expect(std.mem.indexOf(u8, home.document, "Welcome home") != null);
     const content = try registry.SDK.dispatch(&system, records.List, .{});
     try std.testing.expectEqual(@as(usize, 1), content.records.len);
@@ -1209,7 +1251,9 @@ test "settings and custom fields have isolated authoring and validated field for
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var flow: Flow = .{ .inner = undefined };
+    var flow: Flow = .{
+        .inner = undefined,
+    };
     flow.inner.init(.{
         .connection = &harness.fixture.connection,
         .auth = &harness.auth,
@@ -1265,7 +1309,9 @@ test "settings and custom fields have isolated authoring and validated field for
     ) != null);
     const section = try std.fmt.allocPrint(arena, "csrf={s}&name=Brand&handle=brand", .{csrf});
     _ = try flow.call("POST", "/admin/structure/settings/create", section);
-    const got = try registry.SDK.dispatch(&system, types.Get, .{ .type = "brand" });
+    const got = try registry.SDK.dispatch(&system, types.Get, .{
+        .type = "brand",
+    });
     try std.testing.expectEqual(
         @import("../model.zig").content_type.Kind.settings,
         got.definition.kind,
@@ -1312,7 +1358,9 @@ test "settings and custom fields have isolated authoring and validated field for
         ),
     );
     try std.testing.expect(cross.header("Location") == null);
-    _ = try registry.SDK.dispatch(&system, types.Get, .{ .type = "brand" });
+    _ = try registry.SDK.dispatch(&system, types.Get, .{
+        .type = "brand",
+    });
 }
 
 test "schema creation pages fit a fixed request arena with many field definitions" {
@@ -1323,7 +1371,9 @@ test "schema creation pages fit a fixed request arena with many field definition
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var flow: Flow = .{ .inner = undefined };
+    var flow: Flow = .{
+        .inner = undefined,
+    };
     flow.inner.init(.{
         .connection = &harness.fixture.connection,
         .auth = &harness.auth,

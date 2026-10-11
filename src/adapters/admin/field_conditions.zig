@@ -6,7 +6,9 @@ const conditions = model.field.conditions;
 pub fn read(arena: std.mem.Allocator, form: *const admin.Form, prefix: []const u8) !conditions.Set {
     std.debug.assert(form.len <= admin.form_pairs_max);
     std.debug.assert(prefix.len > 0);
-    const invalid: conditions.Set = &.{.{ .rules = &.{} }};
+    const invalid: conditions.Set = &.{.{
+        .rules = &.{},
+    }};
     const start = try std.fmt.allocPrint(arena, "{s}.", .{prefix});
 
     if (!valid_pairs(form, start)) {
@@ -53,7 +55,9 @@ pub fn read(arena: std.mem.Allocator, form: *const admin.Form, prefix: []const u
         }
 
         if (rules.items.len > 0) {
-            try groups.append(arena, .{ .rules = rules.items });
+            try groups.append(arena, .{
+                .rules = rules.items,
+            });
         }
     }
 
@@ -171,7 +175,10 @@ pub fn render(
 
 pub fn choices_of(arena: std.mem.Allocator, field: model.field.Def) ![]const u8 {
     std.debug.assert(field.options.choices.len <= model.field.choices_max);
-    const Choice = struct { value: []const u8, label: []const u8 };
+    const Choice = struct {
+        value: []const u8,
+        label: []const u8,
+    };
 
     if (std.mem.eql(u8, field.kind, "boolean")) {
         return "[{\"value\":\"true\",\"label\":\"Yes\"},{\"value\":\"false\",\"label\":\"No\"}]";
@@ -180,10 +187,13 @@ pub fn choices_of(arena: std.mem.Allocator, field: model.field.Def) ![]const u8 
     const choices = try arena.alloc(Choice, field.options.choices.len);
 
     for (field.options.choices, 0..) |value, index| {
-        choices[index] = .{ .value = value, .label = if (index < field.options.labels.len)
-            field.options.labels[index]
-        else
-            value };
+        choices[index] = .{
+            .value = value,
+            .label = if (index < field.options.labels.len)
+                field.options.labels[index]
+            else
+                value,
+        };
     }
 
     return std.json.Stringify.valueAlloc(arena, choices, .{});
@@ -193,13 +203,34 @@ test "rule forms reject unknown operators, excessive indices and incomplete rows
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const cases = [_]struct { body: []const u8, valid: bool }{
-        .{ .body = "conditions.0.0.field=enabled&conditions.0.0.value=true", .valid = true },
-        .{ .body = "conditions.8.0.field=enabled", .valid = false },
-        .{ .body = "conditions.0.8.field=enabled", .valid = false },
-        .{ .body = "conditions.0.0.operator=surprise", .valid = false },
-        .{ .body = "conditions.0.0.value=true", .valid = false },
-        .{ .body = "conditions.0.0.field.extra=enabled", .valid = false },
+    const cases = [_]struct {
+        body: []const u8,
+        valid: bool,
+    }{
+        .{
+            .body = "conditions.0.0.field=enabled&conditions.0.0.value=true",
+            .valid = true,
+        },
+        .{
+            .body = "conditions.8.0.field=enabled",
+            .valid = false,
+        },
+        .{
+            .body = "conditions.0.8.field=enabled",
+            .valid = false,
+        },
+        .{
+            .body = "conditions.0.0.operator=surprise",
+            .valid = false,
+        },
+        .{
+            .body = "conditions.0.0.value=true",
+            .valid = false,
+        },
+        .{
+            .body = "conditions.0.0.field.extra=enabled",
+            .valid = false,
+        },
     };
 
     for (cases) |case| {

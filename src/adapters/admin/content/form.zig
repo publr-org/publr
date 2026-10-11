@@ -118,7 +118,10 @@ fn terms_of(session: *Session, def: Def, document: ?Value) Error!?admin.render.N
     var tree_tokens: std.Io.Writer.Allocating = .init(arena);
 
     for (assigned) |field| {
-        const tokens: Tokens = .{ .selected = &selected_tokens, .tree = &tree_tokens };
+        const tokens: Tokens = .{
+            .selected = &selected_tokens,
+            .tree = &tree_tokens,
+        };
         const item = try term_field_of(session, field, document, tokens) orelse continue;
 
         items.append(arena, item) catch return error.OutOfMemory;
@@ -137,7 +140,10 @@ const types_taxonomy = @import("../../../operations/taxonomy.zig");
 const display = @import("../display.zig");
 
 /// Where the script's tokens of every field are gathered.
-const Tokens = struct { selected: *std.Io.Writer.Allocating, tree: *std.Io.Writer.Allocating };
+const Tokens = struct {
+    selected: *std.Io.Writer.Allocating,
+    tree: *std.Io.Writer.Allocating,
+};
 
 /// One field's section: its taxonomy's terms in tree order, the selected ones marked;
 /// null when the taxonomy cannot be read.
@@ -256,7 +262,9 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
     };
     const field = admin.query_param(&session, "field") orelse "";
     const search = admin.query_param(&session, "q");
-    const got = registry.SDK.dispatch(&session.ctx, types.Get, .{ .type = handle }) catch |err| {
+    const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
+        .type = handle,
+    }) catch |err| {
         return admin.fail(&session, err, back);
     };
     const live_only = admin.query_param(&session, "live") != null;
@@ -312,7 +320,9 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
     const accept = session.request.header("accept") orelse "";
 
     if (std.mem.eql(u8, accept, "application/json")) {
-        return session.response.json(.ok, .{ .html = html });
+        return session.response.json(.ok, .{
+            .html = html,
+        });
     }
 
     return session.response.set_body(.ok, "text/html; charset=utf-8", html);

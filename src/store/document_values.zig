@@ -23,10 +23,16 @@ pub const live = "live";
 pub const pending = "pending";
 pub const slot_len_max: u32 = 64;
 
-pub const Referrer = struct { record_id: []const u8, field: []const u8 };
+pub const Referrer = struct {
+    record_id: []const u8,
+    field: []const u8,
+};
 pub const Slots = enum { live, editing };
 /// A value row with the record it belongs to, from a read of many records.
-pub const Owned = struct { record: []const u8, row: Row };
+pub const Owned = struct {
+    record: []const u8,
+    row: Row,
+};
 
 pub fn Store(comptime tables: tables_module.Tables) type {
     return struct {
@@ -163,7 +169,9 @@ pub fn Store(comptime tables: tables_module.Tables) type {
 
             try select.bind_text(1, record_id);
 
-            const Slot = struct { slot: []const u8 };
+            const Slot = struct {
+                slot: []const u8,
+            };
             var slots: std.ArrayList([]const u8) = .empty;
 
             while (try select.step()) {
@@ -209,7 +217,11 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             try select.bind_text(1, record_id);
             try select.bind_text(2, slot);
 
-            const Cell = struct { field: []const u8, ordinal: i64, value: db.Any };
+            const Cell = struct {
+                field: []const u8,
+                ordinal: i64,
+                value: db.Any,
+            };
             var rows: std.ArrayList(Row) = .empty;
 
             while (try select.step()) {
@@ -217,9 +229,15 @@ pub fn Store(comptime tables: tables_module.Tables) type {
 
                 const cell = try select.read(Cell, arena);
                 const stored: Stored = switch (cell.value) {
-                    .integer => |number| .{ .integer = number },
-                    .real => |number| .{ .real = number },
-                    .text => |text| .{ .text = text },
+                    .integer => |number| .{
+                        .integer = number,
+                    },
+                    .real => |number| .{
+                        .real = number,
+                    },
+                    .text => |text| .{
+                        .text = text,
+                    },
                     .blob, .null => unreachable,
                 };
 
@@ -274,17 +292,26 @@ pub fn Store(comptime tables: tables_module.Tables) type {
 
                 const cell = try select.read(Cell, arena);
                 const stored: Stored = switch (cell.value) {
-                    .integer => |number| .{ .integer = number },
-                    .real => |number| .{ .real = number },
-                    .text => |text| .{ .text = text },
+                    .integer => |number| .{
+                        .integer = number,
+                    },
+                    .real => |number| .{
+                        .real = number,
+                    },
+                    .text => |text| .{
+                        .text = text,
+                    },
                     .blob, .null => unreachable,
                 };
 
-                rows.append(arena, .{ .record = cell.record, .row = .{
-                    .field = cell.field,
-                    .ordinal = cell.ordinal,
-                    .value = stored,
-                } }) catch return error.OutOfMemory;
+                rows.append(arena, .{
+                    .record = cell.record,
+                    .row = .{
+                        .field = cell.field,
+                        .ordinal = cell.ordinal,
+                        .value = stored,
+                    },
+                }) catch return error.OutOfMemory;
             }
 
             return rows.items;
@@ -353,7 +380,9 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                 return null;
             }
 
-            const Found = struct { record: []const u8 };
+            const Found = struct {
+                record: []const u8,
+            };
             return (try select.read(Found, arena)).record;
         }
 
@@ -384,7 +413,9 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                 return null;
             }
 
-            const Found = struct { record: []const u8 };
+            const Found = struct {
+                record: []const u8,
+            };
             return (try select.read(Found, arena)).record;
         }
 
@@ -413,7 +444,9 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                 return null;
             }
 
-            const Found = struct { value: i64 };
+            const Found = struct {
+                value: i64,
+            };
             return (try select.read(Found, arena)).value;
         }
 
@@ -458,7 +491,9 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                 return null;
             }
 
-            const Found = struct { value: []const u8 };
+            const Found = struct {
+                value: []const u8,
+            };
             return (try select.read(Found, arena)).value;
         }
 

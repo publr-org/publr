@@ -40,7 +40,10 @@ pub const Response = struct {
     /// Headers besides the type and the cache policy: `WWW-Authenticate`, `Link`, ….
     headers: []const Header = &.{},
 
-    pub const Header = struct { name: []const u8, value: []const u8 };
+    pub const Header = struct {
+        name: []const u8,
+        value: []const u8,
+    };
     pub const headers_max: u32 = 8;
 };
 
@@ -192,14 +195,20 @@ pub const Request = struct {
     pub fn redirect(request: *const Request, location: []const u8) Response {
         std.debug.assert(request.http.path().len > 0);
 
-        return .{ .status = 303, .location = location };
+        return .{
+            .status = 303,
+            .location = location,
+        };
     }
 
     /// This page instead, with this status.
     pub fn respond(request: *const Request, status: u16, body: []const u8) Response {
         std.debug.assert(request.http.path().len > 0);
 
-        return .{ .status = status, .body = body };
+        return .{
+            .status = status,
+            .body = body,
+        };
     }
 
     /// The request's body, as sent: empty for a request with none.
@@ -223,7 +232,11 @@ pub const Request = struct {
         const text = std.json.Stringify.valueAlloc(request.arena, value, .{}) catch
             @panic("out of memory");
 
-        return .{ .status = 200, .content_type = "application/json", .body = text };
+        return .{
+            .status = 200,
+            .content_type = "application/json",
+            .body = text,
+        };
     }
 };
 
@@ -288,21 +301,40 @@ test "an answer is written as given, and a redirect must name where" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    var response: http.Response = .{ .arena = arena_state.allocator() };
+    var response: http.Response = .{
+        .arena = arena_state.allocator(),
+    };
 
-    try write(&response, .{ .status = 303, .location = "https://ada.publr.app/" });
+    try write(&response, .{
+        .status = 303,
+        .location = "https://ada.publr.app/",
+    });
     try std.testing.expectEqual(http.Status.see_other, response.status);
     try std.testing.expectEqualStrings("https://ada.publr.app/", response.header("Location").?);
     try std.testing.expectEqualStrings("private, no-store", response.header("Cache-Control").?);
 
-    var page: http.Response = .{ .arena = arena_state.allocator() };
+    var page: http.Response = .{
+        .arena = arena_state.allocator(),
+    };
 
-    try write(&page, .{ .status = 402, .body = "<p>Members only</p>" });
+    try write(&page, .{
+        .status = 402,
+        .body = "<p>Members only</p>",
+    });
     try std.testing.expectEqual(@as(u16, 402), page.status.code());
 
-    var broken: http.Response = .{ .arena = arena_state.allocator() };
+    var broken: http.Response = .{
+        .arena = arena_state.allocator(),
+    };
 
-    try std.testing.expectError(error.Invalid, write(&broken, .{ .status = 303 }));
-    try std.testing.expectError(error.Invalid, write(&broken, .{ .status = 200, .location = "/" }));
-    try std.testing.expectError(error.Invalid, write(&broken, .{ .status = 299 }));
+    try std.testing.expectError(error.Invalid, write(&broken, .{
+        .status = 303,
+    }));
+    try std.testing.expectError(error.Invalid, write(&broken, .{
+        .status = 200,
+        .location = "/",
+    }));
+    try std.testing.expectError(error.Invalid, write(&broken, .{
+        .status = 299,
+    }));
 }

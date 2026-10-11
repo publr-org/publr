@@ -347,7 +347,9 @@ pub fn Of(comptime Domain: type) type {
 
             const key = try ctx.arena.dupe(u8, name);
 
-            try document.object.put(ctx.arena, key, .{ .string = slug });
+            try document.object.put(ctx.arena, key, .{
+                .string = slug,
+            });
         }
 
         /// Where a document's edits currently live: its pending copy when one exists,
@@ -399,8 +401,15 @@ pub fn Of(comptime Domain: type) type {
             const kind = model.kinds.lookup(registry.Kinds.all, found.kind);
 
             return switch (model.kinds.column_of(kind.storage)) {
-                .text => .{ .field = name, .text = text },
-                .ref => .{ .field = name, .ref = text, .membership = kind.has.taxonomy },
+                .text => .{
+                    .field = name,
+                    .text = text,
+                },
+                .ref => .{
+                    .field = name,
+                    .ref = text,
+                    .membership = kind.has.taxonomy,
+                },
                 .int => .{
                     .field = name,
                     .int = document_rules.parse_int_like(text) orelse return error.Invalid,

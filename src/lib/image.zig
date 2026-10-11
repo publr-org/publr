@@ -63,9 +63,17 @@ pub const Params = struct {
     quality: u8 = quality_default,
 };
 
-pub const Processed = struct { bytes: []u8, format: Format, width: u32, height: u32 };
+pub const Processed = struct {
+    bytes: []u8,
+    format: Format,
+    width: u32,
+    height: u32,
+};
 
-pub const Size = struct { width: u32, height: u32 };
+pub const Size = struct {
+    width: u32,
+    height: u32,
+};
 
 pub const Error = error{ Decode, TooLarge, Resize, Encode, OutOfMemory };
 
@@ -88,7 +96,10 @@ pub fn size_of(bytes: []const u8) ?Size {
 
     std.debug.assert(width > 0 and height > 0);
 
-    return .{ .width = @intCast(width), .height = @intCast(height) };
+    return .{
+        .width = @intCast(width),
+        .height = @intCast(height),
+    };
 }
 
 /// Whether `process` reads files of this type.
@@ -202,7 +213,12 @@ pub fn process(allocator: std.mem.Allocator, source: []const u8, params: Params)
 
     std.debug.assert(bytes.len > 0);
 
-    return .{ .bytes = bytes, .format = format, .width = pixels.width, .height = pixels.height };
+    return .{
+        .bytes = bytes,
+        .format = format,
+        .width = pixels.width,
+        .height = pixels.height,
+    };
 }
 
 fn source_format(source: []const u8) Format {
@@ -234,24 +250,79 @@ test "negotiate: WebP when accepted, else the source's format" {
 
 test "cache_suffix: what differs from the defaults" {
     var buffer: [suffix_len_max]u8 = undefined;
-    const cases = [_]struct { params: Params, format: Format, expected: []const u8 }{
-        .{ .params = .{ .width = 600 }, .format = .jpeg, .expected = "_w600" },
-        .{ .params = .{ .width = 300 }, .format = .webp, .expected = "_w300.webp" },
-        .{ .params = .{ .height = 400 }, .format = .jpeg, .expected = "_h400" },
-        .{ .params = .{ .width = 80, .height = 80 }, .format = .jpeg, .expected = "_w80_h80" },
+    const cases = [_]struct {
+        params: Params,
+        format: Format,
+        expected: []const u8,
+    }{
         .{
-            .params = .{ .width = 80, .height = 80, .focal_x = 34, .focal_y = 25 },
+            .params = .{
+                .width = 600,
+            },
+            .format = .jpeg,
+            .expected = "_w600",
+        },
+        .{
+            .params = .{
+                .width = 300,
+            },
+            .format = .webp,
+            .expected = "_w300.webp",
+        },
+        .{
+            .params = .{
+                .height = 400,
+            },
+            .format = .jpeg,
+            .expected = "_h400",
+        },
+        .{
+            .params = .{
+                .width = 80,
+                .height = 80,
+            },
+            .format = .jpeg,
+            .expected = "_w80_h80",
+        },
+        .{
+            .params = .{
+                .width = 80,
+                .height = 80,
+                .focal_x = 34,
+                .focal_y = 25,
+            },
             .format = .jpeg,
             .expected = "_w80_h80_fp34-25",
         },
         .{
-            .params = .{ .width = 80, .height = 80, .fit = .cover },
+            .params = .{
+                .width = 80,
+                .height = 80,
+                .fit = .cover,
+            },
             .format = .jpeg,
             .expected = "_w80_h80_cover",
         },
-        .{ .params = .{ .width = 300, .quality = 80 }, .format = .jpeg, .expected = "_w300_q80" },
-        .{ .params = .{}, .format = .webp, .expected = ".webp" },
-        .{ .params = .{ .focal_x = 10 }, .format = .jpeg, .expected = "" },
+        .{
+            .params = .{
+                .width = 300,
+                .quality = 80,
+            },
+            .format = .jpeg,
+            .expected = "_w300_q80",
+        },
+        .{
+            .params = .{},
+            .format = .webp,
+            .expected = ".webp",
+        },
+        .{
+            .params = .{
+                .focal_x = 10,
+            },
+            .format = .jpeg,
+            .expected = "",
+        },
     };
 
     for (cases) |case| {
@@ -271,15 +342,23 @@ test "process: resizes a PNG by width, keeping the ratio" {
     const source = try encode.sample_png(allocator, 8, 4);
     defer allocator.free(source);
 
-    try std.testing.expectEqual(Size{ .width = 8, .height = 4 }, size_of(source).?);
+    try std.testing.expectEqual(Size{
+        .width = 8,
+        .height = 4,
+    }, size_of(source).?);
 
-    const resized = try process(allocator, source, .{ .width = 4 });
+    const resized = try process(allocator, source, .{
+        .width = 4,
+    });
     defer allocator.free(resized.bytes);
 
     try std.testing.expectEqual(@as(u32, 4), resized.width);
     try std.testing.expectEqual(@as(u32, 2), resized.height);
     try std.testing.expectEqual(Format.png, resized.format);
-    try std.testing.expectEqual(Size{ .width = 4, .height = 2 }, size_of(resized.bytes).?);
+    try std.testing.expectEqual(Size{
+        .width = 4,
+        .height = 2,
+    }, size_of(resized.bytes).?);
 }
 
 test "process: never upscales, crops and covers, writes JPEG and WebP" {
@@ -287,15 +366,24 @@ test "process: never upscales, crops and covers, writes JPEG and WebP" {
     const source = try encode.sample_png(allocator, 8, 4);
     defer allocator.free(source);
 
-    const same = try process(allocator, source, .{ .width = 100 });
+    const same = try process(allocator, source, .{
+        .width = 100,
+    });
     defer allocator.free(same.bytes);
 
     try std.testing.expectEqual(@as(u32, 8), same.width);
 
-    const cropped = try process(allocator, source, .{ .width = 2, .height = 2, .format = .jpeg });
+    const cropped = try process(allocator, source, .{
+        .width = 2,
+        .height = 2,
+        .format = .jpeg,
+    });
     defer allocator.free(cropped.bytes);
 
-    try std.testing.expectEqual(Size{ .width = 2, .height = 2 }, size_of(cropped.bytes).?);
+    try std.testing.expectEqual(Size{
+        .width = 2,
+        .height = 2,
+    }, size_of(cropped.bytes).?);
 
     const covered = try process(allocator, source, .{
         .width = 2,
@@ -307,5 +395,7 @@ test "process: never upscales, crops and covers, writes JPEG and WebP" {
 
     try std.testing.expectEqual(@as(u32, 2), covered.width);
     try std.testing.expect(std.mem.startsWith(u8, covered.bytes, "RIFF"));
-    try std.testing.expectError(error.Decode, process(allocator, "nope", .{ .width = 2 }));
+    try std.testing.expectError(error.Decode, process(allocator, "nope", .{
+        .width = 2,
+    }));
 }

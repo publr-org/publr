@@ -6,7 +6,11 @@ const model = @import("../../model.zig");
 const definitions = @import("definitions.zig");
 
 const Kind = model.content_type.Kind;
-const KindText = struct { kind: Kind, label: []const u8, description: []const u8 };
+const KindText = struct {
+    kind: Kind,
+    label: []const u8,
+    description: []const u8,
+};
 
 const Pages = definitions.Pages(.{
     .base = "/admin/types",

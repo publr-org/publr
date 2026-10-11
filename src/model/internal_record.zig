@@ -141,8 +141,14 @@ fn valid_name(name: []const u8, len_max: u32) bool {
 
 test "collections: names, unique kinds, indexed fields" {
     const good = [_]Collection{
-        .{ .kind = "movement", .indexed = &.{ "stock", "at" }, .append_only = true },
-        .{ .kind = "cart" },
+        .{
+            .kind = "movement",
+            .indexed = &.{ "stock", "at" },
+            .append_only = true,
+        },
+        .{
+            .kind = "cart",
+        },
     };
 
     try std.testing.expect(problem(&good) == null);
@@ -151,9 +157,18 @@ test "collections: names, unique kinds, indexed fields" {
     try std.testing.expect(indexes(good[0], "stock"));
     try std.testing.expect(!indexes(good[0], "reason"));
 
-    const twice = [_]Collection{ .{ .kind = "cart" }, .{ .kind = "cart" } };
-    const badly_named = [_]Collection{.{ .kind = "Cart" }};
-    const field_twice = [_]Collection{.{ .kind = "cart", .indexed = &.{ "a", "a" } }};
+    const twice = [_]Collection{ .{
+        .kind = "cart",
+    }, .{
+        .kind = "cart",
+    } };
+    const badly_named = [_]Collection{.{
+        .kind = "Cart",
+    }};
+    const field_twice = [_]Collection{.{
+        .kind = "cart",
+        .indexed = &.{ "a", "a" },
+    }};
 
     try std.testing.expect(problem(&twice) != null);
     try std.testing.expect(problem(&badly_named) != null);
@@ -165,9 +180,17 @@ test "indexed values: text, integers and booleans only" {
     var fixed = std.heap.FixedBufferAllocator.init(&buffer);
     const arena = fixed.allocator();
 
-    try std.testing.expectEqualStrings("tea", (try indexed_text(arena, .{ .string = "tea" })).?);
-    try std.testing.expectEqualStrings("42", (try indexed_text(arena, .{ .integer = 42 })).?);
-    try std.testing.expectEqualStrings("true", (try indexed_text(arena, .{ .bool = true })).?);
-    try std.testing.expect(try indexed_text(arena, .{ .float = 1.5 }) == null);
+    try std.testing.expectEqualStrings("tea", (try indexed_text(arena, .{
+        .string = "tea",
+    })).?);
+    try std.testing.expectEqualStrings("42", (try indexed_text(arena, .{
+        .integer = 42,
+    })).?);
+    try std.testing.expectEqualStrings("true", (try indexed_text(arena, .{
+        .bool = true,
+    })).?);
+    try std.testing.expect(try indexed_text(arena, .{
+        .float = 1.5,
+    }) == null);
     try std.testing.expect(try indexed_text(arena, .null) == null);
 }

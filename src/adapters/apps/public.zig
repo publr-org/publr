@@ -19,7 +19,10 @@ const manifest_bytes_max: u32 = 16 << 20;
 /// next build removes what left `public/` without touching the pages beside them.
 pub const manifest_name = ".publr-public";
 
-pub const Summary = struct { files: u32 = 0, bytes: u64 = 0 };
+pub const Summary = struct {
+    files: u32 = 0,
+    bytes: u64 = 0,
+};
 
 /// Copies `public/` to the root of the build folder, refusing a path the build writes
 /// itself, and removes what an earlier build copied that is gone from `public/`.
@@ -76,7 +79,9 @@ fn copy_files(
             return error.ReservedPublicFile;
         }
 
-        try source.copyFile(entry.path, target, entry.path, io, .{ .make_path = true });
+        try source.copyFile(entry.path, target, entry.path, io, .{
+            .make_path = true,
+        });
         const file = try source.openFile(io, entry.path, .{});
         defer file.close(io);
 
@@ -127,7 +132,10 @@ fn remove_gone(
         try listing.writer.print("{s}\n", .{path});
     }
 
-    try target.writeFile(io, .{ .sub_path = manifest_name, .data = listing.written() });
+    try target.writeFile(io, .{
+        .sub_path = manifest_name,
+        .data = listing.written(),
+    });
 }
 
 /// Answers `inside`, a path inside the app, with its public file, or with the build's
@@ -260,19 +268,35 @@ fn contains(paths: []const []const u8, wanted: []const u8) bool {
 
 test "public files copy to the build's root, and only what left public/ is removed" {
     const io = std.testing.io;
-    var source = std.testing.tmpDir(.{ .iterate = true });
+    var source = std.testing.tmpDir(.{
+        .iterate = true,
+    });
     defer source.cleanup();
-    var target = std.testing.tmpDir(.{ .iterate = true });
+    var target = std.testing.tmpDir(.{
+        .iterate = true,
+    });
     defer target.cleanup();
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
     try source.dir.createDir(io, "images", .default_dir);
-    try source.dir.writeFile(io, .{ .sub_path = "images/logo.svg", .data = "first" });
-    try source.dir.writeFile(io, .{ .sub_path = "robots.txt", .data = "User-agent: *" });
-    try source.dir.writeFile(io, .{ .sub_path = "style.css", .data = "a{}" });
-    try target.dir.writeFile(io, .{ .sub_path = "index.html", .data = "<p>page</p>" });
+    try source.dir.writeFile(io, .{
+        .sub_path = "images/logo.svg",
+        .data = "first",
+    });
+    try source.dir.writeFile(io, .{
+        .sub_path = "robots.txt",
+        .data = "User-agent: *",
+    });
+    try source.dir.writeFile(io, .{
+        .sub_path = "style.css",
+        .data = "a{}",
+    });
+    try target.dir.writeFile(io, .{
+        .sub_path = "index.html",
+        .data = "<p>page</p>",
+    });
 
     const first = try copy_files(arena, io, source.dir, target.dir);
     try std.testing.expectEqual(@as(u32, 2), first.files);
@@ -280,7 +304,10 @@ test "public files copy to the build's root, and only what left public/ is remov
     try std.testing.expectEqualStrings("User-agent: *", robots);
     try std.testing.expectError(error.FileNotFound, target.dir.access(io, "style.css", .{}));
 
-    try source.dir.writeFile(io, .{ .sub_path = "images/logo.svg", .data = "replacement" });
+    try source.dir.writeFile(io, .{
+        .sub_path = "images/logo.svg",
+        .data = "replacement",
+    });
     try source.dir.deleteFile(io, "robots.txt");
     _ = try copy_files(arena, io, source.dir, target.dir);
     const logo = try target.dir.readFileAlloc(io, "images/logo.svg", arena, .limited(100));

@@ -17,11 +17,26 @@ const Value = std.json.Value;
 
 pub const Purpose = enum { delivery, edit };
 pub const Problem = document_module.Problem;
-pub const Created = struct { id: []const u8, status: []const u8, slug: ?[]const u8, version: i64 };
-pub const Got = struct { record: Record, slot: []const u8, document: []const u8 };
+pub const Created = struct {
+    id: []const u8,
+    status: []const u8,
+    slug: ?[]const u8,
+    version: i64,
+};
+pub const Got = struct {
+    record: Record,
+    slot: []const u8,
+    document: []const u8,
+};
 pub const Saved = @import("save.zig").Saved;
-pub const Referrer = struct { record_id: []const u8, field: []const u8 };
-pub const Report = struct { valid: bool, problems: []const Problem };
+pub const Referrer = struct {
+    record_id: []const u8,
+    field: []const u8,
+};
+pub const Report = struct {
+    valid: bool,
+    problems: []const Problem,
+};
 
 /// What a list takes, whatever the domain calls its definitions.
 pub const ListInput = struct {
@@ -105,7 +120,12 @@ pub fn Of(comptime Domain: type) type {
                 ctx.notice(notice_name("published"), id);
             }
 
-            return .{ .id = id, .status = status, .slug = slug, .version = 1 };
+            return .{
+                .id = id,
+                .status = status,
+                .slug = slug,
+                .version = 1,
+            };
         }
 
         /// The app a new document belongs to: the one asked for (empty: the project's own),
@@ -156,7 +176,11 @@ pub fn Of(comptime Domain: type) type {
                 shown.slug = slug_of(type_row.def, parsed);
             }
 
-            return .{ .record = shown, .slot = slot, .document = text };
+            return .{
+                .record = shown,
+                .slot = slot,
+                .document = text,
+            };
         }
 
         fn slot_for(
@@ -307,7 +331,9 @@ pub fn Of(comptime Domain: type) type {
                 .updated_before_ms = constraints.updated_before_ms,
                 .app = if (constraints.app) |app| switch (app) {
                     .none => .none,
-                    .name => |name| .{ .name = name },
+                    .name => |name| .{
+                        .name = name,
+                    },
                 } else null,
                 .order = in.order,
                 .limit = in.limit,
@@ -339,7 +365,10 @@ pub fn Of(comptime Domain: type) type {
 
             std.debug.assert(me.len > 0);
 
-            return .{ .id = me, .exclude = false };
+            return .{
+                .id = me,
+                .exclude = false,
+            };
         }
 
         fn author_of(author: ?model.filter.Author) ?store.documents.Author {
@@ -349,7 +378,10 @@ pub fn Of(comptime Domain: type) type {
 
             std.debug.assert(wanted.id.len > 0);
 
-            return .{ .id = wanted.id, .exclude = wanted.exclude };
+            return .{
+                .id = wanted.id,
+                .exclude = wanted.exclude,
+            };
         }
 
         /// `slug` is a filter on the definition's slug field; it cannot be combined with
@@ -381,7 +413,10 @@ pub fn Of(comptime Domain: type) type {
                     return error.OutOfMemory;
                 };
 
-                return .{ .field = field, .values_json = given };
+                return .{
+                    .field = field,
+                    .values_json = given,
+                };
             }
 
             const slug = in.slug orelse {
@@ -394,7 +429,10 @@ pub fn Of(comptime Domain: type) type {
 
             const slug_field = model.document.slug_field_of(def) orelse return error.Invalid;
 
-            return .{ .field = slug_field.name, .text = slug };
+            return .{
+                .field = slug_field.name,
+                .text = slug,
+            };
         }
 
         pub fn referrers(ctx: *Ctx, granted: *const Grant, id: []const u8) Error![]const Referrer {
@@ -447,7 +485,10 @@ pub fn Of(comptime Domain: type) type {
             const parsed = @import("../../lib/json.zig").parse(Value, ctx.arena, text, .{}) catch {
                 problems.add("", "document is not valid JSON");
 
-                return .{ .valid = false, .problems = try copy_problems(ctx, &problems) };
+                return .{
+                    .valid = false,
+                    .problems = try copy_problems(ctx, &problems),
+                };
             };
             const known = registry.Kinds.all;
 
@@ -472,7 +513,10 @@ pub fn Of(comptime Domain: type) type {
                 &problems,
             );
 
-            return .{ .valid = problems.is_empty(), .problems = try copy_problems(ctx, &problems) };
+            return .{
+                .valid = problems.is_empty(),
+                .problems = try copy_problems(ctx, &problems),
+            };
         }
     };
 }

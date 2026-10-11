@@ -93,7 +93,11 @@ fn options_of(arena: std.mem.Allocator, kind: Kind, field: FieldDef) Error![]con
     const labels = field.options.labels;
     const options = try arena.alloc(Option, field.options.choices.len + 1);
 
-    options[0] = .{ .value = "", .label = "None", .selected = field.default.len == 0 };
+    options[0] = .{
+        .value = "",
+        .label = "None",
+        .selected = field.default.len == 0,
+    };
 
     for (field.options.choices, 1..) |choice, index| {
         options[index] = .{
@@ -117,7 +121,11 @@ test "defaults know their control, their reason, and print dates in the current 
         .label = "At",
         .kind = "datetime",
         .default = "1970-01-03T10:00",
-        .options = .{ .date = .{ .format = .date } },
+        .options = .{
+            .date = .{
+                .format = .date,
+            },
+        },
     };
     try std.testing.expectEqualStrings("date", control_of(datetime, day));
     try std.testing.expectEqualStrings("1970-01-03", try text_of(arena, datetime, day));
@@ -136,7 +144,10 @@ test "defaults know their control, their reason, and print dates in the current 
         .label = "Kind",
         .kind = "select",
         .default = "b",
-        .options = .{ .choices = &.{ "a", "b" }, .labels = &.{ "Alpha", "Beta" } },
+        .options = .{
+            .choices = &.{ "a", "b" },
+            .labels = &.{ "Alpha", "Beta" },
+        },
     };
     const options = try options_of(arena, select, kind);
     try std.testing.expectEqual(@as(usize, 3), options.len);

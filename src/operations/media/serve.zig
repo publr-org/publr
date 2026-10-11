@@ -20,7 +20,9 @@ pub const File = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
-    pub const In = struct { key: []const u8 };
+    pub const In = struct {
+        key: []const u8,
+    };
     pub const Out = struct {
         id: []const u8,
         filename: []const u8,
@@ -31,7 +33,9 @@ pub const File = struct {
         focal_x: u8,
         focal_y: u8,
     };
-    pub const example: In = .{ .key = library.example_item.key };
+    pub const example: In = .{
+        .key = library.example_item.key,
+    };
     pub const example_out: Out = .{
         .id = library.example_item.id,
         .filename = "harbour.jpg",
@@ -42,7 +46,9 @@ pub const File = struct {
         .focal_x = 50,
         .focal_y = 40,
     };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .key = "The file's key, as in its address" };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .key = "The file's key, as in its address",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .id = "The file's record id",
         .filename = "The name it was uploaded with",
@@ -95,11 +101,21 @@ pub const FolderDelete = struct {
         \\administrators may do.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { folder: []const u8 };
-    pub const Out = struct { moved: u32 };
-    pub const example: In = .{ .folder = example_folder_id };
-    pub const example_out: Out = .{ .moved = 0 };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .folder = "The folder's id" };
+    pub const In = struct {
+        folder: []const u8,
+    };
+    pub const Out = struct {
+        moved: u32,
+    };
+    pub const example: In = .{
+        .folder = example_folder_id,
+    };
+    pub const example_out: Out = .{
+        .moved = 0,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .folder = "The folder's id",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .moved = "How many files and folders moved up",
     };
@@ -133,13 +149,19 @@ pub const FolderDelete = struct {
         }
 
         for (try store.media.filed_in(ctx.db, ctx.arena, folder.id)) |record| {
-            try library.save(ctx, record, edit.Changes{ .folder = parent });
+            try library.save(ctx, record, edit.Changes{
+                .folder = parent,
+            });
             moved += 1;
         }
 
-        _ = try registry.SDK.dispatch(ctx, term.Purge, .{ .id = folder.id });
+        _ = try registry.SDK.dispatch(ctx, term.Purge, .{
+            .id = folder.id,
+        });
 
-        return .{ .moved = moved };
+        return .{
+            .moved = moved,
+        };
     }
 };
 

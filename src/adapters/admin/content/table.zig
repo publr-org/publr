@@ -130,7 +130,12 @@ fn columns_of(page: *const list.Page, show_type: bool) Error![]const Column {
 fn column(id: []const u8, label: []const u8) Column {
     std.debug.assert(id.len > 0);
 
-    return .{ .id = id, .label = label, .href = "", .active = false };
+    return .{
+        .id = id,
+        .label = label,
+        .href = "",
+        .active = false,
+    };
 }
 
 fn tone_of(color: model.status.Color) []const u8 {

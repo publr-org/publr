@@ -91,7 +91,10 @@ pub fn bring_up_to_date(project: *const routes.Project, full: bool) !Refreshed {
     std.debug.assert(project.connection.transaction_depth == 0);
 
     if (full) {
-        return .{ .outcome = .built, .full = try apps_adapter.build.build_all(project) };
+        return .{
+            .outcome = .built,
+            .full = try apps_adapter.build.build_all(project),
+        };
     }
 
     return apps_adapter.rebuild.refresh(project);
@@ -140,7 +143,9 @@ const help =
 
 pub fn parse_flags(args: []const []const u8) Flags {
     if (args.len >= 64) {
-        return .{ .exit = usage("too many arguments") };
+        return .{
+            .exit = usage("too many arguments"),
+        };
     }
 
     std.debug.assert(help.len > 0);
@@ -157,7 +162,9 @@ pub fn parse_flags(args: []const []const u8) Flags {
             index += 1;
 
             if (index == args.len) {
-                return .{ .exit = usage("--out needs a directory") };
+                return .{
+                    .exit = usage("--out needs a directory"),
+                };
             }
 
             flags.options.output_dir = args[index];
@@ -165,7 +172,9 @@ pub fn parse_flags(args: []const []const u8) Flags {
             index += 1;
 
             if (index == args.len) {
-                return .{ .exit = usage("--url needs an address") };
+                return .{
+                    .exit = usage("--url needs an address"),
+                };
             }
 
             flags.options.base_url = std.mem.trimEnd(u8, args[index], "/");
@@ -173,25 +182,33 @@ pub fn parse_flags(args: []const []const u8) Flags {
             index += 1;
 
             if (index == args.len) {
-                return .{ .exit = usage("--apps needs a directory") };
+                return .{
+                    .exit = usage("--apps needs a directory"),
+                };
             }
 
             flags.options.apps_dir = args[index];
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             std.debug.print("{s}", .{help});
 
-            return .{ .exit = 0 };
+            return .{
+                .exit = 0,
+            };
         } else {
             report.err("publr build: unknown flag \"{s}\"", .{arg});
             std.debug.print("{s}", .{help});
 
-            return .{ .exit = 2 };
+            return .{
+                .exit = 2,
+            };
         }
     }
 
     if (!apps_adapter.valid_options(flags.options)) {
-        return .{ .exit = usage("--out and --apps need a directory, --url an absolute HTTP(S) " ++
-            "address") };
+        return .{
+            .exit = usage("--out and --apps need a directory, --url an absolute HTTP(S) " ++
+                "address"),
+        };
     }
 
     return flags;

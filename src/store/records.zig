@@ -165,14 +165,21 @@ test "list: by status, filter on a field value, full-text search, order and pagi
     _ = try seed_record(&fixture, arena, type_id, "Beta", "draft", 20);
     _ = try seed_record(&fixture, arena, type_id, "Gamma", "published", 20);
 
-    const all = try list(connection, arena, .{ .type_ids = &.{type_id}, .order = .title_asc });
+    const all = try list(connection, arena, .{
+        .type_ids = &.{type_id},
+        .order = .title_asc,
+    });
     try std.testing.expectEqual(@as(usize, 3), all.len);
     try std.testing.expectEqualStrings("Alpha", all[0].title);
 
     const live = try list(
         connection,
         arena,
-        .{ .type_ids = &.{type_id}, .statuses = &.{"published"}, .order = .title_asc },
+        .{
+            .type_ids = &.{type_id},
+            .statuses = &.{"published"},
+            .order = .title_asc,
+        },
     );
     try std.testing.expectEqual(@as(usize, 2), live.len);
 
@@ -181,21 +188,32 @@ test "list: by status, filter on a field value, full-text search, order and pagi
         arena,
         .{
             .type_ids = &.{type_id},
-            .filter = .{ .field = "views", .int = 20 },
+            .filter = .{
+                .field = "views",
+                .int = 20,
+            },
             .order = .title_asc,
         },
     );
     try std.testing.expectEqual(@as(usize, 2), twenty.len);
     try std.testing.expectEqualStrings("Beta", twenty[0].title);
 
-    const found = try list(connection, arena, .{ .type_ids = &.{type_id}, .search = "gamma" });
+    const found = try list(connection, arena, .{
+        .type_ids = &.{type_id},
+        .search = "gamma",
+    });
     try std.testing.expectEqual(@as(usize, 1), found.len);
     try std.testing.expectEqualStrings("Gamma", found[0].title);
 
     const page = try list(
         connection,
         arena,
-        .{ .type_ids = &.{type_id}, .order = .title_asc, .limit = 2, .offset = 2 },
+        .{
+            .type_ids = &.{type_id},
+            .order = .title_asc,
+            .limit = 2,
+            .offset = 2,
+        },
     );
     try std.testing.expectEqual(@as(usize, 1), page.len);
     try std.testing.expectEqualStrings("Gamma", page[0].title);
@@ -220,23 +238,32 @@ test "list: across types, by author and excluded author, within time bounds" {
     _ = try seed_record_by(&fixture, arena, note_id, "Beta", "draft", 2, "u_2", 2_000);
     _ = try seed_record_by(&fixture, arena, note_id, "Gamma", "draft", 3, "u_1", 3_000);
 
-    const both = try list(connection, arena, .{ .type_ids = &.{ post_id, note_id } });
+    const both = try list(connection, arena, .{
+        .type_ids = &.{ post_id, note_id },
+    });
     try std.testing.expectEqual(@as(usize, 3), both.len);
     try std.testing.expectEqualStrings("Gamma", both[0].title);
     try std.testing.expectEqualStrings("note", both[0].type);
-    const posts = try list(connection, arena, .{ .type_ids = &.{post_id} });
+    const posts = try list(connection, arena, .{
+        .type_ids = &.{post_id},
+    });
     try std.testing.expectEqual(@as(usize, 1), posts.len);
 
     const by_first = try list(connection, arena, .{
         .type_ids = &.{ post_id, note_id },
-        .created_by = .{ .id = "u_1" },
+        .created_by = .{
+            .id = "u_1",
+        },
         .order = .title_asc,
     });
     try std.testing.expectEqual(@as(usize, 2), by_first.len);
     try std.testing.expectEqualStrings("Alpha", by_first[0].title);
     const not_first = try list(connection, arena, .{
         .type_ids = &.{ post_id, note_id },
-        .updated_by = .{ .id = "u_1", .exclude = true },
+        .updated_by = .{
+            .id = "u_1",
+            .exclude = true,
+        },
     });
     try std.testing.expectEqual(@as(usize, 1), not_first.len);
     try std.testing.expectEqualStrings("Beta", not_first[0].title);
@@ -250,7 +277,10 @@ test "list: across types, by author and excluded author, within time bounds" {
     try std.testing.expectEqualStrings("Beta", middle[0].title);
     const filtered_by_field = try list(connection, arena, .{
         .type_ids = &.{ post_id, note_id },
-        .filter = .{ .field = "views", .int = 3 },
+        .filter = .{
+            .field = "views",
+            .int = 3,
+        },
     });
     try std.testing.expectEqual(@as(usize, 1), filtered_by_field.len);
 }
@@ -276,14 +306,24 @@ test "an app's records: set, cleared, listed by app or as the project's own, mov
     try std.testing.expectEqualStrings("www", (try get(connection, arena, site)).?.app.?);
     try std.testing.expectEqual(1, (try get(connection, arena, site)).?.version);
 
-    const in_www: documents.App = .{ .name = "www" };
-    const www = try list(connection, arena, .{ .type_ids = &.{type_id}, .app = in_www });
+    const in_www: documents.App = .{
+        .name = "www",
+    };
+    const www = try list(connection, arena, .{
+        .type_ids = &.{type_id},
+        .app = in_www,
+    });
     try std.testing.expectEqual(1, www.len);
     try std.testing.expectEqualStrings("Site", www[0].title);
-    const project = try list(connection, arena, .{ .type_ids = &.{type_id}, .app = .none });
+    const project = try list(connection, arena, .{
+        .type_ids = &.{type_id},
+        .app = .none,
+    });
     try std.testing.expectEqual(1, project.len);
     try std.testing.expectEqualStrings("Own", project[0].title);
-    try std.testing.expectEqual(3, (try list(connection, arena, .{ .type_ids = &.{type_id} })).len);
+    try std.testing.expectEqual(3, (try list(connection, arena, .{
+        .type_ids = &.{type_id},
+    })).len);
 
     try std.testing.expectEqual(1, try move_app(connection, "www", "site"));
     try std.testing.expectEqual(0, try move_app(connection, "www", "site"));

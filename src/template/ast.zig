@@ -82,7 +82,10 @@ pub const Expr = struct {
         };
     };
 
-    pub const Binary = struct { left: *const Expr, right: *const Expr };
+    pub const Binary = struct {
+        left: *const Expr,
+        right: *const Expr,
+    };
 
     pub const Logical = struct {
         left: *const Expr,
@@ -130,7 +133,10 @@ pub const Decl = struct {
     /// `else` branch, when it does not).
     when: ?When = null,
 
-    pub const When = struct { condition: Expr, otherwise: bool = false };
+    pub const When = struct {
+        condition: Expr,
+        otherwise: bool = false,
+    };
 
     pub const Value = union(enum) {
         /// `Publr.build.now()`: `YYYY-MM-DD HH:MM:SS`, UTC.
@@ -185,11 +191,29 @@ pub const Decl = struct {
         first: bool = false,
     };
 
-    pub const Query = struct { type_id: []const u8, limit: ?u32 = null, offset: ?u32 = null };
-    pub const DataText = struct { object: []const u8, key: []const u8, fallback: []const u8 };
-    pub const Money = struct { object: []const u8, key: []const u8, currency: ?[]const u8 };
-    pub const References = struct { object: []const u8, key: []const u8 };
-    pub const PropText = struct { key: []const u8, fallback: []const u8 };
+    pub const Query = struct {
+        type_id: []const u8,
+        limit: ?u32 = null,
+        offset: ?u32 = null,
+    };
+    pub const DataText = struct {
+        object: []const u8,
+        key: []const u8,
+        fallback: []const u8,
+    };
+    pub const Money = struct {
+        object: []const u8,
+        key: []const u8,
+        currency: ?[]const u8,
+    };
+    pub const References = struct {
+        object: []const u8,
+        key: []const u8,
+    };
+    pub const PropText = struct {
+        key: []const u8,
+        fallback: []const u8,
+    };
 };
 
 /// A prop at a component call site: a literal, or an expression whose value is a string,
@@ -234,9 +258,20 @@ pub const Node = union(enum) {
     /// `<X ... />` where X is a PJSX component: a call into its lowered module.
     pjsx: Pjsx,
 
-    pub const Attr = struct { name: []const u8, expr: Expr };
-    pub const Loop = struct { collection: []const u8, param: []const u8, body: []const Node };
-    pub const Cond = struct { condition: Expr, consequent: []const Node, alternate: []const Node };
+    pub const Attr = struct {
+        name: []const u8,
+        expr: Expr,
+    };
+    pub const Loop = struct {
+        collection: []const u8,
+        param: []const u8,
+        body: []const Node,
+    };
+    pub const Cond = struct {
+        condition: Expr,
+        consequent: []const Node,
+        alternate: []const Node,
+    };
     pub const Embed = struct {
         callee: u32,
         props: []const PropArg,

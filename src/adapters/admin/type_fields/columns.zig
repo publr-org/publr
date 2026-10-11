@@ -229,12 +229,20 @@ fn summary_of(arena: std.mem.Allocator, field: FieldDef, is_title: bool) Error![
 }
 
 test "a field the form has not named yet is drawn as untitled" {
-    const blank: FieldDef = .{ .name = "", .label = "", .kind = "string" };
+    const blank: FieldDef = .{
+        .name = "",
+        .label = "",
+        .kind = "string",
+    };
     const shown = presentable(blank);
     try std.testing.expectEqualStrings(untitled_label, shown.label);
     try std.testing.expectEqualStrings(untitled_name, shown.name);
 
-    const named: FieldDef = .{ .name = "title", .label = "Title", .kind = "string" };
+    const named: FieldDef = .{
+        .name = "title",
+        .label = "Title",
+        .kind = "string",
+    };
     try std.testing.expectEqualStrings("Title", presentable(named).label);
     try std.testing.expectEqualStrings("title", presentable(named).name);
 }

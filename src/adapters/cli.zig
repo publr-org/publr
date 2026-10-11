@@ -273,7 +273,9 @@ pub fn CLI(comptime SDK: type) type {
                 });
             };
 
-            std.json.Stringify.value(result, .{ .whitespace = .indent_2 }, out) catch
+            std.json.Stringify.value(result, .{
+                .whitespace = .indent_2,
+            }, out) catch
                 return error.WriteFailed;
             out.writeByte('\n') catch return error.WriteFailed;
 
@@ -590,7 +592,12 @@ fn resolve_user(options: Options, id_or_email: []const u8) Error!?sdk.Caller {
 
     const credentials = found orelse return null;
 
-    return .{ .user = .{ .id = credentials.user.id, .roles = credentials.user.roles } };
+    return .{
+        .user = .{
+            .id = credentials.user.id,
+            .roles = credentials.user.roles,
+        },
+    };
 }
 
 fn parse_value(comptime Value: type, arena: std.mem.Allocator, text: []const u8) Error!Value {
@@ -702,7 +709,9 @@ test "parse_in fills fields from flags and applies defaults" {
 
 test "run: --help lists operations, unknown operation, --as sets the caller, output is JSON" {
     const heartbeat = @import("../operations/heartbeat.zig");
-    const SDK = sdk.SDK(.{ .operations = &heartbeat.operations });
+    const SDK = sdk.SDK(.{
+        .operations = &heartbeat.operations,
+    });
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -761,7 +770,11 @@ test "run: --help lists operations, unknown operation, --as sets the caller, out
 test "malformed CLI scalars and oversized input are validation errors" {
     const arena = std.testing.allocator;
     var problem: Problem = .{};
-    const In = struct { flag: bool = false, number: f64 = 0, text: []const u8 = "" };
+    const In = struct {
+        flag: bool = false,
+        number: f64 = 0,
+        text: []const u8 = "",
+    };
 
     for ([_][]const u8{ "yes", "1", "FALSE", "" }) |value| {
         try std.testing.expectError(
@@ -829,7 +842,9 @@ test "malformed CLI scalars and oversized input are validation errors" {
 
 test "empty commands, oversized caller names and a full init alias fail gracefully" {
     const heartbeat = @import("../operations/heartbeat.zig");
-    const Command = CLI(sdk.SDK(.{ .operations = &heartbeat.operations }));
+    const Command = CLI(sdk.SDK(.{
+        .operations = &heartbeat.operations,
+    }));
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();

@@ -7,7 +7,10 @@ const std = @import("std");
 
 pub const Mark = enum { same, added, removed };
 
-pub const Segment = struct { text: []const u8, mark: Mark };
+pub const Segment = struct {
+    text: []const u8,
+    mark: Mark,
+};
 
 /// Above this many cells (the words left on one side times the other's), the middle is
 /// shown as removed then added.
@@ -26,7 +29,9 @@ pub fn words(arena: std.mem.Allocator, before: []const u8, after: []const u8) ![
     const end = common_end(old_tokens[start..], new_tokens[start..]);
     const old_middle = old_tokens[start .. old_tokens.len - end];
     const new_middle = new_tokens[start .. new_tokens.len - end];
-    var out: Builder = .{ .arena = arena };
+    var out: Builder = .{
+        .arena = arena,
+    };
 
     try out.add_all(old_tokens[0..start], .same);
 
@@ -80,11 +85,17 @@ fn tidied(arena: std.mem.Allocator, segments: []const Segment) ![]const Segment 
         }
 
         if (removed.items.len > 0) {
-            try out.append(arena, .{ .text = removed.items, .mark = .removed });
+            try out.append(arena, .{
+                .text = removed.items,
+                .mark = .removed,
+            });
         }
 
         if (added.items.len > 0) {
-            try out.append(arena, .{ .text = added.items, .mark = .added });
+            try out.append(arena, .{
+                .text = added.items,
+                .mark = .added,
+            });
         }
     }
 
@@ -160,7 +171,10 @@ const Builder = struct {
         const items = builder.segments.items;
 
         if (items.len == 0 or items[items.len - 1].mark != mark) {
-            try builder.segments.append(builder.arena, .{ .text = text, .mark = mark });
+            try builder.segments.append(builder.arena, .{
+                .text = text,
+                .mark = mark,
+            });
 
             return;
         }

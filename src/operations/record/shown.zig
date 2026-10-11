@@ -17,7 +17,10 @@ pub const point = "record.title";
 
 pub const Purpose = @import("../document/crud.zig").Purpose;
 
-pub const Title = struct { id: []const u8, title: []const u8 };
+pub const Title = struct {
+    id: []const u8,
+    title: []const u8,
+};
 
 pub fn Shown(comptime List: type, comptime example_id: []const u8) type {
     return struct {
@@ -39,11 +42,20 @@ pub fn Shown(comptime List: type, comptime example_id: []const u8) type {
             /// `edit`: from the pending copy of a record with changes, as its editor sees it.
             purpose: Purpose = .delivery,
         };
-        pub const Out = struct { titles: []const Title };
-        pub const example: In = .{ .ids = &.{example_id} };
-        pub const example_out: Out = .{ .titles = &.{
-            .{ .id = example_id, .title = "Hello, world" },
-        } };
+        pub const Out = struct {
+            titles: []const Title,
+        };
+        pub const example: In = .{
+            .ids = &.{example_id},
+        };
+        pub const example_out: Out = .{
+            .titles = &.{
+                .{
+                    .id = example_id,
+                    .title = "Hello, world",
+                },
+            },
+        };
         pub const field_docs: sdk.operation.Docs(In) = .{
             .ids = "These records, up to 200",
             .type = "Or a type's records, newest first",
@@ -82,7 +94,9 @@ pub fn Shown(comptime List: type, comptime example_id: []const u8) type {
 
             try apply_hooks(ctx, listed.records, listed.documents, titles);
 
-            return .{ .titles = titles };
+            return .{
+                .titles = titles,
+            };
         }
     };
 }
@@ -132,13 +146,19 @@ fn apply_type(
             .allocate = .alloc_always,
         }) catch std.json.Value.null;
 
-        const item: Item = .{ .id = record.id, .value = titles[index].title, .fields = fields };
+        const item: Item = .{
+            .id = record.id,
+            .value = titles[index].title,
+            .fields = fields,
+        };
 
         items.append(arena, item) catch return error.OutOfMemory;
         positions.append(arena, @intCast(index)) catch return error.OutOfMemory;
     }
 
-    var batch: Batch = .{ .items = items.items };
+    var batch: Batch = .{
+        .items = items.items,
+    };
 
     try registry.SDK.display(ctx, point, type_name, &batch);
 

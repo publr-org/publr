@@ -61,7 +61,12 @@ pub fn under(path: []const u8, prefix: []const u8) bool {
 
 /// The request of the pages before sign-in, which draw no chrome.
 pub const signed_out: Request = .{
-    .session = .{ .name = "", .email = "", .csrf = "", .avatar = "" },
+    .session = .{
+        .name = "",
+        .email = "",
+        .csrf = "",
+        .avatar = "",
+    },
     .admin = .{
         .base = "",
         .path = "/admin",
@@ -178,14 +183,20 @@ fn sidebar_of(
         .content => {
             const kept = try session.arena.create(ContentSidebar);
 
-            kept.* = .{ .session = listing, .current = options.content };
+            kept.* = .{
+                .session = listing,
+                .current = options.content,
+            };
 
             return admin.render.lazy(kept, ContentSidebar);
         },
         .settings => {
             const kept = try session.arena.create(SettingsSidebar);
 
-            kept.* = .{ .session = listing, .path = options.settings_path orelse path };
+            kept.* = .{
+                .session = listing,
+                .path = options.settings_path orelse path,
+            };
 
             return admin.render.lazy(kept, SettingsSidebar);
         },
@@ -267,7 +278,12 @@ fn signed_in_request(sidebar: ?Node) Request {
 
     var request = signed_out;
 
-    request.session = .{ .name = "Ada", .email = "ada@example.com", .csrf = "token", .avatar = "" };
+    request.session = .{
+        .name = "Ada",
+        .email = "ada@example.com",
+        .csrf = "token",
+        .avatar = "",
+    };
     request.admin.path = "/admin/settings/users";
     request.admin.area = "settings";
     request.admin.can_settings = true;
@@ -280,7 +296,9 @@ test "layouts: one title for the window and the h1; the empty state replaces the
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const request = signed_in_request(admin.render.Node{ .raw = "<p>the settings sidebar</p>" });
+    const request = signed_in_request(admin.render.Node{
+        .raw = "<p>the settings sidebar</p>",
+    });
 
     const html = try drawn(arena, views.Users, .{
         .users = &.{},
@@ -305,13 +323,20 @@ test "layouts: a record is edited in focus, without the sidebar; problems are an
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const request = signed_in_request(admin.render.Node{ .raw = "<p>the sidebar</p>" });
+    const request = signed_in_request(admin.render.Node{
+        .raw = "<p>the sidebar</p>",
+    });
 
     const focused = try drawn(arena, views.RecordForm, .{
         .title = "Article One",
-        .parents = &.{.{ .label = "Article", .href = "/admin/content?type=article" }},
+        .parents = &.{.{
+            .label = "Article",
+            .href = "/admin/content?type=article",
+        }},
         .focus = true,
-        .editor = .{ .raw = "<form>the editor</form>" },
+        .editor = .{
+            .raw = "<form>the editor</form>",
+        },
         .publr_request = &request,
     });
 
@@ -321,7 +346,10 @@ test "layouts: a record is edited in focus, without the sidebar; problems are an
     const refused = try drawn(arena, views.Message, .{
         .heading = "Something went wrong",
         .text = "Invalid",
-        .problems = &.{.{ .code = "title", .text = "is required" }},
+        .problems = &.{.{
+            .code = "title",
+            .text = "is required",
+        }},
         .link_href = "/admin/settings/users",
         .link_label = "Back",
         .publr_request = &request,

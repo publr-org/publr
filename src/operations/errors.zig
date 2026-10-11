@@ -50,24 +50,33 @@ pub const List = struct {
         before: ?i64 = null,
         limit: u32 = 50,
     };
-    pub const Out = struct { entries: []const Item };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .limit = .{ .min = 1, .max = store.errors.list_max },
+    pub const Out = struct {
+        entries: []const Item,
     };
-    pub const example: In = .{ .operation = "plugin.disable" };
-    pub const example_out: Out = .{ .entries = &.{.{
-        .id = 7,
-        .at = 1_790_000_000_000,
-        .actor = "u_admin",
-        .app = "",
+    pub const rules: sdk.operation.Rules(In) = .{
+        .limit = .{
+            .min = 1,
+            .max = store.errors.list_max,
+        },
+    };
+    pub const example: In = .{
         .operation = "plugin.disable",
-        .input = "{\"names\":[\"inventory\"]}",
-        .calls = &.{},
-        .@"error" = "Failed",
-        .message = "cart depends on inventory. To disable them together: " ++
-            "publr plugin disable --names cart,inventory",
-        .failed_in = "",
-    }} };
+    };
+    pub const example_out: Out = .{
+        .entries = &.{.{
+            .id = 7,
+            .at = 1_790_000_000_000,
+            .actor = "u_admin",
+            .app = "",
+            .operation = "plugin.disable",
+            .input = "{\"names\":[\"inventory\"]}",
+            .calls = &.{},
+            .@"error" = "Failed",
+            .message = "cart depends on inventory. To disable them together: " ++
+                "publr plugin disable --names cart,inventory",
+            .failed_in = "",
+        }},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .actor = "Who: a user id, `system`, `anonymous` or `plugin:<name>`",
         .operation = "One operation, `record.save`",
@@ -108,7 +117,9 @@ pub const List = struct {
             };
         }
 
-        return .{ .entries = items };
+        return .{
+            .entries = items,
+        };
     }
 };
 

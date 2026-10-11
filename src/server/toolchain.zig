@@ -73,7 +73,11 @@ fn unpack_carried(init: std.process.Init) !Toolchain {
     std.debug.assert(unpacked.compiler.len > parent.len);
     std.debug.assert(sdk.len > parent.len);
 
-    return .{ .compiler = unpacked.compiler, .compiler_rt = unpacked.compiler_rt, .sdk = sdk };
+    return .{
+        .compiler = unpacked.compiler,
+        .compiler_rt = unpacked.compiler_rt,
+        .sdk = sdk,
+    };
 }
 
 /// At `init` and `serve`: have the toolchain ready before anything compiles. A failure is
@@ -115,7 +119,9 @@ pub fn run(init: std.process.Init, args: []const []const u8) !u8 {
     std.debug.assert(argv[0].len > 0);
     std.debug.assert(argv.len == args.len + 1);
 
-    var child = try std.process.spawn(init.io, .{ .argv = argv });
+    var child = try std.process.spawn(init.io, .{
+        .argv = argv,
+    });
 
     return switch (try child.wait(init.io)) {
         .exited => |code| code,

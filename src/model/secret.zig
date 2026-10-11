@@ -47,7 +47,9 @@ pub fn masked(
     if (value == .object) {
         for (declared) |name| {
             if (value.object.getPtr(name)) |field| {
-                field.* = .{ .string = mark };
+                field.* = .{
+                    .string = mark,
+                };
             }
         }
     }
@@ -71,7 +73,9 @@ fn mask_caught(arena: std.mem.Allocator, root: *std.json.Value) error{OutOfMemor
         walked += 1;
 
         if (walked > nodes_max) {
-            root.* = .{ .string = mark };
+            root.* = .{
+                .string = mark,
+            };
             return;
         }
 
@@ -81,7 +85,9 @@ fn mask_caught(arena: std.mem.Allocator, root: *std.json.Value) error{OutOfMemor
 
                 while (fields.next()) |field| {
                     if (caught(field.key_ptr.*) and holds_text(field.value_ptr.*)) {
-                        field.value_ptr.* = .{ .string = mark };
+                        field.value_ptr.* = .{
+                            .string = mark,
+                        };
                     } else {
                         try pending.append(arena, field.value_ptr);
                     }
@@ -95,7 +101,9 @@ fn mask_caught(arena: std.mem.Allocator, root: *std.json.Value) error{OutOfMemor
             .string => |text| if (text.len > text_kept_max) {
                 const size = try std.fmt.allocPrint(arena, "({d} bytes, not kept)", .{text.len});
 
-                node.* = .{ .string = size };
+                node.* = .{
+                    .string = size,
+                };
             },
             else => {},
         }

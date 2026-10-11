@@ -45,14 +45,23 @@ pub fn add_check(
 
     step.dependOn(&run.step);
 
-    return .{ .step = step, .native = native.exe };
+    return .{
+        .step = step,
+        .native = native.exe,
+    };
 }
 
 /// The check's step, and the Publr with the fixture plugins compiled in, which the smoke
 /// drives through the admin.
-pub const Check = struct { step: *std.Build.Step, native: *std.Build.Step.Compile };
+pub const Check = struct {
+    step: *std.Build.Step,
+    native: *std.Build.Step.Compile,
+};
 
-const Built = struct { library: *std.Build.Module, exe: *std.Build.Step.Compile };
+const Built = struct {
+    library: *std.Build.Module,
+    exe: *std.Build.Step.Compile,
+};
 
 /// Publr with the fixture apps and, of the fixture plugins, `native` compiled in.
 fn add_publr(
@@ -69,7 +78,9 @@ fn add_publr(
     var chosen = core.with_apps(from, tests.fixture_apps_dir);
 
     chosen.plugins_dir = sandboxed_plugins.fixture_dir;
-    chosen.native = .{ .names = native };
+    chosen.native = .{
+        .names = native,
+    };
     chosen.compiler = false;
 
     const library = core.add_module(builder, target, optimize, chosen);
@@ -78,5 +89,8 @@ fn add_publr(
         .root_module = core.add_entry(builder, "src/main.zig", library),
     });
 
-    return .{ .library = library, .exe = exe };
+    return .{
+        .library = library,
+        .exe = exe,
+    };
 }

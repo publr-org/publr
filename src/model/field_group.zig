@@ -77,7 +77,9 @@ pub fn applies(options: Options, context: Context) bool {
                 "media_type",
             )) context.media_type else "";
 
-            if (value.len == 0 or !conditions.match_rule(rule, .{ .string = value })) {
+            if (value.len == 0 or !conditions.match_rule(rule, .{
+                .string = value,
+            })) {
                 matched = false;
                 break;
             }
@@ -113,26 +115,64 @@ pub fn checked_fields(
 }
 
 test "location groups combine AND and OR and absent context never matches exclusions" {
-    const options: Options = .{ .location = &.{
-        .{ .rules = &.{
-            .{ .field = "destination", .value = "user" },
-            .{ .field = "role", .value = "admin" },
-        } },
-        .{ .rules = &.{.{ .field = "media_type", .value = "image" }} },
-    } };
+    const options: Options = .{
+        .location = &.{
+            .{
+                .rules = &.{
+                    .{
+                        .field = "destination",
+                        .value = "user",
+                    },
+                    .{
+                        .field = "role",
+                        .value = "admin",
+                    },
+                },
+            },
+            .{
+                .rules = &.{.{
+                    .field = "media_type",
+                    .value = "image",
+                }},
+            },
+        },
+    };
     try std.testing.expect(valid(options));
-    try std.testing.expect(applies(options, .{ .destination = .user, .role = "admin" }));
-    try std.testing.expect(!applies(options, .{ .destination = .user, .role = "editor" }));
-    try std.testing.expect(applies(options, .{ .destination = .media, .media_type = "image" }));
-    try std.testing.expect(!applies(.{ .active = false }, .{ .destination = .content }));
-    const exclusion: Options = .{ .location = &.{.{ .rules = &.{.{
-        .field = "role",
-        .operator = .not_equal,
-        .value = "admin",
-    }} }} };
-    try std.testing.expect(!applies(exclusion, .{ .destination = .content }));
-    try std.testing.expect(!valid(.{ .location = &.{.{ .rules = &.{.{
-        .field = "unknown",
-        .value = "anything",
-    }} }} }));
+    try std.testing.expect(applies(options, .{
+        .destination = .user,
+        .role = "admin",
+    }));
+    try std.testing.expect(!applies(options, .{
+        .destination = .user,
+        .role = "editor",
+    }));
+    try std.testing.expect(applies(options, .{
+        .destination = .media,
+        .media_type = "image",
+    }));
+    try std.testing.expect(!applies(.{
+        .active = false,
+    }, .{
+        .destination = .content,
+    }));
+    const exclusion: Options = .{
+        .location = &.{.{
+            .rules = &.{.{
+                .field = "role",
+                .operator = .not_equal,
+                .value = "admin",
+            }},
+        }},
+    };
+    try std.testing.expect(!applies(exclusion, .{
+        .destination = .content,
+    }));
+    try std.testing.expect(!valid(.{
+        .location = &.{.{
+            .rules = &.{.{
+                .field = "unknown",
+                .value = "anything",
+            }},
+        }},
+    }));
 }

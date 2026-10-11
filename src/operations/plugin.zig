@@ -49,17 +49,21 @@ pub const List = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { plugins: []const Summary };
+    pub const Out = struct {
+        plugins: []const Summary,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .plugins = &.{.{
-        .name = "greeter",
-        .version = "0.1.0",
-        .summary = "Greetings kept as records",
-        .mode = .sandboxed,
-        .enabled = true,
-        .pending = 0,
-        .update = "0.2.0",
-    }} };
+    pub const example_out: Out = .{
+        .plugins = &.{.{
+            .name = "greeter",
+            .version = "0.1.0",
+            .summary = "Greetings kept as records",
+            .mode = .sandboxed,
+            .enabled = true,
+            .pending = 0,
+            .update = "0.2.0",
+        }},
+    };
 
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -85,7 +89,9 @@ pub const List = struct {
             summary.* = try views.summary_of(ctx.arena, try state.decode(ctx.arena, row));
         }
 
-        return .{ .plugins = out };
+        return .{
+            .plugins = out,
+        };
     }
 };
 
@@ -113,8 +119,15 @@ pub const Upload = struct {
         /// Once the last piece is in: the plugin it added or updated.
         added: ?Added = null,
     };
-    pub const example: In = .{ .file = "farewell.wasm", .data = "AGFzbQ==", .last = false };
-    pub const example_out: Out = .{ .file = "farewell.wasm", .received = 4 };
+    pub const example: In = .{
+        .file = "farewell.wasm",
+        .data = "AGFzbQ==",
+        .last = false,
+    };
+    pub const example_out: Out = .{
+        .file = "farewell.wasm",
+        .received = 4,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .file = "The module's file name",
         .offset = "Where this piece starts: 0, then the bytes received so far",
@@ -146,7 +159,10 @@ pub const Upload = struct {
         const received = try sandboxed.receive(in.file, in.offset, bytes, in.last);
 
         if (!in.last) {
-            return .{ .file = in.file, .received = received };
+            return .{
+                .file = in.file,
+                .received = received,
+            };
         }
 
         // Whether it is taken or refused, the upload is done with.
@@ -154,7 +170,11 @@ pub const Upload = struct {
 
         const added = try lifecycle.add(ctx, try lifecycle.stage(ctx, in.file, false));
 
-        return .{ .file = in.file, .received = received, .added = added };
+        return .{
+            .file = in.file,
+            .received = received,
+            .added = added,
+        };
     }
 };
 
@@ -170,11 +190,21 @@ pub const Add = struct {
     ;
     pub const operator_only = true;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { file: []const u8 };
+    pub const In = struct {
+        file: []const u8,
+    };
     pub const Out = Added;
-    pub const example: In = .{ .file = "greeter-0.2.0.wasm" };
-    pub const example_out: Out = .{ .name = "greeter", .version = "0.2.0", .update = true };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .file = "The `.wasm` file's path" };
+    pub const example: In = .{
+        .file = "greeter-0.2.0.wasm",
+    };
+    pub const example_out: Out = .{
+        .name = "greeter",
+        .version = "0.2.0",
+        .update = true,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .file = "The `.wasm` file's path",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .name = "The plugin's name",
         .version = "The module's version",
@@ -210,13 +240,24 @@ pub const Enable = struct {
         content_access: state.Scope = .public,
         types: []const []const u8 = &.{},
     };
-    pub const Out = struct { plugins: []const Detail };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .names = .{ .items_min = 1, .items_max = dependents.together_max },
-        .types = .{ .items_max = 64 },
+    pub const Out = struct {
+        plugins: []const Detail,
     };
-    pub const example: In = .{ .names = &.{"farewell"} };
-    pub const example_out: Out = .{ .plugins = &.{views.example_enabled} };
+    pub const rules: sdk.operation.Rules(In) = .{
+        .names = .{
+            .items_min = 1,
+            .items_max = dependents.together_max,
+        },
+        .types = .{
+            .items_max = 64,
+        },
+    };
+    pub const example: In = .{
+        .names = &.{"farewell"},
+    };
+    pub const example_out: Out = .{
+        .plugins = &.{views.example_enabled},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .names = "The plugins' names, what they depend on among them",
         .content_access = "`public`, `all` or `specific`",
@@ -232,7 +273,10 @@ pub const Enable = struct {
 
         try dependents.refuse_missing_parents(ctx, in.names);
 
-        const access: ContentAccess = .{ .scope = in.content_access, .types = in.types };
+        const access: ContentAccess = .{
+            .scope = in.content_access,
+            .types = in.types,
+        };
         const shown = ctx.arena.alloc(Detail, in.names.len) catch return error.OutOfMemory;
 
         for (in.names, shown) |plugin_name, *detail| {
@@ -242,7 +286,9 @@ pub const Enable = struct {
             detail.* = try detail_of(ctx, enabled);
         }
 
-        return .{ .plugins = shown };
+        return .{
+            .plugins = shown,
+        };
     }
 };
 
@@ -262,11 +308,17 @@ fn ByName(
         pub const description = text;
         pub const details = explained;
         pub const kind = operation_kind;
-        pub const In = struct { name: []const u8 };
+        pub const In = struct {
+            name: []const u8,
+        };
         pub const Out = Detail;
-        pub const example: In = .{ .name = "greeter" };
+        pub const example: In = .{
+            .name = "greeter",
+        };
         pub const example_out: Out = documented;
-        pub const field_docs: sdk.operation.Docs(In) = .{ .name = "The plugin's name" };
+        pub const field_docs: sdk.operation.Docs(In) = .{
+            .name = "The plugin's name",
+        };
 
         pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
             std.debug.assert(granted.allows());
@@ -306,13 +358,24 @@ pub const Disable = struct {
         \\hooks into it silent. Enabling a plugin again brings it back with what it held.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { names: []const []const u8 };
-    pub const Out = struct { plugins: []const Detail };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .names = .{ .items_min = 1, .items_max = dependents.together_max },
+    pub const In = struct {
+        names: []const []const u8,
     };
-    pub const example: In = .{ .names = &.{"greeter"} };
-    pub const example_out: Out = .{ .plugins = &.{views.example_disabled} };
+    pub const Out = struct {
+        plugins: []const Detail,
+    };
+    pub const rules: sdk.operation.Rules(In) = .{
+        .names = .{
+            .items_min = 1,
+            .items_max = dependents.together_max,
+        },
+    };
+    pub const example: In = .{
+        .names = &.{"greeter"},
+    };
+    pub const example_out: Out = .{
+        .plugins = &.{views.example_disabled},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .names = "The plugins' names, dependents and what they depend on together",
     };
@@ -335,7 +398,9 @@ pub const Disable = struct {
             detail.* = try detail_of(ctx, disabled);
         }
 
-        return .{ .plugins = shown };
+        return .{
+            .plugins = shown,
+        };
     }
 };
 
@@ -387,9 +452,15 @@ fn Decision(
             \\(`limit.cpu_ms`). It takes effect on the plugin's next call.
         ;
         pub const kind: sdk.operation.Kind = .write;
-        pub const In = struct { name: []const u8, key: []const u8 };
+        pub const In = struct {
+            name: []const u8,
+            key: []const u8,
+        };
         pub const Out = Detail;
-        pub const example: In = .{ .name = "greeter", .key = "users.names" };
+        pub const example: In = .{
+            .name = "greeter",
+            .key = "users.names",
+        };
         pub const example_out: Out = views.example_detail;
         pub const field_docs: sdk.operation.Docs(In) = .{
             .name = "The plugin's name",
@@ -442,11 +513,18 @@ pub const SetContentAccess = struct {
         types: []const []const u8 = &.{},
     };
     pub const Out = Detail;
-    pub const example: In = .{ .name = "greeter", .scope = .specific, .types = &.{"post"} };
+    pub const example: In = .{
+        .name = "greeter",
+        .scope = .specific,
+        .types = &.{"post"},
+    };
     pub const example_out: Out = specific: {
         var chosen = views.example_detail;
 
-        chosen.content_access = .{ .scope = .specific, .types = &.{"post"} };
+        chosen.content_access = .{
+            .scope = .specific,
+            .types = &.{"post"},
+        };
 
         break :specific chosen;
     };
@@ -466,7 +544,10 @@ pub const SetContentAccess = struct {
 
         var decoded = try state.load(ctx, in.name);
 
-        decoded.content_access = .{ .scope = in.scope, .types = in.types };
+        decoded.content_access = .{
+            .scope = in.scope,
+            .types = in.types,
+        };
         try state.save(ctx, decoded);
         ctx.notice("plugin.content_access_set", in.name);
 
@@ -484,11 +565,21 @@ pub const Remove = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const destroys = true;
-    pub const In = struct { name: []const u8 };
-    pub const Out = struct { removed: []const u8 };
-    pub const example: In = .{ .name = "greeter" };
-    pub const example_out: Out = .{ .removed = "greeter" };
-    pub const field_docs: sdk.operation.Docs(In) = .{ .name = "The plugin's name" };
+    pub const In = struct {
+        name: []const u8,
+    };
+    pub const Out = struct {
+        removed: []const u8,
+    };
+    pub const example: In = .{
+        .name = "greeter",
+    };
+    pub const example_out: Out = .{
+        .removed = "greeter",
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .name = "The plugin's name",
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -498,7 +589,9 @@ pub const Remove = struct {
         try lifecycle.remove(ctx, in.name);
         ctx.notice("plugin.removed", in.name);
 
-        return .{ .removed = in.name };
+        return .{
+            .removed = in.name,
+        };
     }
 };
 

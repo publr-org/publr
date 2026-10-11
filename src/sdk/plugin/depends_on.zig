@@ -107,10 +107,16 @@ fn reaches(
 
 test "compiled-in requirements are checked when the binary is built" {
     const Base = struct {
-        pub const manifest = .{ .name = "base", .version = "0.2.3" };
+        pub const manifest = .{
+            .name = "base",
+            .version = "0.2.3",
+        };
     };
     const Dependent = struct {
-        pub const manifest = .{ .name = "dependent", .version = "0.1.0" };
+        pub const manifest = .{
+            .name = "dependent",
+            .version = "0.1.0",
+        };
         pub const depends_on = [_][]const u8{"base@^0.2"};
     };
 
@@ -121,7 +127,11 @@ test "compiled-in requirements are checked when the binary is built" {
 
 test "an installed plugin's manifest carries its depends_on" {
     const Child = struct {
-        pub const manifest = .{ .name = "child", .version = "1.0.0", .summary = "Test child" };
+        pub const manifest = .{
+            .name = "child",
+            .version = "1.0.0",
+            .summary = "Test child",
+        };
         pub const depends_on = .{"parent@^1.0"};
     };
     const manifest = comptime @import("manifest.zig").of(Child);

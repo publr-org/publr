@@ -140,7 +140,11 @@ pub fn new_field(request: *Request, response: *Response, ctx: *Context) Error!vo
         const kind = registry.Kinds.find_kind(chosen.?) orelse {
             return admin.fail(&session, error.NotFound, back);
         };
-        const blank: FieldDef = .{ .name = "", .label = "", .kind = kind.id };
+        const blank: FieldDef = .{
+            .name = "",
+            .label = "",
+            .kind = kind.id,
+        };
 
         return render_form(&session, handle, got.definition, blank, parent, null, &.{});
     }
@@ -353,7 +357,10 @@ fn problem_items(
     const items = try arena.alloc(views.FieldPanel.ProblemsItem, problems.len);
 
     for (problems, 0..) |problem, index| {
-        items[index] = .{ .path = problem.path, .message = problem.message };
+        items[index] = .{
+            .path = problem.path,
+            .message = problem.message,
+        };
     }
 
     return items;

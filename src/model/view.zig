@@ -203,8 +203,16 @@ test "encode and decode round-trip, empty filters encode small, bad shapes are r
     const filters: Filters = .{
         .types = &.{ "post", "page" },
         .clauses = &.{
-            .{ .key = "status", .operator = "is", .value = "draft" },
-            .{ .key = "updated", .operator = "within", .value = "7d" },
+            .{
+                .key = "status",
+                .operator = "is",
+                .value = "draft",
+            },
+            .{
+                .key = "updated",
+                .operator = "within",
+                .value = "7d",
+            },
         },
         .order = "title_asc",
     };
@@ -234,13 +242,25 @@ test "encode and decode round-trip, empty filters encode small, bad shapes are r
     try std.testing.expectError(error.Invalid, decode(arena, "{\"nope\":1}"));
     try std.testing.expectError(error.Invalid, decode(arena, "not json"));
 
-    const added = try with(arena, .{}, 0, .{ .key = "status", .operator = "is", .value = "draft" });
+    const added = try with(arena, .{}, 0, .{
+        .key = "status",
+        .operator = "is",
+        .value = "draft",
+    });
     try std.testing.expectEqual(@as(usize, 1), added.clauses.len);
-    const not_x: Clause = .{ .key = "status", .operator = "not", .value = "x" };
+    const not_x: Clause = .{
+        .key = "status",
+        .operator = "not",
+        .value = "x",
+    };
     const swapped = try with(arena, added, 0, not_x);
     try std.testing.expectEqual(@as(usize, 1), swapped.clauses.len);
     try std.testing.expectEqualStrings("not", swapped.clause("status").?.operator);
-    const by_me: Clause = .{ .key = "created", .operator = "by", .value = "me" };
+    const by_me: Clause = .{
+        .key = "created",
+        .operator = "by",
+        .value = "me",
+    };
     const more = try with(arena, swapped, 9, by_me);
     try std.testing.expectEqual(@as(usize, 2), more.clauses.len);
     try std.testing.expectEqualStrings("created", more.clauses[1].key);

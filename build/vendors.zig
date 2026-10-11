@@ -106,7 +106,10 @@ pub fn add_library(builder: *std.Build, target: std.Build.ResolvedTarget) *std.B
     const module = lib.root_module;
 
     module.addIncludePath(builder.path("vendor/stb"));
-    module.addCSourceFile(.{ .file = stb_impl, .flags = &.{} });
+    module.addCSourceFile(.{
+        .file = stb_impl,
+        .flags = &.{},
+    });
     module.addIncludePath(builder.path("vendor/libwebp"));
     module.addCSourceFiles(.{
         .root = builder.path("vendor/libwebp"),
@@ -130,7 +133,9 @@ fn libwebp_sources(builder: *std.Build) []const []const u8 {
     var files = std.ArrayList([]const u8).empty;
 
     for (libwebp_dirs) |dir_name| {
-        const dir = root.openDir(io, dir_name, .{ .iterate = true }) catch
+        const dir = root.openDir(io, dir_name, .{
+            .iterate = true,
+        }) catch
             @panic("libwebp dir missing");
         var iterator = dir.iterate();
 

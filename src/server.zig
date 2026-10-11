@@ -41,7 +41,9 @@ pub const Server = struct {
         server.heap = try reserve_heap(process.gpa);
         errdefer release_heap(process.gpa, server.heap);
 
-        server.runtime = try db.Runtime.init(.{ .heap = server.heap });
+        server.runtime = try db.Runtime.init(.{
+            .heap = server.heap,
+        });
         errdefer server.runtime.deinit();
 
         server.connection = try db.open(&server.runtime, db_path);
@@ -49,7 +51,9 @@ pub const Server = struct {
 
         try db.schema.apply(&server.connection);
         try registry.SDK.apply_schemas(&server.connection);
-        server.index = try deps.Index.open(&server.connection, .{ .quiet_ms = deps.quiet_ms });
+        server.index = try deps.Index.open(&server.connection, .{
+            .quiet_ms = deps.quiet_ms,
+        });
         try server.auth.init(process.gpa, process.io, .{});
         errdefer server.auth.deinit();
 
@@ -87,7 +91,9 @@ pub const Server = struct {
         std.debug.assert(server.runtime.open_count == 1);
         std.debug.assert(server.connection.transaction_depth == 0);
 
-        return .{ .disk = &server.media };
+        return .{
+            .disk = &server.media,
+        };
     }
 
     /// What every context this server makes carries: the installed plugins, or none.

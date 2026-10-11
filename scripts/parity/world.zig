@@ -51,7 +51,12 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
 
     try fill_users(ctx);
 
-    ctx.caller = .{ .user = .{ .id = admin_id, .roles = &.{"admin"} } };
+    ctx.caller = .{
+        .user = .{
+            .id = admin_id,
+            .roles = &.{"admin"},
+        },
+    };
 
     try fill_types(ctx);
     try fill_records(ctx);
@@ -65,7 +70,12 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     try fill_devices(ctx, admin_id);
     try fill_apps(ctx, dir);
     _ = try SDK.dispatch(ctx, projects.currencies.SetCurrencies, .{
-        .currencies = &.{ .{ .code = "GBP", .symbol = "£" }, .{ .code = "EUR" } },
+        .currencies = &.{ .{
+            .code = "GBP",
+            .symbol = "£",
+        }, .{
+            .code = "EUR",
+        } },
     });
 
     const custom = publr.operations.custom_fields;
@@ -87,21 +97,39 @@ pub fn upload_plugins(io: std.Io, dir: []const u8) !void {
     var folder = try std.Io.Dir.cwd().openDir(io, dir, .{});
     defer folder.close(io);
 
-    const files = [_]struct { name: []const u8, bytes: []const u8 }{
-        .{ .name = "greeter-0.2.0.wasm", .bytes = @embedFile("sandboxed_plugin_greeter_next") },
-        .{ .name = "world-greeter.wasm", .bytes = @embedFile("sandboxed_plugin_greeter") },
+    const files = [_]struct {
+        name: []const u8,
+        bytes: []const u8,
+    }{
+        .{
+            .name = "greeter-0.2.0.wasm",
+            .bytes = @embedFile("sandboxed_plugin_greeter_next"),
+        },
+        .{
+            .name = "world-greeter.wasm",
+            .bytes = @embedFile("sandboxed_plugin_greeter"),
+        },
         .{
             .name = "world-greeter-next.wasm",
             .bytes = @embedFile("sandboxed_plugin_greeter_next"),
         },
-        .{ .name = "world-farewell.wasm", .bytes = @embedFile("sandboxed_plugin_farewell") },
+        .{
+            .name = "world-farewell.wasm",
+            .bytes = @embedFile("sandboxed_plugin_farewell"),
+        },
     };
 
     for (files) |file| {
-        try folder.writeFile(io, .{ .sub_path = file.name, .data = file.bytes });
+        try folder.writeFile(io, .{
+            .sub_path = file.name,
+            .data = file.bytes,
+        });
     }
 
-    try folder.writeFile(io, .{ .sub_path = "harbour.png", .data = &tiny_png });
+    try folder.writeFile(io, .{
+        .sub_path = "harbour.png",
+        .data = &tiny_png,
+    });
 }
 
 /// `greeter` enabled, updated to 0.2.0 and rolled back, with 0.2.0 offered again; `farewell`
@@ -116,21 +144,35 @@ fn fill_plugins(ctx: *Ctx, dir: []const u8) Error!void {
     const next = try path_in(ctx, dir, "world-greeter-next.wasm");
 
     ctx.caller = .system;
-    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{ .file = greeter });
-    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{ .file = next });
+    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{
+        .file = greeter,
+    });
+    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{
+        .file = next,
+    });
     _ = try SDK.dispatch(ctx, plugin_operations.Add, .{
         .file = try path_in(ctx, dir, "world-farewell.wasm"),
     });
     ctx.caller = admin;
-    _ = try SDK.dispatch(ctx, plugin_operations.Enable, .{ .names = &.{"greeter"} });
-    _ = try SDK.dispatch(ctx, plugin_operations.Update, .{ .name = "greeter" });
-    _ = try SDK.dispatch(ctx, plugin_operations.Rollback, .{ .name = "greeter" });
+    _ = try SDK.dispatch(ctx, plugin_operations.Enable, .{
+        .names = &.{"greeter"},
+    });
+    _ = try SDK.dispatch(ctx, plugin_operations.Update, .{
+        .name = "greeter",
+    });
+    _ = try SDK.dispatch(ctx, plugin_operations.Rollback, .{
+        .name = "greeter",
+    });
     ctx.caller = .system;
-    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{ .file = next });
+    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{
+        .file = next,
+    });
     ctx.caller = admin;
 
     // One refusal for the error log's example: a plugin that is not there.
-    const refused = SDK.dispatch(ctx, plugin_operations.Disable, .{ .names = &.{"nowhere"} });
+    const refused = SDK.dispatch(ctx, plugin_operations.Disable, .{
+        .names = &.{"nowhere"},
+    });
 
     std.debug.assert(std.meta.isError(refused));
 }
@@ -148,15 +190,25 @@ fn fill_taxonomies(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.caller == .user);
     std.debug.assert(terms.example_parent_id.len == store.terms.id_len);
 
-    _ = try SDK.dispatch(ctx, taxonomies.Create, .{ .definition = taxonomies.example_definition });
-    _ = try SDK.dispatch(ctx, taxonomies.Create, .{ .definition = tags_definition });
+    _ = try SDK.dispatch(ctx, taxonomies.Create, .{
+        .definition = taxonomies.example_definition,
+    });
+    _ = try SDK.dispatch(ctx, taxonomies.Create, .{
+        .definition = tags_definition,
+    });
 
     try term_with_id(ctx, terms.example_parent_id, "Technology", null);
-    _ = try SDK.dispatch(ctx, terms.Publish, .{ .id = terms.example_parent_id });
+    _ = try SDK.dispatch(ctx, terms.Publish, .{
+        .id = terms.example_parent_id,
+    });
     try term_with_id(ctx, terms.example_id, "Engineering", terms.example_parent_id);
-    _ = try SDK.dispatch(ctx, terms.Publish, .{ .id = terms.example_id });
+    _ = try SDK.dispatch(ctx, terms.Publish, .{
+        .id = terms.example_id,
+    });
     try term_with_id(ctx, terms.example_changed_id, "Design", null);
-    _ = try SDK.dispatch(ctx, terms.Publish, .{ .id = terms.example_changed_id });
+    _ = try SDK.dispatch(ctx, terms.Publish, .{
+        .id = terms.example_changed_id,
+    });
     _ = try SDK.dispatch(ctx, terms.Save, .{
         .id = terms.example_changed_id,
         .document = "{\"name\":\"Product design\"}",
@@ -291,11 +343,26 @@ fn fill_apps(ctx: *Ctx, dir: []const u8) Error!void {
     std.debug.assert(dir.len > 0);
 
     const zon = ".{ .name = \"www\", .mount = .{ .path = \"/\" } }\n";
-    const files = [_]struct { path: []const u8, data: []const u8 }{
-        .{ .path = "apps/www/app.zon", .data = zon },
-        .{ .path = "apps/www/content/index.publr", .data = "<h1>Hi</h1>\n" },
-        .{ .path = "apps/www/content/old.publr", .data = "<h1>Old</h1>\n" },
-        .{ .path = "data/builds/guestbook.log", .data = "{\n  \"enabled\": [\"guestbook\"]\n}\n" },
+    const files = [_]struct {
+        path: []const u8,
+        data: []const u8,
+    }{
+        .{
+            .path = "apps/www/app.zon",
+            .data = zon,
+        },
+        .{
+            .path = "apps/www/content/index.publr",
+            .data = "<h1>Hi</h1>\n",
+        },
+        .{
+            .path = "apps/www/content/old.publr",
+            .data = "<h1>Old</h1>\n",
+        },
+        .{
+            .path = "data/builds/guestbook.log",
+            .data = "{\n  \"enabled\": [\"guestbook\"]\n}\n",
+        },
     };
     var root = std.Io.Dir.cwd().openDir(ctx.io, dir, .{}) catch return error.Unavailable;
     defer root.close(ctx.io);
@@ -304,7 +371,10 @@ fn fill_apps(ctx: *Ctx, dir: []const u8) Error!void {
     root.createDirPath(ctx.io, "data/builds") catch return error.Unavailable;
 
     for (files) |file| {
-        root.writeFile(ctx.io, .{ .sub_path = file.path, .data = file.data }) catch {
+        root.writeFile(ctx.io, .{
+            .sub_path = file.path,
+            .data = file.data,
+        }) catch {
             return error.Unavailable;
         };
     }
@@ -330,7 +400,10 @@ fn fill_internal(ctx: *Ctx) Error!void {
         ctx.now_ms,
     );
     try store.internal_record_values.replace(ctx.db, internal.example_id, &.{
-        .{ .field = "name", .value = "Ada" },
+        .{
+            .field = "name",
+            .value = "Ada",
+        },
     });
 }
 
@@ -378,7 +451,9 @@ fn fill_types(ctx: *Ctx) Error!void {
     _ = try SDK.dispatch(ctx, content_types.Create, .{
         .definition = content_types.example_definition,
     });
-    _ = try SDK.dispatch(ctx, content_types.Create, .{ .definition = page_definition });
+    _ = try SDK.dispatch(ctx, content_types.Create, .{
+        .definition = page_definition,
+    });
 }
 
 fn fill_records(ctx: *Ctx) Error!void {
@@ -386,15 +461,21 @@ fn fill_records(ctx: *Ctx) Error!void {
     std.debug.assert(records.example_changed_id.len == store.records.id_len);
 
     try record_with_id(ctx, records.example_id);
-    _ = try SDK.dispatch(ctx, records.Publish, .{ .id = records.example_id });
+    _ = try SDK.dispatch(ctx, records.Publish, .{
+        .id = records.example_id,
+    });
     _ = try SDK.dispatch(ctx, records.Save, .{
         .id = records.example_id,
         .document = second_document,
     });
-    _ = try SDK.dispatch(ctx, records.Publish, .{ .id = records.example_id });
+    _ = try SDK.dispatch(ctx, records.Publish, .{
+        .id = records.example_id,
+    });
 
     try record_with_id(ctx, records.example_changed_id);
-    _ = try SDK.dispatch(ctx, records.Publish, .{ .id = records.example_changed_id });
+    _ = try SDK.dispatch(ctx, records.Publish, .{
+        .id = records.example_changed_id,
+    });
     _ = try SDK.dispatch(ctx, records.Save, .{
         .id = records.example_changed_id,
         .document = edited_document,
@@ -407,7 +488,9 @@ fn fill_records(ctx: *Ctx) Error!void {
         .document = referring_document,
     });
 
-    _ = try SDK.dispatch(ctx, records.Publish, .{ .id = referring.id });
+    _ = try SDK.dispatch(ctx, records.Publish, .{
+        .id = referring.id,
+    });
 }
 
 /// Create a post and give it the id the examples name, so `--id a1b2...` resolves.

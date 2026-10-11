@@ -105,7 +105,10 @@ fn write_difference(
 
         // A record that needs its parent is deleted (restorable) rather than left without.
         if (reference.required and !reference.many) {
-            const away: records.Transition.In = .{ .id = child, .to = "deleted" };
+            const away: records.Transition.In = .{
+                .id = child,
+                .to = "deleted",
+            };
 
             _ = try registry.SDK.dispatch(ctx, records.Transition, away);
         } else {
@@ -151,7 +154,9 @@ fn repoint(
 
     change.put(arena, def.options.via, next) catch return error.OutOfMemory;
 
-    const document = std.json.Stringify.valueAlloc(arena, Value{ .object = change }, .{}) catch {
+    const document = std.json.Stringify.valueAlloc(arena, Value{
+        .object = change,
+    }, .{}) catch {
         return error.OutOfMemory;
     };
 
@@ -177,7 +182,9 @@ fn moved(
 
     if (!many) {
         return switch (move) {
-            .join => .{ .string = parent },
+            .join => .{
+                .string = parent,
+            },
             .leave => .null,
         };
     }
@@ -195,10 +202,14 @@ fn moved(
     }
 
     if (move == .join) {
-        items.append(.{ .string = parent }) catch return error.OutOfMemory;
+        items.append(.{
+            .string = parent,
+        }) catch return error.OutOfMemory;
     }
 
-    return .{ .array = items };
+    return .{
+        .array = items,
+    };
 }
 
 fn reference_of(ctx: *Ctx, def: model.field.Def) Error!model.field.Def {
@@ -357,10 +368,14 @@ fn ids_value(arena: std.mem.Allocator, ids: []const []const u8) Error!Value {
     var items = std.json.Array.init(arena);
 
     for (ids) |id| {
-        items.append(.{ .string = id }) catch return error.OutOfMemory;
+        items.append(.{
+            .string = id,
+        }) catch return error.OutOfMemory;
     }
 
-    return .{ .array = items };
+    return .{
+        .array = items,
+    };
 }
 
 fn holds(items: []const Value, id: []const u8) bool {

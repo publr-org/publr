@@ -62,9 +62,19 @@ pub const Create = struct {
         plugin: ?[]const u8 = null,
         app: ?[]const u8 = null,
     };
-    pub const Out = struct { id: []const u8, version: i64 };
-    pub const example: In = .{ .plugin = "greeter", .kind = "visit", .document = example_document };
-    pub const example_out: Out = .{ .id = example_id, .version = 1 };
+    pub const Out = struct {
+        id: []const u8,
+        version: i64,
+    };
+    pub const example: In = .{
+        .plugin = "greeter",
+        .kind = "visit",
+        .document = example_document,
+    };
+    pub const example_out: Out = .{
+        .id = example_id,
+        .version = 1,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .kind = "The collection, as the plugin declares it",
         .document = "The record, a JSON object",
@@ -83,7 +93,10 @@ pub const Create = struct {
         try index(ctx, target.collection, id, given);
         try changed(ctx, "internal.created", scope, id);
 
-        return .{ .id = id, .version = 1 };
+        return .{
+            .id = id,
+            .version = 1,
+        };
     }
 };
 
@@ -98,7 +111,11 @@ pub const Get = struct {
         app: ?[]const u8 = null,
     };
     pub const Out = Item;
-    pub const example: In = .{ .plugin = "greeter", .kind = "visit", .id = example_id };
+    pub const example: In = .{
+        .plugin = "greeter",
+        .kind = "visit",
+        .id = example_id,
+    };
     pub const example_out: Out = example_item;
     pub const field_docs: sdk.operation.Docs(In) = .{
         .kind = "The collection",
@@ -135,14 +152,18 @@ pub const Save = struct {
         plugin: ?[]const u8 = null,
         app: ?[]const u8 = null,
     };
-    pub const Out = struct { version: i64 };
+    pub const Out = struct {
+        version: i64,
+    };
     pub const example: In = .{
         .plugin = "greeter",
         .kind = "visit",
         .id = example_id,
         .document = "{\"count\":2}",
     };
-    pub const example_out: Out = .{ .version = 2 };
+    pub const example_out: Out = .{
+        .version = 2,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .kind = "The collection",
         .id = "The record",
@@ -186,7 +207,9 @@ pub const Save = struct {
         try index(ctx, target.collection, in.id, merged);
         try changed(ctx, "internal.saved", target.scope, in.id);
 
-        return .{ .version = version };
+        return .{
+            .version = version,
+        };
     }
 };
 
@@ -202,14 +225,18 @@ pub const FindOne = struct {
         plugin: ?[]const u8 = null,
         app: ?[]const u8 = null,
     };
-    pub const Out = struct { record: ?Item };
+    pub const Out = struct {
+        record: ?Item,
+    };
     pub const example: In = .{
         .plugin = "greeter",
         .kind = "visit",
         .field = "name",
         .value = "Ada",
     };
-    pub const example_out: Out = .{ .record = example_item };
+    pub const example_out: Out = .{
+        .record = example_item,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .kind = "The collection",
         .field = "An indexed field",
@@ -229,7 +256,9 @@ pub const FindOne = struct {
             return error.Conflict;
         }
 
-        return .{ .record = if (rows.len == 1) item_of(rows[0]) else null };
+        return .{
+            .record = if (rows.len == 1) item_of(rows[0]) else null,
+        };
     }
 };
 
@@ -247,12 +276,22 @@ pub const Find = struct {
         plugin: ?[]const u8 = null,
         app: ?[]const u8 = null,
     };
-    pub const Out = struct { records: []const Item };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .limit = .{ .min = 1, .max = sdk.operation.page_limit_max },
+    pub const Out = struct {
+        records: []const Item,
     };
-    pub const example: In = .{ .plugin = "greeter", .kind = "visit" };
-    pub const example_out: Out = .{ .records = &.{example_item} };
+    pub const rules: sdk.operation.Rules(In) = .{
+        .limit = .{
+            .min = 1,
+            .max = sdk.operation.page_limit_max,
+        },
+    };
+    pub const example: In = .{
+        .plugin = "greeter",
+        .kind = "visit",
+    };
+    pub const example_out: Out = .{
+        .records = &.{example_item},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .kind = "The collection",
         .field = "An indexed field to filter on",
@@ -284,7 +323,9 @@ pub const Find = struct {
             target_item.* = item_of(row);
         }
 
-        return .{ .records = items };
+        return .{
+            .records = items,
+        };
     }
 };
 
@@ -299,9 +340,17 @@ pub const Delete = struct {
         plugin: ?[]const u8 = null,
         app: ?[]const u8 = null,
     };
-    pub const Out = struct { deleted: bool };
-    pub const example: In = .{ .plugin = "greeter", .kind = "visit", .id = example_id };
-    pub const example_out: Out = .{ .deleted = true };
+    pub const Out = struct {
+        deleted: bool,
+    };
+    pub const example: In = .{
+        .plugin = "greeter",
+        .kind = "visit",
+        .id = example_id,
+    };
+    pub const example_out: Out = .{
+        .deleted = true,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .kind = "The collection",
         .id = "The record",
@@ -324,11 +373,16 @@ pub const Delete = struct {
 
         try changed(ctx, "internal.deleted", target.scope, in.id);
 
-        return .{ .deleted = deleted };
+        return .{
+            .deleted = deleted,
+        };
     }
 };
 
-const Target = struct { scope: Scope, collection: Collection };
+const Target = struct {
+    scope: Scope,
+    collection: Collection,
+};
 
 /// Whose records a call reaches: the running plugin's in the request's app; with no plugin
 /// running, the ones named. Not found when the plugin declares no such collection.
@@ -377,7 +431,10 @@ fn scope_of(ctx: *Ctx, plugin: ?[]const u8, app: ?[]const u8, kind: []const u8) 
         .kind = kind,
     };
 
-    return .{ .scope = scope, .collection = collection };
+    return .{
+        .scope = scope,
+        .collection = collection,
+    };
 }
 
 fn object_of(ctx: *Ctx, text: []const u8) Error!Value {
@@ -410,7 +467,10 @@ fn index(ctx: *Ctx, collection: Collection, id: []const u8, document: Value) Err
         const value = document.object.get(field) orelse continue;
         const text = try model.internal_record.indexed_text(ctx.arena, value) orelse continue;
 
-        values[count] = .{ .field = field, .value = text };
+        values[count] = .{
+            .field = field,
+            .value = text,
+        };
         count += 1;
     }
 
@@ -428,7 +488,10 @@ fn match_of(collection: Collection, field: []const u8, value: []const u8) Error!
         return error.Invalid;
     }
 
-    return .{ .field = field, .value = value };
+    return .{
+        .field = field,
+        .value = value,
+    };
 }
 
 fn item_of(row: records.Row) Item {
@@ -482,9 +545,13 @@ const Project = struct {
 
         try SDK.bootstrap(&system);
 
-        const added = try SDK.dispatch(&system, plugin_operations.Add, .{ .file = path });
+        const added = try SDK.dispatch(&system, plugin_operations.Add, .{
+            .file = path,
+        });
 
-        _ = try SDK.dispatch(&system, plugin_operations.Enable, .{ .names = &.{added.name} });
+        _ = try SDK.dispatch(&system, plugin_operations.Enable, .{
+            .names = &.{added.name},
+        });
     }
 
     pub fn deinit(project: *Project) void {
@@ -519,11 +586,17 @@ test "internal records: a plugin's own, in its app, found by an indexed field" {
         .kind = "visit",
         .document = "{\"name\":\"Ada\",\"count\":1}",
     });
-    _ = try SDK.dispatch(&greeter, Create, .{ .kind = "visit", .document = "{\"name\":\"Bob\"}" });
+    _ = try SDK.dispatch(&greeter, Create, .{
+        .kind = "visit",
+        .document = "{\"name\":\"Bob\"}",
+    });
 
     var in_shop = greeter;
     in_shop.app = "shop";
-    _ = try SDK.dispatch(&in_shop, Create, .{ .kind = "visit", .document = "{\"name\":\"Ada\"}" });
+    _ = try SDK.dispatch(&in_shop, Create, .{
+        .kind = "visit",
+        .document = "{\"name\":\"Ada\"}",
+    });
 
     const found = (try SDK.dispatch(&greeter, FindOne, .{
         .kind = "visit",
@@ -540,7 +613,10 @@ test "internal records: a plugin's own, in its app, found by an indexed field" {
     });
     try std.testing.expectEqual(@as(i64, 2), saved.version);
 
-    const got = try SDK.dispatch(&greeter, Get, .{ .kind = "visit", .id = first.id });
+    const got = try SDK.dispatch(&greeter, Get, .{
+        .kind = "visit",
+        .id = first.id,
+    });
     try std.testing.expect(std.mem.indexOf(u8, got.document, "\"Ada\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, got.document, "\"count\":2") != null);
 
@@ -552,8 +628,12 @@ test "internal records: a plugin's own, in its app, found by an indexed field" {
     });
     try std.testing.expectError(error.Conflict, stale);
 
-    const here = try SDK.dispatch(&greeter, Find, .{ .kind = "visit" });
-    const there = try SDK.dispatch(&in_shop, Find, .{ .kind = "visit" });
+    const here = try SDK.dispatch(&greeter, Find, .{
+        .kind = "visit",
+    });
+    const there = try SDK.dispatch(&in_shop, Find, .{
+        .kind = "visit",
+    });
     try std.testing.expectEqual(@as(usize, 2), here.records.len);
     try std.testing.expectEqual(@as(usize, 1), there.records.len);
 
@@ -564,10 +644,16 @@ test "internal records: a plugin's own, in its app, found by an indexed field" {
     });
     try std.testing.expectError(error.Invalid, unindexed);
 
-    const deleted = try SDK.dispatch(&greeter, Delete, .{ .kind = "visit", .id = first.id });
+    const deleted = try SDK.dispatch(&greeter, Delete, .{
+        .kind = "visit",
+        .id = first.id,
+    });
     try std.testing.expect(deleted.deleted);
 
-    const gone = SDK.dispatch(&greeter, Get, .{ .kind = "visit", .id = first.id });
+    const gone = SDK.dispatch(&greeter, Get, .{
+        .kind = "visit",
+        .id = first.id,
+    });
     try std.testing.expectError(error.NotFound, gone);
 }
 
@@ -578,27 +664,45 @@ test "internal records: nobody else's, and with no plugin running only for those
 
     var greeter = project.ctx(.anonymous);
     greeter.plugin = "greeter";
-    _ = try SDK.dispatch(&greeter, Create, .{ .kind = "visit", .document = "{\"name\":\"Ada\"}" });
+    _ = try SDK.dispatch(&greeter, Create, .{
+        .kind = "visit",
+        .document = "{\"name\":\"Ada\"}",
+    });
 
-    const named_other = SDK.dispatch(&greeter, Find, .{ .kind = "visit", .plugin = "sampler" });
+    const named_other = SDK.dispatch(&greeter, Find, .{
+        .kind = "visit",
+        .plugin = "sampler",
+    });
     try std.testing.expectError(error.Denied, named_other);
 
     var stranger = project.ctx(.anonymous);
     stranger.plugin = "farewell";
-    const undeclared = SDK.dispatch(&stranger, Find, .{ .kind = "visit" });
+    const undeclared = SDK.dispatch(&stranger, Find, .{
+        .kind = "visit",
+    });
     try std.testing.expectError(error.NotFound, undeclared);
 
-    const unknown_kind = SDK.dispatch(&greeter, Find, .{ .kind = "nope" });
+    const unknown_kind = SDK.dispatch(&greeter, Find, .{
+        .kind = "nope",
+    });
     try std.testing.expectError(error.NotFound, unknown_kind);
 
     var visitor = project.ctx(.anonymous);
-    const anonymous = SDK.dispatch(&visitor, Find, .{ .kind = "visit", .plugin = "greeter" });
+    const anonymous = SDK.dispatch(&visitor, Find, .{
+        .kind = "visit",
+        .plugin = "greeter",
+    });
     try std.testing.expectError(error.Denied, anonymous);
 
     var operator = project.ctx(.system);
-    const seen = try SDK.dispatch(&operator, Find, .{ .kind = "visit", .plugin = "greeter" });
+    const seen = try SDK.dispatch(&operator, Find, .{
+        .kind = "visit",
+        .plugin = "greeter",
+    });
     try std.testing.expectEqual(@as(usize, 1), seen.records.len);
 
-    const unnamed = SDK.dispatch(&operator, Find, .{ .kind = "visit" });
+    const unnamed = SDK.dispatch(&operator, Find, .{
+        .kind = "visit",
+    });
     try std.testing.expectError(error.Invalid, unnamed);
 }

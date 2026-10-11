@@ -44,7 +44,10 @@ const RequestJson = struct {
     headers: []const Header = &.{},
     body: []const u8 = "",
 
-    const Header = struct { name: []const u8, value: []const u8 };
+    const Header = struct {
+        name: []const u8,
+        value: []const u8,
+    };
 };
 
 const ResponseJson = struct {
@@ -55,8 +58,16 @@ const ResponseJson = struct {
     /// What to do in OPFS once the response is taken, in order; each one's bytes by index.
     effects: []const Effect = &.{},
 
-    const Wanted = struct { area: []const u8, key: []const u8 };
-    const Effect = struct { kind: []const u8, area: []const u8, key: []const u8, offset: u64 };
+    const Wanted = struct {
+        area: []const u8,
+        key: []const u8,
+    };
+    const Effect = struct {
+        kind: []const u8,
+        area: []const u8,
+        key: []const u8,
+        offset: u64,
+    };
 };
 
 export fn publr_init() i32 {
@@ -89,7 +100,9 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     std.debug.assert(heap_bytes >= db.heap_bytes_min);
     instance.heap = gpa.alignedAlloc(u8, .@"8", heap_bytes) catch return error.Heap;
     errdefer gpa.free(instance.heap);
-    instance.runtime = db.Runtime.init(.{ .heap = instance.heap }) catch return error.Runtime;
+    instance.runtime = db.Runtime.init(.{
+        .heap = instance.heap,
+    }) catch return error.Runtime;
     errdefer instance.runtime.deinit();
     instance.connection = db.open(&instance.runtime, ":memory:") catch return error.Database;
     errdefer instance.connection.close();
@@ -113,7 +126,9 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     instance.body = &.{};
     instance.allocations = @splat(null);
     instance.deferred = files.Deferred.init(gpa);
-    instance.project.files = .{ .deferred = &instance.deferred };
+    instance.project.files = .{
+        .deferred = &instance.deferred,
+    };
     routes.register(instance.app.router());
     apply_declared_types(instance) catch return error.Bootstrap;
     std.debug.assert(instance.app.routes.routes_len > 0);
@@ -209,7 +224,10 @@ export fn publr_request(ptr: [*]const u8, len: u32, body_ptr: [*]const u8, body_
 
     head.content_length = body.len;
 
-    var request: http.Request = .{ .inner = &head, .body = body };
+    var request: http.Request = .{
+        .inner = &head,
+        .body = body,
+    };
 
     instance.deferred.begin();
 
@@ -225,7 +243,10 @@ export fn publr_request(ptr: [*]const u8, len: u32, body_ptr: [*]const u8, body_
     };
 
     if (instance.deferred.needed) |*wanted| {
-        envelope.need = .{ .area = @tagName(wanted.area), .key = wanted.key() };
+        envelope.need = .{
+            .area = @tagName(wanted.area),
+            .key = wanted.key(),
+        };
         envelope.effects = &.{};
     }
 
@@ -403,7 +424,9 @@ fn open_index(connection: *db.Db) !void {
 
     const deps = publr.lib.deps;
 
-    _ = try deps.Index.open(connection, .{ .quiet_ms = deps.quiet_ms });
+    _ = try deps.Index.open(connection, .{
+        .quiet_ms = deps.quiet_ms,
+    });
 }
 
 fn apply_declared_types(instance: *State) !void {
@@ -453,7 +476,10 @@ fn build_request(parsed: RequestJson) !http.Head {
     for (parsed.headers) |header| {
         if (header.name.len == 0 or std.mem.indexOfAny(u8, header.name, " :\r\n\x00") != null or
             std.mem.indexOfAny(u8, header.value, "\r\n\x00") != null) return error.InvalidHeader;
-        request.headers[request.headers_len] = .{ .name = header.name, .value = header.value };
+        request.headers[request.headers_len] = .{
+            .name = header.name,
+            .value = header.value,
+        };
         request.headers_len += 1;
     }
 

@@ -161,7 +161,9 @@ pub const Memo = struct {
     entries: std.StringHashMapUnmanaged(Context.Entry) = .empty,
 };
 
-pub const Params = struct { slug: ?[]const u8 = null };
+pub const Params = struct {
+    slug: ?[]const u8 = null,
+};
 
 pub const Context = struct {
     /// A published record as templates read it: `post.title`, `post.slug ?? ""`,
@@ -274,7 +276,10 @@ pub const Context = struct {
                     .title = "",
                     .created_at = "",
                     .updated_at = "",
-                    .data = .{ .arena = data.arena, .document = item },
+                    .data = .{
+                        .arena = data.arena,
+                        .document = item,
+                    },
                 });
             }
 
@@ -282,10 +287,15 @@ pub const Context = struct {
         }
     };
 
-    pub const QueryOptions = struct { limit: ?u32 = null, offset: ?u32 = null };
+    pub const QueryOptions = struct {
+        limit: ?u32 = null,
+        offset: ?u32 = null,
+    };
 
     /// `Publr.request.session`: who is signed in. `email` is null for a visitor.
-    pub const Session = struct { email: ?[]const u8 = null };
+    pub const Session = struct {
+        email: ?[]const u8 = null,
+    };
 
     arena: std.mem.Allocator,
     project: *const Project,
@@ -513,7 +523,9 @@ pub const Context = struct {
         std.debug.assert(type_id.len > 0);
         std.debug.assert(ctx.app.pages().routes.len > 0);
 
-        const found = try ctx.query(type_id, .{ .limit = 1 });
+        const found = try ctx.query(type_id, .{
+            .limit = 1,
+        });
 
         if (found.len == 0) {
             return error.EntryNotFound;
@@ -601,7 +613,10 @@ pub const Context = struct {
             .title = "",
             .created_at = "",
             .updated_at = "",
-            .data = .{ .arena = ctx.arena, .document = empty },
+            .data = .{
+                .arena = ctx.arena,
+                .document = empty,
+            },
         };
     }
 
@@ -662,7 +677,10 @@ pub const Context = struct {
             .title = record.title,
             .created_at = try time.date_text(ctx.arena, record.created_at),
             .updated_at = try time.date_text(ctx.arena, record.updated_at),
-            .data = .{ .arena = ctx.arena, .document = document },
+            .data = .{
+                .arena = ctx.arena,
+                .document = document,
+            },
         };
     }
 
@@ -739,7 +757,9 @@ pub const Context = struct {
         const request = ctx.request orelse return .{};
         const identity = identify(ctx.project, ctx.app, ctx.arena, request);
 
-        return .{ .email = if (identity.email.len > 0) identity.email else null };
+        return .{
+            .email = if (identity.email.len > 0) identity.email else null,
+        };
     }
 
     /// `Publr.request.query('error')`: a value from the address's query string, decoded;
@@ -835,7 +855,10 @@ pub const Context = struct {
         }
 
         var result = blank;
-        result.data = .{ .arena = ctx.arena, .document = document };
+        result.data = .{
+            .arena = ctx.arena,
+            .document = document,
+        };
 
         return result;
     }
@@ -985,7 +1008,9 @@ pub fn user_field_of(
     std.debug.assert(path.len > 0);
 
     var sdk_ctx = identity_module.context(project, arena, .system);
-    const got = try registry.SDK.dispatch(&sdk_ctx, user_operations.Get, .{ .user = user_id });
+    const got = try registry.SDK.dispatch(&sdk_ctx, user_operations.Get, .{
+        .user = user_id,
+    });
     const document = @import("../../lib/json.zig").parse(
         std.json.Value,
         arena,
@@ -1004,7 +1029,10 @@ pub fn user_field_of(
         return null;
     }
 
-    const data: Context.Data = .{ .arena = arena, .document = group };
+    const data: Context.Data = .{
+        .arena = arena,
+        .document = group,
+    };
     const text = data.getText(path[dot + 1 ..]) orelse return null;
 
     return if (text.len == 0) null else text;
@@ -1087,7 +1115,10 @@ test "deps: keys are recorded once, a type read also depends on every record" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    var deps: Deps = .{ .arena = arena_state.allocator(), .app = "www" };
+    var deps: Deps = .{
+        .arena = arena_state.allocator(),
+        .app = "www",
+    };
     deps.record_entry("abc");
     deps.record_entry("abc");
     deps.record_type("post");
@@ -1109,7 +1140,10 @@ test "data: scalars read as text, anything else is null" {
 
     const text = "{\"title\":\"Hi\",\"views\":3,\"ratio\":1.5,\"on\":true,\"tags\":[\"a\"]}";
     const document = try @import("../../lib/json.zig").parse(std.json.Value, arena, text, .{});
-    const data: Context.Data = .{ .arena = arena, .document = document };
+    const data: Context.Data = .{
+        .arena = arena,
+        .document = document,
+    };
 
     try std.testing.expectEqualStrings("Hi", data.getText("title").?);
     try std.testing.expectEqualStrings("3", data.getText("views").?);
@@ -1126,7 +1160,10 @@ test "data: a reference field's ids come back in order, one or many, nothing els
 
     const text = "{\"one\":\"a\",\"many\":[\"b\",3,\"c\"],\"none\":7}";
     const document = try @import("../../lib/json.zig").parse(std.json.Value, arena, text, .{});
-    const data: Context.Data = .{ .arena = arena, .document = document };
+    const data: Context.Data = .{
+        .arena = arena,
+        .document = document,
+    };
 
     const one = try data.getIds(arena, "one");
     try std.testing.expectEqual(@as(usize, 1), one.len);

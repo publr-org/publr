@@ -104,7 +104,11 @@ fn parse(arena: std.mem.Allocator, args: []const []const u8) ?Request {
 
     std.debug.assert(folder.len > 0);
 
-    return .{ .name = name.?, .dir = folder, .out = out };
+    return .{
+        .name = name.?,
+        .dir = folder,
+        .out = out,
+    };
 }
 
 /// Runs the compiler on the plugin, its messages going to this process's stderr as they are;
@@ -122,7 +126,9 @@ fn compile(
 
     try std.Io.Dir.cwd().createDirPath(init.io, std.fs.path.dirname(out_path) orelse ".");
 
-    var child = try std.process.spawn(init.io, .{ .argv = argv });
+    var child = try std.process.spawn(init.io, .{
+        .argv = argv,
+    });
 
     return switch (try child.wait(init.io)) {
         .exited => |code| code,
@@ -215,7 +221,9 @@ fn compile_argv(
 fn stub_names(init: std.process.Init, sdk_dir: []const u8) ![]const []const u8 {
     const arena = init.arena.allocator();
     const stubs_path = try std.fs.path.join(arena, &.{ sdk_dir, "stubs" });
-    var dir = try std.Io.Dir.cwd().openDir(init.io, stubs_path, .{ .iterate = true });
+    var dir = try std.Io.Dir.cwd().openDir(init.io, stubs_path, .{
+        .iterate = true,
+    });
     defer dir.close(init.io);
 
     var names: std.ArrayList([]const u8) = .empty;
@@ -252,7 +260,10 @@ fn write_manifest(init: std.process.Init, path: []const u8) ![]const u8 {
 
     try output.writer.writeAll(module);
     try wasm.section.write(&output.writer, plugin_manifest.section_name, manifest);
-    try cwd.writeFile(init.io, .{ .sub_path = path, .data = output.written() });
+    try cwd.writeFile(init.io, .{
+        .sub_path = path,
+        .data = output.written(),
+    });
 
     return manifest;
 }
@@ -263,7 +274,9 @@ fn warn_left_out(init: std.process.Init, name: []const u8, manifest: []const u8)
     std.debug.assert(name.len > 0);
     std.debug.assert(manifest.len > 0);
 
-    const Declared = struct { left_out: []const []const u8 = &.{} };
+    const Declared = struct {
+        left_out: []const []const u8 = &.{},
+    };
     const declared = try std.json.parseFromSliceLeaky(Declared, init.arena.allocator(), manifest, .{
         .ignore_unknown_fields = true,
     });
@@ -291,16 +304,23 @@ fn manifest_of(gpa: std.mem.Allocator, arena: std.mem.Allocator, module_bytes: [
     var runtime: wasm.Runtime = undefined;
     var problem: wasm.Problem = .{};
 
-    try runtime.init(.{ .heap = heap, .imports = &invoke.imports });
+    try runtime.init(.{
+        .heap = heap,
+        .imports = &invoke.imports,
+    });
     defer runtime.deinit();
 
     var module = try wasm.Module.load(&runtime, module_bytes, &problem);
     defer module.unload();
 
-    var instance = try wasm.Instance.init(&module, .{ .memory_pages_max = 256 }, &problem);
+    var instance = try wasm.Instance.init(&module, .{
+        .memory_pages_max = 256,
+    }, &problem);
     defer instance.deinit();
 
-    const budget: wasm.Instance.CallOptions = .{ .instructions_max = manifest_instructions_max };
+    const budget: wasm.Instance.CallOptions = .{
+        .instructions_max = manifest_instructions_max,
+    };
     const cell = try instance.call("publr_alloc", &.{wire.result_bytes}, budget, &problem);
     const status = try instance.call("publr_manifest", &.{cell}, budget, &problem);
 
@@ -324,7 +344,10 @@ fn install(init: std.process.Init, db_path: [:0]const u8, name: []const u8, path
     std.debug.assert(name.len > 0);
     std.debug.assert(path.len > 0);
 
-    var commands: operator.Commands = .{ .init = init, .db_path = db_path };
+    var commands: operator.Commands = .{
+        .init = init,
+        .db_path = db_path,
+    };
     defer commands.deinit();
 
     if (try unchanged(init, &commands, name, path)) {
@@ -450,8 +473,12 @@ pub const Builder = struct {
                 name,
             },
             .stdin = .ignore,
-            .stdout = .{ .file = log },
-            .stderr = .{ .file = log },
+            .stdout = .{
+                .file = log,
+            },
+            .stderr = .{
+                .file = log,
+            },
         });
     }
 };

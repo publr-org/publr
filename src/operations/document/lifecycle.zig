@@ -11,7 +11,11 @@ const Grant = sdk.Grant;
 const Error = sdk.Error;
 const Record = store.documents.Record;
 
-pub const Moved = struct { status: []const u8, changed: bool, version: i64 };
+pub const Moved = struct {
+    status: []const u8,
+    changed: bool,
+    version: i64,
+};
 
 pub fn Of(comptime Domain: type) type {
     return struct {
@@ -101,7 +105,10 @@ pub fn Of(comptime Domain: type) type {
 
         /// What a document was before something other than these operations replaced its
         /// rows (a merge, a rollback): its status and its live document as JSON text.
-        pub const Before = struct { status: []const u8, live: ?[]const u8 };
+        pub const Before = struct {
+            status: []const u8,
+            live: ?[]const u8,
+        };
 
         /// Taken before the rows are replaced; null when the document is not there.
         pub fn landing(ctx: *Ctx, id: []const u8) Error!?Before {
@@ -111,7 +118,10 @@ pub fn Of(comptime Domain: type) type {
             const row = try documents.get(ctx.db, ctx.arena, id) orelse return null;
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
 
-            return .{ .status = row.status, .live = try live_text(ctx, row, type_row.def) };
+            return .{
+                .status = row.status,
+                .live = try live_text(ctx, row, type_row.def),
+            };
         }
 
         /// After the rows were replaced, everything a person making the same move gets: the
@@ -350,7 +360,11 @@ pub fn Of(comptime Domain: type) type {
 
             notify_transition(ctx, row.id, row.status, to);
 
-            return .{ .status = to, .changed = changed, .version = version };
+            return .{
+                .status = to,
+                .changed = changed,
+                .version = version,
+            };
         }
 
         pub fn publish(
@@ -387,7 +401,11 @@ pub fn Of(comptime Domain: type) type {
 
             ctx.notice(notice_name("published"), row.id);
 
-            return .{ .status = row.status, .changed = false, .version = version };
+            return .{
+                .status = row.status,
+                .changed = false,
+                .version = version,
+            };
         }
 
         pub fn discard(ctx: *Ctx, granted: *const Grant, id: []const u8, expected: ?i64) Error!i64 {

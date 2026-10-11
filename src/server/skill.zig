@@ -5,9 +5,18 @@ const std = @import("std");
 
 pub const install_dir_default = ".claude/skills/build-on-publr";
 
-const files = [_]struct { path: []const u8, text: []const u8 }{
-    .{ .path = "SKILL.md", .text = @embedFile("skill") },
-    .{ .path = "references/core-changes.md", .text = @embedFile("skill_core_changes") },
+const files = [_]struct {
+    path: []const u8,
+    text: []const u8,
+}{
+    .{
+        .path = "SKILL.md",
+        .text = @embedFile("skill"),
+    },
+    .{
+        .path = "references/core-changes.md",
+        .text = @embedFile("skill_core_changes"),
+    },
 };
 
 pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8) !u8 {
@@ -49,6 +58,9 @@ fn write_files(init: std.process.Init, dir: []const u8) !void {
             try root.createDirPath(init.io, sub);
         }
 
-        try root.writeFile(init.io, .{ .sub_path = file.path, .data = file.text });
+        try root.writeFile(init.io, .{
+            .sub_path = file.path,
+            .data = file.text,
+        });
     }
 }

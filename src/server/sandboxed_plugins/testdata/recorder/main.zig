@@ -32,7 +32,9 @@ pub const State = struct {
     pub fn init(state: *State, process: publr.plugin.Process) anyerror!void {
         std.debug.assert(process.db_path.len > 0);
 
-        state.* = .{ .arena = process.arena };
+        state.* = .{
+            .arena = process.arena,
+        };
     }
 
     fn keep(state: *State, name: []const u8, subject: []const u8) void {
@@ -77,16 +79,24 @@ pub const Seen = struct {
     pub const details = "Administrators only.";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { lines: []const []const u8 };
+    pub const Out = struct {
+        lines: []const []const u8,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .lines = &.{"content_type.created post"} };
+    pub const example_out: Out = .{
+        .lines = &.{"content_type.created post"},
+    };
 
     pub fn run(ctx: *sdk.Ctx, _: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
 
-        const states = ctx.plugin_states orelse return .{ .lines = &.{} };
+        const states = ctx.plugin_states orelse return .{
+            .lines = &.{},
+        };
         const state = publr.plugin_states.from(states, Recorder);
 
-        return .{ .lines = state.lines[0..state.count] };
+        return .{
+            .lines = state.lines[0..state.count],
+        };
     }
 };

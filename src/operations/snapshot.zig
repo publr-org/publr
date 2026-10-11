@@ -45,10 +45,21 @@ pub const List = struct {
     pub const name = "snapshot.list";
     pub const description = "List a record's snapshots, oldest first";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { id: []const u8, kind: ?[]const u8 = null, limit: u32 = 100 };
-    pub const Out = struct { snapshots: []const Item };
-    pub const example: In = .{ .id = example_id, .kind = "revision" };
-    pub const example_out: Out = .{ .snapshots = &.{example_item} };
+    pub const In = struct {
+        id: []const u8,
+        kind: ?[]const u8 = null,
+        limit: u32 = 100,
+    };
+    pub const Out = struct {
+        snapshots: []const Item,
+    };
+    pub const example: In = .{
+        .id = example_id,
+        .kind = "revision",
+    };
+    pub const example_out: Out = .{
+        .snapshots = &.{example_item},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The record id",
         .kind = "Only this kind (`revision`, ...); every kind when omitted",
@@ -70,7 +81,9 @@ pub const List = struct {
             items[index] = item_of(found);
         }
 
-        return .{ .snapshots = items };
+        return .{
+            .snapshots = items,
+        };
     }
 };
 
@@ -78,9 +91,15 @@ pub const Get = struct {
     pub const name = "snapshot.get";
     pub const description = "Read one snapshot of a record";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { id: []const u8, seq: i64 };
+    pub const In = struct {
+        id: []const u8,
+        seq: i64,
+    };
     pub const Out = Item;
-    pub const example: In = .{ .id = example_id, .seq = 1 };
+    pub const example: In = .{
+        .id = example_id,
+        .seq = 1,
+    };
     pub const example_out: Out = example_item;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -101,10 +120,20 @@ pub const Take = struct {
     pub const name = "snapshot.take";
     pub const description = "Freeze a record's live document under a kind of your own";
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8, kind: []const u8 };
-    pub const Out = struct { seq: i64 };
-    pub const example: In = .{ .id = example_id, .kind = "order.completed" };
-    pub const example_out: Out = .{ .seq = 1 };
+    pub const In = struct {
+        id: []const u8,
+        kind: []const u8,
+    };
+    pub const Out = struct {
+        seq: i64,
+    };
+    pub const example: In = .{
+        .id = example_id,
+        .kind = "order.completed",
+    };
+    pub const example_out: Out = .{
+        .seq = 1,
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -127,7 +156,9 @@ pub const Take = struct {
             text,
         );
 
-        return .{ .seq = seq };
+        return .{
+            .seq = seq,
+        };
     }
 };
 
@@ -140,10 +171,23 @@ pub const Restore = struct {
         \\version it replaces is kept as a new revision snapshot.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8, seq: i64, expected_version: ?i64 = null };
-    pub const Out = struct { version: i64, changed: bool };
-    pub const example: In = .{ .id = example_id, .seq = 1 };
-    pub const example_out: Out = .{ .version = 3, .changed = true };
+    pub const In = struct {
+        id: []const u8,
+        seq: i64,
+        expected_version: ?i64 = null,
+    };
+    pub const Out = struct {
+        version: i64,
+        changed: bool,
+    };
+    pub const example: In = .{
+        .id = example_id,
+        .seq = 1,
+    };
+    pub const example_out: Out = .{
+        .version = 3,
+        .changed = true,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The record id",
         .seq = "The snapshot to restore",
@@ -169,7 +213,10 @@ pub const Restore = struct {
 
         ctx.notice("snapshot.restored", row.id);
 
-        return .{ .version = saved.version, .changed = saved.changed };
+        return .{
+            .version = saved.version,
+            .changed = saved.changed,
+        };
     }
 };
 
@@ -178,10 +225,22 @@ pub const Prune = struct {
     pub const description = "Keep only the newest snapshots of a kind for a record";
     pub const kind: sdk.operation.Kind = .write;
     pub const destroys = true;
-    pub const In = struct { id: []const u8, kind: []const u8, keep: u32 };
-    pub const Out = struct { removed: u32 };
-    pub const example: In = .{ .id = example_id, .kind = "revision", .keep = 20 };
-    pub const example_out: Out = .{ .removed = 0 };
+    pub const In = struct {
+        id: []const u8,
+        kind: []const u8,
+        keep: u32,
+    };
+    pub const Out = struct {
+        removed: u32,
+    };
+    pub const example: In = .{
+        .id = example_id,
+        .kind = "revision",
+        .keep = 20,
+    };
+    pub const example_out: Out = .{
+        .removed = 0,
+    };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -193,7 +252,9 @@ pub const Prune = struct {
         const row = try access.load(ctx, in.id, granted) orelse return error.NotFound;
         const removed = try snapshot.prune(ctx.db, row.id, in.kind, in.keep);
 
-        return .{ .removed = removed };
+        return .{
+            .removed = removed,
+        };
     }
 };
 

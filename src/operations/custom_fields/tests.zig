@@ -19,7 +19,12 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
     defer harness.deinit();
     var system = harness.ctx(.system);
     var visitor = harness.ctx(.anonymous);
-    var editor = harness.ctx(.{ .user = .{ .id = "editor", .roles = &.{"editor"} } });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "editor",
+            .roles = &.{"editor"},
+        },
+    });
     try std.testing.expectError(error.Denied, registry.SDK.dispatch(&visitor, Get, Get.example));
     try std.testing.expectError(
         error.Denied,
@@ -30,12 +35,16 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
         ),
     );
     _ = try registry.SDK.dispatch(&system, Update, Update.example);
-    const saved = try registry.SDK.dispatch(&system, Get, .{ .group = "user" });
+    const saved = try registry.SDK.dispatch(&system, Get, .{
+        .group = "user",
+    });
     try std.testing.expectEqualStrings("biography", saved.definition.fields[0].name);
     try std.testing.expectError(error.NotFound, registry.SDK.dispatch(
         &system,
         Get,
-        .{ .group = "media" },
+        .{
+            .group = "media",
+        },
     ));
     try std.testing.expectEqual(
         @as(
@@ -66,7 +75,9 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
         }));
     }
 
-    const unchanged = try registry.SDK.dispatch(&system, Get, .{ .group = "user" });
+    const unchanged = try registry.SDK.dispatch(&system, Get, .{
+        .group = "user",
+    });
     try std.testing.expectEqualStrings("biography", unchanged.definition.fields[0].name);
     const cleared = try model.content_type.encode(system.arena, Destination.user.definition());
     _ = try registry.SDK.dispatch(
@@ -126,7 +137,9 @@ test "named groups can share a destination and remain independent" {
             },
         )).definition.name,
     );
-    _ = try registry.SDK.dispatch(&system, Delete, .{ .group = "profile" });
+    _ = try registry.SDK.dispatch(&system, Delete, .{
+        .group = "profile",
+    });
     try std.testing.expectError(
         error.NotFound,
         registry.SDK.dispatch(
@@ -174,7 +187,9 @@ test "existing destination groups keep their location when opened as named group
             .fields = &.{},
         },
     );
-    const got = try registry.SDK.dispatch(&system, Get, .{ .group = "user" });
+    const got = try registry.SDK.dispatch(&system, Get, .{
+        .group = "user",
+    });
     try std.testing.expect(model.field_group.applies(
         got.definition.group,
         .{
@@ -188,7 +203,12 @@ test "existing destination groups keep their location when opened as named group
         },
     ));
     var invalid = got.definition;
-    invalid.group.location = &.{.{ .rules = &.{.{ .field = "destination", .value = "unknown" }} }};
+    invalid.group.location = &.{.{
+        .rules = &.{.{
+            .field = "destination",
+            .value = "unknown",
+        }},
+    }};
     try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&system, Update, .{
         .group = "user",
         .definition = try model.content_type.encode(system.arena, invalid),

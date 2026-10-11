@@ -53,7 +53,10 @@ pub const Init = struct {
         roles: []const []const u8,
         password: ?[]const u8,
     };
-    pub const example: In = .{ .email = "ada@example.com", .display_name = "Ada" };
+    pub const example: In = .{
+        .email = "ada@example.com",
+        .display_name = "Ada",
+    };
     pub const example_out: Out = .{
         .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
         .roles = &.{"admin"},
@@ -94,7 +97,11 @@ pub const Init = struct {
         ctx.notice("project.initialised", created.user_id);
         ctx.notice("auth.user_created", created.user_id);
 
-        return .{ .user_id = created.user_id, .roles = admin, .password = created.password };
+        return .{
+            .user_id = created.user_id,
+            .roles = admin,
+            .password = created.password,
+        };
     }
 };
 
@@ -104,9 +111,13 @@ pub const Status = struct {
     pub const description = "Whether the project has been initialised (its first admin created)";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
-    pub const Out = struct { initialised: bool };
+    pub const Out = struct {
+        initialised: bool,
+    };
     pub const example: In = .{};
-    pub const example_out: Out = .{ .initialised = true };
+    pub const example_out: Out = .{
+        .initialised = true,
+    };
 
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -114,7 +125,9 @@ pub const Status = struct {
 
         const stamp = try settings.get(ctx.db, ctx.arena, setup_key);
 
-        return .{ .initialised = stamp != null };
+        return .{
+            .initialised = stamp != null,
+        };
     }
 };
 
@@ -128,8 +141,12 @@ pub const operations = [_]type{
 };
 pub const middleware = [_]type{changes.RecordChanged};
 
-const TestSDK = sdk.SDK(.{ .operations = &operations });
-const UserSDK = sdk.SDK(.{ .operations = &user.operations });
+const TestSDK = sdk.SDK(.{
+    .operations = &operations,
+});
+const UserSDK = sdk.SDK(.{
+    .operations = &user.operations,
+});
 
 test "init runs once: anonymous may call it, then it conflicts for everyone, even system" {
     var harness: sdk.testing.Harness = undefined;
@@ -160,7 +177,10 @@ test "init without a password generates one and returns it once" {
     defer harness.deinit();
 
     var anon = harness.ctx(.anonymous);
-    const in: Init.In = .{ .email = "a@example.com", .display_name = "A" };
+    const in: Init.In = .{
+        .email = "a@example.com",
+        .display_name = "A",
+    };
     const out = try TestSDK.dispatch(&anon, Init, in);
     try std.testing.expectEqual(@as(usize, user.generated_password_len), out.password.?.len);
 

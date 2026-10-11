@@ -23,7 +23,9 @@ pub fn show(session: *Session, page: pages.Page) Error!void {
     const values = std.json.parseFromSliceLeaky(std.json.Value, session.arena, read, .{}) catch {
         return admin.fail(session, error.Invalid, "/admin/settings");
     };
-    const options: admin.chrome.Options = .{ .settings_path = session.request.path() };
+    const options: admin.chrome.Options = .{
+        .settings_path = session.request.path(),
+    };
 
     try admin.screen_with(session, options, .ok, admin.views.PluginFormPage, .{
         .title = page.label,
@@ -143,10 +145,27 @@ test "a declared form's fields: kinds, labels and values from what the read answ
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const described = [_]model.Field{
-        .{ .name = "site_title", .shape = .string, .required = true },
-        .{ .name = "description", .shape = .string, .required = false, .doc = "Under the title" },
-        .{ .name = "visits", .shape = .integer, .required = false },
-        .{ .name = "tags", .shape = .strings, .required = false },
+        .{
+            .name = "site_title",
+            .shape = .string,
+            .required = true,
+        },
+        .{
+            .name = "description",
+            .shape = .string,
+            .required = false,
+            .doc = "Under the title",
+        },
+        .{
+            .name = "visits",
+            .shape = .integer,
+            .required = false,
+        },
+        .{
+            .name = "tags",
+            .shape = .strings,
+            .required = false,
+        },
     };
     const values = try std.json.parseFromSliceLeaky(std.json.Value, arena,
         \\{"site_title":"Acme","description":"Anvils","visits":3}

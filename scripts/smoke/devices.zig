@@ -4,8 +4,13 @@
 const std = @import("std");
 const smoke = @import("../smoke.zig");
 
-const Started = struct { device_code: []const u8, user_code: []const u8 };
-const Claimed = struct { token: []const u8 };
+const Started = struct {
+    device_code: []const u8,
+    user_code: []const u8,
+};
+const Claimed = struct {
+    token: []const u8,
+};
 
 const email = "device@example.com";
 
@@ -23,7 +28,9 @@ pub fn expect_devices(init: std.process.Init, binary: []const u8, work_dir: []co
 
     var child = try std.process.spawn(init.io, .{
         .argv = &.{ binary, "serve", "--port", "8093" },
-        .cwd = .{ .path = dir },
+        .cwd = .{
+            .path = dir,
+        },
         .stdout = .ignore,
         .stderr = .pipe,
     });
@@ -87,7 +94,10 @@ fn expect_remote(
     const kept = try std.fmt.allocPrint(arena, "{{\"sites\":[{{\"address\":\"{s}\"," ++
         "\"token\":\"{s}\"}}]}}", .{ address, token });
 
-    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = file, .data = kept });
+    try std.Io.Dir.cwd().writeFile(init.io, .{
+        .sub_path = file,
+        .data = kept,
+    });
 
     const whoami = try run_with(init, binary, work_dir, file, &.{"whoami"});
 
@@ -126,7 +136,9 @@ fn run_with(
 
     return std.process.run(init.arena.allocator(), init.io, .{
         .argv = argv[0 .. args.len + 1],
-        .cwd = .{ .path = work_dir },
+        .cwd = .{
+            .path = work_dir,
+        },
         .environ_map = &environ,
         .stdout_limit = .limited(1 << 20),
         .stderr_limit = .limited(1 << 20),

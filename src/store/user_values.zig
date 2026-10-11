@@ -41,7 +41,11 @@ test "user values live under the user, apart from record and term values" {
         .name = "basic",
         .label = "Basic",
         .kind = "group",
-        .fields = &.{.{ .name = "bio", .label = "Bio", .kind = "string" }},
+        .fields = &.{.{
+            .name = "bio",
+            .label = "Bio",
+            .kind = "string",
+        }},
     }};
     const text = "{\"basic\":{\"bio\":\"Writes Zig\"}}";
     const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{});

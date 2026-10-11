@@ -43,26 +43,77 @@ const dropped_whole = [_][]const u8{
 
 const void_tags = [_][]const u8{ "br", "hr", "img" };
 
-const Kept = struct { tag: []const u8, attribute: []const u8 };
+const Kept = struct {
+    tag: []const u8,
+    attribute: []const u8,
+};
 
 /// The attributes a tag keeps; `*` is any kept tag.
 const kept_attributes = [_]Kept{
-    .{ .tag = "*", .attribute = "class" },
-    .{ .tag = "*", .attribute = "title" },
-    .{ .tag = "*", .attribute = "lang" },
-    .{ .tag = "*", .attribute = "dir" },
-    .{ .tag = "a", .attribute = "href" },
-    .{ .tag = "a", .attribute = "rel" },
-    .{ .tag = "img", .attribute = "src" },
-    .{ .tag = "img", .attribute = "alt" },
-    .{ .tag = "img", .attribute = "width" },
-    .{ .tag = "img", .attribute = "height" },
-    .{ .tag = "th", .attribute = "colspan" },
-    .{ .tag = "th", .attribute = "rowspan" },
-    .{ .tag = "td", .attribute = "colspan" },
-    .{ .tag = "td", .attribute = "rowspan" },
-    .{ .tag = "ol", .attribute = "start" },
-    .{ .tag = "time", .attribute = "datetime" },
+    .{
+        .tag = "*",
+        .attribute = "class",
+    },
+    .{
+        .tag = "*",
+        .attribute = "title",
+    },
+    .{
+        .tag = "*",
+        .attribute = "lang",
+    },
+    .{
+        .tag = "*",
+        .attribute = "dir",
+    },
+    .{
+        .tag = "a",
+        .attribute = "href",
+    },
+    .{
+        .tag = "a",
+        .attribute = "rel",
+    },
+    .{
+        .tag = "img",
+        .attribute = "src",
+    },
+    .{
+        .tag = "img",
+        .attribute = "alt",
+    },
+    .{
+        .tag = "img",
+        .attribute = "width",
+    },
+    .{
+        .tag = "img",
+        .attribute = "height",
+    },
+    .{
+        .tag = "th",
+        .attribute = "colspan",
+    },
+    .{
+        .tag = "th",
+        .attribute = "rowspan",
+    },
+    .{
+        .tag = "td",
+        .attribute = "colspan",
+    },
+    .{
+        .tag = "td",
+        .attribute = "rowspan",
+    },
+    .{
+        .tag = "ol",
+        .attribute = "start",
+    },
+    .{
+        .tag = "time",
+        .attribute = "datetime",
+    },
 };
 
 const Writer = std.Io.Writer;
@@ -275,7 +326,9 @@ const Cleaner = struct {
     fn drawing_attributes(cleaner: *Cleaner, tag_name: []const u8, text: []const u8) !void {
         std.debug.assert(tag_name.len > 0);
 
-        var reader: AttributeReader = .{ .text = text };
+        var reader: AttributeReader = .{
+            .text = text,
+        };
 
         while (reader.next()) |attribute| {
             var name_buffer: [32]u8 = undefined;
@@ -299,7 +352,9 @@ const Cleaner = struct {
     fn attributes(cleaner: *Cleaner, tag_name: []const u8, text: []const u8) !void {
         std.debug.assert(tag_name.len > 0);
 
-        var reader: AttributeReader = .{ .text = text };
+        var reader: AttributeReader = .{
+            .text = text,
+        };
         var kept_rel = false;
 
         while (reader.next()) |attribute| {
@@ -402,7 +457,10 @@ fn parse_tag(text: []const u8) ?Tag {
     return null;
 }
 
-const Attribute = struct { name: []const u8, value: []const u8 };
+const Attribute = struct {
+    name: []const u8,
+    value: []const u8,
+};
 
 /// `name`, `name=value`, `name="value"`, `name='value'`, separated by space or `/`.
 const AttributeReader = struct {
@@ -431,12 +489,18 @@ const AttributeReader = struct {
         const name = text[name_start..reader.at];
 
         if (reader.at >= text.len or text[reader.at] != '=') {
-            return .{ .name = name, .value = "" };
+            return .{
+                .name = name,
+                .value = "",
+            };
         }
 
         reader.at += 1;
 
-        return .{ .name = name, .value = reader.value() };
+        return .{
+            .name = name,
+            .value = reader.value(),
+        };
     }
 
     fn value(reader: *AttributeReader) []const u8 {

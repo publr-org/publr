@@ -56,7 +56,10 @@ pub fn with_imported(
                 else => return err,
             };
 
-            try files.append(arena, .{ .path = target, .data = data });
+            try files.append(arena, .{
+                .path = target,
+                .data = data,
+            });
         }
     }
 
@@ -100,14 +103,26 @@ test "an app's imports from other folders join it, followed transitively, each o
 
     try scratch.dir.createDirPath(io, "shared");
     try scratch.dir.createDirPath(io, "www/layouts");
-    try scratch.dir.writeFile(io, .{ .sub_path = "shared/nav.publr", .data = nav });
-    try scratch.dir.writeFile(io, .{ .sub_path = "shared/mark.publr", .data = "<svg></svg>" });
-    try scratch.dir.writeFile(io, .{ .sub_path = "www/layouts/base.publr", .data = base });
+    try scratch.dir.writeFile(io, .{
+        .sub_path = "shared/nav.publr",
+        .data = nav,
+    });
+    try scratch.dir.writeFile(io, .{
+        .sub_path = "shared/mark.publr",
+        .data = "<svg></svg>",
+    });
+    try scratch.dir.writeFile(io, .{
+        .sub_path = "www/layouts/base.publr",
+        .data = base,
+    });
 
     const apps_dir = try scratch.dir.realPathFileAlloc(io, ".", arena);
     const page = "---\nimport Base from '../../www/layouts/base.publr';\n" ++
         "import Gone from '../../shared/gone.publr';\n---\n<Base />";
-    const own = [_]File{.{ .path = "content/index.publr", .data = page }};
+    const own = [_]File{.{
+        .path = "content/index.publr",
+        .data = page,
+    }};
     const files = try with_imported(arena, io, apps_dir, "waitlist", &own, 16);
 
     try std.testing.expectEqual(@as(usize, 4), files.len);

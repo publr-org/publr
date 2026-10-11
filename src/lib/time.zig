@@ -12,7 +12,9 @@ pub fn date_text(arena: std.mem.Allocator, ms: i64) ![]const u8 {
         return error.InvalidDate;
     }
 
-    const epoch: std.time.epoch.EpochSeconds = .{ .secs = @intCast(@divFloor(ms, 1000)) };
+    const epoch: std.time.epoch.EpochSeconds = .{
+        .secs = @intCast(@divFloor(ms, 1000)),
+    };
     const year_day = epoch.getEpochDay().calculateYearDay();
     const month_day = year_day.calculateMonthDay();
 
@@ -32,7 +34,9 @@ pub fn datetime_text(arena: std.mem.Allocator, ms: i64) ![]const u8 {
     }
 
     const seconds: u64 = @intCast(@divFloor(ms, 1000));
-    const epoch: std.time.epoch.EpochSeconds = .{ .secs = seconds };
+    const epoch: std.time.epoch.EpochSeconds = .{
+        .secs = seconds,
+    };
     const year_day = epoch.getEpochDay().calculateYearDay();
     const month_day = year_day.calculateMonthDay();
     const day_seconds = epoch.getDaySeconds();
@@ -56,7 +60,9 @@ pub fn datetime_local_text(arena: std.mem.Allocator, ms: i64) ![]const u8 {
     }
 
     const seconds: u64 = @intCast(@divFloor(ms, 1000));
-    const epoch: std.time.epoch.EpochSeconds = .{ .secs = seconds };
+    const epoch: std.time.epoch.EpochSeconds = .{
+        .secs = seconds,
+    };
     const year_day = epoch.getEpochDay().calculateYearDay();
     const month_day = year_day.calculateMonthDay();
     const day_seconds = epoch.getDaySeconds();

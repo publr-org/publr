@@ -13,7 +13,9 @@ pub const Site = struct {
     scope: []const u8 = "",
 };
 
-const File = struct { sites: []const Site = &.{} };
+const File = struct {
+    sites: []const Site = &.{},
+};
 
 /// An address as the user typed it, made whole: a scheme (`https://`, or `http://` for this
 /// machine) and no trailing slash. Null when it cannot be one.
@@ -158,7 +160,9 @@ fn save(init: std.process.Init, sites: []const Site) !void {
 
     const arena = init.arena.allocator();
     const path = try path_of(init) orelse return error.NoHome;
-    const text = try std.json.Stringify.valueAlloc(arena, File{ .sites = sites }, .{
+    const text = try std.json.Stringify.valueAlloc(arena, File{
+        .sites = sites,
+    }, .{
         .whitespace = .indent_2,
     });
     const cwd = std.Io.Dir.cwd();
@@ -167,7 +171,9 @@ fn save(init: std.process.Init, sites: []const Site) !void {
         try cwd.createDirPath(init.io, dir);
     }
 
-    var file = try cwd.createFile(init.io, path, .{ .permissions = .fromMode(0o600) });
+    var file = try cwd.createFile(init.io, path, .{
+        .permissions = .fromMode(0o600),
+    });
     defer file.close(init.io);
 
     try file.writeStreamingAll(init.io, text);

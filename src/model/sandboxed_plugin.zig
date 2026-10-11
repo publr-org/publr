@@ -22,10 +22,17 @@ pub const format: u32 = 1;
 
 pub const Kind = enum { read, write };
 
-pub const Namespace = struct { name: []const u8, summary: []const u8, details: []const u8 };
+pub const Namespace = struct {
+    name: []const u8,
+    summary: []const u8,
+    details: []const u8,
+};
 
 /// A permission a plugin asks for, by the key the administrator sees, with its own reason.
-pub const Ask = struct { key: []const u8, reason: []const u8 };
+pub const Ask = struct {
+    key: []const u8,
+    reason: []const u8,
+};
 
 /// More than the defaults, asked for with a reason; each raised limit waits for approval.
 pub const Limits = struct {
@@ -118,7 +125,11 @@ pub fn contract_provider(
         };
     }
 
-    return .{ .plugin = manifest.name, .version = manifest.version, .operations = operations };
+    return .{
+        .plugin = manifest.name,
+        .version = manifest.version,
+        .operations = operations,
+    };
 }
 
 pub const Field = struct {
@@ -165,7 +176,12 @@ pub const limits_default: Effective = .{
     .output_kib = 1024,
 };
 
-pub const Effective = struct { cpu_ms: u32, memory_mib: u32, calls: u32, output_kib: u32 };
+pub const Effective = struct {
+    cpu_ms: u32,
+    memory_mib: u32,
+    calls: u32,
+    output_kib: u32,
+};
 
 pub const limit_keys = [_][]const u8{
     "limit.cpu_ms",
@@ -395,12 +411,28 @@ const test_manifest: Manifest = .{
     .version = "0.1.0",
     .summary = "Greets",
     .permissions = &.{
-        .{ .key = "content.write", .reason = "Keeps greetings" },
-        .{ .key = "users.read", .reason = "Greets by name" },
-        .{ .key = "newsletter.send", .reason = "Mails greetings" },
+        .{
+            .key = "content.write",
+            .reason = "Keeps greetings",
+        },
+        .{
+            .key = "users.read",
+            .reason = "Greets by name",
+        },
+        .{
+            .key = "newsletter.send",
+            .reason = "Mails greetings",
+        },
     },
-    .hooks = &.{.{ .stage = .after, .target = "record.save", .reason = "Counts saves" }},
-    .limits = .{ .cpu_ms = 2000, .reason = "Resizes images" },
+    .hooks = &.{.{
+        .stage = .after,
+        .target = "record.save",
+        .reason = "Counts saves",
+    }},
+    .limits = .{
+        .cpu_ms = 2000,
+        .reason = "Resizes images",
+    },
 };
 
 test "requests carry tiers; install grants low and medium that are available" {
@@ -445,8 +477,16 @@ test "names and roles: own namespace only" {
         .label = "E",
         .grants = &.{ "greeter.*", "app.greeter.*" },
     }};
-    const core = [_]role.Role{.{ .name = "editor", .label = "E", .grants = &.{"record.*"} }};
-    const sneaky = [_]role.Role{.{ .name = "editor", .label = "E", .grants = &.{"greeters.*"} }};
+    const core = [_]role.Role{.{
+        .name = "editor",
+        .label = "E",
+        .grants = &.{"record.*"},
+    }};
+    const sneaky = [_]role.Role{.{
+        .name = "editor",
+        .label = "E",
+        .grants = &.{"greeters.*"},
+    }};
 
     try std.testing.expect(role_problem("greeter", &own) == null);
     try std.testing.expect(role_problem("greeter", &core) != null);

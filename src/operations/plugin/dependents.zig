@@ -17,7 +17,11 @@ const Error = sdk.Error;
 /// The most plugins one call stops together.
 pub const together_max: u32 = 32;
 
-pub const Running = struct { name: []const u8, depends_on: []const []const u8, built_in: bool };
+pub const Running = struct {
+    name: []const u8,
+    depends_on: []const []const u8,
+    built_in: bool,
+};
 
 /// Refused when a plugin outside `names` still needs one of them: `verb` is what was asked
 /// (`disable`, `remove`), and the message says how to stop them all at once.
@@ -27,7 +31,11 @@ pub fn refuse_left_behind(ctx: *Ctx, names: []const []const u8, verb: []const u8
 
     const why = try left_behind(ctx.arena, try running_of(ctx), names, verb) orelse return;
 
-    return ctx.fail(.{ .name = "DependedOn", .status = 409, .message = why });
+    return ctx.fail(.{
+        .name = "DependedOn",
+        .status = 409,
+        .message = why,
+    });
 }
 
 /// Why `names` cannot stop while `running` does, or null when nothing running needs them.
@@ -91,10 +99,17 @@ pub fn refuse_missing_parents(ctx: *Ctx, names: []const []const u8) Error!void {
         return;
     };
 
-    return ctx.fail(.{ .name = "DependsOn", .status = 409, .message = why });
+    return ctx.fail(.{
+        .name = "DependsOn",
+        .status = 409,
+        .message = why,
+    });
 }
 
-pub const Asked = struct { name: []const u8, depends_on: []const []const u8 };
+pub const Asked = struct {
+    name: []const u8,
+    depends_on: []const []const u8,
+};
 
 /// Why `asked` cannot start, or null: a parent not running and not asked for. The command
 /// it suggests starts the missing parents, theirs in turn, then the ones asked for.
@@ -141,7 +156,10 @@ pub fn parents_missing(
             }
 
             missing.append(arena, parent) catch return error.OutOfMemory;
-            pending.append(arena, .{ .name = parent, .depends_on = found.depends_on }) catch {
+            pending.append(arena, .{
+                .name = parent,
+                .depends_on = found.depends_on,
+            }) catch {
                 return error.OutOfMemory;
             };
         }
@@ -335,10 +353,26 @@ test "dependents: a chain, a disabled one, an optional one and a built-in one" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const running = [_]Running{
-        .{ .name = "inventory", .depends_on = &.{}, .built_in = false },
-        .{ .name = "cart", .depends_on = &.{"inventory@^1"}, .built_in = false },
-        .{ .name = "wishlist", .depends_on = &.{"cart"}, .built_in = false },
-        .{ .name = "reviews", .depends_on = &.{}, .built_in = false },
+        .{
+            .name = "inventory",
+            .depends_on = &.{},
+            .built_in = false,
+        },
+        .{
+            .name = "cart",
+            .depends_on = &.{"inventory@^1"},
+            .built_in = false,
+        },
+        .{
+            .name = "wishlist",
+            .depends_on = &.{"cart"},
+            .built_in = false,
+        },
+        .{
+            .name = "reviews",
+            .depends_on = &.{},
+            .built_in = false,
+        },
     };
 
     const alone = (try left_behind(arena, &running, &.{"inventory"}, "disable")).?;
@@ -353,8 +387,16 @@ test "dependents: a chain, a disabled one, an optional one and a built-in one" {
     try std.testing.expect(std.mem.indexOf(u8, removing, "Disable them first") != null);
 
     const built_in = [_]Running{
-        .{ .name = "inventory", .depends_on = &.{}, .built_in = false },
-        .{ .name = "shop", .depends_on = &.{"inventory"}, .built_in = true },
+        .{
+            .name = "inventory",
+            .depends_on = &.{},
+            .built_in = false,
+        },
+        .{
+            .name = "shop",
+            .depends_on = &.{"inventory"},
+            .built_in = true,
+        },
     };
     const stuck = (try left_behind(arena, &built_in, &.{"inventory"}, "disable")).?;
     try std.testing.expect(std.mem.indexOf(u8, stuck, "built-in plugin shop") != null);
@@ -365,28 +407,55 @@ test "parents: a missing chain is started first, an absent one is named" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const installed = [_]Running{
-        .{ .name = "inventory", .depends_on = &.{}, .built_in = false },
-        .{ .name = "cart", .depends_on = &.{"inventory"}, .built_in = false },
-        .{ .name = "wishlist", .depends_on = &.{"cart@^1"}, .built_in = false },
+        .{
+            .name = "inventory",
+            .depends_on = &.{},
+            .built_in = false,
+        },
+        .{
+            .name = "cart",
+            .depends_on = &.{"inventory"},
+            .built_in = false,
+        },
+        .{
+            .name = "wishlist",
+            .depends_on = &.{"cart@^1"},
+            .built_in = false,
+        },
     };
     const running = [_]Running{};
 
-    const asked = [_]Asked{.{ .name = "wishlist", .depends_on = &.{"cart@^1"} }};
+    const asked = [_]Asked{.{
+        .name = "wishlist",
+        .depends_on = &.{"cart@^1"},
+    }};
     const chain = (try parents_missing(arena, &running, &installed, &asked)).?;
     try std.testing.expectEqualStrings("wishlist depends on cart, which is not running. To " ++
         "enable them together: publr plugin enable --names inventory,cart,wishlist", chain);
 
     const together = [_]Asked{
-        .{ .name = "inventory", .depends_on = &.{} },
-        .{ .name = "cart", .depends_on = &.{"inventory"} },
+        .{
+            .name = "inventory",
+            .depends_on = &.{},
+        },
+        .{
+            .name = "cart",
+            .depends_on = &.{"inventory"},
+        },
     };
     try std.testing.expect(try parents_missing(arena, &running, &installed, &together) == null);
 
     const started = [_]Running{installed[0]};
-    const alone = [_]Asked{.{ .name = "cart", .depends_on = &.{"inventory"} }};
+    const alone = [_]Asked{.{
+        .name = "cart",
+        .depends_on = &.{"inventory"},
+    }};
     try std.testing.expect(try parents_missing(arena, &started, &installed, &alone) == null);
 
-    const orphan = [_]Asked{.{ .name = "reviews", .depends_on = &.{"ratings"} }};
+    const orphan = [_]Asked{.{
+        .name = "reviews",
+        .depends_on = &.{"ratings"},
+    }};
     const absent = (try parents_missing(arena, &running, &installed, &orphan)).?;
     try std.testing.expect(std.mem.indexOf(u8, absent, "not installed") != null);
 }

@@ -96,7 +96,11 @@ fn finding_of(user: User, used: Used, providers: []const Provider) ?Finding {
     const required = declared != null;
     const range = declared orelse range_of(user.compatible_with, target) orelse "";
     const provider = find(providers, target) orelse return null;
-    const base: Finding = .{ .operation = used.operation, .required = required, .why = .misfit };
+    const base: Finding = .{
+        .operation = used.operation,
+        .required = required,
+        .why = .misfit,
+    };
 
     if (!depends_on.satisfies(provider.version, range)) {
         var out_of_range = base;
@@ -210,8 +214,14 @@ pub fn describe(finding: Finding, buffer: []u8) []const u8 {
 }
 
 test "contracts: fit, out of range, misfit, absent" {
-    const Accepts = struct { sku: []const u8, quantity: u32 };
-    const Answers = struct { held: bool, left: u32 };
+    const Accepts = struct {
+        sku: []const u8,
+        quantity: u32,
+    };
+    const Answers = struct {
+        held: bool,
+        left: u32,
+    };
     const provider: Provider = .{
         .plugin = "inventory",
         .version = "1.4.0",
@@ -223,13 +233,22 @@ test "contracts: fit, out of range, misfit, absent" {
     };
     const fitting: Used = .{
         .operation = "app.inventory.reserve",
-        .input = comptime contract.describe(struct { sku: []const u8, quantity: u32 }),
-        .output = comptime contract.describe(struct { held: bool }),
+        .input = comptime contract.describe(struct {
+            sku: []const u8,
+            quantity: u32,
+        }),
+        .output = comptime contract.describe(struct {
+            held: bool,
+        }),
     };
     const misfitting: Used = .{
         .operation = "app.inventory.reserve",
-        .input = comptime contract.describe(struct { sku: []const u8 }),
-        .output = comptime contract.describe(struct { held: bool }),
+        .input = comptime contract.describe(struct {
+            sku: []const u8,
+        }),
+        .output = comptime contract.describe(struct {
+            held: bool,
+        }),
     };
     var out: [4]Finding = undefined;
 

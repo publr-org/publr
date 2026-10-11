@@ -44,7 +44,10 @@ pub fn one(arena: std.mem.Allocator, value: Value, mark: []const u8) !Shown {
     std.debug.assert(mark.len > 0);
     std.debug.assert(value.json.len > 0 or value.text.len == 0);
 
-    const segments = try arena.dupe(Segment, &.{.{ .text = value.text, .mark = mark }});
+    const segments = try arena.dupe(Segment, &.{.{
+        .text = value.text,
+        .mark = mark,
+    }});
 
     const definition = try field.of(arena, value.json) orelse try plugin.of(arena, value.json);
 
@@ -116,7 +119,10 @@ fn words_changed(arena: std.mem.Allocator, before: []const u8, after: []const u8
     var found: std.ArrayList(Segment) = .empty;
 
     for (try diff.words(arena, before, after)) |segment| {
-        try found.append(arena, .{ .text = segment.text, .mark = @tagName(segment.mark) });
+        try found.append(arena, .{
+            .text = segment.text,
+            .mark = @tagName(segment.mark),
+        });
     }
 
     std.debug.assert(found.items.len > 0);
@@ -199,10 +205,16 @@ fn line_segment(
     std.debug.assert(mark.len > 0);
 
     if (found.items.len > 0) {
-        try found.append(arena, .{ .text = ", ", .mark = "same" });
+        try found.append(arena, .{
+            .text = ", ",
+            .mark = "same",
+        });
     }
 
-    try found.append(arena, .{ .text = line, .mark = mark });
+    try found.append(arena, .{
+        .text = line,
+        .mark = mark,
+    });
 }
 
 fn item_segment(
@@ -215,12 +227,18 @@ fn item_segment(
     std.debug.assert(value.json.len > 0);
 
     if (found.items.len > 0) {
-        try found.append(arena, .{ .text = ", ", .mark = "same" });
+        try found.append(arena, .{
+            .text = ", ",
+            .mark = "same",
+        });
     }
 
     const text = if (value.card_title.len > 0) value.card_title else value.text;
 
-    try found.append(arena, .{ .text = text, .mark = mark });
+    try found.append(arena, .{
+        .text = text,
+        .mark = mark,
+    });
 }
 
 fn is_object(json: []const u8) bool {
@@ -258,13 +276,19 @@ pub fn has(list: []const Value, json: []const u8) bool {
     return false;
 }
 
-const StatusShown = struct { label: []const u8, tone: []const u8 };
+const StatusShown = struct {
+    label: []const u8,
+    tone: []const u8,
+};
 
 fn status_of(id: []const u8) StatusShown {
     std.debug.assert(id.len <= 64);
 
     const known = registry.Statuses.find(id) orelse {
-        return .{ .label = id, .tone = "neutral" };
+        return .{
+            .label = id,
+            .tone = "neutral",
+        };
     };
     const tone = switch (known.color) {
         .neutral => "neutral",
@@ -276,7 +300,10 @@ fn status_of(id: []const u8) StatusShown {
 
     std.debug.assert(known.label.len > 0);
 
-    return .{ .label = known.label, .tone = tone };
+    return .{
+        .label = known.label,
+        .tone = tone,
+    };
 }
 
 /// The segments as a page's own item type.
@@ -290,7 +317,10 @@ pub fn segments_into(
     const items = try arena.alloc(Item, list.len);
 
     for (list, items) |segment, *item| {
-        item.* = .{ .text = segment.text, .mark = segment.mark };
+        item.* = .{
+            .text = segment.text,
+            .mark = segment.mark,
+        };
     }
 
     std.debug.assert(items.len == list.len);
@@ -335,8 +365,14 @@ test "a text changed shows the words, a value new whole shows nothing" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const before = [_]Value{.{ .json = "\"Hello world\"", .text = "Hello world" }};
-    const after = [_]Value{.{ .json = "\"Hello there\"", .text = "Hello there" }};
+    const before = [_]Value{.{
+        .json = "\"Hello world\"",
+        .text = "Hello world",
+    }};
+    const after = [_]Value{.{
+        .json = "\"Hello there\"",
+        .text = "Hello there",
+    }};
 
     try std.testing.expect((try changes(arena, "text", &before, &after)).len > 0);
     try std.testing.expectEqual(0, (try changes(arena, "text", &.{}, &after)).len);

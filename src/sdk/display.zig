@@ -21,7 +21,9 @@ pub const Item = struct {
     fields: std.json.Value = .null,
 };
 
-pub const Batch = struct { items: []Item };
+pub const Batch = struct {
+    items: []Item,
+};
 
 pub fn validate(comptime Middleware: type) void {
     comptime {
@@ -127,26 +129,61 @@ test "a hook's answer is text: cut on a character, control characters made space
     const arena = arena_state.allocator();
 
     var items = [_]Item{
-        .{ .id = "a", .value = "Earl Grey,\n50 g" },
-        .{ .id = "b", .value = "é" ** 400 },
-        .{ .id = "c", .value = "\xff\xfe" },
+        .{
+            .id = "a",
+            .value = "Earl Grey,\n50 g",
+        },
+        .{
+            .id = "b",
+            .value = "é" ** 400,
+        },
+        .{
+            .id = "c",
+            .value = "\xff\xfe",
+        },
     };
-    var batch: Batch = .{ .items = &items };
+    var batch: Batch = .{
+        .items = &items,
+    };
 
     try settle(arena, &batch);
     try std.testing.expectEqualStrings("Earl Grey, 50 g", items[0].value);
     try std.testing.expectEqual(@as(usize, value_bytes_max), items[1].value.len);
     try std.testing.expectEqualStrings("", items[2].value);
 
-    var swapped = [_]Item{ .{ .id = "b", .value = "x" }, .{ .id = "a", .value = "y" } };
-    var two = [_]Item{ .{ .id = "a", .value = "1" }, .{ .id = "b", .value = "2" } };
-    var kept: Batch = .{ .items = &two };
+    var swapped = [_]Item{ .{
+        .id = "b",
+        .value = "x",
+    }, .{
+        .id = "a",
+        .value = "y",
+    } };
+    var two = [_]Item{ .{
+        .id = "a",
+        .value = "1",
+    }, .{
+        .id = "b",
+        .value = "2",
+    } };
+    var kept: Batch = .{
+        .items = &two,
+    };
 
-    try std.testing.expect(!take(&kept, .{ .items = &swapped }));
+    try std.testing.expect(!take(&kept, .{
+        .items = &swapped,
+    }));
     try std.testing.expectEqualStrings("1", two[0].value);
 
-    var same = [_]Item{ .{ .id = "a", .value = "A" }, .{ .id = "b", .value = "B" } };
+    var same = [_]Item{ .{
+        .id = "a",
+        .value = "A",
+    }, .{
+        .id = "b",
+        .value = "B",
+    } };
 
-    try std.testing.expect(take(&kept, .{ .items = &same }));
+    try std.testing.expect(take(&kept, .{
+        .items = &same,
+    }));
     try std.testing.expectEqualStrings("B", two[1].value);
 }

@@ -27,13 +27,19 @@ pub const Update = struct {
         roles: []const []const u8,
         document: ?[]const u8 = null,
     };
-    pub const Out = struct { user_id: []const u8, roles: []const []const u8 };
+    pub const Out = struct {
+        user_id: []const u8,
+        roles: []const []const u8,
+    };
     pub const example: In = .{
         .user = "editor@example.com",
         .display_name = "Editor",
         .roles = &.{"admin"},
     };
-    pub const example_out: Out = .{ .user_id = example_id, .roles = &.{"admin"} };
+    pub const example_out: Out = .{
+        .user_id = example_id,
+        .roles = &.{"admin"},
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The user's id or email",
         .display_name = "Name shown in the admin, 1 to 80 characters",
@@ -86,7 +92,10 @@ pub const Update = struct {
 
         ctx.notice("auth.user_updated", found.user.id);
 
-        return .{ .user_id = found.user.id, .roles = in.roles };
+        return .{
+            .user_id = found.user.id,
+            .roles = in.roles,
+        };
     }
 };
 
@@ -100,10 +109,20 @@ pub const Delete = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const destroys = true;
-    pub const In = struct { user: []const u8 };
-    pub const Out = struct { user_id: []const u8, sessions_revoked: u32 };
-    pub const example: In = .{ .user = "editor@example.com" };
-    pub const example_out: Out = .{ .user_id = example_id, .sessions_revoked = 1 };
+    pub const In = struct {
+        user: []const u8,
+    };
+    pub const Out = struct {
+        user_id: []const u8,
+        sessions_revoked: u32,
+    };
+    pub const example: In = .{
+        .user = "editor@example.com",
+    };
+    pub const example_out: Out = .{
+        .user_id = example_id,
+        .sessions_revoked = 1,
+    };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The user's id or email",
     };
@@ -138,7 +157,10 @@ pub const Delete = struct {
 
         ctx.notice("auth.user_deleted", found.user.id);
 
-        return .{ .user_id = found.user.id, .sessions_revoked = revoked };
+        return .{
+            .user_id = found.user.id,
+            .sessions_revoked = revoked,
+        };
     }
 };
 
@@ -164,7 +186,9 @@ fn is_self(ctx: *const Ctx, user_id: []const u8) bool {
     return std.mem.eql(u8, own, user_id);
 }
 
-const TestSDK = sdk.SDK(.{ .operations = &user_operations.operations });
+const TestSDK = sdk.SDK(.{
+    .operations = &user_operations.operations,
+});
 
 test "update: renames and changes role; the last admin stays an admin" {
     var harness: sdk.testing.Harness = undefined;
@@ -174,8 +198,18 @@ test "update: renames and changes role; the last admin stays an admin" {
     var system = harness.ctx(.system);
     try user_operations.seed_admin(&system);
     const admin_id = (try user_operations.find_user(&system, "admin@example.com")).?.user.id;
-    var admin = harness.ctx(.{ .user = .{ .id = admin_id, .roles = &.{"admin"} } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .roles = &.{"editor"} } });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = admin_id,
+            .roles = &.{"admin"},
+        },
+    });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_editor",
+            .roles = &.{"editor"},
+        },
+    });
     const Create = user_operations.Create;
 
     const created = try TestSDK.dispatch(&admin, Create, Create.example);
@@ -204,7 +238,12 @@ test "update: renames and changes role; the last admin stays an admin" {
         .roles = &.{"editor"},
     };
     _ = try TestSDK.dispatch(&admin, Update, demote);
-    var lead = harness.ctx(.{ .user = .{ .id = created.user_id, .roles = &.{"admin"} } });
+    var lead = harness.ctx(.{
+        .user = .{
+            .id = created.user_id,
+            .roles = &.{"admin"},
+        },
+    });
     try std.testing.expectError(error.Conflict, TestSDK.dispatch(&lead, Update, self_demote));
 
     const blank: Update.In = .{
@@ -229,25 +268,50 @@ test "delete: signs the account out; never yourself, never the last admin" {
     var system = harness.ctx(.system);
     try user_operations.seed_admin(&system);
     const admin_id = (try user_operations.find_user(&system, "admin@example.com")).?.user.id;
-    var admin = harness.ctx(.{ .user = .{ .id = admin_id, .roles = &.{"admin"} } });
-    var editor = harness.ctx(.{ .user = .{ .id = "u_editor", .roles = &.{"editor"} } });
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = admin_id,
+            .roles = &.{"admin"},
+        },
+    });
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_editor",
+            .roles = &.{"editor"},
+        },
+    });
     const Create = user_operations.Create;
     const connection = &harness.fixture.connection;
 
     const created = try TestSDK.dispatch(&admin, Create, Create.example);
     _ = try store.sessions.create(connection, std.testing.io, admin.arena, created.user_id, 0);
-    const by_editor = TestSDK.dispatch(&editor, Delete, .{ .user = created.user_id });
+    const by_editor = TestSDK.dispatch(&editor, Delete, .{
+        .user = created.user_id,
+    });
     try std.testing.expectError(error.Denied, by_editor);
-    const self = TestSDK.dispatch(&admin, Delete, .{ .user = admin_id });
+    const self = TestSDK.dispatch(&admin, Delete, .{
+        .user = admin_id,
+    });
     try std.testing.expectError(error.Invalid, self);
 
-    const deleted = try TestSDK.dispatch(&admin, Delete, .{ .user = "writer@example.com" });
+    const deleted = try TestSDK.dispatch(&admin, Delete, .{
+        .user = "writer@example.com",
+    });
     try std.testing.expectEqualStrings(created.user_id, deleted.user_id);
     try std.testing.expectEqual(@as(u32, 1), deleted.sessions_revoked);
-    const gone = TestSDK.dispatch(&admin, Delete, .{ .user = created.user_id });
+    const gone = TestSDK.dispatch(&admin, Delete, .{
+        .user = created.user_id,
+    });
     try std.testing.expectError(error.NotFound, gone);
 
-    var other = harness.ctx(.{ .user = .{ .id = "u_other", .roles = &.{"admin"} } });
-    const last_admin = TestSDK.dispatch(&other, Delete, .{ .user = admin_id });
+    var other = harness.ctx(.{
+        .user = .{
+            .id = "u_other",
+            .roles = &.{"admin"},
+        },
+    });
+    const last_admin = TestSDK.dispatch(&other, Delete, .{
+        .user = admin_id,
+    });
     try std.testing.expectError(error.Conflict, last_admin);
 }

@@ -12,7 +12,11 @@ const plugins_max: u32 = 16;
 pub const Mode = enum { sandboxed, native };
 
 /// What one call answered, with what changes between runs (ids, times) masked.
-pub const Answer = struct { exit: u8, stdout: []const u8, stderr: []const u8 };
+pub const Answer = struct {
+    exit: u8,
+    stdout: []const u8,
+    stderr: []const u8,
+};
 
 pub fn main(init: std.process.Init) !u8 {
     comptime coverage.check();
@@ -109,16 +113,25 @@ fn install(init: std.process.Init, binary: []const u8, dir: []const u8, module: 
     const arena = init.arena.allocator();
     const add = [_][]const u8{ "--as-admin", "plugin", "add", "--file", module };
     const added = try expect_ok(init, binary, dir, &add);
-    const Added = struct { name: []const u8 };
+    const Added = struct {
+        name: []const u8,
+    };
     const name = (try std.json.parseFromSliceLeaky(Added, arena, added, .{
         .ignore_unknown_fields = true,
     })).name;
     const enabled = try expect_ok(init, binary, dir, &.{
         "--as-admin", "plugin", "enable", "--names", name, "--content_access", "all",
     });
-    const Request = struct { key: []const u8, state: []const u8 };
-    const Plugin = struct { requests: []const Request };
-    const Enabled = struct { plugins: []const Plugin };
+    const Request = struct {
+        key: []const u8,
+        state: []const u8,
+    };
+    const Plugin = struct {
+        requests: []const Request,
+    };
+    const Enabled = struct {
+        plugins: []const Plugin,
+    };
     const parsed = try std.json.parseFromSliceLeaky(Enabled, arena, enabled, .{
         .ignore_unknown_fields = true,
     });
@@ -198,7 +211,9 @@ fn run(
 
     return std.process.run(init.arena.allocator(), init.io, .{
         .argv = argv[0 .. args.len + 1],
-        .cwd = .{ .path = dir },
+        .cwd = .{
+            .path = dir,
+        },
         .stdout_limit = .limited(output_bytes_max),
         .stderr_limit = .limited(output_bytes_max),
     });

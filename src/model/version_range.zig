@@ -14,9 +14,14 @@ pub const Requirement = struct {
 pub fn parse(text: []const u8) Requirement {
     std.debug.assert(text.len > 0);
 
-    const at = std.mem.indexOfScalar(u8, text, '@') orelse return .{ .name = text };
+    const at = std.mem.indexOfScalar(u8, text, '@') orelse return .{
+        .name = text,
+    };
 
-    return .{ .name = text[0..at], .range = text[at + 1 ..] };
+    return .{
+        .name = text[0..at],
+        .range = text[at + 1 ..],
+    };
 }
 
 /// Whether `version` is in `range`: any when the range is empty, the same when exact, and for
@@ -52,7 +57,10 @@ pub fn satisfies(version: []const u8, range: []const u8) bool {
     return std.mem.order(u32, &have.parts, &want.parts) != .lt;
 }
 
-const Numbers = struct { parts: [parts_max]u32 = @splat(0), len: u32 = 0 };
+const Numbers = struct {
+    parts: [parts_max]u32 = @splat(0),
+    len: u32 = 0,
+};
 
 /// `1`, `1.2` or `1.2.3`, the missing parts 0; a pre-release or build suffix ignored.
 fn numbers(text: []const u8) ?Numbers {

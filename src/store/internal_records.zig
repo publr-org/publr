@@ -13,7 +13,11 @@ pub const list_max: u32 = 200;
 pub const Error = db.Error || error{ NotFound, Conflict };
 
 /// Whose records: the plugin, the app (empty for the project's own) and the collection.
-pub const Scope = struct { plugin: []const u8, app: []const u8, kind: []const u8 };
+pub const Scope = struct {
+    plugin: []const u8,
+    app: []const u8,
+    kind: []const u8,
+};
 
 /// One row. Field order is the column order of `select_row`.
 pub const Row = struct {
@@ -25,7 +29,10 @@ pub const Row = struct {
 };
 
 /// Records with this indexed field holding this text.
-pub const Match = struct { field: []const u8, value: []const u8 };
+pub const Match = struct {
+    field: []const u8,
+    value: []const u8,
+};
 
 const select_row = "SELECT r.id, r.document, r.version, r.created_at, r.updated_at " ++
     "FROM internal_records r";

@@ -5,9 +5,17 @@ pub const terms_max: u32 = 64;
 pub const page_max: u32 = 200;
 pub const text_bytes_max: u32 = 1024;
 pub const Error = error{Invalid};
-pub const Scalar = union(enum) { text: []const u8, integer: i64, real: f64 };
+pub const Scalar = union(enum) {
+    text: []const u8,
+    integer: i64,
+    real: f64,
+};
 pub const Operator = enum { eq, ne, lt, lte, gt, gte };
-pub const Filter = struct { field: []const u8, operator: Operator = .eq, value: Scalar };
+pub const Filter = struct {
+    field: []const u8,
+    operator: Operator = .eq,
+    value: Scalar,
+};
 pub const Membership = enum { any, all, none };
 pub const Terms = struct {
     taxonomy: []const u8,
@@ -33,7 +41,10 @@ pub const Request = struct {
     limit: u32 = 20,
 };
 
-pub const Row = struct { key: Scalar, count: ?i64 = null };
+pub const Row = struct {
+    key: Scalar,
+    count: ?i64 = null,
+};
 pub const Response = struct {
     rows: []const Row,
     count: ?i64 = null,
@@ -151,37 +162,67 @@ fn memberships(values: []const Terms) Error!void {
 }
 
 test "query contract rejects ambiguous shapes, duplicate terms and nonfinite numbers" {
-    try validate(.{ .schema = "post" });
-    try std.testing.expectError(error.Invalid, validate(.{ .schema = "post", .limit = 0 }));
-    try std.testing.expectError(error.Invalid, validate(.{ .schema = "post;drop" }));
-    try std.testing.expectError(error.Invalid, validate(.{ .schema = "post", .result = .groups }));
+    try validate(.{
+        .schema = "post",
+    });
     try std.testing.expectError(error.Invalid, validate(.{
         .schema = "post",
-        .terms = &.{.{ .taxonomy = "category", .ids = &.{ "a", "a" } }},
+        .limit = 0,
+    }));
+    try std.testing.expectError(error.Invalid, validate(.{
+        .schema = "post;drop",
     }));
     try std.testing.expectError(error.Invalid, validate(.{
         .schema = "post",
-        .where = &.{.{ .field = "price", .value = .{ .real = std.math.nan(f64) } }},
+        .result = .groups,
+    }));
+    try std.testing.expectError(error.Invalid, validate(.{
+        .schema = "post",
+        .terms = &.{.{
+            .taxonomy = "category",
+            .ids = &.{ "a", "a" },
+        }},
+    }));
+    try std.testing.expectError(error.Invalid, validate(.{
+        .schema = "post",
+        .where = &.{.{
+            .field = "price",
+            .value = .{
+                .real = std.math.nan(f64),
+            },
+        }},
     }));
 }
 
 test "request limits and result mode combinations reject invalid input" {
     var fields: [clauses_max + 1]Filter = @splat(.{
         .field = "price",
-        .value = .{ .integer = 1 },
+        .value = .{
+            .integer = 1,
+        },
     });
-    try validate(.{ .schema = "post", .where = fields[0..clauses_max], .limit = page_max });
+    try validate(.{
+        .schema = "post",
+        .where = fields[0..clauses_max],
+        .limit = page_max,
+    });
     try std.testing.expectError(error.Invalid, validate(.{
         .schema = "post",
         .where = &fields,
     }));
     try std.testing.expectError(error.Invalid, validate(.{
         .schema = "post",
-        .references = &.{.{ .field = "authors", .where = &fields }},
+        .references = &.{.{
+            .field = "authors",
+            .where = &fields,
+        }},
     }));
     try std.testing.expectError(error.Invalid, validate(.{
         .schema = "post",
-        .terms = &.{.{ .taxonomy = "categories", .ids = &.{} }},
+        .terms = &.{.{
+            .taxonomy = "categories",
+            .ids = &.{},
+        }},
     }));
     try std.testing.expectError(error.Invalid, validate(.{
         .schema = "post",
