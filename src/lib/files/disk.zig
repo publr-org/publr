@@ -229,6 +229,7 @@ fn path_of(buffer: *[path_len_max]u8, area: Area, key: []const u8) []const u8 {
         .files => "",
         .incoming => ".incoming/",
         .cache => ".cache/",
+        .trash => ".trash/",
     };
 
     return std.fmt.bufPrint(buffer, "{s}{s}", .{ prefix, key }) catch unreachable;

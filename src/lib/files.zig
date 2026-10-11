@@ -17,9 +17,10 @@ pub const bytes_max: u32 = 32 << 20;
 pub const key_len_max: u32 = 200;
 pub const segments_max: u32 = 4;
 
-/// Where a file lives: an original, an upload arriving in pieces, or a resized copy that
-/// can be thrown away and made again.
-pub const Area = enum(u8) { files, incoming, cache };
+/// Where a file lives: an original, an upload arriving in pieces, a resized copy that can
+/// be thrown away and made again, or an original set aside in the trash until it is
+/// restored or emptied (on disk only).
+pub const Area = enum(u8) { files, incoming, cache, trash };
 
 pub const Error = error{
     /// No file under that key.

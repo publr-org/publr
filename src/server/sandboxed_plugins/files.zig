@@ -132,7 +132,8 @@ pub const Files = struct {
     /// Removes every stored module no row names: what a removal, an update or a cancelled
     /// update left behind, once it committed.
     pub fn sweep(files: *const Files, keep: []const []const u8) void {
-        std.debug.assert(keep.len <= sandboxed_plugin.sandboxed_plugins_max * 2);
+        // Three modules a plugin, for the installed ones and the ones in the trash.
+        std.debug.assert(keep.len <= sandboxed_plugin.sandboxed_plugins_max * 6);
 
         var iterator = files.dir.iterate();
         var seen: u32 = 0;

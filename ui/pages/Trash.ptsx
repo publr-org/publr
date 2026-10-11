@@ -1,0 +1,135 @@
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Pager } from "../components/Pager.ptsx";
+import { ConfirmAction } from "../components/ConfirmAction.ptsx";
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type TrashProps = {
+  entries: Array<{
+    label: string;
+    /** "By Ada, 8 Oct 2026 14:02", or "By your agent, …". */
+    removed: string;
+    /** When it goes for good: "7 Nov 2026". */
+    until: string;
+    restore_action: string;
+    remove_action: string;
+  }>;
+  keep_days: number;
+  /** "51–100 of 230" when there is more than one page; empty otherwise. */
+  range: string;
+  previous_href: string;
+  next_href: string;
+  notice: string;
+  problem: string;
+};
+
+/** What was removed, restorable until it goes for good: content types, taxonomies, field
+ * groups, plugins, media, users, secrets, app files. Records and terms keep their own trash
+ * in the content list. */
+export function Trash({ entries, keep_days, range, previous_href, next_href, notice, problem }: TrashProps) {
+  return (
+    <IndexPage
+      title={Publr.t("Trash")}
+      footer={range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
+      description={Publr.tn("What was removed, kept as it was for {count} day, then removed for good. Restore brings it back with everything it held.", "What was removed, kept as it was for {count} days, then removed for good. Restore brings it back with everything it held.", keep_days)}
+      notice={
+        <div class="flex flex-col gap-3">
+          {problem !== "" && (
+            <Callout tone="error" title={Publr.t("Not done")}>
+              {problem}
+            </Callout>
+          )}
+          {notice !== "" && <Callout title={notice} />}
+          <form method="post" action="/admin/trash/keep" class="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+            <Text as="span" variant="body-sm">
+              {Publr.t("Kept for")}
+            </Text>
+            <Input name="days" type="number" size="sm" value={`${keep_days}`} classes="w-20" />
+            <Text as="span" variant="body-sm">
+              {Publr.t("days, then removed for good.")}
+            </Text>
+            <Button hierarchy="secondary" size="sm" type="submit">
+              {Publr.t("Save")}
+            </Button>
+          </form>
+          <Text as="p" variant="body-sm" tone="muted">
+            {Publr.t("Deleted records and terms wait in their own lists:")}{" "}
+            <Link href="/admin/content?status=is:deleted">{Publr.t("records in the trash")}</Link>.
+          </Text>
+        </div>
+      }
+      actions={
+        entries.length > 0 && (
+          <ConfirmAction
+            inline
+            label={Publr.t("Empty trash")}
+            title={Publr.t("Empty the trash?")}
+            description={Publr.t("Everything here is removed for good, now. It cannot be undone.")}
+            action="/admin/trash/empty"
+          />
+        )
+      }
+      empty={
+        entries.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("The trash is empty")}</EmptyTitle>
+            <EmptyDescription>
+              {Publr.t("Whatever you or an agent remove waits here: a content type, a plugin, a file, a user, a secret.")}
+            </EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("What")}</TableHead>
+            <TableHead>{Publr.t("Removed")}</TableHead>
+            <TableHead>{Publr.t("Goes for good")}</TableHead>
+            <TableHead> </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {entries.map((entry) => (
+            <TableRow>
+              <TableCell>{entry.label}</TableCell>
+              <TableCell>{entry.removed}</TableCell>
+              <TableCell>{entry.until}</TableCell>
+              <TableCell>
+                <div class="flex items-center justify-end gap-2">
+                  <form method="post" action={entry.restore_action}>
+                    <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                    <Button hierarchy="secondary" size="sm" type="submit">
+                      {Publr.t("Restore")}
+                    </Button>
+                  </form>
+                  <ConfirmAction
+                    inline
+                    label={Publr.t("Remove for good")}
+                    title={Publr.t("Remove {name} for good?", { name: entry.label })}
+                    description={Publr.t("It can never be restored.")}
+                    action={entry.remove_action}
+                  />
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

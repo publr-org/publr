@@ -2,6 +2,7 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
+const trash = @import("../trash.zig");
 const user_operations = @import("../user.zig");
 const role = @import("../../model/role.zig");
 
@@ -101,14 +102,14 @@ pub const Update = struct {
 
 pub const Delete = struct {
     pub const name = "user.delete";
-    pub const description = "Delete a user and sign out every session they have";
+    pub const description = "Delete a user into the trash and sign out every session they have";
     pub const details =
-        \\Admins only. The account goes for good; what the person created stays,
-        \\attributed to their id. You cannot delete yourself, and the last admin
-        \\cannot be deleted.
+        \\Admins only. The account waits in the trash with its roles and fields, and
+        \\`trash restore` brings it back (signed out: its sessions and devices never come
+        \\back). What the person created stays, attributed to their id. You cannot delete
+        \\yourself, and the last admin cannot be deleted.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const destroys = true;
     pub const In = struct {
         user: []const u8,
     };
@@ -146,6 +147,34 @@ pub const Delete = struct {
         if (admin and try store.users.count_holding(ctx.db, role.admin) <= 1) {
             return error.Conflict;
         }
+
+        const key = std.fmt.allocPrint(ctx.arena, "[\"{s}\"]", .{found.user.id}) catch {
+            return error.OutOfMemory;
+        };
+        const label = std.fmt.allocPrint(ctx.arena, "User {s} ({s})", .{
+            found.user.display_name,
+            found.user.email,
+        }) catch return error.OutOfMemory;
+
+        _ = try trash.keep(ctx, .{
+            .kind = "user",
+            .key = found.user.id,
+            .label = label,
+            .roots = &.{
+                .{
+                    .table = "users",
+                    .column = "id",
+                    .keys = key,
+                },
+                .{
+                    .table = "user_search",
+                    .column = "record",
+                    .keys = key,
+                },
+            },
+            // Signed out for good: a restored account signs in afresh.
+            .skip = &.{ "sessions", "devices", "device_requests" },
+        });
 
         const revoked = try store.sessions.destroy_all(ctx.db, found.user.id);
 

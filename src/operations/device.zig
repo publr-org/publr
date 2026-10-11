@@ -321,7 +321,8 @@ test "a device never destroys, a drafts device never publishes, a revoked one st
     try std.testing.expectError(error.Failed, registry.SDK.dispatch(&device, lifecycle.Purge, .{
         .id = created.id,
     }));
-    try std.testing.expectEqualStrings("NeedsPerson", device.failure.?.name);
+    // Not removed: listed for the device's person, who confirms it.
+    try std.testing.expectEqualStrings("ListedForRemoval", device.failure.?.name);
 
     _ = try registry.SDK.dispatch(&device, record_operations.Save, .{
         .id = created.id,

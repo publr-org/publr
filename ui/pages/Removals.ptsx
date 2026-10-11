@@ -1,0 +1,72 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Pager } from "../components/Pager.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+
+export type RemovalsProps = {
+  lists: Array<{
+    href: string;
+    /** "3 things, from your agent" */
+    label: string;
+    waiting: boolean;
+    created: string;
+  }>;
+  /** "51–100 of 230" when there is more than one page; empty otherwise. */
+  range: string;
+  previous_href: string;
+  next_href: string;
+};
+
+/** Removal lists: what agents asked to remove for good, waiting for you, and those done. */
+export function Removals({ lists, range, previous_href, next_href }: RemovalsProps) {
+  return (
+    <IndexPage
+      footer={range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
+      title={Publr.t("Removals")}
+      description={Publr.t("Agents never remove anything for good: they list it here, and you confirm.")}
+      empty={
+        lists.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("Nothing to remove")}</EmptyTitle>
+            <EmptyDescription>
+              {Publr.t("When an agent is asked to remove something for good, its list waits here.")}
+            </EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("List")}</TableHead>
+            <TableHead>{Publr.t("Where it stands")}</TableHead>
+            <TableHead>{Publr.t("Made")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {lists.map((list) => (
+            <TableRow>
+              <TableCell>
+                <Link href={list.href}>{list.label}</Link>
+              </TableCell>
+              <TableCell>
+                {list.waiting ? <Status tone="warning">{Publr.t("Waiting for you")}</Status> : <Status tone="neutral">{Publr.t("Done")}</Status>}
+              </TableCell>
+              <TableCell>{list.created}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

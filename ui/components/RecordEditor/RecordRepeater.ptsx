@@ -1,18 +1,23 @@
+import { Publr } from "publr-jsx";
 import { Button } from "@publr/ui/Button.ptsx";
-import { Field } from "@publr/ui/Field.ptsx";
-import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
-import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
-import { RecordValue } from "./RecordValue.ptsx";
+import { RecordCell } from "./RecordCell.ptsx";
+import { RecordClosedItem } from "./RecordClosedItem.ptsx";
+import { RecordItemRun } from "./RecordItemRun.ptsx";
 
 export type RecordRepeaterProps = {
+  name: string;
   label: string;
   required: boolean;
   collapsed: boolean;
   entries: Array<{
     name: string;
     label: string;
+    closed: boolean;
+    run: boolean;
+    value_json: string;
+    opened: boolean;
     remove: string;
     up: string;
     down: string;
@@ -40,6 +45,7 @@ export type RecordRepeaterProps = {
       card_status: string;
       card_tone: string;
       card_href: string;
+      formats: string;
       remove: string;
       up: string;
       down: string;
@@ -48,19 +54,39 @@ export type RecordRepeaterProps = {
         label: string;
         selected: boolean;
       }>;
+      files: Array<{
+        id: string;
+        title: string;
+        thumb: string;
+        image: boolean;
+        kind: string;
+        icon: "video" | "audio" | "file";
+        facts: string;
+        missing: boolean;
+        slot: string;
+        place: string;
+        first: boolean;
+        last: boolean;
+      }>;
+      types: Array<{ id: string; label: string }>;
+      accept: string;
+      can_upload: boolean;
     }>;
   }>;
   add: string;
   add_label: string;
+  listed: boolean;
 };
 
 export function RecordRepeater({
+  name,
   label,
   required,
   collapsed,
   entries,
   add,
   add_label,
+  listed,
 }: RecordRepeaterProps) {
   return (
     <div class="flex flex-col gap-3">
@@ -74,23 +100,28 @@ export function RecordRepeater({
           </Text>
         )}
       </div>
+      {listed && <input type="hidden" name="open" value={name} />}
       {entries.map((entry) => (
-        <details class="rounded-xl border border-border" open={!collapsed}>
-          <summary class="cursor-pointer px-5 py-3">
-            <Text as="span" variant="heading-xs">
+        entry.run ? (
+          <RecordItemRun repeater={name} name={entry.name} label={entry.label} value_json={entry.value_json} />
+        ) : entry.closed ? (
+          <RecordClosedItem name={entry.name} label={entry.label} value_json={entry.value_json} />
+        ) : (
+        <details class="group/disclosure rounded-xl border border-border" open={!collapsed}>
+          <summary class="flex cursor-pointer list-none items-center gap-2 px-5 py-3 [&::-webkit-details-marker]:hidden">
+            <Icon name="chevron-right" size="sm" classes="shrink-0 text-muted-foreground transition-transform group-open/disclosure:rotate-90" />
+            <Text as="span" variant="heading-xs" classes="truncate">
               {entry.label}
             </Text>
-          </summary>
-          <div class="border-t border-border px-5 py-4">
-            <div class="mb-3 flex items-center justify-end gap-1">
+            <span class="ml-auto flex items-center gap-1">
               <Button
                 type="submit"
                 name="reshape"
                 value={entry.up}
                 hierarchy="tertiary"
                 size="sm"
-                label="Move up"
-                title="Move up"
+                label={Publr.t("Move up")}
+                title={Publr.t("Move up")}
               >
                 <Icon name="chevron-up" size="sm" />
               </Button>
@@ -100,8 +131,8 @@ export function RecordRepeater({
                 value={entry.down}
                 hierarchy="tertiary"
                 size="sm"
-                label="Move down"
-                title="Move down"
+                label={Publr.t("Move down")}
+                title={Publr.t("Move down")}
               >
                 <Icon name="chevron-down" size="sm" />
               </Button>
@@ -111,48 +142,56 @@ export function RecordRepeater({
                 value={entry.remove}
                 hierarchy="tertiary"
                 size="sm"
-                label="Remove"
-                title="Remove"
+                label={Publr.t("Remove")}
+                title={Publr.t("Remove")}
               >
                 <Icon name="x-close" size="sm" />
               </Button>
-            </div>
+            </span>
+          </summary>
+          <div class="border-t border-border px-5 py-4">
+            {entry.opened && <input type="hidden" name="open" value={entry.name} />}
             <div class="flex flex-col gap-5">
               {entry.cells.map((child) => (
-                <div data-conditions={child.conditions} data-field-path={child.name} data-value-kind={child.value_kind}><Field>
-                  <FieldLabel htmlFor={`field-${child.name}`} required={child.required}>
-                    {child.label}
-                  </FieldLabel>
-                  <RecordValue
-                    name={child.name}
-                    control={child.control}
-                    value={child.value}
-                    checked={child.checked}
-                    readonly={child.readonly}
-                    label_on={child.label_on}
-                    placeholder={child.placeholder}
-                    rows={child.rows}
-                    min={child.min}
-                    max={child.max}
-                    step={child.step}
-                    prefix={child.prefix}
-                    suffix={child.suffix}
-                    card_type={child.card_type}
-                    card_title={child.card_title}
-                    card_status={child.card_status}
-                    card_tone={child.card_tone}
-                    card_href={child.card_href}
-                    remove={child.remove}
-                    up={child.up}
-                    down={child.down}
-                    options={child.cell_options}
-                  />
-                  {child.help !== "" && <FieldDescription>{child.help}</FieldDescription>}
-                </Field></div>
+                <RecordCell
+                  name={child.name}
+                  conditions={child.conditions}
+                  value_kind={child.value_kind}
+                  label={child.label}
+                  required={child.required}
+                  help={child.help}
+                  control={child.control}
+                  value={child.value}
+                  checked={child.checked}
+                  readonly={child.readonly}
+                  label_on={child.label_on}
+                  placeholder={child.placeholder}
+                  rows={child.rows}
+                  min={child.min}
+                  max={child.max}
+                  step={child.step}
+                  prefix={child.prefix}
+                  suffix={child.suffix}
+                  card_type={child.card_type}
+                  card_title={child.card_title}
+                  card_status={child.card_status}
+                  card_tone={child.card_tone}
+                  card_href={child.card_href}
+                  formats={child.formats}
+                  remove={child.remove}
+                  up={child.up}
+                  down={child.down}
+                  files={child.files}
+                  types={child.types}
+                  accept={child.accept}
+                  can_upload={child.can_upload}
+                  options={child.cell_options}
+                />
               ))}
             </div>
           </div>
         </details>
+        )
       ))}
       <div class="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
         <Button type="submit" name="reshape" value={add} hierarchy="secondary" size="sm">

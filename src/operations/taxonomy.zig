@@ -258,9 +258,17 @@ pub const List = struct {
     pub const name = "taxonomy.list";
     pub const description = "List taxonomies";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
+    pub const In = struct {
+        limit: u32 = 50,
+        offset: u32 = 0,
+    };
     pub const Out = struct {
         taxonomies: []const Summary,
+        total: u32 = 0,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .limit = "How many at most; 50 when omitted, up to 200",
+        .offset = "How many to pass over first, by name: the next page's start",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -278,14 +286,25 @@ pub const List = struct {
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .taxonomies = "Sorted by name",
+        .total = "How many the caller sees in all",
     };
 
-    pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
         std.debug.assert(granted.allows());
 
+        if (in.limit == 0 or in.limit > sdk.operation.page_limit_max) {
+            return error.Invalid;
+        }
+
+        const listed = try definition.list(ctx, granted, .{
+            .offset = in.offset,
+            .limit = in.limit,
+        });
+
         return .{
-            .taxonomies = try definition.list(ctx, granted),
+            .taxonomies = listed.summaries,
+            .total = listed.total,
         };
     }
 };
@@ -299,7 +318,6 @@ pub const Delete = struct {
         \\that no longer exist until the records are saved again.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const destroys = true;
     pub const In = struct {
         taxonomy: []const u8,
         force: bool = false,
@@ -307,6 +325,8 @@ pub const Delete = struct {
     pub const Out = struct {
         deleted: bool,
         terms_removed: u32,
+        /// Its trash entry: `trash restore --id` brings it back.
+        trash: []const u8 = "",
     };
     pub const example: In = .{
         .taxonomy = "tags",
@@ -314,6 +334,7 @@ pub const Delete = struct {
     pub const example_out: Out = .{
         .deleted = true,
         .terms_removed = 0,
+        .trash = "0190a1b2c3d40001a1b2c3d4",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .taxonomy = "Handle or id",
@@ -332,6 +353,7 @@ pub const Delete = struct {
         return .{
             .deleted = deleted.deleted,
             .terms_removed = deleted.removed,
+            .trash = deleted.trash,
         };
     }
 };

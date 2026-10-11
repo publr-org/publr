@@ -1,0 +1,51 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { IndexSection } from "./IndexSection.ptsx";
+
+export type PluginDataProps = {
+  action: string;
+  /** What the plugin manages, as the database holds it; ticked: goes with the plugin. */
+  pieces: Array<{ key: string; label: string; detail: string; chosen: boolean }>;
+};
+
+/** A plugin's data, and which of it goes into the trash with the plugin when it is removed.
+ * Nothing is ticked until an administrator ticks it: disabling, removing and adding it back
+ * never touch data otherwise. */
+export function PluginData({ action, pieces }: PluginDataProps) {
+  return (
+    <IndexSection padded title={Publr.t("Its data")}>
+      {pieces.length === 0 && (
+        <Text as="p" variant="body-sm" tone="muted">
+          {Publr.t("It keeps no content types, internal records or field groups of its own.")}
+        </Text>
+      )}
+      {pieces.length > 0 && (
+        <form method="post" action={action} class="flex flex-col gap-4">
+          <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+          <Text as="p" variant="body-sm" tone="muted">
+            {Publr.t("What it manages. Removing the plugin keeps all of it, unless you tick it here: what is ticked goes into the trash with the plugin, restorable with it, and goes for good when the trash is emptied.")}
+          </Text>
+          <div class="flex flex-col gap-3">
+            {pieces.map((piece) => (
+              <CheckboxField
+                id={`remove-${piece.key}`}
+                name="remove"
+                value={piece.key}
+                checked={piece.chosen}
+                label={Publr.t("Remove {label} with it", { label: piece.label })}
+                description={piece.detail}
+              />
+            ))}
+          </div>
+          <div>
+            <Button type="submit" hierarchy="secondary">
+              {Publr.t("Save what goes")}
+            </Button>
+          </div>
+        </form>
+      )}
+    </IndexSection>
+  );
+}

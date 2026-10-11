@@ -126,6 +126,14 @@ pub const Host = struct {
             };
         }
 
+        // A plugin in the trash keeps its modules until it goes for good.
+        const in_trash = try store.trash.plugin_modules(
+            connection,
+            arena_state.allocator(),
+            sandboxed_plugins_max * 3,
+        );
+
+        try keep.appendSlice(arena_state.allocator(), in_trash);
         host.files.sweep(keep.items);
         try host.reindex();
     }

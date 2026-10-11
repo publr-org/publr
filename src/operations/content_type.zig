@@ -19,7 +19,8 @@ pub const namespace: sdk.operation.Namespace = .{
     \\and a list of fields (string, text, richtext, slug, email, url, boolean, integer,
     \\number, datetime, select, image, reference, terms, group, repeater). A `record`
     \\type holds any number of records, a `settings` type exactly one, a `component`
-    \\none: fields are for other types to reuse. Definitions are passed as JSON. Editors
+    \\none: fields are for other types to reuse. A `media` type's records are files
+    \\(`media` commands); only core and plugins declare one. Definitions are passed as JSON. Editors
     \\may read types; changing them needs an admin. Public types are readable by anyone;
     \\private types only by signed-in users.
     ,
@@ -215,9 +216,17 @@ pub const List = struct {
     pub const name = "content_type.list";
     pub const description = "List content types";
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
+    pub const In = struct {
+        limit: u32 = 50,
+        offset: u32 = 0,
+    };
     pub const Out = struct {
         types: []const Summary,
+        total: u32 = 0,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .limit = "How many at most; 50 when omitted, up to 200",
+        .offset = "How many to pass over first, by name: the next page's start",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -234,15 +243,28 @@ pub const List = struct {
         }},
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
-        .types = "Sorted by name; anonymous callers see public types only",
+        .types = "Sorted by name; anonymous callers see public types only, an app's " ++
+            "callers the types living in it or shared with it. `app` is where each lives, " ++
+            "empty for a Global type",
+        .total = "How many the caller sees in all",
     };
 
-    pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
         std.debug.assert(granted.allows());
 
+        if (in.limit == 0 or in.limit > sdk.operation.page_limit_max) {
+            return error.Invalid;
+        }
+
+        const listed = try definition.list(ctx, granted, .{
+            .offset = in.offset,
+            .limit = in.limit,
+        });
+
         return .{
-            .types = try definition.list(ctx, granted),
+            .types = listed.summaries,
+            .total = listed.total,
         };
     }
 };
@@ -251,7 +273,6 @@ pub const Delete = struct {
     pub const name = "content_type.delete";
     pub const description = "Delete a content type; refuses while it has records unless forced";
     pub const kind: sdk.operation.Kind = .write;
-    pub const destroys = true;
     pub const In = struct {
         type: []const u8,
         force: bool = false,
@@ -259,6 +280,8 @@ pub const Delete = struct {
     pub const Out = struct {
         deleted: bool,
         records_removed: u32,
+        /// Its trash entry: `trash restore --id` brings it back.
+        trash: []const u8 = "",
     };
     pub const example: In = .{
         .type = "page",
@@ -266,6 +289,7 @@ pub const Delete = struct {
     pub const example_out: Out = .{
         .deleted = true,
         .records_removed = 0,
+        .trash = "0190a1b2c3d40001a1b2c3d4",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .type = "Handle or id",
@@ -284,6 +308,7 @@ pub const Delete = struct {
         return .{
             .deleted = deleted.deleted,
             .records_removed = deleted.removed,
+            .trash = deleted.trash,
         };
     }
 };

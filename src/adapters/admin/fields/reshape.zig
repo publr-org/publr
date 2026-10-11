@@ -67,6 +67,67 @@ pub fn apply(
     };
 }
 
+/// Where the item or path `path` (`faq[3]`, `faq[3].question`) is after `action`: moved
+/// with `up:`/`down:`, renumbered or gone (null) with `remove:`; else where it was.
+pub fn moved_path(
+    arena: std.mem.Allocator,
+    path: []const u8,
+    action: []const u8,
+) error{OutOfMemory}!?[]const u8 {
+    std.debug.assert(path.len > 0);
+    std.debug.assert(path.len <= model.document.path_len_max);
+
+    const colon = std.mem.indexOfScalar(u8, action, ':') orelse return path;
+    const verb = action[0..colon];
+    const target = action[colon + 1 ..];
+    const bracket = std.mem.lastIndexOfScalar(u8, target, '[') orelse return path;
+    const at = index_of(target[bracket..]) orelse return path;
+    const base = target[0 .. bracket + 1];
+
+    if (!std.mem.startsWith(u8, path, base)) {
+        return path;
+    }
+
+    const close = std.mem.indexOfScalarPos(u8, path, base.len, ']') orelse return path;
+    const index = std.fmt.parseInt(u32, path[base.len..close], 10) catch return path;
+    const rest = path[close + 1 ..];
+    const moved = moved_index(verb, at, index) orelse return null;
+
+    if (moved == index) {
+        return path;
+    }
+
+    return std.fmt.allocPrint(arena, "{s}{d}]{s}", .{ base, moved, rest }) catch {
+        return error.OutOfMemory;
+    };
+}
+
+/// Where item `index` is after `verb` acts on item `at`; null when it was removed.
+fn moved_index(verb: []const u8, at: u32, index: u32) ?u32 {
+    std.debug.assert(at < items_max);
+    std.debug.assert(index < items_max);
+
+    if (std.mem.eql(u8, verb, "remove")) {
+        if (index == at) {
+            return null;
+        }
+
+        return if (index > at) index - 1 else index;
+    }
+
+    if (std.mem.eql(u8, verb, "up") and at > 0) {
+        if (index == at) return at - 1;
+        if (index == at - 1) return at;
+    }
+
+    if (std.mem.eql(u8, verb, "down")) {
+        if (index == at) return at + 1;
+        if (index == at + 1) return at;
+    }
+
+    return index;
+}
+
 fn change(
     arena: std.mem.Allocator,
     array: *std.json.Array,
@@ -299,4 +360,27 @@ test "add, remove and move change one list and leave the rest" {
     try std.testing.expect(cleared.object.get("hotel").? == .null);
     const listed = apply(arena, &test_fields, cleared, "set:tags", &nothing);
     try std.testing.expectError(error.Invalid, listed);
+}
+
+test "an item kept open moves with its item" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const cases = [_][3][]const u8{
+        .{ "faq[3]", "up:faq[3]", "faq[2]" },
+        .{ "faq[2]", "up:faq[3]", "faq[3]" },
+        .{ "faq[3]", "down:faq[3]", "faq[4]" },
+        .{ "faq[3]", "remove:faq[1]", "faq[2]" },
+        .{ "faq[1].a", "up:faq[5]", "faq[1].a" },
+        .{ "faqs[3]", "up:faq[3]", "faqs[3]" },
+        .{ "faq", "remove:faq[0]", "faq" },
+    };
+
+    for (cases) |case| {
+        try std.testing.expectEqualStrings(case[2], (try moved_path(arena, case[0], case[1])).?);
+    }
+
+    try std.testing.expect((try moved_path(arena, "faq[3]", "remove:faq[3]")) == null);
+    try std.testing.expectEqualStrings("faq[3]", (try moved_path(arena, "faq[3]", "")).?);
 }

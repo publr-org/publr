@@ -8,6 +8,7 @@ const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const document_module = @import("document.zig");
+const trash = @import("../trash.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -29,16 +30,53 @@ pub const Summary = struct {
     owner: []const u8,
     editor: []const u8,
     fields: u32,
+    /// The app it lives in; empty for a Global type.
+    app: []const u8 = "",
 };
+/// Which page of definitions a list answers.
+pub const Window = struct {
+    offset: u32 = 0,
+    limit: u32 = 50,
+};
+
+pub const Listed = struct {
+    summaries: []const Summary,
+    total: u32,
+};
+
+const list_chunk: u32 = 100;
+/// The longest name or id a definition has.
+const key_len_max: u32 = 256;
+
+fn summary_of(arena: std.mem.Allocator, brief: anytype) Error!Summary {
+    std.debug.assert(brief.id.len > 0);
+    std.debug.assert(brief.handle.len > 0);
+
+    return .{
+        .id = try arena.dupe(u8, brief.id),
+        .handle = try arena.dupe(u8, brief.handle),
+        .name = try arena.dupe(u8, brief.name),
+        .kind = brief.kind,
+        .public = brief.public,
+        .system = brief.system,
+        .owner = try arena.dupe(u8, brief.owner),
+        .editor = try arena.dupe(u8, brief.editor),
+        .fields = @intCast(brief.fields_len),
+        .app = try arena.dupe(u8, brief.app),
+    };
+}
+
 pub const Updated = struct {
     id: []const u8,
     handle: []const u8,
     rewritten: u32,
     dropped: u32,
 };
+/// What a delete did: whether it went, how many documents went with it, and its trash entry.
 pub const Deleted = struct {
     deleted: bool,
     removed: u32,
+    trash: []const u8 = "",
 };
 pub const Report = struct {
     valid: bool,
@@ -60,6 +98,46 @@ pub fn Of(comptime Domain: type) type {
                 return error.Invalid;
             }
 
+            std.debug.assert(ctx.now_ms >= 0);
+
+            var key_buffer: [160]u8 = undefined;
+            const key = std.fmt.bufPrint(&key_buffer, "{s}:{s}", .{
+                Domain.config.noun,
+                handle_or_id,
+            }) catch "";
+
+            const cache = ctx.definitions orelse return find_uncached(ctx, handle_or_id);
+            const arena = cache.arena_for(ctx.arena, ctx.scratch_set_aside) orelse {
+                return find_uncached(ctx, handle_or_id);
+            };
+
+            if (key.len == 0) {
+                return find_uncached(ctx, handle_or_id);
+            }
+
+            if (cache.get(arena, key)) |kept| {
+                const found: *const Row = @ptrCast(@alignCast(kept));
+
+                return found.*;
+            }
+
+            // Decoded into the request's arena, so a page read on the scratch keeps it too.
+            var reading = ctx.*;
+
+            reading.arena = arena;
+            defer ctx.next_operation_id = reading.next_operation_id;
+
+            const expanded = try find_uncached(&reading, handle_or_id) orelse return null;
+            const kept = try arena.create(Row);
+
+            kept.* = expanded;
+            cache.put(arena, key, kept);
+
+            return expanded;
+        }
+
+        fn find_uncached(ctx: *Ctx, handle_or_id: []const u8) Error!?Row {
+            std.debug.assert(handle_or_id.len <= 64 << 10);
             std.debug.assert(ctx.now_ms >= 0);
 
             const row = try find_raw(ctx, handle_or_id) orelse return null;
@@ -92,25 +170,34 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(granted.allows());
             std.debug.assert(def.handle.len > 0);
 
-            return visible_type(granted, def.handle, def.public, def.owner);
+            return visible_type(granted, brief_of(.{
+                .id = def.handle,
+                .def = def,
+                .created_at = 0,
+                .updated_at = 0,
+            }));
         }
 
         /// A type in the grant's reach: public when only public ones are, one of its types,
-        /// and no plugin's outside its plugins.
-        pub fn visible_type(
-            granted: *const Grant,
-            handle: []const u8,
-            public: bool,
-            owner: []const u8,
-        ) bool {
+        /// no plugin's outside its plugins, and living in or shared with the app read for.
+        pub fn visible_type(granted: *const Grant, brief: Brief) bool {
             std.debug.assert(granted.allows());
-            std.debug.assert(handle.len > 0);
+            std.debug.assert(brief.handle.len > 0);
 
-            if (granted.record_filter.flags.public_types_only and !public) {
+            if (granted.record_filter.flags.public_types_only and !brief.public) {
                 return false;
             }
 
-            return granted.allows_type(handle) and granted.allows_owner(owner);
+            const shared = model.content_type.shared_of(.{
+                .handle = brief.handle,
+                .name = brief.name,
+                .app = brief.app,
+                .shared = brief.shared,
+                .fields = &.{},
+            });
+
+            return granted.allows_type(brief.handle) and granted.allows_owner(brief.owner) and
+                granted.allows_placement(brief.app, shared);
         }
 
         /// A loaded definition as the list sees it.
@@ -128,6 +215,8 @@ pub fn Of(comptime Domain: type) type {
                 .owner = row.def.owner,
                 .editor = row.def.editor,
                 .fields_len = @intCast(row.def.fields.len),
+                .app = row.def.app,
+                .shared = row.def.shared,
             };
         }
 
@@ -187,6 +276,16 @@ pub fn Of(comptime Domain: type) type {
                 dropped += try values.delete_field(ctx.db, row.id, path);
             }
 
+            for (plan.unvaried) |path| {
+                const held = try values.count_variants(ctx.db, row.id, path);
+
+                if (held > 0 and !drop_content) {
+                    return error.Conflict;
+                }
+
+                dropped += held;
+            }
+
             const rewritten = if (plan.needs_rewrite)
                 try rewrite_all(ctx, row.id, row.def, def)
             else
@@ -221,34 +320,59 @@ pub fn Of(comptime Domain: type) type {
             return row;
         }
 
-        pub fn list(ctx: *Ctx, granted: *const Grant) Error![]const Summary {
+        /// A page of the definitions the caller sees, by name, and how many it sees in all.
+        /// Read a chunk at a time into the scratch; only the page is kept.
+        pub fn list(ctx: *Ctx, granted: *const Grant, window: Window) Error!Listed {
             std.debug.assert(ctx.now_ms >= 0);
             std.debug.assert(granted.allows());
 
-            const briefs = try definitions.list_briefs(ctx.db, ctx.arena);
+            const scratch = try ctx.scratch();
+            var key_name: [key_len_max]u8 = undefined;
+            var key_name_len: u32 = 0;
+            var key_id: [key_len_max]u8 = undefined;
+            var key_id_len: u32 = 0;
             var summaries: std.ArrayList(Summary) = .empty;
+            var seen: u32 = 0;
 
-            for (briefs) |brief| {
-                if (!visible_type(granted, brief.handle, brief.public, brief.owner)) {
-                    continue;
+            while (true) {
+                const begun = scratch.mark();
+                defer scratch.rewind(begun);
+
+                const briefs = try definitions.briefs_after(ctx.db, scratch.allocator(), .{
+                    .name = key_name[0..key_name_len],
+                    .id = key_id[0..key_id_len],
+                }, list_chunk);
+
+                for (briefs) |brief| {
+                    if (!visible_type(granted, brief)) {
+                        continue;
+                    }
+
+                    if (seen >= window.offset and summaries.items.len < window.limit) {
+                        try summaries.append(ctx.arena, try summary_of(ctx.arena, brief));
+                    }
+
+                    seen += 1;
                 }
 
-                try summaries.append(ctx.arena, .{
-                    .id = brief.id,
-                    .handle = brief.handle,
-                    .name = brief.name,
-                    .kind = brief.kind,
-                    .public = brief.public,
-                    .system = brief.system,
-                    .owner = brief.owner,
-                    .editor = brief.editor,
-                    .fields = brief.fields_len,
-                });
+                if (briefs.len < list_chunk) {
+                    break;
+                }
+
+                const last = briefs[briefs.len - 1];
+
+                std.debug.assert(last.name.len <= key_len_max and last.id.len <= key_len_max);
+
+                @memcpy(key_name[0..last.name.len], last.name);
+                key_name_len = @intCast(last.name.len);
+                @memcpy(key_id[0..last.id.len], last.id);
+                key_id_len = @intCast(last.id.len);
             }
 
-            std.debug.assert(summaries.items.len <= briefs.len);
-
-            return summaries.items;
+            return .{
+                .summaries = summaries.items,
+                .total = seen,
+            };
         }
 
         pub fn delete(ctx: *Ctx, handle_or_id: []const u8, force: bool) Error!Deleted {
@@ -270,13 +394,94 @@ pub fn Of(comptime Domain: type) type {
                 return error.Conflict;
             }
 
+            const trash_id = try keep(ctx, row.id, row.def.name, held);
+
             const deleted = try definitions.delete(ctx.db, row.id);
             ctx.notice(notice ++ ".deleted", row.def.handle);
 
             return .{
                 .deleted = deleted,
                 .removed = held,
+                .trash = trash_id,
             };
+        }
+
+        /// A copy of the definition and all it holds, kept in the trash before it goes:
+        /// its documents with their values and terms, their search text and snapshots, and
+        /// its field group.
+        fn keep(ctx: *Ctx, id: []const u8, name: []const u8, held: u32) Error![]const u8 {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+
+            const types = comptime std.mem.eql(u8, notice, "content_type");
+            const what = if (types) "Content type" else "Taxonomy";
+            const holds = if (types) "records" else "terms";
+            const label = std.fmt.allocPrint(ctx.arena, "{s} {s}, and its {d} {s}", .{
+                what,
+                name,
+                held,
+                holds,
+            }) catch return error.OutOfMemory;
+
+            return trash.keep(ctx, .{
+                .kind = notice,
+                .key = id,
+                .label = label,
+                .roots = try roots_of(ctx, id),
+            });
+        }
+
+        /// What a copy of the definition holds, for a trash entry: its row (its documents,
+        /// values and terms follow by key), their search text and snapshots, its field group.
+        pub fn roots_of(ctx: *Ctx, id: []const u8) Error![]const store.trash_copy.Root {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+
+            const names = definitions.names;
+            const key = std.fmt.allocPrint(ctx.arena, "[\"{s}\"]", .{id}) catch {
+                return error.OutOfMemory;
+            };
+            const of_type: store.trash_copy.Root = .{
+                .table = names.documents,
+                .column = "type_id",
+                .keys = key,
+            };
+            const held_ids = store.trash_copy.keys_of(ctx.db, ctx.arena, of_type, "id") catch {
+                return error.Invalid;
+            };
+            const roots = [_]store.trash_copy.Root{
+                .{
+                    .table = names.definitions,
+                    .column = "id",
+                    .keys = key,
+                },
+                .{
+                    .table = names.search,
+                    .column = "type_id",
+                    .keys = key,
+                },
+                .{
+                    .table = "snapshots",
+                    .column = "record",
+                    .keys = held_ids,
+                },
+                .{
+                    .table = "field_groups",
+                    .column = "owner",
+                    .keys = key,
+                },
+            };
+
+            return ctx.arena.dupe(store.trash_copy.Root, &roots) catch error.OutOfMemory;
+        }
+
+        /// Deletes a definition and all it holds, its copy kept by the caller already.
+        pub fn drop_kept(ctx: *Ctx, id: []const u8, handle: []const u8) Error!void {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+
+            _ = try definitions.delete(ctx.db, id);
+            ctx.notice(notice ++ ".deleted", handle);
         }
 
         pub fn validate(ctx: *Ctx, definition: []const u8) Error!Report {
@@ -457,6 +662,10 @@ pub fn Of(comptime Domain: type) type {
             if (ctx.caller != .system) {
                 if (def.system or def.owner.len > 0) {
                     problems.add("system", "system definitions are declared in code, not by hand");
+                }
+
+                if (def.kind == .media) {
+                    problems.add("kind", "media types are declared in code, not by hand");
                 }
 
                 for (def.fields) |candidate| {

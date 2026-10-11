@@ -370,7 +370,8 @@ fn changed_plugins(happened: sdk.Event) bool {
         }
     }
 
-    return std.mem.startsWith(u8, name, "plugin.");
+    // A restore may bring a plugin back from the trash.
+    return std.mem.startsWith(u8, name, "plugin.") or std.mem.eql(u8, name, "trash.restore");
 }
 
 fn event_json(ctx: *sdk.Ctx, happened: sdk.Event, name: []const u8) sdk.Error![]const u8 {

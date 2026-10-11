@@ -3,6 +3,7 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
+const trash = @import("trash.zig");
 const registry = @import("../server/registry.zig");
 const types = @import("content_type.zig");
 
@@ -318,18 +319,20 @@ pub const Create = struct {
 
 pub const Delete = struct {
     pub const name = "custom_fields.delete";
-    pub const description = "Delete a custom field group schema";
+    pub const description = "Delete a custom field group schema; it waits in the trash";
     pub const kind: sdk.operation.Kind = .write;
-    pub const destroys = true;
     pub const In = Get.In;
     pub const Out = struct {
         deleted: bool,
+        /// Its trash entry: `trash restore --id` brings it back.
+        trash: []const u8 = "",
     };
     pub const example: In = .{
         .group = "user",
     };
     pub const example_out: Out = .{
         .deleted = true,
+        .trash = "0190a1b2c3d40001a1b2c3d4",
     };
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
@@ -341,10 +344,27 @@ pub const Delete = struct {
             return error.NotFound;
         }
 
+        const key = std.fmt.allocPrint(ctx.arena, "[\"{s}\"]", .{in.group}) catch {
+            return error.OutOfMemory;
+        };
+
+        const trash_id = try trash.keep(ctx, .{
+            .kind = "field_group",
+            .key = in.group,
+            .label = std.fmt.allocPrint(ctx.arena, "Field group {s}", .{in.group}) catch {
+                return error.OutOfMemory;
+            },
+            .roots = &.{.{
+                .table = "field_groups",
+                .column = "owner",
+                .keys = key,
+            }},
+        });
         try store.field_groups.delete(ctx.db, .custom_fields, in.group);
         ctx.notice("custom_fields.deleted", in.group);
         return .{
             .deleted = true,
+            .trash = trash_id,
         };
     }
 };

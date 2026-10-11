@@ -16,6 +16,7 @@ const Session = admin.Session;
 const views = admin.views;
 
 pub const back = "/admin/settings/plugins";
+const page_size: u32 = 50;
 
 pub fn register(router: anytype) void {
     std.debug.assert(router.routes_len > 0);
@@ -33,6 +34,7 @@ pub fn register(router: anytype) void {
     router.post(back ++ "/:name/decide", &decide);
     router.post(back ++ "/:name/access", &access);
     router.post(back ++ "/:name/remove", &remove);
+    router.post(back ++ "/:name/removal", &removal);
 }
 
 pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -40,7 +42,13 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(ctx.user_data != null);
 
     var session = try admin.require(request, response, ctx) orelse return;
-    const listed = registry.SDK.dispatch(&session.ctx, plugin_operations.List, .{}) catch |err| {
+    const offset = admin.pager.offset_of(&session);
+    const built_ins: u32 = registry.native_plugins.all.len;
+    // The installed ones come after the built-in ones in the list: the page starts there.
+    const listed = registry.SDK.dispatch(&session.ctx, plugin_operations.List, .{
+        .offset = built_ins + offset,
+        .limit = page_size,
+    }) catch |err| {
         return admin.fail(&session, err, "/admin/settings");
     };
     const arena = session.arena;
@@ -70,10 +78,22 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         };
     }
 
+    const pages = try admin.pager.links(
+        arena,
+        back,
+        offset,
+        @intCast(shown.items.len),
+        listed.total -| built_ins,
+        page_size,
+    );
+
     try admin.screen(&session, .ok, views.Plugins, .{
         .tab = "installed",
         .built_in = &.{},
         .plugins = shown.items,
+        .range = pages.range,
+        .previous_href = pages.previous_href,
+        .next_href = pages.next_href,
     });
 }
 
@@ -105,6 +125,9 @@ pub fn built_in(request: *Request, response: *Response, ctx: *Context) Error!voi
         .tab = "built_in",
         .built_in = &shown,
         .plugins = &.{},
+        .range = "",
+        .previous_href = "",
+        .next_href = "",
     });
 }
 
@@ -158,6 +181,27 @@ fn brings_of(comptime Plugin: type) []const u8 {
     }
 }
 
+/// What an installed plugin says about itself, through the admin's sanitizer; null when it
+/// says nothing or it does not read cleanly.
+fn about_of(session: *const Session, name: []const u8) Error!?admin.render.Node {
+    std.debug.assert(name.len > 0);
+
+    const sandboxed = session.ctx.sandboxed_plugins orelse return null;
+
+    for (sandboxed.manifests()) |manifest| {
+        if (!std.mem.eql(u8, manifest.name, name) or manifest.about.len == 0) {
+            continue;
+        }
+
+        const sanitize = @import("../../lib/sanitize.zig");
+        const cleaned = sanitize.sanitize(session.arena, manifest.about, .admin) catch return null;
+
+        return admin.render.raw(cleaned);
+    }
+
+    return null;
+}
+
 /// A plugin's own page.
 pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .get or request.method() == .head);
@@ -168,11 +212,14 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     const detail = try get(&session, name) orelse return;
     const arena = session.arena;
     const base = try std.fmt.allocPrint(arena, "{s}/{s}", .{ back, detail.name });
+    var pieces: std.ArrayList(PieceRow) = .empty;
 
+    try pieces.appendSlice(arena, try pieces_of(&session, detail.name));
     try admin.screen(&session, .ok, views.Plugin, .{
         .name = detail.name,
         .version = detail.version,
         .summary = detail.summary,
+        .about = try about_of(&session, detail.name),
         .enabled = detail.enabled,
         .update = if (detail.update) |next| next.version else "",
         .update_href = try std.fmt.allocPrint(arena, "{s}/update", .{base}),
@@ -185,7 +232,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .remove_action = try std.fmt.allocPrint(arena, "{s}/remove", .{base}),
         .requests = try rows.requests(
             views.Plugin.RequestsItem,
-            arena,
+            &session,
             detail.requests,
             detail.allowed_domains,
             true,
@@ -195,7 +242,108 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .recommend = @tagName(detail.recommend.recommend),
         .note = detail.recommend.note,
         .types = try rows.type_rows(views.Plugin.TypesItem, &session, detail.content_access.types),
+        .removal_action = try std.fmt.allocPrint(arena, "{s}/removal", .{base}),
+        .pieces = pieces.items,
+        .removes = try removes_of(&session, pieces.items),
     });
+}
+
+const PieceRow = views.Plugin.PiecesItem;
+
+fn pieces_of(session: *Session, name: []const u8) Error![]PieceRow {
+    std.debug.assert(session.signed_in());
+
+    const read = registry.SDK.dispatch(&session.ctx, plugin_operations.Data, .{
+        .name = name,
+    }) catch return &.{};
+    const pieces = try session.arena.alloc(PieceRow, read.pieces.len);
+
+    for (read.pieces, pieces) |piece, *row| {
+        const detail = switch (piece.kind) {
+            .type => try session.translated_count(
+                "Content type, {count} record",
+                "Content type, {count} records",
+                piece.count,
+            ),
+            .internal => try session.translated_count(
+                "Internal records, {count}",
+                "Internal records, {count}",
+                piece.count,
+            ),
+            .fields => try session.translated(
+                "Custom field group: the fields, not what records hold in them",
+            ),
+        };
+
+        row.* = .{
+            .key = piece.key,
+            .label = piece.label,
+            .detail = detail,
+            .chosen = piece.chosen,
+        };
+    }
+
+    return pieces;
+}
+
+fn removes_of(session: *const Session, pieces: []const PieceRow) Error![]const u8 {
+    std.debug.assert(pieces.len <= 1024);
+
+    const arena = session.arena;
+
+    var going: std.ArrayList(u8) = .empty;
+
+    for (pieces) |piece| {
+        if (!piece.chosen) {
+            continue;
+        }
+
+        const separator: []const u8 = if (going.items.len > 0) ", " else "";
+
+        try going.print(arena, "{s}{s}", .{ separator, piece.label });
+    }
+
+    const stops = try session.translated("Its operations and hooks stop.");
+
+    if (going.items.len == 0) {
+        const stays = try session.translated(
+            "It goes to the trash, restorable; all its data stays.",
+        );
+
+        return std.fmt.allocPrint(arena, "{s} {s}", .{ stops, stays });
+    }
+
+    const goes = try session.translated_with(
+        "It goes to the trash with {pieces}, restorable together; the rest of its data stays.",
+        &.{.{
+            .name = "pieces",
+            .value = going.items,
+        }},
+    );
+
+    return std.fmt.allocPrint(arena, "{s} {s}", .{ stops, goes });
+}
+
+/// What goes with the plugin when it is removed.
+pub fn removal(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .post);
+    std.debug.assert(ctx.user_data != null);
+
+    var post = try admin.accept(request, response, ctx, back) orelse return;
+    const session = &post.session;
+    const name = try admin.param(session, "name", back) orelse return;
+    const chosen = try @import("type_fields/settings.zig").values_of(
+        session.arena,
+        &post.form,
+        "remove",
+    );
+
+    _ = registry.SDK.dispatch(&session.ctx, plugin_operations.ChooseRemoval, .{
+        .name = name,
+        .remove = chosen,
+    }) catch |err| return admin.fail(session, err, back);
+
+    try redirect_to(session, name);
 }
 
 /// The enabling screen: what the plugin asks for, before it runs.
@@ -214,19 +362,25 @@ pub fn review_enable(request: *Request, response: *Response, ctx: *Context) Erro
     }
 
     try render_review(&session, .{
-        .title = try std.fmt.allocPrint(arena, "Enable {s} {s}", .{
-            detail.name,
-            detail.version,
+        .title = try session.translated_with("Enable {plugin} {version}", &.{
+            .{
+                .name = "plugin",
+                .value = detail.name,
+            },
+            .{
+                .name = "version",
+                .value = detail.version,
+            },
         }),
         .summary = detail.summary,
         .action = try std.fmt.allocPrint(arena, "{s}/enable", .{base}),
-        .allow_label = "Allow & Enable",
+        .allow_label = try session.translated("Allow & Enable"),
         .cancel_href = back,
         .discard_action = "",
-        .requests_title = "This plugin wants to",
+        .requests_title = try session.translated("This plugin wants to"),
         .requests = try rows.requests(
             views.PluginReview.RequestsItem,
-            arena,
+            &session,
             detail.requests,
             detail.allowed_domains,
             false,
@@ -254,30 +408,51 @@ pub fn review_update(request: *Request, response: *Response, ctx: *Context) Erro
     const base = try std.fmt.allocPrint(arena, "{s}/{s}", .{ back, detail.name });
     const next = detail.update orelse return session.response.redirect(.see_other, base);
     const domains = detail.allowed_domains;
-    const split = try rows.split_update(arena, next.requests, detail.requests, domains);
+    const split = try rows.split_update(&session, next.requests, detail.requests, domains);
 
     try render_review(&session, .{
-        .title = try std.fmt.allocPrint(arena, "Update {s} from {s} to {s}", .{
-            detail.name,
-            detail.version,
-            next.version,
+        .title = try session.translated_with("Update {plugin} from {version} to {next}", &.{
+            .{
+                .name = "plugin",
+                .value = detail.name,
+            },
+            .{
+                .name = "version",
+                .value = detail.version,
+            },
+            .{
+                .name = "next",
+                .value = next.version,
+            },
         }),
         .summary = detail.summary,
         .action = try std.fmt.allocPrint(arena, "{s}/update", .{base}),
-        .allow_label = "Allow & Update",
+        .allow_label = try session.translated("Allow & Update"),
         .cancel_href = base,
         .discard_action = try std.fmt.allocPrint(arena, "{s}/cancel-update", .{base}),
-        .requests_title = "This version also wants to",
+        .requests_title = try session.translated("This version also wants to"),
         .requests = split.fresh,
         .granted = split.held,
-        .note_text = "Allowing grants everything the new version asks for. The version it " ++
-            "replaces is kept: you can roll back to it from the plugin's page.",
+        .note_text = try update_note(&session),
         .show_access = false,
         .scope = "public",
         .recommend = "public",
         .note = "",
         .types = &.{},
     });
+}
+
+fn update_note(session: *const Session) Error![]const u8 {
+    std.debug.assert(session.signed_in());
+
+    const grants = try session.translated(
+        "Allowing grants everything the new version asks for.",
+    );
+    const kept = try session.translated(
+        "The version it replaces is kept: you can roll back to it from the plugin's page.",
+    );
+
+    return std.fmt.allocPrint(session.arena, "{s} {s}", .{ grants, kept });
 }
 
 const Review = struct {

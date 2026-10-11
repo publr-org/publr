@@ -2,6 +2,7 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
+const trash = @import("trash.zig");
 const state = @import("plugin/state.zig");
 const lifecycle = @import("plugin/lifecycle.zig");
 const versions = @import("plugin/versions.zig");
@@ -9,6 +10,7 @@ const dependents = @import("plugin/dependents.zig");
 const views = @import("plugin/detail.zig");
 const sources = @import("plugin/sources.zig");
 const scaffold = @import("plugin/scaffold.zig");
+const data = @import("plugin/data.zig");
 const registry = @import("../server/registry.zig");
 
 const Ctx = sdk.Ctx;
@@ -48,9 +50,17 @@ pub const List = struct {
         \\version of an update waiting, if any.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
+    pub const In = struct {
+        limit: u32 = 50,
+        offset: u32 = 0,
+    };
     pub const Out = struct {
         plugins: []const Summary,
+        total: u32 = 0,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .limit = "How many at most; 50 when omitted, up to 200",
+        .offset = "How many to pass over first: the built-in ones, then the installed by name",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -65,32 +75,47 @@ pub const List = struct {
         }},
     };
 
-    pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.now_ms >= 0);
 
-        const built_in = registry.native_plugins.all;
-        const rows = try store.sandboxed_plugins.list(ctx.db, ctx.arena);
-        const out = try ctx.arena.alloc(Summary, built_in.len + rows.len);
-
-        inline for (built_in, 0..) |Plugin, index| {
-            out[index] = .{
-                .name = Plugin.manifest.name,
-                .version = Plugin.manifest.version,
-                .summary = Plugin.manifest.summary,
-                .mode = .native,
-                .enabled = true,
-                .pending = 0,
-                .update = null,
-            };
+        if (in.limit == 0 or in.limit > sdk.operation.page_limit_max) {
+            return error.Invalid;
         }
 
-        for (rows, out[built_in.len..]) |row, *summary| {
-            summary.* = try views.summary_of(ctx.arena, try state.decode(ctx.arena, row));
+        const built_in = registry.native_plugins.all;
+        var out: std.ArrayList(Summary) = .empty;
+
+        inline for (built_in, 0..) |Plugin, index| {
+            if (index >= in.offset and out.items.len < in.limit) {
+                try out.append(ctx.arena, .{
+                    .name = Plugin.manifest.name,
+                    .version = Plugin.manifest.version,
+                    .summary = Plugin.manifest.summary,
+                    .mode = .native,
+                    .enabled = true,
+                    .pending = 0,
+                    .update = null,
+                });
+            }
+        }
+
+        const room = in.limit - @as(u32, @intCast(out.items.len));
+
+        if (room > 0) {
+            const from = in.offset -| @as(u32, built_in.len);
+            const rows = try store.sandboxed_plugins.page(ctx.db, ctx.arena, from, room);
+
+            for (rows) |row| {
+                const decoded = try state.decode(ctx.arena, row);
+
+                try out.append(ctx.arena, try views.summary_of(ctx.arena, decoded));
+            }
         }
 
         return .{
-            .plugins = out,
+            .plugins = out.items,
+            .total = @as(u32, built_in.len) + try store.sandboxed_plugins.count(ctx.db),
         };
     }
 };
@@ -557,25 +582,29 @@ pub const SetContentAccess = struct {
 
 pub const Remove = struct {
     pub const name = "plugin.remove";
-    pub const description = "Remove a plugin: off the list, its grants and versions dropped";
+    pub const description = "Remove a plugin: off the list, into the trash";
     pub const details =
-        \\Its operations and hooks stop at once. Its content types and their records stay
-        \\until an administrator deletes them. Refused, like `plugin disable`, while an
-        \\enabled plugin depends on it.
+        \\Its operations and hooks stop at once; it waits in the trash with its grants and
+        \\versions, and `trash restore` brings it back as it was. Its data stays, except the
+        \\pieces chosen with `plugin choose_removal`: those go into the same trash entry,
+        \\after the plugin's `uninstall` write runs, told which. Refused, like
+        \\`plugin disable`, while an enabled plugin depends on it.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const destroys = true;
     pub const In = struct {
         name: []const u8,
     };
     pub const Out = struct {
         removed: []const u8,
+        /// Its trash entry: `trash restore --id` brings it back.
+        trash: []const u8 = "",
     };
     pub const example: In = .{
         .name = "greeter",
     };
     pub const example_out: Out = .{
         .removed = "greeter",
+        .trash = "0190a1b2c3d40001a1b2c3d4",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .name = "The plugin's name",
@@ -586,16 +615,202 @@ pub const Remove = struct {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
         try dependents.refuse_left_behind(ctx, &.{in.name}, "remove");
+
+        const decoded = try state.load(ctx, in.name);
+        const going = try data.going(ctx, decoded);
+        const key = std.fmt.allocPrint(ctx.arena, "[\"{s}\"]", .{in.name}) catch {
+            return error.OutOfMemory;
+        };
+        var roots: std.ArrayList(store.trash_copy.Root) = .empty;
+
+        const own: store.trash_copy.Root = .{
+            .table = "sandboxed_plugins",
+            .column = "name",
+            .keys = key,
+        };
+
+        roots.append(ctx.arena, own) catch return error.OutOfMemory;
+        roots.appendSlice(ctx.arena, try data.roots_of(ctx, in.name, going)) catch
+            return error.OutOfMemory;
+
+        const label = if (going.len == 0)
+            std.fmt.allocPrint(ctx.arena, "Plugin {s}", .{in.name})
+        else
+            std.fmt.allocPrint(ctx.arena, "Plugin {s}, with {s}", .{
+                in.name,
+                try data.summary_of(ctx, going),
+            });
+        const trash_id = try trash.keep(ctx, .{
+            .kind = "plugin",
+            .key = in.name,
+            .label = label catch return error.OutOfMemory,
+            .roots = roots.items,
+        });
+
+        if (going.len > 0) {
+            try uninstall(ctx, decoded, going);
+            try data.drop(ctx, in.name, going);
+        }
+
         try lifecycle.remove(ctx, in.name);
         ctx.notice("plugin.removed", in.name);
 
         return .{
             .removed = in.name,
+            .trash = trash_id,
         };
     }
 };
 
 pub const operations = [_]type{
     List,         Get,          Upload, Add,  Enable,           Disable, Update, Rollback,
-    CancelUpdate, GrantRequest, Revoke, Deny, SetContentAccess, Remove,
+    CancelUpdate, GrantRequest, Revoke, Deny, SetContentAccess, Remove,  Data,   ChooseRemoval,
 } ++ sources.operations ++ scaffold.operations;
+
+pub const Piece = data.Piece;
+
+const example_pieces = [_]Piece{
+    .{
+        .key = "type:course",
+        .kind = .type,
+        .label = "Course",
+        .count = 12,
+        .chosen = true,
+    },
+    .{
+        .key = "internal:enrolments",
+        .kind = .internal,
+        .label = "enrolments",
+        .count = 340,
+        .chosen = false,
+    },
+};
+
+pub const Data = struct {
+    pub const name = "plugin.data";
+    pub const description = "What data a plugin manages, and which of it goes when it is removed";
+    pub const details =
+        \\Read from the database: the content types it owns (with their records), the
+        \\collections of internal records it keeps, the custom field groups it declared. Each
+        \\a piece with a key; `chosen` ones go into the trash with the plugin when it is
+        \\removed (`plugin choose_removal`), the rest stay. None is chosen until an
+        \\administrator chooses.
+    ;
+    pub const kind: sdk.operation.Kind = .read;
+    pub const In = struct {
+        name: []const u8,
+    };
+    pub const Out = struct {
+        pieces: []const Piece,
+    };
+    pub const example: In = .{
+        .name = "greeter",
+    };
+    pub const example_out: Out = .{
+        .pieces = &example_pieces,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .name = "The plugin's name",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(in.name.len <= 64 << 10);
+
+        const decoded = try state.load(ctx, in.name);
+
+        return .{
+            .pieces = try data.pieces_of(ctx, decoded),
+        };
+    }
+};
+
+pub const ChooseRemoval = struct {
+    pub const name = "plugin.choose_removal";
+    pub const description = "Choose which of a plugin's data goes with it when it is removed";
+    pub const details =
+        \\`remove` holds the keys of the pieces `plugin data` lists that go into the trash
+        \\with the plugin; an empty list keeps everything, which is how every plugin starts.
+        \\Disabling never touches data, and neither does removing what is not chosen.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const In = struct {
+        name: []const u8,
+        remove: []const []const u8 = &.{},
+    };
+    pub const Out = struct {
+        pieces: []const Piece,
+    };
+    pub const example: In = .{
+        .name = "greeter",
+    };
+    pub const example_out: Out = .{
+        .pieces = &example_pieces,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .name = "The plugin's name",
+        .remove = "The keys of the pieces to remove with it",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        const decoded = try state.load(ctx, in.name);
+
+        try data.choose(ctx, decoded, in.remove);
+        ctx.notice("plugin.removal_chosen", in.name);
+
+        return .{
+            .pieces = try data.pieces_of(ctx, decoded),
+        };
+    }
+};
+
+/// The plugin's own `uninstall` write, told which pieces go, while it still runs: what it
+/// keeps that core does not know is its. A failure stops the removal.
+fn uninstall(ctx: *Ctx, decoded: state.Decoded, going: []const Piece) Error!void {
+    std.debug.assert(going.len > 0);
+
+    const operation = decoded.manifest.uninstall;
+
+    if (operation.len == 0 or !decoded.row.enabled) {
+        return;
+    }
+
+    // Installed plugins run in the server: without it, the step cannot run.
+    if (ctx.sandboxed_plugins == null) {
+        return ctx.fail(uninstall_offline);
+    }
+
+    const keys = ctx.arena.alloc([]const u8, going.len) catch return error.OutOfMemory;
+
+    for (going, keys) |piece, *one| {
+        one.* = piece.key;
+    }
+
+    const input = std.json.Stringify.valueAlloc(ctx.arena, .{
+        .remove = keys,
+    }, .{}) catch {
+        return error.OutOfMemory;
+    };
+
+    _ = registry.SDK.call_json(ctx, operation, input) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return ctx.fail(uninstall_failed),
+    };
+}
+
+const uninstall_offline: sdk.operation.Failure = .{
+    .name = "UninstallNeedsServer",
+    .status = 409,
+    .message = "The plugin's uninstall step runs in the server: start `publr serve` and " ++
+        "remove it again",
+};
+
+const uninstall_failed: sdk.operation.Failure = .{
+    .name = "UninstallFailed",
+    .status = 409,
+    .message = "The plugin's uninstall step failed, so nothing was removed: keep its data " ++
+        "(untick it on the plugin's page), or fix the plugin and try again",
+};

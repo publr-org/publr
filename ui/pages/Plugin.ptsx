@@ -1,9 +1,11 @@
+import { PluginAbout } from "../components/PluginAbout.ptsx";
 import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { ConfirmAction } from "../components/ConfirmAction.ptsx";
 import { ContentAccess } from "../components/ContentAccess.ptsx";
 import { IndexSection } from "../components/IndexSection.ptsx";
 import { PluginRequests } from "../components/PluginRequests.ptsx";
+import { PluginData } from "../components/PluginData.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
@@ -13,6 +15,8 @@ export type PluginProps = {
   name: string;
   version: string;
   summary: string;
+  /** What the plugin says about itself, sanitized; absent when it says nothing. */
+  about?: JSX.Element;
   enabled: boolean;
   /** The version of a newer module waiting to be applied, and its review; empty for none. */
   update: string;
@@ -41,6 +45,10 @@ export type PluginProps = {
   recommend: string;
   note: string;
   types: Array<{ handle: string; name: string; checked: boolean }>;
+  removal_action: string;
+  pieces: Array<{ key: string; label: string; detail: string; chosen: boolean }>;
+  /** What removing it takes along, for the confirm. */
+  removes: string;
 };
 
 /** One plugin: whether it runs, its versions (an update waiting, the previous one to roll
@@ -50,6 +58,7 @@ export function Plugin({
   name,
   version,
   summary,
+  about,
   enabled,
   update,
   update_href,
@@ -66,75 +75,82 @@ export function Plugin({
   recommend,
   note,
   types,
+  removal_action,
+  pieces,
+  removes,
 }: PluginProps) {
   return (
     <IndexPage
       title={name}
-      parents={[{ label: "Plugins", href: "/admin/settings/plugins" }]}
+      parents={[{ label: Publr.t("Plugins"), href: "/admin/settings/plugins" }]}
       description={summary}
       actions={
         <div class="contents">
           <ConfirmAction
             inline
-            label="Remove plugin"
-            title={`Remove ${name}?`}
-            description="Its operations and hooks stop and its grants go. Its content types and their records stay."
+            label={Publr.t("Remove plugin")}
+            title={Publr.t("Remove {name}?", { name })}
+            description={removes}
             action={remove_action}
           />
           {previous !== "" && (
             <form method="post" action={rollback_action}>
               <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
-              <Button type="submit" hierarchy="secondary">Roll back to {previous}</Button>
+              <Button type="submit" hierarchy="secondary">{Publr.t("Roll back to {version}", { version: previous })}</Button>
             </form>
           )}
           {update !== "" && (
-            <Button href={update_href} hierarchy="secondary">Review {update}</Button>
+            <Button href={update_href} hierarchy="secondary">{Publr.t("Review {version}", { version: update })}</Button>
           )}
           {enabled ? (
             <form method="post" action={disable_action}>
               <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
-              <Button type="submit" hierarchy="secondary">Disable</Button>
+              <Button type="submit" hierarchy="secondary">{Publr.t("Disable")}</Button>
             </form>
           ) : (
-            <Button href={enable_href}>Enable</Button>
+            <Button href={enable_href}>{Publr.t("Enable")}</Button>
           )}
         </div>
       }
       meta={
         <div class="contents">
-          {enabled ? <Status tone="success">Enabled</Status> : <Status tone="neutral">Disabled</Status>}
+          {enabled ? <Status tone="success">{Publr.t("Enabled")}</Status> : <Status tone="neutral">{Publr.t("Disabled")}</Status>}
           <Text as="span" variant="body-sm" tone="muted">
-            Version {version}
+            {Publr.t("Version {version}", { version })}
           </Text>
         </div>
       }
       notice={
-        update !== "" && (
-          <Callout title={`Version ${update} is available`}>
-            This version keeps running until you review and apply it.
-          </Callout>
-        )
+        <>
+          {update !== "" && (
+            <Callout title={Publr.t("Version {version} is available", { version: update })}>
+              {Publr.t("This version keeps running until you review and apply it.")}
+            </Callout>
+          )}
+          {about && <PluginAbout name={name}>{about}</PluginAbout>}
+        </>
       }
     >
       <IndexSection
-        title="This plugin wants to"
-        empty={requests.length === 0 ? "Nothing beyond its own operations and content types." : undefined}
+        title={Publr.t("This plugin wants to")}
+        empty={requests.length === 0 ? Publr.t("Nothing beyond its own operations and content types.") : undefined}
       >
         <PluginRequests csrf={Publr.request.session.csrf} action={decide_action} requests={requests} />
       </IndexSection>
       {show_access && (
-        <IndexSection padded title="Content access">
+        <IndexSection padded title={Publr.t("Content access")}>
           <form method="post" action={access_action} class="flex flex-col gap-4">
             <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
             <ContentAccess scope={scope} recommend={recommend} note={note} types={types} />
             <div>
               <Button type="submit" hierarchy="secondary">
-                Save content access
+                {Publr.t("Save content access")}
               </Button>
             </div>
           </form>
         </IndexSection>
       )}
+      <PluginData action={removal_action} pieces={pieces} />
     </IndexPage>
   );
 }

@@ -1,0 +1,151 @@
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Checkbox } from "@publr/ui/Checkbox.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type RemovalProps = {
+  /** Where Remove and Keep all post. */
+  confirm_action: string;
+  decline_action: string;
+  /** Whether the list still waits for a decision. */
+  waiting: boolean;
+  /** What Remove removes when nothing is unticked: "3 things". */
+  count: string;
+  /** Whether a waiting item can go to the trash instead (records and terms). */
+  trashable: boolean;
+  /** Where it came from: "Your agent, in “Make me a site like…”". */
+  origin: string;
+  items: Array<{
+    position: number;
+    label: string;
+    detail: string;
+    blocked: string;
+    /** `waiting`, `removed`, `kept`, `failed` or `blocked`. */
+    state: string;
+    message: string;
+  }>;
+  notice: string;
+  problem: string;
+};
+
+/** A removal list to review: everything an agent asked to remove for good, ticked; untick
+ * what should stay, then Remove. What can never go this way says how to do it by hand. */
+export function Removal({
+  confirm_action,
+  decline_action,
+  waiting,
+  count,
+  trashable,
+  origin,
+  items,
+  notice,
+  problem,
+}: RemovalProps) {
+  return (
+    <IndexPage
+      title={Publr.t("Removal list")}
+      parents={[{ label: Publr.t("Removals"), href: "/admin/removals" }]}
+      description={origin}
+      notice={
+        <div class="flex flex-col gap-3">
+          {problem !== "" && (
+            <Callout tone="error" title={Publr.t("Not removed")}>
+              {problem}
+            </Callout>
+          )}
+          {notice !== "" && <Callout title={notice} />}
+          {waiting && (
+            <Callout tone="error" title={Publr.t("{what} will be removed for good", { what: count })}>
+              {Publr.t("You do the removing: everything ticked below is deleted permanently, by you, when you press Remove. It cannot be undone or restored. Untick what should stay. The agent waits, and carries on only after.")}
+            </Callout>
+          )}
+        </div>
+      }
+      footer={
+        waiting && (
+          <div class="flex flex-wrap items-center gap-3">
+            <Button hierarchy="primary" intent="destructive" size="md" type="submit" form="removal">
+              {Publr.t("Remove ticked for good")}
+            </Button>
+            {trashable && (
+              <Button hierarchy="secondary" size="md" type="submit" form="removal" name="trash" value="1">
+                {Publr.t("Move ticked to the trash instead")}
+              </Button>
+            )}
+            <form method="post" action={decline_action}>
+              <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+              <Button hierarchy="secondary" size="md" type="submit">
+                {Publr.t("Keep everything")}
+              </Button>
+            </form>
+          </div>
+        )
+      }
+    >
+      <form id="removal" method="post" action={confirm_action}>
+        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{Publr.t("Remove")}</TableHead>
+              <TableHead>{Publr.t("What")}</TableHead>
+              <TableHead>{Publr.t("Where it stands")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((item) => (
+              <TableRow>
+                <TableCell>
+                  {item.state === "waiting" ? (
+                    <Checkbox name="remove" value={`${item.position}`} checked />
+                  ) : (
+                    <Checkbox disabled />
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div class="flex flex-col gap-1">
+                    <Text as="span" variant="body-md">
+                      {item.label}
+                    </Text>
+                    {item.detail !== "" && (
+                      <Text as="span" variant="body-sm" tone="muted">
+                        {item.detail}
+                      </Text>
+                    )}
+                    {item.blocked !== "" && (
+                      <Text as="span" variant="body-sm" tone="muted">
+                        {item.blocked}
+                      </Text>
+                    )}
+                    {item.message !== "" && (
+                      <Text as="span" variant="body-sm" tone="error">
+                        {item.message}
+                      </Text>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  {item.state === "waiting" && <Status tone="warning">{Publr.t("Waiting")}</Status>}
+                  {item.state === "removed" && <Status tone="neutral">{Publr.t("Removed")}</Status>}
+                  {item.state === "trashed" && <Status tone="neutral">{Publr.t("In the trash")}</Status>}
+                  {item.state === "kept" && <Status tone="success">{Publr.t("Kept")}</Status>}
+                  {item.state === "failed" && <Status tone="error">{Publr.t("Not removed")}</Status>}
+                  {item.state === "blocked" && <Status tone="neutral">{Publr.t("By hand only")}</Status>}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </form>
+    </IndexPage>
+  );
+}

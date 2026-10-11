@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const trash = @import("trash.zig");
 const file_path = @import("../model/app/file_path.zig");
 
 const Ctx = sdk.Ctx;
@@ -25,7 +26,7 @@ pub const namespace: sdk.operation.Namespace = .{
     ,
 };
 
-pub const operations = [_]type{ Files, Read, Write, Remove, Load };
+pub const operations = [_]type{ Files, Read, Write, Remove, Load, @import("apps/edit.zig").Edit };
 
 /// The apps folder of the running server; `Unavailable` with none.
 fn folder_of(ctx: *const Ctx) Error!sdk.context.AppsFolder {
@@ -269,9 +270,12 @@ fn refuse_drafts(ctx: *Ctx) Error!void {
     }
 }
 
+/// An app file the trash keeps, at most: its text.
+const file_bytes_kept_max: u32 = 1 << 20;
+
 pub const Remove = struct {
     pub const name = "apps.remove";
-    pub const description = "Delete one file of the project's apps";
+    pub const description = "Delete one file of the project's apps into the trash";
     pub const details =
         \\Administrators only, and not a device that may save drafts only. Not found when
         \\there is no such file. `apps load` makes the change live.
@@ -308,6 +312,25 @@ pub const Remove = struct {
 
         var root = try open_root(ctx, try folder_of(ctx), false);
         defer root.close(ctx.io);
+
+        // What it held waits in the trash, as the call that writes it back.
+        const limit: std.Io.Limit = .limited(file_bytes_kept_max);
+        const held = root.readFileAlloc(ctx.io, in.path, ctx.arena, limit) catch |err| {
+            return if (err == error.FileNotFound) error.NotFound else error.Unavailable;
+        };
+        const copy = std.json.Stringify.valueAlloc(ctx.arena, .{
+            .path = in.path,
+            .content = held,
+        }, .{}) catch return error.OutOfMemory;
+
+        _ = try trash.keep(ctx, .{
+            .kind = "app_file",
+            .key = in.path,
+            .label = std.fmt.allocPrint(ctx.arena, "App file {s}", .{in.path}) catch {
+                return error.OutOfMemory;
+            },
+            .copy = copy,
+        });
 
         root.deleteFile(ctx.io, in.path) catch |err| {
             return if (err == error.FileNotFound) error.NotFound else error.Unavailable;

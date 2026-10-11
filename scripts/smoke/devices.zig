@@ -109,11 +109,13 @@ fn expect_remote(
 
     try expect_in("--site content_type list", types.stdout, "\"types\"");
 
-    const delete = try run_with(init, binary, work_dir, file, &.{
-        "--site", address, "content_type", "delete", "--type", "post",
+    // Final, so not run: listed for the device's person (a missing record is listed too:
+    // the person's own removal finds it gone).
+    const purge = try run_with(init, binary, work_dir, file, &.{
+        "--site", address, "record", "purge", "--id", "0190a1b2c3d40001a1b2c3d4",
     });
 
-    try expect_in("--site content_type delete", delete.stderr, "a person does it in the admin");
+    try expect_in("--site record purge", purge.stderr, "Listed for removal");
 }
 
 fn run_with(
