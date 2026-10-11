@@ -1,0 +1,184 @@
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Checkbox } from "@publr/ui/Checkbox.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
+
+export type HealthProps = {
+  cases: Array<{
+    /** `<target>|<app>`: what an action names. */
+    key: string;
+    /** The record pointed at: "Blue mug", or "Removed record" when gone for good. */
+    title: string;
+    /** Its type's name; empty when it is gone. */
+    type_name: string;
+    /** Where it opens: in its app, or in the trash; empty when it is gone. */
+    href: string;
+    /** "Deleted, in the trash", "Deleted for good", "No longer shared with Website". */
+    why: string;
+    /** The first records still pointing at it. */
+    holders: Array<{ title: string; href: string }>;
+    /** "and 12 more" when more point at it than are named; empty otherwise. */
+    more_holders: string;
+    /** "Restore" or "Share with Website again", where one applies; empty otherwise. */
+    fix: string;
+    kept: boolean;
+  }>;
+  /** How many cases are kept as they are, shown or not. */
+  kept: number;
+  show_kept: boolean;
+  /** The next page of cases; empty after the last. */
+  next_href: string;
+  notice: string;
+  problem: string;
+  /** Translations not picked yet where plugins disagree: the second tab's count. */
+  translations_open?: number;
+};
+
+/** Site Health: what is quietly wrong in the project, each case decided on its own. Broken
+ * references first: records pointing at a record in the trash, gone for good, or of a type
+ * no longer shared with their app. Every action posts the one form: a row's button names
+ * its case (`one`), the band's buttons the ticked ones (`case`). */
+export function Health({ cases, kept, show_kept, next_href, notice, problem, translations_open = 0 }: HealthProps) {
+  return (
+    <IndexPage
+      tabs={
+        <TabNav label={Publr.t("Site Health")}>
+          <TabNavLink href="/admin/health" active={true}>{Publr.t("Broken references")}</TabNavLink>
+          <TabNavLink href="/admin/health/translations" active={false}>
+            {translations_open > 0 ? Publr.t("Translations ({count})", { count: translations_open }) : Publr.t("Translations")}
+          </TabNavLink>
+        </TabNav>
+      }
+      title={Publr.t("Site Health")}
+      description={Publr.t("What is quietly wrong in the project, so it never spreads unseen. Decide each case: fix it, take it out, or keep it as it is.")}
+      notice={
+        (problem !== "" || notice !== "" || kept > 0) && (
+        <div class="flex flex-col gap-3">
+          {problem !== "" && (
+            <Callout tone="error" title={Publr.t("Not done")}>
+              {problem}
+            </Callout>
+          )}
+          {notice !== "" && <Callout title={notice} />}
+          {kept > 0 && (
+            <Text as="p" variant="body-sm" tone="muted">
+              {show_kept ? (
+                <Link href="/admin/health">{Publr.t("Hide the cases kept as they are")}</Link>
+              ) : (
+                <Link href="/admin/health?kept=1">{Publr.tn("Show {count} kept as it is", "Show {count} kept as they are", kept)}</Link>
+              )}
+            </Text>
+          )}
+        </div>
+        )
+      }
+      actions={
+        cases.length > 0 && (
+          <div class="flex items-center gap-2">
+            <Button form="health" type="submit" name="bulk" value="keep" hierarchy="secondary" size="sm">
+              {Publr.t("Keep ticked as they are")}
+            </Button>
+            <Button form="health" type="submit" name="bulk" value="unlink" hierarchy="secondary" size="sm">
+              {Publr.t("Remove ticked references")}
+            </Button>
+          </div>
+        )
+      }
+      footer={
+        next_href !== "" && (
+          <Button href={next_href} hierarchy="secondary" size="sm">
+            {Publr.t("Next")}
+          </Button>
+        )
+      }
+      empty={
+        cases.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("Nothing to look at")}</EmptyTitle>
+            <EmptyDescription>
+              {Publr.t("Every reference points at a record that is there and that its app may use.")}
+            </EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <form id="health" method="post" action="/admin/health/act">
+        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead> </TableHead>
+              <TableHead>{Publr.t("Broken reference")}</TableHead>
+              <TableHead>{Publr.t("Why")}</TableHead>
+              <TableHead>{Publr.t("Still pointing at it")}</TableHead>
+              <TableHead> </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {cases.map((item) => (
+              <TableRow>
+                <TableCell>
+                  <Checkbox name="case" value={item.key} />
+                </TableCell>
+                <TableCell>
+                  <div class="flex flex-col">
+                    {item.href !== "" ? (
+                      <Link href={item.href}>{item.title}</Link>
+                    ) : (
+                      <Text as="span" variant="body-sm">{item.title}</Text>
+                    )}
+                    <Text as="span" variant="body-xs" tone="muted">{item.type_name}</Text>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Text as="span" variant="body-sm">{item.kept ? Publr.t("{why} (kept)", { why: item.why }) : item.why}</Text>
+                </TableCell>
+                <TableCell>
+                  <div class="flex flex-col">
+                    {item.holders.map((holder) => (
+                      <Link href={holder.href}>{holder.title}</Link>
+                    ))}
+                    {item.more_holders !== "" && (
+                      <Text as="span" variant="body-xs" tone="muted">{item.more_holders}</Text>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div class="flex items-center justify-end gap-2">
+                    {item.fix !== "" && (
+                      <Button type="submit" name="one" value={`fix|${item.key}`} hierarchy="secondary" size="sm">
+                        {item.fix}
+                      </Button>
+                    )}
+                    <Button type="submit" name="one" value={`unlink|${item.key}`} hierarchy="secondary" size="sm">
+                      {Publr.t("Remove the reference")}
+                    </Button>
+                    {!item.kept && (
+                      <Button type="submit" name="one" value={`keep|${item.key}`} hierarchy="tertiary" size="sm">
+                        {Publr.t("Keep as is")}
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </form>
+    </IndexPage>
+  );
+}

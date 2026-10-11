@@ -1,0 +1,172 @@
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Publr } from "publr-jsx";
+import { Badge } from "@publr/ui/Badge.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type HealthTranslationsProps = {
+  /** Each message installed translations render differently, in one language. */
+  disagreements: Array<{
+    locale: string;
+    label: string;
+    context: string;
+    id: string;
+    candidates: Array<{
+      provider: string;
+      first_party: boolean;
+      text: string;
+      /** The one shown now: picked, or the first-party one while none is. */
+      shown: boolean;
+    }>;
+    /** A version was picked, rather than the first-party one shown by default. */
+    picked: boolean;
+  }>;
+  /** How many are not picked yet. */
+  open: number;
+  notice: string;
+  /** Each language over each domain's messages (the core's, each plugin's). */
+  coverage: Array<{
+    label: string;
+    /** `Publr` for the core, a plugin's name for its words. */
+    domain: string;
+    translated: number;
+    total: number;
+    /** `98%`. */
+    share: string;
+    /** The plugins bringing these translations, comma separated; empty for none. */
+    providers: string;
+    /** Where the missing messages download as a `.pot`; empty when none are missing. */
+    missing_href: string;
+  }>;
+};
+
+/** Site Health › Translations: where installed translations disagree on a message, every
+ * plugin's version side by side; the words' owner's own shows until another is picked. */
+export function HealthTranslations({ disagreements, open, notice, coverage }: HealthTranslationsProps) {
+  return (
+    <IndexPage
+      title={Publr.t("Site Health")}
+      description={Publr.t("Where installed translations disagree on a message. The words' owner's own translation shows until you pick another.")}
+      tabs={
+        <TabNav label={Publr.t("Site Health")}>
+          <TabNavLink href="/admin/health" active={false}>{Publr.t("Broken references")}</TabNavLink>
+          <TabNavLink href="/admin/health/translations" active={true}>
+            {open > 0 ? Publr.t("Translations ({count})", { count: open }) : Publr.t("Translations")}
+          </TabNavLink>
+        </TabNav>
+      }
+      notice={
+        <div class="flex flex-col gap-4" data-part="translation-coverage">
+          {notice !== "" && <Callout title={notice} />}
+          {coverage.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{Publr.t("Language")}</TableHead>
+                  <TableHead>{Publr.t("Words of")}</TableHead>
+                  <TableHead>{Publr.t("Translated")}</TableHead>
+                  <TableHead>{Publr.t("From")}</TableHead>
+                  <TableHead> </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {coverage.map((row) => (
+                  <TableRow>
+                    <TableCell><Text as="span" variant="body-sm">{row.label}</Text></TableCell>
+                    <TableCell><Text as="span" variant="body-sm">{row.domain}</Text></TableCell>
+                    <TableCell>
+                      <Text as="span" variant="body-sm">
+                        {Publr.t("{share} ({translated} of {total})", { share: row.share, translated: row.translated, total: row.total })}
+                      </Text>
+                    </TableCell>
+                    <TableCell>
+                      <Text as="span" variant="body-sm" tone="muted">
+                        {row.providers !== "" ? row.providers : Publr.t("No plugin translates these yet")}
+                      </Text>
+                    </TableCell>
+                    <TableCell>
+                      {row.missing_href !== "" && (
+                        <Button href={row.missing_href} hierarchy="tertiary" size="sm">{Publr.t("Missing (.pot)")}</Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      }
+      empty={
+        disagreements.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("Every translation agrees")}</EmptyTitle>
+            <EmptyDescription>
+              {Publr.t("No two installed plugins translate a message differently.")}
+            </EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("Message")}</TableHead>
+            <TableHead>{Publr.t("Language")}</TableHead>
+            <TableHead>{Publr.t("Translations")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {disagreements.map((item) => (
+            <TableRow>
+              <TableCell>
+                <div class="flex flex-col">
+                  <Text as="span" variant="body-sm">{item.id}</Text>
+                  {item.context !== "" && <Text as="span" variant="body-xs" tone="muted">{item.context}</Text>}
+                </div>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm">{item.label}</Text>
+              </TableCell>
+              <TableCell>
+                <div class="flex flex-col gap-3">
+                  {item.candidates.map((candidate) => (
+                    <form method="post" action="/admin/health/translations" class="flex items-center justify-between gap-4">
+                      <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                      <input type="hidden" name="locale" value={item.locale} />
+                      <input type="hidden" name="context" value={item.context} />
+                      <input type="hidden" name="id" value={item.id} />
+                      <input type="hidden" name="provider" value={candidate.provider} />
+                      <div class="flex min-w-0 flex-col">
+                        <Text as="span" variant="body-sm">{candidate.text}</Text>
+                        <Text as="span" variant="body-xs" tone="muted">
+                          {candidate.first_party ? Publr.t("{plugin}, first-party", { plugin: candidate.provider }) : candidate.provider}
+                        </Text>
+                      </div>
+                      {candidate.shown ? (
+                        <Badge>{item.picked ? Publr.t("Picked") : Publr.t("Shown")}</Badge>
+                      ) : (
+                        <Button type="submit" hierarchy="secondary" size="sm">{Publr.t("Use this")}</Button>
+                      )}
+                    </form>
+                  ))}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}
