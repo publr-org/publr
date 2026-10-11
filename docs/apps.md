@@ -13,8 +13,10 @@ than a file is an **island**: a fragment of a page fetched after the page loads,
 rendered at build or per request. Templates and generated client code live in the
 binary; public files stay on disk.
 
-A project with no apps is valid: `/` opens the admin. Publr ships none; a project starts
-from a preset (a website, a SaaS, a multi-tenant product) or from scratch.
+A project with no apps is valid: `/` opens the admin. `publr new` starts a site with
+Publr's starter, one app at the root (`apps/www`), then the site's own to change or delete;
+`publr new <name> --admin-only` starts it with none. A project may also start from a preset
+(a website, a SaaS, a multi-tenant product) or from scratch.
 
 ## An app
 
@@ -83,6 +85,9 @@ answer a non-cacheable 503.
     .tokens = .{
         .{ .name = "color-accent", .value = "#2f5d54" },
     },
+    .fonts = .{
+        .{ .family = "Inter", .url = "https://fonts.googleapis.com/css2?family=Inter" },
+    },
 }
 ```
 
@@ -118,6 +123,13 @@ anything else there fails the build.
 
 `.tokens` are the app's design tokens, layered over the stylesheet's defaults: every
 `color-*` token is a utility family (`bg-canvas`, `text-ink`, `border-line`).
+
+`.fonts` are the typefaces the app's pages load: a family and the `https://` stylesheet
+that serves it. Every page links each one in its head, just before the app's own styles,
+which Publr writes there inline; a font family is then used through a token
+(`font-sans`). The admin's Design › Design system writes both lists
+([`design save_system`](cli/design.md)), keeping the rest of `app.zon` as written, and
+loads the apps so every page shows the change.
 
 ## Signed-in visitors and roles
 
@@ -182,16 +194,26 @@ never sets it, so built pages stay cacheable. Signed in or not, it stays the sam
 Operations read it as the visitor (`ctx.visitor()` in a plugin): what a cart keys on, or
 a segment a page shows. The activity log names an anonymous visitor `visitor:<id>`.
 
-## Which records are an app's
+## Where a type lives
 
-Every record belongs to one app or to none: the project's own. A record made through
-an app (its middleware's `call`, a page's `Publr.request.call`, its `_api`) belongs to
-that app;
-one made anywhere else belongs to the app it names (`record create --app`), else to
-the project. `record set_app` changes it. It decides where the admin shows the record,
-never who may read it: every app still reads every record its access allows, so a site
-can list what the newsletter published. `record list` narrows to one app with
-`app:is:<name>` and to the project's own with `app:none`.
+Every content type and taxonomy lives in one app (`"app": "warehouse"` in its
+definition) or is Global (no app: a library every app may use). Its records live where
+it does; no record carries an app of its own. A type is also shared, or not, with other
+apps: a Global type with every app unless it lists some (`"shared": { "apps": ["www"] }`),
+an app's type with none unless it says so (`{ "all": true }`, or the apps listed).
+Either may change at any time; no record moves.
+
+An app reaches the types living in it and the ones shared with it, and nothing else:
+its templates, islands, frontmatter calls, middleware and `_api` read, reference and
+call on those types only, whoever is signed in. A warehouse that shares its stock type
+with the website lets the website list stock levels; its suppliers, shared with no one,
+stay in the warehouse. A reference field of an app's type offers that app's reach; one
+of a Global type, the Global types.
+
+Who may read a type is separate: Public (any visitor of an app it reaches reads its live
+records) or Private (only people signed in, as their roles allow). The design's records
+(templates, parts, patterns, moodboard cards) are the exception: each app has its own,
+and `record list` narrows them with `app:is:<name>`.
 
 ## A template
 
@@ -248,12 +270,17 @@ markup, always sanitized: headings, lists, links, images, tables and inline SVG 
 are kept; scripts, styles, frames, embeds, `on…` attributes and `javascript:` or `data:`
 addresses are removed. In an SVG, references point only at its own parts (`#id`,
 `url(#id)`), its ids are prefixed `svg-`, an animation never targets an address, a style or
-a handler, and `<style>` or `style` never reach the page. Nothing skips it. A page that needs a script gets it from an
-island or an approved plugin script, never from printed markup. Components receive `props`; children fill `<slot />`.
+a handler, and `<style>` or `style` never reach the page. Nothing skips it. A page that needs a script gets it from the
+app's own files (`public/`, linked from a template), an island or an approved plugin
+script, never from printed markup. Components receive `props`; children fill `<slot />`.
 Data reads use the existing `Publr.build` / `Publr.request` context and permissions.
 Request access requires a dynamic template, including when reached through an alias.
 Use a seeded generator for repeatable patterns and `Publr.build.now()` or
 `Publr.request.now()` for tracked time; ambient time and `Math.random()` are disabled.
+`Publr.build.managed()` is true where someone else runs the site and keeps its Publr up to
+date (Publr Cloud), false where it runs on its own: the starter shows "Dashboard" on one and
+"Deploy now" on the other. Pages are built where the site runs, so a site moved to Cloud
+reads true there.
 
 The engine bounds its heap to 32 MiB and stack to 512 KiB, interrupts runaway
 execution, and limits each computed output block to 8 MiB and 64 nested levels.
@@ -289,9 +316,11 @@ rebuilds what read it through the usual `type:<handle>` dependency.
 | `getCollection({ type, limit, offset })`: live records, newest first | `header('name')`, `cookie('name')` |
 | `getReferences(entry, 'field')`: the live records a reference field points at, in the order stored; `getReference(entry, 'field')` the first as an entry, blank when none; `entry.data.rows` with no fallback: a repeater's rows as entries | `now()`: the clock, per request, the same shape |
 | `now()`: the clock of the build, `YYYY-MM-DD HH:MM:SS` UTC | `random(n)`: a number in `[0, n)` |
+| `locale()`: the language the page is in (`pl`, the main one's own code), empty on a site without languages: `<html lang={locale}>`; `languages()` (runs as script): the page in every language, `{ code, label, href, current, main }`, for a switch | |
 | `get('order', id)`: the live record by id, null when there is none or it is of another type; `findOne('product', 'sku', 'EG-50')` the one whose field holds the value; `find('variant', { product: id }, { limit, offset })` live records, newest first, filtered on at most one field by equality | `param('error')`: a value from the address's query string, null when absent |
 | `query('*[_type == "variant" && product == $id] \| order(price.GBP) { _id, title, price }', { id: product.id })`: a [GROQ query](queries.md) over what the visitor may read, its answer plain JSON (`variant.title`, not `.data`); a static page that queries rebuilds when any record changes | `query(...)`: the same, per request |
 | | `call('app.inventory.levels', { product: id })`: a plugin's `app.*` read, with its input, as the visitor; the answer is `.data`, plain JSON |
+| `media(entry.data.photo)`: the file a media field holds, `{ url, alt, title, width, height, key, mime_type }`, null when there is none the visitor may see (a private one, to a visitor); `mediaUrl(entry.data.photo, { w, h, fit: 'cover', q })` its address, resized, empty when none | `media(...)`, `mediaUrl(...)`: the same, per request |
 | `money(entry.data.price)`: a money field in the site's default currency as the site writes it (`£9.25`); `money(entry.data.price, 'EUR')` in that one; empty when the field holds none | `money(...)`: the same, per request |
 | | `getCollection(...)`, `getReferences(...)`: records, read per request |
 | | `userField('<group>.<field>')`: a custom field of the signed-in user, as text; null when signed out or empty |
@@ -340,12 +369,16 @@ a visitor (their orders, their projects) a page reads through its feature's own
 operation, `Publr.request.call('app.<feature>.<verb>')`, which decides what the
 visitor may see. An entry is
 `id`, `type` (the handle), `slug`, `title`, `created_at`, `updated_at` (dates as
-`YYYY-MM-DD`) and `data`, the document: `post.data.body` is the field `body`,
-text or null. A reference field is followed with `getReferences(post,
-'sections')`: a collection of the records it points at, in the order stored; a
-target that is not live and public is left out. `getReference(post, 'seo')`
-is the first of them as an entry, blank (empty id and type, no fields) when the
-field points at nothing live, so `seo.data.description ?? ""` reads either way.
+`YYYY-MM-DD`), `restricted`, `reason` and `data`, the document: `post.data.body` is the
+field `body`, text or null. A reference field is followed with `getReferences(post,
+'sections')`: a collection of the records it points at, in the order stored. A target
+not published yet is left out. One the reader may not read stays in its place as a
+restricted entry: `restricted` true, `type` its type, `reason` why (`access`: a Private
+type or roles that do not reach it; `not_shared`: its type is not shared with this app;
+`deleted`: in the trash or gone for good), and no id, title or field. The page decides
+what to draw: skip it, or say "Teachers only". `getReference(post, 'seo')` is the first
+of them as an entry, blank (empty id and type, no fields) when the field points at
+nothing, so `seo.data.description ?? ""` reads either way.
 Every target is a dependency of the page, so its arrival or change rebuilds it,
 and a render reads each record once however many fields point at it.
 
@@ -374,6 +407,57 @@ exists, and the type's arrival rebuilds what read it.
 must say so, `<name>.dynamic.publr`, or the build refuses it naming the
 rename; the `.dynamic` never appears in a route. A template may carry the
 marker without reading the request, to be rendered per request anyway.
+
+## Templates, parts and patterns
+
+A route's file may hand part of its page to the block editor. The element marked
+`data-publr-template` is the route's template; inside it, elements marked
+`data-publr-slot="title"` and `data-publr-slot="content"` are where each page puts its
+record. An element marked `data-publr-template-part="header"`, in any file, layouts too, is
+a template part every page placing it shares.
+
+```html
+<main data-publr-template>
+  <h1 data-publr-slot="title">{post.title}</h1>
+  <div data-publr-slot="content" set:html={post.data.body ?? ""}></div>
+</main>
+```
+
+The file is the default. Editing the template or a part in the block editor saves an
+override, a published record of the app (`template` by route, `template_part` by name, see
+[Content](content.md)). After the file renders a page, the route's override replaces the
+inside of its `data-publr-template` element, each slot of the override filled with what the
+file rendered into the slot of the same name, and each part's override replaces the inside
+of every element placing it. An override is admin-authored markup, so it passes the same
+sanitizer as `set:html` first; what the file renders into a slot is the app's own and is
+kept as it is. A page without the markers, or with no published override for them, is
+exactly what the file renders. Static pages are built the same way, and publishing or
+resetting an override rebuilds the pages that place it.
+
+The block editor draws a record inside its route's template and the page around it, as the
+file renders them for a published record of the type. With none published, the file renders
+for the record being edited, its unpublished copy, or for a new one: an empty title and the
+type's defaults. A template should read its record with fallbacks (`post.data.body ?? ""`)
+so it renders for an empty one.
+
+Patterns are starting points the editor copies into a page; editing a placed copy changes
+only that page. The defaults are files, `design/patterns/<name>.html`, each a `---`
+header (`label:`, `category:`, `description:`) and then the fragment, at least two of the
+editor's blocks in its block markup (`data-pb-block`, as the editor saves them: build one in
+the editor and publish it to the library to get the markup). Markup that is not a block is
+refused, so the library only offers what the editor can edit. A `pattern` record of the
+same name replaces one, of a new name adds one.
+
+A pattern published from the editor may carry variants: complete alternative
+compositions, two or more, one of them the default a fresh copy starts from. It may also
+name the color context a fresh copy wears (one of the design system's contexts) and the
+contexts its copies may not wear. The record keeps them as fields of its own; a file
+pattern has none until it is published from the editor.
+
+The admin's Design area lists them: Templates (every route whose file marks a region and
+every part a file places, Default or Overridden, with Reset) and Patterns (File,
+Overridden with Reset, or Added with Remove). Reset and Remove move the record to the
+trash.
 
 ## Pages, components, islands
 
@@ -436,6 +520,15 @@ place (nested ones included), and links the island loader and, when it will
 hold an interactive component, the app's client stores, each as its own
 low-priority module script.
 
+Templates are written with Tailwind classes; the page carries short names, one per
+declaration. When the app loads, every declaration of the classes its templates and
+interactive components name gets one, a class is written as its declarations' names, and
+the stylesheet holds each declaration once. The stores import the same names
+(`_app/class-book.js`). A class the stylesheet does not make (a class `style.css` styles)
+is written as it is. In an interactive component a class is never built from a value
+(`pl-${n}`): the build fails and says to pick whole classes from a set or to pass the
+value as a CSS variable in `style`.
+
 ## Interactive components
 
 Interactivity is a client concern and says nothing about when a component
@@ -461,6 +554,28 @@ beside the HttpOnly session cookie, and signing out clears both. Without that co
 script stops and PublrJS is never fetched. With it, `GET /_publr/toolbar?path=<page>`
 answers `{ signed_in, name, admin, edit, edit_label }` as the session sees it. If the
 session has ended, the script clears the cookie.
+
+A page's scripts are its author's, so they never run as someone who may use the admin. The
+admin always has an origin of its own (`serve --admin-url`; by default `admin.<host>` on the
+site's port, `admin.localhost:<port>` on this machine), so the site's host never sees the
+admin's session: a signed-in administrator gets the page as it is, its storage, cookies and
+other sites' embeds working. The admin's host sends any page opened there to the site's
+host, through `/_publr/member`, which keeps a pass there for 12 hours. The pass shows the
+toolbar (its links to the admin's host) and opens nothing else. The site's host sends
+`/admin` and `/auth/sign-on` to the admin's.
+
+On the admin's host, a page loaded in a frame (a preview, the editor's canvas) is sandboxed
+without `allow-same-origin`: its origin is opaque, the session cookie is not sent from it,
+and `localStorage` and `document.cookie` throw. Everything it sends is a visitor's request,
+never the administrator's: the session is taken out and the frame's own visitor put in,
+derived from the session, so islands, `_api` calls and forms work there as for anyone. A
+guard script, first in its head, puts a notice ("Hidden while you're signed in") inside
+every frame of another site, which would inherit the sandbox. The toolbar shows in no frame.
+
+Tools from outside the page join the bar instead of drawing their own: the Publr
+extension's select, comment and send show after the edit link. A child of
+`<publr-toolbar>` with `slot="tools"` goes there; the window gets a `publr:toolbar` event
+once the bar is up. The bar moves and hides with its tools.
 
 An app that should never show it, even to administrators, opts out in its `<head>`:
 
@@ -516,6 +631,25 @@ members-only area and Publr Cloud's preview mode are all gates in plugins; the c
 none of its own. Built files are gated like renders: the gates are asked first, whatever
 answers the request.
 
+## Pages in other languages
+
+On a site with languages (the languages plugin), each language other than the main one has
+its pages under its address: `/pl/products/kubek` is the app's `/products/:slug` page read
+in Polish, the record found by its Polish slug (or its main one where it has none). One
+template serves every language. Every root path the page writes keeps the address (`/pl`),
+its islands too; the head gets `<link rel="alternate" hreflang>` for each language the page
+is in, and `x-default` for the main one; the build writes each language's pages and the
+sitemap lists them all. A layout writes `<html lang={locale}>` from
+`Publr.build.locale()`, and a switch from `Publr.build.languages()`, whose addresses are
+absolute so no language's address is put before them.
+
+A visitor's first page in the main language sends them to the same page in the first
+language their browser asks for (`Accept-Language`) that the site has: `/about` to
+`/pl/about`. Every page they open then records its language as their choice (the
+`publr_language` cookie), so following the switch is choosing, and they are not sent
+anywhere again. A static host without Publr serves the main language until the visitor
+switches.
+
 ## Building and serving
 
 ```
@@ -546,8 +680,9 @@ publish succeeds; the other apps and the admin stay up.
 served with an `ETag` (`public, max-age=60, stale-while-revalidate`), a dynamic island or a
 live page is rendered per request (`no-store`), assets generated by Publr under `/_app/`
 carry a fingerprint (`?v=<token>`) and are immutable for a year. Public files keep
-their literal URLs and are served from disk with revalidation, without content hashes,
-and are never gated. A page at a fixed path wins over a public file of the same path;
+their literal URLs and are served from disk like built pages: kept a minute, then
+revalidated by `ETag` (`304`, no body) in the background; they are never gated.
+A page at a fixed path wins over a public file of the same path;
 any other path is a public file before it is a `[slug]` page or the 404. Every build
 copies public files and removes the copies it made of files since deleted, independently
 of page generation; changing an image or a public script requires no Zig compilation and does
@@ -579,9 +714,13 @@ Every render records what it read in the dependency index, tables in the
 project's own database (`deps_*`) that every app shares: `record:<id>` for an entry,
 `type:<handle>` and `records` for a query, `template:<app>/<path>` for every template it
 went through, `asset:<app>` for the stylesheet it carries inline. A built page or island
-is named with its app, `www:/posts/hello`, so the same path in two apps is two artifacts. Every `record.*`
-notice raises the record's keys, from whichever door the change came (admin,
-API, CLI). The server takes the batch once it has been quiet for a quarter
+is named with its app, `www:/posts/hello`, so the same path in two apps is two artifacts. A
+`record.*` notice that changes what visitors see raises the record's keys, from whichever
+door the change came (admin, API, CLI): a publish, an unpublish, a delete, a restore, a
+purge, and a save or status move of a live record. An edit kept as pending changes, or a
+save of a record no visitor sees, raises nothing; it is seen through a preview drawn on
+request (`/admin/preview/<id>`, saved or not), never written to the built site. A changed record's
+own page is drawn again by the `[slug]` routes of its type only. The server takes the batch once it has been quiet for a quarter
 second and rebuilds exactly the artifacts the index names, each by its own app: a changed post
 rewrites its own page and whatever lists it; a rebuild that produces the same
 bytes is not written; a page whose record is gone is removed. Publish a

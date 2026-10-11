@@ -42,13 +42,22 @@ every level of nesting:
 
 - **Types.** The types the caller's access reaches; a visitor's are the public ones. A
   query naming a type out of reach is refused (`Denied`).
-- **Statuses.** `perspective: published`, the default and a visitor's only one, reads
-  live records. `perspective: all` reads every status the caller's access allows.
+- **Statuses.** `perspective: all`, the default, reads every status the caller's access
+  allows; `perspective: published` reads live records only, and is a visitor's and a site
+  page's only one.
+- **Copies.** A signed-in caller reads each record's latest copy: its pending changes when
+  it has some, else its live document, matched, ordered and returned alike. A visitor, and
+  a page drawn for one, read live documents only; a preview reads the latest.
 - **Fields.** A field the caller's access hides is as if the type had none.
 - **Own records.** Access limited to one's own records reads only those.
 
-A reference to a record the caller may not read is `null`, and the answer's `problems`
-names the record and why:
+A reference to a record the caller may not read stands in its place as
+`{ "restricted": true, "type": "assessment", "reason": "access" }`: `reason` is `access`
+(a Private type, or roles that do not reach it), `not_shared` (its type is not shared
+with the app the query is for) or `deleted` (in the trash or gone for good), `type`
+empty when it is gone. Nothing else of the record is said. A reference to a record not
+published yet, for a caller who reads live records only, is `null`, and the answer's
+`problems` names the record and why:
 
 ```
 { "result": [{ "title": "Orphan", "by": null }],

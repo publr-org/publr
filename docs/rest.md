@@ -93,11 +93,15 @@ redirects, and the paths its cookies are kept for.
 |---|---|
 | `GET /api/health` | `{ "version", "echo", "caller" }`; `caller` is who you are (`anonymous`, or a user id) |
 
+A deprecated operation ([Updates](updates.md#changing-publr)) still answers, with
+`Deprecation: true` and `X-Publr-Deprecated` saying since when and what to call instead.
+
 ## The CLI next to the server
 
 | Route | What |
 |---|---|
 | `POST /_publr/apps/load` | from `publr apps load`, with the same key: the apps read from their folder again and swapped in; answers `{ "loaded" }` or `{ "error" }` |
+| `POST /_publr/restart` | from the update process next to the server, once it swapped the binary, with the same key: the server stops at its next tick and becomes the new binary with the same arguments ([Updates](updates.md)); answers `{ "restarting": true }` |
 | `POST /_publr/cli` | body `{ "args", "password" }`: a command the CLI sends the server running for its database, run as the CLI would run it; answers `{ "code", "out", "err" }`. Only with the key this run of `serve` wrote beside the database (`X-Publr-Operator`), else `403`; see [CLI](cli.md#while-a-server-runs) |
 
 ## A device elsewhere

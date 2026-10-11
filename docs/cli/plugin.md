@@ -16,7 +16,7 @@ to enable it, or to update it.
 
 | Command | What |
 |---|---|
-| `plugin list` | Every plugin, built-in and installed (`mode` native or sandboxed): version, enabled or not, what waits for approval, an update waiting |
+| `plugin list [--limit <n>] [--offset <n>]` | The plugins, built-in then installed by name (`mode` native or sandboxed), 50 a page (`--limit` up to 200): version, enabled or not, what waits for approval, an update waiting; `total` counts them all |
 | `plugin get --name <n>` | Every request with its tier and state, the content access, the versions |
 | `plugin add --file <path>` | Add a module from this machine (`--as-admin` only); a new plugin, or the next version of one |
 | `plugin upload --file <name> --data <base64> [--offset <n>] [--last false]` | Add a module sent a piece at a time: what the admin's Upload plugin button sends |
@@ -29,7 +29,9 @@ to enable it, or to update it.
 | `plugin revoke --name <n> --key <k>` | Take one back; the plugin's next call answers denied |
 | `plugin deny --name <n> --key <k>` | Refuse one; enabling again does not grant it |
 | `plugin set_content_access --name <n> --scope <s> [--types <t,...>]` | Which content types its content permissions reach |
-| `plugin remove --name <n>` | Take it off the list; its content types and records stay. Refused, like disable, while an enabled plugin depends on it |
+| `plugin remove --name <n>` | Take it off the list, into the trash; its data stays, except the pieces chosen to go with it, which go into the same entry after its `uninstall` write runs. Refused, like disable, while an enabled plugin depends on it |
+| `plugin data --name <n>` | What it manages: its content types (with their records), internal record collections and custom field groups, each with a key and whether it goes with the plugin |
+| `plugin choose_removal --name <n> --remove <keys>` | Which pieces go with it when it is removed (`type:<handle>`, `internal:<collection>`, `fields:<group>`); none, keeping everything, until someone chooses |
 | `plugin build --name <n> --files <json>` | For an agent with no file system: each `{ "path", "content" }` written to `plugins/<n>/`, then the build started on its own beside the running server, which installs it when built (added and enabled, or updated). Needs `serve` and a binary carrying the compiler; refused to a drafts-only device. Without `--files`, `publr plugin build` builds the sources already there, here |
 | `plugin scaffold --name <n> [--page list\|form]` | The files of a new plugin with a page of its own in the admin, `{ path, content }`, ready for `plugin build --files`; writes nothing |
 | `plugin build_log --name <n>` | What that build printed so far: the compiler's messages, then what installing answered |

@@ -11,6 +11,10 @@ publr [--db <path>] [global flags] <namespace>.<verb> [--field value ...]
 publr --version
 ```
 
+A list flag takes its values split at commas (`--tags a,b`) or as a JSON array
+(`--urls '["https://a.eu/x,1.jpg","https://a.eu/y.jpg"]'`, the way to give a value with a
+comma in it); a flag that takes an object takes JSON.
+
 Output is the operation's result as JSON on stdout. Exit code `0` on success,
 `1` on failure (the error name is printed on stderr), `2` when no command is
 given.
@@ -20,7 +24,7 @@ The database is `data/publr.db` by default and is created on first use.
 ## Sites
 
 ```
-publr new <name>
+publr new <name> [--admin-only]
 ```
 
 A site is a folder `publr` runs in: `publr.zon`, `apps/`, `plugins/`, and `data/` once it
@@ -33,7 +37,9 @@ sites/
   shop/
 ```
 
-`new` makes `<name>/` in the current folder, with a `publr.zon` naming it. Where the
+`new` makes `<name>/` in the current folder, with a `publr.zon` naming it and Publr's
+starter in `apps/www`: one page at `/` with links to deploy and to the docs, the site's own
+to change. `--admin-only` leaves `apps/` empty, so `/` opens the admin. Where the
 binary is not one of the places agents look first (`publr`, `../publr`,
 `zig-out/bin/publr`, `../zig-out/bin/publr`, from the site), `publr.zon` also names it
 (`.binary`), relative when near and absolute when far. Then `cd <name>` and `serve`; the
@@ -45,7 +51,7 @@ plugins are sandboxed.
 
 ```
 publr [--db <path>] serve [--port <n>] [--static [--full]] [--dev] [--out <dir>] [--url <base>]
-                          [--apps <dir>] [--idle-stop <s>]
+                          [--admin-url <url>] [--apps <dir>] [--idle-stop <s>]
 ```
 
 Starts the HTTP server on `127.0.0.1` and runs until the process is stopped.
@@ -62,6 +68,7 @@ the next free one (at most 20 tries) and prints the port it took. With
 | `--dev` | Render every page on request, cache nothing, tint every island. |
 | `--out <dir>` | The built apps to serve when they exist, one folder each (default `output`). |
 | `--idle-stop <s>` | Stop after this many seconds without a request (default: never): a server started on demand that goes away when nobody uses it. |
+| `--admin-url <url>` | The admin's own address, on another host or port than the site's; by default `admin.<the site's host>` on its port (`http://admin.localhost:8080` for a site on this machine), and a site on a bare IP address must name one. A path under it (`https://cloud.publr.app/spaces/ada/shop`) is for a host shared by several admins: the proxy in front takes the path off, and every address and cookie the admin sends back carries it. The site's host then sends `/admin` there, the admin's host sends the site's pages back, and a signed-in administrator sees the site as it is, with no frame ([apps.md](apps.md#the-toolbar)). |
 | `--url <base>` | The project's public address: the apps' sitemaps, and the domain subdomain apps hang from (default `http://127.0.0.1:8080`). A path in it (`https://example.com/site`) is where the whole project is served: requests are answered under it, and every address it sends back (pages, assets, redirects, cookies) carries it. |
 | `--apps <dir>` | Where each app's public files are read from, `<dir>/<folder>/public` (default `apps`). |
 
@@ -120,11 +127,26 @@ carries neither, and `publr zig` and `plugin build` say so.
 
 ```
 publr agents
+publr --commands
 ```
+
+`publr --commands` lists every command at once, one line each with its exact flags (a flag
+in brackets may be left out) and what it does, the installed plugins' included. A
+conversation's agent starts every turn with it and the guide below, so it works from them
+instead of exploring with `--help`.
 
 Prints the guide for an agent building on this Publr ([Agents](agents.md), built into the
 binary so it always matches it), then where the SDK's source is on this machine and every
 permission a plugin may ask for, with its tier. `publr --help` points agents to it.
+
+```
+publr agent --conversation <id>
+```
+
+One conversation's turn ([`ai`](cli/ai.md)), in a process of its own: the server starts it
+when someone asks, never a person. It takes the device the turn runs as, runs the model's
+loop, reports each step and ends the turn, all through the server beside it. What it did
+goes to `data/agents/<id>.log`.
 
 ## A Publr elsewhere
 
@@ -175,6 +197,14 @@ fire in the server. Output, errors and the exit code are the same as run here; a
 with `--file` is sent as an absolute path. A second `serve` for the same database is
 refused. When the file is there but nothing answers (the server was killed), the command
 removes it and runs here.
+
+## The database and its backups
+
+`publr db check` says what this release would find opening the database (the release that
+last opened it, migrations to run, every way its shape differs) and exits 1 when it would
+refuse it. `publr db tables` counts every table's rows. `publr backups` lists the backups
+taken before each update and `publr restore <name>` puts one back, once `serve` is stopped.
+They open the database without the gate. See [Updates](updates.md) and [`update`](cli/update.md).
 
 ## Global flags
 
@@ -243,6 +273,15 @@ runnable example.
 | [`status`](cli/status.md) | The lifecycle states a record can be in |
 | [`snapshot`](cli/snapshot.md) | Frozen copies of records: revisions and other archives |
 | [`view`](cli/view.md) | Saved views: the content list's filters, named and kept per user |
+| [`rail`](cli/rail.md) | The pages a person pins to their rail |
+| [`ai`](cli/ai.md) | Conversations with a model: a person asks, an agent builds as their device |
+| [`secret`](cli/secret.md) | Secrets plugins name but never hold: API keys, set by an administrator |
+| [`removal`](cli/removal.md) | Removal lists: what an agent asked to remove for good, for its person to confirm |
+| [`trash`](cli/trash.md) | The trash: what was removed, restorable until it goes for good |
+| [`health`](cli/health.md) | Site Health: broken references to review case by case |
+| [`design`](cli/design.md) | An app's design system and moodboard |
+| [`http`](cli/http.md) | Requests a plugin sends out, its secrets filled in as they leave |
+| [`update`](cli/update.md) | Updating this site's Publr to a newer release, and stepping back; `db check`, `backups`, `restore` |
 | [`activity`](cli/activity.md) | What was done: every completed write, kept forever |
 | [`errors`](cli/activity.md) | What was refused or failed, kept forever |
 | [`internal`](cli/internal.md) | A plugin's internal records: what it keeps for itself, never content |

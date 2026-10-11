@@ -210,9 +210,14 @@ work for.
 
 **Pages**
 
-- **Build with Publr only.** Pages are `.publr` templates, styled with classes. No
-  JavaScript app, no React or other framework, no npm, no bundler, no scripts of your own
-  in `public/`. The one script a page may carry is `Publr.islands.condition`.
+- **Scripts are yours to add.** Pages are `.publr` templates; their behaviour (a slider,
+  a menu, a whole framework) can be any JavaScript in the app's `public/`, linked from a
+  layout (`<script src="/learn/slider.js" defer></script>` for an app at `/learn`). Markup
+  printed with `set:html` is sanitized, so a script goes in a template or `public/`, never
+  in a record. The admin is on an origin of its own, so a page's scripts never act as
+  someone signed in to it: they see the real page. The admin's previews show pages in a
+  sandboxed frame, where `localStorage` and `document.cookie` throw and other sites' embeds
+  show a notice; islands, `_api` calls and forms work there. Guard storage with `try`.
 - **Static first.** A page is built once unless it must know the visitor; a part that does
   (a cart, stock left) is a dynamic island. Forms post to the plugin's `app.*` operations.
 - **Use the patterns people expect.** For a shop: product pages, a cart, a separate
@@ -282,14 +287,37 @@ frame, looking like the admin's own. Keep it that way:
   tokens: in the frame both go through the admin, which runs only what the plugin may.
 - **Typed.** `publr plugin build` writes `ui/operations.d.ts`: every operation's input and
   output, so a misspelt name or field is an error in your editor.
+- **Entries, not chrome.** To put the page in the top bar, declare
+  `pub const top_bar = [_]publr.plugin.Item{.{ .label = "Notes", .icon = "file",
+  .page = "entries", .operation = List, .count = Count }}` (`count`, a read answering
+  `count`, for a number beside it). The admin draws it; it leads only to your pages or
+  `/admin/...`. The rail is the person's: nothing adds to it, and people pin your pages
+  there themselves (`publr rail pin`). Several content types of your own get a section of
+  their own in Content with `pub const sections = [_]publr.plugin.Section{.{ .label = "Shop",
+  .icon = "folder", .types = &.{.{ .handle = "product", .columns = &.{"price"} }} }}`:
+  listed under Sections in Content, with a sidebar of their own. Removing a plugin keeps
+  its data unless an administrator ticks pieces on its page; `pub const uninstall = Forget`
+  (one of your writes, taking `remove`) clears what core does not know is yours when they
+  do. `pub const about` is HTML for the plugin's page under
+  Settings › Plugins: plain text markup, classes only `muted`, `success`, `warning`,
+  `error`; anything else is dropped.
 
 ## Pages: apps
 
 The site people visit is made of apps: folders of templates, never compiled. An app
 answers at a mount and works with what its plugins store and do.
 
+**Words in records, layout in templates.** Everything a person would change on the site
+lives in content types and records the templates read: each page's title and body (a
+`page` type with title, slug and body, one `[slug].publr` drawing them all), the menu
+(records, or a list on a settings type), the site's name, phone, address and opening
+hours (a `kind = settings` type, one record). Templates hold the layout and the look,
+never the words. A site built this way is edited in the admin by its owner, and a small
+change is one `record update`: live at once, no file written, nothing loaded. Hard-coded
+text in a template is a site its owner cannot edit.
+
 ```
-apps/courses/app.zon                      .{ .mount = .{ .path = "/learn" } }
+apps/courses/app.zon                      .{ .name = "courses", .label = "Courses", .mount = .{ .path = "/learn" } }
 apps/courses/layouts/base.publr           the page around every page
 apps/courses/content/index.publr          /learn
 apps/courses/content/lessons/[slug].publr /learn/lessons/<slug>, one per lesson
@@ -317,11 +345,24 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
 </Base>
 ```
 
+- **Panels on other types' forms.** `pub const panels = [_]publr.plugin.Panel{.{ .type =
+  "product", .label = "Stock", .operation = StockPanel }}` adds a box to every product's
+  edit form, whoever's type it is. `StockPanel` is one of your reads taking `record` (the
+  record's id, all it is told) and answering `html`; it is drawn in the plugin frame like
+  your pages, with `call` and `query` working the same, and reads what else it needs
+  itself. Nothing on the type's side knows about it; without the type, there is no panel.
 - **What a page can read.** Built pages see live records of **public** types only: give
   the plugin's content type `.public = true`, and for pages per record a slug field,
   `.{ .name = "slug", .label = "Slug", .kind = "slug", .options = .{ .source = "title" } }`.
   An entry is `id`, `type`, `slug`, `title`, `created_at`, `updated_at` and `data`, its
   fields (`lesson.data.body`).
+- **Images.** A media field holds the file's id, not its address:
+  `Publr.build.media(lesson.data.photo)` is the file (`url`, `alt`, `title`, `width`,
+  `height`), or null when there is none a visitor may see, and
+  `Publr.build.mediaUrl(lesson.data.photo, { w: 800, h: 600, fit: 'cover' })` its address,
+  resized. Never query the `media` type: it is the admin's library, closed to visitors.
+  Bring images in with `media import_many --urls <a>,<b>,…` (up to 20 a call; one with
+  `media import --url`).
 - **Ask with a query when the reads do not fit.** `Publr.build.query(groq, params)` (or
   `Publr.request.query`) reads with GROQ: several types joined, nested lists, any filter,
   counts, order by anything, in one call. `*[_type == "variant" && product == $id] |
@@ -343,7 +384,8 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
   `/api/<namespace>/<verb>`.
 - **Links** are the app's own: an app at `/learn` writes `/learn/...`.
 - **Interactive components** (`interactive/*.ptsx`) and `middleware.zig` still need a build
-  of Publr: an app of yours has neither. Put code in a plugin.
+  of Publr: an app loaded from a folder has neither. For behaviour in the browser, use
+  scripts in `public/`; for code on the server, a plugin.
 
 After changing an app:
 
@@ -387,9 +429,11 @@ publr whoami                             # whose device this is, and what it may
 
 The person chooses what you may do: `read`, `drafts` (you write, they publish) or
 `write`. Never ask them for a password or a token, and never paste a token anywhere: the
-link is the only way in. Whatever you may do, you never delete anything for good: deleting
-a content type, a user or a plugin, purging a record, is refused with `NeedsPerson`; say
-what should go and let them do it in the admin. Under `drafts`, a write that would publish
+link is the only way in. Removing is safe: what you delete (a record, a content type, a
+plugin, a file, a user) goes to the trash whole, and the person can restore it (`trash
+list`, `trash restore`). Only what is final waits for them: purging a record or a term, or
+removing something from the trash, is not run but put on their removal list
+(`ListedForRemoval`); they remove it themselves. Under `drafts`, a write that would publish
 is refused with `DraftsOnly`: save drafts and tell them what waits to be published.
 
 With no files of your own to edit, the project's apps and plugins are reached through

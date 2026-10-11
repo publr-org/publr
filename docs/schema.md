@@ -1,8 +1,13 @@
 # Database schema
 
 Publr keeps everything in one SQLite file (`data/publr.db` by default), in
-strict tables created by `src/lib/db/schema.sql` when the database opens. There
-are no migrations: pre-release, the schema is the schema. Ids are 24 hex
+strict tables created by `src/lib/db/schema.sql` when the database opens. `schema.sql` is
+the shape of a new database; a database made by any earlier release since 0.3.0 reaches
+it through the chain of migrations (`src/lib/db/migrations/`, recorded in `migrations`),
+run by the gate every open goes through ([Updates](updates.md)). A database from before
+0.3.0 is brought to the shape once: missing tables made, columns added since a table first
+shipped added in place (`added_columns` in `src/lib/db/schema.zig`), drifted tables
+rebuilt, rows kept. Ids are 24 hex
 characters, times are Unix milliseconds, booleans are `0`/`1`. A record's, term's, user's,
 internal record's or saved view's id is time-ordered: the millisecond it was made (12
 characters), a counter within that millisecond (4), random (8). Sorted by id, rows are in
@@ -136,6 +141,26 @@ and by plugins under their own dotted prefix (`seo.default_image`).
 | `value` | text | The value as text |
 | `updated_at` | integer | Last write |
 
+Publr keeps two of its own here. `publr.release` is the release that last opened the
+database; when another one opens it, the whole site is backed up first. The gate writes it
+([updates.md](updates.md)).
+
+## `migrations`
+
+Every migration this database has been through, core's and each compiled-in plugin's. A
+fresh database records every migration its release knows, since `schema.sql` already has
+their result. A row the opening release does not know means a newer release migrated it.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `source` | text | `publr`, or the plugin the migration belongs to |
+| `name` | text | The release it reaches (`0.4.0`), or `unreleased` during development |
+| `sha256` | text | The migration file's SHA-256 when it ran; an unreleased one runs again when it changes |
+| `one_way` | integer 0/1 | It dropped, renamed or rewrote: the release before cannot run on the result |
+| `applied_ms` | integer | When it ran |
+
+Primary key `(source, name)`.
+
 ## `users`
 
 Accounts. What an account may do is its roles (`user_roles`). An account
@@ -202,6 +227,208 @@ their views. Up to 64 per user.
 | `created_at`, `updated_at` | integer | Timestamps |
 
 Indexes: `views_user (user_id, name)`.
+
+## `rail_pins`
+
+The pages a person pinned to their rail, below the fixed Overview, Content and Media, in
+the order pinned. Each is a reference: a core page (`plugin` empty, `page` like
+`settings/users`) or a plugin's page or section (`plugin` and its `page`,
+`section/<handle>` for a section). Drawn only while the page exists and the person may see
+it. Up to 16 per person. Deleting a user removes their pins.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `user_id` | text, references `users` | Whose rail; cascades on delete |
+| `plugin` | text | The plugin whose page it is; empty for a core page |
+| `page` | text | The page |
+| `position` | integer | Its place on the rail, from the top |
+| `pinned_at` | integer | When it was pinned |
+
+Primary key: `(user_id, plugin, page)`.
+
+## `ai_conversations`
+
+A person's conversations with a model from the admin's Overview, one per prompt: what
+they asked, the provider and model that answered, the access the agent ran with, where
+the turn is, and its last words. Private: listed and read by the person alone. Deleting a
+user removes their conversations and steps.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text, primary key | Conversation id |
+| `user_id` | text, references `users` | Whose conversation; cascades on delete |
+| `prompt` | text | What the person asked, up to 16 KiB |
+| `provider`, `model` | text | Who answered, as the provider names its model |
+| `scope` | text | The agent's access: `read`, `drafts` or `write` |
+| `state` | text | `running`, `stopping`, `finished`, `stopped` or `failed` |
+| `answer` | text | The model's last words, once the turn is over |
+| `device_id` | text | The device the turn ran as, revoked when it ended; empty before it began |
+| `input_tokens`, `output_tokens` | integer | What the conversation cost so far, every turn added, as the provider counted |
+| `created_at`, `updated_at` | integer | Timestamps |
+| `draft` | text | The words the model is writing, so far, while it writes them; empty once they are a step |
+| `cached_tokens` | integer | Of the input tokens, how many the provider read from its cache (at a fraction of the price) |
+
+Indexes: `ai_conversations_user (user_id, created_at)`.
+
+## `ai_steps`
+
+A conversation's steps in order: each follow-up the person asked, each time the model
+said something on the way, each command it ran, and its answer to each ask. Up to 512 per
+conversation.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `conversation_id` | text, references `ai_conversations` | Whose step; cascades on delete |
+| `position` | integer | Its place, from 1 |
+| `kind` | text | `asked`, `said`, `ran` or `answered` |
+| `summary` | text | One line, up to 300 bytes: what a command did ("Created content type Recipe"), or the first line said |
+| `detail` | text | The whole of it, up to 16 KiB: what was said, what the command answered |
+| `failed` | integer | 1 when the command failed |
+| `href` | text | The admin page that shows what it changed; empty for none |
+| `at` | integer | When it happened |
+
+Primary key: `(conversation_id, position)`.
+
+## `ai_pictures`
+
+The pictures the person attached to an ask, which the model sees with it: each a chat
+picture (a file of the `ai_picture` media type, private, never in the library), uploaded
+as it was attached. Up to 8 per ask.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `conversation_id` | text, references `ai_conversations` | Whose; cascades on delete |
+| `asked` | integer | The ask it came with: 0 for the first, else the `asked` step's position |
+| `ordinal` | integer | Its place among that ask's pictures, from 0 |
+| `media_key` | text | The file's key (`ai_picture/2026/10/pasted-5d3752.png`) |
+
+Primary key: `(conversation_id, asked, ordinal)`. A picture whose file is gone is left
+out of the turns after.
+
+## `ai_activity`
+
+What a running turn's agent is doing right now, between the steps: waiting for the model,
+or running one call. The workspace shows it with how long it has taken, so a long model
+reply never looks like a stall. One row per conversation, removed when the turn ends.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `conversation_id` | text, references `ai_conversations` | Whose; cascades on delete |
+| `doing` | text | One line, up to 120 bytes: "Thinking", "Running publr media import" |
+| `since` | integer | When it began |
+
+Primary key: `conversation_id`.
+
+## `ai_browsers`
+
+The person's browser lending the agent its hands: one row per conversation whose workspace
+has the Publr extension, holding the one browser call in flight. Calls go one at a time,
+so only the latest is kept; the row is emptied when the turn ends.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `conversation_id` | text, references `ai_conversations` | Whose; cascades on delete |
+| `ready_at` | integer | When the workspace last said the extension is there; 0 when it never did |
+| `number` | integer | The latest call's number, from 1 |
+| `state` | text | `idle`, `pending` (waiting for the browser) or `answered` |
+| `call` | text | The call as the agent made it: a JSON object with its `action` |
+| `answer` | text | What the browser answered, up to 48 KiB |
+| `failed` | integer | 1 when the browser could not do it |
+| `picture` | text | A screenshot with the answer: a base64 JPEG, up to 176 KiB; empty for none |
+
+Primary key: `conversation_id`.
+
+## `removals`
+
+What an agent asked to remove for good, gathered for its person to review: one list per
+device while it waits (a conversation's agent, or a person's own). The person keeps what
+should stay and removes the rest, as themselves; then the list is done.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text | Its id |
+| `user_id` | text, references `users` | Whose list: the person the device acts for; cascades on delete |
+| `device_id` | text | The device that listed it |
+| `conversation_id` | text | The conversation whose agent listed it; empty for another device |
+| `state` | text | `waiting` or `done` |
+| `created_at`, `updated_at` | integer | Timestamps |
+
+Index: `(user_id, state, created_at)`.
+
+## `removal_items`
+
+One thing on a removal list: the removal as it was asked for, in words, and what came of it.
+Up to 100 per list.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `removal_id` | text, references `removals` | Its list; cascades on delete |
+| `position` | integer | Its place, from 1 |
+| `operation` | text | The operation that removes it (`record.purge`) |
+| `input` | text | The operation's input as it was asked, JSON: what runs when the person confirms |
+| `label` | text | What goes, in words ("Content type Product") |
+| `detail` | text | What goes with it ("and its 12 records") |
+| `blocked` | text | Why it never goes this way, and how to do it by hand; empty when it may |
+| `state` | text | `waiting`, `removed`, `trashed` (moved to the trash instead), `kept`, `failed` or `blocked` |
+| `message` | text | Why a removal failed |
+
+Primary key: `(removal_id, position)`.
+
+## `trash`
+
+A copy of what a removal took, kept until the trash empties it: anything removed (a
+content type, taxonomy, field group, plugin, media file, user, secret or app file) and
+everything a delete of it takes along. Restoring writes the copy
+back and drops the entry.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text | Its id |
+| `kind` | text | `content_type`, `taxonomy`, `field_group`, `plugin`, `media`, `user`, `secret` or `app_file` |
+| `key` | text | What it was: the definition's id, the group's handle, the plugin's name |
+| `label` | text | In words ("Content type Recipe, and its 12 records") |
+| `removed_by` | text | The person who removed it, or whose agent did; empty for the operator |
+| `device_id` | text | The device that removed it; empty for a person |
+| `conversation_id` | text | The conversation whose agent removed it; empty otherwise |
+| `removed_at` | integer | When |
+| `keep_until` | integer | When it goes for good (`trash.keep_days` after) |
+| `copy` | text | The rows, JSON: each table's rows, parents first, blobs as hex; for an app file, its path and text |
+| `files` | text | The media files it set aside in the library's `.trash/` folder, by key, one per line |
+
+Index: `(removed_at)`.
+
+
+## `health_kept`
+
+Site Health's "Keep as is": a broken reference someone chose to leave. Everything else
+Site Health lists is worked out from the references themselves. A row keeps its case out
+of the list until something about it changes (the reason, or how many records point).
+
+| Column | Type | Meaning |
+|---|---|---|
+| `target` | text | The record pointed at, by id |
+| `app` | text | For a type no longer shared, the app whose records point at it; empty otherwise |
+| `reason` | text | `deleted`, `gone` or `not_shared`, as it was when kept |
+| `holders` | integer | How many records pointed at it then |
+| `kept_at` | integer | When |
+
+Primary key `(target, app)`.
+
+## `secrets`
+
+Values plugins name but never hold (API keys and the like), pasted under Settings ›
+Secrets. Each is sealed with the project's key (XChaCha20-Poly1305, bound to its name), a
+key kept outside the database: `PUBLR_SECRET_KEY`, else `secret.key` beside the database
+file (mode 0600, made when the first secret is kept). The database alone reveals nothing;
+losing the key loses what was pasted. An environment variable of the same name wins over
+what is kept here. A value is never read back out, only filled into a plugin's request as
+it leaves.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `name` | text, primary key | `STOCKS_API_KEY`: capitals, digits and underscores |
+| `sealed` | blob | The nonce, the encrypted value and its tag |
+| `updated_at` | integer | When it was last set |
 
 ## `internal_records`
 
@@ -329,6 +556,7 @@ project reads this table again. See [Plugins](plugins.md#installed-plugins-dlp).
 | `next_version`, `next_hash`, `next_manifest` | text, nullable | A newer module uploaded for it, waiting to be applied |
 | `previous_version`, `previous_hash`, `previous_manifest` | text, nullable | The version the last update replaced |
 | `installed_at`, `updated_at` | integer | Timestamps |
+| `remove_data` | text | What of the plugin's data goes into the trash with it when it is removed: keys of its pieces (`type:<handle>`, `internal:<collection>`, `fields:<group>`), as a JSON array; `[]`, keeping everything, until an administrator chooses |
 
 ## `content_types`
 
@@ -348,8 +576,8 @@ database opens) live side by side in this table.
 | `icon` | text | Icon name for the admin |
 | `public` | integer | `1` if anonymous callers may read its live records |
 | `system` | integer | `1` when a plugin owns the type (`owner` in the definition names it): its declared fields are locked, fields added by hand on top are kept across redeclarations |
-| `editor` | text | Editor to use (`form` by default) |
-| `editor_config` | text | Editor configuration as JSON |
+| `editor` | text | How its records are edited: `form` (the default) or `visual` |
+| `editor_config` | text | The editor's configuration as JSON: `{"field": …}`, the rich text field a visual type writes |
 | `definition` | text | The complete definition as JSON (source of truth) |
 | `created_at`, `updated_at` | integer | Timestamps |
 
@@ -376,7 +604,7 @@ archive and delete leave `changed` and the pending copy alone.
 | `created_at`, `updated_at` | integer | Timestamps |
 | `created_by` | text, nullable | The user who created it (a fact, not a byline) |
 | `updated_by` | text, nullable | The user of the last save or transition |
-| `app` | text, nullable | The app it belongs to, by the `.name` in its `app.zon`; null for the project's own. Where the admin shows it, never who may read it; not a version change |
+| `app` | text, nullable | A design record's app (template, part, pattern, moodboard card), by the `.name` in its `app.zon`; null for every other record, which lives where its type does |
 
 Indexes: `records_list (type_id, status, updated_at)`; `records_changed
 (type_id, updated_at) WHERE changed = 1`; `records_app (app, updated_at)`.
@@ -506,8 +734,8 @@ taxonomy is enabled on a content type by giving the type a field of kind
 | `icon` | text | Icon name for the admin |
 | `public` | integer | `1` if anonymous callers may read its live terms |
 | `system` | integer | `1` when a plugin owns the taxonomy |
-| `editor` | text | Editor to use (`form` by default) |
-| `editor_config` | text | Editor configuration as JSON |
+| `editor` | text | How its records are edited: `form` (the default) or `visual` |
+| `editor_config` | text | The editor's configuration as JSON: `{"field": …}`, the rich text field a visual type writes |
 | `definition` | text | The complete definition as JSON (source of truth) |
 | `created_at`, `updated_at` | integer | Timestamps |
 
@@ -529,7 +757,7 @@ record: status, pending edits (`changed`), version, revisions in `snapshots`
 | `version` | integer | Version, starts at 1 |
 | `created_at`, `updated_at` | integer | Timestamps |
 | `created_by`, `updated_by` | text, nullable | The acting users |
-| `app` | text, nullable | The app it belongs to, as on `records` |
+| `app` | text, nullable | Always null: a term lives where its taxonomy does |
 
 Indexes: `terms_list (type_id, status, updated_at)`; `terms_changed (type_id,
 updated_at) WHERE changed = 1`; `terms_parent (parent_id)`.

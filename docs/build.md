@@ -11,8 +11,11 @@ each concern lives in `build/<topic>.zig`.
 | `zig build run -- <args>` | Build and run. |
 | `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every plugin compiled in from `plugins/` (`publr.zon`), and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
 | `zig build verify` | The core's tests + `zig fmt --check` + `tidy`: one compile of the core, the check to run after every change. |
-| `zig build verify-full` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `two-mode` + `browser`. Each builds Publr its own way, so it takes minutes; run it before a commit. |
+| `zig build verify-full` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `two-mode` + `browser` + `upgrade`. Each builds Publr its own way, so it takes minutes; run it before a commit. |
 | `zig build parity` | Run the example every `--help` prints and check its answer. |
+| `zig build upgrade` | Update every release's fixture in `fixtures/upgrade/` with this build and check it (`-Dupgrade-from=<release>` for one, `-Dupgrade-previous=<publr>` to prove the release before still runs on the result, `-Dupgrade-binary=<publr>` to test that binary instead); part of `verify-full`. See [Updates](updates.md). |
+| `zig build upgrade-fixture` | Make this version's fixture and carry the lived site on to it, with this build or `-Dupgrade-binary`; the Release workflow runs it with the release binary. |
+| `zig build migration-draft` | Draft `src/lib/db/migrations/unreleased.zig` from what `schema.sql` adds to the last release's. |
 | `zig build two-mode` | Run every test plugin installed and compiled in, and compare the answers. |
 | `zig build sandboxed-plugins` | Build the plugins under `-Dsandboxed-plugins` as installed plugins into `zig-out/sandboxed-plugins/<name>.wasm`, with the `publr` just built; see [The plugins](#the-plugins). |
 | `zig build browser` | Build the browser target into `zig-out/browser/` (`publr.wasm`, `index.html`, `publr-worker.js`); see [Publr in the browser](browser.md). |

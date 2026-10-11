@@ -1,6 +1,7 @@
 # Plugins
 
 Plugins and apps follow [How to build well](agents.md#how-to-build-well).
+Every declaration and its shape is listed in the [Plugin API reference](plugin-api.md).
 
 Publr has two ways to run a plugin. Both use the same SDK. The difference is
 where the plugin lives and who decides that it is there: every plugin is either
@@ -126,10 +127,11 @@ the sentence, the reason, the key and a tier before enabling it:
 |---|---|---|
 | Low | granted | `content.read`, `schema.read`, `users.names`, a hook that sees an event |
 | Medium | granted, listed | `content.write`, `content.drafts`, `release.manage`, a hook that changes an input |
-| High | pending until approved | `users.read`, `users.write`, `content.purge`, `settings.global`, a raised limit |
+| High | pending until approved | `users.read`, `users.write`, `content.purge`, `settings.global`, `http.fetch`, `secret.<NAME>`, a raised limit |
 
 Some operations no permission names, so no plugin ever reaches them: signing in and out,
-passwords and set-password links, who may sign people in, setup, roles, saved views. A
+passwords and set-password links, who may sign people in, setup, roles, saved views, the
+project's secrets, a person's conversations with a model. A
 plugin always reaches its own operations (`<name>.*`, `app.<name>.*`) and its own content
 types' records without asking. Content permissions are held to its **content access**:
 public types (the default), every type, or the ones the administrator ticks.
@@ -137,6 +139,40 @@ public types (the default), every type, or the ones the administrator ticks.
 Anything granted can be revoked at any time, one at a time; the plugin's next call
 answers `Denied` and it must carry on without. A key nothing installed provides is shown
 as unavailable: the plugin runs without it.
+
+### Calling out, and secrets
+
+A plugin granted `http.fetch` sends requests with `ctx.call(publr.operations.http.Fetch,
+...)`: to the domains it declares in `allowed_domains` (or a domain under one), over https,
+or plain http to this machine. A key it needs is a **secret it names but never holds**: it
+asks for `secret.<NAME>` and writes `{secret:NAME}` where the value goes, in the address, a
+header or the body. The value is filled in as the request leaves, and put back as
+`{secret:NAME}` wherever the answer echoes it. It comes from the environment variable of
+the same name, else from what an administrator set under Settings › Secrets
+([`secret`](cli/secret.md)). A secret not granted, or with no value, fails the call
+(`SecretNotGranted`, `SecretMissing`).
+
+### Model providers
+
+A plugin becomes a model provider by registering two operations, built by `publr.ai`:
+`publr.ai.Describe("<name>", .{...})` (its label, models, default model, and its key: the
+secret it is kept under, where it is made, what to do there, how it starts) and
+`publr.ai.Complete("<name>", complete)`, where `complete` turns a `publr.ai.Request` into a
+`publr.ai.Response` by calling its API through `http.fetch`. Core finds every provider
+installed by those names, lists them under Settings › AI, and has a conversation's agent
+call the one chosen, in the agent's own process. Publr's official providers live in the
+workspace's `plugins/` folder; Settings › AI sets one up in a click when the server knows
+that folder (`PUBLR_PLUGIN_CATALOG`): it adds the provider's built module, as uploading it
+does, and opens its review.
+
+A message's parts are text, tool calls, tool results and images (a media type and base64
+bytes: screenshots the agent takes, pictures the person attaches); in a tool message the
+images follow the results. A provider sends each in its API's own shape. Pictures make a
+request a few MiB, so providers ask for more memory than the default (`limits`), and
+`http.fetch` sends up to 8 MiB. A provider that streams reads the reply with `http.stream`
+and `http.read` and passes the words on with `publr.ai.Progress` (`ai.progress`, a
+permission of its own) as they come; `publr.ai.Events` splits the stream into its
+`data:` lines.
 
 ### Limits
 
@@ -165,6 +201,69 @@ Each hook carries its reason (`pub const reason = "..."`); an event hook names t
 it sees (`pub const event = "record.published"`), an operation or a notice, and sees only
 that one, compiled in or installed. A plugin never writes `export fn`.
 
+### Panels on edit forms
+
+A plugin can add a box to any content type's edit form, its own type, another plugin's,
+or the core's, without that type's plugin knowing about it:
+
+```zig
+pub const panels = [_]publr.plugin.Panel{.{
+    .type = "product",
+    .label = "Stock",
+    .operation = StockPanel,
+}};
+```
+
+`StockPanel` is one of the plugin's reads, taking `record` (the record's id) and `base`,
+answering `html`. The admin shows it in the editor's right column, titled with its label
+and the plugin's name, in the plugin frame sized to its content; `call` and `query` work
+in it as on the plugin's pages. It is told only which record it is on and reads the rest
+itself, within what it and the viewer may. It shows to whoever may call the read, on
+records of that type, and not at all when the type is not there.
+
+### Entries in the admin's lists, and what a plugin says about itself
+
+Any plugin, installed or built-in, can add entries to the top bar: data the admin draws
+with its own components, so they look like its own and pass for nothing else. The rail is
+the person's: no plugin adds to it (declaring `rail` is a compile error). A plugin's pages
+are listed under Settings and its sections in Content, and each person pins the ones they
+use to their own rail (`publr rail pin`, or the pin on the row).
+
+```zig
+pub const top_bar = [_]publr.plugin.Item{.{
+    .label = "Notes", .icon = "file", .page = "entries", .operation = List,
+    .count = Count, // a read answering `count`, shown beside the label
+}};
+```
+
+A plugin that brings several content types can give them a part of the admin of their
+own, listed in Content under Sections (and pinnable to the rail), instead of mixing them
+into its types:
+
+```zig
+pub const sections = [_]publr.plugin.Section{.{
+    .label = "Shop",
+    .icon = "folder",
+    .types = &.{
+        .{ .handle = "product", .columns = &.{ "price", "stock" } },
+        .{ .handle = "order" },
+    },
+}};
+```
+
+The section's sidebar lists its types; each list is the admin's content list with up to 4
+of the type's fields after the title (text, numbers, yes/no, dates, money, colours), and
+editing a record keeps the section lit. Its types leave the Content sidebar. A section
+names only the plugin's own record types; the admin shows the ones the viewer can see.
+
+An entry leads to one of the plugin's pages (`page`) or an address in the admin
+(`href`, `/admin/...`), never elsewhere, and is shown to whoever may call `operation`.
+`pub const about = "<p>...</p>"`
+is what the plugin says about itself on its page under Settings › Plugins: HTML, through
+the admin's sanitizer profile (no layout or colour of its own, the admin's few classes
+`muted`, `success`, `warning`, `error`, images only from the site, links elsewhere opening
+apart), in a box the admin draws and names after the plugin.
+
 ### Pages in the plugin frame
 
 Any plugin, installed or built-in, can bring pages of its own, listed in the Settings
@@ -186,9 +285,10 @@ address's query string as `query` and the path the project is served under as `b
 
 A compiled-in plugin draws the page with the admin's own layouts, so it looks like any
 other Settings page: its view (an `IndexPage`, a `FormPage`) rendered whole with
-`publr.admin.render.document(arena, publr.admin.chrome.in_plugin_frame(arena, in.base),
+`publr.admin.render.document(arena, publr.admin.chrome.in_plugin_frame(ctx, in.base),
 View, props)`, which leaves out the rail, the sidebar and the crumbs the admin already
-draws around the frame. An installed plugin gets the same once the design system is drawn
+draws around the frame, and speaks the person's language: `Publr.t` in the view reads
+their catalogue. An installed plugin gets the same once the design system is drawn
 for it by the host; until then it answers its own markup. It gets the admin's stylesheet and a small bridge, and
 nothing else: no session, no network (`connect-src 'none'`), and it can be framed only
 by the admin. Its response carries the same policy, so it stays sandboxed even when
@@ -326,7 +426,29 @@ and the admin for free. History goes into
 snapshots (`snapshot take/list/prune`, kinds of the plugin's own); parked
 copies of a document go into slots (`record get --slot`), like the core's
 `pending`. A plugin that truly needs its own table ships `schema_sql`; it runs only when
-the plugin is compiled in.
+the plugin is compiled in. Once a release of the plugin has shipped, a change to those
+tables is a migration of its own, `pub const migrations = [_]publr.db.migration.Migration{...}`,
+named by the release that ships it and run by the gate like core's ([Updates](updates.md)).
+
+A plugin that keeps files declares a **media type**: a type of `.kind = .media` with a
+`title` field and, optionally, the file families it takes (`.families = &.{"image"}`).
+Its files are uploaded with `media upload --type <handle>` (`/media/upload?type=`),
+listed with `media list --type`, read with `media read`, and kept apart from the media
+library and every other type: they show nowhere until the plugin draws them on a page of
+its own. A Private media type's files are private. Sandboxed plugins declare one the same
+way.
+
+A page shows its type's files with the admin's own library: `<MediaLibrary type="invoice_file" />`
+(`@publr/admin/MediaLibrary.ptsx`) is the whole of Media's screen for that type, the bar,
+the explorer, the tiles and a file opened in place, reading the files of the address it
+is on. Its parts lay it out differently or beside a page's own:
+`MediaLibraryFilterBar` (with `MediaLibraryUpload`, or other actions, as children),
+`MediaLibrarySidebar`, `MediaLibraryGrid`, `MediaLibrarySelection`, `MediaLibraryPager` and
+`MediaLibraryFile`, inside `<MediaLibrary type="…">`. A part of the page's own imports
+`state` and the actions (`follow`, `load`, `toggled`…) from `MediaLibrary.ptsx`, so its
+table filters, pages and selects as the grid does. On a Settings page, `<ListDetailPage sidebar>` keeps the
+Settings sidebar beside it. On a compiled-in plugin's own route it
+works today; in the plugin frame it waits on the frame reaching `media` operations.
 
 A plugin can declare roles (`pub const roles = [_]publr.plugin.Role{...}`): a name, a
 label and grants, each an operation or a namespace ending in `.*`. A name of its own is
@@ -404,9 +526,6 @@ the view's own data only, after `publr.admin.require` for the signed-in session.
   sidebar for whoever may call the operation it names, and lit on that path and every
   path under it. A page that belongs under another's entry says so with
   `publr.admin.screen_with(&session, .{ .settings_path = "/admin/<other>" }, ...)`.
-- A top bar item (`pub fn top_bar(session: *const publr.admin.Session)
-  publr.admin.Error!?publr.admin.render.Node`): called for every signed-in page; null
-  shows nothing. An item that fails is left out and logged.
 - A segment joined to the app picker (`pub fn app_picker_segment(session: *const
   publr.admin.Session, attached: bool) publr.admin.Error!?publr.admin.render.Node`): drawn
   after the picker as one control where the project has apps (`attached` true: draw it as
@@ -423,7 +542,8 @@ the view's own data only, after `publr.admin.require` for the signed-in session.
   where `{name}` stands for the row's name, a row kind (every row when empty) and the
   operation whoever sees it may call. The page's owner reads them for each row with
   `publr.admin.row_actions(session, slot, kind, name)`; neither plugin knows the other's
-  code.
+  code. An installed plugin's actions count too, when they lead into the admin
+  (`/admin/...`) through an operation of its own.
 
 A plugin can **keep state** for as long as the process runs: one `pub const State =
 struct {...}`, made when the server opens the project (with `pub fn init(state: *State,
@@ -473,6 +593,11 @@ uses. When both plugins are compiled in, a remote shape that does not fit the re
 a compile error naming the field. A plugin's own `interface.zig`, beside its `main.zig`,
 is for its own files: `@import("newsletter")` inside newsletter.
 
+A write may also say what it does outside the database once it is kept:
+`pub fn committed(ctx: *sdk.Ctx, in: In, out: Out) sdk.Error!void` runs after its
+transaction commits, only when no other write encloses it (core's `design.save_system`
+loads the apps this way). Its failure is the call's answer; the write stays.
+
 A plugin can run once the database opens (`pub fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void`),
 as the system, after every declared type and field is in place: a setting the product
 needs, a record that must exist. It runs at every start, so it checks before it writes.
@@ -498,3 +623,53 @@ and run with `zig build test`. The `plugins/` directory and `publr.zon` are your
 Publr's own repository does not track them, so a fork can commit its plugins alongside
 the core. `-Dplugins=<dir>` builds from another folder instead, with the `publr.zon`
 beside it; a link in it counts, so one folder can gather plugins kept elsewhere.
+
+### Translations
+
+A plugin brings the admin's words in other languages as gettext PO files: `pub const
+translations = [_]publr.plugin.Translation{ .{ .locale = "pl", .label = "Polski", .po =
+@embedFile("i18n/publr/pl.po") } }`. `.domain` names whose words a file holds (`publr`,
+or a plugin's name; the plugin's own when left out), so one plugin can translate the core
+and others, and fill in what their authors left out. A plugin translating its own words is
+first-party and wins; a `publr` file wins only when marked `.official`. A language pack is
+a plugin of these alone, named `language_<code>` (`language_pl`). Site Health shows where
+translations disagree and what each language still misses. See
+[Admin](admin.md#the-admins-language).
+
+### Variants and System settings tabs
+
+A plugin may declare the one **variant dimension** (`pub const variants:
+publr.plugin.Variants`): the words of the setting every field then has (`label`, `help`),
+the words of the type setting for records not written in a variant (`untranslated`), and a
+read of its own answering `variants`, each `{ code, label, address, main }` in order, the
+main one first. The core draws the setting, stores and reads the values (see
+[Content](content.md#languages-and-other-variants)), offers the switch in its editors and
+serves each variant's pages under its address. The languages plugin is one: a language is
+a variant.
+
+A plugin may add a section to a tab of System settings (`pub const settings_tabs =
+[_]publr.plugin.SettingsTab{...}`): the tab's name (`localization`) and label, a view whose
+`draw(session)` returns the section drawn with the admin's components, and the operation
+that decides who sees it. Plugins naming the same tab share it, their sections in plugin
+order; the tab shows while any plugin adds to it. A refused save draws the tab again with
+`publr.admin.settings_tabs.show_refused`. Compiled in only, for now.
+
+### Its data, when it is removed
+
+Removing a plugin moves it to the trash; its data stays, unless an administrator chose
+otherwise on its page (Settings › Plugins › the plugin › Its data, or
+`plugin choose_removal`). The page lists what the database holds for it: the content
+types it owns with their records, its internal record collections, its custom field
+groups. Ticked pieces go into the plugin's own trash entry and come back with it; nothing
+is ticked until someone ticks it, so disabling, removing and adding a plugin back never
+lose data by themselves.
+
+A plugin that keeps more than core knows can clear it on the way out:
+
+```zig
+pub const uninstall = Forget; // one of its own writes, taking `remove`
+```
+
+`Forget` runs, while the plugin still runs, when it is removed with some of its data,
+told which pieces go (`remove`: `type:<handle>`, `internal:<collection>`,
+`fields:<group>`). If it fails, nothing is removed.

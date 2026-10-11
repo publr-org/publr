@@ -31,7 +31,8 @@ thirty days of silence; signing out revokes them.
 New accounts can be created with a password, with a generated one shown
 once, or with no password at all: then the account is inactive until the
 person redeems a one-hour, single-use set-password link (which an admin can
-reissue at any time). Setting a password signs out every session of that
+reissue at any time): the admin's welcome screen, `/admin/welcome?token=…`, where they
+also choose their language, and from which they are signed in. Setting a password signs out every session of that
 account.
 
 Wrong passwords cost the same time as right ones and give the same answer for
@@ -51,6 +52,9 @@ A project has one set of accounts and one session for the admin and every app. W
 app answers on a subdomain ([Apps](apps.md#where-an-app-answers)), the session cookie is
 set for the project's whole domain, so one sign-in holds everywhere. Two separate sets
 of accounts are two projects.
+
+With `serve --admin-url`, the admin signs in on its own host and the session cookie stays
+there: host-only, never set for a domain, so the site's host never receives it.
 
 ## Signing in with a provider
 
@@ -127,9 +131,13 @@ person approved:
 | `write` | everything its account may |
 
 Whatever its scope, a device never destroys data for good. An operation that declares
-`destroys` (deleting a content type, a taxonomy, a field group or a user; purging a
-record or a term; removing a plugin; pruning snapshots; deleting media) is refused to it
-with `NeedsPerson`, and a person does it in the admin. A device never approves another
+`destroys` (purging a record or a term; pruning snapshots; removing something from the
+trash, or emptying it) is not run for it: it goes on the device's removal list for its person, and the call fails
+with `ListedForRemoval`, saying where the list is ([`removal`](cli/removal.md)). The person
+reviews the list and removes what they agree to, as themselves. A removal that can be
+undone stays the device's to do: moving records and terms to the trash, and deleting a
+content type, a taxonomy, a field group, a plugin, media, an app's file, a user or a secret,
+which keep a copy in the trash ([`trash`](cli/trash.md)). A device never approves another
 device, and a request carrying its token needs no CSRF token (no browser sends it on its
 own). Its changes are logged as `token:<id>`, and the activity log names the device.
 

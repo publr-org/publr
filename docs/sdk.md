@@ -29,6 +29,12 @@ Every operation also carries one **example input**. The example is used to
 prove, automatically, that the operation behaves identically whichever way it
 is called.
 
+A call's memory is its request's, fixed in size and given back only when the
+request ends. A loop over many items (units of a merge, documents of a write)
+keeps each item's working data in the request's **scratch** and gives it back
+before the next item, so the loop needs one item's memory, however many there
+are, and only its results stay.
+
 ### Dispatching an operation
 
 ```mermaid
@@ -89,6 +95,7 @@ Authorization returns a grant, not a boolean. A grant can say:
 - read-only;
 - only these content types, only these statuses;
 - only the content types of these plugins, beside the project's own (an app's `.plugins`);
+- only the content types living in this app or shared with it (a call made for an app);
 - only records the caller owns, or only records a plugin-supplied check accepts;
 - hide or refuse these fields;
 - only these status transitions.

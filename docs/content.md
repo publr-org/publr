@@ -9,11 +9,15 @@ A content type is data: a name and a list of fields, stored in the database,
 editable at runtime. It has a kind: a **record type** holds any number of
 records (posts, hotels, players); a **settings type** holds exactly one (the
 homepage, the header, general options), created the first time it is opened; a
-**component** holds none, its fields are a set for other types to reuse. (The
+**component** holds none, its fields are a set for other types to reuse; a **media
+type** holds files (below). (The
 `settings` table is something else: the project's own key/value settings.) A
-record type with a `url` (`posts`) is public, must have a slug field, and its records
-live at `/<url>/<slug>` in the apps that route them; a type without one is internal, read by
-signed-in users only. A
+record type with a `url` (`posts`) must have a slug field, and its records live at
+`/<url>/<slug>` in the apps that route them. A type is Public (any visitor reads its live
+records) or Private (only people signed in, as their roles allow); either may have a URL,
+a Private type's pages being gated. A type lives in one app or is Global, and is shared
+with other apps or not: an app reaches the types living in it and the ones shared with it
+([Apps](apps.md#where-a-type-lives)). A
 type may have no fields yet: it is built up one field at a time. Any field but
 a slug or a group may hold a list of values (`many`), a repeater a list of
 field sets. Records take their title from the type's `title_field` when a
@@ -42,6 +46,18 @@ a symbol, a format such as `{symbol}{amount}` or `{amount} {code}`, the decimal 
 The admin shows one input per currency, and templates write an amount with
 `money(product.data.price)`.
 
+A **rich text** field holds HTML and says which formatting its editor offers
+(`options.richtext.formats`: any of `bold`, `italic`, `link`; all three when unset, none for
+plain paragraphs). The block editor keeps its own annotations in the value (`data-pb-*`
+attributes, a block's settings in a `<script>`); a page that prints the value with
+`set:html` gets it through the sanitizer, which drops them, so pages see plain markup.
+
+A type is edited in a **form** (`editor` `form`, the default: one control per field) or
+**visually** (`editor` `visual`): the block editor over one rich text field, the one
+`editor_config` names (`{"field": "body"}`) or else the type's first. A visual type without
+a single rich text field is refused. The block editor is being rebuilt (`../editor`); until
+it lands, a visual type's records open in the form and rich text in a plain box.
+
 A record is one record of one type in one status. Its document is a JSON
 object shaped by the type's fields. It is validated on every write and stored
 as rows, one row per field value (`records` + `record_values`). So every
@@ -67,7 +83,9 @@ The variant's reference is the only truth: a variant made anywhere joins its pro
 one whose reference is cleared leaves it. What the field keeps is the order, the variants'
 ids, saved like a multiple reference. Reads (`record get`, `record list` with documents,
 queries, templates) give the full records in that order, the ones not yet ordered after in
-the order they were made; only those the reader may read, one level deep.
+the order they were made; only those the reader may read, one level deep, and the first 50
+of them. A record with more lists the rest with a query of their type (`*[_type ==
+"variant" && product == $id]`), a page at a time.
 
 The editor shows it as a multiple reference: a card per record, reordered, removed,
 linked or created in the drawer. Saving the list writes the difference into the records
@@ -89,14 +107,35 @@ Publr records who created a record and who last changed it. Who gets credited
 is content: a reference field to an `author` record, chosen by editors; only
 users who have an author record can be picked.
 
-Media is a record type too: every file in the library is a published record of the
-core `media` type (title, alt text, caption, credit, focal point), filed in at most one
-`media_folders` term and under any `media_tags` terms, with the file's own facts (name,
-type, size, dimensions, key, hash) beside it in the `media` table, written only by the
-library. The type is kept out of Content's lists: the library is its admin. A media
-field points at a media record. The rules a media field carries (file size, file
-family, image dimensions) wait on the field's picker to be checked. See
+Files are records too, of a **media type**: a content type of kind `media`, declared
+only by core or a plugin, with a `title` field and, optionally, the file families it
+takes (`families`: `image`, `pdf`...). Every file is a published record of one, with the
+file's own facts (name, type, size, dimensions, key, hash) beside it in the `media` table,
+written only on upload. The library is the core `media` type (title, alt text, caption,
+credit, focal point), filed in at most one `media_folders` term and under any
+`media_tags` terms. Others keep files apart from it: core's `ai_picture` holds the
+pictures pasted into a conversation with the agent. Media types are kept out of Content,
+its lists and the type list, and one type's files never show among another's: each shows
+only where its owner draws it (the library on the Media page, chat pictures in their
+conversation). A file of a Private media type other than the library is private: only
+signed-in callers who may read the type open it (`media read`). A media field points at
+a record of the library. The editor's file chooser and picker offer only the
+families a field takes; the other rules a media field carries (file size, image
+dimensions) are not checked on save yet. See
 [CLI: media](cli/media.md).
+
+An app's design is records too, of three core types kept out of Content's lists the same
+way (the Design area is their admin, see [Apps](apps.md#templates-parts-and-patterns)):
+`template` (`route`, the route's file such as `content/posts/[slug].publr`, its title;
+`html`, what the block editor reopens; `output`, what the route's pages print),
+`template_part` (`name`, `label`, `html`, `output`) and `pattern` (`name`, `label`,
+`category`, `description`, `html`). Each record belongs to the app it overrides, and an
+override counts only while it is published. An app's moodboard is the same: each card a
+`moodboard_item` record of the app (`kind`, its place `x`, `y`, `w`, `h` as numbers, and
+what its kind shows: `note`, `text`, `url`, `src`, `value`, `title`, `alt`, `family`,
+`file`, `thumbnail`, `status`, `error`; a font's `weight` and `weight_max` as numbers and
+`italic` as a yes or no; and `colors` and `fonts` as lists of text), read
+and saved whole through [`design`](cli/design.md).
 
 Two axes describe where a record is. **Status** is publication: a registry,
 `draft`, `published`, `archived`, `deleted` in the core, moved by transitions
@@ -111,6 +150,31 @@ is `status = published, changed = true`, and a rule of thumb for plugins: if
 it is about whether or when the record is live, it is a status; if it is a
 grouping or an editing state, it is derived from records (release membership
 via references, pending edits via `changed`).
+
+## Languages and other variants
+
+A field may hold a value per **variant** beside its own (`variants: true`): the value in a
+variant is stored under the field's name with the variant's code appended, `name@pl` beside
+`name`, in the same rows as any value; the plain name holds the main value. A nested field
+carries the code on its own segment (`faq.question@pl`), a group or repeater marked as a
+whole on its own (`sections@pl`, its items then a structure of their own). A record is
+one record in every variant: a field not marked holds one value for all of them.
+
+What a variant is belongs to the plugin that declares the dimension; the languages plugin
+makes each language a variant, and labels the field setting Translate. The core stores,
+validates (a variant's value by the field's own rules, never required), reads and picks
+them:
+
+- Read whole (the admin, the API, `record get`), a document carries every variant beside
+  its field.
+- Read in a variant (`record get --variant pl`, `record list --variant pl`, and every page
+  drawn under a language's address), each field gives the variant's value, else the code
+  without its region's (`en-gb` reads `en`), else the main value; the listed title and
+  slug follow. `--slug` with `--variant` matches the variant's slug first.
+- A type's `variant_fallback` (default true) says what a record with nothing written in a
+  variant does there: shows in its main values, or is left out (not listed; not found).
+- Changing a type keeps every variant's value; turning a field's variants off drops them,
+  asked first as removing a field with content is (`--drop_content`).
 
 ## Taxonomies
 

@@ -436,7 +436,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `operations/heartbeat.zig` | 63 | `heartbeat check` |
 | `operations/project.zig` | 159 | `project init` (first admin), `project status` |
 | `operations/project/impact.zig` | 213 | `project impact`: what the index holds for a record or its type |
-| `operations/project/move_app.zig` | 76 | `project move_app`: every record of a renamed app handed to its new name, or to the project |
+| `operations/project/move_app.zig` | 201 | `project move_app`: a renamed app's types (where they live, who they are shared with) and design records handed to its new name, or made Global |
 | `operations/role.zig` | 48 | `role list` |
 | `operations/user.zig` | 540 | `user create/list/password_link/set_password` |
 | `operations/sign_in.zig` | 188 | `user sign_in/sign_out`: throttle, session |
@@ -445,7 +445,9 @@ Grouped by kind. Lines are the whole file, tests included.
 | `operations/content_type.zig` | 250 | `content_type create/update/get/list/delete/validate`, declared over the record domain |
 | `operations/record.zig` | 900 | The record domain (`document.Domain`), `record create/get/save/list/referrers/validate` declared over it, the record rules (kinds, `terms` fields name a taxonomy, assigned terms exist) + the tests |
 | `operations/record/lifecycle.zig` | 227 | `record transition/publish/discard_changes/delete/purge`, declared |
-| `operations/record/app.zig` | 204 | `record set_app`: which app a record belongs to; the tests of an app's records and its plugins' reach |
+| `operations/record/reach.zig` | 366 | `record reach`: why a record is out of the caller's reach (`access`, `not_shared`, `deleted`) and the payload that stands in its place; tests of what an app reaches |
+| `operations/health.zig` + `health/cases.zig` | 350 + 270 | `health list/count/keep/unlink`: Site Health's broken references, worked out from the references (`store.values.suspect_links`), kept ones in `health_kept` |
+| `operations/health/translations.zig` | 380 | `health translations/choose_translation/missing_translations`: disagreements and coverage read through `Ctx.translations`, picks under the `translation_choices` setting |
 | `operations/taxonomy.zig` | 330 | `taxonomy create/update/get/list/delete/validate`, declared over the term domain |
 | `operations/term.zig` + `term/lifecycle.zig` | 560 + 230 | The term domain, `term create/get/save/list/tree/validate` with the parent rules, and the lifecycle with purge refusing children and members |
 | `operations/record/fixture.zig` | 18 | The `post` type the record tests write against |
@@ -481,7 +483,10 @@ Grouped by kind. Lines are the whole file, tests included.
 | `adapters/admin/content/pills.zig` | 502 | The filter bar: the type pill, one pill per filter, the Filter menu |
 | `adapters/admin/content/filters.zig` | 453 | Filters between the address, the saved view's JSON and the list input |
 | `adapters/admin/content/views.zig` | 108 | Saving the filters as a view: create, save, rename, delete |
-| `adapters/admin/app_scope.zig` | 378 | Which app the admin shows: the viewer's choice in a cookie, the switcher, the list narrowed, a record's App section and its move |
+| `adapters/admin/app_scope.zig` | 310 | Which app the admin shows: the viewer's choice in a cookie and the switcher; narrowed, the admin reaches what the app does |
+| `adapters/admin/type_placement.zig` | 140 | A type's settings: where it lives, who it is shared with, Public or Private, drawn and read back |
+| `adapters/admin/health.zig` | 315 | Settings › Site Health: the cases and their actions, one row or the ticked ones |
+| `adapters/admin/health/translations.zig` | 160 | Site Health › Translations: disagreements with a pick each, coverage, the missing `.pot` |
 | `adapters/admin/top_bar.zig` | 44 | The top bar's items: each compiled-in plugin's, then the app switcher |
 | `adapters/admin/nav.zig` | 158 | The Content sidebar: recent, private and saved views, by status, by type |
 | `adapters/admin/revisions.zig` | 214 | Versions explorer + restore |
@@ -506,6 +511,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/plugin/admin_slots.zig` | 66 | A compiled-in plugin in the admin: settings pages listed in the sidebar, a top bar item |
 | `sdk/plugin/state.zig` | 71 | A compiled-in plugin's `State` and the process it is made from |
 | `sdk/structure.zig` | 34 | Which notices change a project's structure |
+| `sdk/scratch.zig` | 109 | A request's scratch: working memory for a loop's items, given back after each |
 | `sdk/help.zig` | 311 | An operation's `--help`: its fields, output, failures and example, for core and installed plugins alike |
 | `sdk/plugin/wire.zig` | 107 | What crosses the sandbox's boundary: error codes, the result cell, the envelopes |
 | `sdk/sandboxed_plugins.zig` | 195 | The `Plugins` interface through which dispatch reaches installed plugins' operations and hooks |
