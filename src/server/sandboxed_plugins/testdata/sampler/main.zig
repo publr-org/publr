@@ -3,7 +3,9 @@
 //! with a before hook that reshapes its input and an after hook that raises a notice, an
 //! event hook that answers the notice with a record, its own types and a custom field group,
 //! and a page of its own in the plugin frame, drawn by a read.
-//! Compiled in, it also answers a route, lists it in Settings, puts an item in the top bar,
+//! Its page has an entry in the top bar (with the notes counted), and it says what it is in
+//! HTML the admin sanitizes.
+//! Compiled in, it also answers a route, lists it in Settings,
 //! keeps a state, takes `--sampler-in <folder>` off a command, notes the port `serve` got,
 //! and answers the operator's `ping`: what only a compiled-in plugin does, left out of its
 //! sandboxed build.
@@ -63,22 +65,40 @@ pub const content_types = [_]publr.plugin.ContentTypeDef{
 pub const custom_fields = [_]publr.plugin.ContentTypeDef{.{
     .handle = "sampler_profile",
     .name = "Sampler profile",
-    .fields = &.{.{
-        .name = "motto",
-        .label = "Motto",
-        .kind = "string",
-    }},
+    .fields = &.{
+        .{
+            .name = "motto",
+            .label = "Motto",
+            .kind = "string",
+        },
+    },
     .group = .{
-        .location = &.{.{
-            .rules = &.{.{
-                .field = "destination",
-                .value = "user",
-            }},
-        }},
+        .location = &.{
+            .{
+                .rules = &.{
+                    .{
+                        .field = "destination",
+                        .value = "user",
+                    },
+                },
+            },
+        },
     },
 }};
 
-pub const operations = [_]type{ Hello, Echo, Note, Logs, Page };
+pub const operations = [_]type{
+    Hello,
+    Echo,
+    Note,
+    Logs,
+    Page,
+    Count,
+    Forget,
+    NotePanel,
+};
+
+/// Run when it is removed with some of its data, told which pieces go.
+pub const uninstall = Forget;
 
 pub const pages = [_]publr.plugin.Page{.{
     .path = "log",
@@ -170,32 +190,131 @@ fn ping(
 
     state.pings += 1;
 
-    try response.json(.ok, .{
-        .port = state.port,
-        .db_path = state.db_path,
-        .pings = state.pings,
-    });
+    try response.json(
+        .ok,
+        .{
+            .port = state.port,
+            .db_path = state.db_path,
+            .pings = state.pings,
+        },
+    );
 }
 
 /// How many notes there are, for whoever may read them.
-pub fn top_bar(session: *const publr.admin.Session) publr.admin.Error!?publr.admin.render.Node {
-    std.debug.assert(session.signed_in());
+/// How many notes there are, beside its entry in the top bar.
+pub const Count = struct {
+    pub const name = "sampler.count";
+    pub const description = "How many notes the sampler keeps";
+    pub const kind: sdk.operation.Kind = .read;
+    pub const In = struct {};
+    pub const Out = struct {
+        count: i64,
+    };
+    pub const example: In = .{};
+    pub const example_out: Out = .{
+        .count = 1,
+    };
 
-    if (!publr.registry.SDK.may(&session.ctx, Logs)) {
-        return null;
+    pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
+        std.debug.assert(ctx.now_ms() >= 0);
+
+        const all = try notes.find(ctx, .{}, .{
+            .limit = 200,
+        });
+
+        return .{
+            .count = @intCast(all.len),
+        };
     }
+};
 
-    var listing = session.*;
-    const all = publr.registry.SDK.dispatch(&listing.ctx, record.List, .{
-        .type = "sample_note",
-        .limit = 200,
-    }) catch return null;
-    const count = try std.fmt.allocPrint(session.arena, "{d}", .{all.records.len});
+/// Its page, in the top bar with the notes counted.
+pub const top_bar = [_]publr.plugin.Item{.{
+    .label = "Sampler",
+    .icon = "stack",
+    .page = "log",
+    .operation = Logs,
+    .count = Count,
+}};
 
-    return try publr.admin.render.view(session.arena, publr.admin.views.SamplerBadge, .{
-        .count = count,
-    });
-}
+/// Its types in a part of the admin of their own, the note shown in the notes' list.
+pub const sections = [_]publr.plugin.Section{.{
+    .label = "Sample notes",
+    .icon = "folder",
+    .types = &.{
+        .{
+            .handle = "sample_note",
+            .columns = &.{"note"},
+        },
+        .{
+            .handle = "sample_log",
+        },
+    },
+}};
+
+/// A box on each sample note's form, drawn in the plugin frame.
+pub const panels = [_]publr.plugin.Panel{.{
+    .type = "sample_note",
+    .label = "Sampler",
+    .operation = NotePanel,
+}};
+
+/// Draws the panel: which record it was told, and how many notes there are. It is told
+/// only the record's id and reads the rest itself.
+pub const NotePanel = struct {
+    pub const name = "sampler.note_panel";
+    pub const description = "Draws the sampler's box on a sample note's form";
+    pub const kind: sdk.operation.Kind = .read;
+    pub const In = struct {
+        record: []const u8,
+        base: []const u8 = "",
+    };
+    pub const Out = struct {
+        html: []const u8,
+    };
+    pub const example: In = .{
+        .record = "0190f7a2c3d4",
+    };
+    pub const example_out: Out = .{
+        .html = "<p>Note 0190f7a2c3d4, one of 1.</p>",
+    };
+
+    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
+        std.debug.assert(ctx.now_ms() >= 0);
+
+        if (in.record.len == 0 or in.record.len > 64) {
+            return error.Invalid;
+        }
+
+        const all = try notes.find(ctx, .{}, .{
+            .limit = 200,
+        });
+        const html = std.fmt.allocPrint(
+            ctx.arena(),
+            "<p class=\"text-sm\">Note {s}, one of {d}.</p>",
+            .{ in.record, all.len },
+        ) catch return error.OutOfMemory;
+
+        return .{
+            .html = html,
+        };
+    }
+};
+
+/// An action on the rows of any page that names a `sampler` slot.
+pub const row_actions = [_]publr.plugin.RowAction{.{
+    .slot = "sampler",
+    .label = "Open the log",
+    .path = "/admin/plugin/sampler/log",
+    .operation = Logs,
+}};
+
+/// What it says about itself on its page under Settings › Plugins, through the admin's
+/// sanitizer: the class outside the admin's list and the script never reach the page.
+pub const about =
+    \\<p class="muted fixed">A sample of every part of the plugin contract.</p>
+    \\<script>alert(1)</script><p><a href="https://publr.dev">Read more</a></p>
+;
 
 /// Settings › Sampler: the log, in the admin's own chrome.
 fn settings(
@@ -288,6 +407,38 @@ pub const Echo = struct {
         std.debug.assert(in.tags.len <= 1024);
 
         return in;
+    }
+};
+
+/// Its uninstall step: answers how many pieces it was told go; it keeps nothing else.
+pub const Forget = struct {
+    pub const name = "sampler.forget";
+    pub const description = "Clear what it keeps when it is removed with some of its data";
+    pub const details = "Run by core when the plugin is removed with some of its data.";
+    pub const kind: sdk.operation.Kind = .write;
+    pub const In = struct {
+        remove: []const []const u8 = &.{},
+    };
+    pub const Out = struct {
+        told: u32,
+    };
+    pub const example: In = .{
+        .remove = &.{"type:sample_note"},
+    };
+    pub const example_out: Out = .{
+        .told = 1,
+    };
+
+    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
+        std.debug.assert(ctx.now_ms() >= 0);
+
+        if (in.remove.len > 96) {
+            return error.Invalid;
+        }
+
+        return .{
+            .told = @intCast(in.remove.len),
+        };
     }
 };
 
@@ -404,7 +555,7 @@ pub const Page = struct {
         // Compiled in, the admin's layouts draw it; the sandbox gets them with the design
         // system drawn by the host, and draws its own markup until then.
         if (comptime @import("builtin").os.tag != .freestanding) {
-            const request = publr.admin.chrome.in_plugin_frame(ctx.arena(), in.base) catch {
+            const request = publr.admin.chrome.in_plugin_frame(ctx, in.base) catch {
                 return error.OutOfMemory;
             };
             const View = publr.admin.views.SamplerLog;

@@ -46,10 +46,13 @@ pub fn expect_native_admin(
 
     try expect_in("/admin/sampler", page, "<title>Sampler · Publr</title>");
     try expect_in("/admin/sampler", page, "noted KEPT");
-    try expect_in("/admin/sampler", page, "Sampler: 1");
     try expect_in("/admin/sampler", page, "served on port 8092");
     try expect_in("/admin/settings/system", system, "href=\"/admin/sampler\"");
-    try expect_in("/admin/settings/system", system, "Sampler: 1");
+    try expect_in("/admin/settings/system", system, "href=\"/admin/plugin/sampler/log\"");
+    // Its pages are the person's to pin to their rail, not the plugin's to put there.
+    try expect_in("/admin/settings/system", system, "aria-label=\"Pin to the rail\"");
+    try expect_in("/admin/settings/system", system, "name=\"plugin\" value=\"sampler\"");
+    try expect_in("/admin/settings/system", system, ">1</span>");
     try expect_framed(init, port, cookie);
     try expect_ping(init, port, dir);
     try expect_moved(init, binary, work_dir);

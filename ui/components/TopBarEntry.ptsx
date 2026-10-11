@@ -1,0 +1,27 @@
+import type { IconName } from "@publr/ui/Icon.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type TopBarEntryProps = {
+  href: string;
+  label: string;
+  icon: IconName;
+  /** A number beside the label; empty for none. */
+  count: string;
+};
+
+/** A plugin's entry in the top bar, drawn by the admin: an icon, the label, a count. */
+export function TopBarEntry({ href, label, icon, count }: TopBarEntryProps) {
+  return (
+    <Link href={href} tone="quiet" classes="inline-flex items-center gap-1.5">
+      <Icon name={icon} size="sm" />
+      {label}
+      {count !== "" && (
+        <Text as="span" variant="body-xs" tone="muted">
+          {count}
+        </Text>
+      )}
+    </Link>
+  );
+}

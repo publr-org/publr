@@ -1,70 +1,41 @@
+import { Badge } from "@publr/ui/Badge.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import type { IconName } from "@publr/ui/Icon.ptsx";
 import { SidebarNavItem } from "@publr/ui/SidebarNavItem.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
+import { PinButton } from "./PinButton.ptsx";
 
 export type SettingsNavProps = {
-  /** The fixed pages first: the system's own settings, then the users. */
-  system_active: boolean;
-  users_active: boolean;
-  /** The agents and tools acting for the viewer's account, or for everyone's. */
-  devices_active: boolean;
-  plugins_active: boolean;
-  /** Structure sits below the users, for whoever may change structure. */
-  can_structure: boolean;
-  structure_active: boolean;
-  /** The pages compiled-in plugins add, for whoever may use them. */
-  pages: Array<{ label: string; href: string; icon: IconName; active: boolean }>;
-  /** The settings sections defined under Structure, in their order. */
-  sections: Array<{ label: string; href: string; active: boolean }>;
+  /** Every page under Settings the viewer may see, in order: the admin's own, the pages
+   * plugins add, the settings sections. Each pinnable to the viewer's rail. */
+  pages: Array<{
+    label: string;
+    href: string;
+    icon: IconName;
+    active: boolean;
+    plugin: string;
+    page: string;
+    pinned: boolean;
+    /** What waits there, as a number (Site Health's cases); empty when nothing does. */
+    count: string;
+  }>;
+  /** For the pins' forms: the session's token, and this page to come back to. */
+  csrf: string;
+  back: string;
 };
 
-export function SettingsNav({
-  system_active,
-  users_active,
-  devices_active,
-  plugins_active,
-  can_structure,
-  structure_active,
-  pages,
-  sections,
-}: SettingsNavProps) {
+export function SettingsNav({ pages, csrf, back }: SettingsNavProps) {
   return (
-    <div class="flex flex-col pt-2">
-      <SidebarNavItem href="/admin/settings/system" active={system_active}>
-        <Icon name="settings" size="sm" classes="shrink-0" />
-        <Text as="span" variant="nav">System settings</Text>
-      </SidebarNavItem>
-      <SidebarNavItem href="/admin/settings/users" active={users_active}>
-        <Icon name="users" size="sm" classes="shrink-0" />
-        <Text as="span" variant="nav">Users</Text>
-      </SidebarNavItem>
-      <SidebarNavItem href="/admin/settings/devices" active={devices_active}>
-        <Icon name="device-desktop" size="sm" classes="shrink-0" />
-        <Text as="span" variant="nav">Devices</Text>
-      </SidebarNavItem>
-      {can_structure && (
-        <SidebarNavItem href="/admin/structure" active={structure_active}>
-          <Icon name="components" size="sm" classes="shrink-0" />
-          <Text as="span" variant="nav">Structure</Text>
-        </SidebarNavItem>
-      )}
-      <SidebarNavItem href="/admin/settings/plugins" active={plugins_active}>
-        <Icon name="package" size="sm" classes="shrink-0" />
-        <Text as="span" variant="nav">Plugins</Text>
-      </SidebarNavItem>
-
+    <div data-slot="pages" class="flex flex-col pt-2">
       {pages.map((page) => (
-        <SidebarNavItem href={page.href} active={page.active}>
-          <Icon name={page.icon} size="sm" classes="shrink-0" />
-          <Text as="span" variant="nav">{page.label}</Text>
-        </SidebarNavItem>
-      ))}
-      {sections.map((section) => (
-        <SidebarNavItem href={section.href} active={section.active}>
-          <Icon name="file" size="sm" classes="shrink-0" />
-          <Text as="span" variant="nav">{section.label}</Text>
-        </SidebarNavItem>
+        <div class="group flex items-center gap-1">
+          <SidebarNavItem href={page.href} active={page.active} classes="min-w-0 flex-1">
+            <Icon name={page.icon} size="sm" classes="shrink-0" />
+            <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">{page.label}</Text>
+            {page.count !== "" && <Badge size="xs">{page.count}</Badge>}
+          </SidebarNavItem>
+          <PinButton plugin={page.plugin} page={page.page} pinned={page.pinned} csrf={csrf} back={back} />
+        </div>
       ))}
     </div>
   );

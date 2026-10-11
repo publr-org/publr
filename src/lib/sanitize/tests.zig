@@ -200,6 +200,22 @@ const kept = [_]Case{
     },
 };
 
+/// What the block editor stores (its annotations, a block's settings in a script) reaches
+/// a page as the plain markup it stands for.
+const editor_html = [_]Case{
+    .{
+        .input = "<p data-pb-block=\"paragraph\" data-pb-rich=\"body\" data-pb-id=\"b_1\">" ++
+            "Hi <b>there</b></p>",
+        .wanted = "<p>Hi <b>there</b></p>",
+    },
+    .{
+        .input = "<h2 data-pb-block=\"heading\" class=\"text-3xl\">" ++
+            "<script type=\"application/json\" data-pb-settings>{\"level\":2}</script>" ++
+            "Title</h2>",
+        .wanted = "<h2 class=\"text-3xl\">Title</h2>",
+    },
+};
+
 fn expect_cases(cases: []const Case) !void {
     std.debug.assert(cases.len > 0);
 
@@ -226,6 +242,10 @@ test "sanitize: inline SVG drawn, never running, loading or styling the page" {
 
 test "sanitize: allowed markup kept and normalised, the rest as text" {
     try expect_cases(&kept);
+}
+
+test "sanitize: the block editor's annotations and settings never reach a page" {
+    try expect_cases(&editor_html);
 }
 
 /// Pieces a hostile input is made of, mixed at random.
@@ -320,4 +340,34 @@ fn unsafe_tag(tag: []const u8) bool {
     }
 
     return false;
+}
+
+test "sanitize: the admin profile keeps the admin's classes and site images, marks links away" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const input =
+        \\<div class="fixed inset-0 z-50 muted" style="top:0" id="x"><p class="warning">Hi</p>
+        \\<img src="https://tracker.example/p.gif"><img src="/media/logo.png">
+        \\<a href="https://example.com" rel="opener">site</a>
+        \\<a href="/admin/plugin/notes/entries">page</a>
+        \\<svg><circle r="4"/></svg></div>
+    ;
+    const out = try sanitize(arena, input, .admin);
+
+    try std.testing.expect(std.mem.indexOf(u8, out, "<div class=\"muted\">") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "<p class=\"warning\">") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "fixed") == null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "style") == null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "id=") == null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "tracker") == null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "<img src=\"/media/logo.png\">") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "rel=\"opener\"") == null);
+    const away = "href=\"https://example.com\" target=\"_blank\"";
+    const page = "<a href=\"/admin/plugin/notes/entries\" rel=\"nofollow noopener\">";
+
+    try std.testing.expect(std.mem.indexOf(u8, out, away) != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "data-external") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, page) != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "<svg") == null);
 }

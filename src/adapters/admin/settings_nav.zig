@@ -1,13 +1,9 @@
-//! The Settings sidebar: the system's settings, the users and the plugins first, then the
-//! pages plugins add (compiled-in plugins' routes, then every plugin's framed pages), then
-//! every settings definition as a value-editing destination. The entry the address is
-//! under is lit.
+//! The Settings sidebar: every page under Settings the viewer may see, the one the address
+//! is under lit, each with its pin (`destinations.zig` lists them).
 const std = @import("std");
 const admin = @import("../admin.zig");
-const registry = @import("../../server/registry.zig");
-const types = @import("../../operations/content_type.zig");
 const chrome = @import("chrome.zig");
-const frame = @import("frame.zig");
+const destinations = @import("destinations.zig");
 
 /// The addresses Structure stands for: the hub and every kind of definition under it.
 const structure_paths = [_][]const u8{
@@ -18,41 +14,53 @@ const structure_paths = [_][]const u8{
     "/admin/custom-fields",
 };
 
+const Page = admin.views.SettingsNav.PagesItem;
+
 pub fn node(session: *admin.Session, path: []const u8) admin.Error!admin.render.Node {
     std.debug.assert(session.signed_in());
     std.debug.assert(path.len > 0);
 
-    const listed = registry.SDK.dispatch(
-        &session.ctx,
-        types.List,
-        .{},
-    ) catch return error.OutOfMemory;
-    var items: std.ArrayList(admin.views.SettingsNav.SectionsItem) = .empty;
+    const listed = try destinations.settings(session);
+    const pages = try session.arena.alloc(Page, listed.len);
 
-    for (listed.types) |summary| {
-        if (summary.kind != .settings) continue;
+    for (listed, pages) |destination, *page| {
+        const own = destination.plugin.len == 0;
+        const structure = own and std.mem.eql(u8, destination.page, "structure");
+        const health = own and std.mem.eql(u8, destination.page, "health");
 
-        const href = try std.fmt.allocPrint(session.arena, "/admin/settings/{s}", .{
-            summary.handle,
-        });
-
-        try items.append(session.arena, .{
-            .label = summary.name,
-            .href = href,
-            .active = chrome.under(path, href),
-        });
+        page.* = .{
+            .label = try session.declared(destination.label),
+            .href = destination.href,
+            .icon = std.meta.stringToEnum(@FieldType(Page, "icon"), destination.icon) orelse
+                .package,
+            .active = if (structure) in_structure(path) else chrome.under(path, destination.href),
+            .plugin = destination.plugin,
+            .page = destination.page,
+            .pinned = destination.pinned,
+            .count = if (health) try health_count(session) else "",
+        };
     }
 
     return admin.render.view(session.arena, admin.views.SettingsNav, .{
-        .system_active = chrome.under(path, "/admin/settings/system"),
-        .users_active = chrome.under(path, "/admin/settings/users"),
-        .devices_active = chrome.under(path, "/admin/settings/devices"),
-        .can_structure = registry.SDK.may(&session.ctx, types.Create),
-        .structure_active = in_structure(path),
-        .plugins_active = chrome.under(path, "/admin/settings/plugins"),
-        .pages = try pages_of(session, path),
-        .sections = items.items,
+        .pages = pages,
+        .csrf = session.csrf_token(),
+        .back = path,
     });
+}
+
+/// Site Health's cases not kept as they are, as the badge shows them; empty for none.
+fn health_count(session: *admin.Session) admin.Error![]const u8 {
+    std.debug.assert(session.signed_in());
+
+    const registry = @import("../../server/registry.zig");
+    const health = @import("../../operations/health.zig");
+    const counted = registry.SDK.dispatch(&session.ctx, health.Count, .{}) catch return "";
+
+    if (counted.count == 0) {
+        return "";
+    }
+
+    return std.fmt.allocPrint(session.arena, "{d}", .{counted.count}) catch error.OutOfMemory;
 }
 
 fn in_structure(path: []const u8) bool {
@@ -66,48 +74,4 @@ fn in_structure(path: []const u8) bool {
     }
 
     return false;
-}
-
-const Page = admin.views.SettingsNav.PagesItem;
-
-/// Each plugin's pages, for whoever may call what the page is for.
-fn pages_of(session: *admin.Session, path: []const u8) admin.Error![]const Page {
-    std.debug.assert(session.signed_in());
-
-    var pages: std.ArrayList(Page) = .empty;
-
-    inline for (registry.settings_pages) |page| {
-        if (registry.SDK.may(&session.ctx, page.operation)) {
-            try pages.append(session.arena, .{
-                .label = page.label,
-                .href = page.path,
-                .icon = comptime icon_of(page.icon),
-                .active = chrome.under(path, page.path),
-            });
-        }
-    }
-
-    for (try frame.all(session)) |page| {
-        const href = try std.fmt.allocPrint(session.arena, "{s}/{s}/{s}", .{
-            frame.prefix,
-            page.plugin,
-            page.path,
-        });
-
-        try pages.append(session.arena, .{
-            .label = page.label,
-            .href = href,
-            .icon = std.meta.stringToEnum(@FieldType(Page, "icon"), page.icon) orelse .package,
-            .active = chrome.under(path, href),
-        });
-    }
-
-    return pages.items;
-}
-
-fn icon_of(comptime name: []const u8) @FieldType(Page, "icon") {
-    comptime {
-        return std.meta.stringToEnum(@FieldType(Page, "icon"), name) orelse
-            @compileError("settings page icon " ++ name ++ " is not in the icon set");
-    }
 }

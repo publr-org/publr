@@ -1,0 +1,26 @@
+import { Publr } from "publr-jsx";
+import { SidebarNavAction } from "@publr/ui/SidebarNavAction.ptsx";
+
+export type PinButtonProps = {
+  /** The plugin whose page it is; empty for a core page. */
+  plugin: string;
+  page: string;
+  pinned: boolean;
+  csrf: string;
+  /** The page to come back to. */
+  back: string;
+};
+
+/** Pins a page to the person's rail, or takes it off, from the end of its sidebar row; the
+ * page the person is on comes back. */
+export function PinButton({ plugin, page, pinned, csrf, back }: PinButtonProps) {
+  return (
+    <form method="post" action={pinned ? "/admin/rail/unpin" : "/admin/rail/pin"} class="flex">
+      <input type="hidden" name="csrf" value={csrf} />
+      <input type="hidden" name="plugin" value={plugin} />
+      <input type="hidden" name="page" value={page} />
+      <input type="hidden" name="back" value={back} />
+      <SidebarNavAction label={pinned ? Publr.t("Unpin from the rail") : Publr.t("Pin to the rail")} icon="pin" on={pinned} />
+    </form>
+  );
+}

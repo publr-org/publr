@@ -71,6 +71,15 @@ pub const Manifest = struct {
     remotes: []const RemoteUse = &.{},
     compatible_with: []const []const u8 = &.{},
     pages: []const Page = &.{},
+    sections: []const Section = &.{},
+    panels: []const Panel = &.{},
+    top_bar: []const Item = &.{},
+    row_actions: []const RowAction = &.{},
+    /// Its write run when it is removed with some of its data; empty for none.
+    uninstall: []const u8 = "",
+    /// What the plugin says about itself on its page in the admin: HTML, shown through the
+    /// admin's sanitizer profile in a box the admin draws and names after the plugin.
+    about: []const u8 = "",
     /// What the plugin brings that its sandboxed build left out, each with why.
     left_out: []const []const u8 = &.{},
 };
@@ -155,6 +164,47 @@ pub const Page = struct {
     read: []const u8 = "",
     save: []const u8 = "",
     multiline: []const []const u8 = &.{},
+};
+
+/// An entry in the top bar: to one of the plugin's pages or an admin
+/// address, shown to whoever may call `operation`, `count` (a read) beside the label.
+pub const Item = struct {
+    label: []const u8,
+    icon: []const u8,
+    page: []const u8 = "",
+    href: []const u8 = "",
+    operation: []const u8,
+    count: []const u8 = "",
+};
+
+/// A box on a content type's edit form, drawn in the plugin frame by `operation`, one of
+/// the plugin's reads, told the record's id.
+pub const Panel = struct {
+    type: []const u8,
+    label: []const u8,
+    operation: []const u8,
+};
+
+/// A part of the admin of its own: some of the plugin's record types, with the fields each
+/// list shows after the title.
+pub const Section = struct {
+    label: []const u8,
+    icon: []const u8,
+    types: []const SectionType,
+};
+
+pub const SectionType = struct {
+    handle: []const u8,
+    columns: []const []const u8 = &.{},
+};
+
+/// An action on the rows of another plugin's page, as `publr.plugin.RowAction` declares it.
+pub const RowAction = struct {
+    slot: []const u8,
+    label: []const u8,
+    path: []const u8,
+    kind: []const u8 = "",
+    operation: []const u8,
 };
 
 /// A hook a plugin asks for; its entry is the number of operations plus its position here.

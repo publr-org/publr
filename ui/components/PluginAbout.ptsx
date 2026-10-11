@@ -1,0 +1,20 @@
+import { Publr } from "publr-jsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type PluginAboutProps = {
+  /** The plugin it comes from, named on the box. */
+  name: string;
+  /** Its HTML, already sanitized to the admin profile. */
+  children?: JSX.Element;
+};
+
+/** What a plugin says about itself, in a box the admin draws and names after it, so it
+ * never reads as the admin speaking. */
+export function PluginAbout({ name, children }: PluginAboutProps) {
+  return (
+    <section class="flex flex-col gap-2 rounded-lg border border-border bg-muted/20 px-5 py-4" data-part="plugin-about">
+      <Text as="span" variant="body-xs" tone="muted">{Publr.t("From {name}", { name })}</Text>
+      <div data-plugin-html="">{children}</div>
+    </section>
+  );
+}

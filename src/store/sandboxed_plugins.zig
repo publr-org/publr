@@ -69,6 +69,27 @@ pub fn list(connection: *db.Db, arena: std.mem.Allocator) Error![]Row {
     return rows.items;
 }
 
+/// The installed plugins by name, `limit` of them from `offset`.
+pub fn page(connection: *db.Db, arena: std.mem.Allocator, offset: u32, limit: u32) Error![]Row {
+    std.debug.assert(limit > 0 and limit <= list_max);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var select = try connection.prepare(select_row ++ " ORDER BY name LIMIT ?1 OFFSET ?2");
+    defer select.finalize();
+
+    try select.bind_int(1, limit);
+    try select.bind_int(2, offset);
+
+    var rows: std.ArrayList(Row) = .empty;
+
+    while (try select.step()) {
+        std.debug.assert(rows.items.len < limit);
+        rows.append(arena, try select.read(Row, arena)) catch return error.OutOfMemory;
+    }
+
+    return rows.items;
+}
+
 pub fn count(connection: *db.Db) Error!u32 {
     std.debug.assert(list_max > 0);
     std.debug.assert(connection.transaction_depth <= 8);
@@ -182,4 +203,41 @@ test "put inserts then replaces, list sees it, delete removes it" {
     try delete(&fixture.connection, "greeter");
     try std.testing.expectError(error.NotFound, delete(&fixture.connection, "greeter"));
     try std.testing.expect(try get(&fixture.connection, arena, "greeter") == null);
+}
+
+/// What of the plugin's data goes with it when it is removed: its pieces' keys, as JSON.
+pub fn removal_of(connection: *db.Db, arena: std.mem.Allocator, name: []const u8) Error![]const u8 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(name.len <= 64);
+
+    var select = try connection.prepare(
+        "SELECT remove_data AS chosen FROM sandboxed_plugins WHERE name = ?1",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, name);
+
+    if (!try select.step()) {
+        return "[]";
+    }
+
+    const Chosen = struct {
+        chosen: []const u8,
+    };
+
+    return (try select.read(Chosen, arena)).chosen;
+}
+
+pub fn set_removal(connection: *db.Db, name: []const u8, chosen: []const u8) Error!void {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(chosen.len >= 2);
+
+    var statement = try connection.prepare(
+        "UPDATE sandboxed_plugins SET remove_data = ?2 WHERE name = ?1",
+    );
+    defer statement.finalize();
+
+    try statement.bind_text(1, name);
+    try statement.bind_text(2, chosen);
+    try statement.exec();
 }

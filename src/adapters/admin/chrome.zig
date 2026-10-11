@@ -8,6 +8,7 @@ const registry = @import("../../server/registry.zig");
 const types = @import("../../operations/content_type.zig");
 const users = @import("../../operations/user.zig");
 const top_bar = @import("top_bar.zig");
+const sections = @import("sections.zig");
 const nav = @import("nav.zig");
 const settings_nav = @import("settings_nav.zig");
 
@@ -24,7 +25,8 @@ pub const Options = struct {
     settings_path: ?[]const u8 = null,
 };
 
-pub const Area = enum { overview, content, media, settings };
+/// `section`: a plugin's part of the admin, its own types in its own sidebar.
+pub const Area = enum { overview, content, media, design, settings, section };
 
 /// The rail section of an address: the overview, the content and its records, and the
 /// rest (settings, structure, plugins' pages) under Settings.
@@ -32,7 +34,9 @@ pub fn area_of(path: []const u8) Area {
     std.debug.assert(path.len > 0);
     std.debug.assert(path[0] == '/');
 
-    if (std.mem.eql(u8, path, "/admin") or std.mem.eql(u8, path, "/admin/")) {
+    const home = std.mem.eql(u8, path, "/admin") or std.mem.eql(u8, path, "/admin/");
+
+    if (home or under(path, "/admin/ai")) {
         return .overview;
     }
 
@@ -42,6 +46,10 @@ pub fn area_of(path: []const u8) Area {
 
     if (under(path, "/admin/media")) {
         return .media;
+    }
+
+    if (under(path, "/admin/design")) {
+        return .design;
     }
 
     return .settings;
@@ -91,13 +99,24 @@ pub fn signed_out_at(arena: std.mem.Allocator, base: []const u8) admin.Error!*co
 }
 
 /// The request a plugin's page is drawn with inside the plugin frame: the sheet alone,
-/// nobody named and no token, since the frame reaches the admin only through its bridge.
-pub fn in_plugin_frame(arena: std.mem.Allocator, base: []const u8) admin.Error!*const Request {
+/// nobody named and no token, since the frame reaches the admin only through its bridge;
+/// in the person's language when the plugin is compiled in (`ctx`, its `PluginCtx`).
+pub fn in_plugin_frame(ctx: anytype, base: []const u8) admin.Error!*const Request {
     std.debug.assert(base.len == 0 or base[0] == '/');
 
+    const arena = ctx.arena();
     const request = try arena.create(Request);
 
     request.* = signed_out;
+
+    if (@hasField(@TypeOf(ctx.*), "inner")) {
+        const language = ctx.inner.language;
+
+        request.admin.locale = if (language.locale.len > 0) language.locale else "en";
+        request.publr_translations = language.translator;
+        request.publr_catalogue = language.catalogue;
+    }
+
     request.admin.base = base;
     request.admin.area = "settings";
     request.admin.framed = true;
@@ -117,13 +136,17 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
 
     if (!session.signed_in()) {
         request.* = signed_out;
-        request.admin.base = session.project.base;
+        request.admin.base = session.project.admin_path();
         request.admin.path = path;
 
         return request;
     }
 
-    const area = area_of(path);
+    const all_sections = try sections.all(session);
+    const in = sections.current(all_sections, options.content);
+    var pinning = session.*;
+    const rail = try @import("destinations.zig").rail_of(&pinning, path, all_sections, in);
+    const area: Area = if (in != null) .section else area_of(path);
 
     request.* = .{
         .session = .{
@@ -133,16 +156,37 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
             .avatar = try avatar.address_of(session.arena, session.identity.email),
         },
         .admin = .{
-            .base = session.project.base,
+            .base = session.project.admin_path(),
             .path = path,
             .area = @tagName(area),
             .can_structure = registry.SDK.may(&session.ctx, types.Create),
             .can_settings = registry.SDK.may(&session.ctx, users.List),
             .top_bar = top_bar.of(session),
-            .sidebar = try sidebar_of(session, area, options, path),
+            .rail = rail.node,
+            .pinned_lit = rail.lit,
+            .sidebar = if (in) |section|
+                try sections.sidebar_of(session, section, options.content)
+            else
+                try sidebar_of(session, area, options, path),
+            .sidebar_heading = if (in) |section|
+                try sections.heading_of(session, section)
+            else
+                null,
+            .section = if (in) |section| section.label else "",
+            .section_href = if (in) |section| section.href() else "",
             .framed = framed(session),
         },
     };
+
+    @import("language.zig").apply(session, request);
+
+    var reading = session.*;
+
+    request.admin.variant = @import("variant.zig").chosen(&reading);
+
+    var choosing = session.*;
+
+    request.admin.language_menu = try @import("language.zig").menu_of(&choosing);
 
     return request;
 }
@@ -151,7 +195,7 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
 /// frame keeps it on every page it shows), or a browser saying it loads a frame. Browsers
 /// say so only to secure or local addresses, never to plain http on a name like
 /// `publr.local`, so the address is what counts.
-fn framed(session: *const Session) bool {
+pub fn framed(session: *const Session) bool {
     const destination = session.request.header("sec-fetch-dest") orelse "";
     const asked = admin.query_param(session, "framed") orelse "";
 
@@ -179,7 +223,7 @@ fn sidebar_of(
     listing.* = session.*;
 
     switch (area) {
-        .overview, .media => return null,
+        .overview, .media, .design, .section => return null,
         .content => {
             const kept = try session.arena.create(ContentSidebar);
 
@@ -246,6 +290,8 @@ test "area_of: the overview, the content, and everything else under Settings" {
     try std.testing.expectEqual(Area.content, area_of("/admin/content/42/revisions"));
     try std.testing.expectEqual(Area.media, area_of("/admin/media"));
     try std.testing.expectEqual(Area.media, area_of("/admin/media/01a1"));
+    try std.testing.expectEqual(Area.design, area_of("/admin/design/templates"));
+    try std.testing.expectEqual(Area.settings, area_of("/admin/designer"));
     try std.testing.expectEqual(Area.settings, area_of("/admin/mediakit"));
     try std.testing.expectEqual(Area.settings, area_of("/admin/contentful"));
     try std.testing.expectEqual(Area.settings, area_of("/admin/types/post"));
@@ -265,11 +311,7 @@ fn drawn(arena: std.mem.Allocator, comptime View: type, props: View.Props) ![]co
     std.debug.assert(@hasDecl(View, "render"));
     std.debug.assert(props.publr_request != null);
 
-    var out: std.Io.Writer.Allocating = .init(arena);
-
-    try View.render(&out.writer, arena, props);
-
-    return out.written();
+    return admin.render.html(arena, View, props);
 }
 
 fn signed_in_request(sidebar: ?Node) Request {
@@ -302,6 +344,9 @@ test "layouts: one title for the window and the h1; the empty state replaces the
 
     const html = try drawn(arena, views.Users, .{
         .users = &.{},
+        .range = "",
+        .previous_href = "",
+        .next_href = "",
         .publr_request = &request,
     });
 

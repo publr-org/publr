@@ -75,42 +75,42 @@ export function PluginReview({
   return (
     <IndexPage
       title={title}
-      parents={[{ label: "Plugins", href: "/admin/settings/plugins" }]}
+      parents={[{ label: Publr.t("Plugins"), href: "/admin/settings/plugins" }]}
       description={summary}
       actions={
         <div class="contents">
           {discard_action !== "" && (
             <ConfirmAction
               inline
-              label="Discard this version"
-              title="Discard this version?"
-              description="The uploaded version goes; the one running stays as it is."
+              label={Publr.t("Discard this version")}
+              title={Publr.t("Discard this version?")}
+              description={Publr.t("The uploaded version goes; the one running stays as it is.")}
               action={discard_action}
             />
           )}
           {cancel_href !== "" && (
-            <Button href={cancel_href} hierarchy="secondary">Cancel</Button>
+            <Button href={cancel_href} hierarchy="secondary">{Publr.t("Cancel")}</Button>
           )}
           <Button type="submit" form="plugin-review">{allow_label}</Button>
         </div>
       }
-      notice={<Callout title="Nothing changes until you allow it">{note_text}</Callout>}
+      notice={<Callout title={Publr.t("Nothing changes until you allow it")}>{note_text}</Callout>}
     >
       <IndexSection
         title={requests_title}
-        empty={requests.length === 0 ? "Nothing beyond its own operations and content types." : undefined}
+        empty={requests.length === 0 ? Publr.t("Nothing beyond its own operations and content types.") : undefined}
       >
         <PluginRequests csrf={Publr.request.session.csrf} action="" requests={requests} />
       </IndexSection>
       {granted.length > 0 && (
-        <IndexSection title="It already may">
+        <IndexSection title={Publr.t("It already may")}>
           <PluginRequests csrf={Publr.request.session.csrf} action="" requests={granted} />
         </IndexSection>
       )}
       <form id="plugin-review" method="post" action={action} class="contents">
         <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
         {show_access && (
-          <IndexSection padded title="Content access">
+          <IndexSection padded title={Publr.t("Content access")}>
             <ContentAccess scope={scope} recommend={recommend} note={note} types={types} />
           </IndexSection>
         )}

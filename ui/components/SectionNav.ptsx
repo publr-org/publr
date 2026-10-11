@@ -1,0 +1,20 @@
+import { SidebarNavItem } from "@publr/ui/SidebarNavItem.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SectionNavProps = {
+  /** The section's content types, each opening its list. */
+  types: Array<{ label: string; href: string; active: boolean }>;
+};
+
+/** A plugin's section's sidebar: its content types. */
+export function SectionNav({ types }: SectionNavProps) {
+  return (
+    <div data-slot="pages" class="flex flex-col pt-2">
+      {types.map((type) => (
+        <SidebarNavItem href={type.href} active={type.active}>
+          <Text as="span" variant="nav">{type.label}</Text>
+        </SidebarNavItem>
+      ))}
+    </div>
+  );
+}

@@ -1,0 +1,60 @@
+import { Publr } from "publr-jsx";
+import { answer, go, read } from "./PluginFrame.ptsx";
+
+/** Each panel's height as its frame reports it, by the panel's address. */
+export const state = Publr.reactive({
+  heights: {} as Record<string, number>,
+});
+
+/** A message from one of the page's panel frames, answered once, for the frame it came
+ * from: an edit form may carry panels of several plugins, each knowing only its own. */
+const answered: WeakSet<MessageEvent> = new WeakSet();
+
+export const received = (event: MessageEvent) => {
+  const message = event.data;
+  if (answered.has(event) || !message || message.publr !== 1) return;
+  const frames: HTMLIFrameElement[] = Array.from(document.querySelectorAll("iframe[data-plugin-panel]"));
+  const frame = frames.find((each) => each.contentWindow === event.source);
+  if (!frame) return;
+  answered.add(event);
+  const plugin = frame.dataset.plugin ?? "";
+  const csrf = frame.dataset.csrf ?? "";
+  const operations = (frame.dataset.operations ?? "").split(",").filter((name) => name !== "");
+  const id = Number(message.id);
+  if (message.kind === "height") {
+    const height = Math.min(Math.max(Number(message.height) || 0, 0), 4000);
+    state.heights = { ...state.heights, [frame.dataset.key ?? ""]: height };
+  }
+  if (message.kind === "navigate") go(String(message.to), plugin, "");
+  if (message.kind === "call") answer(frame, id, String(message.operation), message.input, operations, csrf);
+  if (message.kind === "query") read(frame, id, String(message.query), message.params, plugin, csrf);
+};
+
+export type PluginPanelProps = {
+  /** The panel's document. */
+  src: string;
+  title: string;
+  plugin: string;
+  csrf: string;
+  /** The plugin's own operations, comma-joined: the only ones the frame may ask for. */
+  operations: string;
+};
+
+/** A plugin's panel on an edit form: the plugin frame, sized to what it shows. */
+export function PluginPanel({ src, title, plugin, csrf, operations }: PluginPanelProps) {
+  return (
+    <iframe
+      src={src}
+      title={title}
+      sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+      class="block w-full border-0"
+      style={`height:${state.heights[src] || 96}px`}
+      data-plugin-panel=""
+      data-key={src}
+      data-plugin={plugin}
+      data-csrf={csrf}
+      data-operations={operations}
+      onWindowMessage={received}
+    ></iframe>
+  );
+}

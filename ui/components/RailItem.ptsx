@@ -1,9 +1,10 @@
+import type { IconName } from "@publr/ui/Icon.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 
 export type RailItemProps = {
   href: string;
   label: string;
-  icon_name: "home" | "file" | "image" | "settings";
+  icon_name: IconName;
   active: boolean;
 };
 

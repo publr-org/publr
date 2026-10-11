@@ -1,0 +1,17 @@
+import type { IconName } from "@publr/ui/Icon.ptsx";
+import { RailItem } from "./RailItem.ptsx";
+
+export type RailEntriesProps = {
+  entries: Array<{ href: string; label: string; icon: IconName; active: boolean }>;
+};
+
+/** The sections plugins add to the rail, drawn as the admin's own. */
+export function RailEntries({ entries }: RailEntriesProps) {
+  return (
+    <>
+      {entries.map((entry) => (
+        <RailItem href={entry.href} label={entry.label} icon_name={entry.icon} active={entry.active} />
+      ))}
+    </>
+  );
+}

@@ -138,7 +138,7 @@ fn drawn(ctx: *PluginCtx, base: []const u8, listed: []const Entry) sdk.Error![]c
         item.* = .{ .id = entry.id, .title = entry.title, .type_label = "Entry", .status = "", .tone = "", .href = "" };
     }
 
-    const request = publr.admin.chrome.in_plugin_frame(arena, base) catch return error.OutOfMemory;
+    const request = publr.admin.chrome.in_plugin_frame(ctx, base) catch return error.OutOfMemory;
 
     return publr.admin.render.document(arena, request, View, .{ .items = items }) catch error.OutOfMemory;
 }

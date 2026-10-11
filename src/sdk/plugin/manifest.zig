@@ -49,6 +49,12 @@ pub fn of(comptime Plugin: type) Manifest {
             .remotes = remotes_of(Plugin),
             .compatible_with = contract.compatible_with_of(Plugin),
             .pages = pages_of(Plugin),
+            .sections = sections_of(Plugin),
+            .panels = panels_of(Plugin),
+            .top_bar = items_of(Plugin, "top_bar"),
+            .row_actions = row_actions_of(Plugin),
+            .uninstall = uninstall_of(Plugin),
+            .about = if (@hasDecl(Plugin, "about")) Plugin.about else "",
             .left_out = runtime.left_out(Plugin),
         };
     }
@@ -120,6 +126,101 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
         }
 
         return list;
+    }
+}
+
+/// The plugin's entries in `list` whose operations run in the sandbox.
+fn items_of(comptime Plugin: type, comptime list: []const u8) []const sandboxed_plugin.Item {
+    comptime {
+        const declared = @import("admin_slots.zig").items_of(Plugin, list);
+        const takes = @import("context.zig").takes_plugin_ctx;
+        var items: []const sandboxed_plugin.Item = &.{};
+
+        std.debug.assert(declared.len <= @import("admin_slots.zig").items_max);
+
+        for (declared) |item| {
+            const counted = if (item.count) |Count| takes(Count.run) else true;
+
+            if (!takes(item.operation.run) or !counted) {
+                continue;
+            }
+
+            items = items ++ &[_]sandboxed_plugin.Item{.{
+                .label = item.label,
+                .icon = item.icon,
+                .page = item.page,
+                .href = item.href,
+                .operation = item.operation.name,
+                .count = if (item.count) |Count| Count.name else "",
+            }};
+        }
+
+        return items;
+    }
+}
+
+fn panels_of(comptime Plugin: type) []const sandboxed_plugin.Panel {
+    comptime {
+        var panels: []const sandboxed_plugin.Panel = &.{};
+
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        for (@import("admin_slots.zig").panels_of(Plugin)) |panel| {
+            panels = panels ++ &[_]sandboxed_plugin.Panel{.{
+                .type = panel.type,
+                .label = panel.label,
+                .operation = panel.operation.name,
+            }};
+        }
+
+        return panels;
+    }
+}
+
+fn sections_of(comptime Plugin: type) []const sandboxed_plugin.Section {
+    comptime {
+        var sections: []const sandboxed_plugin.Section = &.{};
+
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        for (@import("admin_slots.zig").sections_of(Plugin)) |section| {
+            var listed: []const sandboxed_plugin.SectionType = &.{};
+
+            for (section.types) |one| {
+                listed = listed ++ &[_]sandboxed_plugin.SectionType{.{
+                    .handle = one.handle,
+                    .columns = one.columns,
+                }};
+            }
+
+            sections = sections ++ &[_]sandboxed_plugin.Section{.{
+                .label = section.label,
+                .icon = section.icon,
+                .types = listed,
+            }};
+        }
+
+        return sections;
+    }
+}
+
+fn row_actions_of(comptime Plugin: type) []const sandboxed_plugin.RowAction {
+    comptime {
+        var actions: []const sandboxed_plugin.RowAction = &.{};
+
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        for (@import("admin_slots.zig").row_actions_of(Plugin)) |action| {
+            actions = actions ++ &[_]sandboxed_plugin.RowAction{.{
+                .slot = action.slot,
+                .label = action.label,
+                .path = action.path,
+                .kind = action.kind,
+                .operation = action.operation.name,
+            }};
+        }
+
+        return actions;
     }
 }
 
@@ -333,4 +434,31 @@ test "the test plugin's manifest names its operation, fields and content type" {
     try std.testing.expect(std.mem.indexOf(u8, text, "\"content.write\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "\"greeting\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "Usage: publr greeter") != null);
+}
+
+/// The write a plugin runs when it is removed with some of its data: one of its own, taking
+/// `remove`, the keys of the pieces going (`type:<handle>`, `internal:<collection>`,
+/// `fields:<group>`), to clear what core does not know is its.
+pub fn uninstall_of(comptime Plugin: type) []const u8 {
+    comptime {
+        const contract = @import("../plugin.zig");
+        const name = Plugin.manifest.name;
+
+        if (!@hasDecl(Plugin, "uninstall")) {
+            return "";
+        }
+
+        const Uninstall = Plugin.uninstall;
+
+        if (!contract.owns_operation(Plugin, Uninstall) or Uninstall.kind != .write) {
+            @compileError("plugin " ++ name ++ ": `uninstall` is one of its own writes");
+        }
+
+        if (!@hasField(Uninstall.In, "remove")) {
+            @compileError("plugin " ++ name ++ ": `uninstall` takes `remove`, the keys of " ++
+                "the pieces of its data going");
+        }
+
+        return Uninstall.name;
+    }
 }

@@ -1,9 +1,10 @@
-//! The top bar's items: each compiled-in plugin's, in name order, then which app the admin
-//! shows where the project has apps, with what plugins join to it (`app_picker_segment`);
-//! where it has none, those segments stand on their own.
+//! The top bar's items: the entries plugins add (`items.zig`), drawn by the admin, then which
+//! app the admin shows where the project has apps, with what plugins join to it
+//! (`app_picker_segment`); where it has none, those segments stand on their own.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
+const items = @import("items.zig");
 
 const Session = admin.Session;
 const Node = admin.render.Node;
@@ -13,23 +14,24 @@ const items_max: u32 = 16;
 /// left out and logged: the page stays up.
 pub fn of(session: *const Session) ?Node {
     std.debug.assert(session.signed_in());
-    comptime std.debug.assert(
-        registry.top_bar.len + 1 + registry.app_picker_segment.len <= items_max,
-    );
+    comptime std.debug.assert(2 + registry.app_picker_segment.len <= items_max);
 
-    var items: [items_max]Node = undefined;
+    var shown: [items_max]Node = undefined;
     var count: u32 = 0;
+    var reading = session.*;
 
-    inline for (registry.top_bar) |Plugin| {
-        const item = Plugin.top_bar(session) catch |err| blk: {
-            std.log.warn("plugin {s}: top bar item: {t}", .{ Plugin.manifest.name, err });
-            break :blk null;
-        };
+    if (@import("variant.zig").switcher(&reading)) |node| {
+        shown[count] = node;
+        count += 1;
+    }
 
-        if (item) |node| {
-            items[count] = node;
-            count += 1;
+    for (entries_of(session)) |node| {
+        if (count + 2 + registry.app_picker_segment.len >= items_max) {
+            break;
         }
+
+        shown[count] = node;
+        count += 1;
     }
 
     const picker = session.project.apps.len > 0;
@@ -43,12 +45,12 @@ pub fn of(session: *const Session) ?Node {
             null;
 
         if (admin.app_scope.switcher(session, after)) |node| {
-            items[count] = node;
+            shown[count] = node;
             count += 1;
         }
     } else {
         for (joined) |segment| {
-            items[count] = segment;
+            shown[count] = segment;
             count += 1;
         }
     }
@@ -57,9 +59,37 @@ pub fn of(session: *const Session) ?Node {
         return null;
     }
 
-    const kept = session.arena.dupe(Node, items[0..count]) catch return null;
+    const kept = session.arena.dupe(Node, shown[0..count]) catch return null;
 
     return admin.render.all(session.arena, kept) catch null;
+}
+
+const Entry = admin.views.TopBarEntry;
+
+/// The plugins' entries, each drawn by the admin; an entry that fails is left out and
+/// logged. Counts are plugins' reads, so they run on a copy of the session of their own.
+fn entries_of(session: *const Session) []const Node {
+    std.debug.assert(session.signed_in());
+
+    const listed = items.of(session, .top_bar) catch return &.{};
+    const reading = session.arena.create(Session) catch return &.{};
+    var nodes: std.ArrayList(Node) = .empty;
+
+    reading.* = session.*;
+
+    for (listed) |entry| {
+        const icon = std.meta.stringToEnum(@FieldType(Entry.Props, "icon"), entry.icon);
+        const node = admin.render.view(session.arena, Entry, .{
+            .href = entry.href,
+            .label = entry.label,
+            .icon = icon orelse .package,
+            .count = items.count_of(reading, entry),
+        }) catch continue;
+
+        nodes.append(session.arena, node) catch return nodes.items;
+    }
+
+    return nodes.items;
 }
 
 /// What plugins join to the app picker (`attached`), or show alone where there is none; a

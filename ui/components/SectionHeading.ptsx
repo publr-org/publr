@@ -1,0 +1,22 @@
+import { Icon } from "@publr/ui/Icon.ptsx";
+import type { IconName } from "@publr/ui/Icon.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SectionHeadingProps = {
+  href: string;
+  label: string;
+  icon: IconName;
+};
+
+/** The heading over a section's sidebar, as the admin's own areas have. */
+export function SectionHeading({ href, label, icon }: SectionHeadingProps) {
+  return (
+    <a
+      href={href}
+      class="flex h-14 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-5 text-sidebar-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring"
+    >
+      <Icon name={icon} size="sm" classes="shrink-0" />
+      <Text as="span" variant="heading-sm">{label}</Text>
+    </a>
+  );
+}

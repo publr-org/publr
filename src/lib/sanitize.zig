@@ -16,7 +16,14 @@ pub const Profile = enum {
     inline_text,
     /// A body: headings, lists, quotes, code blocks, tables, images, inline SVG.
     content,
+    /// What a plugin shows inside the admin: a body without drawings, its looks only from
+    /// the admin's own classes (`admin_classes`), images only from the site, links off the
+    /// site opening apart and marked so. Nothing in it can lay itself over the admin.
+    admin,
 };
+
+/// The classes a fragment in the admin may carry; the admin styles them, nothing else.
+pub const admin_classes = [_][]const u8{ "muted", "success", "warning", "error" };
 
 pub const input_bytes_max: u32 = 4 << 20;
 pub const depth_max: u32 = 64;
@@ -204,7 +211,7 @@ const Cleaner = struct {
         const drawing = cleaner.in_drawing();
         const svg_title = drawing and std.mem.eql(u8, name, "title");
         const whole = listed(&dropped_whole, name) and !svg_title;
-        const svg_here = std.mem.eql(u8, name, "svg") and cleaner.profile == .inline_text;
+        const svg_here = std.mem.eql(u8, name, "svg") and cleaner.profile != .content;
 
         if (!found.closing and (whole or svg_here)) {
             cleaner.skip_whole(name);
@@ -307,7 +314,7 @@ const Cleaner = struct {
 
         const body = listed(&content_tags, name) or std.mem.eql(u8, name, "svg");
 
-        return cleaner.profile == .content and body;
+        return cleaner.profile != .inline_text and body;
     }
 
     /// Whether an `<svg>` is open: what comes next is part of a drawing.
@@ -356,6 +363,7 @@ const Cleaner = struct {
             .text = text,
         };
         var kept_rel = false;
+        var external = false;
 
         while (reader.next()) |attribute| {
             var name_buffer: [32]u8 = undefined;
@@ -370,11 +378,22 @@ const Cleaner = struct {
                 continue;
             }
 
-            const value = try url.decode(cleaner.arena, attribute.value);
+            const decoded = try url.decode(cleaner.arena, attribute.value);
             const is_address = std.mem.eql(u8, name, "href") or std.mem.eql(u8, name, "src");
 
-            if (is_address and !url.safe(value)) {
+            if (is_address and !url.safe(decoded)) {
                 continue;
+            }
+
+            const value = if (cleaner.profile == .admin)
+                try admin_value(cleaner.arena, tag_name, name, decoded) orelse continue
+            else
+                decoded;
+
+            if (cleaner.profile == .admin and std.mem.eql(u8, tag_name, "a") and
+                std.mem.eql(u8, name, "href") and off_site(value))
+            {
+                external = true;
             }
 
             kept_rel = kept_rel or std.mem.eql(u8, name, "rel");
@@ -383,11 +402,60 @@ const Cleaner = struct {
             try cleaner.out.writeAll("\"");
         }
 
-        if (std.mem.eql(u8, tag_name, "a") and !kept_rel) {
+        if (external) {
+            try cleaner.out.writeAll(" target=\"_blank\" rel=\"nofollow noopener noreferrer\"" ++
+                " data-external=\"\"");
+        } else if (std.mem.eql(u8, tag_name, "a") and !kept_rel) {
             try cleaner.out.writeAll(" rel=\"nofollow noopener\"");
         }
     }
 };
+
+/// An attribute's value in the admin profile: classes only from `admin_classes`, an
+/// image only from the site, no `rel` of the fragment's own; null drops the attribute.
+fn admin_value(
+    arena: std.mem.Allocator,
+    tag_name: []const u8,
+    name: []const u8,
+    value: []const u8,
+) !?[]const u8 {
+    std.debug.assert(name.len > 0);
+
+    if (std.mem.eql(u8, name, "rel")) {
+        return null;
+    }
+
+    if (std.mem.eql(u8, name, "src") and std.mem.eql(u8, tag_name, "img")) {
+        return if (off_site(value) or value.len == 0) null else value;
+    }
+
+    if (!std.mem.eql(u8, name, "class")) {
+        return value;
+    }
+
+    var kept: std.ArrayList(u8) = .empty;
+    var classes = std.mem.tokenizeAny(u8, value, " \t\r\n");
+
+    while (classes.next()) |class| {
+        if (listed(&admin_classes, class)) {
+            if (kept.items.len > 0) try kept.append(arena, ' ');
+            try kept.appendSlice(arena, class);
+        }
+    }
+
+    return if (kept.items.len == 0) null else kept.items;
+}
+
+/// An address that leaves the site: a scheme, or `//` that names another host.
+fn off_site(address: []const u8) bool {
+    std.debug.assert(address.len <= input_bytes_max);
+
+    const protocol_relative = std.mem.startsWith(u8, address, "//");
+    const colon = std.mem.indexOfScalar(u8, address, ':') orelse return protocol_relative;
+    const slash = std.mem.indexOfScalar(u8, address, '/') orelse address.len;
+
+    return protocol_relative or colon < slash;
+}
 
 /// `<path d="…"/>`: the tag's attributes end with a `/`.
 fn self_closing(attributes_text: []const u8) bool {

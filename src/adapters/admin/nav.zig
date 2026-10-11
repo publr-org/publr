@@ -59,14 +59,16 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
     const arena = session.arena;
     const address = try filters.format(arena, current.filters, null);
     const on_view = current.view_id != null;
-    const listed = registry.SDK.dispatch(&session.ctx, types.List, .{}) catch {
+    const listed = registry.SDK.dispatch(&session.ctx, types.List, .{
+        .limit = @import("../../sdk/operation.zig").page_limit_max,
+    }) catch {
         return error.OutOfMemory;
     };
     var private: std.ArrayList(views.ContentNav.Private_viewsItem) = .empty;
     var statuses: std.ArrayList(Row) = .empty;
     var record_types: std.ArrayList(views.ContentNav.TypesItem) = .empty;
 
-    try append_built_in(arena, &private, address, on_view);
+    try append_built_in(session, &private, address, on_view);
     try append_saved(session, &private, current.view_id);
 
     for (registry.Statuses.all) |status| {
@@ -82,12 +84,20 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
         statuses.append(arena, row) catch return error.OutOfMemory;
     }
 
-    statuses.append(arena, try row_of(arena, "Changed", changed_only, address, on_view)) catch {
+    const changed_label = try session.translated("Changed");
+    const changed_row = try row_of(arena, changed_label, changed_only, address, on_view);
+
+    statuses.append(arena, changed_row) catch {
         return error.OutOfMemory;
     };
 
+    const in_sections = try @import("sections.zig").all(session);
+
     for (listed.types) |summary| {
-        if (model.media.is_library(summary.handle)) {
+        // A plugin's section lists its own types; they are not listed twice.
+        if (model.design.is_design(summary.handle) or
+            @import("sections.zig").holds(in_sections, summary.handle))
+        {
             continue;
         }
 
@@ -101,13 +111,15 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
                 .label = row.label,
                 .href = row.href,
                 .active = row.active,
+                .heading = summary.app,
             }),
-            .settings => {},
-            .component => {},
+            .settings, .component, .media => {},
         };
 
         appended catch return error.OutOfMemory;
     }
+
+    try group_by_app(session, record_types.items);
 
     const all = try row_of(arena, "All", .{}, address, on_view);
     const recent_row = try row_of(arena, "Recent", recent, address, on_view);
@@ -121,7 +133,103 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
         .statuses = statuses.items,
         .types = record_types.items,
         .settings = &.{},
+        .sections = try sections_of(session, in_sections),
+        .csrf = session.csrf_token(),
+        .back = address,
     });
+}
+
+/// The record types by where they live, each group under its name: the app the admin is
+/// narrowed to first, then Global, then the other apps'. `heading` comes in as the app's
+/// `.name` and leaves as the label of the group an item starts, else empty. A project with
+/// no apps has no groups.
+const TypeItem = views.ContentNav.TypesItem;
+
+fn group_by_app(session: *const Session, items: []TypeItem) Error!void {
+    std.debug.assert(items.len <= 4096);
+    std.debug.assert(session.signed_in());
+
+    if (session.project.apps.len == 0) {
+        for (items) |*item| {
+            item.heading = "";
+        }
+
+        return;
+    }
+
+    const narrowed = admin.app_scope.of(session).app_name() orelse "";
+    const Rank = struct {
+        narrowed: []const u8,
+
+        fn of(rank: @This(), app: []const u8) u8 {
+            if (app.len > 0 and std.mem.eql(u8, app, rank.narrowed)) {
+                return 0;
+            }
+
+            return if (app.len == 0) 1 else 2;
+        }
+
+        fn less(rank: @This(), left: TypeItem, right: TypeItem) bool {
+            std.debug.assert(left.label.len > 0 and right.label.len > 0);
+
+            const left_rank = rank.of(left.heading);
+            const right_rank = rank.of(right.heading);
+
+            if (left_rank != right_rank) {
+                return left_rank < right_rank;
+            }
+
+            return std.mem.order(u8, left.heading, right.heading) == .lt;
+        }
+    };
+    const rank: Rank = .{
+        .narrowed = narrowed,
+    };
+
+    std.sort.insertion(TypeItem, items, rank, Rank.less);
+
+    var previous: ?[]const u8 = null;
+
+    for (items) |*item| {
+        const app = item.heading;
+        const starts = previous == null or !std.mem.eql(u8, previous.?, app);
+
+        previous = app;
+        item.heading = if (!starts)
+            ""
+        else if (app.len == 0)
+            try session.translated("Global")
+        else if (session.project.find(app)) |found|
+            found.spec.label
+        else
+            app;
+    }
+}
+
+const SectionItem = views.ContentNav.SectionsItem;
+
+fn sections_of(
+    session: *Session,
+    all: []const @import("sections.zig").Section,
+) Error![]const SectionItem {
+    std.debug.assert(session.signed_in());
+
+    const listed = try @import("destinations.zig").content(session, all);
+    const items = try session.arena.alloc(SectionItem, listed.len);
+
+    for (listed, items) |destination, *item| {
+        item.* = .{
+            .label = destination.label,
+            .href = destination.href,
+            .icon = std.meta.stringToEnum(@FieldType(SectionItem, "icon"), destination.icon) orelse
+                .package,
+            .plugin = destination.plugin,
+            .page = destination.page,
+            .pinned = destination.pinned,
+        };
+    }
+
+    return items;
 }
 
 /// One row: active when the page shows exactly these filters and no saved view.
@@ -146,7 +254,7 @@ fn row_of(
 
 /// The two private views everyone has, locked: what the caller created, what they saved.
 fn append_built_in(
-    arena: std.mem.Allocator,
+    session: *const Session,
     private: *std.ArrayList(views.ContentNav.Private_viewsItem),
     address: []const u8,
     on_view: bool,
@@ -154,16 +262,18 @@ fn append_built_in(
     std.debug.assert(private.items.len == 0);
     std.debug.assert(std.mem.startsWith(u8, address, "/admin/content"));
 
+    const arena = session.arena;
+
     const built_in = [_]struct {
         label: []const u8,
         filter: Filters,
     }{
         .{
-            .label = "Created by me",
+            .label = try session.translated("Created by me"),
             .filter = created_by_me,
         },
         .{
-            .label = "Updated by me",
+            .label = try session.translated("Updated by me"),
             .filter = updated_by_me,
         },
     };

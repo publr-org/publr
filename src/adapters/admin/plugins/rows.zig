@@ -13,7 +13,7 @@ const Session = admin.Session;
 /// its state allows.
 pub fn requests(
     comptime Row: type,
-    arena: std.mem.Allocator,
+    session: *const Session,
     list: []const plugin_operations.Request,
     domains: []const []const u8,
     buttons: bool,
@@ -21,12 +21,14 @@ pub fn requests(
     std.debug.assert(list.len <= 256);
     std.debug.assert(domains.len <= 64);
 
+    const arena = session.arena;
+
     var rows: std.ArrayList(Row) = .empty;
 
     for ([_]@TypeOf(list[0].tier){ .low, .medium, .high }) |tier| {
         for (list) |request| {
             if (request.tier == tier) {
-                try rows.append(arena, try row_of(Row, arena, request, domains, buttons));
+                try rows.append(arena, try row_of(Row, session, request, domains, buttons));
             }
         }
     }
@@ -36,7 +38,7 @@ pub fn requests(
 
 fn row_of(
     comptime Row: type,
-    arena: std.mem.Allocator,
+    session: *const Session,
     request: plugin_operations.Request,
     domains: []const []const u8,
     buttons: bool,
@@ -44,12 +46,18 @@ fn row_of(
     std.debug.assert(request.key.len > 0);
 
     const state = request.state;
+    const fetches = std.mem.eql(u8, request.key, "http.fetch");
     const note: []const u8 = if (state == .unavailable)
-        "Unavailable: nothing installed provides it; the plugin runs without it"
-    else if (std.mem.eql(u8, request.key, "http.fetch") and domains.len > 0)
-        try std.fmt.allocPrint(arena, "Only {s}", .{
-            try std.mem.join(arena, ", ", domains),
-        })
+        try session.translated(
+            "Unavailable: nothing installed provides it; the plugin runs without it",
+        )
+    else if (fetches and anywhere(domains))
+        try session.translated("Any address on the internet")
+    else if (fetches and domains.len > 0)
+        try session.translated_with("Only {domains}", &.{.{
+            .name = "domains",
+            .value = try std.mem.join(session.arena, ", ", domains),
+        }})
     else
         "";
 
@@ -69,7 +77,7 @@ fn row_of(
 /// An update's requests split in two: what the running version does not hold (new), and what
 /// it holds already. `held` is the running version's requests.
 pub fn split_update(
-    arena: std.mem.Allocator,
+    session: *const Session,
     list: []const plugin_operations.Request,
     held: []const plugin_operations.Request,
     domains: []const []const u8,
@@ -80,6 +88,7 @@ pub fn split_update(
     std.debug.assert(list.len <= 256);
     std.debug.assert(held.len <= 256);
 
+    const arena = session.arena;
     var fresh: std.ArrayList(plugin_operations.Request) = .empty;
     var kept: std.ArrayList(plugin_operations.Request) = .empty;
 
@@ -98,8 +107,8 @@ pub fn split_update(
     const Held = admin.views.PluginReview.GrantedItem;
 
     return .{
-        .fresh = try requests(Fresh, arena, fresh.items, domains, false),
-        .held = try requests(Held, arena, kept.items, domains, false),
+        .fresh = try requests(Fresh, session, fresh.items, domains, false),
+        .held = try requests(Held, session, kept.items, domains, false),
     };
 }
 
@@ -111,7 +120,9 @@ pub fn type_rows(
 ) Error![]const TypeRow {
     std.debug.assert(ticked.len <= 64);
 
-    const listed = registry.SDK.dispatch(&session.ctx, types.List, .{}) catch |err| {
+    const listed = registry.SDK.dispatch(&session.ctx, types.List, .{
+        .limit = @import("../../../sdk/operation.zig").page_limit_max,
+    }) catch |err| {
         return if (err == error.OutOfMemory) error.OutOfMemory else &.{};
     };
     var rows: std.ArrayList(TypeRow) = .empty;
@@ -128,6 +139,23 @@ pub fn type_rows(
             .name = summary.name,
             .checked = checked,
         });
+    }
+
+    // One ticked past the first types listed: offered too, so saving keeps it.
+    for (ticked) |handle| {
+        const shown = for (rows.items) |row| {
+            if (std.mem.eql(u8, row.handle, handle)) {
+                break true;
+            }
+        } else false;
+
+        if (!shown) {
+            try rows.append(session.arena, .{
+                .handle = handle,
+                .name = handle,
+                .checked = true,
+            });
+        }
     }
 
     return rows.items;
@@ -155,4 +183,17 @@ pub fn access_of(
         .scope = scope,
         .types = ticked.items,
     };
+}
+
+/// Whether a plugin may send requests anywhere: it declared `*` among its domains.
+fn anywhere(domains: []const []const u8) bool {
+    std.debug.assert(domains.len <= 64);
+
+    for (domains) |domain| {
+        if (std.mem.eql(u8, domain, "*")) {
+            return true;
+        }
+    }
+
+    return false;
 }
