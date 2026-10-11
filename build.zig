@@ -30,6 +30,10 @@ pub fn build(builder: *std.Build) void {
 
     // Exported for the workspace's benchmarks, which depend on this repository by path.
     builder.modules.put(builder.graph.arena, "publr", library) catch @panic("OOM");
+    // The starter `publr new` writes, for whatever else makes sites (Publr Cloud).
+    _ = builder.addModule("publr_starter", .{
+        .root_source_file = builder.path("src/server/starter.zig"),
+    });
     builder.installArtifact(exe);
     apps.add_check(builder, exe, target);
 

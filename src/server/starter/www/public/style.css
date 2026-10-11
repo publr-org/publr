@@ -1,0 +1,116 @@
+:root {
+  --canvas: #fafafa;
+  --card: #ffffff;
+  --ink: #0a0a0a;
+  --muted: #666666;
+  --line: #ebebeb;
+  --hover: #f2f2f2;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #000000;
+    --card: #0a0a0a;
+    --ink: #ededed;
+    --muted: #a1a1a1;
+    --line: #262626;
+    --hover: #1a1a1a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; min-height: 100%; }
+
+body {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.starter {
+  display: flex;
+  width: 100%;
+  max-width: 48rem;
+  min-height: 100vh;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 3rem;
+  padding: 8rem 4rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.copy { display: flex; flex-direction: column; gap: 1.5rem; }
+
+h1 {
+  max-width: 20rem;
+  margin: 0;
+  font-size: 1.875rem;
+  font-weight: 600;
+  line-height: 2.5rem;
+  letter-spacing: -0.025em;
+}
+
+.copy p {
+  max-width: 28rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.125rem;
+  line-height: 2rem;
+}
+
+.copy a { color: var(--ink); font-weight: 500; text-decoration: none; }
+.copy a:hover { text-decoration: underline; }
+
+code {
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+  background: var(--hover);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.actions { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 1rem; font-weight: 500; }
+
+.button {
+  display: inline-flex;
+  height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 1.25rem;
+  border-radius: 999px;
+  text-decoration: none;
+  transition: background-color 0.15s;
+}
+
+.button.primary { min-width: 9.5rem; background: var(--ink); color: var(--canvas); }
+.button.primary:hover { opacity: 0.85; }
+
+.button.secondary { min-width: 9.5rem; border: 1px solid var(--line); color: var(--ink); }
+.button.secondary:hover { background: var(--hover); }
+
+@media (max-width: 40rem) {
+  .starter { align-items: center; padding: 4rem 1rem; text-align: center; }
+  .copy { align-items: center; }
+  .actions { width: 100%; flex-direction: column; }
+  .button { width: 100%; }
+}

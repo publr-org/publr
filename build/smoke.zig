@@ -41,7 +41,7 @@ pub fn add_check(
 }
 
 /// The version `build.zig.zon` says, which `--version` and `/api/health` answer.
-fn version(builder: *std.Build) []const u8 {
+pub fn version(builder: *std.Build) []const u8 {
     std.debug.assert(builder.build_root.path != null);
 
     const io = builder.graph.io;

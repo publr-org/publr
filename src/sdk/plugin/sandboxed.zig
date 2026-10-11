@@ -114,7 +114,12 @@ fn hook_left_out(comptime Middleware: type) ?[]const u8 {
 pub fn left_out(comptime Plugin: type) []const []const u8 {
     comptime {
         const contract = @import("../plugin.zig");
-        const never = [_][]const u8{ "schema_sql", "bootstrap", "sign_in_provider" };
+        const never = [_][]const u8{
+            "schema_sql",
+            "migrations",
+            "bootstrap",
+            "sign_in_provider",
+        };
         const later = [_][]const u8{
             "policies",
             "field_kinds",
@@ -124,7 +129,6 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
             "filters",
             "routes",
             "settings_pages",
-            "top_bar",
             "sign_in_at",
             "app_picker_segment",
             "State",

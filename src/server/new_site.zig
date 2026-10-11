@@ -9,6 +9,7 @@
 //!   shop/
 //! ```
 const std = @import("std");
+const starter = @import("starter.zig");
 
 pub const name_len_max: u32 = 64;
 
@@ -24,8 +25,13 @@ pub const standard_places = [_][]const u8{
 pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8) !u8 {
     std.debug.assert(standard_places.len > 0);
 
-    if (args.len != 1 or !valid_name(args[0])) {
-        std.debug.print("usage: publr new <name>   (letters, digits and dashes)\n", .{});
+    const admin_only = args.len == 2 and std.mem.eql(u8, args[1], "--admin-only");
+
+    if ((args.len != 1 and !admin_only) or !valid_name(args[0])) {
+        std.debug.print(
+            "usage: publr new <name> [--admin-only]   (letters, digits and dashes)\n",
+            .{},
+        );
         return 2;
     }
 
@@ -38,7 +44,14 @@ pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8
         return 1;
     } else |_| {}
 
-    try cwd.createDirPath(init.io, try std.fs.path.join(arena, &.{ name, "apps" }));
+    const apps = try std.fs.path.join(arena, &.{ name, "apps" });
+
+    try cwd.createDirPath(init.io, apps);
+
+    if (!admin_only) {
+        try starter.write(init.io, arena, apps, starter.default);
+    }
+
     try cwd.createDirPath(init.io, try std.fs.path.join(arena, &.{ name, "plugins" }));
 
     const binary = try binary_entry(init, name);
@@ -54,7 +67,7 @@ pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8
         .sub_path = try std.fs.path.join(arena, &.{ name, "publr.zon" }),
         .data = zon,
     });
-    try print_next(out, name, binary);
+    try print_next(out, name, binary, admin_only);
 
     return 0;
 }
@@ -100,19 +113,27 @@ fn binary_entry(init: std.process.Init, name: []const u8) !?[]const u8 {
     return if (hops > 2) executable else relative;
 }
 
-fn print_next(out: *std.Io.Writer, name: []const u8, binary: ?[]const u8) !void {
+fn print_next(
+    out: *std.Io.Writer,
+    name: []const u8,
+    binary: ?[]const u8,
+    admin_only: bool,
+) !void {
     std.debug.assert(name.len > 0);
 
     const command = binary orelse "../publr";
+    const apps = if (admin_only) "apps/ (empty: / opens the admin)" else "apps/www (the starter)";
+
+    std.debug.assert(command.len > 0);
 
     try out.print(
-        \\Made {s}/: publr.zon, apps/, plugins/.
+        \\Made {s}/: publr.zon, {s}, plugins/.
         \\
         \\Next:
         \\  cd {s}
         \\  {s} serve        # prints its address; open it to create the first admin
         \\
-    , .{ name, name, command });
+    , .{ name, apps, name, command });
 }
 
 test "site names are plain folder names" {
@@ -122,4 +143,8 @@ test "site names are plain folder names" {
     try std.testing.expect(!valid_name("Blog"));
     try std.testing.expect(!valid_name("a/b"));
     try std.testing.expect(!valid_name(""));
+}
+
+test {
+    _ = starter;
 }

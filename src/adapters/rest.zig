@@ -143,6 +143,15 @@ fn invoke(
         });
     };
     var sdk_ctx = identity_module.context(Project.of(ctx), ctx.arena, caller);
+
+    // RFC 9745: the caller's client can tell, and the link names what replaces it.
+    if (comptime sdk.operation.deprecation(Operation) != null) {
+        try response.set_header("Deprecation", "true");
+        const text = comptime sdk.operation.deprecation_text(Operation);
+
+        try response.set_header("X-Publr-Deprecated", text);
+    }
+
     const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch |err| {
         return auth_http.respond_error(response, err, &sdk_ctx);
     };

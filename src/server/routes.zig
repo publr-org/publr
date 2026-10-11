@@ -15,6 +15,7 @@ const media_adapter = @import("../adapters/media.zig");
 const builtin = @import("builtin");
 const operator = @import("operator.zig");
 const apps_load = @import("apps_load.zig");
+const update = if (builtin.os.tag == .wasi) void else @import("update.zig");
 const remote = @import("remote.zig");
 const plugin_routes = @import("plugin_routes.zig");
 const plugin_hooks = @import("plugin_hooks.zig");
@@ -39,6 +40,10 @@ pub fn register(router: *http.Router) void {
     router.use(&base.under_base);
     // Then, so it runs after the rest: whatever they leave without a cache policy is private.
     router.use(&private_by_default);
+    // With the admin on a host of its own: each host answers only what is its own.
+    router.use(&@import("split.zig").split);
+    // What the administrator's sandboxed frame sends is a visitor's; it reads the answers.
+    router.use(&apps_adapter.framed.open_to_frame);
     // Behind a CDN that purges: every write answers with the dependency keys it raised.
     router.use(&apps_adapter.edge.changes);
     native_plugin_routes.register(router);
@@ -57,6 +62,7 @@ pub fn register(router: *http.Router) void {
         router.post(operator.route, &operator.handle);
         router.post(apps_load.route, &apps_load.handle);
         router.post(remote.route, &remote.handle);
+        router.post(update.restart_route, &update.handle_restart);
         plugin_operator_commands.register(router);
     }
 
@@ -69,7 +75,7 @@ pub fn register(router: *http.Router) void {
     const operator_routes: u32 = if (builtin.os.tag == .wasi)
         0
     else
-        3 + plugin_operator_commands.routes_count;
+        4 + plugin_operator_commands.routes_count;
     const fixed = 9 + operator_routes + provider_routes.routes_count +
         native_plugin_routes.routes_count;
 

@@ -47,8 +47,16 @@ pub fn main(init: std.process.Init) !u8 {
     try expect_compiler(init, binary, bare, work_dir);
     try expect_contains(init, bare, work_dir, &.{"agents"}, "publr plugin build --name");
     try expect_contains(init, bare, work_dir, &.{"skill"}, "name: build-on-publr");
-    try expect_contains(init, bare, work_dir, &.{ "new", "smoke-site" }, "Made smoke-site/");
+    try expect_contains(init, bare, work_dir, &.{ "new", "smoke-site" }, "apps/www (the starter)");
+    try expect_contains(
+        init,
+        bare,
+        work_dir,
+        &.{ "new", "smoke-admin", "--admin-only" },
+        "apps/ (empty: / opens the admin)",
+    );
     try expect_contains(init, bare, work_dir, &.{"--help"}, "run `publr agents` first");
+    try expect_contains(init, bare, work_dir, &.{"--commands"}, "content_type get --type <text>");
     try expect_auth(init, binary, work_dir);
     const sandboxed = @import("smoke/sandboxed_plugins.zig");
 
@@ -62,6 +70,9 @@ pub fn main(init: std.process.Init) !u8 {
 
     try native_plugins.expect_native_admin(init, native, work_dir, installable);
     try @import("smoke/devices.zig").expect_devices(init, binary, work_dir);
+    try @import("smoke/ai.zig").expect_ai(init, binary, work_dir);
+    try @import("smoke/browser.zig").expect_browser(init, binary, work_dir);
+    try @import("smoke/updates.zig").expect_updates(init, binary, work_dir);
 
     std.debug.print("smoke: ok\n", .{});
 

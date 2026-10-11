@@ -1,5 +1,6 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const db = @import("../lib/db.zig");
 const contract = @import("../sdk/plugin.zig");
 const status_registry = @import("../model/status.zig");
 const kind_registry = @import("../model/kinds.zig");
@@ -13,6 +14,8 @@ const sign_in = @import("../operations/sign_in.zig");
 const sign_on = @import("../operations/sign_on.zig");
 const device = @import("../operations/device.zig");
 const apps = @import("../operations/apps.zig");
+const removal = @import("../operations/removal.zig");
+const trash = @import("../operations/trash.zig");
 const identity = @import("../operations/identity.zig");
 const status = @import("../operations/status.zig");
 const role = @import("../operations/role.zig");
@@ -23,6 +26,7 @@ const term = @import("../operations/term.zig");
 const media = @import("../operations/media.zig");
 const snapshot = @import("../operations/snapshot.zig");
 const view = @import("../operations/view.zig");
+const rail = @import("../operations/rail.zig");
 const internal = @import("../operations/internal.zig");
 const plugin_operations = @import("../operations/plugin.zig");
 const plugin_types = @import("../sdk/plugin/types.zig");
@@ -30,6 +34,12 @@ const plugin_contracts = @import("../model/plugin_contracts.zig");
 const shapes = @import("../model/contract.zig");
 const activity = @import("../operations/activity.zig");
 const errors = @import("../operations/errors.zig");
+const ai = @import("../operations/ai.zig");
+const secret = @import("../operations/secret.zig");
+const http_operations = @import("../operations/http.zig");
+const update = @import("../operations/update.zig");
+const design_operations = @import("../operations/design.zig");
+const health = @import("../operations/health.zig");
 
 pub const native_plugins = contract.Merged(@import("native_plugins").all);
 
@@ -41,8 +51,11 @@ const core_operations = heartbeat.operations ++ project.operations ++ custom_fie
     content_type.operations ++
     record.operations ++ taxonomy.operations ++ term.operations ++ media.operations ++
     snapshot.operations ++
-    view.operations ++ plugin_operations.operations ++ internal.operations ++
-    activity.operations ++ errors.operations ++ apps.operations;
+    view.operations ++ rail.operations ++ plugin_operations.operations ++ internal.operations ++
+    activity.operations ++ errors.operations ++ apps.operations ++ ai.operations ++
+    secret.operations ++ http_operations.operations ++ update.operations ++
+    removal.operations ++ trash.operations ++ design_operations.operations ++
+    health.operations;
 const core_namespaces = [_]sdk.operation.Namespace{
     heartbeat.namespace,
     project.namespace,
@@ -60,11 +73,20 @@ const core_namespaces = [_]sdk.operation.Namespace{
     media.namespace,
     snapshot.namespace,
     view.namespace,
+    rail.namespace,
     plugin_operations.namespace,
     internal.namespace,
     activity.namespace,
     errors.namespace,
     apps.namespace,
+    ai.namespace,
+    secret.namespace,
+    http_operations.namespace,
+    update.namespace,
+    removal.namespace,
+    trash.namespace,
+    design_operations.namespace,
+    health.namespace,
 };
 
 /// The names no plugin may take: every core namespace, `app` (what an app's users call is
@@ -168,9 +190,11 @@ pub const registry: sdk.Registry = .{
     .middleware_owners = &core_owners(project.middleware.len) ++
         native_plugins.merged_middleware_owners,
     .schemas = native_plugins.merged_schemas,
+    .migrations = &db.migrations.core ++ native_plugins.merged_migrations,
     .roles = native_plugins.merged_roles,
     .bootstrap = &bootstrap,
     .log = activity.log,
+    .removal = removal.prepare,
 };
 
 pub const SDK = sdk.SDK(registry);
@@ -192,11 +216,16 @@ pub const Roles = role_registry.Registry(native_plugins.merged_roles);
 pub const sign_in_providers = native_plugins.merged_sign_in_providers;
 pub const plugin_routes = native_plugins.merged_routes;
 pub const settings_pages = native_plugins.merged_settings_pages;
+pub const settings_tabs = native_plugins.merged_settings_tabs;
 pub const row_actions = native_plugins.merged_row_actions;
 pub const pages = native_plugins.merged_pages;
 pub const top_bar = native_plugins.merged_top_bar;
+pub const sections = native_plugins.merged_sections;
+pub const panels = native_plugins.merged_panels;
 pub const sign_in_at = native_plugins.merged_sign_in_at;
 pub const app_picker_segment = native_plugins.merged_app_picker_segment;
+pub const variants = native_plugins.merged_variants;
+pub const translations = native_plugins.merged_translations;
 pub const stateful_plugins = native_plugins.merged_stateful;
 pub const operator_commands = native_plugins.merged_operator_commands;
 pub const before_command = native_plugins.merged_before_command;
@@ -208,6 +237,8 @@ fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
     @import("std").debug.assert(ctx.caller == .system);
     @import("std").debug.assert(ctx.db.transaction_depth == 0);
     try media.bootstrap(ctx);
+    try ai.bootstrap(ctx);
+    try design_operations.bootstrap(ctx);
     try plugin_types.apply_all(ctx);
 
     inline for (native_plugins.all) |Plugin| {

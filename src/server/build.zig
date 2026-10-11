@@ -54,6 +54,8 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         .auth = &application.auth,
         .io = init.io,
         .sandboxed_plugins = application.sandboxed(),
+        .scratch = &application.scratch,
+        .definitions = &application.definitions,
     };
     const apps = try init.gpa.alloc(apps_adapter.App, source.specs.len);
     defer init.gpa.free(apps);

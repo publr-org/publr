@@ -3,9 +3,12 @@
 //! records of public types. Every read is written down in `Deps` when a build asks for it.
 
 const std = @import("std");
+const jit = @import("publr_jit");
+const template_render = @import("../../template/render.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const identity_module = @import("../rest/identity.zig");
+const model_variant = @import("../../model/variant.zig");
 const record_operations = @import("../../operations/record.zig");
 const user_operations = @import("../../operations/user.zig");
 const http = @import("../../lib/http.zig");
@@ -26,6 +29,10 @@ pub const references_max: u32 = record_operations.list_max;
 /// collections.
 pub const keys_max: u32 = 16384;
 pub const template_key_prefix = "template:";
+/// What a preview's page tells the tab around it: where it is, so the tab's address follows
+/// the frame and a reload comes back to the same page. Links stay plain links.
+pub const preview_report = "<script>parent.postMessage({publrPreview:" ++
+    "location.pathname+location.search},\"*\")</script>";
 pub const asset_key_prefix = "asset:";
 pub const islands_prefix = "/_islands/";
 /// Where an app's generated assets are, under its mount: `/_app/islands.js`.
@@ -177,6 +184,10 @@ pub const Context = struct {
         created_at: []const u8,
         updated_at: []const u8,
         data: Data,
+        /// A reference to a record this reader may not read here: no id, title or field,
+        /// only its type and why (`access`, `not_shared`, `deleted`).
+        restricted: bool = false,
+        reason: []const u8 = "",
     };
 
     /// The record's document: a field's value as text, or null when it is not a scalar.
@@ -319,6 +330,21 @@ pub const Context = struct {
     /// Where a live page's `Publr.request.redirect()` sends the visitor; null where no
     /// redirect can be answered (a build, a fragment).
     redirect_to: ?*?[]const u8 = null,
+    /// The entry a `[slug]` page shows, given rather than read: a record's edit copy, or a
+    /// new one's stand-in, drawn by the admin's editor (`pages.render_shown`).
+    shown: ?Entry = null,
+    /// An admin's preview (`/admin/preview`): the page alone, without the toolbar, which would
+    /// frame it again by its address and lose what was posted.
+    preview: bool = false,
+    /// Where the page's own addresses start in a preview (`/admin/preview/<pass>/site`), so
+    /// every link it draws stays in the preview; null outside one.
+    preview_base: ?[]const u8 = null,
+    /// The language the page is in: its documents read in it, its root paths under its
+    /// address (`/pl`), its `<html lang>`.
+    place: model_variant.Place = .{},
+    /// The route the page answers, for its address in the other languages; null for a
+    /// fragment or a page drawn outside a route.
+    route: ?*const engine.Route = null,
 
     /// A dynamic island's prerender pass: no request, not live, a visitor nobody knows.
     pub fn prerender(ctx: *const Context) Context {
@@ -330,6 +356,11 @@ pub const Context = struct {
             .project = ctx.project,
             .app = ctx.app,
             .params = ctx.params,
+            .shown = ctx.shown,
+            .preview = ctx.preview,
+            .preview_base = ctx.preview_base,
+            .place = ctx.place,
+            .caller = if (ctx.preview) ctx.caller else .anonymous,
             .deps = ctx.deps,
             .memo = ctx.memo,
         };
@@ -346,6 +377,11 @@ pub const Context = struct {
             .project = ctx.project,
             .app = ctx.app,
             .params = ctx.params,
+            .shown = ctx.shown,
+            .preview = ctx.preview,
+            .preview_base = ctx.preview_base,
+            .place = ctx.place,
+            .caller = if (ctx.preview) ctx.caller else .anonymous,
             .memo = ctx.memo,
         };
     }
@@ -361,10 +397,17 @@ pub const Context = struct {
             deps.record_asset();
         }
 
+        try ctx.write_fonts(writer);
+        try @import("alternates.zig").write_links(ctx, writer);
         try writer.writeAll("<style>");
         try writer.writeAll(ctx.app.css);
         try writer.writeAll("</style>");
-        try ctx.write_module(writer, "toolbar.js");
+
+        if (ctx.preview) {
+            try writer.writeAll(preview_report);
+        } else {
+            try ctx.write_module(writer, "toolbar.js");
+        }
 
         const page = ctx.page orelse return;
 
@@ -380,14 +423,55 @@ pub const Context = struct {
             return;
         }
 
-        try write_preloads(writer, ctx.app.base(), page);
+        const base = if (ctx.place.address.len == 0)
+            ctx.app.base()
+        else
+            try std.mem.concat(ctx.arena, u8, &.{ ctx.app.base(), ctx.place.address });
+
+        try write_preloads(writer, base, page);
 
         if (ctx.app.options.dev) {
             try writer.writeAll(island_tint);
         }
 
-        try writer.writeAll(island_conditions);
+        try writer.print(island_conditions, .{ctx.project.hint_cookie});
         try ctx.write_module(writer, "islands.js");
+    }
+
+    /// Each of the app's fonts as the stylesheet that serves it, before the app's own.
+    fn write_fonts(ctx: *const Context, writer: *std.Io.Writer) !void {
+        std.debug.assert(ctx.app.spec.fonts.len <= model_app.fonts_max);
+        std.debug.assert(ctx.app.spec.name.len > 0);
+
+        for (ctx.app.spec.fonts) |font| {
+            if (font.url.len > 0) {
+                try writer.writeAll("<link rel=\"stylesheet\" href=\"");
+                try engine.render.escape(writer, font.url);
+                try writer.writeAll("\">");
+            }
+
+            for (font.faces) |face| {
+                try write_face(writer, font.family, face);
+            }
+        }
+    }
+
+    /// One hosted file as an `@font-face`; the family and the source were checked when the
+    /// font was written (`design.valid_font_face`), so neither can end the rule.
+    fn write_face(writer: *std.Io.Writer, family: []const u8, face: model_app.FontFace) !void {
+        std.debug.assert(family.len > 0 and face.src.len > 0);
+        std.debug.assert(face.weight_min <= face.weight_max);
+
+        const style: []const u8 = if (face.italic) "italic" else "normal";
+
+        try writer.print("<style>@font-face{{font-family:\"{s}\";font-weight:{d} {d};" ++
+            "font-style:{s};font-display:swap;src:url(\"{s}\")}}</style>", .{
+            family,
+            face.weight_min,
+            face.weight_max,
+            style,
+            face.src,
+        });
     }
 
     /// One module its own low-priority script: nothing on screen waits for it.
@@ -395,15 +479,36 @@ pub const Context = struct {
         std.debug.assert(path.len > 0);
         std.debug.assert(std.mem.endsWith(u8, path, ".js"));
 
-        // `data-publr-base`: the path the project is served under, for the toolbar's calls.
+        // `data-publr-base`: the path the project is served under, for the toolbar's calls;
+        // `data-publr-hint`: the project's signed-in hint cookie.
         try writer.print("<script type=\"module\" async fetchpriority=\"low\" " ++
-            "src=\"{s}{s}{s}?v={s}\" data-publr-base=\"{s}\"></script>", .{
+            "src=\"{s}{s}{s}?v={s}\" data-publr-base=\"{s}\" data-publr-hint=\"{s}\">" ++
+            "</script>", .{
             ctx.app.base(),
             assets_prefix,
             path,
             &ctx.app.version,
             model_app.path_of(ctx.app.options.base_url),
+            ctx.project.hint_cookie,
         });
+    }
+
+    /// A class attribute's value by the names the app's sheet styles it by, escaped.
+    pub fn write_classes(ctx: *const Context, writer: *std.Io.Writer, classes: []const u8) !void {
+        std.debug.assert(ctx.app.book_arena != null);
+        std.debug.assert(ctx.app.book.marker_names.len == ctx.app.book.classes.len);
+
+        jit.book.write(&ctx.app.book, writer, &.{classes}) catch |err| switch (err) {
+            error.TooManyClasses => try template_render.escape(writer, classes),
+            else => |other| return other,
+        };
+    }
+
+    /// The app's class book, for its interactive components (`publr_jit.Book`).
+    pub fn class_book(ctx: *const Context) ?*const anyopaque {
+        std.debug.assert(ctx.app.book_arena != null);
+
+        return &ctx.app.book;
     }
 
     /// The path the project is served under (`/environments/dev`), before a root path a
@@ -411,7 +516,13 @@ pub const Context = struct {
     pub fn url_base(ctx: *const Context) []const u8 {
         std.debug.assert(ctx.app.options.base_url.len > 0);
 
-        return model_app.path_of(ctx.app.options.base_url);
+        const base = ctx.preview_base orelse model_app.path_of(ctx.app.options.base_url);
+
+        if (ctx.place.address.len == 0) {
+            return base;
+        }
+
+        return std.mem.concat(ctx.arena, u8, &.{ base, ctx.place.address }) catch base;
     }
 
     /// An `/_app/...` URL under the app's mount, with the fingerprint of the build. The
@@ -496,6 +607,14 @@ pub const Context = struct {
         std.debug.assert(type_id.len > 0);
         std.debug.assert(ctx.app.pages().routes.len > 0);
 
+        if (ctx.shown) |given| {
+            const own_slug = std.mem.eql(u8, slug, ctx.params.slug orelse "");
+
+            if (own_slug and std.mem.eql(u8, given.type, type_id)) {
+                return given;
+            }
+        }
+
         if (slug.len == 0) {
             return error.EntryNotFound;
         }
@@ -566,8 +685,9 @@ pub const Context = struct {
     }
 
     /// `Publr.build.getReferences(entry, 'field')`: the records `ids` name, in that order.
-    /// A target that is not live and public (or is gone) is left out; every id is written
-    /// down anyway, so the target's arrival rebuilds the page.
+    /// One the reader may not read here stands as a restricted entry (its type and why);
+    /// one not published yet is left out. Every id is written down anyway, so the
+    /// target's arrival rebuilds the page.
     pub fn references(ctx: *const Context, ids: []const []const u8) ![]const Entry {
         std.debug.assert(ids.len <= references_max);
         std.debug.assert(ctx.app.pages().routes.len > 0);
@@ -581,7 +701,12 @@ pub const Context = struct {
             }
 
             const found = ctx.load(id) catch |err| switch (err) {
-                error.EntryNotFound => continue,
+                error.EntryNotFound => {
+                    const restricted = try ctx.restriction(id) orelse continue;
+
+                    try entries.append(ctx.arena, restricted);
+                    continue;
+                },
                 else => return err,
             };
 
@@ -591,9 +716,10 @@ pub const Context = struct {
         return entries.items;
     }
 
-    /// `Publr.build.getReference(entry, 'field')`: the first record `ids` name that is live
-    /// and public, else a blank entry (empty id and type, no fields), so a template reads
-    /// `settings.data.theme ?? "cream"` whether or not the field points anywhere.
+    /// `Publr.build.getReference(entry, 'field')`: the first record `ids` name the reader
+    /// reads or may not (restricted, as in `references`), else a blank entry (empty id and
+    /// type, no fields), so a template reads `settings.data.theme ?? "cream"` whether or
+    /// not the field points anywhere.
     pub fn reference(ctx: *const Context, ids: []const []const u8) !Entry {
         std.debug.assert(ids.len <= references_max);
         std.debug.assert(ctx.app.pages().routes.len > 0);
@@ -617,6 +743,38 @@ pub const Context = struct {
                 .arena = ctx.arena,
                 .document = empty,
             },
+        };
+    }
+
+    /// What stands for a record the reader may not read here: its type and why, nothing
+    /// else of it; null when nothing stands in the way (not published yet).
+    fn restriction(ctx: *const Context, id: []const u8) !?Entry {
+        std.debug.assert(id.len > 0);
+        std.debug.assert(ctx.project.connection.transaction_depth == 0);
+
+        var sdk_ctx = ctx.sdk_context();
+        const reach = registry.SDK.dispatch(&sdk_ctx, record_operations.Reach, .{
+            .id = id,
+        }) catch |err| switch (err) {
+            error.Invalid => return null,
+            else => return err,
+        };
+        const reason = reach.reason orelse return null;
+        const empty = try @import("../../lib/json.zig").parse(std.json.Value, ctx.arena, "{}", .{});
+
+        return .{
+            .id = "",
+            .type = reach.type,
+            .slug = null,
+            .title = "",
+            .created_at = "",
+            .updated_at = "",
+            .data = .{
+                .arena = ctx.arena,
+                .document = empty,
+            },
+            .restricted = true,
+            .reason = @tagName(reason),
         };
     }
 
@@ -711,10 +869,41 @@ pub const Context = struct {
     pub const find_records = @import("reads.zig").find_records;
     pub const call_with = @import("reads.zig").call_with;
     pub const run_query = @import("reads.zig").run_query;
+    pub const media = @import("reads.zig").media;
     pub const money_code = @import("money.zig").code;
     pub const money = @import("money.zig").write;
 
     /// `Publr.build.now()`: when the site was last built, in milliseconds.
+    /// `Publr.build.locale()`: the language the page is in (`pl`, the main one's `en`);
+    /// empty on a site without languages.
+    pub fn locale(ctx: *const Context) []const u8 {
+        std.debug.assert(ctx.place.locale.len <= model_variant.code_len_max);
+        std.debug.assert(ctx.place.address.len == 0 or ctx.place.locale.len > 0);
+
+        return ctx.place.locale;
+    }
+
+    /// `Publr.build.languages()`: the page in every language, `{ code, label, href,
+    /// current, main }` each, the main one first; `[]` on a site without languages.
+    pub fn languages_json(ctx: *const Context) ![]const u8 {
+        std.debug.assert(ctx.app.url.len > 0);
+
+        const all = try @import("alternates.zig").of(ctx);
+
+        return std.json.Stringify.valueAlloc(ctx.arena, all, .{});
+    }
+
+    /// `Publr.build.managed()`: whether someone else runs this site and keeps its Publr up to
+    /// date (Publr Cloud, `PUBLR_UPDATES=managed`); false where it runs on its own.
+    pub fn managed(ctx: *const Context) bool {
+        std.debug.assert(ctx.app.built_at >= 0);
+        std.debug.assert(ctx.app.css.len > 0);
+
+        const updater = ctx.project.updater orelse return false;
+
+        return updater.managed;
+    }
+
     pub fn build_time(ctx: *const Context) i64 {
         std.debug.assert(ctx.app.built_at >= 0);
         std.debug.assert(ctx.app.css.len > 0);
@@ -844,6 +1033,7 @@ pub const Context = struct {
 
         sdk_ctx.app = ctx.app.spec.name;
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
+        sdk_ctx.app_reach = ctx.app.spec.name;
         sdk_ctx.visitor = ctx.visitor_id;
 
         const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch return blank;
@@ -908,10 +1098,12 @@ pub const Context = struct {
         return std.mem.readInt(u32, &bytes, .little) % bound;
     }
 
-    /// Every template a render goes through is a dependency of the artifact.
+    /// Every template a render goes through is a dependency of the artifact, and every
+    /// script module (`.js`, `.ts`) a template imports.
     pub fn record_template(ctx: *const Context, rel: []const u8) void {
         std.debug.assert(rel.len > 0);
-        std.debug.assert(std.mem.endsWith(u8, rel, ".publr"));
+        std.debug.assert(std.mem.endsWith(u8, rel, ".publr") or
+            std.mem.endsWith(u8, rel, ".js") or std.mem.endsWith(u8, rel, ".ts"));
 
         if (ctx.deps) |deps| {
             deps.record_template(rel);
@@ -920,14 +1112,19 @@ pub const Context = struct {
 
     pub fn sdk_context(ctx: *const Context) sdk.Ctx {
         std.debug.assert(ctx.project.connection.transaction_depth == 0);
-        std.debug.assert(ctx.live or ctx.caller == .anonymous);
+        std.debug.assert(ctx.live or ctx.preview or ctx.caller == .anonymous);
         std.debug.assert(ctx.deps == null or ctx.caller == .anonymous);
 
         var sdk_ctx = identity_module.context(ctx.project, ctx.arena, ctx.caller);
-        sdk_ctx.delivery = true;
+        // A preview reads as whoever opened it, every record as its edit copy; a page drawn
+        // for a visitor reads live records only.
+        sdk_ctx.delivery = !ctx.preview;
+        sdk_ctx.preview = ctx.preview;
         sdk_ctx.visitor = ctx.visitor_id;
         sdk_ctx.app = ctx.app.spec.name;
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
+        sdk_ctx.app_reach = ctx.app.spec.name;
+        sdk_ctx.variant = ctx.place.variant;
 
         return sdk_ctx;
     }
@@ -1094,14 +1291,14 @@ fn write_preloads(writer: *std.Io.Writer, base: []const u8, page: *const engine.
 /// which the loader runs its conditional islands through once every script on the page
 /// has run, so a condition is never judged missing only because its script came later.
 const island_conditions =
-    "<script>(()=>{const publr=window.Publr??={};const islands=publr.islands??={};" ++
-    "const conditions=islands.conditions??={};let ready=false;const waiting=[];" ++
-    "islands.condition=(name,test)=>{conditions[name]=test};" ++
+    "<script>(()=>{{const publr=window.Publr??={{}};const islands=publr.islands??={{}};" ++
+    "const conditions=islands.conditions??={{}};let ready=false;const waiting=[];" ++
+    "islands.condition=(name,test)=>{{conditions[name]=test}};" ++
     "islands.whenReady=(run)=>ready?run():waiting.push(run);" ++
-    "document.addEventListener('DOMContentLoaded',()=>{ready=true;" ++
-    "for(const run of waiting.splice(0))run()});" ++
+    "document.addEventListener('DOMContentLoaded',()=>{{ready=true;" ++
+    "for(const run of waiting.splice(0))run()}});" ++
     "islands.condition('signedIn',()=>document.cookie.split('; ')" ++
-    ".includes('publr_signed_in=1'))})()</script>";
+    ".includes('{s}=1'))}})()</script>";
 
 /// `--dev`: every placed island tinted so the boundaries are visible.
 const island_tint = "<style>" ++

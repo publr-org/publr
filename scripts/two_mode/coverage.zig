@@ -176,6 +176,26 @@ const exercised = [_]Part{
         .name = "icon",
         .where = "sampler's log page",
     },
+    .{
+        .name = "sections",
+        .where = "sampler's Sample notes section",
+    },
+    .{
+        .name = "panels",
+        .where = "sampler's panel on sample notes",
+    },
+    .{
+        .name = "top_bar",
+        .where = "sampler's top bar entry, counted by sampler count",
+    },
+    .{
+        .name = "row_actions",
+        .where = "sampler's action on the rows of a `sampler` slot",
+    },
+    .{
+        .name = "about",
+        .where = "sampler's about, on its plugin page",
+    },
 };
 
 /// What only the sandbox has: a compiled-in plugin runs with everything, unlimited.
@@ -203,6 +223,10 @@ const sandbox_only = [_]Part{
     .{
         .name = "left_out",
         .where = "what its sandboxed build could not carry",
+    },
+    .{
+        .name = "uninstall",
+        .where = "run when an installed plugin is removed; never a built-in",
     },
 };
 

@@ -23,9 +23,21 @@ pub fn under_base(
 ) anyerror!void {
     std.debug.assert(ctx.user_data != null);
 
+    // The first thing a request meets: the definitions it reads are kept for it alone.
+    const definitions = Project.of(ctx).definitions;
+
+    if (definitions) |cache| {
+        cache.begin(ctx.arena);
+    }
+
+    defer if (definitions) |cache| cache.end();
+
     try next.run(request, response, ctx);
 
-    const base = Project.of(ctx).base;
+    const project = Project.of(ctx);
+    // On the admin's own host, its own path: a shared host (Cloud's dashboard) keeps each
+    // project's admin, and the cookies it sets, under that project's path.
+    const base = if (project.on_admin_host(request)) project.admin_path() else project.base;
 
     if (base.len == 0) {
         return;

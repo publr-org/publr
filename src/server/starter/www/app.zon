@@ -1,0 +1,7 @@
+.{
+    .name = "www",
+    .label = "Website",
+    .mount = .{
+        .path = "/",
+    },
+}

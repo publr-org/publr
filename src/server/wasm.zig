@@ -8,7 +8,7 @@ const auth = publr.auth;
 const http = publr.http;
 
 const heap_bytes: u32 = 16 << 20;
-const arena_bytes: u32 = 4 << 20;
+const arena_bytes: u32 = publr.model.limits.request_arena_bytes;
 const request_bytes_max: u32 = 8 << 20;
 /// What one allocation from the worker may hold: a request, or a file it hands over.
 const allocation_bytes_max: u32 = files.bytes_max;
@@ -26,6 +26,10 @@ const State = struct {
     app: http.App,
     io_backend: std.Io.Threaded,
     arena_buffer: []u8,
+    /// The working memory every request's loops share, as `serve`'s server has it.
+    scratch_buffer: []u8,
+    scratch: publr.sdk.Scratch,
+    definitions: publr.sdk.DefinitionCache,
     response: []u8,
     /// The last response's body, which the worker reads by pointer: it may be bytes.
     body: []const u8,
@@ -122,6 +126,16 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     instance.app.user_data = &instance.project;
     instance.arena_buffer = gpa.alloc(u8, arena_bytes) catch return error.Arena;
     errdefer gpa.free(instance.arena_buffer);
+    instance.scratch_buffer = gpa.alloc(u8, publr.sdk.scratch.bytes_default) catch {
+        return error.Arena;
+    };
+    errdefer gpa.free(instance.scratch_buffer);
+    instance.scratch = .{
+        .fixed = .init(instance.scratch_buffer),
+    };
+    instance.project.scratch = &instance.scratch;
+    instance.definitions = .{};
+    instance.project.definitions = &instance.definitions;
     instance.response = &.{};
     instance.body = &.{};
     instance.allocations = @splat(null);
@@ -146,6 +160,7 @@ export fn publr_deinit() void {
     instance.deferred.deinit();
     instance.gpa.free(instance.response);
     instance.gpa.free(instance.arena_buffer);
+    instance.gpa.free(instance.scratch_buffer);
     instance.auth.deinit();
     instance.io_backend.deinit();
     instance.connection.close();
@@ -448,6 +463,7 @@ fn apply_types(instance: *State, connection: *db.Db) !void {
     });
 
     try publr.operations.media.bootstrap(&ctx);
+    try publr.operations.design.bootstrap(&ctx);
     try publr.plugin.types.apply_all(&ctx);
 }
 

@@ -405,7 +405,7 @@ test "auth over http: login sets the cookie, session reports the user, csrf guar
         .display_name = "New",
         .password_link = true,
     });
-    const token = invited.link.?.path[user_operations.set_password_path.len + 7 ..];
+    const token = invited.link.?.path[user_operations.invitation_path.len + 7 ..];
     const set_head = "POST /api/auth/set-password HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
         "Content-Length: 0\r\n\r\n";
     const set_template = "{{\"token\":\"{s}\",\"password\":\"correct horse battery\"}}";

@@ -207,6 +207,7 @@ fn read_app(
         .tokens = try jit.extendThemeRuntime(arena, jit.default_theme, .{
             .tokens = tokens,
         }),
+        .fonts = config.fonts,
         .style_css = style_css,
         .interactive_classes = if (compiled) |built| built.interactive_classes else "",
         .pjsx_components = if (compiled) |built| built.pjsx_components else &.{},

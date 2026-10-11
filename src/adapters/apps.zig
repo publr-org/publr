@@ -3,6 +3,7 @@
 //! and the caching policy every app's response carries.
 
 const std = @import("std");
+const jit = @import("publr_jit");
 const http = @import("../lib/http.zig");
 const state = @import("apps/state.zig");
 const pages = @import("apps/pages.zig");
@@ -10,6 +11,8 @@ const api = @import("apps/api.zig");
 const islands = @import("apps/islands.zig");
 const assets = @import("apps/assets.zig");
 const toolbar = @import("apps/toolbar.zig");
+const shell = @import("apps/shell.zig");
+pub const framed = @import("apps/framed.zig");
 const Project = @import("../server/project.zig").Project;
 
 pub const spec = @import("apps/spec.zig");
@@ -50,34 +53,78 @@ fn dispatch(request: *Request, response: *Response, ctx: *http.Context) anyerror
     std.debug.assert(ctx.user_data != null);
     std.debug.assert(request.path().len > 0);
 
+    const path = request.path();
+    const in_admin = std.mem.eql(u8, path, "/admin") or std.mem.startsWith(u8, path, "/admin/");
+
+    if (in_admin and (request.method() == .get or request.method() == .head)) {
+        return @import("admin.zig").missing(request, response, ctx);
+    }
+
     const project = Project.of(ctx);
 
     if (project.apps_failed) {
         return pages.unavailable(response);
     }
 
+    // `/about/` is `/about`: a site moved here keeps its old links and search results.
+    if (try slash_redirect(project, request, response)) {
+        return;
+    }
+
     const host = request.header("host") orelse "";
-    const target = project.resolve(host, request.path()) orelse {
+    const resolved = project.resolve(host, request.path()) orelse {
         if (std.mem.eql(u8, request.path(), "/")) {
             return response.redirect(.see_other, "/admin");
         }
 
         return response.text(.not_found, "Not Found");
     };
-
-    if (std.mem.startsWith(u8, target.path, assets.prefix)) {
-        return assets.serve(target.app, target.path, request, response, ctx);
-    }
-
-    if (std.mem.startsWith(u8, target.path, islands.islands_prefix)) {
-        return islands.island(project, target, request, response, ctx);
-    }
+    const target = try @import("apps/languages.zig").locate(project, ctx.arena, resolved);
 
     if (std.mem.startsWith(u8, target.path, api.prefix)) {
         return api.call(project, target, request, response, ctx);
     }
 
-    return pages.dispatch(project, target, request, response, ctx);
+    if (std.mem.startsWith(u8, target.path, assets.prefix)) {
+        try assets.serve(target.app, target.path, request, response, ctx);
+    } else if (std.mem.startsWith(u8, target.path, islands.islands_prefix)) {
+        try islands.island(project, target, request, response, ctx);
+    } else {
+        const choice = @import("apps/language_choice.zig");
+
+        if (try choice.redirect(project, target, request, response)) {
+            return;
+        }
+
+        try choice.remember(project, target, request, response);
+        try pages.dispatch(project, target, request, response, ctx);
+    }
+}
+
+/// A page asked for with a trailing slash is sent, for good, to its address without it.
+fn slash_redirect(project: *const Project, request: *Request, response: *Response) !bool {
+    std.debug.assert(request.path().len > 0);
+    std.debug.assert(project.base.len == 0 or project.base[0] == '/');
+
+    const path = request.path();
+    const reading = request.method() == .get or request.method() == .head;
+
+    // `/_islands/`, `/_app/`: Publr's own addresses, some of them a folder on purpose.
+    const own = std.mem.startsWith(u8, path, "/_");
+
+    if (!reading or own or path.len < 2 or path[path.len - 1] != '/') {
+        return false;
+    }
+
+    const trimmed = std.mem.trimEnd(u8, path, "/");
+    const asked = request.query();
+    const page = if (trimmed.len > 0) trimmed else "/";
+    const mark = if (asked.len > 0) "?" else "";
+    const location = try std.mem.concat(response.arena, u8, &.{ project.base, page, mark, asked });
+
+    try response.redirect(.moved_permanently, location);
+
+    return true;
 }
 
 /// Where the bytes of a response came from, written as `X-Publr-Served` and deciding the
@@ -154,28 +201,49 @@ pub fn serve_file(
     std.debug.assert(html.len > 0);
     std.debug.assert(response.body.len == 0);
 
-    const hash = std.hash.Fnv1a_64.hash(html);
-    const tag = try std.fmt.allocPrint(response.arena, "\"{x:0>16}\"", .{hash});
-
     try serve(response, app, .file, cache);
-    try response.set_header("ETag", tag);
 
-    if (request.header("if-none-match")) |held| {
-        if (std.mem.indexOf(u8, held, tag) != null) {
-            response.status = .not_modified;
-            response.body = "";
-
-            return;
-        }
+    if (try unchanged(request, response, html)) {
+        return;
     }
 
     try response.set_body(status, "text/html; charset=utf-8", html);
+}
+
+/// Tags the response with the `ETag` of `bytes` and, when the consumer already holds
+/// them, turns it into `304 Not Modified` with no body: true when it did.
+pub fn unchanged(request: *const Request, response: *Response, bytes: []const u8) Error!bool {
+    std.debug.assert(response.status != .not_modified);
+    std.debug.assert(bytes.len <= std.math.maxInt(u32));
+
+    const hash = std.hash.Fnv1a_64.hash(bytes);
+    const tag = try std.fmt.allocPrint(response.arena, "\"{x:0>16}\"", .{hash});
+
+    try response.set_header("ETag", tag);
+
+    // A copy made for an administrator's frame carries the guard the held one may lack.
+    if (std.mem.eql(u8, response.header("Content-Security-Policy") orelse "", shell.policy)) {
+        return false;
+    }
+
+    const held = request.header("if-none-match") orelse return false;
+
+    if (std.mem.indexOf(u8, held, tag) == null) {
+        return false;
+    }
+
+    response.status = .not_modified;
+    response.body = "";
+
+    return true;
 }
 
 test {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(state);
     std.testing.refAllDecls(pages);
+    std.testing.refAllDecls(shell);
+    std.testing.refAllDecls(framed);
     std.testing.refAllDecls(islands);
     std.testing.refAllDecls(assets);
     std.testing.refAllDecls(rebuild);
@@ -183,6 +251,7 @@ test {
     std.testing.refAllDecls(edge);
     std.testing.refAllDecls(@import("apps/public.zig"));
     std.testing.refAllDecls(@import("apps/imported.zig"));
+    std.testing.refAllDecls(@import("apps/design.zig"));
 }
 
 const sdk = @import("../sdk.zig");
@@ -279,6 +348,26 @@ pub const Harness = struct {
         }
     }
 
+    /// The app named `name`.
+    pub fn app_named(harness: *Harness, name: []const u8) *App {
+        std.debug.assert(name.len > 0);
+
+        for (&harness.apps) |*app| {
+            if (std.mem.eql(u8, app.spec.name, name)) {
+                return app;
+            }
+        }
+
+        unreachable;
+    }
+
+    /// `html` with its class names read back as `app`'s classes.
+    pub fn decoded(harness: *Harness, app: *const App, html: []const u8) ![]const u8 {
+        std.debug.assert(app.css.len > 0);
+
+        return jit.book.decode(&app.book, harness.arena_state.allocator(), html);
+    }
+
     fn unload(harness: *Harness) void {
         std.debug.assert(harness.apps.len == spec.all.len);
         std.debug.assert(harness.app.css.len > 0);
@@ -326,6 +415,37 @@ pub const Harness = struct {
     }
 };
 
+/// `sheet` has a rule for each of `class`'s declarations, by the names `app`'s book gives
+/// them.
+fn styles(sheet: []const u8, app: *const App, class: []const u8) bool {
+    const id = app.book.class_id(class) orelse return false;
+    const atoms = app.book.atoms_of(id);
+
+    std.debug.assert(atoms.len > 0);
+
+    for (atoms) |atom| {
+        if (!names_rule(sheet, app.book.atom_names[atom])) return false;
+    }
+
+    return true;
+}
+
+fn names_rule(sheet: []const u8, name: []const u8) bool {
+    var buffer: [64]u8 = undefined;
+
+    std.debug.assert(name.len < buffer.len - 2);
+
+    for ([_]u8{ '{', ',', ')', ':', ' ' }) |after| {
+        const selector = std.fmt.bufPrint(&buffer, ".{s}{c}", .{ name, after }) catch unreachable;
+
+        if (contains(sheet, selector)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 fn contains(text: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, text, needle) != null;
 }
@@ -353,8 +473,15 @@ test "unbuilt: the app's routes render now, and the app's 404 page answers the r
 
     const page = try harness.get("/posts/hello-site");
     try std.testing.expectEqual(@as(u16, 200), page.status.code());
-    try std.testing.expect(contains(page.body, "sm:text-5xl\">Hello &lt;site&gt;</h1>"));
+    const page_text = try harness.decoded(harness.app, page.body);
+
+    try std.testing.expect(contains(page_text, "sm:text-5xl\">Hello &lt;site&gt;</h1>"));
     try std.testing.expect(contains(page.body, "<code>hello-site</code>"));
+
+    // A moved site's old addresses end in a slash: sent on to the page, for good.
+    const slashed = try harness.get("/posts/hello-site/?ref=old");
+    try std.testing.expectEqual(@as(u16, 301), slashed.status.code());
+    try std.testing.expectEqualStrings("/posts/hello-site?ref=old", slashed.header("Location").?);
 
     const missing = try harness.get("/posts/nope");
     try std.testing.expectEqual(@as(u16, 404), missing.status.code());
@@ -366,7 +493,9 @@ test "unbuilt: the app's routes render now, and the app's 404 page answers the r
 
     const live = try harness.get("/visit");
     try std.testing.expectEqual(@as(u16, 200), live.status.code());
-    try std.testing.expect(contains(live.body, "hover:text-accent\">Sign in</a>"));
+    const live_text = try harness.decoded(harness.app, live.body);
+
+    try std.testing.expect(contains(live_text, "hover:text-accent\">Sign in</a>"));
     try std.testing.expect(!contains(live.body, "/_islands/signed-in"));
 }
 
@@ -399,6 +528,38 @@ const middleware_testing = struct {
         return null;
     }
 };
+
+test "a public file is kept like a built page, then revalidated by its ETag" {
+    var harness: Harness = undefined;
+    try harness.init(.{});
+    defer harness.deinit();
+
+    const logo = try harness.get("/logo.svg");
+    try std.testing.expectEqual(@as(u16, 200), logo.status.code());
+    try std.testing.expectEqualStrings("file", logo.header("X-Publr-Served").?);
+    try std.testing.expectEqualStrings(
+        "public, max-age=60, stale-while-revalidate=86400",
+        logo.header("Cache-Control").?,
+    );
+    try std.testing.expect(logo.body.len > 0);
+
+    const tag = logo.header("ETag").?;
+    const held = try harness.flow.head(
+        "GET /logo.svg HTTP/1.1\r\nHost: h\r\nIf-None-Match: {s}\r\n\r\n",
+        .{tag},
+    );
+    const not_modified = try harness.flow.call(held, "");
+    try std.testing.expectEqual(@as(u16, 304), not_modified.status.code());
+    try std.testing.expectEqual(@as(usize, 0), not_modified.body.len);
+
+    const stale = try harness.flow.head(
+        "GET /logo.svg HTTP/1.1\r\nHost: h\r\nIf-None-Match: \"0000000000000000\"\r\n\r\n",
+        .{},
+    );
+    const changed = try harness.flow.call(stale, "");
+    try std.testing.expectEqual(@as(u16, 200), changed.status.code());
+    try std.testing.expectEqualStrings(logo.body, changed.body);
+}
 
 test "middleware answers before the site, or lets the request through" {
     var harness: Harness = undefined;
@@ -509,7 +670,7 @@ test "islands: a dynamic fragment is rendered per request and never kept, a stat
     try std.testing.expectEqual(@as(u16, 200), signed_in.status.code());
     try std.testing.expect(contains(signed_in.body, "<template patchfor=\"signed-in\">"));
     try std.testing.expectEqualStrings("no-store", signed_in.header("Cache-Control").?);
-    try std.testing.expectEqualStrings("Cookie", signed_in.header("Vary").?);
+    try std.testing.expectEqualStrings("Cookie, Origin", signed_in.header("Vary").?);
 
     var key: []const u8 = "";
 
@@ -610,7 +771,7 @@ test "assets: the stylesheet and the loader from memory, immutable under the fin
 
     const sheet = try harness.get("/_app/app.css");
     try std.testing.expectEqual(@as(u16, 200), sheet.status.code());
-    try std.testing.expect(contains(sheet.body, ".bg-canvas"));
+    try std.testing.expect(styles(sheet.body, harness.app, "bg-canvas"));
     try std.testing.expectEqualStrings("public, max-age=3600", sheet.header("Cache-Control").?);
 
     const arena = harness.arena_state.allocator();
@@ -880,13 +1041,15 @@ test "a path mount answers below its path, with its own islands, assets and 404"
     try std.testing.expect(contains(island.body, "1 posts on the site"));
 
     const sheet = try harness.get("/docs/_app/app.css");
-    try std.testing.expect(contains(sheet.body, ".bg-paper"));
-    try std.testing.expect(!contains(sheet.body, ".bg-canvas"));
+    const docs_app = harness.app_named("docs");
+    try std.testing.expect(styles(sheet.body, docs_app, "bg-paper"));
+    try std.testing.expect(docs_app.book.class_id("bg-canvas") == null);
 
     // A template from a shared folder, and what it imports, are the importing app's own.
-    try std.testing.expect(contains(docs.body, "Made with <span class=\"tracking-widest\">Publr"));
-    try std.testing.expect(contains(sheet.body, ".italic"));
-    try std.testing.expect(contains(sheet.body, ".tracking-widest"));
+    const docs_text = try harness.decoded(docs_app, docs.body);
+    try std.testing.expect(contains(docs_text, "Made with <span class=\"tracking-widest\">Publr"));
+    try std.testing.expect(styles(sheet.body, docs_app, "italic"));
+    try std.testing.expect(styles(sheet.body, docs_app, "tracking-widest"));
 
     // A public file is at its own path under the mount; /_app/ is only what Publr generates.
     const mark = try harness.get("/docs/mark.svg");

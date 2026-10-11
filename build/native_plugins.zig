@@ -164,6 +164,19 @@ pub fn ui_dirs(builder: *std.Build, dir: []const u8, native: Native) []const []c
     return found.items;
 }
 
+/// The compiled-in plugins' names, beside their folders under `dir`.
+pub fn names_of(builder: *std.Build, dir: []const u8, native: Native) []const []const u8 {
+    std.debug.assert(dir.len > 0);
+
+    var storage: [plugins_max][]const u8 = undefined;
+    const names = compiled_in(builder, dir, native, &storage);
+    const out = builder.allocator.dupe([]const u8, names) catch @panic("OOM");
+
+    std.debug.assert(out.len == names.len);
+
+    return out;
+}
+
 fn compiled_in(
     builder: *std.Build,
     dir: []const u8,

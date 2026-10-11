@@ -113,11 +113,18 @@ pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8)
 
 /// The SDK a plugin is built against, as `publr plugin build` finds it: `src/` (the Zig
 /// files only), `stubs/` and `guest.zig`, packed by `pack` into one archive.
-pub fn sdk_archive(builder: *std.Build, pack: *std.Build.Step.Compile) std.Build.LazyPath {
+pub fn sdk_archive(
+    builder: *std.Build,
+    pack: *std.Build.Step.Compile,
+    limits_source: []const u8,
+) std.Build.LazyPath {
     std.debug.assert(builder.build_root.path != null);
-    std.debug.assert(stub_imports.len > 0);
+    std.debug.assert(limits_source.len > 0);
 
     const stubs = stubs_of(builder);
+
+    // Not a stub: a plugin built here holds what this binary's entries and types may.
+    _ = stubs.add("limits_options.zig", limits_source);
     const guest = builder.addWriteFiles().add("guest.zig", guest_root_source);
     const run = builder.addRunArtifact(pack);
     const archive = run.addOutputFileArg("sdk.tar.gz");
@@ -146,6 +153,11 @@ fn stubs_of(builder: *std.Build) *std.Build.Step.WriteFile {
 
     _ = files.add("publr_sqlite.zig", "pub const Error = error{ Sqlite, Constraint, " ++
         "Busy, ReadOnly, OutOfMemory, Interrupted, TooBig };\n");
+
+    // Not a stub: a model provider is a plugin, and builds against the contract itself.
+    const publr_ai = builder.dependency("publr_ai", .{});
+
+    _ = files.addCopyFile(publr_ai.namedLazyPath("amalgamation"), "publr_ai.zig");
 
     for (stub_imports) |name| {
         _ = files.add(builder.fmt("{s}.zig", .{name}), "pub const all = .{};\n");

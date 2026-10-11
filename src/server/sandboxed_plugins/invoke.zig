@@ -302,10 +302,13 @@ fn reply(env: *wasm.Env, output: []const u8, result_ptr: u32) u32 {
     return wire.ok;
 }
 
+/// A plugin's call into Publr, at most: an outbound request with a conversation's pictures.
+const call_bytes_max: u32 = 9 << 20;
+
 fn copy_guest(env: *wasm.Env, ctx: *sdk.Ctx, ptr: u32, len: u32) ?[]const u8 {
     std.debug.assert(ctx.now_ms >= 0);
 
-    if (len == 0 or len > sdk.in_bytes_max * 16) {
+    if (len == 0 or len > call_bytes_max) {
         return null;
     }
 

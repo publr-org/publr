@@ -1,4 +1,5 @@
 const std = @import("std");
+const limits = @import("../model/limits.zig");
 const plugin_hooks = @import("plugin_hooks.zig");
 const server = @import("../server.zig");
 const report = @import("../lib/report.zig");
@@ -12,6 +13,9 @@ const sdk = @import("../sdk.zig");
 const build_command = @import("build.zig");
 const apps_host = @import("apps_host.zig");
 const plugin_build = @import("plugin_build.zig");
+const live = @import("live.zig");
+const agent_start = @import("agent_start.zig");
+const update = @import("update.zig");
 
 const port_default: u16 = 8080;
 const browser_port_default: u16 = 8081;
@@ -33,10 +37,14 @@ const Flags = struct {
     full: bool = false,
     /// `--url` was given; without it the apps' address is this server's own.
     url_given: bool = false,
+    /// `--admin-url`: the admin's own origin, away from the site's; empty: `/admin` beside it.
+    admin_url: []const u8 = "",
     /// Why the flags were refused, printed with the help by `run`; parsing prints nothing.
     refused: []const u8 = "",
     /// A flag `serve` does not know.
     unknown: []const u8 = "",
+    /// `--auto-update patch`: apply the newest patch of this minor once a day.
+    auto_update: bool = false,
     help: bool = false,
 };
 
@@ -49,28 +57,66 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         return code;
     }
 
+    // Everything the run holds is let go before this process becomes the new binary.
+    switch (try serve_project(init, db_path, flags)) {
+        .stopped => return 0,
+        .refused => return 1,
+        .restart => {
+            update.restart(init, db_path);
+            return 1;
+        },
+    }
+}
+
+const Ended = enum { stopped, refused, restart };
+
+/// After an update's swap, a release that cannot open the site gives way to the one it
+/// replaced, which runs instead.
+fn open_application(
+    application: *server.Server,
+    init: std.process.Init,
+    db_path: [:0]const u8,
+) !void {
+    std.debug.assert(db_path.len > 0);
+
+    application.init(init, db_path) catch |err| {
+        update.go_back(init, db_path, err);
+        return err;
+    };
+
+    std.debug.assert(application.runtime.open_count == 1);
+}
+
+/// Serves until stopped; `restart` when an update asked for it.
+fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !Ended {
+    std.debug.assert(db_path.len > 0);
+
     const browser_dir = flags.browser_dir;
 
     // The browser build's server only hands out files: it owns no project.
     if (browser_dir == null and try another_server(init, db_path)) {
-        return 1;
+        return .refused;
     }
 
     var application: server.Server = undefined;
-    try application.init(init, db_path);
+    try open_application(&application, init, db_path);
     defer application.deinit();
 
     const base = if (flags.url_given) model_app.path_of(flags.apps.base_url) else "";
     var project = project_of(init.io, &application, browser_dir, base);
+
+    try name_cookies(init.arena.allocator(), &project);
     const first_port = flags.port orelse default_port(browser_dir != null);
     const search_span: u16 = if (flags.port == null) port_search_max else 0;
     var options = server_options(first_port, browser_dir != null);
 
     var listener = start_server(init.gpa, &options, search_span) catch |err| {
-        return switch (err) {
-            error.AddressInUse => usage_port_in_use(@max(first_port, 1), search_span),
-            else => err,
-        };
+        if (err == error.AddressInUse) {
+            _ = usage_port_in_use(@max(first_port, 1), search_span);
+            return .refused;
+        }
+
+        return err;
     };
     defer listener.deinit();
 
@@ -89,6 +135,12 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     if (browser_dir != null) {
         routes.register_static(listener.router());
     } else {
+        try split_hosts(
+            &project,
+            init.arena.allocator(),
+            flags.admin_url,
+            apps.mode.options.base_url,
+        );
         apps.start();
         project.apps_host = &apps;
         routes.register(listener.router());
@@ -97,22 +149,47 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     const session = try claim(init, db_path, bound, &apps, browser_dir == null);
     defer if (session != null) operator.close(init.io, init.arena.allocator(), db_path);
 
-    var builder: plugin_build.Builder = .{
-        .io = init.io,
-        .db_path = db_path,
-    };
+    var helpers = helpers_of(init, db_path, flags.auto_update);
     project.operator_key = if (session) |*owned| &owned.key else null;
-    project.builder = try builder_of(init, &builder, session != null);
+    try helpers.attach(init, &project, session != null);
     announce(bound, browser_dir);
 
     if (browser_dir == null) {
         try started(init, &project, bound);
+        update.served(init.io, init.arena.allocator(), db_path, @import("../publr.zig").version);
     }
 
     try listener.enable_shutdown_signals();
     try run_loop(&listener, &project, @as(i64, flags.idle_stop_s) * std.time.ms_per_s);
 
-    return 0;
+    return if (project.restart_requested) .restart else .stopped;
+}
+
+fn helpers_of(init: std.process.Init, db_path: [:0]const u8, auto_update: bool) Helpers {
+    std.debug.assert(db_path.len > 0);
+
+    return .{
+        .builder = .{
+            .io = init.io,
+            .db_path = db_path,
+        },
+        .updater = .{
+            .io = init.io,
+            .db_path = db_path,
+            .managed = is_managed(init),
+            .source = update.fetch.Source.of(init.environ_map),
+            .auto = auto_update,
+        },
+    };
+}
+
+/// Publr Cloud runs this site and keeps its Publr up to date: `PUBLR_UPDATES=managed`.
+fn is_managed(init: std.process.Init) bool {
+    const value = init.environ_map.get("PUBLR_UPDATES") orelse "";
+
+    std.debug.assert(value.len <= std.math.maxInt(u32));
+
+    return std.mem.eql(u8, value, "managed");
 }
 
 /// The listener answering for `project`, under the path it is served at. The CLI beside the
@@ -128,12 +205,15 @@ fn attach(listener: *http.App, project: *routes.Project) void {
     std.debug.assert(listener.user_data != null);
 }
 
-/// The project served: the plugins told where.
+/// The project served: where it is on disk learned, the plugins told where it listens.
 fn started(init: std.process.Init, project: *routes.Project, port: u16) !void {
     std.debug.assert(port > 0);
     std.debug.assert(project.static_dir == null);
 
     const arena = init.arena.allocator();
+
+    try locate(init, project);
+    try carry_on_interrupted(init, project);
 
     try plugin_hooks.serving(.{
         .io = init.io,
@@ -161,7 +241,189 @@ fn project_of(
         .sandboxed_plugins = application.sandboxed(),
         .plugin_states = &application.plugin_states,
         .files = application.files_of(),
+        .scratch = &application.scratch,
+        .definitions = &application.definitions,
+        .languages = &application.languages,
     };
+}
+
+/// The project's own cookie names, marked by when it was set up: two projects on one host
+/// keep their sign-ins apart (`identity.cookie_names`). Not set up yet: the plain names.
+fn name_cookies(arena: std.mem.Allocator, project: *routes.Project) !void {
+    std.debug.assert(project.session_cookie.len > 0);
+
+    const setup_key = @import("../operations/project.zig").setup_key;
+    const settings = @import("../store/settings.zig");
+    const set_up = try settings.get(project.connection, arena, setup_key) orelse return;
+    const names = try @import("../adapters/rest/identity.zig").cookie_names(arena, set_up);
+
+    project.session_cookie = names.session;
+    project.hint_cookie = names.hint;
+    project.visitor_cookie = names.visitor;
+    project.member_cookie = names.member;
+
+    std.debug.assert(!std.mem.eql(u8, names.session, names.hint));
+}
+
+/// The admin answers on an origin of its own, never the site's: `--admin-url`, else
+/// `admin.<the site's host>` on the site's port (`admin.localhost` for a site on this
+/// machine), and the site's host no longer serves it.
+fn split_hosts(
+    project: *routes.Project,
+    arena: std.mem.Allocator,
+    given_admin_url: []const u8,
+    site_url: []const u8,
+) !void {
+    std.debug.assert(project.admin_origin.len == 0);
+    std.debug.assert(site_url.len > 0);
+
+    const admin_url = if (given_admin_url.len > 0)
+        given_admin_url
+    else
+        default_admin_url(arena, site_url) catch {
+            std.debug.print("publr serve: the site is at {s}, an address with no name to put " ++
+                "the admin beside; name the admin's address with --admin-url\n", .{site_url});
+            return error.NoAdminAddress;
+        };
+    const site_host = model_app.host_of(site_url);
+
+    if (std.ascii.eqlIgnoreCase(site_host, model_app.host_of(admin_url))) {
+        std.debug.print("publr serve: --admin-url names the site's own host ({s}); the " ++
+            "admin needs another\n", .{site_host});
+        return error.AdminOnSiteHost;
+    }
+
+    project.admin_origin = model_app.origin_of(admin_url);
+    project.admin_base = model_app.path_of(admin_url);
+    project.site_origin = model_app.origin_of(site_url);
+
+    std.debug.assert(project.split());
+}
+
+/// `admin.<host>` on the site's scheme and port; `admin.localhost` for a site on this machine
+/// (`127.0.0.1`, `localhost`, `*.localhost`). A site on another bare address has no name for
+/// one.
+fn default_admin_url(arena: std.mem.Allocator, site_url: []const u8) ![]const u8 {
+    std.debug.assert(site_url.len > 0);
+
+    const origin = model_app.origin_of(site_url);
+    const scheme_end = std.mem.indexOf(u8, origin, "://") orelse return error.NoAdminAddress;
+    const authority = origin[scheme_end + 3 ..];
+    const port_at = std.mem.lastIndexOfScalar(u8, authority, ':');
+    const host = if (port_at) |at| authority[0..at] else authority;
+    const port = if (port_at) |at| authority[at..] else "";
+    const local = std.mem.eql(u8, host, "127.0.0.1") or std.mem.eql(u8, host, "localhost") or
+        std.mem.endsWith(u8, host, ".localhost");
+    const dotted = std.mem.indexOfScalar(u8, host, '.') != null;
+    const named = dotted and host.len > 0 and !std.ascii.isDigit(host[host.len - 1]);
+    const scheme = origin[0 .. scheme_end + 3];
+
+    if (local) {
+        return std.fmt.allocPrint(arena, "{s}admin.localhost{s}", .{ scheme, port });
+    }
+
+    if (!named) {
+        return error.NoAdminAddress;
+    }
+
+    return std.fmt.allocPrint(arena, "{s}admin.{s}{s}", .{ scheme, host, port });
+}
+
+/// Conversations whose turn was running when the last server stopped: their agent went with
+/// it, so each ends as failed, saying so. Their devices are revoked as the server starts.
+/// The turns the last server left working carry on: each agent starts again from the steps
+/// already done, never leaving the work half made. Without agents here, they end.
+fn carry_on_interrupted(init: std.process.Init, project: *routes.Project) !void {
+    std.debug.assert(project.connection.transaction_depth == 0);
+    std.debug.assert(project.static_dir == null);
+
+    const store = @import("../store.zig");
+    const now_ms = sdk.context.wall_clock_ms(init.io);
+    const arena = init.arena.allocator();
+
+    for (try store.ai_conversations.unfinished_devices(project.connection, arena)) |device_id| {
+        _ = try store.devices.revoke(project.connection, device_id, now_ms);
+    }
+
+    const agents = project.agents orelse return end_interrupted(init, project);
+    const working = try store.ai_conversations.left_working(project.connection, arena, now_ms);
+
+    for (working) |id| {
+        try store.ai_conversations.release_device(project.connection, id);
+        _ = try store.ai_steps.append(project.connection, id, .{
+            .kind = .said,
+            .summary = carried_on,
+            .detail = carried_on,
+        }, now_ms);
+
+        if (agents.start(agents.context, id)) |problem| {
+            std.log.err("conversation {s} could not carry on: {s}", .{ id, problem });
+        }
+    }
+
+    if (working.len > 0) {
+        std.log.info("carrying on {d} conversation(s) the last server left working", .{
+            working.len,
+        });
+    }
+}
+
+const carried_on = "The server restarted; carrying on where the work left off.";
+
+fn end_interrupted(init: std.process.Init, project: *routes.Project) !void {
+    std.debug.assert(project.connection.transaction_depth == 0);
+    std.debug.assert(project.static_dir == null);
+
+    const store = @import("../store.zig");
+    const now_ms = sdk.context.wall_clock_ms(init.io);
+
+    const ended = try store.ai_conversations.interrupt_all(
+        project.connection,
+        "The server stopped while this was being worked on. Ask again to carry on.",
+        now_ms,
+    );
+
+    if (ended > 0) {
+        std.log.info("ended {d} conversation(s) the last server left running", .{ended});
+    }
+}
+
+/// Where the project is on disk, for the admin to tell an agent: the folder `serve` runs in
+/// and its own binary, from there when it lies inside.
+fn locate(init: std.process.Init, project: *routes.Project) !void {
+    std.debug.assert(project.static_dir == null);
+    std.debug.assert(project.folder.len == 0);
+
+    const arena = init.arena.allocator();
+    const folder = try std.Io.Dir.cwd().realPathFileAlloc(init.io, ".", arena);
+    const executable = try std.process.executablePathAlloc(init.io, arena);
+
+    project.folder = folder;
+    project.binary = try binary_from(arena, folder, executable);
+
+    std.debug.assert(project.binary.len > 0);
+}
+
+/// How to run `executable` from `folder`: relative when it lies inside, else as it is.
+fn binary_from(
+    arena: std.mem.Allocator,
+    folder: []const u8,
+    executable: []const u8,
+) ![]const u8 {
+    std.debug.assert(std.fs.path.isAbsolute(folder));
+    std.debug.assert(std.fs.path.isAbsolute(executable));
+
+    const inside = executable.len > folder.len + 1 and
+        std.mem.startsWith(u8, executable, folder) and
+        executable[folder.len] == std.fs.path.sep;
+
+    if (!inside) {
+        return executable;
+    }
+
+    const relative = executable[folder.len + 1 ..];
+
+    return std.fmt.allocPrint(arena, ".{c}{s}", .{ std.fs.path.sep, relative });
 }
 
 fn default_port(browser: bool) u16 {
@@ -188,24 +450,47 @@ fn apps_mode(arena: std.mem.Allocator, flags: Flags, bound: u16) !apps_host.Mode
     };
 }
 
+/// The processes `serve` starts beside itself, each reporting back through the operator
+/// channel, so only beside a CLI session: plugin builds (with the compiler carried) and
+/// conversations' turns.
+const Helpers = struct {
+    builder: plugin_build.Builder,
+    starter: agent_start.Starter = undefined,
+    hub: live.Hub = .{},
+    updater: update.Updater,
+
+    fn attach(
+        helpers: *Helpers,
+        init: std.process.Init,
+        project: *routes.Project,
+        session: bool,
+    ) !void {
+        std.debug.assert(helpers.builder.db_path.len > 0);
+        std.debug.assert(project.builder == null and project.agents == null);
+
+        if (!session) {
+            return;
+        }
+
+        const arena = init.arena.allocator();
+
+        helpers.starter = .{
+            .io = init.io,
+            .db_path = helpers.builder.db_path,
+        };
+        project.agents = try helpers.starter.hook(arena);
+        project.live = helpers.hub.live();
+        project.updater = try helpers.updater.hook(arena);
+        project.auto_update = if (helpers.updater.auto) &helpers.updater else null;
+
+        if (toolchain.carried) {
+            project.builder = try helpers.builder.hook(arena);
+        }
+    }
+};
+
 /// Whether a server already runs for this database, said when it does: one project, one
 /// owner. When none does, the compiler for plugins is made ready before serving.
-/// What builds plugins from sources an agent sends: only beside a CLI session (the build
-/// installs through it) and with the compiler carried.
-fn builder_of(
-    init: std.process.Init,
-    builder: *plugin_build.Builder,
-    session: bool,
-) !?sdk.context.PluginBuilder {
-    std.debug.assert(builder.db_path.len > 0);
-
-    if (!session or !toolchain.carried) {
-        return null;
-    }
-
-    return try builder.hook(init.arena.allocator());
-}
-
 fn another_server(init: std.process.Init, db_path: [:0]const u8) !bool {
     std.debug.assert(db_path.len > 0);
 
@@ -268,6 +553,10 @@ fn run_loop(listener: *http.App, project: *routes.Project, idle_stop_ms: i64) !v
 
         if (project.apps.len > 0) {
             tick_apps(project);
+        }
+
+        if (project.auto_update) |updater| {
+            updater.tick(sdk.context.wall_clock_ms(project.io));
         }
     }
 }
@@ -365,7 +654,9 @@ fn server_options(first_port: u16, browser: bool) http.Options {
             .address = loopback,
             .port = first_port,
             .connections_max = 8,
-            .request_bytes_max = 64 << 10,
+            // A visual page's whole document posts in one autosave.
+            .request_bytes_max = limits.request_bytes_max,
+            .arena_bytes = limits.request_arena_bytes,
             // The whole browser build's module in one response: 8.4 MiB in ReleaseSmall on
             // 2026-10-06 once it resized images, with room to grow.
             .response_bytes_max = 16 << 20,
@@ -376,14 +667,15 @@ fn server_options(first_port: u16, browser: bool) http.Options {
         .address = loopback,
         .port = first_port,
         .connections_max = 64,
-        .request_bytes_max = 64 << 10,
+        .request_bytes_max = limits.request_bytes_max,
         .response_bytes_max = 2 << 20,
+        .arena_bytes = limits.request_arena_bytes,
     };
 }
 
 const help =
     \\Usage: publr [--db <path>] serve [--port <n>] [--static [--full]] [--dev] [--out <dir>]
-    \\                                  [--url <base>] [--apps <dir>]
+    \\                                  [--url <base>] [--admin-url <url>] [--apps <dir>]
     \\       publr [--db <path>] serve --browser [<dir>]
     \\
     \\  --port <n>        Listen on this exact port (default: 8080, or 8081 with --browser;
@@ -393,12 +685,19 @@ const help =
     \\  --full            With --static: build every page again
     \\  --dev             Render every page live, cache nothing, tint the islands
     \\  --out <dir>       The built apps to serve from, one folder each (default: output)
+    \\  --admin-url <url> The admin's own address, another host or port than the site's
+    \\                    (http://admin.localhost:8080): the site's host then sends /admin
+    \\                    there, and a signed-in administrator sees the site as it is; a
+    \\                    path under it when the host is shared, the proxy taking it off
     \\  --url <base>      The project's public address: the apps' sitemaps, and the domain
     \\                    their subdomains hang from (default: this server's own address);
     \\                    a path in it is where the whole project is served
     \\  --apps <dir>      Where each app's public files are read from, <dir>/<folder>/public
     \\                    (default: apps)
     \\  --idle-stop <s>   Stop after this many seconds without a request (default: never)
+    \\  --auto-update patch
+    \\                    Once a day, update to the newest patch of this release (backed up,
+    \\                    rehearsed, restarted in place); minor and major releases are yours
     \\  --edge-max-age <s>
     \\                    How long a CDN in front may keep built pages and static islands
     \\                    (CDN-Cache-Control); for a CDN purged on every change (default 0)
@@ -406,6 +705,20 @@ const help =
     \\  -h, --help        Print this help
     \\
 ;
+
+/// The number of seconds after the flag at `index`, which moves past it; null when there is
+/// none.
+fn seconds_after(args: []const []const u8, index: *u32) ?u32 {
+    std.debug.assert(index.* < args.len);
+
+    index.* += 1;
+
+    const text = if (index.* < args.len) args[index.*] else "";
+
+    return std.fmt.parseInt(u32, text, 10) catch null;
+}
+
+const auto_update_refused = "--auto-update takes `patch`: minor and major releases are yours";
 
 fn parse_flags(args: []const []const u8) Flags {
     if (args.len >= 64) {
@@ -432,12 +745,14 @@ fn parse_flags(args: []const []const u8) Flags {
                     .refused = "--port must be a number (0 picks a free port)",
                 };
         } else if (std.mem.eql(u8, arg, "--idle-stop")) {
-            index += 1;
-            const text = if (index < args.len) args[index] else "";
-            flags.idle_stop_s = std.fmt.parseInt(u32, text, 10) catch
+            flags.idle_stop_s = seconds_after(args, &index) orelse
                 return .{
                     .refused = "--idle-stop needs a number of seconds",
                 };
+        } else if (std.mem.eql(u8, arg, "--auto-update")) {
+            index += 1;
+            flags.auto_update = index < args.len and std.mem.eql(u8, args[index], "patch");
+            flags.refused = if (flags.auto_update) flags.refused else auto_update_refused;
         } else if (std.mem.eql(u8, arg, "--static")) {
             flags.static = true;
         } else if (std.mem.eql(u8, arg, "--full")) {
@@ -453,10 +768,17 @@ fn parse_flags(args: []const []const u8) Flags {
             }
             option.* = args[index];
             flags.url_given = flags.url_given or std.mem.eql(u8, arg, "--url");
-        } else if (std.mem.eql(u8, arg, "--edge-max-age")) {
+        } else if (std.mem.eql(u8, arg, "--admin-url")) {
             index += 1;
-            const text = if (index < args.len) args[index] else "";
-            flags.apps.edge_max_age = std.fmt.parseInt(u32, text, 10) catch
+            flags.admin_url = if (index < args.len) admin_origin(args[index]) else "";
+            if (flags.admin_url.len == 0) {
+                return .{
+                    .refused = "--admin-url needs an address, a path under it at most: " ++
+                        "http://admin.localhost:8080",
+                };
+            }
+        } else if (std.mem.eql(u8, arg, "--edge-max-age")) {
+            flags.apps.edge_max_age = seconds_after(args, &index) orelse
                 return .{
                     .refused = "--edge-max-age needs a number of seconds",
                 };
@@ -497,6 +819,49 @@ fn parse_flags(args: []const []const u8) Flags {
     std.debug.assert(index == args.len);
 
     return flags;
+}
+
+/// An HTTP(S) address with a host and no path, as the admin's origin; empty otherwise.
+/// The admin's address: an origin, and a path under it when the host is shared (Publr
+/// Cloud's dashboard: `https://cloud.publr.app/spaces/ada/shop`). A path is lower-case
+/// segments of a-z, 0-9, `-` and `_`; anything else is refused.
+fn admin_origin(text: []const u8) []const u8 {
+    std.debug.assert(text.len <= 64 << 10);
+
+    const address = std.mem.trimEnd(u8, text, "/");
+    const web = std.mem.startsWith(u8, address, "http://") or
+        std.mem.startsWith(u8, address, "https://");
+
+    const path_valid = admin_path_valid(model_app.path_of(address));
+
+    if (!web or model_app.host_of(address).len == 0 or !path_valid) {
+        return "";
+    }
+
+    return address;
+}
+
+fn admin_path_valid(path: []const u8) bool {
+    std.debug.assert(path.len <= 64 << 10);
+
+    if (path.len == 0) {
+        return true;
+    }
+
+    if (path[0] != '/' or path[path.len - 1] == '/' or std.mem.indexOf(u8, path, "//") != null) {
+        return false;
+    }
+
+    for (path) |char| {
+        const allowed = (char >= 'a' and char <= 'z') or (char >= '0' and char <= '9') or
+            char == '-' or char == '_' or char == '/';
+
+        if (!allowed) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /// Where a flag that takes text puts it; null for any other flag.
@@ -640,11 +1005,45 @@ test "a failed static build keeps the apps for recovery and releases them on shu
     }
 }
 
+test "the binary is named from the project's folder when it lies inside" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    try std.testing.expectEqualStrings(
+        "./zig-out/bin/publr",
+        try binary_from(arena, "/sites/blog", "/sites/blog/zig-out/bin/publr"),
+    );
+    try std.testing.expectEqualStrings(
+        "/usr/local/bin/publr",
+        try binary_from(arena, "/sites/blog", "/usr/local/bin/publr"),
+    );
+    try std.testing.expectEqualStrings(
+        "/sites/blog-old/publr",
+        try binary_from(arena, "/sites/blog", "/sites/blog-old/publr"),
+    );
+}
+
 test "serve flags validate counts and paths before startup" {
     const many = [_][]const u8{"--static"} ** 64;
     try std.testing.expect(parse_flags(&many).refused.len > 0);
     try std.testing.expect(parse_flags(&.{ "--out", "" }).refused.len > 0);
     try std.testing.expect(parse_flags(&.{ "--url", "///" }).refused.len > 0);
+    try std.testing.expectEqualStrings(
+        "http://admin.localhost:8080",
+        parse_flags(&.{ "--admin-url", "http://admin.localhost:8080/" }).admin_url,
+    );
+    const shared = "http://cloud.publr.localhost:8095/spaces/ada/shop";
+
+    try std.testing.expectEqualStrings(
+        shared,
+        parse_flags(&.{ "--admin-url", shared ++ "/" }).admin_url,
+    );
+    try std.testing.expect(parse_flags(&.{ "--admin-url", "http://a.test/Admin" }).refused.len > 0);
+    try std.testing.expect(parse_flags(&.{ "--admin-url", "http://a.test/a//b" }).refused.len > 0);
+    try std.testing.expect(parse_flags(&.{ "--admin-url", "http://a.test/a?b" }).refused.len > 0);
+    try std.testing.expect(parse_flags(&.{ "--admin-url", "admin.localhost" }).refused.len > 0);
+    try std.testing.expect(parse_flags(&.{"--admin-url"}).refused.len > 0);
     try std.testing.expect(parse_flags(&.{ "--browser", "" }).refused.len > 0);
 }
 
@@ -726,4 +1125,27 @@ test "an app whose build fails answers 503 until a publish lets it build" {
     var buffer: [1024]u8 = undefined;
     const html = try scratch.dir.readFile(std.testing.io, "www/index.html", &buffer);
     try std.testing.expectEqualStrings("<h1>Recovered homepage</h1>", html);
+}
+
+test "the admin is given an origin of its own: admin.<host>, admin.localhost on this machine" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    try std.testing.expectEqualStrings(
+        "http://admin.localhost:8080",
+        try default_admin_url(arena, "http://127.0.0.1:8080"),
+    );
+    try std.testing.expectEqualStrings(
+        "http://admin.localhost:8080",
+        try default_admin_url(arena, "http://shop.localhost:8080/"),
+    );
+    try std.testing.expectEqualStrings(
+        "https://admin.example.com",
+        try default_admin_url(arena, "https://example.com"),
+    );
+    try std.testing.expectError(
+        error.NoAdminAddress,
+        default_admin_url(arena, "http://10.0.0.5:8080"),
+    );
 }

@@ -12,6 +12,9 @@ const record_operations = @import("../../operations/record.zig");
 const deps = @import("../../lib/deps.zig");
 const engine = @import("../../template.zig");
 const context_module = @import("context.zig");
+const languages = @import("languages.zig");
+const model_variant = @import("../../model/variant.zig");
+const Place = model_variant.Place;
 const pages = @import("pages.zig");
 const rebuild = @import("rebuild.zig");
 const public = @import("public.zig");
@@ -114,12 +117,21 @@ pub fn build(app: *App, project: *const Project) !Summary {
 
     app.built_at = sdk.context.wall_clock_ms(project.io);
 
-    for (program.routes) |*route| {
-        if (route.live) {
-            continue;
-        }
+    var places_arena = std.heap.ArenaAllocator.init(app.gpa);
+    defer places_arena.deinit();
 
-        try build_route(app, project, route, &summary);
+    // Every language its own pages, under its address; a site without languages has one.
+    const listed = try languages.places(project, places_arena.allocator());
+    const all: []const Place = if (listed.len == 0) &.{.{}} else listed;
+
+    for (all) |place| {
+        for (program.routes) |*route| {
+            if (route.live) {
+                continue;
+            }
+
+            try build_route(app, project, route, place, &summary);
+        }
     }
 
     if (program.error_404) |index| {
@@ -149,34 +161,38 @@ fn build_route(
     app: *App,
     project: *const Project,
     route: *const engine.Route,
+    place: Place,
     summary: *Summary,
 ) !void {
     std.debug.assert(!route.live);
     std.debug.assert(route.pattern.len > 0);
 
+    var arena_state = std.heap.ArenaAllocator.init(app.gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
     switch (route.kind) {
         .static => {
-            const rendered = try render_url(app, project, route, route.pattern, .{}, .always);
+            const url = try model_variant.under(arena, place.address, route.pattern);
+            const rendered = try render_url(app, project, route, url, .{}, place, .always);
 
             summary.bytes += rendered.bytes;
             summary.pages += 1;
-            report_progress(route.pattern, 1, 1);
+            report_progress(url, 1, 1);
         },
         .dynamic => {
-            var arena_state = std.heap.ArenaAllocator.init(app.gpa);
-            defer arena_state.deinit();
-            const arena = arena_state.allocator();
-            const slugs = try slugs_of(app, project, arena, route);
+            const slugs = try slugs_of(app, project, arena, route, place);
 
             for (slugs, 1..) |slug, done| {
-                const url = try engine.substitute(arena, route.pattern, slug);
+                const in_app = try engine.substitute(arena, route.pattern, slug);
+                const url = try model_variant.under(arena, place.address, in_app);
                 const params: context_module.Params = .{
                     .slug = slug,
                 };
 
                 report_progress(url, @intCast(done), @intCast(slugs.len));
 
-                const rendered = try render_url(app, project, route, url, params, .always);
+                const rendered = try render_url(app, project, route, url, params, place, .always);
 
                 summary.bytes += rendered.bytes;
                 summary.pages += 1;
@@ -211,6 +227,7 @@ fn slugs_of(
     project: *const Project,
     arena: std.mem.Allocator,
     route: *const engine.Route,
+    place: Place,
 ) ![]const []const u8 {
     std.debug.assert(route.kind == .dynamic);
     std.debug.assert(route.template < app.pages().templates.len);
@@ -227,6 +244,7 @@ fn slugs_of(
             .order = .created_desc,
             .limit = record_operations.list_max,
             .offset = offset,
+            .variant = if (place.variant.len > 0) place.variant else null,
         }) catch |err| switch (err) {
             error.NotFound => return &.{},
             else => return err,
@@ -246,7 +264,9 @@ fn slugs_of(
     return slugs.items;
 }
 
-/// The type a template's `Publr.build.getEntry()` reads, from its frontmatter.
+/// The type a template's `Publr.build.getEntry()` reads, from its frontmatter. A template whose
+/// frontmatter runs as JavaScript reads the type its `[slug]` place names, as `getEntry()`
+/// does there.
 pub fn entry_type_of(template: *const engine.Template) ?[]const u8 {
     std.debug.assert(template.compiled);
     std.debug.assert(template.rel.len > 0);
@@ -256,6 +276,12 @@ pub fn entry_type_of(template: *const engine.Template) ?[]const u8 {
             .entry => |entry| return entry.type_id,
             else => {},
         }
+    }
+
+    const at_slug = std.mem.indexOf(u8, template.rel, "[slug]") != null;
+
+    if (template.javascript != null and at_slug) {
+        return engine.routes.position_type(template.rel);
     }
 
     return null;
@@ -290,6 +316,7 @@ pub fn render_url(
     route: *const engine.Route,
     url: []const u8,
     params: context_module.Params,
+    place: Place,
     when: Write,
 ) !Rendered {
     std.debug.assert(url.len > 0);
@@ -308,6 +335,8 @@ pub fn render_url(
         .app = app,
         .params = params,
         .deps = &recorded,
+        .place = place,
+        .route = route,
     });
 
     const artifact = try artifacts.name(arena, app, url);
@@ -425,31 +454,54 @@ pub fn write_sitemap(app: *App, project: *const Project) !void {
     const arena = arena_state.allocator();
     var xml: std.Io.Writer.Allocating = .init(arena);
     const writer = &xml.writer;
-    const base = app.url;
 
     try writer.writeAll("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" ++
         "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n");
 
-    for (app.pages().routes) |*route| {
-        switch (route.kind) {
-            .static => {
-                const priority: []const u8 = if (route.pattern.len <= 1) "1.0" else "0.8";
+    const listed = try languages.places(project, arena);
+    const all: []const Place = if (listed.len == 0) &.{.{}} else listed;
 
-                try sitemap_url(writer, base, route.pattern, if (route.live) "0.5" else priority);
-            },
-            .dynamic => {
-                for (try slugs_of(app, project, arena, route)) |slug| {
-                    const url = try engine.substitute(arena, route.pattern, slug);
-
-                    try sitemap_url(writer, base, url, "0.6");
-                }
-            },
-            .catch_all => {},
+    for (all) |place| {
+        for (app.pages().routes) |*route| {
+            try sitemap_route(writer, app, project, arena, route, place);
         }
     }
 
     try writer.writeAll("</urlset>\n");
     try artifacts.write(app, "sitemap.xml", xml.written());
+}
+
+/// A route's addresses in one language: its own, or one per record for a `[slug]` route.
+fn sitemap_route(
+    writer: *std.Io.Writer,
+    app: *const App,
+    project: *const Project,
+    arena: std.mem.Allocator,
+    route: *const engine.Route,
+    place: Place,
+) !void {
+    std.debug.assert(route.pattern.len > 0);
+    std.debug.assert(app.url.len > 0);
+
+    const base = app.url;
+
+    switch (route.kind) {
+        .static => {
+            const priority: []const u8 = if (route.pattern.len <= 1) "1.0" else "0.8";
+            const url = try model_variant.under(arena, place.address, route.pattern);
+
+            try sitemap_url(writer, base, url, if (route.live) "0.5" else priority);
+        },
+        .dynamic => {
+            for (try slugs_of(app, project, arena, route, place)) |slug| {
+                const in_app = try engine.substitute(arena, route.pattern, slug);
+                const url = try model_variant.under(arena, place.address, in_app);
+
+                try sitemap_url(writer, base, url, "0.6");
+            }
+        },
+        .catch_all => {},
+    }
 }
 
 fn sitemap_url(
