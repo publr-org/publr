@@ -1,6 +1,7 @@
 pub const names = .{
     "publr",
     "publr-dom",
+    "publr-jsx",
     "publr-html",
     "publr-runtime",
     "publr-transport",

@@ -46,6 +46,8 @@ pub const PjsxRender = *const fn (
     arena: std.mem.Allocator,
     props: []const Prop,
     children: ?[]const u8,
+    /// The app's class book (`publr_jit.Book`) the component writes its classes with.
+    classes: ?*const anyopaque,
 ) anyerror!void;
 
 pub fn Renderer(comptime Ctx: type) type {
@@ -266,6 +268,12 @@ pub fn Renderer(comptime Ctx: type) type {
                 .request_now => .{
                     .string = try time.datetime_text(renderer.arena, ctx.now()),
                 },
+                .locale => .{
+                    .string = ctx.locale(),
+                },
+                .managed => .{
+                    .boolean = ctx.managed(),
+                },
                 .session => .{
                     .session = try ctx.session(),
                 },
@@ -417,6 +425,11 @@ pub fn Renderer(comptime Ctx: type) type {
                 .attr => |attr| try renderer.write_attr(writer, frame, attr),
                 .asset => |path| try frame.ctx.asset_url(writer, path),
                 .url_base => try writer.writeAll(frame.ctx.url_base()),
+                .classes => |text| if (@hasDecl(Ctx, "write_classes")) {
+                    try frame.ctx.write_classes(writer, text);
+                } else {
+                    try writer.writeAll(text);
+                },
                 .head_assets => try frame.ctx.head_assets(writer),
                 .loop => |loop| try renderer.write_loop(writer, frame, loop),
                 .cond => |cond| {
@@ -471,6 +484,7 @@ pub fn Renderer(comptime Ctx: type) type {
                     .{
                         .name = attr.name,
                         .base = frame.ctx.url_base(),
+                        .ctx = frame.ctx,
                     },
                     value,
                 ),
@@ -479,12 +493,32 @@ pub fn Renderer(comptime Ctx: type) type {
                     try writer.writeAll(attr.name);
                 },
                 .opt_string => |text| if (text) |present| {
-                    try write_quoted(writer, attr.name, frame.ctx.url_base(), present);
+                    try renderer.write_text_attr(writer, frame, attr.name, present);
                 },
-                .string => |text| try write_quoted(writer, attr.name, frame.ctx.url_base(), text),
+                .string => |text| try renderer.write_text_attr(writer, frame, attr.name, text),
                 .int => |number| try writer.print(" {s}=\"{d}\"", .{ attr.name, number }),
                 else => unreachable,
             }
+        }
+
+        /// ` name="text"`, a `class` by the names the app's sheet styles it by.
+        fn write_text_attr(
+            renderer: *const Self,
+            writer: *std.Io.Writer,
+            frame: *Frame,
+            name: []const u8,
+            text: []const u8,
+        ) anyerror!void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(renderer.pjsx.len <= 1 << 16);
+
+            if (@hasDecl(Ctx, "write_classes") and std.mem.eql(u8, name, "class")) {
+                try writer.writeAll(" class=\"");
+                try frame.ctx.write_classes(writer, text);
+                return writer.writeByte('"');
+            }
+
+            try write_quoted(writer, name, frame.ctx.url_base(), text);
         }
 
         /// ` name="text"`; a root path in a URL attribute under the base the project is
@@ -587,8 +621,11 @@ pub fn Renderer(comptime Ctx: type) type {
             };
             try Bridge.native_props(renderer, &bridge_frame);
             const props = bridge_frame.props;
+            const book = if (@hasDecl(Ctx, "class_book")) frame.ctx.class_book() else null;
             const children = call.children orelse {
-                return renderer.pjsx[call.component](writer, renderer.arena, props.values, null);
+                const component = renderer.pjsx[call.component];
+
+                return component(writer, renderer.arena, props.values, null, book);
             };
             var buffer: std.Io.Writer.Allocating = .init(renderer.arena);
 
@@ -597,7 +634,7 @@ pub fn Renderer(comptime Ctx: type) type {
             try renderer.nested(&buffer.writer, frame, children);
             const rendered = buffer.written();
 
-            try renderer.pjsx[call.component](writer, renderer.arena, props.values, rendered);
+            try renderer.pjsx[call.component](writer, renderer.arena, props.values, rendered, book);
         }
 
         /// The placeholder for a fragment: a static island is always one, its fallback
@@ -986,6 +1023,12 @@ pub fn Renderer(comptime Ctx: type) type {
                 },
                 .entry_data => .{
                     .data = object.entry.data,
+                },
+                .entry_restricted => .{
+                    .boolean = object.entry.restricted,
+                },
+                .entry_reason => .{
+                    .string = object.entry.reason,
                 },
                 .data_text => |key| .{
                     .opt_string = object.data.getText(key),

@@ -50,6 +50,18 @@ pub fn build_stamp(
         hash.update(file.data);
     }
 
+    for (spec.fonts) |font| {
+        hash.update(font.family);
+        hash.update(font.url);
+
+        for (font.faces) |face| {
+            hash.update(face.src);
+            hash.update(std.mem.asBytes(&face.weight_min));
+            hash.update(std.mem.asBytes(&face.weight_max));
+            hash.update(if (face.italic) "i" else "n");
+        }
+    }
+
     hash.update(version);
     hash.update(url);
     hash.update(spec_module.engine_stamp);

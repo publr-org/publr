@@ -1,4 +1,5 @@
 const std = @import("std");
+const limits_module = @import("limits.zig");
 const vendors = @import("vendors.zig");
 const native_plugins = @import("native_plugins.zig");
 const gen = @import("gen.zig");
@@ -24,6 +25,8 @@ pub const Sources = struct {
     compiler: bool = true,
     /// That compiler's archive built before for the same target, instead of building it.
     toolchain_archive: ?[]const u8 = null,
+    /// What one type and one entry may hold (`limits.zig`).
+    limits: limits_module.Limits = .{},
 };
 
 /// `-Dpreset=<dir>`: a project's parts kept together, `<dir>/apps`, `<dir>/plugins` and
@@ -89,6 +92,7 @@ pub fn sources(builder: *std.Build) Sources {
         .public_dir = if (from_preset != null) builder.pathFromRoot(apps_dir) else "apps",
         .compiler = compiler,
         .toolchain_archive = toolchain_archive,
+        .limits = limits_module.from(builder),
     };
     const root = builder.build_root.path.?;
 
@@ -146,6 +150,10 @@ pub fn add_module(
         .target = target,
         .release = optimize != .Debug,
     });
+    const publr_ai = builder.dependency("publr_ai", .{
+        .target = target,
+        .release = optimize != .Debug,
+    });
     const publr_jit = builder.dependency("publr_jit", .{
         .target = target,
         .optimize = optimize,
@@ -159,6 +167,10 @@ pub fn add_module(
             .{
                 .name = "publr_sqlite",
                 .module = publr_sqlite.module("publr_sqlite"),
+            },
+            .{
+                .name = "limits_options",
+                .module = limits_module.module(builder, from.limits),
             },
             .{
                 .name = "publr_http",
@@ -175,6 +187,10 @@ pub fn add_module(
             .{
                 .name = "publr_deps",
                 .module = publr_deps.module("publr_deps"),
+            },
+            .{
+                .name = "publr_ai",
+                .module = publr_ai.module("publr_ai"),
             },
             .{
                 .name = "publr_jit",
@@ -210,14 +226,25 @@ pub fn add_module(
     native_plugins.add(builder, module, from.plugins_dir, from.native);
 
     const plugin_ui = native_plugins.ui_dirs(builder, from.plugins_dir, from.native);
+    const plugin_names = native_plugins.names_of(builder, from.plugins_dir, from.native);
+
+    @import("i18n.zig").add(builder, module, from.plugins_dir, plugin_names);
     const generated = gen.add(builder, target, optimize, plugin_ui);
 
     module.addImport("views", generated.views);
     module.addImport("runtime", generated.runtime);
     module.addImport("request", generated.request);
     module.addImport("pjsx_syntax", generated.runtime);
-    jit.add(builder, module, generated.classes, optimize);
+    const book = jit.add(builder, module, generated.classes, optimize);
+
+    generated.class_merge.addAnonymousImport("class_book", .{
+        .root_source_file = book.zig,
+    });
+    module.addImport("class_merge", generated.class_merge);
     add_admin_scripts(builder, module, generated.stores);
+    module.addAnonymousImport("admin_expressions", .{
+        .root_source_file = generated.expressions,
+    });
     add_apps(builder, module, generated, optimize, from);
 
     std.debug.assert(module.link_libc == true);
@@ -264,7 +291,11 @@ fn add_compiler(
 
     module.addImport("publr_zig", publr_zig.module("publr_zig"));
     module.addAnonymousImport("sdk_archive", .{
-        .root_source_file = sandboxed_plugins.sdk_archive(builder, publr_zig.artifact("pack")),
+        .root_source_file = sandboxed_plugins.sdk_archive(
+            builder,
+            publr_zig.artifact("pack"),
+            limits_module.source(builder, from.limits),
+        ),
     });
 }
 
@@ -280,6 +311,12 @@ fn add_admin_scripts(
 
     module.addAnonymousImport("admin_stores_js", .{
         .root_source_file = stores,
+    });
+
+    // The block editor, built for the admin: its modules import the runtime files below.
+    const editor = builder.dependency("publr_editor", .{});
+    module.addAnonymousImport("editor_files", .{
+        .root_source_file = editor.namedLazyPath("admin").path(builder, "files.zig"),
     });
 
     inline for (@import("../src/ui/client_files.zig").names) |name| {

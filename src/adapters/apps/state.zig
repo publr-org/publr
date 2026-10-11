@@ -7,6 +7,7 @@ const model_app = @import("../../model/app.zig");
 const spec_module = @import("spec.zig");
 const fingerprint = @import("fingerprint.zig");
 const middleware = @import("middleware.zig");
+const sheet = @import("sheet.zig");
 
 pub const Spec = spec_module.Spec;
 pub const Asset = fingerprint.Asset;
@@ -17,8 +18,6 @@ pub const output_dir_default = "output";
 pub const apps_dir_default = spec_module.public_dir;
 pub const base_url_default = "http://127.0.0.1:8080";
 pub const url_len_max: u32 = 2048;
-
-const preflight_css = @embedFile("apps_preflight_css");
 
 pub const Options = struct {
     /// Where every app's build goes, one folder each: `output/<app>/`.
@@ -76,6 +75,10 @@ pub const App = struct {
     /// The app's templates compiled; null for an app with none, which only has middleware.
     program: ?*engine.Program,
     css: []const u8,
+    /// Every class the sheet styles by its short name; pages write their classes with it.
+    book: jit.Book = undefined,
+    /// What the book lives in, made with the stylesheet.
+    book_arena: ?*std.heap.ArenaAllocator = null,
     /// Changes when generated client code or the compiled stylesheet changes.
     version: [version_len]u8,
     /// The embedded assets, relative imports between the JS files fingerprinted.
@@ -101,8 +104,8 @@ pub const App = struct {
     /// Asked before anything else on the app's paths: its `middleware.zig`.
     middleware: ?middleware.Middleware,
 
-    pub const Error = engine.LoadError || jit.CompileError || std.mem.Allocator.Error ||
-        error{InvalidOptions};
+    pub const Error = engine.LoadError || jit.CompileError || jit.book.BuildError ||
+        std.mem.Allocator.Error || std.Io.Writer.Error || error{InvalidOptions};
 
     /// Loads the app's templates (one that does not load is a startup failure naming the
     /// template) and compiles its stylesheet.
@@ -146,7 +149,7 @@ pub const App = struct {
         errdefer app.unload();
 
         app.version = fingerprint.stamp(spec, app.css);
-        app.assets = try fingerprint.rewrite(gpa, spec.assets, &app.version);
+        app.assets = try fingerprint.rewrite(gpa, try app.with_book(), &app.version);
         errdefer fingerprint.free(gpa, app.assets);
 
         app.stores_imports = try fingerprint.imports_of(gpa, app.assets, "stores.js");
@@ -162,6 +165,23 @@ pub const App = struct {
         app.build_stamp = fingerprint.build_stamp(spec, &app.version, app.url);
 
         std.debug.assert(app.css.len > 0);
+    }
+
+    /// The embedded assets and `class-book.js`, in the book's arena.
+    fn with_book(app: *App) Error![]const spec_module.File {
+        std.debug.assert(app.book_arena != null);
+        std.debug.assert(app.spec.assets.len < assets_max);
+
+        const arena = app.book_arena.?.allocator();
+        const files = try arena.alloc(spec_module.File, app.spec.assets.len + 1);
+
+        @memcpy(files[0..app.spec.assets.len], app.spec.assets);
+        files[app.spec.assets.len] = .{
+            .path = sheet.script_path,
+            .data = try sheet.script(arena, &app.book),
+        };
+
+        return files;
     }
 
     /// The templates and the stylesheet.
@@ -194,7 +214,15 @@ pub const App = struct {
 
         errdefer app.unload();
 
-        app.css = try compile_css(app.gpa, app.spec, app.program);
+        const book_arena = try app.gpa.create(std.heap.ArenaAllocator);
+
+        book_arena.* = .init(app.gpa);
+        app.book_arena = book_arena;
+
+        const compiled = try sheet.compile(app.gpa, book_arena.allocator(), app.spec, app.program);
+
+        app.css = compiled.css;
+        app.book = compiled.book;
     }
 
     fn unload(app: *App) void {
@@ -203,6 +231,12 @@ pub const App = struct {
         if (app.css.len > 0) {
             app.gpa.free(app.css);
             app.css = "";
+        }
+
+        if (app.book_arena) |arena| {
+            arena.deinit();
+            app.gpa.destroy(arena);
+            app.book_arena = null;
         }
 
         if (app.program) |program| {
@@ -374,11 +408,14 @@ fn check_app(gpa: std.mem.Allocator, arena: std.mem.Allocator, spec: *const Spec
         };
     }
 
-    const css = compile_css(gpa, spec, program) catch |err| {
+    var book_arena = std.heap.ArenaAllocator.init(gpa);
+    defer book_arena.deinit();
+
+    const compiled = sheet.compile(gpa, book_arena.allocator(), spec, program) catch |err| {
         return try std.fmt.allocPrint(arena, "the stylesheet: {s}", .{@errorName(err)});
     };
 
-    gpa.free(css);
+    gpa.free(compiled.css);
 
     return null;
 }
@@ -410,40 +447,6 @@ fn sources(arena: std.mem.Allocator, spec: *const Spec) ![]const engine.Source {
     }
 
     return list;
-}
-
-/// Preflight, the app's own `style.css`, then the JIT over every class its templates and
-/// its interactive components name. Owned by the caller.
-pub fn compile_css(
-    gpa: std.mem.Allocator,
-    spec: *const Spec,
-    program: ?*const engine.Program,
-) ![]const u8 {
-    std.debug.assert(preflight_css.len > 0);
-    std.debug.assert(spec.name.len > 0);
-
-    var arena_state = std.heap.ArenaAllocator.init(gpa);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    var classes: std.ArrayList([]const u8) = .empty;
-
-    if (program) |loaded| {
-        try classes.appendSlice(arena, loaded.classes);
-    }
-
-    var tokens = std.mem.tokenizeAny(u8, spec.interactive_classes, " \t\r\n");
-
-    while (tokens.next()) |class| {
-        try classes.append(arena, class);
-    }
-
-    const utilities = try jit.compile(arena, spec.tokens, classes.items, .{
-        .minify = minify,
-    });
-    const separator: []const u8 = if (minify) "" else "\n";
-    const parts = [_][]const u8{ preflight_css, separator, spec.style_css, separator, utilities };
-
-    return std.mem.concat(gpa, u8, &parts);
 }
 
 test "options reject empty paths and malformed base addresses" {

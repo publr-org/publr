@@ -81,6 +81,11 @@ form:not(:has(#default_now:checked)) [data-when="not-now"] {
   display: block;
 }
 
+/* A visual record's form shows only inside the block editor's sheet, which moves it into
+   its Document tab: drawn on the page before the editor loads, it flashes in. */
+[data-visual-record]:not([data-visual-record=""]):not([data-visual-sheet] *) {
+  display: none;
+}
 
 @keyframes drawer-enter {
   from { transform: translateX(100%); }
@@ -112,3 +117,18 @@ form:not(:has(#default_now:checked)) [data-when="not-now"] {
     grid-column: 2;
   }
 }
+
+/* What a plugin says in the admin, sanitized to the admin profile (`lib/sanitize.zig`):
+   plain text styles, and the only classes it may carry. */
+[data-plugin-html] { font-size: 0.875rem; line-height: 1.5rem; color: var(--foreground); }
+[data-plugin-html] > * + * { margin-top: 0.5rem; }
+[data-plugin-html] a { color: var(--primary); text-decoration: underline; text-underline-offset: 4px; }
+[data-plugin-html] a[data-external]::after { content: " ↗"; }
+[data-plugin-html] ul, [data-plugin-html] ol { padding-left: 1.25rem; list-style: revert; }
+[data-plugin-html] h1, [data-plugin-html] h2, [data-plugin-html] h3,
+[data-plugin-html] h4, [data-plugin-html] h5, [data-plugin-html] h6 { font-weight: 600; }
+[data-plugin-html] code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.8125rem; }
+[data-plugin-html] .muted { color: var(--muted-foreground); }
+[data-plugin-html] .success { color: var(--success); }
+[data-plugin-html] .warning { color: var(--warning); }
+[data-plugin-html] .error { color: var(--destructive); }

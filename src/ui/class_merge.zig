@@ -1,151 +1,140 @@
-//! The render runtime's one seam: a stack of `class` attributes merged into one class
-//! list by the JIT's Tailwind-aware resolver, so a later conflicting utility wins
-//! (`max-w-xl` after `max-w-md` removes the earlier one). The theme is the admin
-//! sheet's theme, so the design system's scale tokens resolve as the utilities they
-//! are. A fixed heap caches results; uncached merges and resolver temporaries live
-//! in the render arena, so cache pressure never drops styles.
+//! The render runtime's one seam: a stack of `class` attributes merged and written as the
+//! page sends it. The merge reads the class book the sheet was built with (the JIT's
+//! `book.zig`): every class is the declarations it is made of, each a short name, and a
+//! later declaration of a property in the same context removes an earlier one (`max-w-xl`
+//! after `max-w-md`). A class the book does not hold (styled by hand-written CSS) is
+//! written as it is. No parse, no allocation, no cache: the book was made when the sheet
+//! was.
+//!
+//! The admin's book is built in. A site's own book (its sheet is built when its app loads)
+//! is put in place for its render with `use`.
 const std = @import("std");
 const jit = @import("publr_jit");
+const data = @import("class_book");
 
-const ui_theme: jit.Theme = @import("ui_theme");
-const theme: jit.Theme = jit.extendTheme(jit.default_theme, ui_theme);
+/// A class Zig code names (`listed("pl-4")`), as it is, for a view's props: the build reads
+/// every `listed("…")` in `src/` into the sheet's classes, so it has a rule and a name.
+pub fn listed(comptime classes: []const u8) []const u8 {
+    comptime std.debug.assert(classes.len > 0);
 
-const heap_bytes = 1 << 20;
-const key_bytes_max = 4 << 10;
+    return classes;
+}
 
-// The memo lives for the process: the server is single-threaded, and the heap is
-// fixed at startup, never grown (STYLE: all memory at startup, bounded).
-var heap: [heap_bytes]u8 = undefined;
-// The allocator over that heap; process-global for the same reason.
-var heap_state: std.heap.FixedBufferAllocator = .init(&heap);
-// The memo itself, keyed by the joined parts; process-global for the same reason.
-var memo: std.StringHashMapUnmanaged([]const u8) = .empty;
+/// The admin's book, as the build wrote it.
+pub const admin: jit.Book = .{
+    .classes = &data.classes,
+    .marker_names = &data.marker_names,
+    .atom_starts = &data.atom_starts,
+    .class_atoms = &data.class_atoms,
+    .class_slots = &data.class_slots,
+    .atom_names = &data.atom_names,
+    .atom_scopes = &data.atom_scopes,
+    .atom_properties = &data.atom_properties,
+    .cover_starts = &data.cover_starts,
+    .covers = &data.covers,
+};
 
-/// Cached results live for the process; uncached results live in the caller's render
-/// arena. Exhausting the memo must never change the markup or conflict resolution.
+/// The merged class list, owned by `arena`, with the admin's book.
 pub fn merge_classes(arena: std.mem.Allocator, parts: []const []const u8) ![]const u8 {
-    std.debug.assert(parts.len <= 64);
-    std.debug.assert(heap_bytes > key_bytes_max);
-
-    var key_buffer: [key_bytes_max]u8 = undefined;
-    const key = key_of(parts, &key_buffer);
-
-    if (key) |value| {
-        if (memo.get(value)) |hit| return hit;
-    }
-
-    // Resolver temporaries belong to this render, never to the permanent memo heap.
-    const merged = try jit.mergeClasses(arena, theme, parts);
-
-    if (key) |value| {
-        return remember(value, merged) catch merged;
-    }
-
-    return merged;
+    return merge_classes_in(arena, null, parts);
 }
 
-fn remember(key: []const u8, merged: []const u8) ![]const u8 {
-    std.debug.assert(key.len <= key_bytes_max);
-    std.debug.assert(heap_state.end_index <= heap_bytes);
+/// The merged class list, owned by `arena`, with `book` (a `jit.Book`; null is the admin's).
+pub fn merge_classes_in(
+    arena: std.mem.Allocator,
+    book: ?*const anyopaque,
+    parts: []const []const u8,
+) ![]const u8 {
+    std.debug.assert(parts.len <= jit.book.classes_max);
 
-    const before = heap_state.end_index;
-    errdefer heap_state.end_index = before;
-    const allocator = heap_state.allocator();
-    const kept_key = try allocator.dupe(u8, key);
-    const kept_value = try allocator.dupe(u8, merged);
-    try memo.put(allocator, kept_key, kept_value);
-    return kept_value;
+    return jit.book.text(book_of(book), arena, parts);
 }
 
-/// The parts joined with NUL, a byte no class attribute carries, so `["a b", "c"]` and
-/// `["a", "b c"]` key differently; null when the stack is too long to memoise.
-fn key_of(parts: []const []const u8, buffer: []u8) ?[]const u8 {
-    std.debug.assert(buffer.len == key_bytes_max);
-    std.debug.assert(parts.len <= 64);
+/// The merged class list written into an attribute value the caller has opened, escaped.
+pub fn write_classes(writer: *std.Io.Writer, parts: []const []const u8) !void {
+    try write_classes_in(writer, null, parts);
+}
 
-    var length: usize = 0;
+pub fn write_classes_in(
+    writer: *std.Io.Writer,
+    book: ?*const anyopaque,
+    parts: []const []const u8,
+) !void {
+    std.debug.assert(parts.len <= jit.book.classes_max);
 
-    for (parts) |part| {
-        if (length + part.len + 1 > buffer.len) {
-            return null;
+    try jit.book.write(book_of(book), writer, parts);
+}
+
+fn book_of(book: ?*const anyopaque) *const jit.Book {
+    const chosen: *const jit.Book = if (book) |held| @ptrCast(@alignCast(held)) else &admin;
+
+    std.debug.assert(chosen.atom_starts.len == chosen.classes.len + 1);
+
+    return chosen;
+}
+
+/// `classes` as the admin writes them, sorted: what a merge is compared with.
+fn names_of(arena: std.mem.Allocator, classes: []const u8) ![]const u8 {
+    return sorted(arena, try merge_classes(arena, &.{classes}));
+}
+
+fn sorted(arena: std.mem.Allocator, written: []const u8) ![]const u8 {
+    std.debug.assert(written.len < 1 << 16);
+
+    var names: std.ArrayList([]const u8) = .empty;
+    var tokens = std.mem.tokenizeScalar(u8, written, ' ');
+
+    while (tokens.next()) |name| try names.append(arena, name);
+
+    std.mem.sort([]const u8, names.items, {}, struct {
+        fn less(_: void, left: []const u8, right: []const u8) bool {
+            return std.mem.lessThan(u8, left, right);
         }
+    }.less);
 
-        @memcpy(buffer[length .. length + part.len], part);
-        length += part.len;
-        buffer[length] = 0;
-        length += 1;
-    }
-
-    return buffer[0..length];
+    return std.mem.join(arena, " ", names.items);
 }
 
 test "a later conflicting utility wins the merge" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const merged = try merge_classes(arena.allocator(), &.{ "max-w-md px-4", "max-w-xl" });
-    try std.testing.expect(std.mem.indexOf(u8, merged, "max-w-md") == null);
-    try std.testing.expect(std.mem.indexOf(u8, merged, "max-w-xl") != null);
-    try std.testing.expect(std.mem.indexOf(u8, merged, "px-4") != null);
+    const written = try merge_classes(arena.allocator(), &.{ "max-w-md px-4", "max-w-xl" });
+
+    try std.testing.expectEqualStrings(
+        try names_of(arena.allocator(), "max-w-xl px-4"),
+        try sorted(arena.allocator(), written),
+    );
 }
 
 test "design-system scale tokens resolve as font-size utilities" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const merged = try merge_classes(arena.allocator(), &.{ "text-body-sm", "text-xs" });
-    try std.testing.expect(std.mem.indexOf(u8, merged, "text-body-sm") == null);
-    try std.testing.expect(std.mem.indexOf(u8, merged, "text-xs") != null);
-}
+    const written = try merge_classes(arena.allocator(), &.{ "text-body-sm", "text-xs" });
+    const body = try names_of(arena.allocator(), "text-body-sm");
+    var tokens = std.mem.tokenizeScalar(u8, try names_of(arena.allocator(), "text-xs"), ' ');
 
-test "the same stack is answered from the memo" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const first = try merge_classes(arena.allocator(), &.{ "flex", "gap-2" });
-    const second = try merge_classes(arena.allocator(), &.{ "flex", "gap-2" });
-    try std.testing.expect(first.ptr == second.ptr);
-}
-
-test "new class stacks keep their styles after the memo fills" {
-    const before = heap_state.end_index;
-    heap_state.end_index = heap_bytes;
-    defer heap_state.end_index = before;
-
-    var buffer: [64]u8 = undefined;
-
-    for (0..2000) |index| {
-        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-        defer arena.deinit();
-        const unique = try std.fmt.bufPrint(&buffer, "record-{d}", .{index});
-        const merged = try merge_classes(arena.allocator(), &.{ "flex px-4", unique, "px-8" });
-        try std.testing.expect(std.mem.indexOf(u8, merged, "flex") != null);
-        try std.testing.expect(std.mem.indexOf(u8, merged, unique) != null);
-        try std.testing.expect(std.mem.indexOf(u8, merged, "px-8") != null);
-        try std.testing.expect(std.mem.indexOf(u8, merged, "px-4") == null);
+    // text-xs's size and line height replace body-sm's.
+    while (tokens.next()) |name| {
+        try std.testing.expect(std.mem.indexOf(u8, written, name) != null);
     }
+
+    try std.testing.expect(!std.mem.eql(u8, body, try sorted(arena.allocator(), written)));
 }
 
-test "cached classes survive the render arena that first merged them" {
-    {
-        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-        defer arena.deinit();
-        const part = try arena.allocator().dupe(u8, "cache-lifetime flex px-2");
-        _ = try merge_classes(arena.allocator(), &.{ part, "px-6" });
-    }
-    const hit = try merge_classes(std.testing.failing_allocator, &.{
-        "cache-lifetime flex px-2", "px-6",
-    });
-    try std.testing.expectEqualStrings("cache-lifetime flex px-6", hit);
+test "a class the book does not hold is written as it is" {
+    var buffer: [256]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+
+    try write_classes(&writer, &.{ "drawer-enter", "flex" });
+
+    try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "drawer-enter") != null);
+    try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "flex") == null);
 }
 
-test "class stacks too long to cache still merge and report allocation failure" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const long = [_]u8{'a'} ** key_bytes_max;
-    const merged = try merge_classes(arena.allocator(), &.{ &long, "px-2", "px-6" });
-    try std.testing.expect(std.mem.startsWith(u8, merged, &long));
-    try std.testing.expect(std.mem.endsWith(u8, merged, " px-6"));
-    try std.testing.expect(std.mem.indexOf(u8, merged, "px-2") == null);
-    try std.testing.expectError(error.OutOfMemory, merge_classes(
-        std.testing.failing_allocator,
-        &.{ &long, "px-2", "px-6" },
-    ));
+test "a merge allocates only its answer" {
+    var buffer: [256]u8 = undefined;
+    var fixed: std.heap.FixedBufferAllocator = .init(&buffer);
+    const merged = try merge_classes(fixed.allocator(), &.{ "flex px-2", "px-6" });
+
+    try std.testing.expectEqual(merged.len, fixed.end_index);
 }
