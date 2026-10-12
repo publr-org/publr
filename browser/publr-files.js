@@ -18,6 +18,7 @@ const PublrFiles = (() => {
   const open = new Map([[cwd, { path: "", folder: true }]]);
   let next_fd = cwd + 1;
   let memory = null;
+  let storage = () => navigator.storage.getDirectory();
 
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
@@ -345,7 +346,7 @@ const PublrFiles = (() => {
   };
 
   async function root_folder() {
-    return (await navigator.storage.getDirectory()).getDirectoryHandle(root_name, { create: true });
+    return (await storage()).getDirectoryHandle(root_name, { create: true });
   }
 
   async function read_folder(handle, prefix) {
@@ -370,9 +371,11 @@ const PublrFiles = (() => {
     wasi,
 
     // What OPFS holds, read into memory; a browser with none starts from `seed_url`, a JSON
-    // object of paths and their contents in base64.
-    async load(memory_of, seed_url) {
+    // object of paths and their contents in base64. `storage_of` is the folder this Publr
+    // keeps in OPFS.
+    async load(memory_of, seed_url, storage_of) {
       memory = memory_of;
+      storage = storage_of;
       await read_folder(await root_folder(), "");
       if (files.size > 0 || !seed_url) return;
       const response = await fetch(seed_url);

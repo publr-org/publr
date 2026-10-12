@@ -570,7 +570,10 @@ and `localStorage` and `document.cookie` throw. Everything it sends is a visitor
 never the administrator's: the session is taken out and the frame's own visitor put in,
 derived from the session, so islands, `_api` calls and forms work there as for anyone. A
 guard script, first in its head, puts a notice ("Hidden while you're signed in") inside
-every frame of another site, which would inherit the sandbox. The toolbar shows in no frame.
+every frame of another site, which would inherit the sandbox. The toolbar shows in no frame
+the admin made; a page on the site's own origin that frames it (a site embedding Publr for
+the browser) gets the bar inside. Publr in the browser keeps its cookies in its worker, so
+there every page it answers asks whether to show the bar.
 
 Tools from outside the page join the bar instead of drawing their own: the Publr
 extension's select, comment and send show after the edit link. A child of

@@ -13,8 +13,9 @@
 // head: <meta name="publr-toolbar" content="off">.
 //
 // The admin has an origin of its own, so a page's scripts never run as the administrator: on
-// the site the bar shows for someone sent from the admin (a member pass), and in a frame
-// (a preview on the admin's host) it shows nothing.
+// the site the bar shows for someone sent from the admin (a member pass), and in a frame the
+// admin made (a preview) it shows nothing. A page that embeds the site in a frame of its own
+// gets the bar inside it.
 //
 // The bar lives in a shadow root, so the page's styles never reach it and its own never
 // leak out; PublrJS binds each element directly, so its directives work inside.
@@ -32,11 +33,28 @@ const hidden_key = 'publr-toolbar-hidden';
 const margin = 12;
 
 // An opaque origin (a sandboxed frame) throws on any cookie read.
+// Publr running in this browser keeps its cookies in its service worker, out of the page's
+// reach, so a page that worker answers asks every time; the asking stays in the browser.
 const signed_in = () => {
   try {
-    return document.cookie.split('; ').includes(hint + '=1');
+    return document.cookie.split('; ').includes(hint + '=1') ||
+      navigator.serviceWorker?.controller != null;
   } catch {
     return false;
+  }
+};
+
+// Framed by the admin (a preview on its own host, which this page cannot read, or its pages
+// on this one): the admin around it has its own bar. Framed by anything else, the bar shows.
+const in_admin = () => {
+  if (window.top === window) {
+    return false;
+  }
+
+  try {
+    return window.parent.location.pathname.startsWith(base + '/admin');
+  } catch {
+    return true;
   }
 };
 
@@ -198,8 +216,7 @@ const ask = (path) =>
     .catch(() => null);
 
 const start = async () => {
-  // In a frame (a preview on the admin's host), no bar: the admin around it has its own.
-  if (window.top !== window || !signed_in() || opted_out()) {
+  if (in_admin() || !signed_in() || opted_out()) {
     return;
   }
 

@@ -99,7 +99,7 @@ const areas = { files: 0, incoming: 1 };
 
 /** The folder an area's files live in, under OPFS's `media/`. */
 async function folder_of(area, key, create) {
-  let folder = await (await navigator.storage.getDirectory()).getDirectoryHandle("media", { create: true });
+  let folder = await (await storage()).getDirectoryHandle("media", { create: true });
   if (area === "incoming") folder = await folder.getDirectoryHandle(".incoming", { create: true });
   const parts = key.split("/");
   for (const part of parts.slice(0, -1)) folder = await folder.getDirectoryHandle(part, { create });
@@ -155,7 +155,7 @@ async function boot() {
   const result = await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi });
 
   instance = result.instance;
-  await PublrFiles.load(() => instance.exports.memory, seed_files && new URL(seed_files, self.location.href));
+  await PublrFiles.load(() => instance.exports.memory, seed_files && new URL(seed_files, self.location.href), storage);
   instance.exports._initialize?.();
 
   const code = instance.exports.publr_init();
@@ -163,7 +163,7 @@ async function boot() {
     ready = null;
     throw new Error("publr_init failed: " + code);
   }
-  if (base) set_base();
+  set_address();
 
   try {
     await restore();
@@ -175,14 +175,15 @@ async function boot() {
   console.log("publr: wasm ready");
 }
 
-function set_base() {
-  const encoded = new TextEncoder().encode(base);
+// Publr's own address, the scope's: the links it writes and the path it strips.
+function set_address() {
+  const encoded = new TextEncoder().encode(self.registration.scope.replace(/\/$/, ""));
   const ptr = instance.exports.publr_alloc(encoded.length);
-  if (!ptr) throw new Error("Publr has no memory for its base path");
+  if (!ptr) throw new Error("Publr has no memory for its address");
   new Uint8Array(instance.exports.memory.buffer, ptr, encoded.length).set(encoded);
-  const code = instance.exports.publr_base(ptr, encoded.length);
+  const code = instance.exports.publr_address(ptr, encoded.length);
   instance.exports.publr_free(ptr, encoded.length);
-  if (code !== 0) throw new Error(`Publr cannot be served under ${base}: ${code}`);
+  if (code !== 0) throw new Error(`Publr cannot be served at ${self.registration.scope}: ${code}`);
 }
 
 function call(name, text, body = new Uint8Array(0)) {
@@ -234,8 +235,16 @@ async function persist() {
   await write_file(db_file, response_bytes());
 }
 
+// This Publr's own folder in OPFS: its scope's path (`demo/shop/`), so Publrs under
+// different scopes of one site keep separate databases and files; the root for one at `/`.
+async function storage() {
+  let folder = await navigator.storage.getDirectory();
+  for (const part of base.split("/").filter(Boolean)) folder = await folder.getDirectoryHandle(part, { create: true });
+  return folder;
+}
+
 async function write_file(name, bytes) {
-  const root = await navigator.storage.getDirectory();
+  const root = await storage();
   const handle = await root.getFileHandle(name, { create: true });
   const writable = await handle.createWritable();
   await writable.write(bytes);
@@ -243,7 +252,7 @@ async function write_file(name, bytes) {
 }
 
 async function read_file(name) {
-  const root = await navigator.storage.getDirectory();
+  const root = await storage();
   const handle = await root.getFileHandle(name).catch(() => null);
   if (!handle) return null;
   return new Uint8Array(await (await handle.getFile()).arrayBuffer());

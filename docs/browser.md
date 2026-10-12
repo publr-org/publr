@@ -24,10 +24,13 @@ as the native server would: the same routes, the same operations, the same
 permissions. The worker knows nothing about Publr; it only carries requests in
 and responses out.
 
-Registered with a scope below the root (`/demo/`), the worker answers only what
-is under it, and Publr runs under that path as the native server does with
-`--url`: requests arrive without it and every address sent back carries it. The
-worker loads `publr.wasm` from beside itself. That is how a site embeds Publr
+The worker's scope is Publr's address, as `--url` is the native server's: the
+apps' links and the admin's way to each app are written at it. Registered below
+the root (`/demo/`), the worker answers only what is under it, and Publr runs
+under that path: requests arrive without it and every address sent back carries it. The
+worker loads `publr.wasm` from beside itself, and keeps everything in OPFS under
+its scope's path (`demo/shop/`), so Publrs at different scopes of one site never share a
+database or a file. That is how a site embeds Publr
 on its own pages: the files under `/demo/`, a frame opening `/demo/admin`.
 
 Three things the worker does own, because the module cannot reach them:
