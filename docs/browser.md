@@ -28,7 +28,9 @@ The worker's scope is Publr's address, as `--url` is the native server's: the
 apps' links and the admin's way to each app are written at it. Registered below
 the root (`/demo/`), the worker answers only what is under it, and Publr runs
 under that path: requests arrive without it and every address sent back carries it. The
-worker loads `publr.wasm` from beside itself, and keeps everything in OPFS under
+worker loads `publr.wasm` from beside itself (with `publr-worker.js?v=<version>`, as
+`publr.wasm?v=<version>`, and the same for its other script, so a cache in front never mixes
+builds), and keeps everything in OPFS under
 its scope's path (`demo/shop/`), so Publrs at different scopes of one site never share a
 database or a file. That is how a site embeds Publr
 on its own pages: the files under `/demo/`, a frame opening `/demo/admin`.

@@ -1,6 +1,11 @@
 // Service worker: forwards every request to the Publr wasm module and returns its response.
 
-importScripts("publr-files.js");
+// A build's version, `publr-worker.js?v=<version>`, goes on the files the worker loads, so a
+// cache in front of the site never pairs this worker with another build's.
+const version = new URL(self.location.href).searchParams.get("v");
+const versioned = (file) => new URL(version ? `${file}?v=${encodeURIComponent(version)}` : file, self.location.href);
+
+importScripts(versioned("publr-files.js"));
 
 // The path Publr is served under: the scope's (`/demo/` → `/demo`), empty at the root.
 const base = new URL(self.registration.scope).pathname.replace(/\/$/, "");
@@ -149,7 +154,7 @@ function body_bytes() {
 }
 
 async function boot() {
-  const bytes = await (await fetch(new URL("publr.wasm", self.location.href))).arrayBuffer();
+  const bytes = await (await fetch(versioned("publr.wasm"))).arrayBuffer();
   const calls = { ...wasi_stubs, ...PublrFiles.wasi };
   const wasi = new Proxy(calls, { get: (target, name) => target[name] ?? (() => wasi_errno_nosys) });
   const result = await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi });
