@@ -1,5 +1,6 @@
 import { HubPage } from "../layouts/HubPage.ptsx";
 import { AgentSetup } from "../components/AgentSetup.ptsx";
+import { PluginAbout } from "../components/PluginAbout.ptsx";
 import { Publr } from "publr-jsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Card } from "@publr/ui/Card.ptsx";
@@ -27,6 +28,10 @@ export type DashboardProps = {
   login_command: string;
   /** The person's earlier conversations, newest first. */
   earlier: Array<{ id: string; prompt: string; label: string; href: string }>;
+  /** A plugin's own "Your agent" tab, sanitized, shown instead of the commands; absent when none. */
+  agents_tab?: JSX.Element;
+  /** The plugin that tab comes from, named on its box. */
+  agents_tab_from?: string;
 };
 
 /** The overview: building this site with AI, on the person's own key or with their own agent. */
@@ -37,6 +42,8 @@ export function Dashboard({
   install_command,
   login_command,
   earlier,
+  agents_tab,
+  agents_tab_from,
 }: DashboardProps) {
   return (
     <HubPage title={Publr.t("Overview")} hero>
@@ -59,7 +66,10 @@ export function Dashboard({
               {Publr.t("Your agent")}
             </TabNavLink>
           </TabNav>
-          {mode === "agents" && (
+          {mode === "agents" && agents_tab && (
+            <PluginAbout name={agents_tab_from ?? ""}>{agents_tab}</PluginAbout>
+          )}
+          {mode === "agents" && !agents_tab && (
             <AgentSetup
               folder_command={folder_command}
               install_command={install_command}

@@ -31,6 +31,8 @@ pub fn props_of(session: *admin.Session) admin.Error!Props {
 
     try fill_agents(session, &props);
     try fill_conversations(session, &props);
+    props.agents_tab = agents_tab_of(session);
+    props.agents_tab_from = if (registry.agents_tab) |tab| tab.plugin else "";
 
     return props;
 }
@@ -140,6 +142,21 @@ fn fill_agents(session: *admin.Session, props: *Props) admin.Error!void {
 
     props.folder_command = try std.fmt.allocPrint(arena, "cd {s}", .{folder});
     props.install_command = try std.fmt.allocPrint(arena, "{s} skill install", .{binary});
+}
+
+/// A plugin's own contents for the "Your agent" tab, through the admin's sanitizer; null
+/// when no plugin declares one or it does not read cleanly.
+fn agents_tab_of(session: *const admin.Session) ?admin.render.Node {
+    std.debug.assert(session.signed_in());
+
+    const tab = registry.agents_tab orelse return null;
+
+    std.debug.assert(tab.html.len > 0);
+
+    const sanitize = @import("../../lib/sanitize.zig");
+    const cleaned = sanitize.sanitize(session.arena, tab.html, .admin) catch return null;
+
+    return admin.render.raw(cleaned);
 }
 
 /// The person's conversations, newest first, each leading to its workspace.

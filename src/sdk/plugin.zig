@@ -125,6 +125,13 @@ pub const OwnedSettingsTab = struct {
     tab: SettingsTab,
 };
 
+/// What a plugin shows in place of the Overview's "Your agent" commands: its
+/// `pub const agents_tab` HTML, which the admin sanitizes and draws in a box named after it.
+pub const AgentsTab = struct {
+    plugin: []const u8,
+    html: []const u8,
+};
+
 pub const OwnedItem = struct {
     plugin: []const u8,
     item: Item,
@@ -729,6 +736,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var sign_in_at: []const type = &.{};
         var app_picker_segment: []const type = &.{};
         var dimension: ?variants.Dimension = null;
+        var agents_tab: ?AgentsTab = null;
         var settings_tabs: []const OwnedSettingsTab = &.{};
         var translations: []const OwnedTranslation = &.{};
         var operator_commands: []const route.DeclaredCommand = &.{};
@@ -853,6 +861,17 @@ pub fn Merged(comptime plugins: anytype) type {
                 }
 
                 dimension = declared;
+            }
+
+            if (@hasDecl(Plugin, "agents_tab")) {
+                if (agents_tab != null) {
+                    @compileError("two plugins declare `agents_tab`; one at a time");
+                }
+
+                agents_tab = .{
+                    .plugin = Plugin.manifest.name,
+                    .html = Plugin.agents_tab,
+                };
             }
 
             operator_commands = operator_commands ++ route.operator_commands_of(Plugin);
@@ -998,6 +1017,8 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_translations = translations;
             /// The variant dimension a plugin declares, if one does.
             pub const merged_variants = dimension;
+            /// What a plugin shows in the Overview's "Your agent" tab, if one does.
+            pub const merged_agents_tab = agents_tab;
             /// The plugins that keep a `State`, in name order.
             pub const merged_stateful = state.stateful(plugins);
             pub const merged_operator_commands = operator_commands;

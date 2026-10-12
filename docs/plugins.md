@@ -636,6 +636,15 @@ a plugin of these alone, named `language_<code>` (`language_pl`). Site Health sh
 translations disagree and what each language still misses. See
 [Admin](admin.md#the-admins-language).
 
+### The Overview's "Your agent" tab
+
+The Overview offers two ways to build: the person's own keys, and their own agent, whose tab
+shows the commands that set an agent to work on this site. A plugin may show its own words
+there instead (`pub const agents_tab = "<p>...</p>"`): HTML through the admin's sanitizer
+profile, in a box named after the plugin, as `about` is. One plugin at a time; compiled in
+only, for now. A demo running in a browser tab, which no agent can sign in to, says how to
+build with an agent on the visitor's own machine.
+
 ### Variants and System settings tabs
 
 A plugin may declare the one **variant dimension** (`pub const variants:

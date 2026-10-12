@@ -225,6 +225,7 @@ pub const panels = native_plugins.merged_panels;
 pub const sign_in_at = native_plugins.merged_sign_in_at;
 pub const app_picker_segment = native_plugins.merged_app_picker_segment;
 pub const variants = native_plugins.merged_variants;
+pub const agents_tab = native_plugins.merged_agents_tab;
 pub const translations = native_plugins.merged_translations;
 pub const stateful_plugins = native_plugins.merged_stateful;
 pub const operator_commands = native_plugins.merged_operator_commands;
