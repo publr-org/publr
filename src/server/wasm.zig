@@ -15,6 +15,8 @@ const allocation_bytes_max: u32 = files.bytes_max;
 /// How many runs a request gets to name the files it needs, one at a time.
 const needs_max: u32 = files.kept_elsewhere.attachments_max;
 const allocations_max: u32 = 64;
+/// The longest path the worker may serve Publr under (`/demo`).
+const base_bytes_max: u32 = 128;
 
 const State = struct {
     gpa: std.mem.Allocator,
@@ -41,6 +43,8 @@ const State = struct {
     /// The project's apps, from its folder in OPFS or built into the module, rendered on
     /// request.
     apps: browser_apps.Host,
+    /// The path the worker serves Publr under, which `project.base` and the router read.
+    base_buffer: [base_bytes_max]u8,
 };
 
 // A wasm module is one instance behind a C ABI; the exports below are its only record points.
@@ -154,6 +158,27 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     open_apps(instance) catch return error.Apps;
     std.debug.assert(instance.app.routes.routes_len > 0);
     std.debug.assert(instance.runtime.open_count == 1);
+}
+
+/// The path the worker serves Publr under (its scope's, without the trailing slash): the
+/// router takes it off every request and every address Publr sends back carries it.
+export fn publr_base(ptr: [*]const u8, len: u32) i32 {
+    const instance = state orelse return 1;
+    const base = ptr[0..len];
+
+    if (len == 0 or len > base_bytes_max or base[0] != '/' or base[len - 1] == '/') {
+        return 2;
+    }
+
+    @memcpy(instance.base_buffer[0..len], base);
+    instance.project.base = instance.base_buffer[0..len];
+    instance.app.path_base = instance.project.base;
+    instance.apps.serve_under(instance.project.base) catch return 3;
+
+    std.debug.assert(instance.project.base.len == len);
+    std.debug.assert(instance.app.path_base.ptr == instance.project.base.ptr);
+
+    return 0;
 }
 
 export fn publr_deinit() void {

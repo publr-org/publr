@@ -2,7 +2,9 @@
 
 importScripts("publr-files.js");
 
-const passthrough = ["/index.html", "/publr-worker.js", "/publr-files.js", "/publr.wasm"];
+// The path Publr is served under: the scope's (`/demo/` → `/demo`), empty at the root.
+const base = new URL(self.registration.scope).pathname.replace(/\/$/, "");
+const passthrough = ["/index.html", "/publr-worker.js", "/publr-files.js", "/publr.wasm"].map((file) => base + file);
 const wasi_errno_nosys = 52;
 const db_file = "publr.sqlite";
 const cookies_file = "publr.cookies.json";
@@ -147,7 +149,7 @@ function body_bytes() {
 }
 
 async function boot() {
-  const bytes = await (await fetch("/publr.wasm")).arrayBuffer();
+  const bytes = await (await fetch(new URL("publr.wasm", self.location.href))).arrayBuffer();
   const calls = { ...wasi_stubs, ...PublrFiles.wasi };
   const wasi = new Proxy(calls, { get: (target, name) => target[name] ?? (() => wasi_errno_nosys) });
   const result = await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi });
@@ -161,6 +163,7 @@ async function boot() {
     ready = null;
     throw new Error("publr_init failed: " + code);
   }
+  if (base) set_base();
 
   try {
     await restore();
@@ -170,6 +173,16 @@ async function boot() {
     throw error;
   }
   console.log("publr: wasm ready");
+}
+
+function set_base() {
+  const encoded = new TextEncoder().encode(base);
+  const ptr = instance.exports.publr_alloc(encoded.length);
+  if (!ptr) throw new Error("Publr has no memory for its base path");
+  new Uint8Array(instance.exports.memory.buffer, ptr, encoded.length).set(encoded);
+  const code = instance.exports.publr_base(ptr, encoded.length);
+  instance.exports.publr_free(ptr, encoded.length);
+  if (code !== 0) throw new Error(`Publr cannot be served under ${base}: ${code}`);
 }
 
 function call(name, text, body = new Uint8Array(0)) {

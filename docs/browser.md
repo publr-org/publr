@@ -24,6 +24,12 @@ as the native server would: the same routes, the same operations, the same
 permissions. The worker knows nothing about Publr; it only carries requests in
 and responses out.
 
+Registered with a scope below the root (`/demo/`), the worker answers only what
+is under it, and Publr runs under that path as the native server does with
+`--url`: requests arrive without it and every address sent back carries it. The
+worker loads `publr.wasm` from beside itself. That is how a site embeds Publr
+on its own pages: the files under `/demo/`, a frame opening `/demo/admin`.
+
 Three things the worker does own, because the module cannot reach them:
 
 - **the database**: SQLite lives in memory inside the module and is written
