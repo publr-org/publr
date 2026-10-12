@@ -1541,6 +1541,31 @@ test "money: a field written as the site writes it, natively and in script" {
     try testing.expect(contains(message, "money takes a field of an entry"));
 }
 
+test "base: a script's source goes under the base the project is served at, its body not" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/index.publr",
+            \\<script src="/shop.js" defer></script><script>const home = "/";</script>
+            \\<script src="https://cdn.example/a.js"></script><a href="/cart">Bag</a>
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const ctx: TestContext = .{
+        .arena = arena,
+        .base = "/demo/shop",
+    };
+    const page = try render_test(arena, program, program.find("content/index.publr").?, &ctx);
+
+    try testing.expect(contains(page, "<script src=\"/demo/shop/shop.js\" defer></script>"));
+    try testing.expect(contains(page, "<script>const home = \"/\";</script>"));
+    try testing.expect(contains(page, "<script src=\"https://cdn.example/a.js\"></script>"));
+    try testing.expect(contains(page, "href=\"/demo/shop/cart\""));
+}
+
 test "set:html: whatever a page prints as markup is sanitized, natively and in script" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();

@@ -4,6 +4,7 @@
 //! nothing and is left as it is.
 
 const std = @import("std");
+const address = @import("../../model/app/address.zig");
 const registry = @import("../../server/registry.zig");
 const identity_module = @import("../rest/identity.zig");
 const record_operations = @import("../../operations/record.zig");
@@ -61,15 +62,22 @@ pub fn apply(context: Context, rel: []const u8, page: []const u8) ![]const u8 {
 
     const part_overrides = try context.arena.alloc(overrides.Part, parts.len);
 
+    const base = context.url_base();
+
     for (parts, part_overrides) |part, *out| {
         out.* = .{
             .name = part.name,
-            .output = part.output,
+            .output = try address.markup_under(context.arena, base, part.output),
         };
     }
 
+    const template_output: ?[]const u8 = if (template.len > 0)
+        try address.markup_under(context.arena, base, template[0].output)
+    else
+        null;
+
     return overrides.apply(context.arena, page, .{
-        .template = if (template.len > 0) template[0].output else null,
+        .template = template_output,
         .parts = part_overrides,
     });
 }

@@ -47,7 +47,7 @@ pub fn island(
     }
 
     if (!app.build_ready) {
-        return pages.unavailable(response);
+        return pages.unavailable(response, "");
     }
 
     if (app.program == null or request.method() != .get and request.method() != .head) {

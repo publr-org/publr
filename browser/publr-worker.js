@@ -17,6 +17,14 @@ const cookies_file = "publr.cookies.json";
 const seed_file = new URL(self.location.href).searchParams.get("seed");
 // The project files such a browser starts from: `publr-worker.js?files=<file>`.
 const seed_files = new URL(self.location.href).searchParams.get("files");
+// The media library's files such a browser starts from, fetched the first time one is needed:
+// `publr-worker.js?media=<folder>`, holding each file at its key.
+const seed_media = new URL(self.location.href).searchParams.get("media");
+// Safari before 26 cannot write OPFS files from a service worker (no `createWritable`): there
+// Publr runs from memory for the visit and keeps nothing once the worker stops.
+const persistent = "createWritable" in (self.FileSystemFileHandle?.prototype ?? {});
+// The media library's files, by area and key, where nothing can be written to OPFS.
+const remembered = new Map();
 // Pages showing this Publr hear of every change, to draw again what they show of it.
 const changes = new BroadcastChannel("publr");
 
@@ -114,8 +122,8 @@ async function folder_of(area, key, create) {
 async function attach(need) {
   const { folder, name } = await folder_of(need.area, need.key, false).catch(() => ({ folder: null, name: "" }));
   const handle = folder && await folder.getFileHandle(name).catch(() => null);
-  if (!handle) throw Object.assign(new Error(`${need.key} is not in this browser's storage`), { status: 404 });
-  const bytes = new Uint8Array(await (await handle.getFile()).arrayBuffer());
+  const bytes = remembered.get(`${need.area}/${need.key}`) ??
+    (handle ? new Uint8Array(await (await handle.getFile()).arrayBuffer()) : await seeded(need));
   const key = new TextEncoder().encode(need.key);
   const key_ptr = instance.exports.publr_alloc(key.length);
   const ptr = bytes.length > 0 ? instance.exports.publr_alloc(bytes.length) : 0;
@@ -127,8 +135,27 @@ async function attach(need) {
   if (code !== 0) throw Object.assign(new Error("Publr could not take the file: " + code), { status: 503 });
 }
 
+/** A library file this browser never had, from the seed's media folder, kept in OPFS from then on. */
+async function seeded(need) {
+  const missing = () => Object.assign(new Error(`${need.key} is not in this browser's storage`), { status: 404 });
+  if (!seed_media || need.area !== "files") throw missing();
+  const response = await fetch(new URL(need.key, new URL(seed_media.replace(/\/?$/, "/"), self.location.href)));
+  if (!response.ok) throw missing();
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (!persistent) {
+    remembered.set(`${need.area}/${need.key}`, bytes);
+    return bytes;
+  }
+  const { folder, name } = await folder_of(need.area, need.key, true);
+  const writable = await (await folder.getFileHandle(name, { create: true })).createWritable();
+  await writable.write(bytes);
+  await writable.close();
+  return bytes;
+}
+
 /** What the response wrote and removed, done in OPFS before it reaches the page. */
 async function carry_out(effects) {
+  if (!persistent) return remember(effects);
   for (const [index, effect] of effects.entries()) {
     const { folder, name } = await folder_of(effect.area, effect.key, effect.kind !== "remove");
     if (effect.kind === "remove") {
@@ -147,13 +174,61 @@ async function carry_out(effects) {
   }
 }
 
+/** `carry_out` where nothing can be written to OPFS: the same effects, in memory. */
+function remember(effects) {
+  for (const [index, effect] of effects.entries()) {
+    const place = `${effect.area}/${effect.key}`;
+    if (effect.kind === "remove") {
+      remembered.delete(place);
+      continue;
+    }
+    const ptr = instance.exports.publr_effect_ptr(index);
+    const bytes = new Uint8Array(instance.exports.memory.buffer, ptr, instance.exports.publr_effect_len(index)).slice();
+    const offset = effect.kind === "append" ? effect.offset : 0;
+    const before = offset > 0 ? (remembered.get(place) ?? new Uint8Array(0)).subarray(0, offset) : new Uint8Array(0);
+    const joined = new Uint8Array(before.length + bytes.length);
+    joined.set(before);
+    joined.set(bytes, before.length);
+    remembered.set(place, joined);
+  }
+}
+
 function body_bytes() {
   const ptr = instance.exports.publr_body_ptr();
   const len = instance.exports.publr_body_len();
   return new Uint8Array(instance.exports.memory.buffer, ptr, len).slice();
 }
 
+// What `publr_init` answers when it cannot start, by its code.
+const init_failures = {
+  1: "no memory for its state",
+  2: "no memory for its database",
+  3: "its database would not start",
+  4: "its database would not open",
+  5: "no memory to answer requests",
+  6: "sign-in would not start",
+  7: "its content types would not apply",
+  8: "its apps would not open",
+  9: "this browser gave it no more memory",
+};
+
+// Which seeds this browser's copy started from, kept beside it.
+const seed_marker_file = "publr.seed";
+
+/** A copy started from other seeds (an earlier build of a demo) is dropped, so this browser
+ * starts from the seeds the worker was registered with, as a fresh one does. */
+async function from_these_seeds() {
+  if (!persistent || !(seed_file || seed_files || seed_media)) return;
+  const marker = JSON.stringify([seed_file, seed_files, seed_media]);
+  const kept = await read_file(seed_marker_file);
+  if (kept && new TextDecoder().decode(kept) === marker) return;
+  const root = await storage();
+  for await (const name of root.keys()) await root.removeEntry(name, { recursive: true });
+  await write_file(seed_marker_file, new TextEncoder().encode(marker));
+}
+
 async function boot() {
+  await from_these_seeds();
   const bytes = await (await fetch(versioned("publr.wasm"))).arrayBuffer();
   const calls = { ...wasi_stubs, ...PublrFiles.wasi };
   const wasi = new Proxy(calls, { get: (target, name) => target[name] ?? (() => wasi_errno_nosys) });
@@ -166,7 +241,7 @@ async function boot() {
   const code = instance.exports.publr_init();
   if (code !== 0) {
     ready = null;
-    throw new Error("publr_init failed: " + code);
+    throw new Error(`Publr could not start: ${init_failures[code] ?? "code " + code}`);
   }
   set_address();
 
@@ -243,12 +318,16 @@ async function persist() {
 // This Publr's own folder in OPFS: its scope's path (`demo/shop/`), so Publrs under
 // different scopes of one site keep separate databases and files; the root for one at `/`.
 async function storage() {
-  let folder = await navigator.storage.getDirectory();
+  // Safari refuses it in a private window, with a message about memory.
+  let folder = await navigator.storage.getDirectory().catch(() => {
+    throw new Error("this browser gives the page no storage to keep Publr in (a private window keeps none)");
+  });
   for (const part of base.split("/").filter(Boolean)) folder = await folder.getDirectoryHandle(part, { create: true });
   return folder;
 }
 
 async function write_file(name, bytes) {
+  if (!persistent) return;
   const root = await storage();
   const handle = await root.getFileHandle(name, { create: true });
   const writable = await handle.createWritable();

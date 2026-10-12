@@ -19,6 +19,9 @@ pub const Request = struct {
     /// The operation says anyone may call it (`pub const open = true`), like signing in:
     /// a plugin's own open door, such as creating an account. Policies still narrow it.
     open: bool = false,
+    /// The type the call names, when the compiled-in plugin whose code runs declares it:
+    /// reached whoever the plugin runs for, as an installed plugin reaches its own.
+    own_types: []const []const u8 = &.{},
 };
 
 pub const Policy = *const fn (ctx: *const Ctx, request: Request) Grant;
@@ -59,6 +62,13 @@ pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) opera
 
     if (request.open) {
         return Grant.allow_all;
+    }
+
+    // A visitor's order is the shop's to write: the plugin's operation decided it may.
+    if (request.own_types.len > 0) {
+        return .{
+            .types = request.own_types,
+        };
     }
 
     // A plugin's code reaches its own internal records whoever it runs for: the operations
@@ -266,6 +276,32 @@ pub fn authorize(
     }
 
     return result;
+}
+
+test "core policy: a plugin's own type is reached whoever it runs for, only that type" {
+    var harness: Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var anon = harness.ctx(.anonymous);
+    const create: Request = .{
+        .operation_name = "record.create",
+        .kind = .write,
+        .resource = .{
+            .type_id = "order",
+        },
+        .own_types = &.{"order"},
+    };
+    const granted = try authorize(&anon, create, &.{}, &role.core);
+
+    try std.testing.expect(!granted.read_only);
+    try std.testing.expect(granted.allows_type("order"));
+    try std.testing.expect(!granted.allows_type("post"));
+
+    var not_own = create;
+    not_own.own_types = &.{};
+
+    try std.testing.expectError(error.Denied, authorize(&anon, not_own, &.{}, &role.core));
 }
 
 test "core policy: anonymous reads live+public only, writes denied; users and system full" {

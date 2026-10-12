@@ -8,7 +8,8 @@ const apps = publr.apps;
 
 /// The project's own folder, beside where it runs, whatever the build's apps came from.
 pub const dir = "apps";
-const base_url_default = (apps.Options{}).base_url;
+const base_options: apps.Options = .{};
+const base_url_default = base_options.base_url;
 
 pub const Host = struct {
     gpa: std.mem.Allocator,
@@ -37,6 +38,8 @@ pub const Host = struct {
 
         try apps.load.open(host.project, source.specs, loaded, host.gpa, host.index, .{
             .base_url = host.base_url,
+            // Their `public/` files are the project's, as `serve` reads them.
+            .apps_dir = apps.folder.resolve_dir(host.io, base_options.apps_dir),
             .diagnostic = &host.reason,
         }, now_ms);
         host.source = source;
@@ -63,13 +66,13 @@ pub const Host = struct {
 
     /// The apps opened again at `address` (`https://publr.app/demo`), which the links their
     /// pages write and the admin's way to each app carry. It stays the caller's.
-    pub fn serve_at(host: *Host, address: []const u8) !void {
+    /// Apps that will not open answer 503 saying why, as on a reload.
+    pub fn serve_at(host: *Host, address: []const u8) void {
         std.debug.assert(std.mem.indexOf(u8, address, "://") != null);
         std.debug.assert(host.project.connection.transaction_depth == 0);
 
         host.base_url = address;
-        host.close();
-        try host.open();
+        _ = reload(host);
     }
 
     /// What the `apps` operations reach: the folder, and `reload` with its reason.
@@ -94,11 +97,23 @@ pub const Host = struct {
 
         std.debug.assert(host.project.apps.len == 0);
 
+        host.project.apps_reason = "";
+
         host.open() catch |err| {
             host.project.apps_failed = true;
-            return if (host.reason.len > 0) host.reason.text() else @errorName(err);
+            host.project.apps_reason = host.failure(err);
+
+            return host.project.apps_reason;
         };
 
         return null;
+    }
+
+    /// Why the apps would not open, for the 503 the site answers in its place.
+    pub fn failure(host: *Host, err: anyerror) []const u8 {
+        std.debug.assert(host.reason.len <= host.reason.buffer.len);
+        std.debug.assert(host.project.apps_failed or host.loaded.len == 0);
+
+        return if (host.reason.len > 0) host.reason.text() else @errorName(err);
     }
 };

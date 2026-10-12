@@ -63,7 +63,7 @@ fn dispatch(request: *Request, response: *Response, ctx: *http.Context) anyerror
     const project = Project.of(ctx);
 
     if (project.apps_failed) {
-        return pages.unavailable(response);
+        return pages.unavailable(response, project.apps_reason);
     }
 
     // `/about/` is `/about`: a site moved here keeps its old links and search results.
@@ -252,6 +252,7 @@ test {
     std.testing.refAllDecls(@import("apps/public.zig"));
     std.testing.refAllDecls(@import("apps/imported.zig"));
     std.testing.refAllDecls(@import("apps/design.zig"));
+    std.testing.refAllDecls(@import("apps/block_css.zig"));
 }
 
 const sdk = @import("../sdk.zig");

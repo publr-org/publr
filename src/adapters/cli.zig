@@ -190,7 +190,11 @@ pub fn CLI(comptime SDK: type) type {
                         try help.command(Operation, out);
                         return 0;
                     }
-                    return invoke(&ctx, Operation, rest, out, options);
+                    const code = try invoke(&ctx, Operation, rest, out, options);
+
+                    hand_on_notices(&ctx);
+
+                    return code;
                 }
             }
 
@@ -259,6 +263,29 @@ pub fn CLI(comptime SDK: type) type {
             const footer = "\nRun `publr {s} <verb> --help` for the fields of a command.\n";
             out.print(footer, .{namespace}) catch return error.WriteFailed;
         }
+
+        /// Without a server next to it, the CLI hands the command's queued notices to the
+        /// extrinsic hooks itself once it has committed; in a server, the same.
+        fn hand_on_notices(ctx: *sdk.Ctx) void {
+            std.debug.assert(ctx.db.transaction_depth == 0);
+            std.debug.assert(passes_max > 0);
+
+            const take_max = @import("../store/notice_queue.zig").take_max;
+            var passes: u32 = 0;
+
+            while (passes < passes_max) : (passes += 1) {
+                const handed = SDK.notices.drain(ctx, take_max) catch |err| {
+                    std.log.warn("notices: not handed on: {t}", .{err});
+                    return;
+                };
+
+                if (handed < take_max) {
+                    return;
+                }
+            }
+        }
+
+        const passes_max: u32 = 1024;
 
         fn invoke(
             ctx: *sdk.Ctx,
@@ -672,9 +699,27 @@ fn parse_value(comptime Value: type, arena: std.mem.Allocator, text: []const u8)
 
             break :blk try parse_json(Value, arena, text);
         },
-        .@"struct", .@"union" => try parse_json(Value, arena, text),
+        .@"struct" => blk: {
+            if (comptime @hasDecl(Value, "reference")) {
+                if (bare_id(text)) {
+                    break :blk .{
+                        .id = text,
+                    };
+                }
+            }
+
+            break :blk try parse_json(Value, arena, text);
+        },
+        .@"union" => try parse_json(Value, arena, text),
         else => @compileError("CLI cannot parse " ++ @typeName(Value)),
     };
+}
+
+/// A record named by its id as it is (`--variant 01a1…`, a form's field), not as JSON.
+fn bare_id(text: []const u8) bool {
+    std.debug.assert(text.len <= value_len_max);
+
+    return text.len > 0 and text[0] != '"' and text[0] != '{';
 }
 
 fn parse_json(comptime Value: type, arena: std.mem.Allocator, text: []const u8) Error!Value {
@@ -711,6 +756,28 @@ fn parse_list(
     std.debug.assert(index == count);
 
     return list;
+}
+
+test "parse_in takes a record by its bare id, or as JSON" {
+    const Named = struct {
+        title: []const u8,
+    };
+    const In = struct {
+        variant: @import("../operations/record/typed.zig").Ref(Named, "variant"),
+    };
+    var problem: Problem = .{};
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const bare = try parse_in(In, arena, &.{ "--variant", "01a1b2" }, &problem, null);
+    const quoted = try parse_in(In, arena, &.{ "--variant", "\"01a1b2\"" }, &problem, null);
+
+    try std.testing.expectEqualStrings("01a1b2", bare.variant.id);
+    try std.testing.expectEqualStrings("01a1b2", quoted.variant.id);
+    const empty = parse_in(In, arena, &.{ "--variant", "" }, &problem, null);
+
+    try std.testing.expectError(error.Invalid, empty);
 }
 
 test "parse_in fills fields from flags and applies defaults" {

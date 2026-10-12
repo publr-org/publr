@@ -134,13 +134,36 @@ fn passthrough(compiler: *Compiler, rest: []const u8) Error!bool {
         const end = std.mem.indexOf(u8, rest, closing) orelse {
             return compiler.fail("unterminated {s}", .{closing[2 .. closing.len - 1]});
         };
+        const taken: u32 = if (script) try script_source(compiler, rest[0..end]) else 0;
 
-        try take_static(compiler, rest, @intCast(end + closing.len));
+        try take_static(compiler, rest[taken..], @intCast(end + closing.len - taken));
 
         return true;
     }
 
     return false;
+}
+
+/// A script's `src="/…"` under the base the project is served at, as any other address in
+/// an attribute is; the rest of the element goes through untouched. How much it wrote.
+fn script_source(compiler: *Compiler, element: []const u8) Error!u32 {
+    std.debug.assert(starts_with_tag(element, "script"));
+
+    const marker = " src=\"";
+    const tag_end = std.mem.indexOfScalar(u8, element, '>') orelse element.len;
+    const at = std.mem.indexOf(u8, element[0..tag_end], marker) orelse return 0;
+    const value_at: u32 = @intCast(at + marker.len);
+
+    if (!root_path(element[value_at..tag_end])) {
+        return 0;
+    }
+
+    try take_static(compiler, element, value_at);
+    try compiler.push(.url_base);
+
+    std.debug.assert(value_at < tag_end);
+
+    return value_at;
 }
 
 fn take_static(compiler: *Compiler, rest: []const u8, len: u32) Error!void {

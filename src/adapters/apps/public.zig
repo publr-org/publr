@@ -151,13 +151,10 @@ pub fn serve(
     std.debug.assert(inside.len > 0 and inside[0] == '/');
     std.debug.assert(request.method() == .get or request.method() == .head);
 
-    if (@import("builtin").target.cpu.arch == .wasm32) {
-        return false;
-    }
-
     const path = inside[1..];
+    const browser = @import("builtin").target.cpu.arch == .wasm32;
 
-    if (std.mem.eql(u8, path, "sitemap.xml") and app.output != null) {
+    if (!browser and std.mem.eql(u8, path, "sitemap.xml") and app.output != null) {
         const built = try std.fmt.allocPrint(ctx.arena, "{s}/{s}", .{
             app.options.output_dir,
             app.spec.name,
@@ -172,7 +169,8 @@ pub fn serve(
 
     const root = try app.public_dir(ctx.arena);
 
-    if (request.header("Range") != null) {
+    // The browser build reads `public/` from its files whole; a range is a server's.
+    if (!browser and request.header("Range") != null) {
         return serve_range(app, root, path, request, response, ctx);
     }
 
@@ -192,7 +190,11 @@ fn serve_from(
     std.debug.assert(inside[0] == '/');
 
     const bytes_max = ctx.options.response_bytes_max;
-    const result = try http.static.serve_file(root, inside, response, ctx.arena, bytes_max);
+    const browser = @import("builtin").target.cpu.arch == .wasm32;
+    const result = if (browser)
+        try read_whole(app, root, inside, response, ctx.arena, bytes_max)
+    else
+        try http.static.serve_file(root, inside, response, ctx.arena, bytes_max);
 
     switch (result) {
         .served => {
@@ -209,6 +211,39 @@ fn serve_from(
     }
 
     return true;
+}
+
+/// The browser build's way to a file: its folder is WASI's, read whole, with no server's
+/// file descriptors. Dot segments never get here (`hidden`).
+fn read_whole(
+    app: *const state.App,
+    root: []const u8,
+    inside: []const u8,
+    response: *Response,
+    arena: std.mem.Allocator,
+    bytes_max: u32,
+) !http.static.Serve {
+    std.debug.assert(inside.len > 1 and inside[0] == '/');
+    std.debug.assert(!hidden(inside[1..]));
+
+    const full = try std.fs.path.join(arena, &.{ root, inside[1..] });
+    const limit: std.Io.Limit = .limited(bytes_max);
+    const bytes = std.Io.Dir.cwd().readFileAlloc(app.io, full, arena, limit) catch |err| {
+        return switch (err) {
+            error.StreamTooLong => .too_large,
+            error.OutOfMemory => error.OutOfMemory,
+            else => .not_found,
+        };
+    };
+
+    try response.set_body(.ok, http.static.content_type(inside), bytes);
+
+    // As the server does: a stored SVG is never a document its scripts run in.
+    if (std.mem.endsWith(u8, inside, ".svg")) {
+        try response.set_header("Content-Disposition", "attachment");
+    }
+
+    return .served;
 }
 
 fn serve_range(

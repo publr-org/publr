@@ -24,6 +24,9 @@ pub const Project = struct {
     apps: []App = &.{},
     /// The apps failed to load: their paths answer 503 while the admin stays up.
     apps_failed: bool = false,
+    /// Why, said on the 503 itself where whoever opens the site owns it (the browser build,
+    /// in its own tab); empty on a server, whose visitors are not told.
+    apps_reason: []const u8 = "",
     /// The host the apps' subdomains hang from: the project's address without its port.
     domain: []const u8 = "",
     /// The path the project is served under (`/environments/dev`, the path of `--url`);

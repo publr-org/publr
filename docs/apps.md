@@ -434,6 +434,13 @@ kept as it is. A page without the markers, or with no published override for the
 exactly what the file renders. Static pages are built the same way, and publishing or
 resetting an override rebuilds the pages that place it.
 
+The app's stylesheet is made from its templates, so it has no rules for the classes the
+block editor writes into a record or an override (`text-7xl`, `bg-[#0c0f0d]`). Each page
+carries those itself: the classes its markup names that the stylesheet does not style are
+compiled with the app's tokens into a `<style>` at the end of its head. The root paths that
+markup holds (a block's `/media/…` image, a link to `/about`) go under the path the project
+is served at, as a template's own do.
+
 The block editor draws a record inside its route's template and the page around it, as the
 file renders them for a published record of the type. With none published, the file renders
 for the record being edited, its unpublished copy, or for a new one: an empty title and the

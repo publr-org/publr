@@ -248,8 +248,10 @@ const notes = publr.records.of(Note, "notes_note");
 | `notes.save(ctx, id, fields, .{ .expected_version = v, .status = "published" })` | writes only the fields named in `fields` |
 
 `Item` is `{ id, version, status, changed, value: Note }`. Its own types need no
-permission; other types need `content.read` or `content.write` and the content access an
-administrator gave it.
+permission, and the calls that name the type (`create`, `find`, `find_one`) reach them
+whoever the plugin runs for: a visitor's order, placed through an `app.*` operation, is
+the plugin's to write. Other types need `content.read` or `content.write` and the content
+access an administrator gave it.
 
 ## Internal records: `publr.internal.of`
 
@@ -310,7 +312,24 @@ pub const Shout = struct {
 ```
 
 An event is `.completed`, `.rejected`, `.failed` or `.notice` (`{ operation_id, name,
-subject }`). A display batch holds up to 200 items, each `{ id, value, fields }`: the hook
+subject }`).
+
+Hooks are intrinsic or extrinsic. Intrinsic hooks are part of the write: `.before` and
+`.after`, and an `.on` hook that declares `pub const intrinsic = true`. They run inside the
+write's transaction, so what they keep commits or rolls back with it. Everything else an
+`.on` hook does is a side effect, so it is extrinsic: it hears an operation's end as it
+happens, but a notice only once the write has committed, from a queue the server works
+through between requests, with the system as caller. An installed plugin's event hooks are
+always extrinsic.
+
+A write over many records (`record transition_many`) does the write once for all of them,
+but each record is still heard on its own: `.before` and `.after` hooks on `record
+transition` run for every record, and one that refuses keeps only that record back. An
+intrinsic hook may declare a set form, called once with the whole part instead of once per
+item: `run_many(*sdk.Ctx, []const Op.In, refused: []?[]const u8) sdk.Error!void` for
+`.before` (setting a reason refuses that item), the same with `[]const Op.Out` after the
+inputs for `.after`, and `run_many(*sdk.Ctx, []const sdk.middleware.Event.Notice) void` for
+an intrinsic `.on`. A display batch holds up to 200 items, each `{ id, value, fields }`: the hook
 rewrites `value` (at most 512 bytes) and cannot write anything. A hook may target another
 plugin's operation only through a `Remote` it declares.
 
@@ -644,6 +663,7 @@ pub const settings_pages = [_]publr.plugin.SettingsPage{.{
 pub fn app_picker_segment(
     session: *const publr.admin.Session,
     attached: bool,
+    apps: ?publr.admin.render.Node,
 ) publr.admin.Error!?publr.admin.render.Node {
     ...
 }

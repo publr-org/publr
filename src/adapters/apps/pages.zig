@@ -14,6 +14,7 @@ const Memo = @import("context.zig").Memo;
 const build = @import("build.zig");
 const visitor = @import("visitor.zig");
 const public = @import("public.zig");
+const block_css = @import("block_css.zig");
 const shell = @import("shell.zig");
 const framed = @import("framed.zig");
 const ids = @import("../../lib/id.zig");
@@ -67,8 +68,9 @@ pub fn render_page(
 
     const html = try render_file_page(arena, app, index, context);
     const rel = app.pages().templates[index].rel;
+    const designed = try @import("design.zig").apply(context, rel, html);
 
-    return @import("design.zig").apply(context, rel, html);
+    return block_css.apply(arena, app, designed);
 }
 
 /// One page of the app into `arena`, as its files have it.
@@ -115,7 +117,9 @@ pub fn render_shown(
     };
     shown_context.shown = shown;
 
-    return render_file_page(arena, app, index, shown_context);
+    const html = try render_file_page(arena, app, index, shown_context);
+
+    return block_css.apply(arena, app, html);
 }
 
 /// A new record of the type as its page reads it: no id, slug or title, `document` its
@@ -219,7 +223,7 @@ fn serve(
     }
 
     if (!app.build_ready) {
-        return unavailable(response);
+        return unavailable(response, "");
     }
 
     if (request.method() != .get and request.method() != .head) {
@@ -260,10 +264,15 @@ fn serve(
     }
 }
 
-pub fn unavailable(response: *Response) !void {
+pub fn unavailable(response: *Response, reason: []const u8) !void {
     std.debug.assert(response.body.len == 0);
     try response.set_header("Cache-Control", "no-store");
     try response.set_header("Retry-After", "60");
+
+    if (reason.len > 0) {
+        return response.text(.service_unavailable, reason);
+    }
+
     return response.text(
         .service_unavailable,
         "This site is temporarily unavailable. Please try again later.",
@@ -359,7 +368,7 @@ pub fn not_found(
     const app = target.app;
 
     if (!app.build_ready) {
-        return unavailable(response);
+        return unavailable(response, "");
     }
 
     const path = target.path;

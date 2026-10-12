@@ -244,6 +244,7 @@ default are required.
 | choice (enum) | one of the listed names (help shows them, e.g. `admin\|editor`) |
 | optional | the value, or `null` |
 | list of text or of names | comma-separated: `a,b,c` |
+| a record (an operation that takes one by reference) | its id: `--variant 01a1…` |
 | any other list, a structure | JSON, in quotes: `'[{"x":1}]'` |
 
 An installed plugin's commands read their flags the same way, answer `--help` the same

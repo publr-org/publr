@@ -197,7 +197,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 159 + preview_pages.routes_count +
+pub const routes_count: u32 = 160 + preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
     design_pages.routes_count + @import("admin/settings_tabs.zig").tabs.len;
@@ -244,6 +244,7 @@ pub fn register(router: *http.Router) void {
     register_settings_pages(router);
     @import("admin/plugins.zig").register(router);
     @import("admin/frame.zig").register(router);
+    router.get("/admin/settings/apps", &app_scope.list);
     router.get("/admin/settings/:handle", &@import("admin/content/form.zig").settings_page);
     router.get("/admin/structure", &structure_pages.show);
     register_schemas(router);
@@ -416,6 +417,11 @@ fn editor_file_type(path: []const u8) []const u8 {
 
     if (std.mem.endsWith(u8, path, ".wasm")) {
         return "application/wasm";
+    }
+
+    // The canvas page, which the editor's frame loads so it is served as the admin is.
+    if (std.mem.endsWith(u8, path, ".html")) {
+        return "text/html; charset=utf-8";
     }
 
     return "text/plain; charset=utf-8";

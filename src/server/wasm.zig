@@ -9,6 +9,7 @@ const http = publr.http;
 const browser_apps = @import("wasm/apps.zig");
 
 const heap_bytes: u32 = 16 << 20;
+const response_bytes_max: u32 = 8 << 20;
 const arena_bytes: u32 = publr.model.limits.request_arena_bytes;
 /// What one allocation from the worker may hold: a request, or a file it hands over.
 const allocation_bytes_max: u32 = files.bytes_max;
@@ -18,12 +19,38 @@ const allocations_max: u32 = 64;
 /// The longest address the worker may serve Publr at (`https://publr.app/demo`).
 const address_bytes_max: u32 = 256;
 
+const page_bytes: u32 = 64 << 10;
+
+/// A buffer kept for as long as Publr runs (SQLite's heap, the request arena, the scratch,
+/// argon2's), grown onto memory by exactly its pages: the general allocator rounds a block
+/// up to a power of two, which made a 16 MiB buffer cost 32 and pushed the module past what
+/// an iPhone lets a service worker grow to. Never freed: memory never shrinks, and a module
+/// started again after a failed start grows by them again.
+fn grown(bytes: u32) error{OutOfMemory}![]align(page_bytes) u8 {
+    std.debug.assert(bytes > 0);
+
+    const pages = std.math.divCeil(u32, bytes, page_bytes) catch unreachable;
+    const before = @wasmMemoryGrow(0, pages);
+
+    if (before < 0) {
+        return error.OutOfMemory;
+    }
+
+    const start: [*]align(page_bytes) u8 = @ptrFromInt(@as(u32, @intCast(before)) * page_bytes);
+
+    std.debug.assert(pages * page_bytes >= bytes);
+
+    return start[0..bytes];
+}
+
 const State = struct {
     gpa: std.mem.Allocator,
     heap: []align(8) u8,
     runtime: db.Runtime,
     connection: db.Db,
     auth: auth.State,
+    /// Where `auth` keeps its argon2 scratch: one grown buffer.
+    auth_memory: std.heap.FixedBufferAllocator,
     project: routes.Project,
     app: http.App,
     io_backend: std.Io.Threaded,
@@ -101,19 +128,21 @@ export fn publr_init() i32 {
             error.Auth => 6,
             error.Bootstrap => 7,
             error.Apps => 8,
+            error.Memory => 9,
         };
     };
     state = instance;
     return 0;
 }
 
-const InitError = error{ Heap, Runtime, Database, Arena, Auth, Bootstrap, Apps };
+const InitError = error{ Heap, Runtime, Database, Arena, Auth, Bootstrap, Apps, Memory };
 
 fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
+    comptime std.debug.assert(response_bytes_max < arena_bytes);
+
     instance.gpa = gpa;
     std.debug.assert(heap_bytes >= db.heap_bytes_min);
-    instance.heap = gpa.alignedAlloc(u8, .@"8", heap_bytes) catch return error.Heap;
-    errdefer gpa.free(instance.heap);
+    instance.heap = grown(heap_bytes) catch return error.Heap;
     instance.runtime = db.Runtime.init(.{
         .heap = instance.heap,
     }) catch return error.Runtime;
@@ -125,21 +154,25 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     instance.index = open_index(&instance.connection) catch return error.Database;
     instance.io_backend = std.Io.Threaded.init(gpa, .{});
     errdefer instance.io_backend.deinit();
-    instance.auth.init(gpa, instance.io_backend.io(), .{}) catch return error.Auth;
+    const argon_bytes = auth.password.scratch_bytes(auth.password.params_default);
+    instance.auth_memory = .init(grown(argon_bytes) catch return error.Auth);
+    instance.auth.init(instance.auth_memory.allocator(), instance.io_backend.io(), .{}) catch {
+        return error.Auth;
+    };
     errdefer instance.auth.deinit();
     instance.project = .{
         .connection = &instance.connection,
         .auth = &instance.auth,
         .io = instance.io_backend.io(),
     };
-    instance.app = http.App.offline(.{});
+    // Only a cap here (nothing is set aside for it): a media file served whole, such as a
+    // block's image the editor's canvas loads, within the request arena it is read into.
+    instance.app = http.App.offline(.{
+        .response_bytes_max = response_bytes_max,
+    });
     instance.app.user_data = &instance.project;
-    instance.arena_buffer = gpa.alloc(u8, arena_bytes) catch return error.Arena;
-    errdefer gpa.free(instance.arena_buffer);
-    instance.scratch_buffer = gpa.alloc(u8, publr.sdk.scratch.bytes_default) catch {
-        return error.Arena;
-    };
-    errdefer gpa.free(instance.scratch_buffer);
+    instance.arena_buffer = grown(arena_bytes) catch return error.Arena;
+    instance.scratch_buffer = grown(publr.sdk.scratch.bytes_default) catch return error.Arena;
     instance.scratch = .{
         .fixed = .init(instance.scratch_buffer),
     };
@@ -154,8 +187,18 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
         .deferred = &instance.deferred,
     };
     routes.register(instance.app.router());
-    apply_declared_types(instance) catch return error.Bootstrap;
-    open_apps(instance) catch return error.Apps;
+    apply_declared_types(instance) catch |err| {
+        return if (err == error.OutOfMemory) error.Memory else error.Bootstrap;
+    };
+    // As `serve` does: apps that will not open answer 503, saying why, and the admin stays up.
+    open_apps(instance) catch |err| {
+        if (err == error.OutOfMemory) {
+            return error.Memory;
+        }
+
+        instance.project.apps_failed = true;
+        instance.project.apps_reason = instance.apps.failure(err);
+    };
     std.debug.assert(instance.app.routes.routes_len > 0);
     std.debug.assert(instance.runtime.open_count == 1);
 }
@@ -178,7 +221,7 @@ export fn publr_address(ptr: [*]const u8, len: u32) i32 {
 
     instance.project.base = base;
     instance.app.path_base = base;
-    instance.apps.serve_at(address) catch return 3;
+    instance.apps.serve_at(address);
 
     std.debug.assert(instance.project.base.len < len);
     std.debug.assert(base.len == 0 or base[0] == '/');
@@ -197,13 +240,10 @@ export fn publr_deinit() void {
     instance.apps.close();
     instance.deferred.deinit();
     instance.gpa.free(instance.response);
-    instance.gpa.free(instance.arena_buffer);
-    instance.gpa.free(instance.scratch_buffer);
     instance.auth.deinit();
     instance.io_backend.deinit();
     instance.connection.close();
     instance.runtime.deinit();
-    instance.gpa.free(instance.heap);
     instance.gpa.destroy(instance);
 }
 

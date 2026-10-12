@@ -455,7 +455,7 @@ pub fn Renderer(comptime Ctx: type) type {
         ) anyerror!void {
             if (expr.type == .javascript) {
                 const value = try Bridge.eval(renderer, frame, expr.node.javascript);
-                return Bridge.write_raw(frame.execution.vm.?, writer, value);
+                return Bridge.write_raw(frame.execution.vm.?, writer, value, frame.ctx.url_base());
             }
 
             std.debug.assert(expr.type == .string or expr.type == .opt_string);
@@ -466,7 +466,10 @@ pub fn Renderer(comptime Ctx: type) type {
                 else => unreachable,
             };
 
-            try writer.writeAll(try sanitize.sanitize(renderer.arena, text, .content));
+            const clean = try sanitize.sanitize(renderer.arena, text, .content);
+            const base = frame.ctx.url_base();
+
+            try writer.writeAll(try address.markup_under(renderer.arena, base, clean));
         }
 
         fn write_attr(

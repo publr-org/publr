@@ -35,13 +35,23 @@ pub fn json(session: *const Session, app_name: ?[]const u8) admin.Error![]const 
 
         return std.json.Stringify.valueAlloc(arena, bare, .{});
     };
-    const styles = try arena.alloc([]const u8, 2);
+    var styles: std.ArrayList([]const u8) = .empty;
 
-    styles[0] = reset;
-    styles[1] = try std.fmt.allocPrint(arena, "{s}/_app/app.css", .{stylesheet_base(app)});
+    // The typefaces the app's pages link, then its stylesheet, as a page has them.
+    try styles.append(arena, reset);
+
+    for (app.spec.fonts) |font| {
+        if (font.url.len > 0) {
+            try styles.append(arena, font.url);
+        }
+    }
+
+    try styles.append(arena, try std.fmt.allocPrint(arena, "{s}/_app/app.css", .{
+        stylesheet_base(app),
+    }));
 
     const site: Site = .{
-        .styles = styles,
+        .styles = styles.items,
         .theme = try theme(arena, app),
     };
 

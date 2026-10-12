@@ -282,6 +282,62 @@ test "a root path is written under the base, once" {
     try std.testing.expect(url_attribute("HREF") and !url_attribute("data-href"));
 }
 
+/// Markup that arrives as text (a record's rich text, a design override, already sanitized)
+/// with each root path in an address attribute under `base`, as a template's own are: the
+/// block editor writes `/media/…` and `/about`, which a project served under a path needs
+/// carried. Attributes are read as the sanitizer writes them, `name="value"`.
+pub fn markup_under(arena: std.mem.Allocator, base: []const u8, markup: []const u8) ![]const u8 {
+    std.debug.assert(base.len == 0 or base[0] == '/');
+
+    if (base.len == 0 or std.mem.indexOf(u8, markup, "=\"/") == null) {
+        return markup;
+    }
+
+    var out: std.ArrayList(u8) = .empty;
+    var rest = markup;
+
+    while (std.mem.indexOf(u8, rest, "=\"")) |equals| {
+        const value_start = equals + 2;
+        const value_end = std.mem.indexOfScalarPos(u8, rest, value_start, '"') orelse break;
+        const name_start = if (std.mem.lastIndexOfAny(u8, rest[0..equals], " \t\r\n")) |space|
+            space + 1
+        else
+            0;
+        const name = rest[name_start..equals];
+        const value = rest[value_start..value_end];
+
+        try out.appendSlice(arena, rest[0..value_start]);
+
+        if (name.len > 0 and url_attribute(name) and needs_base(base, value)) {
+            try out.appendSlice(arena, base);
+        }
+
+        try out.appendSlice(arena, value);
+        rest = rest[value_end..];
+    }
+
+    try out.appendSlice(arena, rest);
+
+    std.debug.assert(out.items.len >= markup.len);
+
+    return out.items;
+}
+
+test "markup from a record carries the base on its root paths, once" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const base = "/demo/site";
+    const markup = "<a href=\"/about\" class=\"x\"><img src=\"/media/a.jpg\" alt=\"/x\"></a>" ++
+        "<a href=\"/demo/site/work\">w</a><a href=\"https://e.com/\">e</a>";
+    const under = try markup_under(arena, base, markup);
+
+    try std.testing.expectEqualStrings("<a href=\"/demo/site/about\" class=\"x\">" ++
+        "<img src=\"/demo/site/media/a.jpg\" alt=\"/x\"></a>" ++
+        "<a href=\"/demo/site/work\">w</a><a href=\"https://e.com/\">e</a>", under);
+    try std.testing.expectEqualStrings(markup, try markup_under(arena, "", markup));
+}
+
 /// A path the browser shows, without the base the project is served under:
 /// `/environments/dev/about` is `/about`. Anything outside the base as it is.
 pub fn without_base(base: []const u8, path: []const u8) []const u8 {

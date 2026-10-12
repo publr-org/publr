@@ -434,6 +434,9 @@ const save = mutation(async () => {
   }
   state.dirty = state.edit_revision !== revision;
   state.saved_text = state.dirty ? Publr.t("Unsaved changes") : Publr.t("All changes saved");
+  // What the record may do now (Publish changes once a live record has some): a host drawing
+  // the actions itself, the visual editor's Document tab, reads them from here.
+  form.dispatchEvent(new CustomEvent("publr:record-saved", { bubbles: true, detail: { actions: state.actions } }));
   invalidate("content");
   invalidate(`record:${answer.id ?? state.id}`);
   if (creating && answer.id) {

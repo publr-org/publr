@@ -390,6 +390,11 @@ const PublrFiles = (() => {
 
     // Every change since the last flush, carried out in OPFS: written, made or removed.
     async flush() {
+      // Safari before 26 cannot write here from a service worker: the files stay in memory.
+      if (!("createWritable" in (self.FileSystemFileHandle?.prototype ?? {}))) {
+        changed.clear();
+        return;
+      }
       const paths = [...changed].sort((a, b) => a.split("/").length - b.split("/").length);
       changed.clear();
       for (const path of paths) {

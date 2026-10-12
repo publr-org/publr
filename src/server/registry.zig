@@ -175,6 +175,21 @@ pub fn native_providers(
     return list;
 }
 
+fn type_owners(comptime declared: anytype) [declared.len]sdk.TypeOwner {
+    comptime std.debug.assert(declared.len <= 64 * 64);
+
+    var owners: [declared.len]sdk.TypeOwner = undefined;
+
+    for (declared, &owners) |each, *owner| {
+        owner.* = .{
+            .handle = each.def.handle,
+            .owner = each.owner,
+        };
+    }
+
+    return owners;
+}
+
 /// The core's operations and middleware belong to no plugin.
 fn core_owners(comptime count: u32) [count][]const u8 {
     return @splat("");
@@ -189,6 +204,7 @@ pub const registry: sdk.Registry = .{
         native_plugins.merged_operation_owners,
     .middleware_owners = &core_owners(project.middleware.len) ++
         native_plugins.merged_middleware_owners,
+    .type_owners = &type_owners(native_plugins.merged_content_types),
     .schemas = native_plugins.merged_schemas,
     .migrations = &db.migrations.core ++ native_plugins.merged_migrations,
     .roles = native_plugins.merged_roles,

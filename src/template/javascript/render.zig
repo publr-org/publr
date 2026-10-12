@@ -246,7 +246,7 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             defer vm.free(raw);
 
             if (!api.JS_IsUndefined(raw)) {
-                try write_raw(vm, &buffer.writer, raw);
+                try write_raw(vm, &buffer.writer, raw, frame.ctx.url_base());
             } else try write_node(renderer, frame, buffer, children, depth);
 
             if (std.mem.eql(u8, name, "head")) {
@@ -350,7 +350,8 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             frame.props.entries = entries.items;
         }
 
-        pub fn write_raw(vm: *VM, writer: *std.Io.Writer, value: Value) !void {
+        /// A string printed as markup: sanitized, its root paths under `base`.
+        pub fn write_raw(vm: *VM, writer: *std.Io.Writer, value: Value, base: []const u8) !void {
             std.debug.assert(!api.JS_IsException(value));
 
             if (api.JS_IsNull(value) or api.JS_IsUndefined(value)) {
@@ -363,7 +364,9 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 
             const text = try vm.text(value);
 
-            try writer.writeAll(try sanitize.sanitize(vm.arena, text, .content));
+            const clean = try sanitize.sanitize(vm.arena, text, .content);
+
+            try writer.writeAll(try address.markup_under(vm.arena, base, clean));
         }
 
         /// An attribute's name, and the path the project is served under, which a root path

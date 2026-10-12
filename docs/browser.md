@@ -35,6 +35,13 @@ its scope's path (`demo/shop/`), so Publrs at different scopes of one site never
 database or a file. That is how a site embeds Publr
 on its own pages: the files under `/demo/`, a frame opening `/demo/admin`.
 
+It needs that storage: Safari keeps none in a private window, and the worker then says so
+instead of starting. Safari before 26 lets a service worker read OPFS but not write it (no
+`createWritable`): there Publr runs from memory for the visit, the database, files and
+pictures included, and starts again from the seed once the browser stops the worker. It starts in about 90 MB: the buffers it keeps for as long as it runs
+(SQLite's heap, the request arena, the password hashing scratch) are grown by exactly their
+size, since an iPhone lets a service worker grow only so far.
+
 Three things the worker does own, because the module cannot reach them:
 
 - **the database**: SQLite lives in memory inside the module and is written
@@ -51,13 +58,17 @@ Three things the worker does own, because the module cannot reach them:
   browser with none starts from `publr-worker.js?files=<file>`, a JSON object
   of paths and their contents in base64. So the apps are read from `apps/`, as
   `serve` reads them, and what edits them (the design system, `apps.write`)
-  works here too;
+  works here too. A browser whose copy started from other seeds (an earlier build of a
+  demo, whose seed addresses carry its version) drops it and starts from these;
 - **the media library's files**: each file is its own file in OPFS under
   `media/`, which only the worker can open, and only asynchronously. When a request
   needs one the module does not hold, its answer names it (`need`); the worker hands
   it over (`publr_attach`) and runs the request again, which is safe because a failed
   request changed nothing. What a request writes or removes comes back as `effects`,
-  carried out in OPFS before the response reaches the page. The module resizes images
+  carried out in OPFS before the response reaches the page. A file OPFS does not hold
+  comes from `publr-worker.js?media=<folder>`, when the worker was registered with one,
+  at `<folder>/<key>`, and is kept in OPFS from then on: a demo's pictures, fetched only
+  when a page shows them. The module resizes images
   as the server does, but keeps their format (no WebP) and keeps no copies. A
   response's body is read by pointer (`publr_body_ptr`), so it may be bytes.
 

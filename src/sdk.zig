@@ -39,6 +39,12 @@ const role = @import("model/role.zig");
 const plugin_context = @import("sdk/plugin/context.zig");
 const PluginCtx = plugin_context.PluginCtx;
 
+/// A content type a compiled-in plugin declares, and that plugin.
+pub const TypeOwner = struct {
+    handle: []const u8,
+    owner: []const u8,
+};
+
 pub const Registry = struct {
     operations: []const type,
     namespaces: []const operation.Namespace = &.{},
@@ -48,6 +54,9 @@ pub const Registry = struct {
     /// core's. Left empty, nothing belongs to a plugin.
     operation_owners: []const []const u8 = &.{},
     middleware_owners: []const []const u8 = &.{},
+    /// The content types compiled-in plugins declare: a plugin's code reaches its own types
+    /// whoever it runs for, as an installed plugin's does.
+    type_owners: []const TypeOwner = &.{},
     schemas: []const [:0]const u8 = &.{},
     /// The chain a database is migrated along: core's, then each compiled-in plugin's.
     migrations: []const db.migration.Migration = &.{},
@@ -339,9 +348,15 @@ pub fn SDK(comptime registry: Registry) type {
                 return error.Denied;
             }
 
+            var named = request;
+
+            if (owns_type(ctx.plugin, request.resource.type_id)) {
+                named.own_types = try ctx.arena.dupe([]const u8, &.{request.resource.type_id.?});
+            }
+
             const granted = try authorize.authorize(
                 ctx,
-                request,
+                named,
                 registry.policies,
                 roles_in_force(ctx),
             );
@@ -350,6 +365,26 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(!(granted.read_only and request.kind == .write));
 
             return granted;
+        }
+
+        /// Whether the compiled-in plugin whose code runs declares the type a call names.
+        fn owns_type(plugin: []const u8, type_id: ?[]const u8) bool {
+            std.debug.assert(plugin.len <= 64);
+            std.debug.assert(registry.type_owners.len <= 64 * 64);
+
+            const handle = type_id orelse return false;
+
+            if (plugin.len == 0) {
+                return false;
+            }
+
+            for (registry.type_owners) |declared| {
+                if (std.mem.eql(u8, declared.handle, handle)) {
+                    return std.mem.eql(u8, declared.owner, plugin);
+                }
+            }
+
+            return false;
         }
 
         /// The build's roles, with what installed plugins declare merged in.
@@ -764,7 +799,7 @@ pub fn SDK(comptime registry: Registry) type {
             return error.Sqlite;
         }
 
-        fn invoke_hook(ctx: *Ctx, comptime Middleware: type, args: anytype) Error!void {
+        pub fn invoke_hook(ctx: *Ctx, comptime Middleware: type, args: anytype) Error!void {
             std.debug.assert(ctx.parent != null);
             std.debug.assert(args.len <= 2);
 
@@ -790,7 +825,7 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// An installed plugin's `before` hook sees the input as JSON and may hand back another.
-        fn runtime_before(
+        pub fn runtime_before(
             ctx: *Ctx,
             sandboxed: *const sandboxed_plugins.SandboxedPlugins,
             comptime Operation: type,
@@ -807,7 +842,7 @@ pub fn SDK(comptime registry: Registry) type {
             }) catch error.Invalid;
         }
 
-        fn runtime_after(
+        pub fn runtime_after(
             ctx: *Ctx,
             sandboxed: *const sandboxed_plugins.SandboxedPlugins,
             comptime Operation: type,
@@ -988,6 +1023,26 @@ pub fn SDK(comptime registry: Registry) type {
             }
         }
 
+        /// One of many notices a write hands on at once (`notices.hand_many`): kept on the
+        /// trail, and marking the write as one that changed what visitors see.
+        pub fn follow_notice(ctx: *Ctx, notice: Event.Notice) void {
+            std.debug.assert(notice.name.len > 0);
+            std.debug.assert(notice.operation_id != 0);
+
+            const published = std.mem.endsWith(u8, notice.name, ".published");
+            const unpublished = std.mem.endsWith(u8, notice.name, ".unpublished");
+
+            if (published or unpublished) {
+                ctx.publishes = true;
+            }
+
+            if (ctx.trail) |open| {
+                follow(ctx, open, .{
+                    .notice = notice,
+                });
+            }
+        }
+
         pub fn emit_notice(ctx: *Ctx, notice: Event.Notice) void {
             std.debug.assert(notice.name.len > 0);
             std.debug.assert(notice.operation_id != 0);
@@ -1016,6 +1071,9 @@ pub fn SDK(comptime registry: Registry) type {
             }
         }
 
+        /// An operation's end reaches every event hook as it happens. A notice reaches the
+        /// intrinsic ones now, inside the write that raised it, and is queued for the
+        /// extrinsic ones, which hear it once the write has committed (`notices.zig`).
         pub fn emit(ctx: *Ctx, event: Event) void {
             std.debug.assert(ctx.next_operation_id > 1);
             std.debug.assert(registry.middleware.len <= middleware.middleware_max);
@@ -1024,23 +1082,40 @@ pub fn SDK(comptime registry: Registry) type {
                 follow(ctx, open, event);
             }
 
+            if (event == .notice) {
+                return notices.hand(ctx, event.notice);
+            }
+
             if (ctx.sandboxed_plugins) |sandboxed| {
                 sandboxed.event(ctx, event);
             }
 
             inline for (registry.middleware) |Middleware| {
                 if (Middleware.stage == .on and hears(Middleware, event)) {
-                    if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
-                        var wrapped: PluginCtx = .{
-                            .inner = ctx,
-                        };
-                        Middleware.run(&wrapped, event);
-                    } else {
-                        Middleware.run(ctx, event);
-                    }
+                    run_listener(ctx, Middleware, event);
                 }
             }
         }
+
+        pub fn run_listener(ctx: *Ctx, comptime Middleware: type, event: Event) void {
+            comptime std.debug.assert(Middleware.stage == .on);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
+                var wrapped: PluginCtx = .{
+                    .inner = ctx,
+                };
+
+                Middleware.run(&wrapped, event);
+            } else {
+                Middleware.run(ctx, event);
+            }
+        }
+
+        /// The notices' way to the event hooks, and the intrinsic operation hooks a bulk
+        /// write runs over many inputs at once.
+        pub const notices = @import("sdk/notices.zig").Notices(@This(), registry);
+        pub const bulk = @import("sdk/bulk.zig").Bulk(@This(), registry);
     };
 }
 
@@ -1048,7 +1123,7 @@ const json_module = @import("lib/json.zig");
 
 /// Whether an event hook sees this event: every one, or only the one it names (`event`),
 /// by the operation's name or the notice's, as an installed plugin's hook does.
-fn hears(comptime Middleware: type, event: Event) bool {
+pub fn hears(comptime Middleware: type, event: Event) bool {
     std.debug.assert(Middleware.stage == .on);
 
     if (!@hasDecl(Middleware, "event")) {
