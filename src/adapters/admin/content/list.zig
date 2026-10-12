@@ -103,17 +103,18 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     var list_in = try filters.list_in(arena, effective);
 
     list_in.variant = @import("../variant.zig").chosen(&session);
+    list_in.count = true;
 
-    const listed = registry.SDK.dispatch(
-        &session.ctx,
-        record_operations.List,
-        list_in,
-    ) catch |err| return admin.fail(&session, err, back);
-    var props = try base_props(&page, @intCast(listed.records.len));
+    const shown = listed_page(&session, &list_in) catch |err| {
+        return admin.fail(&session, err, back);
+    };
+    var props = try base_props(&page, shown.listed.total);
 
     try fill_header(&props, &page);
     try pills.fill(&props, &page);
-    try table.fill(&props, &page, listed.records);
+    try table.fill(&props, &page, shown.listed.records);
+    try table.fill_selection(&props, &page, list_in, shown.listed.total);
+    try table.fill_pages(&props, &page, shown.number, shown.listed.total);
     try session.response.set_header("Vary", "Accept");
     try session.response.set_header("Cache-Control", "private, no-cache");
 
@@ -135,10 +136,44 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     });
 }
 
+/// One page of the records, the address's `page` (from 1). Past the last one (its records
+/// moved away, an old link) the last one is shown instead.
+fn listed_page(session: *Session, list_in: *record_operations.List.In) !Shown {
+    std.debug.assert(list_in.limit == filters.page_size);
+    std.debug.assert(list_in.count);
+
+    const asked = admin.query_param(session, "page") orelse "1";
+    var number = std.math.clamp(std.fmt.parseInt(u32, asked, 10) catch 1, 1, pages_max);
+
+    list_in.offset = (number - 1) * filters.page_size;
+
+    var listed = try registry.SDK.dispatch(&session.ctx, record_operations.List, list_in.*);
+    const last = table.page_count(listed.total);
+
+    if (number > last) {
+        number = last;
+        list_in.offset = (number - 1) * filters.page_size;
+        listed = try registry.SDK.dispatch(&session.ctx, record_operations.List, list_in.*);
+    }
+
+    return .{
+        .listed = listed,
+        .number = number,
+    };
+}
+
+const Shown = struct {
+    listed: record_operations.List.Out,
+    number: u32,
+};
+
+/// Pages an address may ask for: every offset they make fits a `u32`.
+const pages_max: u32 = std.math.maxInt(u32) / filters.page_size;
+
 /// The page with what every part of it shares filled in; the header, the pills and the
 /// rows follow.
-fn base_props(page: *const Page, shown: u32) Error!views.ContentList.Props {
-    std.debug.assert(shown <= filters.page_size);
+fn base_props(page: *const Page, total: u32) Error!views.ContentList.Props {
+    std.debug.assert(page.query.len <= filters.query_len_max);
     std.debug.assert(page.session.signed_in());
 
     const session = page.session;
@@ -147,7 +182,7 @@ fn base_props(page: *const Page, shown: u32) Error!views.ContentList.Props {
         .csrf = session.csrf_token(),
         .title = try title_of(page),
         .address = try page.href(page.effective),
-        .shown_text = try session.translated_count("{count} shown", "{count} shown", shown),
+        .shown_text = try session.translated_count("{count} record", "{count} records", total),
         .is_saved = page.saved != null,
         .view_id = page.view_id orelse "",
         .view_changed = page.changed,
@@ -168,6 +203,16 @@ fn base_props(page: *const Page, shown: u32) Error!views.ContentList.Props {
         .columns = &.{},
         .rows = &.{},
         .filters = &.{},
+        .total = 0,
+        .match_type = "",
+        .match_types = &.{},
+        .match_filters = &.{},
+        .match_search = "",
+        .moves = &.{},
+        .pages = &.{},
+        .previous_href = "",
+        .next_href = "",
+        .range_text = "",
     };
 }
 

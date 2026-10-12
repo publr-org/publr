@@ -64,26 +64,72 @@ pub fn of(session: *const Session) Scope {
     };
 }
 
-/// The switcher in the top bar, for a project with apps; null for one without.
 /// The app picker, with what plugins join after it (`after`); null where the project has no
-/// apps.
-pub fn switcher(session: *const Session, after: ?Node) ?Node {
+/// apps. With one app there is nothing to pick: it is a link to that app's site. `apps` is
+/// the phone's list of them (`panel`), drawn by the picker's own drawer when nothing joined
+/// it took them.
+pub fn switcher(session: *const Session, after: ?Node, apps: ?Node) ?Node {
     std.debug.assert(session.signed_in());
+    std.debug.assert(after == null or apps == null);
 
-    const apps = session.project.apps;
+    const listed = session.project.apps;
 
-    if (apps.len == 0) {
+    if (listed.len == 0) {
         return null;
     }
 
-    const arena = session.arena;
     const scope = of(session);
-    const Choice = admin.views.AppSwitcher.ChoicesItem;
-    const choices = arena.alloc(Choice, apps.len + 1) catch return null;
+    const choices = choices_of(admin.views.AppSwitcher.ChoicesItem, session) catch return null;
+
+    return admin.render.view(session.arena, admin.views.AppSwitcher, .{
+        .current = scope.label(session) catch return null,
+        .current_href = if (scope == .app) site_of(scope.app) else "",
+        .choices = choices,
+        .csrf = session.csrf_token(),
+        .back = back_of(session),
+        .after = after,
+        .extended = after != null,
+        .only_href = if (listed.len == 1) site_of(&listed[0]) else "",
+        .apps = apps,
+    }) catch null;
+}
+
+/// The apps as a phone's drawer lists them: which one the admin shows, each with its site;
+/// null where the project has none.
+pub fn panel(session: *const Session) ?Node {
+    std.debug.assert(session.signed_in());
+
+    const listed = session.project.apps;
+
+    if (listed.len == 0) {
+        return null;
+    }
+
+    const choices = choices_of(admin.views.AppsPanel.ChoicesItem, session) catch return null;
+
+    std.debug.assert(choices.len == listed.len + 1);
+
+    return admin.render.view(session.arena, admin.views.AppsPanel, .{
+        .choices = choices,
+        .csrf = session.csrf_token(),
+        .back = back_of(session),
+        .only_href = if (listed.len == 1) site_of(&listed[0]) else "",
+    }) catch null;
+}
+
+/// Everything first, then each app, the one shown marked.
+fn choices_of(comptime Choice: type, session: *const Session) admin.Error![]Choice {
+    std.debug.assert(session.signed_in());
+
+    const apps = session.project.apps;
+    const scope = of(session);
+    const choices = try session.arena.alloc(Choice, apps.len + 1);
+
+    std.debug.assert(apps.len > 0);
 
     choices[0] = .{
         .value = "",
-        .label = session.translated("All apps") catch return null,
+        .label = try session.translated("All apps"),
         .current = scope == .all,
         .href = "",
     };
@@ -97,15 +143,53 @@ pub fn switcher(session: *const Session, after: ?Node) ?Node {
         };
     }
 
-    return admin.render.view(arena, admin.views.AppSwitcher, .{
-        .current = scope.label(session) catch return null,
-        .current_href = if (scope == .app) site_of(scope.app) else "",
-        .choices = choices,
+    return choices;
+}
+
+/// The site of the app the admin shows: the only one, or the one chosen; empty while it
+/// shows several or the project has none.
+pub fn site_href(session: *const Session) []const u8 {
+    std.debug.assert(session.signed_in());
+
+    const apps = session.project.apps;
+
+    if (apps.len == 1) {
+        return site_of(&apps[0]);
+    }
+
+    return switch (of(session)) {
+        .app => |app| site_of(app),
+        .all => "",
+    };
+}
+
+/// `GET /admin/settings/apps`: the project's apps, each with its site, and with several the
+/// choice of which one the admin shows.
+pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .get or request.method() == .head);
+    std.debug.assert(ctx.user_data != null);
+
+    var session = try admin.require(request, response, ctx) orelse return;
+    const apps = session.project.apps;
+    const scope = of(&session);
+    const rows = try session.arena.alloc(admin.views.Apps.AppsItem, apps.len);
+
+    for (apps, rows) |*app, *row| {
+        row.* = .{
+            .label = app.spec.label,
+            .name = app.spec.name,
+            .url = app.url,
+            .href = site_of(app),
+            .shown_alone = scope == .app and scope.app == app,
+        };
+    }
+
+    try admin.screen(&session, .ok, admin.views.Apps, .{
+        .apps = rows,
+        .narrowed = scope == .app,
+        .several = apps.len > 1,
         .csrf = session.csrf_token(),
-        .back = back_of(session),
-        .after = after,
-        .extended = after != null,
-    }) catch null;
+    });
 }
 
 /// Where an app's site opens: its own path on this host (the base the project is served

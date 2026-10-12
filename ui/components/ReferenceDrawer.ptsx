@@ -149,10 +149,10 @@ export function ReferenceDrawer({ id }: ReferenceDrawerProps) {
               aria-label={level.title}
               tabindex={-1}
             >
-              <div class="px-8 py-7" hidden={!level.loading} role="status">
+              <div class="px-5 py-7" hidden={!level.loading} role="status">
                 <Text variant="body-sm" tone="muted">{Publr.t("Loading reference…")}</Text>
               </div>
-              <div class="px-8 py-7" hidden={!level.error} role="alert">
+              <div class="px-5 py-7" hidden={!level.error} role="alert">
                 <Text variant="body-sm">{level.error}</Text>
                 <Button hierarchy="secondary" onClick={retryReference} data-level={level.id}>{Publr.t("Retry")}</Button>
               </div>

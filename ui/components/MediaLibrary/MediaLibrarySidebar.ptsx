@@ -1,5 +1,9 @@
 import { Publr } from "publr-jsx";
 import {
+  chose_delete,
+  chose_inside,
+  chose_move,
+  chose_rename,
   dated,
   folder_deleted,
   folder_made,
@@ -18,6 +22,11 @@ import { DialogContent } from "@publr/ui/DialogContent.ptsx";
 import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
 import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
 import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 import { FilterChip } from "@publr/ui/FilterChip.ptsx";
 import { FolderNav } from "@publr/ui/FolderNav.ptsx";
 import { FolderNavItem } from "@publr/ui/FolderNavItem.ptsx";
@@ -27,6 +36,7 @@ import { FolderNavItemLink } from "@publr/ui/FolderNavItemLink.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
 import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { SidebarNavEyebrow } from "@publr/ui/SidebarNavEyebrow.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 /** A media library's explorer: every file, the unsorted and unreviewed ones and the folder
@@ -36,9 +46,9 @@ import { Text } from "@publr/ui/Text.ptsx";
 export function MediaLibrarySidebar() {
   return (
     <div class="contents">
-      <div class="flex flex-col gap-1">
-        <div class="flex items-center justify-between px-2">
-          <Text as="span" variant="eyebrow-xs" tone="muted">{state.filed ? Publr.t("Folders") : Publr.t("Files")}</Text>
+      <div class="flex flex-col">
+        <div class="flex items-end justify-between pr-1">
+          <SidebarNavEyebrow>{state.filed ? Publr.t("Folders") : Publr.t("Files")}</SidebarNavEyebrow>
           {state.filed && (
             <Dialog>
               <DialogTrigger asChild>
@@ -63,7 +73,7 @@ export function MediaLibrarySidebar() {
           <FolderNavItem>
             <FolderNavItemLink href={state.all_href} current={state.folder === ""} onClick={follow}>
               <Icon name="grid" size="sm" />
-              {Publr.t("All files")}
+              <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">{Publr.t("All files")}</Text>
             </FolderNavItemLink>
             <FolderNavItemCount persistent>{`${state.all}`}</FolderNavItemCount>
           </FolderNavItem>
@@ -71,7 +81,7 @@ export function MediaLibrarySidebar() {
             <FolderNavItem>
               <FolderNavItemLink href={state.unsorted_href} current={state.folder === "unsorted"} onClick={follow}>
                 <Icon name="file" size="sm" />
-                {Publr.t("Unsorted")}
+                <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">{Publr.t("Unsorted")}</Text>
               </FolderNavItemLink>
               <FolderNavItemCount persistent>{`${state.unsorted}`}</FolderNavItemCount>
             </FolderNavItem>
@@ -80,7 +90,7 @@ export function MediaLibrarySidebar() {
             <FolderNavItem>
               <FolderNavItemLink href={state.unreviewed_href} current={state.folder === "unreviewed"} onClick={follow}>
                 <Icon name="search" size="sm" />
-                {Publr.t("Unreviewed")}
+                <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">{Publr.t("Unreviewed")}</Text>
               </FolderNavItemLink>
               <FolderNavItemCount persistent>{`${state.unreviewed}`}</FolderNavItemCount>
             </FolderNavItem>
@@ -89,84 +99,102 @@ export function MediaLibrarySidebar() {
             <FolderNavItem level={entry.level} key={entry.id}>
               <FolderNavItemLink href={entry.href} current={entry.current} onClick={follow}>
                 <Icon name="folder" size="sm" />
-                {entry.name}
+                <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">{entry.name}</Text>
               </FolderNavItemLink>
               <FolderNavItemCount>{`${entry.count}`}</FolderNavItemCount>
               <FolderNavItemActions>
-                {entry.nests && (
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("New folder in {name}", { name: entry.name })} title={Publr.t("New folder inside")}>
-                        <Icon name="folder-plus" size="sm" />
+                <Dialog>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("More for {name}", { name: entry.name })} title={Publr.t("More")}>
+                        <Icon name="more" size="sm" />
                       </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogTitle>{Publr.t("New folder in {name}", { name: entry.name })}</DialogTitle>
-                      <form class="mt-4 flex flex-col gap-4" data-parent={entry.id} onSubmit={folder_made}>
-                        <Input name="name" placeholder={Publr.t("Name")} required maxLength={64} />
-                        <div class="flex justify-end gap-2">
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="right">
+                      {entry.nests && (
+                        <DialogTrigger asChild>
+                          <DropdownMenuItem onClick={chose_inside}>
+                            <Icon name="folder-plus" size="sm" />
+                            {Publr.t("New folder inside")}
+                          </DropdownMenuItem>
+                        </DialogTrigger>
+                      )}
+                      <DialogTrigger asChild>
+                        <DropdownMenuItem onClick={chose_rename}>
+                          <Icon name="edit" size="sm" />
+                          {Publr.t("Rename")}
+                        </DropdownMenuItem>
+                      </DialogTrigger>
+                      <DialogTrigger asChild>
+                        <DropdownMenuItem onClick={chose_move}>
+                          <Icon name="folder" size="sm" />
+                          {Publr.t("Move")}
+                        </DropdownMenuItem>
+                      </DialogTrigger>
+                      <DropdownMenuSeparator />
+                      <DialogTrigger asChild>
+                        <DropdownMenuItem variant="destructive" onClick={chose_delete}>
+                          <Icon name="trash" size="sm" />
+                          {Publr.t("Delete")}
+                        </DropdownMenuItem>
+                      </DialogTrigger>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <DialogContent>
+                    {state.folder_action === "inside" && (
+                      <div class="contents">
+                        <DialogTitle>{Publr.t("New folder in {name}", { name: entry.name })}</DialogTitle>
+                        <form class="mt-4 flex flex-col gap-4" data-parent={entry.id} onSubmit={folder_made}>
+                          <Input name="name" placeholder={Publr.t("Name")} required maxLength={64} />
+                          <div class="flex justify-end gap-2">
+                            <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+                            <DialogClose asChild><Button type="submit">{Publr.t("Create")}</Button></DialogClose>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+                    {state.folder_action === "rename" && (
+                      <div class="contents">
+                        <DialogTitle>{Publr.t("Rename {name}", { name: entry.name })}</DialogTitle>
+                        <form class="mt-4 flex flex-col gap-4" data-folder={entry.id} onSubmit={folder_renamed}>
+                          <Input name="name" value={entry.name} required maxLength={64} />
+                          <div class="flex justify-end gap-2">
+                            <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+                            <DialogClose asChild><Button type="submit">{Publr.t("Rename")}</Button></DialogClose>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+                    {state.folder_action === "move" && (
+                      <div class="contents">
+                        <DialogTitle>{Publr.t("Move {name}", { name: entry.name })}</DialogTitle>
+                        <DialogDescription>{Publr.t("Not into itself or a folder inside it.")}</DialogDescription>
+                        <form class="mt-4 flex flex-col gap-4" data-folder={entry.id} onSubmit={folder_moved}>
+                          <NativeSelect name="parent" label={Publr.t("Into")}>
+                            <option value="">{Publr.t("The top level")}</option>
+                            {state.folders.map((home) => (
+                              <option value={home.id} selected={home.id === entry.parent}>{home.label}</option>
+                            ))}
+                          </NativeSelect>
+                          <div class="flex justify-end gap-2">
+                            <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+                            <DialogClose asChild><Button type="submit">{Publr.t("Move")}</Button></DialogClose>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+                    {state.folder_action === "delete" && (
+                      <div class="contents">
+                        <DialogTitle>{Publr.t("Delete {name}?", { name: entry.name })}</DialogTitle>
+                        <DialogDescription>
+                          {Publr.t("Its files and folders move up a level; files in a top-level folder become unsorted.")}
+                        </DialogDescription>
+                        <form class="mt-4 flex justify-end gap-2" data-folder={entry.id} onSubmit={folder_deleted}>
                           <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
-                          <DialogClose asChild><Button type="submit">{Publr.t("Create")}</Button></DialogClose>
-                        </div>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
-                )}
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Rename {name}", { name: entry.name })} title={Publr.t("Rename")}>
-                      <Icon name="edit" size="sm" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogTitle>{Publr.t("Rename {name}", { name: entry.name })}</DialogTitle>
-                    <form class="mt-4 flex flex-col gap-4" data-folder={entry.id} onSubmit={folder_renamed}>
-                      <Input name="name" value={entry.name} required maxLength={64} />
-                      <div class="flex justify-end gap-2">
-                        <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
-                        <DialogClose asChild><Button type="submit">{Publr.t("Rename")}</Button></DialogClose>
+                          <DialogClose asChild><Button type="submit" intent="destructive">{Publr.t("Delete folder")}</Button></DialogClose>
+                        </form>
                       </div>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Move {name}", { name: entry.name })} title={Publr.t("Move")}>
-                      <Icon name="folder" size="sm" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogTitle>{Publr.t("Move {name}", { name: entry.name })}</DialogTitle>
-                    <DialogDescription>{Publr.t("Not into itself or a folder inside it.")}</DialogDescription>
-                    <form class="mt-4 flex flex-col gap-4" data-folder={entry.id} onSubmit={folder_moved}>
-                      <NativeSelect name="parent" label={Publr.t("Into")}>
-                        <option value="">{Publr.t("The top level")}</option>
-                        {state.folders.map((home) => (
-                          <option value={home.id} selected={home.id === entry.parent}>{home.label}</option>
-                        ))}
-                      </NativeSelect>
-                      <div class="flex justify-end gap-2">
-                        <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
-                        <DialogClose asChild><Button type="submit">{Publr.t("Move")}</Button></DialogClose>
-                      </div>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button type="button" hierarchy="tertiary" size="xs" label={Publr.t("Delete {name}", { name: entry.name })} title={Publr.t("Delete")}>
-                      <Icon name="trash" size="sm" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogTitle>{Publr.t("Delete {name}?", { name: entry.name })}</DialogTitle>
-                    <DialogDescription>
-                      {Publr.t("Its files and folders move up a level; files in a top-level folder become unsorted.")}
-                    </DialogDescription>
-                    <form class="mt-4 flex justify-end gap-2" data-folder={entry.id} onSubmit={folder_deleted}>
-                      <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
-                      <DialogClose asChild><Button type="submit" intent="destructive">{Publr.t("Delete folder")}</Button></DialogClose>
-                    </form>
+                    )}
                   </DialogContent>
                 </Dialog>
               </FolderNavItemActions>
@@ -176,8 +204,8 @@ export function MediaLibrarySidebar() {
       </div>
       {state.filed && (
         <div class="flex flex-col gap-2">
-          <Text as="span" variant="eyebrow-xs" tone="muted" classes="px-2">{Publr.t("Tags")}</Text>
-          <div class="flex flex-wrap gap-1.5 px-2">
+          <SidebarNavEyebrow classes="-mb-2">{Publr.t("Tags")}</SidebarNavEyebrow>
+          <div class="flex flex-wrap gap-1.5 px-2.5">
             {state.tag_list.map((tag) => (
               tag.enabled ? (
                 <FilterChip href={tag.href} onClick={follow} count={`${tag.count}`} selected={tag.selected}>
@@ -188,7 +216,7 @@ export function MediaLibrarySidebar() {
               )
             ))}
           </div>
-          <form class="flex items-center gap-1 px-2" onSubmit={tag_made}>
+          <form class="flex items-center gap-1 pl-2.5 pr-1" onSubmit={tag_made}>
             <Input name="name" size="sm" placeholder={Publr.t("New tag")} maxLength={64} classes="min-w-0 flex-1" />
             <Button type="submit" hierarchy="tertiary" size="sm" label={Publr.t("Add tag")} title={Publr.t("Add tag")}>
               <Icon name="plus" size="sm" />
@@ -197,8 +225,8 @@ export function MediaLibrarySidebar() {
         </div>
       )}
       <div class="flex flex-col gap-2">
-        <Text as="span" variant="eyebrow-xs" tone="muted" classes="px-2">{Publr.t("Uploaded")}</Text>
-        <div class="flex gap-2 px-2">
+        <SidebarNavEyebrow classes="-mb-2">{Publr.t("Uploaded")}</SidebarNavEyebrow>
+        <div class="flex flex-col gap-2 px-2.5">
           <NativeSelect name="year" label={Publr.t("Year")} size="sm" onChange={dated} classes="flex-1">
             {state.years.map((option) => (
               <option value={option.value} selected={option.selected}>{option.label}</option>
@@ -212,13 +240,13 @@ export function MediaLibrarySidebar() {
         </div>
       </div>
       {state.filed && state.on_server && (
-        <div class="flex flex-col gap-2 px-2" data-part="media-server">
-          <Text as="span" variant="eyebrow-xs" tone="muted">{Publr.t("On the server")}</Text>
-          <Text as="p" variant="body-sm" tone="muted">{state.server_note}</Text>
+        <div class="flex flex-col gap-2" data-part="media-server">
+          <SidebarNavEyebrow classes="-mb-2">{Publr.t("On the server")}</SidebarNavEyebrow>
+          <Text as="p" variant="body-sm" tone="muted" classes="px-2.5">{state.server_note}</Text>
           {state.server_skipped.map((line) => (
-            <Text as="p" variant="body-xs" tone="muted" classes="break-all">{line}</Text>
+            <Text as="p" variant="body-xs" tone="muted" classes="break-all px-2.5">{line}</Text>
           ))}
-          <div class="flex gap-2">
+          <div class="flex gap-2 px-2.5">
             <Button type="button" hierarchy="secondary" size="sm" disabled={state.server_busy} onClick={server_checked}>
               <Icon name="sync" size="sm" />
               <span>{Publr.t("Check")}</span>

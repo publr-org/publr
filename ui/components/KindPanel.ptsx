@@ -20,7 +20,7 @@ export type KindPanelProps = {
 export function KindPanel({ title, description, back_href, back_label, kinds }: KindPanelProps) {
   return (
     <div class="contents" data-part="type-panel-content" data-title={title}>
-      <div class="px-8 py-7">
+      <div class="px-5 py-7">
         <PageHeader onBack={onBack}
           title={title}
           description={description}

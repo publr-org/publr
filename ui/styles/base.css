@@ -132,3 +132,92 @@ form:not(:has(#default_now:checked)) [data-when="not-now"] {
 [data-plugin-html] .success { color: var(--success); }
 [data-plugin-html] .warning { color: var(--warning); }
 [data-plugin-html] .error { color: var(--destructive); }
+
+/* With no area sidebar, a sidebar the page draws (a ListDetailList with a heading, the
+   design builder's styles) takes its place: lifted beside the top bar, full height, its
+   heading band level with the bar, and the crumbs starting after it. */
+@media (min-width: 768px) {
+  [data-sheet="alone"] [data-page-sidebar] {
+    position: relative;
+    z-index: 30;
+    margin-top: -3.5rem;
+  }
+  [data-sheet="alone"] [data-page-sidebar] > [data-part="page-sidebar-inner"] {
+    top: 0;
+    max-height: 100dvh;
+  }
+  [data-sheet="alone"]:has([data-page-sidebar]) > [data-part="top-bar"] {
+    padding-left: calc(15rem + 1.25rem);
+  }
+  /* The page sidebar's list is a popover only on a phone: here it is part of the page. */
+  #page-sidebar {
+    position: static;
+    inset: auto;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+  }
+}
+
+/* A phone: the rail and the area sidebar fold into a drawer the top bar's Menu opens, and
+   a page's own sidebar into one its heading band opens (popovers, so they work before any
+   script); the crumbs keep only the page, and a page's columns stack. */
+@media (max-width: 767.98px) {
+  #admin-nav:not(:popover-open),
+  #page-sidebar:not(:popover-open) {
+    display: none;
+  }
+  #page-sidebar:popover-open {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(18rem, calc(100vw - 3rem));
+    height: 100dvh;
+    margin: 0;
+    padding: 0.5rem 0;
+    border: 0;
+    background: var(--card);
+    box-shadow: 0 10px 40px oklch(0 0 0 / 0.25);
+  }
+  #page-sidebar::backdrop {
+    background: oklch(0 0 0 / 0.35);
+  }
+  #admin-nav:popover-open {
+    display: flex;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: auto;
+    height: 100dvh;
+    max-width: calc(100vw - 3rem);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    background: var(--card);
+    box-shadow: 0 10px 40px oklch(0 0 0 / 0.25);
+  }
+  #admin-nav::backdrop {
+    background: oklch(0 0 0 / 0.35);
+  }
+  #admin-nav > aside {
+    width: min(15rem, calc(100vw - 6.5rem));
+  }
+  [data-part="crumbs"] li:not(:has(> [aria-current="page"], > span:not([hidden]) > [aria-current="page"])),
+  [data-part="crumbs"] li > [aria-hidden="true"] {
+    display: none;
+  }
+  [data-part="list-detail-columns"] {
+    flex-direction: column;
+  }
+  [data-part="list-detail-column"] {
+    width: 100%;
+    border-right: 0;
+  }
+  [data-part="list-detail-column"] > [data-part="page-sidebar-inner"] {
+    position: static;
+    max-height: none;
+  }
+}

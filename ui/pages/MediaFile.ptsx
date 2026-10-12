@@ -130,22 +130,22 @@ export function MediaFile({
         live={false}
       >
         <div class="flex flex-1 flex-col">
-          <ListDetailBand>
-            <MediaFileHeader
-              id={id}
-              title={title}
-              filename={filename}
-              facts={facts}
-              uploaded={uploaded}
-              url={url}
-              saved={saved}
-            />
-          </ListDetailBand>
           <ListDetailColumns>
-            <ListDetailList label={Publr.t("Media")}>
+            <ListDetailList label={Publr.t("Media")} heading={Publr.t("Media")} heading_icon="image" heading_href="/admin/media">
               <MediaLibrarySidebar />
             </ListDetailList>
             <ListDetailDetail>
+              <ListDetailBand>
+                <MediaFileHeader
+                  id={id}
+                  title={title}
+                  filename={filename}
+                  facts={facts}
+                  uploaded={uploaded}
+                  url={url}
+                  saved={saved}
+                />
+              </ListDetailBand>
               <MediaFileForm
                 id={id}
                 title={title}

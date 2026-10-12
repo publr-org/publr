@@ -21,6 +21,9 @@ pub const key_len_max: u32 = 128;
 
 pub const RecordChanged = struct {
     pub const stage: sdk.middleware.Stage = .on;
+    /// Part of the write: a page the write changed and the index never heard of would stay
+    /// stale, so a key not raised fails the write.
+    pub const intrinsic = true;
 
     pub fn run(ctx: *Ctx, event: Event) void {
         std.debug.assert(ctx.now_ms >= 0);
@@ -43,7 +46,112 @@ pub const RecordChanged = struct {
             });
         };
     }
+
+    /// A write over many records: every key they raise, raised at once.
+    pub fn run_many(ctx: *Ctx, notices: []const Event.Notice) void {
+        std.debug.assert(notices.len > 0);
+        std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        raise_many(ctx, notices) catch |err| {
+            ctx.dependency_failure = true;
+            std.log.debug("site changes: {d} not raised: {s}", .{
+                notices.len,
+                @errorName(err),
+            });
+        };
+    }
 };
+
+fn raise_many(ctx: *Ctx, notices: []const Event.Notice) !void {
+    std.debug.assert(notices.len > 0);
+    std.debug.assert(key_len_max > 0);
+
+    var subjects: std.ArrayList([]const u8) = .empty;
+
+    for (notices) |notice| {
+        if (std.mem.startsWith(u8, notice.name, notice_prefix) and notice.subject.len > 0) {
+            try subjects.append(ctx.arena, notice.subject);
+        }
+    }
+
+    if (subjects.items.len == 0) {
+        return;
+    }
+
+    const ids_json = try std.json.Stringify.valueAlloc(ctx.arena, subjects.items, .{});
+    const found = try records.briefs(ctx.db, ctx.arena, ids_json);
+    var keys: std.ArrayList([]const u8) = .empty;
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+
+    for (notices) |notice| {
+        if (!std.mem.startsWith(u8, notice.name, notice_prefix) or notice.subject.len == 0) {
+            continue;
+        }
+
+        const brief = brief_of(found, notice.subject);
+        const live_now = if (brief) |record| registry.Statuses.is_live(record.status) else false;
+        const action = notice.name[notice_prefix.len..];
+
+        if (action.len == 0 or !touches_live(action, live_now)) {
+            continue;
+        }
+
+        var record_buffer: [key_len_max]u8 = undefined;
+        var type_buffer: [key_len_max]u8 = undefined;
+
+        try add_key(ctx, &keys, &seen, try record_key(&record_buffer, notice.subject));
+        try add_key(ctx, &keys, &seen, all_records_key);
+
+        if (brief) |record| {
+            try add_key(ctx, &keys, &seen, try type_key(&type_buffer, record.type));
+        }
+    }
+
+    if (keys.items.len == 0) {
+        return;
+    }
+
+    var index: deps.Index = .{
+        .db = ctx.db,
+        .options = .{
+            .quiet_ms = deps.quiet_ms,
+        },
+    };
+
+    try index.invalidate(keys.items, ctx.now_ms);
+}
+
+fn brief_of(found: []const records.Brief, id: []const u8) ?records.Brief {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(found.len <= 1 << 20);
+
+    for (found) |brief| {
+        if (std.mem.eql(u8, brief.id, id)) {
+            return brief;
+        }
+    }
+
+    return null;
+}
+
+fn add_key(
+    ctx: *Ctx,
+    keys: *std.ArrayList([]const u8),
+    seen: *std.StringHashMapUnmanaged(void),
+    key: []const u8,
+) !void {
+    std.debug.assert(key.len > 0);
+    std.debug.assert(keys.items.len == seen.count());
+
+    if (seen.contains(key)) {
+        return;
+    }
+
+    const kept = try ctx.arena.dupe(u8, key);
+
+    try keys.append(ctx.arena, kept);
+    try seen.put(ctx.arena, kept, {});
+}
 
 /// Whether a record notice changes what visitors see. Pending changes never do; a save, a
 /// creation or a status move does only while the record is live afterwards (going out of

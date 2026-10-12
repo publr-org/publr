@@ -1,0 +1,109 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+
+export type AppsProps = {
+  apps: Array<{
+    label: string;
+    /** Its name in the project, the folder under `apps/`. */
+    name: string;
+    /** Where it answers. */
+    url: string;
+    /** Where its site opens from the admin. */
+    href: string;
+    /** The admin shows only what this app reaches. */
+    shown_alone: boolean;
+  }>;
+  /** The admin shows one app's records; Show every app undoes it. */
+  narrowed: boolean;
+  /** Several apps: the admin can be narrowed to one. */
+  several: boolean;
+  csrf: string;
+};
+
+/** The project's apps: each one's address and site, and, with several, which one the
+ * admin shows (the viewer's own choice, as the top bar's picker makes it). */
+export function Apps({ apps, narrowed, several, csrf }: AppsProps) {
+  return (
+    <IndexPage
+      title={Publr.t("Apps")}
+      description={Publr.t("The sites and apps this project serves. Each has its own templates, types and address.")}
+      actions={
+        narrowed && (
+          <form method="post" action="/admin/app">
+            <input type="hidden" name="csrf" value={csrf} />
+            <input type="hidden" name="app" value="" />
+            <input type="hidden" name="back" value="/admin/settings/apps" />
+            <Button type="submit" hierarchy="secondary">{Publr.t("Show every app")}</Button>
+          </form>
+        )
+      }
+      empty={
+        apps.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("No apps")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("An app is a folder under apps/ in the project.")}</EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("App")}</TableHead>
+            <TableHead>{Publr.t("Address")}</TableHead>
+            {several && <TableHead>{Publr.t("In the admin")}</TableHead>}
+            <TableHead />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {apps.map((app) => (
+            <TableRow>
+              <TableCell>
+                <div class="flex flex-col">
+                  <Text as="span" variant="body-sm">{app.label}</Text>
+                  <Text as="span" variant="body-xs" tone="muted">{app.name}</Text>
+                </div>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">{app.url}</Text>
+              </TableCell>
+              {several && (
+                <TableCell>
+                  {app.shown_alone ? (
+                    <Status tone="info">{Publr.t("Shown alone")}</Status>
+                  ) : (
+                    <form method="post" action="/admin/app">
+                      <input type="hidden" name="csrf" value={csrf} />
+                      <input type="hidden" name="app" value={app.name} />
+                      <input type="hidden" name="back" value="/admin/settings/apps" />
+                      <Button type="submit" hierarchy="tertiary" size="sm">{Publr.t("Show only this app")}</Button>
+                    </form>
+                  )}
+                </TableCell>
+              )}
+              <TableCell>
+                <Button hierarchy="secondary" size="sm" href={app.href} target="_blank">
+                  <Icon name="external" size="sm" />
+                  <span>{Publr.t("View site")}</span>
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

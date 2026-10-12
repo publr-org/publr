@@ -16,6 +16,8 @@ pub const document_bytes_max = documents.document_bytes_max;
 pub const search_len_max = documents.search_len_max;
 pub const Error = documents.Error;
 pub const Record = documents.Record;
+pub const Match = documents.Match;
+pub const Brief = documents.Brief;
 pub const Insert = documents.Insert;
 pub const Order = documents.Order;
 pub const Filter = documents.Filter;
@@ -40,6 +42,12 @@ pub fn rename(connection: *db.Db, from: []const u8, to: []const u8) Error!void {
 }
 pub const count_by_type = Store.count_by_type;
 pub const list = Store.list;
+pub const count = Store.count;
+pub const gather = Store.gather;
+pub const gathered = Store.gathered;
+pub const release = Store.release;
+pub const briefs = Store.briefs;
+pub const set_status_many = Store.set_status_many;
 
 const content_type = @import("content_types.zig");
 const model_content_type = @import("../model/content_type.zig");

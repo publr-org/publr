@@ -62,7 +62,7 @@ export function FieldChildren({ add_child_href, children, kind, csrf }: FieldChi
           </Empty>
         </div>
       ) : (
-        <div class="-mx-8 mt-4 border-t border-border">
+        <div class="-mx-5 mt-4 border-t border-border">
           <Table>
             <TableBody>
               {children.map((row) => (

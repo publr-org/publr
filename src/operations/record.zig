@@ -218,6 +218,7 @@ pub const Publish = lifecycle.Publish;
 pub const DiscardChanges = lifecycle.DiscardChanges;
 pub const Delete = lifecycle.Delete;
 pub const Purge = lifecycle.Purge;
+pub const TransitionMany = @import("record/many.zig").TransitionMany;
 
 pub const example_id = "a1b2c3d4e5f60718293a4b5c";
 pub const example_changed_id = "b2c3d4e5f60718293a4b5c6d";
@@ -437,9 +438,12 @@ pub const List = struct {
         filter_value: ?[]const u8 = null,
         filter_values: []const []const u8 = &.{},
         ids: []const []const u8 = &.{},
+        exclude_statuses: []const []const u8 = &.{},
         order: Order = .updated_desc,
         limit: u32 = 50,
         offset: u32 = 0,
+        /// Also count every record the list's conditions keep, past this page.
+        count: bool = false,
         documents: bool = false,
         /// With `documents`: virtual fields worked out (`false` reads what they keep).
         expand: bool = true,
@@ -451,6 +455,8 @@ pub const List = struct {
         records: []const Record,
         /// With `documents`: each record's live document, in the records' order.
         documents: []const []const u8 = &.{},
+        /// With `count`: how many records the conditions keep, every page together.
+        total: u32 = 0,
     };
     pub const example: In = .{
         .type = "post",
@@ -471,9 +477,12 @@ pub const List = struct {
         .filter_value = "The value to match (text, number, true/false, or an id for references)",
         .filter_values = "With `filter_field`: any of these values (references or text)",
         .ids = "Only these records, by id (up to the page size)",
+        .exclude_statuses = "Never records in these statuses, whatever `filters` ask",
         .order = "`updated_desc` (default), `created_desc` or `title_asc`",
         .limit = "Page size, up to 200",
         .offset = "Rows to skip",
+        .count = "Also return `total`: every record the conditions keep, past this page " ++
+            "(before per-record checks a plugin's grant adds)",
         .documents = "Also return each record's live document, read with the page in one go",
         .expand = "With documents: virtual fields as the records they stand for (default)",
         .purpose = "With documents: `edit` reads pending copies where there are changes",
@@ -489,7 +498,7 @@ pub const List = struct {
         std.debug.assert(granted.allows());
 
         const code = try domain.variants.code_of(ctx, in.variant);
-        const listed = try crud.list(ctx, granted, .{
+        const input: crud_module.ListInput = .{
             .definition = in.type,
             .definitions = in.types,
             .filters = in.filters,
@@ -499,16 +508,20 @@ pub const List = struct {
             .filter_value = in.filter_value,
             .filter_values = in.filter_values,
             .ids = in.ids,
+            .exclude_statuses = in.exclude_statuses,
             .order = in.order,
             .limit = in.limit,
             .offset = in.offset,
             .variant = code orelse "",
-        });
+        };
+        const listed = try crud.list(ctx, granted, input);
+        const total = if (in.count) try crud.count(ctx, granted, input) else 0;
         const resolving = code != null and code.?.len > 0;
 
         if (!in.documents and !resolving) {
             return .{
                 .records = listed,
+                .total = total,
             };
         }
 
@@ -530,6 +543,7 @@ pub const List = struct {
         if (!in.documents) {
             return .{
                 .records = records_shown,
+                .total = total,
             };
         }
 
@@ -543,6 +557,7 @@ pub const List = struct {
         return .{
             .records = records_shown,
             .documents = documents,
+            .total = total,
         };
     }
 };
@@ -640,12 +655,13 @@ pub const Reach = @import("record/reach.zig").Reach;
 
 test {
     _ = @import("record/reach.zig");
+    _ = @import("record/many.zig");
 }
 
 pub const operations = [_]type{
     Create,    Get,    Save,           Transition, Publish,  List,
     Referrers, Delete, DiscardChanges, Purge,      Validate, Shown,
-    Query,     Reach,
+    Query,     Reach,  TransitionMany,
 };
 
 const SDK = registry.SDK;

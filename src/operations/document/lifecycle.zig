@@ -28,7 +28,7 @@ pub fn Of(comptime Domain: type) type {
         const notice_name = Domain.notice_name;
 
         /// Make the pending copy the live document (if there is one) and drop the mark.
-        fn apply_pending(ctx: *Ctx, row: Record) Error!bool {
+        pub fn apply_pending(ctx: *Ctx, row: Record) Error!bool {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
@@ -58,7 +58,7 @@ pub fn Of(comptime Domain: type) type {
             return true;
         }
 
-        fn check_references(ctx: *Ctx, row: Record, slot: []const u8) Error!void {
+        pub fn check_references(ctx: *Ctx, row: Record, slot: []const u8) Error!void {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(slot.len > 0);
 
@@ -235,29 +235,55 @@ pub fn Of(comptime Domain: type) type {
             return std.json.Stringify.valueAlloc(ctx.arena, live, .{}) catch error.OutOfMemory;
         }
 
-        /// The outcome notice of a status move, if the move has a name of its own.
+        /// The outcome notices of a status move: `transitioned`, and the move's own names.
         fn notify_transition(ctx: *Ctx, id: []const u8, from: []const u8, to: []const u8) void {
             std.debug.assert(id.len > 0);
             std.debug.assert(!std.mem.eql(u8, from, to) or from.len > 0);
 
-            ctx.notice(notice_name("transitioned"), id);
+            var buffer: [transition_notices_max][]const u8 = undefined;
+
+            for (transition_notices(from, to, &buffer)) |name| {
+                ctx.notice(name, id);
+            }
+        }
+
+        pub const transition_notices_max: u32 = 3;
+
+        pub fn transition_notices(
+            from: []const u8,
+            to: []const u8,
+            buffer: *[transition_notices_max][]const u8,
+        ) []const []const u8 {
+            std.debug.assert(to.len > 0);
+            std.debug.assert(!std.mem.eql(u8, from, to) or from.len > 0);
 
             const from_live = registry.Statuses.is_live(from);
             const to_live = registry.Statuses.is_live(to);
+            var count: u32 = 0;
+
+            buffer[count] = notice_name("transitioned");
+            count += 1;
 
             if (to_live and !from_live) {
-                ctx.notice(notice_name("published"), id);
+                buffer[count] = notice_name("published");
+                count += 1;
             } else if (from_live and !to_live) {
-                ctx.notice(notice_name("unpublished"), id);
+                buffer[count] = notice_name("unpublished");
+                count += 1;
             }
 
             if (std.mem.eql(u8, to, "archived")) {
-                ctx.notice(notice_name("archived"), id);
+                buffer[count] = notice_name("archived");
+                count += 1;
             } else if (std.mem.eql(u8, to, "deleted")) {
-                ctx.notice(notice_name("deleted"), id);
+                buffer[count] = notice_name("deleted");
+                count += 1;
             } else if (std.mem.eql(u8, from, "archived") or std.mem.eql(u8, from, "deleted")) {
-                ctx.notice(notice_name("restored"), id);
+                buffer[count] = notice_name("restored");
+                count += 1;
             }
+
+            return buffer[0..count];
         }
 
         pub fn transition(

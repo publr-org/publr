@@ -35,8 +35,9 @@ pub fn of(session: *const Session) ?Node {
     }
 
     const picker = session.project.apps.len > 0;
+    const apps = admin.app_scope.panel(session);
     var segments: [items_max]Node = undefined;
-    const joined = segments_of(session, picker, &segments);
+    const joined = segments_of(session, picker, apps, &segments);
 
     if (picker) {
         const after = if (joined.len > 0)
@@ -44,7 +45,7 @@ pub fn of(session: *const Session) ?Node {
         else
             null;
 
-        if (admin.app_scope.switcher(session, after)) |node| {
+        if (admin.app_scope.switcher(session, after, if (after == null) apps else null)) |node| {
             shown[count] = node;
             count += 1;
         }
@@ -93,15 +94,18 @@ fn entries_of(session: *const Session) []const Node {
 }
 
 /// What plugins join to the app picker (`attached`), or show alone where there is none; a
-/// segment that fails to render is left out and logged.
-fn segments_of(session: *const Session, attached: bool, into: []Node) []const Node {
+/// segment that fails to render is left out and logged. The first segment drawn is given
+/// the phone's list of apps (`apps`), since on a phone it stands for the whole picker.
+fn segments_of(session: *const Session, attached: bool, apps: ?Node, into: []Node) []const Node {
     std.debug.assert(session.signed_in());
     std.debug.assert(into.len >= registry.app_picker_segment.len);
+    std.debug.assert(apps == null or attached);
 
     var count: u32 = 0;
 
     inline for (registry.app_picker_segment) |Plugin| {
-        const segment = Plugin.app_picker_segment(session, attached) catch |err| blk: {
+        const given = if (count == 0) apps else null;
+        const segment = Plugin.app_picker_segment(session, attached, given) catch |err| blk: {
             std.log.warn("plugin {s}: app picker segment: {t}", .{ Plugin.manifest.name, err });
             break :blk null;
         };

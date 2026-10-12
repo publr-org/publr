@@ -24,6 +24,10 @@ pub const Destination = struct {
     icon: []const u8,
     href: []const u8,
     pinned: bool = false,
+    /// Where Settings lists it.
+    group: model.admin_pages.Group = .general,
+    /// The app a settings section belongs to; empty for a Global one and the rest.
+    app: []const u8 = "",
 };
 
 /// Everything Settings lists, in its order.
@@ -43,6 +47,7 @@ pub fn settings(session: *const Session) Error![]Destination {
                 .label = page.label,
                 .icon = page.icon,
                 .href = href,
+                .group = page.group,
             });
         }
     }
@@ -55,6 +60,7 @@ pub fn settings(session: *const Session) Error![]Destination {
                 .label = owned.page.label,
                 .icon = owned.page.icon,
                 .href = owned.page.path,
+                .group = .plugins,
             });
         }
     }
@@ -72,13 +78,31 @@ pub fn settings(session: *const Session) Error![]Destination {
             .label = page.label,
             .icon = page.icon,
             .href = href,
+            .group = .plugins,
         });
     }
 
     try append_settings_sections(session, &listed);
+    std.sort.insertion(Destination, listed.items, {}, listed_before);
     try mark_pinned(session, listed.items);
 
     return listed.items;
+}
+
+/// Settings' order: by group, and in Apps the sections by their app, each kept in the order
+/// it was added.
+fn listed_before(_: void, left: Destination, right: Destination) bool {
+    std.debug.assert(left.page.len > 0);
+    std.debug.assert(right.page.len > 0);
+
+    const left_group = @intFromEnum(left.group);
+    const right_group = @intFromEnum(right.group);
+
+    if (left_group != right_group) {
+        return left_group < right_group;
+    }
+
+    return std.mem.lessThan(u8, left.app, right.app);
 }
 
 /// Plugins' sections, as Content lists them.
@@ -268,6 +292,8 @@ fn append_settings_sections(
                 .label = try session.arena.dupe(u8, summary.name),
                 .icon = "file",
                 .href = try std.fmt.allocPrint(session.arena, "/admin/{s}", .{page}),
+                .group = .apps,
+                .app = try session.arena.dupe(u8, summary.app),
             });
         }
 

@@ -900,11 +900,12 @@ fn nested_of(
     current: ?Value,
 ) Error!Instance {
     std.debug.assert(name.len > def.name.len);
-    std.debug.assert(model.field.is_leaf(def.kind));
+    std.debug.assert(def.fields.len <= model.field.fields_max);
 
-    const kind = kind_of(def);
+    // A repeater or group inside a group is a list there too: edited as JSON.
+    const nested = !model.field.is_leaf(def.kind);
 
-    if (def.many or kind.control == .json) {
+    if (nested or def.many or kind_of(def).control == .json) {
         return .{
             .name = name,
             .label = def.label,
@@ -918,6 +919,7 @@ fn nested_of(
         };
     }
 
+    const kind = kind_of(def);
     var instance = try instance_of(context, def, kind, name, path, current, false);
 
     if (kind.has.media) {

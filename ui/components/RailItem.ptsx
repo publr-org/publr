@@ -6,13 +6,16 @@ export type RailItemProps = {
   label: string;
   icon_name: IconName;
   active: boolean;
+  /** `_blank` for a link that leaves the admin, like the site. */
+  target?: string;
 };
 
 /** One section on the admin's dark rail: an icon link, lit when the page is in it. */
-export function RailItem({ href, label, icon_name, active }: RailItemProps) {
+export function RailItem({ href, label, icon_name, active, target = "" }: RailItemProps) {
   return (
     <a
       href={href}
+      target={target === "" ? undefined : target}
       aria-label={label}
       title={label}
       aria-current={active ? "page" : undefined}

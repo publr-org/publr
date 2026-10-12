@@ -13,7 +13,7 @@ export type IndexHeaderProps = {
  * list) draws it inside the part it redraws. */
 export function IndexHeader({ title, description, actions, id }: IndexHeaderProps) {
   return (
-    <div class="px-8 pt-7 pb-6" data-part="page-header">
+    <div class="px-5 pt-6 pb-5" data-part="page-header">
       <PageHeader id={id} title={title} description={description}>
         {actions}
       </PageHeader>

@@ -30,7 +30,7 @@ export function CompareField({
 }: CompareFieldProps) {
   return (
     <div class={["grid grid-cols-2", dim ? "opacity-60" : ""]} data-quiet="true" data-conflict="false" data-part="compare-field">
-      <div class="flex flex-col gap-2 px-8 py-5">
+      <div class="flex flex-col gap-2 px-5 py-5">
         <div class="flex items-start gap-2">
           <Text as="span" variant="body-xs" tone="muted" classes="shrink-0">{label}</Text>
           {left_note !== "" && <Text as="span" variant="body-xs" tone="success" classes="shrink-0">{left_note}</Text>}
@@ -38,7 +38,7 @@ export function CompareField({
         </div>
         <CompareValues values={left} />
       </div>
-      <div class="flex flex-col gap-2 border-l border-border px-8 py-5">
+      <div class="flex flex-col gap-2 border-l border-border px-5 py-5">
         <div class="flex items-start gap-2">
           <Text as="span" variant="body-xs" tone="muted" classes="shrink-0">{label}</Text>
           {right_note !== "" && <Text as="span" variant="body-xs" tone="success" classes="shrink-0">{right_note}</Text>}

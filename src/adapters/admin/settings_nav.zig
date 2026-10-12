@@ -4,6 +4,7 @@ const std = @import("std");
 const admin = @import("../admin.zig");
 const chrome = @import("chrome.zig");
 const destinations = @import("destinations.zig");
+const model = @import("../../model.zig");
 
 /// The addresses Structure stands for: the hub and every kind of definition under it.
 const structure_paths = [_][]const u8{
@@ -23,8 +24,9 @@ pub fn node(session: *admin.Session, path: []const u8) admin.Error!admin.render.
     const listed = try destinations.settings(session);
     const pages = try session.arena.alloc(Page, listed.len);
 
-    for (listed, pages) |destination, *page| {
+    for (listed, pages, 0..) |destination, *page, index| {
         const own = destination.plugin.len == 0;
+        const previous: ?destinations.Destination = if (index == 0) null else listed[index - 1];
         const structure = own and std.mem.eql(u8, destination.page, "structure");
         const health = own and std.mem.eql(u8, destination.page, "health");
 
@@ -38,6 +40,8 @@ pub fn node(session: *admin.Session, path: []const u8) admin.Error!admin.render.
             .page = destination.page,
             .pinned = destination.pinned,
             .count = if (health) try health_count(session) else "",
+            .group = try group_of(session, destination, previous),
+            .heading = try heading_of(session, destination, previous),
         };
     }
 
@@ -46,6 +50,58 @@ pub fn node(session: *admin.Session, path: []const u8) admin.Error!admin.render.
         .csrf = session.csrf_token(),
         .back = path,
     });
+}
+
+/// The group's name over its first page; empty for the rest.
+fn group_of(
+    session: *admin.Session,
+    destination: destinations.Destination,
+    previous: ?destinations.Destination,
+) admin.Error![]const u8 {
+    std.debug.assert(destination.page.len > 0);
+    std.debug.assert(previous == null or @intFromEnum(previous.?.group) <=
+        @intFromEnum(destination.group));
+
+    if (previous != null and previous.?.group == destination.group) {
+        return "";
+    }
+
+    return session.declared(destination.group.label());
+}
+
+/// Over the first settings section of each app, the app's name ("Global" for the project's
+/// own); empty everywhere else.
+fn heading_of(
+    session: *admin.Session,
+    destination: destinations.Destination,
+    previous: ?destinations.Destination,
+) admin.Error![]const u8 {
+    std.debug.assert(destination.page.len > 0);
+    std.debug.assert(destination.app.len == 0 or destination.group == .apps);
+
+    const section = model.admin_pages.settings_handle(destination.page) != null and
+        destination.plugin.len == 0 and destination.group == .apps;
+
+    if (!section) {
+        return "";
+    }
+
+    if (previous) |before| {
+        const before_section = model.admin_pages.settings_handle(before.page) != null and
+            before.group == .apps;
+
+        if (before_section and std.mem.eql(u8, before.app, destination.app)) {
+            return "";
+        }
+    }
+
+    if (destination.app.len == 0) {
+        return session.translated("Global");
+    }
+
+    const app = session.project.find(destination.app) orelse return destination.app;
+
+    return app.spec.label;
 }
 
 /// Site Health's cases not kept as they are, as the badge shows them; empty for none.

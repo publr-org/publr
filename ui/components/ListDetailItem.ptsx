@@ -1,5 +1,6 @@
 import { Publr } from "publr-jsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
+import { SidebarNavItem } from "@publr/ui/SidebarNavItem.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 export type ListDetailItemProps = {
@@ -12,29 +13,21 @@ export type ListDetailItemProps = {
 };
 
 /** One thing in a ListDetailPage's list, leading to its detail: the open one marked, a
- * done one checked, one still to do dotted. */
+ * done one checked, one still to do dotted. A sidebar row like any other. */
 export function ListDetailItem({ label, href, current = false, marker = "" }: ListDetailItemProps) {
   return (
-    <li>
-      <a
-        href={href}
-        aria-current={current ? "page" : undefined}
-        class={[
-          "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
-          current ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
-        ]}
-        data-part="list-detail-item"
-      >
-        <span class="min-w-0 flex-1 truncate">
-          <Text as="span" variant="body-sm" tone={current ? "default" : "muted"}>{label}</Text>
-        </span>
+    <li data-part="list-detail-item">
+      <SidebarNavItem href={href} active={current}>
+        <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
+          {label}
+        </Text>
         {marker === "done" && (
           <Text as="span" variant="body-sm" tone="success" classes="shrink-0">
             <Icon name="check" size="sm" />
           </Text>
         )}
         {marker === "todo" && <span class="size-2 shrink-0 rounded-full bg-warning" aria-label={Publr.t("To resolve")}></span>}
-      </a>
+      </SidebarNavItem>
     </li>
   );
 }

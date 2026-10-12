@@ -139,12 +139,36 @@ pub const Status = struct {
         std.debug.assert(setup_key.len > 0);
 
         const stamp = try settings.get(ctx.db, ctx.arena, setup_key);
+        // A database made before `init` recorded the stamp has its administrator all the same.
+        const administered = try store.users.count_holding(ctx.db, role.admin) != 0;
 
         return .{
-            .initialised = stamp != null,
+            .initialised = stamp != null or administered,
         };
     }
 };
+
+test "status: initialised once set up, or when an administrator exists without the stamp" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var anon = harness.ctx(.anonymous);
+    const fresh = try TestSDK.dispatch(&anon, Status, .{});
+
+    try std.testing.expect(!fresh.initialised);
+
+    _ = try TestSDK.dispatch(&anon, Init, .{
+        .email = "a@example.com",
+        .display_name = "A",
+        .password = "correct horse battery",
+    });
+    try settings.delete(&harness.fixture.connection, setup_key);
+
+    const unstamped = try TestSDK.dispatch(&anon, Status, .{});
+
+    try std.testing.expect(unstamped.initialised);
+}
 
 pub const operations = [_]type{
     Init,

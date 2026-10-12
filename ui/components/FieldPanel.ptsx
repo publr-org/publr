@@ -165,7 +165,7 @@ export function FieldPanel({
 }: FieldPanelProps) {
   return (
     <div class="contents" data-part="type-panel-content" data-title={title}>
-      <div class="px-8 py-7">
+      <div class="px-5 py-7">
         <PageHeader onBack={onBack}
           title={title}
           description={kind_label}

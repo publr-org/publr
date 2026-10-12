@@ -12,6 +12,8 @@ const Props = admin.views.ContentList.Props;
 const Cell = admin.views.ContentList.CellsItem;
 const Row = admin.views.ContentList.RowsItem;
 const Column = admin.views.ContentList.ColumnsItem;
+const Move = admin.views.ContentList.MovesItem;
+const PageLink = admin.views.ContentList.PagesItem;
 const Error = admin.Error;
 
 pub fn fill(props: *Props, page: *const list.Page, found: []const records.Record) Error!void {
@@ -40,6 +42,147 @@ pub fn fill(props: *Props, page: *const list.Page, found: []const records.Record
         try page.session.translated("No records yet. Create the first one.")
     else
         try page.session.translated("No records match these filters.");
+}
+
+/// What the selection's actions need: how many records match past the page, the
+/// conditions that match them, and the statuses a transition leads to.
+pub fn fill_selection(
+    props: *Props,
+    page: *const list.Page,
+    list_in: records.List.In,
+    total: u32,
+) Error!void {
+    std.debug.assert(page.session.signed_in());
+    std.debug.assert(props.rows.len <= total or props.rows.len <= filters.page_size);
+
+    const arena = page.session.arena;
+    var moves: std.ArrayList(Move) = .empty;
+
+    for (registry.Statuses.all) |status| {
+        const action = action_to(status.id) orelse continue;
+
+        try moves.append(arena, .{
+            .to = status.id,
+            .label = try page.session.declared(action),
+            .status = try page.session.declared(status.label),
+        });
+    }
+
+    props.total = @floatFromInt(total);
+    props.moves = moves.items;
+    props.match_type = list_in.type orelse "";
+    props.match_types = list_in.types;
+    props.match_filters = list_in.filters;
+    props.match_search = list_in.search orelse "";
+}
+
+/// Pages of `filters.page_size` the matching records fill; one when there are none.
+pub fn page_count(total: u32) u32 {
+    std.debug.assert(filters.page_size > 0);
+
+    const count = std.math.divCeil(u32, total, filters.page_size) catch unreachable;
+
+    std.debug.assert(count <= total);
+
+    return @max(count, 1);
+}
+
+/// Where the list stands among its pages: the address keeps the page, the links go to the
+/// first, the last and the ones beside this one, a gap between.
+pub fn fill_pages(props: *Props, page: *const list.Page, number: u32, total: u32) Error!void {
+    std.debug.assert(number >= 1 and number <= page_count(total));
+    std.debug.assert(props.rows.len <= filters.page_size);
+
+    const session = page.session;
+    const arena = session.arena;
+    const base = props.address;
+    const last = page_count(total);
+    var links: std.ArrayList(PageLink) = .empty;
+    var previous: u32 = 0;
+
+    for (1..last + 1) |index| {
+        const shown: u32 = @intCast(index);
+        const near = shown + 1 >= number and shown <= number + 1;
+
+        if (shown != 1 and shown != last and !near) {
+            continue;
+        }
+
+        if (previous != 0 and shown > previous + 1) {
+            try links.append(arena, .{
+                .id = try std.fmt.allocPrint(arena, "gap-{d}", .{shown}),
+                .label = "",
+                .href = "",
+                .current = false,
+            });
+        }
+
+        try links.append(arena, .{
+            .id = try std.fmt.allocPrint(arena, "page-{d}", .{shown}),
+            .label = try std.fmt.allocPrint(arena, "{d}", .{shown}),
+            .href = if (shown == number) "" else try address_of(arena, base, shown),
+            .current = shown == number,
+        });
+        previous = shown;
+    }
+
+    props.address = try address_of(arena, base, number);
+    props.pages = if (last > 1) links.items else &.{};
+    props.previous_href = if (number > 1) try address_of(arena, base, number - 1) else "";
+    props.next_href = if (number < last) try address_of(arena, base, number + 1) else "";
+    props.range_text = try range_of(session, number, @intCast(props.rows.len), total);
+}
+
+/// The list's address on a page: the first needs no `page`.
+fn address_of(arena: std.mem.Allocator, base: []const u8, number: u32) Error![]const u8 {
+    std.debug.assert(base.len > 0);
+    std.debug.assert(number >= 1);
+
+    if (number == 1) {
+        return base;
+    }
+
+    const separator: u8 = if (std.mem.indexOfScalar(u8, base, '?') == null) '?' else '&';
+
+    return std.fmt.allocPrint(arena, "{s}{c}page={d}", .{ base, separator, number });
+}
+
+/// "21–40 of 10000": the rows shown among the matching ones.
+fn range_of(session: *const admin.Session, number: u32, shown: u32, total: u32) Error![]const u8 {
+    std.debug.assert(number >= 1);
+    std.debug.assert(shown <= filters.page_size);
+
+    const arena = session.arena;
+    const first = (number - 1) * filters.page_size + @min(shown, 1);
+
+    return session.translated_with("{first}–{last} of {total}", &.{
+        .{
+            .name = "first",
+            .value = try std.fmt.allocPrint(arena, "{d}", .{first}),
+        },
+        .{
+            .name = "last",
+            .value = try std.fmt.allocPrint(arena, "{d}", .{first + shown -| 1}),
+        },
+        .{
+            .name = "total",
+            .value = try std.fmt.allocPrint(arena, "{d}", .{total}),
+        },
+    });
+}
+
+/// The name of the first transition leading to a status: what moving there is called.
+fn action_to(status: []const u8) ?[]const u8 {
+    std.debug.assert(status.len > 0);
+    std.debug.assert(registry.Statuses.all_transitions.len > 0);
+
+    for (registry.Statuses.all_transitions) |transition| {
+        if (std.mem.eql(u8, transition.to, status)) {
+            return transition.label;
+        }
+    }
+
+    return null;
 }
 
 fn cells_of(
@@ -186,6 +329,11 @@ pub fn answer(session: *admin.Session, props: Props) Error!void {
             .search = props.search,
             .add_filters = props.add_filters,
             .empty_text = props.empty_text,
+            .total = props.total,
+            .pages = props.pages,
+            .previous_href = props.previous_href,
+            .next_href = props.next_href,
+            .range_text = props.range_text,
         },
         .context = .{
             .title = props.title,
@@ -201,6 +349,12 @@ pub fn answer(session: *admin.Session, props: Props) Error!void {
             .new_href = props.new_href,
             .new_label = props.new_label,
             .new_targets = props.new_targets,
+            .conditions = .{
+                .type = props.match_type,
+                .types = props.match_types,
+                .filters = props.match_filters,
+                .search = props.match_search,
+            },
         },
     });
 }

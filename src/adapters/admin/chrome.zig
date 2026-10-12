@@ -174,6 +174,7 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
                 null,
             .section = if (in) |section| section.label else "",
             .section_href = if (in) |section| section.href() else "",
+            .site_href = admin.app_scope.site_href(session),
             .framed = framed(session),
         },
     };

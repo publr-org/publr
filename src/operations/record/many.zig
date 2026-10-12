@@ -1,0 +1,259 @@
+//! Many records moved at once: the ones named, or every one a list's conditions keep.
+
+const std = @import("std");
+const sdk = @import("../../sdk.zig");
+const store = @import("../../store.zig");
+const registry = @import("../../server/registry.zig");
+const record_operations = @import("../record.zig");
+const crud_module = @import("../document/crud.zig");
+const many_module = @import("../document/many.zig");
+
+const Ctx = sdk.Ctx;
+const Grant = sdk.Grant;
+const Error = sdk.Error;
+const Transition = record_operations.Transition;
+const Refusals = @import("../../sdk/bulk.zig").Refusals;
+
+pub const TransitionMany = struct {
+    pub const name = "record.transition_many";
+    pub const description = "Move many records to another status: the ones named, or " ++
+        "every record a list's filters keep";
+    pub const details =
+        \\Either name the records (`ids`) or set `matching` with the conditions `record
+        \\list` takes (`type`, `types`, `filters`, `search`): every record they keep moves,
+        \\in one call, whatever their number. Records already in the target status are left
+        \\out. Each is checked as `record transition` checks it, and one that may not move
+        \\is reported in `failed` (the first 100 by name, all in `not_moved`) while the rest
+        \\go on. Pending edits of records going live are applied, as `record publish` does.
+        \\Hooks on `record transition` run for each record; event hooks hear each record's
+        \\notices as if it had moved on its own.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const In = struct {
+        to: []const u8,
+        ids: []const []const u8 = &.{},
+        matching: bool = false,
+        type: ?[]const u8 = null,
+        types: []const []const u8 = &.{},
+        filters: []const []const u8 = &.{},
+        search: ?[]const u8 = null,
+    };
+    pub const Failed = many_module.Failed;
+    pub const Out = struct {
+        moved: u32,
+        not_moved: u32,
+        failed: []const Failed,
+    };
+    pub const example: In = .{
+        .to = "archived",
+        .matching = true,
+        .type = "post",
+        .filters = &.{"updated:before:2025-01-01"},
+    };
+    pub const example_out: Out = .{
+        .moved = 1768,
+        .not_moved = 0,
+        .failed = &.{},
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .to = "The target status id",
+        .ids = "The records to move, by id",
+        .matching = "Move every record the conditions keep instead of named ones",
+        .type = "With `matching`: one content type, by handle or id",
+        .types = "With `matching`: several content types; neither: every regular type",
+        .filters = "With `matching`: clauses as `record list` takes them",
+        .search = "With `matching`: full-text query over searchable fields",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .moved = "How many records moved",
+        .not_moved = "How many could not move",
+        .failed = "The first 100 that could not move, and why",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        const named = in.ids.len > 0;
+
+        if (in.to.len == 0 or named == in.matching) {
+            return error.Invalid;
+        }
+
+        const input: crud_module.ListInput = .{
+            .definition = if (named) null else in.type,
+            .definitions = if (named) &.{} else in.types,
+            .filters = if (named) &.{} else in.filters,
+            .search = if (named) null else in.search,
+            .ids = in.ids,
+            .exclude_statuses = &.{in.to},
+            .limit = store.records.list_max,
+        };
+        const domain = record_operations.domain;
+        const query = try domain.crud.matching_query(ctx, granted, input) orelse return .{
+            .moved = 0,
+            .not_moved = 0,
+            .failed = &.{},
+        };
+        const hooks: ?many_module.Hooks = if (registry.SDK.bulk.hooked(ctx, Transition)) .{
+            .before = &before,
+            .after = &after,
+        } else null;
+        const outcome = try domain.many.move(ctx, granted, query, in.to, hooks);
+
+        return .{
+            .moved = outcome.moved,
+            .not_moved = outcome.not_moved,
+            .failed = outcome.failed,
+        };
+    }
+
+    /// The hooks on `record transition`, over a part of the records about to move.
+    fn before(ctx: *Ctx, ids: []const []const u8, to: []const u8, refused: Refusals) Error!void {
+        std.debug.assert(ids.len == refused.len);
+        std.debug.assert(to.len > 0);
+
+        const inputs = try inputs_of(ctx, ids, to);
+
+        try registry.SDK.bulk.before_each(ctx, Transition, inputs, refused);
+    }
+
+    /// The hooks on `record transition`, over a part moved, each with what it became.
+    fn after(ctx: *Ctx, ids: []const []const u8, to: []const u8, refused: Refusals) Error!void {
+        std.debug.assert(ids.len == refused.len);
+        std.debug.assert(to.len > 0);
+
+        const inputs = try inputs_of(ctx, ids, to);
+        const outputs = ctx.arena.alloc(Transition.Out, ids.len) catch return error.OutOfMemory;
+
+        for (ids, refused, outputs) |id, reason, *output| {
+            const found = if (reason == null)
+                try store.records.get(ctx.db, ctx.arena, id)
+            else
+                null;
+
+            output.* = if (found) |record| .{
+                .status = record.status,
+                .changed = record.changed,
+                .version = record.version,
+            } else .{
+                .status = to,
+                .changed = false,
+                .version = 0,
+            };
+        }
+
+        try registry.SDK.bulk.after_each(ctx, Transition, inputs, outputs, refused);
+    }
+
+    fn inputs_of(ctx: *Ctx, ids: []const []const u8, to: []const u8) Error![]Transition.In {
+        std.debug.assert(ids.len > 0);
+        std.debug.assert(to.len > 0);
+
+        const inputs = ctx.arena.alloc(Transition.In, ids.len) catch return error.OutOfMemory;
+
+        for (ids, inputs) |id, *input| {
+            input.* = .{
+                .id = id,
+                .to = to,
+            };
+        }
+
+        return inputs;
+    }
+};
+
+const SDK = registry.SDK;
+
+test "transition_many: named, every match in one call, refusals" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try SDK.bootstrap(&system);
+    try record_operations.fixture.post_type(&system);
+
+    var editor = harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
+    var id_buffers: [many_module.part_max + 5][store.records.id_len]u8 = undefined;
+    var ids: [many_module.part_max + 5][]const u8 = undefined;
+
+    // Each made in an arena given back after it: the harness's is a few MiB for the test.
+    for (&id_buffers, &ids, 0..) |*buffer, *id, index| {
+        var document_buffer: [64]u8 = undefined;
+        const shape = "{{\"title\":\"Many {d}\",\"body\":\"x\"}}";
+        const document = try std.fmt.bufPrint(&document_buffer, shape, .{index});
+        const mark = harness.fixed.end_index;
+        const created = try SDK.dispatch(&editor, record_operations.Create, .{
+            .type = "post",
+            .document = document,
+        });
+
+        @memcpy(buffer, created.id[0..store.records.id_len]);
+        id.* = buffer;
+        harness.fixed.end_index = mark;
+    }
+
+    const named = try SDK.dispatch(&editor, TransitionMany, .{
+        .to = "archived",
+        .ids = ids[0..2],
+    });
+    try std.testing.expectEqual(@as(u32, 2), named.moved);
+
+    const unknown = SDK.dispatch(&editor, TransitionMany, .{
+        .to = "nowhere",
+        .matching = true,
+        .type = "post",
+    });
+    try std.testing.expectError(error.Invalid, unknown);
+
+    // Past one part: every draft moves in the one call.
+    const published = try SDK.dispatch(&editor, TransitionMany, .{
+        .to = "published",
+        .matching = true,
+        .type = "post",
+        .filters = &.{"status:is:draft"},
+    });
+    try std.testing.expectEqual(@as(u32, many_module.part_max + 3), published.moved);
+    try std.testing.expectEqual(@as(u32, 0), published.not_moved);
+
+    const listed = try SDK.dispatch(&editor, record_operations.List, .{
+        .type = "post",
+        .filters = &.{"status:is:published"},
+        .limit = 1,
+        .count = true,
+    });
+    try std.testing.expectEqual(@as(u32, many_module.part_max + 3), listed.total);
+
+    // Archived records may not be published straight away: reported, not moved.
+    const refused = try SDK.dispatch(&editor, TransitionMany, .{
+        .to = "published",
+        .ids = ids[0..2],
+    });
+    try std.testing.expectEqual(@as(u32, 0), refused.moved);
+    try std.testing.expectEqual(@as(u32, 2), refused.not_moved);
+    try std.testing.expectEqual(@as(usize, 2), refused.failed.len);
+
+    const again = try SDK.dispatch(&editor, TransitionMany, .{
+        .to = "published",
+        .matching = true,
+        .type = "post",
+    });
+    try std.testing.expectEqual(@as(u32, 0), again.moved);
+
+    const both = SDK.dispatch(&editor, TransitionMany, .{
+        .to = "draft",
+        .ids = ids[0..1],
+        .matching = true,
+    });
+    try std.testing.expectError(error.Invalid, both);
+    const neither = SDK.dispatch(&editor, TransitionMany, .{
+        .to = "draft",
+    });
+    try std.testing.expectError(error.Invalid, neither);
+}

@@ -5,7 +5,7 @@ export type WorkspaceMainProps = {
 /** WorkspacePage's main side: what is being worked on, filling the sheet. */
 export function WorkspaceMain({ children }: WorkspaceMainProps) {
   return (
-    <section class="relative flex min-w-0 flex-1 flex-col bg-muted/40" data-part="workspace-main">
+    <section class="relative flex min-w-0 flex-1 flex-col bg-muted/40 max-md:h-[40dvh] max-md:flex-none" data-part="workspace-main">
       {children}
     </section>
   );

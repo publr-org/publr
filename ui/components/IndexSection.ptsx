@@ -40,7 +40,7 @@ export function IndexSection({
       <div
         class={[
           "flex min-h-14 items-center justify-between gap-3 py-4",
-          boxed ? "px-5" : "px-8",
+          boxed ? "px-5" : "px-5",
         ]}
       >
         <div class="min-w-0">
@@ -56,7 +56,7 @@ export function IndexSection({
         {actions && <div class="flex shrink-0 items-center gap-2">{actions}</div>}
       </div>
       {empty ? (
-        <div class={boxed ? "px-5 pb-5" : "px-8 pb-5"}>
+        <div class={boxed ? "px-5 pb-5" : "px-5 pb-5"}>
           <Text as="p" variant="body-sm" tone="muted">
             {empty}
           </Text>
@@ -65,7 +65,7 @@ export function IndexSection({
         <div
           class={[
             "border-t border-border",
-            padded ? (boxed ? "flex flex-col gap-4 px-5 py-5" : "flex flex-col gap-4 px-8 py-5") : "",
+            padded ? (boxed ? "flex flex-col gap-4 px-5 py-5" : "flex flex-col gap-4 px-5 py-5") : "",
           ]}
         >
           {children}

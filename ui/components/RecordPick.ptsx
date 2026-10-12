@@ -64,7 +64,7 @@ export function RecordPick({
   state.title = Publr.t("Link a {type}", { type: type_name });
   return (
     <div class="flex flex-col" data-part="record-pick" ref={root_ref}>
-      <div class="px-8 py-7">
+      <div class="px-5 py-7">
         <div class="flex items-center gap-4">
           <Button
             type="button"
@@ -110,7 +110,7 @@ export function RecordPick({
         </form>
       </div>
       {rows.length === 0 ? (
-        <div class="mx-8">
+        <div class="mx-5">
           <Empty compact>
             <EmptyTitle size="xs">{Publr.t("Nothing to link")}</EmptyTitle>
             <EmptyDescription>{Publr.t("No {type} records match.", { type: type_name })}</EmptyDescription>
@@ -193,7 +193,7 @@ export function RecordPick({
         </div>
       )}
       {(next_offset > 0 || previous_offset >= 0) && (
-        <div class="flex justify-end gap-2 border-t border-border px-8 py-4" data-part="pick-pages">
+        <div class="flex justify-end gap-2 border-t border-border px-5 py-4" data-part="pick-pages">
           {previous_offset >= 0 && (
             <form method="get" action="/admin/content/pick" onSubmit={submitted}>
               {live && <input type="hidden" name="live" value="1" />}

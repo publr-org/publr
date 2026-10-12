@@ -17,7 +17,7 @@ export function HubPage({ title, parents = [], description, hero = false, childr
   return (
     <Chrome title={title} parents={parents}>
       {!hero && <IndexHeader title={title} description={description} />}
-      <div class={["flex flex-1 flex-col gap-10 pb-10", hero ? "" : "px-8"]}>{children}</div>
+      <div class={["flex flex-1 flex-col gap-10 pb-10", hero ? "" : "px-5"]}>{children}</div>
     </Chrome>
   );
 }

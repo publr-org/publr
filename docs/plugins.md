@@ -527,10 +527,13 @@ the view's own data only, after `publr.admin.require` for the signed-in session.
   path under it. A page that belongs under another's entry says so with
   `publr.admin.screen_with(&session, .{ .settings_path = "/admin/<other>" }, ...)`.
 - A segment joined to the app picker (`pub fn app_picker_segment(session: *const
-  publr.admin.Session, attached: bool) publr.admin.Error!?publr.admin.render.Node`): drawn
-  after the picker as one control where the project has apps (`attached` true: draw it as
-  the control's end, `StatusButton attach="end"`), on its own in the top bar where it has
-  none. Null shows nothing.
+  publr.admin.Session, attached: bool, apps: ?publr.admin.render.Node)
+  publr.admin.Error!?publr.admin.render.Node`): drawn after the picker as one control where
+  the project has apps (`attached` true: draw it as the control's end, `StatusButton
+  attach="end"`), on its own in the top bar where it has none. Null shows nothing. On a
+  phone the first segment drawn stands for the whole picker: it shows only its icon
+  (`StatusButton compact`), and the drawer it opens lists `apps` first (on phones only),
+  the apps the picker would have offered. Only that segment is given them.
 - Where someone who must sign in goes (`pub fn sign_in_at(session: *const
   publr.admin.Session) anyerror!?[]const u8`): asked on the login page before the form and
   before a trusted issuer; the first plugin that names an address sends the browser there.

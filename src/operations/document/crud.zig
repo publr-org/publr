@@ -51,6 +51,8 @@ pub const ListInput = struct {
     filter_values: []const []const u8 = &.{},
     /// Only these records, by id.
     ids: []const []const u8 = &.{},
+    /// Never records in these statuses, whatever the filters ask.
+    exclude_statuses: []const []const u8 = &.{},
     order: Order = .updated_desc,
     limit: u32 = 50,
     offset: u32 = 0,
@@ -263,6 +265,11 @@ pub fn Of(comptime Domain: type) type {
             const constraints = try constraints_of(ctx, in.filters);
             var statuses_buffer: [model.status.statuses_max][]const u8 = undefined;
             var query = try query_of(ctx, in, granted, span, constraints, &statuses_buffer);
+
+            if (query.statuses != null and query.statuses.?.len == 0) {
+                return &.{};
+            }
+
             var rows = try documents.list(ctx.db, ctx.arena, query);
 
             // A record not translated into the variant keeps its main slug there too.
@@ -290,6 +297,95 @@ pub fn Of(comptime Domain: type) type {
             }
 
             return visible.items;
+        }
+
+        /// How many records the list's conditions keep, its limit and offset aside, before
+        /// a grant's own per-record checks.
+        pub fn count(ctx: *Ctx, granted: *const Grant, in: ListInput) Error!u32 {
+            std.debug.assert(granted.allows());
+            std.debug.assert(in.limit > 0);
+
+            if (in.definitions.len > documents.type_ids_max or in.ids.len > documents.list_max) {
+                return error.Invalid;
+            }
+
+            const span = try access.visible_types(ctx, granted, in.definition, in.definitions);
+
+            if (span.briefs.len == 0) {
+                return 0;
+            }
+
+            const constraints = try constraints_of(ctx, in.filters);
+            var statuses_buffer: [model.status.statuses_max][]const u8 = undefined;
+            const query = try query_of(ctx, in, granted, span, constraints, &statuses_buffer);
+
+            if (query.statuses != null and query.statuses.?.len == 0) {
+                return 0;
+            }
+
+            return documents.count(ctx.db, ctx.arena, query);
+        }
+
+        /// The query a write over every document the conditions keep reads them through, a
+        /// part at a time (`documents.matching`); null when the caller sees none of them.
+        /// The grant's own per-record checks are the caller's to make on each.
+        pub fn matching_query(
+            ctx: *Ctx,
+            granted: *const Grant,
+            in: ListInput,
+        ) Error!?store.documents.Query {
+            std.debug.assert(granted.allows());
+            std.debug.assert(in.limit > 0);
+
+            if (in.definitions.len > documents.type_ids_max) {
+                return error.Invalid;
+            }
+
+            const span = try access.visible_types(ctx, granted, in.definition, in.definitions);
+
+            if (span.briefs.len == 0) {
+                return null;
+            }
+
+            const constraints = try constraints_of(ctx, in.filters);
+            const statuses_buffer = ctx.arena.create([model.status.statuses_max][]const u8) catch {
+                return error.OutOfMemory;
+            };
+            var query = try query_of(ctx, in, granted, span, constraints, statuses_buffer);
+
+            // Records named are found in any status the caller may see, archived or deleted
+            // too: someone picked them where they are.
+            if (in.ids.len > 0 and constraints.status == null) {
+                query.statuses = any_status(granted, statuses_buffer, in.exclude_statuses);
+            }
+
+            if (query.statuses != null and query.statuses.?.len == 0) {
+                return null;
+            }
+
+            return query;
+        }
+
+        fn any_status(
+            granted: *const Grant,
+            buffer: *[model.status.statuses_max][]const u8,
+            excluded: []const []const u8,
+        ) []const []const u8 {
+            std.debug.assert(granted.allows());
+            std.debug.assert(registry.Statuses.all.len <= model.status.statuses_max);
+
+            var kept: u32 = 0;
+
+            for (registry.Statuses.all) |status| {
+                const live_ok = !granted.record_filter.flags.live_only or status.live;
+
+                if (live_ok and granted.allows_status(status.id)) {
+                    buffer[kept] = status.id;
+                    kept += 1;
+                }
+            }
+
+            return without(buffer, kept, excluded);
         }
 
         /// Every clause, checked and applied by the filter it names, added up.
@@ -342,10 +438,14 @@ pub fn Of(comptime Domain: type) type {
 
             const status = constraints.status;
             const exclude = constraints.status_exclude;
+            const allowed = access.allowed_statuses(granted, status, exclude, statuses_buffer);
 
             return .{
                 .type_ids = type_ids,
-                .statuses = access.allowed_statuses(granted, status, exclude, statuses_buffer),
+                .statuses = if (allowed) |kept|
+                    without(statuses_buffer, @intCast(kept.len), in.exclude_statuses)
+                else
+                    null,
                 .ids_json = if (in.ids.len == 0) null else try sdk.stringify(ctx.arena, in.ids),
                 .changed = constraints.changed,
                 .search = in.search,
@@ -561,4 +661,31 @@ pub fn Of(comptime Domain: type) type {
             };
         }
     };
+}
+
+/// The statuses kept in `buffer`, those excluded taken out, in place.
+fn without(
+    buffer: *[model.status.statuses_max][]const u8,
+    kept_len: u32,
+    excluded: []const []const u8,
+) []const []const u8 {
+    std.debug.assert(kept_len <= model.status.statuses_max);
+    std.debug.assert(excluded.len <= model.status.statuses_max);
+
+    var len: u32 = 0;
+
+    for (buffer[0..kept_len]) |status| {
+        const dropped = for (excluded) |name| {
+            if (std.mem.eql(u8, name, status)) {
+                break true;
+            }
+        } else false;
+
+        if (!dropped) {
+            buffer[len] = status;
+            len += 1;
+        }
+    }
+
+    return buffer[0..len];
 }

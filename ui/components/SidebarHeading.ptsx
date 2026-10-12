@@ -1,0 +1,30 @@
+import { Dynamic } from "publr-jsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import type { IconName } from "@publr/ui/Icon.ptsx";
+
+export type SidebarHeadingProps = {
+  label: string;
+  icon: IconName;
+  /** Where the heading leads: the top of what the sidebar lists. */
+  href?: string;
+};
+
+/** A sidebar's heading band, level with the top bar: the icon and the name of what the
+ * sidebar lists. The area sidebar and the sidebars pages draw (a list column, the design
+ * builder's styles) open with it, so every sidebar starts the same. */
+export function SidebarHeading({ label, icon, href = "" }: SidebarHeadingProps) {
+  return (
+    <Dynamic
+      as={href === "" ? "div" : "a"}
+      href={href === "" ? undefined : href}
+      class="flex h-14 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-5 text-sidebar-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring"
+      data-part="sidebar-heading"
+    >
+      <Icon name={icon} size="sm" classes="shrink-0" />
+      <Text as="span" variant="heading-sm" classes="truncate">
+        {label}
+      </Text>
+    </Dynamic>
+  );
+}

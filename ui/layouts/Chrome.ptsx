@@ -3,7 +3,9 @@ import { Document } from "./Document.ptsx";
 import { Mark } from "../components/Mark.ptsx";
 import { Crumbs } from "../components/Crumbs.ptsx";
 import { RailItem } from "../components/RailItem.ptsx";
+import { SidebarHeading } from "../components/SidebarHeading.ptsx";
 import { Avatar } from "@publr/ui/Avatar.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
 import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
 import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
 import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
@@ -31,6 +33,7 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
   return (
     <Document title={title}>
       <div class="flex h-dvh overflow-hidden">
+        <div id="admin-nav" popover="auto" class="contents" data-part="admin-nav">
         {Publr.request.session.email !== "" && !Publr.request.admin.framed && (
         <div class="flex w-14 shrink-0 flex-col items-center bg-rail text-rail-foreground">
           <a
@@ -68,6 +71,18 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
             {Publr.request.admin.rail}
           </nav>
           <div class="mt-auto flex flex-col items-center gap-1 pb-3">
+            {Publr.request.admin.site_href !== "" && (
+              // On phones the top bar has no room to promise the site link; the menu keeps it.
+              <div class="flex md:hidden">
+                <RailItem
+                  href={Publr.request.admin.site_href}
+                  label={Publr.t("View site")}
+                  icon_name="external"
+                  active={false}
+                  target="_blank"
+                />
+              </div>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger classes="inline-flex size-9 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 transition-colors hover:bg-rail-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground">
                 <Avatar
@@ -115,19 +130,11 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
           >
             {Publr.request.admin.sidebar_heading}
             {!Publr.request.admin.sidebar_heading && (
-            <a
-              href={Publr.request.admin.area === "content" ? "/admin/content" : "/admin/settings"}
-              class="flex h-14 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-5 text-sidebar-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring"
-            >
-              {Publr.request.admin.area === "content" ? (
-                <Icon name="file" size="sm" classes="shrink-0" />
-              ) : (
-                <Icon name="settings" size="sm" classes="shrink-0" />
-              )}
-              <Text as="span" variant="heading-sm">
-                {Publr.request.admin.area === "content" ? Publr.t("Content") : Publr.t("Settings")}
-              </Text>
-            </a>
+              <SidebarHeading
+                href={Publr.request.admin.area === "content" ? "/admin/content" : "/admin/settings"}
+                icon={Publr.request.admin.area === "content" ? "file" : "settings"}
+                label={Publr.request.admin.area === "content" ? Publr.t("Content") : Publr.t("Settings")}
+              />
             )}
             <nav
               class="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4"
@@ -137,9 +144,11 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
             </nav>
           </aside>
         )}
+        </div>
         <main
           id="main"
           tabindex="-1"
+          data-sheet={!focus && !Publr.request.admin.framed && Publr.request.admin.sidebar ? "beside" : "alone"}
           class={[
             "flex min-w-0 flex-1 flex-col overflow-y-auto bg-card outline-none",
             // What sticks in the sheet sticks under its top bar, which a framed page has not.
@@ -147,9 +156,26 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
           ]}
         >
           {!Publr.request.admin.framed && (
-            <div class="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card/95 px-8 backdrop-blur">
-              <Crumbs title={title} parents={parents} />
-              <div data-slot="top_bar" class="flex shrink-0 items-center gap-4">
+            <div data-part="top-bar" class="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card/95 px-5 backdrop-blur">
+              <div class="flex min-w-8 items-center gap-2 max-md:flex-1 md:min-w-0">
+                {Publr.request.session.email !== "" && (
+                  <Button
+                    type="button"
+                    hierarchy="tertiary"
+                    size="sm"
+                    label={Publr.t("Menu")}
+                    title={Publr.t("Menu")}
+                    popovertarget="admin-nav"
+                    classes="-ml-1.5 shrink-0 md:hidden"
+                  >
+                    <Icon name="menu-03" size="sm" />
+                  </Button>
+                )}
+                <div class="flex min-w-0 max-md:flex-1 max-md:overflow-hidden">
+                  <Crumbs title={title} parents={parents} />
+                </div>
+              </div>
+              <div data-slot="top_bar" class="flex shrink-0 items-center gap-4 max-md:gap-2">
                 {Publr.request.admin.top_bar}
               </div>
             </div>

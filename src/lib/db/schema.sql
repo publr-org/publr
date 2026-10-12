@@ -493,3 +493,13 @@ CREATE TRIGGER IF NOT EXISTS errors_kept BEFORE UPDATE ON errors
 
 CREATE TRIGGER IF NOT EXISTS errors_never_removed BEFORE DELETE ON errors
     BEGIN SELECT RAISE(ABORT, 'the error log is append-only'); END;
+
+-- Notices waiting for the extrinsic hooks: written in the transaction that raised them, so a
+-- rolled-back write queues nothing; delivered once it commits, oldest first, then removed.
+CREATE TABLE IF NOT EXISTS notice_queue (
+    id           INTEGER PRIMARY KEY,
+    operation_id INTEGER NOT NULL,
+    name         TEXT NOT NULL,
+    subject      TEXT NOT NULL,
+    queued_at    INTEGER NOT NULL
+) STRICT;

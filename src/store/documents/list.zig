@@ -11,6 +11,18 @@ pub const statuses_filter_max: u32 = 64;
 pub const type_ids_max: u32 = 256;
 pub const Error = db.Error || error{ NotFound, Conflict };
 
+/// What a write over many documents needs of each: in column order of `select_gathered`.
+pub const Match = struct {
+    /// Its place among the gathered.
+    position: i64,
+    id: []const u8,
+    type_id: []const u8,
+    status: []const u8,
+    changed: bool,
+    created_by: ?[]const u8,
+    title: ?[]const u8,
+};
+
 /// One row of the documents table, with what every reader wants next to it: the
 /// definition's handle, and the live title and slug (from the definition's `title_field`
 /// and its slug field, found in the definition by SQLite's JSON functions). Field order
@@ -37,13 +49,31 @@ const list_ids = " AND r.id IN (SELECT value FROM json_each(?{d}))";
 
 /// The copy a list reads of the record `r`: the live one, or its latest.
 const live_slot = "'live'";
+const pending_slot = "'pending'";
 const latest_slot = "(CASE WHEN r.changed THEN 'pending' ELSE 'live' END)";
 
-fn slot_of(query: Query) []const u8 {
+/// A condition on the copy a list reads, its `{s}` the slot. The latest copy depends on
+/// the row (`r.changed`), and a subquery naming it would run again for every row (a
+/// search over every record, each time); split by `r.changed`, each half runs once.
+fn write_slotted(
+    writer: *std.Io.Writer,
+    query: Query,
+    comptime clause: []const u8,
+    args: anytype,
+) error{OutOfMemory}!void {
     std.debug.assert(query.type_ids.len > 0);
-    std.debug.assert(query.limit <= list_max);
+    std.debug.assert(std.mem.startsWith(u8, clause, " AND "));
 
-    return if (query.latest) latest_slot else live_slot;
+    if (!query.latest) {
+        writer.print(clause, args ++ .{live_slot}) catch return error.OutOfMemory;
+        return;
+    }
+
+    writer.writeAll(" AND (r.changed = 0") catch return error.OutOfMemory;
+    writer.print(clause, args ++ .{live_slot}) catch return error.OutOfMemory;
+    writer.writeAll(" OR r.changed = 1") catch return error.OutOfMemory;
+    writer.print(clause, args ++ .{pending_slot}) catch return error.OutOfMemory;
+    writer.writeAll(")") catch return error.OutOfMemory;
 }
 
 /// Which app's documents a list keeps: one app's, or the project's own (no app).
@@ -197,7 +227,7 @@ pub fn List(comptime tables: tables_module.Tables) type {
             var select = try connection.prepare_dynamic(text);
             defer select.finalize();
 
-            try bind_query(&select, query);
+            _ = try bind_query(&select, query);
 
             var records: std.ArrayList(Record) = .empty;
 
@@ -208,6 +238,104 @@ pub fn List(comptime tables: tables_module.Tables) type {
             }
 
             return records.items;
+        }
+
+        /// Every document the conditions keep, gathered into a temporary table of this
+        /// connection, in id order: a write over every one of them reads them a part at a
+        /// time (`gathered`) without asking the conditions again. Answers how many.
+        pub fn gather(connection: *db.Db, arena: std.mem.Allocator, query: Query) Error!u32 {
+            std.debug.assert(query.type_ids.len > 0 and query.type_ids.len <= type_ids_max);
+            std.debug.assert(connection.transaction_depth >= 1);
+
+            try connection.exec("CREATE TEMP TABLE IF NOT EXISTS " ++ gathered_table ++
+                " (id TEXT NOT NULL)");
+            try connection.exec("DELETE FROM temp." ++ gathered_table);
+
+            var sql: std.Io.Writer.Allocating = .init(arena);
+            const head = "INSERT INTO temp." ++ gathered_table ++ " (id) SELECT r.id FROM " ++
+                table ++ " r WHERE ";
+
+            sql.writer.writeAll(head) catch return error.OutOfMemory;
+            _ = try write_conditions(&sql.writer, query);
+            sql.writer.writeAll(" ORDER BY r.id") catch return error.OutOfMemory;
+
+            var insert = try connection.prepare_dynamic(sql.written());
+            defer insert.finalize();
+
+            _ = try bind_query(&insert, query);
+            try insert.exec();
+
+            return @intCast(connection.changes());
+        }
+
+        /// The gathered documents after `position`, up to `limit`, as they are now.
+        pub fn gathered(
+            connection: *db.Db,
+            arena: std.mem.Allocator,
+            position: i64,
+            limit: u32,
+        ) Error![]Match {
+            std.debug.assert(position >= 0);
+            std.debug.assert(limit > 0 and limit <= list_max);
+
+            var select = try connection.prepare(select_gathered);
+            defer select.finalize();
+
+            try select.bind_int(1, position);
+            try select.bind_int(2, limit);
+
+            var rows: std.ArrayList(Match) = .empty;
+
+            while (try select.step()) {
+                std.debug.assert(rows.items.len < limit);
+                rows.append(arena, try select.read(Match, arena)) catch return error.OutOfMemory;
+            }
+
+            return rows.items;
+        }
+
+        /// The gathered documents forgotten.
+        pub fn release(connection: *db.Db) Error!void {
+            std.debug.assert(connection.transaction_depth <= 8);
+            std.debug.assert(gathered_table.len > 0);
+
+            try connection.exec("DROP TABLE IF EXISTS temp." ++ gathered_table);
+        }
+
+        const gathered_table = "gathered_" ++ table;
+        const select_gathered = "SELECT g.rowid, r.id, r.type_id, r.status, r.changed, " ++
+            "r.created_by, title.value FROM temp." ++ gathered_table ++ " g JOIN " ++ table ++
+            " r ON r.id = g.id JOIN " ++ tables.definitions ++ " t ON t.id = r.type_id " ++
+            "LEFT JOIN " ++ values ++ " title ON title.record = r.id " ++
+            "AND title.slot = 'live' AND title.ordinal = 0 " ++
+            "AND title.field = json_extract(t.definition, '$.title_field') " ++
+            "WHERE g.rowid > ?1 ORDER BY g.rowid LIMIT ?2";
+
+        /// How many documents the query's conditions keep, its limit and offset aside.
+        pub fn count(connection: *db.Db, arena: std.mem.Allocator, query: Query) Error!u32 {
+            std.debug.assert(query.type_ids.len > 0 and query.type_ids.len <= type_ids_max);
+            std.debug.assert(query.limit <= list_max);
+
+            var sql: std.Io.Writer.Allocating = .init(arena);
+            const head = "SELECT COUNT(*) AS count FROM " ++ table ++ " r WHERE ";
+
+            sql.writer.writeAll(head) catch return error.OutOfMemory;
+            _ = try write_conditions(&sql.writer, query);
+
+            var select = try connection.prepare_dynamic(sql.written());
+            defer select.finalize();
+
+            _ = try bind_query(&select, query);
+
+            if (!try select.step()) {
+                return 0;
+            }
+
+            const counted = try select.read(struct {
+                count: i64,
+            }, arena);
+
+            return @intCast(@max(0, counted.count));
         }
 
         fn build_list_sql(arena: std.mem.Allocator, query: Query) Error![]const u8 {
@@ -223,7 +351,7 @@ pub fn List(comptime tables: tables_module.Tables) type {
                 const head = if (query.latest) list_latest_by_title else list_by_title;
 
                 writer.writeAll(head) catch return error.OutOfMemory;
-                try write_conditions(writer, query);
+                _ = try write_conditions(writer, query);
                 writer.print(" ORDER BY title.value, r.id LIMIT {d} OFFSET {d}", paging) catch {
                     return error.OutOfMemory;
                 };
@@ -236,7 +364,7 @@ pub fn List(comptime tables: tables_module.Tables) type {
                 };
 
                 writer.writeAll(list_by_record) catch return error.OutOfMemory;
-                try write_conditions(writer, query);
+                _ = try write_conditions(writer, query);
                 writer.print("{s} LIMIT {d} OFFSET {d}) r {s}{s}", .{
                     order,
                     limit,
@@ -261,22 +389,23 @@ pub fn List(comptime tables: tables_module.Tables) type {
             std.debug.assert(bind_index > 1);
             std.debug.assert(filter.values_json == null or query.type_ids.len == 1);
 
-            const args = .{ bind_index, bind_index + 1, slot_of(query) };
+            const args = .{ bind_index, bind_index + 1 };
             const has_assignments = comptime (tables.assignments != null);
-            const written = if (filter.values_json != null)
-                writer.print(list_filter_any, args)
-            else if (has_assignments and filter.membership)
-                writer.print(list_membership, args)
-            else if (query.type_ids.len == 1)
-                writer.print(list_filter_one_type, args)
-            else
-                writer.print(list_filter, args);
 
-            written catch return error.OutOfMemory;
+            if (filter.values_json != null) {
+                try write_slotted(writer, query, list_filter_any, args);
+            } else if (has_assignments and filter.membership) {
+                try write_slotted(writer, query, list_membership, args);
+            } else if (query.type_ids.len == 1) {
+                try write_slotted(writer, query, list_filter_one_type, args);
+            } else {
+                try write_slotted(writer, query, list_filter, args);
+            }
         }
 
-        /// Every condition on `r`, with placeholders numbered as `bind_query` binds them.
-        fn write_conditions(writer: *std.Io.Writer, query: Query) Error!void {
+        /// Every condition on `r`, with placeholders numbered as `bind_query` binds them;
+        /// answers the next placeholder's number.
+        fn write_conditions(writer: *std.Io.Writer, query: Query) Error!u32 {
             std.debug.assert(query.type_ids.len > 0);
             std.debug.assert(query.type_ids.len <= type_ids_max);
 
@@ -312,9 +441,7 @@ pub fn List(comptime tables: tables_module.Tables) type {
             }
 
             if (query.search != null) {
-                writer.print(list_search, .{ bind_index, slot_of(query) }) catch {
-                    return error.OutOfMemory;
-                };
+                try write_slotted(writer, query, list_search, .{bind_index});
                 bind_index += 1;
             }
 
@@ -331,7 +458,13 @@ pub fn List(comptime tables: tables_module.Tables) type {
 
             if (query.app) |app| {
                 try write_app(writer, app, bind_index);
+
+                if (app == .name) {
+                    bind_index += 1;
+                }
             }
+
+            return bind_index;
         }
     };
 }
@@ -384,7 +517,8 @@ fn write_author(
     bind_index.* += 1;
 }
 
-fn bind_query(select: *db.Statement, query: Query) Error!void {
+/// Binds every value the conditions take; answers the next placeholder's number.
+fn bind_query(select: *db.Statement, query: Query) Error!u31 {
     std.debug.assert(query.type_ids.len > 0);
     std.debug.assert(query.limit <= list_max);
 
@@ -447,6 +581,9 @@ fn bind_query(select: *db.Statement, query: Query) Error!void {
     if (query.app) |app| {
         if (app == .name) {
             try select.bind_text(bind_index, app.name);
+            bind_index += 1;
         }
     }
+
+    return bind_index;
 }

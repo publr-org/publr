@@ -43,6 +43,7 @@ pub const tables = [_][]const u8{
     "sandboxed_plugins",
     "activity",
     "errors",
+    "notice_queue",
 };
 
 pub fn apply(connection: *db.Db) db.Error!void {

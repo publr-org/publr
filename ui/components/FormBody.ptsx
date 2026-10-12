@@ -25,8 +25,6 @@ export type FormBodyProps = {
   danger?: JSX.Element;
   /** An aside of the page's own (the record editor's actions) instead of `aside`. */
   side?: JSX.Element;
-  /** Centred in the sheet: a record, edited in focus. Everything else sits at the gutter. */
-  focus?: boolean;
   /** Drawn inside a drawer, which scrolls on its own. */
   in_drawer?: boolean;
   /** The column alone: a preview of a form, no title, no aside. */
@@ -35,6 +33,8 @@ export type FormBodyProps = {
   children?: JSX.Element;
   /** One column, the aside under the form: a narrow panel (a visual record's Entry). */
   stacked?: boolean;
+  /** Centred in the sheet: a record, edited in focus. Everything else sits at the gutter. */
+  focus?: boolean;
 };
 
 /** The body of a page about one thing: the title band, an optional facts band, then the
@@ -60,18 +60,18 @@ export function FormBody({
   children,
 }: FormBodyProps) {
   return (
-    <div class={["flex min-w-0 grow", stacked ? "flex-col" : "items-stretch"]} data-part="form-body">
+    <div class={["flex min-w-0 grow", stacked ? "flex-col" : "items-stretch max-md:flex-col"]} data-part="form-body">
       <div class={["min-w-0 flex-1", bare ? "py-7" : "pb-10", stacked ? "[&_[data-part=page-header]]:px-4" : ""]}>
         {!bare && header}
         {!bare && !header && (
           <IndexHeader title={title} description={description} actions={actions} />
         )}
         {!bare && meta && (
-          <div class={["flex min-h-12 flex-wrap items-center gap-3 border-y border-border py-2.5", stacked ? "px-4" : "px-8"]}>
+          <div class={["flex min-h-12 flex-wrap items-center gap-3 border-y border-border py-2.5", stacked ? "px-4" : "px-5"]}>
             {meta}
           </div>
         )}
-        <div class={["flex w-full max-w-4xl flex-col gap-6", stacked ? "px-4" : "px-8", focus ? "mx-auto" : "", meta ? "pt-6" : ""]}>
+        <div class={["flex w-full max-w-4xl flex-col gap-6", stacked ? "px-4" : "px-5", focus ? "mx-auto" : "", meta ? "pt-6" : ""]}>
           {problems.length > 0 && (
             <Callout
               tone="error"

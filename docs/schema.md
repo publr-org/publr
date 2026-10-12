@@ -848,6 +848,14 @@ last change. Keys are `record:<id>`, `type:<handle>`, `records`,
 `template:<app>/<path>` and `asset:<app>`; artifacts are an app and a URL inside it
 (`www:/posts/hello`, `www:/_islands/latest-posts`). See [Apps](apps.md).
 
+## `notice_queue`
+
+The notices waiting for the extrinsic event hooks (see [Plugin API](plugin-api.md)): `id`
+in the order they were raised, the raising operation's `operation_id`, the notice's
+`name` and `subject`, and `queued_at`. A write adds them in its own transaction, so a write
+rolled back queues nothing; the server hands them on between requests, oldest first, and
+removes them.
+
 ## Coming with later gates
 
 API token tables come with the tokens gate. A built-in plugin that truly needs its own table names it

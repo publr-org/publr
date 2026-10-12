@@ -30,10 +30,11 @@ pub const always = [_][]const u8{
 
 /// The record operations a plugin reaches on its own content types without asking.
 pub const own_records = [_][]const u8{
-    "record.get",      "record.list",    "record.create",     "record.save",
-    "record.delete",   "record.publish", "record.transition", "record.discard_changes",
-    "record.purge",    "snapshot.list",  "snapshot.get",      "snapshot.take",
-    "record.validate", "record.shown",   "record.query",      "record.reach",
+    "record.get",             "record.list",    "record.create",     "record.save",
+    "record.delete",          "record.publish", "record.transition", "record.discard_changes",
+    "record.purge",           "snapshot.list",  "snapshot.get",      "snapshot.take",
+    "record.validate",        "record.shown",   "record.query",      "record.reach",
+    "record.transition_many",
 };
 
 pub const core = [_]Permission{
@@ -145,6 +146,7 @@ pub const core = [_]Permission{
         .operations = &.{
             "record.publish",
             "record.transition",
+            "record.transition_many",
             "term.publish",
             "term.transition",
         },

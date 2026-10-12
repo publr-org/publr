@@ -15,7 +15,7 @@ export function MediaLibrarySelection() {
   return (
     <div class="contents">
       {state.selected_count > 0 && (
-        <div class="sticky top-[var(--sheet-top,3.5rem)] z-20 flex flex-wrap items-center gap-2 border-b border-border bg-card px-6 py-2" data-part="media-bulk">
+        <div class="sticky top-[var(--sheet-top,3.5rem)] z-20 flex flex-wrap items-center gap-2 border-b border-border bg-card px-5 py-2" data-part="media-bulk">
           <Text as="span" variant="heading-xs">{Publr.tn("{count} selected", "{count} selected", state.selected_count)}</Text>
           <Button type="button" hierarchy="tertiary" size="sm" onClick={select_page}>{Publr.t("Select page")}</Button>
           <Button type="button" hierarchy="tertiary" size="sm" onClick={clear_selection}>{Publr.t("Clear")}</Button>

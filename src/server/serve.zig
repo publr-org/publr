@@ -160,7 +160,7 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
     }
 
     try listener.enable_shutdown_signals();
-    try run_loop(&listener, &project, @as(i64, flags.idle_stop_s) * std.time.ms_per_s);
+    try run_loop(&listener, &project, init.gpa, @as(i64, flags.idle_stop_s) * std.time.ms_per_s);
 
     return if (project.restart_requested) .restart else .stopped;
 }
@@ -529,7 +529,12 @@ fn claim(
     return try operator.open(init.io, init.arena.allocator(), db_path, port, url);
 }
 
-fn run_loop(listener: *http.App, project: *routes.Project, idle_stop_ms: i64) !void {
+fn run_loop(
+    listener: *http.App,
+    project: *routes.Project,
+    gpa: std.mem.Allocator,
+    idle_stop_ms: i64,
+) !void {
     std.debug.assert(tick_ms > 0);
     std.debug.assert(idle_stop_ms >= 0);
 
@@ -550,6 +555,8 @@ fn run_loop(listener: *http.App, project: *routes.Project, idle_stop_ms: i64) !v
         if ((project.stop_requested or idle_over) and listener.engine.phase == .running) {
             listener.engine.stop();
         }
+
+        @import("queued_notices.zig").tick(project, gpa);
 
         if (project.apps.len > 0) {
             tick_apps(project);

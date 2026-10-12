@@ -27,7 +27,7 @@ export type MediaLibraryFilterBarProps = {
  * last action did, Filter's menu of filters to add, and the view. */
 export function MediaLibraryFilterBar({ children }: MediaLibraryFilterBarProps) {
   return (
-    <FilterBar classes="pl-8 pr-5">
+    <FilterBar classes="px-5">
       {state.pills.map((pill) => (
         <FilterPill key={pill.id} id={`filter-${pill.id}`}>
           <FilterPillLabel>{pill.label}</FilterPillLabel>

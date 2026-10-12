@@ -30,7 +30,7 @@ export function FieldPanelFooter({
   form_id,
 }: FieldPanelFooterProps) {
   return (
-    <div class="sticky bottom-0 mt-auto flex items-center justify-between gap-3 border-t border-border bg-card/95 px-8 py-4 backdrop-blur">
+    <div class="sticky bottom-0 mt-auto flex items-center justify-between gap-3 border-t border-border bg-card/95 px-5 py-4 backdrop-blur">
       <div class="flex items-center gap-2">
         {delete_action && (
           <Dialog>

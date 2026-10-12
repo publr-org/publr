@@ -1,7 +1,13 @@
 import { DataTable } from "@publr/ui/DataTable.ptsx";
 import type { DataTableProps } from "@publr/ui/DataTable.ptsx";
 import { onNavigate } from "@publr/ui/DataTable.ptsx";
+import { BulkActions } from "@publr/ui/BulkActions.ptsx";
+import { BulkActionsClear } from "@publr/ui/BulkActionsClear.ptsx";
+import { BulkActionsItem } from "@publr/ui/BulkActionsItem.ptsx";
+import { BulkActionsSeparator } from "@publr/ui/BulkActionsSeparator.ptsx";
+import { Toast } from "@publr/ui/Toast.ptsx";
 import { Publr } from "publr-jsx";
+import { send } from "publr/operations";
 import { IndexHeader } from "./IndexHeader.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Dialog } from "@publr/ui/Dialog.ptsx";
@@ -51,6 +57,28 @@ export type ContentListProps = {
   search: string;
   add_filters: Required<DataTableProps>["add_filters"];
   empty_text: string;
+  /** How many records the filters match, every page together. */
+  total: number;
+  /** The filters in force as `record.transition_many` takes them, to move every match. */
+  match_type: string;
+  match_types: string[];
+  match_filters: string[];
+  match_search: string;
+  /** The statuses records can be moved to, for the selection's actions: the action's name
+   * and the status's. */
+  moves: Array<{ to: string; label: string; status: string }>;
+  pages: Required<DataTableProps>["pages"];
+  previous_href: string;
+  next_href: string;
+  range_text: string;
+};
+
+type Conditions = { type: string; types: string[]; filters: string[]; search: string };
+
+type Moved = {
+  moved: number;
+  not_moved: number;
+  failed: Array<{ id: string; title: string; why: string }>;
 };
 
 export const state = Publr.reactive({
@@ -67,6 +95,13 @@ export const state = Publr.reactive({
   new_href: "",
   new_label: "",
   new_targets: [] as ContentListProps["new_targets"],
+  conditions: { type: "", types: [], filters: [], search: "" } as Conditions,
+  moves: [] as ContentListProps["moves"],
+  moving: false,
+  note: "",
+  /** The table's selection, as its `datatableselectionchange` reports it. */
+  selected_ids: [] as string[],
+  all_matching: false,
 });
 
 export const onDatatableload = (event: Event) => {
@@ -90,6 +125,60 @@ export const onDatatableload = (event: Event) => {
   state.new_href = event.detail.new_href;
   state.new_label = event.detail.new_label;
   state.new_targets = event.detail.new_targets;
+  state.conditions = event.detail.conditions;
+};
+
+export const onDatatableselectionchange = (event: Event) => {
+  if (!(event instanceof CustomEvent) || !event.detail) return;
+  state.selected_ids = event.detail.selectedRowIds;
+  state.all_matching = event.detail.allMatching;
+};
+
+/** The selection's records in one call: the ones ticked, or every match when the whole
+ * of it is selected. */
+const move_selection = async (to: string): Promise<Moved> => {
+  if (!state.all_matching) {
+    return (await send("record.transition_many", { to, ids: [...state.selected_ids] })) as Moved;
+  }
+  const { type, types, filters, search } = state.conditions;
+  return (await send("record.transition_many", {
+    to,
+    matching: true,
+    type: type || undefined,
+    types,
+    filters,
+    search: search || undefined,
+  })) as Moved;
+};
+
+let note_timer: ReturnType<typeof setTimeout> | undefined = undefined;
+
+export const moveSelected = async (event: Event) => {
+  const button = event.currentTarget as HTMLButtonElement;
+  const to = button.value;
+  const label = state.moves.find((move) => move.to === to)?.status ?? to;
+  if (!to || state.moving) return;
+  state.moving = true;
+  clearTimeout(note_timer);
+  try {
+    state.note = Publr.t("Moving…");
+    const done = await move_selection(to);
+    state.note =
+      done.not_moved === 0
+        ? Publr.tn("{count} moved to {status}", "{count} moved to {status}", done.moved, { status: label })
+        : Publr.tn("{count} moved to {status}, {failed} could not move: {why}", "{count} moved to {status}, {failed} could not move: {why}", done.moved, {
+            status: label,
+            failed: done.not_moved,
+            why: done.failed[0]?.why ?? "",
+          });
+  } catch (error) {
+    state.note = Publr.t("Not done: {reason}", { reason: (error as Error).message });
+  } finally {
+    state.moving = false;
+  }
+  button.dispatchEvent(new CustomEvent("datatablereload", { bubbles: true }));
+  clearTimeout(note_timer);
+  note_timer = setTimeout(() => (state.note = ""), 5000);
 };
 
 Publr.effect(() => {
@@ -121,6 +210,16 @@ export function ContentList({
   search,
   add_filters,
   empty_text,
+  total,
+  match_type,
+  match_types,
+  match_filters,
+  match_search,
+  moves,
+  pages,
+  previous_href,
+  next_href,
+  range_text,
 }: ContentListProps) {
   state.title = title;
   state.shown_text = shown_text;
@@ -135,9 +234,21 @@ export function ContentList({
   state.new_href = new_href;
   state.new_label = new_label;
   state.new_targets = new_targets;
+  state.conditions = {
+    type: match_type,
+    types: match_types,
+    filters: match_filters,
+    search: match_search,
+  };
+  state.moves = moves;
 
   return (
-    <div data-part="content-list" class="flex flex-1 flex-col" onDatatableload={onDatatableload}>
+    <div
+      data-part="content-list"
+      class="flex flex-1 flex-col"
+      onDatatableload={onDatatableload}
+      onDatatableselectionchange={onDatatableselectionchange}
+    >
       <DataTable
         address={address}
         columns={columns}
@@ -147,6 +258,33 @@ export function ContentList({
         search={search}
         add_filters={add_filters}
         empty_text={empty_text}
+        total={total}
+        pages={pages}
+        previous_href={previous_href}
+        next_href={next_href}
+        range_text={range_text}
+        selectable
+        bulk={
+          <BulkActions>
+            {state.moves.map((move) => (
+              <span key={move.to} class="contents">
+                {move.to !== "deleted" && (
+                  <BulkActionsItem value={move.to} onClick={moveSelected} disabled={state.moving}>
+                    {move.label}
+                  </BulkActionsItem>
+                )}
+              </span>
+            ))}
+            <BulkActionsSeparator />
+            {state.moves.some((move) => move.to === "deleted") && (
+              <BulkActionsItem variant="destructive" value="deleted" onClick={moveSelected} disabled={state.moving}>
+                <Icon name="trash" size="xs" />
+                {Publr.t("Delete")}
+              </BulkActionsItem>
+            )}
+            <BulkActionsClear />
+          </BulkActions>
+        }
       >
         <IndexHeader
           title={state.title}
@@ -319,6 +457,11 @@ export function ContentList({
           }
         />
       </DataTable>
+      {state.note && (
+        <div class="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+          <Toast>{state.note}</Toast>
+        </div>
+      )}
     </div>
   );
 }

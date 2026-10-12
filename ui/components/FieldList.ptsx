@@ -106,7 +106,7 @@ export function FieldList({
             }
           />
           {limit_title !== "" && (
-            <div class="px-6 pb-4" data-part="fields-limit">
+            <div class="px-5 pb-4" data-part="fields-limit">
               <Callout tone={limit_full ? "error" : "warning"} title={limit_title}>
                 {limit_text}
               </Callout>

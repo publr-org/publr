@@ -30,6 +30,7 @@ pub const delete = Store.delete;
 pub const rename = Store.rename;
 pub const count_by_type = Store.count_by_type;
 pub const list = Store.list;
+pub const count = Store.count;
 
 /// How deep a hierarchy goes: a term at depth 16 has no children.
 pub const depth_max: u32 = 16;

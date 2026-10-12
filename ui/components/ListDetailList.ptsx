@@ -1,20 +1,60 @@
+import { Publr } from "publr-jsx";
+import { SidebarHeading } from "./SidebarHeading.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import type { IconName } from "@publr/ui/Icon.ptsx";
+
 export type ListDetailListProps = {
   /** What the list is, for assistive tech: `Conflicts`, `Media`. */
   label: string;
+  /** The list's heading band, where the list stands in for the area sidebar; with none
+   * the list sits under the top bar, beside an area sidebar. */
+  heading?: string;
+  heading_icon?: IconName;
+  heading_href?: string;
   children?: JSX.Element;
 };
 
-/** A ListDetailPage's list: the left column, kept in view as the detail scrolls. */
-export function ListDetailList({ label, children }: ListDetailListProps) {
+/** A ListDetailPage's list: the left column, kept in view as the detail scrolls. Drawn as
+ * the area sidebar is (base.css lifts it beside the top bar when there is none). On a
+ * phone a headed list is its heading band, whose button opens the list as a drawer. */
+export function ListDetailList({ label, heading = "", heading_icon = "list-unordered", heading_href = "", children }: ListDetailListProps) {
   return (
-    <div class="w-72 shrink-0 border-r border-border" data-part="list-detail-column">
-      <nav
-        aria-label={label}
-        class="sticky top-[var(--sheet-top,3.5rem)] flex max-h-[calc(100dvh-var(--sheet-top,3.5rem))] flex-col gap-5 overflow-y-auto px-6 py-5"
-        data-part="list-detail-list"
+    <div
+      class="w-60 shrink-0 border-r border-sidebar-border bg-card text-sidebar-foreground"
+      data-part="list-detail-column"
+      data-page-sidebar={heading !== "" ? "" : undefined}
+    >
+      <div
+        class="sticky top-[var(--sheet-top,3.5rem)] flex max-h-[calc(100dvh-var(--sheet-top,3.5rem))] flex-col"
+        data-part="page-sidebar-inner"
       >
-        {children}
-      </nav>
+        {heading !== "" && (
+          <div class="relative">
+            <SidebarHeading label={heading} icon={heading_icon} href={heading_href} />
+            <Button
+              type="button"
+              hierarchy="tertiary"
+              size="sm"
+              label={Publr.t("Show {name}", { name: label })}
+              title={Publr.t("Show {name}", { name: label })}
+              popovertarget="page-sidebar"
+              classes="absolute top-3 right-3 md:hidden"
+            >
+              <Icon name="filter-lines" size="sm" />
+            </Button>
+          </div>
+        )}
+        <nav
+          id={heading !== "" ? "page-sidebar" : undefined}
+          popover={heading !== "" ? "auto" : undefined}
+          aria-label={label}
+          class="flex min-h-0 flex-1 flex-col overflow-y-auto"
+          data-part="list-detail-list"
+        >
+          <div class="flex flex-col px-3 pb-4">{children}</div>
+        </nav>
+      </div>
     </div>
   );
 }

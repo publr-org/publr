@@ -50,21 +50,21 @@ export function IndexPage({
       <div class="flex flex-1 flex-col" data-part="index-page">
         {!own_header && <IndexHeader title={title} description={description} actions={actions} />}
         {meta && (
-          <div class="flex min-h-12 flex-wrap items-center gap-3 border-t border-border px-8 py-2.5">
+          <div class="flex min-h-12 flex-wrap items-center gap-3 border-t border-border px-5 py-2.5">
             {meta}
           </div>
         )}
         {tabs && (
-          <div class="flex items-center justify-between gap-4 border-t border-border px-8 py-2">
+          <div class="flex items-center justify-between gap-4 border-t border-border px-5 py-2">
             {tabs}
             {tab_menu}
           </div>
         )}
         {notice && (
-          <div class="flex flex-col gap-3 border-t border-border px-8 py-5">{notice}</div>
+          <div class="flex flex-col gap-3 border-t border-border px-5 py-5">{notice}</div>
         )}
         {filters && (
-          <div class="flex flex-wrap items-end gap-3 border-t border-border px-8 py-4">{filters}</div>
+          <div class="flex flex-wrap items-end gap-3 border-t border-border px-5 py-4">{filters}</div>
         )}
         {empty ? (
           <div class={["flex flex-1 flex-col", meta || tabs || notice || filters ? "border-t border-border" : ""]}>
@@ -82,7 +82,7 @@ export function IndexPage({
           </div>
         )}
         {footer && (
-          <div class="flex items-center justify-between gap-4 border-t border-border px-8 py-4">
+          <div class="flex items-center justify-between gap-4 border-t border-border px-5 py-4">
             {footer}
           </div>
         )}

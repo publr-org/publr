@@ -205,6 +205,7 @@ fn units_of(ctx: *Ctx, notices: []const sdk.trail.Notice) Error![]const []const 
     std.debug.assert(notices.len <= sdk.trail.notices_max);
 
     var units: std.ArrayList([]const u8) = .empty;
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
 
     for (notices) |notice| {
         const prefix = unit_prefix(notice.name) orelse continue;
@@ -217,8 +218,9 @@ fn units_of(ctx: *Ctx, notices: []const sdk.trail.Notice) Error![]const []const 
             return error.OutOfMemory;
         };
 
-        if (!listed(units.items, unit)) {
+        if (!seen.contains(unit)) {
             units.append(ctx.arena, unit) catch return error.OutOfMemory;
+            seen.put(ctx.arena, unit, {}) catch return error.OutOfMemory;
         }
     }
 

@@ -16,4 +16,10 @@ pub const core = [_]migration.Migration{
         @import("migrations/0.3.0.zig"),
         @embedFile("migrations/0.3.0.zig"),
     ),
+    .of(
+        "publr",
+        "unreleased",
+        @import("migrations/unreleased.zig"),
+        @embedFile("migrations/unreleased.zig"),
+    ),
 };

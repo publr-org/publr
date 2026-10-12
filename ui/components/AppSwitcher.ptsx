@@ -1,5 +1,11 @@
 import { Publr } from "publr-jsx";
 import { Button } from "@publr/ui/Button.ptsx";
+import { Drawer } from "@publr/ui/Drawer.ptsx";
+import { DrawerClose } from "@publr/ui/DrawerClose.ptsx";
+import { DrawerContent } from "@publr/ui/DrawerContent.ptsx";
+import { DrawerHeader } from "@publr/ui/DrawerHeader.ptsx";
+import { DrawerTitle } from "@publr/ui/DrawerTitle.ptsx";
+import { DrawerTrigger } from "@publr/ui/DrawerTrigger.ptsx";
 import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
 import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
 import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
@@ -31,16 +37,39 @@ export type AppSwitcherProps = {
   after?: JSX.Element;
   /** Whether anything is joined after it. */
   extended: boolean;
+  /** The project's only app's site: nothing to switch, so the picker is a link to it. Empty
+   * with several apps. */
+  only_href: string;
+  /** The apps as a phone's drawer lists them (AppsPanel); empty when a joined segment's
+   * drawer holds them, which on a phone then stands for the whole picker. */
+  apps?: JSX.Element;
 };
 
 /** Which app the admin shows, top right: every record, or one app's, with a way to that
  * app's site. It only narrows what is listed; picking one reloads the
- * page. Plugins may join their own segments to it, one control. */
-export function AppSwitcher({ current, current_href, choices, csrf, back, after, extended }: AppSwitcherProps) {
+ * page. Plugins may join their own segments to it, one control. On a phone it is one
+ * button: the site's icon for the only app, else the apps' opening a drawer of them, and
+ * with a segment joined only the segment's, whose drawer lists the apps too. */
+export function AppSwitcher({ current, current_href, choices, csrf, back, after, extended, only_href, apps }: AppSwitcherProps) {
   const linked = current_href !== "";
 
   return (
     <div class="inline-flex items-stretch" data-part="app-picker">
+      {only_href !== "" && (
+        <StatusButton
+          stripe={false}
+          href={only_href}
+          target="_blank"
+          icon_name="external"
+          attach={extended ? "start" : "none"}
+          label={Publr.t("View site")}
+          compact={!extended}
+          classes={extended ? "max-md:hidden" : ""}
+        >
+          {Publr.t("View site")}
+        </StatusButton>
+      )}
+      {only_href === "" && (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <StatusButton
@@ -49,6 +78,7 @@ export function AppSwitcher({ current, current_href, choices, csrf, back, after,
             attach={linked || extended ? "start" : "none"}
             merge={linked ? "next" : "none"}
             label={Publr.t("Showing: {current}. Switch app", { current })}
+            classes="max-md:hidden"
           >
             {current}
           </StatusButton>
@@ -85,7 +115,8 @@ export function AppSwitcher({ current, current_href, choices, csrf, back, after,
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      {linked && (
+      )}
+      {only_href === "" && linked && (
         <StatusButton
           stripe={false}
           href={current_href}
@@ -94,7 +125,26 @@ export function AppSwitcher({ current, current_href, choices, csrf, back, after,
           attach={extended ? "middle" : "end"}
           merge="previous"
           label={Publr.t("Open {name}", { name: current })}
+          classes="max-md:hidden"
         />
+      )}
+      {only_href === "" && !extended && (
+        <Drawer classes="md:hidden">
+          <DrawerTrigger asChild>
+            <StatusButton stripe={false} icon_name="layout-grid" label={Publr.t("Showing: {current}. Switch app", { current })} />
+          </DrawerTrigger>
+          <DrawerContent label={Publr.t("Apps")} classes="sm:max-w-sm">
+            <DrawerHeader>
+              <DrawerTitle>{Publr.t("Apps")}</DrawerTitle>
+              <DrawerClose asChild>
+                <Button hierarchy="tertiary" size="sm" label={Publr.t("Close")}>
+                  <Icon name="x-close" size="sm" />
+                </Button>
+              </DrawerClose>
+            </DrawerHeader>
+            <div class="p-4">{apps}</div>
+          </DrawerContent>
+        </Drawer>
       )}
       {after}
     </div>

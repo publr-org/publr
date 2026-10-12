@@ -40,6 +40,9 @@ pub fn Shape(comptime Node: type) type {
             /// The plugin's section the page is in, and where it opens: the crumbs' first.
             section: []const u8 = "",
             section_href: []const u8 = "",
+            /// The site of the app the admin shows (the only one, or the one chosen); empty
+            /// while it shows several. On phones the rail links to it.
+            site_href: []const u8 = "",
             /// The page is shown inside another (the AI workspace follows the agent in a
             /// frame): the sheet alone, without the rail and the sidebar.
             framed: bool = false,

@@ -141,13 +141,13 @@ export function FieldRows({
         </TableBody>
       </Table>
       {more_href !== "" && (
-        <div class="border-t border-border px-8 py-3">
+        <div class="border-t border-border px-5 py-3">
           <Link href={more_href} variant="body-sm" tone="default">
             {more_label}
           </Link>
         </div>
       )}
-      <div class="border-t border-border bg-muted/40 px-8 py-4">
+      <div class="border-t border-border bg-muted/40 px-5 py-4">
         <Link onClick={onNavigate}
           href={add_href}
           variant="body-sm"

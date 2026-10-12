@@ -108,6 +108,8 @@ export const state = Publr.reactive({
   server_note: Publr.t("Pick up files put into the media folder outside the admin."),
   server_new: 0,
   server_skipped: [] as string[],
+  /** What a folder's More menu opened its dialog for: `inside`, `rename`, `move`, `delete`. */
+  folder_action: "rename",
   folders: [] as MediaFolder[],
   tag_list: [] as MediaTag[],
   periods: [] as MediaPeriod[],
@@ -146,6 +148,20 @@ export const state = Publr.reactive({
   file_shown: "other" as "image" | "video" | "audio" | "pdf" | "other",
   file_back: "",
 });
+
+// A folder's More menu opens one dialog; which of its forms it shows is chosen here.
+export const chose_inside = () => {
+  state.folder_action = "inside";
+};
+export const chose_rename = () => {
+  state.folder_action = "rename";
+};
+export const chose_move = () => {
+  state.folder_action = "move";
+};
+export const chose_delete = () => {
+  state.folder_action = "delete";
+};
 
 const depth_max = 5;
 const month_names = () => ["", Publr.t("January"), Publr.t("February"), Publr.t("March"),
@@ -888,16 +904,16 @@ export function MediaLibrary({
         children
       ) : (
         <div class="flex flex-1 flex-col">
-          <ListDetailBand>
-            <MediaLibraryFilterBar>
-              <MediaLibraryUpload />
-            </MediaLibraryFilterBar>
-          </ListDetailBand>
           <ListDetailColumns>
-            <ListDetailList label={Publr.t("Media")}>
+            <ListDetailList label={Publr.t("Media")} heading={Publr.t("Media")} heading_icon="image" heading_href="/admin/media">
               <MediaLibrarySidebar />
             </ListDetailList>
             <ListDetailDetail>
+              <ListDetailBand>
+                <MediaLibraryFilterBar>
+                  <MediaLibraryUpload />
+                </MediaLibraryFilterBar>
+              </ListDetailBand>
               {state.file !== "" ? (
                 <MediaLibraryFile />
               ) : (

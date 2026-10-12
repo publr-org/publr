@@ -1,6 +1,7 @@
 import { Badge } from "@publr/ui/Badge.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import type { IconName } from "@publr/ui/Icon.ptsx";
+import { SidebarNavEyebrow } from "@publr/ui/SidebarNavEyebrow.ptsx";
 import { SidebarNavItem } from "@publr/ui/SidebarNavItem.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { PinButton } from "./PinButton.ptsx";
@@ -18,6 +19,10 @@ export type SettingsNavProps = {
     pinned: boolean;
     /** What waits there, as a number (Site Health's cases); empty when nothing does. */
     count: string;
+    /** Over the first page of a group, the group's name; empty for the rest. */
+    group: string;
+    /** Over the first settings section of an app, the app's name; empty for the rest. */
+    heading: string;
   }>;
   /** For the pins' forms: the session's token, and this page to come back to. */
   csrf: string;
@@ -26,8 +31,17 @@ export type SettingsNavProps = {
 
 export function SettingsNav({ pages, csrf, back }: SettingsNavProps) {
   return (
-    <div data-slot="pages" class="flex flex-col pt-2">
+    <div data-slot="pages" class="flex flex-col">
       {pages.map((page) => (
+        <div class="contents">
+          {page.group !== "" && <SidebarNavEyebrow>{page.group}</SidebarNavEyebrow>}
+          {page.heading !== "" && (
+            <p class="px-2.5 pb-0.5 pt-2" data-part="settings-app">
+              <Text as="span" variant="body-xs" tone="muted">
+                {page.heading}
+              </Text>
+            </p>
+          )}
         <div class="group flex items-center gap-1">
           <SidebarNavItem href={page.href} active={page.active} classes="min-w-0 flex-1">
             <Icon name={page.icon} size="sm" classes="shrink-0" />
@@ -35,6 +49,7 @@ export function SettingsNav({ pages, csrf, back }: SettingsNavProps) {
             {page.count !== "" && <Badge size="xs">{page.count}</Badge>}
           </SidebarNavItem>
           <PinButton plugin={page.plugin} page={page.page} pinned={page.pinned} csrf={csrf} back={back} />
+        </div>
         </div>
       ))}
     </div>

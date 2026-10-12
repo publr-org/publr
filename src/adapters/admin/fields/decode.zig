@@ -89,6 +89,11 @@ fn field_value(
         return if (filled(object)) object else null;
     }
 
+    // A repeater inside a group is edited as JSON there and posts its value whole.
+    if (model.field.is_repeater(def.kind) and has_exact(form, name)) {
+        return json_value(arena, form, name);
+    }
+
     if (model.field.is_repeater(def.kind)) {
         return entries_value(arena, def, form, name);
     }
@@ -561,6 +566,45 @@ test "the form's paths become the document: lists, groups, repeaters, JSON insid
 
     const bad = Form.parse(arena, "views=x").?;
     try std.testing.expect(document_of(arena, &test_fields, &bad) == null);
+}
+
+test "a repeater inside a group comes back whole from its JSON" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const fields = [_]Def{.{
+        .name = "footer",
+        .label = "Footer",
+        .kind = "group",
+        .fields = &.{
+            .{
+                .name = "heading",
+                .label = "Heading",
+                .kind = "string",
+            },
+            .{
+                .name = "links",
+                .label = "Links",
+                .kind = "repeater",
+                .fields = &.{.{
+                    .name = "url",
+                    .label = "URL",
+                    .kind = "string",
+                }},
+            },
+        },
+    }};
+    const body = "footer.heading=Shop&footer.links=%5B%7B%22url%22%3A%22%2Fa%22%7D%5D";
+    const form = Form.parse(arena, body).?;
+
+    try std.testing.expectEqualStrings(
+        "{\"footer\":{\"heading\":\"Shop\",\"links\":[{\"url\":\"/a\"}]}}",
+        document_of(arena, &fields, &form).?,
+    );
+
+    const broken = Form.parse(arena, "footer.links=%5B").?;
+    try std.testing.expect(document_of(arena, &fields, &broken) == null);
 }
 
 test "a field the form posted blank is cleared; one it left out is kept" {

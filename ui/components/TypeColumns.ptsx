@@ -240,10 +240,10 @@ export function TypeColumns({ type_href, list, levels, open, preview }: TypeColu
                 <div ref={panel_ref} data-level={level.id} data-part="type-panel" style={level.style}
                   class="drawer-enter absolute inset-y-0 right-0 overflow-y-auto border-l border-border bg-card shadow-2xl outline-none"
                   inert={level.inactive} focusScope={!level.inactive} tabindex={-1} aria-busy={level.loading}>
-                  <div class="px-8 py-4" hidden={!level.loading} role="status">
+                  <div class="px-5 py-4" hidden={!level.loading} role="status">
                     <Text variant="body-sm" tone="muted">{Publr.t("Loading field…")}</Text>
                   </div>
-                  <div class="px-8 py-4" hidden={!level.error} role="alert">
+                  <div class="px-5 py-4" hidden={!level.error} role="alert">
                     <Text variant="body-sm">{level.error}</Text>
                     <Button onClick={retryLevel} data-level={level.id} hierarchy="secondary">{Publr.t("Retry")}</Button>
                   </div>
@@ -252,7 +252,7 @@ export function TypeColumns({ type_href, list, levels, open, preview }: TypeColu
               </div>
             ))}
           </div>
-          <div class="absolute inset-x-0 bottom-0 px-8 py-4" hidden={!state.error} role="alert">
+          <div class="absolute inset-x-0 bottom-0 px-5 py-4" hidden={!state.error} role="alert">
             <Text variant="body-sm">{state.error}</Text>
             <Button onClick={retryColumns} hidden={!state.refresh_error} hierarchy="secondary">{Publr.t("Retry refresh")}</Button>
           </div>

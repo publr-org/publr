@@ -21,6 +21,14 @@ pub const Filter = list_module.Filter;
 pub const Author = list_module.Author;
 pub const Query = list_module.Query;
 pub const Record = list_module.Record;
+pub const Match = list_module.Match;
+
+/// A document's status and its type's handle: what a change to many needs to know.
+pub const Brief = struct {
+    id: []const u8,
+    status: []const u8,
+    type: []const u8,
+};
 
 pub const App = list_module.App;
 
@@ -38,6 +46,10 @@ pub fn Store(comptime tables: tables_module.Tables) type {
         const List = list_module.List(tables);
 
         pub const list = List.list;
+        pub const count = List.count;
+        pub const gather = List.gather;
+        pub const gathered = List.gathered;
+        pub const release = List.release;
         pub const select_record = List.select_record;
 
         pub fn insert(
@@ -70,6 +82,34 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             try statement.exec();
 
             return id;
+        }
+
+        /// Each of many documents' status and type, by a JSON array of ids; the ones gone
+        /// are left out.
+        pub fn briefs(
+            connection: *db.Db,
+            arena: std.mem.Allocator,
+            ids_json: []const u8,
+        ) Error![]const Brief {
+            std.debug.assert(ids_json.len >= 2 and ids_json[0] == '[');
+            std.debug.assert(table.len > 0);
+
+            var select = try connection.prepare(
+                "SELECT r.id, r.status, t.handle FROM " ++ table ++ " r JOIN " ++
+                    tables.definitions ++ " t ON t.id = r.type_id " ++
+                    "WHERE r.id IN (SELECT value FROM json_each(?1))",
+            );
+            defer select.finalize();
+
+            try select.bind_text(1, ids_json);
+
+            var found: std.ArrayList(Brief) = .empty;
+
+            while (try select.step()) {
+                found.append(arena, try select.read(Brief, arena)) catch return error.OutOfMemory;
+            }
+
+            return found.items;
         }
 
         pub fn get(connection: *db.Db, arena: std.mem.Allocator, id: []const u8) Error!?Record {
@@ -159,6 +199,38 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             try statement.exec();
 
             return current + 1;
+        }
+
+        /// Many documents moved to `status` in one statement, each a version on; `ids_json`
+        /// and `applied_json` are JSON arrays of ids, the second the ones whose pending
+        /// changes went live with the move, so they are no longer changed.
+        pub fn set_status_many(
+            connection: *db.Db,
+            ids_json: []const u8,
+            applied_json: []const u8,
+            status: []const u8,
+            now_ms: i64,
+            updated_by: ?[]const u8,
+        ) Error!u32 {
+            std.debug.assert(ids_json.len >= 2 and ids_json[0] == '[');
+            std.debug.assert(status.len > 0);
+
+            var statement = try connection.prepare(
+                "UPDATE " ++ table ++ " SET status = ?3, version = version + 1, " ++
+                    "updated_at = ?4, updated_by = ?5, changed = changed AND id NOT IN " ++
+                    "(SELECT value FROM json_each(?2)) " ++
+                    "WHERE id IN (SELECT value FROM json_each(?1))",
+            );
+            defer statement.finalize();
+
+            try statement.bind_text(1, ids_json);
+            try statement.bind_text(2, applied_json);
+            try statement.bind_text(3, status);
+            try statement.bind_int(4, now_ms);
+            try statement.bind_optional_text(5, updated_by);
+            try statement.exec();
+
+            return @intCast(connection.changes());
         }
 
         /// Which app a document belongs to, null for the project's own. Not a version of

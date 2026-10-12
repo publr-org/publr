@@ -21,6 +21,7 @@ pub const update = Store.update;
 pub const get_by_id = Store.get_by_id;
 pub const get_by_handle = Store.get_by_handle;
 pub const list = Store.list;
+pub const count = Store.count;
 pub const applying_to = Store.applying_to;
 pub const list_briefs = Store.list_briefs;
 pub const briefs_after = Store.briefs_after;
