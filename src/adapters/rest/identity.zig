@@ -488,7 +488,7 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
     ctx.definitions = project.definitions;
     ctx.plugin_states = project.plugin_states;
     ctx.files = project.files;
-    ctx.apps = if (project.apps_host) |host| host.folder() else null;
+    ctx.apps = project.apps_folder();
     ctx.translations = if (project.languages) |languages| languages.view() else null;
     ctx.builder = project.builder;
     ctx.agents = project.agents;

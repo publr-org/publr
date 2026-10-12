@@ -6,10 +6,10 @@ const files = publr.lib.files;
 const routes = publr.routes;
 const auth = publr.auth;
 const http = publr.http;
+const browser_apps = @import("wasm/apps.zig");
 
 const heap_bytes: u32 = 16 << 20;
 const arena_bytes: u32 = publr.model.limits.request_arena_bytes;
-const request_bytes_max: u32 = 8 << 20;
 /// What one allocation from the worker may hold: a request, or a file it hands over.
 const allocation_bytes_max: u32 = files.bytes_max;
 /// How many runs a request gets to name the files it needs, one at a time.
@@ -36,6 +36,11 @@ const State = struct {
     allocations: [allocations_max]?[]u8,
     /// The media library's files, which the worker keeps in OPFS.
     deferred: files.Deferred,
+    /// What the apps' pages read; it follows `connection` when a database is imported.
+    index: publr.lib.deps.Index,
+    /// The project's apps, from its folder in OPFS or built into the module, rendered on
+    /// request.
+    apps: browser_apps.Host,
 };
 
 // A wasm module is one instance behind a C ABI; the exports below are its only record points.
@@ -91,13 +96,14 @@ export fn publr_init() i32 {
             error.Arena => 5,
             error.Auth => 6,
             error.Bootstrap => 7,
+            error.Apps => 8,
         };
     };
     state = instance;
     return 0;
 }
 
-const InitError = error{ Heap, Runtime, Database, Arena, Auth, Bootstrap };
+const InitError = error{ Heap, Runtime, Database, Arena, Auth, Bootstrap, Apps };
 
 fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     instance.gpa = gpa;
@@ -112,7 +118,7 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     errdefer instance.connection.close();
     db.schema.apply(&instance.connection) catch return error.Database;
     publr.registry.SDK.apply_schemas(&instance.connection) catch return error.Database;
-    open_index(&instance.connection) catch return error.Database;
+    instance.index = open_index(&instance.connection) catch return error.Database;
     instance.io_backend = std.Io.Threaded.init(gpa, .{});
     errdefer instance.io_backend.deinit();
     instance.auth.init(gpa, instance.io_backend.io(), .{}) catch return error.Auth;
@@ -145,6 +151,7 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     };
     routes.register(instance.app.router());
     apply_declared_types(instance) catch return error.Bootstrap;
+    open_apps(instance) catch return error.Apps;
     std.debug.assert(instance.app.routes.routes_len > 0);
     std.debug.assert(instance.runtime.open_count == 1);
 }
@@ -157,6 +164,7 @@ export fn publr_deinit() void {
         if (allocation) |bytes| instance.gpa.free(bytes);
     }
 
+    instance.apps.close();
     instance.deferred.deinit();
     instance.gpa.free(instance.response);
     instance.gpa.free(instance.arena_buffer);
@@ -421,7 +429,7 @@ export fn publr_import(ptr: [*]const u8, len: u32) i32 {
     candidate.deserialize(ptr[0..len]) catch return 3;
     db.schema.apply(&candidate) catch return 4;
     publr.registry.SDK.apply_schemas(&candidate) catch return 4;
-    open_index(&candidate) catch return 4;
+    _ = open_index(&candidate) catch return 4;
     apply_types(instance, &candidate) catch return 7;
     instance.connection.close();
     instance.connection = candidate;
@@ -433,15 +441,35 @@ export fn publr_import(ptr: [*]const u8, len: u32) i32 {
 }
 
 /// The dependency index's tables, which every record write records into, as the native
-/// server opens them; the browser build serves no built pages, so it keeps no handle.
-fn open_index(connection: *db.Db) !void {
+/// server opens them.
+fn open_index(connection: *db.Db) !publr.lib.deps.Index {
     std.debug.assert(connection.transaction_depth == 0);
 
     const deps = publr.lib.deps;
-
-    _ = try deps.Index.open(connection, .{
+    const index = try deps.Index.open(connection, .{
         .quiet_ms = deps.quiet_ms,
     });
+
+    std.debug.assert(index.db == connection);
+
+    return index;
+}
+
+/// The apps from the project's folder, or the module's own, reached by the `apps`
+/// operations through the project like `serve`'s.
+fn open_apps(instance: *State) !void {
+    std.debug.assert(instance.project.apps.len == 0);
+
+    instance.apps = .{
+        .gpa = instance.gpa,
+        .io = instance.io_backend.io(),
+        .project = &instance.project,
+        .index = &instance.index,
+    };
+    instance.project.apps_elsewhere = instance.apps.folder();
+    try instance.apps.open();
+
+    std.debug.assert(instance.project.apps_elsewhere != null);
 }
 
 fn apply_declared_types(instance: *State) !void {
@@ -468,8 +496,6 @@ fn apply_types(instance: *State, connection: *db.Db) !void {
 }
 
 fn build_request(parsed: RequestJson) !http.Head {
-    std.debug.assert(request_bytes_max > arena_bytes);
-
     if (parsed.path.len == 0 or parsed.path[0] != '/' or
         std.mem.indexOfAny(u8, parsed.path, " \r\n\x00") != null) return error.InvalidPath;
 
@@ -498,6 +524,9 @@ fn build_request(parsed: RequestJson) !http.Head {
         };
         request.headers_len += 1;
     }
+
+    std.debug.assert(request.headers_len == parsed.headers.len);
+    std.debug.assert(request.path[0] == '/');
 
     return request;
 }

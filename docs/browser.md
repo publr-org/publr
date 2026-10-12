@@ -27,10 +27,20 @@ and responses out.
 Three things the worker does own, because the module cannot reach them:
 
 - **the database**: SQLite lives in memory inside the module and is written
-  to the browser's storage after every change and restored on the next boot;
+  to the browser's storage after every change and restored on the next boot. A
+  browser with none of its own starts from the file the worker was registered
+  with, `publr-worker.js?seed=<file>`, when there is one: a demo's content, ready;
 - **the session cookie**: `Set-Cookie` and `Cookie` are invisible to service
   workers, so the worker keeps the cookie jar itself and persists it with the
   database;
+- **the project's files**: the folder Publr runs in, its apps first, is OPFS's
+  `files/`. Publr reads and writes it as it would a disk, through WASI's file
+  calls, which the worker answers from a copy it keeps in memory (OPFS cannot be
+  reached synchronously) and carries out in OPFS before the response leaves. A
+  browser with none starts from `publr-worker.js?files=<file>`, a JSON object
+  of paths and their contents in base64. So the apps are read from `apps/`, as
+  `serve` reads them, and what edits them (the design system, `apps.write`)
+  works here too;
 - **the media library's files**: each file is its own file in OPFS under
   `media/`, which only the worker can open, and only asynchronously. When a request
   needs one the module does not hold, its answer names it (`need`); the worker hands
@@ -43,14 +53,20 @@ Three things the worker does own, because the module cannot reach them:
 ## Building and running it
 
 ```
-zig build browser                  # zig-out/browser: publr.wasm, index.html, publr-worker.js
+zig build browser                  # zig-out/browser: publr.wasm, index.html, the worker
 zig build run -- serve --browser   # http://127.0.0.1:8081/
 ```
 
 `serve --browser [<dir>]` serves that directory as static files (`/` is
 `index.html`); after the first load, everything under `/` is answered by the
-module in the tab. The module carries no apps, so `/` opens the admin, which
-asks for the first administrator on a fresh database. Native and browser servers run side by side on `8080` and
+module in the tab. The module serves the apps in the project's `apps/`, or,
+when that holds none, the ones it was built with (`-Dpreset`, `-Dapps`), every
+page rendered on request; with neither, `/` opens the admin, which asks for the
+first administrator on a fresh database.
+
+After every change the worker posts `{ changed: <path> }` on the
+`BroadcastChannel` named `publr`, so a page showing a site beside its admin can
+draw it again. Native and browser servers run side by side on `8080` and
 `8081`. `-Dbrowser-debug=true` builds the module in Debug mode with panic
 messages.
 

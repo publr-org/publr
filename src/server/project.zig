@@ -35,6 +35,8 @@ pub const Project = struct {
     binary: []const u8 = "",
     /// The apps as `serve` holds them, to load again when asked; null outside `serve`.
     apps_host: ?*@import("apps_host.zig").AppsHost = null,
+    /// The apps folder of a host that is not `serve`: the browser build's, in OPFS.
+    apps_elsewhere: ?sdk.context.AppsFolder = null,
     /// The key the CLI next to this server sends a command with (`operator.zig`); null when
     /// it takes none.
     operator_key: ?[]const u8 = null,
@@ -165,6 +167,18 @@ pub const Project = struct {
         std.debug.assert(project.admin_origin.len == 0 or project.site_origin.len > 0);
 
         return project.admin_origin.len > 0;
+    }
+
+    /// The folder the `apps` operations reach: `serve`'s, else another host's, else none.
+    pub fn apps_folder(project: *const Project) ?sdk.context.AppsFolder {
+        std.debug.assert(project.apps.len <= apps_limit);
+
+        if (project.apps_host) |host| {
+            std.debug.assert(project.apps_elsewhere == null);
+            return host.folder();
+        }
+
+        return project.apps_elsewhere;
     }
 
     /// The path every address the admin sends back carries: its own, else the project's.

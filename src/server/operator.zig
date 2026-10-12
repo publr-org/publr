@@ -285,7 +285,7 @@ pub fn handle(
         .sandboxed_plugins = project.sandboxed_plugins,
         .plugin_states = project.plugin_states,
         .files = project.files,
-        .apps = if (project.apps_host) |host| host.folder() else null,
+        .apps = project.apps_folder(),
         .builder = project.builder,
         .agents = project.agents,
         .live = project.live,

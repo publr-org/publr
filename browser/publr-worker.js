@@ -1,9 +1,17 @@
 // Service worker: forwards every request to the Publr wasm module and returns its response.
 
-const passthrough = ["/index.html", "/publr-worker.js", "/publr.wasm"];
+importScripts("publr-files.js");
+
+const passthrough = ["/index.html", "/publr-worker.js", "/publr-files.js", "/publr.wasm"];
 const wasi_errno_nosys = 52;
 const db_file = "publr.sqlite";
 const cookies_file = "publr.cookies.json";
+// The database a browser with none of its own starts from: `publr-worker.js?seed=<file>`.
+const seed_file = new URL(self.location.href).searchParams.get("seed");
+// The project files such a browser starts from: `publr-worker.js?files=<file>`.
+const seed_files = new URL(self.location.href).searchParams.get("files");
+// Pages showing this Publr hear of every change, to draw again what they show of it.
+const changes = new BroadcastChannel("publr");
 
 let instance = null;
 let ready = null;
@@ -65,9 +73,13 @@ async function forward(request, url) {
 
     try {
       if (response.status < 400) await carry_out(response.effects ?? []);
+      await PublrFiles.flush();
       for (const { name, value } of response.headers) if (name.toLowerCase() === "set-cookie") store_cookie(value);
       const body = body_bytes();
-      if (!read_only) await persist();
+      if (!read_only) {
+        await persist();
+        changes.postMessage({ changed: url.pathname });
+      }
       return new Response(response.status === 204 || response.status === 304 ? null : body, {
         status: response.status,
         headers: response.headers.map(({ name, value }) => [name, value]),
@@ -136,10 +148,12 @@ function body_bytes() {
 
 async function boot() {
   const bytes = await (await fetch("/publr.wasm")).arrayBuffer();
-  const wasi = new Proxy(wasi_stubs, { get: (target, name) => target[name] ?? (() => wasi_errno_nosys) });
+  const calls = { ...wasi_stubs, ...PublrFiles.wasi };
+  const wasi = new Proxy(calls, { get: (target, name) => target[name] ?? (() => wasi_errno_nosys) });
   const result = await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi });
 
   instance = result.instance;
+  await PublrFiles.load(() => instance.exports.memory, seed_files && new URL(seed_files, self.location.href));
   instance.exports._initialize?.();
 
   const code = instance.exports.publr_init();
@@ -225,7 +239,7 @@ async function read_file(name) {
 async function restore() {
   const saved_cookies = await read_file(cookies_file);
   if (saved_cookies && saved_cookies.length > 0) cookies = new Map(JSON.parse(new TextDecoder().decode(saved_cookies)));
-  const bytes = await read_file(db_file);
+  const bytes = await read_file(db_file) ?? await read_seed();
   if (!bytes || bytes.length === 0) return;
   const ptr = instance.exports.publr_alloc(bytes.length);
   if (!ptr) throw new Error("Saved database is too large or Publr has no memory available");
@@ -238,19 +252,14 @@ async function restore() {
   }
 }
 
+async function read_seed() {
+  if (!seed_file) return null;
+  const response = await fetch(new URL(seed_file, self.location.href));
+  if (!response.ok) throw new Error(`The seed database ${seed_file} could not be fetched: ${response.status}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 const wasi_stubs = {
-  fd_write(fd, iovs, iovs_len, nwritten) {
-    const view = new DataView(instance.exports.memory.buffer);
-    let total = 0, text = "";
-    for (let i = 0; i < iovs_len; i++) {
-      const ptr = view.getUint32(iovs + i * 8, true), len = view.getUint32(iovs + i * 8 + 4, true);
-      text += new TextDecoder().decode(new Uint8Array(instance.exports.memory.buffer, ptr, len));
-      total += len;
-    }
-    view.setUint32(nwritten, total, true);
-    if (text.trim()) console.log("[publr]", text.trimEnd());
-    return 0;
-  },
   clock_time_get(id, precision, out) {
     new DataView(instance.exports.memory.buffer).setBigUint64(out, BigInt(Date.now()) * 1000000n, true);
     return 0;
@@ -275,11 +284,6 @@ const wasi_stubs = {
     return 0;
   },
   args_get: () => 0,
-  fd_close: () => 0,
-  fd_seek: () => wasi_errno_nosys,
-  fd_read: () => wasi_errno_nosys,
-  fd_fdstat_get: () => 8,
-  fd_prestat_get: () => 8,
   poll_oneoff: () => wasi_errno_nosys,
   proc_exit(code) { throw new Error("proc_exit " + code); },
 };
