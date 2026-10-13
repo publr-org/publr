@@ -20,7 +20,7 @@ pub const template_def: content_type.Def = .{
     .description = "A route's template, edited in the block editor; live once published.",
     .icon = "layout",
     .system = true,
-    .owner = "publr",
+    .owner = content_type.core_owner,
     .title_field = "route",
     .fields = &.{
         .{
@@ -49,7 +49,7 @@ pub const part_def: content_type.Def = .{
     .description = "A part every page placing it by name shows; live once published.",
     .icon = "layout",
     .system = true,
-    .owner = "publr",
+    .owner = content_type.core_owner,
     .title_field = "name",
     .fields = &.{
         .{
@@ -83,7 +83,7 @@ pub const pattern_def: content_type.Def = .{
     .description = "A starting point the block editor copies into a page.",
     .icon = "layout",
     .system = true,
-    .owner = "publr",
+    .owner = content_type.core_owner,
     .title_field = "name",
     .fields = &.{
         .{
@@ -168,7 +168,7 @@ pub const moodboard_def: content_type.Def = .{
         "font or a Figma frame, with why it is there.",
     .icon = "pattern",
     .system = true,
-    .owner = "publr",
+    .owner = content_type.core_owner,
     .title_field = "kind",
     .fields = &.{
         .{

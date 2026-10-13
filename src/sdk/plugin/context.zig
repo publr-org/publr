@@ -51,8 +51,9 @@ pub const HostApi = struct {
         return self.inner.arena;
     }
 
+    /// Inside an operation, or at the top when an event hook hears a queued notice.
     pub fn call(self: *PluginCtx, comptime Operation: type, in: Operation.In) Error!Operation.Out {
-        std.debug.assert(self.inner.parent != null);
+        std.debug.assert(self.inner.now_ms >= 0);
         std.debug.assert(Operation.name.len > 0);
 
         return registry.SDK.call(self.inner, Operation, in);

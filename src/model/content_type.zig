@@ -15,6 +15,9 @@ pub const id_len = ids.len;
 pub const statuses_max: u32 = 64;
 /// The apps a type may be shared with by name, besides every app at once.
 pub const shared_apps_max: u32 = 64;
+/// The owner of the types core declares itself (media, templates, the moodboard): the
+/// project's own, in every app's reach, as a type without an owner is.
+pub const core_owner = "publr";
 
 /// What a type is for: `record` types hold any number of records (posts, hotels), a
 /// `settings` type holds exactly one (the homepage, the header, general options), a

@@ -104,13 +104,13 @@ pub const Grant = struct {
         return contains(list, type_id);
     }
 
-    /// Whether a type owned by `owner` (empty: no plugin, the project's own) is in reach.
+    /// Whether a type owned by `owner` (empty or core's: the project's own) is in reach.
     pub fn allows_owner(grant: *const Grant, owner: []const u8) bool {
         std.debug.assert(owner.len <= 64);
 
         const list = grant.plugins orelse return true;
 
-        if (owner.len == 0) {
+        if (owner.len == 0 or std.mem.eql(u8, owner, content_type.core_owner)) {
             return true;
         }
 
@@ -293,6 +293,7 @@ test "plugins: the project's own types always, a plugin's only when listed" {
 
     try std.testing.expect(every.allows_owner("shop"));
     try std.testing.expect(site.allows_owner(""));
+    try std.testing.expect(site.allows_owner(content_type.core_owner));
     try std.testing.expect(site.allows_owner("seo"));
     try std.testing.expect(!site.allows_owner("shop"));
 

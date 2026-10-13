@@ -5,6 +5,7 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const design = @import("../model/design.zig");
+const content_type = @import("../model/content_type.zig");
 const plugin_types = @import("../sdk/plugin/types.zig");
 const system = @import("design/system.zig");
 const read_system = @import("design/read_system.zig");
@@ -34,19 +35,19 @@ pub const operations = [_]type{ System, SaveSystem, Moodboard, SaveMoodboard };
 
 const declared = [_]plugin_types.Declared{
     .{
-        .owner = "publr",
+        .owner = content_type.core_owner,
         .def = design.template_def,
     },
     .{
-        .owner = "publr",
+        .owner = content_type.core_owner,
         .def = design.part_def,
     },
     .{
-        .owner = "publr",
+        .owner = content_type.core_owner,
         .def = design.pattern_def,
     },
     .{
-        .owner = "publr",
+        .owner = content_type.core_owner,
         .def = design.moodboard_def,
     },
 };

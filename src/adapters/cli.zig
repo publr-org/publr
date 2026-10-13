@@ -200,7 +200,11 @@ pub fn CLI(comptime SDK: type) type {
 
             if (options.sandboxed_plugins) |sandboxed| {
                 if (sandboxed.find(name)) |found| {
-                    return invoke_runtime(&ctx, found, rest, out, options);
+                    const code = try invoke_runtime(&ctx, found, rest, out, options);
+
+                    hand_on_notices(&ctx);
+
+                    return code;
                 }
             }
 

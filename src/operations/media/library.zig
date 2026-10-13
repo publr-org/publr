@@ -61,7 +61,7 @@ pub fn bootstrap(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.db.transaction_depth == 0);
 
     try plugin_types.apply(ctx, &.{.{
-        .owner = "publr",
+        .owner = model.content_type.core_owner,
         .def = media.type_def,
     }});
 

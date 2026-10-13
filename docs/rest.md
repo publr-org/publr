@@ -59,7 +59,9 @@ page answers with an `ETag`, a rendered one with `no-store`; `X-Publr-Served` sa
 (`2026/10/harbour-a1b2c3.jpg`). `?w=` and `?h=` resize a JPEG or PNG, never larger than
 it is; with both, `?fit=cover` scales it until it covers them and then crops, otherwise
 it crops at full size, around the file's focal point or `?fp=x,y` (percent). `?q=` is
-the quality, 1 to 100 (90). A browser whose `Accept` takes WebP gets WebP. Copies are
+the quality, 1 to 100 (90). A browser whose `Accept` takes WebP gets WebP. `?download=1`
+answers `Content-Disposition: attachment` with the file's name, so a plain link saves it
+(a link's `download` attribute skips the browser build's worker). Copies are
 cached beside the originals. A public file answers `Cache-Control: public,
 max-age=31536000, immutable` with an `ETag` of its hash (and the copy's suffix) and
 `304` to a match; a private one is `404` to anyone not signed in and `private, no-store`

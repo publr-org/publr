@@ -37,7 +37,7 @@ pub fn bootstrap(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.db.transaction_depth == 0);
 
     try @import("../sdk/plugin/types.zig").apply(ctx, &.{.{
-        .owner = "publr",
+        .owner = model.content_type.core_owner,
         .def = ai.picture_type_def,
     }});
 }

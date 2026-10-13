@@ -219,7 +219,7 @@ pub const type_def: content_type.Def = .{
     .kind = .media,
     .icon = "image",
     .system = true,
-    .owner = "publr",
+    .owner = content_type.core_owner,
     .title_field = "title",
     .fields = &.{
         .{

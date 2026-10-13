@@ -1,9 +1,10 @@
 //! `/media/<key>`: a library file, as uploaded or resized. `?w=` and `?h=` resize (never
 //! larger), with both `?fit=cover` scales before it crops (else it crops at full size)
 //! around the focal point (`?fp=x,y`, else the file's own), `?q=` sets the quality; a
-//! browser that takes WebP gets WebP. Copies are cached beside the originals where the
-//! files are on disk. A public file is cached by browsers for good (its key never names
-//! other bytes); a private one only reaches signed-in users and is never stored.
+//! browser that takes WebP gets WebP; `?download=1` saves the file instead of opening it.
+//! Copies are cached beside the originals where the files are on disk. A public file is
+//! cached by browsers for good (its key never names other bytes); a private one only
+//! reaches signed-in users and is never stored.
 
 const std = @import("std");
 const http = @import("../lib/http.zig");
@@ -69,6 +70,10 @@ fn serve(request: *http.Request, response: *http.Response, ctx: *http.Context) a
 
     try headers(response, facts.private, etag, resized);
 
+    if (try disposition_of(ctx.arena, request.query(), key)) |value| {
+        try response.set_header("Content-Disposition", value);
+    }
+
     // A file opened on its own must not run what it carries: an SVG's script, a text file
     // a browser takes for a page. A PDF keeps its viewer, which a sandbox would block.
     if (!std.mem.eql(u8, facts.mime_type, "application/pdf")) {
@@ -117,6 +122,36 @@ fn headers(response: *http.Response, private: bool, etag: []const u8, resized: b
     try response.set_header("ETag", etag);
     try response.set_header("Vary", "Accept");
     try response.set_header("Accept-Ranges", "bytes");
+}
+
+/// `?download=1`: a plain link that saves the file, under its own name. A link's `download`
+/// attribute would do it too, but such a request skips a browser build's worker.
+fn disposition_of(arena: std.mem.Allocator, query: []const u8, key: []const u8) !?[]const u8 {
+    std.debug.assert(files_module.valid_key(key));
+
+    if (http.Form.query_param(arena, query, "download") == null) {
+        return null;
+    }
+
+    const name = std.fs.path.basename(key);
+
+    std.debug.assert(std.mem.indexOfScalar(u8, name, '"') == null);
+
+    return try std.fmt.allocPrint(arena, "attachment; filename=\"{s}\"", .{name});
+}
+
+test "disposition_of: saved under its own name only when asked" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const key = "2026/10/sheet-e04c8c.pdf";
+
+    try std.testing.expectEqualStrings(
+        "attachment; filename=\"sheet-e04c8c.pdf\"",
+        (try disposition_of(arena, "download=1", key)).?,
+    );
+    try std.testing.expect(try disposition_of(arena, "w=480", key) == null);
+    try std.testing.expect(try disposition_of(arena, "", key) == null);
 }
 
 fn matches_etag(header: ?[]const u8, etag: []const u8) bool {
