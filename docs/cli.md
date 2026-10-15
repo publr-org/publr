@@ -175,13 +175,16 @@ name. With one address kept, `logout` and `whoami` need none.
 
 ```
 publr skill
-publr skill install [--dir <path>]
+publr skill install [--agent claude|codex|cursor|pi | --dir <path>]
 ```
 
 `skill` prints the build-on-publr skill this binary carries: how an agent decides where a
 need goes, what it never does, and when core may change. `skill install` writes it, with
-its references, into a project (`.claude/skills/build-on-publr/` unless `--dir` names
-another folder), where agents that load skills from a folder find it. The repository is
+its references, into the folder it runs in, where agents that load skills find it: in
+`.agents/skills/build-on-publr/`, which Codex, Cursor, Pi and other agents following Agent
+Skills read, and in `.claude/skills/build-on-publr/` for Claude Code. `--agent` writes
+only that agent's folder (Cursor's is `.cursor/skills/`, Pi's `.pi/skills/`), `--dir` only
+the folder named. The repository is
 also a plugin marketplace (`.claude-plugin/`) offering the same skill.
 
 ## While a server runs

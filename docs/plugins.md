@@ -160,10 +160,11 @@ secret it is kept under, where it is made, what to do there, how it starts) and
 `publr.ai.Complete("<name>", complete)`, where `complete` turns a `publr.ai.Request` into a
 `publr.ai.Response` by calling its API through `http.fetch`. Core finds every provider
 installed by those names, lists them under Settings › AI, and has a conversation's agent
-call the one chosen, in the agent's own process. Publr's official providers live in the
-workspace's `plugins/` folder; Settings › AI sets one up in a click when the server knows
-that folder (`PUBLR_PLUGIN_CATALOG`): it adds the provider's built module, as uploading it
-does, and opens its review.
+call the one chosen, in the agent's own process. Publr's official providers are published at
+`https://plugins.publr.app` (a `catalog.json` and the built modules it lists;
+`PUBLR_PLUGIN_CATALOG` names another folder or address). The Overview and Settings › AI
+install the ones ticked: each module is added, as uploading it does, enabled, and granted
+its requests out, its key and its raised limits, so the key pasted next is all it needs.
 
 A message's parts are text, tool calls, tool results and images (a media type and base64
 bytes: screenshots the agent takes, pictures the person attaches); in a tool message the

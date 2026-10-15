@@ -1,0 +1,44 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type ProviderPickerProps = {
+  /** The official providers not installed yet, from Publr's plugin server. */
+  offered: Array<{ name: string; label: string; summary: string }>;
+  /** `overview` when it sits on the Overview, which the form comes back to. */
+  from?: string;
+};
+
+/** The official model providers, ticked and installed in one go: each is added, started,
+ * and allowed to call its API with the key pasted next. */
+export function ProviderPicker({ offered, from = "" }: ProviderPickerProps) {
+  return (
+    <form method="post" action="/admin/settings/ai/set-up" class="flex flex-col gap-4">
+      <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+      {from !== "" && <input type="hidden" name="from" value={from} />}
+      <div class="flex flex-col gap-3">
+        {offered.map((item) => (
+          <CheckboxField
+            key={item.name}
+            id={"provider-" + item.name}
+            name="name"
+            value={item.name}
+            checked={offered.length === 1}
+            label={item.label}
+            description={item.summary}
+            framed
+          />
+        ))}
+      </div>
+      <Text as="p" variant="body-sm" tone="muted">
+        {Publr.t("Each one is a plugin from Publr's plugin server. Installing it lets it send requests to its API with the key you paste next.")}
+      </Text>
+      <div>
+        <Button hierarchy="primary" size="md" type="submit">
+          {Publr.t("Install")}
+        </Button>
+      </div>
+    </form>
+  );
+}

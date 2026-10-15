@@ -2,13 +2,15 @@ import { HubPage } from "../layouts/HubPage.ptsx";
 import { AgentSetup } from "../components/AgentSetup.ptsx";
 import { PluginAbout } from "../components/PluginAbout.ptsx";
 import { Publr } from "publr-jsx";
-import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
 import { Card } from "@publr/ui/Card.ptsx";
 import { CardBody } from "@publr/ui/CardBody.ptsx";
 import { Heading } from "@publr/ui/Heading.ptsx";
 import { IsoField } from "@publr/ui/IsoField.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
 import { AskBox } from "../components/AskBox.ptsx";
+import { ProviderKey } from "../components/ProviderKey.ptsx";
+import { ProviderPicker } from "../components/ProviderPicker.ptsx";
 import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { TabNav } from "@publr/ui/TabNav.ptsx";
@@ -20,12 +22,29 @@ export type DashboardProps = {
   mode: string;
   /** Whether a model provider is connected, so the prompt can build. */
   connected: boolean;
+  /** Not connected yet: the providers installed, each waiting for its key. */
+  providers?: Array<{
+    plugin: string;
+    label: string;
+    key_secret: string;
+    key_set: boolean;
+    key_url: string;
+    key_steps: string;
+  }>;
+  /** Not connected and none installed: the official providers to pick from. */
+  offered?: Array<{ name: string; label: string; summary: string }>;
+  /** Whether Publr's plugin server answered with its list. */
+  reached?: boolean;
   /** `cd` into the project's folder; empty unless the admin is open on this machine. */
   folder_command: string;
   /** The project's own binary installing the skill, run from its folder. */
   install_command: string;
   /** Signing an agent in at this site's address; empty when it works in the folder. */
   login_command: string;
+  /** Away from the folder: making a folder for the agent and going into it. */
+  start_command: string;
+  /** Away from the folder: Publr's installer, putting `./publr` there. */
+  get_command: string;
   /** The person's earlier conversations, newest first. */
   earlier: Array<{ id: string; prompt: string; label: string; href: string }>;
   /** A plugin's own "Your agent" tab, sanitized, shown instead of the commands; absent when none. */
@@ -42,9 +61,14 @@ export type DashboardProps = {
 export function Dashboard({
   mode,
   connected,
+  providers = [],
+  offered = [],
+  reached = true,
   folder_command,
   install_command,
   login_command,
+  start_command,
+  get_command,
   earlier,
   agents_tab,
   agents_tab_from,
@@ -80,6 +104,8 @@ export function Dashboard({
               folder_command={folder_command}
               install_command={install_command}
               login_command={login_command}
+              start_command={start_command}
+              get_command={get_command}
             />
           )}
           {mode === "keys" && connected && !Publr.request.admin.framed && (
@@ -88,13 +114,39 @@ export function Dashboard({
           {mode === "keys" && !connected && (
             <Card>
               <CardBody>
-                <div class="flex flex-col items-start gap-4">
+                <div class="flex flex-col gap-5">
                   <Text as="p" variant="body-md">
-                    {Publr.t("Connect a model provider with a key of your own, and describe what to build here. Its bill is yours; Publr charges nothing.")}
+                    {providers.length > 0
+                      ? Publr.t("Paste a key for one of them, and describe what to build here.")
+                      : Publr.t("Pick the model providers to build with, on keys of your own. Their bills are yours; Publr charges nothing.")}
                   </Text>
-                  <Button hierarchy="primary" size="md" href="/admin/settings/ai">
-                    {Publr.t("Connect a provider")}
-                  </Button>
+                  {providers.map((provider) => (
+                    <div key={provider.plugin} class="flex flex-col gap-2">
+                      <Heading level={2} size="sm">
+                        {provider.label}
+                      </Heading>
+                      <ProviderKey
+                        key_secret={provider.key_secret}
+                        key_set={provider.key_set}
+                        key_url={provider.key_url}
+                        key_steps={provider.key_steps}
+                        from="overview"
+                      />
+                    </div>
+                  ))}
+                  {providers.length === 0 && offered.length > 0 && (
+                    <ProviderPicker offered={offered} from="overview" />
+                  )}
+                  {providers.length === 0 && !reached && (
+                    <Callout tone="warning" title={Publr.t("Publr's plugin server could not be reached")}>
+                      {Publr.t("Try again later, or upload a provider's .wasm under Plugins.")}
+                    </Callout>
+                  )}
+                  {providers.length > 0 && (
+                    <Link href="/admin/settings/ai" variant="body-sm">
+                      {Publr.t("Add another provider")}
+                    </Link>
+                  )}
                 </div>
               </CardBody>
             </Card>

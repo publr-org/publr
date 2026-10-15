@@ -1,14 +1,15 @@
-//! Setting a provider up from Settings › AI: the providers the official plugins offer (until
-//! the marketplace, a folder of them named by `PUBLR_PLUGIN_CATALOG`), one installed from
-//! there in a click, and a test call to the one chosen.
+//! Setting a provider up: the providers Publr's plugin server offers (`catalog.zig`), some
+//! installed and started in a click, and a test call to the one chosen.
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const environment = @import("../../lib/environment.zig");
+const store = @import("../../store.zig");
 const lib_ai = @import("../../lib/ai.zig");
 const sdk_ai = @import("../../sdk/ai.zig");
 const providers = @import("providers.zig");
+const catalog = @import("catalog.zig");
 const lifecycle = @import("../plugin/lifecycle.zig");
+const state = @import("../plugin/state.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -16,8 +17,8 @@ const Error = sdk.Error;
 
 pub const operations = [_]type{ Catalog, SetUp, Test };
 
-pub const catalog_variable = "PUBLR_PLUGIN_CATALOG";
-const catalog_bytes_max: u32 = 64 << 10;
+/// Most providers set up in one call.
+const set_up_max: u32 = 8;
 
 pub const Offered = struct {
     name: []const u8,
@@ -27,33 +28,29 @@ pub const Offered = struct {
     installed: bool,
 };
 
-const CatalogFile = struct {
-    plugins: []const struct {
-        name: []const u8,
-        label: []const u8,
-        summary: []const u8 = "",
-        kind: []const u8 = "",
-        /// The built module, relative to the catalog's folder.
-        module: []const u8 = "",
-    } = &.{},
-};
-
 pub const Catalog = struct {
     pub const name = "ai.catalog";
     pub const description = "List the model providers that can be set up in a click";
     pub const details =
-        \\The official provider plugins, from the folder `PUBLR_PLUGIN_CATALOG` names (its
-        \\`catalog.json`), each marked when it is installed already. Empty when no folder is
-        \\named. Administrators only.
+        \\The official provider plugins on Publr's plugin server (plugins.publr.app, or the
+        \\folder or address `PUBLR_PLUGIN_CATALOG` names), each marked when it is installed
+        \\already. `reached` is false, and the list empty, when the server could not be
+        \\reached. Administrators only.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
     pub const Out = struct {
         offered: []const Offered,
+        reached: bool,
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
         .offered = &.{},
+        .reached = true,
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .offered = "Each provider: its plugin's name, label, summary, and whether it is installed",
+        .reached = "Whether the list of official plugins could be read",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -62,10 +59,17 @@ pub const Catalog = struct {
 
         _ = in;
 
-        const folder = environment.get(catalog_variable) orelse return .{
-            .offered = &.{},
+        const file = catalog.read(ctx) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {
+                ctx.failure = null;
+
+                return .{
+                    .offered = &.{},
+                    .reached = false,
+                };
+            },
         };
-        const file = try read_catalog(ctx, folder);
         var offered: std.ArrayList(Offered) = .empty;
 
         for (file.plugins) |plugin| {
@@ -83,70 +87,101 @@ pub const Catalog = struct {
 
         return .{
             .offered = offered.items,
+            .reached = true,
         };
     }
 };
 
 pub const SetUp = struct {
     pub const name = "ai.set_up";
-    pub const description = "Install a model provider from the official plugins, in a click";
+    pub const description = "Install and start model providers from the official plugins";
     pub const details =
-        \\Adds the provider's built module from the catalog as an installed plugin, as
-        \\uploading its `.wasm` does: added, not yet running, until an administrator reviews
-        \\what it asks for (sending requests out, its key) and enables it. Administrators
-        \\only.
+        \\Each provider's built module is fetched from the catalog and added as an installed
+        \\plugin, as uploading it does, then enabled and granted sending requests out, its
+        \\key and its raised limits: what a provider needs to answer. Anything else it asks
+        \\for waits for an administrator under Plugins. One already added is only enabled. All or none.
+        \\Administrators only.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
-        name: []const u8,
+        names: []const []const u8,
     };
-    pub const Out = lifecycle.Added;
+    pub const Out = struct {
+        names: []const []const u8,
+    };
+    pub const rules: sdk.operation.Rules(In) = .{
+        .names = .{
+            .items_min = 1,
+            .items_max = set_up_max,
+        },
+    };
     pub const example: In = .{
-        .name = "ai_example",
+        .names = &.{"ai_example"},
     };
     pub const example_out: Out = .{
-        .name = "ai_example",
-        .version = "0.1.0",
-        .update = false,
+        .names = &.{"ai_example"},
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
-        .name = "The provider plugin's name",
+        .names = "The provider plugins' names, as the catalog lists them",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .names = "The plugins set up, now running",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
+        std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const folder = environment.get(catalog_variable) orelse return ctx.fail(no_catalog);
-        const file = try read_catalog(ctx, folder);
+        const file = try catalog.read(ctx);
 
-        for (file.plugins) |plugin| {
-            if (!std.mem.eql(u8, plugin.name, in.name)) {
-                continue;
-            }
-
-            const inside = plugin.module.len > 0 and !std.fs.path.isAbsolute(plugin.module) and
-                std.mem.indexOf(u8, plugin.module, "..") == null;
-
-            if (!inside) {
-                return ctx.fail(no_module);
-            }
-
-            const path = std.fs.path.join(ctx.arena, &.{ folder, plugin.module }) catch {
-                return error.OutOfMemory;
+        for (in.names) |wanted| {
+            const entry = for (file.plugins) |plugin| {
+                if (std.mem.eql(u8, plugin.name, wanted)) {
+                    break plugin;
+                }
+            } else {
+                return error.NotFound;
             };
 
-            return lifecycle.add(ctx, try lifecycle.stage(ctx, path, true));
+            if (try store.sandboxed_plugins.get(ctx.db, ctx.arena, entry.name) == null) {
+                _ = try lifecycle.add(ctx, try catalog.stage(ctx, entry));
+            }
+
+            try start(ctx, entry.name);
         }
 
-        return error.NotFound;
+        return .{
+            .names = in.names,
+        };
     }
 };
 
-const no_module: sdk.operation.Failure = .{
-    .name = "NoModule",
-    .status = 409,
-    .message = "The catalog names no built module for it",
-};
+/// Enables it, granting what a provider is set up for: requests out, its secrets, and the
+/// room a model's answer takes (its raised limits).
+fn start(ctx: *Ctx, name: []const u8) Error!void {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const enabled = try lifecycle.enable(ctx, name, .{});
+    const shown = try state.requests_of(
+        ctx.arena,
+        &enabled.manifest,
+        enabled.granted,
+        enabled.denied,
+    );
+
+    for (shown) |request| {
+        const wanted = std.mem.eql(u8, request.key, "http.fetch") or
+            std.mem.startsWith(u8, request.key, "secret.") or
+            std.mem.startsWith(u8, request.key, "limit.");
+
+        if (wanted and request.state == .pending) {
+            _ = try lifecycle.decide(ctx, name, request.key, .grant);
+        }
+    }
+
+    ctx.notice("plugin.enabled", name);
+}
 
 pub const Test = struct {
     pub const name = "ai.test";
@@ -236,28 +271,4 @@ fn reply_of(ctx: *Ctx, output: []const u8) Error![]const u8 {
     }
 
     return "";
-}
-
-const no_catalog: sdk.operation.Failure = .{
-    .name = "NoCatalog",
-    .status = 409,
-    .message = "No folder of official plugins is known: set PUBLR_PLUGIN_CATALOG",
-};
-
-fn read_catalog(ctx: *Ctx, folder: []const u8) Error!CatalogFile {
-    std.debug.assert(folder.len > 0);
-    std.debug.assert(catalog_bytes_max > 0);
-
-    const path = std.fs.path.join(ctx.arena, &.{ folder, "catalog.json" }) catch {
-        return error.OutOfMemory;
-    };
-    const limit: std.Io.Limit = .limited(catalog_bytes_max);
-    const text = std.Io.Dir.cwd().readFileAlloc(ctx.io, path, ctx.arena, limit) catch {
-        return ctx.fail(no_catalog);
-    };
-
-    return std.json.parseFromSliceLeaky(CatalogFile, ctx.arena, text, .{
-        .ignore_unknown_fields = true,
-        .allocate = .alloc_always,
-    }) catch error.Invalid;
 }

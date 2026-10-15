@@ -14,11 +14,22 @@ export type AgentSetupProps = {
   install_command: string;
   /** Signing an agent in at this site's address; empty when it works in the folder. */
   login_command: string;
+  /** Away from the folder: making a folder for the agent and going into it. */
+  start_command: string;
+  /** Away from the folder: Publr's installer, putting `./publr` there. */
+  get_command: string;
 };
 
 /** Setting your own agent to work on this site, step by step: in its folder when the admin
- * is open on the machine it runs on, else signed in at its address. */
-export function AgentSetup({ folder_command, install_command, login_command }: AgentSetupProps) {
+ * is open on the machine it runs on, else from a folder of its own with Publr fetched into
+ * it, signed in at the site's address. */
+export function AgentSetup({
+  folder_command,
+  install_command,
+  login_command,
+  start_command,
+  get_command,
+}: AgentSetupProps) {
   return (
     <Card>
       <CardBody>
@@ -29,7 +40,7 @@ export function AgentSetup({ folder_command, install_command, login_command }: A
             </Step>
             <Step number={2} title={Publr.t("Give your agent the Publr skill")}>
               <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("It teaches your agent how Publr works: content types, pages, plugins.")}
+                {Publr.t("It teaches your agent how Publr works: content types, pages, plugins. Claude Code, Codex, Cursor, Pi and other agents that read skills find it.")}
               </Text>
               <Command command={install_command} />
             </Step>
@@ -42,20 +53,32 @@ export function AgentSetup({ folder_command, install_command, login_command }: A
         )}
         {login_command !== "" && (
           <Steps>
-            <Step number={1} title={Publr.t("Sign your agent in to this site")}>
+            <Step number={1} title={Publr.t("Open a terminal in a new folder")}>
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("Your agent works from there; the site itself stays where it runs.")}
+              </Text>
+              <Command command={start_command} />
+            </Step>
+            <Step number={2} title={Publr.t("Get Publr")}>
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("It puts the publr command in this folder, nothing else.")}
+              </Text>
+              <Command command={get_command} />
+            </Step>
+            <Step number={3} title={Publr.t("Sign it in to this site")}>
               <Command command={login_command} />
               <Text as="p" variant="body-sm" tone="muted">
                 {Publr.t("Your browser opens to approve it.")} It gets drafts access, which you can revoke
                 under <Link href="/admin/settings/devices" variant="body-sm">{Publr.t("Settings › Devices")}</Link>.
               </Text>
             </Step>
-            <Step number={2} title={Publr.t("Give your agent the Publr skill")}>
+            <Step number={4} title={Publr.t("Give your agent the Publr skill")}>
               <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("It teaches your agent how Publr works: content types, pages, plugins.")}
+                {Publr.t("It teaches your agent how Publr works: content types, pages, plugins. Claude Code, Codex, Cursor, Pi and other agents that read skills find it.")}
               </Text>
-              <Command command="publr skill install" />
+              <Command command={install_command} />
             </Step>
-            <Step number={3} title={Publr.t("Ask")}>
+            <Step number={5} title={Publr.t("Start your agent there and ask")}>
               <Text as="p" variant="body-sm" tone="muted">
                 {Publr.t("Describe what you want, like \"Add a recipes section with a page listing them\".")}
               </Text>

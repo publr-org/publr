@@ -230,26 +230,64 @@ pub fn settle(io: std.Io, arena: std.mem.Allocator, address: []const u8) ![]cons
     return plain;
 }
 
-/// Whether `host:port` answers a plain HTTP request. A TLS server refuses those bytes at
-/// once, so neither answer waits long.
+/// Whether `host:port` speaks plain HTTP and no TLS. Some TLS servers (Cloudflare, nginx)
+/// answer plain HTTP on their TLS port with an HTTP 400, so an HTTP answer alone is not
+/// enough: a server that also answers a TLS record with one speaks TLS. A TLS server
+/// refuses plain bytes at once and a plain one answers the TLS probe with an HTTP error,
+/// so no probe waits long.
 fn plain_http(io: std.Io, host: []const u8, port: u16) bool {
     std.debug.assert(port > 0);
 
-    const name = std.Io.net.HostName.init(host) catch return false;
+    const answer = probe(io, host, port, "HEAD / HTTP/1.0\r\n\r\n", 5) orelse return false;
+    if (!std.mem.eql(u8, answer.slice(), "HTTP/")) {
+        return false;
+    }
+
+    // A ClientHello record too short to be one: a TLS server answers with an alert (0x15).
+    // The blank line after it ends the bytes as an HTTP request, so a plain server answers
+    // instead of waiting for more.
+    const tls = probe(io, host, port, "\x16\x03\x01\x00\x04\x01\x00\x00\x00\r\n\r\n", 1) orelse return true;
+    const record = tls.slice()[0];
+
+    return record != 0x15 and record != 0x16;
+}
+
+const Head = struct {
+    bytes: [8]u8,
+    len: usize,
+
+    fn slice(head: *const Head) []const u8 {
+        return head.bytes[0..head.len];
+    }
+};
+
+/// The first `len` bytes `host:port` answers to `request` on a fresh connection, or null
+/// when it cannot be reached or closes first.
+fn probe(io: std.Io, host: []const u8, port: u16, request: []const u8, len: usize) ?Head {
+    std.debug.assert(len > 0);
+    std.debug.assert(len <= 8);
+
+    const name = std.Io.net.HostName.init(host) catch return null;
     const stream = name.connect(io, port, .{
         .mode = .stream,
-    }) catch return false;
+    }) catch return null;
     defer stream.close(io);
 
     var write_buffer: [64]u8 = undefined;
     var writer = stream.writer(io, &write_buffer);
 
-    writer.interface.writeAll("HEAD / HTTP/1.0\r\n\r\n") catch return false;
-    writer.interface.flush() catch return false;
+    writer.interface.writeAll(request) catch return null;
+    writer.interface.flush() catch return null;
 
     var read_buffer: [64]u8 = undefined;
     var reader = stream.reader(io, &read_buffer);
-    const head = reader.interface.peek(5) catch return false;
+    const answer = reader.interface.peek(len) catch return null;
 
-    return std.mem.eql(u8, head, "HTTP/");
+    var head: Head = .{
+        .bytes = undefined,
+        .len = len,
+    };
+    @memcpy(head.bytes[0..len], answer);
+
+    return head;
 }

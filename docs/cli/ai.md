@@ -27,11 +27,11 @@ administrator's:
 | `ai providers` | Every provider installed, with its models, whether its key is set, and the one chosen |
 | `ai choose --provider <plugin> [--model <id>]` | The provider conversations use, and its model (empty for its default) |
 | `ai test --provider <plugin>` | One short call: `ok` and what the model answered, or what went wrong |
-| `ai catalog` | The official providers that can be set up in a click, from the folder `PUBLR_PLUGIN_CATALOG` names |
-| `ai set_up --name <plugin>` | Add its built module as an installed plugin, as uploading it does; it runs once reviewed and enabled |
+| `ai catalog` | The official providers that can be set up in a click, from Publr's plugin server (`https://plugins.publr.app`, or the folder or address `PUBLR_PLUGIN_CATALOG` names); `reached` false when it could not be read |
+| `ai set_up --names <plugin>...` | Fetch each one's built module and add it as an installed plugin, as uploading it does, then enable it, granting its requests out, its key and its raised limits; anything else it asks for waits under Plugins |
 
-A conversation is answered by the provider chosen while it is installed, else by the script
-below. Its agent runs the provider's `complete` in its own process, with the project
+A conversation is answered by the provider in use: the one chosen while it is installed,
+else the first installed with its key set; else by the script below. Its agent runs the provider's `complete` in its own process, with the project
 opened there, so the server keeps answering while the model works.
 
 The agent keeps the books over the operator channel, as the local operator: `ai begin`

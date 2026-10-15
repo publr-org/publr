@@ -6,6 +6,8 @@ const credentials = @import("../../server/credentials.zig");
 const identity_module = @import("../rest/identity.zig");
 const ai = @import("../../operations/ai.zig");
 const ai_model = @import("../../model/ai.zig");
+const providers = @import("../../operations/ai/providers.zig");
+const setup = @import("../../operations/ai/setup.zig");
 
 const Props = admin.views.Dashboard.Props;
 const Earlier = admin.views.Dashboard.EarlierItem;
@@ -30,11 +32,18 @@ pub fn props_of(session: *admin.Session) admin.Error!Props {
         .folder_command = "",
         .install_command = "",
         .login_command = "",
+        .start_command = "",
+        .get_command = "",
         .earlier = &.{},
     };
 
     try fill_agents(session, &props);
     try fill_conversations(session, &props);
+
+    if (std.mem.eql(u8, props.mode, "keys") and !connected) {
+        try fill_providers(session, &props);
+    }
+
     props.agents_tab = agents_tab_of(session);
     props.agents_tab_from = if (registry.agents_tab) |tab| tab.plugin else "";
 
@@ -65,6 +74,8 @@ pub fn agents_step(
         .folder_command = "",
         .install_command = "",
         .login_command = "",
+        .start_command = "",
+        .get_command = "",
         .earlier = &.{},
     };
 
@@ -76,8 +87,11 @@ pub fn agents_step(
         .folder = if (here) session.project.folder else null,
         .binary = if (here) session.project.binary else null,
         .folder_command = props.folder_command,
-        .install_command = props.install_command,
+        // The Companion runs it in the folder it opened: only the site's own folder has it.
+        .install_command = if (here) props.install_command else "",
         .login_command = props.login_command,
+        .start_command = props.start_command,
+        .get_command = props.get_command,
     });
 }
 
@@ -123,7 +137,8 @@ fn known_mode(text: []const u8) ?[]const u8 {
 
 /// The commands that set an agent to work on this project. Opened on this machine, with
 /// the folder `serve` runs in known: work in that folder with its own binary. Otherwise:
-/// sign in at the address the browser used.
+/// a folder of the agent's own, Publr fetched into it, signed in at the address the
+/// browser used.
 fn fill_agents(session: *admin.Session, props: *Props) admin.Error!void {
     std.debug.assert(session.signed_in());
     std.debug.assert(props.login_command.len == 0);
@@ -135,8 +150,15 @@ fn fill_agents(session: *admin.Session, props: *Props) admin.Error!void {
     if (project.folder.len == 0 or !local(host)) {
         const host_url = try definitions.host_url_of(session);
         const address = .{ host_url, project.admin_path() };
+        const folder = try quoted(arena, host_name(host_url));
 
-        props.login_command = try std.fmt.allocPrint(arena, "publr login {s}{s}", address);
+        props.start_command = try std.fmt.allocPrint(arena, "mkdir -p {s} && cd {s}", .{
+            folder,
+            folder,
+        });
+        props.get_command = get_command;
+        props.login_command = try std.fmt.allocPrint(arena, "./publr login {s}{s}", address);
+        props.install_command = "./publr skill install";
 
         return;
     }
@@ -146,6 +168,23 @@ fn fill_agents(session: *admin.Session, props: *Props) admin.Error!void {
 
     props.folder_command = try std.fmt.allocPrint(arena, "cd {s}", .{folder});
     props.install_command = try std.fmt.allocPrint(arena, "{s} skill install", .{binary});
+}
+
+/// Publr's installer, putting the binary in the folder it runs in and making no site.
+const get_command = "curl -fsSL https://publr.dev/install.sh | " ++
+    "PUBLR_HOME=. PUBLR_FIRST_SITE=- sh";
+
+/// The site's host, without its scheme, port or path: the name of the folder the agent
+/// works from.
+fn host_name(address: []const u8) []const u8 {
+    std.debug.assert(address.len <= 64 << 10);
+
+    const scheme_end = std.mem.indexOf(u8, address, "://");
+    const rest = if (scheme_end) |end| address[end + 3 ..] else address;
+    const host = rest[0 .. std.mem.indexOfScalar(u8, rest, '/') orelse rest.len];
+    const name = host[0 .. std.mem.lastIndexOfScalar(u8, host, ':') orelse host.len];
+
+    return if (name.len == 0) "publr-site" else name;
 }
 
 /// A plugin's own contents for the "Your agent" tab, through the admin's sanitizer; null
@@ -161,6 +200,56 @@ fn agents_tab_of(session: *const admin.Session) ?admin.render.Node {
     const cleaned = sanitize.sanitize(session.arena, tab.html, .admin) catch return null;
 
     return admin.render.raw(cleaned);
+}
+
+/// Before any provider is connected: the ones installed, each waiting for its key; with
+/// none, the official ones to pick from.
+fn fill_providers(session: *admin.Session, props: *Props) admin.Error!void {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(!props.connected);
+
+    const arena = session.arena;
+    const listed = registry.SDK.dispatch(&session.ctx, providers.Providers, .{}) catch |err| {
+        return if (err == error.OutOfMemory) error.OutOfMemory else {};
+    };
+    var waiting: std.ArrayList(admin.views.Dashboard.ProvidersItem) = .empty;
+
+    for (listed.providers) |provider| {
+        const given = provider.description.key orelse continue;
+
+        try waiting.append(arena, .{
+            .plugin = provider.plugin,
+            .label = provider.description.label,
+            .key_secret = given.secret,
+            .key_set = provider.key_set,
+            .key_url = given.create_url,
+            .key_steps = try std.mem.join(arena, " ", given.steps),
+        });
+    }
+
+    props.providers = waiting.items;
+
+    if (waiting.items.len > 0) {
+        return;
+    }
+
+    const catalog = registry.SDK.dispatch(&session.ctx, setup.Catalog, .{}) catch |err| {
+        return if (err == error.OutOfMemory) error.OutOfMemory else {};
+    };
+    var offered: std.ArrayList(admin.views.Dashboard.OfferedItem) = .empty;
+
+    for (catalog.offered) |item| {
+        if (!item.installed) {
+            try offered.append(arena, .{
+                .name = item.name,
+                .label = item.label,
+                .summary = item.summary,
+            });
+        }
+    }
+
+    props.offered = offered.items;
+    props.reached = catalog.reached;
 }
 
 /// The person's conversations, newest first, each leading to its workspace.
@@ -271,4 +360,11 @@ test "a host on this machine is told from one elsewhere" {
 test "only the two ways of building are remembered" {
     try std.testing.expectEqualStrings("keys", known_mode("keys").?);
     try std.testing.expect(known_mode("cloud") == null);
+}
+
+test "the agent's folder is named after the site's host" {
+    try std.testing.expectEqualStrings("shop.publr.app", host_name("https://shop.publr.app"));
+    try std.testing.expectEqualStrings("localhost", host_name("http://localhost:8080/admin"));
+    try std.testing.expectEqualStrings("example.com", host_name("example.com"));
+    try std.testing.expectEqualStrings("publr-site", host_name(""));
 }

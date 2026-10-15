@@ -89,7 +89,7 @@ fn screen(
     try admin.screen(session, status, views.SettingsAi, .{
         .providers = rows,
         .offered = offered.items,
-        .catalog = @import("../../lib/environment.zig").get(setup.catalog_variable) != null,
+        .reached = catalog.reached,
         .notice = notice,
         .problem = problem,
     });
@@ -199,7 +199,10 @@ fn key(request: *Request, response: *Response, ctx: *Context) Error!void {
         return refused(session, err, try session.translated("Paste the whole key."));
     };
 
-    try response.redirect(.see_other, back ++ "?said=key");
+    try response.redirect(.see_other, if (from_overview(&post.form))
+        overview
+    else
+        back ++ "?said=key");
 }
 
 fn choose(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -255,25 +258,46 @@ fn test_provider(request: *Request, response: *Response, ctx: *Context) Error!vo
     try screen(session, .ok, notice, "");
 }
 
+/// Where the Overview's forms come back to.
+const overview = "/admin?mode=keys";
+
+/// Whether the form was sent from the Overview, which it goes back to.
+fn from_overview(form: *const admin.Form) bool {
+    std.debug.assert(form.len <= admin.Form.pairs_max);
+
+    const from = form.text("from") orelse return false;
+
+    return std.mem.eql(u8, from, "overview");
+}
+
 fn set_up(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .post);
     std.debug.assert(ctx.user_data != null);
 
     var post = try admin.accept(request, response, ctx, back) orelse return;
     const session = &post.session;
-    const asked: setup.SetUp.In = .{
-        .name = post.form.text("name") orelse "",
-    };
+    const form = &post.form;
+    var names: std.ArrayList([]const u8) = .empty;
 
-    const added = registry.SDK.dispatch(&session.ctx, setup.SetUp, asked) catch |err| {
+    for (form.pairs[0..form.len]) |pair| {
+        if (std.mem.eql(u8, pair.name, "name") and pair.value.len > 0) {
+            try names.append(session.arena, pair.value);
+        }
+    }
+
+    if (names.items.len == 0) {
+        const none = try session.translated("Tick at least one provider.");
+
+        return screen(session, .unprocessable_content, "", none);
+    }
+
+    _ = registry.SDK.dispatch(&session.ctx, setup.SetUp, .{
+        .names = names.items,
+    }) catch |err| {
         return refused(session, err, "");
     };
-    // Added, not running: its review screen shows what it asks for, and enables it.
-    const review = try std.fmt.allocPrint(session.arena, "/admin/settings/plugins/{s}/enable", .{
-        added.name,
-    });
 
-    try response.redirect(.see_other, review);
+    try response.redirect(.see_other, if (from_overview(form)) overview else back);
 }
 
 /// The page again with why a post was refused: the operation's own words when it gave any.

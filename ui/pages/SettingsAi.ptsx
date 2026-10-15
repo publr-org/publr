@@ -4,15 +4,15 @@ import { Button } from "@publr/ui/Button.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { Card } from "@publr/ui/Card.ptsx";
 import { CardBody } from "@publr/ui/CardBody.ptsx";
-import { Code } from "@publr/ui/Code.ptsx";
 import { Heading } from "@publr/ui/Heading.ptsx";
-import { Input } from "@publr/ui/Input.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
 import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
 import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { TalkKey } from "../components/TalkKey.ptsx";
+import { ProviderKey } from "../components/ProviderKey.ptsx";
+import { ProviderPicker } from "../components/ProviderPicker.ptsx";
 
 export type SettingsAiProps = {
   /** The providers installed, the one in use first. */
@@ -33,15 +33,15 @@ export type SettingsAiProps = {
   }>;
   /** The official providers that can be set up in a click. */
   offered: Array<{ name: string; label: string; summary: string }>;
-  /** Whether a folder of official plugins is known (`PUBLR_PLUGIN_CATALOG`). */
-  catalog: boolean;
+  /** Whether Publr's plugin server answered with its list. */
+  reached: boolean;
   notice: string;
   problem: string;
 };
 
 /** Models on the project's own keys: the providers installed, each with its key, its
  * model and a test; the one conversations use; and the ones that can be set up. */
-export function SettingsAi({ providers, offered, catalog, notice, problem }: SettingsAiProps) {
+export function SettingsAi({ providers, offered, reached, notice, problem }: SettingsAiProps) {
   return (
     <FormPage
       title={Publr.t("AI")}
@@ -54,13 +54,9 @@ export function SettingsAi({ providers, offered, catalog, notice, problem }: Set
             </Callout>
           )}
           {notice !== "" && <Callout title={notice} />}
-          {providers.length === 0 && offered.length === 0 && (
-            <Callout title={Publr.t("No model providers yet")}>
-              {Publr.t("A provider is a plugin: upload its .wasm under Plugins, then approve what it asks for.")}{" "}
-              {catalog ? Publr.t("Or set one up below.") : Publr.t("With the folder of official plugins named by")}
-              {catalog ? "" : " "}
-              {!catalog && <Code>PUBLR_PLUGIN_CATALOG</Code>}
-              {catalog ? "" : Publr.t(", they can be set up from here in a click.")}
+          {!reached && (
+            <Callout tone="warning" title={Publr.t("Publr's plugin server could not be reached")}>
+              {Publr.t("Try again later, or upload a provider's .wasm under Plugins.")}
             </Callout>
           )}
         </div>
@@ -86,27 +82,12 @@ export function SettingsAi({ providers, offered, catalog, notice, problem }: Set
                   </div>
                 </div>
                 {provider.key_secret !== "" && (
-                  <form method="post" action="/admin/settings/ai/key" class="flex flex-col gap-2">
-                    <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
-                    <input type="hidden" name="name" value={provider.key_secret} />
-                    <Text as="p" variant="body-sm" tone="muted">
-                      {provider.key_steps}{" "}
-                      <Link href={provider.key_url} external variant="body-sm">
-                        {Publr.t("Get a key")}
-                      </Link>
-                    </Text>
-                    <div class="flex items-center gap-2">
-                      <Input
-                        type="password"
-                        name="value"
-                        placeholder={provider.key_set ? Publr.t("Paste a new key to replace it") : Publr.t("Paste your key")}
-                        classes="flex-1"
-                      />
-                      <Button hierarchy="secondary" size="md" type="submit">
-                        {Publr.t("Save key")}
-                      </Button>
-                    </div>
-                  </form>
+                  <ProviderKey
+                    key_secret={provider.key_secret}
+                    key_set={provider.key_set}
+                    key_url={provider.key_url}
+                    key_steps={provider.key_steps}
+                  />
                 )}
                 {provider.pending && (
                   <div class="flex items-center justify-between gap-4">
@@ -151,26 +132,8 @@ export function SettingsAi({ providers, offered, catalog, notice, problem }: Set
         {providers.length > 0 && <TalkKey />}
         {offered.length > 0 && (
           <div class="flex flex-col gap-3">
-            <SectionTitle title={Publr.t("Set up another")} />
-            {offered.map((item) => (
-              <div key={item.name} class="flex items-center justify-between gap-4">
-                <div class="flex min-w-0 flex-col">
-                  <Text as="span" variant="heading-xs">
-                    {item.label}
-                  </Text>
-                  <Text as="span" variant="body-sm" tone="muted">
-                    {item.summary}
-                  </Text>
-                </div>
-                <form method="post" action="/admin/settings/ai/set-up">
-                  <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
-                  <input type="hidden" name="name" value={item.name} />
-                  <Button hierarchy="secondary" size="md" type="submit">
-                    {Publr.t("Set up")}
-                  </Button>
-                </form>
-              </div>
-            ))}
+            <SectionTitle title={providers.length === 0 ? Publr.t("Pick your providers") : Publr.t("Add another")} />
+            <ProviderPicker offered={offered} />
           </div>
         )}
       </div>

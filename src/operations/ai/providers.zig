@@ -62,11 +62,19 @@ pub const Providers = struct {
 
         const chosen = try store.settings.get(ctx.db, ctx.arena, provider_key) orelse "";
         const model = try store.settings.get(ctx.db, ctx.arena, model_key) orelse "";
+        const listed = try in_use(ctx, chosen);
+        var provider: []const u8 = "";
+
+        for (listed) |one| {
+            if (one.chosen) {
+                provider = one.plugin;
+            }
+        }
 
         return .{
-            .providers = try installed(ctx, chosen),
-            .provider = chosen,
-            .model = model,
+            .providers = listed,
+            .provider = provider,
+            .model = if (std.mem.eql(u8, provider, chosen)) model else "",
         };
     }
 };
@@ -124,8 +132,8 @@ pub const Choose = struct {
     }
 };
 
-/// What a new conversation is answered by: the provider chosen, while it is installed;
-/// else the script `PUBLR_AI_SCRIPT` names; null when there is neither.
+/// What a new conversation is answered by: the provider in use (see `in_use`); else the
+/// script `PUBLR_AI_SCRIPT` names; null when there is neither.
 pub const Answerer = struct {
     provider: []const u8,
     model: []const u8,
@@ -137,12 +145,16 @@ pub fn answerer(ctx: *Ctx) Error!?Answerer {
 
     const chosen = try store.settings.get(ctx.db, ctx.arena, provider_key) orelse "";
 
-    if (chosen.len > 0 and try find(ctx, chosen) != null) {
+    for (try in_use(ctx, chosen)) |one| {
+        if (!one.chosen) {
+            continue;
+        }
+
         const model = try store.settings.get(ctx.db, ctx.arena, model_key) orelse "";
 
         return .{
-            .provider = chosen,
-            .model = model,
+            .provider = one.plugin,
+            .model = if (std.mem.eql(u8, one.plugin, chosen)) model else "",
         };
     }
 
@@ -202,8 +214,32 @@ pub fn find(ctx: *Ctx, plugin: []const u8) Error!?Listed {
     return null;
 }
 
+/// Every provider registered, the one in use marked `chosen`: the one chosen while it is
+/// installed, else the first with its key set, so a key pasted in is enough to build.
+fn in_use(ctx: *Ctx, chosen: []const u8) Error![]Listed {
+    std.debug.assert(listed_max > 0);
+    std.debug.assert(chosen.len <= 64 << 10);
+
+    const listed = try installed(ctx, chosen);
+
+    for (listed) |one| {
+        if (one.chosen) {
+            return listed;
+        }
+    }
+
+    for (listed) |*one| {
+        if (one.key_set) {
+            one.chosen = true;
+            return listed;
+        }
+    }
+
+    return listed;
+}
+
 /// Every provider registered: the compiled-in plugins' and the installed ones'.
-fn installed(ctx: *Ctx, chosen: []const u8) Error![]const Listed {
+fn installed(ctx: *Ctx, chosen: []const u8) Error![]Listed {
     std.debug.assert(listed_max > 0);
 
     const SDK = @import("../../server/registry.zig").SDK;
