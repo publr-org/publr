@@ -174,6 +174,13 @@ and `http.read` and passes the words on with `publr.ai.Progress` (`ai.progress`,
 permission of its own) as they come; `publr.ai.Events` splits the stream into its
 `data:` lines.
 
+A provider that turns speech into text says `.speech = true` in its description and adds
+`publr.ai.Transcribe("<name>", transcribe)`: a recording (`publr.ai.Speech`: base64 audio,
+up to 768 KiB, and its media type, `audio/webm`, `audio/ogg`, `audio/mp4`, `audio/wav` or
+`audio/mpeg`) in, its words out. Core's [`ai transcribe`](cli/ai.md) calls it. A file goes
+to an API as a form upload: `http.fetch`'s `form`, whose file parts are base64, is written
+as `multipart/form-data` by core, so a plugin never encodes one.
+
 ### Limits
 
 Every call into a plugin runs within limits: 100 ms of CPU (counted in instructions),

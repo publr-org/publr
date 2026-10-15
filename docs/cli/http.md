@@ -10,7 +10,12 @@ Back to the [CLI reference](../cli.md).
 
 | Command | What |
 |---|---|
-| `http fetch --url <url> [--method] [--headers] [--body]` | Send a request out, as the calling plugin |
+| `http fetch --url <url> [--method] [--headers] [--body] [--form]` | Send a request out, as the calling plugin |
+
+`--form`, in place of a body, is a form upload of up to 16 parts (`name`, `value`, and for
+a file `file_name` and `content_type`, its value base64): core writes it as
+`multipart/form-data` with the file's bytes and sets the `Content-Type`. No secret is
+filled in a form.
 
 `http.stream` sends a request as `http.fetch` does, under the same grant and domains, and
 answers once the response's head is in: its status and a `handle`. `http.read --handle`

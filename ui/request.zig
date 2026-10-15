@@ -31,6 +31,10 @@ pub fn Shape(comptime Node: type) type {
             top_bar: ?Node,
             /// The pages the person pinned, after the admin's own.
             rail: ?Node = null,
+            /// Whose admin it is (a plugin's `admin_brand`): its name in the title, empty for
+            /// Publr, and its mark's address in the rail, empty for Publr's.
+            brand: []const u8 = "",
+            brand_mark: []const u8 = "",
             /// One of the pinned pages is the one shown: it is lit, not its area's.
             pinned_lit: bool = false,
             /// The area's sidebar, drawn only when the chrome reaches it.
@@ -43,9 +47,12 @@ pub fn Shape(comptime Node: type) type {
             /// The site of the app the admin shows (the only one, or the one chosen); empty
             /// while it shows several. On phones the rail links to it.
             site_href: []const u8 = "",
-            /// The page is shown inside another (the AI workspace follows the agent in a
-            /// frame): the sheet alone, without the rail and the sidebar.
+            /// The sheet alone, without the rail and the sidebar: the AI workspace's preview
+            /// asks for it with `?framed=1`.
             framed: bool = false,
+            /// A paste with nothing focused asks the agent: a provider is connected and the
+            /// person may ask, on a page that is not in a frame.
+            can_ask: bool = false,
             /// The language the admin speaks to the person (`pl`): `<html lang>`, and the
             /// catalogue the page's script loads; `en` needs none.
             locale: []const u8 = "en",

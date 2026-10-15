@@ -357,7 +357,7 @@ fn tag(compiler: *Compiler) Error!void {
     try compiler.static("<");
     try compiler.static(name);
 
-    const set_html = try write_attributes(compiler, name, attributes.items);
+    const set_content = try write_attributes(compiler, name, attributes.items);
 
     try compiler.static(">");
 
@@ -365,7 +365,7 @@ fn tag(compiler: *Compiler) Error!void {
         return;
     }
 
-    if (set_html) |raw| {
+    if (set_content) |raw| {
         try write_raw(compiler, raw);
     }
 
@@ -375,7 +375,7 @@ fn tag(compiler: *Compiler) Error!void {
 
     // Everything the head owes the page is written where the app closes it; what
     // that is exactly is the host's to decide.
-    if (set_html == null and std.mem.eql(u8, name, "head")) {
+    if (set_content == null and std.mem.eql(u8, name, "head")) {
         compiler.template.has_head = true;
         try compiler.push(.head_assets);
     }
@@ -520,21 +520,37 @@ fn is_attribute_char(byte: u8) bool {
     return !std.ascii.isWhitespace(byte) and byte != '=' and byte != '>' and byte != '/';
 }
 
-/// Writes an element's attributes; returns the `set:html` expression when it has one.
+/// The markup an element's content is set to: `set:html={…}` or `set:markdown={…}`.
+const SetContent = struct {
+    expression: []const u8,
+    markdown: bool,
+};
+
+/// Writes an element's attributes; returns what `set:html` or `set:markdown` sets its
+/// content to, when it has one.
 fn write_attributes(
     compiler: *Compiler,
     name: []const u8,
     attributes: []const Attr,
-) Error!?[]const u8 {
+) Error!?SetContent {
     std.debug.assert(name.len > 0);
     std.debug.assert(attributes.len <= attributes_max);
 
-    var set_html: ?[]const u8 = null;
+    var set_content: ?SetContent = null;
 
     for (attributes) |attr| {
-        if (std.mem.eql(u8, attr.name, "set:html")) {
-            set_html = attr.expression orelse {
-                return compiler.fail("set:html takes an {{expression}}", .{});
+        const markdown = std.mem.eql(u8, attr.name, "set:markdown");
+
+        if (markdown or std.mem.eql(u8, attr.name, "set:html")) {
+            if (set_content != null) {
+                return compiler.fail("<{s}> sets its content twice", .{name});
+            }
+
+            set_content = .{
+                .expression = attr.expression orelse {
+                    return compiler.fail("{s} takes an {{expression}}", .{attr.name});
+                },
+                .markdown = markdown,
             };
             continue;
         }
@@ -547,7 +563,7 @@ fn write_attributes(
         try attribute_expression(compiler, attr.name, attr.expression.?);
     }
 
-    return set_html;
+    return set_content;
 }
 
 /// A literal attribute as written; an `/_app/...` URL is written through the host, which
@@ -666,19 +682,22 @@ fn attribute_expression(compiler: *Compiler, name: []const u8, text: []const u8)
     }
 }
 
-/// `set:html={v}`: the value written without escaping.
-fn write_raw(compiler: *Compiler, text: []const u8) Error!void {
-    std.debug.assert(text.len > 0);
+/// `set:html={v}` or `set:markdown={v}`: the value written as markup, sanitized.
+fn write_raw(compiler: *Compiler, set: SetContent) Error!void {
+    std.debug.assert(set.expression.len > 0);
 
-    const value = try expression.expression(compiler, text);
+    const value = try expression.expression(compiler, set.expression);
 
     switch (value.type) {
         .javascript, .string, .opt_string => try compiler.push(.{
-            .raw = value,
+            .raw = .{
+                .expr = value,
+                .markdown = set.markdown,
+            },
         }),
         else => return compiler.fail(
-            "set:html needs a string; got a {s}",
-            .{@tagName(value.type)},
+            "{s} needs a string; got a {s}",
+            .{ if (set.markdown) "set:markdown" else "set:html", @tagName(value.type) },
         ),
     }
 }

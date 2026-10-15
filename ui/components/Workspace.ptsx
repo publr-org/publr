@@ -20,7 +20,8 @@ import { Input } from "@publr/ui/Input.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
 import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
-import { PictureTray, images_in, pictures_max, upload_picture, type Picture } from "./PictureTray.ptsx";
+import { PictureTray, images_in, pasted_freely, pictures_max, upload_picture, type Picture } from "./PictureTray.ptsx";
+import { TalkLine, listen } from "./Talk.ptsx";
 
 type Run = { text: string; style: string };
 
@@ -104,6 +105,8 @@ export const state = Publr.reactive({
   frame_url: "",
   followed: "",
   reply: "",
+  /** Holding the talk key: "Listening… 0:03", "Writing it down…"; empty otherwise. */
+  talking: "",
   /** Pictures attached to the reply, already in the media library. */
   pictures: [] as Picture[],
   attaching: false,
@@ -573,6 +576,13 @@ export const landed = () => {
     return;
   }
   element?.contentDocument?.addEventListener("click", guard_link, true);
+  // Its links keep the frame's mark, so the next page draws its sheet alone at once.
+  for (const anchor of element?.contentDocument?.querySelectorAll<HTMLAnchorElement>("a[href]") ?? []) {
+    const target = new URL(anchor.href);
+    if (target.origin !== window.location.origin || target.searchParams.has("framed")) continue;
+    target.searchParams.set("framed", "1");
+    anchor.href = target.href;
+  }
   // A link inside the frame leads to a page that does not know it is framed: shown again, marked.
   if (!new URLSearchParams(location.search).has("framed")) {
     location.replace(framed(here));
@@ -914,8 +924,7 @@ export const removed = (event: MouseEvent) => {
   state.pictures = state.pictures.filter((picture) => picture.key !== key);
 };
 
-export const send = async (event: Event) => {
-  event.preventDefault();
+const reply = async () => {
   const prompt = state.reply.trim();
   if (prompt === "" || state.attaching) return;
   try {
@@ -930,9 +939,68 @@ export const send = async (event: Event) => {
   }
 };
 
+export const send = (event: Event) => {
+  event.preventDefault();
+  reply();
+};
+
+/** A paste with no field focused (a dictation app done listening) is a reply: its words go
+ * into the box and are sent; while the agent works they wait there for its turn to end. */
+const pasted_anywhere = async (event: ClipboardEvent) => {
+  if (!pasted_freely(event)) return;
+  const text = (event.clipboardData?.getData("text/plain") ?? "").trim();
+  const files = images_in(event.clipboardData);
+  if (text === "" && files.length === 0) return;
+  event.preventDefault();
+  await attach(files);
+  if (text !== "") reply_with(text);
+};
+
+/** Words said while the talk key is held are a reply too, as a paste is. */
+const reply_with = (words: string) => {
+  state.reply = state.reply.trim() === "" ? words : `${state.reply.trimEnd()}\n${words}`;
+  if (!state.live) reply();
+};
+
+Publr.effect(() => {
+  document.addEventListener("paste", pasted_anywhere);
+  const stop_talking = listen(() => state.csrf, {
+    allowed: () => true,
+    started: () => {
+      state.note = "";
+      state.talking = Publr.t("Listening…");
+    },
+    ticked: (seconds) => {
+      state.talking = Publr.t("Listening… {time}", { time: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}` });
+    },
+    writing: () => {
+      state.talking = Publr.t("Writing it down…");
+    },
+    heard: (words, typed) => {
+      state.talking = "";
+      if (!typed) reply_with(words);
+    },
+    failed: (reason) => {
+      state.talking = "";
+      state.note = reason;
+    },
+    cancelled: () => {
+      state.talking = "";
+    },
+  });
+  return () => {
+    document.removeEventListener("paste", pasted_anywhere);
+    stop_talking();
+  };
+});
+
 export type WorkspaceProps = {
   id: string;
   prompt: string;
+  /** The page the first ask came from, under its words; empty when none went with it. */
+  asked_on: string;
+  /** The prompt's first line, the conversation's heading. */
+  title: string;
   /** The first ask's pictures, as the page shows them. */
   prompt_pictures: string[];
   /** `running`, `stopping`, `finished`, `stopped` or `failed`. */
@@ -974,6 +1042,8 @@ export type WorkspaceProps = {
 export function Workspace({
   id,
   prompt,
+  asked_on,
+  title,
   prompt_pictures,
   conversation_state,
   steps,
@@ -1103,14 +1173,21 @@ export function Workspace({
       <WorkspaceAside>
         <div class="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
           <Text as="p" variant="heading-xs" classes="line-clamp-2">
-            {prompt}
+            {title}
           </Text>
           <Status tone={state.conversation_state === "failed" ? "error" : state.waiting ? "warning" : state.live ? "accent" : "success"}>
             {state.label}
           </Status>
         </div>
         <div ref={conversation} class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
-          <MessageBubble>{prompt}</MessageBubble>
+          <div class="flex flex-col items-end gap-1">
+            <MessageBubble>{prompt}</MessageBubble>
+            {asked_on !== "" && (
+              <Text as="p" variant="body-xs" tone="muted" classes="max-w-[85%] truncate">
+                {Publr.t("Asked on {page}", { page: asked_on })}
+              </Text>
+            )}
+          </div>
           {prompt_pictures.length > 0 && (
             <div class="flex flex-wrap justify-end gap-2">
               {prompt_pictures.map((source) => (
@@ -1273,7 +1350,8 @@ export function Workspace({
             </Text>
           )}
         </div>
-        <div class="shrink-0 border-t border-border p-4">
+        <div class="flex shrink-0 flex-col gap-2 border-t border-border p-4">
+          {state.talking !== "" && <TalkLine text={state.talking} />}
           {state.live ? (
             <div class="flex items-center justify-between gap-3">
               <Text as="span" variant="body-sm" tone="muted">

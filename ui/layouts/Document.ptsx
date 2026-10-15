@@ -18,7 +18,7 @@ export function Document({ title, children }: DocumentProps) {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="publr-csrf" content={Publr.request.session.csrf} />
-        <title>{title} · Publr</title>
+        <title>{title} · {Publr.request.admin.brand !== "" ? Publr.request.admin.brand : "Publr"}</title>
         <link rel="stylesheet" href="/admin/styles.css" />
         {Publr.request.admin.messages !== "" && <script src={Publr.request.admin.messages}></script>}
         <script type="module" src="/admin/stores.js"></script>

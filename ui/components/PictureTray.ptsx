@@ -12,6 +12,18 @@ export const pictures_max = 8;
 export const images_in = (transfer: DataTransfer | null): File[] =>
   Array.from(transfer?.files ?? []).filter((file) => file.type.startsWith("image/"));
 
+/** Whether a trusted paste was meant for no field: nothing editable or framed had the
+ * focus. What a dictation app pastes when it stops listening is an ask. */
+export const pasted_freely = (event: ClipboardEvent) => {
+  if (!event.isTrusted || event.defaultPrevented) return false;
+  const target = event.target instanceof Element ? event.target : null;
+  const active = document.activeElement;
+  const editable = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
+  if (target?.closest(editable)) return false;
+  if (active instanceof HTMLIFrameElement) return false;
+  return !(active instanceof Element && active.closest(editable) !== null);
+};
+
 /** A pasted picture is often called `image.png`; it gets a name of its own. */
 const name_of = (file: File) => {
   if (file.name !== "" && file.name !== "image.png") return file.name;

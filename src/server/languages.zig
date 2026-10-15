@@ -4,6 +4,8 @@
 const std = @import("std");
 const model = @import("../model.zig");
 const registry = @import("registry.zig");
+const runtime = @import("runtime");
+const SdkMessage = @import("../sdk/context.zig").Message;
 
 const Catalog = model.i18n.Catalog;
 const Source = model.i18n.catalog.Source;
@@ -32,6 +34,22 @@ pub const Language = struct {
 const LanguageDisagreements = @import("../sdk/context.zig").LanguageDisagreements;
 const Coverage = @import("../sdk/context.zig").Coverage;
 const coverage_of = @import("languages/coverage.zig").of;
+
+/// A catalogue's text for a message, as `runtime.Translator.lookup` asks it; `context` is
+/// the language's `*const Catalog`.
+pub fn lookup(
+    context: *const anyopaque,
+    message_context: []const u8,
+    id: []const u8,
+    plural: []const u8,
+    count: ?f64,
+) ?[]const u8 {
+    const catalog: *const Catalog = @ptrCast(@alignCast(context));
+
+    std.debug.assert(id.len > 0);
+
+    return catalog.lookup(message_context, id, if (plural.len > 0) count else null);
+}
 
 pub const Languages = struct {
     gpa: std.mem.Allocator,
@@ -69,6 +87,7 @@ pub const Languages = struct {
             .context = languages,
             .disagreements = read_disagreements,
             .coverage = read_coverage,
+            .say = say,
         };
     }
 
@@ -185,6 +204,41 @@ fn script_of(arena: std.mem.Allocator, catalog: *const Catalog) ![]const u8 {
     try writer.writeAll("};\n");
 
     return out.written();
+}
+
+fn say(
+    context: *const anyopaque,
+    arena: std.mem.Allocator,
+    locale: []const u8,
+    message: SdkMessage,
+) std.mem.Allocator.Error![]const u8 {
+    const languages: *const Languages = @ptrCast(@alignCast(context));
+
+    std.debug.assert(message.id.len > 0);
+    std.debug.assert(languages.list.len <= languages_max);
+
+    const values = try arena.alloc(runtime.Placeholder, message.values.len);
+
+    for (message.values, values) |given, *value| {
+        value.* = .{
+            .name = given.name,
+            .value = given.value,
+        };
+    }
+
+    const found = languages.find(locale);
+    const translator: ?runtime.Translator = if (found) |language| .{
+        .context = &language.catalog,
+        .lookup = lookup,
+    } else null;
+
+    return runtime.translate(arena, if (translator) |*held| held else null, .{
+        .context = message.context,
+        .id = message.id,
+        .plural = message.plural,
+        .count = message.count,
+        .values = values,
+    });
 }
 
 fn read_coverage(context: *const anyopaque) []const Coverage {

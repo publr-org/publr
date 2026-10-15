@@ -28,6 +28,7 @@ apps/www/
     posts/index.publr      /posts
     posts/[slug].publr     /posts/<slug>, one page per live post
     visit.dynamic.publr    /visit, rendered per request
+    about.md               /about, written in Markdown
     404.publr              every unmatched path
   layouts/, components/, dynamic/   templates the pages import; the names are the app's own
   interactive/*.ptsx       PJSX components with client state (optional)
@@ -37,7 +38,8 @@ apps/www/
 ```
 
 Only `content/` means anything to the engine: its files are pages, and `[slug]` in a
-name is a route parameter. Every other folder holds templates a page imports.
+name is a route parameter. A page is a `.publr` template or a `.md` file (see Markdown
+pages); a `.md` file anywhere else, such as a README, is not read. Every other folder holds templates a page imports.
 `public/` and `interactive/` are not templates. An app with no templates at all is
 valid: its `middleware.zig` answers every request (a webhook receiver, an API facade).
 
@@ -272,7 +274,9 @@ addresses are removed. In an SVG, references point only at its own parts (`#id`,
 `url(#id)`), its ids are prefixed `svg-`, an animation never targets an address, a style or
 a handler, and `<style>` or `style` never reach the page. Nothing skips it. A page that needs a script gets it from the
 app's own files (`public/`, linked from a template), an island or an approved plugin
-script, never from printed markup. Components receive `props`; children fill `<slot />`.
+script, never from printed markup. `set:markdown` prints a string of Markdown (a text field
+set to Markdown) as that markup: it is converted to HTML first, then sanitized the same way.
+An element takes one of the two. Components receive `props`; children fill `<slot />`.
 Data reads use the existing `Publr.build` / `Publr.request` context and permissions.
 Request access requires a dynamic template, including when reached through an alias.
 Use a seeded generator for repeatable patterns and `Publr.build.now()` or
@@ -466,6 +470,40 @@ every part a file places, Default or Overridden, with Reset) and Patterns (File,
 Overridden with Reset, or Added with Remove). Reset and Remove move the record to the
 trash.
 
+## Markdown pages
+
+A `.md` file under `content/` is a page, routed by its name like a `.publr` one:
+`content/guide/install.md` answers at `/guide/install`, `content/404.md` is the not-found
+page. Its frontmatter is `key: value` lines; `layout` names the `.publr` layout by its
+relative path, every other key reaches the layout as a prop, and the page's HTML fills the
+layout's `<slot />`:
+
+```md
+---
+layout: ../../layouts/base.publr
+title: Installing
+---
+# Installing
+
+Download the binary, then run `publr new`.
+```
+
+Without `layout` the page is the HTML alone. A value is plain or in quotes; lists and
+nesting are refused. As with any component call, a key the layout never reads is refused,
+naming it. The page is static, rebuilt when the file or its layout changes.
+`[slug].md`, `[...path].md` and `.dynamic.md` are refused: a file has no record to fill.
+
+The Markdown is CommonMark's common core with GitHub's tables and strikethrough:
+`#` headings, paragraphs, rules, fenced code (its language becomes
+`class="language-<word>"`), quotes, nested lists, tables, emphasis, code, links, images,
+autolinks and hard breaks. Setext headings, indented code, reference links, footnotes and
+task lists read as text. HTML in the file is the app's own markup, kept as written and not
+sanitized; a capitalised tag is a component, which a Markdown page cannot import. Braces
+are text, never expressions. The same converter serves `set:markdown`.
+
+Words a site's owner edits belong in records; a Markdown page suits writing kept with the
+code, such as docs or a changelog.
+
 ## Pages, components, islands
 
 | | HTML is made | reaches the visitor |
@@ -555,6 +593,12 @@ colours and mark, whatever the app looks like. An app's visitor, whose roles rea
 the admin's operations, never sees it. The bar can be dragged by the mark, and the browser remembers where.
 Hiding it is remembered too; a small triangle then appears when the pointer reaches the
 page's bottom-right corner, and clicking it brings the bar back.
+
+While the bar shows, a paste with nothing focused (what a dictation app does when it stops
+listening) shows the words above it with **Ask in admin**: the admin's Overview opens in a
+new tab with them in the prompt and the page's address sent with them, for the person to
+send with Build. The page never starts a turn: its scripts are its author's. Pictures are
+not carried; the bar says to paste them in the admin. Esc or the X dismisses the words.
 
 Anonymous visitors pay for one cookie read. Signing in sets a readable `publr_signed_in=1`
 beside the HttpOnly session cookie, and signing out clears both. Without that cookie the

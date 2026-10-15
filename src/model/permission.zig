@@ -239,7 +239,7 @@ pub const never = [_][]const u8{
     "ai.ask",             "ai.conversation",    "ai.conversations",           "ai.stop",
     "ai.begin",           "ai.step",            "ai.finish",                  "ai.draft",
     "user.language",      "user.set_language",  "project.set_admin_language", "user.variant",
-    "user.set_variant",
+    "user.set_variant",   "ai.transcribe",
 };
 
 /// A secret a plugin names is its own permission, `secret.<NAME>`, always high.

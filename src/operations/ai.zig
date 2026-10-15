@@ -7,6 +7,7 @@ const providers = @import("ai/providers.zig");
 const setup = @import("ai/setup.zig");
 const pictures = @import("ai/pictures.zig");
 const browser = @import("ai/browser.zig");
+const speech = @import("ai/speech.zig");
 pub const live = @import("ai/live.zig");
 
 const Ctx = sdk.Ctx;
@@ -43,7 +44,8 @@ pub fn bootstrap(ctx: *Ctx) Error!void {
 }
 
 pub const operations = [_]type{ Ask, Reply, Get, List, Stop } ++ turn.operations ++
-    providers.operations ++ setup.operations ++ live.operations ++ browser.operations;
+    providers.operations ++ setup.operations ++ live.operations ++ browser.operations ++
+    speech.operations;
 
 /// One conversation, as every operation answers it.
 pub const Conversation = struct {
@@ -111,6 +113,7 @@ pub const Ask = struct {
         prompt: []const u8,
         scope: []const u8 = "write",
         pictures: []const []const u8 = &.{},
+        page: []const u8 = "",
     };
     pub const Out = Conversation;
     pub const example: In = .{
@@ -122,6 +125,8 @@ pub const Ask = struct {
         .scope = "What the agent may do: write (as you may), drafts (it writes, you " ++
             "publish) or read",
         .pictures = pictures_doc,
+        .page = "The page it was asked on, which the words may mean by \"this\": an " ++
+            "admin path (`/admin/content/post/<id>`) or a site's address; empty for none",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -129,9 +134,18 @@ pub const Ask = struct {
         std.debug.assert(ai.prompt_len_max > 0);
 
         const person = try person_of(ctx);
-        const prompt = std.mem.trim(u8, in.prompt, " \t\r\n");
+        const words = std.mem.trim(u8, in.prompt, " \t\r\n");
 
-        if (prompt.len == 0 or prompt.len > ai.prompt_len_max) {
+        if (words.len == 0 or words.len > ai.prompt_len_max or !ai.page_valid(in.page)) {
+            return error.Invalid;
+        }
+
+        const prompt = if (in.page.len == 0)
+            words
+        else
+            try std.mem.concat(ctx.arena, u8, &.{ words, ai.asked_on_mark, in.page });
+
+        if (prompt.len > ai.prompt_len_max) {
             return error.Invalid;
         }
 

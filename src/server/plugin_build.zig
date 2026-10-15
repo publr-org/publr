@@ -310,7 +310,11 @@ fn manifest_of(gpa: std.mem.Allocator, arena: std.mem.Allocator, module_bytes: [
     });
     defer runtime.deinit();
 
-    var module = try wasm.Module.load(&runtime, module_bytes, &problem);
+    var module = wasm.Module.load(&runtime, module_bytes, &problem) catch |err| {
+        std.log.err("the built module does not load: {s}", .{problem.text()});
+
+        return err;
+    };
     defer module.unload();
 
     var instance = try wasm.Instance.init(&module, .{

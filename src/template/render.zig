@@ -4,17 +4,35 @@
 
 const std = @import("std");
 const sanitize = @import("../lib/sanitize.zig");
+const markdown = @import("../lib/markdown.zig");
 const ast = @import("ast.zig");
 const compile = @import("compile.zig");
 const time = @import("../lib/time.zig");
 const javascript = @import("javascript/vm.zig");
 const address = @import("../model/app/address.zig");
+const runtime = @import("runtime");
 
 const Expr = ast.Expr;
 const Node = ast.Node;
 const Template = ast.Template;
 
 pub const Error = error{NestingTooDeep};
+
+/// What `set:html` or `set:markdown` prints, made safe and put under the base path: the
+/// Markdown converted first, then the same sanitizer for both.
+pub fn printed_markup(
+    arena: std.mem.Allocator,
+    text: []const u8,
+    is_markdown: bool,
+    base: []const u8,
+) ![]const u8 {
+    std.debug.assert(base.len == 0 or base[0] == '/');
+
+    const html = if (is_markdown) try markdown.to_html(arena, text, .{}) else text;
+    const clean = try sanitize.sanitize(arena, html, .content);
+
+    return address.markup_under(arena, base, clean);
+}
 
 /// Escapes the five HTML-special characters.
 pub fn escape(writer: *std.Io.Writer, text: []const u8) !void {
@@ -39,6 +57,15 @@ pub const Prop = struct {
     kind: enum { string, number, boolean } = .string,
 };
 
+/// What a PJSX component draws with besides its props: the app's class book
+/// (`publr_jit.Book`), and the page's language (`Publr.t`'s catalogue, null for English).
+pub const PjsxPage = struct {
+    classes: ?*const anyopaque = null,
+    translator: ?*const anyopaque = null,
+    /// The catalogue as the script the render's engine reads; empty for English.
+    catalogue: []const u8 = "",
+};
+
 /// A PJSX component the renderer can call: the lowered module's `render`, wrapped to
 /// take props by name.
 pub const PjsxRender = *const fn (
@@ -46,8 +73,7 @@ pub const PjsxRender = *const fn (
     arena: std.mem.Allocator,
     props: []const Prop,
     children: ?[]const u8,
-    /// The app's class book (`publr_jit.Book`) the component writes its classes with.
-    classes: ?*const anyopaque,
+    page: PjsxPage,
 ) anyerror!void;
 
 pub fn Renderer(comptime Ctx: type) type {
@@ -289,6 +315,14 @@ pub fn Renderer(comptime Ctx: type) type {
                 .money => |access| .{
                     .string = try money(ctx, frame.lookup(access.object), access),
                 },
+                .media_url => |access| .{
+                    .string = try media_url(
+                        renderer.arena,
+                        ctx,
+                        frame.lookup(access.object),
+                        access,
+                    ),
+                },
                 .user_field => |path| .{
                     .opt_string = try ctx.user_field(path),
                 },
@@ -421,7 +455,7 @@ pub fn Renderer(comptime Ctx: type) type {
             switch (item) {
                 .text => |text| try writer.writeAll(text),
                 .value => |expr| try renderer.write_value(writer, frame, expr),
-                .raw => |expr| try renderer.write_raw(writer, frame, expr),
+                .raw => |raw| try renderer.write_raw(writer, frame, raw),
                 .attr => |attr| try renderer.write_attr(writer, frame, attr),
                 .asset => |path| try frame.ctx.asset_url(writer, path),
                 .url_base => try writer.writeAll(frame.ctx.url_base()),
@@ -451,11 +485,17 @@ pub fn Renderer(comptime Ctx: type) type {
             renderer: *const Self,
             writer: *std.Io.Writer,
             frame: *Frame,
-            expr: Expr,
+            raw: Node.Raw,
         ) anyerror!void {
+            const expr = raw.expr;
+            const base = frame.ctx.url_base();
+
             if (expr.type == .javascript) {
                 const value = try Bridge.eval(renderer, frame, expr.node.javascript);
-                return Bridge.write_raw(frame.execution.vm.?, writer, value, frame.ctx.url_base());
+                return Bridge.write_raw(frame.execution.vm.?, writer, value, .{
+                    .base = base,
+                    .markdown = raw.markdown,
+                });
             }
 
             std.debug.assert(expr.type == .string or expr.type == .opt_string);
@@ -466,10 +506,7 @@ pub fn Renderer(comptime Ctx: type) type {
                 else => unreachable,
             };
 
-            const clean = try sanitize.sanitize(renderer.arena, text, .content);
-            const base = frame.ctx.url_base();
-
-            try writer.writeAll(try address.markup_under(renderer.arena, base, clean));
+            try writer.writeAll(try printed_markup(renderer.arena, text, raw.markdown, base));
         }
 
         fn write_attr(
@@ -624,11 +661,11 @@ pub fn Renderer(comptime Ctx: type) type {
             };
             try Bridge.native_props(renderer, &bridge_frame);
             const props = bridge_frame.props;
-            const book = if (@hasDecl(Ctx, "class_book")) frame.ctx.class_book() else null;
+            const page = try pjsx_page(frame);
             const children = call.children orelse {
                 const component = renderer.pjsx[call.component];
 
-                return component(writer, renderer.arena, props.values, null, book);
+                return component(writer, renderer.arena, props.values, null, page);
             };
             var buffer: std.Io.Writer.Allocating = .init(renderer.arena);
 
@@ -637,7 +674,27 @@ pub fn Renderer(comptime Ctx: type) type {
             try renderer.nested(&buffer.writer, frame, children);
             const rendered = buffer.written();
 
-            try renderer.pjsx[call.component](writer, renderer.arena, props.values, rendered, book);
+            try renderer.pjsx[call.component](writer, renderer.arena, props.values, rendered, page);
+        }
+
+        fn pjsx_page(frame: *const Frame) !PjsxPage {
+            std.debug.assert(frame.depth < compile.nesting_max);
+            std.debug.assert(frame.template.rel.len > 0);
+
+            var page: PjsxPage = .{};
+
+            if (@hasDecl(Ctx, "class_book")) {
+                page.classes = frame.ctx.class_book();
+            }
+
+            if (@hasDecl(Ctx, "language")) {
+                const language = try frame.ctx.language();
+
+                page.translator = language.translator;
+                page.catalogue = language.catalogue;
+            }
+
+            return page;
         }
 
         /// The placeholder for a fragment: a static island is always one, its fallback
@@ -861,6 +918,7 @@ pub fn Renderer(comptime Ctx: type) type {
                 },
                 .logical => |both| renderer.logical(frame, both),
                 .template => |parts| renderer.template_string(frame, parts),
+                .words => |words| renderer.words_value(frame, words),
             };
         }
 
@@ -975,6 +1033,55 @@ pub fn Renderer(comptime Ctx: type) type {
             };
         }
 
+        /// The message in the page's language, its values filled.
+        fn words_value(renderer: *const Self, frame: *Frame, words: Expr.Words) anyerror!Value {
+            std.debug.assert(words.id.len > 0);
+            std.debug.assert(words.plural.len == 0 or words.count != null);
+
+            const values = try renderer.arena.alloc(runtime.Placeholder, words.values.len);
+
+            for (words.values, values) |given, *value| {
+                value.* = .{
+                    .name = given.name,
+                    .value = try renderer.text_of(try renderer.eval(frame, given.value.*)),
+                };
+            }
+
+            const counted: ?Value = if (words.count) |count_expr|
+                try renderer.eval(frame, count_expr.*)
+            else
+                null;
+            const count: ?f64 = if (counted) |value| switch (value) {
+                .int => |number| @floatFromInt(number),
+                else => null,
+            } else null;
+            const translator = if (@hasDecl(Ctx, "language"))
+                (try frame.ctx.language()).translator
+            else
+                null;
+
+            return .{
+                .string = try runtime.translate(renderer.arena, translator, .{
+                    .context = words.context,
+                    .id = words.id,
+                    .plural = words.plural,
+                    .count = count,
+                    .values = values,
+                }),
+            };
+        }
+
+        fn text_of(renderer: *const Self, value: Value) ![]const u8 {
+            std.debug.assert(renderer.templates.len > 0);
+
+            return switch (value) {
+                .string => |text| text,
+                .opt_string => |text| text orelse "",
+                .int => |number| try std.fmt.allocPrint(renderer.arena, "{d}", .{number}),
+                else => "",
+            };
+        }
+
         fn template_string(
             renderer: *const Self,
             frame: *Frame,
@@ -1065,6 +1172,31 @@ test "escape covers the five special characters and nothing else" {
 }
 
 /// A money field as the site writes it, or "" when it holds nothing in that currency.
+fn media_url(
+    arena: std.mem.Allocator,
+    ctx: anytype,
+    owner: anytype,
+    access: ast.Decl.References,
+) ![]const u8 {
+    std.debug.assert(access.key.len > 0);
+    std.debug.assert(access.object.len > 0);
+
+    if (!@hasDecl(@TypeOf(ctx.*), "media")) {
+        return "";
+    }
+
+    const id = owner.entry.data.getText(access.key) orelse return "";
+    const viewed = try ctx.media(id) orelse return "";
+    const File = struct {
+        url: []const u8 = "",
+    };
+    const file = std.json.parseFromSliceLeaky(File, arena, viewed, .{
+        .ignore_unknown_fields = true,
+    }) catch return "";
+
+    return file.url;
+}
+
 fn money(ctx: anytype, owner: anytype, access: ast.Decl.Money) ![]const u8 {
     std.debug.assert(access.key.len > 0);
     std.debug.assert(access.object.len > 0);

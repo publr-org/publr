@@ -1,11 +1,11 @@
 //! JavaScript values cross into the ordinary Zig HTML writer, never raw interpolation.
 const std = @import("std");
-const sanitize = @import("../../lib/sanitize.zig");
 const engine = @import("vm.zig");
 const VM = engine.VM;
 const Value = engine.Value;
 const api = engine.api;
 const escape = @import("../render.zig").escape;
+const printed_markup = @import("../render.zig").printed_markup;
 const address = @import("../../model/app/address.zig");
 
 pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
@@ -244,9 +244,19 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 
             const raw = try vm.get(attributes, "set:html");
             defer vm.free(raw);
+            const markdown = try vm.get(attributes, "set:markdown");
+            defer vm.free(markdown);
+            const set_markdown = !api.JS_IsUndefined(markdown);
 
-            if (!api.JS_IsUndefined(raw)) {
-                try write_raw(vm, &buffer.writer, raw, frame.ctx.url_base());
+            if (set_markdown and !api.JS_IsUndefined(raw)) {
+                return error.InvalidRawHTML;
+            }
+
+            if (set_markdown or !api.JS_IsUndefined(raw)) {
+                try write_raw(vm, &buffer.writer, if (set_markdown) markdown else raw, .{
+                    .base = frame.ctx.url_base(),
+                    .markdown = set_markdown,
+                });
             } else try write_node(renderer, frame, buffer, children, depth);
 
             if (std.mem.eql(u8, name, "head")) {
@@ -350,8 +360,16 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             frame.props.entries = entries.items;
         }
 
-        /// A string printed as markup: sanitized, its root paths under `base`.
-        pub fn write_raw(vm: *VM, writer: *std.Io.Writer, value: Value, base: []const u8) !void {
+        pub const Raw = struct {
+            /// The path the project is served under.
+            base: []const u8,
+            /// `set:markdown`: the value is Markdown.
+            markdown: bool,
+        };
+
+        /// A string printed as markup: Markdown converted, sanitized, its root paths under
+        /// the base path.
+        pub fn write_raw(vm: *VM, writer: *std.Io.Writer, value: Value, raw: Raw) !void {
             std.debug.assert(!api.JS_IsException(value));
 
             if (api.JS_IsNull(value) or api.JS_IsUndefined(value)) {
@@ -364,9 +382,7 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 
             const text = try vm.text(value);
 
-            const clean = try sanitize.sanitize(vm.arena, text, .content);
-
-            try writer.writeAll(try address.markup_under(vm.arena, base, clean));
+            try writer.writeAll(try printed_markup(vm.arena, text, raw.markdown, raw.base));
         }
 
         /// An attribute's name, and the path the project is served under, which a root path
@@ -435,7 +451,7 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             const base = ctx.url_base();
 
             for (try property_names(vm, attributes)) |name| {
-                if (std.mem.eql(u8, name, "set:html")) {
+                if (std.mem.eql(u8, name, "set:html") or std.mem.eql(u8, name, "set:markdown")) {
                     continue;
                 }
 

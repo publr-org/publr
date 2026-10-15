@@ -175,11 +175,12 @@ pub const layouts = [_][]const u8{
     "ListDetailPage",
     "FramePage",
     "WorkspacePage",
+    "AroundPage",
 };
 
 fn is_layout(comptime name: []const u8) bool {
     comptime {
-        std.debug.assert(layouts.len == 7);
+        std.debug.assert(layouts.len == 8);
 
         for (layouts) |layout| {
             if (std.mem.eql(u8, layout, name)) {
@@ -230,7 +231,7 @@ pub fn document(
     comptime {
         if (!is_layout(View.root_component)) {
             @compileError("a page is drawn by one of the layouts (IndexPage, FormPage, " ++
-                "HubPage, CardPage, ListDetailPage, FramePage, WorkspacePage); " ++
+                "HubPage, CardPage, ListDetailPage, FramePage, WorkspacePage, AroundPage); " ++
                 "this one's root is \"" ++
                 View.root_component ++ "\"");
         }

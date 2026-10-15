@@ -370,7 +370,7 @@ fn Thunk(comptime Component: type, comptime expressions: []const u8) type {
             arena: std.mem.Allocator,
             props: []const engine.Prop,
             children: ?[]const u8,
-            classes: ?*const anyopaque,
+            page: engine.PjsxPage,
         ) anyerror!void {
             std.debug.assert(props.len <= engine.props_max);
             std.debug.assert(@hasDecl(Component, "render"));
@@ -398,13 +398,17 @@ fn Thunk(comptime Component: type, comptime expressions: []const u8) type {
             const runner = try ui_render.Runner.create(arena, expressions);
             defer runner.deinit();
 
+            runner.catalogue = page.catalogue;
+
             var request = ui_render.engine_request(runner);
             var templates: runtime.Templates = .{
                 .gpa = arena,
             };
             defer templates.deinit();
 
-            request.publr_classes = classes;
+            request.publr_classes = page.classes;
+            request.publr_translations = page.translator;
+            request.publr_catalogue = page.catalogue;
             request.publr_templates = &templates;
             filled.publr_request = &request;
 

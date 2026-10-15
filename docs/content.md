@@ -46,6 +46,9 @@ a symbol, a format such as `{symbol}{amount}` or `{amount} {code}`, the decimal 
 The admin shows one input per currency, and templates write an amount with
 `money(product.data.price)`.
 
+A **text** field holds plain text or, with `options.text.format` `markdown`, Markdown: the
+admin edits it with a preview, and a template prints it as HTML with `set:markdown`.
+
 A **rich text** field holds HTML and says which formatting its editor offers
 (`options.richtext.formats`: any of `bold`, `italic`, `link`; all three when unset, none for
 plain paragraphs). The block editor keeps its own annotations in the value (`data-pb-*`

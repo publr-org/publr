@@ -10,6 +10,7 @@ export const state = Publr.reactive({
   busy: false,
   note: "",
   csrf: "",
+  words: "",
 });
 
 const chooser = Publr.ref<HTMLInputElement>();
@@ -66,15 +67,24 @@ export const removed = (event: MouseEvent) => {
   state.pictures = state.pictures.filter((picture) => picture.key !== key);
 };
 
+export const typed = (event: Event) => {
+  state.words = (event.currentTarget as HTMLTextAreaElement).value;
+};
+
 export type AskBoxProps = {
   /** The session's token, for the form and the uploads. */
   csrf: string;
+  /** Words to start with: handed over from a site page. */
+  prompt?: string;
+  /** The page they were said on, sent with them. */
+  page?: string;
 };
 
 /** What to build: words, pictures attached, pasted or dropped on it, and the access the
  * agent gets. Sent as a plain form; the pictures go into the media library as they come. */
-export function AskBox({ csrf }: AskBoxProps) {
+export function AskBox({ csrf, prompt = "", page = "" }: AskBoxProps) {
   state.csrf = csrf;
+  state.words = prompt;
 
   return (
     <form
@@ -86,12 +96,15 @@ export function AskBox({ csrf }: AskBoxProps) {
       onDrop={dropped}
     >
       <input type="hidden" name="csrf" value={csrf} />
+      {page !== "" && <input type="hidden" name="page" value={page} />}
       <input ref={chooser} type="file" accept="image/*" multiple class="hidden" onChange={chosen} />
       <PromptBox
         name="prompt"
         rows={3}
+        value={state.words}
+        onInput={typed}
         placeholder={Publr.t("Ask for a page, a content type, a plugin...")}
-        hint={Publr.t("Attach, paste or drop pictures: a screenshot, a sketch, a logo.")}
+        hint={page !== "" ? Publr.t("Asked on {page}", { page }) : Publr.t("Attach, paste or drop pictures: a screenshot, a sketch, a logo.")}
         attachments={<PictureTray pictures={state.pictures} onRemove={removed} />}
       >
         <Button type="button" hierarchy="tertiary" size="md" label={Publr.t("Attach pictures")} onClick={choose}>

@@ -1,0 +1,21 @@
+import { Publr } from "publr-jsx";
+import { AroundPage } from "../layouts/AroundPage.ptsx";
+import { AskBubble } from "../components/AskBubble.ptsx";
+
+export type AiAroundProps = {
+  /** The conversation's first line. */
+  title: string;
+  /** The page the frame opens on, under the project's base. */
+  frame_url: string;
+};
+
+/** The agent at work on the admin: the admin in a frame filling the window, the
+ * conversation in the corner above it, on a page that never reloads. The address follows
+ * the frame. */
+export function AiAround({ title, frame_url }: AiAroundProps) {
+  return (
+    <AroundPage title={title}>
+      <AskBubble csrf={Publr.request.session.csrf} base={Publr.request.admin.base} frame_url={frame_url} />
+    </AroundPage>
+  );
+}

@@ -239,6 +239,7 @@ pub const top_bar = native_plugins.merged_top_bar;
 pub const sections = native_plugins.merged_sections;
 pub const panels = native_plugins.merged_panels;
 pub const sign_in_at = native_plugins.merged_sign_in_at;
+pub const admin_brand = native_plugins.merged_admin_brand;
 pub const app_picker_segment = native_plugins.merged_app_picker_segment;
 pub const variants = native_plugins.merged_variants;
 pub const agents_tab = native_plugins.merged_agents_tab;

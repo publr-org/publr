@@ -6,6 +6,8 @@ const http = @import("../../lib/http.zig");
 const apps_adapter = @import("../apps.zig");
 const context_module = @import("context.zig");
 const state = @import("state.zig");
+const language = @import("language.zig");
+const Project = @import("../../server/project.zig").Project;
 
 const Request = http.Request;
 const Response = http.Response;
@@ -30,10 +32,16 @@ pub fn serve(
     }
 
     const path = inside[prefix.len..];
+    const project = Project.of(ctx);
     const stylesheet = std.mem.eql(u8, path, context_module.stylesheet);
 
     if (path.len == 0) {
         return response.text(.not_found, "Not Found");
+    }
+
+    if (language.script_of(project, path)) |script| {
+        try response.set_body(.ok, "text/javascript; charset=utf-8", script);
+        return response.set_header("Cache-Control", "public, max-age=31536000, immutable");
     }
 
     if (!stylesheet and app.asset(path) == null) {

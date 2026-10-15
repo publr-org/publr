@@ -28,14 +28,16 @@ pub fn route_of(path: []const u8) ?Route {
 
     const rest = path[slash..];
 
-    if (!std.mem.startsWith(u8, rest, content_dir) or !std.mem.endsWith(u8, rest, suffix)) {
+    const extension = if (std.mem.endsWith(u8, rest, ".md")) ".md" else suffix;
+
+    if (!std.mem.startsWith(u8, rest, content_dir) or !std.mem.endsWith(u8, rest, extension)) {
         return .{
             .app = app,
             .route = "",
         };
     }
 
-    var route = rest[content_dir.len .. rest.len - suffix.len];
+    var route = rest[content_dir.len .. rest.len - extension.len];
 
     route = std.mem.cutSuffix(u8, route, ".dynamic") orelse route;
 
@@ -127,13 +129,17 @@ fn filled(channel: *Channel, arena: std.mem.Allocator, route: []const u8) !?[]co
     return null;
 }
 
-test "app files become routes: index, nested index, dynamic, a slug, not a page" {
+test "app files become routes: index, nested index, dynamic, a slug, Markdown, not a page" {
     try std.testing.expectEqualStrings("", route_of("shop/content/index.publr").?.route);
     try std.testing.expectEqualStrings("cart", route_of("shop/content/cart.dynamic.publr").?.route);
     try std.testing.expectEqualStrings("posts", route_of("www/content/posts/index.publr").?.route);
     try std.testing.expectEqualStrings(
         "products/[slug]",
         route_of("shop/content/products/[slug].publr").?.route,
+    );
+    try std.testing.expectEqualStrings(
+        "guide/install",
+        route_of("docs/content/guide/install.md").?.route,
     );
     try std.testing.expectEqualStrings("", route_of("shop/public/shop.css").?.route);
     try std.testing.expect(route_of("app.zon") == null);

@@ -182,7 +182,7 @@ export const moveSelected = async (event: Event) => {
 };
 
 Publr.effect(() => {
-  if (typeof document !== "undefined") document.title = `${state.title} · Publr`;
+  if (typeof document !== "undefined") document.title = `${state.title} · ${document.title.split(" · ").pop() ?? "Publr"}`;
 });
 
 export function ContentList({

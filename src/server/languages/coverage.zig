@@ -7,7 +7,7 @@ const languages = @import("../languages.zig");
 
 const Language = languages.Language;
 const Coverage = @import("../../sdk/context.zig").Coverage;
-const Message = @import("../../sdk/context.zig").Message;
+const Message = @import("../../sdk/context.zig").MessageId;
 /// Every message the admin and the compiled-in plugins mark, `domain\tcontext\tid` a line.
 const messages_lines = @import("i18n_messages").lines;
 

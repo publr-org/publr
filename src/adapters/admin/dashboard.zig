@@ -5,6 +5,7 @@ const definitions = @import("definitions.zig");
 const credentials = @import("../../server/credentials.zig");
 const identity_module = @import("../rest/identity.zig");
 const ai = @import("../../operations/ai.zig");
+const ai_model = @import("../../model/ai.zig");
 
 const Props = admin.views.Dashboard.Props;
 const Earlier = admin.views.Dashboard.EarlierItem;
@@ -20,9 +21,12 @@ pub fn props_of(session: *admin.Session) admin.Error!Props {
     std.debug.assert(session.project.folder.len == 0 or session.project.binary.len > 0);
 
     const connected = ai.connected(&session.ctx);
+    const asked = admin.query_param(session, "ask") orelse "";
     var props: Props = .{
-        .mode = try mode_of(session, connected),
+        .mode = if (asked.len > 0) "keys" else try mode_of(session, connected),
         .connected = connected,
+        .asked = asked,
+        .asked_on = admin.query_param(session, "page") orelse "",
         .folder_command = "",
         .install_command = "",
         .login_command = "",
@@ -174,7 +178,7 @@ fn fill_conversations(session: *admin.Session, props: *Props) admin.Error!void {
     for (listed.conversations, earlier) |conversation, *item| {
         item.* = .{
             .id = conversation.id,
-            .prompt = conversation.prompt,
+            .prompt = ai_model.summary_of(conversation.prompt),
             .label = try label_of(session, conversation.state),
             .href = try std.fmt.allocPrint(arena, "/admin/ai/{s}", .{conversation.id}),
         };

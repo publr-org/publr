@@ -5,6 +5,10 @@ import { Workspace } from "../components/Workspace.ptsx";
 export type AiWorkspaceProps = {
   id: string;
   prompt: string;
+  /** The page it was asked on, shown under the words. */
+  asked_on: string;
+  /** The prompt's first line, without the page it was asked on. */
+  title: string;
   /** The first ask's pictures, as the page shows them. */
   prompt_pictures: string[];
   conversation_state: string;
@@ -35,6 +39,8 @@ export type AiWorkspaceProps = {
 export function AiWorkspace({
   id,
   prompt,
+  asked_on,
+  title,
   prompt_pictures,
   conversation_state,
   steps,
@@ -48,10 +54,12 @@ export function AiWorkspace({
   earlier,
 }: AiWorkspaceProps) {
   return (
-    <WorkspacePage title={prompt}>
+    <WorkspacePage title={title}>
       <Workspace
         id={id}
         prompt={prompt}
+        asked_on={asked_on}
+        title={title}
         prompt_pictures={prompt_pictures}
         conversation_state={conversation_state}
         steps={steps}

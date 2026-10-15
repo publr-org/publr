@@ -4,11 +4,10 @@
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
-const model = @import("../../model.zig");
+const server_languages = @import("../../server/languages.zig");
 const runtime = @import("runtime");
 const language_operations = @import("../../operations/user/language.zig");
 
-const Catalog = model.i18n.Catalog;
 const Session = admin.Session;
 const Request = admin.render.Request;
 pub const prefix = "/admin/messages/";
@@ -68,7 +67,7 @@ pub fn in(session: *Session, locale: []const u8) admin.Error!Language {
 
     translator.* = .{
         .context = catalog,
-        .lookup = lookup,
+        .lookup = server_languages.lookup,
     };
 
     return .{
@@ -202,20 +201,6 @@ pub fn counted(
         .count = @floatFromInt(count),
         .values = values,
     });
-}
-
-fn lookup(
-    context: *const anyopaque,
-    message_context: []const u8,
-    id: []const u8,
-    plural: []const u8,
-    count: ?f64,
-) ?[]const u8 {
-    const catalog: *const Catalog = @ptrCast(@alignCast(context));
-
-    std.debug.assert(id.len > 0);
-
-    return catalog.lookup(message_context, id, if (plural.len > 0) count else null);
 }
 
 /// `/admin/messages/<locale>.js`: the catalogue for the browser, kept a year (its address

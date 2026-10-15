@@ -1,0 +1,94 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Card } from "@publr/ui/Card.ptsx";
+import { CardBody } from "@publr/ui/CardBody.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { default_key, keep_key, key_label, talk_key } from "./Talk.ptsx";
+
+export const state = Publr.reactive({
+  /** The key as kept; read once the page is in the browser. */
+  key: "AltRight",
+  /** The default key, for the page to compare with. */
+  default_key: "AltRight",
+  /** Its name, and the default's, as this keyboard prints them. */
+  label: "Right Option",
+  default_label: "Right Option",
+  choosing: false,
+});
+
+const show = (code: string) => {
+  state.key = code;
+  state.label = code === "" ? "" : key_label(code);
+  state.default_label = key_label(default_key);
+};
+
+Publr.effect(() => {
+  show(talk_key());
+});
+
+const chosen = (event: KeyboardEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+  document.removeEventListener("keydown", chosen, true);
+  state.choosing = false;
+  if (event.code === "Escape" || event.code === "") return;
+  keep_key(event.code);
+  show(event.code);
+};
+
+export const choose = () => {
+  state.choosing = true;
+  document.addEventListener("keydown", chosen, true);
+};
+
+export const turn_off = () => {
+  keep_key("");
+  show("");
+};
+
+export const reset = () => {
+  keep_key(default_key);
+  show(default_key);
+};
+
+/** The key held to talk to Publr from any admin page, chosen for this browser. */
+export function TalkKey() {
+  return (
+    <div data-part="talk-key">
+    <Card>
+      <CardBody>
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex min-w-0 flex-col gap-1">
+            <Heading level={2} size="sm">
+              {Publr.t("Talking")}
+            </Heading>
+            <Text as="p" variant="body-sm" tone="muted">
+              {state.choosing
+                ? Publr.t("Press the key you want to hold. Esc keeps the one you have.")
+                : state.key === ""
+                  ? Publr.t("Off in this browser. A dictation app's paste still asks.")
+                  : Publr.t("Hold {key}, speak, let go: anywhere in the admin, what you say is asked, or typed into the field you are in. Kept for this browser.", { key: state.label })}
+            </Text>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <Button type="button" hierarchy="secondary" size="md" onClick={choose} disabled={state.choosing}>
+              <span>{state.choosing ? Publr.t("Press a key…") : Publr.t("Change key")}</span>
+            </Button>
+            {state.key !== "" && !state.choosing && (
+              <Button type="button" hierarchy="tertiary" size="md" onClick={turn_off}>
+                <span>{Publr.t("Turn off")}</span>
+              </Button>
+            )}
+            {state.key !== state.default_key && !state.choosing && (
+              <Button type="button" hierarchy="tertiary" size="md" onClick={reset}>
+                <span>{Publr.t("Use {key}", { key: state.default_label })}</span>
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardBody>
+    </Card>
+    </div>
+  );
+}

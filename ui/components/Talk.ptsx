@@ -1,0 +1,251 @@
+import { Publr } from "publr-jsx";
+import { Status } from "@publr/ui/Status.ptsx";
+
+/** The key held to talk, kept for this browser: it belongs to the keyboard. */
+const key_storage = "publr-talk-key";
+/** Right Option (Alt): the browser sees it, it types nothing alone. fn never reaches a page. */
+export const default_key = "AltRight";
+/** A hold shorter than this is a key on its way to a combination (Right Option types ą). */
+const hold_ms = 250;
+const recording_ms_max = 120_000;
+/** Shorter than this, nothing was said. */
+const said_ms_min = 400;
+const formats = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"];
+
+/** The key held to talk, as `KeyboardEvent.code`; empty when talking is off. */
+export const talk_key = () => {
+  try {
+    return window.localStorage.getItem(key_storage) ?? default_key;
+  } catch {
+    return default_key;
+  }
+};
+
+export const keep_key = (code: string) => {
+  try {
+    if (code === default_key) window.localStorage.removeItem(key_storage);
+    else window.localStorage.setItem(key_storage, code);
+  } catch {
+    // Storage refused (a private window): the default stays.
+  }
+};
+
+const on_mac = () => /Mac|iPhone|iPad/.test(navigator.platform);
+
+/** A key's name as its keyboard prints it. */
+export const key_label = (code: string) => {
+  const side = code.endsWith("Right") ? Publr.tx("key", "Right") : code.endsWith("Left") ? Publr.tx("key", "Left") : "";
+  const base = code.replace(/(Right|Left)$/, "");
+  const names: Record<string, string> = {
+    Alt: on_mac() ? "Option" : "Alt",
+    Meta: on_mac() ? "Command" : "Windows",
+    Control: "Control",
+    Shift: "Shift",
+  };
+  const name = names[base] ?? base.replace(/^(Key|Digit)/, "");
+  return side === "" ? name : `${side} ${name}`;
+};
+
+const editable = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
+
+/** The field the words go into: focused, and not a frame. */
+const field_focused = () => {
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active.closest(editable) !== null ? active : null;
+};
+
+export type Listener = {
+  /** Whether to listen now; `into_field` when a field has the focus. */
+  allowed: (into_field: boolean) => boolean;
+  started: () => void;
+  ticked: (seconds: number) => void;
+  writing: () => void;
+  /** The words; already typed into the field when `typed`. */
+  heard: (words: string, typed: boolean) => void;
+  failed: (reason: string) => void;
+  /** It came to nothing: a short tap, a key combination, a paste that won. */
+  cancelled: () => void;
+};
+
+/** Hold the talk key, speak, let go: the recording is turned into words by `ai.transcribe`.
+ * Answers a function that stops listening. */
+export const listen = (csrf: () => string, listener: Listener) => {
+  let held = false;
+  let waiting = 0;
+  let ticking = 0;
+  let started_at = 0;
+  let field: HTMLElement | null = null;
+  let stream: MediaStream | null = null;
+  let recorder: MediaRecorder | null = null;
+  let chunks: Blob[] = [];
+  /** Bumped by a cancel or a paste: an answer for an older recording is dropped. */
+  let turn = 0;
+
+  const release_microphone = () => {
+    stream?.getTracks().forEach((track) => track.stop());
+    stream = null;
+  };
+
+  const cancel = () => {
+    window.clearInterval(ticking);
+    if (waiting !== 0) {
+      // Not started: nothing to say.
+      window.clearTimeout(waiting);
+      waiting = 0;
+      return;
+    }
+    turn += 1;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.onstop = null;
+      recorder.stop();
+    }
+    recorder = null;
+    release_microphone();
+    listener.cancelled();
+  };
+
+  const start = async () => {
+    waiting = 0;
+    field = field_focused();
+    if (!listener.allowed(field !== null)) return;
+    const mine = ++turn;
+    listener.started();
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      listener.failed(Publr.t("The microphone is not allowed: allow it in the address bar, then hold the key again."));
+      return;
+    }
+    // Let go while the browser asked for the microphone: nothing was said yet.
+    if (mine !== turn || !held) {
+      release_microphone();
+      if (mine === turn) listener.cancelled();
+      return;
+    }
+    const format = formats.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
+    recorder = new MediaRecorder(stream, { mimeType: format, audioBitsPerSecond: 24_000 });
+    chunks = [];
+    recorder.ondataavailable = (event) => chunks.push(event.data);
+    recorder.onstop = () => finish(mine);
+    recorder.start();
+    started_at = Date.now();
+    ticking = window.setInterval(() => {
+      const elapsed = Date.now() - started_at;
+      listener.ticked(Math.floor(elapsed / 1000));
+      if (elapsed >= recording_ms_max) stop();
+    }, 250);
+  };
+
+  const stop = () => {
+    window.clearInterval(ticking);
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+  };
+
+  const finish = async (mine: number) => {
+    const format = recorder?.mimeType ?? "";
+    recorder = null;
+    release_microphone();
+    if (Date.now() - started_at < said_ms_min) {
+      listener.cancelled();
+      return;
+    }
+    listener.writing();
+    try {
+      const audio = await base64_of(new Blob(chunks, { type: format }));
+      const response = await fetch(Publr.url("/api/ai/transcribe"), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf() },
+        body: JSON.stringify({ audio, format }),
+      });
+      const answer = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(answer.message ?? answer.error ?? `${response.status}`);
+      if (mine !== turn) return;
+      const words = `${answer.text ?? ""}`.trim();
+      if (words === "") {
+        listener.failed(Publr.t("Nothing was heard. Hold the key while you speak."));
+        return;
+      }
+      const typed = field !== null && document.activeElement === field && document.execCommand("insertText", false, words);
+      listener.heard(words, typed);
+    } catch (error) {
+      if (mine === turn) listener.failed(Publr.t("Not written down: {reason}", { reason: (error as Error).message }));
+    }
+  };
+
+  const pressed = (event: KeyboardEvent) => {
+    const key = talk_key();
+    if (key === "") return;
+    if (event.code === key) {
+      if (event.repeat || held) return;
+      held = true;
+      waiting = window.setTimeout(start, hold_ms);
+      return;
+    }
+    // Another key while it is held: a combination (Option+A types ą), never speech.
+    if (held) {
+      held = false;
+      cancel();
+    }
+  };
+
+  const released = (event: KeyboardEvent) => {
+    if (event.code !== talk_key() || !held) return;
+    held = false;
+    if (waiting !== 0) {
+      window.clearTimeout(waiting);
+      waiting = 0;
+      return;
+    }
+    stop();
+  };
+
+  const left = () => {
+    if (!held) return;
+    held = false;
+    if (waiting !== 0) {
+      window.clearTimeout(waiting);
+      waiting = 0;
+    } else stop();
+  };
+
+  // A dictation app's paste landing while ours is written down wins: ours is dropped.
+  const pasted = () => {
+    if (recorder === null && waiting === 0 && !held) turn += 1;
+  };
+
+  document.addEventListener("keydown", pressed, true);
+  document.addEventListener("keyup", released, true);
+  document.addEventListener("paste", pasted, true);
+  window.addEventListener("blur", left);
+  return () => {
+    document.removeEventListener("keydown", pressed, true);
+    document.removeEventListener("keyup", released, true);
+    document.removeEventListener("paste", pasted, true);
+    window.removeEventListener("blur", left);
+  };
+};
+
+const base64_of = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(`${reader.result}`.replace(/^data:[^,]*,/, ""));
+    reader.onerror = () => reject(new Error(Publr.t("the recording could not be read")));
+    reader.readAsDataURL(blob);
+  });
+
+export type TalkLineProps = {
+  /** "Listening… 0:03", "Writing it down…". */
+  text: string;
+};
+
+/** What talking is doing, on one line. */
+export function TalkLine({ text }: TalkLineProps) {
+  return (
+    <div data-part="talking">
+      <Status tone="accent" label="plain">
+        {text}
+      </Status>
+    </div>
+  );
+}

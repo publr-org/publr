@@ -154,6 +154,14 @@ pub const version_len_max: u32 = 32;
 pub const summary_len_max: u32 = 200;
 pub const plugins_max: u32 = 64;
 
+/// Whose admin it is, as a plugin's `admin_brand(ctx)` says: its name in the window's title
+/// and its mark in the rail. Empty is Publr's.
+pub const AdminBrand = struct {
+    name: []const u8 = "",
+    /// The mark's address, an image any page may load.
+    mark: []const u8 = "",
+};
+
 pub const Manifest = struct {
     name: []const u8,
     version: []const u8,
@@ -734,6 +742,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var sections: []const OwnedSection = &.{};
         var panels: []const OwnedPanel = &.{};
         var sign_in_at: []const type = &.{};
+        var admin_brand: []const type = &.{};
         var app_picker_segment: []const type = &.{};
         var dimension: ?variants.Dimension = null;
         var agents_tab: ?AgentsTab = null;
@@ -835,6 +844,10 @@ pub fn Merged(comptime plugins: anytype) type {
 
             if (@hasDecl(Plugin, "sign_in_at")) {
                 sign_in_at = sign_in_at ++ &[_]type{Plugin};
+            }
+
+            if (@hasDecl(Plugin, "admin_brand")) {
+                admin_brand = admin_brand ++ &[_]type{Plugin};
             }
 
             if (@hasDecl(Plugin, "app_picker_segment")) {
@@ -1011,6 +1024,9 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_panels = panels;
             /// The plugins that may send someone who must sign in elsewhere, in name order.
             pub const merged_sign_in_at = sign_in_at;
+            /// The plugins that say whose admin it is, in name order; the first that names
+            /// one wins.
+            pub const merged_admin_brand = admin_brand;
             /// The plugins that join a segment to the app picker, in name order.
             pub const merged_app_picker_segment = app_picker_segment;
             /// Every PO file the plugins bring, in plugin order.

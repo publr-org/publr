@@ -4,6 +4,7 @@
 //! folder with no `app.zon`), and such a template is named from the apps folder,
 //! `../shared/navbar.publr`. Nothing leaves the apps folder.
 const std = @import("std");
+const markdown_page = @import("markdown_page.zig");
 
 /// How a template from outside the app is named: `../<folder>/<path>`.
 pub const outside_prefix = "../";
@@ -108,6 +109,11 @@ pub fn specs(
 ) Error![]const []const u8 {
     std.debug.assert(source.len <= 1 << 24);
     std.debug.assert(filename.len > 0);
+
+    if (std.mem.endsWith(u8, filename, ".md")) {
+        const layout = try markdown_page.layout_of(arena, source) orelse return &.{};
+        return try arena.dupe([]const u8, &.{layout});
+    }
 
     var found: std.ArrayList([]const u8) = .empty;
     const helper = std.mem.endsWith(u8, filename, ".js") or std.mem.endsWith(u8, filename, ".ts");
@@ -251,6 +257,18 @@ test "the frontmatter's .publr imports are listed, nothing else" {
             "index.publr",
         )).len,
     );
+}
+
+test "a Markdown page's one import is its layout" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const syntax = @import("pjsx_syntax").template_syntax;
+
+    const found = try specs(syntax, arena, "---\nlayout: ../layouts/base.publr\n---\n# x", "a.md");
+    try std.testing.expectEqual(@as(usize, 1), found.len);
+    try std.testing.expectEqualStrings("../layouts/base.publr", found[0]);
+    try std.testing.expectEqual(@as(usize, 0), (try specs(syntax, arena, "# x", "b.md")).len);
 }
 
 test "multiline helper imports and reexports use module grammar" {

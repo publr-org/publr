@@ -126,8 +126,10 @@ pub fn templates(builder: *std.Build, app_dir: []const u8) *std.Build.Module {
     write_header(writer, app_dir);
 
     for (files_under(builder, app_dir, "")) |path| {
-        if (!source_extension(path)) continue;
         const rel = path[app_dir.len + 1 ..];
+        const markdown_page = std.mem.startsWith(u8, rel, "content/") and
+            std.mem.endsWith(u8, rel, ".md");
+        if (!source_extension(path) and !markdown_page) continue;
         const top = rel[0 .. std.mem.indexOfScalar(u8, rel, '/') orelse 0];
 
         if (top.len == 0) {

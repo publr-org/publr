@@ -11,6 +11,7 @@ pub const impact = @import("template/impact.zig");
 pub const imports = @import("template/imports.zig");
 pub const regions = @import("template/regions.zig");
 pub const overrides = @import("template/overrides.zig");
+pub const markdown_page = @import("template/markdown_page.zig");
 
 pub const Template = ast.Template;
 pub const Options = compile.Options;
@@ -20,6 +21,7 @@ pub const PjsxProp = compile.PjsxProp;
 pub const Prop = render.Prop;
 pub const Renderer = render.Renderer;
 pub const PjsxRender = render.PjsxRender;
+pub const PjsxPage = render.PjsxPage;
 pub const Route = routes.Route;
 pub const RouteKind = routes.RouteKind;
 pub const Match = routes.Match;
@@ -34,9 +36,12 @@ pub const islands_max: u32 = compile.islands_max;
 pub const props_max: u32 = compile.props_max;
 pub const nesting_max: u32 = compile.nesting_max;
 
+/// Whether an app-relative path is one the engine reads: a template, a script module, or
+/// a Markdown page under `content/` (a `.md` elsewhere, a README, is not).
 pub fn is_source(path: []const u8) bool {
     return std.mem.endsWith(u8, path, ".publr") or std.mem.endsWith(u8, path, ".js") or
-        (std.mem.endsWith(u8, path, ".ts") and !std.mem.endsWith(u8, path, ".d.ts"));
+        (std.mem.endsWith(u8, path, ".ts") and !std.mem.endsWith(u8, path, ".d.ts")) or
+        compile.is_markdown_page(path);
 }
 
 /// One template as the app provides it, before it is read.
@@ -244,12 +249,17 @@ fn copy_sources(
             return error.SourceTooLong;
         }
 
-        const is_module = !std.mem.endsWith(u8, item.rel, ".publr");
+        const is_markdown = compile.is_markdown_page(item.rel);
+        const is_module = !is_markdown and !std.mem.endsWith(u8, item.rel, ".publr");
         const is_page = !is_module and std.mem.startsWith(u8, item.rel, "content/");
+        const source_text = if (is_markdown)
+            try markdown_source(arena, item, diagnostic)
+        else
+            try arena.dupe(u8, item.source);
         has_page = has_page or is_page;
         template.* = .{
             .rel = try arena.dupe(u8, item.rel),
-            .source = try arena.dupe(u8, item.source),
+            .source = source_text,
             .kind = if (is_module) .module else if (is_page) .page else .layout,
             .origin = item.origin,
         };
@@ -264,6 +274,34 @@ fn copy_sources(
     }
 
     return templates;
+}
+
+/// A Markdown page's `.publr` source; a refusal names the page.
+fn markdown_source(
+    arena: std.mem.Allocator,
+    item: Source,
+    diagnostic: *Diagnostic,
+) LoadError![]const u8 {
+    std.debug.assert(compile.is_markdown_page(item.rel));
+
+    const result = markdown_page.translate(arena, item.rel, item.source) catch |err| {
+        return switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            else => error.Unsupported,
+        };
+    };
+
+    switch (result) {
+        .source => |text| return text,
+        .refused => |reason| {
+            diagnostic.message = try std.fmt.allocPrint(
+                diagnostic.arena,
+                "{s}: {s}",
+                .{ item.rel, reason },
+            );
+            return error.Unsupported;
+        },
+    }
 }
 
 const RouteTable = struct {
@@ -283,7 +321,7 @@ fn route_table(arena: std.mem.Allocator, templates: []const Template) LoadError!
         }
 
         if (is_error_page(template.rel)) {
-            if (std.mem.endsWith(u8, template.rel, "404.publr")) {
+            if (std.mem.startsWith(u8, basename_of(template.rel), "404.")) {
                 error_404 = @intCast(index);
             }
 
@@ -367,12 +405,26 @@ fn template_less_than(_: void, left: Template, right: Template) bool {
     return std.mem.lessThan(u8, left.rel, right.rel);
 }
 
-fn is_error_page(rel: []const u8) bool {
+fn basename_of(rel: []const u8) []const u8 {
     std.debug.assert(rel.len > 0);
 
-    const basename = rel[(std.mem.lastIndexOfScalar(u8, rel, '/') orelse 0) + 1 ..];
+    return rel[(std.mem.lastIndexOfScalar(u8, rel, '/') orelse 0) + 1 ..];
+}
 
-    return std.mem.eql(u8, basename, "404.publr") or std.mem.eql(u8, basename, "500.publr");
+/// `404.publr` or `500.publr`, or the same in Markdown.
+fn is_error_page(rel: []const u8) bool {
+    const basename = basename_of(rel);
+    const pages = [_][]const u8{ "404.publr", "500.publr", "404.md", "500.md" };
+
+    std.debug.assert(basename.len > 0);
+
+    for (pages) |page| {
+        if (std.mem.eql(u8, basename, page)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // ---- tests -------------------------------------------------------------------------
@@ -1603,6 +1655,100 @@ test "set:html: whatever a page prints as markup is sanitized, natively and in s
     const scripted = try render_test(arena, program, scripted_index, &ctx);
     try testing.expect(contains(scripted, "<div><b>kept</b><img src=\"x\"></div>"));
     try testing.expect(!contains(scripted, "onerror"));
+}
+
+test "set:markdown: a field's Markdown printed as HTML, sanitized, natively and in script" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/posts/[slug].publr",
+            \\---
+            \\const post = Publr.build.getEntry();
+            \\---
+            \\<div set:markdown={post.data.content} />
+        ),
+        source("content/scripted.publr",
+            \\---
+            \\const lines = ['# Hi', '', '*there* [x](/docs) <script>alert(1)</script>'];
+            \\const body = lines.join('\n');
+            \\---
+            \\<article set:markdown={body} />
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const ctx: TestContext = .{
+        .arena = arena,
+        .slug = "first",
+    };
+    const native_index = program.find("content/posts/[slug].publr").?;
+    try testing.expect(program.templates[native_index].javascript == null);
+    const native = try render_test(arena, program, native_index, &ctx);
+    try testing.expect(contains(native, "<div><p>One</p>"));
+    try testing.expect(!contains(native, "script"));
+
+    const scripted_index = program.find("content/scripted.publr").?;
+    try testing.expect(program.templates[scripted_index].javascript != null);
+    const scripted = try render_test(arena, program, scripted_index, &ctx);
+    try testing.expect(contains(scripted, "<h1>Hi</h1>"));
+    try testing.expect(contains(scripted, "<em>there</em> <a href=\"/docs\" rel="));
+    try testing.expect(!contains(scripted, "alert"));
+
+    const twice = try refuse(&.{
+        source("content/index.publr", "<div set:html={'a'} set:markdown={'b'} />"),
+    }, .{});
+    defer testing.allocator.free(twice);
+    try testing.expect(contains(twice, "sets its content twice"));
+}
+
+test "a Markdown page: routed by its name, drawn in its layout, braces as text" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("layouts/base.publr",
+            \\<html><head><title>{props.title ?? "Site"}</title></head>
+            \\<body><main><slot /></main><p>{props.summary ?? ""}</p></body></html>
+        ),
+        source("content/guide/install.md",
+            \\---
+            \\layout: ../../layouts/base.publr
+            \\title: Q&A "quoted"
+            \\summary: '{not} an expression'
+            \\---
+            \\# Install {now}
+            \\
+            \\See [the docs](/docs) and `{code}`.
+            \\
+        ),
+        source("content/404.md", "# Not here"),
+        source("content/index.publr", "<p>home</p>"),
+    }, .{});
+    defer destroy(program);
+
+    const ctx: TestContext = .{
+        .arena = arena,
+    };
+    const matched = program.match("/guide/install").?;
+    const page = try render_test(arena, program, matched.route.template, &ctx);
+
+    try testing.expect(contains(page, "<title>Q&amp;A &quot;quoted&quot;</title>"));
+    try testing.expect(contains(page, "<h1>Install &#123;now&#125;</h1>"));
+    try testing.expect(contains(page, "<a href=\"/docs\">the docs</a>"));
+    try testing.expect(contains(page, "<code>&#123;code&#125;</code>"));
+    try testing.expect(contains(page, "<p>{not} an expression</p>"));
+    try testing.expectEqualStrings("content/404.md", program.templates[program.error_404.?].rel);
+    try testing.expect(!is_source("README.md"));
+    try testing.expect(!is_source("components/notes.md"));
+
+    const refused = try refuse(&.{
+        source("content/[slug].md", "# x"),
+    }, .{});
+    defer testing.allocator.free(refused);
+    try testing.expect(contains(refused, "content/[slug].md: a Markdown page has no record"));
 }
 
 test "queries: a GROQ answer is plain JSON; param reads the address's query string" {

@@ -24,6 +24,10 @@
 // bar rather than drawing their own: a child of `<publr-toolbar>` with `slot="tools"` shows
 // after the edit link. Once the bar is up, the window gets a `publr:toolbar` event; a tool
 // that came later finds the element. Hidden, the bar takes its tools with it.
+//
+// A paste with nothing focused (a dictation app pastes what it heard) shows the words above
+// the bar with "Ask in admin": the Overview opens in a new tab with them and this page's
+// address filled in, for the person to send. The page never starts a turn itself.
 
 // The project's own name for it (`publr_signed_in_<mark>`), from the script tag.
 const hint = document.querySelector('script[data-publr-hint]')?.dataset.publrHint ??
@@ -154,6 +158,17 @@ const styles = `
   }
   ::slotted(*) { display: flex; align-items: center; }
   .close { width: 32px; padding: 0; justify-content: center; font-size: 16px; }
+  .heard {
+    position: fixed; z-index: 2147483647; left: 50%; bottom: 72px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px; width: min(560px, calc(100vw - 32px));
+    padding: 6px 6px 6px 18px; border-radius: 999px; background: var(--rail);
+    color: var(--rail-foreground);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.24), 0 0 0 1px rgb(255 255 255 / 0.1);
+    font: 500 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .heard p { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .heard .go { background: var(--rail-foreground); color: var(--rail); }
+  .heard .go:hover { background: var(--rail-muted); color: var(--rail); }
 
   /* Hidden, the bar leaves this: a corner nobody notices until the pointer reaches it. The
      triangle is the rail's dark fill with a light edge and a light mark, so one of them
@@ -187,10 +202,30 @@ const markup = `
     <button class="close" type="button" title="Hide the toolbar" aria-label="Hide the toolbar"
             data-p-on="click:publr-toolbar::hide">&times;</button>
   </div>
+  <div class="heard hidden" role="status" aria-live="polite" data-p-show="$publr-toolbar::heard">
+    <p data-p-text="$publr-toolbar::heard"></p>
+    <a class="go hidden" target="_blank" rel="noopener" data-p-show="$publr-toolbar::handoff"
+       data-p-bind="href:$publr-toolbar::handoff" data-p-on="click:publr-toolbar::forget">Ask in admin</a>
+    <button class="close" type="button" title="Cancel" aria-label="Cancel"
+            data-p-on="click:publr-toolbar::forget">&times;</button>
+  </div>
   <button class="corner hidden" type="button" title="Show the Publr toolbar"
           aria-label="Show the Publr toolbar" data-p-show="$publr-toolbar::hidden"
           data-p-on="click:publr-toolbar::show">${corner}</button>
 `;
+
+// Whether a paste has somewhere of its own to go: a field, an editable region, a frame.
+const pasted_into = (event) => {
+  const editable = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+  const active = document.activeElement;
+
+  if (event.target instanceof Element && event.target.closest(editable)) {
+    return true;
+  }
+
+  return active instanceof HTMLIFrameElement ||
+    (active instanceof Element && active.closest(editable) !== null);
+};
 
 // Keeps the bar whole on screen, however the window was resized since it was placed.
 const clamp = (left, top, bar) => {
@@ -264,6 +299,8 @@ const start = async () => {
         left: '0px',
         top: '0px',
         dragging: false,
+        heard: '',
+        handoff: '',
       },
 
       init() {
@@ -277,9 +314,39 @@ const start = async () => {
         });
         addEventListener('resize', keep);
 
+        const heard = (event) => {
+          if (!event.isTrusted || event.defaultPrevented || state.hidden || pasted_into(event)) {
+            return;
+          }
+
+          const words = (event.clipboardData?.getData('text/plain') ?? '').trim();
+          const pictures = [...(event.clipboardData?.files ?? [])].some((file) =>
+            file.type.startsWith('image/'));
+
+          if (words === '' && !pictures) {
+            return;
+          }
+
+          event.preventDefault();
+          state.heard = words === '' ? 'Pictures go with an ask in the admin: paste them there.' : words;
+          state.handoff = words === '' ? '' : answer.admin + '?ask=' + encodeURIComponent(words) +
+            '&page=' + encodeURIComponent(location.href);
+        };
+        const escaped = (event) => {
+          if (event.key === 'Escape' && state.heard !== '') {
+            state.heard = '';
+            state.handoff = '';
+          }
+        };
+
+        document.addEventListener('paste', heard);
+        document.addEventListener('keydown', escaped);
+
         return () => {
           grown.disconnect();
           removeEventListener('resize', keep);
+          document.removeEventListener('paste', heard);
+          document.removeEventListener('keydown', escaped);
         };
       },
 
@@ -314,6 +381,11 @@ const start = async () => {
 
           state.dragging = false;
           write(place_key, JSON.stringify([parseFloat(state.left), parseFloat(state.top)]));
+        },
+
+        forget() {
+          state.heard = '';
+          state.handoff = '';
         },
 
         hide() {

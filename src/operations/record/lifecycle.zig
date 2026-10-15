@@ -147,7 +147,13 @@ pub const Delete = struct {
         id: []const u8,
         expected_version: ?i64 = null,
     };
-    pub const Out = Transition.Out;
+    pub const Out = struct {
+        status: []const u8,
+        changed: bool,
+        version: i64,
+        /// The record's type: its list is where a person deleting it goes back to.
+        type: []const u8,
+    };
     pub const example: In = .{
         .id = example_id,
     };
@@ -155,6 +161,7 @@ pub const Delete = struct {
         .status = "deleted",
         .changed = false,
         .version = 2,
+        .type = "post",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -164,7 +171,20 @@ pub const Delete = struct {
             return error.Invalid;
         }
 
-        return moved_out(try lifecycle.delete(ctx, granted, in.id, in.expected_version));
+        const moved = moved_out(try lifecycle.delete(ctx, granted, in.id, in.expected_version));
+        const row = try store.records.get(ctx.db, ctx.arena, in.id) orelse return error.NotFound;
+        const type_row = try record_operations.domain.definition.find(ctx, row.type_id) orelse {
+            return error.NotFound;
+        };
+
+        std.debug.assert(type_row.def.handle.len > 0);
+
+        return .{
+            .status = moved.status,
+            .changed = moved.changed,
+            .version = moved.version,
+            .type = type_row.def.handle,
+        };
     }
 };
 

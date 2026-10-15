@@ -197,9 +197,12 @@ const Command = struct {
             try std.fmt.allocPrint(arena, "{s} \u{201C}{s}\u{201D}", .{ what, title })
         else
             what;
-        // A write shows the record itself, where the change can be seen.
+        // A write shows the record itself, where the change can be seen; a removal shows the
+        // list it left, where a person deleting it lands too.
         const id = flag(command.flags, "--id") orelse field(command.answer, "id") orelse "";
-        const own = if (id.len > 0 and id.len <= 64)
+        const removes = std.mem.eql(u8, command.verb, "delete") or
+            std.mem.eql(u8, command.verb, "purge");
+        const own = if (id.len > 0 and id.len <= 64 and !removes)
             try std.fmt.allocPrint(arena, "/admin/content/{s}", .{id})
         else
             href;
@@ -333,6 +336,12 @@ test "commands read as what they did, with the page that shows it" {
     try std.testing.expectEqualStrings("Created recipe \u{201C}Tomato soup\u{201D}", added.label);
     // A write shows the record itself.
     try std.testing.expectEqualStrings("/admin/content/x", added.href);
+
+    // A removal shows the list the record left.
+    const deleted = try present(arena, &.{
+        "record", "delete", "--id", "x",
+    }, "{\"type\":\"recipe\"}");
+    try std.testing.expectEqualStrings("/admin/content?type=recipe", deleted.href);
 
     const help = try present(arena, &.{ "record", "--help" }, "");
     try std.testing.expectEqualStrings("Read the help for record", help.label);

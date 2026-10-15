@@ -1,0 +1,779 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { ChatPanel } from "@publr/ui/ChatPanel.ptsx";
+import { CloseButton } from "@publr/ui/CloseButton.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { GlowPill } from "@publr/ui/GlowPill.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { MessageBubble } from "@publr/ui/MessageBubble.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
+import { images_in, pasted_freely, pictures_max, upload_picture } from "./PictureTray.ptsx";
+import { point_at, rest_pointer } from "./Pointer.ptsx";
+import { key_label, listen, talk_key } from "./Talk.ptsx";
+
+/** How long heard words wait before they are sent: room for Esc after a stray paste. */
+const wait_ms = 2000;
+/** The conversation in the corner, kept for the tab so it is there on the next page. */
+const kept_key = "publr-ask";
+const asked_on_mark = "\n\nAsked on ";
+const trash_prefix = "/admin/trash?entry=";
+
+type Run = { text: string; style: string };
+type Block = { kind: string; number: number; runs: Run[] };
+type Step = {
+  position: number;
+  kind: string;
+  summary: string;
+  detail: string;
+  failed: boolean;
+  href: string;
+  blocks: Block[];
+  /** Its removal waits in the trash: its entry, which Undo restores; empty for none. */
+  trash_entry: string;
+};
+
+export const state = Publr.reactive({
+  /** The pill: `` (hidden), `listening`, `writing`, `heard`, `sending` or `failed`. */
+  phase: "",
+  text: "",
+  detail: "",
+  filled: "",
+  /** Words are heard and can be sent. */
+  sendable: false,
+  /** Pictures pasted without words, kept for the next words. */
+  pictures: [] as string[],
+  /** The conversation in the corner: `` (none), `open`, or `small` (a pill in the corner). */
+  chat: "",
+  id: "",
+  /** The first ask's words, and their first line. */
+  prompt: "",
+  title: "",
+  /** A turn runs: replies wait, the frame follows the agent and takes no clicks. */
+  live: false,
+  /** The turn paused for the person: a removal list to review, on the page. */
+  waiting: false,
+  conversation_state: "",
+  label: "",
+  steps: [] as Step[],
+  /** Trash entries restored from here. */
+  undone: [] as string[],
+  /** What the agent does now, and for how long ("Thinking… 1:05"); empty between turns. */
+  activity_line: "",
+  /** The words the model is writing, so far. */
+  draft: "",
+  reply: "",
+  note: "",
+  /** The page in the frame filling the window while the agent works; empty on a plain page. */
+  frame_url: "",
+  csrf: "",
+  base: "",
+});
+
+const frame = Publr.ref();
+const scroller = Publr.ref();
+
+let words = "";
+let uploads: Array<Promise<string>> = [];
+let heard_at = 0;
+let countdown = 0;
+/** The newest step read. */
+let after = 0;
+/** The newest step whose page was shown: the frame goes to each newer one. */
+let followed = 0;
+let socket: WebSocket | null = null;
+let activity = "";
+let activity_started = 0;
+/** On its way to the frame or out of it: nothing more is followed. */
+let leaving = false;
+/** The page the frame is on its way to, until it lands: where the turn ends, too. */
+let heading_to = "";
+
+const labels: Record<string, string> = {
+  running: Publr.t("Working"),
+  stopping: Publr.t("Stopping"),
+  waiting: Publr.t("Waiting for you"),
+  finished: Publr.t("Done"),
+  stopped: Publr.t("Stopped"),
+  failed: Publr.t("Failed"),
+};
+
+const keep = () => {
+  try {
+    if (state.id === "" || state.chat === "") window.sessionStorage.removeItem(kept_key);
+    else window.sessionStorage.setItem(kept_key, JSON.stringify({ id: state.id, chat: state.chat, followed }));
+  } catch {
+    // Storage refused (a private window): the chat stays on this page only.
+  }
+};
+
+const kept = () => {
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(kept_key) ?? "{}");
+    return { id: `${saved.id ?? ""}`, chat: `${saved.chat ?? ""}`, followed: Number(saved.followed) || 0 };
+  } catch {
+    return { id: "", chat: "", followed: 0 };
+  }
+};
+
+/** A path under the project's base, as the admin addresses it. */
+const inside = (path: string) => (state.base !== "" && path.startsWith(state.base) ? path.slice(state.base.length) || "/" : path);
+
+/** The admin page it is asked on, without the admin's base path. */
+const page_now = () => `${inside(window.location.pathname)}${window.location.search}`;
+
+/** Whether the frame may show `href`: an admin page, never a workspace. */
+const wrappable = (href: string) => {
+  const path = href.split(/[?#]/)[0].replace(/\/+$/, "");
+  const admin = path === "/admin" || path.startsWith("/admin/");
+  return admin && path !== "/admin/ai" && !path.startsWith("/admin/ai/");
+};
+
+const first_line = (text: string) => text.trim().split("\n")[0] ?? "";
+
+const stop_waiting = () => {
+  window.clearInterval(countdown);
+  countdown = 0;
+  state.filled = "";
+};
+
+/** The pill goes; the conversation in the corner stays. */
+export const close = () => {
+  stop_waiting();
+  state.phase = "";
+  state.pictures = [];
+  state.sendable = false;
+  words = "";
+  uploads = [];
+};
+
+const pasted = (event: ClipboardEvent) => {
+  if (!pasted_freely(event)) return;
+  if (state.live) return;
+  const text = (event.clipboardData?.getData("text/plain") ?? "").trim();
+  const files = images_in(event.clipboardData).slice(0, Math.max(0, pictures_max - uploads.length));
+  if (text === "" && files.length === 0) return;
+  event.preventDefault();
+  uploads = [...uploads, ...files.map((file) => upload_picture(file, state.csrf, Publr.url).then((picture) => picture.key))];
+  state.pictures = [...state.pictures, ...files.map((file) => file.name)];
+  if (text === "") {
+    state.phase = "heard";
+    state.text = Publr.tn("{count} picture kept", "{count} pictures kept", state.pictures.length);
+    state.detail = Publr.t("Say what to do with them, and it goes with your words.");
+    stop_waiting();
+    return;
+  }
+  hear(text);
+};
+
+/** Words heard, pasted or said: shown, and sent after a moment unless Esc. */
+const hear = (text: string) => {
+  words = text;
+  state.sendable = true;
+  state.phase = "heard";
+  state.text = text;
+  state.detail = state.pictures.length > 0
+    ? Publr.tn("With {count} picture. Enter sends now, Esc cancels.", "With {count} pictures. Enter sends now, Esc cancels.", state.pictures.length)
+    : Publr.t("Enter sends now, Esc cancels.");
+  heard_at = Date.now();
+  stop_waiting();
+  countdown = window.setInterval(() => {
+    const share = Math.min(1, (Date.now() - heard_at) / wait_ms);
+    state.filled = `${Math.round(share * 100)}%`;
+    if (share >= 1) send();
+  }, 50);
+};
+
+/** Holding the talk key: the pill listens, then shows the words as a paste would. */
+const talking = () =>
+  listen(() => state.csrf, {
+    allowed: (into_field) => into_field || !state.live,
+    started: () => {
+      stop_waiting();
+      state.phase = "listening";
+      state.sendable = false;
+      state.text = Publr.t("Listening…");
+      state.detail = Publr.t("Let go of {key} to finish, Esc cancels.", { key: key_label(talk_key()) });
+    },
+    ticked: (seconds) => {
+      state.text = Publr.t("Listening… {time}", { time: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}` });
+    },
+    writing: () => {
+      state.phase = "writing";
+      state.text = Publr.t("Writing it down…");
+      state.detail = "";
+    },
+    heard: (text, typed) => {
+      if (typed || state.live) {
+        state.phase = "";
+        return;
+      }
+      hear(text);
+    },
+    failed: (reason) => {
+      state.phase = "failed";
+      state.text = reason;
+      state.detail = "";
+    },
+    cancelled: () => {
+      if (state.phase === "listening" || state.phase === "writing") state.phase = "";
+    },
+  });
+
+const keyed = (event: KeyboardEvent) => {
+  if (state.phase !== "heard") return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    close();
+  } else if (event.key === "Enter" && words !== "") {
+    event.preventDefault();
+    send();
+  }
+};
+
+const post = async (operation: string, body: unknown) => {
+  const response = await fetch(Publr.url(`/api/${operation}`), {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },
+    body: JSON.stringify(body),
+  });
+  const answer = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(answer.message ?? answer.error ?? `${response.status}`);
+  return answer;
+};
+
+/** The words go: a reply to the conversation in the corner, or a new one asked here. */
+export const send = async () => {
+  if (state.phase !== "heard" || words === "") return;
+  stop_waiting();
+  const prompt = words;
+  state.sendable = false;
+  state.phase = "sending";
+  state.text = prompt;
+  state.detail = Publr.t("Starting…");
+  try {
+    const pictures = await Promise.all(uploads);
+    if (state.id !== "" && state.chat !== "") {
+      await post("ai/reply", { id: state.id, prompt, pictures });
+      state.chat = "open";
+      keep();
+      started();
+    } else {
+      const asked = await post("ai/ask", { prompt, page: page_now(), pictures });
+      begin(asked.id, prompt);
+    }
+    close();
+  } catch (error) {
+    state.phase = "failed";
+    state.text = Publr.t("Not sent: {reason}", { reason: (error as Error).message });
+    state.detail = "";
+  }
+};
+
+/** A new conversation, in the corner. */
+const begin = (id: string, prompt: string) => {
+  state.id = id;
+  state.prompt = prompt;
+  state.title = first_line(prompt);
+  state.steps = [];
+  state.undone = [];
+  state.chat = "open";
+  after = 0;
+  followed = 0;
+  keep();
+  started();
+};
+
+/** A turn started: followed until it ends. */
+const started = () => {
+  state.live = true;
+  state.label = labels.running;
+  state.note = "";
+  watch();
+  refresh();
+};
+
+/** The server tells of each change over a WebSocket; without one, it is asked now and then. */
+const watch = () => {
+  if (socket || state.id === "") return;
+  const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const path = Publr.url(`/admin/ai/${encodeURIComponent(state.id)}/live`);
+  socket = new WebSocket(`${scheme}//${window.location.host}${path}`);
+  socket.onopen = () => refresh();
+  socket.onmessage = () => refresh();
+  socket.onclose = () => {
+    socket = null;
+    if (!state.live && !state.waiting) return;
+    refresh();
+    window.setTimeout(() => (state.live || state.waiting ? watch() : undefined), 2000);
+  };
+};
+
+const unwatch = () => {
+  if (!socket) return;
+  socket.onclose = null;
+  socket.close();
+  socket = null;
+};
+
+/** The time on what the agent does now, as m:ss. */
+const tick = () => {
+  const seconds = Math.max(0, Math.floor((Date.now() - activity_started) / 1000));
+  const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  state.activity_line = activity === "" || !state.live ? "" : `${activity}… ${elapsed}`;
+};
+
+type Read = {
+  conversation: { state: string; prompt: string };
+  steps: Step[];
+  draft: string;
+  activity: string;
+  activity_ms: number;
+};
+
+let reading = false;
+let read_again = false;
+
+const refresh = async () => {
+  if (state.id === "") return;
+  if (reading) {
+    read_again = true;
+    return;
+  }
+  reading = true;
+  try {
+    const address = Publr.url(`/api/ai/conversation?id=${encodeURIComponent(state.id)}&after=${after}`);
+    const response = await fetch(address, { credentials: "same-origin" });
+    if (!response.ok) throw new Error(`${response.status}`);
+    apply(await response.json());
+    state.note = "";
+  } catch {
+    state.note = Publr.t("Lost touch with the server; trying again…");
+    if (state.live || state.waiting) window.setTimeout(refresh, 3000);
+  }
+  reading = false;
+  if (read_again) {
+    read_again = false;
+    refresh();
+  }
+};
+
+/** What the server read: the steps added, where the turn is, and where the page goes. */
+const apply = (read: Read) => {
+  const was_live = state.live;
+  const turn = read.conversation.state;
+  state.conversation_state = turn;
+  state.live = turn === "running" || turn === "stopping";
+  state.waiting = turn === "waiting";
+  state.label = labels[turn] ?? turn;
+  took(read.steps);
+  state.draft = state.live ? read.draft : "";
+  activity = read.activity;
+  activity_started = Date.now() - read.activity_ms;
+  tick();
+  if (was_live || state.live) go_on();
+  if (state.live || state.waiting) {
+    watch();
+    return;
+  }
+  unwatch();
+  if (state.frame_url !== "") unwrap();
+};
+
+const took = (steps: Step[]) => {
+  const fresh = steps
+    .filter((step) => step.position > after)
+    .sort((one, other) => one.position - other.position)
+    .map((step) => ({
+      ...step,
+      trash_entry: step.href.startsWith(trash_prefix) ? step.href.slice(trash_prefix.length) : "",
+    }));
+  if (fresh.length === 0) return;
+  after = fresh[fresh.length - 1].position;
+  state.steps = [...state.steps, ...fresh];
+};
+
+/** The newest page the agent worked on that the frame has not shown. */
+const unshown = () => {
+  for (let index = state.steps.length - 1; index >= 0; index--) {
+    const step = state.steps[index];
+    if (step.position <= followed) return null;
+    if (step.href !== "" && wrappable(step.href)) return step;
+  }
+  return null;
+};
+
+/** The agent works on a page: on a plain page, the page is first wrapped in the frame
+ * (the server draws it, the chat above); in the frame, it goes there as a person would. */
+const go_on = () => {
+  const step = unshown();
+  if (!step || leaving) return;
+  if (state.frame_url === "") {
+    leaving = true;
+    keep();
+    // A step forward in history: Back from the frame returns to the page it was asked on.
+    window.location.assign(Publr.url(`/admin/ai/${encodeURIComponent(state.id)}/around?page=${encodeURIComponent(page_now())}`));
+    return;
+  }
+  followed = step.position;
+  keep();
+  void open_in_frame(step.href.split("#")[0]);
+};
+
+const frame_window = () => (frame.current as HTMLIFrameElement | null)?.contentWindow ?? null;
+
+/** The frame's page as the admin addresses it; empty when it cannot be read. */
+const frame_page = () => {
+  try {
+    const location = frame_window()?.location;
+    return location ? `${inside(location.pathname)}${location.search}` : "";
+  } catch {
+    return "";
+  }
+};
+
+/** The pointer glides to what leads to `page` on the page shown and clicks it; the frame
+ * then goes there. The agent's moves leave no steps in the browser's history (browsers skip
+ * steps a page adds without a click); the person's own clicks in the frame do, and Back
+ * takes the frame back through them. The same page is shown again. */
+const open_in_frame = async (page: string) => {
+  const element = frame.current as HTMLIFrameElement | null;
+  const shown = frame_window();
+  if (!element || !shown) return;
+  if (frame_page() === page) {
+    shown.location.reload();
+    return;
+  }
+  heading_to = page;
+  const link = (() => {
+    try {
+      return Array.from(shown.document.querySelectorAll<HTMLAnchorElement>("a[href]"))
+        .find((anchor) => inside(new URL(anchor.href).pathname) + new URL(anchor.href).search === page) ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  if (link) {
+    const box = link.getBoundingClientRect();
+    const frame_box = element.getBoundingClientRect();
+    await point_at(frame_box.left + box.left + Math.min(box.width / 2, 80), frame_box.top + box.top + box.height / 2);
+  }
+  shown.location.replace(Publr.url(page));
+  rest_pointer();
+};
+
+/** The frame showed a page: the address and the title say it. */
+export const landed = () => {
+  try {
+    const location = frame_window()?.location;
+    if (!location) return;
+    if (`${inside(location.pathname)}${location.search}` === heading_to) heading_to = "";
+    window.history.replaceState(null, "", `${location.pathname}${location.search}${location.hash}`);
+    const title = frame_window()?.document.title ?? "";
+    if (title !== "") document.title = title;
+  } catch {
+    // Another site's page: the address stays.
+  }
+};
+
+/** The turn is over: the frame comes off, the page it showed loaded for real, the chat on it. */
+const unwrap = () => {
+  if (leaving) return;
+  leaving = true;
+  const step = unshown();
+  const page = step ? step.href.split("#")[0] : heading_to !== "" ? heading_to : frame_page();
+  keep();
+  window.location.replace(page !== "" ? Publr.url(page) : window.location.href);
+};
+
+/** A conversation open in the corner on an earlier page of this tab is open here too. */
+const resume = async () => {
+  const saved = kept();
+  if (saved.id === "" || saved.chat === "") return;
+  followed = saved.followed;
+  try {
+    const address = Publr.url(`/api/ai/conversation?id=${encodeURIComponent(saved.id)}`);
+    const response = await fetch(address, { credentials: "same-origin" });
+    if (!response.ok) throw new Error(`${response.status}`);
+    const read = await response.json();
+    const prompt = `${read.conversation.prompt}`;
+    const mark = prompt.lastIndexOf(asked_on_mark);
+    state.id = saved.id;
+    state.chat = saved.chat;
+    state.prompt = mark >= 0 ? prompt.slice(0, mark) : prompt;
+    state.title = first_line(state.prompt);
+    apply(read);
+  } catch {
+    state.id = "";
+    keep();
+  }
+};
+
+export const minimize = () => {
+  state.chat = "small";
+  keep();
+};
+
+export const expand = () => {
+  state.chat = "open";
+  keep();
+};
+
+/** The conversation leaves the corner; it stays in the list on the Overview. */
+export const dismiss = () => {
+  unwatch();
+  state.chat = "";
+  state.id = "";
+  state.steps = [];
+  keep();
+};
+
+export const stop = async () => {
+  try {
+    await post("ai/stop", { id: state.id });
+    state.label = labels.stopping;
+  } catch (error) {
+    state.note = Publr.t("Could not stop it: {reason}", { reason: (error as Error).message });
+  }
+};
+
+export const typed = (event: Event) => {
+  state.reply = (event.target as HTMLTextAreaElement).value;
+};
+
+export const replied = async (event: Event) => {
+  event.preventDefault();
+  const prompt = state.reply.trim();
+  if (prompt === "" || state.live) return;
+  state.reply = "";
+  try {
+    await post("ai/reply", { id: state.id, prompt, pictures: [] });
+    started();
+  } catch (error) {
+    state.reply = prompt;
+    state.note = Publr.t("Not sent: {reason}", { reason: (error as Error).message });
+  }
+};
+
+/** One removal back from the trash; the page shows it again. */
+export const undo = async (event: MouseEvent) => {
+  const entry = (event.currentTarget as HTMLButtonElement).value;
+  try {
+    await post("trash/restore", { id: entry });
+    state.undone = [...state.undone, entry];
+    (frame_window() ?? window).location.reload();
+  } catch (error) {
+    state.note = Publr.t("Could not undo it: {reason}", { reason: (error as Error).message });
+  }
+};
+
+/** The conversation stays scrolled to its newest line. */
+Publr.effect(() => {
+  void state.steps.length;
+  void state.chat;
+  void state.activity_line;
+  const element = scroller.current as HTMLElement | null;
+  if (element) element.scrollTop = element.scrollHeight;
+});
+
+/** While it works, the time on the line moves every second. */
+Publr.effect(() => {
+  if (!state.live) return;
+  const timer = window.setInterval(tick, 1000);
+  return () => window.clearInterval(timer);
+});
+
+Publr.effect(() => {
+  // The admin inside the frame is the frame's: the chat is the page's above it.
+  if (window.parent !== window) return;
+  document.addEventListener("paste", pasted);
+  document.addEventListener("keydown", keyed, true);
+  const stop_talking = talking();
+  resume();
+  return () => {
+    document.removeEventListener("paste", pasted);
+    document.removeEventListener("keydown", keyed, true);
+    stop_talking();
+  };
+});
+
+export type AskBubbleProps = {
+  /** The session's token, for the ask and the pictures. */
+  csrf: string;
+  /** The admin's base path (a copy's), taken off the page the ask names. */
+  base: string;
+  /** The page shown in a frame filling the window while the agent works; empty on a plain page. */
+  frame_url?: string;
+};
+
+/** Asking from any admin page: a paste with nothing focused, or words said while the talk
+ * key is held, show in a pill at the bottom centre, sent after a moment. The conversation
+ * then stays in the bottom right corner from page to page. While the agent works on a page,
+ * the admin is drawn in a frame under the chat, which follows the agent there. */
+export function AskBubble({ csrf, base, frame_url = "" }: AskBubbleProps) {
+  state.csrf = csrf;
+  state.base = base;
+  state.frame_url = frame_url;
+
+  return (
+    <div data-part="ask">
+      {state.frame_url !== "" && (
+        <iframe
+          ref={frame}
+          src={state.frame_url}
+          title={Publr.t("What the agent is working on")}
+          onLoad={landed}
+          inert={state.live}
+          class="fixed inset-0 size-full border-0 bg-background"
+        ></iframe>
+      )}
+      <div
+        class="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4"
+        hidden={state.phase === ""}
+        data-part="ask-bubble"
+      >
+        <GlowPill
+          text={state.text}
+          detail={state.detail}
+          glowing={state.phase !== "failed"}
+          filled={state.filled}
+          classes="pointer-events-auto w-full max-w-xl"
+          actions={
+            <div class="flex items-center gap-1">
+              {state.phase === "heard" && state.sendable && (
+                <Button type="button" hierarchy="primary" size="sm" shape="pill" onClick={send}>
+                  <span>{Publr.t("Send")}</span>
+                </Button>
+              )}
+              {(state.phase === "heard" || state.phase === "failed") && (
+                <CloseButton label={state.phase === "heard" ? Publr.t("Cancel") : Publr.t("Close")} onClick={close} />
+              )}
+            </div>
+          }
+        />
+      </div>
+      {state.chat === "small" && (
+        <div class="fixed right-4 bottom-4 z-50 w-72 max-sm:left-4 max-sm:w-auto" data-part="ask-chat-small">
+          <GlowPill
+            text={state.title}
+            detail={state.activity_line !== "" ? state.activity_line : state.label}
+            glowing={state.live}
+            actions={
+              <Button type="button" hierarchy="tertiary" size="sm" shape="pill" onClick={expand}>
+                <span>{Publr.t("Show")}</span>
+              </Button>
+            }
+          />
+        </div>
+      )}
+      {state.chat === "open" && (
+        <div class="fixed right-4 bottom-4 z-50 max-sm:left-4" data-part="ask-chat">
+          <ChatPanel
+            title={state.title}
+            status={
+              <Status tone={state.conversation_state === "failed" ? "error" : state.waiting ? "warning" : state.live ? "accent" : "success"} label="plain">
+                {state.activity_line !== "" ? state.activity_line : state.label}
+              </Status>
+            }
+            actions={
+              <div class="flex items-center gap-0.5">
+                <Button hierarchy="tertiary" size="sm" label={Publr.t("Open in the workspace")} title={Publr.t("Open in the workspace")} href={`/admin/ai/${state.id}`}>
+                  <Icon name="external" size="sm" />
+                </Button>
+                <Button type="button" hierarchy="tertiary" size="sm" label={Publr.t("Make small")} title={Publr.t("Make small")} onClick={minimize}>
+                  <Icon name="chevron-down" size="sm" />
+                </Button>
+                {!state.live && !state.waiting && (
+                  <Button type="button" hierarchy="tertiary" size="sm" label={Publr.t("Close")} title={Publr.t("Close")} onClick={dismiss}>
+                    <Icon name="x-close" size="sm" />
+                  </Button>
+                )}
+              </div>
+            }
+            footer={
+              state.live ? (
+                <div class="flex items-center justify-between gap-3">
+                  <Text as="span" variant="body-sm" tone="muted">
+                    {Publr.t("Working on it…")}
+                  </Text>
+                  <Button type="button" hierarchy="secondary" size="sm" onClick={stop}>
+                    {Publr.t("Stop")}
+                  </Button>
+                </div>
+              ) : state.waiting ? (
+                <Text as="p" variant="body-sm" tone="error">
+                  {Publr.t("Waiting for you: the agent listed things to remove for good. Remove them on the page; it carries on after, with what is left.")}
+                </Text>
+              ) : (
+                <form class="flex flex-col gap-2" onSubmit={replied}>
+                  <Textarea name="reply" rows={2} value={state.reply} onInput={typed} placeholder={Publr.t("Reply…")} />
+                  <div class="flex justify-end">
+                    <Button hierarchy="primary" size="sm" type="submit">
+                      {Publr.t("Send")}
+                    </Button>
+                  </div>
+                </form>
+              )
+            }
+          >
+            <div ref={scroller} class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
+              <MessageBubble>{state.prompt}</MessageBubble>
+              {state.steps.map((step) => (
+                <div key={step.position} class="flex flex-col gap-1">
+                  {step.kind === "asked" && <MessageBubble>{step.detail}</MessageBubble>}
+                  {(step.kind === "said" || step.kind === "answered") &&
+                    step.blocks.map((block) => (
+                      <Text
+                        as="p"
+                        variant={block.kind === "heading" ? "heading-xs" : "body-sm"}
+                        tone={step.kind === "said" ? "muted" : "default"}
+                      >
+                        {block.kind === "bullet" ? "• " : block.kind === "numbered" ? `${block.number}. ` : ""}
+                        {block.runs.map((run) => (run.style === "code" ? <Code>{run.text}</Code> : run.text))}
+                      </Text>
+                    ))}
+                  {step.kind === "ran" && (
+                    <div class="flex items-start gap-2">
+                      {step.trash_entry !== "" ? (
+                        <Icon name="trash" size="sm" classes="mt-0.5" />
+                      ) : step.failed ? (
+                        <Icon name="redo" size="sm" classes="mt-0.5" />
+                      ) : (
+                        <Icon name="check" size="sm" classes="mt-0.5" />
+                      )}
+                      <Text as="span" variant="body-sm" tone={step.failed ? "muted" : "default"} classes="min-w-0 flex-1">
+                        {step.summary}
+                      </Text>
+                      {step.trash_entry !== "" &&
+                        (state.undone.includes(step.trash_entry) ? (
+                          <Text as="span" variant="body-sm" tone="muted">
+                            {Publr.t("Restored")}
+                          </Text>
+                        ) : (
+                          <Button hierarchy="link" size="xs" value={step.trash_entry} onClick={undo}>
+                            {Publr.t("Undo")}
+                          </Button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {state.live && state.draft !== "" && (
+                <Text as="p" variant="body-sm" tone="muted" classes="whitespace-pre-wrap">
+                  {state.draft}
+                </Text>
+              )}
+              {state.note !== "" && (
+                <Text as="p" variant="body-sm" tone="error">
+                  {state.note}
+                </Text>
+              )}
+            </div>
+          </ChatPanel>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -300,7 +300,9 @@ fn render(
 
     if (!route.live) {
         if (build.built_page(app, ctx.arena, full_path)) |html| {
-            const cache: apps_adapter.Cache = .{
+            // An app's middleware may answer a page differently for each visitor (sign in
+            // first, onboarding done): every use asks again, so its answer is never skipped.
+            const cache: apps_adapter.Cache = if (app.middleware != null) .{} else .{
                 .max_age = page_max_age,
                 .stale = page_stale,
             };

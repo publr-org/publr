@@ -189,11 +189,18 @@ pub fn static_name(arena: std.mem.Allocator, rel: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena, "{s}.publr", .{stem});
 }
 
-/// The path without `.publr`, and without a `.dynamic` marker.
-pub fn stem_of(rel: []const u8) []const u8 {
-    std.debug.assert(std.mem.endsWith(u8, rel, ".publr"));
+/// A page written in Markdown: `content/**/*.md`.
+pub fn is_markdown_page(rel: []const u8) bool {
+    return std.mem.startsWith(u8, rel, "content/") and std.mem.endsWith(u8, rel, ".md");
+}
 
-    const without = rel[0 .. rel.len - ".publr".len];
+/// The path without `.publr` (or a Markdown page's `.md`), and without a `.dynamic` marker.
+pub fn stem_of(rel: []const u8) []const u8 {
+    const extension = if (is_markdown_page(rel)) ".md" else ".publr";
+
+    std.debug.assert(std.mem.endsWith(u8, rel, extension));
+
+    const without = rel[0 .. rel.len - extension.len];
 
     if (std.mem.endsWith(u8, without, ".dynamic")) {
         return without[0 .. without.len - ".dynamic".len];
@@ -617,6 +624,9 @@ test "island keys, dynamic names and import paths" {
     try expect("fresh.dynamic.publr", try dynamic_name(arena, "content/fresh.publr"));
     try expect("pure.publr", try static_name(arena, "components/pure.dynamic.publr"));
     try expect("content/posts/index", stem_of("content/posts/index.dynamic.publr"));
+    try expect("content/guide/install", stem_of("content/guide/install.md"));
+    try std.testing.expect(is_markdown_page("content/a.md"));
+    try std.testing.expect(!is_markdown_page("components/README.md"));
     try expect("Disclosure", file_stem("../interactive/Disclosure.ptsx"));
 }
 

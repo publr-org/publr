@@ -132,6 +132,23 @@ pub fn expression_end(compiler: *Compiler, text: []const u8, start: u32) Error!u
     return compiler.fail("unterminated expression: {s}", .{compiler.excerpt(text[start..])});
 }
 
+/// How many `{name}` values one message fills.
+pub const words_values_max: u32 = 32;
+
+/// `Publr.t(`, `Publr.tn(`, `Publr.tx(` after the word `Publr`: the page's words, which the
+/// script engine says in the page's language.
+pub fn words_call(rest: []const u8) bool {
+    std.debug.assert(rest.len < 1 << 24);
+
+    for ([_][]const u8{ ".t(", ".tn(", ".tx(" }) |call| {
+        if (std.mem.startsWith(u8, rest, call)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 const globals = [_][]const u8{
     "Math",
     "Number",
@@ -562,6 +579,128 @@ const Parser = struct {
         };
     }
 
+    /// `.t("…", { … })`, `.tx("context", "…", { … })`, `.tn("one", "other", count, { … })`
+    /// after `Publr`: the message as written, its values as expressions.
+    fn words_expression(parser: *Parser) Error!Expr {
+        const compiler = parser.compiler;
+
+        std.debug.assert(parser.text[parser.position] == '.');
+
+        parser.position += 1;
+
+        const call = try parser.identifier();
+        var words: Expr.Words = .{
+            .id = "",
+        };
+
+        if (!parser.take("(")) {
+            return compiler.fail("missing `(` after Publr.{s}", .{call});
+        }
+
+        if (std.mem.eql(u8, call, "tx")) {
+            words.context = try parser.message_text();
+            try parser.comma();
+        }
+
+        words.id = try parser.message_text();
+
+        if (std.mem.eql(u8, call, "tn")) {
+            try parser.comma();
+            words.plural = try parser.message_text();
+            try parser.comma();
+            words.count = try compiler.box(try parser.ternary());
+
+            if (words.count.?.type != .int) {
+                return compiler.script("a count that is not a whole number", .{});
+            }
+        }
+
+        if (parser.take(",") and !parser.peek(")")) {
+            words.values = try parser.word_values();
+        }
+
+        if (!parser.take(")")) {
+            return compiler.fail("missing `)` after Publr.{s}", .{call});
+        }
+
+        return .{
+            .type = .string,
+            .node = .{
+                .words = words,
+            },
+        };
+    }
+
+    /// A message: a string literal, so the extractor finds it as written.
+    fn message_text(parser: *Parser) Error![]const u8 {
+        parser.skip_whitespace();
+
+        const at_quote = parser.position < parser.text.len and
+            (parser.text[parser.position] == '"' or parser.text[parser.position] == '\'');
+
+        if (!at_quote) {
+            return parser.compiler.fail("a message is a string literal", .{});
+        }
+
+        const literal = try parser.string_literal(parser.text[parser.position]);
+
+        std.debug.assert(literal.node == .string);
+
+        return literal.node.string;
+    }
+
+    fn comma(parser: *Parser) Error!void {
+        std.debug.assert(parser.position <= parser.text.len);
+
+        if (!parser.take(",")) {
+            return parser.compiler.fail("missing `,` in Publr's words", .{});
+        }
+    }
+
+    /// `{ name: value, other }`: each value a string or a number.
+    fn word_values(parser: *Parser) Error![]const Expr.WordValue {
+        const compiler = parser.compiler;
+        var values: std.ArrayList(Expr.WordValue) = .empty;
+
+        std.debug.assert(parser.position <= parser.text.len);
+
+        if (!parser.take("{")) {
+            return compiler.script("message values that are not an object literal", .{});
+        }
+
+        while (!parser.take("}")) {
+            if (values.items.len == words_values_max) {
+                return compiler.fail("a message fills at most {d} values", .{words_values_max});
+            }
+
+            const start = parser.position;
+            const name = try parser.identifier();
+
+            // `{ days }` is `{ days: days }`.
+            if (!parser.take(":")) {
+                parser.position = start;
+            }
+
+            const value = try parser.ternary();
+            const fits = value.type == .string or value.type == .opt_string or value.type == .int;
+
+            if (!fits) {
+                return compiler.script("a message value that is not a string or a number", .{});
+            }
+
+            try values.append(compiler.arena, .{
+                .name = name,
+                .value = try compiler.box(value),
+            });
+
+            if (!parser.take(",") and !parser.peek("}")) {
+                return compiler.fail("missing `,` between message values", .{});
+            }
+        }
+
+        return values.items;
+    }
+
     fn prop_member(parser: *Parser, boxed: *const Expr, field: []const u8) Error!Expr {
         const compiler = parser.compiler;
 
@@ -760,6 +899,10 @@ const Parser = struct {
                 .type = .props,
                 .node = .props,
             };
+        }
+
+        if (std.mem.eql(u8, word, "Publr") and words_call(parser.text[parser.position..])) {
+            return parser.words_expression();
         }
 
         if (std.mem.eql(u8, word, "Publr") or std.mem.eql(u8, word, "Astro")) {

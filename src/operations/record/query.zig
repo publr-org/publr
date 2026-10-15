@@ -256,7 +256,7 @@ fn source_of(
             const visible = !public_only or brief.public;
             const handle = try arena.dupe(u8, brief.handle);
 
-            if (in_reach and visible and kind_readable(ctx, brief.kind)) {
+            if (in_reach and visible and kind_readable(ctx, brief.kind, brief.public)) {
                 readable.append(arena, .{
                     .handle = handle,
                 }) catch return error.OutOfMemory;
@@ -300,13 +300,14 @@ fn own_user(ctx: *const Ctx) Error![]const u8 {
 }
 
 /// Records and settings singletons, as when a list names its type; a settings type only for
-/// a caller whose roles reach settings. Components hold no records.
-fn kind_readable(ctx: *const Ctx, kind: model.content_type.Kind) bool {
+/// a caller whose roles reach settings, or every caller when it is public. Components hold
+/// no records.
+fn kind_readable(ctx: *const Ctx, kind: model.content_type.Kind, public: bool) bool {
     std.debug.assert(ctx.now_ms >= 0);
 
     return switch (kind) {
         .record => true,
-        .settings => !access.settings_denied(ctx),
+        .settings => public or !access.settings_denied(ctx),
         else => false,
     };
 }

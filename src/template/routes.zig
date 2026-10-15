@@ -47,7 +47,7 @@ pub fn position_type(rel: []const u8) ?[]const u8 {
 /// "/"; "content/docs/[...path].publr" becomes "/docs/*".
 pub fn route_pattern(arena: std.mem.Allocator, rel: []const u8) ![]const u8 {
     std.debug.assert(std.mem.startsWith(u8, rel, "content/"));
-    std.debug.assert(std.mem.endsWith(u8, rel, ".publr"));
+    std.debug.assert(std.mem.endsWith(u8, rel, ".publr") or compile.is_markdown_page(rel));
 
     const stem = compile.stem_of(rel)["content/".len..];
     var out: std.Io.Writer.Allocating = .init(arena);

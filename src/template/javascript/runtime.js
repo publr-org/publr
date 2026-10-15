@@ -39,8 +39,14 @@ globalThis.__publr = (() => {
       return pairs.length > 0 ? file.url + "?" + pairs.join("&") : file.url;
     },
   });
+  // `Publr.t`, `Publr.tn`, `Publr.tx`: the words in the page's language, as components say them.
+  const words = values => JSON.stringify(values ?? {});
+  const t = (id, values) => host("build.t", ["", id, "", 0, false, words(values)]);
+  const tx = (context, id, values) => host("build.t", [context, id, "", 0, false, words(values)]);
+  const tn = (one, other, count, values) =>
+    host("build.t", ["", one, other, Number(count), true, words(values)]);
   return Object.freeze({ element, text, component, isNode: value => nodes.has(value),
-    api: Object.freeze({ build: api("build"), request: api("request") }) });
+    api: Object.freeze({ build: api("build"), request: api("request"), t, tn, tx }) });
 })();
 // Static computations use explicit, tracked time and randomness.
 Math.random = () => { throw new Error("Use a seeded generator or Publr.request.random(n)"); };

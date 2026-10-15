@@ -2,11 +2,13 @@
 //! they may open, the plugins' top bar items, which area the address is in and that area's
 //! sidebar. Filled once per page from the session; the views never forward it.
 const std = @import("std");
+const AdminBrand = @import("../../sdk/plugin.zig").AdminBrand;
 const avatar = @import("avatar.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const types = @import("../../operations/content_type.zig");
 const users = @import("../../operations/user.zig");
+const ai = @import("../../operations/ai.zig");
 const top_bar = @import("top_bar.zig");
 const sections = @import("sections.zig");
 const nav = @import("nav.zig");
@@ -134,10 +136,14 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
     std.debug.assert(path.len > 0);
     std.debug.assert(path[0] == '/');
 
+    const brand = brand_of(session);
+
     if (!session.signed_in()) {
         request.* = signed_out;
         request.admin.base = session.project.admin_path();
         request.admin.path = path;
+        request.admin.brand = brand.name;
+        request.admin.brand_mark = brand.mark;
 
         return request;
     }
@@ -175,7 +181,10 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
             .section = if (in) |section| section.label else "",
             .section_href = if (in) |section| section.href() else "",
             .site_href = admin.app_scope.site_href(session),
-            .framed = framed(session),
+            .framed = sheet_alone(session),
+            .can_ask = can_ask(session),
+            .brand = brand.name,
+            .brand_mark = brand.mark,
         },
     };
 
@@ -192,6 +201,44 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
     return request;
 }
 
+/// Whose admin it is: the first plugin that names a brand; Publr's when none does. A plugin
+/// that fails is logged and passed over.
+fn brand_of(session: *const Session) AdminBrand {
+    std.debug.assert(session.ctx.now_ms > 0);
+    comptime std.debug.assert(registry.admin_brand.len <= 64);
+
+    inline for (registry.admin_brand) |Plugin| {
+        var asking = session.ctx;
+        const named = Plugin.admin_brand(&asking) catch |err| blk: {
+            std.log.warn("plugin {s}: admin brand: {t}", .{ Plugin.manifest.name, err });
+            break :blk AdminBrand{};
+        };
+
+        if (named.name.len > 0) {
+            return named;
+        }
+    }
+
+    return .{};
+}
+
+/// Whether a paste with nothing focused asks the agent here: never in a frame, nor on a
+/// conversation's workspace, which has its own reply box.
+fn can_ask(session: *const Session) bool {
+    const path = session.request.path();
+
+    std.debug.assert(path.len > 0);
+    std.debug.assert(session.signed_in());
+
+    if (framed(session) or std.mem.startsWith(u8, path, "/admin/ai/")) {
+        return false;
+    }
+
+    var asking = session.*;
+
+    return registry.SDK.may(&asking.ctx, ai.Ask) and ai.connected(&asking.ctx);
+}
+
 /// Whether the page is shown inside another: asked with `?framed=1` (the AI workspace's
 /// frame keeps it on every page it shows), or a browser saying it loads a frame. Browsers
 /// say so only to secure or local addresses, never to plain http on a name like
@@ -204,6 +251,18 @@ pub fn framed(session: *const Session) bool {
     std.debug.assert(session.signed_in());
 
     return std.mem.eql(u8, asked, "1") or std.mem.eql(u8, destination, "iframe");
+}
+
+/// Whether the page draws its sheet alone: asked with `?framed=1`, as the AI workspace's
+/// preview does. A page framed otherwise (the corner chat wraps the admin in a frame while
+/// the agent works) keeps the whole admin around it.
+fn sheet_alone(session: *const Session) bool {
+    const asked = admin.query_param(session, "framed") orelse "";
+
+    std.debug.assert(asked.len <= 64 << 10);
+    std.debug.assert(session.signed_in());
+
+    return std.mem.eql(u8, asked, "1");
 }
 
 /// The area's sidebar as a node that does its work only when the chrome draws it: a page

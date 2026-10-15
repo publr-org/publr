@@ -98,6 +98,49 @@ pub const Translations = struct {
     disagreements: *const fn (context: *const anyopaque) []const LanguageDisagreements,
     /// How much of each domain's messages each language covers.
     coverage: *const fn (context: *const anyopaque) []const Coverage,
+    /// A message in `locale`, its values filled: the source text when no plugin translates
+    /// it there.
+    say: *const fn (
+        context: *const anyopaque,
+        arena: std.mem.Allocator,
+        locale: []const u8,
+        message: Message,
+    ) std.mem.Allocator.Error![]const u8,
+};
+
+/// The source text with each `{name}` its value, the plural by count: what `Ctx.say` gives
+/// where no server built the languages.
+fn filled(arena: std.mem.Allocator, message: Message) std.mem.Allocator.Error![]const u8 {
+    std.debug.assert(message.id.len > 0);
+
+    const many = message.plural.len > 0 and message.count != null and message.count.? != 1;
+    var text: []const u8 = if (many) message.plural else message.id;
+
+    for (message.values) |value| {
+        const hole = try std.mem.concat(arena, u8, &.{ "{", value.name, "}" });
+
+        text = try std.mem.replaceOwned(u8, arena, text, hole, value.value);
+    }
+
+    std.debug.assert(text.len > 0 or message.values.len > 0);
+
+    return text;
+}
+
+/// What plugin code says to people outside the admin, an email or a page of its own, in the
+/// words of the language it names (`Ctx.say`).
+pub const Message = struct {
+    context: []const u8 = "",
+    id: []const u8,
+    /// The source's plural (`{count} projects`), empty for a message without one.
+    plural: []const u8 = "",
+    count: ?f64 = null,
+    values: []const Value = &.{},
+
+    pub const Value = struct {
+        name: []const u8,
+        value: []const u8,
+    };
 };
 
 /// One language over one domain's messages: how many it translates, the ones it does not,
@@ -108,11 +151,11 @@ pub const Coverage = struct {
     domain: []const u8,
     translated: u32,
     total: u32,
-    missing: []const Message,
+    missing: []const MessageId,
     providers: []const []const u8,
 };
 
-pub const Message = struct {
+pub const MessageId = struct {
     context: []const u8,
     id: []const u8,
 };
@@ -228,6 +271,22 @@ pub const Ctx = struct {
     /// The definitions this request has read (`definition_cache.zig`), where a server keeps
     /// them; shared by every context made for the request.
     definitions: ?*DefinitionCache = null,
+
+    /// `message` in `locale` for people outside the admin (an email, a plugin's own page):
+    /// the source text where no plugin translates it. Outside a server, which builds the
+    /// languages, the source text as written.
+    pub fn say(
+        ctx: *const Ctx,
+        locale: []const u8,
+        message: Message,
+    ) std.mem.Allocator.Error![]const u8 {
+        std.debug.assert(message.id.len > 0);
+        std.debug.assert(message.plural.len == 0 or message.count != null);
+
+        const view = ctx.translations orelse return filled(ctx.arena, message);
+
+        return view.say(view.context, ctx.arena, locale, message);
+    }
 
     pub fn init(options: Options) Ctx {
         std.debug.assert(options.request_id.len <= request_id_len_max);

@@ -16,6 +16,7 @@ pub const layouts = [_][]const u8{
     "ListDetailPage",
     "FramePage",
     "WorkspacePage",
+    "AroundPage",
 };
 const chrome_parts = [_][]const u8{ "Chrome", "Document" };
 /// The spacing a layout owns: a page's own top-level elements set none of it.
@@ -26,7 +27,7 @@ const spacing_prefixes = [_][]const u8{
 
 pub fn check(modules: []const *const Module) !void {
     std.debug.assert(modules.len > 0);
-    std.debug.assert(layouts.len == 7);
+    std.debug.assert(layouts.len == 8);
 
     for (modules) |module| {
         try check_imports(module);
@@ -61,7 +62,7 @@ fn check_imports(module: *const Module) !void {
             if (is_one_of(entry.imported, &chrome_parts)) {
                 std.debug.print(
                     "pjsx_gen: {s} imports {s}; pages draw the chrome through a layout " ++
-                        "(IndexPage, FormPage, HubPage, CardPage)\n",
+                        "(IndexPage, FormPage, HubPage, CardPage, AroundPage, …)\n",
                     .{ name, entry.imported },
                 );
 

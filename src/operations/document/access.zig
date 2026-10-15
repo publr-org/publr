@@ -52,7 +52,8 @@ pub fn Of(comptime Domain: type) type {
             const found = row orelse return null;
             const type_row = try definitions.find(ctx, found.type_id) orelse return null;
 
-            if (type_row.def.kind == .settings and settings_denied(ctx)) {
+            // A public settings type is every visitor's to read, like a public record type.
+            if (type_row.def.kind == .settings and !type_row.def.public and settings_denied(ctx)) {
                 return error.Denied;
             }
 
@@ -126,7 +127,7 @@ pub fn Of(comptime Domain: type) type {
                         return error.NotFound;
                     };
 
-                    if (row.def.kind == .settings and settings_denied(ctx)) {
+                    if (row.def.kind == .settings and !row.def.public and settings_denied(ctx)) {
                         return error.Denied;
                     }
 

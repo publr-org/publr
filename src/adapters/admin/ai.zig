@@ -10,6 +10,10 @@ const Response = admin.Response;
 const Context = admin.Context;
 const Error = admin.Error;
 
+test {
+    _ = @import("ai_around.zig");
+}
+
 pub fn register(router: anytype) void {
     std.debug.assert(router.routes_len > 0);
 
@@ -17,6 +21,7 @@ pub fn register(router: anytype) void {
     router.get("/admin/ai/:id", &workspace);
     router.get("/admin/ai/:id/live", &watch);
     @import("ai_settings.zig").register(router);
+    @import("ai_around.zig").register(router);
 }
 
 /// `POST /admin/ai/ask`: the Overview's prompt. Starts the turn and shows it following.
@@ -35,6 +40,7 @@ pub fn ask(request: *Request, response: *Response, ctx: *Context) Error!void {
         .prompt = post.form.text("prompt") orelse "",
         .scope = post.form.get("scope") orelse "write",
         .pictures = try pictures_of(session.arena, &post.form),
+        .page = post.form.get("page") orelse "",
     }) catch |err| return admin.fail(session, err, "/admin");
     const back = try std.fmt.allocPrint(session.arena, "/admin/ai/{s}", .{started.id});
 
@@ -110,9 +116,13 @@ pub fn workspace(request: *Request, response: *Response, ctx: *Context) Error!vo
         entry_id.* = entry.id;
     }
 
+    const asked = ai_model.asked_of(read.conversation.prompt);
+
     try admin.screen(&session, .ok, admin.views.AiWorkspace, .{
         .id = read.conversation.id,
-        .prompt = read.conversation.prompt,
+        .prompt = asked.words,
+        .asked_on = asked.page,
+        .title = ai_model.summary_of(asked.words),
         .prompt_pictures = try sources_of(&session, read.prompt_pictures),
         .conversation_state = read.conversation.state,
         .steps = steps,

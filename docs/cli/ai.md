@@ -12,11 +12,12 @@ as it happens, and the device is revoked when the turn ends. Conversations are
 
 | Command | What |
 |---|---|
-| `ai ask --prompt <text> [--scope write\|drafts\|read] [--pictures <keys>]` | Start a conversation; answers at once, `running`. Signed-in people only, on a running server with a model provider connected. `--pictures` (JSON list, up to 8) names chat pictures (`media upload --type ai_picture`) the model looks at with the words |
+| `ai ask --prompt <text> [--scope write\|drafts\|read] [--pictures <keys>] [--page <path>]` | Start a conversation; answers at once, `running`. Signed-in people only, on a running server with a model provider connected. `--pictures` (JSON list, up to 8) names chat pictures (`media upload --type ai_picture`) the model looks at with the words. `--page` names the page it was asked on (an admin path or a site's address, one line, up to 512 bytes), added under the words as `Asked on <page>` so "this" means what is on it |
 | `ai conversation --id <id> [--before <position>] [--limit <n>]` | The conversation and its steps, the newest 50 at a time (`--limit` up to 512, `--before` for the ones before a position; `earlier` says how many are left): `asked` (a follow-up), `said` (the model's words on the way), `ran` (an action, as a readable line with what it answered and the admin page that shows it, `href`) and `answered` |
 | `ai conversations` | The caller's latest 50, newest first |
 | `ai reply --id <id> --prompt <text> [--pictures <keys>]` | A follow-up once the last turn is over: another turn starts and carries on from the last turn's own messages (what each command answered, word for word), kept by the agent in `data/agents/<id>.history.json`; without them (a restart mid-turn), reminded of every ask, what was done and what was answered |
 | `ai stop --id <id>` | Ask the agent to stop before its next step; what it did stays |
+| `ai transcribe --audio <base64> --format <type>` | What was said in a recording (up to 768 KiB; WebM, Ogg, MP4, WAV or MP3), by the provider chosen when it hears, else the first connected one that does; nothing is kept. `NoHearer` when none does. What the admin's talk key sends |
 
 Model providers are plugins (see [plugins](../plugins.md#model-providers)); these are an
 administrator's:
@@ -40,7 +41,8 @@ The agent keeps the books over the operator channel, as the local operator: `ai 
 `PUBLR_AI_SCRIPT`, set where `serve` starts, names a file of scripted answers (a JSON
 list of responses) that every conversation is answered from: for checking a whole turn
 with no network and no key. `PUBLR_AI_SCRIPT_PACE_MS` makes it wait before each answer, so
-a turn can be watched.
+a turn can be watched. With it and no provider that hears, `ai transcribe` answers
+`PUBLR_AI_SCRIPT_HEARD` (else "Scripted words") for every recording.
 
 ```
 $ publr --as ada@example.com ai ask --prompt "Add a recipes section with a page listing them"

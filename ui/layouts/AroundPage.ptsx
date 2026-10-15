@@ -1,0 +1,14 @@
+import { Document } from "./Document.ptsx";
+
+export type AroundPageProps = {
+  title: string;
+  /** The island that draws the admin in a frame and the chat above it. */
+  children?: JSX.Element;
+};
+
+/** The admin drawn in a frame filling the window, with something above it that must not
+ * reload while the frame moves: the corner chat while the agent works. No chrome of its
+ * own; the admin in the frame has it. */
+export function AroundPage({ title, children }: AroundPageProps) {
+  return <Document title={title}>{children}</Document>;
+}

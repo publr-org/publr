@@ -412,6 +412,8 @@ pub const Context = struct {
         const page = ctx.page orelse return;
 
         if (page.has_interactive) {
+            try @import("language.zig").write_script(ctx, writer, ctx.app.base());
+
             for (ctx.app.stores_imports) |path| {
                 try ctx.write_module(writer, path);
             }
@@ -872,6 +874,8 @@ pub const Context = struct {
     pub const media = @import("reads.zig").media;
     pub const money_code = @import("money.zig").code;
     pub const money = @import("money.zig").write;
+    /// The page's language: `Publr.t`'s catalogue for its templates and components.
+    pub const language = @import("language.zig").of;
 
     /// `Publr.build.now()`: when the site was last built, in milliseconds.
     /// `Publr.build.locale()`: the language the page is in (`pl`, the main one's `en`);
@@ -1103,7 +1107,8 @@ pub const Context = struct {
     pub fn record_template(ctx: *const Context, rel: []const u8) void {
         std.debug.assert(rel.len > 0);
         std.debug.assert(std.mem.endsWith(u8, rel, ".publr") or
-            std.mem.endsWith(u8, rel, ".js") or std.mem.endsWith(u8, rel, ".ts"));
+            std.mem.endsWith(u8, rel, ".md") or std.mem.endsWith(u8, rel, ".js") or
+            std.mem.endsWith(u8, rel, ".ts"));
 
         if (ctx.deps) |deps| {
             deps.record_template(rel);

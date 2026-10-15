@@ -324,6 +324,13 @@ const Emitter = struct {
         compiler.template.reads_data = true;
         compiler.template.javascript_reads = true;
 
+        const words = std.mem.eql(u8, name, "t") or std.mem.eql(u8, name, "tn") or
+            std.mem.eql(u8, name, "tx");
+
+        if (words) {
+            return;
+        }
+
         if (std.mem.eql(u8, name, "build")) {
             compiler.template.uses_build = true;
         } else {

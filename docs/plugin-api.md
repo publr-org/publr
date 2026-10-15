@@ -738,7 +738,8 @@ built-in only.
 ## Model providers
 
 A plugin becomes a model provider by listing two operations built by `publr.ai`:
-`publr.ai.Describe("<name>", .{...})` and `publr.ai.Complete("<name>", complete)`. See
+`publr.ai.Describe("<name>", .{...})` and `publr.ai.Complete("<name>", complete)`, and a
+third, `publr.ai.Transcribe("<name>", transcribe)`, when it turns speech into text. See
 [Plugins](plugins.md#model-providers).
 
 ## Building

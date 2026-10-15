@@ -72,6 +72,10 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
                 return viewed(vm, frame, args);
             }
 
+            if (std.mem.eql(u8, method, "t")) {
+                return @import("translate.zig").translated(vm, frame.ctx, args);
+            }
+
             if (std.mem.eql(u8, method, "locale")) {
                 return vm.string(frame.ctx.locale());
             }

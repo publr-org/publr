@@ -1,6 +1,7 @@
 import { Publr } from "publr-jsx";
 import { Document } from "./Document.ptsx";
 import { Mark } from "../components/Mark.ptsx";
+import { AskBubble } from "../components/AskBubble.ptsx";
 import { Crumbs } from "../components/Crumbs.ptsx";
 import { RailItem } from "../components/RailItem.ptsx";
 import { SidebarHeading } from "../components/SidebarHeading.ptsx";
@@ -38,10 +39,14 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
         <div class="flex w-14 shrink-0 flex-col items-center bg-rail text-rail-foreground">
           <a
             href="/admin"
-            aria-label="Publr"
+            aria-label={Publr.request.admin.brand !== "" ? Publr.request.admin.brand : "Publr"}
             class="flex h-14 w-full items-center justify-center text-rail-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-rail-foreground"
           >
-            <Mark classes="size-6" />
+            {Publr.request.admin.brand_mark !== "" ? (
+              <img src={Publr.request.admin.brand_mark} alt="" class="size-7 rounded-full" />
+            ) : (
+              <Mark classes="size-6" />
+            )}
           </a>
           <nav aria-label={Publr.t("Sections")} data-slot="rail" class="flex flex-col items-center gap-1 pt-1">
             <RailItem
@@ -183,6 +188,7 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
           {children}
         </main>
       </div>
+      {Publr.request.admin.can_ask && <AskBubble csrf={Publr.request.session.csrf} base={Publr.request.admin.base} />}
     </Document>
   );
 }

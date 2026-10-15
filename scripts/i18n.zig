@@ -1,6 +1,6 @@
 //! The admin's messages for translators: `zig run scripts/i18n.zig -- <dir>...` writes a
-//! gettext template (`.pot`) to stdout of every message marked in the `.ptsx`, `.ts` and
-//! `.zig` files under the folders given: `Publr.t("…")`, `Publr.tx("context", "…")`,
+//! gettext template (`.pot`) to stdout of every message marked in the `.ptsx`, `.ts`,
+//! `.publr` and `.zig` files under the folders given: `Publr.t("…")`, `Publr.tx("context", "…")`,
 //! `Publr.tn("one", "other", n)`, and in Zig `translated("…")`, `translated_with("…", …)`,
 //! `translated_in("context", "…")`, `translated_count("one", "other", n)`. Each message once,
 //! with every place it is written.
@@ -188,7 +188,7 @@ fn wanted(path: []const u8) bool {
         std.mem.indexOf(u8, path, "node_modules") != null or
         std.mem.indexOf(u8, path, "zig-out") != null;
     const kind = std.mem.endsWith(u8, path, ".ptsx") or std.mem.endsWith(u8, path, ".ts") or
-        std.mem.endsWith(u8, path, ".zig");
+        std.mem.endsWith(u8, path, ".publr") or std.mem.endsWith(u8, path, ".zig");
 
     return kind and !skipped;
 }

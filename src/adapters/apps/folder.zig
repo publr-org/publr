@@ -262,8 +262,9 @@ fn refuse_compiled_parts(
     } else |_| {}
 }
 
-/// `**/*.publr` under the app, by their app-relative paths; `public/` and `interactive/` hold
-/// no templates, and a template sits in a folder, never at the app's root.
+/// `**/*.publr` and `content/**/*.md` under the app, by their app-relative paths; `public/`
+/// and `interactive/` hold no templates, and a template sits in a folder, never at the app's
+/// root.
 fn read_templates(arena: std.mem.Allocator, io: std.Io, app_dir: []const u8) ![]const File {
     var root = try std.Io.Dir.cwd().openDir(io, app_dir, .{
         .iterate = true,
@@ -282,7 +283,7 @@ fn read_templates(arena: std.mem.Allocator, io: std.Io, app_dir: []const u8) ![]
             continue;
         }
 
-        const is_template = @import("../../template.zig").is_source(entry.basename);
+        const is_template = @import("../../template.zig").is_source(entry.path);
 
         if (!is_template or files.items.len == templates_max) {
             continue;

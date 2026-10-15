@@ -192,6 +192,13 @@ fn declaration(compiler: *Compiler, line: []const u8) Error!void {
         return publr_call(compiler, name, rhs);
     }
 
+    const words = std.mem.startsWith(u8, rhs, "Publr") and
+        @import("expression.zig").words_call(rhs["Publr".len..]);
+
+    if (words) {
+        return compiler.script("Publr's words (Publr.t, Publr.tn, Publr.tx)", .{});
+    }
+
     if (std.mem.startsWith(u8, rhs, "Publr.")) {
         return compiler.fail(
             "Publr.* is namespaced by when the answer is known: Publr.build.* or " ++
@@ -573,6 +580,12 @@ fn data_call(compiler: *Compiler, name: []const u8, rhs: []const u8, call: []con
         return money_call(compiler, name, args);
     }
 
+    if (call_of(call, "mediaUrl(")) |args| {
+        if (std.mem.indexOfScalar(u8, args, ',') == null) {
+            return media_url_call(compiler, name, args);
+        }
+    }
+
     const scripted = [_][]const u8{
         "get(", "findOne(", "find(", "param(", "query(", "media(", "mediaUrl(", "languages(",
     };
@@ -617,6 +630,33 @@ fn money_call(compiler: *Compiler, name: []const u8, args: []const u8) Error!voi
             .object = object,
             .key = key,
             .currency = currency,
+        },
+    });
+}
+
+/// `mediaUrl(settings.data.logo)`: the file a media field of an entry holds, at its address.
+/// With a size it runs as script.
+fn media_url_call(compiler: *Compiler, name: []const u8, args: []const u8) Error!void {
+    std.debug.assert(name.len > 0);
+
+    const field = std.mem.trim(u8, args, " \t");
+    const at = std.mem.indexOf(u8, field, ".data.") orelse {
+        return compiler.script("mediaUrl of something not an entry's field runs as script", .{});
+    };
+    const object = field[0..at];
+    const key = field[at + ".data.".len ..];
+    const owner = compiler.find_local(object) orelse {
+        return compiler.fail("`{s}` is not a frontmatter entry", .{object});
+    };
+
+    if (owner.type != .entry or !expression.is_identifier(key)) {
+        return compiler.script("mediaUrl of something not an entry's field runs as script", .{});
+    }
+
+    try declare(compiler, name, .string, .{
+        .media_url = .{
+            .object = object,
+            .key = key,
         },
     });
 }

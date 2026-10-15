@@ -12,6 +12,7 @@ import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
 import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
+import { TalkKey } from "../components/TalkKey.ptsx";
 
 export type SettingsAiProps = {
   /** The providers installed, the one in use first. */
@@ -147,6 +148,7 @@ export function SettingsAi({ providers, offered, catalog, notice, problem }: Set
             </CardBody>
           </Card>
         ))}
+        {providers.length > 0 && <TalkKey />}
         {offered.length > 0 && (
           <div class="flex flex-col gap-3">
             <SectionTitle title={Publr.t("Set up another")} />

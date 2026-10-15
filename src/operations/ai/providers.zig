@@ -156,6 +156,31 @@ pub fn answerer(ctx: *Ctx) Error!?Answerer {
     return null;
 }
 
+/// The provider that turns speech into text: the chosen one when it hears, else the first
+/// installed one with its key set that does; null for none.
+pub fn hearer(ctx: *Ctx) Error!?[]const u8 {
+    std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(listed_max > 0);
+
+    const chosen = try store.settings.get(ctx.db, ctx.arena, provider_key) orelse "";
+    const listed = try installed(ctx, chosen);
+    var first: ?[]const u8 = null;
+
+    for (listed) |one| {
+        if (!one.key_set or !one.description.speech) {
+            continue;
+        }
+
+        if (one.chosen) {
+            return one.plugin;
+        }
+
+        first = first orelse one.plugin;
+    }
+
+    return first;
+}
+
 /// Whether some provider is installed or scripted, without asking any: for the Overview.
 pub fn any(ctx: *Ctx) bool {
     std.debug.assert(ctx.now_ms >= 0);

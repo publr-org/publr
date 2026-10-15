@@ -58,6 +58,23 @@ pub const Expr = struct {
         logical: Logical,
         /// A template string: literal runs and string or number holes.
         template: []const TemplatePart,
+        /// `Publr.t(…)`, `Publr.tn(…)`, `Publr.tx(…)`: the page's words in its language.
+        words: Words,
+    };
+
+    pub const Words = struct {
+        context: []const u8 = "",
+        id: []const u8,
+        /// The source's plural (`{count} projects`), empty for a message without one.
+        plural: []const u8 = "",
+        count: ?*const Expr = null,
+        values: []const WordValue = &.{},
+    };
+
+    /// `{ name: value }`: what one `{name}` of a message is filled with.
+    pub const WordValue = struct {
+        name: []const u8,
+        value: *const Expr,
     };
 
     pub const Member = struct {
@@ -163,6 +180,9 @@ pub const Decl = struct {
         /// `Publr.build.money(<entry>.data.<key>)`, or with `, '<code>'`: the amount the
         /// field holds in the site's default (or that) currency, as the site writes it.
         money: Money,
+        /// `Publr.build.mediaUrl(<entry>.data.<key>)`: the address of the file a media field
+        /// holds; empty when it holds none, or one the visitor may not see.
+        media_url: References,
         /// `Publr.request.userField('<group>.<field>')`: a custom field of the signed-in
         /// user, as text; null when nobody is signed in or the field is empty.
         user_field: []const u8,
@@ -242,8 +262,8 @@ pub const Node = union(enum) {
     text: []const u8,
     /// `{expr}`: written escaped by type.
     value: Expr,
-    /// `set:html={expr}`: written raw.
-    raw: Expr,
+    /// `set:html={expr}`: written sanitized; `set:markdown={expr}`: converted, then the same.
+    raw: Raw,
     /// ` name="..."` from an `={expr}` attribute: strings escaped, an optional only when
     /// present, a boolean as a bare attribute, a number printed.
     attr: Attr,
@@ -273,6 +293,10 @@ pub const Node = union(enum) {
     pub const Attr = struct {
         name: []const u8,
         expr: Expr,
+    };
+    pub const Raw = struct {
+        expr: Expr,
+        markdown: bool,
     };
     pub const Loop = struct {
         collection: []const u8,

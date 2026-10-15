@@ -22,6 +22,7 @@ const operation = @import("operation.zig");
 const Grant = @import("grant.zig").Grant;
 const PluginCtx = @import("plugin/context.zig").PluginCtx;
 const ProgressCtx = @import("context.zig").Ctx;
+const speech = @import("ai/speech.zig");
 
 pub const Role = lib_ai.Role;
 pub const Part = lib_ai.Part;
@@ -59,6 +60,9 @@ pub fn error_message(arena: std.mem.Allocator, body: []const u8) []const u8 {
 }
 
 pub const describe_verb = "describe_provider";
+pub const transcribe_verb = speech.transcribe_verb;
+pub const Speech = speech.Speech;
+pub const Transcribe = speech.Transcribe;
 pub const read_verb = "read_page";
 
 /// What a page reads as, at most: the model reads it, not a person.
@@ -468,4 +472,8 @@ test "server-sent events are handed on a whole line at a time" {
     try std.testing.expectEqual(@as(usize, 2), seen.lines.items.len);
     try std.testing.expectEqualStrings("{\"x\":1}", seen.lines.items[0]);
     try std.testing.expectEqualStrings("[DONE]", seen.lines.items[1]);
+}
+
+test {
+    _ = speech;
 }

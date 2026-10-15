@@ -321,6 +321,7 @@ apps/courses/app.zon                      .{ .name = "courses", .label = "Course
 apps/courses/layouts/base.publr           the page around every page
 apps/courses/content/index.publr          /learn
 apps/courses/content/lessons/[slug].publr /learn/lessons/<slug>, one per lesson
+apps/courses/content/faq.md               /learn/faq, written in Markdown
 apps/courses/components/*.publr           parts pages import
 apps/courses/public/                      files served as they are, at /learn/<file>
 ```
@@ -370,10 +371,15 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
   entries; references are record ids (`product == ^._id`, `author->name`). The URL's query
   string is `Publr.request.param('error')`.
 - **The body** takes `{value}` (escaped), `set:html={value}` (markup,
-  sanitized: no scripts, styles, frames or `on…` attributes survive), `{items.map((item) =>
+  sanitized: no scripts, styles, frames or `on…` attributes survive), `set:markdown={value}`
+  (a Markdown text field, converted to HTML and sanitized the same way), `{items.map((item) =>
   (...))}`, `{test ? (...) : null}`, and `<Component prop="..." />` with `<slot />`. A
   layout or component reads `props.name`. Keep island directives and PJSX component
   calls in the outer markup; computed JSX can embed static `.publr` components.
+- **Markdown pages.** `content/faq.md` is a page: `key: value` frontmatter, `layout:
+  ../layouts/base.publr` with the other keys as the layout's props, the Markdown as its
+  slot. It suits writing kept with the code (docs, a changelog); words the owner edits stay
+  in records.
 - **Computed markup.** JavaScript expressions can generate arrays of JSX elements,
   including SVG patterns. Relative `.js` and `.ts` helpers use ES module imports.
   Static pages save the HTML; no browser JavaScript or Node installation is needed.

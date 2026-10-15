@@ -26,8 +26,10 @@ pub const operations = [_]type{ Fetch, stream.Stream, stream.Read };
 
 pub const stream = @import("http_stream.zig");
 const timed = @import("http_timed.zig");
+const form_parts = @import("http_form.zig");
 
 pub const headers_max: u32 = 16;
+pub const FormPart = form_parts.Part;
 /// What a plugin may send: a conversation with its pictures fits.
 pub const body_bytes_max: u32 = 8 << 20;
 /// What an answer may be.
@@ -55,6 +57,9 @@ pub const Fetch = struct {
         url: []const u8,
         headers: []const Header = &.{},
         body: []const u8 = "",
+        /// A form upload (multipart/form-data) in place of `body`, files as base64; the
+        /// `Content-Type` is set for it. No secret is filled in a form.
+        form: []const form_parts.Part = &.{},
     };
     pub const Out = struct {
         status: u16,
@@ -76,6 +81,8 @@ pub const Fetch = struct {
         .url = "https, or http to this machine; may hold {secret:NAME}",
         .headers = "Up to 16, as name and value; values may hold {secret:NAME}",
         .body = "Up to 8 MiB; may hold {secret:NAME}",
+        .form = "Up to 16 parts in place of the body: name, value, and for a file " ++
+            "file_name and content_type, its value base64",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -99,6 +106,10 @@ pub const Fetch = struct {
         }
 
         var filling = try Filling.of(ctx, plugin, in);
+
+        if (in.form.len > 0) {
+            try with_form(ctx, &filling, in);
+        }
 
         return send(ctx, method, &filling);
     }
@@ -195,6 +206,46 @@ pub const Filling = struct {
         return scrubbed;
     }
 };
+
+/// The request's body as the form `in` holds, and its `Content-Type`.
+fn with_form(ctx: *Ctx, filling: *Filling, in: Fetch.In) Error!void {
+    std.debug.assert(in.form.len > 0);
+
+    const too_many = in.form.len > form_parts.parts_max or filling.headers.len >= headers_max;
+
+    if (in.body.len > 0 or too_many) {
+        return error.Invalid;
+    }
+
+    var form_bytes: u64 = 0;
+
+    for (in.form) |part| {
+        form_bytes += part.value.len;
+    }
+
+    if (form_bytes > body_bytes_max) {
+        return error.Invalid;
+    }
+
+    var seed: [16]u8 = undefined;
+
+    ctx.io.random(&seed);
+
+    const written = form_parts.write(ctx.arena, in.form, seed) catch |err| return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        error.Invalid => error.Invalid,
+    };
+    const headers = try ctx.arena.alloc(std.http.Header, filling.headers.len + 1);
+
+    @memcpy(headers[0..filling.headers.len], filling.headers);
+    headers[filling.headers.len] = .{
+        .name = "Content-Type",
+        .value = written.content_type,
+    };
+    filling.headers = headers;
+    filling.body = written.body;
+    std.debug.assert(filling.body.len > 0);
+}
 
 fn asked(ctx: *Ctx, in: Fetch.In, storage: *[secrets_max][]const u8) Error![]const []const u8 {
     std.debug.assert(secrets_max > 0);
@@ -407,4 +458,5 @@ test "an address goes out over https, or plain http to this machine" {
 
 test {
     _ = timed;
+    _ = form_parts;
 }
