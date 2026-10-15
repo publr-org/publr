@@ -22,6 +22,7 @@ pub const Parts = struct {
 
 /// `verify`: core's tests, formatting and tidy, one compile of the core, for every change.
 /// `verify-full`: every gate check, each of which builds Publr its own way, before a commit.
+/// CI runs the same checks one named step at a time, so the first failure ends the run.
 pub fn add(builder: *std.Build, parts: Parts) void {
     std.debug.assert(builder.build_root.path != null);
     std.debug.assert(parts.fixture_plugins.names.len > 0);
@@ -33,8 +34,11 @@ pub fn add(builder: *std.Build, parts: Parts) void {
     slim.dependOn(parts.checks.core);
     slim.dependOn(parts.fmt);
     slim.dependOn(tidy_check);
+    const wasm_step = wasm.add_check(builder, parts.from);
+
     full.dependOn(parts.checks.step);
-    full.dependOn(wasm.add_check(builder, parts.from));
+    full.dependOn(wasm_step);
+    builder.step("wasm", "Build Publr for the browser's WebAssembly").dependOn(wasm_step);
     full.dependOn(parts.fmt);
     full.dependOn(tidy_check);
 
@@ -46,15 +50,18 @@ pub fn add(builder: *std.Build, parts: Parts) void {
         parts.fixture_plugins,
     );
 
-    full.dependOn(both_ways.step);
-    full.dependOn(smoke.add_check(
+    const smoke_step = smoke.add_check(
         builder,
         parts.checks.fixture_exe,
         parts.exe,
         parts.fixture_plugins.file_of("greeter"),
         both_ways.native,
         parts.fixture_plugins.file_of("postcard"),
-    ));
+    );
+
+    full.dependOn(both_ways.step);
+    full.dependOn(smoke_step);
+    builder.step("smoke", "Drive the built Publr through every entry point").dependOn(smoke_step);
 
     const parity_step = parity.add_check(builder, parts.checks, parts.fixture_plugins);
     const browser_step = browser.add_step(builder, parts.from);

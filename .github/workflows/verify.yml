@@ -14,6 +14,28 @@ jobs:
         with: { path: publr, fetch-depth: 0 }
       - uses: ./publr/.github/actions/workspace
 
-      - name: zig build verify-full
+      # verify-full's checks, one step each, quickest first: the first failure ends the run.
+      - name: Formatting, tidy and core's tests
         working-directory: publr
-        run: zig build verify-full -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary all
+        run: zig build verify -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures
+      - name: Every test
+        working-directory: publr
+        run: zig build test -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures
+      - name: WebAssembly build
+        working-directory: publr
+        run: zig build wasm -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures
+      - name: Fixture plugins sandboxed and compiled in
+        working-directory: publr
+        run: zig build two-mode -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures
+      - name: Smoke
+        working-directory: publr
+        run: zig build smoke -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures
+      - name: Printed examples
+        working-directory: publr
+        run: zig build parity -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures
+      - name: Upgrades from every release
+        working-directory: publr
+        run: zig build upgrade -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures
+      - name: Browser build
+        working-directory: publr
+        run: zig build browser -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures

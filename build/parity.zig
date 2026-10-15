@@ -24,6 +24,11 @@ pub fn add_check(
     run.addArtifactArg(exe);
     run.addArg(builder.pathFromRoot(".zig-cache/parity"));
     run.has_side_effects = true;
+    // The official plugins listed from a fixture, never the plugin server: no network.
+    run.setEnvironmentVariable(
+        "PUBLR_PLUGIN_CATALOG",
+        builder.pathFromRoot("scripts/parity/catalog"),
+    );
 
     std.debug.assert(run.argv.items.len == 3);
 

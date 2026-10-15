@@ -1,0 +1,12 @@
+{
+  "plugins": [
+    {
+      "name": "ai_example",
+      "label": "Example",
+      "summary": "Models on your own Example key",
+      "kind": "ai_provider",
+      "version": "0.1.0",
+      "module": "dist/ai_example.wasm"
+    }
+  ]
+}

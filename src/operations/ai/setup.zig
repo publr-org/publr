@@ -45,7 +45,12 @@ pub const Catalog = struct {
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
-        .offered = &.{},
+        .offered = &.{.{
+            .name = "ai_example",
+            .label = "Example",
+            .summary = "Models on your own Example key",
+            .installed = false,
+        }},
         .reached = true,
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
@@ -99,8 +104,8 @@ pub const SetUp = struct {
         \\Each provider's built module is fetched from the catalog and added as an installed
         \\plugin, as uploading it does, then enabled and granted sending requests out, its
         \\key and its raised limits: what a provider needs to answer. Anything else it asks
-        \\for waits for an administrator under Plugins. One already added is only enabled. All or none.
-        \\Administrators only.
+        \\for waits for an administrator under Plugins. One already added is only enabled.
+        \\All or none. Administrators only.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
