@@ -58,10 +58,11 @@ pub fn main(init: std.process.Init) !u8 {
 /// The operations whose examples cannot run here. Asking a model starts an agent beside a
 /// server, which the examples run without (smoke asks one of a running server); a fetch
 /// goes out to the network, and only a plugin may send one; an import downloads; choosing,
-/// testing and setting up a provider need a provider plugin, which the seeded project does
-/// not have; an update needs a running server and the network; a stream needs an agent; a
-/// removal list is made by a device; a trash entry by a removal; a browser call is asked
-/// by an agent and answered by a workspace page; a health case kept or unlinked needs a
+/// testing and setting up a provider, and turning speech into text, need a provider
+/// plugin, which the seeded project does not have; an update needs a running server and the
+/// network; a stream needs an agent; a removal list is made by a device; a trash entry by a
+/// removal; a browser call is asked by an agent and answered by a workspace page; a health
+/// case kept or unlinked needs a
 /// broken reference, which the seeded project has none of; choosing between translations,
 /// or listing what one leaves untranslated, needs plugins translating the admin, and it has
 /// none.
@@ -72,6 +73,7 @@ const skips = [_][]const u8{
     "ai.choose",
     "ai.test",
     "ai.set_up",
+    "ai.transcribe",
     "update.check",
     "update.apply",
     "update.rollback",
