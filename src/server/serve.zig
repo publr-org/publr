@@ -657,16 +657,19 @@ fn server_options(first_port: u16, browser: bool) http.Options {
     std.debug.assert(port_search_max > 0);
 
     if (browser) {
+        // The whole browser build's module in one response: 8.4 MiB in ReleaseSmall on
+        // 2026-10-06 once it resized images, 16.1 MiB on 2026-10-15, with room to grow.
+        const response_bytes_max: u32 = 32 << 20;
+
         return .{
             .address = loopback,
             .port = first_port,
             .connections_max = 8,
             // A visual page's whole document posts in one autosave.
             .request_bytes_max = limits.request_bytes_max,
-            .arena_bytes = limits.request_arena_bytes,
-            // The whole browser build's module in one response: 8.4 MiB in ReleaseSmall on
-            // 2026-10-06 once it resized images, with room to grow.
-            .response_bytes_max = 16 << 20,
+            // A file is read whole into the arena, in a buffer as large as a response.
+            .arena_bytes = limits.request_arena_bytes + response_bytes_max,
+            .response_bytes_max = response_bytes_max,
         };
     }
 
