@@ -12,8 +12,15 @@ pub const Answer = struct {
     err: []const u8,
 };
 
+/// A command for the local operator.
 const Envelope = struct {
     args: []const []const u8,
+};
+/// A command as the turn's device: a conversation in the admin builds on the site itself,
+/// never in a copy of it.
+const DeviceEnvelope = struct {
+    args: []const []const u8,
+    production: bool = true,
 };
 
 pub const Channel = struct {
@@ -49,7 +56,9 @@ pub const Channel = struct {
             .args = args,
         }, .{});
         const body = try operator.post(channel.io, arena, channel.session, "/_publr/cli", payload);
-        const answer = try std.json.parseFromSliceLeaky(Answer, channel.arena, body, .{});
+        const answer = try std.json.parseFromSliceLeaky(Answer, channel.arena, body, .{
+            .ignore_unknown_fields = true,
+        });
 
         if (answer.code != 0) {
             std.log.warn("{s} {s}: {s}", .{ args[1], args[2], answer.err });
@@ -74,7 +83,7 @@ pub const Channel = struct {
             channel.base,
         });
         const bearer = try std.fmt.allocPrint(channel.arena, "Bearer {s}", .{channel.token});
-        const envelope: Envelope = .{
+        const envelope: DeviceEnvelope = .{
             .args = args,
         };
         const payload = try std.json.Stringify.valueAlloc(channel.arena, envelope, .{});
@@ -112,6 +121,8 @@ pub const Channel = struct {
             };
         }
 
-        return std.json.parseFromSliceLeaky(Answer, channel.arena, body.written(), .{});
+        return std.json.parseFromSliceLeaky(Answer, channel.arena, body.written(), .{
+            .ignore_unknown_fields = true,
+        });
     }
 };

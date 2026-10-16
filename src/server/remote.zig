@@ -27,6 +27,16 @@ pub const Answer = struct {
     /// The name of the failure it ended with, empty for none.
     failure: []const u8 = "",
 };
+/// An answer without a failure's name, as every Publr answered before it had one.
+const Plain = struct {
+    code: u8,
+    out: []const u8,
+    err: []const u8,
+};
+/// A command without `production`, as every CLI sent before it had one.
+const Words = struct {
+    args: []const []const u8,
+};
 /// What a hosting service answers a device's write sent to the site itself without
 /// `--production`: the CLI starts work and sends it there instead.
 const work_failure = "WorkInABranch";
@@ -57,7 +67,9 @@ pub fn handle(
         });
     }
 
-    const envelope = std.json.parseFromSliceLeaky(Envelope, ctx.arena, request.body, .{}) catch {
+    const envelope = std.json.parseFromSliceLeaky(Envelope, ctx.arena, request.body, .{
+        .ignore_unknown_fields = true,
+    }) catch {
         return response.json(.bad_request, .{
             .@"error" = "invalid_body",
         });
@@ -96,6 +108,15 @@ pub fn handle(
         };
         break :blk 1;
     };
+
+    // Named only when there is one: a CLI from before `failure` reads the plain answer.
+    if (failed.len == 0) {
+        return response.json(.ok, Plain{
+            .code = code,
+            .out = out.written(),
+            .err = err.written(),
+        });
+    }
 
     try response.json(.ok, Answer{
         .code = code,
@@ -206,10 +227,16 @@ fn send(
     std.debug.assert(args.len > 0);
 
     const arena = init.arena.allocator();
-    const payload = try std.json.Stringify.valueAlloc(arena, Envelope{
-        .args = args,
-        .production = production,
-    }, .{});
+    // `production` only when said: a Publr from before it refuses words it does not know.
+    const payload = if (production)
+        try std.json.Stringify.valueAlloc(arena, Envelope{
+            .args = args,
+            .production = true,
+        }, .{})
+    else
+        try std.json.Stringify.valueAlloc(arena, Words{
+            .args = args,
+        }, .{});
     const reply = try post(init.io, arena, .{
         .url = try std.fmt.allocPrint(arena, "{s}{s}", .{ target, route }),
         .payload = payload,

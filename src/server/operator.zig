@@ -269,7 +269,9 @@ pub fn handle(
         return response.text(.forbidden, "Forbidden");
     }
 
-    const envelope = std.json.parseFromSliceLeaky(Envelope, ctx.arena, request.body, .{}) catch {
+    const envelope = std.json.parseFromSliceLeaky(Envelope, ctx.arena, request.body, .{
+        .ignore_unknown_fields = true,
+    }) catch {
         return response.text(.bad_request, "Bad Request");
     };
     var out: std.Io.Writer.Allocating = .init(ctx.arena);
