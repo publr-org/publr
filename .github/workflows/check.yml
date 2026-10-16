@@ -1,0 +1,21 @@
+name: check
+
+# Every push: formatting and tidy, without building Publr. The full verify (verify.yml)
+# runs in a Release, before anything is published.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: publr }
+      - uses: ./publr/.github/actions/workspace
+
+      - name: Formatting and tidy
+        working-directory: publr
+        run: zig build check -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures

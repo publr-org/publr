@@ -1,7 +1,8 @@
 name: Release
 
-# Actions → Release → Run, choosing patch, minor or major. It releases main as it is, once
-# verify has passed on that commit. The next version is built first; only then is its
+# Actions → Release → Run, choosing patch, minor or major. It releases main as it is: every
+# gate check (verify.yml) runs beside the builds, and nothing is published unless it
+# passes. The next version is built first; only then is its
 # commit tagged and released, so a failed run leaves no tag or Release. The tag holds the
 # commit tested plus the version commit, and is merged into main afterwards, so pushing to
 # main while a release runs is fine.
@@ -51,15 +52,6 @@ jobs:
           if [ "$GITHUB_REF" != refs/heads/main ]; then
             echo "::error::release from main, not $GITHUB_REF"; exit 1
           fi
-          verified="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow verify.yml \
-            --commit "$GITHUB_SHA" --limit 1 --json status,conclusion \
-            --jq '.[] | "\(.status) \(.conclusion)"')"
-          case "$verified" in
-            "completed success") ;;
-            "") echo "::error::verify has not run on $GITHUB_SHA; push a commit first"; exit 1 ;;
-            completed*) echo "::error::verify failed on $GITHUB_SHA"; exit 1 ;;
-            *) echo "::error::verify is still running on $GITHUB_SHA; release when it passes"; exit 1 ;;
-          esac
           current="$(sed -nE 's/^ *\.version = "([0-9]+\.[0-9]+\.[0-9]+)",$/\1/p' build.zig.zon)"
           IFS=. read -r major minor patch <<< "$current"
           case "$BUMP" in
@@ -228,8 +220,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: "${{ matrix.file }}", path: "${{ matrix.file }}" }
 
+  verify:
+    needs: version
+    uses: ./.github/workflows/verify.yml
+
   release:
-    needs: [version, upgrade, build]
+    needs: [version, upgrade, build, verify]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}

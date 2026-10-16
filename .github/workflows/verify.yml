@@ -1,9 +1,10 @@
 name: verify
 
+# Every gate check, run by a Release before it publishes (release.yml), or by hand.
+
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_call:
+  workflow_dispatch:
 
 jobs:
   verify:

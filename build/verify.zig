@@ -20,6 +20,7 @@ pub const Parts = struct {
     fmt: *std.Build.Step,
 };
 
+/// `check`: formatting and tidy alone, in seconds, on every push.
 /// `verify`: core's tests, formatting and tidy, one compile of the core, for every change.
 /// `verify-full`: every gate check, each of which builds Publr its own way, before a commit.
 /// CI runs the same checks one named step at a time, so the first failure ends the run.
@@ -31,6 +32,10 @@ pub fn add(builder: *std.Build, parts: Parts) void {
     const slim = builder.step("verify", "Core's tests, formatting and tidy: the quick check");
     const full = builder.step("verify-full", "Run every gate check");
 
+    const check = builder.step("check", "Formatting and tidy, without building Publr");
+
+    check.dependOn(parts.fmt);
+    check.dependOn(tidy_check);
     slim.dependOn(parts.checks.core);
     slim.dependOn(parts.fmt);
     slim.dependOn(tidy_check);

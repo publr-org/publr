@@ -10,8 +10,11 @@ each concern lives in `build/<topic>.zig`.
 | `zig build` | Build `zig-out/bin/publr` with the apps under `apps/` (none in this repository) and check they compile (`publr check-apps`). The first build also compiles the Zig compiler the binary carries (`../lib/zig`, about two minutes); the cache keeps it after that. |
 | `zig build run -- <args>` | Build and run. |
 | `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every plugin compiled in from `plugins/` (`publr.zon`), and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
+| `zig build check` | `zig fmt --check` + `tidy`, without building Publr: seconds, the check on every push. |
 | `zig build verify` | The core's tests + `zig fmt --check` + `tidy`: one compile of the core, the check to run after every change. |
 | `zig build verify-full` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `two-mode` + `browser` + `upgrade`. Each builds Publr its own way, so it takes minutes; run it before a commit. |
+| `zig build wasm` | Compile the core for wasm32-wasi; part of `verify-full`. |
+| `zig build smoke` | Run the built binary through every entry point from a fresh folder; part of `verify-full`. |
 | `zig build parity` | Run the example every `--help` prints and check its answer. |
 | `zig build upgrade` | Update every release's fixture in `fixtures/upgrade/` with this build and check it (`-Dupgrade-from=<release>` for one, `-Dupgrade-previous=<publr>` to prove the release before still runs on the result, `-Dupgrade-binary=<publr>` to test that binary instead); part of `verify-full`. See [Updates](updates.md). |
 | `zig build upgrade-fixture` | Make this version's fixture and carry the lived site on to it, with this build or `-Dupgrade-binary`; the Release workflow runs it with the release binary. |
@@ -164,8 +167,11 @@ matching its documented one.
 
 ## Continuous integration
 
-`.github/workflows/verify.yml` runs `zig build verify-full` on every push to `main`
-and every pull request. The browser smoke is agent-only, so it is skipped there.
+`.github/workflows/check.yml` runs `zig build check` (formatting and tidy, without
+building Publr) on every push to `main` and every pull request. `verify.yml` runs every
+check of `verify-full`, one step each so the first failure ends the run; a Release runs
+it beside its builds and publishes nothing unless it passes, and it can be run by hand.
+The browser smoke is agent-only, so it is skipped there.
 The sibling repositories come from `.github/actions/workspace`, which checks
 out the latest `main` of `lib`, `pjsx`, `jit`, `ui`, `icons` and `publrjs`
 beside this one, builds `publrjs` with Vite+ into `../publr-js/dist`, and
