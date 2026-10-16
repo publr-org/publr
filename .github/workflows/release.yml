@@ -1,8 +1,10 @@
 name: Release
 
 # Actions → Release → Run, choosing patch, minor or major. It releases main as it is, once
-# verify has passed on that commit. The next version is built first; only then is it
-# committed to main, tagged and released, so a failed run leaves no commit, tag or Release.
+# verify has passed on that commit. The next version is built first; only then is its
+# commit tagged and released, so a failed run leaves no tag or Release. The tag holds the
+# commit tested plus the version commit, and is merged into main afterwards, so pushing to
+# main while a release runs is fine.
 #
 # The kind must match the database (`.agents/specs/updates.md`): a patch has no migration,
 # a minor's migration only adds, a one-way migration needs a major. The Linux x86_64 build
@@ -42,7 +44,9 @@ jobs:
       - name: The next version
         id: next
         working-directory: publr
-        env: { BUMP: "${{ inputs.bump }}" }
+        env:
+          BUMP: "${{ inputs.bump }}"
+          SIGNING_KEY: "${{ secrets.PUBLR_RELEASE_SIGNING_KEY }}"
         run: |
           if [ "$GITHUB_REF" != refs/heads/main ]; then
             echo "::error::release from main, not $GITHUB_REF"; exit 1
@@ -65,6 +69,9 @@ jobs:
           esac
           if git ls-remote --exit-code --tags origin "v$version" >/dev/null; then
             echo "::error::v$version already exists"; exit 1
+          fi
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "::error::secret PUBLR_RELEASE_SIGNING_KEY is not set: releases must be signed"; exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Releasing \`v$version\` ($BUMP from $current) from \`$(git rev-parse --short HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
@@ -229,7 +236,7 @@ jobs:
       TAG: v${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-        with: { path: publr }
+        with: { path: publr, fetch-depth: 0 }
       - uses: actions/download-artifact@v4
         with: { path: dist, pattern: "publr-*", merge-multiple: true }
       - uses: actions/download-artifact@v4
@@ -266,7 +273,8 @@ jobs:
           test "$(wc -c < SHA256SUMS.sig)" -eq 64
 
       # The fixture this release made and the lived site go in its own commit, so the tag
-      # holds them; nothing ever changes them after.
+      # holds them; nothing ever changes them after. Only the tag is pushed: main may have
+      # moved since the commit tested, and it takes the release afterwards.
       - name: Commit the version and tag it
         working-directory: publr
         run: |
@@ -276,7 +284,7 @@ jobs:
           git add -A fixtures/upgrade src/lib/db/migrations src/lib/db/migrations.zig
           git commit -qam "Release $TAG"
           git tag "$TAG"
-          git push --atomic origin HEAD:main "$TAG"
+          git push origin "$TAG"
 
       - name: Release
         run: |
@@ -304,3 +312,20 @@ jobs:
             --title "$TAG" \
             --notes-file notes.md \
             --generate-notes
+
+      # Main takes the release: a fast-forward when nothing was pushed meanwhile, else a
+      # merge, so the tag stays in main's history (the next release finds it there).
+      - name: Merge the release into main
+        working-directory: publr
+        run: |
+          for attempt in 1 2 3; do
+            git fetch -q origin main
+            git checkout -q -B main origin/main
+            if ! git merge -q --no-edit -m "Merge $TAG into main" "$TAG"; then
+              echo "::error::$TAG is released, but main changed the same lines: merge $TAG into main by hand"
+              exit 1
+            fi
+            git push origin main && exit 0
+          done
+          echo "::error::$TAG is released, but main kept moving: merge $TAG into main by hand"
+          exit 1
