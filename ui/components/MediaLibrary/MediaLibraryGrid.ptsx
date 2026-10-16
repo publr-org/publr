@@ -30,7 +30,7 @@ export function MediaLibraryGrid() {
           {state.items.map((item) => (
             <AssetCard look="tile" key={item.id}>
               <AssetCardSelect>
-                <Checkbox value={item.id} checked={item.selected} onChange={toggled} />
+                <Checkbox value={item.id} checked={item.selected} label={Publr.t("Select {name}", { name: item.title })} onChange={toggled} />
               </AssetCardSelect>
               <a href={item.href} onClick={follow} class="block outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" aria-label={item.title}>
                 <AssetCardPreview>

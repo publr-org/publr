@@ -293,7 +293,7 @@ administrator like a permission) or it does not run installed.
 | `.after` | `operation = "<name>"` | `fn (*PluginCtx, *Op.In, *const Op.Out) sdk.Error!void`: may refuse, which rolls back | both |
 | `.on` | `event = "<operation or notice name>"` | `fn (*PluginCtx, sdk.middleware.Event) void`: sees, cannot refuse | both |
 | `.display` | `point = "record.title"`, `content_type = "<handle>"` | `fn (*PluginCtx, *sdk.display_hooks.Batch) sdk.Error!void` | both |
-| `.pre` | every call | `fn (*sdk.Ctx, []const u8) sdk.Error!void` | built-in |
+| `.pre` | every call | `fn (*sdk.Ctx, []const u8, sdk.operation.Kind) sdk.Error!void`: the operation's name and whether it reads or writes | built-in |
 
 ```zig
 pub const middleware = [_]type{Shout};

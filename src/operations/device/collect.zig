@@ -19,7 +19,9 @@ pub const operations = [_]type{ Poll, Claim, Redeem };
 fn request_of(ctx: *Ctx, device_code: []const u8) Error!?store.device_requests.Request {
     std.debug.assert(ctx.now_ms >= 0);
 
-    if (device_code.len != device.device_code_len) {
+    const offered = model.valid_offer_code(device_code);
+
+    if (device_code.len != device.device_code_len and !offered) {
         return null;
     }
 
@@ -96,6 +98,8 @@ pub const Claim = struct {
     pub const open = true;
     pub const In = struct {
         device_code: []const u8,
+        /// For a sign-in offered from the admin, which has no name of the device's own.
+        name: ?[]const u8 = null,
     };
     pub const Out = struct {
         token: []const u8,
@@ -111,7 +115,9 @@ pub const Claim = struct {
         .scope = "drafts",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
-        .device_code = "What `device start` answered",
+        .device_code = "What `device start` answered, or the code `device offer` answered",
+        .name = "What the device is called, 1 to 80 characters; the request's own name " ++
+            "when left out",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .token = "`id.secret`, for `Authorization: Bearer`",
@@ -131,9 +137,15 @@ pub const Claim = struct {
 
         try store.device_requests.remove(ctx.db, device.hash_of(in.device_code));
 
+        const named = in.name orelse request.name;
+
+        if (!model.valid_name(named)) {
+            return error.Invalid;
+        }
+
         const created = try store.devices.create(ctx.db, ctx.io, ctx.arena, .{
             .user_id = user_id,
-            .name = request.name,
+            .name = named,
             .scope = request.scope,
         }, ctx.now_ms);
 

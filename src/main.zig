@@ -57,11 +57,19 @@ fn run(init: std.process.Init) !u8 {
     }
 
     // Everything goes to the Publr named, its help and its plugins' commands too; signing in
-    // and out of it are this machine's.
+    // and out of it, and the folder's open work, are this machine's.
+    var production = taken(&rest, "--production");
+
     if (try site_of(init, &rest)) |address| {
-        if (rest.len > 0 and !is_account(rest[0])) {
-            return try publr.remote.forward(init, address, rest, out);
+        production = taken(&rest, "--production") or production;
+
+        if (rest.len > 0 and !is_account(rest[0]) and !is_local_work(rest)) {
+            return try publr.remote.forward(init, address, rest, production, out);
         }
+    }
+
+    if (rest.len >= 1 and is_local_work(rest)) {
+        return try publr.work.run(init, out, rest);
     }
 
     if (try tool(init, out, db_path, rest)) |code| {
@@ -110,11 +118,40 @@ fn is_account(command: []const u8) bool {
         std.mem.eql(u8, command, "whoami");
 }
 
+/// `publr work` and `work done`: the folder's, never sent; `work start` is the site's.
+fn is_local_work(args: []const []const u8) bool {
+    std.debug.assert(args.len > 0);
+
+    const starts = args.len >= 2 and std.mem.eql(u8, args[1], "start");
+
+    return std.mem.eql(u8, args[0], "work") and !starts;
+}
+
+/// Whether the words start with `flag`, taken off them when they do.
+fn taken(rest: *[]const []const u8, flag: []const u8) bool {
+    std.debug.assert(flag.len > 0);
+
+    if (rest.len == 0 or !std.mem.eql(u8, rest.*[0], flag)) {
+        return false;
+    }
+
+    rest.* = rest.*[1..];
+
+    return true;
+}
+
 /// The Publr elsewhere a command goes to: `--site <address>` (taken off the words), else
-/// `PUBLR_SITE`; null to run it here.
+/// `PUBLR_SITE`, else the site of the work open in this folder; null to run it here.
 fn site_of(init: std.process.Init, rest: *[]const []const u8) !?[]const u8 {
     const named = rest.len >= 2 and std.mem.eql(u8, rest.*[0], "--site");
-    const site = if (named) rest.*[1] else init.environ_map.get("PUBLR_SITE") orelse return null;
+    const site = if (named)
+        rest.*[1]
+    else if (init.environ_map.get("PUBLR_SITE")) |variable|
+        variable
+    else if (try publr.work.open(init, null)) |work|
+        work.site
+    else
+        return null;
 
     if (named) {
         rest.* = rest.*[2..];

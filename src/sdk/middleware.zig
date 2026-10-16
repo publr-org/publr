@@ -87,7 +87,7 @@ test "validate accepts a before middleware and an event subscriber" {
     };
     const Gate = struct {
         pub const stage: Stage = .pre;
-        pub fn run(_: *Ctx, _: []const u8) Error!void {}
+        pub fn run(_: *Ctx, _: []const u8, _: operation.Kind) Error!void {}
     };
     comptime validate(Before);
     comptime validate(Listener);

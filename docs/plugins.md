@@ -656,6 +656,21 @@ profile, in a box named after the plugin, as `about` is. One plugin at a time; c
 only, for now. A demo running in a browser tab, which no agent can sign in to, says how to
 build with an agent on the visitor's own machine.
 
+### An agent's work in a copy
+
+A host that keeps copies of a site (Publr Cloud's branches) names the operation that starts
+an agent's work in one: `pub const work_start = StartWork;`. `publr work start` from a
+device runs it; its answer (`name`, `address`, `preview`, `merge`) tells the device's CLI
+where that folder's commands go from then on. A device's call says `--production` to mean
+the site itself, which a pre hook reads as `ctx.production`; a pre hook that refuses a
+device's write with the failure `WorkInABranch` makes the CLI start work and send the
+write there. With `work_start` declared, the Overview's agent steps say that changes go to
+a branch for the person to merge. One plugin at a time; compiled in only.
+
+A host's plugin also says `pub const hosted = true`: the project's folder is then never
+the person's, so the Overview always gives the steps for a site elsewhere (get Publr, sign
+in, install the skill), even at an address that looks like this machine.
+
 ### Variants and System settings tabs
 
 A plugin may declare the one **variant dimension** (`pub const variants:

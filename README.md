@@ -21,12 +21,20 @@ Status: **v0.2, pre-release.** Nothing is stable yet.
 
 ## Install
 
-One binary, in a folder with your sites. The installer asks where (empty: here),
-downloads the build for your OS and CPU into it, verifies its checksum and offers
-to make your first site. Nothing goes on your PATH:
+The installer downloads the build for your OS and CPU, verifies its checksum and
+puts the `publr` command in `~/.local/bin`. That is all an agent needs to work on a
+site that runs elsewhere, such as on Cloud:
 
 ```
 curl -fsSL https://publr.dev/install.sh | sh
+```
+
+To run sites on this computer, add `sites`: it also makes a folder for them, with its
+own copy of the binary so updating the command never changes them, and offers to make
+your first site:
+
+```
+curl -fsSL https://publr.dev/install.sh | sh -s sites
 ```
 
 If you would rather not pipe a script into your shell, fetch it, check it
@@ -35,7 +43,7 @@ against the hash published here, and only then run it:
 ```
 curl -fsSL https://raw.githubusercontent.com/publr-org/publr/v0.2.0/install.sh -o install.sh
 echo "<sha256 of install.sh, published with each release>  install.sh" | shasum -a 256 -c -
-sh install.sh
+sh install.sh          # or: sh install.sh sites
 ```
 
 Or pick a build by hand from the [releases page](https://github.com/publr-org/publr/releases)

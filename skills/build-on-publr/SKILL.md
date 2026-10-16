@@ -30,6 +30,10 @@ templates read at runtime, never compiled). It is never a modified core.
      goes to it: no address or flag needed.
    - Elsewhere (a server, Publr Cloud): `publr login <address>` prints a link its owner
      approves in that Publr's admin; then `publr --site <address> <command>`. Never ask for a password or a token.
+   - On Publr Cloud your changes go to a branch, never the live site: start one per task
+     with `publr --site <address> work start --name "<the task>"`; the folder's later
+     commands go there (`publr work` shows it). When done, give the person its Preview and
+     Merge links. Change the live site only when they ask, adding `--production` to that call.
 4. **Plan before code.** Say what the people running the site will see in the admin and
    what visitors will see. Agree it with the person you work for.
 
@@ -70,4 +74,4 @@ Most needs stop at 2, 3 or 4. Reaching rung 5 is rare and must be justified in w
 - [ ] The rules in `publr agents` ("How to build well") hold for every plugin and app.
 - [ ] Every operation documented; a call without permission is denied and changes nothing.
 - [ ] The admin and the pages match what was agreed, checked in a browser.
-- [ ] What waits for the person (permissions, drafts to publish) is listed for them.
+- [ ] What waits for the person (permissions, drafts to publish, a branch to merge) is listed for them.

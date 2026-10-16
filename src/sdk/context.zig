@@ -262,6 +262,9 @@ pub const Ctx = struct {
     streams: ?*anyopaque = null,
     /// Updating Publr, where `serve` runs it.
     updater: ?Updater = null,
+    /// The device sending the call said `--production`: it means the site itself, not a copy
+    /// of it. The core reads it nowhere; a hosting service's plugin may.
+    production: bool = false,
     /// A write so far changed what visitors see (a `published` or `unpublished` notice):
     /// what a `drafts` device may not do.
     publishes: bool = false,

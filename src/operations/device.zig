@@ -35,7 +35,8 @@ pub const namespace: sdk.operation.Namespace = .{
     ,
 };
 
-pub const operations = [_]type{Start} ++ collect.operations ++ people.operations;
+pub const operations = [_]type{ Start, @import("device/offer.zig").Offer } ++
+    collect.operations ++ people.operations;
 
 pub const example_device_code = "9f2c" ** 16;
 
@@ -99,7 +100,12 @@ pub const Start = struct {
 
         const device_code = std.fmt.bytesToHex(secret, .lower);
         const expires_at = ctx.now_ms + model.request_lifetime_ms;
-        const user_code = try insert(ctx, &device_code, in, expires_at);
+        const user_code = try insert(ctx, .{
+            .code_hash = hash_of(&device_code),
+            .name = in.name,
+            .scope = in.scope,
+            .expires_at = expires_at,
+        });
         const path = std.fmt.allocPrint(ctx.arena, "{s}?code={s}", .{ approve_path, user_code });
 
         return .{
@@ -109,34 +115,6 @@ pub const Start = struct {
             .expires_at = expires_at,
             .interval_s = model.poll_interval_s,
         };
-    }
-
-    /// The request stored under a fresh user code; a code another waiting request holds is
-    /// drawn again.
-    fn insert(ctx: *Ctx, device_code: []const u8, in: In, expires_at: i64) Error![]const u8 {
-        std.debug.assert(device_code.len == device_code_len);
-
-        var attempt: u32 = 0;
-
-        while (attempt < user_code_attempts) : (attempt += 1) {
-            var random: [8]u8 = undefined;
-            ctx.io.random(&random);
-
-            const user_code = model.user_code(random);
-            const inserted = try store.device_requests.insert(ctx.db, .{
-                .code_hash = hash_of(device_code),
-                .user_code = &user_code,
-                .name = in.name,
-                .scope = in.scope,
-                .expires_at = expires_at,
-            }, ctx.now_ms);
-
-            if (inserted) {
-                return ctx.arena.dupe(u8, &user_code) catch error.OutOfMemory;
-            }
-        }
-
-        return error.Busy;
     }
 };
 
@@ -148,6 +126,42 @@ pub fn hash_of(device_code: []const u8) [32]u8 {
     std.crypto.hash.sha2.Sha256.hash(device_code, &hash, .{});
 
     return hash;
+}
+
+pub const Stored = struct {
+    code_hash: [32]u8,
+    name: []const u8,
+    scope: []const u8,
+    expires_at: i64,
+};
+
+/// A request stored under a fresh user code, which it answers; a code another waiting
+/// request holds is drawn again.
+pub fn insert(ctx: *Ctx, new: Stored) Error![]const u8 {
+    std.debug.assert(new.name.len > 0);
+    std.debug.assert(new.expires_at > ctx.now_ms);
+
+    var attempt: u32 = 0;
+
+    while (attempt < user_code_attempts) : (attempt += 1) {
+        var random: [8]u8 = undefined;
+        ctx.io.random(&random);
+
+        const user_code = model.user_code(random);
+        const inserted = try store.device_requests.insert(ctx.db, .{
+            .code_hash = new.code_hash,
+            .user_code = &user_code,
+            .name = new.name,
+            .scope = new.scope,
+            .expires_at = new.expires_at,
+        }, ctx.now_ms);
+
+        if (inserted) {
+            return ctx.arena.dupe(u8, &user_code) catch error.OutOfMemory;
+        }
+    }
+
+    return error.Busy;
 }
 
 const registry = @import("../server/registry.zig");

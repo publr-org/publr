@@ -14,7 +14,7 @@ export type TermParentProps = {
 export function TermParent({ parents, is_root }: TermParentProps) {
   return (
     <EditorAsideSection title={Publr.t("Parent")}>
-      <NativeSelect id="parent" name="parent" form="record">
+      <NativeSelect id="parent" name="parent" form="record" label={Publr.t("Parent")}>
         <option value="" selected={is_root}>
           {Publr.t("None (a root term)")}
         </option>

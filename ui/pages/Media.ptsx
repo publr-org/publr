@@ -1,6 +1,7 @@
 import { Publr } from "publr-jsx";
 import { ListDetailPage } from "@publr/admin/ListDetailPage.ptsx";
 import { MediaLibrary } from "../components/MediaLibrary/MediaLibrary.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
 
 export type MediaProps = {
   folder: string;
@@ -108,6 +109,9 @@ export function Media({
 }: MediaProps) {
   return (
     <ListDetailPage title={Publr.t("Media")}>
+      <Heading level={1} size="sm" classes="sr-only">
+        {Publr.t("Media")}
+      </Heading>
       <MediaLibrary
         type="media"
         files_at="/admin/media/"

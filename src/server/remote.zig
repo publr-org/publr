@@ -9,6 +9,7 @@ const identity_module = @import("../adapters/rest/identity.zig");
 const registry = @import("registry.zig");
 const sdk = @import("../sdk.zig");
 const credentials = @import("credentials.zig");
+const work = @import("work.zig");
 const Project = @import("project.zig").Project;
 
 pub const route = "/api/cli";
@@ -16,12 +17,19 @@ const body_bytes_max: u32 = 1 << 20;
 
 pub const Envelope = struct {
     args: []const []const u8,
+    /// The command said `--production` (`ctx.production`).
+    production: bool = false,
 };
 pub const Answer = struct {
     code: u8,
     out: []const u8,
     err: []const u8,
+    /// The name of the failure it ended with, empty for none.
+    failure: []const u8 = "",
 };
+/// What a hosting service answers a device's write sent to the site itself without
+/// `--production`: the CLI starts work and sends it there instead.
+const work_failure = "WorkInABranch";
 
 /// `POST /api/cli`: a device's command, run as the device; answered with its exit code,
 /// output and errors. Anyone else is told to sign in.
@@ -54,8 +62,16 @@ pub fn handle(
             .@"error" = "invalid_body",
         });
     };
+    const args = try work_command(ctx.arena, envelope.args) orelse {
+        return response.json(.ok, Answer{
+            .code = 1,
+            .out = "",
+            .err = "",
+        });
+    };
     var out: std.Io.Writer.Allocating = .init(ctx.arena);
     var err: std.Io.Writer.Allocating = .init(ctx.arena);
+    var failed: []const u8 = "";
     const code = cli.CLI(registry.SDK).run(.{
         .db = project.connection,
         .io = project.io,
@@ -72,7 +88,9 @@ pub fn handle(
         .live = project.live,
         .updater = project.updater,
         .device = identity.caller,
-    }, envelope.args, &out.writer) catch |failure| blk: {
+        .production = envelope.production,
+        .failed = &failed,
+    }, args, &out.writer) catch |failure| blk: {
         err.writer.print("publr: {s}\n", .{@errorName(failure)}) catch {
             return response.text(.internal_server_error, @errorName(failure));
         };
@@ -83,15 +101,42 @@ pub fn handle(
         .code = code,
         .out = out.written(),
         .err = err.written(),
+        .failure = failed,
     });
 }
 
+/// The words to run: `work start …` becomes the operation a hosting service's plugin names
+/// for it (`registry.work_start`); null when none does, which the device's CLI explains.
+fn work_command(
+    arena: std.mem.Allocator,
+    args: []const []const u8,
+) error{OutOfMemory}!?[]const []const u8 {
+    std.debug.assert(args.len <= 1 << 16);
+
+    if (args.len == 0 or !starts_work(args)) {
+        return args;
+    }
+
+    const operation = registry.work_start orelse return null;
+    const dot = std.mem.indexOfScalar(u8, operation, '.').?;
+    var words = try arena.alloc([]const u8, args.len);
+
+    words[0] = operation[0..dot];
+    words[1] = operation[dot + 1 ..];
+    @memcpy(words[2..], args[2..]);
+
+    return words;
+}
+
 /// The command run by the Publr at `address` with the token this machine keeps for it: its
-/// exit code, its output written to `out` and its errors to stderr.
+/// exit code, its output written to `out` and its errors to stderr. It goes to the work
+/// open in this folder (`work.zig`), unless `production` says the site itself; a write a
+/// hosting service sends to work instead starts some and goes there.
 pub fn forward(
     init: std.process.Init,
     address: []const u8,
     args: []const []const u8,
+    production: bool,
     out: *std.Io.Writer,
 ) !u8 {
     std.debug.assert(address.len > 0);
@@ -105,34 +150,88 @@ pub fn forward(
         });
         return 1;
     };
+    // Starting work is the site's to do, whatever is open.
+    const open = if (production or starts_work(args)) null else try work.open(init, site.address);
+    const target = if (open) |found| found.address else site.address;
+    var answer = try send(init, site, target, args, production) orelse return 1;
+
+    if (open == null and std.mem.eql(u8, answer.failure, work_failure)) {
+        const now_s: u64 = @intCast(@divTrunc(sdk.context.wall_clock_ms(init.io), 1000));
+        const name = try work.name_now(arena, now_s);
+        const start = [_][]const u8{ "work", "start", "--name", name };
+        const begun = try send(init, site, site.address, &start, false) orelse return 1;
+        const made = work.started(arena, site.address, begun.out) orelse {
+            std.debug.print("{s}", .{begun.err});
+            return 1;
+        };
+
+        try work.keep(init, made);
+        answer = try send(init, site, made.address, args, false) orelse return 1;
+    }
+
+    if (starts_work(args)) {
+        if (answer.code == 0) {
+            const made = work.started(arena, site.address, answer.out) orelse return 1;
+
+            try work.keep(init, made);
+        } else if (answer.failure.len == 0) {
+            std.debug.print("publr: {s}\n", .{work.not_hosted});
+            return 1;
+        }
+    }
+
+    try out.writeAll(answer.out);
+    std.debug.print("{s}", .{answer.err});
+
+    return answer.code;
+}
+
+fn starts_work(args: []const []const u8) bool {
+    std.debug.assert(args.len > 0);
+
+    return args.len >= 2 and std.mem.eql(u8, args[0], "work") and
+        std.mem.eql(u8, args[1], "start");
+}
+
+/// The command posted to `/api/cli` at `target` with `site`'s token; null, having said why,
+/// when it was not run.
+fn send(
+    init: std.process.Init,
+    site: credentials.Site,
+    target: []const u8,
+    args: []const []const u8,
+    production: bool,
+) !?Answer {
+    std.debug.assert(target.len > 0);
+    std.debug.assert(args.len > 0);
+
+    const arena = init.arena.allocator();
     const payload = try std.json.Stringify.valueAlloc(arena, Envelope{
         .args = args,
+        .production = production,
     }, .{});
     const reply = try post(init.io, arena, .{
-        .url = try std.fmt.allocPrint(arena, "{s}{s}", .{ site.address, route }),
+        .url = try std.fmt.allocPrint(arena, "{s}{s}", .{ target, route }),
         .payload = payload,
         .token = site.token,
     });
 
     if (reply.status == .unauthorized) {
         std.debug.print("publr: {s} no longer accepts this device; run \"publr login {s}\"\n", .{
-            site.address,
+            target,
             site.address,
         });
-        return 1;
+        return null;
     }
 
     if (reply.status != .ok) {
-        std.debug.print("publr: {s} answered {d}\n", .{ site.address, @intFromEnum(reply.status) });
-        return 1;
+        std.debug.print("publr: {s} answered {d}\n", .{ target, @intFromEnum(reply.status) });
+        return null;
     }
 
-    const answer = try std.json.parseFromSliceLeaky(Answer, arena, reply.body, .{});
-
-    try out.writeAll(answer.out);
-    std.debug.print("{s}", .{answer.err});
-
-    return answer.code;
+    return try std.json.parseFromSliceLeaky(Answer, arena, reply.body, .{
+        .ignore_unknown_fields = true,
+    });
 }
 
 pub const Post = struct {

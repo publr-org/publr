@@ -210,6 +210,9 @@ pub fn add_module(
         module.addAnonymousImport("agents_guide", .{
             .root_source_file = builder.path("docs/agents.md"),
         });
+        module.addAnonymousImport("installer", .{
+            .root_source_file = builder.path("install.sh"),
+        });
         module.addAnonymousImport("skill", .{
             .root_source_file = builder.path("skills/build-on-publr/SKILL.md"),
         });

@@ -36,8 +36,10 @@ const Listed = struct {
 const Options = struct {
     address: ?[]const u8 = null,
     name: ?[]const u8 = null,
-    scope: []const u8 = "drafts",
+    scope: []const u8 = "write",
     browser: bool = true,
+    /// A sign-in offered from the admin (`device offer`): taken at once, nothing to approve.
+    claim: ?[]const u8 = null,
 };
 
 pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8) !u8 {
@@ -47,7 +49,7 @@ pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8
     const options = parse(args[1..]) orelse {
         std.debug.print(
             "usage: publr login <address> [--name <name>] [--scope read|drafts|write] " ++
-                "[--no-browser]\n       publr logout [<address>]\n" ++
+                "[--no-browser] [--claim <code>]\n       publr logout [<address>]\n" ++
                 "       publr whoami [<address>]\n",
             .{},
         );
@@ -75,7 +77,8 @@ fn parse(args: []const []const u8) ?Options {
 
     while (index < args.len) : (index += 1) {
         const arg = args[index];
-        const valued = std.mem.eql(u8, arg, "--name") or std.mem.eql(u8, arg, "--scope");
+        const valued = std.mem.eql(u8, arg, "--name") or std.mem.eql(u8, arg, "--scope") or
+            std.mem.eql(u8, arg, "--claim");
 
         if (valued and index + 1 == args.len) {
             return null;
@@ -87,6 +90,9 @@ fn parse(args: []const []const u8) ?Options {
         } else if (std.mem.eql(u8, arg, "--scope")) {
             index += 1;
             options.scope = args[index];
+        } else if (std.mem.eql(u8, arg, "--claim")) {
+            index += 1;
+            options.claim = args[index];
         } else if (std.mem.eql(u8, arg, "--no-browser")) {
             options.browser = false;
         } else if (std.mem.startsWith(u8, arg, "-") or options.address != null) {
@@ -118,26 +124,13 @@ fn login(init: std.process.Init, out: *std.Io.Writer, options: Options) !u8 {
     }
 
     const name = options.name orelse try default_name(arena);
-    const start_body = try std.json.Stringify.valueAlloc(arena, .{
-        .name = name,
-        .scope = options.scope,
-    }, .{});
-    const started = try call(init, Started, address, "/api/device/start", start_body, null);
-    const link = try std.fmt.allocPrint(arena, "{s}{s}", .{ address, started.approve_path });
-
-    try out.print("Open {s} to sign in.\n", .{link});
-    try out.flush();
-
-    if (options.browser) {
-        open_browser(init, link);
-    }
-
-    if (!try wait(init, address, started)) {
-        return 1;
-    }
-
+    const device_code = if (options.claim) |code|
+        code
+    else
+        try approved(init, out, address, name, options) orelse return 1;
     const code_body = try std.json.Stringify.valueAlloc(arena, .{
-        .device_code = started.device_code,
+        .device_code = device_code,
+        .name = name,
     }, .{});
     const claimed = try call(init, Claimed, address, "/api/device/claim", code_body, null);
     const scope = claimed.scope;
@@ -157,6 +150,40 @@ fn login(init: std.process.Init, out: *std.Io.Writer, options: Options) !u8 {
     try out.print("✓ {s} · {s} · {s}\n", .{ who.email, address, scope });
 
     return 0;
+}
+
+/// The device code of a request its person approved in the admin, after showing them the
+/// link; null, having said why, when they did not.
+fn approved(
+    init: std.process.Init,
+    out: *std.Io.Writer,
+    address: []const u8,
+    name: []const u8,
+    options: Options,
+) !?[]const u8 {
+    std.debug.assert(address.len > 0);
+    std.debug.assert(name.len > 0);
+
+    const arena = init.arena.allocator();
+    const start_body = try std.json.Stringify.valueAlloc(arena, .{
+        .name = name,
+        .scope = options.scope,
+    }, .{});
+    const started = try call(init, Started, address, "/api/device/start", start_body, null);
+    const link = try std.fmt.allocPrint(arena, "{s}{s}", .{ address, started.approve_path });
+
+    try out.print("Open {s} to sign in.\n", .{link});
+    try out.flush();
+
+    if (options.browser) {
+        open_browser(init, link);
+    }
+
+    if (!try wait(init, address, started)) {
+        return null;
+    }
+
+    return started.device_code;
 }
 
 /// Asks until the person decides or the request lapses: true once approved, else false after

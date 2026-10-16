@@ -128,7 +128,7 @@ fn admit(
     std.debug.assert(found.name.len > 0);
     std.debug.assert(ctx.parent != null);
 
-    try SDK.run_pre_hooks(ctx, found.name);
+    try SDK.run_pre_hooks(ctx, found.name, found.kind);
     try SDK.check_fence(ctx, plugin_names.plugin_of(found.name));
 
     const fields = json.parse(ResourceFields, ctx.arena, input, .{

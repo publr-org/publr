@@ -75,6 +75,8 @@ pub const login = if (builtin.os.tag == .wasi) void else @import("server/login.z
 pub const skill = if (builtin.os.tag == .wasi) void else @import("server/skill.zig");
 pub const new_site = if (builtin.os.tag == .wasi) void else @import("server/new_site.zig");
 pub const remote = if (builtin.os.tag == .wasi) void else @import("server/remote.zig");
+pub const work = if (builtin.os.tag == .wasi) void else @import("server/work.zig");
+pub const agent_script = if (builtin.os.tag == .wasi) void else @import("server/agent_script.zig");
 pub const agent = if (builtin.os.tag == .wasi) void else @import("server/agent.zig");
 
 test {

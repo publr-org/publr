@@ -41,16 +41,18 @@ export type DashboardProps = {
   install_command: string;
   /** Signing an agent in at this site's address; empty when it works in the folder. */
   login_command: string;
-  /** Away from the folder: making a folder for the agent and going into it. */
-  start_command: string;
-  /** Away from the folder: Publr's installer, putting `./publr` there. */
-  get_command: string;
+  /** Away from the folder: the one command that sets the agent's computer up. */
+  agent_command: string;
+  /** Away from the folder: the same for an agent to run itself, explained. */
+  agent_prompt: string;
   /** The person's earlier conversations, newest first. */
   earlier: Array<{ id: string; prompt: string; label: string; href: string }>;
   /** A plugin's own "Your agent" tab, sanitized, shown instead of the commands; absent when none. */
   agents_tab?: JSX.Element;
   /** The plugin that tab comes from, named on its box. */
   agents_tab_from?: string;
+  /** The site's host sends an agent's changes to a branch (`registry.work_start`). */
+  branch_work?: boolean;
   /** Words handed over from a site page (`?ask=`), in the prompt for the person to send. */
   asked?: string;
   /** The page they were said on (`?page=`), sent with them. */
@@ -67,11 +69,12 @@ export function Dashboard({
   folder_command,
   install_command,
   login_command,
-  start_command,
-  get_command,
+  agent_command,
+  agent_prompt,
   earlier,
   agents_tab,
   agents_tab_from,
+  branch_work = false,
   asked = "",
   asked_on = "",
 }: DashboardProps) {
@@ -104,8 +107,9 @@ export function Dashboard({
               folder_command={folder_command}
               install_command={install_command}
               login_command={login_command}
-              start_command={start_command}
-              get_command={get_command}
+              agent_command={agent_command}
+              agent_prompt={agent_prompt}
+              branch_work={branch_work}
             />
           )}
           {mode === "keys" && connected && !Publr.request.admin.framed && (

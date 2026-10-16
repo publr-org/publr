@@ -37,6 +37,11 @@ pub const Options = struct {
     /// Who runs every command, fixed: a device sending them from elsewhere (`/api/cli`).
     /// `--as` and `--as-admin` are refused then.
     device: ?sdk.Caller = null,
+    /// The device's call said `--production` (`ctx.production`).
+    production: bool = false,
+    /// Where the name of the failure a command ended with goes, for an adapter that answers
+    /// it: `/api/cli` passes it to the device.
+    failed: ?*[]const u8 = null,
 };
 
 const AuthState = @import("../lib/auth.zig").State;
@@ -183,6 +188,7 @@ pub fn CLI(comptime SDK: type) type {
             ctx.agents = options.agents;
             ctx.live = options.live;
             ctx.updater = options.updater;
+            ctx.production = options.production;
 
             inline for (SDK.operations) |Operation| {
                 if (std.mem.eql(u8, Operation.name, name)) {
@@ -317,6 +323,7 @@ pub fn CLI(comptime SDK: type) type {
             }
 
             const result = SDK.dispatch(ctx, Operation, in) catch |err| {
+                note_failure(options, ctx);
                 return failf(options, "{s} {s}: {s}", .{
                     comptime sdk.operation.namespace(Operation.name),
                     comptime sdk.operation.verb(Operation.name),
@@ -358,6 +365,7 @@ pub fn CLI(comptime SDK: type) type {
                 });
             };
             const result = SDK.call_json(ctx, found.name, input) catch |err| {
+                note_failure(options, ctx);
                 return failf(options, "{s} {s}: {s}", .{ namespace, verb, describe(err, ctx) });
             };
 
@@ -477,6 +485,17 @@ fn failf(options: Options, comptime format: []const u8, args: anytype) u8 {
     std.debug.assert(message.len <= message_len_max);
 
     return fail(options, message);
+}
+
+fn note_failure(options: Options, ctx: *const sdk.Ctx) void {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const failure = ctx.failure orelse return;
+    const failed = options.failed orelse return;
+
+    std.debug.assert(failure.name.len > 0);
+
+    failed.* = failure.name;
 }
 
 fn describe(err: sdk.Error, ctx: *const sdk.Ctx) []const u8 {

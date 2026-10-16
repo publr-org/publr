@@ -8,6 +8,7 @@ const ai = @import("../../operations/ai.zig");
 const ai_model = @import("../../model/ai.zig");
 const providers = @import("../../operations/ai/providers.zig");
 const setup = @import("../../operations/ai/setup.zig");
+const agent_setup = @import("agent_setup.zig");
 
 const Props = admin.views.Dashboard.Props;
 const Earlier = admin.views.Dashboard.EarlierItem;
@@ -32,8 +33,8 @@ pub fn props_of(session: *admin.Session) admin.Error!Props {
         .folder_command = "",
         .install_command = "",
         .login_command = "",
-        .start_command = "",
-        .get_command = "",
+        .agent_command = "",
+        .agent_prompt = "",
         .earlier = &.{},
     };
 
@@ -46,6 +47,7 @@ pub fn props_of(session: *admin.Session) admin.Error!Props {
 
     props.agents_tab = agents_tab_of(session);
     props.agents_tab_from = if (registry.agents_tab) |tab| tab.plugin else "";
+    props.branch_work = registry.work_start != null;
 
     return props;
 }
@@ -74,8 +76,8 @@ pub fn agents_step(
         .folder_command = "",
         .install_command = "",
         .login_command = "",
-        .start_command = "",
-        .get_command = "",
+        .agent_command = "",
+        .agent_prompt = "",
         .earlier = &.{},
     };
 
@@ -90,8 +92,6 @@ pub fn agents_step(
         // The Companion runs it in the folder it opened: only the site's own folder has it.
         .install_command = if (here) props.install_command else "",
         .login_command = props.login_command,
-        .start_command = props.start_command,
-        .get_command = props.get_command,
     });
 }
 
@@ -136,9 +136,10 @@ fn known_mode(text: []const u8) ?[]const u8 {
 }
 
 /// The commands that set an agent to work on this project. Opened on this machine, with
-/// the folder `serve` runs in known: work in that folder with its own binary. Otherwise:
-/// a folder of the agent's own, Publr fetched into it, signed in at the address the
-/// browser used.
+/// the folder `serve` runs in known and no host running it (`registry.hosted`): work in
+/// that folder with its own binary. Otherwise:
+/// the publr command, signed in at the address the browser used, the skill in the agent's
+/// own folder.
 fn fill_agents(session: *admin.Session, props: *Props) admin.Error!void {
     std.debug.assert(session.signed_in());
     std.debug.assert(props.login_command.len == 0);
@@ -147,18 +148,14 @@ fn fill_agents(session: *admin.Session, props: *Props) admin.Error!void {
     const project = session.project;
     const host = session.request.header("host") orelse "";
 
-    if (project.folder.len == 0 or !local(host)) {
+    if (registry.hosted or project.folder.len == 0 or !local(host)) {
         const host_url = try definitions.host_url_of(session);
-        const address = .{ host_url, project.admin_path() };
-        const folder = try quoted(arena, host_name(host_url));
+        const site = try std.fmt.allocPrint(arena, "{s}{s}", .{ host_url, project.admin_path() });
+        const agent = try agent_setup.of(session, site);
 
-        props.start_command = try std.fmt.allocPrint(arena, "mkdir -p {s} && cd {s}", .{
-            folder,
-            folder,
-        });
-        props.get_command = get_command;
-        props.login_command = try std.fmt.allocPrint(arena, "./publr login {s}{s}", address);
-        props.install_command = "./publr skill install";
+        props.agent_command = agent.command;
+        props.agent_prompt = agent.prompt;
+        props.login_command = try std.fmt.allocPrint(arena, "publr login {s}", .{site});
 
         return;
     }
@@ -168,23 +165,6 @@ fn fill_agents(session: *admin.Session, props: *Props) admin.Error!void {
 
     props.folder_command = try std.fmt.allocPrint(arena, "cd {s}", .{folder});
     props.install_command = try std.fmt.allocPrint(arena, "{s} skill install", .{binary});
-}
-
-/// Publr's installer, putting the binary in the folder it runs in and making no site.
-const get_command = "curl -fsSL https://publr.dev/install.sh | " ++
-    "PUBLR_HOME=. PUBLR_FIRST_SITE=- sh";
-
-/// The site's host, without its scheme, port or path: the name of the folder the agent
-/// works from.
-fn host_name(address: []const u8) []const u8 {
-    std.debug.assert(address.len <= 64 << 10);
-
-    const scheme_end = std.mem.indexOf(u8, address, "://");
-    const rest = if (scheme_end) |end| address[end + 3 ..] else address;
-    const host = rest[0 .. std.mem.indexOfScalar(u8, rest, '/') orelse rest.len];
-    const name = host[0 .. std.mem.lastIndexOfScalar(u8, host, ':') orelse host.len];
-
-    return if (name.len == 0) "publr-site" else name;
 }
 
 /// A plugin's own contents for the "Your agent" tab, through the admin's sanitizer; null
@@ -360,11 +340,4 @@ test "a host on this machine is told from one elsewhere" {
 test "only the two ways of building are remembered" {
     try std.testing.expectEqualStrings("keys", known_mode("keys").?);
     try std.testing.expect(known_mode("cloud") == null);
-}
-
-test "the agent's folder is named after the site's host" {
-    try std.testing.expectEqualStrings("shop.publr.app", host_name("https://shop.publr.app"));
-    try std.testing.expectEqualStrings("localhost", host_name("http://localhost:8080/admin"));
-    try std.testing.expectEqualStrings("example.com", host_name("example.com"));
-    try std.testing.expectEqualStrings("publr-site", host_name(""));
 }

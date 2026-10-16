@@ -26,7 +26,16 @@ writes nothing, so asking every few seconds costs nothing.
 ## `claim`
 
 Anyone holding the device code, once it is approved: the token, given once. The request
-is then used up.
+is then used up. It also takes the code `offer` answered, with `--name` for what the
+device is called.
+
+## `offer`
+
+A signed-in person, never a device. A sign-in for one of their own computers, approved as
+it is made (`--scope`, `write` by default): answers a one-time code that `claim` takes
+within ten minutes. The admin's Overview puts it in the command that sets up an agent's
+computer, `curl -fsSL <site>/api/agent/<code> | sh`, which installs the publr command,
+signs the computer in (`publr login <site> --claim <code>`) and installs the skill.
 
 ## `request`, `approve`, `deny`
 

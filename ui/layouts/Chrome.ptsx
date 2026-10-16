@@ -13,6 +13,7 @@ import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
 import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
 import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
+import { SkipLink } from "@publr/ui/SkipLink.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 export type ChromeProps = {
@@ -33,10 +34,11 @@ export type ChromeProps = {
 export function Chrome({ title, parents = [], focus = false, children }: ChromeProps) {
   return (
     <Document title={title}>
+      <SkipLink target="main">{Publr.t("Skip to content")}</SkipLink>
       <div class="flex h-dvh overflow-hidden">
         <div id="admin-nav" popover="auto" class="contents" data-part="admin-nav">
         {Publr.request.session.email !== "" && !Publr.request.admin.framed && (
-        <div class="flex w-14 shrink-0 flex-col items-center bg-rail text-rail-foreground">
+        <nav aria-label={Publr.t("Sections")} class="flex w-14 shrink-0 flex-col items-center bg-rail text-rail-foreground">
           <a
             href="/admin"
             aria-label={Publr.request.admin.brand !== "" ? Publr.request.admin.brand : "Publr"}
@@ -48,7 +50,7 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
               <Mark classes="size-6" />
             )}
           </a>
-          <nav aria-label={Publr.t("Sections")} data-slot="rail" class="flex flex-col items-center gap-1 pt-1">
+          <div data-slot="rail" class="flex flex-col items-center gap-1 pt-1">
             <RailItem
               href="/admin"
               label={Publr.t("Overview")}
@@ -74,7 +76,7 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
               active={Publr.request.admin.area === "design" && !Publr.request.admin.pinned_lit}
             />
             {Publr.request.admin.rail}
-          </nav>
+          </div>
           <div class="mt-auto flex flex-col items-center gap-1 pb-3">
             {Publr.request.admin.site_href !== "" && (
               // On phones the top bar has no room to promise the site link; the menu keeps it.
@@ -89,7 +91,7 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
               </div>
             )}
             <DropdownMenu>
-              <DropdownMenuTrigger classes="inline-flex size-9 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 transition-colors hover:bg-rail-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground">
+              <DropdownMenuTrigger label={Publr.t("Account")} classes="inline-flex size-9 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 transition-colors hover:bg-rail-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rail-foreground">
                 <Avatar
                   size="sm"
                   name={Publr.request.session.name}
@@ -126,7 +128,7 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
               />
             )}
           </div>
-        </div>
+        </nav>
         )}
         {!focus && !Publr.request.admin.framed && Publr.request.admin.sidebar && (
           <aside

@@ -968,8 +968,8 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expect(std.mem.startsWith(u8, flow.cookie, "publr_session="));
 
     const overview = try flow.call("GET", "/admin", "");
-    const login_line = "publr login http://h";
-    try std.testing.expect(std.mem.indexOf(u8, overview.body, login_line) != null);
+    const setup_line = "curl -fsSL http://h/api/agent/";
+    try std.testing.expect(std.mem.indexOf(u8, overview.body, setup_line) != null);
     try std.testing.expect(std.mem.indexOf(u8, overview.body, "agent-tab-here") == null);
 
     const structure = try flow.call("GET", "/admin/structure", "");

@@ -12,6 +12,43 @@ pub const poll_interval_s: u32 = 3;
 pub const user_code_len: u32 = 9;
 pub const user_code_alphabet = "BCDFGHJKLMNPQRSTVWXZ";
 
+/// An offered sign-in's code, in the command a person runs: long enough that guessing one
+/// within its ten minutes is out of reach (80 bits), short enough to read.
+pub const offer_code_len: u32 = 16;
+pub const offer_code_alphabet = "abcdefghijkmnpqrstuvwxyz23456789";
+
+/// An offered sign-in's code, made from random bytes.
+pub fn offer_code(random: [offer_code_len]u8) [offer_code_len]u8 {
+    std.debug.assert(offer_code_alphabet.len == 32);
+
+    var code: [offer_code_len]u8 = undefined;
+
+    for (random, 0..) |byte, index| {
+        code[index] = offer_code_alphabet[byte & 31];
+    }
+
+    std.debug.assert(code[0] != 0);
+
+    return code;
+}
+
+/// Whether `text` could be an offered sign-in's code.
+pub fn valid_offer_code(text: []const u8) bool {
+    std.debug.assert(offer_code_alphabet.len == 32);
+
+    if (text.len != offer_code_len) {
+        return false;
+    }
+
+    for (text) |char| {
+        if (std.mem.indexOfScalar(u8, offer_code_alphabet, char) == null) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 /// What a device may do with its account: read only; write, but nothing visitors see
 /// changes (edits wait as drafts for a person); or everything the account may.
 pub const Scope = enum {

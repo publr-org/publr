@@ -58,7 +58,7 @@ export function Trash({ entries, keep_days, range, previous_href, next_href, not
             <Text as="span" variant="body-sm">
               {Publr.t("Kept for")}
             </Text>
-            <Input name="days" type="number" size="sm" value={`${keep_days}`} classes="w-20" />
+            <Input name="days" type="number" size="sm" value={`${keep_days}`} label={Publr.t("Days kept in the trash")} classes="w-20" />
             <Text as="span" variant="body-sm">
               {Publr.t("days, then removed for good.")}
             </Text>

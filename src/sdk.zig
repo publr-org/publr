@@ -294,7 +294,7 @@ pub fn SDK(comptime registry: Registry) type {
             const listed = registry.operations;
             const owner = comptime owner_of(listed, registry.operation_owners, Operation);
 
-            try run_pre_hooks(ctx, Operation.name);
+            try run_pre_hooks(ctx, Operation.name, Operation.kind);
             try check_fence(ctx, owner);
 
             if (comptime operation.destroys(Operation)) {
@@ -399,14 +399,15 @@ pub fn SDK(comptime registry: Registry) type {
             return merged;
         }
 
-        /// Runs the pre hooks every native plugin holds, before authorization.
-        pub fn run_pre_hooks(ctx: *Ctx, name: []const u8) Error!void {
+        /// Runs the pre hooks every native plugin holds, before authorization: each sees the
+        /// operation's name and whether it reads or writes.
+        pub fn run_pre_hooks(ctx: *Ctx, name: []const u8, kind: operation.Kind) Error!void {
             std.debug.assert(name.len > 0);
             std.debug.assert(ctx.parent != null);
 
             inline for (registry.middleware) |Middleware| {
                 if (Middleware.stage == .pre) {
-                    try invoke_hook(ctx, Middleware, .{name});
+                    try invoke_hook(ctx, Middleware, .{ name, kind });
                 }
             }
         }
@@ -1466,9 +1467,11 @@ pub const testing = struct {
     pub const Gate = struct {
         pub const stage: middleware.Stage = .pre;
 
-        pub fn run(ctx: *Ctx, operation_name: []const u8) Error!void {
+        pub fn run(ctx: *Ctx, operation_name: []const u8, kind: operation.Kind) Error!void {
             std.debug.assert(operation_name.len > 0);
             std.debug.assert(ctx.parent != null);
+
+            _ = kind;
 
             if (ctx.request_id.len != 0 and std.mem.eql(u8, ctx.request_id, "blocked")) {
                 return error.Vetoed;

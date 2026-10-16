@@ -151,17 +151,22 @@ goes to `data/agents/<id>.log`.
 ## A Publr elsewhere
 
 ```
-publr login <address> [--name <name>] [--scope read|drafts|write] [--no-browser]
+publr login <address> [--name <name>] [--scope read|drafts|write] [--no-browser] [--claim <code>]
 publr logout [<address>]
 publr whoami [<address>]
-publr --site <address> <command ...>
+publr --site <address> [--production] <command ...>
+publr --site <address> work start --name <what>
+publr work
+publr work done
 ```
 
 `login` signs this machine in to the Publr at `<address>` as a device
 ([Authentication: Devices](auth.md#devices)): it prints a link (and opens it when there is
 a browser), its person approves it in that Publr's admin and chooses what it may do
-(`drafts` unless `--scope` asks otherwise), and the token is kept in
+(`write` unless `--scope` asks otherwise), and the token is kept in
 `~/.publr/credentials` (or `$PUBLR_CREDENTIALS`), readable by its user only, by address.
+`--claim <code>` takes a sign-in the person already gave (`device offer`, the code in the
+Overview's setup command) instead: nothing to approve.
 It is never printed. `--name` is what the person sees; it defaults to "The publr CLI on"
 this machine's name.
 
@@ -170,6 +175,16 @@ words go as they are and are read there, so its plugins' commands and its help a
 answer. `--as` and `--as-admin` are refused there; the device is who you are. `logout`
 revokes the device there and forgets it here; `whoami` says whose it is, its scope and its
 name. With one address kept, `logout` and `whoami` need none.
+
+Where the Publr's host has copies of the site (Publr Cloud's branches), a device works in
+one: `work start` makes it and answers where its commands go, which this machine keeps for
+the folder it runs in (`.publr/work.json`). Every later command from that folder to that
+Publr goes there, reads included, and `--site` may then be left out. A write sent to the
+site itself without `--production` is refused there; the CLI then starts work named after
+the time and sends the write to it. `--production` sends that one call to the site itself.
+`work` says which work is open, with where to see it and where a person merges it; `work
+done` forgets it here. A Publr without copies answers `work start` with "Branches are a
+Publr Cloud feature", and every call goes to the site.
 
 ## The skill
 
@@ -215,6 +230,7 @@ They open the database without the gate. See [Updates](updates.md) and [`update`
 |---|---|
 | `--db <path>` | Use this database file. Must come first. |
 | `--site <address>` | Send the command to the Publr at that address, as this machine's device there (after `--db`, before the command); `PUBLR_SITE` does the same. See [A Publr elsewhere](#a-publr-elsewhere). |
+| `--production` | With `--site`: this call goes to the site itself, not the work open in the folder; where the host keeps an agent's changes in a branch, the only way to change the live site. See [A Publr elsewhere](#a-publr-elsewhere). |
 | `--as <user>` | Run as that user, by id or email; the user's roles apply. |
 | `--as-admin` | Run as the local operator (`system`), unrestricted. |
 | `-h`, `--help` | Print usage, options and every command. After a namespace (`publr user --help`, or just `publr user`), explain the namespace and list its commands. After a command, print its explanation, every field with its meaning, the output shape, and a runnable example with its output. |

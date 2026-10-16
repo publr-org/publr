@@ -2,7 +2,7 @@ import { Publr } from "publr-jsx";
 import { Card } from "@publr/ui/Card.ptsx";
 import { CardBody } from "@publr/ui/CardBody.ptsx";
 import { Command } from "@publr/ui/Command.ptsx";
-import { Link } from "@publr/ui/Link.ptsx";
+import { CopyButton } from "@publr/ui/CopyButton.ptsx";
 import { Step } from "@publr/ui/Step.ptsx";
 import { Steps } from "@publr/ui/Steps.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
@@ -14,21 +14,24 @@ export type AgentSetupProps = {
   install_command: string;
   /** Signing an agent in at this site's address; empty when it works in the folder. */
   login_command: string;
-  /** Away from the folder: making a folder for the agent and going into it. */
-  start_command: string;
-  /** Away from the folder: Publr's installer, putting `./publr` there. */
-  get_command: string;
+  /** Away from the folder: the one command that sets the agent's computer up. */
+  agent_command: string;
+  /** Away from the folder: the same for an agent to run itself, explained. */
+  agent_prompt: string;
+  /** The site's host sends an agent's changes to a branch, for a person to merge. */
+  branch_work?: boolean;
 };
 
-/** Setting your own agent to work on this site, step by step: in its folder when the admin
- * is open on the machine it runs on, else from a folder of its own with Publr fetched into
- * it, signed in at the site's address. */
+/** Setting your own agent to work on this site: in its folder when the admin is open on the
+ * machine it runs on, else one command that installs Publr, signs the computer in and gives
+ * the agent the skill, with the same as a prompt for an agent to run itself. */
 export function AgentSetup({
   folder_command,
   install_command,
   login_command,
-  start_command,
-  get_command,
+  agent_command,
+  agent_prompt,
+  branch_work = false,
 }: AgentSetupProps) {
   return (
     <Card>
@@ -51,39 +54,35 @@ export function AgentSetup({
             </Step>
           </Steps>
         )}
-        {login_command !== "" && (
+        {agent_command !== "" && (
           <Steps>
-            <Step number={1} title={Publr.t("Open a terminal in a new folder")}>
+            <Step number={1} title={Publr.t("Run this in a terminal, in the folder your agent will work in")}>
+              <Command command={agent_command} />
               <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("Your agent works from there; the site itself stays where it runs.")}
-              </Text>
-              <Command command={start_command} />
-            </Step>
-            <Step number={2} title={Publr.t("Get Publr")}>
-              <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("It puts the publr command in this folder, nothing else.")}
-              </Text>
-              <Command command={get_command} />
-            </Step>
-            <Step number={3} title={Publr.t("Sign it in to this site")}>
-              <Command command={login_command} />
-              <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("Your browser opens to approve it.")} It gets drafts access, which you can revoke
-                under <Link href="/admin/settings/devices" variant="body-sm">{Publr.t("Settings › Devices")}</Link>.
+                {Publr.t("It installs Publr, signs this computer in to this site and gives your agent the Publr skill. It works once, within ten minutes; reload this page for a new one.")}
               </Text>
             </Step>
-            <Step number={4} title={Publr.t("Give your agent the Publr skill")}>
-              <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("It teaches your agent how Publr works: content types, pages, plugins. Claude Code, Codex, Cursor, Pi and other agents that read skills find it.")}
-              </Text>
-              <Command command={install_command} />
-            </Step>
-            <Step number={5} title={Publr.t("Start your agent there and ask")}>
+            <Step number={2} title={Publr.t("Start your agent there and ask")}>
               <Text as="p" variant="body-sm" tone="muted">
                 {Publr.t("Describe what you want, like \"Add a recipes section with a page listing them\".")}
               </Text>
+              {branch_work && (
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Its changes go to a branch of this site, not to the site itself. It gives you a link to review them and merge them.")}
+                </Text>
+              )}
             </Step>
           </Steps>
+        )}
+        {agent_command !== "" && (
+          <div class="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4">
+            <CopyButton text={agent_prompt} hierarchy="tertiary" size="sm">
+              {Publr.t("Copy agent prompt")}
+            </CopyButton>
+            <Text as="span" variant="body-sm" tone="muted">
+              {Publr.t("Or paste it into your agent, and it sets itself up.")}
+            </Text>
+          </div>
         )}
       </CardBody>
     </Card>

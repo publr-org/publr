@@ -110,7 +110,8 @@ A deprecated operation ([Updates](updates.md#changing-publr)) still answers, wit
 
 | Route | What |
 |---|---|
-| `POST /api/cli` | body `{ "args" }`: a command sent by `publr --site <address>`, run here as the device whose token comes in `Authorization: Bearer`; answers `{ "code", "out", "err" }`. `--as` is refused; without a device's token, `401` |
+| `POST /api/cli` | body `{ "args", "production" }`: a command sent by `publr --site <address>`, run here as the device whose token comes in `Authorization: Bearer`; answers `{ "code", "out", "err", "failure" }` (`failure` the name of the failure it ended with). `work start` runs the operation a host's plugin names (`work_start`), or answers code 1 where none does. `--as` is refused; without a device's token, `401` |
+| `GET /api/agent/<code>` | the shell script the Overview's setup command pipes into `sh`: Publr's installer, then `publr login <site> --claim <code>` and `publr skill install`. Anyone may fetch it; the code (`device offer`) is the credential, once, for ten minutes. A code that is not one answers `404` with a script that says so |
 
 Any route takes a device's token in `Authorization: Bearer <token>` instead of the
 session cookie, and then needs no CSRF token. The token comes from signing in by link:

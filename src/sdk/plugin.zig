@@ -746,6 +746,8 @@ pub fn Merged(comptime plugins: anytype) type {
         var app_picker_segment: []const type = &.{};
         var dimension: ?variants.Dimension = null;
         var agents_tab: ?AgentsTab = null;
+        var work_start: ?[]const u8 = null;
+        var hosted = false;
         var settings_tabs: []const OwnedSettingsTab = &.{};
         var translations: []const OwnedTranslation = &.{};
         var operator_commands: []const route.DeclaredCommand = &.{};
@@ -885,6 +887,18 @@ pub fn Merged(comptime plugins: anytype) type {
                     .plugin = Plugin.manifest.name,
                     .html = Plugin.agents_tab,
                 };
+            }
+
+            if (@hasDecl(Plugin, "hosted")) {
+                hosted = hosted or Plugin.hosted;
+            }
+
+            if (@hasDecl(Plugin, "work_start")) {
+                if (work_start != null) {
+                    @compileError("two plugins declare `work_start`; one at a time");
+                }
+
+                work_start = Plugin.work_start.name;
             }
 
             operator_commands = operator_commands ++ route.operator_commands_of(Plugin);
@@ -1035,6 +1049,12 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_variants = dimension;
             /// What a plugin shows in the Overview's "Your agent" tab, if one does.
             pub const merged_agents_tab = agents_tab;
+            /// The operation `publr work start` runs, where a hosting service's plugin
+            /// sends a device's work to a copy of the project (`pub const work_start`).
+            pub const merged_work_start = work_start;
+            /// A plugin says the project runs on a host (`pub const hosted = true`): its
+            /// folder and binary are never on the machine of the person in its admin.
+            pub const merged_hosted = hosted;
             /// The plugins that keep a `State`, in name order.
             pub const merged_stateful = state.stateful(plugins);
             pub const merged_operator_commands = operator_commands;
