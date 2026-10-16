@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-pub const version = "0.4.0";
+pub const version = "0.4.1";
 
 pub const lib = @import("lib.zig");
 pub const db = lib.db;
