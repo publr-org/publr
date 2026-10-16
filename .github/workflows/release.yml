@@ -48,6 +48,7 @@ jobs:
         env:
           BUMP: "${{ inputs.bump }}"
           SIGNING_KEY: "${{ secrets.PUBLR_RELEASE_SIGNING_KEY }}"
+          RELEASE_TOKEN: "${{ secrets.RELEASE_TOKEN }}"
         run: |
           if [ "$GITHUB_REF" != refs/heads/main ]; then
             echo "::error::release from main, not $GITHUB_REF"; exit 1
@@ -64,6 +65,9 @@ jobs:
           fi
           if [ -z "$SIGNING_KEY" ]; then
             echo "::error::secret PUBLR_RELEASE_SIGNING_KEY is not set: releases must be signed"; exit 1
+          fi
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::secret RELEASE_TOKEN is not set: the tag and main are pushed with it"; exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Releasing \`v$version\` ($BUMP from $current) from \`$(git rev-parse --short HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
@@ -231,8 +235,10 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
       TAG: v${{ needs.version.outputs.version }}
     steps:
+      # Pushed with a token that may write workflows: the default one may not push a tag or
+      # merge whose workflow files differ from main's.
       - uses: actions/checkout@v4
-        with: { path: publr, fetch-depth: 0 }
+        with: { path: publr, fetch-depth: 0, token: "${{ secrets.RELEASE_TOKEN }}" }
       - uses: actions/download-artifact@v4
         with: { path: dist, pattern: "publr-*", merge-multiple: true }
       - uses: actions/download-artifact@v4
