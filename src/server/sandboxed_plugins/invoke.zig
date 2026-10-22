@@ -364,7 +364,16 @@ fn publr_call(
         return wire.code_of(error.Unavailable);
     }
 
-    const output = registry.SDK.call_json(ctx, name, input) catch |err| return wire.code_of(err);
+    const output = registry.SDK.call_json(ctx, name, input) catch |err| {
+        // A refusal goes back with its name, for the plugin's `ctx.failure()`.
+        if (err == error.Failed) if (ctx.failure) |failure| {
+            if (reply(env, failure.name, result_ptr) != wire.ok) {
+                return wire.code_of(error.OutOfMemory);
+            }
+        };
+
+        return wire.code_of(err);
+    };
 
     return reply(env, output, result_ptr);
 }
