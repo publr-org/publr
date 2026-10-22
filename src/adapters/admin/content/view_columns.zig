@@ -1,6 +1,6 @@
-//! The fields a plugin's section shows after the title in one of its types' lists: read for
-//! the listed records in one query, each shown as text by its field's kind. A column that
-//! is not a field of the type, or of a kind a cell cannot show, is left out.
+//! The fields a one-type list shows as columns (the view's `columns`, in order): their values
+//! read for the listed records in one query, drawn by `cell_values.zig`. A column that is not
+//! a field of the type, or a field that holds no value (a tab, a message), is left out.
 const std = @import("std");
 const admin = @import("../../admin.zig");
 const registry = @import("../../../server/registry.zig");
@@ -8,12 +8,28 @@ const model = @import("../../../model.zig");
 const records = @import("../../../operations/record.zig");
 const types = @import("../../../operations/content_type.zig");
 const query = @import("../../../operations/record/query.zig");
-const admin_slots = @import("../../../sdk/plugin/admin_slots.zig");
-const sections = @import("../sections.zig");
 const list = @import("list.zig");
 
 const Error = admin.Error;
 const Value = std.json.Value;
+
+/// The kinds a list cell shows as text.
+const column_kinds = [_][]const u8{
+    "string",  "text",   "email",   "url",      "slug",  "select",
+    "integer", "number", "boolean", "datetime", "money", "color",
+};
+
+pub fn column_kind(kind: []const u8) bool {
+    std.debug.assert(column_kinds.len > 0);
+
+    for (column_kinds) |allowed| {
+        if (std.mem.eql(u8, allowed, kind)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 pub const Field = struct {
     name: []const u8,
@@ -23,32 +39,24 @@ pub const Field = struct {
 
 pub const Columns = struct {
     fields: []const Field,
-    /// Per record, in the list's order: each field's text.
-    cells: []const []const []const u8,
+    /// Per record, in the list's order: each field's value as stored, null when it has none.
+    values: []const []const Value,
 };
 
-/// The section columns of a list showing one type of a section; null for any other list.
+/// The field columns of a list showing one type: the fields its view shows, in order; null
+/// for a list over several types, or a view showing none.
 pub fn of(page: *const list.Page, found: []const records.Record) Error!?Columns {
     std.debug.assert(page.session.signed_in());
     std.debug.assert(found.len <= records.list_max);
 
     const shown = page.effective.types;
+    const names = page.columns();
 
-    if (page.view_id != null or shown.len != 1) {
+    if (shown.len != 1) {
         return null;
     }
 
-    const all = try sections.all(page.session);
-    const section = sections.current(all, .{
-        .filters = page.effective,
-    }) orelse return null;
-    const listed = section.find(shown[0]) orelse return null;
-
-    if (listed.columns.len == 0) {
-        return null;
-    }
-
-    const fields = try fields_of(page.session, listed.handle, listed.columns);
+    const fields = try fields_of(page.session, shown[0], names);
 
     if (fields.len == 0) {
         return null;
@@ -56,7 +64,7 @@ pub fn of(page: *const list.Page, found: []const records.Record) Error!?Columns 
 
     return .{
         .fields = fields,
-        .cells = try cells_of(page.session, fields, found),
+        .values = try values_of(page.session, fields, found),
     };
 }
 
@@ -65,7 +73,7 @@ fn fields_of(
     handle: []const u8,
     columns: []const []const u8,
 ) Error![]const Field {
-    std.debug.assert(columns.len <= admin_slots.columns_max);
+    std.debug.assert(handle.len > 0);
 
     var reading = session.*;
     const got = registry.SDK.dispatch(&reading.ctx, types.Get, .{
@@ -75,9 +83,13 @@ fn fields_of(
     };
     var fields: std.ArrayList(Field) = .empty;
 
+    std.debug.assert(columns.len <= model.content_type.view_columns_max);
+
     for (columns) |column| {
         for (got.definition.fields) |field| {
-            if (std.mem.eql(u8, field.name, column) and admin_slots.column_kind(field.kind)) {
+            const holds = !model.field.is_layout(field.kind);
+
+            if (std.mem.eql(u8, field.name, column) and holds) {
                 try fields.append(session.arena, .{
                     .name = field.name,
                     .label = field.label,
@@ -90,19 +102,19 @@ fn fields_of(
     return fields.items;
 }
 
-fn cells_of(
+fn values_of(
     session: *admin.Session,
     fields: []const Field,
     found: []const records.Record,
-) Error![]const []const []const u8 {
+) Error![]const []const Value {
     std.debug.assert(fields.len > 0);
 
     const arena = session.arena;
-    const cells = try arena.alloc([]const []const u8, found.len);
+    const cells = try arena.alloc([]const Value, found.len);
 
     for (cells) |*row| {
-        row.* = try arena.alloc([]const u8, fields.len);
-        @memset(@constCast(row.*), "");
+        row.* = try arena.alloc(Value, fields.len);
+        @memset(@constCast(row.*), .null);
     }
 
     if (found.len == 0) {
@@ -136,7 +148,7 @@ fn cells_of(
         .params = params,
         .perspective = .all,
     }) catch |err| {
-        std.log.warn("section columns: {t}", .{err});
+        std.log.warn("list columns: {t}", .{err});
         return cells;
     };
     const text = answered.result.text;
@@ -151,13 +163,13 @@ fn cells_of(
 
         const id = item.object.get("_id") orelse continue;
         const position = position_of(found, if (id == .string) id.string else "") orelse continue;
-        const row: [][]const u8 = @constCast(cells[position]);
+        const row: []Value = @constCast(cells[position]);
 
-        for (fields, 0..) |field, index| {
+        for (row, 0..) |*value, index| {
             var key_buffer: [8]u8 = undefined;
             const key = std.fmt.bufPrint(&key_buffer, "c{d}", .{index}) catch unreachable;
 
-            row[index] = try text_of(arena, field.kind, item.object.get(key));
+            value.* = item.object.get(key) orelse .null;
         }
     }
 

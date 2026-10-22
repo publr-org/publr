@@ -28,14 +28,28 @@ const Size = struct {
     unit: []const u8,
 };
 
-pub fn node(arena: std.mem.Allocator, field: FieldDef) Error!admin.render.Node {
+pub fn node(
+    session: *const admin.Session,
+    arena: std.mem.Allocator,
+    field: FieldDef,
+) Error!admin.render.Node {
     std.debug.assert(field.kind.len <= model.kinds.string_len_max);
     std.debug.assert(field.options.choices.len <= model.field.choices_max);
 
     const kind = model.kinds.lookup(registry.Kinds.all, field.kind);
+    var written_out = field;
+
+    // The line the rules write when the field gives none: the input's placeholder.
+    written_out.validation.hint = "";
+
     var props: Props = .{
-        .schemes = try schemes_of(arena, field.options.url.schemes),
-        .media_types = try media_types_of(arena, field.options.media.types),
+        .schemes = try schemes_of(arena, field.validation.url.schemes),
+        .media_types = try media_types_of(arena, field.validation.media.types),
+        .hint = field.validation.hint,
+        .hint_default = if (field.name.len > 0)
+            try @import("../fields/hint.zig").line(session, arena, written_out)
+        else
+            "",
     };
 
     try fill_common(&props, arena, kind, field);
@@ -52,15 +66,15 @@ fn fill_common(props: *Props, arena: std.mem.Allocator, kind: Kind, field: Field
     std.debug.assert(std.mem.eql(u8, kind.id, field.kind));
     std.debug.assert(kind.id.len > 0);
 
-    const set = field.options;
+    const set = field.validation;
     const is_group = model.field.is_group(field.kind);
     const is_boolean = kind.storage == .bool;
 
     props.can_require = !is_group and !is_boolean;
     props.many_choice = kind.many_allowed;
-    props.required = field.required;
+    props.required = field.validation.required;
     props.can_unique = kind.unique_allowed;
-    props.unique = field.unique;
+    props.unique = field.validation.unique;
     // Single or Multiple is chosen on the same form, so the rule shows whenever it could
     // apply; it is read only when the field holds many values.
     props.has_items = kind.many_allowed or model.field.is_repeater(field.kind);
@@ -77,7 +91,7 @@ fn fill_text(props: *Props, arena: std.mem.Allocator, kind: Kind, field: FieldDe
     std.debug.assert(std.mem.eql(u8, kind.id, field.kind));
     std.debug.assert(kind.id.len > 0);
 
-    const set = field.options;
+    const set = field.validation;
 
     props.has_length = kind.has.length;
     props.limit_length = set.min_len != null or set.max_len != null;
@@ -100,20 +114,20 @@ fn fill_numbers(props: *Props, arena: std.mem.Allocator, kind: Kind, field: Fiel
     std.debug.assert(std.mem.eql(u8, kind.id, field.kind));
     std.debug.assert(kind.id.len > 0);
 
-    const set = field.options;
+    const set = field.validation;
     const listed = kind.has.choices and kind.control != .select;
 
     props.has_range = kind.has.range;
     props.has_dates = kind.has.dates;
-    props.limit_range = set.min != null or set.max != null or set.step != null;
+    props.limit_range = set.min != null or set.max != null or field.options.step != null;
     props.min = try bound_text(arena, kind, set.min);
     props.max = try bound_text(arena, kind, set.max);
-    props.step = try number_text(arena, set.step);
+    props.step = try number_text(arena, field.options.step);
     props.range_message = set.messages.range;
     props.from_now = set.date.from_now;
     props.has_number_choices = listed;
-    props.limit_choices = listed and set.choices.len > 0;
-    props.number_choices = if (listed) try join_lines(arena, set.choices) else "";
+    props.limit_choices = listed and field.options.choices.len > 0;
+    props.number_choices = if (listed) try join_lines(arena, field.options.choices) else "";
     props.choices_message = set.messages.choices;
 }
 
@@ -122,7 +136,7 @@ fn fill_links(props: *Props, arena: std.mem.Allocator, kind: Kind, field: FieldD
     std.debug.assert(std.mem.eql(u8, kind.id, field.kind));
     std.debug.assert(kind.id.len > 0);
 
-    const set = field.options;
+    const set = field.validation;
 
     props.has_reserved = std.mem.eql(u8, kind.id, "slug");
     props.limit_reserved = set.slug.reserved.len > 0;
@@ -144,7 +158,7 @@ fn fill_media(props: *Props, arena: std.mem.Allocator, kind: Kind, field: FieldD
     std.debug.assert(std.mem.eql(u8, kind.id, field.kind));
     std.debug.assert(kind.id.len > 0);
 
-    const set = field.options;
+    const set = field.validation;
     const media = set.media;
     const size_min = try size_of(arena, media.size_min);
     const size_max = try size_of(arena, media.size_max);
@@ -302,18 +316,22 @@ test "sizes come back in the unit they were typed in; groups follow the kind" {
 
     const datetime = model.kinds.find(&model.kinds.core, "datetime").?;
     const day: FieldDef = .{
+        .validation = .{
+            .date = .{
+                .from_now = true,
+            },
+            .min = 86_400_000,
+        },
         .name = "at",
         .label = "At",
         .kind = "datetime",
         .options = .{
             .date = .{
                 .format = .date,
-                .from_now = true,
             },
-            .min = 86_400_000,
         },
     };
-    const earliest = try bound_text(arena, datetime, day.options.min);
+    const earliest = try bound_text(arena, datetime, day.validation.min);
     try std.testing.expectEqualStrings("1970-01-02", earliest);
     var dated: Props = .{
         .schemes = &.{},
@@ -350,17 +368,17 @@ test "sizes come back in the unit they were typed in; groups follow the kind" {
 
     const url = model.kinds.find(&model.kinds.core, "url").?;
     const site: FieldDef = .{
-        .name = "site",
-        .label = "Site",
-        .kind = "url",
-        .options = .{
+        .validation = .{
             .url = .{
                 .schemes = &.{"https"},
                 .hosts = &.{ "a.io", "b.io" },
             },
         },
+        .name = "site",
+        .label = "Site",
+        .kind = "url",
     };
-    const schemes = try schemes_of(arena, site.options.url.schemes);
+    const schemes = try schemes_of(arena, site.validation.url.schemes);
     var linked: Props = .{
         .schemes = schemes,
         .media_types = &.{},

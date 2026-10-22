@@ -626,10 +626,12 @@ test "a group left empty but for an unticked checkbox is left out" {
     const arena = arena_state.allocator();
     const parts = [_]Def{
         .{
+            .validation = .{
+                .required = true,
+            },
             .name = "url",
             .label = "URL",
             .kind = "url",
-            .required = true,
         },
         .{
             .name = "new_window",

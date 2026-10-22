@@ -15,7 +15,7 @@ const Error = admin.Error;
 const Form = admin.Form;
 const FieldDef = model.field.Def;
 const Kind = model.kinds.Kind;
-const Preset = model.field.options.Preset;
+const Preset = model.field.validation.Preset;
 
 const day_ms: i64 = 86_400_000;
 const kib: u64 = 1024;
@@ -38,9 +38,22 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
 
     field.label = label;
     field.name = form.text("name") orelse try type_pages.handle_of(arena, label);
-    field.required = !model.field.is_layout(field.kind) and form.get("required") != null;
-    field.unique = kind.unique_allowed and form.get("unique") != null;
+    field.validation.required = !model.field.is_layout(field.kind) and form.get("required") != null;
+    field.validation.unique = kind.unique_allowed and form.get("unique") != null;
+    field.validation.hint = form.text("hint") orelse "";
     field.searchable = field_pages.can_search(field.kind) and form.get("searchable") != null;
+
+    if (form.get("filterable_offered") != null) {
+        field.filterable = form.get("filterable") != null;
+    }
+
+    // Left as its kind sorts unless ticked otherwise.
+    if (form.get("sortable_offered") != null) {
+        const wanted = form.get("sortable") != null;
+        const usual = model.field_filter.sorts_by_default(field_pages.family_of(field.kind));
+
+        field.sortable = if (wanted == usual) null else wanted;
+    }
 
     // Turned on and off only where the form offers it: a site with one language keeps it.
     if (form.get("variants_offered") != null) {
@@ -66,7 +79,7 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
     try read_lists(arena, form, kind, &field);
 
     if (kind.has.media) {
-        try read_media(arena, form, &field.options.media, &field.options.messages);
+        try read_media(arena, form, &field);
     }
 
     try settings.read(arena, form, kind, &field);
@@ -102,7 +115,7 @@ fn read_rules(
     std.debug.assert(std.mem.eql(u8, kind.id, field.kind));
     std.debug.assert(form.len <= admin.form_pairs_max);
 
-    var set = &field.options;
+    var set = &field.validation;
     const listed = field.many or model.field.is_repeater(field.kind);
     const items_on = listed and form.get("limit_items") != null;
     const length_on = kind.has.length and form.get("limit_length") != null;
@@ -123,7 +136,7 @@ fn read_rules(
     set.messages.words = if (words_on) form.text("words_message") orelse "" else "";
     set.min = if (range_on) bound_of(form, kind, "min", false) else null;
     set.max = if (range_on) bound_of(form, kind, "max", true) else null;
-    set.step = if (range_on and !kind.has.dates) number_of(form, "step") else null;
+    field.options.step = if (range_on and !kind.has.dates) number_of(form, "step") else null;
     set.messages.range = if (range_on) form.text("range_message") orelse "" else "";
     set.date.from_now = kind.has.dates and form.get("from_now") != null;
     set.messages.choices = if (choices_on) form.text("choices_message") orelse "" else "";
@@ -131,8 +144,8 @@ fn read_rules(
     if (numbers) {
         const text = if (choices_on) form.text("number_choices") orelse "" else "";
 
-        set.choices = try settings.lines_of(arena, text);
-        set.labels = &.{};
+        field.options.choices = try settings.lines_of(arena, text);
+        field.options.labels = &.{};
     }
 }
 
@@ -141,7 +154,7 @@ fn read_shape(form: *const Form, kind: Kind, field: *FieldDef) void {
     std.debug.assert(std.mem.eql(u8, kind.id, field.kind));
     std.debug.assert(form.len <= admin.form_pairs_max);
 
-    var set = &field.options;
+    var set = &field.validation;
     const on = kind.has.pattern and form.get("limit_pattern") != null;
     const wanted = form.text("preset") orelse "any";
 
@@ -160,7 +173,7 @@ fn read_lists(
     std.debug.assert(std.mem.eql(u8, kind.id, field.kind));
     std.debug.assert(form.len <= admin.form_pairs_max);
 
-    var set = &field.options;
+    var set = &field.validation;
     const is_slug = std.mem.eql(u8, kind.id, "slug");
     const is_email = std.mem.eql(u8, kind.id, "email");
     const is_url = std.mem.eql(u8, kind.id, "url");
@@ -202,15 +215,12 @@ fn bound_of(form: *const Form, kind: Kind, name: []const u8, last: bool) ?f64 {
     return @floatFromInt(ms);
 }
 
-fn read_media(
-    arena: std.mem.Allocator,
-    form: *const Form,
-    media: *model.field.options.Media,
-    messages: *model.field.options.Messages,
-) Error!void {
+fn read_media(arena: std.mem.Allocator, form: *const Form, field: *FieldDef) Error!void {
     std.debug.assert(form.len <= admin.form_pairs_max);
     std.debug.assert(model.field.options.media_types.len > 0);
 
+    const media = &field.validation.media;
+    const messages = &field.validation.messages;
     const size_on = form.get("limit_size") != null;
     const types_on = form.get("limit_types") != null;
     const dimensions_on = form.get("limit_dimensions") != null;
@@ -225,8 +235,8 @@ fn read_media(
     media.height_min = if (dimensions_on) count_of(form, "height_min") else null;
     media.height_max = if (dimensions_on) count_of(form, "height_max") else null;
     messages.dimensions = if (dimensions_on) form.text("dimensions_message") orelse "" else "";
-    media.create = form.get("media_create") != null;
-    media.link = form.get("media_link") != null;
+    field.options.media.create = form.get("media_create") != null;
+    field.options.media.link = form.get("media_link") != null;
 }
 
 /// A file size as the number typed times its unit (`<name>_unit`: b, kb, mb).
@@ -287,22 +297,22 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
         .kind = "string",
     });
     try std.testing.expectEqualStrings("sku", sku.name);
-    try std.testing.expect(sku.required and sku.unique);
-    try std.testing.expectEqual(@as(u32, 2), sku.options.min_len.?);
-    try std.testing.expectEqual(@as(u32, 12), sku.options.max_len.?);
-    try std.testing.expectEqualStrings("Two to twelve", sku.options.messages.length);
+    try std.testing.expect(sku.validation.required and sku.validation.unique);
+    try std.testing.expectEqual(@as(u32, 2), sku.validation.min_len.?);
+    try std.testing.expectEqual(@as(u32, 12), sku.validation.max_len.?);
+    try std.testing.expectEqualStrings("Two to twelve", sku.validation.messages.length);
     try std.testing.expectEqualStrings("As printed", sku.help);
     try std.testing.expectEqualStrings("x", sku.default);
-    try std.testing.expectEqual(Preset.uppercase, sku.options.preset);
-    try std.testing.expectEqualStrings("SKU-####", sku.options.pattern);
+    try std.testing.expectEqual(Preset.uppercase, sku.validation.preset);
+    try std.testing.expectEqualStrings("SKU-####", sku.validation.pattern);
     try std.testing.expectEqualStrings("SKU-0000", sku.options.placeholder);
 
     const off = Form.parse(arena, "label=SKU&min_len=2&pattern=x").?;
     const loose = try field_of(arena, &off, sku);
-    try std.testing.expect(loose.options.min_len == null);
-    try std.testing.expectEqual(@as(usize, 0), loose.options.messages.length.len);
-    try std.testing.expect(!loose.unique);
-    try std.testing.expectEqual(@as(usize, 0), loose.options.pattern.len);
+    try std.testing.expect(loose.validation.min_len == null);
+    try std.testing.expectEqual(@as(usize, 0), loose.validation.messages.length.len);
+    try std.testing.expect(!loose.validation.unique);
+    try std.testing.expectEqual(@as(usize, 0), loose.validation.pattern.len);
 
     const dated = Form.parse(arena, "label=When&limit_range=1&min=1970-01-02&max=1970-01-02" ++
         "&date_format=date&from_now=1&default_now=1&default=1970-01-02").?;
@@ -311,10 +321,10 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
         .label = "",
         .kind = "datetime",
     });
-    try std.testing.expectEqual(@as(f64, 86_400_000), when.options.min.?);
-    try std.testing.expectEqual(@as(f64, 2 * 86_400_000 - 1), when.options.max.?);
+    try std.testing.expectEqual(@as(f64, 86_400_000), when.validation.min.?);
+    try std.testing.expectEqual(@as(f64, 2 * 86_400_000 - 1), when.validation.max.?);
     try std.testing.expectEqual(model.field.options.DateFormat.date, when.options.date.format);
-    try std.testing.expect(when.options.date.from_now);
+    try std.testing.expect(when.validation.date.from_now);
     try std.testing.expectEqualStrings("now", when.default);
 
     const filed = Form.parse(arena, "label=Cover&limit_size=1&size_max=2&size_max_unit=mb" ++
@@ -325,10 +335,10 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
         .label = "",
         .kind = "media",
     });
-    try std.testing.expectEqual(@as(u64, 2 * mib), cover.options.media.size_max.?);
-    try std.testing.expect(cover.options.media.size_min == null);
-    try std.testing.expectEqual(@as(usize, 2), cover.options.media.types.len);
-    try std.testing.expectEqual(@as(u32, 800), cover.options.media.width_min.?);
+    try std.testing.expectEqual(@as(u64, 2 * mib), cover.validation.media.size_max.?);
+    try std.testing.expect(cover.validation.media.size_min == null);
+    try std.testing.expectEqual(@as(usize, 2), cover.validation.media.types.len);
+    try std.testing.expectEqual(@as(u32, 800), cover.validation.media.width_min.?);
     try std.testing.expect(!cover.options.media.create and cover.options.media.link);
 }
 
@@ -344,9 +354,9 @@ test "lists, listed numbers and the number of values" {
         .label = "",
         .kind = "string",
     });
-    try std.testing.expectEqual(@as(u32, 5), tagged.options.items_max.?);
-    try std.testing.expect(tagged.options.distinct);
-    try std.testing.expectEqualStrings("One to five", tagged.options.messages.items);
+    try std.testing.expectEqual(@as(u32, 5), tagged.validation.items_max.?);
+    try std.testing.expect(tagged.validation.distinct);
+    try std.testing.expectEqualStrings("One to five", tagged.validation.messages.items);
 
     const sizes = Form.parse(arena, "label=Size&limit_choices=1&number_choices=1%0A2%0A5").?;
     const sized = try field_of(arena, &sizes, .{
@@ -364,9 +374,9 @@ test "lists, listed numbers and the number of values" {
         .label = "",
         .kind = "url",
     });
-    try std.testing.expectEqual(@as(usize, 2), site.options.url.schemes.len);
-    try std.testing.expectEqualStrings("b.io", site.options.url.hosts[1]);
-    try std.testing.expectEqualStrings("Ours only", site.options.messages.host);
+    try std.testing.expectEqual(@as(usize, 2), site.validation.url.schemes.len);
+    try std.testing.expectEqualStrings("b.io", site.validation.url.hosts[1]);
+    try std.testing.expectEqualStrings("Ours only", site.validation.messages.host);
 
     const mail = Form.parse(arena, "label=Mail&limit_domains=1&domains=publr.dev&lowercase=1").?;
     const mailed = try field_of(arena, &mail, .{
@@ -374,7 +384,7 @@ test "lists, listed numbers and the number of values" {
         .label = "",
         .kind = "email",
     });
-    try std.testing.expectEqualStrings("publr.dev", mailed.options.email.domains[0]);
+    try std.testing.expectEqualStrings("publr.dev", mailed.validation.email.domains[0]);
     try std.testing.expect(mailed.options.email.lowercase);
 
     const path = Form.parse(arena, "label=Slug&limit_reserved=1&reserved=admin%0Aapi" ++
@@ -384,7 +394,7 @@ test "lists, listed numbers and the number of values" {
         .label = "",
         .kind = "slug",
     });
-    try std.testing.expectEqual(@as(usize, 2), slugged.options.slug.reserved.len);
+    try std.testing.expectEqual(@as(usize, 2), slugged.validation.slug.reserved.len);
     try std.testing.expect(slugged.options.slug.lock_on_publish);
 }
 

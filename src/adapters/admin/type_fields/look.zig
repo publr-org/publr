@@ -69,8 +69,8 @@ fn fill_controls(props: *Props, kind: Kind, field: FieldDef) void {
     props.select_buttons = set.select.control == .buttons;
     props.has_reference = std.mem.eql(u8, kind.id, "reference");
     props.reference_create = set.reference.create;
-    props.reference_live_only = set.reference.live_only;
-    props.reference_public_only = set.reference.public_only;
+    props.reference_live_only = field.validation.reference.live_only;
+    props.reference_public_only = field.validation.reference.public_only;
     props.reference_link = set.reference.link;
     props.has_container = model.field.is_container(field.kind);
     props.collapsed = set.container.collapsed;

@@ -40,7 +40,7 @@ pub fn list_node(session: *Session, handle: []const u8, def: Def) Error!admin.re
 
     const arena = session.arena;
     const kind_label = if (spaces.of(session) == .custom)
-        try session.translated("Custom fields")
+        try session.translated("Custom fields", .{})
     else
         (try type_pages.kind_text(session, def.kind)).label;
     const hub = try spaces.hub(session, handle);
@@ -61,7 +61,10 @@ pub fn list_node(session: *Session, handle: []const u8, def: Def) Error!admin.re
 
     return admin.render.view(arena, views.FieldList, .{
         .csrf = session.csrf_token(),
-        .title = if (spaces.of(session) == .custom) try session.translated("Fields") else def.name,
+        .title = if (spaces.of(session) == .custom) try session.translated(
+            "Fields",
+            .{},
+        ) else def.name,
         .description = if (spaces.of(session) == .custom) "" else try print(
             arena,
             "{s} · {s}",
@@ -82,12 +85,14 @@ pub fn list_node(session: *Session, handle: []const u8, def: Def) Error!admin.re
         ),
         .content_href = content_href,
         .rows = rows[0..shown],
-        .more_label = if (shown == rows.len) "" else try session.translated_with(
+        .more_label = if (shown == rows.len) "" else try session.translated(
             "Show all {count} fields",
-            &.{.{
-                .name = "count",
-                .value = more,
-            }},
+            .{
+                .values = &.{.{
+                    .name = "count",
+                    .value = more,
+                }},
+            },
         ),
         .more_href = if (shown == rows.len) "" else try print(arena, "{s}?fields=all", .{hub}),
         .limit_title = limit.title,
@@ -265,7 +270,7 @@ pub fn row_of(
     return .{
         .path = path,
         .label = field.label,
-        .required = field.required,
+        .required = field.validation.required,
         .icon = std.meta.stringToEnum(
             @FieldType(
                 Row,

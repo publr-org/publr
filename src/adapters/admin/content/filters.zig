@@ -57,6 +57,21 @@ pub fn parse(arena: std.mem.Allocator, query: []const u8) Error!Filters {
             filters.search = if (value.len > 0) value else null;
         } else if (std.mem.eql(u8, key, "order")) {
             filters.order = if (model.view.is_order(value)) value else null;
+        } else if (std.mem.eql(u8, key, "per_page")) {
+            const number = std.fmt.parseInt(u32, value, 10) catch 0;
+            const known = std.mem.indexOfScalar(u32, &model.view.per_page_choices, number);
+
+            filters.per_page = if (known != null) number else null;
+        } else if (std.mem.eql(u8, key, "columns")) {
+            filters.columns = try names_of(arena, value);
+        } else if (model.field_filter.field_of(key) != null) {
+            if (part_of(key) == null) {
+                const operator_text = operator_param(arena, query, key);
+
+                try place(arena, &clauses, field_clause(key, value, operator_text));
+            } else {
+                try place_parts(arena, &clauses, query, key);
+            }
         } else if (registry.Filters.find(key)) |def| {
             const operator_text = operator_param(arena, query, key);
 
@@ -69,6 +84,131 @@ pub fn parse(arena: std.mem.Allocator, query: []const u8) Error!Filters {
     filters.clauses = clauses.items;
 
     return filters;
+}
+
+/// `number,total`: names, the empty ones dropped; past the most a view holds, the rest too.
+fn names_of(arena: std.mem.Allocator, value: []const u8) Error![]const []const u8 {
+    std.debug.assert(value.len <= model.view.value_len_max);
+
+    var names: std.ArrayList([]const u8) = .empty;
+    var parts = std.mem.splitScalar(u8, value, ',');
+
+    while (parts.next()) |part| {
+        const name = std.mem.trim(u8, part, " ");
+        const fits = name.len > 0 and name.len <= model.filter.key_len_max;
+
+        if (fits and names.items.len < model.view.columns_max) {
+            names.append(arena, name) catch return error.OutOfMemory;
+        }
+    }
+
+    return names.items;
+}
+
+/// A clause on a field: `field.total=more:4999`, the operator before the first colon; or a
+/// bare value under the operator its own parameter names (`field.total_operator=more`), as
+/// a pill's form sends it. Which operators a field takes is its type's; the list page drops
+/// the ones it does not.
+fn field_clause(key: []const u8, text: []const u8, operator_text: ?[]const u8) Clause {
+    std.debug.assert(key.len > model.field_filter.prefix.len);
+
+    if (operator_text) |named| {
+        const valid = named.len > 0 and named.len <= model.filter.operator_len_max;
+
+        return .{
+            .key = key,
+            .operator = if (valid) named else "is",
+            .value = if (valid) text else "",
+        };
+    }
+
+    const colon = std.mem.indexOfScalar(u8, text, ':') orelse text.len;
+    const operator = text[0..colon];
+    const valid = operator.len > 0 and operator.len <= model.filter.operator_len_max;
+
+    return .{
+        .key = key,
+        .operator = if (valid) operator else "is",
+        .value = if (valid and colon < text.len) text[colon + 1 ..] else "",
+    };
+}
+
+/// The parts a pill's form sends a field's value in: a range's two ends, a span's count and
+/// its unit, the operator.
+const part_suffixes = [_][]const u8{ "_from", "_to", "_count", "_unit", operator_suffix };
+
+/// The field key a part's parameter belongs to: `field.total_from` is `field.total`'s.
+fn part_of(key: []const u8) ?[]const u8 {
+    for (part_suffixes) |suffix| {
+        if (std.mem.endsWith(u8, key, suffix) and key.len > suffix.len) {
+            const field = key[0 .. key.len - suffix.len];
+            std.debug.assert(field.len > 0);
+
+            return field;
+        }
+    }
+
+    return null;
+}
+
+/// A range (`_from`, `_to`) or a span (`_count`, `_unit`) put back into one clause:
+/// `10..20`, `7d`; placed once, when its first part comes.
+fn place_parts(
+    arena: std.mem.Allocator,
+    clauses: *std.ArrayList(Clause),
+    query: []const u8,
+    part_key: []const u8,
+) Error!void {
+    std.debug.assert(query.len <= query_len_max);
+
+    const key = part_of(part_key) orelse return;
+    const first = std.mem.endsWith(u8, part_key, "_from") or
+        std.mem.endsWith(u8, part_key, "_count");
+
+    if (!first or model.field_filter.field_of(key) == null) {
+        return;
+    }
+
+    const low = param(arena, query, key, "_from");
+    const high = param(arena, query, key, "_to");
+    const count = param(arena, query, key, "_count");
+    const unit = param(arena, query, key, "_unit");
+    const operator = param(arena, query, key, operator_suffix) orelse return;
+    const value = if (low != null and high != null)
+        std.fmt.allocPrint(arena, "{s}..{s}", .{ low.?, high.? }) catch return error.OutOfMemory
+    else if (count != null and unit != null)
+        std.fmt.allocPrint(arena, "{s}{s}", .{ count.?, unit.? }) catch return error.OutOfMemory
+    else
+        "";
+
+    try place(arena, clauses, field_clause(key, value, operator));
+}
+
+fn param(
+    arena: std.mem.Allocator,
+    query: []const u8,
+    key: []const u8,
+    suffix: []const u8,
+) ?[]const u8 {
+    std.debug.assert(key.len > 0);
+
+    const name = std.fmt.allocPrint(arena, "{s}{s}", .{ key, suffix }) catch return null;
+    var pairs = std.mem.splitScalar(u8, query, '&');
+
+    while (pairs.next()) |pair| {
+        const equals = std.mem.indexOfScalar(u8, pair, '=') orelse continue;
+
+        if (std.mem.eql(u8, pair[0..equals], name)) {
+            const value = decode(arena, pair[equals + 1 ..]) orelse return null;
+            const trimmed = std.mem.trim(u8, value, " ");
+
+            const fits = trimmed.len > 0 and trimmed.len <= model.view.value_len_max;
+
+            return if (fits) trimmed else null;
+        }
+    }
+
+    return null;
 }
 
 /// One filter's parameter as a clause: `operator:value`, or a bare value under the
@@ -125,8 +265,12 @@ fn place(arena: std.mem.Allocator, clauses: *std.ArrayList(Clause), clause: Clau
     std.debug.assert(clause.key.len > 0);
     std.debug.assert(clauses.items.len <= model.view.clauses_max);
 
+    const on_field = model.field_filter.field_of(clause.key) != null;
+
     for (clauses.items) |*existing| {
-        if (registry.Filters.clash(existing.*, clause)) {
+        const same_field = on_field and std.mem.eql(u8, existing.key, clause.key);
+
+        if (same_field or (!on_field and registry.Filters.clash(existing.*, clause))) {
             existing.* = clause;
 
             return;
@@ -136,6 +280,44 @@ fn place(arena: std.mem.Allocator, clauses: *std.ArrayList(Clause), clause: Clau
     if (clauses.items.len < model.view.clauses_max) {
         clauses.append(arena, clause) catch return error.OutOfMemory;
     }
+}
+
+/// Whether the address names a list and nothing about it (`?type=order`, a page number
+/// aside): the list starts where its default view does.
+pub fn bare(query: []const u8) bool {
+    std.debug.assert(query.len <= query_len_max);
+
+    var pairs = std.mem.splitScalar(u8, query, '&');
+
+    while (pairs.next()) |pair| {
+        const equals = std.mem.indexOfScalar(u8, pair, '=') orelse pair.len;
+        const key = pair[0..equals];
+        const quiet = key.len == 0 or std.mem.eql(u8, key, "type") or
+            std.mem.eql(u8, key, "types") or std.mem.eql(u8, key, "page") or
+            std.mem.eql(u8, key, "view");
+
+        if (!quiet) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// The parts of a view an address left out, from the view it rests on: the columns, the
+/// page size and the order. Clauses and the search stay as given: an
+/// address without them asks for none.
+pub fn completed(given: Filters, resting: Filters) Filters {
+    std.debug.assert(given.clauses.len <= model.view.clauses_max);
+    std.debug.assert(resting.clauses.len <= model.view.clauses_max);
+
+    var out = given;
+
+    out.order = given.order orelse resting.order;
+    out.columns = given.columns orelse resting.columns;
+    out.per_page = given.per_page orelse resting.per_page;
+
+    return out;
 }
 
 /// Whether the address carries any filter at all, besides a view.
@@ -149,7 +331,9 @@ pub fn any_present(query: []const u8) bool {
         const equals = std.mem.indexOfScalar(u8, pair, '=') orelse pair.len;
         const key = pair[0..equals];
         const known = std.mem.eql(u8, key, "type") or std.mem.eql(u8, key, "types") or
-            std.mem.eql(u8, key, "q") or std.mem.eql(u8, key, "order");
+            std.mem.eql(u8, key, "q") or std.mem.eql(u8, key, "order") or
+            std.mem.eql(u8, key, "per_page") or std.mem.eql(u8, key, "columns") or
+            model.field_filter.field_of(key) != null;
 
         if (known or registry.Filters.find(key) != null) {
             return true;
@@ -199,6 +383,18 @@ pub fn format(arena: std.mem.Allocator, filters: Filters, view_id: ?[]const u8) 
         try write_pair(writer, &separator, "order", order);
     }
 
+    if (filters.per_page) |per_page| {
+        const text = std.fmt.allocPrint(arena, "{d}", .{per_page}) catch return error.OutOfMemory;
+
+        try write_pair(writer, &separator, "per_page", text);
+    }
+
+    if (filters.columns) |names| {
+        const text = std.mem.join(arena, ",", names) catch return error.OutOfMemory;
+
+        try write_pair(writer, &separator, "columns", text);
+    }
+
     return out.written();
 }
 
@@ -245,32 +441,59 @@ pub fn list_in(arena: std.mem.Allocator, filters: Filters) Error!ListIn {
     std.debug.assert(filters.types.len <= model.view.types_max);
     std.debug.assert(page_size > 0 and page_size <= record_operations.list_max);
 
-    const clauses = arena.alloc([]const u8, filters.clauses.len) catch return error.OutOfMemory;
+    var clauses: std.ArrayList([]const u8) = .empty;
 
-    for (filters.clauses, clauses) |clause, *text| {
-        text.* = std.fmt.allocPrint(arena, "{s}:{s}:{s}", .{
+    for (filters.clauses) |clause| {
+        // A pill on a field with nothing chosen yet asks nothing of the list.
+        if (model.field_filter.field_of(clause.key) != null and clause.value.len == 0) {
+            continue;
+        }
+
+        clauses.append(arena, std.fmt.allocPrint(arena, "{s}:{s}:{s}", .{
             clause.key,
             clause.operator,
             clause.value,
-        }) catch return error.OutOfMemory;
+        }) catch return error.OutOfMemory) catch return error.OutOfMemory;
     }
 
     return .{
         .type = if (filters.types.len == 1) filters.types[0] else null,
         .types = if (filters.types.len > 1) filters.types else &.{},
-        .filters = clauses,
+        .filters = clauses.items,
         .search = filters.search,
         .order = order_of(filters.order),
-        .limit = page_size,
+        .sort = sort_of(filters.order),
+        .limit = filters.per_page orelse page_size,
     };
 }
 
+/// The list's order by one of core's columns: `title`, `-updated`; newest saved first when
+/// the view orders by a field (`sort_of`) or says nothing.
 pub fn order_of(text: ?[]const u8) Order {
-    std.debug.assert(model.view.orders.len == 3);
+    std.debug.assert(model.view.core_orders.len == 4);
 
-    const name = text orelse return .updated_desc;
+    const name = (text orelse return .updated_desc);
+    const descending = std.mem.startsWith(u8, name, "-");
+    const column = if (descending) name[1..] else name;
+    const by = std.meta.stringToEnum(enum { title, created, updated, status }, column) orelse {
+        return .updated_desc;
+    };
 
-    return std.meta.stringToEnum(Order, name) orelse .updated_desc;
+    return switch (by) {
+        .title => if (descending) .title_desc else .title_asc,
+        .created => if (descending) .created_desc else .created_asc,
+        .updated => if (descending) .updated_desc else .updated_asc,
+        .status => if (descending) .status_desc else .status_asc,
+    };
+}
+
+/// The field the view orders by, `total` or `-total`; null for one of core's orders.
+pub fn sort_of(text: ?[]const u8) ?[]const u8 {
+    const name = text orelse return null;
+
+    std.debug.assert(name.len > 0);
+
+    return if (model.view.is_core_order(name)) null else (name);
 }
 
 fn write_pair(
@@ -287,14 +510,14 @@ fn write_pair(
     encode(writer, value) catch return error.OutOfMemory;
 }
 
-/// Form-style percent encoding: unreserved bytes and `:` as they are, a space as `+`.
+/// Form-style percent encoding: unreserved bytes, `:` and `,` as they are, a space as `+`.
 pub fn encode(writer: *std.Io.Writer, text: []const u8) !void {
     std.debug.assert(text.len <= query_len_max);
     std.debug.assert(query_len_max > 0);
 
     for (text) |byte| {
         const plain = std.ascii.isAlphanumeric(byte) or byte == '-' or byte == '_' or
-            byte == '.' or byte == '~' or byte == ':';
+            byte == '.' or byte == '~' or byte == ':' or byte == ',';
 
         if (plain) {
             try writer.writeByte(byte);
@@ -354,7 +577,7 @@ test "an address parses to filters and formats back in one order; junk is droppe
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const query = "order=title_asc&types=page&status=not:draft&types=post&types=page" ++
+    const query = "order=title&types=page&status=not:draft&types=post&types=page" ++
         "&q=hello+world&updated=within:7d&created=before:soon&changed=" ++
         "&view=abc&nope=1";
     const filters = try parse(arena, query);
@@ -368,12 +591,12 @@ test "an address parses to filters and formats back in one order; junk is droppe
     try std.testing.expectEqualStrings("", filters.clause("created").?.value);
     try std.testing.expectEqualStrings("before", filters.clause("created").?.operator);
     try std.testing.expectEqualStrings("", filters.clause("changed").?.value);
-    try std.testing.expectEqualStrings("title_asc", filters.order.?);
+    try std.testing.expectEqualStrings("title", filters.order.?);
 
     const address = try format(arena, filters, "abc");
     try std.testing.expectEqualStrings(
         "/admin/content?view=abc&types=page&types=post&status=not:draft" ++
-            "&updated=within:7d&created=before:&changed=is:&q=hello+world&order=title_asc",
+            "&updated=within:7d&created=before:&changed=is:&q=hello+world&order=title",
         address,
     );
     try std.testing.expect(try same(arena, filters, try parse(arena, address[15..])));
@@ -425,5 +648,33 @@ test "an address parses to filters and formats back in one order; junk is droppe
     const own_address = "/admin/content?type=post&status=is:draft";
     try std.testing.expectEqualStrings(own_address, try format(arena, own, null));
     try std.testing.expect(!(try parse(arena, "types=post")).type_view);
+    try std.testing.expect(bare("type=order&page=2") and !bare("type=order&q=x"));
+
+    const from_forms = try parse(arena, "type=order&field.total_operator=more&field.total=10" ++
+        "&field.placed_operator=between&field.placed_from=2026-01-01" ++
+        "&field.placed_to=2026-01-31&field.paid_operator=in_the_past&field.paid_count=7" ++
+        "&field.paid_unit=d");
+    try std.testing.expectEqual(@as(usize, 3), from_forms.clauses.len);
+    try std.testing.expectEqualStrings("more", from_forms.clauses[0].operator);
+    try std.testing.expectEqualStrings("10", from_forms.clauses[0].value);
+    try std.testing.expectEqualStrings("2026-01-01..2026-01-31", from_forms.clauses[1].value);
+    try std.testing.expectEqualStrings("7d", from_forms.clauses[2].value);
+
+    const shaped = try parse(arena, "type=order&field.total=more:4999&field.total=at_least:10" ++
+        "&field.at=before:10:30&field.empty=&order=-total&per_page=50&per_page=7" ++
+        "&columns=number,,total");
+    try std.testing.expectEqual(@as(usize, 3), shaped.clauses.len);
+    try std.testing.expectEqualStrings("at_least", shaped.clauses[0].operator);
+    try std.testing.expectEqualStrings("10:30", shaped.clauses[1].value);
+    try std.testing.expectEqual(@as(?u32, null), shaped.per_page);
+    try std.testing.expectEqual(@as(usize, 2), shaped.columns.?.len);
+    const shaped_in = try list_in(arena, shaped);
+    try std.testing.expectEqual(@as(usize, 2), shaped_in.filters.len);
+    try std.testing.expectEqualStrings("-total", shaped_in.sort.?);
+    try std.testing.expectEqualStrings(
+        "/admin/content?type=order&field.total=at_least:10&field.at=before:10:30" ++
+            "&field.empty=is:&order=-total&columns=number,total",
+        try format(arena, shaped, null),
+    );
     try std.testing.expect(!(try parse(arena, "type=post&type=page")).type_view);
 }

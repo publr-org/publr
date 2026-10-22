@@ -4,12 +4,14 @@ const std = @import("std");
 const admin = @import("../../admin.zig");
 const registry = @import("../../../server/registry.zig");
 const model = @import("../../../model.zig");
+const statuses = @import("../../../operations/status.zig");
 const types = @import("../../../operations/content_type.zig");
 const record_operations = @import("../../../operations/record.zig");
 const saved_views = @import("../../../operations/view.zig");
 const filters = @import("filters.zig");
 const pills = @import("pills.zig");
 const table = @import("table.zig");
+const view_offer = @import("view_offer.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -31,6 +33,27 @@ pub const Page = struct {
     effective: Filters,
     changed: bool,
     types: []const Summary,
+    /// Every status the site knows: core's and each type's own.
+    statuses: []const model.status.Status,
+    /// What a list of one type offers, and the default view it starts at.
+    offer: ?view_offer.Offer = null,
+    /// The view the list rests on: a saved view as saved, a type's default view, a built-in
+    /// view; what Clear changes goes back to.
+    resting: Filters = .{},
+    default_columns: []const []const u8 = &.{},
+
+    /// The columns shown: the view's, or the ones a view saying none shows.
+    pub fn columns(page: *const Page) []const []const u8 {
+        std.debug.assert(page.query.len <= filters.query_len_max);
+
+        return page.effective.columns orelse page.default_columns;
+    }
+
+    pub fn per_page(page: *const Page) u32 {
+        std.debug.assert(page.query.len <= filters.query_len_max);
+
+        return page.effective.per_page orelse filters.page_size;
+    }
 
     /// The list with these filters instead, the view kept.
     pub fn href(page: *const Page, modified: Filters) Error![]const u8 {
@@ -86,11 +109,21 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     else
         address;
     const overrides = view_id != null and filters.any_present(query);
-    const effective = if (overrides) address else base;
+    const typed = try view_offer.of(&session, base);
+    const offer = typed orelse view_offer.across_types();
     const resting = if (saved != null)
         base
+    else if (base.type_view and typed != null)
+        view_offer.start(arena, typed.?)
     else
-        try default_base(arena, effective, listed_types.types);
+        try default_base(arena, address, listed_types.types);
+
+    const given = if (overrides) address else base;
+    const started = if (saved == null and base.type_view and filters.bare(query))
+        resting
+    else
+        filters.completed(given, resting);
+    const effective = try view_offer.kept(arena, started, offer);
     var page: Page = .{
         .session = &session,
         .query = query,
@@ -99,6 +132,15 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .effective = effective,
         .changed = !(try filters.same(arena, effective, resting)),
         .types = listed_types.types,
+        .statuses = statuses.known(&session.ctx) catch |err| {
+            return admin.fail(&session, err, back);
+        },
+        .offer = offer,
+        .resting = resting,
+        .default_columns = if (typed) |found|
+            view_offer.start(arena, found).columns orelse &view_offer.across_default_columns
+        else
+            &view_offer.across_default_columns,
     };
     var list_in = try filters.list_in(arena, effective);
 
@@ -115,6 +157,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     try table.fill(&props, &page, shown.listed.records);
     try table.fill_selection(&props, &page, list_in, shown.listed.total);
     try table.fill_pages(&props, &page, shown.number, shown.listed.total);
+    try @import("view_options.zig").fill(&props, &page);
     try session.response.set_header("Vary", "Accept");
     try session.response.set_header("Cache-Control", "private, no-cache");
 
@@ -124,35 +167,42 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     const list_panel = try admin.render.view(arena, views.ContentList, props);
 
-    try admin.screen_with(&session, .{
-        .content = .{
-            .view_id = view_id,
-            .filters = effective,
+    try admin.screen(
+        &session,
+        .ok,
+        views.Content,
+        .{
+            .title = props.title,
+            .has_types = has_record_type(page.types),
+            .list = list_panel,
         },
-    }, .ok, views.Content, .{
-        .title = props.title,
-        .has_types = has_record_type(page.types),
-        .list = list_panel,
-    });
+        .{
+            .content = .{
+                .view_id = view_id,
+                .filters = effective,
+            },
+        },
+    );
 }
 
 /// One page of the records, the address's `page` (from 1). Past the last one (its records
 /// moved away, an old link) the last one is shown instead.
 fn listed_page(session: *Session, list_in: *record_operations.List.In) !Shown {
-    std.debug.assert(list_in.limit == filters.page_size);
+    std.debug.assert(list_in.limit > 0 and list_in.limit <= record_operations.list_max);
     std.debug.assert(list_in.count);
 
     const asked = admin.query_param(session, "page") orelse "1";
+    const per_page = list_in.limit;
     var number = std.math.clamp(std.fmt.parseInt(u32, asked, 10) catch 1, 1, pages_max);
 
-    list_in.offset = (number - 1) * filters.page_size;
+    list_in.offset = (number - 1) * per_page;
 
     var listed = try registry.SDK.dispatch(&session.ctx, record_operations.List, list_in.*);
-    const last = table.page_count(listed.total);
+    const last = table.page_count(listed.total, per_page);
 
     if (number > last) {
         number = last;
-        list_in.offset = (number - 1) * filters.page_size;
+        list_in.offset = (number - 1) * per_page;
         listed = try registry.SDK.dispatch(&session.ctx, record_operations.List, list_in.*);
     }
 
@@ -167,8 +217,9 @@ const Shown = struct {
     number: u32,
 };
 
-/// Pages an address may ask for: every offset they make fits a `u32`.
-const pages_max: u32 = std.math.maxInt(u32) / filters.page_size;
+/// Pages an address may ask for: every offset they make, at the most rows a page holds,
+/// fits a `u32`.
+const pages_max: u32 = std.math.maxInt(u32) / 100;
 
 /// The page with what every part of it shares filled in; the header, the pills and the
 /// rows follow.
@@ -192,8 +243,17 @@ fn base_props(page: *const Page, total: u32) Error!views.ContentList.Props {
         .save_href = "",
         .delete_href = "",
         .rename_href = "",
+        .default_type = if (page.saved == null and page.effective.type_view and
+            page.offer.?.title_field.len > 0)
+            page.effective.types[0]
+        else
+            "",
+        .own_default = if (page.offer) |offer| std.mem.eql(u8, offer.layer, "mine") else false,
+        .everyone_default = if (page.offer) |offer| offer.everyone else false,
+        .is_admin = session.ctx.caller.holds("admin"),
+        .view_shared = if (page.saved) |saved| saved.shared else false,
         .new_href = "",
-        .new_label = try session.translated("New record"),
+        .new_label = try session.translated("New record", .{}),
         .new_targets = &.{},
         .hidden = &.{},
         .search = page.effective.search orelse "",
@@ -208,11 +268,15 @@ fn base_props(page: *const Page, total: u32) Error!views.ContentList.Props {
         .match_types = &.{},
         .match_filters = &.{},
         .match_search = "",
-        .moves = &.{},
+        .transitions = &.{},
         .pages = &.{},
         .previous_href = "",
         .next_href = "",
         .range_text = "",
+        .sort_options = &.{},
+        .direction_options = &.{},
+        .page_size_options = &.{},
+        .properties = &.{},
     };
 }
 
@@ -317,7 +381,7 @@ fn title_of(page: *const Page) Error![]const u8 {
         }
     }
 
-    return page.session.translated("All content");
+    return page.session.translated("All content", .{});
 }
 
 /// A built-in view's name, by its place in `built_in_views`.
@@ -326,10 +390,10 @@ fn built_in_name(session: *const Session, index: u32) Error![]const u8 {
     std.debug.assert(built_in_views.len == 4);
 
     return switch (index) {
-        0 => session.translated("Recent"),
-        1 => session.translated("Created by me"),
-        2 => session.translated("Updated by me"),
-        else => session.translated("Changed"),
+        0 => session.translated("Recent", .{}),
+        1 => session.translated("Created by me", .{}),
+        2 => session.translated("Updated by me", .{}),
+        else => session.translated("Changed", .{}),
     };
 }
 
@@ -385,9 +449,7 @@ fn base_href(page: *const Page) Error![]const u8 {
         return print(page.session.arena, "/admin/content?view={s}", .{id});
     }
 
-    const resting = try default_base(page.session.arena, page.effective, page.types);
-
-    return filters.format(page.session.arena, resting, null);
+    return filters.format(page.session.arena, page.resting, null);
 }
 
 /// The filters in force as the query string a form posts to save them.
@@ -412,12 +474,17 @@ fn fill_header(props: *views.ContentList.Props, page: *const Page) Error!void {
         props.save_href = try print(arena, "/admin/views/{s}/save", .{id});
         props.rename_href = try print(arena, "/admin/views/{s}/rename", .{id});
         props.delete_href = try print(arena, "/admin/views/{s}/delete", .{id});
-        props.copy_name = try session.translated("New view");
+        props.copy_name = try session.translated("New view", .{});
     } else {
-        props.copy_name = try session.translated_with("Copy of {view}", &.{.{
-            .name = "view",
-            .value = props.title,
-        }});
+        props.copy_name = try session.translated(
+            "Copy of {view}",
+            .{
+                .values = &.{.{
+                    .name = "view",
+                    .value = props.title,
+                }},
+            },
+        );
     }
 
     var targets: std.ArrayList(views.ContentList.New_targetsItem) = .empty;
@@ -441,10 +508,15 @@ fn fill_header(props: *views.ContentList.Props, page: *const Page) Error!void {
 
     if (targets.items.len == 1) {
         props.new_href = targets.items[0].href;
-        props.new_label = try session.translated_with("New {type}", &.{.{
-            .name = "type",
-            .value = targets.items[0].label,
-        }});
+        props.new_label = try session.translated(
+            "New {type}",
+            .{
+                .values = &.{.{
+                    .name = "type",
+                    .value = targets.items[0].label,
+                }},
+            },
+        );
     } else {
         props.new_targets = targets.items;
     }

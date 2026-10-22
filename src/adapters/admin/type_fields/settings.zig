@@ -43,8 +43,8 @@ pub fn read(arena: std.mem.Allocator, form: *const Form, kind: Kind, field: *Fie
     if (kind.has.target) {
         set.to = try values_of(arena, form, "to");
         set.reference.create = form.get("reference_create") != null;
-        set.reference.live_only = form.get("reference_live_only") != null;
-        set.reference.public_only = form.get("reference_public_only") != null;
+        field.validation.reference.live_only = form.get("reference_live_only") != null;
+        field.validation.reference.public_only = form.get("reference_public_only") != null;
         set.reference.link = form.get("reference_link") != null;
         set.reference.on_delete = if (form.get("on_delete")) |wanted|
             std.meta.stringToEnum(settings_options.OnDelete, wanted) orelse .keep

@@ -57,7 +57,7 @@ pub fn create(request: *Request, response: *Response, ctx: *Context) Error!void 
         .label = "",
         .kind = kind.id,
     });
-    const untitled = try session.translated("Untitled field");
+    const untitled = try session.translated("Untitled field", .{});
     const field = if (preview) columns.presentable(typed, untitled) else typed;
     const grown = try session.arena.alloc(FieldDef, siblings.len + 1);
 
@@ -101,7 +101,7 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
     const changed = try session.arena.dupe(FieldDef, place.siblings);
     const preview = columns.wants_preview(session);
     const typed = try field_of(session.arena, form, place.field);
-    const untitled = try session.translated("Untitled field");
+    const untitled = try session.translated("Untitled field", .{});
     const field = if (preview) columns.presentable(typed, untitled) else typed;
 
     changed[place.index] = field;
@@ -146,11 +146,12 @@ pub fn delete(request: *Request, response: *Response, ctx: *Context) Error!void 
             .path = path,
             .message = try session.translated(
                 "the visual editor writes this field; make the type a Form type first",
+                .{},
             ),
         }};
-        const heading = try session.translated("The field was not removed");
+        const heading = try session.translated("The field was not removed", .{});
 
-        return admin.message(session, heading, "", &refused, hub);
+        return admin.message(session, heading, "", &refused, hub, .{});
     }
 
     const kept = try session.arena.alloc(FieldDef, place.siblings.len - 1);
@@ -191,19 +192,20 @@ fn held_or_problems(
 
     if (err != error.Conflict) {
         const refused = try schemas.problems(session, err, definition);
-        const heading = try session.translated("The field was not removed");
+        const heading = try session.translated("The field was not removed", .{});
 
-        return admin.message(session, heading, "", refused, hub);
+        return admin.message(session, heading, "", refused, hub, .{});
     }
 
     const field_href = try print(session.arena, "{s}/fields/{s}", .{ hub, path });
 
-    const heading = try session.translated("Records hold values for this field");
+    const heading = try session.translated("Records hold values for this field", .{});
     const text = try session.translated(
         "Delete it from its own page, with \"also delete its values\" ticked.",
+        .{},
     );
 
-    try admin.message(session, heading, text, &[_]model.field.Problem{}, field_href);
+    try admin.message(session, heading, text, &[_]model.field.Problem{}, field_href, .{});
 }
 
 pub fn move(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -268,9 +270,9 @@ fn save_and_redirect(session: *Session, handle: []const u8, def: Def, next: []co
     const hub = try spaces.hub(session, handle);
     const refused = try save(session, handle, def) orelse return moved(session, next);
 
-    const heading = try session.translated("The content type is not valid");
+    const heading = try session.translated("The content type is not valid", .{});
 
-    try admin.message(session, heading, "", refused, hub);
+    try admin.message(session, heading, "", refused, hub, .{});
 }
 
 /// A write that went through: the page's script is told where to go next, a plain form is

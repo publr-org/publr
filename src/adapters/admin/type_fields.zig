@@ -58,12 +58,12 @@ fn back_label_of(session: *const Session, path: ?[]const u8) Error![]const u8 {
     std.debug.assert(session.signed_in());
 
     if (path == null) {
-        return session.translated("Kinds");
+        return session.translated("Kinds", .{});
     }
 
     const under = levels.below(session);
 
-    return if (under.len > 0) under else session.translated("Fields");
+    return if (under.len > 0) under else session.translated("Fields", .{});
 }
 
 /// The kind's descriptor, or the placeholder for a kind no plugin provides any more.
@@ -93,6 +93,13 @@ pub fn can_be_many(kind: []const u8) bool {
     std.debug.assert(listable or !std.mem.eql(u8, kind, "string"));
 
     return listable;
+}
+
+/// How lists can filter and order by fields of the kind.
+pub fn family_of(kind: []const u8) model.field_filter.Family {
+    std.debug.assert(kind.len > 0);
+
+    return model.field_filter.family_of(model.kinds.lookup(registry.Kinds.all, kind));
 }
 
 pub fn can_search(kind: []const u8) bool {
@@ -186,21 +193,31 @@ fn render_picker(session: *Session, handle: []const u8, def: Def, parent: []cons
     }
 
     const description = if (parent.len > 0)
-        try session.translated_with("A field inside {field}", &.{.{
-            .name = "field",
-            .value = parent,
-        }})
+        try session.translated(
+            "A field inside {field}",
+            .{
+                .values = &.{.{
+                    .name = "field",
+                    .value = parent,
+                }},
+            },
+        )
     else
-        try session.translated_with("A field of {type}", &.{.{
-            .name = "type",
-            .value = def.name,
-        }});
+        try session.translated(
+            "A field of {type}",
+            .{
+                .values = &.{.{
+                    .name = "type",
+                    .value = def.name,
+                }},
+            },
+        );
     const back_href = if (parent.len > 0)
         try print(arena, "{s}/fields/{s}", .{ type_href, parent })
     else
         type_href;
     const panel = try admin.render.view(arena, views.KindPanel, .{
-        .title = try session.translated("Pick a kind"),
+        .title = try session.translated("Pick a kind", .{}),
         .description = description,
         .back_href = back_href,
         .back_label = try back_label_of(session, null),
@@ -213,7 +230,7 @@ fn render_picker(session: *Session, handle: []const u8, def: Def, parent: []cons
 
     try levels.answer(session, handle, def, .{
         .url = url,
-        .title = try session.translated("Pick a kind"),
+        .title = try session.translated("Pick a kind", .{}),
         .panel = panel,
     });
 }
@@ -246,7 +263,7 @@ pub fn render_form(
 
     try levels.answer(session, handle, def, .{
         .url = url,
-        .title = if (path == null) try session.translated("New field") else field.label,
+        .title = if (path == null) try session.translated("New field", .{}) else field.label,
         .panel = panel,
     });
 }
@@ -272,7 +289,7 @@ pub fn panel_node(
 
     return admin.render.view(arena, views.FieldPanel, .{
         .csrf = session.csrf_token(),
-        .title = if (path == null) try session.translated("New field") else field.label,
+        .title = if (path == null) try session.translated("New field", .{}) else field.label,
         .type_href = links.type_href,
         .form_id = if (parent.len > 0) "field-2" else "field-1",
         .back_href = links.back_href,
@@ -292,6 +309,11 @@ pub fn panel_node(
         .many = field.many,
         .can_search = can_search(field.kind),
         .searchable = field.searchable,
+        .can_filter = family_of(field.kind) != .none,
+        .filterable = field.filterable,
+        .can_sort = model.field_filter.sortable(family_of(field.kind)) and !field.many,
+        .sortable = field.sortable orelse
+            model.field_filter.sorts_by_default(family_of(field.kind)),
         .can_translate = dimension_offered != null and !model.field.is_layout(field.kind),
         .translates = if (path == null) translated_by_default(field.kind) else field.variants,
         .translate_label = if (dimension_offered) |dimension|
@@ -313,7 +335,7 @@ pub fn panel_node(
         .has_choices = text.control == .select,
         .choices = try choice_lines(arena, set.choices, set.labels),
         .on_delete = @tagName(set.reference.on_delete),
-        .rules = try rules.node(arena, field),
+        .rules = try rules.node(session, arena, field),
         .defaults = try default_value.node(arena, field),
         .look = try look.node(arena, field),
         .conditions = try @import("field_conditions.zig").node(
@@ -532,20 +554,25 @@ fn target_label(
 
     if (!reached) {
         const app = if (def.app.len == 0)
-            try session.translated("Global types")
+            try session.translated("Global types", .{})
         else
             app_label(session, def.app);
 
-        return session.translated_with("{type} (not shared with {app})", &.{
+        return session.translated(
+            "{type} (not shared with {app})",
             .{
-                .name = "type",
-                .value = summary.name,
+                .values = &.{
+                    .{
+                        .name = "type",
+                        .value = summary.name,
+                    },
+                    .{
+                        .name = "app",
+                        .value = app,
+                    },
+                },
             },
-            .{
-                .name = "app",
-                .value = app,
-            },
-        });
+        );
     }
 
     if (own or summary.app.len == 0) {

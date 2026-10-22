@@ -9,6 +9,7 @@ const model = @import("../../../model.zig");
 const users = @import("../../../operations/user.zig");
 const filters = @import("filters.zig");
 const list = @import("list.zig");
+const field_pills = @import("field_pills.zig");
 
 const Error = admin.Error;
 const views = admin.views;
@@ -36,9 +37,16 @@ pub fn fill(props: *views.ContentList.Props, page: *const Page) Error!void {
     }
 
     for (page.effective.clauses, 0..) |clause, index| {
-        const def = registry.Filters.find(clause.key) orelse continue;
-
         const at: u32 = @intCast(index);
+
+        if (model.field_filter.field_of(clause.key) != null) {
+            const shown = try field_pills.pill(page, clause, at) orelse continue;
+
+            rows.append(arena, shown) catch return error.OutOfMemory;
+            continue;
+        }
+
+        const def = registry.Filters.find(clause.key) orelse continue;
 
         rows.append(arena, try pill_of(page, def, clause, at)) catch return error.OutOfMemory;
     }
@@ -79,7 +87,7 @@ fn type_pill(page: *const Page) Error!Pill {
     cleared.types = &.{};
 
     const label = if (chosen.len == 0)
-        try page.session.translated("Any")
+        try page.session.translated("Any", .{})
     else if (chosen.len == 1)
         (if (page.type_named(chosen[0])) |found| found.name else chosen[0])
     else
@@ -96,7 +104,7 @@ fn type_pill(page: *const Page) Error!Pill {
     return .{
         .id = "filter-type",
         .name = "types",
-        .label = try page.session.translated("Content type"),
+        .label = try page.session.translated("Content type", .{}),
         .operator = try page.session.declared("is"),
         .operator_id = "is",
         .operator_name = "types_operator",
@@ -104,6 +112,14 @@ fn type_pill(page: *const Page) Error!Pill {
         .value = label,
         .value_kind = "choice",
         .day = "",
+        .low = "",
+        .high = "",
+        .low_name = "",
+        .high_name = "",
+        .count = "",
+        .unit = "",
+        .count_name = "",
+        .unit_name = "",
         .options = options.items,
         .carried = &.{},
         .remove_href = "",
@@ -148,9 +164,9 @@ fn pill_of(page: *const Page, def: Definition, clause: Clause, index: u32) Error
     const choices = try choices_of(page, def, operator);
     var options: std.ArrayList(Option) = .empty;
     var value: []const u8 = if (operator.takes == .day)
-        try page.session.translated("Pick a day")
+        try page.session.translated("Pick a day", .{})
     else
-        try page.session.translated("Any");
+        try page.session.translated("Any", .{});
 
     for (choices) |choice| {
         const selected = std.mem.eql(u8, choice.id, clause.value);
@@ -192,6 +208,14 @@ fn pill_of(page: *const Page, def: Definition, clause: Clause, index: u32) Error
             .nothing => "none",
         },
         .day = if (operator.takes == .day) clause.value else "",
+        .low = "",
+        .high = "",
+        .low_name = "",
+        .high_name = "",
+        .count = "",
+        .unit = "",
+        .count_name = "",
+        .unit_name = "",
         .options = options.items,
         .carried = try pairs_of(Carried, page, rest),
         .remove_href = try page.href(rest),
@@ -225,14 +249,17 @@ fn choices_of(
 
     out.append(arena, .{
         .id = "",
-        .label = try page.session.translated("Any"),
+        .label = try page.session.translated("Any", .{}),
     }) catch return error.OutOfMemory;
 
     switch (def.source) {
         .none => {},
         .changes => out.appendSlice(arena, &model.filter.changes) catch return error.OutOfMemory,
+        .requests => out.appendSlice(arena, &model.filter.requests) catch {
+            return error.OutOfMemory;
+        },
         .statuses => {
-            for (registry.Statuses.all) |status| {
+            for (page.statuses) |status| {
                 out.append(arena, .{
                     .id = status.id,
                     .label = try page.session.declared(status.label),
@@ -401,12 +428,14 @@ fn adders(page: *const Page) Error![]const views.ContentList.Add_filtersItem {
         };
     }
 
+    try field_pills.adders(page, &items);
+
     return items.items;
 }
 
 /// Everything an address carries but the search, as a form's hidden fields: the whole
 /// list's, or the list without the clause a form of its own supplies.
-fn pairs_of(comptime Item: type, page: *const Page, of: Filters) Error![]const Item {
+pub fn pairs_of(comptime Item: type, page: *const Page, of: Filters) Error![]const Item {
     std.debug.assert(page.query.len <= filters.query_len_max);
     std.debug.assert(of.clauses.len <= model.view.clauses_max);
 

@@ -7,6 +7,7 @@ const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
+const statuses = @import("../../operations/status.zig");
 const record_operations = @import("../../operations/record.zig");
 const time = @import("../../lib/time.zig");
 
@@ -90,6 +91,8 @@ pub const Context = struct {
     slug_prefix: []const u8,
     /// The address a translated slug (`slug@pl`) is under, by language code.
     slug_prefixes: []const SlugPrefix = &.{},
+    /// Every status the site knows, core's and each type's own: a referenced record's.
+    statuses: []const model.status.Status = &model.status.core_statuses,
     /// The record is live: a slug locked on publish is shown, not edited.
     live: bool = false,
     /// The site's currencies, the default first: one input each on a money field.
@@ -272,15 +275,16 @@ fn row_shell(context: Context, def: Def) Error!Row {
         .conditions = try std.json.Stringify.valueAlloc(context.arena, def.conditions, .{}),
         .value_kind = def.kind,
         .label = def.label,
-        .required = def.required,
+        .required = def.validation.required,
         .help = def.help,
+        .hint = try @import("fields/hint.zig").line(context.session, context.arena, def),
         .collapsed = def.options.container.collapsed,
         .closed = false,
         .opened = false,
         .listed = false,
         .can_create = def.options.reference.create,
         .can_link = def.options.reference.link,
-        .live_suffix = if (def.options.reference.live_only) ":live" else "",
+        .live_suffix = if (def.validation.reference.live_only) ":live" else "",
         .opener_query = try opener_query_of(context, def),
         .shape = "single",
         .json_value = "",
@@ -342,7 +346,7 @@ fn row_of(context: Context, def: Def, current: ?Value) Error!Row {
         row.listed = listed_at(context, def.name);
         row.entries = try entries_of(context, def, current);
         row.add = try print(context.arena, "add:{s}", .{def.name});
-        row.add_label = add_label_of(def, try context.session.translated("Add item"));
+        row.add_label = add_label_of(def, try context.session.translated("Add item", .{}));
     } else if (def.many and kind.has.taxonomy) {
         row.shape = "checks";
         row.choices = try term_checks_of(context, def, current);
@@ -413,7 +417,7 @@ fn fill_media_row(context: Context, row: *Row, def: Def, current: ?Value) Error!
     std.debug.assert(kind_of(def).has.media);
     std.debug.assert(def.name.len > 0);
 
-    const families = def.options.media.types;
+    const families = def.validation.media.types;
 
     row.shape = "media";
     row.files = try media.placed(context.arena, context.files, def, def.name, current);
@@ -429,7 +433,7 @@ fn fill_list_row(context: Context, row: *Row, def: Def, kind: Kind, current: ?Va
     row.shape = "list";
     row.list_type = list_type_of(def, kind).?;
     row.choices = try list_values_of(context, def, kind, current);
-    row.add_label = add_label_of(def, try context.session.translated("Add value"));
+    row.add_label = add_label_of(def, try context.session.translated("Add value", .{}));
 }
 
 /// A group's fields, drawn inline under its label as `group.child`.
@@ -459,7 +463,7 @@ fn group_instances(context: Context, def: Def, current: ?Value) Error![]const In
 
         instances[index] = try nested_of(context, child, name, path, value);
         // A part is needed only when its group is: an optional link may stay empty whole.
-        instances[index].required = child.required and def.required;
+        instances[index].required = child.validation.required and def.validation.required;
     }
 
     return instances;
@@ -619,7 +623,7 @@ fn money_single_of(context: Context, def: Def, current: ?Value) Error![]const vi
 
     std.debug.assert(instances.len == 1);
     @constCast(instances)[0].label = def.label;
-    @constCast(instances)[0].required = def.required;
+    @constCast(instances)[0].required = def.validation.required;
 
     return convert_all(views.ItemsItem, views.OptionsItem, "options", context.arena, instances);
 }
@@ -746,10 +750,15 @@ fn run_of(context: Context, def: Def, items: []const Value, start: u32) Error!Ru
     return .{
         .entry = .{
             .name = try print(context.arena, "{s}[{d}+]", .{ def.name, start }),
-            .label = try context.session.translated_with("{count} more items", &.{.{
-                .name = "count",
-                .value = more,
-            }}),
+            .label = try context.session.translated(
+                "{count} more items",
+                .{
+                    .values = &.{.{
+                        .name = "count",
+                        .value = more,
+                    }},
+                },
+            ),
             .closed = true,
             .run = true,
             .value_json = try json_text(context.arena, values),
@@ -837,10 +846,10 @@ fn many_add_label(context: Context, kind: Kind) Error![]const u8 {
     std.debug.assert(kind.id.len > 0);
 
     if (kind.has.target) {
-        return context.session.translated("Add reference");
+        return context.session.translated("Add reference", .{});
     }
 
-    return context.session.translated("Add value");
+    return context.session.translated("Add value", .{});
 }
 
 /// The add button's label: the field's own, else the shape's.
@@ -885,10 +894,15 @@ fn entry_label(context: Context, def: Def, item: ?Value, index: u32) Error![]con
 
     const number = try print(context.arena, "{d}", .{index + 1});
 
-    return context.session.translated_with("Item {number}", &.{.{
-        .name = "number",
-        .value = number,
-    }});
+    return context.session.translated(
+        "Item {number}",
+        .{
+            .values = &.{.{
+                .name = "number",
+                .value = number,
+            }},
+        },
+    );
 }
 
 /// A field inside a group or repeater: one level deep, so a list there is edited as JSON.
@@ -909,7 +923,7 @@ fn nested_of(
         return .{
             .name = name,
             .label = def.label,
-            .required = def.required,
+            .required = def.validation.required,
             .help = def.help,
             .conditions = try std.json.Stringify.valueAlloc(context.arena, def.conditions, .{}),
             .value_kind = def.kind,
@@ -923,7 +937,7 @@ fn nested_of(
     var instance = try instance_of(context, def, kind, name, path, current, false);
 
     if (kind.has.media) {
-        const families = def.options.media.types;
+        const families = def.validation.media.types;
 
         instance.control = "media";
         instance.files = try media.placed(context.arena, context.files, def, name, current);
@@ -971,7 +985,7 @@ fn instance_of(
         .conditions = try std.json.Stringify.valueAlloc(context.arena, def.conditions, .{}),
         .value_kind = def.kind,
         .label = def.label,
-        .required = def.required,
+        .required = def.validation.required,
         .help = def.help,
         .placeholder = if (def.options.placeholder.len > 0)
             def.options.placeholder
@@ -1046,11 +1060,11 @@ fn fill_boolean(context: Context, instance: *Instance, def: Def, current: ?Value
     const yes = if (flags.true_label.len > 0)
         flags.true_label
     else
-        try context.session.translated("Yes");
+        try context.session.translated("Yes", .{});
     const no = if (flags.false_label.len > 0)
         flags.false_label
     else
-        try context.session.translated("No");
+        try context.session.translated("No", .{});
 
     instance.checked = on;
 
@@ -1099,8 +1113,8 @@ fn fill_number(
 
     instance.control = "number";
     instance.value = try text_of(arena, current);
-    instance.min = try number_text(arena, def.options.min);
-    instance.max = try number_text(arena, def.options.max);
+    instance.min = try number_text(arena, def.validation.min);
+    instance.max = try number_text(arena, def.validation.max);
     instance.step = try step_text(arena, def);
     instance.prefix = if (shape.unit_after) "" else shape.unit;
     instance.suffix = if (shape.unit_after) shape.unit else "";
@@ -1110,7 +1124,7 @@ fn fill_number(
         instance.options = try choice_options(arena, def, current);
         instance.prefix = "";
         instance.suffix = "";
-    } else if (shape.control == .slider and def.options.max != null) {
+    } else if (shape.control == .slider and def.validation.max != null) {
         instance.control = "range";
     } else if (shape.control == .rating) {
         instance.control = "rating";
@@ -1148,7 +1162,7 @@ fn rating_options(arena: std.mem.Allocator, def: Def, current: ?Value) Error![]c
     std.debug.assert(def.name.len > 0);
     std.debug.assert(rating_max > 0);
 
-    const wanted: f64 = def.options.max orelse 5;
+    const wanted: f64 = def.validation.max orelse 5;
     const stars: u32 = @intFromFloat(@min(@max(wanted, 1), rating_max));
     const chosen: ?i64 = if (current) |value| switch (value) {
         .integer => |whole| whole,
@@ -1390,7 +1404,7 @@ fn fill_user(context: Context, instance: *Instance) Error!void {
     const options = try context.arena.alloc(Option, context.users.len + 2);
     options[0] = .{
         .value = "",
-        .label = try context.session.translated("Select a user"),
+        .label = try context.session.translated("Select a user", .{}),
         .selected = instance.value.len == 0,
     };
 
@@ -1408,7 +1422,7 @@ fn fill_user(context: Context, instance: *Instance) Error!void {
 
     options[context.users.len + 1] = .{
         .value = instance.value,
-        .label = try context.session.translated("Previously selected user"),
+        .label = try context.session.translated("Previously selected user", .{}),
         .selected = true,
     };
     var found = instance.value.len == 0;
@@ -1468,7 +1482,10 @@ fn fill_input(
     }
 
     const found = referenced_of(context, instance.value);
-    const status = if (found) |seen| registry.Statuses.find(seen.record.status) else null;
+    const status = if (found) |seen|
+        statuses.find_in(context.statuses, seen.record.status)
+    else
+        null;
 
     const notice = if (found) |seen| seen.notice else "";
     const linked = if (found) |seen| seen.link else true;
@@ -1648,16 +1665,16 @@ fn named_empty(
 
     const listed = !std.mem.eql(u8, control, "select");
 
-    if (listed and def.required) {
+    if (listed and def.validation.required) {
         return options[1..];
     }
 
     const writable = @constCast(options);
 
     writable[0].label = if (listed)
-        try context.session.translated("None")
+        try context.session.translated("None", .{})
     else
-        try context.session.translated("Choose…");
+        try context.session.translated("Choose…", .{});
 
     return options;
 }

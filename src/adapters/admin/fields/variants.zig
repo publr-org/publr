@@ -61,12 +61,12 @@ fn clone_of(arena: std.mem.Allocator, def: Def, code: []const u8, main: ?Value) 
     var clone = def;
 
     clone.name = try model.variant.key_of(arena, def.name, code);
-    clone.required = false;
-    clone.unique = false;
+    clone.validation.required = false;
+    clone.validation.unique = false;
     clone.locked = false;
     clone.variants = false;
     clone.default = "";
-    clone.options.items_min = null;
+    clone.validation.items_min = null;
 
     if (main) |value| {
         if (value == .string and value.string.len > 0) {
@@ -101,10 +101,12 @@ test "a varied field is followed by its variants; a group's varied fields inside
     };
     const fields = [_]Def{
         .{
+            .validation = .{
+                .required = true,
+            },
             .name = "name",
             .label = "Name",
             .kind = "string",
-            .required = true,
             .variants = true,
         },
         .{
@@ -125,7 +127,7 @@ test "a varied field is followed by its variants; a group's varied fields inside
 
     try std.testing.expectEqual(@as(usize, 5), out.len);
     try std.testing.expectEqualStrings("name@pl", out[1].name);
-    try std.testing.expect(!out[1].required);
+    try std.testing.expect(!out[1].validation.required);
     try std.testing.expectEqualStrings("Mug", out[1].options.placeholder);
     try std.testing.expectEqualStrings("name@de", out[2].name);
     try std.testing.expectEqualStrings("title@pl", out[4].fields[1].name);

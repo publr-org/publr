@@ -7,6 +7,7 @@ const admin = @import("../../admin.zig");
 const fields = @import("../fields.zig");
 const registry = @import("../../../server/registry.zig");
 const model = @import("../../../model.zig");
+const statuses = @import("../../../operations/status.zig");
 const types = @import("../../../operations/content_type.zig");
 const record_operations = @import("../../../operations/record.zig");
 const term_operations = @import("../../../operations/term.zig");
@@ -368,8 +369,12 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
     const shown = listed.records[0..@min(listed.records.len, pick_page)];
     const titles = try display.titles(&session.ctx, shown);
 
+    const site_statuses = statuses.known(&session.ctx) catch |err| {
+        return admin.fail(&session, err, back);
+    };
+
     for (shown, titles, 0..) |record, title, index| {
-        const status = registry.Statuses.find(record.status);
+        const status = statuses.find_in(site_statuses, record.status);
         const owner: pick_owner.Owner = if (owners.len > 0) owners[index] else .free;
         if (owner == .here) {
             continue;
@@ -379,7 +384,7 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
             .id = record.id,
             .title = title,
             .status = if (status) |known| try session.declared(known.label) else record.status,
-            .published = registry.Statuses.is_live(record.status),
+            .published = if (status) |found| found.live else false,
             .moves_from = if (owner == .elsewhere) owner.elsewhere else "",
         });
     }

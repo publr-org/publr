@@ -6,13 +6,14 @@ const records = @import("../../../operations/record.zig");
 const list = @import("list.zig");
 const filters = @import("filters.zig");
 const display = @import("../display.zig");
-const section_columns = @import("section_columns.zig");
+const view_columns = @import("view_columns.zig");
+const view_table = @import("view_table.zig");
 
 const Props = admin.views.ContentList.Props;
 const Cell = admin.views.ContentList.CellsItem;
 const Row = admin.views.ContentList.RowsItem;
 const Column = admin.views.ContentList.ColumnsItem;
-const Move = admin.views.ContentList.MovesItem;
+const Transition = admin.views.ContentList.TransitionsItem;
 const PageLink = admin.views.ContentList.PagesItem;
 const Error = admin.Error;
 
@@ -22,30 +23,48 @@ pub fn fill(props: *Props, page: *const list.Page, found: []const records.Record
 
     const arena = page.session.arena;
     const titles = try display.titles(&page.session.ctx, found);
-    const extra = try section_columns.of(page, found);
+    const extra = try view_columns.of(page, found);
     var rows: std.ArrayList(Row) = .empty;
 
+    const fields = if (extra) |columns| columns.fields else &.{};
+    const lookups = try @import("cell_values.zig").gather(page, fields, if (extra) |columns|
+        columns.values
+    else
+        &.{});
+
     for (found, titles, 0..) |record, title, position| {
-        const own: []const []const u8 = if (extra) |columns| columns.cells[position] else &.{};
+        const values: []const std.json.Value = if (extra) |columns|
+            columns.values[position]
+        else
+            &.{};
 
         try rows.append(arena, .{
             .id = record.id,
-            .cells = try cells_of(page, record, title, props.show_type, own),
+            .cells = try view_table.cells(page, record, title, .{
+                .fields = fields,
+                .values = values,
+                .lookups = &lookups,
+            }),
         });
     }
 
     props.rows = rows.items;
-    const own_fields = if (extra) |columns| columns.fields else &.{};
+    props.columns = try view_table.columns(page, fields);
+    props.empty_text = try empty_text(page);
+}
 
-    props.columns = try columns_of(page, props.show_type, own_fields);
-    props.empty_text = if (page.effective.is_empty())
-        try page.session.translated("No records yet. Create the first one.")
+fn empty_text(page: *const list.Page) Error![]const u8 {
+    std.debug.assert(page.session.signed_in());
+
+    return if (page.effective.clauses.len == 0 and page.effective.search == null)
+        page.session.translated("No records yet. Create the first one.", .{})
     else
-        try page.session.translated("No records match these filters.");
+        page.session.translated("No records match these filters.", .{});
 }
 
 /// What the selection's actions need: how many records match past the page, the
-/// conditions that match them, and the statuses a transition leads to.
+/// conditions that match them, and the transitions they may make: the list's type's flow,
+/// core's for a list of several, and the trash.
 pub fn fill_selection(
     props: *Props,
     page: *const list.Page,
@@ -53,34 +72,43 @@ pub fn fill_selection(
     total: u32,
 ) Error!void {
     std.debug.assert(page.session.signed_in());
-    std.debug.assert(props.rows.len <= total or props.rows.len <= filters.page_size);
+    std.debug.assert(props.rows.len <= total or props.rows.len <= page.per_page());
 
     const arena = page.session.arena;
-    var moves: std.ArrayList(Move) = .empty;
+    var transitions: std.ArrayList(Transition) = .empty;
+    const flow = try flow_of(page, list_in.type);
 
-    for (registry.Statuses.all) |status| {
-        const action = action_to(status.id) orelse continue;
+    for (flow.listed()) |transition| {
+        if (named_already(transitions.items, transition.name)) {
+            continue;
+        }
 
-        try moves.append(arena, .{
-            .to = status.id,
-            .label = try page.session.declared(action),
-            .status = try page.session.declared(status.label),
+        try transitions.append(arena, .{
+            .name = transition.name,
+            .label = try page.session.declared(transition.label),
+            .status = try status_label(page, transition.to),
         });
     }
 
+    try transitions.append(arena, .{
+        .name = "trash",
+        .label = try page.session.translated("Delete", .{}),
+        .status = try status_label(page, model.flow.trashed),
+    });
+
     props.total = @floatFromInt(total);
-    props.moves = moves.items;
+    props.transitions = transitions.items;
     props.match_type = list_in.type orelse "";
     props.match_types = list_in.types;
     props.match_filters = list_in.filters;
     props.match_search = list_in.search orelse "";
 }
 
-/// Pages of `filters.page_size` the matching records fill; one when there are none.
-pub fn page_count(total: u32) u32 {
-    std.debug.assert(filters.page_size > 0);
+/// Pages of `per_page` the matching records fill; one when there are none.
+pub fn page_count(total: u32, per_page: u32) u32 {
+    std.debug.assert(per_page > 0);
 
-    const count = std.math.divCeil(u32, total, filters.page_size) catch unreachable;
+    const count = std.math.divCeil(u32, total, per_page) catch unreachable;
 
     std.debug.assert(count <= total);
 
@@ -90,13 +118,13 @@ pub fn page_count(total: u32) u32 {
 /// Where the list stands among its pages: the address keeps the page, the links go to the
 /// first, the last and the ones beside this one, a gap between.
 pub fn fill_pages(props: *Props, page: *const list.Page, number: u32, total: u32) Error!void {
-    std.debug.assert(number >= 1 and number <= page_count(total));
-    std.debug.assert(props.rows.len <= filters.page_size);
+    std.debug.assert(number >= 1 and number <= page_count(total, page.per_page()));
+    std.debug.assert(props.rows.len <= page.per_page());
 
     const session = page.session;
     const arena = session.arena;
     const base = props.address;
-    const last = page_count(total);
+    const last = page_count(total, page.per_page());
     var links: std.ArrayList(PageLink) = .empty;
     var previous: u32 = 0;
 
@@ -130,7 +158,12 @@ pub fn fill_pages(props: *Props, page: *const list.Page, number: u32, total: u32
     props.pages = if (last > 1) links.items else &.{};
     props.previous_href = if (number > 1) try address_of(arena, base, number - 1) else "";
     props.next_href = if (number < last) try address_of(arena, base, number + 1) else "";
-    props.range_text = try range_of(session, number, @intCast(props.rows.len), total);
+    props.range_text = try range_of(session, .{
+        .number = number,
+        .shown = @intCast(props.rows.len),
+        .total = total,
+        .per_page = page.per_page(),
+    });
 }
 
 /// The list's address on a page: the first needs no `page`.
@@ -147,42 +180,83 @@ fn address_of(arena: std.mem.Allocator, base: []const u8, number: u32) Error![]c
     return std.fmt.allocPrint(arena, "{s}{c}page={d}", .{ base, separator, number });
 }
 
+const Range = struct {
+    number: u32,
+    shown: u32,
+    total: u32,
+    per_page: u32,
+};
+
 /// "21–40 of 10000": the rows shown among the matching ones.
-fn range_of(session: *const admin.Session, number: u32, shown: u32, total: u32) Error![]const u8 {
-    std.debug.assert(number >= 1);
-    std.debug.assert(shown <= filters.page_size);
+fn range_of(session: *const admin.Session, range: Range) Error![]const u8 {
+    std.debug.assert(range.number >= 1);
+    std.debug.assert(range.shown <= range.per_page);
 
     const arena = session.arena;
-    const first = (number - 1) * filters.page_size + @min(shown, 1);
+    const shown = range.shown;
+    const total = range.total;
+    const first = (range.number - 1) * range.per_page + @min(shown, 1);
 
-    return session.translated_with("{first}–{last} of {total}", &.{
+    return session.translated(
+        "{first}–{last} of {total}",
         .{
-            .name = "first",
-            .value = try std.fmt.allocPrint(arena, "{d}", .{first}),
+            .values = &.{
+                .{
+                    .name = "first",
+                    .value = try std.fmt.allocPrint(arena, "{d}", .{first}),
+                },
+                .{
+                    .name = "last",
+                    .value = try std.fmt.allocPrint(arena, "{d}", .{first + shown -| 1}),
+                },
+                .{
+                    .name = "total",
+                    .value = try std.fmt.allocPrint(arena, "{d}", .{total}),
+                },
+            },
         },
-        .{
-            .name = "last",
-            .value = try std.fmt.allocPrint(arena, "{d}", .{first + shown -| 1}),
-        },
-        .{
-            .name = "total",
-            .value = try std.fmt.allocPrint(arena, "{d}", .{total}),
-        },
-    });
+    );
 }
 
-/// The name of the first transition leading to a status: what moving there is called.
-fn action_to(status: []const u8) ?[]const u8 {
-    std.debug.assert(status.len > 0);
-    std.debug.assert(registry.Statuses.all_transitions.len > 0);
+/// The flow a list's records move by: its type's, or core's for a list of several types.
+fn flow_of(page: *const list.Page, handle: ?[]const u8) Error!model.flow.Flow {
+    std.debug.assert(page.session.signed_in());
 
-    for (registry.Statuses.all_transitions) |transition| {
-        if (std.mem.eql(u8, transition.to, status)) {
-            return transition.label;
+    const named = handle orelse return model.flow.core;
+    const ctx = &page.session.ctx;
+    // A type that cannot be read now offers core's transitions; the server checks each.
+    const found = records.domain.definition.find(ctx, named) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return model.flow.core,
+    };
+    const type_row = found orelse return model.flow.core;
+
+    std.debug.assert(type_row.def.handle.len > 0);
+
+    return type_row.def.flow;
+}
+
+fn named_already(transitions: []const Transition, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(transitions.len <= model.flow.transitions_max + 1);
+
+    for (transitions) |transition| {
+        if (std.mem.eql(u8, transition.name, name)) {
+            return true;
         }
     }
 
-    return null;
+    return false;
+}
+
+/// A status as people read it, by its id.
+fn status_label(page: *const list.Page, id: []const u8) Error![]const u8 {
+    std.debug.assert(id.len > 0);
+
+    const status = @import("../../../operations/status.zig").find_in(page.statuses, id);
+    const label = if (status) |found| found.label else id;
+
+    return page.session.declared(label);
 }
 
 fn cells_of(
@@ -198,7 +272,7 @@ fn cells_of(
     const arena = page.session.arena;
     const href = try std.fmt.allocPrint(arena, "/admin/content/{s}", .{record.id});
     const type_name = if (page.type_named(record.type)) |found| found.name else record.type;
-    const status = registry.Statuses.find(record.status);
+    const status = @import("../../../operations/status.zig").find_in(page.statuses, record.status);
     var cells: std.ArrayList(Cell) = .empty;
     var title = cell("title", shown_title);
     title.href = href;
@@ -218,13 +292,13 @@ fn cells_of(
     var workflow = cell("status", record.status);
     workflow.kind = "status";
     workflow.tone = tone_of(if (status) |found| found.color else .neutral);
-    workflow.extra = if (record.changed) try page.session.translated("changed") else "";
+    workflow.extra = if (record.changed) try page.session.translated("changed", .{}) else "";
     workflow.extra_tone = "warning";
     try cells.append(arena, workflow);
     var updated = cell("updated", admin.time_text(arena, record.updated_at));
     updated.kind = "numeric";
     try cells.append(arena, updated);
-    var open = cell("open", try page.session.translated("Open"));
+    var open = cell("open", try page.session.translated("Open", .{}));
     open.kind = "action";
     open.href = href;
     try cells.append(arena, open);
@@ -243,16 +317,17 @@ fn cell(id: []const u8, text: []const u8) Cell {
         .tone = "neutral",
         .extra = "",
         .extra_tone = "neutral",
+        .items = &.{},
     };
 }
 
-/// The ids of a section's own columns, after the title.
+/// The ids of the type's own columns, after the title.
 const own_ids = [_][]const u8{ "own_0", "own_1", "own_2", "own_3" };
 
 fn columns_of(
     page: *const list.Page,
     show_type: bool,
-    own: []const section_columns.Field,
+    own: []const view_columns.Field,
 ) Error![]const Column {
     std.debug.assert(page.session.signed_in());
     std.debug.assert(page.effective.clauses.len <= model.view.clauses_max);
@@ -260,15 +335,18 @@ fn columns_of(
     const arena = page.session.arena;
     var title = page.effective;
     var updated = page.effective;
-    title.order = "title_asc";
+    title.order = "title";
     updated.order = null;
     const order = filters.order_of(page.effective.order);
     var columns: std.ArrayList(Column) = .empty;
     try columns.append(arena, .{
         .id = "title",
-        .label = try page.session.translated("Title"),
+        .label = try page.session.translated("Title", .{}),
         .href = try page.href(title),
         .active = order == .title_asc,
+        .sort = if (order == .title_asc) "asc" else "",
+        .@"align" = "",
+        .menu = &.{},
     });
 
     for (own, 0..) |field, index| {
@@ -276,16 +354,19 @@ fn columns_of(
     }
 
     if (show_type) {
-        try columns.append(arena, column("type", try page.session.translated("Content type")));
+        try columns.append(arena, column("type", try page.session.translated("Content type", .{})));
     }
 
-    try columns.append(arena, column("slug", try page.session.translated("Slug")));
-    try columns.append(arena, column("status", try page.session.translated("Status")));
+    try columns.append(arena, column("slug", try page.session.translated("Slug", .{})));
+    try columns.append(arena, column("status", try page.session.translated("Status", .{})));
     try columns.append(arena, .{
         .id = "updated",
-        .label = try page.session.translated("Updated"),
+        .label = try page.session.translated("Updated", .{}),
         .href = try page.href(updated),
         .active = order == .updated_desc,
+        .sort = if (order == .updated_desc) "desc" else "",
+        .@"align" = "",
+        .menu = &.{},
     });
     try columns.append(arena, column("open", ""));
 
@@ -300,6 +381,9 @@ fn column(id: []const u8, label: []const u8) Column {
         .label = label,
         .href = "",
         .active = false,
+        .sort = "",
+        .@"align" = "",
+        .menu = &.{},
     };
 }
 
@@ -334,6 +418,10 @@ pub fn answer(session: *admin.Session, props: Props) Error!void {
             .previous_href = props.previous_href,
             .next_href = props.next_href,
             .range_text = props.range_text,
+            .sort_options = props.sort_options,
+            .direction_options = props.direction_options,
+            .page_size_options = props.page_size_options,
+            .properties = props.properties,
         },
         .context = .{
             .title = props.title,
@@ -346,6 +434,11 @@ pub fn answer(session: *admin.Session, props: Props) Error!void {
             .save_href = props.save_href,
             .delete_href = props.delete_href,
             .rename_href = props.rename_href,
+            .default_type = props.default_type,
+            .own_default = props.own_default,
+            .everyone_default = props.everyone_default,
+            .is_admin = props.is_admin,
+            .view_shared = props.view_shared,
             .new_href = props.new_href,
             .new_label = props.new_label,
             .new_targets = props.new_targets,

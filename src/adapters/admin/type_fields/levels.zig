@@ -114,7 +114,7 @@ pub fn page(session: *Session, handle: []const u8, def: Def, top: ?Level) Error!
     const parents = try arena.alloc(views.TypeFields.ParentsItem, 2);
 
     parents[0] = .{
-        .label = try session.translated("Structure"),
+        .label = try session.translated("Structure", .{}),
         .href = "/admin/structure",
     };
     parents[1] = .{
@@ -130,7 +130,7 @@ pub fn page(session: *Session, handle: []const u8, def: Def, top: ?Level) Error!
         .levels = levels,
         .open = top != null,
         .preview = try columns.preview_node(session, def),
-    });
+    }, .{});
 }
 
 test {
