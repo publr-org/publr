@@ -136,6 +136,8 @@ pub const OwnedItem = struct {
 pub const OwnedPage = struct {
     plugin: []const u8,
     page: Page,
+    /// The plugin's words, where its form finds those of its values.
+    docs: type,
 };
 pub const state = @import("plugin/state.zig");
 pub const depends_on = @import("plugin/depends_on.zig");
@@ -922,6 +924,7 @@ pub fn Merged(comptime plugins: anytype) type {
                 pages = pages ++ &[_]OwnedPage{.{
                     .plugin = Plugin.manifest.name,
                     .page = page,
+                    .docs = Plugin.docs,
                 }};
             }
 

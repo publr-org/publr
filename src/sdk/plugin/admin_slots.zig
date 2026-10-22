@@ -188,6 +188,9 @@ pub const Form = struct {
     save: type,
     /// Fields drawn as several lines rather than one.
     multiline: []const []const u8 = &.{},
+    /// A list's boolean columns true in one row only, drawn as a choice between the rows:
+    /// the main language.
+    only_one: []const []const u8 = &.{},
     /// A read of the plugin's own, no input, answering items people often add to the
     /// form's lists, by list (`.{ .languages = ... }`): each list offers them to pick.
     suggest: ?type = null,

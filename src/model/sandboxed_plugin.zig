@@ -223,6 +223,9 @@ pub const Field = struct {
     label: []const u8 = "",
     /// The names a value may be, when it is one of a set.
     values: []const []const u8 = &.{},
+    /// Each value's words, the first line of its `///` (`1,000`), in step with `values`;
+    /// empty where it has none.
+    words: []const []const u8 = &.{},
     /// A list of items' fields, each plain (`json`, a list of `{ code, label }`).
     fields: []const Field = &.{},
 
@@ -239,6 +242,8 @@ pub const Page = struct {
     read: []const u8 = "",
     save: []const u8 = "",
     multiline: []const []const u8 = &.{},
+    /// A list's boolean columns true in one row only.
+    only_one: []const []const u8 = &.{},
     /// A form's read offering items to add to its lists, and its read previewing a save.
     suggest: []const u8 = "",
     preview: []const u8 = "",

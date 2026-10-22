@@ -879,9 +879,10 @@ const settings: publr.plugin.Page = .{
 ```
 
 `Read` is a read with no input answering the values; `Save` is a write taking every
-field. Each field's `///` is its help; an enum is a dropdown; a list of plain items is a
-table whose rows are added, removed and reordered, and its columns only `Read` answers are
-shown. `.suggest` (a read, no input, answering items by list) offers items to add;
+field. Each field's `///` is its help; an enum is a dropdown, each value named by its `///`
+(`/// 1,000`); a list of plain items is a table whose rows are added, removed and
+reordered, and its columns only `Read` answers are shown. `.only_one = &.{"main"}` names a
+list's boolean columns true in one row only, drawn as a radio. `.suggest` (a read, no input, answering items by list) offers items to add;
 `.preview` (a read taking `Save`'s input, answering as `Read`) keeps the shown columns in
 step as people type. Pages, their top bar counts, panels, row actions and
 Settings pages may name operations made with `publr.operation.define`.

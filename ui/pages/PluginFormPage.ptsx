@@ -20,10 +20,9 @@ export type PluginFormPageProps = {
     choices: Array<{ value: string; label: string }>;
     columns: Array<{ name: string; label: string; kind: string; choices: Array<{ value: string; label: string }> }>;
     rows: Array<{
-      index: number;
-      cells: Array<{ at: number; kind: string; label: string; value: string; choices: Array<{ value: string; label: string }> }>;
+      cells: Array<{ kind: string; label: string; value: string; choices: Array<{ value: string; label: string }> }>;
     }>;
-    suggestions: Array<{ at: number; label: string; values: string[] }>;
+    suggestions: Array<{ label: string; values: string[] }>;
   }>;
   /** The read previewing a save; empty for none. */
   preview?: string;

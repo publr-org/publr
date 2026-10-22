@@ -820,10 +820,18 @@ fn callable_file(set: *Set) ![]const u8 {
 
 /// The helpers islands import from plain modules (`upload_picture` from `PictureTray`),
 /// once each, ahead of the stores that use them.
+/// The helpers stores import from other modules: each module's in a scope of its own, so
+/// its private names never meet another's (`const stack` in two of them), answering the
+/// names the stores import, under the names they import them as.
 fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
     std.debug.assert(set.modules.items.len > 0);
 
-    var written: std.ArrayList([]const u8) = .empty;
+    const Named = struct {
+        stem: []const u8,
+        imported: []const u8,
+        local: []const u8,
+    };
+    var named: std.ArrayList(Named) = .empty;
 
     for (set.modules.items) |module| {
         if (module.component.store_registration == null) {
@@ -831,43 +839,95 @@ fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
         }
 
         for (module.component.imports) |import| {
-            if (is_runtime(import.source) or !imports_helper(import)) {
+            if (is_runtime(import.source)) {
                 continue;
             }
 
             const stem = stem_of(import.source);
+            const shared = shared_of(set, stem) orelse continue;
 
-            if (contains(written.items, stem)) {
-                continue;
+            for (import.names) |name| {
+                if (name.type_only or !helper_in(shared, name.imported)) {
+                    continue;
+                }
+
+                const seen = for (named.items) |known| {
+                    if (std.mem.eql(u8, known.local, name.local)) {
+                        if (std.mem.eql(u8, known.stem, stem) and std.mem.eql(u8, known.imported, name.imported)) {
+                            break true;
+                        }
+
+                        std.debug.print("pjsx_gen: two stores import {s} from different modules\n", .{name.local});
+                        return error.Failed;
+                    }
+                } else false;
+
+                if (!seen) {
+                    try named.append(set.arena, .{
+                        .stem = stem,
+                        .imported = name.imported,
+                        .local = name.local,
+                    });
+                }
             }
-
-            const code = shared_code_of(set, stem) orelse continue;
-
-            try written.append(set.arena, stem);
-            try out.print("\n// {s}\n{s}\n", .{ stem, code });
         }
+    }
+
+    var stems: std.ArrayList([]const u8) = .empty;
+
+    for (named.items) |first| {
+        if (contains(stems.items, first.stem)) {
+            continue;
+        }
+
+        try stems.append(set.arena, first.stem);
+        try out.print("\n// {s}\nconst {{", .{first.stem});
+
+        for (named.items) |one| {
+            if (std.mem.eql(u8, one.stem, first.stem)) {
+                try out.print(" {s}: {s},", .{ one.imported, one.local });
+            }
+        }
+
+        try out.writeAll(" } = (() => {\n");
+
+        for (shared_of(set, first.stem).?.component.declarations) |declaration| {
+            if (!declaration.store_bound and !std.ascii.isUpper(declaration.name[0])) {
+                try out.print("{s}\n", .{declaration.code});
+            }
+        }
+
+        try out.writeAll("return {");
+
+        for (named.items) |one| {
+            if (std.mem.eql(u8, one.stem, first.stem)) {
+                try out.print(" {s},", .{one.imported});
+            }
+        }
+
+        try out.writeAll(" };\n})();\n");
     }
 }
 
-/// Whether an import names a helper rather than only components: a lowercase value name.
-fn imports_helper(import: anytype) bool {
-    std.debug.assert(import.names.len <= 256);
+/// Whether `module` shares a helper named `name`: one bound to no store.
+fn helper_in(module: *const Module, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
 
-    for (import.names) |name| {
-        if (!name.type_only and name.imported.len > 0 and !std.ascii.isUpper(name.imported[0])) {
-            return true;
+    for (module.component.declarations) |declaration| {
+        if (std.mem.eql(u8, declaration.name, name)) {
+            return !declaration.store_bound and !std.ascii.isUpper(name[0]);
         }
     }
 
     return false;
 }
 
-fn shared_code_of(set: *const Set, stem: []const u8) ?[]const u8 {
+fn shared_of(set: *const Set, stem: []const u8) ?*const Module {
     std.debug.assert(stem.len > 0);
 
     for (set.modules.items) |module| {
         if (std.mem.eql(u8, stem_of(std.fs.path.basename(module.filename)), stem)) {
-            return module.component.shared_code;
+            return module;
         }
     }
 

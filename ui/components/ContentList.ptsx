@@ -175,7 +175,7 @@ const transition_selection = async (transition: string): Promise<Transitioned> =
   })) as Transitioned;
 };
 
-let note_timer: ReturnType<typeof setTimeout> | undefined = undefined;
+let note_timer: ReturnType<typeof setTimeout> | undefined;
 
 export const transitionSelected = async (event: Event) => {
   const button = event.currentTarget as HTMLButtonElement;

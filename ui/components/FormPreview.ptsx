@@ -8,7 +8,7 @@ export const state = Publr.reactive({ note: "", html: null as string | null, bus
 export const body_ref = Publr.ref<HTMLElement>((element) => {
   Publr.stores.navigation.previewHtml = element.innerHTML;
 });
-let request: AbortController | undefined = undefined;
+let request: AbortController | undefined;
 export const root_ref = Publr.ref<HTMLElement>(() => () => request?.abort());
 
 const preview = awaited(async () => {

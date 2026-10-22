@@ -303,7 +303,7 @@ const refreshConditions = (root: HTMLElement) => {
 
 const root_of = () => root_ref.current;
 
-let timer: number | undefined = undefined;
+let timer: number | undefined;
 let inflight: Promise<boolean> | null = null;
 let disposed = false;
 let refresh_after_create = false;
