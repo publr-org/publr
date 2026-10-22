@@ -2325,7 +2325,7 @@ test "roles: an account calls what its roles grant; one granted only apps never 
     try stored_roles.apply(&system, "news", &.{.{
         .name = "subscriber",
         .label = "Subscriber",
-        .grants = &.{"app.news.*"},
+        .grants = &.{"news.*"},
     }});
 
     var subscriber = harness.ctx(.{

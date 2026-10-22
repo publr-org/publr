@@ -120,7 +120,6 @@ pub const options_built_in = [_][]const u8{
     "settings_pages",
     "settings_tabs",
 };
-};
 
 fn check_options(comptime plugin: []const u8, comptime Options: type) void {
     comptime {

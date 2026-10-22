@@ -25,7 +25,7 @@ pub const ContentTypeDef = content_type.Def;
 const DeclaredType = plugin_types.Declared;
 pub const InternalCollection = @import("../model/internal_record.zig").Collection;
 /// An internal record collection with the plugin that declared it.
-const OwnedCollection = struct {
+pub const OwnedCollection = struct {
     owner: []const u8,
     collection: InternalCollection,
 };
