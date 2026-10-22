@@ -5,11 +5,11 @@
 const version = new URL(self.location.href).searchParams.get("v");
 const versioned = (file) => new URL(version ? `${file}?v=${encodeURIComponent(version)}` : file, self.location.href);
 
-importScripts(versioned("publr-files.js"));
+importScripts(versioned("publr-files.js"), versioned("publr-sandbox.js"));
 
 // The path Publr is served under: the scope's (`/demo/` → `/demo`), empty at the root.
 const base = new URL(self.registration.scope).pathname.replace(/\/$/, "");
-const passthrough = ["/index.html", "/publr-worker.js", "/publr-files.js", "/publr.wasm"].map((file) => base + file);
+const passthrough = ["/index.html", "/publr-worker.js", "/publr-files.js", "/publr-sandbox.js", "/publr.wasm"].map((file) => base + file);
 const wasi_errno_nosys = 52;
 const db_file = "publr.sqlite";
 const cookies_file = "publr.cookies.json";
@@ -210,6 +210,7 @@ const init_failures = {
   7: "its content types would not apply",
   8: "its apps would not open",
   9: "this browser gave it no more memory",
+  10: "its installed plugins would not start",
 };
 
 // Which seeds this browser's copy started from, kept beside it.
@@ -232,7 +233,10 @@ async function boot() {
   const bytes = await (await fetch(versioned("publr.wasm"))).arrayBuffer();
   const calls = { ...wasi_stubs, ...PublrFiles.wasi };
   const wasi = new Proxy(calls, { get: (target, name) => target[name] ?? (() => wasi_errno_nosys) });
-  const result = await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi });
+  const result = await WebAssembly.instantiate(bytes, {
+    wasi_snapshot_preview1: wasi,
+    publr_wasm: PublrSandbox.imports(() => instance),
+  });
 
   instance = result.instance;
   await PublrFiles.load(() => instance.exports.memory, seed_files && new URL(seed_files, self.location.href), storage);

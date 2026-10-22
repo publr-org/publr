@@ -171,8 +171,11 @@ jobs:
             chmod +x ../previous/publr-linux-x86_64
             previous_binary="$PWD/../previous/publr-linux-x86_64"
           fi
-          zig build upgrade-fixture -Dupgrade-binary="$binary" \
-            -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE"
+          # Fixtures are made only once update testing has started (fixtures/upgrade/START).
+          if [ -f fixtures/upgrade/START ]; then
+            zig build upgrade-fixture -Dupgrade-binary="$binary" \
+              -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE"
+          fi
           zig build upgrade -Dupgrade-binary="$binary" -Dupgrade-previous="$previous_binary" \
             -Dupgrade-releasing=true -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" 2>&1 | tee ../upgrade.txt
           test "${PIPESTATUS[0]}" -eq 0
@@ -280,7 +283,9 @@ jobs:
       - name: Commit the version and tag it
         working-directory: publr
         run: |
-          cp ../upgrade/publr/fixtures/upgrade/*.tar.gz fixtures/upgrade/
+          if ls ../upgrade/publr/fixtures/upgrade/*.tar.gz >/dev/null 2>&1; then
+            cp ../upgrade/publr/fixtures/upgrade/*.tar.gz fixtures/upgrade/
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A fixtures/upgrade src/lib/db/migrations src/lib/db/migrations.zig
