@@ -474,14 +474,16 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
     std.debug.assert(project.connection.transaction_depth == 0);
     std.debug.assert(project.auth.secret.len == csrf.secret_len);
 
-    var ctx = sdk.Ctx.init(.{
-        .caller = caller,
-        .db = project.connection,
-        .io = project.io,
-        .arena = arena,
-        .auth = project.auth,
-        .now_ms = sdk.context.wall_clock_ms(project.io),
-    });
+    var ctx = sdk.Ctx.init(
+        project.connection,
+        project.io,
+        arena,
+        project.auth,
+        caller,
+        .{
+            .now_ms = sdk.context.wall_clock_ms(project.io),
+        },
+    );
 
     ctx.sandboxed_plugins = project.sandboxed_plugins;
     ctx.scratch_set_aside = project.scratch;
@@ -494,8 +496,69 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
     ctx.agents = project.agents;
     ctx.live = project.live;
     ctx.updater = project.updater;
+    ctx.limits = project.limits;
+    ctx.outside = project.outside;
 
     return ctx;
+}
+
+/// A context for a request: `context`, with the address the request came from, so its
+/// calls count against the rate limits.
+pub fn request_context(
+    project: *const Project,
+    request: anytype,
+    arena: std.mem.Allocator,
+    caller: Caller,
+) sdk.Ctx {
+    std.debug.assert(project.connection.transaction_depth == 0);
+    std.debug.assert(caller != .system);
+
+    var ctx = context(project, arena, caller);
+
+    ctx.address = sdk.limits.address_of(arena, request.peer(), request.header("x-forwarded-for"));
+    ctx.referer = referer_of(request);
+
+    return ctx;
+}
+
+/// The page that sent a request when it is another site's; empty for our own pages and for
+/// a request that names none.
+pub fn referer_of(request: anytype) []const u8 {
+    const referer = request.header("referer") orelse return "";
+
+    std.debug.assert(referer.len <= csrf.header_len_max);
+
+    return switch (csrf.origin_of(request.header("host"), null, referer)) {
+        .same => "",
+        .foreign, .absent => referer,
+    };
+}
+
+test "the referer: another site's page, never our own" {
+    const Fake = struct {
+        host: ?[]const u8,
+        referer: ?[]const u8,
+
+        pub fn header(fake: *const @This(), name: []const u8) ?[]const u8 {
+            return if (std.mem.eql(u8, name, "host")) fake.host else fake.referer;
+        }
+    };
+    const own: Fake = .{
+        .host = "shop.example.com",
+        .referer = "https://shop.example.com/cart",
+    };
+    const other: Fake = .{
+        .host = "shop.example.com",
+        .referer = "https://news.example.org/review",
+    };
+    const none: Fake = .{
+        .host = "shop.example.com",
+        .referer = null,
+    };
+
+    try std.testing.expectEqualStrings("", referer_of(&own));
+    try std.testing.expectEqualStrings("https://news.example.org/review", referer_of(&other));
+    try std.testing.expectEqualStrings("", referer_of(&none));
 }
 
 test "cookie parsing" {

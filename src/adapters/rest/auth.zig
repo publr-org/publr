@@ -18,6 +18,7 @@ const Context = http.Context;
 const identify = identity_module.identify;
 const guard = identity_module.guard;
 const context = identity_module.context;
+const visitor_module = @import("../apps/visitor.zig");
 const set_session_cookie = identity_module.set_session_cookie;
 const clear_session_cookie = identity_module.clear_session_cookie;
 
@@ -40,6 +41,10 @@ pub fn sign_in(request: *Request, response: *Response, ctx: *Context) Error!void
         });
     };
     var sdk_ctx = context(project, ctx.arena, .anonymous);
+
+    // The id the person had before signing in, for the sign-in's hooks.
+    sdk_ctx.visitor = visitor_module.of(project, request) orelse "";
+
     const out = registry.SDK.dispatch(&sdk_ctx, sign_in_operations.SignIn, in) catch |err| {
         return respond_error(response, err, &sdk_ctx);
     };
@@ -74,6 +79,9 @@ pub fn sign_on(request: *Request, response: *Response, ctx: *Context) Error!void
     const wanted = http.Form.query_param(ctx.arena, source, "return") orelse "/admin";
     const back = if (local_path(wanted)) wanted else "/admin";
     var sdk_ctx = context(project, ctx.arena, .anonymous);
+
+    sdk_ctx.visitor = visitor_module.of(project, request) orelse "";
+
     const redeem = sign_on_operations.Redeem;
     const out = registry.SDK.dispatch(&sdk_ctx, redeem, .{
         .token = token,
@@ -153,6 +161,8 @@ pub fn sign_out(request: *Request, response: *Response, ctx: *Context) Error!voi
     if (identity.token) |token| {
         var sdk_ctx = context(project, ctx.arena, identity.caller);
         const sign_out_operation = sign_in_operations.SignOut;
+
+        sdk_ctx.visitor = visitor_module.of(project, request) orelse "";
         _ = registry.SDK.dispatch(&sdk_ctx, sign_out_operation, .{
             .token = token,
         }) catch |err| {
@@ -202,11 +212,46 @@ fn parse_body(comptime In: type, arena: std.mem.Allocator, body: []const u8) ?In
     return @import("../../lib/json.zig").parse(In, arena, body, options) catch null;
 }
 
+/// Where the caller stands against the rate limit that answered: `RateLimit-Limit`,
+/// `-Remaining`, `-Reset` (seconds); nothing for a call no limit counted.
+pub fn rate_headers(response: *Response, ctx: *const sdk.Ctx) Error!void {
+    std.debug.assert(response.headers_len <= 32);
+
+    const rate = ctx.rate orelse return;
+
+    std.debug.assert(rate.remaining <= rate.limit);
+
+    const values = [_]u32{ rate.limit, rate.remaining, rate.reset_s };
+    const names = [_][]const u8{ "RateLimit-Limit", "RateLimit-Remaining", "RateLimit-Reset" };
+
+    // The response keeps the values it is given until it is written: the call's memory.
+    for (names, values) |name, value| {
+        const text = std.fmt.allocPrint(ctx.arena, "{d}", .{value}) catch {
+            return error.OutOfMemory;
+        };
+
+        try response.set_header(name, text);
+    }
+}
+
 /// The operation's error as JSON: `{ "error": "<name>" }` with a matching status. A
 /// plugin's own failure (`error.Failed`) answers with its declared name, status and message.
+/// Too many calls (`error.Throttled`) also says when to try again (`Retry-After`).
 pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) Error!void {
     std.debug.assert(@errorName(err).len > 0);
     std.debug.assert(response.headers_len <= 32);
+
+    try rate_headers(response, ctx);
+
+    if (err == error.Throttled) {
+        if (ctx.rate) |rate| {
+            const text = std.fmt.allocPrint(ctx.arena, "{d}", .{rate.reset_s}) catch {
+                return error.OutOfMemory;
+            };
+
+            try response.set_header("Retry-After", text);
+        }
+    }
 
     if (err == error.Failed) {
         const failure = ctx.failure orelse {
@@ -223,6 +268,13 @@ pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) E
         });
     }
 
+    if (err == error.Invalid and ctx.problems.len > 0) {
+        return response.json(.unprocessable_content, .{
+            .@"error" = "Invalid",
+            .problems = ctx.problems,
+        });
+    }
+
     const status: http.Status = switch (err) {
         error.BadCredentials => .unauthorized,
         error.Throttled => .too_many_requests,
@@ -235,6 +287,7 @@ pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) E
         error.Vetoed => .forbidden,
         error.Interrupted, error.TooBig => .unprocessable_content,
         error.InvalidationFailed,
+        error.NotYet,
         error.OutOfMemory,
         error.Busy,
         error.Constraint,
@@ -281,6 +334,43 @@ test "a plugin's failure answers with its declared status, name and message" {
     };
     try respond_error(&unknown, error.Failed, &bare);
     try std.testing.expectEqual(@as(u16, 500), unknown.status.code());
+}
+
+test "a refused input answers every problem beside its field" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.anonymous);
+    const problems = [_]sdk.operation.Problem{
+        .{
+            .field = "name",
+            .message = "A name is 1 to 80 characters.",
+        },
+        .{
+            .field = "message",
+            .message = "Write a message.",
+        },
+    };
+
+    try std.testing.expectError(error.Invalid, @as(sdk.Error!void, ctx.refuse(&problems)));
+
+    var response: Response = .{
+        .arena = ctx.arena,
+    };
+    try respond_error(&response, error.Invalid, &ctx);
+    try std.testing.expectEqual(@as(u16, 422), response.status.code());
+    try std.testing.expectEqualStrings("{\"error\":\"Invalid\",\"problems\":[" ++
+        "{\"field\":\"name\",\"message\":\"A name is 1 to 80 characters.\"}," ++
+        "{\"field\":\"message\",\"message\":\"Write a message.\"}]}", response.body);
+
+    // Invalid with no problems named stays the bare core error.
+    var bare = harness.ctx(.anonymous);
+    var plain: Response = .{
+        .arena = bare.arena,
+    };
+    try respond_error(&plain, error.Invalid, &bare);
+    try std.testing.expectEqualStrings("{\"error\":\"Invalid\"}", plain.body);
 }
 
 test "per-user answers are never cacheable by a shared cache, signed in or not" {

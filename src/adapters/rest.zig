@@ -90,11 +90,12 @@ fn invoke_runtime(
             .@"error" = "invalid_input",
         });
     };
-    var sdk_ctx = identity_module.context(project, ctx.arena, caller);
+    var sdk_ctx = identity_module.request_context(project, request, ctx.arena, caller);
     const output = registry.SDK.call_json(&sdk_ctx, name, input) catch |err| {
         return auth_http.respond_error(response, err, &sdk_ctx);
     };
 
+    try auth_http.rate_headers(response, &sdk_ctx);
     try response.set_body(.ok, "application/json", output);
 }
 
@@ -142,7 +143,7 @@ fn invoke(
             .@"error" = "invalid_input",
         });
     };
-    var sdk_ctx = identity_module.context(Project.of(ctx), ctx.arena, caller);
+    var sdk_ctx = identity_module.request_context(Project.of(ctx), request, ctx.arena, caller);
 
     // RFC 9745: the caller's client can tell, and the link names what replaces it.
     if (comptime sdk.operation.deprecation(Operation) != null) {
@@ -156,6 +157,7 @@ fn invoke(
         return auth_http.respond_error(response, err, &sdk_ctx);
     };
 
+    try auth_http.rate_headers(response, &sdk_ctx);
     try response.json(.ok, out);
 }
 
@@ -185,7 +187,7 @@ fn parse_query(comptime In: type, arena: std.mem.Allocator, query: []const u8) ?
     const args = query_args(arena, query, &args_storage) orelse return null;
     var problem: cli.Problem = .{};
 
-    return cli.parse_in(In, arena, args, &problem, null) catch null;
+    return cli.parse_in(In, arena, args, &problem, .{}) catch null;
 }
 
 /// A query string as flags: `a=1&b=2` is `--a 1 --b 2`.

@@ -22,7 +22,7 @@ pub const upload_path = "/media/upload";
 const side_requested_max: u32 = 4096;
 
 pub fn register(router: *http.Router) void {
-    std.debug.assert(router.routes_len < 256 - routes_count);
+    std.debug.assert(router.routes_len < router.routes.len - routes_count);
 
     const before = router.routes_len;
 

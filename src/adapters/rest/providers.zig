@@ -1,7 +1,8 @@
 //! `/auth/<provider>` and `/auth/<provider>/callback`: the core's side of signing in with
 //! a provider. The first makes `state` and a PKCE pair, keeps them in a short cookie and
-//! sends the browser to the provider; the second checks the state, asks the plugin who the
-//! code stands for, and turns that into a session (or a link, for someone signed in).
+//! sends the browser to the provider; the second checks the state, runs the provider's
+//! `exchange` (who the code stands for, within a short time), and turns that into a session
+//! (or a link, for someone signed in).
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
@@ -20,11 +21,15 @@ const Request = http.Request;
 const Response = http.Response;
 const Context = http.Context;
 const SignInProvider = sdk.provider.SignInProvider;
+const Access = @import("../../sdk/plugin_access.zig").Access;
+const exchange_step = @import("../../sdk/plugin/exchange.zig");
 const base64 = std.base64.url_safe_no_pad;
 
 pub const cookie_name = "publr_auth";
 pub const cookie_lifetime_s: u32 = 10 * 60;
 pub const refused_path = "/admin/login?identity=refused";
+/// The provider gave no answer in time, or an error: "Try again".
+pub const failed_path = "/admin/login?identity=failed";
 pub const verifier_len: u32 = ids.len * 2;
 pub const next_len_max: u32 = 1024;
 /// An origin to advertise as the callback's instead of the request's own, for a machine the
@@ -32,14 +37,28 @@ pub const next_len_max: u32 = 1024;
 pub const callback_origin_variable = "PUBLR_AUTH_CALLBACK_ORIGIN";
 const host_len_max: u32 = 255;
 
+/// How the routes run each provider's exchange: the grants its plugin was built with, and
+/// how long it may take.
+pub const Exchange = struct {
+    access_of: *const fn (plugin: []const u8) ?*const Access,
+    limit_ms: u32 = sdk.provider.exchange_ms_max,
+};
+
+/// The registry's: each plugin's built grants, `exchange_ms_max`.
+pub const compiled: Exchange = .{
+    .access_of = &registry.SDK.compiled_access,
+};
+
 /// The two routes over a provider list, so the registry's providers and a test's are the
 /// same code. `register` adds `routes_count` routes.
-pub fn Routes(comptime providers: []const SignInProvider) type {
+pub fn Routes(comptime providers: []const SignInProvider, comptime exchange: Exchange) type {
+    comptime std.debug.assert(exchange.limit_ms <= sdk.provider.exchange_ms_max);
+
     return struct {
         pub const routes_count: u32 = 2;
 
         pub fn register(router: *http.Router) void {
-            std.debug.assert(router.routes_len < 256 - routes_count);
+            std.debug.assert(router.routes_len < router.routes.len - routes_count);
             const before = router.routes_len;
 
             router.get("/auth/:provider", &start);
@@ -53,7 +72,7 @@ pub fn Routes(comptime providers: []const SignInProvider) type {
             std.debug.assert(ctx.user_data != null);
 
             const arena = ctx.arena;
-            const provider = offered(request) orelse return unknown(response);
+            const provider = offered(request, ctx) orelse return unknown(response);
             const wanted = http.Form.query_param(arena, request.query(), "next") orelse "/";
             const local = rest_auth.local_path(wanted) and wanted.len <= next_len_max;
             const next = if (local) wanted else "/";
@@ -88,7 +107,7 @@ pub fn Routes(comptime providers: []const SignInProvider) type {
             std.debug.assert(ctx.user_data != null);
 
             const arena = ctx.arena;
-            const provider = offered(request) orelse return unknown(response);
+            const provider = offered(request, ctx) orelse return unknown(response);
             const project = Project.of(ctx);
             const gone = "{s}=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0{s}";
             const cleared = try std.fmt.allocPrint(arena, gone, .{
@@ -115,25 +134,32 @@ pub fn Routes(comptime providers: []const SignInProvider) type {
                 return refuse(response, cleared, why, null);
             }
 
-            const identity = provider.identity(project.io, arena, .{
-                .callback_url = try callback_url(arena, request, provider.name),
-                .code = code,
-                .code_verifier = kept.verifier,
-            }) catch |err| return refuse(response, cleared, "the provider's identity", err);
+            var system = identity_module.context(project, arena, .system);
+            const claims = exchange_step.run(
+                &system,
+                provider,
+                exchange.access_of(provider.plugin),
+                .{
+                    .callback_url = try callback_url(arena, request, provider.name),
+                    .code = code,
+                    .code_verifier = kept.verifier,
+                },
+                exchange.limit_ms,
+            ) catch return exchange_failed(response, cleared);
             const in: identity_operations.Input = .{
                 .provider = provider.name,
-                .id = identity.id,
-                .email = identity.email,
-                .verified = identity.verified,
-                .name = identity.name,
-                .avatar = identity.avatar,
+                .id = claims.subject,
+                .email = claims.email,
+                .verified = claims.verified,
+                .name = claims.name,
+                .avatar = claims.avatar,
             };
 
             try settle(request, response, project, in, kept.next, cleared);
         }
 
         /// The route's provider, when it is declared and offered.
-        fn offered(request: *const Request) ?*const SignInProvider {
+        fn offered(request: *const Request, ctx: *Context) ?*const SignInProvider {
             comptime std.debug.assert(providers.len <= sdk.provider.providers_max);
 
             const name = request.params.get("provider") orelse return null;
@@ -141,8 +167,12 @@ pub fn Routes(comptime providers: []const SignInProvider) type {
             std.debug.assert(name.len > 0);
 
             const provider = sdk.provider.find(providers, name) orelse return null;
+            var reading = identity_module.context(Project.of(ctx), ctx.arena, .system);
+            const offering = identity_operations.providers.available(&reading, provider) catch {
+                return null;
+            };
 
-            return if (provider.available()) provider else null;
+            return if (offering) provider else null;
         }
     };
 }
@@ -162,6 +192,8 @@ fn settle(
     const arena = response.arena;
     const visitor = identity_module.identify(request, arena, project);
     var system = identity_module.context(project, arena, .system);
+
+    system.visitor = @import("../apps/visitor.zig").of(project, request) orelse "";
 
     if (visitor.caller.user_id()) |user_id| {
         _ = registry.SDK.dispatch(&system, identity_operations.Link, .{
@@ -247,6 +279,15 @@ fn refuse(response: *Response, cleared: []const u8, why: []const u8, err: ?anyer
 
     try response.set_header("Set-Cookie", cleared);
     try response.redirect(.see_other, refused_path);
+}
+
+/// Back to the login form with "Try again": the exchange logged why, under the provider.
+fn exchange_failed(response: *Response, cleared: []const u8) Error!void {
+    std.debug.assert(cleared.len > cookie_name.len);
+    std.debug.assert(failed_path[0] == '/');
+
+    try response.set_header("Set-Cookie", cleared);
+    try response.redirect(.see_other, failed_path);
 }
 
 /// `<scheme>://<host>/auth/<provider>/callback`, as the provider must send the browser back:
@@ -345,7 +386,10 @@ fn decode(arena: std.mem.Allocator, text: []const u8) ?[]const u8 {
 
 const user_operations = @import("../../operations/user.zig");
 
-const TestRoutes = Routes(&.{ sdk.provider.testing.trusting, sdk.provider.testing.missing });
+const TestRoutes = Routes(
+    &.{ sdk.provider.testing.trusting, sdk.provider.testing.missing },
+    compiled,
+);
 
 const Flow = struct {
     app: http.App,
@@ -478,8 +522,6 @@ test "callback signs in with the right state, refuses everything else, and links
 
     const refused = [_][]const u8{
         try flow.callback("nope", "7:admin@example.com"),
-        try flow.callback(begun.state, "refuse"),
-        try flow.callback(begun.state, "down"),
         try flow.callback(begun.state, "9:eve@example.com"),
         try flow.callback(begun.state, "7:admin@example.com:unverified"),
     };
@@ -489,6 +531,12 @@ test "callback signs in with the right state, refuses everything else, and links
         try std.testing.expectEqualStrings(refused_path, answer.header("Location").?);
         const set = answer.header("Set-Cookie").?;
         try std.testing.expect(std.mem.indexOf(u8, set, "Max-Age=0") != null);
+    }
+
+    // The exchange failed (refused code, provider down): "Try again".
+    for ([_][]const u8{ "refuse", "down" }) |code| {
+        const answer = try flow.get(try flow.callback(begun.state, code), begun.cookie);
+        try std.testing.expectEqualStrings(failed_path, answer.header("Location").?);
     }
 
     const signed = try flow.get(good, begun.cookie);

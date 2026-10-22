@@ -12,10 +12,6 @@ const runtime_cli = @import("cli/sandboxed_plugins.zig");
 const help = sdk.help;
 
 pub const Options = struct {
-    db: *db.Db,
-    io: std.Io,
-    arena: std.mem.Allocator,
-    auth: *AuthState,
     now_ms: i64 = 0,
     err: ?*std.Io.Writer = null,
     password_env: ?[]const u8 = null,
@@ -46,24 +42,59 @@ pub const Options = struct {
 
 const AuthState = @import("../lib/auth.zig").State;
 
+/// One command line's run: what it reads and writes, and how its caller asked for it.
+const Invocation = struct {
+    db: *db.Db,
+    io: std.Io,
+    arena: std.mem.Allocator,
+    auth: *AuthState,
+    options: Options,
+};
+
 pub const message_len_max: u32 = 512;
 
 pub fn CLI(comptime SDK: type) type {
     return struct {
-        pub fn run(options: Options, args: []const []const u8, out: *std.Io.Writer) Error!u8 {
+        pub fn run(
+            database: *db.Db,
+            io: std.Io,
+            arena: std.mem.Allocator,
+            auth: *AuthState,
+            args: []const []const u8,
+            out: *std.Io.Writer,
+            options: Options,
+        ) Error!u8 {
+            std.debug.assert(database.transaction_depth == 0);
+
+            const invocation: Invocation = .{
+                .db = database,
+                .io = io,
+                .arena = arena,
+                .auth = auth,
+                .options = options,
+            };
+
+            return run_invocation(invocation, args, out);
+        }
+
+        fn run_invocation(
+            invocation: Invocation,
+            args: []const []const u8,
+            out: *std.Io.Writer,
+        ) Error!u8 {
             @setEvalBranchQuota(100_000);
 
             if (args.len > args_max) {
-                return fail(options, "too many arguments");
+                return fail(invocation, "too many arguments");
             }
 
             for (args) |arg| {
-                if (arg.len > value_len_max) return fail(options, "argument is too long");
+                if (arg.len > value_len_max) return fail(invocation, "argument is too long");
             }
 
-            std.debug.assert(options.db.transaction_depth == 0);
+            std.debug.assert(invocation.db.transaction_depth == 0);
 
-            var caller: sdk.Caller = options.device orelse .anonymous;
+            var caller: sdk.Caller = invocation.options.device orelse .anonymous;
             var index: u32 = 0;
 
             while (index < args.len and std.mem.startsWith(u8, args[index], "-")) : (index += 1) {
@@ -71,8 +102,8 @@ pub fn CLI(comptime SDK: type) type {
                 const acting_as = std.mem.eql(u8, flag, "--as-admin") or
                     std.mem.eql(u8, flag, "--as");
 
-                if (acting_as and options.device != null) {
-                    return fail(options, "a device acts as its own account; drop \"--as\"");
+                if (acting_as and invocation.options.device != null) {
+                    return fail(invocation, "a device acts as its own account; drop \"--as\"");
                 }
 
                 if (std.mem.eql(u8, flag, "--as-admin")) {
@@ -80,10 +111,10 @@ pub fn CLI(comptime SDK: type) type {
                 } else if (std.mem.eql(u8, flag, "--as")) {
                     index += 1;
                     if (index == args.len) {
-                        return fail(options, "flag \"--as\" needs a user id or email");
+                        return fail(invocation, "flag \"--as\" needs a user id or email");
                     }
-                    caller = try resolve_user(options, args[index]) orelse return failf(
-                        options,
+                    caller = try resolve_user(invocation, args[index]) orelse return failf(
+                        invocation,
                         "unknown user \"{s}\"; --as takes a user id or email",
                         .{args[index]},
                     );
@@ -91,12 +122,13 @@ pub fn CLI(comptime SDK: type) type {
                     try print_help(out);
                     return 0;
                 } else if (std.mem.eql(u8, flag, "--commands")) {
-                    @import("cli/commands.zig").print(SDK, options.sandboxed_plugins, out) catch
+                    const sandboxed = invocation.options.sandboxed_plugins;
+                    @import("cli/commands.zig").print(SDK, sandboxed, out) catch
                         return error.WriteFailed;
 
                     return 0;
                 } else {
-                    return failf(options, "unknown flag \"{s}\"; run \"publr --help\"", .{flag});
+                    return failf(invocation, "unknown flag \"{s}\"; run \"publr --help\"", .{flag});
                 }
             }
 
@@ -108,20 +140,20 @@ pub fn CLI(comptime SDK: type) type {
             if (std.mem.eql(u8, args[index], "init")) {
                 var aliased: [args_max + 1][]const u8 = undefined;
                 const rest = args[index + 1 ..];
-                if (rest.len > args_max - 2) return fail(options, "too many arguments");
+                if (rest.len > args_max - 2) return fail(invocation, "too many arguments");
 
                 aliased[0] = "project";
                 aliased[1] = "init";
                 @memcpy(aliased[2 .. 2 + rest.len], rest);
 
-                return dispatch_command(options, caller, aliased[0 .. 2 + rest.len], out);
+                return dispatch_command(invocation, caller, aliased[0 .. 2 + rest.len], out);
             }
 
-            return dispatch_command(options, caller, args[index..], out);
+            return dispatch_command(invocation, caller, args[index..], out);
         }
 
         fn dispatch_command(
-            options: Options,
+            invocation: Invocation,
             caller: sdk.Caller,
             args: []const []const u8,
             out: *std.Io.Writer,
@@ -132,7 +164,7 @@ pub fn CLI(comptime SDK: type) type {
             std.debug.assert(args.len <= args_max);
 
             if (args[0].len == 0) {
-                return fail(options, "command must not be empty");
+                return fail(invocation, "command must not be empty");
             }
 
             const index: u32 = 0;
@@ -141,14 +173,14 @@ pub fn CLI(comptime SDK: type) type {
 
             if (bare_namespace) {
                 if (!namespace_known(args[index])) {
-                    if (options.sandboxed_plugins) |sandboxed| {
+                    if (invocation.options.sandboxed_plugins) |sandboxed| {
                         if (try runtime_cli.print_namespace_help(sandboxed, args[index], out)) {
                             return if (index + 1 == args.len) 2 else 0;
                         }
                     }
 
                     return failf(
-                        options,
+                        invocation,
                         "unknown command \"{s}\"; commands are <namespace> <verb>, " ++
                             "run \"publr --help\"",
                         .{args[index]},
@@ -160,9 +192,9 @@ pub fn CLI(comptime SDK: type) type {
                 return if (index + 1 == args.len) 2 else 0;
             }
 
-            const name = operation_name(options.arena, args[index..]) catch |err| switch (err) {
+            const name = operation_name(invocation.arena, args[index..]) catch |err| switch (err) {
                 error.UnknownOp => return failf(
-                    options,
+                    invocation,
                     "unknown command \"{s}\"; commands are <namespace> <verb>, " ++
                         "run \"publr --help\"",
                     .{args[index]},
@@ -171,24 +203,26 @@ pub fn CLI(comptime SDK: type) type {
             };
             const rest = args[index + operation_name_args(args[index..]) ..];
 
-            var ctx = sdk.Ctx.init(.{
-                .caller = caller,
-                .db = options.db,
-                .io = options.io,
-                .arena = options.arena,
-                .auth = options.auth,
-                .now_ms = options.now_ms,
-            });
+            var ctx = sdk.Ctx.init(
+                invocation.db,
+                invocation.io,
+                invocation.arena,
+                invocation.auth,
+                caller,
+                .{
+                    .now_ms = invocation.options.now_ms,
+                },
+            );
 
-            ctx.sandboxed_plugins = options.sandboxed_plugins;
-            ctx.plugin_states = options.plugin_states;
-            ctx.files = options.files;
-            ctx.apps = options.apps;
-            ctx.builder = options.builder;
-            ctx.agents = options.agents;
-            ctx.live = options.live;
-            ctx.updater = options.updater;
-            ctx.production = options.production;
+            ctx.sandboxed_plugins = invocation.options.sandboxed_plugins;
+            ctx.plugin_states = invocation.options.plugin_states;
+            ctx.files = invocation.options.files;
+            ctx.apps = invocation.options.apps;
+            ctx.builder = invocation.options.builder;
+            ctx.agents = invocation.options.agents;
+            ctx.live = invocation.options.live;
+            ctx.updater = invocation.options.updater;
+            ctx.production = invocation.options.production;
 
             inline for (SDK.operations) |Operation| {
                 if (std.mem.eql(u8, Operation.name, name)) {
@@ -196,19 +230,19 @@ pub fn CLI(comptime SDK: type) type {
                         try help.command(Operation, out);
                         return 0;
                     }
-                    const code = try invoke(&ctx, Operation, rest, out, options);
+                    const code = try invoke(&ctx, Operation, rest, out, invocation);
 
-                    hand_on_notices(&ctx);
+                    hand_on_events(&ctx);
 
                     return code;
                 }
             }
 
-            if (options.sandboxed_plugins) |sandboxed| {
+            if (invocation.options.sandboxed_plugins) |sandboxed| {
                 if (sandboxed.find(name)) |found| {
-                    const code = try invoke_runtime(&ctx, found, rest, out, options);
+                    const code = try invoke_runtime(&ctx, found, rest, out, invocation);
 
-                    hand_on_notices(&ctx);
+                    hand_on_events(&ctx);
 
                     return code;
                 }
@@ -217,14 +251,14 @@ pub fn CLI(comptime SDK: type) type {
             const namespace = sdk.operation.namespace(name);
 
             if (namespace_known(namespace)) {
-                return failf(options, "unknown command \"{s} {s}\"; run \"publr {s} --help\"", .{
+                return failf(invocation, "unknown command \"{s} {s}\"; run \"publr {s} --help\"", .{
                     namespace,
                     sdk.operation.verb(name),
                     namespace,
                 });
             }
 
-            return failf(options, "unknown command \"{s}\"; run \"publr --help\"", .{name});
+            return failf(invocation, "unknown command \"{s}\"; run \"publr --help\"", .{name});
         }
 
         fn namespace_known(namespace: []const u8) bool {
@@ -274,18 +308,18 @@ pub fn CLI(comptime SDK: type) type {
             out.print(footer, .{namespace}) catch return error.WriteFailed;
         }
 
-        /// Without a server next to it, the CLI hands the command's queued notices to the
-        /// extrinsic hooks itself once it has committed; in a server, the same.
-        fn hand_on_notices(ctx: *sdk.Ctx) void {
+        /// Without a server next to it, the CLI hands the command's queued events to the
+        /// `on` hooks itself once it has committed; in a server, the same.
+        fn hand_on_events(ctx: *sdk.Ctx) void {
             std.debug.assert(ctx.db.transaction_depth == 0);
             std.debug.assert(passes_max > 0);
 
-            const take_max = @import("../store/notice_queue.zig").take_max;
+            const take_max = @import("../store/event_queue.zig").take_max;
             var passes: u32 = 0;
 
             while (passes < passes_max) : (passes += 1) {
-                const handed = SDK.notices.drain(ctx, take_max) catch |err| {
-                    std.log.warn("notices: not handed on: {t}", .{err});
+                const handed = SDK.events.drain(ctx, take_max) catch |err| {
+                    std.log.warn("events: not handed on: {t}", .{err});
                     return;
                 };
 
@@ -302,12 +336,14 @@ pub fn CLI(comptime SDK: type) type {
             comptime Operation: type,
             args: []const []const u8,
             out: *std.Io.Writer,
-            options: Options,
+            invocation: Invocation,
         ) Error!u8 {
             var problem: Problem = .{};
-            const password_env = options.password_env;
-            const in = parse_in(Operation.In, ctx.arena, args, &problem, password_env) catch {
-                return failf(options, "{s} {s}: {s}; run \"publr {s} {s} --help\"", .{
+            const parse_options: ParseOptions = .{
+                .password_env = invocation.options.password_env,
+            };
+            const in = parse_in(Operation.In, ctx.arena, args, &problem, parse_options) catch {
+                return failf(invocation, "{s} {s}: {s}; run \"publr {s} {s} --help\"", .{
                     comptime sdk.operation.namespace(Operation.name),
                     comptime sdk.operation.verb(Operation.name),
                     problem.text(),
@@ -323,12 +359,7 @@ pub fn CLI(comptime SDK: type) type {
             }
 
             const result = SDK.dispatch(ctx, Operation, in) catch |err| {
-                note_failure(options, ctx);
-                return failf(options, "{s} {s}: {s}", .{
-                    comptime sdk.operation.namespace(Operation.name),
-                    comptime sdk.operation.verb(Operation.name),
-                    describe(err, ctx),
-                });
+                return refused(invocation, ctx, Operation.name, err);
             };
 
             std.json.Stringify.value(result, .{
@@ -346,7 +377,7 @@ pub fn CLI(comptime SDK: type) type {
             found: sdk.sandboxed_plugins.Operation,
             args: []const []const u8,
             out: *std.Io.Writer,
-            options: Options,
+            invocation: Invocation,
         ) Error!u8 {
             const namespace = sdk.operation.namespace(found.name);
             const verb = sdk.operation.verb(found.name);
@@ -360,13 +391,12 @@ pub fn CLI(comptime SDK: type) type {
 
             var problem: Problem = .{};
             const input = runtime_cli.parse(ctx.arena, found, args, &problem) catch {
-                return failf(options, "{s} {s}: {s}; run \"publr {s} {s} --help\"", .{
+                return failf(invocation, "{s} {s}: {s}; run \"publr {s} {s} --help\"", .{
                     namespace, verb, problem.text(), namespace, verb,
                 });
             };
             const result = SDK.call_json(ctx, found.name, input) catch |err| {
-                note_failure(options, ctx);
-                return failf(options, "{s} {s}: {s}", .{ namespace, verb, describe(err, ctx) });
+                return refused(invocation, ctx, found.name, err);
             };
 
             try runtime_cli.print_json(ctx.arena, result, out);
@@ -419,6 +449,8 @@ const help_header =
     \\       publr zig <args>                                    the compiler for plugins
     \\       publr db check                                      what an update would find
     \\       publr backups | restore <name>                      the backups before each update
+    \\       publr pack [<file>] | unpack <file>                 the whole site in one file
+    \\       publr cloud deploy --space <s> --slug <address>     this site made a Cloud project
     \\
     \\An agent building on Publr: run `publr agents` first, and read all of it. Every command
     \\with its flags, on one line each: `publr --commands`.
@@ -462,11 +494,11 @@ pub const Problem = struct {
     }
 };
 
-fn fail(options: Options, message: []const u8) u8 {
+fn fail(invocation: Invocation, message: []const u8) u8 {
     std.debug.assert(message.len > 0);
     std.debug.assert(message.len <= message_len_max);
 
-    if (options.err) |err| {
+    if (invocation.options.err) |err| {
         err.print("publr: {s}\n", .{message}) catch |print_err| {
             std.debug.print("publr: {t}\n", .{print_err});
         };
@@ -477,21 +509,47 @@ fn fail(options: Options, message: []const u8) u8 {
     return 2;
 }
 
-fn failf(options: Options, comptime format: []const u8, args: anytype) u8 {
+fn failf(invocation: Invocation, comptime format: []const u8, args: anytype) u8 {
     var buffer: [message_len_max]u8 = undefined;
     const message = report.format_bounded(&buffer, format, args);
 
     std.debug.assert(message.len > 0);
     std.debug.assert(message.len <= message_len_max);
 
-    return fail(options, message);
+    return fail(invocation, message);
 }
 
-fn note_failure(options: Options, ctx: *const sdk.Ctx) void {
+/// The call's refusal, then each problem with the input on a line of its own under it:
+/// `  --name: A name is 1 to 80 characters.`
+fn refused(invocation: Invocation, ctx: *const sdk.Ctx, name: []const u8, err: sdk.Error) u8 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(ctx.problems.len <= sdk.operation.problems_max);
+
+    const namespace = sdk.operation.namespace(name);
+    const verb = sdk.operation.verb(name);
+    var buffer: [message_len_max]u8 = undefined;
+    var message: std.Io.Writer = .fixed(&buffer);
+
+    note_failure(invocation, ctx);
+
+    message.print("{s} {s}: {s}", .{ namespace, verb, describe(err, ctx) }) catch {
+        return failf(invocation, "{s} {s}: {s}", .{ namespace, verb, describe(err, ctx) });
+    };
+
+    if (err == error.Invalid) {
+        for (ctx.problems) |problem| {
+            message.print("\n  --{s}: {s}", .{ problem.field, problem.message }) catch break;
+        }
+    }
+
+    return fail(invocation, message.buffered());
+}
+
+fn note_failure(invocation: Invocation, ctx: *const sdk.Ctx) void {
     std.debug.assert(ctx.now_ms >= 0);
 
     const failure = ctx.failure orelse return;
-    const failed = options.failed orelse return;
+    const failed = invocation.options.failed orelse return;
 
     std.debug.assert(failure.name.len > 0);
 
@@ -512,7 +570,7 @@ fn describe(err: sdk.Error, ctx: *const sdk.Ctx) []const u8 {
         error.NotFound => "not found",
         error.Conflict => "conflict: it already exists or was already done",
         error.Vetoed => "vetoed by a plugin",
-        error.Throttled => "too many failed attempts; wait before trying again",
+        error.Throttled => "too many calls or failed attempts; wait before trying again",
         error.Failed => if (ctx.failure) |failure| failure.message else "failed",
         error.Unavailable => "a service it needs is unavailable; nothing changed, try again",
         error.BadCredentials => "wrong email or password",
@@ -524,6 +582,7 @@ fn describe(err: sdk.Error, ctx: *const sdk.Ctx) []const u8 {
         error.Sqlite => "database error",
         error.Interrupted => "it asked for more work than a call may do; ask for less",
         error.TooBig => "the answer is too large; ask for less",
+        error.NotYet => "internal error: a filter's read escaped its batch",
     };
 
     std.debug.assert(text.len > 0);
@@ -569,12 +628,17 @@ fn operation_name(arena: std.mem.Allocator, args: []const []const u8) Error![]co
         return error.OutOfMemory;
 }
 
+pub const ParseOptions = struct {
+    /// A password read from the environment, used when no `--password` flag is given.
+    password_env: ?[]const u8 = null,
+};
+
 pub fn parse_in(
     comptime In: type,
     arena: std.mem.Allocator,
     args: []const []const u8,
     problem: *Problem,
-    password_env: ?[]const u8,
+    options: ParseOptions,
 ) Error!In {
     comptime std.debug.assert(std.meta.fields(In).len <= sdk.operation.fields_max);
 
@@ -637,8 +701,8 @@ pub fn parse_in(
             const is_password = comptime std.mem.eql(u8, field.name, "password");
             const is_text = field.type == []const u8 or field.type == ?[]const u8;
             const from_env = is_password and is_text;
-            if (from_env and password_env != null) {
-                @field(in, field.name) = password_env.?;
+            if (from_env and options.password_env != null) {
+                @field(in, field.name) = options.password_env.?;
             } else {
                 const default = field.defaultValue() orelse {
                     problem.set("missing required --{s} ({s}){s}", .{
@@ -657,9 +721,9 @@ pub fn parse_in(
     return in;
 }
 
-fn resolve_user(options: Options, id_or_email: []const u8) Error!?sdk.Caller {
+fn resolve_user(invocation: Invocation, id_or_email: []const u8) Error!?sdk.Caller {
     std.debug.assert(id_or_email.len <= value_len_max);
-    std.debug.assert(options.db.transaction_depth == 0);
+    std.debug.assert(invocation.db.transaction_depth == 0);
 
     if (id_or_email.len == 0) {
         return null;
@@ -667,10 +731,10 @@ fn resolve_user(options: Options, id_or_email: []const u8) Error!?sdk.Caller {
 
     const user_module = @import("../store/users.zig");
     const found = if (std.mem.indexOfScalar(u8, id_or_email, '@') != null) blk: {
-        const email = user_module.normalize_email(options.arena, id_or_email) catch return null;
-        break :blk try user_module.find_by_email(options.db, options.arena, email);
+        const email = user_module.normalize_email(invocation.arena, id_or_email) catch return null;
+        break :blk try user_module.find_by_email(invocation.db, invocation.arena, email);
     } else blk: {
-        break :blk try user_module.find_by_id(options.db, options.arena, id_or_email);
+        break :blk try user_module.find_by_id(invocation.db, invocation.arena, id_or_email);
     };
 
     const credentials = found orelse return null;
@@ -793,12 +857,12 @@ test "parse_in takes a record by its bare id, or as JSON" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const bare = try parse_in(In, arena, &.{ "--variant", "01a1b2" }, &problem, null);
-    const quoted = try parse_in(In, arena, &.{ "--variant", "\"01a1b2\"" }, &problem, null);
+    const bare = try parse_in(In, arena, &.{ "--variant", "01a1b2" }, &problem, .{});
+    const quoted = try parse_in(In, arena, &.{ "--variant", "\"01a1b2\"" }, &problem, .{});
 
     try std.testing.expectEqualStrings("01a1b2", bare.variant.id);
     try std.testing.expectEqualStrings("01a1b2", quoted.variant.id);
-    const empty = parse_in(In, arena, &.{ "--variant", "" }, &problem, null);
+    const empty = parse_in(In, arena, &.{ "--variant", "" }, &problem, .{});
 
     try std.testing.expectError(error.Invalid, empty);
 }
@@ -816,7 +880,7 @@ test "parse_in fills fields from flags and applies defaults" {
     const arena = fixed.allocator();
     var problem: Problem = .{};
     const args = [_][]const u8{ "--name", "zig", "--tags", "a,b", "--loud", "true" };
-    const in = try parse_in(In, arena, &args, &problem, null);
+    const in = try parse_in(In, arena, &args, &problem, .{});
 
     try std.testing.expectEqualStrings("zig", in.name);
     try std.testing.expectEqual(@as(u32, 1), in.times);
@@ -824,25 +888,25 @@ test "parse_in fills fields from flags and applies defaults" {
     try std.testing.expect(in.loud);
 
     const repeated = [_][]const u8{ "--name", "zig", "--tags", "a", "--tags", "b,c" };
-    const again = try parse_in(In, arena, &repeated, &problem, null);
+    const again = try parse_in(In, arena, &repeated, &problem, .{});
 
     try std.testing.expectEqual(@as(u32, 3), @as(u32, @intCast(again.tags.len)));
     try std.testing.expectEqualStrings("c", again.tags[2]);
 
     // A JSON array keeps a comma inside a value.
     const as_json = [_][]const u8{ "--name", "zig", "--tags", "[\"a,b\",\"c\"]" };
-    const listed = try parse_in(In, arena, &as_json, &problem, null);
+    const listed = try parse_in(In, arena, &as_json, &problem, .{});
 
     try std.testing.expectEqual(@as(u32, 2), @as(u32, @intCast(listed.tags.len)));
     try std.testing.expectEqualStrings("a,b", listed.tags[0]);
 
-    try std.testing.expectError(error.Invalid, parse_in(In, arena, &.{}, &problem, null));
+    try std.testing.expectError(error.Invalid, parse_in(In, arena, &.{}, &problem, .{}));
     try std.testing.expectEqualStrings("missing required --name (text)", problem.text());
     const nope = [_][]const u8{ "--nope", "1" };
-    try std.testing.expectError(error.UnknownFlag, parse_in(In, arena, &nope, &problem, null));
+    try std.testing.expectError(error.UnknownFlag, parse_in(In, arena, &nope, &problem, .{}));
     try std.testing.expectEqualStrings("unknown flag \"--nope\"", problem.text());
-    const missing_value = parse_in(In, arena, &.{"--name"}, &problem, null);
-    const bad_int = parse_in(In, arena, &.{ "--times", "x" }, &problem, null);
+    const missing_value = parse_in(In, arena, &.{"--name"}, &problem, .{});
+    const bad_int = parse_in(In, arena, &.{ "--times", "x" }, &problem, .{});
     try std.testing.expectError(error.MissingValue, missing_value);
     try std.testing.expectError(error.Invalid, bad_int);
     const invalid = "invalid value \"x\" for --times (expected integer)";
@@ -860,19 +924,18 @@ test "run: --help lists operations, unknown operation, --as sets the caller, out
 
     var out_buffer: [4096]u8 = undefined;
     var out: std.Io.Writer = .fixed(&out_buffer);
-    const options: Options = .{
-        .db = &harness.fixture.connection,
-        .io = std.testing.io,
-        .arena = harness.fixed.allocator(),
-        .auth = &harness.auth,
-    };
+    const connection = &harness.fixture.connection;
+    const io = std.testing.io;
+    const fixed = harness.fixed.allocator();
     const Command = CLI(SDK);
 
     var err_buffer: [512]u8 = undefined;
     var err: std.Io.Writer = .fixed(&err_buffer);
-    var options_with_err = options;
-    options_with_err.err = &err;
-    const unknown = try Command.run(options_with_err, &.{ "nope", "verb" }, &out);
+    const with_err: Options = .{
+        .err = &err,
+    };
+    const nope = [_][]const u8{ "nope", "verb" };
+    const unknown = try Command.run(connection, io, fixed, &harness.auth, &nope, &out, with_err);
     try std.testing.expectEqual(@as(u8, 2), unknown);
     const message = err.buffered();
     try std.testing.expect(std.mem.indexOf(u8, message, "unknown command \"nope.verb\"") != null);
@@ -887,23 +950,26 @@ test "run: --help lists operations, unknown operation, --as sets the caller, out
         .now_ms = 0,
     });
     const args = [_][]const u8{ "--as", "ed@example.com", "heartbeat", "check", "--echo", "x" };
-    const status = try Command.run(options, &args, &out);
+    const status = try Command.run(connection, io, fixed, &harness.auth, &args, &out, .{});
     try std.testing.expectEqual(@as(u8, 0), status);
     try std.testing.expect(std.mem.indexOf(u8, out.buffered(), user_id) != null);
 
     err = .fixed(&err_buffer);
     const ghost = [_][]const u8{ "--as", "ghost", "heartbeat", "check" };
-    const unknown_user = try Command.run(options_with_err, &ghost, &out);
+    const auth = &harness.auth;
+    const unknown_user = try Command.run(connection, io, fixed, auth, &ghost, &out, with_err);
     try std.testing.expectEqual(@as(u8, 2), unknown_user);
     try std.testing.expect(std.mem.indexOf(u8, err.buffered(), "unknown user \"ghost\"") != null);
 
     out = .fixed(&out_buffer);
-    try std.testing.expectEqual(@as(u8, 0), try Command.run(options, &.{"--help"}, &out));
+    const listed = try Command.run(connection, io, fixed, &harness.auth, &.{"--help"}, &out, .{});
+    try std.testing.expectEqual(@as(u8, 0), listed);
     try std.testing.expect(std.mem.indexOf(u8, out.buffered(), "Usage: publr") != null);
     try std.testing.expect(std.mem.indexOf(u8, out.buffered(), "heartbeat check") != null);
 
     out = .fixed(&out_buffer);
-    const command_help = try Command.run(options, &.{ "heartbeat", "check", "--help" }, &out);
+    const asked = [_][]const u8{ "heartbeat", "check", "--help" };
+    const command_help = try Command.run(connection, io, fixed, &harness.auth, &asked, &out, .{});
     try std.testing.expectEqual(@as(u8, 0), command_help);
     try std.testing.expect(std.mem.indexOf(u8, out.buffered(), "--echo") != null);
     try std.testing.expect(std.mem.indexOf(u8, out.buffered(), "optional") != null);
@@ -929,7 +995,7 @@ test "malformed CLI scalars and oversized input are validation errors" {
                     value,
                 },
                 &problem,
-                null,
+                .{},
             ),
         );
     }
@@ -945,7 +1011,7 @@ test "malformed CLI scalars and oversized input are validation errors" {
                     value,
                 },
                 &problem,
-                null,
+                .{},
             ),
         );
     }
@@ -961,11 +1027,11 @@ test "malformed CLI scalars and oversized input are validation errors" {
                 long,
             },
             &problem,
-            null,
+            .{},
         ),
     );
     const many = [_][]const u8{"--flag"} ** (args_max + 1);
-    try std.testing.expectError(error.Invalid, parse_in(In, arena, &many, &problem, null));
+    try std.testing.expectError(error.Invalid, parse_in(In, arena, &many, &problem, .{}));
     const valid = try parse_in(
         In,
         arena,
@@ -976,7 +1042,7 @@ test "malformed CLI scalars and oversized input are validation errors" {
             "1.5",
         },
         &problem,
-        null,
+        .{},
     );
     try std.testing.expect(!valid.flag);
     try std.testing.expectEqual(@as(f64, 1.5), valid.number);
@@ -994,17 +1060,21 @@ test "empty commands, oversized caller names and a full init alias fail graceful
     var error_buffer: [4096]u8 = undefined;
     var output: std.Io.Writer = .fixed(&output_buffer);
     var errors: std.Io.Writer = .fixed(&error_buffer);
+    const connection = &harness.fixture.connection;
+    const io = std.testing.io;
+    const fixed = harness.fixed.allocator();
     const options: Options = .{
-        .db = &harness.fixture.connection,
-        .io = std.testing.io,
-        .arena = harness.fixed.allocator(),
-        .auth = &harness.auth,
         .err = &errors,
     };
-    try std.testing.expectEqual(@as(u8, 2), try Command.run(options, &.{""}, &output));
+    const empty = try Command.run(connection, io, fixed, &harness.auth, &.{""}, &output, options);
+    try std.testing.expectEqual(@as(u8, 2), empty);
     const long = "x" ** (value_len_max + 1);
-    try std.testing.expectEqual(@as(u8, 2), try Command.run(options, &.{ "--as", long }, &output));
+    const too_long = [_][]const u8{ "--as", long };
+    const auth = &harness.auth;
+    const long_as = try Command.run(connection, io, fixed, auth, &too_long, &output, options);
+    try std.testing.expectEqual(@as(u8, 2), long_as);
     var alias: [args_max][]const u8 = @splat("--help");
     alias[0] = "init";
-    try std.testing.expectEqual(@as(u8, 2), try Command.run(options, &alias, &output));
+    const aliased = try Command.run(connection, io, fixed, &harness.auth, &alias, &output, options);
+    try std.testing.expectEqual(@as(u8, 2), aliased);
 }
