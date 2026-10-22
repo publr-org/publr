@@ -1034,13 +1034,15 @@ pub const Context = struct {
         const in = json.parse(Operation.In, ctx.arena, "{}", .{}) catch {
             return error.FrontmatterCallNeedsInput;
         };
-        var sdk_ctx = identity_module.context(ctx.project, ctx.arena, ctx.caller);
+        var sdk_ctx = if (ctx.request) |request|
+            identity_module.request_context(ctx.project, request, ctx.arena, ctx.caller)
+        else
+            identity_module.context(ctx.project, ctx.arena, ctx.caller);
 
         sdk_ctx.app = ctx.app.spec.name;
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;
         sdk_ctx.visitor = ctx.visitor_id;
-        sdk_ctx.referer = if (ctx.request) |request| identity_module.referer_of(request) else "";
 
         const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch return blank;
         const text = try std.json.Stringify.valueAlloc(ctx.arena, out, .{});

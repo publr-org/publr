@@ -140,7 +140,8 @@ pub fn call_with(ctx: *const Context, operation: []const u8, input: []const u8) 
         return error.FrontmatterCallRefused;
     }
 
-    var sdk_ctx = identity_module.context(ctx.project, ctx.arena, ctx.caller);
+    const request = ctx.request.?;
+    var sdk_ctx = identity_module.request_context(ctx.project, request, ctx.arena, ctx.caller);
 
     sdk_ctx.app = ctx.app.spec.name;
     sdk_ctx.app_plugins = ctx.app.spec.plugins;

@@ -17,7 +17,7 @@ const Response = http.Response;
 const Context = http.Context;
 const identify = identity_module.identify;
 const guard = identity_module.guard;
-const context = identity_module.context;
+const request_context = identity_module.request_context;
 const visitor_module = @import("../apps/visitor.zig");
 const set_session_cookie = identity_module.set_session_cookie;
 const clear_session_cookie = identity_module.clear_session_cookie;
@@ -40,7 +40,7 @@ pub fn sign_in(request: *Request, response: *Response, ctx: *Context) Error!void
             .@"error" = "invalid_body",
         });
     };
-    var sdk_ctx = context(project, ctx.arena, .anonymous);
+    var sdk_ctx = request_context(project, request, ctx.arena, .anonymous);
 
     // The id the person had before signing in, for the sign-in's hooks.
     sdk_ctx.visitor = visitor_module.of(project, request) orelse "";
@@ -78,7 +78,7 @@ pub fn sign_on(request: *Request, response: *Response, ctx: *Context) Error!void
     const token = http.Form.query_param(ctx.arena, source, "token") orelse "";
     const wanted = http.Form.query_param(ctx.arena, source, "return") orelse "/admin";
     const back = if (local_path(wanted)) wanted else "/admin";
-    var sdk_ctx = context(project, ctx.arena, .anonymous);
+    var sdk_ctx = request_context(project, request, ctx.arena, .anonymous);
 
     sdk_ctx.visitor = visitor_module.of(project, request) orelse "";
 
@@ -137,7 +137,7 @@ pub fn set_password(request: *Request, response: *Response, ctx: *Context) Error
             .@"error" = "invalid_body",
         });
     };
-    var sdk_ctx = context(project, ctx.arena, .anonymous);
+    var sdk_ctx = request_context(project, request, ctx.arena, .anonymous);
     const out = registry.SDK.dispatch(&sdk_ctx, user_operations.SetPassword, in) catch |err| {
         return respond_error(response, err, &sdk_ctx);
     };
@@ -159,7 +159,7 @@ pub fn sign_out(request: *Request, response: *Response, ctx: *Context) Error!voi
     }
 
     if (identity.token) |token| {
-        var sdk_ctx = context(project, ctx.arena, identity.caller);
+        var sdk_ctx = request_context(project, request, ctx.arena, identity.caller);
         const sign_out_operation = sign_in_operations.SignOut;
 
         sdk_ctx.visitor = visitor_module.of(project, request) orelse "";
@@ -507,4 +507,53 @@ test "auth over http: login sets the cookie, session reports the user, csrf guar
     const new_body = "{\"email\":\"new@example.com\",\"password\":\"correct horse battery\"}";
     const new_login = try flow.call(login_head, new_body);
     try std.testing.expectEqual(@as(u16, 200), new_login.status.code());
+}
+
+test "a sign-in with no account or visitor id counts against its address's limit" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    var table: sdk.limits.Limits = .{};
+    var flow: routes.testing.Flow = undefined;
+    flow.init(.{
+        .connection = &harness.fixture.connection,
+        .auth = &harness.auth,
+        .io = std.testing.io,
+        .limits = &table,
+    }, arena_state.allocator());
+
+    var system = harness.ctx(.system);
+    try user_operations.seed_admin(&system);
+
+    const now_ms = sdk.context.wall_clock_ms(std.testing.io);
+    const general = sdk.limits.general_per_minute;
+
+    for (0..general) |_| {
+        _ = table.take("203.0.113.9", "", general, now_ms);
+    }
+
+    const login_head = "POST /api/auth/sign-in HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
+        "Content-Length: 0\r\n\r\n";
+    const wrong_body = "{\"email\":\"admin@example.com\",\"password\":\"nope nope nope\"}";
+    var wire = (try http.parse(login_head)).complete;
+    var request: http.Request = .{
+        .inner = &wire,
+        .body = wrong_body,
+    };
+
+    wire.peer = .{ 203, 0, 113, 9 };
+
+    const refused = flow.app.handle(flow.arena, &request);
+
+    try std.testing.expectEqual(@as(u16, 429), refused.status.code());
+
+    wire.peer = .{ 203, 0, 113, 10 };
+
+    const counted = flow.app.handle(flow.arena, &request);
+
+    try std.testing.expectEqual(@as(u16, 401), counted.status.code());
 }
