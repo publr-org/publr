@@ -148,6 +148,25 @@ pub fn fail(connection: *db.Db, id: i64, problem: []const u8) db.Error!void {
     try update.exec();
 }
 
+/// A failed job run again (Run again): waiting from `now_ms`, its tries counted afresh.
+/// Whether there was such a failed job.
+pub fn run_again(connection: *db.Db, id: i64, now_ms: i64) db.Error!bool {
+    std.debug.assert(id > 0);
+    std.debug.assert(now_ms >= 0);
+
+    var update = try connection.prepare(
+        "UPDATE job_queue SET state = 'waiting', attempts = 0, due_at = ?2, claimed_until = 0 " ++
+            "WHERE id = ?1 AND state = 'failed'",
+    );
+    defer update.finalize();
+
+    try update.bind_int(1, id);
+    try update.bind_int(2, now_ms);
+    try update.exec();
+
+    return connection.changes() > 0;
+}
+
 /// Whether a job of this plugin and name waits to run.
 pub fn waiting_for(connection: *db.Db, plugin: []const u8, name: []const u8) db.Error!bool {
     std.debug.assert(plugin.len > 0);
@@ -197,6 +216,7 @@ pub fn last_problem(
 
 /// A job as the operator sees it, in the column order of `list`.
 pub const Listed = struct {
+    id: i64,
     plugin: []const u8,
     name: []const u8,
     input: []const u8,
@@ -212,7 +232,7 @@ pub fn list(connection: *db.Db, arena: std.mem.Allocator, max: u32) Error![]cons
     std.debug.assert(connection.transaction_depth <= 8);
 
     var select = try connection.prepare(
-        "SELECT plugin, name, input, due_at, attempts, state, problem FROM job_queue " ++
+        "SELECT id, plugin, name, input, due_at, attempts, state, problem FROM job_queue " ++
             "ORDER BY state = 'failed', due_at, id LIMIT ?1",
     );
     defer select.finalize();
@@ -298,4 +318,9 @@ test "jobs: claimed when due, held while claimed, retried, failed, done" {
     try fail(connection, again[0].id, "gave up");
     try std.testing.expectEqual(null, try next_due(connection));
     try std.testing.expectEqual(0, (try claim(connection, arena, 9999, 1000, 8)).len);
+
+    // Run again: waiting from now, its tries counted afresh; only a failed job.
+    try std.testing.expect(try run_again(connection, again[0].id, 9999));
+    try std.testing.expect(!try run_again(connection, again[0].id, 9999));
+    try std.testing.expectEqual(0, (try claim(connection, arena, 9999, 1000, 8))[0].attempts);
 }

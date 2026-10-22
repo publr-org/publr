@@ -17,6 +17,8 @@ const Error = admin.Error;
 const Session = admin.Session;
 const views = admin.views;
 
+const webhooks_tab = @import("plugins/webhooks.zig");
+
 pub const back = "/admin/settings/plugins";
 const page_size: u32 = 50;
 
@@ -27,6 +29,8 @@ pub fn register(router: anytype) void {
     router.get(back ++ "/built-in", &built_in);
     router.get(back ++ "/:name", &show);
     router.get(back ++ "/:name/log", &@import("plugins/log.zig").show);
+    router.get(back ++ "/:name/webhooks", &webhooks_tab.show);
+    router.post(back ++ "/:name/webhooks/:id/run", &webhooks_tab.run_again);
     router.get(back ++ "/:name/enable", &review_enable);
     router.post(back ++ "/:name/enable", &enable);
     router.post(back ++ "/:name/disable", &disable);
@@ -280,6 +284,10 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .pieces = pieces.items,
         .removes = try removes_of(&session, pieces.items),
         .log_href = try std.fmt.allocPrint(arena, "{s}/log", .{base}),
+        .webhooks_href = if (webhooks_tab.has_webhooks(detail.name))
+            try std.fmt.allocPrint(arena, "{s}/webhooks", .{base})
+        else
+            "",
         .blocked = try lines_of(views.Plugin.BlockedItem, arena, detail.blocked),
         .off = try off_of(arena, detail.off),
     }, .{});

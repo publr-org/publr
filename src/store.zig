@@ -51,6 +51,7 @@ pub const errors = @import("store/errors.zig");
 pub const plugin_log = @import("store/plugin_log.zig");
 pub const job_queue = @import("store/job_queue.zig");
 pub const scheduled_transitions = @import("store/scheduled_transitions.zig");
+pub const webhook_deliveries = @import("store/webhook_deliveries.zig");
 pub const internal_record_values = @import("store/internal_record_values.zig");
 pub const sandboxed_plugins = @import("store/sandboxed_plugins.zig");
 

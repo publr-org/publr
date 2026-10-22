@@ -71,6 +71,7 @@ export function SettingsSystem({
             <DropdownMenuContent align="right">
               <DropdownMenuItem href="/admin/settings/system/activity">{Publr.t("Activity log")}</DropdownMenuItem>
               <DropdownMenuItem href="/admin/settings/system/errors">{Publr.t("Error log")}</DropdownMenuItem>
+              <DropdownMenuItem href="/admin/settings/system/queue">{Publr.t("Queued work")}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )

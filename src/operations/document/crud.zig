@@ -29,6 +29,14 @@ pub const Got = struct {
     record: Record,
     slot: []const u8,
     document: []const u8,
+    /// The transition scheduled for it (`record.transition_at`), read for the editor.
+    scheduled: ?Scheduled = null,
+};
+pub const Scheduled = struct {
+    transition: []const u8,
+    at: i64,
+    /// The person it is made as.
+    by: []const u8,
 };
 pub const Saved = @import("save.zig").Saved;
 pub const Referrer = struct {

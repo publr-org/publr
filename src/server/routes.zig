@@ -32,6 +32,11 @@ pub const provider_routes = rest_providers.Routes(
     registry.sign_in_providers,
     rest_providers.compiled,
 );
+/// `/_webhooks/<plugin>.<name>`, for every webhook a plugin declares.
+pub const webhook_routes = @import("../adapters/rest/webhooks.zig").Receive(
+    registry.webhooks,
+    registry.webhook_owners,
+);
 /// What compiled-in plugins answer, under the prefixes they own.
 pub const native_plugin_routes = plugin_routes.Routes(registry.plugin_routes);
 /// What compiled-in plugins answer the CLI next to the server, behind the operator key.
@@ -72,6 +77,7 @@ pub fn register(router: *http.Router) void {
     }
 
     provider_routes.register(router);
+    webhook_routes.register(router);
     admin.register(router);
     media_adapter.register(router);
     rest.register(router);
@@ -82,7 +88,8 @@ pub fn register(router: *http.Router) void {
     else
         5 + plugin_operator_commands.routes_count;
     const fixed = 9 + operator_routes + provider_routes.routes_count +
-        native_plugin_routes.routes_count - native_plugin_routes.streams_count;
+        webhook_routes.routes_count + native_plugin_routes.routes_count -
+        native_plugin_routes.streams_count;
 
     std.debug.assert(router.routes_len == fixed + admin.routes_count + apps_adapter.routes_count +
         media_adapter.routes_count);

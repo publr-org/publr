@@ -198,8 +198,9 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 164 + preview_pages.routes_count +
+pub const routes_count: u32 = 166 + preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
+    @import("admin/queue.zig").routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
     design_pages.routes_count + @import("admin/settings_tabs.zig").tabs.len;
 const client_files = @import("../ui/client_files.zig");
@@ -330,6 +331,7 @@ fn register_settings_pages(router: *http.Router) void {
     secret_pages.register(router);
     removal_pages.register(router);
     trash_pages.register(router);
+    @import("admin/queue.zig").register(router);
     health_pages.register(router);
     rail_pages.register(router);
     @import("admin/updates.zig").register(router);

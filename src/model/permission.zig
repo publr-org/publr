@@ -170,6 +170,7 @@ pub const core = [_]Permission{
             "record.delete",
             "record.discard_changes",
             "record.transition",
+            "record.transition_at",
             "record.decline_request",
             "snapshot.take",
             "snapshot.restore",

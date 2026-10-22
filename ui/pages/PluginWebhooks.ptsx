@@ -1,0 +1,159 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type PluginWebhooksProps = {
+  name: string;
+  summary: string;
+  /** The plugin's own page, for the Overview tab. */
+  overview_href: string;
+  /** The plugins list it is under: the Built-in tab for a built-in plugin. */
+  plugins_href: string;
+  log_href: string;
+  /** This page. */
+  webhooks_href: string;
+  /** Each webhook and the address to paste into the sender's settings. */
+  webhooks: Array<{ name: string; url: string }>;
+  /** What was sent, newest first. */
+  deliveries: Array<{
+    /** The webhook it was sent to. */
+    name: string;
+    /** `YYYY-MM-DD`, UTC. */
+    date: string;
+    /** `HH:MM:SS`, UTC. */
+    time: string;
+    /** The address it came from. */
+    sender: string;
+    /** Whether its signature held. */
+    verified: boolean;
+    /** `waiting`, `ran`, `failed`, `refused` or `unreadable`. */
+    result: string;
+    /** Why its run failed. */
+    problem: string;
+    /** What its run logged, a line each. */
+    lines: string;
+    /** Run again; empty when its signature did not hold. */
+    run_action: string;
+  }>;
+  notice: string;
+  problem: string;
+};
+
+/** A plugin's webhooks: the addresses other servers send to, and what they sent, each
+ * delivery with its signature, result and log, and Run again. */
+export function PluginWebhooks({ name, summary, overview_href, plugins_href, log_href, webhooks_href, webhooks, deliveries, notice, problem }: PluginWebhooksProps) {
+  return (
+    <IndexPage
+      title={name}
+      parents={[{ label: Publr.t("Plugins"), href: plugins_href }]}
+      description={summary}
+      tabs={
+        <TabNav label={name}>
+          <TabNavLink href={overview_href}>{Publr.t("Overview")}</TabNavLink>
+          <TabNavLink href={log_href}>{Publr.t("Log")}</TabNavLink>
+          <TabNavLink href={webhooks_href} active>
+            {Publr.t("Webhooks")}
+          </TabNavLink>
+        </TabNav>
+      }
+      notice={
+        <div class="flex flex-col gap-3">
+          {problem !== "" && (
+            <Callout tone="error" title={Publr.t("Not done")}>
+              {problem}
+            </Callout>
+          )}
+          {notice !== "" && <Callout title={notice} />}
+          <Text as="p" variant="body-sm" tone="muted">
+            {Publr.t("Paste the address into the sending service's webhook settings, with the secret this plugin asks for.")}
+          </Text>
+          {webhooks.map((hook) => (
+            <div class="flex flex-wrap items-center gap-2">
+              <Text as="span" variant="body-sm">
+                {hook.name}
+              </Text>
+              <Code classes="break-all">{hook.url}</Code>
+            </div>
+          ))}
+        </div>
+      }
+      empty={
+        deliveries.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("Nothing sent yet")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("What other servers send to these addresses shows here.")}</EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("Received")}</TableHead>
+            <TableHead>{Publr.t("Webhook")}</TableHead>
+            <TableHead>{Publr.t("From")}</TableHead>
+            <TableHead>{Publr.t("Result")}</TableHead>
+            <TableHead> </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {deliveries.map((delivery) => (
+            <TableRow>
+              <TableCell classes="whitespace-nowrap">
+                <Text variant="body-sm" tone="muted">
+                  {`${delivery.date} ${delivery.time}`}
+                </Text>
+              </TableCell>
+              <TableCell>
+                <Code>{delivery.name}</Code>
+              </TableCell>
+              <TableCell>
+                <Text variant="body-sm">{delivery.sender}</Text>
+              </TableCell>
+              <TableCell>
+                {delivery.result === "ran" ? (
+                  <Status tone="success">{Publr.t("Ran")}</Status>
+                ) : delivery.result === "waiting" ? (
+                  <Status tone="neutral">{Publr.t("Waiting to run")}</Status>
+                ) : delivery.result === "refused" ? (
+                  <Status tone="error">{Publr.t("Signature not verified")}</Status>
+                ) : delivery.result === "unreadable" ? (
+                  <Status tone="error">{Publr.t("Body did not read")}</Status>
+                ) : (
+                  <Status tone="error">{Publr.t("Failed")}</Status>
+                )}
+                {delivery.problem !== "" && <Text variant="body-sm">{delivery.problem}</Text>}
+                {delivery.lines !== "" && <Code classes="block whitespace-pre-wrap">{delivery.lines}</Code>}
+              </TableCell>
+              <TableCell>
+                {delivery.run_action !== "" && (
+                  <form method="post" action={delivery.run_action} class="flex justify-end">
+                    <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                    <Button hierarchy="secondary" size="sm" type="submit">
+                      {Publr.t("Run again")}
+                    </Button>
+                  </form>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

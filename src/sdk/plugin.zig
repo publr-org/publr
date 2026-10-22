@@ -2,6 +2,7 @@ const std = @import("std");
 const plugin_define = @import("plugin/define.zig");
 const permission_model = @import("../model/permission.zig");
 const job_define = @import("plugin/job_define.zig");
+const webhook_define = @import("plugin/webhook_define.zig");
 const hook_define = @import("plugin/hook_define.zig");
 const remote_contract = @import("plugin/remote_contract.zig");
 const sdk = @import("../sdk.zig");
@@ -655,6 +656,36 @@ pub fn jobs_of(comptime Plugin: type) []const type {
     }
 }
 
+/// The webhooks a plugin lists in `.webhooks`, each checked against its declared secrets.
+pub fn webhooks_of(comptime Plugin: type) []const type {
+    comptime {
+        std.debug.assert(@hasDecl(Plugin, "manifest"));
+
+        if (!plugin_define.has(Plugin, "webhooks")) {
+            return &.{};
+        }
+
+        const list: []const type = plugin_define.get(Plugin, "webhooks");
+        const declared = @import("plugin/secret_define.zig").declared_of(Plugin);
+
+        for (list) |Webhook| {
+            if (!webhook_define.is_webhook(Webhook)) {
+                @compileError(Plugin.manifest.name ++ ": `.webhooks` lists what " ++
+                    "`publr.webhook.define` makes, not " ++ @typeName(Webhook));
+            }
+
+            for (declared) |secret| {
+                if (std.mem.eql(u8, secret.name, Webhook.secret)) {
+                    break;
+                }
+            } else @compileError(Plugin.manifest.name ++ ": webhook " ++ Webhook.name ++
+                " is signed with " ++ Webhook.secret ++ ", not a secret in `.secrets`");
+        }
+
+        return list;
+    }
+}
+
 pub fn schema_of(comptime Plugin: type) ?[:0]const u8 {
     comptime {
         std.debug.assert(@hasDecl(Plugin, "manifest"));
@@ -722,6 +753,8 @@ pub fn Merged(comptime plugins: anytype) type {
         var middleware_owners: []const []const u8 = &.{};
         var jobs: []const type = &.{};
         var job_owners: []const []const u8 = &.{};
+        var webhooks: []const type = &.{};
+        var webhook_owners: []const []const u8 = &.{};
         var plugin_grants: []const sdk.PluginGrants = &.{};
         var internal_collections: []const OwnedCollection = &.{};
         var schemas: []const [:0]const u8 = &.{};
@@ -770,8 +803,12 @@ pub fn Merged(comptime plugins: anytype) type {
 
             middleware = middleware ++ hooks;
             middleware_owners = middleware_owners ++ owners(Plugin, hooks.len);
-            jobs = jobs ++ jobs_of(Plugin);
-            job_owners = job_owners ++ owners(Plugin, jobs_of(Plugin).len);
+            // A webhook's delivery runs as one of its plugin's jobs.
+            jobs = jobs ++ jobs_of(Plugin) ++ webhooks_of(Plugin);
+            job_owners = job_owners ++ owners(Plugin, jobs_of(Plugin).len) ++
+                owners(Plugin, webhooks_of(Plugin).len);
+            webhooks = webhooks ++ webhooks_of(Plugin);
+            webhook_owners = webhook_owners ++ owners(Plugin, webhooks_of(Plugin).len);
             plugin_grants = plugin_grants ++ &[_]sdk.PluginGrants{grants_of(Plugin)};
 
             for (internal_records_of(Plugin)) |collection| {
@@ -1011,6 +1048,9 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_remotes_off = remotes_off;
             pub const merged_jobs = jobs;
             pub const merged_job_owners = job_owners;
+            /// The webhooks compiled-in plugins declare, and the plugin of each.
+            pub const merged_webhooks = webhooks;
+            pub const merged_webhook_owners = webhook_owners;
             pub const merged_plugin_grants = plugin_grants;
             pub const merged_internal_collections = internal_collections;
             pub const merged_schemas = schemas;

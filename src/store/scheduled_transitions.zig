@@ -10,7 +10,7 @@ pub const take_max: u32 = 64;
 
 pub const Transition = struct {
     record_id: []const u8,
-    to_status: []const u8,
+    transition: []const u8,
     due_at: i64,
     scheduled_by: []const u8,
     scheduled_at: i64,
@@ -19,18 +19,18 @@ pub const Transition = struct {
 /// Schedules `transition`, replacing any the record had scheduled.
 pub fn put(connection: *db.Db, transition: Transition) db.Error!void {
     std.debug.assert(transition.record_id.len > 0);
-    std.debug.assert(transition.to_status.len > 0);
+    std.debug.assert(transition.transition.len > 0);
 
     var insert = try connection.prepare(
-        "INSERT INTO scheduled_transitions (record_id, to_status, due_at, scheduled_by, " ++
+        "INSERT INTO scheduled_transitions (record_id, transition, due_at, scheduled_by, " ++
             "scheduled_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (record_id) DO UPDATE SET " ++
-            "to_status = excluded.to_status, due_at = excluded.due_at, " ++
+            "transition = excluded.transition, due_at = excluded.due_at, " ++
             "scheduled_by = excluded.scheduled_by, scheduled_at = excluded.scheduled_at",
     );
     defer insert.finalize();
 
     try insert.bind_text(1, transition.record_id);
-    try insert.bind_text(2, transition.to_status);
+    try insert.bind_text(2, transition.transition);
     try insert.bind_int(3, transition.due_at);
     try insert.bind_text(4, transition.scheduled_by);
     try insert.bind_int(5, transition.scheduled_at);
@@ -43,7 +43,7 @@ pub fn get(connection: *db.Db, arena: std.mem.Allocator, record_id: []const u8) 
     std.debug.assert(connection.transaction_depth <= 8);
 
     var select = try connection.prepare(
-        "SELECT record_id, to_status, due_at, scheduled_by, scheduled_at " ++
+        "SELECT record_id, transition, due_at, scheduled_by, scheduled_at " ++
             "FROM scheduled_transitions WHERE record_id = ?1",
     );
     defer select.finalize();
@@ -71,6 +71,21 @@ pub fn remove(connection: *db.Db, record_id: []const u8) db.Error!bool {
     return connection.changes() > 0;
 }
 
+/// Made: removed, unless it was scheduled again meanwhile.
+pub fn made(connection: *db.Db, transition: Transition) db.Error!void {
+    std.debug.assert(transition.record_id.len > 0);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var delete = try connection.prepare(
+        "DELETE FROM scheduled_transitions WHERE record_id = ?1 AND scheduled_at = ?2",
+    );
+    defer delete.finalize();
+
+    try delete.bind_text(1, transition.record_id);
+    try delete.bind_int(2, transition.scheduled_at);
+    try delete.exec();
+}
+
 /// The transitions due by `now_ms`, soonest first, up to `max`.
 pub fn due(
     connection: *db.Db,
@@ -82,7 +97,7 @@ pub fn due(
     std.debug.assert(now_ms >= 0);
 
     var select = try connection.prepare(
-        "SELECT record_id, to_status, due_at, scheduled_by, scheduled_at " ++
+        "SELECT record_id, transition, due_at, scheduled_by, scheduled_at " ++
             "FROM scheduled_transitions WHERE due_at <= ?1 ORDER BY due_at, record_id LIMIT ?2",
     );
     defer select.finalize();
@@ -113,20 +128,20 @@ test "scheduled transitions: one per record, found when due, removed" {
 
     try put(connection, .{
         .record_id = "r1",
-        .to_status = "published",
+        .transition = "publish",
         .due_at = 500,
         .scheduled_by = "u_1",
         .scheduled_at = 1,
     });
     try put(connection, .{
         .record_id = "r1",
-        .to_status = "archived",
+        .transition = "archive",
         .due_at = 900,
         .scheduled_by = "u_1",
         .scheduled_at = 2,
     });
 
-    try std.testing.expectEqualStrings("archived", (try get(connection, arena, "r1")).?.to_status);
+    try std.testing.expectEqualStrings("archive", (try get(connection, arena, "r1")).?.transition);
     try std.testing.expectEqual(0, (try due(connection, arena, 899, 8)).len);
     try std.testing.expectEqual(1, (try due(connection, arena, 900, 8)).len);
     try std.testing.expect(try remove(connection, "r1"));

@@ -20,6 +20,7 @@ const trash = @import("../operations/trash.zig");
 const identity = @import("../operations/identity.zig");
 const status = @import("../operations/status.zig");
 const job = @import("../operations/job.zig");
+const webhook = @import("../operations/webhook.zig");
 const role = @import("../operations/role.zig");
 const content_type = @import("../operations/content_type.zig");
 const record = @import("../operations/record.zig");
@@ -67,7 +68,7 @@ pub const remotes_off = native_plugins.merged_remotes_off;
 const core_operations = heartbeat.operations ++ project.operations ++ custom_fields.operations ++
     user.operations ++
     sign_in.operations ++ sign_on.operations ++ device.operations ++ identity.operations ++
-    status.operations ++ job.operations ++
+    status.operations ++ job.operations ++ webhook.operations ++
     role.operations ++
     content_type.operations ++
     record.operations ++ taxonomy.operations ++ term.operations ++ media.operations ++
@@ -87,6 +88,7 @@ const core_namespaces = [_]sdk.operation.Namespace{
     identity.namespace,
     status.namespace,
     job.namespace,
+    webhook.namespace,
     operation_operations.namespace,
     mod_operations.namespace,
     role.namespace,
@@ -302,6 +304,9 @@ pub const Filters = filter_registry.Registry(
     &filter_registry.core ++ native_plugins.merged_filters,
 );
 
+/// The webhooks the native plugins declare, and the plugin of each.
+pub const webhooks = native_plugins.merged_webhooks;
+pub const webhook_owners = native_plugins.merged_webhook_owners;
 /// The sign-in providers the native plugins declare, offered or not.
 pub const sign_in_providers = native_plugins.merged_sign_in_providers;
 pub const plugin_routes = native_plugins.merged_routes;

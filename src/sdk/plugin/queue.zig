@@ -31,6 +31,22 @@ pub fn Queue(comptime Base: type) type {
             return self.base.call(Operation, in);
         }
 
+        pub fn call_json(
+            self: *Self,
+            name: []const u8,
+            input: []const u8,
+        ) @TypeOf(Base.call_json(@as(*Base, undefined), "", "")) {
+            return self.base.call_json(name, input);
+        }
+
+        pub fn mod(
+            self: *Self,
+            comptime name: []const u8,
+            value: anytype,
+        ) @TypeOf(Base.mod(@as(*Base, undefined), name, value)) {
+            return self.base.mod(name, value);
+        }
+
         pub fn caller(self: *const Self) @TypeOf(Base.caller(@as(*const Base, undefined))) {
             return self.base.caller();
         }

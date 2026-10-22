@@ -598,9 +598,30 @@ CREATE INDEX IF NOT EXISTS job_queue_due ON job_queue (state, due_at);
 -- record, made by the worker once `due_at` comes, as `scheduled_by` with their rights then.
 CREATE TABLE IF NOT EXISTS scheduled_transitions (
     record_id    TEXT PRIMARY KEY,
-    to_status    TEXT NOT NULL,
+    transition   TEXT NOT NULL,
     due_at       INTEGER NOT NULL,
     scheduled_by TEXT NOT NULL,
     scheduled_at INTEGER NOT NULL
 ) STRICT;
 CREATE INDEX IF NOT EXISTS scheduled_transitions_due ON scheduled_transitions (due_at);
+
+-- What other servers sent to plugins' webhooks (`/_webhooks/<plugin>.<name>`): each delivery,
+-- whether its signature held, its body, and how its queued run ended. A verified delivery's
+-- own id (`delivery_id`) is kept once: a repeat is dropped.
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    id          INTEGER PRIMARY KEY,
+    plugin      TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    delivery_id TEXT NOT NULL DEFAULT '',
+    received_at INTEGER NOT NULL,
+    sender      TEXT NOT NULL DEFAULT '',
+    verified    INTEGER NOT NULL,
+    body        TEXT NOT NULL,
+    headers     TEXT NOT NULL DEFAULT '',
+    result      TEXT NOT NULL,
+    problem     TEXT NOT NULL DEFAULT '',
+    lines       TEXT NOT NULL DEFAULT ''
+) STRICT;
+CREATE INDEX IF NOT EXISTS webhook_deliveries_plugin ON webhook_deliveries (plugin, id);
+CREATE INDEX IF NOT EXISTS webhook_deliveries_seen
+    ON webhook_deliveries (plugin, name, delivery_id) WHERE delivery_id != '';
