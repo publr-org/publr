@@ -309,9 +309,9 @@ Check it:
 publr --as-admin plugin get --name guestbook     # version, what it asked for, what waits
 publr guestbook --help                           # a plugin's own commands, when its
                                                  # namespace is not `app.*`
-curl -X POST http://127.0.0.1:8080/api/app.guestbook/sign \
+curl -X POST http://127.0.0.1:8080/api/guestbook.sign \
   -H 'content-type: application/json' -H 'origin: http://127.0.0.1:8080' \
-  -d '{"name":"Ada","message":"hi"}'             # an `app.*` operation, as a visitor
+  -d '{"name":"Ada","message":"hi"}'             # one for untrusted callers, as a visitor
 ```
 
 ## Admin pages for a plugin

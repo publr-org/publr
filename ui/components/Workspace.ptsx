@@ -206,7 +206,7 @@ export const show_earlier = async () => {
   state.fetching_earlier = true;
   try {
     const before = state.steps[0].position;
-    const address = Publr.url(`/api/ai/conversation?id=${encodeURIComponent(state.id)}&before=${before}`);
+    const address = Publr.url(`/api/ai.conversation?id=${encodeURIComponent(state.id)}&before=${before}`);
     const response = await fetch(address, { credentials: "same-origin" });
     if (!response.ok) throw new Error(`${response.status}`);
     const read = await response.json();
@@ -373,7 +373,7 @@ const refresh = async () => {
   asking = true;
   try {
     const after = state.steps.length > 0 ? state.steps[state.steps.length - 1].position : 0;
-    const address = Publr.url(`/api/ai/conversation?id=${encodeURIComponent(state.id)}&after=${after}`);
+    const address = Publr.url(`/api/ai.conversation?id=${encodeURIComponent(state.id)}&after=${after}`);
     const response = await fetch(address, { credentials: "same-origin" });
     if (!response.ok) throw new Error(`${response.status}`);
     const read = await response.json();
@@ -487,12 +487,12 @@ const hand_over = (pending: { number: number; call: string } | undefined) => {
 const browser_ready = () => {
   if (state.browser) return;
   state.browser = true;
-  post("ai/browser_ready", { id: state.id }).then(refresh).catch(() => {});
+  post("ai.browser_ready", { id: state.id }).then(refresh).catch(() => {});
 };
 
 const browser_answered = (event: Event) => {
   const answer = JSON.parse((event as CustomEvent<string>).detail);
-  post("ai/browser_answer", { id: state.id, ...answer }).catch((error) => {
+  post("ai.browser_answer", { id: state.id, ...answer }).catch((error) => {
     state.note = Publr.t("The browser's answer did not reach Publr: {reason}", { reason: (error as Error).message });
   });
 };
@@ -763,7 +763,7 @@ const feedback_text = (entries: Feedback[]) => {
 const send_feedback = async (entries: Feedback[]) => {
   if (entries.length === 0) return;
   try {
-    await post("ai/reply", { id: state.id, prompt: feedback_text(entries) });
+    await post("ai.reply", { id: state.id, prompt: feedback_text(entries) });
     state.comments = [];
     state.picking = false;
     settle("running");
@@ -833,7 +833,7 @@ const post = async (operation: string, body: unknown) => {
 
 /** One removal back from the trash, as it was. */
 const restore = async (entry: string) => {
-  await post("trash/restore", { id: entry });
+  await post("trash.restore", { id: entry });
   state.undone = [...state.undone, entry];
   state.undoable = can_undo();
 };
@@ -863,7 +863,7 @@ export const undo_all = async () => {
 
 export const stop = async () => {
   try {
-    await post("ai/stop", { id: state.id });
+    await post("ai.stop", { id: state.id });
     settle("stopping");
   } catch (error) {
     state.note = Publr.t("Could not stop it: {reason}", { reason: (error as Error).message });
@@ -929,7 +929,7 @@ const reply = async () => {
   if (prompt === "" || state.attaching) return;
   try {
     const pictures = state.pictures.map((picture) => picture.key);
-    await post("ai/reply", { id: state.id, prompt, pictures });
+    await post("ai.reply", { id: state.id, prompt, pictures });
     state.reply = "";
     state.pictures = [];
     state.picking = false;

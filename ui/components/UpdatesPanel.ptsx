@@ -109,7 +109,7 @@ const current = (): Found => ({
 });
 
 const call = async (operation: string, method: string, body?: unknown) => {
-  const response = await fetch(Publr.url(`/api/update/${operation}`), {
+  const response = await fetch(Publr.url(`/api/update.${operation}`), {
     method,
     credentials: "same-origin",
     headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },

@@ -886,7 +886,7 @@ test "behind a CDN: built files carry their keys, a write answers with the keys 
     const pair = cookie[0..std.mem.indexOfScalar(u8, cookie, ';').?];
     const csrf_at = std.mem.indexOf(u8, signed.body, "\"csrf\":\"").? + 8;
     const csrf = signed.body[csrf_at .. csrf_at + @import("../lib/auth.zig").csrf.token_len];
-    const create = try harness.flow.head("POST /api/record/create HTTP/1.1\r\nHost: h\r\n" ++
+    const create = try harness.flow.head("POST /api/record.create HTTP/1.1\r\nHost: h\r\n" ++
         "Origin: http://h\r\nCookie: {s}\r\nX-Csrf-Token: {s}\r\nContent-Length: 0\r\n\r\n", .{
         pair,
         csrf,

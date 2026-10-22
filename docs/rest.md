@@ -30,8 +30,8 @@ one.
 
 ## Every operation, one rule
 
-Every operation is reachable at `/api/<namespace>/<verb>`, the same names the
-CLI uses (`publr --help` lists them, `publr <namespace> <verb> --help` documents
+Every operation is reachable at `/api/<name>`, its whole name (`/api/record.list`), as the
+CLI names it (`publr --help` lists them, `publr <namespace> <verb> --help` documents
 each with its input and output). Read operations answer `GET` with the input as
 query parameters; write operations take `POST` with the input as a JSON body.
 The response body is the operation's output as JSON, exactly what the CLI
@@ -39,17 +39,16 @@ prints. Signed-in requests carry the session cookie; writes also carry
 `X-Csrf-Token`.
 
 ```
-GET  /api/record/list?type=post&status=published&limit=20
-POST /api/record/create        {"type":"post","document":"{\"title\":\"Hello\"}"}
-POST /api/record/transition    {"id":"…","transition":"publish"}
-GET  /api/content_type/get?type=post
-GET  /api/record/referrers?id=…
-GET  /api/term/tree?taxonomy=topics
-POST /api/term/create          {"taxonomy":"topics","document":"{\"name\":\"Engineering\"}","parent":"…"}
+GET  /api/record.list?type=post&status=published&limit=20
+POST /api/record.create        {"type":"post","document":"{\"title\":\"Hello\"}"}
+POST /api/record.transition    {"id":"…","transition":"publish"}
+GET  /api/content_type.get?type=post
+GET  /api/record.referrers?id=…
+GET  /api/term.tree?taxonomy=topics
+POST /api/term.create          {"taxonomy":"topics","document":"{\"name\":\"Engineering\"}","parent":"…"}
 ```
 
-Plugins' operations appear the same way (`POST /api/<namespace>/<verb>`); what an app
-calls has the namespace `app.<feature>` (`POST /api/app.newsletter/subscribe`).
+Plugins' operations appear the same way, `<plugin>.<verb>` (`POST /api/newsletter.subscribe`).
 Unknown operations answer `404 { "error": "unknown_operation" }`; `GET` on a
 write operation answers `405`.
 
@@ -125,8 +124,8 @@ A deprecated operation ([Updates](updates.md#changing-publr)) still answers, wit
 
 Any route takes a device's token in `Authorization: Bearer <token>` instead of the
 session cookie, and then needs no CSRF token. The token comes from signing in by link:
-`POST /api/device/start`, the person approves at the link it answers,
-`POST /api/device/poll` until `approved`, then `POST /api/device/claim` once
+`POST /api/device.start`, the person approves at the link it answers,
+`POST /api/device.poll` until `approved`, then `POST /api/device.claim` once
 ([Authentication: Devices](auth.md#devices)).
 
 ## Authentication

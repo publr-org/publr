@@ -136,7 +136,7 @@ fn login(init: std.process.Init, out: *std.Io.Writer, options: Options) !u8 {
         .device_code = device_code,
         .name = name,
     }, .{});
-    const claimed = try call(init, Claimed, address, "/api/device/claim", code_body, null);
+    const claimed = try call(init, Claimed, address, "/api/device.claim", code_body, null);
     const scope = claimed.scope;
     const site: credentials.Site = .{
         .address = address,
@@ -173,7 +173,7 @@ fn approved(
         .name = name,
         .scope = options.scope,
     }, .{});
-    const started = try call(init, Started, address, "/api/device/start", start_body, null);
+    const started = try call(init, Started, address, "/api/device.start", start_body, null);
     const link = try std.fmt.allocPrint(arena, "{s}{s}", .{ address, started.approve_path });
 
     try out.print("Open {s} to sign in.\n", .{link});
@@ -208,7 +208,7 @@ fn wait(init: std.process.Init, address: []const u8, started: Started) !bool {
 
         // A server restarting or a network blip while the person decides is no reason to
         // give up: the request waits for them there either way.
-        const polled = call(init, Polled, address, "/api/device/poll", body, null) catch {
+        const polled = call(init, Polled, address, "/api/device.poll", body, null) catch {
             continue;
         };
 
@@ -239,7 +239,7 @@ fn logout(init: std.process.Init, out: *std.Io.Writer, address: ?[]const u8) !u8
     const body = try std.json.Stringify.valueAlloc(arena, .{
         .id = id,
     }, .{});
-    const url = try std.fmt.allocPrint(arena, "{s}/api/device/revoke", .{site.address});
+    const url = try std.fmt.allocPrint(arena, "{s}/api/device.revoke", .{site.address});
 
     // Forgotten here whatever the answer: a device already revoked there is gone either way.
     const revoke: remote.Post = .{
@@ -285,7 +285,7 @@ fn whoami(init: std.process.Init, out: *std.Io.Writer, address: ?[]const u8) !u8
 fn current(init: std.process.Init, site: credentials.Site) !Item {
     std.debug.assert(site.token.len > 0);
 
-    const listed = try call(init, Listed, site.address, "/api/device/list", "{}", site.token);
+    const listed = try call(init, Listed, site.address, "/api/device.list", "{}", site.token);
 
     for (listed.devices) |item| {
         if (item.current) {

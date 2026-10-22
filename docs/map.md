@@ -48,7 +48,7 @@ runs the same operation.
 flowchart LR
     A["Admin: the Publish button"] --> O[record publish]
     B["CLI: publr record publish --id abc"] --> O
-    C["API: POST /api/record/publish"] --> O
+    C["API: POST /api/record.publish"] --> O
 ```
 
 ### Operations come in families
@@ -464,7 +464,7 @@ Grouped by kind. Lines are the whole file, tests included.
 |---|---|---|
 | `adapters/cli.zig` | 1091 | Args to `In`, dispatch, print `Out`, `--help` from the op docs, `--as` to caller |
 | `adapters/cli/sandboxed_plugins.zig` | 223 | An installed plugin's commands: flags to JSON by its manifest's field shapes, `--help` from its manifest |
-| `adapters/rest.zig` | 256 | `GET/POST /api/:namespace/:verb` to the op; query/body to `In`; its http test |
+| `adapters/rest.zig` | 256 | `GET/POST /api/:name` to the op; query/body to `In`; its http test |
 | `adapters/rest/identity.zig` | 173 | Who is making an HTTP request: cookie to caller, CSRF guard for writes, the `Ctx` a handler dispatches with |
 | `adapters/rest/auth.zig` | 247 | `/api/auth/*` handlers (sign-in, sign-out, set-password, session) and their http test |
 | `adapters/admin.zig` | 356 | Admin routes, `Session`, `require`/`accept`/`param`, `fail`, the admin http test |

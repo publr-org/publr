@@ -238,7 +238,7 @@ const load = async (more = false) => {
   const asked = ++latest;
   state.loading = true;
   try {
-    const listed: Listed = await answer(await fetch(Publr.url(`/api/media/list?${query}`), { credentials: "same-origin" }));
+    const listed: Listed = await answer(await fetch(Publr.url(`/api/media.list?${query}`), { credentials: "same-origin" }));
     if (asked !== latest) return;
     const tiles = listed.items.map(tile_of);
     state.items = more ? [...state.items, ...tiles] : tiles;

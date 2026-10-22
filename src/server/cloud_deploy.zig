@@ -150,7 +150,7 @@ fn deploy(
         .slug = options.slug,
         .upload = upload,
     }, .{});
-    const answer = try client.call("cloud/deploy_site", sent);
+    const answer = try client.call("cloud.deploy_site", sent);
     const deployed = try client.answered(Deployed, answer) orelse return 1;
 
     try write_link(init, deployed, options);
@@ -179,7 +179,7 @@ fn address_free(client: Client, out: *std.Io.Writer, slug: []const u8) !bool {
 
     try progress(out, "Checking the address {s}", .{slug});
 
-    const answer = try client.call("cloud/check_address", sent);
+    const answer = try client.call("cloud.check_address", sent);
     const checked = try client.answered(Checked, answer) orelse return false;
 
     if (!checked.available) {
@@ -283,7 +283,7 @@ const Client = struct {
     dashboard: []const u8,
     token: []const u8,
 
-    /// `POST /api/<namespace>/<verb>` with a JSON body.
+    /// `POST /api/<plugin>.<verb>` with a JSON body.
     fn call(client: Client, operation: []const u8, payload: []const u8) !Reply {
         std.debug.assert(operation.len > 0);
         std.debug.assert(payload.len > 0);

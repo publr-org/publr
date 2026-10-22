@@ -474,24 +474,24 @@ fn expect_serve(
         return error.SmokeFailed;
     }
 
-    const listed = try http_get(init, port, "/api/record/list?type=post");
+    const listed = try http_get(init, port, "/api/record.list?type=post");
     const published = std.mem.indexOf(u8, listed, "\"title\":\"Hello site\"") != null;
     const draft = std.mem.indexOf(u8, listed, "\"title\":\"Smoke\"") != null;
 
     // A visitor sees the published post and never the draft.
     if (!published or draft) {
-        std.debug.print("smoke: serve: unexpected /api/record/list body: {s}\n", .{listed});
+        std.debug.print("smoke: serve: unexpected /api/record.list body: {s}\n", .{listed});
         return error.SmokeFailed;
     }
 
-    const tree = try http_get(init, port, "/api/term/tree?taxonomy=topics");
+    const tree = try http_get(init, port, "/api/term.tree?taxonomy=topics");
 
     if (std.mem.indexOf(u8, tree, "\"terms\":[") == null) {
-        std.debug.print("smoke: serve: unexpected /api/term/tree body: {s}\n", .{tree});
+        std.debug.print("smoke: serve: unexpected /api/term.tree body: {s}\n", .{tree});
         return error.SmokeFailed;
     }
 
-    const denied = try http_get(init, port, "/api/content_type/list");
+    const denied = try http_get(init, port, "/api/content_type.list");
 
     if (std.mem.indexOf(u8, denied, "403 Forbidden") == null) {
         std.debug.print("smoke: serve: anonymous content_type list not denied: {s}\n", .{denied});
