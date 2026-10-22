@@ -112,9 +112,10 @@ pub fn items_of(comptime Plugin: type, comptime list: []const u8) []const Item {
 
 /// A box a plugin adds to a content type's edit form, any plugin's type or the core's: its
 /// read draws it in the plugin frame, told only which record it is on (`In.record`, an id)
-/// and the admin's base path, answering `html`. The plugin reads whatever else it needs
-/// itself, as it may. Shown to whoever may call the read, on records of that type, when the
-/// type is there.
+/// and the admin's base path, answering `publr.views.render(ctx, in.base, View, props)` as
+/// `html`, a view of its own on the `PanelPage` layout; markup of its own is refused. The
+/// plugin reads whatever else it needs itself, as it may. Shown to whoever may call the
+/// read, on records of that type, when the type is there.
 pub const Panel = struct {
     /// The content type's handle.
     type: []const u8,

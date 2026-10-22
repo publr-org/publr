@@ -17,6 +17,7 @@ pub const layouts = [_][]const u8{
     "FramePage",
     "WorkspacePage",
     "AroundPage",
+    "PanelPage",
 };
 const chrome_parts = [_][]const u8{ "Chrome", "Document" };
 /// The spacing a layout owns: a page's own top-level elements set none of it.
@@ -27,7 +28,7 @@ const spacing_prefixes = [_][]const u8{
 
 pub fn check(modules: []const *const Module) !void {
     std.debug.assert(modules.len > 0);
-    std.debug.assert(layouts.len == 8);
+    std.debug.assert(layouts.len == 9);
 
     for (modules) |module| {
         try check_imports(module);

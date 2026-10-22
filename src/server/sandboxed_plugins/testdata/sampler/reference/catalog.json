@@ -1096,7 +1096,7 @@
     "id": "panels",
     "group": "Admin",
     "name": "publr.Panel",
-    "summary": "A box on another type's edit form, drawn by a read of the plugin's own in the plugin frame, told only the record's id.",
+    "summary": "A box on another type's edit form, drawn in the plugin frame by a read of the plugin's own with publr.views.render on the panel layout, told only the record's id.",
     "code": [
       {
         "file": "main.zig",
@@ -1121,7 +1121,7 @@
       },
       {
         "find": "css:iframe[src*='note_panel']",
-        "say": "The Sampler box, drawn by the sampler's read in the plugin frame."
+        "say": "The Sampler box, drawn by the sampler's read with its own view in the plugin frame."
       }
     ]
   },

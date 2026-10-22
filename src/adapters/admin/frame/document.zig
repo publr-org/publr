@@ -146,6 +146,11 @@ fn unescaped(value: []const u8, buffer: *[class_value_max]u8) ?[]const u8 {
     return buffer[0..len];
 }
 
+/// Whether `html` is a whole page, as `publr.views.render` draws one.
+pub fn whole(html: []const u8) bool {
+    return head_end(html) != null;
+}
+
 /// Where a whole page's `<head>` opens ends: the bridge goes first in it.
 fn head_end(html: []const u8) ?u32 {
     const doctype = "<!doctype html>";
@@ -172,6 +177,7 @@ test "a whole page gets the bridge first in its head" {
     try std.testing.expect(std.mem.startsWith(u8, text, "<!doctype html>\n<html><head><script>"));
     try std.testing.expect(std.mem.indexOf(u8, text, "</script><title>T</title>") != null);
     try std.testing.expectEqual(@as(?u32, null), head_end("<p>no page</p>"));
+    try std.testing.expect(!whole("<p>no page</p>"));
 }
 
 test "the frame's document links the stylesheet under the base and carries the bridge" {

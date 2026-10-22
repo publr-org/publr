@@ -1,0 +1,20 @@
+import { PanelPage } from "@publr/admin/PanelPage.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SamplerNotePanelProps = {
+  /** The note the form is open on. */
+  record: string;
+  /** How many notes there are. */
+  total: number;
+};
+
+/** The sampler's box on a sample note's form, drawn by its own view as its pages are. */
+export function SamplerNotePanel({ record, total }: SamplerNotePanelProps) {
+  return (
+    <PanelPage title="Sampler">
+      <Text variant="body-sm">
+        Note {record}, one of {total}.
+      </Text>
+    </PanelPage>
+  );
+}

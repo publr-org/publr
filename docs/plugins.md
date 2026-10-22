@@ -608,7 +608,9 @@ or the core's, without that type's plugin knowing about it:
 ```
 
 `StockPanel` is one of the plugin's reads, taking `record` (the record's id) and `base`,
-answering `html`. The admin shows it in the editor's right column, titled with its label
+answering `html` drawn by its own view: `publr.views.render(ctx, in.base,
+publr.views.all.StockPanel, props)`, a `ui/StockPanel.ptsx` on the `PanelPage` layout,
+which draws what the panel shows and nothing around it. The admin shows it in the editor's right column, titled with its label
 and the plugin's name, in the plugin frame sized to its content; `call` and `query` work
 in it as on the plugin's pages. It is told only which record it is on and reads the rest
 itself, within what it and the viewer may. It shows to whoever may call the read, on
