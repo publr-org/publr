@@ -272,6 +272,7 @@ fn source_of(
                 readable.append(arena, .{
                     .handle = handle,
                     .live_only = !own and granted.live_only_on(brief.handle, brief.public),
+                    .own = own,
                 }) catch return error.OutOfMemory;
             } else {
                 out_of_reach.append(arena, handle) catch return error.OutOfMemory;

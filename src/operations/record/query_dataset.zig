@@ -29,6 +29,9 @@ pub const Type = struct {
     handle: []const u8,
     /// Its records read live only, whatever the rest of the query reads.
     live_only: bool = false,
+    /// The running plugin's own type: read in every status whoever it runs for, as its other
+    /// record operations do; the plugin's operation decides whether a record is the caller's.
+    own: bool = false,
 };
 
 /// An internal record collection the running plugin reads, by its full name.
@@ -148,6 +151,10 @@ pub const Source = struct {
     fn statuses_of(source: *const Source, readable: Type) ?[]const []const u8 {
         std.debug.assert(readable.handle.len > 0);
         std.debug.assert(source.live_statuses.len <= 64);
+
+        if (readable.own) {
+            return null;
+        }
 
         if (source.live) |statuses| {
             return statuses;
