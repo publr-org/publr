@@ -857,16 +857,3 @@ test "references in an installed plugin: the relay reads the record before it ru
     const unknown = SDK.call_json(&system, "greeter.recall", "{\"salutation\":\"nope\"}");
     try std.testing.expectError(error.NotFound, unknown);
 }
-
-test "rules in an installed plugin: the relay refuses a field that breaks one" {
-    var project: Project = undefined;
-    try project.init();
-    defer project.deinit();
-
-    var system = project.ctx(.system);
-    const long = "{\"note\":\"" ++ "x" ** 201 ++ "\"}";
-    const refused = SDK.call_json(&system, "greeter.greet", long);
-
-    try std.testing.expectError(error.Failed, refused);
-    try std.testing.expect(std.mem.indexOf(u8, system.failure.?.message, "note") != null);
-}

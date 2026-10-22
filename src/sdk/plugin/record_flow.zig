@@ -178,7 +178,7 @@ pub fn status_id(comptime handle: []const u8, comptime value: []const u8) []cons
     comptime {
         std.debug.assert(value.len > 0);
 
-        if (listed_in(&core_status_ids, value)) {
+        if (listed_in(core_status_ids, value)) {
             return value;
         }
 
@@ -338,7 +338,7 @@ pub fn alias_of(comptime options: anytype, comptime value: []const u8) []const u
         const aliases = options.status.alias;
 
         for (std.meta.fieldNames(@TypeOf(aliases))) |own| {
-            if (!@hasField(Status, own) or listed_in(&core_status_ids, own)) {
+            if (!@hasField(Status, own) or listed_in(core_status_ids, own)) {
                 @compileError("record " ++ options.name ++ ": `.alias` names one of its own " ++
                     "statuses, not `" ++ own ++ "`");
             }
@@ -450,7 +450,7 @@ fn added_id(
             return plugin ++ "." ++ name;
         }
 
-        if (listed_in(&core_status_ids, name)) {
+        if (listed_in(core_status_ids, name)) {
             return name;
         }
 

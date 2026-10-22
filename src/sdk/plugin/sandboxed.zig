@@ -331,12 +331,12 @@ test "what the sandbox cannot run is left out and named, never refused" {
             .version = "0.1.0",
             .summary = "Own tables",
         };
-        pub const schema_sql = "CREATE TABLE tables_rows (id INTEGER PRIMARY KEY)";
-        pub const policies = [_]type{};
+        pub const extend = {};
+        pub const settings_tabs = [_]type{};
     };
     const list = comptime left_out(Plugin);
 
     try std.testing.expectEqual(@as(usize, 2), list.len);
-    try std.testing.expectEqualStrings("`policies`: built-in only", list[0]);
-    try std.testing.expectEqualStrings("`schema_sql`: built-in only", list[1]);
+    try std.testing.expectEqualStrings("`extend`: needs a native plugin", list[0]);
+    try std.testing.expectEqualStrings("`settings_tabs`: built-in only", list[1]);
 }

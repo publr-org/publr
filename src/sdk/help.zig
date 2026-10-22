@@ -55,7 +55,7 @@ fn print_rules(comptime Operation: type, out: *std.Io.Writer) Error!void {
     comptime std.debug.assert(Operation.name.len > 0);
 
     if (checked or who) {
-        write(out, "\n") catch return error.WriteFailed;
+        out.writeAll("\n") catch return error.WriteFailed;
     }
 
     if (checked) {
