@@ -8,9 +8,36 @@ const plugin_define = @import("define.zig");
 pub const depends_on_max: u32 = 16;
 const version_range = @import("../../model/version_range.zig");
 
-pub const Requirement = version_range.Requirement;
 pub const parse = version_range.parse;
 pub const satisfies = version_range.satisfies;
+
+/// Whether `list` (`depends_on` or `compatible_with`) names the plugin `name`.
+pub fn names(list: []const []const u8, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    for (list) |text| {
+        if (text.len > 0 and std.mem.eql(u8, parse(text).name, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Whether `list` names the plugin that owns `operation_name`.
+pub fn names_owner(list: []const []const u8, operation_name: []const u8) bool {
+    std.debug.assert(operation_name.len > 0);
+
+    for (list) |text| {
+        const parent = if (text.len > 0) parse(text).name else "";
+
+        if (parent.len > 0 and @import("../plugin_access.zig").own(parent, operation_name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 /// Every compiled-in plugin's requirements met by another compiled-in plugin, and none
 /// requiring itself, directly or round a loop: a compile error naming what is wrong.

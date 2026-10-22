@@ -68,18 +68,12 @@ pub const DefinitionCache = struct {
         return if (on_scratch) request else null;
     }
 
-    /// What was kept for `key` by a context on `arena`; null when nothing was, or when
-    /// `arena` is not the running request's.
-    pub fn get(
-        cache: *const DefinitionCache,
-        arena: std.mem.Allocator,
-        key: []const u8,
-    ) ?*const anyopaque {
+    /// What was kept for `key`; null when nothing was or no request runs. Callers read on
+    /// the arena `arena_for` answered.
+    pub fn get(cache: *const DefinitionCache, key: []const u8) ?*const anyopaque {
         std.debug.assert(cache.len <= entries_max);
 
-        const request = cache.arena orelse return null;
-
-        if (request.ptr != arena.ptr or key.len > key_len_max) {
+        if (cache.arena == null or key.len > key_len_max) {
             return null;
         }
 
@@ -92,19 +86,12 @@ pub const DefinitionCache = struct {
         return null;
     }
 
-    /// `row` (in `arena`) kept for `key`, when `arena` is the running request's and there
-    /// is room; otherwise nothing is kept and the next read decodes again.
-    pub fn put(
-        cache: *DefinitionCache,
-        arena: std.mem.Allocator,
-        key: []const u8,
-        row: *const anyopaque,
-    ) void {
+    /// `row` (in the request's arena) kept for `key` while there is room; otherwise nothing
+    /// is kept and the next read decodes again.
+    pub fn put(cache: *DefinitionCache, key: []const u8, row: *const anyopaque) void {
         std.debug.assert(cache.len <= entries_max);
 
-        const request = cache.arena orelse return;
-
-        if (request.ptr != arena.ptr or key.len > key_len_max or cache.len == entries_max) {
+        if (cache.arena == null or key.len > key_len_max or cache.len == entries_max) {
             return;
         }
 
@@ -117,29 +104,26 @@ pub const DefinitionCache = struct {
     }
 };
 
-test "a definition kept for the request answers on its arena only, until a write" {
+test "a definition kept for the request answers while it runs, until a write" {
     var buffer: [256]u8 = undefined;
     var fixed: std.heap.FixedBufferAllocator = .init(&buffer);
-    var other_buffer: [256]u8 = undefined;
-    var other: std.heap.FixedBufferAllocator = .init(&other_buffer);
     var cache: DefinitionCache = .{};
     const row: u32 = 7;
 
-    cache.put(fixed.allocator(), "record:post", &row);
-    try std.testing.expectEqual(null, cache.get(fixed.allocator(), "record:post"));
+    cache.put("record:post", &row);
+    try std.testing.expectEqual(null, cache.get("record:post"));
 
     cache.begin(fixed.allocator());
-    cache.put(fixed.allocator(), "record:post", &row);
-    const kept = cache.get(fixed.allocator(), "record:post");
+    cache.put("record:post", &row);
+    const kept = cache.get("record:post");
     try std.testing.expect(kept == @as(*const anyopaque, &row));
-    try std.testing.expectEqual(null, cache.get(other.allocator(), "record:post"));
 
     cache.forget();
-    try std.testing.expectEqual(null, cache.get(fixed.allocator(), "record:post"));
+    try std.testing.expectEqual(null, cache.get("record:post"));
 
-    cache.put(fixed.allocator(), "record:post", &row);
+    cache.put("record:post", &row);
     cache.end();
-    try std.testing.expectEqual(null, cache.get(fixed.allocator(), "record:post"));
+    try std.testing.expectEqual(null, cache.get("record:post"));
 }
 
 test "a context on the request's scratch is answered on the request's arena" {

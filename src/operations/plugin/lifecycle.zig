@@ -149,22 +149,7 @@ fn depended_on(manifest: *const sandboxed_plugin.Manifest, operation_name: []con
     }
 
     for ([_][]const []const u8{ manifest.depends_on, manifest.compatible_with }) |list| {
-        if (in_list(list, operation_name)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-fn in_list(list: []const []const u8, operation_name: []const u8) bool {
-    std.debug.assert(operation_name.len > 0);
-    std.debug.assert(list.len <= depends_on.depends_on_max);
-
-    for (list) |text| {
-        const parent = if (text.len > 0) depends_on.parse(text).name else "";
-
-        if (parent.len > 0 and sdk.plugin_access.own(parent, operation_name)) {
+        if (depends_on.names_owner(list, operation_name)) {
             return true;
         }
     }

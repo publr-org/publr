@@ -71,6 +71,10 @@ pub fn Bind(comptime Module: type, comptime Docs: type) type {
                 "`//!` is the description, 1 to 200 characters");
         }
 
+        if (plugin.manifest.version.len > version_len_max) {
+            @compileError("plugin " ++ plugin.manifest.name ++ ": `version` is 1 to 32 chars");
+        }
+
         check_options(plugin.manifest.name, @TypeOf(plugin.options));
         check_middleware(plugin.manifest.name, @TypeOf(plugin.options), plugin.options);
 
@@ -93,6 +97,7 @@ pub fn Bind(comptime Module: type, comptime Docs: type) type {
 }
 
 const summary_len_max: u32 = 200;
+const version_len_max: u32 = 32;
 
 /// What `define` takes.
 const options_known = [_][]const u8{
@@ -421,13 +426,9 @@ fn declared_kinds(comptime Plugin: type) []const Kind {
         std.debug.assert(Plugin.manifest.name.len > 0);
 
         for (Plugin.options.field_kinds) |Listed| {
-            const made = @TypeOf(Listed) == type and field_kind_define.is_definition(Listed);
-            const declared = if (made)
-                field_kind_define.described(Listed, Plugin.manifest.name, Plugin.docs)
-            else
-                Listed;
-
-            list = list ++ [_]Kind{declared};
+            list = list ++ [_]Kind{
+                field_kind_define.described(Listed, Plugin.manifest.name, Plugin.docs),
+            };
         }
 
         const done = list;
@@ -448,35 +449,20 @@ fn declared_field_groups(comptime Plugin: type) []const ContentTypeDef {
 /// A bound plugin's pages, each operation they name given its words and its plugin's name.
 fn declared_pages(comptime Plugin: type) []const Page {
     comptime {
-        const operation_define = @import("operation_define.zig");
-        const plugin = Plugin.manifest.name;
         var list: []const Page = &.{};
 
-        std.debug.assert(plugin.len > 0);
+        std.debug.assert(Plugin.manifest.name.len > 0);
 
         for (as_slice(Page, Plugin.options.pages)) |page| {
             var made = page;
 
             if (page.operation) |Operation| {
-                if (operation_define.is_definition(Operation)) {
-                    made.operation = operation_define.Described(Operation, plugin, Plugin.docs);
-                }
+                made.operation = admin_described.described(Plugin, Operation);
             }
 
             if (page.form) |form| {
-                var described_form = form;
-
-                const Docs = Plugin.docs;
-
-                if (operation_define.is_definition(form.read)) {
-                    described_form.read = operation_define.Described(form.read, plugin, Docs);
-                }
-
-                if (operation_define.is_definition(form.save)) {
-                    described_form.save = operation_define.Described(form.save, plugin, Docs);
-                }
-
-                made.form = described_form;
+                made.form.?.read = admin_described.described(Plugin, form.read);
+                made.form.?.save = admin_described.described(Plugin, form.save);
             }
 
             if (page.top_bar) |shown| {

@@ -252,7 +252,7 @@ fn option_of(
     const call = tree.fullCall(&call_buffer, node) orelse return null;
     const function = node_source(tree, call.ast.fn_expr);
 
-    if (std.mem.indexOf(u8, function, callee) == null or call.ast.params.len == 0) {
+    if (!std.mem.endsWith(u8, function, callee) or call.ast.params.len == 0) {
         return null;
     }
 
@@ -321,43 +321,18 @@ fn node_source(tree: *const Ast, node: Ast.Node.Index) []const u8 {
 }
 
 /// The `.name` a `<callee>(..., .{ .name = "x", ... })` call gives; null for any other node.
-fn defined_name(tree: *const Ast, node: Ast.Node.Index, callee: []const u8) ?[]const u8 {
+fn defined_name(tree: *const Ast, node: Ast.Node.Index, comptime callee: []const u8) ?[]const u8 {
     std.debug.assert(callee.len > 0);
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
 
-    var call_buffer: [1]Ast.Node.Index = undefined;
-    const call = tree.fullCall(&call_buffer, node) orelse return null;
-    const function_start = tree.tokenStart(tree.firstToken(call.ast.fn_expr));
-    const function_end_token = tree.lastToken(call.ast.fn_expr);
-    const function_end = tree.tokenStart(function_end_token) +
-        tree.tokenSlice(function_end_token).len;
-    const function = tree.source[function_start..function_end];
+    const field = option_of(tree, node, callee, "name") orelse return null;
 
-    if (!std.mem.endsWith(u8, function, callee) or call.ast.params.len == 0) {
+    if (tree.nodeTag(field) != .string_literal) {
         return null;
     }
 
-    var init_buffer: [2]Ast.Node.Index = undefined;
-    const options = call.ast.params[call.ast.params.len - 1];
-    const init = tree.fullStructInit(&init_buffer, options) orelse return null;
+    const literal = tree.tokenSlice(tree.nodeMainToken(field));
 
-    for (init.ast.fields) |field| {
-        const name_token = tree.firstToken(field) - 2;
-
-        if (!std.mem.eql(u8, tree.tokenSlice(name_token), "name")) {
-            continue;
-        }
-
-        if (tree.nodeTag(field) != .string_literal) {
-            return null;
-        }
-
-        const literal = tree.tokenSlice(tree.nodeMainToken(field));
-
-        return literal[1 .. literal.len - 1];
-    }
-
-    return null;
+    return literal[1 .. literal.len - 1];
 }
 
 fn add(

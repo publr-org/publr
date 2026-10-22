@@ -272,12 +272,8 @@ pub fn check_call(comptime operation_name: []const u8) void {
             const optional = @import("../plugin.zig").compatible_with_of(Plugin);
             const declared = depends_on.of(Plugin) ++ optional;
 
-            for (declared) |text| {
-                const target = depends_on.parse(text).name;
-
-                if (@import("../plugin_access.zig").own(target, operation_name)) {
-                    return;
-                }
+            if (depends_on.names_owner(declared, operation_name)) {
+                return;
             }
 
             @compileError(label ++

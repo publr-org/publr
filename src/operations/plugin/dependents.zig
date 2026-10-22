@@ -54,7 +54,7 @@ pub fn left_behind(
         for (running) |plugin| {
             const outside = !listed(names, plugin.name) and !listed(needed.items, plugin.name);
 
-            if (!outside or !needs(plugin, target)) {
+            if (!outside or !depends_on.names(plugin.depends_on, target)) {
                 continue;
             }
 
@@ -260,8 +260,9 @@ fn closure(
     while (index < all.items.len and all.items.len <= running.len) : (index += 1) {
         for (running) |plugin| {
             const fresh = !listed(all.items, plugin.name) and !listed(names, plugin.name);
+            const needs = depends_on.names(plugin.depends_on, all.items[index]);
 
-            if (fresh and !plugin.built_in and needs(plugin, all.items[index])) {
+            if (fresh and !plugin.built_in and needs) {
                 all.append(arena, plugin.name) catch return error.OutOfMemory;
             }
         }
@@ -322,18 +323,6 @@ fn running_of(ctx: *Ctx) Error![]const Running {
     }
 
     return running.items;
-}
-
-fn needs(plugin: Running, target: []const u8) bool {
-    std.debug.assert(target.len > 0);
-
-    for (plugin.depends_on) |text| {
-        if (text.len > 0 and std.mem.eql(u8, depends_on.parse(text).name, target)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 fn listed(names: []const []const u8, name: []const u8) bool {

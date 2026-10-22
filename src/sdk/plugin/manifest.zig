@@ -70,13 +70,7 @@ fn operations_of(comptime Plugin: type) []const Operation {
 
         var list: []const Operation = &.{};
 
-        for (runtime.runtime_entries(Plugin)) |entry| {
-            if (entry.stage != .operation) {
-                continue;
-            }
-
-            const Declared = entry.declaration;
-
+        for (operation_types(Plugin)) |Declared| {
             list = list ++ &[_]Operation{.{
                 .name = Declared.name,
                 .kind = if (Declared.kind == .read) .read else .write,

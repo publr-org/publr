@@ -21,10 +21,10 @@ pub const types = plugin_types;
 pub const define = plugin_define.define;
 pub const Bind = plugin_define.Bind;
 pub const ContentTypeDef = content_type.Def;
-pub const DeclaredType = plugin_types.Declared;
+const DeclaredType = plugin_types.Declared;
 pub const InternalCollection = @import("../model/internal_record.zig").Collection;
 /// An internal record collection with the plugin that declared it.
-pub const OwnedCollection = struct {
+const OwnedCollection = struct {
     owner: []const u8,
     collection: InternalCollection,
 };
@@ -37,7 +37,6 @@ pub const Entry = runtime.Entry;
 pub const runtime_entries = runtime.runtime_entries;
 pub const HookIn = runtime.HookIn;
 pub const HookOut = runtime.HookOut;
-pub const plugin_manifest = @import("plugin/manifest.zig");
 pub const route = @import("plugin/route.zig");
 pub const Route = route.Route;
 pub const OperatorCommand = route.OperatorCommand;
@@ -137,13 +136,10 @@ pub const OwnedPage = struct {
 pub const state = @import("plugin/state.zig");
 pub const depends_on = @import("plugin/depends_on.zig");
 pub const Process = state.Process;
-pub const wire = @import("plugin/wire.zig");
 pub const guest = @import("plugin/guest.zig");
 pub const content_types_max: u32 = 64;
 
 pub const name_len_max: u32 = 32;
-pub const version_len_max: u32 = 32;
-pub const summary_len_max: u32 = 200;
 pub const plugins_max: u32 = 64;
 
 /// Whose admin it is, as a plugin's `admin_brand(ctx)` says: its name in the window's title
@@ -166,14 +162,6 @@ pub fn validate(comptime Plugin: type) void {
 
         const manifest: Manifest = Plugin.manifest;
         assert_name(manifest.name, label);
-
-        if (manifest.version.len == 0 or manifest.version.len > version_len_max) {
-            @compileError("plugin " ++ manifest.name ++ ": `manifest.version` is 1 to 32 chars");
-        }
-
-        if (manifest.summary.len == 0 or manifest.summary.len > summary_len_max) {
-            @compileError("plugin " ++ manifest.name ++ ": `manifest.summary` is 1 to 200 chars");
-        }
 
         for (operations_of(Plugin)) |Operation| {
             sdk.operation.validate(Operation);
@@ -556,7 +544,7 @@ fn check_remotes(comptime plugins: anytype) []const remote_contract.Off {
                 const target = sdk.plugin_of(name);
                 const label = "plugin " ++ Plugin.manifest.name ++ ": " ++ name ++ " ";
 
-                const required = lists(depends_on.of(Plugin), target);
+                const required = depends_on.names(depends_on.of(Plugin), target);
                 const optional = declared_in(compatible_with_of(Plugin), target);
 
                 if (!required and optional == null) {
@@ -649,20 +637,6 @@ fn declared_in(comptime list: []const []const u8, comptime name: []const u8) ?[]
         }
 
         return null;
-    }
-}
-
-fn lists(comptime list: []const []const u8, comptime name: []const u8) bool {
-    comptime {
-        std.debug.assert(name.len > 0);
-
-        for (list) |text| {
-            if (std.mem.eql(u8, depends_on.parse(text).name, name)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
 
@@ -1396,8 +1370,8 @@ test "the test plugin passes the contract and merges into a registry" {
 
 test {
     _ = job_define;
-    _ = plugin_manifest;
-    _ = wire;
+    _ = @import("plugin/manifest.zig");
+    _ = @import("plugin/wire.zig");
     _ = runtime;
     _ = @import("plugin/remote_fields.zig");
     _ = @import("plugin/remote_contract.zig");
