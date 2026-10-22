@@ -20,8 +20,9 @@ pub const Scope = enum { project, app };
 
 /// A reference to a record of any type, stored and sent as its id. A field narrows the
 /// types with `.options = .{ .to = &.{"products.variant"} }`. As an operation's input core
-/// reads it before `run`: `type` its type, `value` the record when the caller may read that
-/// type (else null), `missing` when the record is gone.
+/// reads it before `run`, and a record holding one reads it back the same way: `type` its
+/// type, `value` the record when the caller may read that type (else null), `missing` when
+/// the record is gone.
 pub const AnyRef = struct {
     id: []const u8,
     type: []const u8 = "",
@@ -85,6 +86,59 @@ pub const AnyRef = struct {
 
         return writer.write(self.id);
     }
+
+    /// The record `id` names, read as the caller may, as an input's is.
+    fn read(ctx: *PluginCtx, id: []const u8) sdk.Error!AnyRef {
+        std.debug.assert(id.len > 0);
+
+        const reach = try ctx.call(record_operations.Reach, .{
+            .id = id,
+        });
+        const reason = reach.reason orelse {
+            // Not published yet, for a caller who reads live records only: its type alone.
+            const got = ctx.call(record_operations.Get, .{
+                .id = id,
+            }) catch |err| switch (err) {
+                error.NotFound => return .{
+                    .id = id,
+                    .type = reach.type,
+                },
+                else => return err,
+            };
+
+            return .{
+                .id = id,
+                .type = got.record.type,
+                .value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena(), got.document, .{
+                    .allocate = .alloc_always,
+                }) catch return error.Invalid,
+            };
+        };
+
+        return .{
+            .id = id,
+            .type = reach.type,
+            .missing = reason == .deleted,
+        };
+    }
+
+    /// Every `AnyRef` among `value`'s fields, and in its lists of them, read.
+    fn read_all(ctx: *PluginCtx, value: anytype) sdk.Error!void {
+        inline for (std.meta.fields(@TypeOf(value.*))) |field| {
+            if (comptime field.type == AnyRef) {
+                @field(value, field.name) = try read(ctx, @field(value, field.name).id);
+            } else if (comptime field.type == []const AnyRef) {
+                const list = @field(value, field.name);
+                const loaded = ctx.arena().alloc(AnyRef, list.len) catch return error.OutOfMemory;
+
+                for (list, loaded) |item, *target| {
+                    target.* = try read(ctx, item.id);
+                }
+
+                @field(value, field.name) = loaded;
+            }
+        }
+    }
 };
 
 // Options by name: the compiler finds a name among an enum's tags without reading them.
@@ -116,7 +170,7 @@ const sdk = @import("../../sdk.zig");
 
 /// What one field's declaration may take to evaluate: its overrides, the parts of its options
 /// and validation (each a few dozen, nested once), its kind's checks.
-const field_branches_max: u32 = 600;
+pub const field_branches_max: u32 = 600;
 
 const FieldOption = enum {
     kind,
@@ -449,13 +503,18 @@ pub fn Store(
             }
         }
 
+        /// The stored document, each reference to any record read as an input's is.
         fn decode(ctx: *PluginCtx, document: []const u8) sdk.Error!Document {
             std.debug.assert(document.len > 0);
 
-            return std.json.parseFromSliceLeaky(Document, ctx.arena(), document, .{
+            var value = std.json.parseFromSliceLeaky(Document, ctx.arena(), document, .{
                 .ignore_unknown_fields = true,
                 .allocate = .alloc_always,
-            }) catch error.Invalid;
+            }) catch return error.Invalid;
+
+            try AnyRef.read_all(ctx, &value);
+
+            return value;
         }
     };
 }
@@ -1242,4 +1301,45 @@ pub fn status_ids_of(comptime Definition: type) []const []const u8 {
 
         return done;
     }
+}
+
+test "a record's references to any record read back as an input's: type, value, missing" {
+    const registry = @import("../../server/registry.zig");
+    const fixture = @import("../../operations/record/fixture.zig");
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try registry.SDK.bootstrap(&system);
+    try fixture.post_type(&system);
+
+    const live = try fixture.published(&system, "post", "{\"title\":\"Live\"}");
+    const gone = try fixture.published(&system, "post", "{\"title\":\"Gone\"}");
+
+    _ = try registry.SDK.dispatch(&system, record_operations.Transition, .{
+        .id = gone.id,
+        .transition = "trash",
+    });
+    system.parent = system.allocate_operation_id();
+
+    var ctx: PluginCtx = .{
+        .inner = &system,
+    };
+    const Line = struct {
+        item: AnyRef,
+        others: []const AnyRef,
+    };
+    var line = try std.json.parseFromSliceLeaky(Line, system.arena, try std.fmt.allocPrint(
+        system.arena,
+        "{{\"item\":\"{s}\",\"others\":[\"{s}\"]}}",
+        .{ live.id, gone.id },
+    ), .{});
+
+    try AnyRef.read_all(&ctx, &line);
+    try std.testing.expectEqualStrings("post", line.item.type);
+    try std.testing.expectEqualStrings("Live", line.item.value.?.object.get("title").?.string);
+    try std.testing.expect(!line.item.missing);
+    try std.testing.expect(line.others[0].missing);
+    try std.testing.expect(line.others[0].value == null);
 }
