@@ -48,21 +48,16 @@ pub fn push(connection: *db.Db, job: Queued) db.Error!void {
     try insert.exec();
 }
 
-/// Work whose first run failed outside the queue (an `on` hook's): kept as a job after one
-/// attempt, waiting until `job.due_at_ms`, or failed for good when `ends`.
-pub fn push_failed(
-    connection: *db.Db,
-    job: Queued,
-    ends: bool,
-    problem: []const u8,
-) db.Error!void {
+/// Work kept failed for good without a run: an `on` hook's event too large to wait in the
+/// queue.
+pub fn push_failed(connection: *db.Db, job: Queued, problem: []const u8) db.Error!void {
     std.debug.assert(job.plugin.len > 0 and job.name.len > 0);
     std.debug.assert(job.input.len > 0 and job.input.len <= input_bytes_max);
     std.debug.assert(problem.len > 0);
 
     var insert = try connection.prepare(
         "INSERT INTO job_queue (plugin, name, input, due_at, queued_at, attempts, state, " ++
-            "problem) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)",
+            "problem) VALUES (?1, ?2, ?3, ?4, ?5, 0, 'failed', ?6)",
     );
     defer insert.finalize();
 
@@ -71,8 +66,7 @@ pub fn push_failed(
     try insert.bind_text(3, job.input);
     try insert.bind_int(4, job.due_at_ms);
     try insert.bind_int(5, job.now_ms);
-    try insert.bind_text(6, if (ends) "failed" else "waiting");
-    try insert.bind_text(7, problem[0..@min(problem.len, problem_len_max)]);
+    try insert.bind_text(6, problem[0..@min(problem.len, problem_len_max)]);
     try insert.exec();
 }
 

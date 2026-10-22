@@ -68,10 +68,10 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
                 ctx.lines = &lines;
                 defer ctx.lines = null;
 
-                // An `on` hook's run kept to run again (`on:<event>`) logs as its event's.
+                // An `on` hook's run (`on:<event>`) logs as its event's.
                 const hook = hook_runs.target_of(job.name);
                 const problem = if (hook != null)
-                    SDK.events.rerun(ctx, job.plugin, job.name, job.input)
+                    SDK.events.run_hook(ctx, job.plugin, job.name, job.input)
                 else
                     run_one(ctx, job);
 
@@ -320,35 +320,6 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
 
             return job_queue.retry(ctx.db, job.id, due_at_ms, problem);
         }
-
-        /// Work whose first run failed outside the queue (an `on` hook's): kept as a job
-        /// after that one attempt, to run again as a failed job does, or failed for good.
-        pub fn failed_first(
-            ctx: *Ctx,
-            first: job_queue.Queued,
-            problem: []const u8,
-        ) job_queue.Error!void {
-            std.debug.assert(first.plugin.len > 0 and first.name.len > 0);
-            std.debug.assert(problem.len > 0);
-
-            var kept = first;
-            var why = problem;
-            var ends = ends_after(0, problem);
-
-            if (kept.input.len > job_queue.input_bytes_max) {
-                kept.input = "null";
-                why = try std.fmt.allocPrint(ctx.arena, too_large ++ "{s}", .{problem});
-                ends = true;
-            }
-
-            kept.due_at_ms = ctx.now_ms + job_define.backoff_ms(0);
-
-            try note_failure(ctx, kept.plugin, kept.name, 1, ends, why);
-
-            return job_queue.push_failed(ctx.db, kept, ends, why);
-        }
-
-        const too_large = "Not run again: its event is over 64 KiB. ";
 
         /// Whether a run that failed after `attempts` earlier ones is not run again: a
         /// conflict, or the last attempt.

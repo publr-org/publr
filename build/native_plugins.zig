@@ -130,7 +130,7 @@ fn docs_module(
 
 /// A plugin's own `interface.zig`, its operations' names and shapes, imported under its
 /// name by its own files: `@import("newsletter")` inside newsletter. Another plugin never
-/// imports it: it declares the contract it uses (`publr.plugin.Remote`), checked against
+/// imports it: it declares the contract it uses (`publr.remote.operation`), checked against
 /// this one when both are compiled in, and when they are installed.
 fn add_interfaces(
     builder: *std.Build,

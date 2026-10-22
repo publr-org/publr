@@ -1,4 +1,4 @@
-//! What a filter reads while it runs over a batch. The first pass only notes each read and
+//! What a modifier reads while it runs over a batch. The first pass only notes each read and
 //! answers `error.NotYet`; `settle` then reads every noted record in one `record.list` and
 //! anything else once per distinct input, and the next pass is answered from them.
 const std = @import("std");

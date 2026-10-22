@@ -1,12 +1,12 @@
 //! `publr.modify("variant.title", title)`: a plugin changes a value wherever its owner applies
 //! it (`ctx.mod`), shown or saved. `run` takes one value, typed by its parameter, and changes
 //! it in place; the batch runs through it in passes, its reads collected and read together
-//! between them (`filter_reads.zig`). Pure: no writes, no outside calls; a value whose
+//! between them (`mod_reads.zig`). Pure: no writes, no outside calls; a value whose
 //! modifier fails, or that does not read as its type, stays as it was.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const mods = @import("../mods.zig");
-const filter_reads = @import("filter_reads.zig");
+const mod_reads = @import("mod_reads.zig");
 
 /// A record's title as core applies it, `<type>.title`: the record's id, its fields typed, and
 /// the title a modifier changes.
@@ -52,7 +52,7 @@ pub fn run_batch(
     std.debug.assert(ctx.reads == null);
 
     const memory = ctx.arena();
-    var reads: filter_reads.Reads = .{
+    var reads: mod_reads.Reads = .{
         .arena = memory,
     };
     const values = memory.alloc(?Value, batch.items.len) catch return error.OutOfMemory;
@@ -65,7 +65,7 @@ pub fn run_batch(
         finished.* = value.* == null;
     }
 
-    for (0..filter_reads.rounds_max) |_| {
+    for (0..mod_reads.rounds_max) |_| {
         ctx.reads = &reads;
 
         const waiting = pass(Value, run, ctx, values, done);
@@ -142,7 +142,7 @@ test "a modifier written for one value: its reads wait for the batch, then come 
     defer arena_state.deinit();
     const memory = arena_state.allocator();
     const Fake = struct {
-        reads: ?*filter_reads.Reads = null,
+        reads: ?*mod_reads.Reads = null,
         memory: std.mem.Allocator,
         lists: u32 = 0,
 

@@ -215,7 +215,7 @@ pub fn Of(comptime Domain: type) type {
             const heard = try transition_heard(ctx, def, row.id, was.status, row.status);
 
             mark_live_change(ctx, def.flow, was.status, row.status);
-            ctx.emit_heard(heard.name, heard.payload);
+            ctx.emit_json(heard.name, heard.payload, false);
         }
 
         fn live_text(ctx: *Ctx, row: Record, def: store.definitions.Def) Error!?[]const u8 {
@@ -339,19 +339,19 @@ pub fn Of(comptime Domain: type) type {
 
             const named = heard.named.len > 0;
 
-            try registry.SDK.transition_hooks(ctx, .before, heard.name, heard.payload);
+            try registry.SDK.hooks_on(ctx, .before, heard.name, heard.payload, true);
 
             if (named) {
-                try registry.SDK.transition_hooks(ctx, .before, heard.named, heard.payload);
+                try registry.SDK.hooks_on(ctx, .before, heard.named, heard.payload, true);
             }
 
             _ = try purge(ctx, granted, row.id);
-            try registry.SDK.transition_hooks(ctx, .after, heard.name, heard.payload);
-            ctx.emit_heard(heard.name, heard.payload);
+            try registry.SDK.hooks_on(ctx, .after, heard.name, heard.payload, true);
+            ctx.emit_json(heard.name, heard.payload, false);
 
             if (named) {
-                try registry.SDK.transition_hooks(ctx, .after, heard.named, heard.payload);
-                ctx.emit_heard(heard.named, heard.payload);
+                try registry.SDK.hooks_on(ctx, .after, heard.named, heard.payload, true);
+                ctx.emit_json(heard.named, heard.payload, false);
             }
 
             return .{
@@ -481,10 +481,10 @@ pub fn Of(comptime Domain: type) type {
 
             const heard = try transition_heard(ctx, type_row.def, row.id, row.status, to);
 
-            try registry.SDK.transition_hooks(ctx, .before, heard.name, heard.payload);
+            try registry.SDK.hooks_on(ctx, .before, heard.name, heard.payload, true);
 
             if (heard.named.len > 0) {
-                try registry.SDK.transition_hooks(ctx, .before, heard.named, heard.payload);
+                try registry.SDK.hooks_on(ctx, .before, heard.named, heard.payload, true);
             }
 
             const applied = if (flow.is_live(to) and applying)
@@ -504,12 +504,12 @@ pub fn Of(comptime Domain: type) type {
             );
 
             mark_live_change(ctx, flow, row.status, to);
-            try registry.SDK.transition_hooks(ctx, .after, heard.name, heard.payload);
-            ctx.emit_heard(heard.name, heard.payload);
+            try registry.SDK.hooks_on(ctx, .after, heard.name, heard.payload, true);
+            ctx.emit_json(heard.name, heard.payload, false);
 
             if (heard.named.len > 0) {
-                try registry.SDK.transition_hooks(ctx, .after, heard.named, heard.payload);
-                ctx.emit_heard(heard.named, heard.payload);
+                try registry.SDK.hooks_on(ctx, .after, heard.named, heard.payload, true);
+                ctx.emit_json(heard.named, heard.payload, false);
             }
 
             return .{
@@ -524,7 +524,8 @@ pub fn Of(comptime Domain: type) type {
             /// The transition's own hook point, `<plugin>.<type>_<transition>`; empty for a
             /// type no plugin declares, or a move no transition names.
             named: []const u8,
-            payload: model.flow.Transitioned,
+            /// The move as JSON (`model.flow.Transitioned`).
+            payload: []const u8,
         };
 
         /// What hooks on every transition of the record's type hear, and the name they
@@ -552,15 +553,17 @@ pub fn Of(comptime Domain: type) type {
             else
                 "";
 
+            const payload: model.flow.Transitioned = .{
+                .record = id,
+                .transition = by,
+                .from = from,
+                .to = to,
+            };
+
             return .{
                 .name = name,
                 .named = named,
-                .payload = .{
-                    .record = id,
-                    .transition = by,
-                    .from = from,
-                    .to = to,
-                },
+                .payload = try sdk.stringify(ctx.arena, payload),
             };
         }
 

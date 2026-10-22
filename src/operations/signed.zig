@@ -49,7 +49,7 @@ pub fn signed_up(ctx: *Ctx, user: User, method: []const u8) Error!void {
 /// Someone signed out: `after` hooks, which never stop it, then the event.
 pub fn signed_out(ctx: *Ctx, user_id: []const u8) Error!void {
     std.debug.assert(user_id.len > 0);
-    std.debug.assert(!events.refusable(events.SignedOut.full_name));
+    comptime std.debug.assert(!events.SignedOut.refusable);
 
     const payload: events.SignedOut.Payload = .{
         .user = user_id,
@@ -86,7 +86,12 @@ fn raise(ctx: *Ctx, comptime Event: type, payload: Event.Payload) void {
     std.debug.assert(Event.full_name.len > 0);
     std.debug.assert(ctx.parent != null);
 
-    ctx.emit_heard(Event.full_name, payload);
+    const text = std.json.Stringify.valueAlloc(ctx.arena, payload, .{}) catch {
+        ctx.event_refusal = ctx.event_refusal orelse error.OutOfMemory;
+        return;
+    };
+
+    ctx.emit_json(Event.full_name, text, false);
 }
 
 test "sign-in hooks: before refuses, after writes in the same write, administrators go on" {

@@ -10,13 +10,12 @@ const sdk = @import("../../sdk.zig");
 const middleware = @import("../middleware.zig");
 const PluginCtx = @import("context.zig").PluginCtx;
 const record_typed = @import("../../operations/record/typed.zig");
-const record_operations = @import("../../operations/record.zig");
+const record_define = @import("record_define.zig");
 const modify_define = @import("modify_define.zig");
 const mods = @import("../mods.zig");
-const auth_events = @import("../auth_events.zig");
 const error_events = @import("../error_events.zig");
 
-pub const Stage = middleware.Stage;
+const Stage = middleware.Stage;
 
 /// `publr.before(Operation, run)`: changes or refuses the operation's input, inside its write.
 /// Operations only: an event already happened (a sign-in or a transition, which may still be
@@ -87,10 +86,6 @@ fn is_event(comptime Target: type) bool {
 /// Whether a `before` hook may refuse the event: only the ones core says (a sign-in, a
 /// transition); a plugin's own event already happened.
 fn refusable(comptime Target: type) bool {
-    if (Target.full_name.len > 0 and auth_events.refusable(Target.full_name)) {
-        return true;
-    }
-
     return @hasDecl(Target, "refusable") and Target.refusable;
 }
 
@@ -118,63 +113,22 @@ pub fn target_name(comptime Target: type, comptime plugin: []const u8) []const u
 
 /// The hook as the core runs it.
 /// `words`: the `run` function's `///`, what an administrator reads when the plugin asks
-/// to hook in; a hook without one is compiled in only.
+/// to hook in (`reason`, empty when it has none); a hook without one is compiled in only.
 pub fn Described(
     comptime Definition: type,
     comptime plugin: []const u8,
     comptime words: ?[]const u8,
 ) type {
-    const Hook = Shaped(Definition, plugin);
-
-    const text = words orelse return Hook;
-
-    if (@hasDecl(Hook, "pattern")) {
-        return struct {
-            pub const stage = Hook.stage;
-            pub const pattern = Hook.pattern;
-            pub const reason = text;
-            pub const run = Hook.run;
-        };
-    }
-
-    if (@hasDecl(Hook, "operation") and @hasDecl(Hook, "event")) {
-        return struct {
-            pub const stage = Hook.stage;
-            pub const operation = Hook.operation;
-            pub const event = Hook.event;
-            pub const Payload = Hook.Payload;
-            pub const reason = text;
-            pub const run = Hook.run;
-        };
-    }
-
-    if (@hasDecl(Hook, "operation")) {
-        return struct {
-            pub const stage = Hook.stage;
-            pub const operation = Hook.operation;
-            pub const reason = text;
-            pub const run = Hook.run;
-        };
-    }
-
-    return struct {
-        pub const stage = Hook.stage;
-        pub const event = Hook.event;
-        pub const Payload = Hook.Payload;
-        pub const reason = text;
-        pub const run = Hook.run;
-    };
-}
-
-fn Shaped(comptime Definition: type, comptime plugin: []const u8) type {
     comptime {
         const Target = Definition.target;
         const given_run = Definition.given_run;
+        const text = words orelse "";
 
         if (Definition.hook_stage == .modify) {
             return struct {
                 pub const stage: Stage = .modify;
                 pub const pattern = Target.pattern;
+                pub const reason = text;
 
                 pub fn run(ctx: *PluginCtx, batch: *mods.Batch) sdk.Error!void {
                     return modify_define.run_batch(Target.Value, given_run, ctx, batch);
@@ -185,18 +139,20 @@ fn Shaped(comptime Definition: type, comptime plugin: []const u8) type {
         const name = target_name(Target, plugin);
 
         if (is_event(Target) and Definition.hook_stage != .on) {
-            return EventHook(Definition.hook_stage, Target, name, given_run);
+            return EventHook(Definition.hook_stage, Target, name, text, given_run);
         }
 
         return switch (Definition.hook_stage) {
             .before => struct {
                 pub const stage: Stage = .before;
                 pub const operation = name;
+                pub const reason = text;
                 pub const run = given_run;
             },
             .after => struct {
                 pub const stage: Stage = .after;
                 pub const operation = name;
+                pub const reason = text;
                 pub const run = given_run;
             },
             // An event's payload, or an operation's answer: what the hook gets from the queue.
@@ -204,6 +160,7 @@ fn Shaped(comptime Definition: type, comptime plugin: []const u8) type {
                 pub const stage: Stage = .on;
                 pub const event = name;
                 pub const Payload = if (is_event(Target)) Target.Payload else Target.Out;
+                pub const reason = text;
 
                 pub fn run(ctx: *PluginCtx, payload: Payload) sdk.Error!void {
                     return queued(given_run, ctx, payload);
@@ -213,7 +170,6 @@ fn Shaped(comptime Definition: type, comptime plugin: []const u8) type {
         };
     }
 }
-
 /// A `before` or `after` hook on an event (core's sign-in, a transition, a plugin's own): the
 /// plugin's `fn (ctx, payload)` run inside the write that emitted it, its error refusing it.
 /// Shaped as an operation hook named for the event, so installed plugins run it the same way.
@@ -221,6 +177,7 @@ fn EventHook(
     comptime hook_stage: Stage,
     comptime Target: type,
     comptime name: []const u8,
+    comptime text: []const u8,
     comptime given_run: anytype,
 ) type {
     comptime {
@@ -236,6 +193,7 @@ fn EventHook(
                 pub const operation = name;
                 pub const event = name;
                 pub const Payload = Payload_;
+                pub const reason = text;
 
                 pub fn run(ctx: *PluginCtx, in: *Payload) sdk.Error!void {
                     return given_run(ctx, in.*);
@@ -248,6 +206,7 @@ fn EventHook(
             pub const operation = name;
             pub const event = name;
             pub const Payload = Payload_;
+            pub const reason = text;
 
             pub fn run(ctx: *PluginCtx, in: *Payload, _: *const Nothing) sdk.Error!void {
                 return given_run(ctx, in.*);
@@ -256,13 +215,13 @@ fn EventHook(
     }
 }
 
-/// An `on` hook is queued work, run from the queue once the write committed: a `run` taking
-/// `*publr.QueueCtx` gets one (and `fetch`); one taking `*publr.Ctx` gets that.
+/// An `on` hook is queued work, run from the queue once the write committed: its `run`
+/// takes `*publr.QueueCtx` (with `fetch`).
 fn queued(comptime given: anytype, ctx: *PluginCtx, value: anytype) sdk.Error!void {
     const First = @typeInfo(@TypeOf(given)).@"fn".params[0].type.?;
 
-    if (comptime First == *PluginCtx) {
-        return given(ctx, value);
+    if (comptime First != *queue.Queue(PluginCtx)) {
+        @compileError("an `on` hook is queued work: its run takes `*publr.QueueCtx`");
     }
 
     var queue_ctx: queue.Queue(PluginCtx) = .{
@@ -294,12 +253,10 @@ pub fn event(comptime options: anytype) type {
         }
 
         const core = std.mem.indexOfScalar(u8, name, '.') != null;
+        const refusable_ = @hasField(Options, "refusable") and options.refusable;
 
-        if (core and std.mem.startsWith(u8, name, "auth.")) {
-            if (auth_events.credential_field(Payload_)) |field| {
-                @compileError("a sign-in event never carries a credential: " ++ name ++ "." ++
-                    field);
-            }
+        if (refusable_ and !core) {
+            @compileError("only core names an event a `before` hook may refuse: " ++ name);
         }
 
         return struct {
@@ -307,14 +264,31 @@ pub fn event(comptime options: anytype) type {
             pub const Payload = Payload_;
             pub const verb = name;
             pub const full_name = if (core) name else "";
+            pub const refusable = refusable_;
         };
     }
 }
 
 /// Another plugin's things, described with only what this plugin uses.
 pub const remote = struct {
-    pub fn operation(comptime name: []const u8, comptime In: type, comptime Out: type) type {
-        return @import("../plugin.zig").Remote(name, In, Out);
+    /// Another plugin's operation, as this plugin uses it: its name, what this plugin sends
+    /// and the part of the answer it reads. Listed in the plugin's `remotes`, it is called
+    /// (`ctx.call(Reserve, ...)`) and hooked like any operation; its plugin must be named in
+    /// `depends_on` or `compatible_with`. Checked against the real operation when both are
+    /// compiled in, and when either is installed.
+    pub fn operation(
+        comptime operation_name: []const u8,
+        comptime Input: type,
+        comptime Output: type,
+    ) type {
+        comptime sdk.operation.assert_name(operation_name);
+
+        return struct {
+            pub const name = operation_name;
+            pub const In = Input;
+            pub const Out = Output;
+            pub const remote = true;
+        };
     }
 
     /// Another plugin's record type: `publr.remote.record("products.variant", Fields)`.
@@ -324,7 +298,7 @@ pub const remote = struct {
                 @compileError("a remote record is named `<plugin>.<type>`");
             }
 
-            const Typed = @import("record_define.zig").Store(Fields, name, false, "");
+            const Typed = record_define.Store(Fields, name, false, "");
 
             return struct {
                 pub const remote_record = name;
@@ -347,17 +321,9 @@ pub const remote = struct {
                 pub fn get(
                     any_ctx: anytype,
                     id: []const u8,
-                    options: @import("record_define.zig").GetOptions,
+                    options: record_define.GetOptions,
                 ) sdk.Error!Held {
-                    std.debug.assert(id.len > 0);
-
-                    const found = try Typed.get(queue.base_of(any_ctx), id);
-
-                    if (std.mem.eql(u8, found.status, "trashed") and !options.trashed) {
-                        return error.NotFound;
-                    }
-
-                    return found;
+                    return record_define.get_typed(Typed, any_ctx, id, options);
                 }
 
                 /// Moves the record by a transition of its owner's flow, or one this plugin
@@ -366,17 +332,8 @@ pub const remote = struct {
                     any_ctx: anytype,
                     held: Held,
                     comptime named: @TypeOf(.enum_literal),
-                ) sdk.Error!@import("record_define.zig").Transitioned {
-                    const ctx = queue.base_of(any_ctx);
-
-                    std.debug.assert(held.id.len > 0);
-
-                    const moved = try ctx.call(record_operations.Transition, .{
-                        .id = held.id,
-                        .transition = @tagName(named),
-                    });
-
-                    return if (moved.pending) .pending else .done;
+                ) sdk.Error!record_define.Transitioned {
+                    return record_define.transition_named(any_ctx, held.id, @tagName(named));
                 }
             };
         }
@@ -417,7 +374,7 @@ test "a hook on a plugin's own operation is named for the plugin" {
     try std.testing.expectEqualStrings("guestbook.sign", Hook.operation);
     try std.testing.expectEqual(Stage.before, Hook.stage);
     try std.testing.expectEqualStrings("Refuses links", Hook.reason);
-    try std.testing.expect(!@hasDecl(Unexplained, "reason"));
+    try std.testing.expectEqualStrings("", Unexplained.reason);
 
     const Stock = event(.{
         .name = "out_of_stock",

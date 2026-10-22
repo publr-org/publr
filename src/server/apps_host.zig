@@ -104,7 +104,9 @@ pub const AppsHost = struct {
         var ctx = identity.context(host.project, arena_state.allocator(), .system);
 
         for (specs) |spec| {
-            registry.SDK.announce(&ctx, "apps.loaded", spec.name);
+            registry.SDK.announce(&ctx, sdk.AppsLoaded, .{
+                .app = spec.name,
+            });
         }
     }
 

@@ -21,11 +21,13 @@ const Signed = struct {
 pub const SignedIn = event(.{
     .name = "auth.signed_in",
     .payload = Signed,
+    .refusable = true,
 });
 /// A person created their own account (open sign-up), emitted before their first `SignedIn`.
 pub const SignedUp = event(.{
     .name = "auth.signed_up",
     .payload = Signed,
+    .refusable = true,
 });
 /// Someone signed out.
 pub const SignedOut = event(.{
@@ -93,9 +95,6 @@ pub const IdentityRefused = event(.{
     },
 });
 
-/// The sign-in events a `before` or `after` hook may refuse.
-pub const refusable_events = [_][]const u8{ SignedIn.full_name, SignedUp.full_name };
-
 /// Core's events that a `before` hook may not hear: they already happened. An installed
 /// plugin asking for one is refused at install, as a compiled-in one fails to build.
 pub const unrefusable = [_][]const u8{SignedOut.full_name};
@@ -110,14 +109,6 @@ pub const refused = [_][]const u8{
     SignOnFailed.full_name,
     IdentityRefused.full_name,
 };
-
-/// Whether a `before` or `after` hook on the event may refuse it.
-pub fn refusable(name: []const u8) bool {
-    std.debug.assert(name.len > 0);
-    std.debug.assert(refusable_events.len > 0);
-
-    return listed(&refusable_events, name);
-}
 
 /// Whether `name` is one of core's events a `before` hook may not hear.
 pub fn before_refused(name: []const u8) bool {
@@ -140,40 +131,10 @@ fn listed(names: []const []const u8, name: []const u8) bool {
     return false;
 }
 
-/// What no sign-in payload may carry, in any field's name: a credential, or a way to one.
-const credential_words = [_][]const u8{
-    "password", "token", "code", "secret", "cookie", "session", "link", "key",
-};
-
-/// The field of `Payload` named like a credential; null when there is none.
-pub fn credential_field(comptime Payload_: type) ?[]const u8 {
-    comptime {
-        std.debug.assert(@typeInfo(Payload_) == .@"struct");
-        std.debug.assert(credential_words.len > 0);
-
-        for (@typeInfo(Payload_).@"struct".fields) |field| {
-            for (credential_words) |word| {
-                if (std.mem.indexOf(u8, field.name, word) != null) {
-                    return field.name;
-                }
-            }
-        }
-
-        return null;
-    }
-}
-
-test "no sign-in payload carries a credential; a field named like one is found" {
-    const Leaky = struct {
-        user: []const u8,
-        session_token: []const u8,
-    };
-
-    try std.testing.expectEqualStrings("session_token", comptime credential_field(Leaky).?);
-    try std.testing.expectEqual(@as(?[]const u8, null), comptime credential_field(Signed));
-    try std.testing.expect(!refusable(SignedOut.full_name));
+test "a sign-in or sign-up may be refused; a sign-out may not" {
+    try std.testing.expect(!SignedOut.refusable);
     try std.testing.expect(before_refused("auth.signed_out"));
     try std.testing.expect(!before_refused("auth.signed_in"));
-    try std.testing.expect(refusable(SignedIn.full_name) and refusable(SignedUp.full_name));
+    try std.testing.expect(SignedIn.refusable and SignedUp.refusable);
     try std.testing.expectEqualStrings("auth.sign_on_failed", SignOnFailed.full_name);
 }

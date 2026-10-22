@@ -139,22 +139,6 @@ pub fn records_of(comptime Plugin: type) []const ProvidedRecord {
     }
 }
 
-/// When both are compiled in and the user needs the other plugin, a remote record or event
-/// that does not fit fails the build, as a remote operation does.
-pub fn check_compiled(
-    comptime label: []const u8,
-    comptime Remote: type,
-    comptime Provider: type,
-) void {
-    comptime {
-        std.debug.assert(used_of(Remote).kind != .operation);
-
-        if (misfit_compiled(Remote, Provider, Provider.manifest.name)) |why| {
-            @compileError(label ++ "does not fit: " ++ why);
-        }
-    }
-}
-
 /// A compiled-in plugin's remote that does not fit another compiled-in plugin it only works
 /// with: switched off from the start, its hooks left out of the build.
 pub const Off = struct {
@@ -314,8 +298,11 @@ test "a plugin's remotes and its events, as its manifest carries them and the bu
     try std.testing.expectEqualStrings("provider.restocked", events[0].name);
     try std.testing.expectEqualStrings("integer", records[0].fields[1].kind);
 
-    comptime check_compiled("user_side: ", User.Variant, Provider);
-    comptime check_compiled("user_side: ", User.Heard, Provider);
+    const variant_misfit = comptime misfit_compiled(User.Variant, Provider, "provider");
+    const heard_misfit = comptime misfit_compiled(User.Heard, Provider, "provider");
+
+    try std.testing.expectEqual(null, variant_misfit);
+    try std.testing.expectEqual(null, heard_misfit);
 }
 
 /// A compiled-in pair for the test below: `keeper` counts, `watcher` only works with it.

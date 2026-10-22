@@ -46,7 +46,8 @@ test "an installed plugin's failing on hook runs again on its own, then shows fa
 
     var worker = scenario.ctx(.system);
 
-    try std.testing.expectEqual(2, try registry.SDK.events.drain(&worker, 8));
+    // Two hooks on each print, each its own run.
+    try std.testing.expectEqual(4, try registry.SDK.jobs.drain(&worker, 8));
 
     for (1..job_define.attempts_max) |_| {
         worker.now_ms += job_define.backoff_ms_max;

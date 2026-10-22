@@ -10,7 +10,6 @@ pub const Error = db.Error || error{
     Invalid,
     NotFound,
     Conflict,
-    Vetoed,
     Throttled,
     /// The operation's own failure, one the core does not name: `ctx.failure` says which
     /// (a `Failure` its plugin declares), and the adapters answer with its status and name.
@@ -19,8 +18,8 @@ pub const Error = db.Error || error{
     Unavailable,
     BadCredentials,
     InvalidationFailed,
-    /// A filter's read, noted for its batch: the filter runs again once the batch's reads are
-    /// in. Only a filter's first pass sees it.
+    /// A modifier's read, noted for its batch: the modifier runs again once the batch's reads
+    /// are in. Only a modifier's first pass sees it.
     NotYet,
 };
 

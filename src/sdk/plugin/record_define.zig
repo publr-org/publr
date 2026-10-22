@@ -120,21 +120,13 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
             /// The record, its pending changes included; not found when it is another type's
             /// or in the trash, unless `.{ .trashed = true }`. Internal records have no trash.
             pub fn get(any_ctx: anytype, id: []const u8, get_options: GetOptions) sdk.Error!Held {
-                std.debug.assert(id.len > 0);
-
-                const found = try Kept.get(queue.base_of(any_ctx), id);
-
                 if (comptime internal) {
-                    return found;
-                } else {
-                    const in_trash = std.mem.eql(u8, found.status, "trashed");
+                    std.debug.assert(id.len > 0);
 
-                    if (in_trash and !get_options.trashed) {
-                        return error.NotFound;
-                    }
-
-                    return held_of(found);
+                    return Kept.get(queue.base_of(any_ctx), id);
                 }
+
+                return held_of(try get_typed(Kept, any_ctx, id, get_options));
             }
 
             /// The one record whose unique or indexed `field` holds `value`, or null; two
@@ -220,18 +212,10 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
                 held: Held,
                 comptime named: @TypeOf(.enum_literal),
             ) sdk.Error!Transitioned {
-                const ctx = queue.base_of(any_ctx);
-
                 comptime record_flow.check_named(options, @tagName(named));
                 comptime std.debug.assert(!internal);
-                std.debug.assert(held.id.len > 0);
 
-                const moved = try ctx.call(record_operations.Transition, .{
-                    .id = held.id,
-                    .transition = @tagName(named),
-                });
-
-                return if (moved.pending) .pending else .done;
+                return transition_named(any_ctx, held.id, @tagName(named));
             }
         };
     }
@@ -430,6 +414,41 @@ fn filter_text(ctx: *PluginCtx, value: anytype) sdk.Error![]const u8 {
         .@"enum" => @tagName(value),
         else => @as([]const u8, value),
     };
+}
+
+/// A content record by id through its `Store` (`Typed`), its pending changes included; not found
+/// in the trash unless `.{ .trashed = true }`. A plugin's own records and another's alike.
+pub fn get_typed(
+    comptime Typed: type,
+    any_ctx: anytype,
+    id: []const u8,
+    get_options: GetOptions,
+) sdk.Error!Typed.Item {
+    std.debug.assert(id.len > 0);
+
+    const found = try Typed.get(queue.base_of(any_ctx), id);
+
+    if (std.mem.eql(u8, found.status, "trashed") and !get_options.trashed) {
+        return error.NotFound;
+    }
+
+    return found;
+}
+
+/// Moves the record `id` by the transition named `name`. `.pending` when the caller may
+/// only draft: a person makes the transition later.
+pub fn transition_named(any_ctx: anytype, id: []const u8, name: []const u8) sdk.Error!Transitioned {
+    const ctx = queue.base_of(any_ctx);
+
+    std.debug.assert(id.len > 0);
+    std.debug.assert(name.len > 0);
+
+    const moved = try ctx.call(record_operations.Transition, .{
+        .id = id,
+        .transition = name,
+    });
+
+    return if (moved.pending) .pending else .done;
 }
 
 /// `save`'s changes name fields of the record's document.

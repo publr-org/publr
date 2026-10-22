@@ -45,19 +45,15 @@ fn changed(ctx: *sdk.Ctx, operation: []const u8, unit: changed_units.Unit) void 
 /// The apps loaded from the folder: the server's own event, not a write.
 pub const Loaded = struct {
     pub const stage: sdk.middleware.Stage = .on;
-    pub const event = "apps.loaded";
+    pub const event = sdk.AppsLoaded.full_name;
+    pub const Payload = sdk.AppsLoaded.Payload;
     pub const reason = "Keeps the apps loaded";
 
-    pub fn run(ctx: *sdk.Ctx, event_heard: sdk.middleware.Event) void {
+    pub fn run(ctx: *sdk.Ctx, loaded: Payload) void {
         std.debug.assert(ctx.now_ms >= 0);
 
-        const emitted = switch (event_heard) {
-            .emitted => |found| found,
-            else => return,
-        };
-
-        keep(ctx, emitted.name, emitted.subject) catch |err| {
-            std.log.warn("recorder: {s} not kept: {t}", .{ emitted.name, err });
+        keep(ctx, event, loaded.app) catch |err| {
+            std.log.warn("recorder: {s} not kept: {t}", .{ event, err });
         };
     }
 };

@@ -3,7 +3,7 @@
 //! compiled-in plugins first, then installed ones. Nothing is declared ahead: a name nobody
 //! modifies comes back as it went. A modifier's name may hold `*` for exactly one part
 //! (`*.title`, `checkout.*`). Values cross as JSON, a batch at a time, so a modifier written
-//! for one item has its reads made together for all (`plugin/filter_reads.zig`).
+//! for one item has its reads made together for all (`plugin/mod_reads.zig`).
 
 const std = @import("std");
 

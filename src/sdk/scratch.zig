@@ -1,9 +1,9 @@
 //! Working memory for one item of a loop over many. The request's arena only grows until
 //! the request ends, so a loop that keeps each item's working data there takes the sum of
-//! every item. A scratch is a part of the arena set aside once per request (`ctx.scratch`)
-//! and given back after each item: the loop takes its largest item's memory, and keeps
-//! only its results in the arena. Marks nest, so a loop inside an item of another (an
-//! operation called from it) gives back only its own.
+//! every item. A scratch is a buffer set aside once per process (`ctx.scratch`; from the
+//! arena where the process set none aside) and given back after each item: the loop takes
+//! its largest item's memory, and keeps only its results in the arena. Marks nest, so a
+//! loop inside an item of another (an operation called from it) gives back only its own.
 const std = @import("std");
 
 /// One request's scratch: the most an item's working data may take, every nested loop's
@@ -16,19 +16,6 @@ pub const Scratch = struct {
     pub const Mark = struct {
         index: u32,
     };
-
-    /// `bytes` of `arena` set aside for the items, one at a time.
-    pub fn init(arena: std.mem.Allocator, bytes: u32) error{OutOfMemory}!Scratch {
-        std.debug.assert(bytes > 0);
-
-        const buffer = try arena.alloc(u8, bytes);
-
-        std.debug.assert(buffer.len == bytes);
-
-        return .{
-            .fixed = .init(buffer),
-        };
-    }
 
     pub fn allocator(scratch: *Scratch) std.mem.Allocator {
         std.debug.assert(scratch.fixed.buffer.len > 0);
@@ -56,9 +43,10 @@ pub const Scratch = struct {
 };
 
 test "a scratch holds one item at a time, however many there are" {
-    var buffer: [4096]u8 = undefined;
-    var fixed: std.heap.FixedBufferAllocator = .init(&buffer);
-    var scratch = try Scratch.init(fixed.allocator(), 1024);
+    var buffer: [1024]u8 = undefined;
+    var scratch: Scratch = .{
+        .fixed = .init(&buffer),
+    };
     var item: u32 = 0;
 
     while (item < 100) : (item += 1) {
@@ -71,13 +59,14 @@ test "a scratch holds one item at a time, however many there are" {
         try std.testing.expectEqual(@as(u8, @truncate(item)), working[999]);
     }
 
-    try std.testing.expectEqual(@as(usize, 1024), fixed.end_index);
+    try std.testing.expectEqual(@as(usize, 0), scratch.fixed.end_index);
 }
 
 test "a nested loop gives back only its own items" {
-    var buffer: [4096]u8 = undefined;
-    var fixed: std.heap.FixedBufferAllocator = .init(&buffer);
-    var scratch = try Scratch.init(fixed.allocator(), 1024);
+    var buffer: [1024]u8 = undefined;
+    var scratch: Scratch = .{
+        .fixed = .init(&buffer),
+    };
     const outer = scratch.mark();
     const kept = try scratch.allocator().alloc(u8, 100);
 
@@ -100,10 +89,10 @@ test "a nested loop gives back only its own items" {
 }
 
 test "an item larger than the scratch is refused" {
-    var buffer: [2048]u8 = undefined;
-    var fixed: std.heap.FixedBufferAllocator = .init(&buffer);
-    var scratch = try Scratch.init(fixed.allocator(), 512);
+    var buffer: [512]u8 = undefined;
+    var scratch: Scratch = .{
+        .fixed = .init(&buffer),
+    };
 
     try std.testing.expectError(error.OutOfMemory, scratch.allocator().alloc(u8, 513));
-    try std.testing.expectError(error.OutOfMemory, Scratch.init(fixed.allocator(), 4096));
 }

@@ -79,10 +79,9 @@ fn dispatch(
 
     admit_counted(SDK, ctx, found, input, parent == null) catch |err| {
         SDK.emit(ctx, .{
-            .rejected = .{
+            .failed = .{
                 .operation_name = found.name,
                 .operation_id = operation_id,
-                .err = err,
             },
         });
         SDK.log_failure(ctx, found.name, input, found.secret, err);
@@ -103,7 +102,6 @@ fn dispatch(
             .completed = .{
                 .operation_name = found.name,
                 .operation_id = operation_id,
-                .duration_ns = 0,
             },
         });
         SDK.log_lines(ctx, found.name);
@@ -112,7 +110,6 @@ fn dispatch(
             .failed = .{
                 .operation_name = found.name,
                 .operation_id = operation_id,
-                .err = err,
             },
         });
         SDK.log_failure(ctx, found.name, input, found.secret, err);

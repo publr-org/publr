@@ -715,7 +715,7 @@ test "a hook's reason is its run function's words, by its place in .hooks" {
         \\fn quiet(ctx: *publr.Ctx, in: *In) publr.Error!void {}
         \\
         \\/// Thanks whoever greeted.
-        \\fn thank(ctx: *publr.Ctx, payload: Payload) publr.Error!void {}
+        \\fn thank(ctx: *publr.QueueCtx, payload: Payload) publr.Error!void {}
         \\
         \\const hooks = .{
         \\    publr.after(Record, announce),

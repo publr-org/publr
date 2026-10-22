@@ -965,15 +965,6 @@ last change. Keys are `record:<id>`, `type:<handle>`, `records`,
 `template:<app>/<path>` and `asset:<app>`; artifacts are an app and a URL inside it
 (`www:/posts/hello`, `www:/_islands/latest-posts`). See [Apps](apps.md).
 
-## `event_queue`
-
-The events waiting for the `on` hooks (see [Plugin API](plugin-api.md)): `id` in the order
-they were emitted, the emitting operation's `operation_id`, the event's `name` (a plugin's
-event, one of core's, or an operation's own on success) and `subject` (its payload as JSON,
-an operation's answer for its own), and `queued_at`. A write adds them in its own
-transaction, so a write rolled back queues nothing; the server's worker process hands them
-on, oldest first, and removes them.
-
 ## `job_queue`
 
 The jobs plugins queued (see [Plugin API](plugin-api.md)): the `plugin` and the job's
@@ -982,9 +973,10 @@ transaction, so a write rolled back queues nothing. The server's worker process 
 once `due_at` has come and removes it when it is done. A job that fails waits again: `attempts` counts the
 runs, and each failure moves `due_at` later, from a minute doubling up to a day. After the
 last attempt `state` is `failed` and `problem` says why; the row stays for the plugin's
-page. An `on` hook's run that failed is kept here too, after its first try (`attempts` 1),
-as its plugin's (`core` for core's own) under `on:<event>` (`#2` for the plugin's second
-hook on it), the event's payload as `input`. `claimed_until` holds a job while it runs: a run lost to a crash is taken up again
+page. Each `on` hook's run is a job too, queued in the write that emitted the event, as
+its plugin's (`core` for core's own) under `on:<event>` (`#2` for the plugin's second hook
+on it), the event's payload as `input`; one whose payload is over 64 KiB is kept failed
+without a run. `claimed_until` holds a job while it runs: a run lost to a crash is taken up again
 once it passes. `queued_at` is when it was queued. Indexed on `(state, due_at)`, the read
 each pass makes.
 

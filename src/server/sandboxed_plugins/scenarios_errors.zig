@@ -55,7 +55,7 @@ test "an installed tracker hears errors and failed sign-ins, never refusals" {
 
     var worker = scenario.ctx(.system);
 
-    try std.testing.expectEqual(3, try registry.SDK.events.drain(&worker, 8));
+    try std.testing.expectEqual(3, try registry.SDK.jobs.drain(&worker, 8));
     try std.testing.expectEqual(1, try logged(&scenario, "Tracked tracker.break Logged: " ++
         "The disk is full by user"));
     try std.testing.expectEqual(1, try logged(&scenario, "Tracked tracker.break Unavailable: " ++

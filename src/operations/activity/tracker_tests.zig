@@ -9,6 +9,7 @@ const activity = @import("../activity.zig");
 const store = @import("../../store.zig");
 
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
+const QueueCtx = @import("../../sdk/plugin/queue.zig").Queue(PluginCtx);
 
 /// Breaks on purpose, and records every error it hears of, as an error tracker would.
 const Tracker = struct {
@@ -63,8 +64,8 @@ const Tracker = struct {
         }
     };
 
-    fn track(ctx: *PluginCtx, failed: error_events.Failed.Payload) sdk.Error!void {
-        std.debug.assert(ctx.inner.db.transaction_depth == 0);
+    fn track(ctx: *QueueCtx, failed: error_events.Failed.Payload) sdk.Error!void {
+        std.debug.assert(ctx.base.inner.db.transaction_depth == 0);
         std.debug.assert(failed.entry > 0);
 
         ctx.log(.info, "Tracked {s} {s}: {s} by {s}", .{
@@ -104,10 +105,10 @@ test "errors raise publr.errors.Failed for a compiled-in tracker; refusals raise
 
     // Three Error log entries; two are errors, kept though the crash's write rolled back.
     try std.testing.expectEqual(@as(u32, 3), try sdk.testing.count(&ctx, "errors"));
-    try std.testing.expectEqual(@as(u32, 2), try sdk.testing.count(&ctx, "event_queue"));
+    try std.testing.expectEqual(@as(u32, 2), try sdk.testing.count(&ctx, "job_queue"));
 
     var worker = harness.ctx(.system);
-    try std.testing.expectEqual(@as(u32, 2), try TestSDK.events.drain(&worker, 8));
+    try std.testing.expectEqual(@as(u32, 2), try TestSDK.jobs.drain(&worker, 8));
 
     const rows = try store.plugin_log.of_plugin(ctx.db, ctx.arena, "tracker", null, 8);
     var tracked: std.ArrayList([]const u8) = .empty;
