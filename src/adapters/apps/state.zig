@@ -115,8 +115,8 @@ pub const App = struct {
         gpa: std.mem.Allocator,
         io: std.Io,
         index: *deps.Index,
-        options: Options,
         now_ms: i64,
+        options: Options,
     ) Error!void {
         if (options.diagnostic) |reason| {
             reason.len = 0;
@@ -199,8 +199,8 @@ pub const App = struct {
             const loaded = engine.load(
                 app.gpa,
                 try sources(arena, app.spec),
-                engine_options(app.spec),
                 &diagnostic,
+                engine_options(app.spec),
             );
 
             app.program = loaded catch |err| {
@@ -398,7 +398,7 @@ fn check_app(gpa: std.mem.Allocator, arena: std.mem.Allocator, spec: *const Spec
         };
         const options = engine_options(spec);
 
-        program = engine.load(gpa, try sources(arena, spec), options, &diagnostic) catch |err| {
+        program = engine.load(gpa, try sources(arena, spec), &diagnostic, options) catch |err| {
             const message = if (diagnostic.message.len > 0)
                 diagnostic.message
             else

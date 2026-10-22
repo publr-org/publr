@@ -1,5 +1,5 @@
 //! The visitor's stable id: the project's visitor cookie (`publr_visitor_<mark>`), a random
-//! id set by the first dynamic page, dynamic island or `_api` call that finds none. Never by
+//! id set by the first dynamic page, dynamic island or `_actions` call that finds none. Never by
 //! a static page, so built pages stay cacheable. Signed in or not, it stays the same, beside
 //! the user.
 
@@ -42,6 +42,30 @@ pub fn ensure(
     try response.add_header("Set-Cookie", value);
 
     return fresh;
+}
+
+/// The header a call from another site names its visitor by (a public operation's call
+/// carries no cookies): an id the calling page made and keeps, as Publr's cookie would hold.
+pub const header_name = "publr-visitor";
+
+/// The id the request's `publr-visitor` header holds, when it is shaped as Publr's ids are;
+/// "" otherwise (the call then has no visitor).
+pub fn of_header(request: *const http.Request) []const u8 {
+    std.debug.assert(ids.len > 0);
+
+    const value = request.header(header_name) orelse return "";
+
+    if (value.len != ids.len) {
+        return "";
+    }
+
+    for (value) |char| {
+        if (!std.ascii.isHex(char)) {
+            return "";
+        }
+    }
+
+    return value;
 }
 
 /// The id the request's cookie holds, when it is one Publr could have made.

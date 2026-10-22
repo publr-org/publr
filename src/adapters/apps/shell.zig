@@ -378,7 +378,7 @@ test "the frame gets visitors' answers, never the administrator's, and may read 
     try std.testing.expect(!has(session.body, "ed@x.test"));
 }
 
-test "from the frame, islands and `_api` calls work, as the frame's visitor, never as the admin" {
+test "from the frame, islands and `_actions` calls work as the frame's visitor, not the admin" {
     var harness: Harness = undefined;
     try split_harness(&harness);
     defer harness.deinit();
@@ -412,14 +412,14 @@ test "from the frame, islands and `_api` calls work, as the frame's visitor, nev
     try std.testing.expect(std.ascii.isHex(named[0]) and std.ascii.isHex(named[23]));
     try std.testing.expect(!has(framed_page.body, "ed@x.test"));
 
-    // The browser asks before the frame's `_api` call; the call is not refused as foreign.
-    const ask = try harness.flow.call("OPTIONS /_api/greeter/wave HTTP/1.1\r\n" ++
+    // The browser asks before the frame's `_actions` call; the call is not refused as foreign.
+    const ask = try harness.flow.call("OPTIONS /_actions/app.greeter.wave HTTP/1.1\r\n" ++
         "Host: example.test\r\nOrigin: null\r\n\r\n", "");
 
     try std.testing.expectEqual(http.Status.no_content, ask.status);
     try std.testing.expect(has(ask.header("Access-Control-Allow-Headers").?, "publr-visitor"));
 
-    const call_head = try harness.flow.head("POST /_api/greeter/wave HTTP/1.1\r\n" ++
+    const call_head = try harness.flow.head("POST /_actions/app.greeter.wave HTTP/1.1\r\n" ++
         "Host: example.test\r\nOrigin: null\r\nContent-Type: application/json\r\n" ++
         "Content-Length: 2\r\nPublr-Request: 1\r\nPublr-Visitor: {s}\r\n\r\n", .{named});
     const called = try harness.flow.call(call_head, "{}");

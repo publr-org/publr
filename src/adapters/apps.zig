@@ -37,7 +37,7 @@ const Response = http.Response;
 const Error = http.Error;
 
 pub fn register(router: *http.Router) void {
-    std.debug.assert(router.routes_len < 256 - routes_count);
+    std.debug.assert(router.routes_len < router.routes.len - routes_count);
 
     const before = router.routes_len;
 
@@ -81,7 +81,7 @@ fn dispatch(request: *Request, response: *Response, ctx: *http.Context) anyerror
     };
     const target = try @import("apps/languages.zig").locate(project, ctx.arena, resolved);
 
-    if (std.mem.startsWith(u8, target.path, api.prefix)) {
+    if (std.mem.startsWith(u8, target.path, api.actions_prefix)) {
         return api.call(project, target, request, response, ctx);
     }
 
@@ -305,7 +305,7 @@ pub const Harness = struct {
         harness.index = try deps.Index.open(connection, .{
             .quiet_ms = deps.quiet_ms,
         });
-        try harness.load(options, now_ms);
+        try harness.load(now_ms, options);
         errdefer harness.unload();
 
         harness.flow.init(.{
@@ -326,7 +326,7 @@ pub const Harness = struct {
         });
     }
 
-    fn load(harness: *Harness, options: Options, now_ms: i64) !void {
+    fn load(harness: *Harness, now_ms: i64, options: Options) !void {
         std.debug.assert(spec.all.len > 0);
         std.debug.assert(now_ms >= 0);
 
@@ -336,7 +336,7 @@ pub const Harness = struct {
         for (spec.all, &harness.apps) |*app_spec, *app| {
             const gpa = std.testing.allocator;
 
-            try app.init(app_spec, gpa, std.testing.io, &harness.index, options, now_ms);
+            try app.init(app_spec, gpa, std.testing.io, &harness.index, now_ms, options);
             loaded += 1;
         }
 
@@ -1283,7 +1283,20 @@ test "operation results collect empty membership and replay only committed scope
     try std.testing.expectEqual(@as(usize, 0), rolled_back.tags.len);
 }
 
-test "visitors and `_api`: dynamic answers set the visitor, static ones never; calls refused" {
+test "`_actions` reaches only operations for untrusted callers: anything else is not there" {
+    var harness: Harness = undefined;
+    try harness.init(.{});
+    defer harness.deinit();
+
+    const ask = "OPTIONS /_actions/{s} HTTP/1.1\r\nHost: h\r\n" ++
+        "Origin: http://elsewhere.example\r\nAccess-Control-Request-Method: POST\r\n\r\n";
+    const shut = try harness.flow.call(try harness.flow.head(ask, .{"app.greeter.count"}), "");
+
+    try std.testing.expectEqual(@as(u16, 404), shut.status.code());
+    try std.testing.expect(shut.header("Access-Control-Allow-Origin") == null);
+}
+
+test "visitors and `_actions`: dynamic answers set the visitor, static ones never; calls checked" {
     var harness: Harness = undefined;
     try harness.init(.{});
     defer harness.deinit();
@@ -1301,23 +1314,26 @@ test "visitors and `_api`: dynamic answers set the visitor, static ones never; c
     const home = try harness.get("/");
     try std.testing.expect(home.header("Set-Cookie") == null);
 
-    const read = try harness.get("/_api/greeter/wave");
+    const read = try harness.get("/_actions/app.greeter.wave");
     try std.testing.expectEqual(@as(u16, 405), read.status.code());
 
-    const json_head = "POST /_api/{s} HTTP/1.1\r\nHost: h\r\nOrigin: {s}\r\n" ++
+    const json_head = "POST /_actions/{s} HTTP/1.1\r\nHost: h\r\nOrigin: {s}\r\n" ++
         "Content-Type: application/json\r\nContent-Length: 2\r\nPublr-Request: 1\r\n\r\n";
-    const unmarked = "POST /_api/greeter/wave HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
+    const unmarked = "POST /_actions/app.greeter.wave HTTP/1.1\r\nHost: h\r\n" ++
+        "Origin: http://h\r\n" ++
         "Content-Type: application/json\r\nContent-Length: 2\r\n\r\n";
+    // From another site it is reached the same way, as nobody (`api.zig`'s own tests call
+    // one); a name no plugin answers is not found from anywhere.
     const foreign = try harness.flow.call(try harness.flow.head(json_head, .{
-        "greeter/wave", "http://evil.example",
+        "app.greeter.wave", "http://evil.example",
     }), "{}");
-    try std.testing.expectEqual(@as(u16, 403), foreign.status.code());
+    try std.testing.expectEqual(@as(u16, 404), foreign.status.code());
 
     const bare = try harness.flow.call(try harness.flow.head(unmarked, .{}), "{}");
     try std.testing.expectEqual(@as(u16, 403), bare.status.code());
 
     const core = try harness.flow.call(try harness.flow.head(json_head, .{
-        "record/save", "http://h",
+        "app.record.save", "http://h",
     }), "{}");
     try std.testing.expectEqual(@as(u16, 404), core.status.code());
 

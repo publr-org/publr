@@ -2,7 +2,7 @@
 //! request, never theirs. The frame has an opaque origin, so its fetches and form posts
 //! arrive with `Origin: null`; a form post still carries the session cookie, and its page
 //! loads carry it too. Every such request reaches the rest of the server with the session
-//! taken out and the frame's own visitor in its place, so islands, `_api` calls and forms
+//! taken out and the frame's own visitor in its place, so islands, `_actions` calls and forms
 //! work as they do for anyone, carts and all, and none of them acts as the administrator.
 //!
 //! The frame's visitor is derived from the session: stable while it lasts, never the
@@ -146,7 +146,7 @@ pub fn as_visitor(
 }
 
 /// Router middleware: a request from the frame goes on as a visitor's, and what it gets
-/// back the frame may read (fonts, module scripts, `fetch`, island and `_api` answers),
+/// back the frame may read (fonts, module scripts, `fetch`, island and `_actions` answers),
 /// except through the closed doors, which it reaches only as nobody. Every other read of an
 /// open door varies on `Origin`, so no cache hands the frame a copy made without this.
 pub fn open_to_frame(
@@ -201,7 +201,7 @@ pub fn open_to_frame(
     }
 }
 
-/// The frame's `_api` calls send `Publr-Request` and its visitor: the browser asks first.
+/// The frame's `_actions` calls send `Publr-Request` and its visitor: the browser asks first.
 fn preflight(response: *Response) !void {
     std.debug.assert(response.body.len == 0);
     std.debug.assert(response.status == .ok);

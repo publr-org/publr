@@ -6,6 +6,7 @@
 const std = @import("std");
 const jit = @import("publr_jit");
 const model_app = @import("../../model/app.zig");
+const model_role = @import("../../model/role.zig");
 const registry = @import("../../server/registry.zig");
 const report = @import("../../lib/report.zig");
 const spec_module = @import("spec.zig");
@@ -357,8 +358,8 @@ fn check_one(spec: Spec, reason: *report.Reason) !void {
     }
 
     for (spec.roles) |role| {
-        if (registry.Roles.get(role) == null) {
-            reason.set("[{s}] `.roles` names {s}, a role no plugin declares", .{ spec.name, role });
+        if (!model_role.valid_name(role)) {
+            reason.set("[{s}] `.roles` names {s}, not a role's name", .{ spec.name, role });
             return error.InvalidApp;
         }
     }

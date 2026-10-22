@@ -994,7 +994,7 @@ pub const Context = struct {
     }
 
     /// `Publr.request.call('<namespace>.<verb>')`: runs the operation as the visitor, through
-    /// the same pipeline as the API. Only an operation that declares
+    /// the same pipeline as the API. Only a plugin's read or an operation that declares
     /// `allow_frontmatter_calls` runs from a page (anything else fails the render); a
     /// prefetch runs nothing. A refused or failed call is a blank entry, so the page stays
     /// up; a finished one carries the operation's output as its `data`.
@@ -1022,10 +1022,11 @@ pub const Context = struct {
         std.debug.assert(Operation.name.len > 0);
         std.debug.assert(blank.id.len == 0);
 
-        const allowed = @hasDecl(Operation, "allow_frontmatter_calls") and
+        const declared = @hasDecl(Operation, "allow_frontmatter_calls") and
             Operation.allow_frontmatter_calls;
+        const defined = @hasDecl(Operation, "untrusted_callers");
 
-        if (!allowed) {
+        if (!declared and !(defined and Operation.kind == .read)) {
             return error.FrontmatterCallRefused;
         }
 
@@ -1039,6 +1040,7 @@ pub const Context = struct {
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;
         sdk_ctx.visitor = ctx.visitor_id;
+        sdk_ctx.referer = if (ctx.request) |request| identity_module.referer_of(request) else "";
 
         const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch return blank;
         const text = try std.json.Stringify.valueAlloc(ctx.arena, out, .{});
@@ -1126,6 +1128,7 @@ pub const Context = struct {
         sdk_ctx.delivery = !ctx.preview;
         sdk_ctx.preview = ctx.preview;
         sdk_ctx.visitor = ctx.visitor_id;
+        sdk_ctx.referer = if (ctx.request) |request| identity_module.referer_of(request) else "";
         sdk_ctx.app = ctx.app.spec.name;
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;

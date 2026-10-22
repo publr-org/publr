@@ -121,9 +121,9 @@ pub fn media(ctx: *const Context, id: []const u8) !?[]const u8 {
     return try std.json.Stringify.valueAlloc(sdk_ctx.arena, viewed, .{});
 }
 
-/// `call(name, input)`: a plugin's `app.*` read, installed or built in, as the visitor for
-/// the app; or a built-in operation that allows frontmatter calls. Its output is the
-/// entry's `data`; a refusal is a blank entry.
+/// `call(name, input)`: a plugin's read made with `publr.operation.define`, installed or built
+/// in, as the visitor for the app; or a built-in operation that allows frontmatter calls. Its
+/// output is the entry's `data`; a refusal is a blank entry.
 pub fn call_with(ctx: *const Context, operation: []const u8, input: []const u8) !Entry {
     std.debug.assert(operation.len > 0);
     std.debug.assert(ctx.project.connection.transaction_depth == 0);
@@ -134,7 +134,9 @@ pub fn call_with(ctx: *const Context, operation: []const u8, input: []const u8) 
         return blank;
     }
 
-    if (!try callable(ctx, operation)) {
+    const name = resolved(ctx, operation);
+
+    if (!try callable(ctx, name)) {
         return error.FrontmatterCallRefused;
     }
 
@@ -146,7 +148,7 @@ pub fn call_with(ctx: *const Context, operation: []const u8, input: []const u8) 
     sdk_ctx.visitor = ctx.visitor_id;
 
     const given = if (input.len > 0) input else "{}";
-    const output = registry.SDK.call_json(&sdk_ctx, operation, given) catch {
+    const output = registry.SDK.call_json(&sdk_ctx, name, given) catch {
         return blank;
     };
     const document = json.parse(std.json.Value, ctx.arena, output, .{}) catch return blank;
@@ -165,23 +167,40 @@ pub fn call_with(ctx: *const Context, operation: []const u8, input: []const u8) 
     return result;
 }
 
-/// A page may run an `app.*` read, or a built-in operation that allows frontmatter calls.
-fn callable(ctx: *const Context, operation: []const u8) !bool {
+/// `app.cart.view` names `cart.view`, its address and its name the same operation.
+fn resolved(_: *const Context, operation: []const u8) []const u8 {
     std.debug.assert(operation.len > 0);
 
-    const app = std.mem.startsWith(u8, operation, "app.");
+    if (!std.mem.startsWith(u8, operation, "app.")) {
+        return operation;
+    }
+
+    const own = operation["app.".len..];
+
+    std.debug.assert(own.len > 0);
+
+    return own;
+}
+
+/// Whether a page may run `operation` when it renders: any read made with
+/// `publr.operation.define` (as the visitor, its `.authorize` deciding), or a built-in
+/// operation that allows frontmatter calls. Never a write: a GET changes nothing.
+fn callable(ctx: *const Context, operation: []const u8) !bool {
+    std.debug.assert(operation.len > 0);
+    std.debug.assert(ctx.app.spec.name.len > 0);
 
     inline for (registry.SDK.operations) |Operation| {
         if (std.mem.eql(u8, Operation.name, operation)) {
             const allowed = @hasDecl(Operation, "allow_frontmatter_calls") and
                 Operation.allow_frontmatter_calls;
+            const defined = @hasDecl(Operation, "untrusted_callers");
 
-            return allowed or (app and Operation.kind == .read);
+            return allowed or (defined and Operation.kind == .read);
         }
     }
 
     const sandboxed = ctx.project.sandboxed_plugins orelse return false;
     const found = sandboxed.find(operation) orelse return false;
 
-    return app and found.kind == .read;
+    return found.untrusted_callers != null and found.kind == .read;
 }

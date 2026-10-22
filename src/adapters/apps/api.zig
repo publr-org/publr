@@ -1,8 +1,8 @@
-//! `<mount>/_api/<plugin>/<verb>`: an app's pages call `app.<plugin>.<verb>`, as the
-//! visitor, with the app's own `ctx.app` and `.plugins` fence. An island posts JSON (with
-//! `Publr-Request: 1`); a plain `<form>` posts its fields and is sent back with a 303 to its
-//! `redirect` field, or to the page it came from. Only `app.*` operations: what a site may
-//! do is what plugins mark safe for its users; core features are exposed on their own.
+//! `<mount>/_actions/app.<plugin>.<verb>`: an app's pages call an operation its plugin made
+//! for untrusted callers (`.untrusted_callers`), as the visitor, with the app's own `ctx.app`
+//! and `.plugins` fence. An island posts JSON (with `Publr-Request: 1`); a plain `<form>`
+//! posts its fields and is sent back with a 303 to its `redirect` field, or to the page it
+//! came from. Nothing else is reached here: core features are exposed on their own.
 
 const std = @import("std");
 const http = @import("../../lib/http.zig");
@@ -22,7 +22,9 @@ const Request = http.Request;
 const Response = http.Response;
 const Form = http.Form;
 
-pub const prefix = "/_api/";
+/// Where an app's pages call: `<mount>/_actions/app.<plugin>.<verb>`, the operation's name in
+/// the address so core knows it before reading a byte of the body.
+pub const actions_prefix = "/_actions/";
 pub const body_bytes_max: u32 = 1 << 20;
 /// The header a fetch from the app's own pages sends: a page on another site cannot send
 /// it without the browser asking first.
@@ -35,8 +37,17 @@ pub fn call(
     response: *Response,
     ctx: *http.Context,
 ) anyerror!void {
-    std.debug.assert(std.mem.startsWith(u8, target.path, prefix));
     std.debug.assert(ctx.user_data != null);
+
+    std.debug.assert(std.mem.startsWith(u8, target.path, actions_prefix));
+
+    const name = action_of(project, target.path[actions_prefix.len..]);
+
+    // Every operation here is for untrusted callers: another site's page asks first
+    // (OPTIONS) and calls without cookies, as an anonymous visitor.
+    if (request.method() == .options) {
+        return if (name == null) not_found(response) else preflight(response, true);
+    }
 
     if (request.method() != .post) {
         return response.json(.method_not_allowed, .{
@@ -45,17 +56,7 @@ pub fn call(
     }
 
     // The administrator's frame posts from an opaque origin, as a visitor (`framed.zig`).
-    if (identity.origin_of(request) != .same and !framed.from_frame(request)) {
-        return response.json(.forbidden, .{
-            .@"error" = "cross_origin",
-        });
-    }
-
-    const name = operation_of(ctx.arena, target.path[prefix.len..]) orelse {
-        return response.json(.not_found, .{
-            .@"error" = "not_found",
-        });
-    };
+    const same = identity.origin_of(request) == .same or framed.from_frame(request);
     const content_type = request.header("content-type") orelse "";
     const as_form = std.mem.startsWith(u8, content_type, "application/x-www-form-urlencoded");
 
@@ -65,6 +66,10 @@ pub fn call(
         });
     }
 
+    const found = name orelse return not_found(response);
+
+    try response.set_header("Access-Control-Allow-Origin", "*");
+
     if (request.body.len > body_bytes_max) {
         return response.json(.payload_too_large, .{
             .@"error" = "too_large",
@@ -72,43 +77,102 @@ pub fn call(
     }
 
     const app = target.app;
-    var sdk_ctx = identity.context(project, ctx.arena, context.identify(
-        project,
-        app,
-        ctx.arena,
-        request,
-    ).caller);
+    // From another site: nobody signed in, whatever cookies came, and the visitor the page
+    // names; from the app's own pages: the request's own.
+    const caller: sdk.Caller = if (same)
+        context.identify(project, app, ctx.arena, request).caller
+    else
+        .anonymous;
+    var sdk_ctx = identity.request_context(project, request, ctx.arena, caller);
 
     sdk_ctx.app = app.spec.name;
     sdk_ctx.app_plugins = app.spec.plugins;
     sdk_ctx.app_reach = app.spec.name;
-    sdk_ctx.visitor = try visitor.ensure(project, request, response, ctx.arena);
+    sdk_ctx.visitor = if (same)
+        try visitor.ensure(project, request, response, ctx.arena)
+    else
+        visitor.of_header(request);
+
+    if (!same and as_form) {
+        return response.json(.unsupported_media_type, .{
+            .@"error" = "use JSON",
+        });
+    }
 
     if (!as_form) {
         const input = if (request.body.len == 0) "{}" else request.body;
-        const output = registry.SDK.call_json(&sdk_ctx, name, input) catch |err| {
+        const output = registry.SDK.call_json(&sdk_ctx, found, input) catch |err| {
             return rest_auth.respond_error(response, err, &sdk_ctx);
         };
+
+        try rest_auth.rate_headers(response, &sdk_ctx);
 
         return response.set_body(.ok, "application/json", output);
     }
 
-    return form_call(&sdk_ctx, name, request, response, target);
+    return form_call(&sdk_ctx, found, request, response, target);
 }
 
-/// `cart/add` is `app.cart.add`; anything else names no operation an app may call.
-fn operation_of(arena: std.mem.Allocator, rest: []const u8) ?[]const u8 {
+fn not_found(response: *Response) anyerror!void {
+    std.debug.assert(actions_prefix.len > 0);
+
+    return response.json(.not_found, .{
+        .@"error" = "not_found",
+    });
+}
+
+/// `app.cart.add`: the operation `cart.add` when cart makes it for untrusted callers; null
+/// for anything else.
+fn action_of(project: *const Project, rest: []const u8) ?[]const u8 {
     std.debug.assert(rest.len <= 4096);
+    std.debug.assert(actions_prefix.len > 0);
 
-    const slash = std.mem.indexOfScalar(u8, rest, '/') orelse return null;
-    const plugin = rest[0..slash];
-    const verb = rest[slash + 1 ..];
-
-    if (!word(plugin) or !word(verb)) {
+    if (!std.mem.startsWith(u8, rest, "app.")) {
         return null;
     }
 
-    return std.fmt.allocPrint(arena, "app.{s}.{s}", .{ plugin, verb }) catch null;
+    const own = rest["app.".len..];
+    const dot = std.mem.indexOfScalar(u8, own, '.') orelse return null;
+
+    if (!word(own[0..dot]) or !word(own[dot + 1 ..])) {
+        return null;
+    }
+
+    inline for (registry.SDK.operations) |Operation| {
+        const untrusted = comptime @hasDecl(Operation, "untrusted_callers") and
+            Operation.untrusted_callers;
+
+        if (untrusted and std.mem.eql(u8, Operation.name, own)) {
+            return own;
+        }
+    }
+
+    const installed = project.sandboxed_plugins orelse return null;
+    const found = installed.find(own) orelse return null;
+
+    return if (found.untrusted_callers orelse false) own else null;
+}
+
+/// The answer to another site's page asking whether it may call: yes, without cookies,
+/// for a public operation only.
+fn preflight(response: *Response, public: bool) anyerror!void {
+    std.debug.assert(request_header.len > 0);
+
+    if (!public) {
+        return response.json(.forbidden, .{
+            .@"error" = "cross_origin",
+        });
+    }
+
+    try response.set_header("Access-Control-Allow-Origin", "*");
+    try response.set_header("Access-Control-Allow-Methods", "POST");
+    try response.set_header(
+        "Access-Control-Allow-Headers",
+        "content-type, " ++ request_header ++ ", " ++ visitor.header_name,
+    );
+    try response.set_header("Access-Control-Max-Age", "86400");
+
+    return response.text(.no_content, "");
 }
 
 fn word(text: []const u8) bool {
@@ -182,9 +246,12 @@ fn input_of(sdk_ctx: *sdk.Ctx, name: []const u8, form: *const Form) !?[]const u8
     var problem: cli.Problem = .{};
 
     inline for (registry.SDK.operations) |Operation| {
-        if (comptime std.mem.startsWith(u8, Operation.name, "app.")) {
+        const callable = comptime std.mem.startsWith(u8, Operation.name, "app.") or
+            @hasDecl(Operation, "untrusted_callers");
+
+        if (callable) {
             if (std.mem.eql(u8, Operation.name, name)) {
-                const in = cli.parse_in(Operation.In, arena, args.items, &problem, null) catch {
+                const in = cli.parse_in(Operation.In, arena, args.items, &problem, .{}) catch {
                     return null;
                 };
 
@@ -256,16 +323,12 @@ fn with_error(arena: std.mem.Allocator, back: []const u8, name: []const u8) ![]c
     return std.fmt.allocPrint(arena, "{s}{s}error={s}", .{ back, joiner, name });
 }
 
-test "paths: `<plugin>/<verb>` is `app.<plugin>.<verb>`, nothing else names an operation" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-
-    try std.testing.expectEqualStrings("app.cart.add", operation_of(arena, "cart/add").?);
-    try std.testing.expect(operation_of(arena, "cart") == null);
-    try std.testing.expect(operation_of(arena, "cart/add/more") == null);
-    try std.testing.expect(operation_of(arena, "Cart/add") == null);
-    try std.testing.expect(operation_of(arena, "../record/save") == null);
+test "addresses: a plugin and a verb, each a word; a redirect only to the site" {
+    try std.testing.expect(word("cart"));
+    try std.testing.expect(word("add_line"));
+    try std.testing.expect(!word("Cart"));
+    try std.testing.expect(!word(".."));
+    try std.testing.expect(!word(""));
     try std.testing.expect(local("/shop/cart"));
     try std.testing.expect(!local("//evil.example"));
     try std.testing.expect(!local("https://evil.example/"));
@@ -282,14 +345,14 @@ test "a visitor's call: in the sandbox as that visitor, kept for the app, fenced
     first.app_plugins = &.{"greeter"};
     first.visitor = "aaaaaaaaaaaaaaaaaaaaaaaa";
 
-    _ = try registry.SDK.call_json(&first, "app.greeter.wave", "{}");
-    const again = try registry.SDK.call_json(&first, "app.greeter.wave", "{}");
+    _ = try registry.SDK.call_json(&first, "greeter.wave", "{}");
+    const again = try registry.SDK.call_json(&first, "greeter.wave", "{}");
     try std.testing.expect(std.mem.indexOf(u8, again, "\"waves\":2") != null);
     try std.testing.expect(std.mem.indexOf(u8, again, "aaaaaaaaaaaaaaaaaaaaaaaa") != null);
 
     var second = first;
     second.visitor = "bbbbbbbbbbbbbbbbbbbbbbbb";
-    const other = try registry.SDK.call_json(&second, "app.greeter.wave", "{}");
+    const other = try registry.SDK.call_json(&second, "greeter.wave", "{}");
     try std.testing.expect(std.mem.indexOf(u8, other, "\"waves\":1") != null);
 
     var system = project.ctx(.system);
@@ -303,13 +366,34 @@ test "a visitor's call: in the sandbox as that visitor, kept for the app, fenced
     var nobody = project.ctx(.anonymous);
     nobody.app = "www";
     nobody.app_plugins = &.{"greeter"};
-    const refused_in_words = registry.SDK.call_json(&nobody, "app.greeter.wave", "{}");
+    const refused_in_words = registry.SDK.call_json(&nobody, "greeter.wave", "{}");
     try std.testing.expectError(error.Failed, refused_in_words);
     try std.testing.expectEqualStrings("NoVisitor", nobody.failure.?.name);
     try std.testing.expect(std.mem.indexOf(u8, nobody.failure.?.message, "no visitor") != null);
 
     var fenced = first;
     fenced.app_plugins = &.{"sampler"};
-    const refused = registry.SDK.call_json(&fenced, "app.greeter.wave", "{}");
+    const refused = registry.SDK.call_json(&fenced, "greeter.wave", "{}");
     try std.testing.expect(std.meta.isError(refused));
+}
+
+test "untrusted callers: an installed operation says so itself; the rest never are" {
+    const internal = @import("../../operations/internal.zig");
+    var project: internal.TestProject = undefined;
+    try project.init();
+    defer project.deinit();
+
+    var anyone = project.ctx(.anonymous);
+    anyone.app = "www";
+    anyone.app_plugins = &.{"greeter"};
+    anyone.visitor = "0123456789abcdef01234567";
+
+    const installed = anyone.sandboxed_plugins.?;
+    try std.testing.expect(installed.find("greeter.hail").?.untrusted_callers.?);
+    try std.testing.expect(installed.find("greeter.wave").?.untrusted_callers.?);
+    try std.testing.expect(installed.find("greeter.count").?.untrusted_callers == null);
+
+    // Called as the visitor a page elsewhere names.
+    const hailed = try registry.SDK.call_json(&anyone, "greeter.hail", "{}");
+    try std.testing.expect(std.mem.indexOf(u8, hailed, "0123456789abcdef01234567") != null);
 }

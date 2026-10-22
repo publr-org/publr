@@ -129,7 +129,7 @@
   };
 
   // The frame's own visitor, which a page with cookies would send without asking: on the
-  // site's island and `_api` calls, so a cart added to is the cart shown.
+  // site's island and `_actions` calls, so a cart added to is the cart shown.
   const visitor_id = document.currentScript?.dataset.publrVisitor ?? '';
   const send_plain = window.fetch;
   const carries_visitor = /\/_(api|islands)\//;

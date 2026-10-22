@@ -15,8 +15,8 @@ pub fn open(
     apps: []App,
     gpa: std.mem.Allocator,
     index: *deps.Index,
-    options: state.Options,
     now_ms: i64,
+    options: state.Options,
 ) App.Error!void {
     std.debug.assert(apps.len == specs.len);
     std.debug.assert(project.apps.len == 0);
@@ -25,7 +25,7 @@ pub fn open(
     errdefer for (apps[0..loaded]) |*app| app.deinit();
 
     for (specs, apps) |*app_spec, *app| {
-        try app.init(app_spec, gpa, project.io, index, options, now_ms);
+        try app.init(app_spec, gpa, project.io, index, now_ms, options);
         loaded += 1;
     }
 
