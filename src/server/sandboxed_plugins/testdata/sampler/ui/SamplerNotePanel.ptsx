@@ -1,0 +1,20 @@
+import type { ViewCtx } from "@publr/admin/Document.ptsx";
+import { PanelPage } from "@publr/admin/PanelPage.ptsx";
+import { SamplerNoteCount } from "./SamplerNoteCount.ptsx";
+
+export type SamplerNotePanelProps = {
+  /** The note the form is open on. */
+  record: string;
+  /** How many notes there are. */
+  total: number;
+  ctx: ViewCtx;
+};
+
+/** The sampler's box on a sample note's form, drawn by its own view as its pages are. */
+export function SamplerNotePanel({ record, total, ctx }: SamplerNotePanelProps) {
+  return (
+    <PanelPage title="Sampler">
+      <SamplerNoteCount record={record} total={total} ctx={ctx} />
+    </PanelPage>
+  );
+}

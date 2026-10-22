@@ -409,9 +409,10 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
 - **Panels on other types' forms.** `.panels = &.{.{ .type = "product", .label =
   "Stock", .operation = StockPanel }}` in `define` adds a box to every product's
   edit form, whoever's type it is. `StockPanel` is one of your reads taking `record` (the
-  record's id, all it is told) and answering `html`; it is drawn in the plugin frame like
-  your pages, with `call` and `query` working the same, and reads what else it needs
-  itself. Nothing on the type's side knows about it; without the type, there is no panel.
+  record's id, all it is told) and `base`, answering `publr.views.render(ctx, in.base,
+  publr.views.all.StockPanel, props)` as `html`: a view in your `ui/` on the `PanelPage`
+  layout, drawn in the plugin frame like your pages, with `call` and `query` working the
+  same. It reads what else it needs itself. Nothing on the type's side knows about it; without the type, there is no panel.
 - **What a page can read.** Built pages see live records of **public** types only: give
   the plugin's record `.public = true`, and for pages per record a slug field,
   `slug: ?[]const u8 = null` with `.fields = .{ .slug = .{ .kind = "slug", .options =

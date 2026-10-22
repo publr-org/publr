@@ -1,5 +1,5 @@
 import { Publr } from "publr-jsx";
-import { answer, go, read, reply } from "./PluginFrame.ptsx";
+import { answer, go, reply } from "./PluginFrame.ptsx";
 
 /** Each panel's height as its frame reports it, by the panel's address. */
 export const state = Publr.reactive({
@@ -28,7 +28,6 @@ export const received = (event: MessageEvent) => {
   }
   if (message.kind === "navigate") go(String(message.to), plugin, "");
   if (message.kind === "call") answer(frame, id, String(message.operation), message.input, operations, csrf);
-  if (message.kind === "query") read(frame, id, String(message.query), message.params, plugin, csrf);
 };
 
 export type PluginPanelProps = {

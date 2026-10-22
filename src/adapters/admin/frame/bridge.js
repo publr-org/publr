@@ -1,4 +1,7 @@
-(() => {
+// The frame's side of the bridge, given who is looking and the page (`frame`): what the
+// view's `ctx` reads in the browser (`Publr.ctx`, made from it), and how the frame reaches
+// the admin, by `postMessage` to its parent.
+((frame) => {
   const pending = new Map();
   let next = 1;
   const post = (message) => parent.postMessage(Object.assign({ publr: 1 }, message), "*");
@@ -29,18 +32,14 @@
   });
   hello();
   window.publr = {
-    call(operation, input) {
+    person: frame.person,
+    page: frame.page,
+    // One of the plugin's own operations, run by the admin as the person looking.
+    send(operation, input) {
       const id = next++;
       return new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject });
         send({ kind: "call", id, operation: String(operation), input: input ?? {} });
-      });
-    },
-    query(query, params) {
-      const id = next++;
-      return new Promise((resolve, reject) => {
-        pending.set(id, { resolve, reject });
-        send({ kind: "query", id, query: String(query), params: params ?? {} });
       });
     },
     navigate(to) { send({ kind: "navigate", to: String(to) }); },
@@ -79,4 +78,4 @@
     event.preventDefault();
     send({ kind: "navigate", to: href });
   });
-})();
+})

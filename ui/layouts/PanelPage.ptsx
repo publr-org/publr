@@ -1,0 +1,13 @@
+import { Document } from "./Document.ptsx";
+
+export type PanelPageProps = {
+  /** The panel's label: the frame's title. */
+  title: string;
+  children?: JSX.Element;
+};
+
+/** A plugin's panel on an edit form, in the plugin frame: what it shows and nothing
+ * around it, the frame sized to it. The edit form draws the panel's heading. */
+export function PanelPage({ title, children }: PanelPageProps) {
+  return <Document title={title}>{children}</Document>;
+}

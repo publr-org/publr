@@ -101,9 +101,9 @@ pub fn signed_out_at(arena: std.mem.Allocator, base: []const u8) admin.Error!*co
     return request;
 }
 
-/// The request a plugin's page is drawn with inside the plugin frame: the sheet alone,
-/// nobody named and no token, since the frame reaches the admin only through its bridge;
-/// in the person's language when the plugin is compiled in (`ctx`, its `PluginCtx`).
+/// The request a plugin's page is drawn with inside the plugin frame: the sheet alone, who
+/// is looking but no token, since the frame reaches the admin only through its bridge; in
+/// the person's language when the plugin is compiled in (`ctx`, its `PluginCtx`).
 pub fn in_plugin_frame(ctx: anytype, base: []const u8) admin.Error!*const Request {
     std.debug.assert(base.len == 0 or base[0] == '/');
 
@@ -114,10 +114,17 @@ pub fn in_plugin_frame(ctx: anytype, base: []const u8) admin.Error!*const Reques
 
     if (@hasField(@TypeOf(ctx.*), "inner")) {
         const language = ctx.inner.language;
+        const person = ctx.inner.view.person;
 
         request.admin.locale = if (language.locale.len > 0) language.locale else "en";
         request.publr_translations = language.translator;
         request.publr_catalogue = language.catalogue;
+        request.session.name = person.name;
+        request.session.email = person.email;
+
+        if (person.email.len > 0) {
+            request.session.avatar = try avatar.address_of(arena, person.email);
+        }
     }
 
     request.admin.base = base;

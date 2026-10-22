@@ -608,7 +608,9 @@ or the core's, without that type's plugin knowing about it:
 ```
 
 `StockPanel` is one of the plugin's reads, taking `record` (the record's id) and `base`,
-answering `html`. The admin shows it in the editor's right column, titled with its label
+answering `html` drawn by its own view: `publr.views.render(ctx, in.base,
+publr.views.all.StockPanel, props)`, a `ui/StockPanel.ptsx` on the `PanelPage` layout,
+which draws what the panel shows and nothing around it. The admin shows it in the editor's right column, titled with its label
 and the plugin's name, in the plugin frame sized to its content; `call` and `query` work
 in it as on the plugin's pages. It is told only which record it is on and reads the rest
 itself, within what it and the viewer may. It shows to whoever may call the read, on
@@ -687,10 +689,11 @@ opened on its own.
 Inside, anything goes: any markup, any script, any library. The admin's design system
 is the easy default. The frame reaches the admin only through the bridge:
 
-- `publr.call("guestbook.sign", input)` runs one of the plugin's own operations as the
-  viewer, through the usual checks, and resolves with its output. Anything else is
-  refused.
-- `publr.navigate("log?week=2")`, and every link clicked, goes to another of the
+- A view's `ctx` (given with its props) has `ctx.person` and `ctx.page`, and in the
+  browser `ctx.query("guestbook.entries", () => input)`, a read read again after any
+  write, and `ctx.call("guestbook.sign")`, a write: each one of the plugin's own
+  operations run as the viewer, through the usual checks. Anything else is refused.
+- `ctx.navigate("log?week=2")`, and every link clicked, goes to another of the
   plugin's pages (`?week=2` alone stays on this one). A link to another site opens in a
   new tab.
 - The frame grows with what it shows.

@@ -2,6 +2,18 @@ import { Publr } from "publr-jsx";
 import { Navigation } from "../components/Navigation.ptsx";
 import { IconSprite } from "../components/IconSprite.ptsx";
 
+/** What a plugin's view is given with its props: who is looking and the page, on the server
+ * and in the browser; in the browser also its reads and writes, each one of the plugin's own
+ * operations run as the person looking. A read is read again after any write. */
+export type ViewCtx = {
+  person: { name: string; email: string };
+  /** The page's path among the plugin's pages (empty for a panel), and its query string. */
+  page: { path: string; query: string };
+  query: (name: string, input?: () => unknown, options?: { initial?: unknown; seeded?: boolean }) => { value: any };
+  call: (name: string) => (input: unknown) => Promise<any>;
+  navigate: (path: string) => void;
+};
+
 export type DocumentProps = {
   /** The window's title, before " · Publr". */
   title: string;
@@ -10,7 +22,8 @@ export type DocumentProps = {
 
 /** The admin's HTML document: the head every page shares, the icon sprite and the shared
  * navigation store. The layouts open with it; pages never do. Its root states the base path
- * the project is served under, which the page's scripts build addresses with. */
+ * the project is served under, which the page's scripts build addresses with. In the plugin
+ * frame the body is only as tall as what it shows: the frame is sized to it. */
 export function Document({ title, children }: DocumentProps) {
   return (
     <html lang={Publr.request.admin.locale} class="h-full bg-background" data-publr-base={Publr.request.admin.base} data-variant={Publr.request.admin.variant}>
@@ -24,7 +37,7 @@ export function Document({ title, children }: DocumentProps) {
         <script type="module" src="/admin/stores.js"></script>
         <script type="module" src="/admin/editor/editor/host/admin.js"></script>
       </head>
-      <body class="min-h-screen bg-background text-foreground antialiased">
+      <body class={["bg-background text-foreground antialiased", Publr.request.admin.framed ? "" : "min-h-screen"]}>
         <Navigation>
           <IconSprite />
           {Publr.request.admin.plugin_icons}

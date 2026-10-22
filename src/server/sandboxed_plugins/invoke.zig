@@ -68,7 +68,7 @@ pub const imports = [_]wasm.Import{
     },
     .{
         .name = "publr_frame",
-        .signature = "(ii)i",
+        .signature = "(iii)i",
         .function = &drawing.publr_frame,
     },
     .{

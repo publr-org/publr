@@ -183,6 +183,23 @@ pub const AppsFolder = struct {
     reload: *const fn (context: *anyopaque) ?[]const u8,
 };
 
+/// What a view's `ctx` carries on the server: who is looking, and the page.
+pub const View = struct {
+    person: Person = .{},
+    page: Page = .{},
+
+    pub const Person = struct {
+        name: []const u8 = "",
+        email: []const u8 = "",
+    };
+
+    /// The page's path among the plugin's pages (empty for a panel), and its query string.
+    pub const Page = struct {
+        path: []const u8 = "",
+        query: []const u8 = "",
+    };
+};
+
 pub const Ctx = struct {
     dependencies: ?*@import("dependencies.zig").Collector = null,
     dependency_failure: bool = false,
@@ -216,6 +233,9 @@ pub const Ctx = struct {
     /// The page that sent the request when it is another site's (the `Referer` header);
     /// empty for our own pages and a request that names none. Tells, never grants.
     referer: []const u8 = "",
+    /// A plugin's page or panel being drawn in the plugin frame: who is looking and the
+    /// page, what its view's `ctx` carries. Empty outside one.
+    view: View = .{},
     /// The process's rate limits; null where calls are not limited (the CLI on its own,
     /// tests, the browser build).
     limits: ?*@import("limits.zig").Limits = null,

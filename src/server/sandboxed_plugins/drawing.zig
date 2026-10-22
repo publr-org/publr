@@ -13,8 +13,9 @@ pub const base_len_max: u32 = 256;
 pub const name_len_max: u32 = 64;
 
 /// `publr_frame(base)`: the page is for the plugin frame under `base`; the components drawn
-/// after it read the frame's request.
-pub fn publr_frame(env: *wasm.Env, base_ptr: u32, base_len: u32) callconv(.c) u32 {
+/// after it read the frame's request. Answers who is looking and the page, as JSON, for the
+/// view's `ctx`.
+pub fn publr_frame(env: *wasm.Env, base_ptr: u32, base_len: u32, result_ptr: u32) callconv(.c) u32 {
     const invocation = invoke.invocation_of(env);
     const ctx = invocation.ctx;
 
@@ -50,7 +51,11 @@ pub fn publr_frame(env: *wasm.Env, base_ptr: u32, base_len: u32) callconv(.c) u3
         return wire.code_of(error.OutOfMemory);
     };
 
-    return wire.ok;
+    const view = std.json.Stringify.valueAlloc(ctx.arena, ctx.view, .{}) catch {
+        return wire.code_of(error.OutOfMemory);
+    };
+
+    return invoke.reply(env, view, result_ptr);
 }
 
 /// `publr_render(name, props)`: one component drawn, its HTML answered; `NotFound` for one

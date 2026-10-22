@@ -1,11 +1,11 @@
-//! Draws the sampler's box on a sample note's form.
+//! Draws the sampler's box on a sample note's form, by its own view.
 //!
 //! It is told only the record's id and reads the rest itself: which record it was told, and
-//! how many notes there are.
+//! how many notes there are, drawn on the panel layout as its pages are drawn on theirs.
 //!
 //! Example:
 //!   in: { "record": "0190f7a2c3d4" }
-//!   out: { "html": "<p>Note 0190f7a2c3d4, one of 1.</p>" }
+//!   out: { "html": "<!doctype html>" }
 const publr = @import("publr");
 const std = @import("std");
 
@@ -39,9 +39,9 @@ fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
     });
 
     return .{
-        .html = try ctx.print("<p class=\"text-sm\">Note {s}, one of {d}.</p>", .{
-            in.record,
-            all.len,
+        .html = try publr.views.render(ctx, in.base, publr.views.all.SamplerNotePanel, .{
+            .record = in.record,
+            .total = all.len,
         }),
     };
 }

@@ -38,7 +38,7 @@ sidebar and the entry lit in it follow from the address, so a page never names t
 a refused action stays in the area it was refused in. Who is signed in reaches the chrome
 as the request (`Publr.request` in PTSX), never as props a page forwards.
 
-Every page is drawn by one of eight layouts and fills its slots; the layout owns the
+Every page is drawn by one of nine layouts and fills its slots; the layout owns the
 chrome, the bands, the gutters and the empty states, and a page sets no spacing of its
 own. The build refuses a page whose root is not one of them.
 
@@ -52,6 +52,7 @@ own. The build refuses a page whose root is not one of them.
 | `FramePage` | A page a plugin brings, drawn by its own read in the plugin frame | title, parents; the frame fills the sheet and grows with what it shows |
 | `WorkspacePage` | Something done and watched at once: the AI workspace | title, parents; one island drawing `WorkspaceMain` (the work, filling the sheet) and `WorkspaceAside` (a narrow column on the right); no section sidebar |
 | `AroundPage` | The admin in a frame filling the window, under something that must not reload while the frame moves: the corner chat while the agent works | title; one island drawing the frame and what is above it; no chrome of its own, the admin in the frame has it |
+| `PanelPage` | A plugin's panel on an edit form, drawn by its own read in the plugin frame | title (the panel's label); what the panel shows and nothing around it; the edit form draws its heading and sizes the frame to it |
 
 Two versions of something are compared side by side: `CompareSides` heads the two columns
 (any content: the copies merged, Before and After), then one `CompareField` per field, each
