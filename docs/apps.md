@@ -355,15 +355,12 @@ never a layout, a component or a build. `if (<condition>) {`, an optional `} els
 since its name would be missing on the path that skips it. Conditions and template
 expressions take `!`, `&&` and `||`, which read truthiness and give true or false.
 
-A page can also run an operation when it is opened, `Publr.request.call('cloud.welcome');`:
-onboarding marking itself seen, a page view counted. Both are actions, statements of their
-own among the declarations, in order; name one (`const seen = Publr.request.call(…)`) to
-read what it returns, as `seen.data`. A read on its own does nothing and is refused.
-It runs as the visitor, through the same pipeline and policies as the API, so a page can
-do nothing its visitor could not. Only an operation that declares
-`allow_frontmatter_calls` runs this way; it says that being triggered by merely opening a
-page is fine, since a page's GET has no CSRF check and a link from anywhere opens it.
-Anything else fails the render. A prefetch (`Sec-Purpose: prefetch`) runs nothing:
+A page can also run a read when it is opened, `Publr.request.call('identity.providers')`;
+name it (`const offered = Publr.request.call(…)`) to read what it returns, as
+`offered.data`. It runs as the visitor, through the same pipeline and policies as the API,
+so a page can read nothing its visitor could not. A write fails the render: a page's GET
+has no CSRF check and a link from anywhere opens it, so a page view counted or onboarding
+marked seen is an island or a form. A prefetch (`Sec-Purpose: prefetch`) runs nothing:
 opening the page is the event. A call that is refused or fails is a blank entry, and the
 page renders; one placed after a redirect never runs for a visitor sent away.
 

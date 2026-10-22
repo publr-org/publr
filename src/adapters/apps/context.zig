@@ -994,9 +994,8 @@ pub const Context = struct {
     }
 
     /// `Publr.request.call('<namespace>.<verb>')`: runs the operation as the visitor, through
-    /// the same pipeline as the API. Only a plugin's read or an operation that declares
-    /// `allow_frontmatter_calls` runs from a page (anything else fails the render); a
-    /// prefetch runs nothing. A refused or failed call is a blank entry, so the page stays
+    /// the same pipeline as the API. Only a read runs from a page (a write fails the render);
+    /// a prefetch runs nothing. A refused or failed call is a blank entry, so the page stays
     /// up; a finished one carries the operation's output as its `data`.
     pub fn call(ctx: *const Context, operation: []const u8) !Entry {
         std.debug.assert(operation.len > 0);
@@ -1022,11 +1021,7 @@ pub const Context = struct {
         std.debug.assert(Operation.name.len > 0);
         std.debug.assert(blank.id.len == 0);
 
-        const declared = @hasDecl(Operation, "allow_frontmatter_calls") and
-            Operation.allow_frontmatter_calls;
-        const defined = @hasDecl(Operation, "untrusted_callers");
-
-        if (!declared and !(defined and Operation.kind == .read)) {
+        if (Operation.kind != .read) {
             return error.FrontmatterCallRefused;
         }
 

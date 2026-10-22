@@ -182,25 +182,20 @@ fn resolved(_: *const Context, operation: []const u8) []const u8 {
     return own;
 }
 
-/// Whether a page may run `operation` when it renders: any read made with
-/// `publr.operation.define` (as the visitor, its `.authorize` deciding), or a built-in
-/// operation that allows frontmatter calls. Never a write: a GET changes nothing.
+/// Whether a page may run `operation` when it renders: any read, as the visitor, its
+/// authorization deciding. Never a write: a GET changes nothing.
 fn callable(ctx: *const Context, operation: []const u8) !bool {
     std.debug.assert(operation.len > 0);
     std.debug.assert(ctx.app.spec.name.len > 0);
 
     inline for (registry.SDK.operations) |Operation| {
         if (std.mem.eql(u8, Operation.name, operation)) {
-            const allowed = @hasDecl(Operation, "allow_frontmatter_calls") and
-                Operation.allow_frontmatter_calls;
-            const defined = @hasDecl(Operation, "untrusted_callers");
-
-            return allowed or (defined and Operation.kind == .read);
+            return Operation.kind == .read;
         }
     }
 
     const sandboxed = ctx.project.sandboxed_plugins orelse return false;
     const found = sandboxed.find(operation) orelse return false;
 
-    return found.untrusted_callers != null and found.kind == .read;
+    return found.kind == .read;
 }

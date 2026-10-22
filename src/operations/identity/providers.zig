@@ -28,8 +28,6 @@ pub const Providers = struct {
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
-    /// A login page reads it while rendering; opening the page changes nothing.
-    pub const allow_frontmatter_calls = true;
     pub const In = struct {};
     pub const Out = struct {
         providers: []const Offered,
