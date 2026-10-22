@@ -26,10 +26,6 @@ pub const Error = db.Error || error{
 
 pub const Kind = enum { read, write };
 
-/// A way an operation fails that the core's errors do not name, declared by the plugin that
-/// owns the operation and raised with `ctx.fail`: "your email is not verified", "the plan's
-/// limit is reached". An operation lists the ones it can end with in `failures`, for its
-/// documentation.
 /// Whether the operation destroys what cannot be had back (`pub const destroys = true`):
 /// a device never may; a person does it in the admin.
 pub fn destroys(comptime Operation: type) bool {
@@ -50,6 +46,9 @@ pub const drafts_only: Failure = .{
     .message = "This device saves drafts only; a person publishes them in the admin",
 };
 
+/// A way an operation fails that the core's errors do not name, raised with `ctx.fail`:
+/// "your email is not verified", "the plan's limit is reached". A plugin's operation lists
+/// the ones it can end with on its `Fails:` lines.
 pub const Failure = struct {
     /// What REST answers (`{ "error": "Unverified" }`): letters only, starting upper-case.
     name: []const u8,
@@ -152,15 +151,6 @@ pub const Page = struct {
 };
 pub const page_limit_max: u32 = 200;
 
-pub fn PageOut(comptime Item: type) type {
-    comptime std.debug.assert(@sizeOf(Item) > 0);
-
-    return struct {
-        items: []const Item,
-        next_offset: ?u32 = null,
-    };
-}
-
 pub fn field_doc(
     comptime Operation: type,
     comptime docs_name: []const u8,
@@ -189,13 +179,6 @@ pub const Deprecated = struct {
     /// Why, in a sentence, when the name of the replacement does not say.
     why: []const u8 = "",
 };
-
-/// Whether pages on any site may call the operation through an app's `_api`: only when it
-/// says so itself (`pub const public = true`), never by default. Such a call carries no
-/// cookies and runs as an anonymous visitor (the `publr-visitor` header names it).
-pub fn public(comptime Operation: type) bool {
-    return @hasDecl(Operation, "public") and Operation.public;
-}
 
 pub fn deprecation(comptime Operation: type) ?Deprecated {
     comptime {
@@ -250,16 +233,6 @@ pub fn validate(comptime Operation: type) void {
             @compileError(Operation.name ++ ": missing `run`");
         }
 
-        if (@hasDecl(Operation, "public")) {
-            // Any site calls only what anyone may call, through an app (`app.*`).
-            if (Operation.public and !(@hasDecl(Operation, "open") and Operation.open)) {
-                @compileError(Operation.name ++ ": `public` needs `open = true`");
-            }
-            if (Operation.public and !std.mem.startsWith(u8, Operation.name, "app.")) {
-                @compileError(Operation.name ++ ": `public` is for `app.*` operations");
-            }
-        }
-
         if (!@hasDecl(Operation, "example")) {
             @compileError(Operation.name ++ ": missing `example: In`");
         }
@@ -304,14 +277,6 @@ pub fn validate(comptime Operation: type) void {
                         "message of 1 to 200 characters");
                 }
             }
-        }
-
-        const gone = @hasDecl(Operation, "resource") or @hasDecl(Operation, "seed") or
-            @hasDecl(Operation, "volatile_fields") or @hasDecl(Operation, "example_caller");
-
-        if (gone) {
-            @compileError(Operation.name ++ ": `resource`, `seed`, `volatile_fields` and " ++
-                "`example_caller` are gone; the resource is read from `In` by field name");
         }
     }
 }

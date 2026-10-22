@@ -24,20 +24,13 @@ const PluginCtx = @import("plugin/context.zig").PluginCtx;
 const ProgressCtx = @import("context.zig").Ctx;
 const speech = @import("ai/speech.zig");
 
-pub const Role = lib_ai.Role;
 pub const Part = lib_ai.Part;
 pub const Message = lib_ai.Message;
-pub const Tool = lib_ai.Tool;
 pub const Request = lib_ai.Request;
 pub const Response = lib_ai.Response;
-pub const Usage = lib_ai.Usage;
 pub const Stop = lib_ai.Stop;
 pub const Description = lib_ai.Description;
-pub const Model = lib_ai.Model;
-pub const Key = lib_ai.Key;
 pub const request_of = lib_ai.request_of;
-pub const request_json = lib_ai.request_json;
-pub const response_of = lib_ai.response_of;
 pub const response_json = lib_ai.response_json;
 
 /// What a provider's API said went wrong, from its error answer: the `message` of its

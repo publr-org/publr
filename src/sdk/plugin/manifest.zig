@@ -83,7 +83,6 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 .description = Declared.description,
                 .details = if (@hasDecl(Declared, "details")) Declared.details else "",
                 .open = @hasDecl(Declared, "open") and Declared.open,
-                .public = sdk_operation.public(Declared),
                 .untrusted_callers = if (@hasDecl(Declared, "untrusted_callers"))
                     Declared.untrusted_callers
                 else

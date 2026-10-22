@@ -68,12 +68,3 @@ pub fn of(comptime Plugin: type) ?Dimension {
         return declared;
     }
 }
-
-/// The values a variant's code stands for in a stored key: the main variant's are under
-/// the plain name.
-pub fn stored_code(variant: Variant) []const u8 {
-    std.debug.assert(variant.code.len > 0);
-    std.debug.assert(variant.code.len <= model_variant.code_len_max);
-
-    return if (variant.main) "" else variant.code;
-}

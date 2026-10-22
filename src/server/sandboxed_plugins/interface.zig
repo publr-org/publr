@@ -163,7 +163,6 @@ fn find(context: *anyopaque, name: []const u8) ?sdk.sandboxed_plugins.Operation 
         .kind = if (declared.kind == .read) .read else .write,
         .description = declared.description,
         .open = declared.open,
-        .public = declared.public,
         .untrusted_callers = declared.untrusted_callers,
         .limit = declared.limit,
         .answer = declared.answer,

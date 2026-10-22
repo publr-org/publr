@@ -36,11 +36,11 @@ pub fn command(comptime Operation: type, out: *std.Io.Writer) Error!void {
     }
 
     if (fields.len > 0) {
-        write(out, "\nFields:\n") catch return error.WriteFailed;
+        out.writeAll("\nFields:\n") catch return error.WriteFailed;
         try print_field_docs(Operation, Operation.In, "field_docs", true, out);
     }
 
-    write(out, "\nOutput:\n") catch return error.WriteFailed;
+    out.writeAll("\nOutput:\n") catch return error.WriteFailed;
     try print_field_docs(Operation, Operation.Out, "output_docs", false, out);
     try print_failures(Operation, out);
     try print_example(Operation, out);
@@ -54,7 +54,7 @@ fn print_failures(comptime Operation: type, out: *std.Io.Writer) Error!void {
         return;
     }
 
-    write(out, "\nFails with:\n") catch return error.WriteFailed;
+    out.writeAll("\nFails with:\n") catch return error.WriteFailed;
 
     for (Operation.failures) |failure| {
         out.print("\n  {s} ({d})  {s}\n", .{
@@ -135,7 +135,7 @@ fn print_example(comptime Operation: type, out: *std.Io.Writer) Error!void {
         }
     }
 
-    write(out, "\n") catch return error.WriteFailed;
+    out.writeAll("\n") catch return error.WriteFailed;
 
     var buffer: [8 << 10]u8 = undefined;
     var json: std.Io.Writer = .fixed(&buffer);
@@ -169,20 +169,20 @@ fn print_example_text(text: []const u8, out: *std.Io.Writer) Error!void {
     }
 
     if (std.mem.indexOfAny(u8, text, " \"\n") == null) {
-        write(out, text) catch return error.WriteFailed;
+        out.writeAll(text) catch return error.WriteFailed;
 
         return;
     }
 
-    write(out, "'") catch return error.WriteFailed;
+    out.writeAll("'") catch return error.WriteFailed;
 
     var lines = std.mem.splitScalar(u8, text, '\n');
 
     while (lines.next()) |line| {
-        write(out, line) catch return error.WriteFailed;
+        out.writeAll(line) catch return error.WriteFailed;
     }
 
-    write(out, "'") catch return error.WriteFailed;
+    out.writeAll("'") catch return error.WriteFailed;
 }
 
 /// A list as you would type it: its items with commas between, no spaces.
@@ -192,7 +192,7 @@ fn print_example_list(items: anytype, out: *std.Io.Writer) Error!void {
 
     for (items, 0..) |item, index| {
         if (index > 0) {
-            write(out, ",") catch return error.WriteFailed;
+            out.writeAll(",") catch return error.WriteFailed;
         }
 
         try print_example_value(item, out);
@@ -205,9 +205,9 @@ fn print_example_value(value: anytype, out: *std.Io.Writer) Error!void {
     comptime std.debug.assert(@typeInfo(Value) != .void);
 
     switch (@typeInfo(Value)) {
-        .bool => write(out, if (value) "true" else "false") catch return error.WriteFailed,
+        .bool => out.writeAll(if (value) "true" else "false") catch return error.WriteFailed,
         .int, .float => out.print("{d}", .{value}) catch return error.WriteFailed,
-        .@"enum" => write(out, @tagName(value)) catch return error.WriteFailed,
+        .@"enum" => out.writeAll(@tagName(value)) catch return error.WriteFailed,
         .optional => try print_example_value(value.?, out),
         .pointer => |pointer| if (pointer.child == u8)
             try print_example_text(value, out)
@@ -223,9 +223,9 @@ fn print_example_value(value: anytype, out: *std.Io.Writer) Error!void {
 fn print_example_json(value: anytype, out: *std.Io.Writer) Error!void {
     std.debug.assert(out.buffer.len > 0 or out.end == 0);
 
-    write(out, "'") catch return error.WriteFailed;
+    out.writeAll("'") catch return error.WriteFailed;
     std.json.Stringify.value(value, .{}, out) catch return error.WriteFailed;
-    write(out, "'") catch return error.WriteFailed;
+    out.writeAll("'") catch return error.WriteFailed;
 }
 
 /// Whether a list of it is written comma-separated (`a,b`): text and names. Any other list,
@@ -300,10 +300,6 @@ fn type_label_depth(comptime Type: type, comptime depth: u32) []const u8 {
     comptime std.debug.assert(label.len < 4096);
 
     return label;
-}
-
-fn write(out: *std.Io.Writer, text: []const u8) !void {
-    try out.writeAll(text);
 }
 
 test "an example value prints the way a shell reads it, apostrophes inside double quotes" {

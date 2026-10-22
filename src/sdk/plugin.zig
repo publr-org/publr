@@ -7,7 +7,6 @@ const remote_contract = @import("plugin/remote_contract.zig");
 const sdk = @import("../sdk.zig");
 const plugin_context = @import("plugin/context.zig");
 const plugin_types = @import("plugin/types.zig");
-const filter_module = @import("../model/filter.zig");
 const content_type = @import("../model/content_type.zig");
 const field = @import("../model/field.zig");
 const kinds = @import("../model/kinds.zig");
@@ -123,13 +122,6 @@ pub const OwnedSettingsPage = struct {
 pub const OwnedSettingsTab = struct {
     plugin: []const u8,
     tab: SettingsTab,
-};
-
-/// What a plugin shows in place of the Overview's "Your agent" commands: its
-/// `pub const agents_tab` HTML, which the admin sanitizes and draws in a box named after it.
-pub const AgentsTab = struct {
-    plugin: []const u8,
-    html: []const u8,
 };
 
 pub const OwnedItem = struct {
@@ -780,30 +772,6 @@ pub fn schema_of(comptime Plugin: type) ?[:0]const u8 {
     }
 }
 
-/// A plugin's migrations, each its own: a plugin migrates only its own tables.
-pub fn migrations_of(comptime Plugin: type) []const db.migration.Migration {
-    comptime {
-        std.debug.assert(@hasDecl(Plugin, "manifest"));
-
-        if (!plugin_define.has(Plugin, "migrations")) {
-            return &.{};
-        }
-
-        const list: []const db.migration.Migration = plugin_define.get(Plugin, "migrations");
-
-        for (list) |migration| {
-            if (!std.mem.eql(u8, migration.source, Plugin.manifest.name)) {
-                @compileError("plugin " ++ Plugin.manifest.name ++ ": migration " ++
-                    migration.name ++ " names `" ++ migration.source ++ "` as its source");
-            }
-        }
-
-        std.debug.assert(list.len <= db.migration.migrations_max);
-
-        return list;
-    }
-}
-
 /// What a plugin's routes may live under: its name and its namespaces.
 fn owned_of(comptime Plugin: type) []const []const u8 {
     comptime {
@@ -834,11 +802,9 @@ pub fn Merged(comptime plugins: anytype) type {
         var plugin_grants: []const sdk.PluginGrants = &.{};
         var internal_collections: []const OwnedCollection = &.{};
         var schemas: []const [:0]const u8 = &.{};
-        var migrations: []const db.migration.Migration = &.{};
         var field_kinds: []const kinds.Kind = &.{};
         var content_types: []const DeclaredType = &.{};
         var custom_fields: []const DeclaredType = &.{};
-        var filters: []const filter_module.Definition = &.{};
         var delivery_gates: []const sdk.delivery.Gate = &.{};
         var roles: []const Role = &.{};
         var sign_in_providers: []const SignInProvider = &.{};
@@ -855,7 +821,6 @@ pub fn Merged(comptime plugins: anytype) type {
         var admin_brand: []const type = &.{};
         var app_picker_segment: []const type = &.{};
         var dimension: ?variants.Dimension = null;
-        var agents_tab: ?AgentsTab = null;
         var work_start: ?[]const u8 = null;
         var hosted = false;
         var settings_tabs: []const OwnedSettingsTab = &.{};
@@ -991,17 +956,6 @@ pub fn Merged(comptime plugins: anytype) type {
                 dimension = declared;
             }
 
-            if (plugin_define.has(Plugin, "agents_tab")) {
-                if (agents_tab != null) {
-                    @compileError("two plugins declare `agents_tab`; one at a time");
-                }
-
-                agents_tab = .{
-                    .plugin = Plugin.manifest.name,
-                    .html = plugin_define.get(Plugin, "agents_tab"),
-                };
-            }
-
             if (plugin_define.has(Plugin, "hosted")) {
                 hosted = hosted or plugin_define.get(Plugin, "hosted");
             }
@@ -1039,15 +993,6 @@ pub fn Merged(comptime plugins: anytype) type {
 
             if (schema_of(Plugin)) |sql| {
                 schemas = schemas ++ &[_][:0]const u8{sql};
-            }
-
-            migrations = migrations ++ migrations_of(Plugin);
-
-            if (plugin_define.has(Plugin, "filters")) {
-                const declared: []const filter_module.Definition =
-                    plugin_define.get(Plugin, "filters");
-
-                filters = filters ++ declared;
             }
 
             if (plugin_define.has(Plugin, "delivery_gates")) {
@@ -1125,11 +1070,9 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_plugin_grants = plugin_grants;
             pub const merged_internal_collections = internal_collections;
             pub const merged_schemas = schemas;
-            pub const merged_migrations = migrations;
             pub const merged_field_kinds = field_kinds;
             pub const merged_content_types = content_types;
             pub const merged_custom_fields = custom_fields;
-            pub const merged_filters = filters;
             pub const merged_delivery_gates = delivery_gates;
             pub const merged_sign_in_providers = sign_in_providers;
             pub const merged_routes = routes;
@@ -1161,8 +1104,6 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_translations = translations;
             /// The variant dimension a plugin declares, if one does.
             pub const merged_variants = dimension;
-            /// What a plugin shows in the Overview's "Your agent" tab, if one does.
-            pub const merged_agents_tab = agents_tab;
             /// The operation `publr work start` runs, where a hosting service's plugin
             /// sends a device's work to a copy of the project (`pub const work_start`).
             pub const merged_work_start = work_start;

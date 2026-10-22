@@ -7,7 +7,6 @@ const queue = @import("queue.zig");
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const record = @import("../../operations/record.zig");
-const PluginCtx = @import("context.zig").PluginCtx;
 
 pub const params_max: u32 = 32;
 
@@ -23,10 +22,6 @@ pub fn prepare(comptime text: []const u8, comptime options: Options) type {
         const names = param_names(text);
 
         return struct {
-            pub const query = text;
-            pub const given = options;
-            pub const parameters = names;
-
             /// Runs the query as the caller, its answer read into `Result`.
             pub fn execute(
                 any_ctx: anytype,

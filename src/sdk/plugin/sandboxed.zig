@@ -14,12 +14,11 @@ const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 const catalog = @import("../../model/permission.zig");
 const context = @import("context.zig");
 
-/// A permission a plugin asks for, by the key the administrator sees (`content.write`), and
+/// A permission a plugin asks for, by the key the administrator sees (`records.write`), and
 /// the plugin's own sentence on why it needs it.
 pub const Permission = sandboxed_plugin.Ask;
 /// More than the defaults, asked for with a reason; each raised limit waits for approval.
 pub const Limits = sandboxed_plugin.Limits;
-/// Which content the plugin recommends it be given; the administrator decides.
 /// One thing the host can run in a plugin's module: an operation or a hook.
 pub const Entry = struct {
     stage: Stage,
@@ -122,7 +121,6 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
         const contract = @import("../plugin.zig");
         const never = [_][]const u8{
             "schema_sql",
-            "migrations",
             "bootstrap",
             "sign_in_provider",
         };
@@ -130,7 +128,6 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
             "policies",
             "field_kinds",
             "delivery_gates",
-            "filters",
             "routes",
             "settings_pages",
             "sign_in_at",

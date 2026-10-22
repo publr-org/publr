@@ -196,10 +196,9 @@ pub const plugin = publr.plugin.define(manifest, .{
   times and references kept as plain numbers or text, JSON in text, and an untrusted
   write taking facts the server owns. A `Why:` line in the field's `///` passes one when
   the rule does not fit.
-- **Not built yet.** `define` refuses `register_taxonomies`,
-  `register_columns`, `register_components`, `register_providers`,
-  `register_location_rules`, `taxonomies`, `jobs` and `webhooks`, saying they come with a
-  later gate. There is no queued work, no schedule, no email and no outside search engine
+- **Not built yet.** `define` has no `register_taxonomies`, `register_columns`,
+  `register_components`, `register_providers`, `register_location_rules`, `taxonomies` or
+  `webhooks` option and fails the build on one. There is no queued work, no schedule, no email and no outside search engine
   for plugins yet. When a feature needs one, tell the person what is missing.
 
 ## How to build well

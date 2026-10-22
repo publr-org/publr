@@ -122,8 +122,6 @@ pub const Operation = struct {
     description: []const u8,
     details: []const u8 = "",
     open: bool = false,
-    /// Any site may call it (`pub const public = true`); never without saying so.
-    public: bool = false,
     /// Made with `publr.operation.define`: whether callers without credentials may call it.
     /// Null for an operation declared part by part.
     untrusted_callers: ?bool = null,

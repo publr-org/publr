@@ -1,7 +1,6 @@
 //! One registration: `pub const plugin = publr.plugin.define(manifest, options)`. The words
 //! come from the plugin's doc comments, which the build hands over beside it; `Bind` pairs
-//! the two into the type every reader takes, and `has`/`get` read an option whether the
-//! plugin is written this way or still declares its parts one by one.
+//! the two into the type every reader takes, and `has`/`get` read its options.
 const std = @import("std");
 const doc_reader = @import("doc_reader.zig");
 
@@ -52,8 +51,7 @@ pub fn defined(comptime Module: type) bool {
     }
 }
 
-/// The plugin as every reader takes it. A plugin still declaring its parts one by one passes
-/// through as it is; one using `define` gets its manifest with the description from `main.zig`'s
+/// The plugin as every reader takes it: its manifest with the description from `main.zig`'s
 /// `//!`, its options, and its words.
 pub fn Bind(comptime Module: type, comptime Docs: type) type {
     comptime {
@@ -116,7 +114,6 @@ const options_built_in = [_][]const u8{
     "settings_tabs",
     "routes",
     "operator_commands",
-    "migrations",
     "schema_sql",
     "bootstrap",
     "sign_in_provider",
@@ -125,23 +122,10 @@ const options_built_in = [_][]const u8{
     "serving",
     "before_command",
     "admin_brand",
-    "agents_tab",
     "app_picker_segment",
     "work_start",
     "hosted",
     "delivery_gates",
-    "filters",
-};
-
-/// Options decided for gates still to come: a plugin using one is told which, never ignored.
-const options_later = [_][2][]const u8{
-    .{ "register_taxonomies", "taxonomies on other plugins' types" },
-    .{ "register_columns", "columns on lists the plugin does not own" },
-    .{ "register_components", "slots on the site" },
-    .{ "register_providers", "contracts and providers" },
-    .{ "register_location_rules", "location rules of the plugin's own" },
-    .{ "taxonomies", "taxonomies declared by plugins" },
-    .{ "webhooks", "incoming webhooks" },
 };
 
 fn check_options(comptime plugin: []const u8, comptime Options: type) void {
@@ -149,19 +133,12 @@ fn check_options(comptime plugin: []const u8, comptime Options: type) void {
         std.debug.assert(plugin.len > 0);
 
         const fields = std.meta.fieldNames(Options).len;
-        const listed = options_known.len + options_built_in.len + options_later.len;
+        const listed = options_known.len + options_built_in.len;
 
         // Each option's name against every known one, a byte at a time.
         @setEvalBranchQuota(1000 + fields * listed * 64);
 
         for (std.meta.fieldNames(Options)) |name| {
-            for (options_later) |later| {
-                if (std.mem.eql(u8, later[0], name)) {
-                    @compileError("plugin " ++ plugin ++ ": `." ++ name ++ "` is decided but " ++
-                        "not built yet: " ++ later[1] ++ " come with a later gate");
-                }
-            }
-
             if (!listed_in(&options_known, name) and !listed_in(&options_built_in, name)) {
                 @compileError("plugin " ++ plugin ++ ": `define` has no option `." ++ name ++ "`");
             }
@@ -328,8 +305,7 @@ fn described_operations(comptime Plugin: type) []const type {
     }
 }
 
-/// A bound plugin's content types: those it lists the old way, then every `.records`
-/// entry that is not internal.
+/// A bound plugin's content types: every `.records` entry that is not internal.
 fn declared_content_types(comptime Plugin: type) []const ContentTypeDef {
     comptime {
         const record_define = @import("record_define.zig");
@@ -337,10 +313,6 @@ fn declared_content_types(comptime Plugin: type) []const ContentTypeDef {
         var list: []const ContentTypeDef = &.{};
 
         std.debug.assert(Plugin.manifest.name.len > 0);
-
-        if (@hasField(Options, "content_types")) {
-            list = list ++ as_slice(ContentTypeDef, Plugin.options.content_types);
-        }
 
         if (@hasField(Options, "records")) {
             for (Plugin.options.records) |Record| {
@@ -367,10 +339,6 @@ fn declared_collections(comptime Plugin: type) []const Collection {
         var list: []const Collection = &.{};
 
         std.debug.assert(Plugin.manifest.name.len > 0);
-
-        if (@hasField(Options, "internal_records")) {
-            list = list ++ as_slice(Collection, Plugin.options.internal_records);
-        }
 
         if (@hasField(Options, "records")) {
             for (Plugin.options.records) |Record| {
@@ -402,7 +370,7 @@ fn check_record_name(comptime plugin: []const u8, comptime name: []const u8) voi
     }
 }
 
-/// A bound plugin's hooks: `.middleware` listed the old way, then `.hooks`, each
+/// A bound plugin's hooks: the server's own `.middleware`, then `.hooks`, each
 /// `publr.before`, `publr.after`, `publr.on` and `publr.modify` given its plugin's name.
 fn declared_hooks(comptime Plugin: type) []const type {
     comptime {
@@ -468,26 +436,12 @@ fn declared_kinds(comptime Plugin: type) []const Kind {
     }
 }
 
-/// A bound plugin's field groups: `custom_fields` the old way, then `.register_fields`.
+/// A bound plugin's field groups: its `.register_fields`.
 fn declared_field_groups(comptime Plugin: type) []const ContentTypeDef {
     comptime {
-        const record_define = @import("record_define.zig");
-        const Options = @TypeOf(Plugin.options);
-        var list: []const ContentTypeDef = &.{};
-
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        if (@hasField(Options, "custom_fields")) {
-            list = list ++ as_slice(ContentTypeDef, Plugin.options.custom_fields);
-        }
-
-        if (@hasField(Options, "register_fields")) {
-            list = list ++ record_define.field_groups_of(Plugin);
-        }
-
-        const done = list;
-
-        return done;
+        return @import("record_define.zig").field_groups_of(Plugin);
     }
 }
 
@@ -542,15 +496,10 @@ fn declared_pages(comptime Plugin: type) []const Page {
     }
 }
 
-/// A bound plugin's namespace: its own words, the description and the settings text,
-/// unless it still lists namespaces itself.
+/// A bound plugin's namespace: its own words, the description and the settings text.
 fn declared_namespaces(comptime Plugin: type) []const Namespace {
     comptime {
         std.debug.assert(Plugin.manifest.name.len > 0);
-
-        if (@hasField(@TypeOf(Plugin.options), "namespaces")) {
-            return as_slice(Namespace, Plugin.options.namespaces);
-        }
 
         const own = [_]Namespace{.{
             .name = Plugin.manifest.name,
