@@ -107,11 +107,18 @@ const version_len_max: u32 = 32;
 
 /// What `define` takes.
 const options_known = [_][]const u8{
-    "records",         "operations", "hooks",                   "events",             "permissions",
-    "secrets",         "depends_on", "compatible_with",         "remotes",            "field_kinds",
-    "register_fields", "roles",      "translations",            "limits",             "pages",
-    "panels",          "jobs",       "menu",                    "icons",              "register_statuses",
-    "extend",          "webhooks",   "register_location_rules", "register_providers",
+    "records",                 "operations",
+    "hooks",                   "events",
+    "permissions",             "secrets",
+    "depends_on",              "compatible_with",
+    "remotes",                 "field_kinds",
+    "register_fields",         "roles",
+    "translations",            "limits",
+    "pages",                   "panels",
+    "jobs",                    "menu",
+    "icons",                   "register_statuses",
+    "extend",                  "webhooks",
+    "register_location_rules", "register_providers",
 };
 
 /// What only a built-in plugin takes outside `.extend`, until each finds its place.
