@@ -243,6 +243,9 @@ pub const Window = struct {
     query: []const u8 = "",
     offset: u32 = 0,
     limit: u32,
+    /// A field stored on the accounts to order by (`loyalty.points`), `-` in front for
+    /// descending; accounts without it last. Empty: oldest first.
+    sort: []const u8 = "",
 };
 
 const matching = " WHERE ?1 = '' OR instr(lower(display_name), lower(?1)) > 0 OR " ++
@@ -252,14 +255,28 @@ pub fn page(connection: *db.Db, arena: std.mem.Allocator, window: Window) db.Err
     std.debug.assert(window.limit > 0 and window.limit <= list_max);
     std.debug.assert(window.query.len <= 256);
 
-    var select = try connection.prepare(
-        "SELECT " ++ select_columns ++ matching ++ " ORDER BY created_at, email LIMIT ?2 OFFSET ?3",
-    );
+    const descending = std.mem.startsWith(u8, window.sort, "-");
+    const sort = if (descending) window.sort[1..] else window.sort;
+    const by_field = "(SELECT value FROM user_values WHERE record = users.id AND slot = 'live' " ++
+        "AND field = ?4 AND ordinal = 0)";
+    const order = " ORDER BY " ++ by_field ++ " IS NULL, ";
+    const select_page = "SELECT " ++ select_columns ++ matching;
+    const limited = "created_at, email LIMIT ?2 OFFSET ?3";
+    var select = if (sort.len == 0)
+        try connection.prepare(select_page ++ " ORDER BY " ++ limited)
+    else if (descending)
+        try connection.prepare(select_page ++ order ++ by_field ++ " DESC, " ++ limited)
+    else
+        try connection.prepare(select_page ++ order ++ by_field ++ ", " ++ limited);
     defer select.finalize();
 
     try select.bind_text(1, window.query);
     try select.bind_int(2, window.limit);
     try select.bind_int(3, window.offset);
+
+    if (sort.len > 0) {
+        try select.bind_text(4, sort);
+    }
 
     var users: std.ArrayList(User) = .empty;
 

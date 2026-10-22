@@ -137,10 +137,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         },
         .offer = offer,
         .resting = resting,
-        .default_columns = if (typed) |found|
-            view_offer.start(arena, found).columns orelse &view_offer.across_default_columns
-        else
-            &view_offer.across_default_columns,
+        .default_columns = default_columns_of(arena, typed),
     };
     var list_in = try filters.list_in(arena, effective);
 
@@ -183,6 +180,15 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             },
         },
     );
+}
+
+/// The columns a view saying none shows: the type's start, or core's across types.
+fn default_columns_of(arena: std.mem.Allocator, typed: ?view_offer.Offer) []const []const u8 {
+    std.debug.assert(view_offer.across_default_columns.len > 0);
+
+    const found = typed orelse return &view_offer.across_default_columns;
+
+    return view_offer.start(arena, found).columns orelse &view_offer.across_default_columns;
 }
 
 /// One page of the records, the address's `page` (from 1). Past the last one (its records

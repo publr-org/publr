@@ -98,11 +98,28 @@ const summary_len_max: u32 = 200;
 
 /// What `define` takes.
 const options_known = [_][]const u8{
-    "records",                 "operations", "hooks",           "events",  "permissions",
-    "secrets",                 "depends_on", "compatible_with", "remotes", "field_kinds",
-    "register_fields",         "roles",      "translations",    "limits",  "pages",
-    "panels",                  "jobs",       "menu",            "icons",   "register_statuses",
+    "records",
+    "operations",
+    "hooks",
+    "events",
+    "permissions",
+    "secrets",
+    "depends_on",
+    "compatible_with",
+    "remotes",
+    "field_kinds",
+    "register_fields",
+    "roles",
+    "translations",
+    "limits",
+    "pages",
+    "panels",
+    "jobs",
+    "menu",
+    "icons",
+    "register_statuses",
     "register_location_rules",
+    "register_columns",
 };
 
 /// What only a built-in plugin takes, until `.extend` holds them: the server's own seams.
@@ -137,7 +154,6 @@ const options_built_in = [_][]const u8{
 /// Options decided for gates still to come: a plugin using one is told which, never ignored.
 const options_later = [_][2][]const u8{
     .{ "register_taxonomies", "taxonomies on other plugins' types" },
-    .{ "register_columns", "columns on lists the plugin does not own" },
     .{ "register_components", "slots on the site" },
     .{ "register_providers", "contracts and providers" },
     .{ "taxonomies", "taxonomies declared by plugins" },

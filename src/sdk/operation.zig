@@ -480,6 +480,11 @@ pub fn assert_serialisable(comptime Type: type, comptime depth: u32) void {
             },
             .array => |array| assert_serialisable(array.child, depth + 1),
             .@"struct" => |structure| {
+                // An object whose keys come with the data writes its own JSON.
+                if (@hasDecl(Type, "json_object")) {
+                    return;
+                }
+
                 if (structure.fields.len > fields_max) {
                     @compileError("too many fields: " ++ @typeName(Type));
                 }
