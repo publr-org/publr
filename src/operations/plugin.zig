@@ -274,15 +274,6 @@ pub const Enable = struct {
     pub const Out = struct {
         plugins: []const Detail,
     };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .names = .{
-            .items_min = 1,
-            .items_max = dependents.together_max,
-        },
-        .grants = .{
-            .items_max = grants.choices_max,
-        },
-    };
     pub const example: In = .{
         .names = &.{"farewell"},
     };
@@ -301,6 +292,15 @@ pub const Enable = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        try refuse_names(ctx, in.names);
+
+        if (in.grants.len > grants.choices_max) {
+            return ctx.refuse(&.{.{
+                .field = "grants",
+                .message = std.fmt.comptimePrint("At most {d} choices.", .{grants.choices_max}),
+            }});
+        }
 
         try dependents.refuse_missing_parents(ctx, in.names);
 
@@ -388,12 +388,6 @@ pub const Disable = struct {
     pub const Out = struct {
         plugins: []const Detail,
     };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .names = .{
-            .items_min = 1,
-            .items_max = dependents.together_max,
-        },
-    };
     pub const example: In = .{
         .names = &.{"greeter"},
     };
@@ -411,6 +405,7 @@ pub const Disable = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
+        try refuse_names(ctx, in.names);
         try dependents.refuse_left_behind(ctx, in.names, "disable");
 
         const shown = ctx.arena.alloc(Detail, in.names.len) catch return error.OutOfMemory;
@@ -426,6 +421,18 @@ pub const Disable = struct {
         };
     }
 };
+
+/// Refuses a list of plugins naming none, or more than are started or stopped together.
+fn refuse_names(ctx: *Ctx, names: []const []const u8) error{Invalid}!void {
+    if (names.len >= 1 and names.len <= dependents.together_max) {
+        return;
+    }
+
+    return ctx.refuse(&.{.{
+        .field = "names",
+        .message = std.fmt.comptimePrint("Name 1 to {d} plugins.", .{dependents.together_max}),
+    }});
+}
 
 pub const Update = ByName(
     "plugin.update",

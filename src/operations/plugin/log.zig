@@ -40,12 +40,6 @@ pub const Log = struct {
     pub const Out = struct {
         lines: []const Line,
     };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .limit = .{
-            .min = 1,
-            .max = store.plugin_log.list_max,
-        },
-    };
     pub const example: In = .{
         .name = "greeter",
     };
@@ -69,7 +63,15 @@ pub const Log = struct {
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
-        std.debug.assert(in.limit <= store.plugin_log.list_max);
+
+        if (in.limit < 1 or in.limit > store.plugin_log.list_max) {
+            return ctx.refuse(&.{.{
+                .field = "limit",
+                .message = std.fmt.comptimePrint("A page is 1 to {d} lines.", .{
+                    store.plugin_log.list_max,
+                }),
+            }});
+        }
 
         if (in.name.len == 0) {
             return error.Invalid;

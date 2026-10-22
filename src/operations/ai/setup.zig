@@ -114,12 +114,6 @@ pub const SetUp = struct {
     pub const Out = struct {
         names: []const []const u8,
     };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .names = .{
-            .items_min = 1,
-            .items_max = set_up_max,
-        },
-    };
     pub const example: In = .{
         .names = &.{"ai_example"},
     };
@@ -136,6 +130,13 @@ pub const SetUp = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        if (in.names.len < 1 or in.names.len > set_up_max) {
+            return ctx.refuse(&.{.{
+                .field = "names",
+                .message = std.fmt.comptimePrint("Name 1 to {d} providers.", .{set_up_max}),
+            }});
+        }
 
         const file = try catalog.read(ctx);
 

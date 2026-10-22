@@ -8,7 +8,6 @@
 //! provider gives.
 
 const std = @import("std");
-const input_rule = @import("input_rule.zig");
 
 pub const nodes_max: u32 = 256;
 pub const depth_max: u32 = 16;
@@ -33,33 +32,7 @@ pub const Node = struct {
     values: []const []const u8 = &.{},
     /// A reference's content type: the caller sends an id, the operation gets the record.
     to: []const u8 = "",
-    /// The bounds the operation declares on this field of its input.
-    rule: input_rule.Rule = .{},
 };
-
-/// The first top-level field of `value` that breaks its rule: `quantity is above its
-/// greatest value`, into `buffer`; null when every field keeps to its rule.
-pub fn rules_broken(nodes: []const Node, value: std.json.Value, buffer: []u8) ?[]const u8 {
-    std.debug.assert(nodes.len > 0 and nodes.len <= nodes_max);
-    std.debug.assert(buffer.len >= 64);
-
-    if (value != .object) {
-        return null;
-    }
-
-    for (nodes) |node| {
-        if (node.parent != 0 or node.rule.empty()) {
-            continue;
-        }
-
-        const field = value.object.get(node.name) orelse continue;
-        const why = input_rule.broken(node.rule, field) orelse continue;
-
-        return std.fmt.bufPrint(buffer, "{s} {s}", .{ node.name, why }) catch buffer[0..0];
-    }
-
-    return null;
-}
 
 pub const Reason = enum { missing, unknown, kind, nullable, value };
 

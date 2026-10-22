@@ -249,14 +249,6 @@ fn run_pipeline(
     std.debug.assert(ctx.parent != null);
     std.debug.assert(found.name.len > 0);
 
-    if (found.input.len > 0) {
-        const value = std.json.parseFromSliceLeaky(Value, ctx.arena, input, .{}) catch {
-            return error.Invalid;
-        };
-
-        try @import("../sdk.zig").refuse_broken(ctx, found.input, value);
-    }
-
     const changed = if (sandboxed.hooked(.before, found.name))
         try sandboxed.before(ctx, found.name, input)
     else

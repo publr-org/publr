@@ -94,7 +94,7 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 else
                     0,
                 .fields = fields_of(Declared),
-                .input = sdk_operation.input_shape(Declared),
+                .input = shapes.describe(Declared.In),
                 .output = shapes.describe(Declared.Out),
                 .secret = @import("../trail.zig").secret_of(Declared),
             }};

@@ -62,6 +62,53 @@ pub const Currencies = struct {
     }
 };
 
+/// Refuses a list of more than `currencies_max`, or with entries that are not well formed
+/// or listed twice, naming every one at once.
+fn refuse_entries(ctx: *Ctx, entries: []const Entry) error{ Invalid, OutOfMemory }!void {
+    comptime std.debug.assert(currencies_max * 2 <= sdk.operation.problems_max);
+
+    if (entries.len > currencies_max) {
+        return ctx.refuse(&.{.{
+            .field = "currencies",
+            .message = std.fmt.comptimePrint("At most {d} currencies.", .{currencies_max}),
+        }});
+    }
+
+    var problems: std.ArrayList(sdk.operation.Problem) = .empty;
+
+    for (entries, 0..) |entry, index| {
+        if (model.money.entry_problem(entry)) |problem| {
+            const message = std.fmt.allocPrint(ctx.arena, "{s}: {s}", .{
+                entry.code,
+                problem,
+            }) catch return error.OutOfMemory;
+
+            problems.append(ctx.arena, .{
+                .field = "currencies",
+                .message = message,
+            }) catch return error.OutOfMemory;
+        }
+
+        for (entries[0..index]) |earlier| {
+            if (std.mem.eql(u8, earlier.code, entry.code)) {
+                const message = std.fmt.allocPrint(ctx.arena, "{s}: listed twice", .{
+                    entry.code,
+                }) catch return error.OutOfMemory;
+
+                problems.append(ctx.arena, .{
+                    .field = "currencies",
+                    .message = message,
+                }) catch return error.OutOfMemory;
+                break;
+            }
+        }
+    }
+
+    if (problems.items.len > 0) {
+        return ctx.refuse(problems.items);
+    }
+}
+
 pub const SetCurrencies = struct {
     pub const name = "project.set_currencies";
     pub const description = "Say which currencies the site prices in and how it writes them";
@@ -82,11 +129,6 @@ pub const SetCurrencies = struct {
     pub const Out = struct {
         currencies: []const Entry,
     };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .currencies = .{
-            .items_max = currencies_max,
-        },
-    };
     pub const example: In = .{
         .currencies = example_entries,
     };
@@ -101,30 +143,7 @@ pub const SetCurrencies = struct {
         std.debug.assert(ctx.db.transaction_depth >= 1);
         std.debug.assert(granted.allows());
 
-        for (in.currencies, 0..) |entry, index| {
-            if (model.money.entry_problem(entry)) |problem| {
-                const message = std.fmt.allocPrint(ctx.arena, "{s}: {s}", .{
-                    entry.code,
-                    problem,
-                }) catch return error.OutOfMemory;
-
-                return ctx.fail(.{
-                    .name = "InvalidInput",
-                    .status = 400,
-                    .message = message,
-                });
-            }
-
-            for (in.currencies[0..index]) |earlier| {
-                if (std.mem.eql(u8, earlier.code, entry.code)) {
-                    return ctx.fail(.{
-                        .name = "InvalidInput",
-                        .status = 400,
-                        .message = "a currency is listed once",
-                    });
-                }
-            }
-        }
+        try refuse_entries(ctx, in.currencies);
 
         const stored = std.json.Stringify.valueAlloc(ctx.arena, in.currencies, .{}) catch {
             return error.OutOfMemory;
@@ -357,7 +376,8 @@ test "money: amounts per currency, only the site's, found and sorted by one" {
             .code = "ZZZ",
         }},
     });
-    try std.testing.expectError(error.Failed, unknown);
+    try std.testing.expectError(error.Invalid, unknown);
+    try std.testing.expectEqualStrings("currencies", system.problems[0].field);
 
     const no_amount = registry.SDK.dispatch(&system, SetCurrencies, .{
         .currencies = &.{.{
@@ -365,5 +385,5 @@ test "money: amounts per currency, only the site's, found and sorted by one" {
             .format = "{symbol}",
         }},
     });
-    try std.testing.expectError(error.Failed, no_amount);
+    try std.testing.expectError(error.Invalid, no_amount);
 }

@@ -189,11 +189,6 @@ pub const Greet = struct {
         /// Why: a count, not money
         total: u32,
     };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .note = .{
-            .max_len = 200,
-        },
-    };
     pub const example: In = .{
         .note = "hello from the sandbox",
     };
@@ -210,7 +205,7 @@ pub const Greet = struct {
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now().ms >= 0);
 
-        if (in.note.len == 0 or in.note.len > 280) {
+        if (in.note.len == 0 or in.note.len > 200) {
             return error.Invalid;
         }
 

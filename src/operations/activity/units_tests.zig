@@ -188,3 +188,18 @@ test "activity: a record's own writes and a move over many, each record by its i
     });
     try expect_units(&.{ one_unit, two_unit }, try units_of(&system, "record.transition_many"));
 }
+
+test "activity: a page size out of bounds is refused as Invalid, the problem beside limit" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try SDK.bootstrap(&system);
+
+    try std.testing.expectError(error.Invalid, SDK.dispatch(&system, activity.List, .{
+        .limit = 0,
+    }));
+    try std.testing.expectEqual(@as(usize, 1), system.problems.len);
+    try std.testing.expectEqualStrings("limit", system.problems[0].field);
+}

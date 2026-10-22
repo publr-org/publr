@@ -281,12 +281,6 @@ pub const Find = struct {
     pub const Out = struct {
         records: []const Item,
     };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .limit = .{
-            .min = 1,
-            .max = sdk.operation.page_limit_max,
-        },
-    };
     pub const example: In = .{
         .plugin = "greeter",
         .kind = "visit",
@@ -306,6 +300,13 @@ pub const Find = struct {
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
+
+        if (in.limit < 1 or in.limit > sdk.operation.page_limit_max) {
+            return ctx.refuse(&.{.{
+                .field = "limit",
+                .message = "A page is 1 to 200 records.",
+            }});
+        }
 
         const paired = (in.field == null) == (in.value == null);
 
