@@ -116,7 +116,15 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
         for (declared) |page| {
             const takes = @import("context.zig").takes_plugin_ctx;
 
-            if (page.form) |form| {
+            if (page.tabs) {
+                list = list ++ &[_]sandboxed_plugin.Page{.{
+                    .path = page.path,
+                    .label = page.label,
+                    .icon = page.icon,
+                    .hidden = page.menu != null,
+                    .tabs = true,
+                }};
+            } else if (page.form) |form| {
                 if (!takes(form.read.run) or !takes(form.save.run)) {
                     continue;
                 }
@@ -129,6 +137,7 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .save = form.save.name,
                     .multiline = form.multiline,
                     .hidden = page.menu != null,
+                    .parent = page.parent,
                 }};
             } else if (takes(page.operation.?.run)) {
                 list = list ++ &[_]sandboxed_plugin.Page{.{
@@ -305,6 +314,46 @@ pub fn fields_of(comptime Declared: type) []const Field {
                 .shape = shape_of(field.type),
                 .required = field.defaultValue() == null,
                 .doc = sdk_operation.field_doc(Declared, "field_docs", field.name),
+                .label = help.type_label(field.type),
+                .values = values_of(field.type),
+                .fields = item_fields_of(field.type),
+            }};
+        }
+
+        return list;
+    }
+}
+
+/// A list of structs' item fields, when each is plain; none for anything else.
+fn item_fields_of(comptime Type: type) []const Field {
+    comptime {
+        std.debug.assert(@typeInfo(Type) != .@"fn");
+
+        const info = @typeInfo(Type);
+
+        if (info != .pointer or info.pointer.size != .slice) {
+            return &.{};
+        }
+
+        const Item = info.pointer.child;
+
+        if (@typeInfo(Item) != .@"struct" or is_reference(Item)) {
+            return &.{};
+        }
+
+        var list: []const Field = &.{};
+
+        for (@typeInfo(Item).@"struct".fields) |field| {
+            const shape = shape_of(field.type);
+
+            if (shape == .strings or shape == .json) {
+                return &.{};
+            }
+
+            list = list ++ &[_]Field{.{
+                .name = field.name,
+                .shape = shape,
+                .required = field.defaultValue() == null,
                 .label = help.type_label(field.type),
                 .values = values_of(field.type),
             }};

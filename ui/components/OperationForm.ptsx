@@ -9,15 +9,34 @@ import { StatusStrip } from "@publr/ui/StatusStrip.ptsx";
 import { Switch } from "@publr/ui/Switch.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
 
 export type OperationFormProps = {
   title: string;
   /** The operation a save calls with every field's value: `site_info.save`. */
   operation: string;
-  /** The fields in order. `kind`: string (a line), text (lines), number, boolean. */
-  fields: Array<{ name: string; label: string; kind: string; required: boolean; help: string; value: string }>;
+  /** The fields in order. `kind`: string (a line), text (lines), number, boolean, or rows:
+   * a list of items, one row each, a column per `columns` (`kind` string, number, boolean),
+   * its values in `rows`. */
+  fields: Array<{
+    name: string;
+    label: string;
+    kind: string;
+    required: boolean;
+    help: string;
+    value: string;
+    columns: Array<{ name: string; label: string; kind: string }>;
+    rows: Array<{ index: number; cells: Array<{ at: number; kind: string; label: string; value: string }> }>;
+  }>;
   /** Under the save button: what saving does. */
   note?: string;
+  /** A header in place of the title band: a tabbed page's title and tabs. */
+  header?: JSX.Element;
 };
 
 type Field = OperationFormProps["fields"][number];
@@ -51,22 +70,60 @@ Publr.effect(() => {
 export const typed = (event: Event) => {
   const input = event.target as HTMLInputElement;
   const value = input.type === "checkbox" ? (input.checked ? "true" : "false") : input.value;
+  const cell = /^(.+)\[(\d+)\]\[(\d+)\]$/.exec(input.name ?? "");
+  if (cell) {
+    const row = Number(cell[2]);
+    const at = Number(cell[3]);
+    state.fields = state.fields.map((field) =>
+      field.name !== cell[1] ? field : {
+        ...field,
+        rows: field.rows.map((one) =>
+          one.index !== row ? one : { ...one, cells: one.cells.map((it) => (it.at === at ? { ...it, value } : it)) }),
+      });
+    return;
+  }
   state.fields = state.fields.map((field) => (field.name === input.name ? { ...field, value } : field));
 };
 
-/** Every field's value as the operation takes it: numbers and switches typed. */
+/** Add (`name="row-add"`, the list's name as its value) puts an empty row at the end;
+ * Remove (`name="row-remove"`, `<list>:<row>`) takes one out. */
+export const clicked = (event: MouseEvent) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[name]");
+  if (!button || (button.name !== "row-add" && button.name !== "row-remove")) return;
+  event.preventDefault();
+  const [name, at] = button.value.split(":");
+  const row = Number(at);
+  state.fields = state.fields.map((field) =>
+    field.name !== name ? field : {
+      ...field,
+      rows: button.name === "row-add"
+        ? [...field.rows, {
+          index: field.rows.length,
+          cells: field.columns.map((column, place) => ({ at: place, kind: column.kind, label: column.label, value: "" })),
+        }]
+        : field.rows.filter((one) => one.index !== row).map((one, index) => ({ ...one, index })),
+    });
+};
+
+/** A value as the operation takes it: numbers and switches typed. */
+const typedValue = (kind: string, text: string): unknown =>
+  kind === "number" ? Number(text) : kind === "boolean" ? text === "true" : text;
+
+/** Every field's value as the operation takes it, a list's rows as items. */
 export const save = () => {
   const input: Record<string, unknown> = {};
   for (const field of state.fields) {
-    input[field.name] =
-      field.kind === "number" ? Number(field.value) : field.kind === "boolean" ? field.value === "true" : field.value;
+    input[field.name] = field.kind === "rows"
+      ? field.rows.map((row) =>
+        Object.fromEntries(field.columns.map((column, at) => [column.name, typedValue(column.kind, row.cells[at].value)])))
+      : typedValue(field.kind, field.value);
   }
   saveForm(input);
 };
 
 /** A plugin's form by declaration: its fields drawn with the admin's controls, saved
  * through one operation, the status line and the save as on every editor. */
-export function OperationForm({ title, operation, fields, note = "" }: OperationFormProps) {
+export function OperationForm({ title, operation, fields, note = "", header }: OperationFormProps) {
   state.save = operation;
   state.fields = fields;
   state.status = Publr.t("All changes saved");
@@ -74,9 +131,10 @@ export function OperationForm({ title, operation, fields, note = "" }: Operation
   state.problems = {};
 
   return (
-    <div class="flex grow flex-col" data-part="operation-form" onInput={typed} onChange={typed}>
+    <div class="flex grow flex-col" data-part="operation-form" onInput={typed} onChange={typed} onClick={clicked}>
       <FormBody
         title={title}
+        header={header}
         meta={<StatusStrip status={Publr.t("Saved")} tone="success" note={state.status} />}
         aside={
           <EditorAsideSection>
@@ -96,6 +154,47 @@ export function OperationForm({ title, operation, fields, note = "" }: Operation
               )}
               {field.kind === "number" && (
                 <Input id={`field-${field.name}`} name={field.name} value={field.value} type="number" required={field.required} />
+              )}
+              {field.kind === "rows" && (
+                <div class="flex flex-col gap-3" data-part="operation-form-rows">
+                  <div class="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {field.columns.map((column) => <TableHead>{column.label}</TableHead>)}
+                          <TableHead><span class="sr-only">{Publr.t("Remove")}</span></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {field.rows.map((row) => (
+                          <TableRow key={row.index}>
+                            {row.cells.map((cell) => (
+                              <TableCell>
+                                {cell.kind === "boolean" ? (
+                                  <Switch name={`${field.name}[${row.index}][${cell.at}]`} checked={cell.value === "true"}
+                                    aria-label={cell.label} />
+                                ) : (
+                                  <Input name={`${field.name}[${row.index}][${cell.at}]`} value={cell.value} size="sm"
+                                    type={cell.kind === "number" ? "number" : "text"} aria-label={cell.label} />
+                                )}
+                              </TableCell>
+                            ))}
+                            <TableCell>
+                              <Button type="button" name="row-remove" value={`${field.name}:${row.index}`} hierarchy="tertiary" size="sm">
+                                {Publr.t("Remove")}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div>
+                    <Button type="button" name="row-add" value={field.name} hierarchy="secondary" size="sm">
+                      {Publr.t("Add")}
+                    </Button>
+                  </div>
+                </div>
               )}
             </FieldRow>
           ))}

@@ -1,9 +1,9 @@
 //! Where a plugin shows in the admin. Any plugin: its own pages, shown in the plugin frame
-//! and listed in the Settings sidebar, sections, panels, an item in the top bar, and actions
-//! on the rows of another plugin's page. Compiled in only, for now: settings pages, listed
-//! in the Settings sidebar, and settings tabs. A settings page is one of the plugin's own
-//! routes; the top bar item is a function the admin calls for every signed-in page; a row
-//! action is data the page's owner reads.
+//! and listed in the Settings sidebar or as tabs of a tabbed page, sections, panels, an item
+//! in the top bar, and actions on the rows of another plugin's page. Compiled in only, for
+//! now: settings pages, listed in the Settings sidebar, and tabs of Users. A settings page
+//! is one of the plugin's own routes; the top bar item is a function the admin calls for
+//! every signed-in page; a row action is data the page's owner reads.
 const std = @import("std");
 const plugin_define = @import("define.zig");
 const route = @import("route.zig");
@@ -37,14 +37,25 @@ pub const Page = struct {
     /// `.none`: no entry in the menu; the page still opens at its address, for links of the
     /// plugin's own.
     menu: ?enum { none } = null,
+    /// A tabbed page: the admin draws it, its title over a tab bar and the open tab, and
+    /// other plugins' pages fill it by naming it in `.parent`. No operation or form.
+    tabs: bool = false,
+    /// A tab of the first tabbed page named here that exists (`"products.settings"`, or
+    /// System settings, `"core.system"`), else of System settings. A tab is a `.form`.
+    parent: []const []const u8 = &.{},
 
     /// The operation that decides who sees the page: the drawing read, or the form's.
     pub fn gate(comptime page: Page) type {
         comptime {
+            std.debug.assert(!page.tabs);
+
             return page.operation orelse page.form.?.read;
         }
     }
 };
+
+/// System settings, the tabbed page every Publr has: a tab's parent when none named exists.
+pub const system_page = "core.system";
 
 pub const TopBar = struct {
     count: ?type = null,
@@ -83,6 +94,11 @@ pub fn items_of(comptime Plugin: type, comptime list: []const u8) []const Item {
 
         for (plugin_define.get(Plugin, "pages")) |page| {
             const shown = page.top_bar orelse continue;
+
+            if (page.tabs) {
+                @compileError("plugin " ++ name ++ ": tabbed page " ++ page.path ++
+                    " is not in the top bar; its tabs may be");
+            }
 
             if (shown.count) |Count| {
                 if (Count.kind != .read or !@hasField(Count.Out, "count")) {
@@ -173,30 +189,14 @@ pub const SettingsPage = struct {
     operation: type,
 };
 
-/// The Settings pages plugins add tabs to: System settings
-/// (`/admin/settings/system/<tab>`) and Users (`/admin/settings/users/<tab>`).
-pub const SettingsTabPage = enum {
-    system,
-    users,
-
-    pub fn path(page: SettingsTabPage) []const u8 {
-        return switch (page) {
-            .system => "/admin/settings/system",
-            .users => "/admin/settings/users",
-        };
-    }
-};
-
-/// A section a plugin adds to a tab of a Settings page, System settings unless `page` says
-/// Users. Plugins naming the same tab share it, their sections in plugin order; the tab
-/// shows while any plugin adds to it, and a page with none shows no tabs. Compiled in only:
+/// A section a plugin adds to a tab of Users (`/admin/settings/users/<tab>`). Plugins naming
+/// the same tab share it, their sections in plugin order. Compiled in only:
 /// `view.draw(session)` draws the section with the admin's own components, and the plugin's
 /// routes take what it posts.
 pub const SettingsTab = struct {
-    page: SettingsTabPage = .system,
-    /// Lowercase letters and dashes: `localization`.
+    /// Lowercase letters and dashes: `roles`.
     tab: []const u8,
-    /// The tab's name: `Localization`. Plugins sharing a tab give the same one.
+    /// The tab's name: `Roles`. Plugins sharing a tab give the same one.
     tab_label: []const u8,
     /// A struct with `pub fn draw(session: *publr.admin.Session) publr.admin.Error!Node`.
     view: type,
@@ -209,8 +209,6 @@ pub const SettingsTab = struct {
 };
 
 pub const settings_tabs_max: u32 = 4;
-/// The tabs System settings has of its own: a plugin's tab is named otherwise.
-pub const own_settings_tabs = [_][]const u8{ "general", "currencies", "activity", "errors" };
 /// What Users' own addresses take after `/admin/settings/users/`.
 pub const own_users_paths = [_][]const u8{ "users", "new", "create" };
 
@@ -234,10 +232,10 @@ pub fn settings_tabs_of(comptime Plugin: type) []const SettingsTab {
         for (tabs) |tab| {
             if (!valid_tab(tab.tab) or tab.tab_label.len == 0) {
                 @compileError("plugin " ++ name ++ ": a settings tab is named in lowercase " ++
-                    "letters and dashes, not one of its page's own, and has a label");
+                    "letters and dashes, and has a label");
             }
 
-            if (tab.page == .users and taken_by_users(tab.tab)) {
+            if (taken_by_users(tab.tab)) {
                 @compileError("plugin " ++ name ++ ": tab " ++ tab.tab ++ " is a Users path");
             }
 
@@ -252,16 +250,10 @@ pub fn settings_tabs_of(comptime Plugin: type) []const SettingsTab {
 
 fn valid_tab(comptime tab: []const u8) bool {
     comptime {
-        std.debug.assert(own_settings_tabs.len > 0);
+        std.debug.assert(page_path_len_max > 0);
 
         if (tab.len == 0 or tab.len > page_path_len_max) {
             return false;
-        }
-
-        for (own_settings_tabs) |own| {
-            if (std.mem.eql(u8, own, tab)) {
-                return false;
-            }
         }
 
         for (tab) |char| {
@@ -364,9 +356,18 @@ pub fn pages_of(comptime Plugin: type) []const Page {
                 }
             }
 
+            if (page.tabs) {
+                assert_tabbed(name, page);
+                continue;
+            }
+
             if ((page.operation == null) == (page.form == null)) {
                 @compileError("plugin " ++ name ++ ": page " ++ page.path ++
                     " is drawn by an `operation` or declared as a `form`, one of them");
+            }
+
+            if (page.parent.len > 0) {
+                assert_tab(name, page);
             }
 
             if (page.operation) |Operation| {
@@ -398,6 +399,40 @@ pub fn is_page_path(path: []const u8) bool {
     }
 
     return true;
+}
+
+fn assert_tabbed(comptime plugin: []const u8, comptime page: Page) void {
+    comptime {
+        const label = "plugin " ++ plugin ++ ": tabbed page " ++ page.path;
+
+        if (page.operation != null or page.form != null) {
+            @compileError(label ++ " draws nothing itself: no `operation` or `form`");
+        }
+
+        if (page.parent.len > 0) {
+            @compileError(label ++ " is not a tab of another");
+        }
+    }
+}
+
+/// A tab is a form, under pages named `<plugin>.<path>` or `core.system`.
+fn assert_tab(comptime plugin: []const u8, comptime page: Page) void {
+    comptime {
+        const label = "plugin " ++ plugin ++ ": page " ++ page.path;
+
+        if (page.form == null) {
+            @compileError(label ++ " is a tab, so a `form`");
+        }
+
+        for (page.parent) |named| {
+            const dot = std.mem.indexOfScalar(u8, named, '.') orelse
+                @compileError(label ++ ": parent \"" ++ named ++ "\" is `<plugin>.<path>`");
+
+            if (dot == 0 or !is_page_path(named[dot + 1 ..])) {
+                @compileError(label ++ ": parent \"" ++ named ++ "\" is `<plugin>.<path>`");
+            }
+        }
+    }
 }
 
 fn assert_form(comptime plugin: []const u8, comptime form: Form) void {

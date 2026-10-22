@@ -26,6 +26,10 @@ pub const Page = struct {
     multiline: []const []const u8 = &.{},
     /// Left out of the menu (`.menu = .none`); still opened at its address.
     hidden: bool = false,
+    /// A tabbed page, drawn by the admin around the pages naming it in `parent`.
+    tabs: bool = false,
+    /// A form that is a tab of the first of these tabbed pages that exists.
+    parent: []const []const u8 = &.{},
 
     pub fn declared(page: Page) bool {
         std.debug.assert(page.path.len > 0);
@@ -33,15 +37,80 @@ pub const Page = struct {
         return page.save.len > 0;
     }
 
-    /// The operation that decides who sees it.
+    /// The operation that decides who sees it; none for a tabbed page, shown while a tab is.
     pub fn gate(page: Page) []const u8 {
-        std.debug.assert(page.operation.len > 0 or page.read.len > 0);
+        std.debug.assert(page.operation.len > 0 or page.read.len > 0 or page.tabs);
 
         return if (page.operation.len > 0) page.operation else page.read;
     }
+
+    /// `<plugin>.<path>`, as a tab's `parent` names it, in `buffer`.
+    pub fn named(page: Page, buffer: []u8) []const u8 {
+        std.debug.assert(buffer.len >= 64 + 1 + admin_slots.page_path_len_max);
+
+        return std.fmt.bufPrint(buffer, "{s}.{s}", .{ page.plugin, page.path }) catch "";
+    }
+
+    /// Where it opens.
+    pub fn href(page: Page, arena: std.mem.Allocator) admin.Error![]const u8 {
+        std.debug.assert(page.plugin.len > 0);
+
+        return std.fmt.allocPrint(arena, prefix ++ "/{s}/{s}", .{ page.plugin, page.path });
+    }
 };
 
-/// Every page the viewer may open, compiled-in plugins' first, in name order.
+const prefix = "/admin/plugin";
+pub const system = admin_slots.system_page;
+
+/// The tabbed page `tab` shows in, as `<plugin>.<path>`: the first of its `parent` that is a
+/// tabbed page in `list`, else System settings. Null for a page that is not a tab.
+pub fn parent_of(list: []const Page, tab: Page) ?[]const u8 {
+    std.debug.assert(list.len <= pages_max);
+
+    if (tab.parent.len == 0) {
+        return null;
+    }
+
+    var buffer: [128]u8 = undefined;
+
+    for (tab.parent) |wanted| {
+        if (std.mem.eql(u8, wanted, system)) {
+            return system;
+        }
+
+        for (list) |page| {
+            if (page.tabs and std.mem.eql(u8, page.named(&buffer), wanted)) {
+                return wanted;
+            }
+        }
+    }
+
+    return system;
+}
+
+/// The tabs of the tabbed page `name` the viewer may open, in `list`'s order.
+pub fn tabs_of(
+    arena: std.mem.Allocator,
+    list: []const Page,
+    name: []const u8,
+) admin.Error![]const Page {
+    std.debug.assert(name.len > 0);
+
+    var found: std.ArrayList(Page) = .empty;
+
+    for (list) |page| {
+        const under = parent_of(list, page) orelse continue;
+
+        if (std.mem.eql(u8, under, name)) {
+            try found.append(arena, page);
+        }
+    }
+
+    return found.toOwnedSlice(arena);
+}
+
+/// Every page the viewer may open, compiled-in plugins' first, in name order. A tabbed page
+/// is always there, so tabs find it; it shows while one of its tabs does.
 pub fn all(session: *const Session) admin.Error![]const Page {
     std.debug.assert(session.signed_in());
     comptime std.debug.assert(registry.pages.len <= pages_max);
@@ -49,7 +118,9 @@ pub fn all(session: *const Session) admin.Error![]const Page {
     var list: std.ArrayList(Page) = .empty;
 
     inline for (registry.pages) |owned| {
-        if (registry.SDK.may(&session.ctx, comptime owned.page.gate())) {
+        if (comptime owned.page.tabs) {
+            try list.append(session.arena, comptime native(owned));
+        } else if (registry.SDK.may(&session.ctx, comptime owned.page.gate())) {
             try list.append(session.arena, comptime native(owned));
         }
     }
@@ -70,9 +141,12 @@ pub fn all(session: *const Session) admin.Error![]const Page {
                 .save = page.save,
                 .multiline = page.multiline,
                 .hidden = page.hidden,
+                .tabs = page.tabs,
+                .parent = page.parent,
             };
+            const may = page.tabs or registry.SDK.may_named(&session.ctx, shown.gate());
 
-            if (sound(manifest, page) and registry.SDK.may_named(&session.ctx, shown.gate())) {
+            if (sound(manifest, page) and may) {
                 try list.append(session.arena, shown);
             }
         }
@@ -97,6 +171,8 @@ fn native(comptime owned: @import("../../../sdk/plugin.zig").OwnedPage) Page {
             .save = if (page.form) |form| form.save.name else "",
             .multiline = if (page.form) |form| form.multiline else &.{},
             .hidden = page.menu != null,
+            .tabs = page.tabs,
+            .parent = page.parent,
         };
     }
 }
@@ -168,6 +244,14 @@ fn sound(manifest: Manifest, page: ManifestPage) bool {
         return false;
     }
 
+    if (page.tabs) {
+        return page.operation.len == 0 and page.read.len == 0 and page.parent.len == 0;
+    }
+
+    if (page.parent.len > 0 and page.save.len == 0) {
+        return false;
+    }
+
     if (page.operation.len > 0) {
         return own_kind(manifest, page.operation) == .read and page.save.len == 0;
     }
@@ -215,4 +299,89 @@ test "an installed plugin's page drawn by another's operation is not sound" {
     try std.testing.expect(sound(own, page));
     try std.testing.expect(!sound(own, borrowed));
     try std.testing.expect(!sound(own, bad_path));
+}
+
+test "a tab shows in the first tabbed page of its parents that exists, else System settings" {
+    const shop: Page = .{
+        .plugin = "products",
+        .path = "settings",
+        .label = "Shop settings",
+        .icon = "gear",
+        .operation = "",
+        .tabs = true,
+    };
+    const currencies: Page = .{
+        .plugin = "currencies",
+        .path = "currencies",
+        .label = "Currencies",
+        .icon = "coins",
+        .operation = "",
+        .read = "currencies.list",
+        .save = "currencies.save",
+        .parent = &.{ "products.settings", "core.system" },
+    };
+    const notes: Page = .{
+        .plugin = "notes",
+        .path = "all",
+        .label = "Notes",
+        .icon = "file",
+        .operation = "notes.page",
+    };
+    var lost = currencies;
+
+    lost.parent = &.{"orders.settings"};
+
+    const placed = parent_of(&.{ shop, currencies }, currencies).?;
+
+    try std.testing.expectEqualStrings("products.settings", placed);
+    try std.testing.expectEqualStrings(system, parent_of(&.{currencies}, currencies).?);
+    try std.testing.expectEqualStrings(system, parent_of(&.{ shop, lost }, lost).?);
+    try std.testing.expect(parent_of(&.{notes}, notes) == null);
+
+    const all_pages = [_]Page{ shop, currencies, notes };
+    const tabs = try tabs_of(std.testing.allocator, &all_pages, "products.settings");
+    defer std.testing.allocator.free(tabs);
+
+    try std.testing.expectEqual(@as(usize, 1), tabs.len);
+    try std.testing.expectEqualStrings("currencies", tabs[0].plugin);
+}
+
+test "a tabbed page in a manifest draws nothing itself; a tab is a form" {
+    const own: Manifest = .{
+        .name = "shop",
+        .version = "0.1.0",
+        .summary = "Shop",
+        .operations = &.{
+            .{
+                .name = "shop.read",
+                .kind = .read,
+                .description = "Reads",
+            },
+            .{
+                .name = "shop.page",
+                .kind = .read,
+                .description = "Draws",
+            },
+        },
+    };
+    const tabbed: ManifestPage = .{
+        .path = "settings",
+        .label = "Shop settings",
+        .icon = "gear",
+        .tabs = true,
+    };
+    const drawn_tab: ManifestPage = .{
+        .path = "drawn",
+        .label = "Drawn",
+        .icon = "file",
+        .operation = "shop.page",
+        .parent = &.{"shop.settings"},
+    };
+    var drawing = tabbed;
+
+    drawing.operation = "shop.page";
+
+    try std.testing.expect(sound(own, tabbed));
+    try std.testing.expect(!sound(own, drawing));
+    try std.testing.expect(!sound(own, drawn_tab));
 }

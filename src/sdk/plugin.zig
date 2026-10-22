@@ -101,7 +101,6 @@ pub const Variants = variants.Dimension;
 pub const Variant = variants.Variant;
 pub const SettingsPage = admin_slots.SettingsPage;
 pub const SettingsTab = admin_slots.SettingsTab;
-pub const SettingsTabPage = admin_slots.SettingsTabPage;
 pub const RowAction = admin_slots.RowAction;
 pub const Page = admin_slots.Page;
 pub const Item = admin_slots.Item;
@@ -916,10 +915,12 @@ pub fn Merged(comptime plugins: anytype) type {
             }
 
             for (admin_slots.pages_of(Plugin)) |page| {
-                const used = if (page.form) |form| [_]type{ form.read, form.save } else [_]type{
-                    page.operation.?,
-                    page.operation.?,
-                };
+                const used: []const type = if (page.tabs)
+                    &.{}
+                else if (page.form) |form|
+                    &.{ form.read, form.save }
+                else
+                    &.{page.operation.?};
 
                 for (used) |Operation| {
                     if (!owns_operation(Plugin, Operation)) {
@@ -1134,7 +1135,7 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_sign_in_providers = sign_in_providers;
             pub const merged_routes = routes;
             pub const merged_settings_pages = settings_pages;
-            /// Every plugin's sections of System settings tabs, in name order.
+            /// Every plugin's sections of Users tabs, in name order.
             pub const merged_settings_tabs = settings_tabs;
             /// Every plugin's actions on other pages' rows, in name order.
             pub const merged_row_actions = row_actions;
