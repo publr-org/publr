@@ -1,6 +1,6 @@
-//! Roles are rows. Code declares them (core's, a plugin's); applying a declaration makes the
-//! role the first time its owner declares it, and later adds only the grants the owner's
-//! previous declaration lacked, so what the site changed or removed stays as it is.
+//! Roles are rows. Code declares them (core's with their grants, a plugin's by name); a
+//! declaration makes the role the first time its owner declares it, and core's later add only
+//! the grants its previous declaration lacked, so what the site changed or removed stays.
 const std = @import("std");
 const store = @import("../store.zig");
 const role = @import("../model/role.zig");
@@ -17,6 +17,21 @@ pub fn apply(ctx: *const Ctx, owner: []const u8, declared: []const Role) Error!v
 
     for (declared) |wanted| {
         try apply_one(ctx, owner, wanted);
+    }
+}
+
+/// Declares a plugin's roles: each made, granting nothing, the first time `owner` declares it.
+pub fn declare(ctx: *const Ctx, owner: []const u8, declared: []const role.Declared) Error!void {
+    std.debug.assert(owner.len > 0);
+    std.debug.assert(declared.len <= role.roles_max);
+
+    for (declared) |wanted| {
+        try apply_one(ctx, owner, .{
+            .name = wanted.name,
+            .label = wanted.label,
+            .description = wanted.description,
+            .grants = &.{},
+        });
     }
 }
 
@@ -67,31 +82,6 @@ fn missing_from(
     }
 
     return added.items;
-}
-
-/// `owner` goes: the grants it added to roles it does not own leave them, unless another
-/// owner declares them too, and what it declared for those roles is forgotten. Its own
-/// roles stay as they are, unless chosen to go with it.
-pub fn withdraw(ctx: *const Ctx, owner: []const u8, declared: []const Role) Error!void {
-    std.debug.assert(owner.len > 0);
-    std.debug.assert(declared.len <= role.roles_max);
-
-    for (declared) |wanted| {
-        const row = try store.roles.get(ctx.db, ctx.arena, wanted.name) orelse continue;
-
-        if (std.mem.eql(u8, row.owner, owner)) {
-            continue;
-        }
-
-        const own = try store.role_declarations.patterns_of(ctx.db, ctx.arena, owner, row.name);
-
-        try store.role_declarations.forget(ctx.db, owner, row.name);
-
-        const others = try store.role_declarations.patterns_for(ctx.db, ctx.arena, row.name);
-        const leaving = try missing_from(ctx.arena, own, others);
-
-        try store.role_grants.remove(ctx.db, row.name, leaving);
-    }
 }
 
 /// The stored roles among `names`, each with its grants; a name no row has is left out.
@@ -191,16 +181,11 @@ test "applying: made once, new grants added, the site's removals and edits stay"
 
     try std.testing.expectEqualStrings("Shop lead", kept.label);
 
-    const extending = [_]Role{.{
+    // A plugin declaring a role there already grants it nothing.
+    try declare(&ctx, "newsletter", &.{.{
         .name = "manager",
         .label = "Ignored",
-        .grants = &.{"newsletter.*"},
-    }};
-
-    try apply(&ctx, "newsletter", &extending);
-    try std.testing.expect(allows(&ctx, &.{"manager"}, "newsletter.send"));
-
-    try withdraw(&ctx, "newsletter", &extending);
+    }});
     try std.testing.expect(!allows(&ctx, &.{"manager"}, "newsletter.send"));
     try std.testing.expect(allows(&ctx, &.{"manager"}, "order.refund"));
 

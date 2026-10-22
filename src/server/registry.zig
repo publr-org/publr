@@ -266,7 +266,6 @@ pub const registry: sdk.Registry = .{
     .plugin_grants = native_plugins.merged_plugin_grants,
     .schemas = native_plugins.merged_schemas,
     .migrations = &db.migrations.core ++ native_plugins.merged_migrations,
-    .roles = native_plugins.merged_roles,
     .bootstrap = &bootstrap,
     .log = activity.log,
     .removal = removal.prepare,
@@ -279,8 +278,6 @@ pub const Kinds = kind_registry.Registry(&kind_registry.core ++ native_plugins.m
 pub const Filters = filter_registry.Registry(
     &filter_registry.core ++ native_plugins.merged_filters,
 );
-
-pub const Roles = role_registry.Registry(native_plugins.merged_roles);
 
 /// The sign-in providers the native plugins declare, offered or not.
 pub const sign_in_providers = native_plugins.merged_sign_in_providers;
@@ -335,6 +332,6 @@ pub fn apply_declared_roles(ctx: *sdk.Ctx) sdk.Error!void {
     inline for (native_plugins.all) |Plugin| {
         const declared = comptime @import("../sdk/plugin.zig").roles_of(Plugin);
 
-        try sdk.stored_roles.apply(ctx, Plugin.manifest.name, declared);
+        try sdk.stored_roles.declare(ctx, Plugin.manifest.name, declared);
     }
 }

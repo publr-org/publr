@@ -34,7 +34,7 @@ pub const Salutations = publr.record.define(Salutation, .{
     },
 });
 
-const permissions = [_]publr.plugin.Permission{
+const permissions = .{
     .{
         .key = "users.names",
         .reason = "Greets the people on the site by name",

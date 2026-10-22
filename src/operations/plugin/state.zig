@@ -115,8 +115,7 @@ pub fn requests_of(
     std.debug.assert(manifest.name.len > 0);
     std.debug.assert(granted.len <= sandboxed_plugin.requests_max);
 
-    const catalog = &permission.core;
-    const asked = sandboxed_plugin.requests(catalog, manifest, arena) catch |err| switch (err) {
+    const asked = sandboxed_plugin.requests(manifest, arena) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Invalid => return error.Invalid,
     };
@@ -143,7 +142,7 @@ pub fn requests_of(
         if (request.asked) |as_asked| {
             const set = sandboxed_plugin.as_set(as_asked, grants);
 
-            shown.tier = permission.tier_of_held(permission.find(catalog, request.key).?, &set);
+            shown.tier = permission.tier_of_held(permission.find(request.key).?, &set);
             shown.names = set.names();
             shown.domains = set.domains;
             shown.flags = try flags_of(arena, as_asked, set);

@@ -381,7 +381,6 @@ pub fn actor_of(ctx: *Ctx) Error![]const u8 {
         .system => return "system",
         .user => |user| return user.id,
         .token => |token| std.fmt.allocPrint(ctx.arena, "token:{s}", .{token.id}),
-        .machine => |machine| std.fmt.allocPrint(ctx.arena, "machine:{s}", .{machine.id}),
         .plugin => |plugin| std.fmt.allocPrint(ctx.arena, "plugin:{s}", .{plugin.name}),
     };
 

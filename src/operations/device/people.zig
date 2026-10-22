@@ -24,7 +24,7 @@ fn person_of(ctx: *const Ctx) Error![]const u8 {
 
     return switch (ctx.caller) {
         .user => |user| user.id,
-        .anonymous, .token, .machine, .system, .plugin => error.Denied,
+        .anonymous, .token, .system, .plugin => error.Denied,
     };
 }
 

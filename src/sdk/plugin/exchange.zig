@@ -14,7 +14,6 @@ pub const Error = sdk.Error;
 
 /// A provider plugin built without grants: every request refused.
 const nothing_granted: plugin_access.Access = .{
-    .granted = &.{},
     .own_types = &.{},
 };
 
@@ -332,7 +331,6 @@ test "the exchange fetches only to its domains, fills its secret, gives up in ti
         .reason = "Asks the provider who signed in",
     };
     const access: plugin_access.Access = .{
-        .granted = &.{"http.fetch"},
         .held = &.{ask.held()},
         .own_types = &.{},
         .secrets = &.{.{

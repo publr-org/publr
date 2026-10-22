@@ -167,9 +167,8 @@ fn print_example(comptime Operation: type, out: *std.Io.Writer) Error!void {
     const verb = comptime operation.verb(Operation.name);
     const signed_in = @hasDecl(Operation, "example_signed_in") and Operation.example_signed_in;
     const declared_open = !signed_in and @hasDecl(Operation, "open") and Operation.open;
-    const anonymous_ok = declared_open or authorize.is_open_operation(Operation.name) or
-        (Operation.kind == .read and
-            authorize.is_public_read_namespace(Operation.name));
+    const anonymous_ok = declared_open or
+        (Operation.kind == .read and authorize.is_public_read_namespace(Operation.name));
     const operator = @hasDecl(Operation, "operator_only") and Operation.operator_only;
     const as: []const u8 = if (operator)
         "--as-admin "

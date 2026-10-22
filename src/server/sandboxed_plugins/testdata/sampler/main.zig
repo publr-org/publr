@@ -98,7 +98,7 @@ const Secrets = struct {
     SAMPLER_KEY: publr.Secret,
 };
 
-const permissions = [_]publr.plugin.Permission{.{
+const permissions = .{.{
     .key = "http.fetch",
     .domains = &.{"sampler.example"},
     .reason = "Holds a key for the sampler service",

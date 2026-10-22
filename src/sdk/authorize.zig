@@ -15,7 +15,8 @@ pub const policies_max: u32 = 64;
 pub const Request = struct {
     operation_name: []const u8,
     kind: operation.Kind,
-    resource: operation.Resource,
+    /// The content type the call names (its input's `type`), if any.
+    type_id: ?[]const u8 = null,
     /// The operation says anyone may call it (`pub const open = true`), like signing in:
     /// a plugin's own open door, such as creating an account. Policies still narrow it.
     open: bool = false,
@@ -29,14 +30,6 @@ pub const Request = struct {
 
 pub const Policy = *const fn (ctx: *const Ctx, request: Request) Grant;
 
-pub const open_operations = [_][]const u8{
-    "mod.apply",
-    "project.init",
-    "project.status",
-    "user.set_password",
-    "user.sign_in",
-    "user.sign_out",
-};
 pub const admin_namespaces = [_][]const u8{
     "user",
     "settings",
@@ -58,15 +51,11 @@ const delivery_grant: Grant = .{
 };
 
 /// What the core allows before any plugin narrows it: anonymous callers read live public
-/// records; a signed-in account what its roles grant; the system everything; a plugin or a
-/// machine token its listed capabilities.
+/// records; a signed-in account what its roles grant; the system everything; a plugin what
+/// its granted permissions allow.
 pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) operation.Error!Grant {
     std.debug.assert(request.operation_name.len > 0);
     std.debug.assert(std.mem.indexOfScalar(u8, request.operation_name, '.') != null);
-
-    if (request.open) {
-        return Grant.allow_all;
-    }
 
     // A visitor's order is the shop's to write: the plugin's operation decided it may.
     if (request.own_types.len > 0) {
@@ -85,11 +74,10 @@ pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) opera
         .anonymous => anonymous_grant(request),
         .user => |user| role_grant(roles, user.roles, request),
         .token => |token| device_grant(roles, token, request),
-        .machine => scoped_grant(ctx, request),
         .plugin => |plugin| if (plugin.access != null)
             try plugin_grant(ctx, request, roles)
         else
-            scoped_grant(ctx, request),
+            Grant.deny,
         .system => Grant.allow_all,
     };
 }
@@ -101,7 +89,7 @@ fn role_grant(roles: []const Role, held: []const []const u8, request: Request) G
     std.debug.assert(request.operation_name.len > 0);
     std.debug.assert(held.len <= role.user_roles_max);
 
-    if (is_open_operation(request.operation_name)) {
+    if (request.open) {
         return Grant.allow_all;
     }
 
@@ -110,19 +98,6 @@ fn role_grant(roles: []const Role, held: []const []const u8, request: Request) G
     }
 
     return anonymous_grant(request);
-}
-
-pub fn is_open_operation(operation_name: []const u8) bool {
-    std.debug.assert(operation_name.len > 0);
-    std.debug.assert(open_operations.len == 6);
-
-    for (open_operations) |name| {
-        if (std.mem.eql(u8, operation_name, name)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 pub fn is_public_read_namespace(operation_name: []const u8) bool {
@@ -152,7 +127,7 @@ fn is_admin_namespace(operation_name: []const u8) bool {
 }
 
 fn anonymous_grant(request: Request) Grant {
-    if (is_open_operation(request.operation_name)) {
+    if (request.open) {
         return Grant.allow_all;
     }
 
@@ -206,27 +181,11 @@ fn plugin_grant(ctx: *const Ctx, request: Request, roles: []const Role) operatio
 
     const granted = try plugin_access.grant(ctx.arena, plugin.name, access, .{
         .operation_name = request.operation_name,
-        .kind = request.kind,
-        .type_id = request.resource.type_id,
+        .type_id = request.type_id,
     });
     const held = plugin.roles orelse return granted;
 
     return Grant.intersect(granted, role_grant(roles, held, request), ctx.arena);
-}
-
-fn scoped_grant(ctx: *const Ctx, request: Request) Grant {
-    std.debug.assert(ctx.caller == .machine or ctx.caller == .plugin);
-    std.debug.assert(request.operation_name.len > 0);
-
-    if (ctx.caller.has_capability(request.operation_name)) {
-        return Grant.allow_all;
-    }
-
-    if (ctx.caller.has_capability(operation.namespace(request.operation_name))) {
-        return Grant.allow_all;
-    }
-
-    return Grant.deny;
 }
 
 pub fn authorize(
@@ -243,13 +202,12 @@ pub fn authorize(
     // A compiled-in plugin is held to its grants for what a permission names; what none
     // names (its own seams into core, other plugins' operations) stays as its build made it.
     if (request.plugin_access) |access| {
-        if (result.allows() and plugin_access.names_operation(access, request.operation_name)) {
+        if (result.allows() and plugin_access.names_operation(request.operation_name)) {
             std.debug.assert(ctx.plugin.len > 0);
 
             const held = try plugin_access.grant(ctx.arena, ctx.plugin, access, .{
                 .operation_name = request.operation_name,
-                .kind = request.kind,
-                .type_id = request.resource.type_id,
+                .type_id = request.type_id,
             });
 
             result = try Grant.intersect(result, held, ctx.arena);
@@ -307,9 +265,7 @@ test "core policy: a plugin's own type is reached whoever it runs for, only that
     const create: Request = .{
         .operation_name = "record.create",
         .kind = .write,
-        .resource = .{
-            .type_id = "order",
-        },
+        .type_id = "order",
         .own_types = &.{"order"},
     };
     const granted = try authorize(&anon, create, &.{}, &role.core);
@@ -334,7 +290,6 @@ test "a compiled-in plugin's code is held to its grants, queued work included" {
         .records = &.{"note"},
     }};
     const access: plugin_access.Access = .{
-        .granted = &.{"records.write"},
         .held = &held,
         .own_types = &.{},
     };
@@ -346,24 +301,20 @@ test "a compiled-in plugin's code is held to its grants, queued work included" {
     var save: Request = .{
         .operation_name = "record.save",
         .kind = .write,
-        .resource = .{
-            .type_id = "note",
-        },
+        .type_id = "note",
         .plugin_access = &access,
     };
     const granted = try authorize(&queued, save, &.{}, &role.core);
 
     try std.testing.expect(granted.allows_type("note"));
 
-    save.resource.type_id = "post";
+    save.type_id = "post";
     try std.testing.expectError(error.Denied, authorize(&queued, save, &.{}, &role.core));
 
     const publish: Request = .{
         .operation_name = "record.publish",
         .kind = .write,
-        .resource = .{
-            .type_id = "note",
-        },
+        .type_id = "note",
         .plugin_access = &access,
     };
 
@@ -373,7 +324,6 @@ test "a compiled-in plugin's code is held to its grants, queued work included" {
     _ = try authorize(&queued, .{
         .operation_name = "project.set_currencies",
         .kind = .write,
-        .resource = .{},
         .plugin_access = &access,
     }, &.{}, &role.core);
 }
@@ -386,12 +336,10 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
     const read: Request = .{
         .operation_name = "record.get",
         .kind = .read,
-        .resource = .{},
     };
     const write: Request = .{
         .operation_name = "record.save",
         .kind = .write,
-        .resource = .{},
     };
 
     var anon = harness.ctx(.anonymous);
@@ -413,12 +361,12 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
     const setup: Request = .{
         .operation_name = "project.init",
         .kind = .write,
-        .resource = .{},
+        .open = true,
     };
     const login: Request = .{
         .operation_name = "user.sign_in",
         .kind = .write,
-        .resource = .{},
+        .open = true,
     };
     try std.testing.expect(!(try authorize(&anon, setup, &.{}, &role.core)).read_only);
     try std.testing.expect(!(try authorize(&anon, login, &.{}, &role.core)).read_only);
@@ -426,13 +374,11 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
     const signup: Request = .{
         .operation_name = "plugin.sign_up",
         .kind = .write,
-        .resource = .{},
         .open = true,
     };
     const closed: Request = .{
         .operation_name = "plugin.sign_up",
         .kind = .write,
-        .resource = .{},
     };
     try std.testing.expect(!(try authorize(&anon, signup, &.{}, &role.core)).read_only);
     try std.testing.expectError(error.Denied, authorize(&anon, closed, &.{}, &role.core));
@@ -447,7 +393,7 @@ test "core policy: anonymous reads live+public only, writes denied; users and sy
     const sign_out: Request = .{
         .operation_name = "user.sign_out",
         .kind = .write,
-        .resource = .{},
+        .open = true,
     };
     try std.testing.expect((try authorize(&editor, sign_out, &.{}, &role.core)).allows());
 }
@@ -460,17 +406,14 @@ test "delivery narrows any caller to live, read-only records and keeps the calle
     const read: Request = .{
         .operation_name = "record.list",
         .kind = .read,
-        .resource = .{},
     };
     const write: Request = .{
         .operation_name = "record.save",
         .kind = .write,
-        .resource = .{},
     };
     const users_list: Request = .{
         .operation_name = "user.list",
         .kind = .read,
-        .resource = .{},
     };
 
     var admin = harness.ctx(.{
@@ -523,12 +466,10 @@ test "roles: editors are denied the users and settings namespaces, admins are no
     const users_list: Request = .{
         .operation_name = "user.list",
         .kind = .read,
-        .resource = .{},
     };
     const entries_save: Request = .{
         .operation_name = "record.save",
         .kind = .write,
-        .resource = .{},
     };
 
     var anon = harness.ctx(.anonymous);
@@ -546,12 +487,10 @@ test "devices: their account's roles, a read device reads only" {
     const save: Request = .{
         .operation_name = "record.save",
         .kind = .write,
-        .resource = .{},
     };
     const users_list: Request = .{
         .operation_name = "user.list",
         .kind = .read,
-        .resource = .{},
     };
     const editor_roles: []const []const u8 = &.{"editor"};
 
@@ -591,7 +530,6 @@ test "plugin policies intersect and can deny" {
     const write: Request = .{
         .operation_name = "record.save",
         .kind = .write,
-        .resource = .{},
     };
 
     const constrained = try authorize(&user, write, &.{&only_posts}, &role.core);

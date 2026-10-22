@@ -116,15 +116,6 @@ pub const Namespace = struct {
     };
 };
 
-pub const Resource = struct {
-    type_id: ?[]const u8 = null,
-    record_id: ?[]const u8 = null,
-    owner_id: ?[]const u8 = null,
-    from_status: ?[]const u8 = null,
-    to_status: ?[]const u8 = null,
-    fields: []const []const u8 = &.{},
-};
-
 pub fn Docs(comptime Shape: type) type {
     comptime {
         const source = @typeInfo(Shape).@"struct".fields;
@@ -364,32 +355,13 @@ pub fn validate(comptime Operation: type) void {
     }
 }
 
-/// What an operation is about, read from its input by convention: `type` names the
-/// content type, `id` the record, `to` (or `status`) the target status.
-pub fn resource_of(in: anytype) Resource {
+/// The content type an operation is about, read from its input by convention: `type`.
+pub fn type_of(in: anytype) ?[]const u8 {
     const In = @TypeOf(in);
 
     comptime std.debug.assert(@typeInfo(In) == .@"struct");
 
-    var resource: Resource = .{};
-
-    if (@hasField(In, "type")) {
-        resource.type_id = in.type;
-    }
-
-    if (@hasField(In, "id")) {
-        resource.record_id = in.id;
-    }
-
-    if (@hasField(In, "to")) {
-        resource.to_status = in.to;
-    } else if (@hasField(In, "status")) {
-        resource.to_status = in.status;
-    }
-
-    std.debug.assert(resource.fields.len == 0);
-
-    return resource;
+    return if (@hasField(In, "type")) in.type else null;
 }
 
 /// `namespace.verb`, or `app.<feature>.verb` for what apps call: the grants a role gives

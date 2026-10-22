@@ -33,7 +33,7 @@ pub fn apply(arena: std.mem.Allocator, decoded: *state.Decoded, choice: Choice) 
     std.debug.assert(decoded.granted.len <= sandboxed_plugin.requests_max);
 
     const manifest = &decoded.manifest;
-    const asked = sandboxed_plugin.requests(&permission.core, manifest, arena) catch |err| {
+    const asked = sandboxed_plugin.requests(manifest, arena) catch |err| {
         return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
     };
     const request = find(asked, choice.key) orelse return error.NotFound;
@@ -101,7 +101,7 @@ fn with_flags(
     }
 
     if (choice.domains) |domains| {
-        const entry = permission.find(&permission.core, as_asked.key) orelse return error.Invalid;
+        const entry = permission.find(as_asked.key) orelse return error.Invalid;
 
         if (entry.narrowing != .domains) {
             return error.Invalid;
@@ -172,7 +172,7 @@ pub fn problem(manifest: *const sandboxed_plugin.Manifest) ?[]const u8 {
     std.debug.assert(manifest.permissions.len <= sandboxed_plugin.requests_max);
 
     for (manifest.permissions) |*ask| {
-        const entry = permission.find(&permission.core, ask.key) orelse continue;
+        const entry = permission.find(ask.key) orelse continue;
         const held = ask.held();
 
         if (ask.records.len > 0 and entry.narrowing != .records) {

@@ -34,6 +34,7 @@ pub const setup_key = "project.initialised_at";
 
 pub const Init = struct {
     pub const name = "project.init";
+    pub const open = true;
     /// Never written to the logs.
     pub const secret = .{"password"};
     pub const description = "Set up a fresh installation: creates the first admin, exactly once";
@@ -128,6 +129,7 @@ pub const Init = struct {
 /// Whether `project init` has happened: the admin sends a fresh installation to setup.
 pub const Status = struct {
     pub const name = "project.status";
+    pub const open = true;
     pub const description = "Whether the project has been initialised (its first admin created)";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};

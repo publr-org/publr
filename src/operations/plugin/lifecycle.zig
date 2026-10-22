@@ -75,10 +75,6 @@ fn check(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!void {
         }
     }
 
-    if (sandboxed_plugin.role_problem(name, manifest.roles) != null) {
-        return error.Invalid;
-    }
-
     if (model.internal_record.problem(manifest.internal_records) != null) {
         return error.Invalid;
     }
@@ -247,7 +243,7 @@ pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!
         });
     }
 
-    try sdk.stored_roles.apply(ctx, manifest.name, manifest.roles);
+    try sdk.stored_roles.declare(ctx, manifest.name, manifest.roles);
 }
 
 /// What adding a module did: a plugin new to the list, or a newer version of one there.
@@ -376,9 +372,7 @@ pub fn requests(
 ) Error![]const sandboxed_plugin.Request {
     std.debug.assert(manifest.name.len > 0);
 
-    const catalog = &model.permission.core;
-
-    return sandboxed_plugin.requests(catalog, manifest, ctx.arena) catch |err| switch (err) {
+    return sandboxed_plugin.requests(manifest, ctx.arena) catch |err| switch (err) {
         error.OutOfMemory => error.OutOfMemory,
         error.Invalid => error.Invalid,
     };

@@ -161,7 +161,7 @@ pub fn admits(answer: Answer, caller: sdk.Caller, through_app: bool) bool {
     std.debug.assert(@intFromEnum(caller) <= @intFromEnum(sdk.Caller.plugin));
     std.debug.assert(@intFromEnum(answer) <= @intFromEnum(Answer.plugin_calls));
 
-    if (!through_app and holds(caller, "admin")) {
+    if (!through_app and (caller == .system or caller.holds("admin"))) {
         return true;
     }
 
@@ -169,26 +169,12 @@ pub fn admits(answer: Answer, caller: sdk.Caller, through_app: bool) bool {
         .visitor => true,
         .signed_in => caller.is_authenticated() and caller != .plugin,
         .roles => |names| for (names) |wanted| {
-            if (holds(caller, wanted)) {
+            if (caller == .system or caller.holds(wanted)) {
                 break true;
             }
         } else false,
         .plugin_calls => caller == .plugin,
     };
-}
-
-fn holds(caller: sdk.Caller, wanted: []const u8) bool {
-    std.debug.assert(wanted.len > 0);
-
-    const held = caller.roles() orelse return caller == .system;
-
-    for (held) |role_name| {
-        if (std.mem.eql(u8, role_name, wanted)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 /// What `.validate` fills: `problems.add(.page, "Must start with /")`. Every problem is told

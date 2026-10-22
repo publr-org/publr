@@ -211,7 +211,6 @@ fn call_as(
     ctx.caller = .{
         .plugin = .{
             .name = loaded.name(),
-            .capabilities = &.{},
             .on_behalf_of = saved.user_id(),
             .access = &access,
             .roles = saved.roles(),
@@ -550,7 +549,6 @@ fn access_of(loaded: *Loaded, ctx: *sdk.Ctx) sdk.Error!sdk.plugin_access.Access 
     std.debug.assert(ctx.now_ms >= 0);
 
     return .{
-        .granted = loaded.granted,
         .held = loaded.held,
         .depends_on = loaded.manifest.depends_on,
         .compatible_with = loaded.manifest.compatible_with,

@@ -11,14 +11,11 @@ const secrets = @import("../model/secrets.zig");
 const plugin_contracts = @import("../model/plugin_contracts.zig");
 
 pub const Access = struct {
-    /// Every key granted now: permissions, hooks, calls, raised limits. Revoking one
-    /// takes effect on the next call.
-    granted: []const []const u8,
-    /// The permissions among them as granted: the flags on and the types they name.
+    /// Every key granted now, as granted: a permission with the flags on and the types it
+    /// names, a call by its key alone. Revoking one takes effect on the next call.
     held: []const permission.Held = &.{},
     /// The content types the plugin declared: always its own.
     own_types: []const []const u8,
-    catalog: []const permission.Permission = &permission.core,
     /// The plugins it declares it depends on: the only ones whose operations a `call:`
     /// grant reaches.
     depends_on: []const []const u8 = &.{},
@@ -30,21 +27,10 @@ pub const Access = struct {
     /// fields it lists.
     remotes: []const plugin_contracts.Used = &.{},
 
-    pub fn has(access: *const Access, key: []const u8) bool {
-        std.debug.assert(key.len > 0);
-        std.debug.assert(access.granted.len <= permission.operations_max * 4);
-
-        return permission.contains(access.granted, key);
-    }
-
-    /// The permission `key` as granted now; null when it is off.
+    /// The key as granted now; null when it is off.
     pub fn held_of(access: *const Access, key: []const u8) ?*const permission.Held {
         std.debug.assert(key.len > 0);
         std.debug.assert(access.held.len <= permission.operations_max * 4);
-
-        if (!access.has(key)) {
-            return null;
-        }
 
         for (access.held) |*held| {
             if (std.mem.eql(u8, held.key, key)) {
@@ -58,7 +44,6 @@ pub const Access = struct {
 
 pub const Request = struct {
     operation_name: []const u8,
-    kind: operation.Kind,
     type_id: ?[]const u8 = null,
 };
 
@@ -117,7 +102,7 @@ fn decided(
         };
     }
 
-    const entry = naming(access.catalog, operation_name) orelse return own_or_deny(
+    const entry = naming(operation_name) orelse return own_or_deny(
         access,
         request,
     );
@@ -272,23 +257,19 @@ fn concat(
     return joined.items;
 }
 
-/// Whether a permission of `access`'s catalog names `operation_name`.
-pub fn names_operation(access: *const Access, operation_name: []const u8) bool {
+/// Whether a core permission names `operation_name`.
+pub fn names_operation(operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
-    std.debug.assert(access.catalog.len > 0);
 
-    return naming(access.catalog, operation_name) != null;
+    return naming(operation_name) != null;
 }
 
 /// The permission whose operations name `operation_name`, if any.
-fn naming(
-    catalog: []const permission.Permission,
-    operation_name: []const u8,
-) ?*const permission.Permission {
+fn naming(operation_name: []const u8) ?*const permission.Permission {
     std.debug.assert(operation_name.len > 0);
-    std.debug.assert(catalog.len > 0);
+    std.debug.assert(permission.core.len > 0);
 
-    for (catalog) |*entry| {
+    for (&permission.core) |*entry| {
         if (permission.contains(entry.operations, operation_name)) {
             return entry;
         }
@@ -315,8 +296,8 @@ fn calls_dependency(access: *const Access, operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
     std.debug.assert(access.depends_on.len <= plugin_depends_on.depends_on_max);
 
-    for (access.granted) |key| {
-        const target = permission.called_operation(key) orelse continue;
+    for (access.held) |held| {
+        const target = permission.called_operation(held.key) orelse continue;
 
         if (!std.mem.eql(u8, target, operation_name)) {
             continue;
@@ -347,22 +328,6 @@ fn names_owner(list: []const []const u8, operation_name: []const u8) bool {
     return false;
 }
 
-/// The granted permission that names the operation, if any.
-fn granting(access: *const Access, operation_name: []const u8) ?*const permission.Permission {
-    std.debug.assert(operation_name.len > 0);
-    std.debug.assert(access.catalog.len > 0);
-
-    for (access.granted) |key| {
-        const found = permission.find(access.catalog, key) orelse continue;
-
-        if (permission.contains(found.operations, operation_name)) {
-            return found;
-        }
-    }
-
-    return null;
-}
-
 const testing_arena = std.testing.allocator;
 
 fn granted_for(
@@ -371,12 +336,8 @@ fn granted_for(
     operation_name: []const u8,
     type_id: ?[]const u8,
 ) !Grant {
-    const kind: operation.Kind = if (std.mem.indexOf(u8, operation_name, ".get") != null or
-        std.mem.indexOf(u8, operation_name, ".list") != null) .read else .write;
-
     return grant(arena, "greeter", access, .{
         .operation_name = operation_name,
-        .kind = kind,
         .type_id = type_id,
     });
 }
@@ -386,7 +347,6 @@ test "own namespace and harmless calls need nothing; never is never" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const access: Access = .{
-        .granted = &.{},
         .own_types = &.{"greeting"},
     };
 
@@ -396,7 +356,6 @@ test "own namespace and harmless calls need nothing; never is never" {
     try std.testing.expect(!(try granted_for(arena, &access, "user.list", null)).allows());
 
     const everything: Access = .{
-        .granted = &.{ "users.read", "users.write" },
         .held = &.{ .{
             .key = "users.read",
         }, .{
@@ -418,7 +377,6 @@ test "records.read starts at what a visitor sees; each flag opens more" {
         .key = "records.read",
     };
     const access: Access = .{
-        .granted = &.{"records.read"},
         .held = (&held)[0..1],
         .own_types = &.{"greeting"},
     };
@@ -466,7 +424,6 @@ test "records.write reads what it writes; .publish alone puts things live; destr
         .records = &.{"notes"},
     } };
     var access: Access = .{
-        .granted = &.{ "records.read", "records.write" },
         .held = &held,
         .own_types = &.{},
     };
@@ -487,7 +444,7 @@ test "records.write reads what it writes; .publish alone puts things live; destr
     try std.testing.expect((try granted_for(arena, &access, "record.publish", "notes"))
         .allows());
 
-    access.granted = &.{"records.write"};
+    access.held = held[1..];
     try std.testing.expect(!(try granted_for(arena, &access, "record.list", "post")).allows());
     try std.testing.expect((try granted_for(arena, &access, "record.list", "notes")).allows());
 
@@ -496,7 +453,6 @@ test "records.write reads what it writes; .publish alone puts things live; destr
     }};
 
     access = .{
-        .granted = &.{"records.destroy"},
         .held = &destroy,
         .own_types = &.{},
     };
@@ -512,7 +468,6 @@ test "media.read keeps private files out of reach without .private" {
         .key = "media.read",
     }};
     const access: Access = .{
-        .granted = &.{"media.read"},
         .held = &held,
         .own_types = &.{},
     };
@@ -526,17 +481,11 @@ test "media.read keeps private files out of reach without .private" {
         .record_filter.flags.public_types_only);
 }
 
-test "a switched-off key reaches nothing, whatever its flags" {
+test "a switched-off key reaches nothing; its own types still are" {
     var arena_state = std.heap.ArenaAllocator.init(testing_arena);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const held = [_]permission.Held{.{
-        .key = "records.write",
-        .publish = true,
-    }};
     const access: Access = .{
-        .granted = &.{},
-        .held = &held,
         .own_types = &.{"greeting"},
     };
 
@@ -550,28 +499,29 @@ test "an exact plugin call needs both its grant and a declared parent" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var access: Access = .{
-        .granted = &.{"call:app.provider.adjust"},
+        .held = &.{.{
+            .key = "call:app.provider.adjust",
+        }},
         .own_types = &.{},
     };
     const request: Request = .{
         .operation_name = "app.provider.adjust",
-        .kind = .write,
     };
     try std.testing.expect(!(try grant(arena, "child", &access, request)).allows());
     access.depends_on = &.{"provider@^0.3"};
     try std.testing.expect((try grant(arena, "child", &access, request)).allows());
     try std.testing.expect(!(try grant(arena, "child", &access, .{
         .operation_name = "app.provider.purge",
-        .kind = .write,
     })).allows());
 
-    access.granted = &.{"call:provider.adjust"};
+    access.held = &.{.{
+        .key = "call:provider.adjust",
+    }};
     try std.testing.expect((try grant(arena, "child", &access, .{
         .operation_name = "provider.adjust",
-        .kind = .write,
     })).allows());
     try std.testing.expect(!(try grant(arena, "child", &access, request)).allows());
 
-    access.granted = &.{};
+    access.held = &.{};
     try std.testing.expect(!(try grant(arena, "child", &access, request)).allows());
 }

@@ -159,11 +159,11 @@ test "removing: never someone's only role; holders lose it; the trash brings it 
         },
     });
 
-    try sdk.stored_roles.apply(&admin, "courses", &.{.{
+    try sdk.stored_roles.declare(&admin, "courses", &.{.{
         .name = "teacher",
         .label = "Teacher",
-        .grants = &.{"courses.*"},
     }});
+    try store.role_grants.add(admin.db, "teacher", &.{"courses.*"});
 
     const created = try SDK.dispatch(&admin, user.Create, .{
         .email = "tea@example.com",
@@ -188,10 +188,9 @@ test "removing: never someone's only role; holders lose it; the trash brings it 
 
     try std.testing.expectEqual(@as(usize, 1), left.len);
 
-    try sdk.stored_roles.apply(&admin, "courses", &.{.{
+    try sdk.stored_roles.declare(&admin, "courses", &.{.{
         .name = "teacher",
         .label = "Teacher",
-        .grants = &.{"courses.*"},
     }});
     try std.testing.expect(!try sdk.stored_roles.exists(&admin, "teacher"));
 
