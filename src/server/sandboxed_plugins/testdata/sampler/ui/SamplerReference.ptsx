@@ -1,0 +1,132 @@
+import { ListDetailPage } from "@publr/admin/ListDetailPage.ptsx";
+import { ListDetailGroup } from "@publr/admin/ListDetailGroup.ptsx";
+import { ListDetailItem } from "@publr/admin/ListDetailItem.ptsx";
+import { IndexHeader } from "@publr/admin/IndexHeader.ptsx";
+import { IndexSection } from "@publr/admin/IndexSection.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { CodeBlock } from "@publr/ui/CodeBlock.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SamplerReferenceProps = {
+  /** The top-level APIs by area, each leading to its entry. */
+  groups: Array<{ label: string; items: Array<{ label: string; href: string; current: boolean }> }>;
+  /** The open API as written, and what it does. */
+  name: string;
+  summary: string;
+  /** The sampler's code that uses it, cut from its source: the file, then the code. */
+  code: Array<{ file: string; text: string }>;
+  /** How to see it in the admin, step by step. */
+  see: string[];
+  /** What shows it worked. */
+  look_for: string;
+  /** Where its answer and log show (`e`), its Run buttons, whether it has a tour. */
+  key: string;
+  runs: Array<{ label: string; value: string }>;
+  toured: boolean;
+  /** Its options and parts the sampler uses, each the same way. */
+  options: Array<{
+    name: string;
+    summary: string;
+    code: Array<{ file: string; text: string }>;
+    see: string[];
+    look_for: string;
+    key: string;
+    runs: Array<{ label: string; value: string }>;
+    toured: boolean;
+  }>;
+};
+
+/** Every top-level API the sampler uses, its options under it: where each is in the sampler's
+ * code, how to see it at work in the admin, and what to look for. */
+export function SamplerReference({
+  groups,
+  name,
+  summary,
+  code,
+  see,
+  look_for,
+  key,
+  runs,
+  toured,
+  options,
+}: SamplerReferenceProps) {
+  return (
+    <ListDetailPage
+      title="SDK reference"
+      list_label="APIs"
+      list_icon="code"
+      header={<IndexHeader title={name} description={summary} />}
+      list={groups.map((group) => (
+        <ListDetailGroup label={group.label}>
+          {group.items.map((item) => (
+            <ListDetailItem label={item.label} href={item.href} current={item.current} />
+          ))}
+        </ListDetailGroup>
+      ))}
+    >
+      {code.map((part) => (
+        <IndexSection title={part.file} padded>
+          <CodeBlock variant="command">{part.text}</CodeBlock>
+        </IndexSection>
+      ))}
+      {runs.length === 0 && !toured && (
+        <IndexSection title="See it in the admin" description={look_for} padded>
+          {see.map((step, index) => (
+            <Text as="p" variant="body-md">
+              {`${index + 1}. ${step}`}
+            </Text>
+          ))}
+        </IndexSection>
+      )}
+      {(runs.length > 0 || toured) && (
+        <IndexSection title="Try it" description={look_for} padded>
+          <div>
+            {runs.map((run) => (
+              <Button type="button" size="sm" name="sampler-run" value={run.value}>
+                {run.label}
+              </Button>
+            ))}
+            {toured && (
+              <Button type="button" size="sm" hierarchy="secondary" name="sampler-tour" value={key}>
+                Show me in the admin
+              </Button>
+            )}
+          </div>
+          <CodeBlock variant="command" id={`sampler-answer-${key}`}></CodeBlock>
+          <CodeBlock variant="framed" id={`sampler-log-${key}`}></CodeBlock>
+        </IndexSection>
+      )}
+      {options.map((option) => (
+        <IndexSection title={option.name} description={option.summary} padded>
+          {option.code.map((part) => (
+            <CodeBlock variant="command">{`// ${part.file}\n${part.text}`}</CodeBlock>
+          ))}
+          {option.runs.length === 0 &&
+            !option.toured &&
+            option.see.map((step, index) => (
+              <Text as="p" variant="body-md">
+                {`${index + 1}. ${step}`}
+              </Text>
+            ))}
+          <Text as="p" variant="body-md" tone="muted">
+            {`Look for: ${option.look_for}`}
+          </Text>
+          <div>
+            {option.runs.map((run) => (
+              <Button type="button" size="sm" name="sampler-run" value={run.value}>
+                {run.label}
+              </Button>
+            ))}
+            {option.toured && (
+              <Button type="button" size="sm" hierarchy="secondary" name="sampler-tour" value={option.key}>
+                Show me in the admin
+              </Button>
+            )}
+          </div>
+          <CodeBlock variant="command" id={`sampler-answer-${option.key}`}></CodeBlock>
+          <CodeBlock variant="framed" id={`sampler-log-${option.key}`}></CodeBlock>
+        </IndexSection>
+      ))}
+    </ListDetailPage>
+  );
+}

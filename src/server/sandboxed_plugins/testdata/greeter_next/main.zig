@@ -1,36 +1,40 @@
+//! An installed plugin core's tests and smoke install: greetings kept as records.
+//!
 //! The next version of `greeter`, as tests and parity update to it: it asks for more (a
 //! high-tier permission), so the update waits for an administrator.
+//! The next version of the plugin the sandbox is tested with.
 const std = @import("std");
 const publr = @import("publr");
 
 const sdk = publr.sdk;
 const PluginCtx = publr.plugin.PluginCtx;
 
-pub const manifest: publr.plugin.Manifest = .{
+const manifest: publr.Manifest = .{
     .name = "greeter",
     .version = "0.2.0",
-    .summary = "An installed plugin core's tests and smoke install: greetings kept as records",
 };
 
-pub const namespaces = [_]sdk.operation.Namespace{.{
-    .name = "greeter",
-    .summary = "Greetings, kept as records of the plugin's own type",
-    .details = "The next version of the plugin the sandbox is tested with.",
-}};
+/// Salutation
+///
+/// A greeting someone recorded.
+pub const Salutation = struct {
+    /// Note
+    note: []const u8,
+};
 
-pub const content_types = [_]publr.plugin.ContentTypeDef{.{
-    .handle = "salutation",
-    .name = "Salutation",
-    .title_field = "note",
-    .fields = &.{.{
-        .name = "note",
-        .label = "Note",
-        .kind = "string",
-        .required = true,
-    }},
-}};
+pub const Salutations = publr.record.define(Salutation, .{
+    .name = "greeter.salutation",
+    .title_field = .note,
+    .fields = .{
+        .note = .{
+            .validation = .{
+                .required = true,
+            },
+        },
+    },
+});
 
-pub const permissions = [_]publr.plugin.Permission{
+const permissions = [_]publr.plugin.Permission{
     .{
         .key = "users.names",
         .reason = "Greets the people on the site by name",
@@ -41,7 +45,7 @@ pub const permissions = [_]publr.plugin.Permission{
     },
 };
 
-pub const operations = [_]type{Count};
+const operations = [_]type{Count};
 
 pub const Count = struct {
     pub const name = "greeter.count";
@@ -49,6 +53,7 @@ pub const Count = struct {
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
     pub const Out = struct {
+        /// Why: a count, not money
         total: u32,
     };
     pub const example: In = .{};
@@ -57,11 +62,11 @@ pub const Count = struct {
     };
 
     pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
+        std.debug.assert(ctx.now().ms >= 0);
 
         const record = publr.operations.record;
         const all = try ctx.call(record.List, .{
-            .type = "salutation",
+            .type = "greeter.salutation",
             .limit = 200,
         });
 
@@ -70,3 +75,9 @@ pub const Count = struct {
         };
     }
 };
+
+pub const plugin = publr.plugin.define(manifest, .{
+    .records = &.{Salutations},
+    .permissions = permissions,
+    .operations = operations,
+});

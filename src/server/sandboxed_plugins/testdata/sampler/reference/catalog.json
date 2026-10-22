@@ -1,0 +1,1176 @@
+[
+  {
+    "id": "define",
+    "group": "Plugin",
+    "name": "publr.plugin.define(manifest, options)",
+    "summary": "The one registration Publr looks for in main.zig: everything the plugin adds, as options. A misspelt option fails the build.",
+    "code": [
+      {
+        "file": "main.zig",
+        "decl": "plugin"
+      }
+    ],
+    "see": [
+      "On sampler-sandboxed, open Settings, then Plugins.",
+      "On the sampler site it is under Built-in."
+    ],
+    "look_for": "sampler listed, enabled, version 0.1.0.",
+    "options": [
+      {
+        "name": ".register_fields",
+        "summary": "A typed field group on users, media or any type, placed by .location.",
+        "code": [
+          {
+            "file": "records/profile.zig",
+            "decl": "Fields"
+          },
+          {
+            "file": "main.zig",
+            "decl": "field_groups"
+          }
+        ],
+        "see": [
+          "Open Settings, then Users, then Admin."
+        ],
+        "look_for": "A Sampler profile group with a Motto field.",
+        "tour": [
+          {
+            "go": "/admin/settings/users",
+            "follow": "Admin",
+            "say": "Open an account."
+          },
+          {
+            "find": "Sampler profile",
+            "say": "The sampler's field group, with its Motto field."
+          }
+        ]
+      },
+      {
+        "name": ".register_statuses",
+        "summary": "Adds a status and its transitions to another plugin's flow: Sampled on greeter's salutations.",
+        "code": [
+          {
+            "file": "main.zig",
+            "decl": "added_statuses"
+          }
+        ],
+        "see": [
+          "On sampler-sandboxed, open Settings, then Plugins, then sampler."
+        ],
+        "look_for": "Add the status Sampled to greeter.salutation; records go in and out by Sample it and Release.",
+        "tour": [
+          {
+            "go": "/admin/settings/plugins/sampler",
+            "find": "Records go in and out by",
+            "exact": false,
+            "say": "The status the sampler adds to greeter's salutations, one of its requests on its page."
+          }
+        ]
+      },
+      {
+        "name": ".row_actions",
+        "summary": "An action on the rows of a page that names a slot: here, any page naming the sampler slot.",
+        "code": [
+          {
+            "file": "main.zig",
+            "decl": "row_actions"
+          }
+        ],
+        "see": [
+          "No page names the sampler slot yet; the action is read by a page's owner."
+        ],
+        "look_for": "Open the log, offered to whoever may read the logs."
+      },
+      {
+        "name": ".routes, .settings_pages (compiled in only)",
+        "summary": "Routes of the plugin's own and a Settings page listing them: compiled in only, left out of the installed build.",
+        "code": [
+          {
+            "file": "native.zig",
+            "decl": "routes"
+          },
+          {
+            "file": "native.zig",
+            "decl": "settings_pages"
+          }
+        ],
+        "see": [
+          "On the sampler site, open Settings.",
+          "Under Plugins, open Sampler."
+        ],
+        "look_for": "The log and the port serve noted, drawn by the plugin's own route."
+      },
+      {
+        "name": ".State, .serving, .before_command, .operator_commands (compiled in only)",
+        "summary": "Process-wide state and hooks on the process itself: compiled in only.",
+        "code": [
+          {
+            "file": "native.zig",
+            "decl": "State"
+          },
+          {
+            "file": "native.zig",
+            "decl": "serving"
+          }
+        ],
+        "see": [
+          "POST /_publr/sampler/ping with the operator key."
+        ],
+        "look_for": "The port serve noted, and how many pings."
+      }
+    ],
+    "tour": [
+      {
+        "go": "/admin/settings/plugins",
+        "find": "sampler",
+        "say": "The sampler, listed among the plugins with its description and version."
+      }
+    ]
+  },
+  {
+    "id": "manifest",
+    "group": "Plugin",
+    "name": "publr.Manifest",
+    "summary": "The plugin's name and version. Its description is the top //! comment of main.zig: the first line in lists, the rest on its page.",
+    "code": [
+      {
+        "file": "main.zig",
+        "decl": "manifest"
+      }
+    ],
+    "see": [
+      "On sampler-sandboxed, open Settings, then Plugins, then sampler."
+    ],
+    "look_for": "Its name, the first line of main.zig's //! comment under it, Version 0.1.0; the rest of the comment further down, under From sampler.",
+    "options": [],
+    "tour": [
+      {
+        "go": "/admin/settings/plugins/sampler",
+        "find": "A sample of every part of the plugin contract, for the two-mode check.",
+        "say": "The first line of main.zig's //! comment is the description; the version sits beside it."
+      }
+    ]
+  },
+  {
+    "id": "menu",
+    "group": "Plugin",
+    "name": "publr.MenuItem",
+    "summary": "A menu item of the plugin's own in the admin's sidebar. Its records and other plugins attach to it by name, sampler.notes.",
+    "code": [
+      {
+        "file": "main.zig",
+        "decl": "notes_menu"
+      }
+    ],
+    "see": [
+      "Open Content from the rail.",
+      "Look at its sidebar."
+    ],
+    "look_for": "A Sample notes heading with the sampler's note icon, the sampler's types under it.",
+    "options": [
+      {
+        "name": ".icon, with .icons",
+        "summary": "The icon an item draws: one of the set, or one of the plugin's own, declared in define's .icons and named <plugin>.<name>; every drawing goes through the SVG sanitizer.",
+        "code": [
+          {
+            "file": "main.zig",
+            "decl": "notes_menu"
+          },
+          {
+            "file": "main.zig",
+            "decl": "icons"
+          }
+        ],
+        "see": [
+          "Open Content from the rail.",
+          "Look at its sidebar."
+        ],
+        "look_for": "The Sample notes heading draws sampler.note: a note with a folded corner.",
+        "tour": [
+          {
+            "go": "/admin/content",
+            "find": "Sample notes",
+            "say": "sampler.note, the plugin's own icon, drawn beside the heading."
+          }
+        ]
+      }
+    ],
+    "tour": [
+      {
+        "go": "/admin/content",
+        "find": "Sample notes",
+        "say": "The sampler's menu item: a heading in Content's sidebar, its types under it."
+      }
+    ]
+  },
+  {
+    "id": "operation-define",
+    "group": "Operations",
+    "name": "publr.operation.define(In, Out, options)",
+    "summary": "An input type, an output type and a function. Its words are the file's //! comment: the description, the details and an Example the build checks.",
+    "code": [
+      {
+        "file": "operations/hello.zig",
+        "decl": "In"
+      },
+      {
+        "file": "operations/hello.zig",
+        "decl": "operation"
+      }
+    ],
+    "see": [
+      "In the site's folder, run: publr sampler hello --help",
+      "Then: publr sampler hello --who you"
+    ],
+    "look_for": "The help shows the description and each field's words; the answer is { \"text\": \"hello, you\" }.",
+    "options": [
+      {
+        "name": ".untrusted_callers",
+        "summary": "Anyone may call the operation, a site's pages too, at /_actions/app.sampler.<verb>. Without .authorize, anyone at all.",
+        "code": [
+          {
+            "file": "operations/hello.zig",
+            "decl": "operation"
+          }
+        ],
+        "see": [
+          "In the site's folder, run publr sampler hello without --as."
+        ],
+        "look_for": "It answers without anyone signed in.",
+        "runs": [
+          {
+            "label": "Say hello, no name",
+            "input": {},
+            "operation": "sampler.hello"
+          }
+        ]
+      },
+      {
+        "name": ".authorize",
+        "summary": "A ready answer to who may call: anyone signed in. It needs .untrusted_callers.",
+        "code": [
+          {
+            "file": "operations/wave.zig",
+            "decl": "operation"
+          }
+        ],
+        "see": [
+          "Run publr sampler wave --who Ada without --as.",
+          "Then with --as-admin, then with --as admin@publr.localhost."
+        ],
+        "look_for": "Refused for nobody; Hi for the administrator on the command line, let through but not signed in; Hi, Ada for someone signed in.",
+        "runs": [
+          {
+            "label": "Wave at Ada",
+            "input": {
+              "who": "Ada"
+            },
+            "operation": "sampler.wave"
+          }
+        ]
+      },
+      {
+        "name": ".validate, publr.Problems",
+        "summary": "Checks what belongs to the call, every problem at once, each beside its field. Its /// is the Checked line in --help.",
+        "code": [
+          {
+            "file": "operations/wave.zig",
+            "decl": "check"
+          }
+        ],
+        "see": [
+          "Run publr --as-admin sampler wave --who \"\"."
+        ],
+        "look_for": "Refused as invalid input, the problem under --who: A name is 1 to 40 characters.",
+        "runs": [
+          {
+            "label": "Wave with no name",
+            "input": {
+              "who": ""
+            },
+            "operation": "sampler.wave"
+          }
+        ]
+      },
+      {
+        "name": ".limit",
+        "summary": "A stricter rate limit for untrusted callers: a site's pages and anyone without credentials.",
+        "code": [
+          {
+            "file": "operations/wave.zig",
+            "decl": "operation"
+          }
+        ],
+        "see": [
+          "Call /_actions/app.sampler.wave from a page more than 30 times in a minute."
+        ],
+        "look_for": "429 Too Many Requests, with the RateLimit headers."
+      }
+    ],
+    "runs": [
+      {
+        "label": "Say hello to you",
+        "input": {
+          "who": "you"
+        },
+        "operation": "sampler.hello"
+      }
+    ]
+  },
+  {
+    "id": "ctx",
+    "group": "Context",
+    "name": "publr.Ctx",
+    "summary": "What an operation's or a hook's code reaches Publr through: the call's memory and time, who is calling, other operations, events and queued work.",
+    "code": [
+      {
+        "file": "operations/note.zig",
+        "decl": "run"
+      }
+    ],
+    "see": [
+      "Run publr --as-admin sampler note --note hello."
+    ],
+    "look_for": "note comes back in capitals with the number of notes kept.",
+    "options": [
+      {
+        "name": "ctx.print(fmt, args)",
+        "summary": "Formatted text in memory that lives until the call ends.",
+        "code": [
+          {
+            "file": "operations/wave.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Run publr --as admin@publr.localhost sampler wave --who Ada."
+        ],
+        "look_for": "Hi, Ada.",
+        "runs": [
+          {
+            "label": "Wave at Ada",
+            "input": {
+              "who": "Ada"
+            },
+            "operation": "sampler.wave"
+          }
+        ]
+      },
+      {
+        "name": "ctx.alloc(T, n)",
+        "summary": "Memory for the call, failing with publr.Error rather than a raw allocator error.",
+        "code": [
+          {
+            "file": "hooks/shout.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Open the Sampler log page after adding a note."
+        ],
+        "look_for": "The note is logged in capitals: the before hook made them in memory from ctx.alloc.",
+        "runs": [
+          {
+            "label": "Keep a note: hello",
+            "input": {
+              "note": "hello"
+            },
+            "operation": "sampler.note"
+          }
+        ]
+      },
+      {
+        "name": "ctx.caller()",
+        "summary": "Who is calling: whether signed in, their roles, the visitor's id, where the call came from.",
+        "code": [
+          {
+            "file": "operations/wave.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Run publr --as-admin sampler wave --who Ada, then publr --as admin@publr.localhost sampler wave --who Ada."
+        ],
+        "look_for": "Hi without --as's person, Hi, Ada with them: the run asks whether someone is signed in.",
+        "runs": [
+          {
+            "label": "Keep a note: hello",
+            "input": {
+              "note": "hello"
+            },
+            "operation": "sampler.note"
+          }
+        ]
+      },
+      {
+        "name": "ctx.call(Operation, in)",
+        "summary": "Any operation, core's under publr.operations, through the same checks as every caller.",
+        "code": [
+          {
+            "file": "operations/note.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Run publr --as-admin sampler note --note hello."
+        ],
+        "look_for": "total counts every sample note: core's record.List, called as the sampler."
+      },
+      {
+        "name": "ctx.mod(name, value)",
+        "summary": "Applies a value under a name and answers it as every modifier left it. The sampler doubles every number it applies, through * for one dotted part.",
+        "code": [
+          {
+            "file": "operations/measure.zig",
+            "decl": "run"
+          },
+          {
+            "file": "hooks/double.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "On sampler-sandboxed, open Settings, then Plugins, then sampler.",
+          "Then run publr --as-admin sampler measure --text abc."
+        ],
+        "look_for": "Change sampler.* wherever it is used, because it: Doubles every number sampler applies. length comes back as 6.",
+        "runs": [
+          {
+            "label": "Measure abc",
+            "input": {
+              "text": "abc"
+            },
+            "operation": "sampler.measure"
+          }
+        ]
+      },
+      {
+        "name": "ctx.emit(Event, payload)",
+        "summary": "Emits an event of the plugin's own: after hooks hear it in the write, on hooks from the queue once it commits.",
+        "code": [
+          {
+            "file": "hooks/announce.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Add a note, then open the Sampler log page."
+        ],
+        "look_for": "A new line, noted <NOTE>: the event reached the on hook.",
+        "runs": [
+          {
+            "label": "Keep a note: hello",
+            "input": {
+              "note": "hello"
+            },
+            "operation": "sampler.note"
+          }
+        ]
+      },
+      {
+        "name": "ctx.enqueue(Job, in)",
+        "summary": "Queues a job, written in the same transaction; the queue worker runs it after the call.",
+        "code": [
+          {
+            "file": "operations/later.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Run publr --as-admin sampler later --note Remember.",
+          "Open the sample reviews list."
+        ],
+        "look_for": "A draft review Remember, written by the job a moment later.",
+        "runs": [
+          {
+            "label": "Write a note later",
+            "input": {
+              "note": "Remember"
+            },
+            "operation": "sampler.later"
+          }
+        ],
+        "tour": [
+          {
+            "go": "/admin/content?type=sampler.sample_review",
+            "find": "Remember",
+            "say": "The draft review the job wrote, from the queue."
+          }
+        ]
+      },
+      {
+        "name": "ctx.now(), publr.Time",
+        "summary": "The call's time, one value for the whole call or job run, the type datetime fields hold.",
+        "code": [
+          {
+            "file": "jobs/tick.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Run publr --as-admin job list."
+        ],
+        "look_for": "tick waiting, due at 03:00."
+      }
+    ],
+    "runs": [
+      {
+        "label": "Keep a note: hello",
+        "input": {
+          "note": "hello"
+        },
+        "operation": "sampler.note"
+      }
+    ]
+  },
+  {
+    "id": "text",
+    "group": "Context",
+    "name": "publr.text",
+    "summary": "The text helpers plugins need every day, named as JavaScript's String names them, so no plugin writes std.mem.",
+    "code": [
+      {
+        "file": "records/reviews.zig",
+        "decl": "not_spam"
+      }
+    ],
+    "see": [
+      "Run publr --as-admin sampler submit --text spam."
+    ],
+    "look_for": "Refused: A review says something of its own.",
+    "options": [
+      {
+        "name": "equals(a, b)",
+        "summary": "The same text, byte for byte.",
+        "code": [
+          {
+            "file": "records/reviews.zig",
+            "decl": "not_spam"
+          }
+        ],
+        "see": [
+          "Run publr --as-admin sampler submit --text spam."
+        ],
+        "look_for": "Refused: A review says something of its own."
+      }
+    ],
+    "runs": [
+      {
+        "label": "Submit spam",
+        "input": {
+          "text": "spam"
+        },
+        "operation": "sampler.submit"
+      }
+    ]
+  },
+  {
+    "id": "record-define",
+    "group": "Records",
+    "name": "publr.record.define(T, options)",
+    "summary": "A content type from a struct: its fields from the struct and their ///, the title, the menu it sits under, the columns its list shows.",
+    "code": [
+      {
+        "file": "records/notes.zig",
+        "decl": "SampleNote"
+      },
+      {
+        "file": "records/notes.zig",
+        "decl": "record"
+      }
+    ],
+    "see": [
+      "Open Content from the rail.",
+      "In its sidebar, under Sample notes, open Sample note."
+    ],
+    "look_for": "The notes listed by their titles, the Note column beside them.",
+    "options": [
+      {
+        "name": ".fields: .validation",
+        "summary": "A field's rules, checked on every write whoever writes, written out beside the field's help.",
+        "code": [
+          {
+            "file": "records/notes.zig",
+            "decl": "record"
+          }
+        ],
+        "see": [
+          "Open a sample note and empty its Note field.",
+          "Save."
+        ],
+        "look_for": "The save is refused with the problem under Note."
+      },
+      {
+        "name": ".internal, .indexed, .append_only",
+        "summary": "Bookkeeping never shown in Content: looked up by an indexed field, written once and never changed.",
+        "code": [
+          {
+            "file": "records/tallies.zig",
+            "decl": "record"
+          },
+          {
+            "file": "operations/note.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "On sampler-sandboxed, open Settings, then Plugins, then sampler.",
+          "Scroll to Its data."
+        ],
+        "look_for": "tally, Internal records, one per note kept: core knows the plugin's bookkeeping, never shown in Content.",
+        "runs": [
+          {
+            "label": "Keep a note: hello",
+            "input": {
+              "note": "hello"
+            },
+            "operation": "sampler.note"
+          }
+        ],
+        "tour": [
+          {
+            "go": "/admin/settings/plugins/sampler",
+            "find": "Remove tally with it",
+            "say": "The tallies, the plugin's bookkeeping, counted under Its data; never in Content."
+          }
+        ]
+      },
+      {
+        "name": ".status, publr.record.Transition(Status)",
+        "summary": "The statuses a record can be in and the transitions between them; any other is refused. A transition may say who may run it.",
+        "code": [
+          {
+            "file": "records/reviews.zig",
+            "decl": "Status"
+          },
+          {
+            "file": "records/reviews.zig",
+            "decl": "flow"
+          }
+        ],
+        "see": [
+          "Open Content, then Sample review.",
+          "Open the draft Remember the milk."
+        ],
+        "look_for": "Submit for review where a draft of core's flow says Publish. Once in review the editor offers Publish: it does not show the flow's Approve label yet.",
+        "runs": [
+          {
+            "label": "Submit a review",
+            "input": {
+              "text": "Looks good"
+            },
+            "operation": "sampler.submit"
+          }
+        ],
+        "tour": [
+          {
+            "go": "/admin/content?type=sampler.sample_review",
+            "follow": "Remember the milk",
+            "say": "Open a draft review."
+          },
+          {
+            "find": "Submit for review",
+            "say": "The flow's own transition, where core's flow says Publish."
+          }
+        ]
+      },
+      {
+        "name": ".validate",
+        "summary": "A record checks its own data on every create and save, whoever writes.",
+        "code": [
+          {
+            "file": "records/reviews.zig",
+            "decl": "not_spam"
+          },
+          {
+            "file": "records/reviews.zig",
+            "decl": "record"
+          }
+        ],
+        "see": [
+          "Run publr --as-admin sampler submit --text spam."
+        ],
+        "look_for": "Refused as invalid input, the problem under --text: A review says something of its own. The record's own check, run on create.",
+        "runs": [
+          {
+            "label": "Submit spam",
+            "input": {
+              "text": "spam"
+            },
+            "operation": "sampler.submit"
+          }
+        ]
+      },
+      {
+        "name": "The handle: create, get, transition",
+        "summary": "A record's handle: create starts at .start, transition names a transition of the flow and answers .done or .pending.",
+        "code": [
+          {
+            "file": "operations/submit.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Run publr --as-admin sampler submit --text \"Looks good\"."
+        ],
+        "look_for": "status is in_review.",
+        "runs": [
+          {
+            "label": "Submit a review",
+            "input": {
+              "text": "Looks good"
+            },
+            "operation": "sampler.submit"
+          }
+        ]
+      }
+    ],
+    "runs": [
+      {
+        "label": "Keep a note: hello",
+        "input": {
+          "note": "hello"
+        },
+        "operation": "sampler.note"
+      }
+    ],
+    "tour": [
+      {
+        "go": "/admin/content?type=sampler.sample_note",
+        "find": "Note: HELLO (5 characters)",
+        "say": "The sample notes, listed by title with their Note column."
+      }
+    ]
+  },
+  {
+    "id": "typed-records",
+    "group": "Records",
+    "name": "publr.records.of, publr.internal.of",
+    "summary": "A plugin's records as typed values, created and found by field.",
+    "code": [
+      {
+        "file": "records/notes.zig",
+        "decl": "typed"
+      },
+      {
+        "file": "operations/count.zig",
+        "decl": "run"
+      }
+    ],
+    "see": [
+      "Look at the top bar's right end."
+    ],
+    "look_for": "Sampler log with the number of notes beside it.",
+    "options": [],
+    "runs": [
+      {
+        "label": "Count the notes",
+        "input": {},
+        "operation": "sampler.count"
+      }
+    ]
+  },
+  {
+    "id": "event-define",
+    "group": "Hooks and events",
+    "name": "publr.event.define(options)",
+    "summary": "An event of the plugin's own, a payload with /// on each field, listed in .events and emitted with ctx.emit.",
+    "code": [
+      {
+        "file": "events/noted.zig",
+        "decl": "Payload"
+      },
+      {
+        "file": "events/noted.zig",
+        "decl": "event"
+      }
+    ],
+    "see": [
+      "Add a note, then open the Sampler log page."
+    ],
+    "look_for": "noted <NOTE>: the line the event's on hook wrote.",
+    "options": [],
+    "runs": [
+      {
+        "label": "Keep a note: hello",
+        "input": {
+          "note": "hello"
+        },
+        "operation": "sampler.note"
+      }
+    ]
+  },
+  {
+    "id": "before",
+    "group": "Hooks and events",
+    "name": "publr.before(Target, run)",
+    "summary": "Inside the write, before the operation: may change its input or refuse. Its /// is the reason the administrator reads.",
+    "code": [
+      {
+        "file": "hooks/shout.zig",
+        "decl": "run"
+      },
+      {
+        "file": "main.zig",
+        "decl": "hooks"
+      }
+    ],
+    "see": [
+      "On sampler-sandboxed, open Settings, then Plugins, then sampler.",
+      "Then run publr --as-admin sampler note --note hello."
+    ],
+    "look_for": "Change what is sent to the sampler.note operation, because it: Keeps every note in capitals. The note comes back as HELLO.",
+    "options": [],
+    "runs": [
+      {
+        "label": "Keep a note: hello",
+        "input": {
+          "note": "hello"
+        },
+        "operation": "sampler.note"
+      }
+    ]
+  },
+  {
+    "id": "after",
+    "group": "Hooks and events",
+    "name": "publr.after(Target, run)",
+    "summary": "Inside the write, after the operation: gets its input and answer, may refuse, which rolls the write back.",
+    "code": [
+      {
+        "file": "hooks/announce.zig",
+        "decl": "run"
+      }
+    ],
+    "see": [
+      "On sampler-sandboxed, open Settings, then Plugins, then sampler."
+    ],
+    "look_for": "See when the sampler.note operation happens, because it: Tells other plugins a note was kept.",
+    "options": [],
+    "runs": [
+      {
+        "label": "Keep a note: hello",
+        "input": {
+          "note": "hello"
+        },
+        "operation": "sampler.note"
+      }
+    ]
+  },
+  {
+    "id": "on",
+    "group": "Hooks and events",
+    "name": "publr.on(Target, run)",
+    "summary": "From the queue, once the write committed; never in the caller's request. May call other servers.",
+    "code": [
+      {
+        "file": "hooks/log_note.zig",
+        "decl": "run"
+      }
+    ],
+    "see": [
+      "Open Settings, then Sampler log."
+    ],
+    "look_for": "A line per note kept, each written by this hook from the queue.",
+    "options": [],
+    "runs": [
+      {
+        "label": "Keep a note: hello",
+        "input": {
+          "note": "hello"
+        },
+        "operation": "sampler.note"
+      }
+    ],
+    "tour": [
+      {
+        "go": "/admin/plugin/sampler/log",
+        "find": "css:iframe",
+        "say": "Each line here was written by the on hook, from the queue."
+      }
+    ]
+  },
+  {
+    "id": "modify",
+    "group": "Hooks and events",
+    "name": "publr.modify(name, run)",
+    "summary": "Changes a value wherever its owner applies it, the way WordPress's add_filter does; * stands for one dotted part. Its /// is the reason the administrator reads.",
+    "code": [
+      {
+        "file": "main.zig",
+        "decl": "hooks"
+      }
+    ],
+    "see": [
+      "Open Content, then Sample note under Sample notes."
+    ],
+    "look_for": "Each title reads Note: <note> (<n> characters): the modifier, applied wherever the title shows.",
+    "options": [
+      {
+        "name": "\"<type>.title\", publr.Title",
+        "summary": "Changes a value wherever its owner applies it; core applies each record's title as <type>.title.",
+        "code": [
+          {
+            "file": "hooks/note_title.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Open Content, then Sample note under Sample notes."
+        ],
+        "look_for": "Each title reads Note: <note> (<n> characters): the modifier, applied wherever the title shows.",
+        "tour": [
+          {
+            "go": "/admin/content?type=sampler.sample_note",
+            "find": "Note: HELLO (5 characters)",
+            "say": "The title as the modifier left it: Note: <note> (<n> characters)."
+          }
+        ]
+      },
+      {
+        "name": "\"sampler.*\", with ctx.mod",
+        "summary": "Applies a value under a name and answers it as every modifier left it. The sampler doubles every number it applies, through * for one dotted part.",
+        "code": [
+          {
+            "file": "operations/measure.zig",
+            "decl": "run"
+          },
+          {
+            "file": "hooks/double.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "On sampler-sandboxed, open Settings, then Plugins, then sampler.",
+          "Then run publr --as-admin sampler measure --text abc."
+        ],
+        "look_for": "Change sampler.* wherever it is used, because it: Doubles every number sampler applies. length comes back as 6.",
+        "runs": [
+          {
+            "label": "Measure abc",
+            "input": {
+              "text": "abc"
+            },
+            "operation": "sampler.measure"
+          }
+        ]
+      }
+    ],
+    "tour": [
+      {
+        "go": "/admin/content?type=sampler.sample_note",
+        "find": "Note: HELLO (5 characters)",
+        "say": "The title as the modifier left it: Note: <note> (<n> characters)."
+      }
+    ]
+  },
+  {
+    "id": "job-define",
+    "group": "Queued work",
+    "name": "publr.job.define(In, options)",
+    "summary": "The plugin's own queued work, listed in .jobs, queued with ctx.enqueue, retried with growing waits.",
+    "code": [
+      {
+        "file": "jobs/write_note.zig",
+        "decl": "run"
+      },
+      {
+        "file": "jobs/write_note.zig",
+        "decl": "job"
+      }
+    ],
+    "see": [
+      "Run publr --as-admin sampler later --note Remember.",
+      "Open Content, then Sample review."
+    ],
+    "look_for": "A new draft review, Remember, written by the job a moment later. publr --as-admin job list shows runs only while they wait or after they failed.",
+    "options": [
+      {
+        "name": "publr.job.define_recurring(options)",
+        "summary": "Work that repeats: .every a day, an hour or minutes, .at a time in UTC.",
+        "code": [
+          {
+            "file": "jobs/tick.zig",
+            "decl": "job"
+          }
+        ],
+        "see": [
+          "Run publr --as-admin job list."
+        ],
+        "look_for": "sampler tick waiting, due at the next 03:00 UTC."
+      }
+    ],
+    "runs": [
+      {
+        "label": "Write a note later",
+        "input": {
+          "note": "Remember"
+        },
+        "operation": "sampler.later"
+      }
+    ],
+    "tour": [
+      {
+        "go": "/admin/content?type=sampler.sample_review",
+        "find": "Remember",
+        "say": "The review the job wrote."
+      }
+    ]
+  },
+  {
+    "id": "page",
+    "group": "Admin",
+    "name": "publr.Page",
+    "summary": "A page of the plugin's own under Settings, drawn by a read of its own, the same built in and installed.",
+    "code": [
+      {
+        "file": "main.zig",
+        "decl": "pages"
+      }
+    ],
+    "see": [
+      "Open Settings, then Sampler log."
+    ],
+    "look_for": "The log in the admin's own table, inside the plugin's frame.",
+    "options": [
+      {
+        "name": ".top_bar = .{ .count }",
+        "summary": "The page in the top bar too, a read's count beside its label.",
+        "code": [
+          {
+            "file": "main.zig",
+            "decl": "pages"
+          },
+          {
+            "file": "operations/count.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Open any admin page.",
+          "Look at the top bar's right end."
+        ],
+        "look_for": "Sampler log, with the number of notes.",
+        "tour": [
+          {
+            "go": "/admin",
+            "find": "css:[data-part=top-bar] a[href$='/plugin/sampler/log']",
+            "say": "The page in the top bar, the notes counted beside it."
+          }
+        ]
+      }
+    ],
+    "tour": [
+      {
+        "go": "/admin/plugin/sampler/log",
+        "find": "css:iframe",
+        "say": "The sampler's page, drawn by its read in the plugin frame."
+      }
+    ]
+  },
+  {
+    "id": "views-render",
+    "group": "Admin",
+    "name": "publr.views.render(ctx, base, View, props)",
+    "summary": "A page from the plugin's own PTSX view. Installed, the host draws every design-system component it reaches, so the page reads like a compiled-in one.",
+    "code": [
+      {
+        "file": "operations/page.zig",
+        "decl": "run"
+      }
+    ],
+    "see": [
+      "Open Settings, then Sampler log, on both sampler and sampler-sandboxed."
+    ],
+    "look_for": "The same page both ways.",
+    "options": [],
+    "tour": [
+      {
+        "go": "/admin/plugin/sampler/log",
+        "find": "css:iframe",
+        "say": "The sampler's page, drawn by its read in the plugin frame."
+      }
+    ]
+  },
+  {
+    "id": "panels",
+    "group": "Admin",
+    "name": "publr.Panel",
+    "summary": "A box on another type's edit form, drawn by a read of the plugin's own in the plugin frame, told only the record's id.",
+    "code": [
+      {
+        "file": "main.zig",
+        "decl": "panels"
+      },
+      {
+        "file": "operations/note_panel.zig",
+        "decl": "run"
+      }
+    ],
+    "see": [
+      "Open Content, then Sample note under Sample notes.",
+      "Open Note: HELLO."
+    ],
+    "look_for": "A Sampler box beside the form: Note <id>, one of <n>.",
+    "options": [],
+    "tour": [
+      {
+        "go": "/admin/content?type=sampler.sample_note",
+        "follow": "Note: HELLO (5 characters)",
+        "say": "Open a note."
+      },
+      {
+        "find": "css:iframe[src*='note_panel']",
+        "say": "The Sampler box, drawn by the sampler's read in the plugin frame."
+      }
+    ]
+  },
+  {
+    "id": "secrets",
+    "group": "Security",
+    "name": "publr.Secret",
+    "summary": "The secrets a plugin declares; it never holds the value. {secret:NAME} is filled as a fetch leaves.",
+    "code": [
+      {
+        "file": "main.zig",
+        "decl": "Secrets"
+      }
+    ],
+    "see": [
+      "Open Settings, then Secrets."
+    ],
+    "look_for": "SAMPLER_KEY, used by sampler, Missing until someone sets its value.",
+    "options": [],
+    "tour": [
+      {
+        "go": "/admin/settings/secrets",
+        "find": "SAMPLER_KEY",
+        "say": "The key the sampler declares, used by sampler, Missing until it is set."
+      }
+    ]
+  },
+  {
+    "id": "permissions",
+    "group": "Security",
+    "name": "publr.Permission",
+    "summary": "What the plugin asks the administrator for, each with its reason; outside calls only to the domains named.",
+    "code": [
+      {
+        "file": "main.zig",
+        "decl": "permissions"
+      }
+    ],
+    "see": [
+      "On sampler-sandboxed, open Settings, then Plugins, then sampler."
+    ],
+    "look_for": "Send requests to the domains it names, sampler.example in its Domains box, the Sampler key under it, High risk.",
+    "options": [],
+    "tour": [
+      {
+        "go": "/admin/settings/plugins/sampler",
+        "find": "Send requests to the domains it names",
+        "say": "What the sampler asks for: http.fetch to sampler.example, with its reason."
+      }
+    ]
+  }
+]

@@ -1,674 +1,210 @@
+//! A sample of every part of the plugin contract, for the two-mode check.
+//!
 //! Every part of the plugin contract a sandboxed plugin can declare, once, so the two-mode
 //! check sees each part run sandboxed and compiled in: an operation open to anyone, a write
-//! with a before hook that reshapes its input and an after hook that raises a notice, an
-//! event hook that answers the notice with a record, its own types and a custom field group,
+//! with a before hook that reshapes its input and an after hook that emits an event, an
+//! `on` hook that answers the event with a record, its own types and a custom field group,
 //! and a page of its own in the plugin frame, drawn by a read.
-//! Its page has an entry in the top bar (with the notes counted), and it says what it is in
-//! HTML the admin sanitizes.
+//! Its page has an entry in the top bar (with the notes counted), its types sit under a menu
+//! item of its own, and this text is what its page in the admin says about it.
 //! Compiled in, it also answers a route, lists it in Settings,
 //! keeps a state, takes `--sampler-in <folder>` off a command, notes the port `serve` got,
 //! and answers the operator's `ping`: what only a compiled-in plugin does, left out of its
 //! sandboxed build.
-const std = @import("std");
+//! Notes, a log the notes' events leave, and a greeting open to anyone.
 const publr = @import("publr");
 
-const sdk = publr.sdk;
-const PluginCtx = publr.plugin.PluginCtx;
-const record = publr.operations.record;
-const notes = publr.records.of(struct {
-    note: []const u8,
-}, "sample_note");
-const logs = publr.records.of(struct {
-    line: []const u8,
-}, "sample_log");
-const tallies = publr.internal.of(struct {
-    word: []const u8,
-}, "tally");
+const Native = @import("native.zig");
 
-pub const manifest: publr.plugin.Manifest = .{
+const Notes = @import("records/notes.zig");
+const Logs = @import("records/logs.zig");
+const Tallies = @import("records/tallies.zig");
+const Reviews = @import("records/reviews.zig");
+const Profile = @import("records/profile.zig");
+const Noted = @import("events/noted.zig");
+
+const Hello = @import("operations/hello.zig");
+const Echo = @import("operations/echo.zig");
+const Note = @import("operations/note.zig");
+const ReadLogs = @import("operations/logs.zig");
+const Page = @import("operations/page.zig");
+const Count = @import("operations/count.zig");
+const NotePanel = @import("operations/note_panel.zig");
+const Wave = @import("operations/wave.zig");
+const Submit = @import("operations/submit.zig");
+const Later = @import("operations/later.zig");
+const Measure = @import("operations/measure.zig");
+const Reference = @import("operations/reference.zig");
+
+const WriteNote = @import("jobs/write_note.zig");
+const Tick = @import("jobs/tick.zig");
+
+const Shout = @import("hooks/shout.zig");
+const Announce = @import("hooks/announce.zig");
+const LogNote = @import("hooks/log_note.zig");
+const NoteTitle = @import("hooks/note_title.zig");
+const Double = @import("hooks/double.zig");
+
+const manifest: publr.Manifest = .{
     .name = "sampler",
     .version = "0.1.0",
-    .summary = "A sample of every part of the plugin contract, for the two-mode check",
 };
 
-pub const namespaces = [_]sdk.operation.Namespace{.{
-    .name = "sampler",
-    .summary = "A sample of the plugin contract",
-    .details = "Notes, a log the notes' notices leave, and a greeting open to anyone.",
-}};
+/// Its types in a part of the admin of their own.
+const notes_menu: publr.MenuItem = .{
+    .name = "notes",
+    .label = publr.t("Sample notes"),
+    .icon = "sampler.note",
+};
 
-pub const content_types = [_]publr.plugin.ContentTypeDef{
+const pages = [_]publr.plugin.Page{
     .{
-        .handle = "sample_note",
-        .name = "Sample note",
-        .title_field = "note",
-        .fields = &.{.{
-            .name = "note",
-            .label = "Note",
-            .kind = "string",
-            .required = true,
-        }},
+        .path = "log",
+        .label = "Sampler log",
+        .icon = "stack",
+        .operation = Page.operation,
+        .top_bar = .{
+            .count = Count.operation,
+        },
     },
     .{
-        .handle = "sample_log",
-        .name = "Sample log",
-        .title_field = "line",
-        .fields = &.{.{
-            .name = "line",
-            .label = "Line",
-            .kind = "string",
-            .required = true,
-        }},
+        .path = "reference",
+        .label = "SDK reference",
+        .icon = "code",
+        .operation = Reference.operation,
     },
 };
-
-pub const custom_fields = [_]publr.plugin.ContentTypeDef{.{
-    .handle = "sampler_profile",
-    .name = "Sampler profile",
-    .fields = &.{
-        .{
-            .name = "motto",
-            .label = "Motto",
-            .kind = "string",
-        },
-    },
-    .group = .{
-        .location = &.{
-            .{
-                .rules = &.{
-                    .{
-                        .field = "destination",
-                        .value = "user",
-                    },
-                },
-            },
-        },
-    },
-}};
-
-pub const operations = [_]type{
-    Hello,
-    Echo,
-    Note,
-    Logs,
-    Page,
-    Count,
-    Forget,
-    NotePanel,
-};
-
-/// Run when it is removed with some of its data, told which pieces go.
-pub const uninstall = Forget;
-
-pub const pages = [_]publr.plugin.Page{.{
-    .path = "log",
-    .label = "Sampler log",
-    .icon = "stack",
-    .operation = Page,
-}};
-
-pub const internal_records = [_]publr.plugin.InternalCollection{
-    .{
-        .kind = "tally",
-        .indexed = &.{"word"},
-        .append_only = true,
-        .shared = true,
-    },
-};
-
-pub const routes = [_]publr.plugin.Route{.{
-    .path = "/admin/sampler",
-    .handler = &settings,
-}};
-
-pub const settings_pages = [_]publr.plugin.SettingsPage{.{
-    .label = "Sampler",
-    .icon = "stack",
-    .path = "/admin/sampler",
-    .operation = Logs,
-}};
-
-/// What the sampler keeps while the process runs.
-pub const State = struct {
-    db_path: []const u8 = "",
-    port: u16 = 0,
-    pings: u32 = 0,
-
-    pub fn init(state: *State, process: publr.plugin.Process) anyerror!void {
-        std.debug.assert(process.db_path.len > 0);
-
-        state.* = .{
-            .db_path = try process.arena.dupe(u8, process.db_path),
-        };
-    }
-};
-
-pub const operator_commands = [_]publr.plugin.OperatorCommand{
-    .{
-        .name = "ping",
-        .handler = &ping,
-    },
-};
-
-/// `publr --sampler-in <folder> <command>`: the command runs in that folder.
-pub fn before_command(command: *publr.plugin_hooks.Command) anyerror!void {
-    std.debug.assert(command.db_path.len > 0);
-
-    const args = command.args;
-
-    if (args.len < 2 or !std.mem.eql(u8, args[0], "--sampler-in")) {
-        return;
-    }
-
-    var dir = try std.Io.Dir.cwd().openDir(command.io, args[1], .{});
-    defer dir.close(command.io);
-
-    try std.process.setCurrentDir(command.io, dir);
-    command.args = args[2..];
-}
-
-/// `serve` listening: the sampler notes where.
-pub fn serving(serve: publr.plugin_hooks.Serving) anyerror!void {
-    std.debug.assert(serve.port > 0);
-
-    const states = serve.project.plugin_states orelse return;
-
-    publr.plugin_states.from(states, @This()).port = serve.port;
-}
-
-/// `POST /_publr/sampler/ping`: the port `serve` noted, the database, and how many pings.
-fn ping(
-    request: *publr.http.Request,
-    response: *publr.http.Response,
-    ctx: *publr.http.Context,
-) publr.http.Error!void {
-    std.debug.assert(request.path().len > 0);
-
-    const project = publr.project.Project.of(ctx);
-    const states = project.plugin_states orelse return response.text(.not_found, "Not Found");
-    const state = publr.plugin_states.from(states, @This());
-
-    state.pings += 1;
-
-    try response.json(
-        .ok,
-        .{
-            .port = state.port,
-            .db_path = state.db_path,
-            .pings = state.pings,
-        },
-    );
-}
-
-/// How many notes there are, for whoever may read them.
-/// How many notes there are, beside its entry in the top bar.
-pub const Count = struct {
-    pub const name = "sampler.count";
-    pub const description = "How many notes the sampler keeps";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = struct {
-        count: i64,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .count = 1,
-    };
-
-    pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        const all = try notes.find(ctx, .{}, .{
-            .limit = 200,
-        });
-
-        return .{
-            .count = @intCast(all.len),
-        };
-    }
-};
-
-/// Its page, in the top bar with the notes counted.
-pub const top_bar = [_]publr.plugin.Item{.{
-    .label = "Sampler",
-    .icon = "stack",
-    .page = "log",
-    .operation = Logs,
-    .count = Count,
-}};
-
-/// Its types in a part of the admin of their own, the note shown in the notes' list.
-pub const sections = [_]publr.plugin.Section{.{
-    .label = "Sample notes",
-    .icon = "folder",
-    .types = &.{
-        .{
-            .handle = "sample_note",
-            .columns = &.{"note"},
-        },
-        .{
-            .handle = "sample_log",
-        },
-    },
-}};
 
 /// A box on each sample note's form, drawn in the plugin frame.
-pub const panels = [_]publr.plugin.Panel{.{
-    .type = "sample_note",
+const panels = [_]publr.plugin.Panel{.{
+    .type = "sampler.sample_note",
     .label = "Sampler",
-    .operation = NotePanel,
+    .operation = NotePanel.operation,
 }};
 
-/// Draws the panel: which record it was told, and how many notes there are. It is told
-/// only the record's id and reads the rest itself.
-pub const NotePanel = struct {
-    pub const name = "sampler.note_panel";
-    pub const description = "Draws the sampler's box on a sample note's form";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        record: []const u8,
-        base: []const u8 = "",
-    };
-    pub const Out = struct {
-        html: []const u8,
-    };
-    pub const example: In = .{
-        .record = "0190f7a2c3d4",
-    };
-    pub const example_out: Out = .{
-        .html = "<p>Note 0190f7a2c3d4, one of 1.</p>",
-    };
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        if (in.record.len == 0 or in.record.len > 64) {
-            return error.Invalid;
-        }
-
-        const all = try notes.find(ctx, .{}, .{
-            .limit = 200,
-        });
-        const html = std.fmt.allocPrint(
-            ctx.arena(),
-            "<p class=\"text-sm\">Note {s}, one of {d}.</p>",
-            .{ in.record, all.len },
-        ) catch return error.OutOfMemory;
-
-        return .{
-            .html = html,
-        };
-    }
-};
-
 /// An action on the rows of any page that names a `sampler` slot.
-pub const row_actions = [_]publr.plugin.RowAction{.{
+const row_actions = [_]publr.plugin.RowAction{.{
     .slot = "sampler",
     .label = "Open the log",
     .path = "/admin/plugin/sampler/log",
-    .operation = Logs,
+    .operation = ReadLogs.operation,
 }};
 
-/// What it says about itself on its page under Settings › Plugins, through the admin's
-/// sanitizer: the class outside the admin's list and the script never reach the page.
-pub const about =
-    \\<p class="muted fixed">A sample of every part of the plugin contract.</p>
-    \\<script>alert(1)</script><p><a href="https://publr.dev">Read more</a></p>
-;
+/// Secrets sampler declares, listed with it under Settings › Secrets either way it runs.
+const Secrets = struct {
+    /// Sampler key
+    ///
+    /// Any text; nothing is sent with it.
+    SAMPLER_KEY: publr.Secret,
+};
 
-/// Settings › Sampler: the log, in the admin's own chrome.
-fn settings(
-    request: *publr.http.Request,
-    response: *publr.http.Response,
-    ctx: *publr.http.Context,
-) publr.http.Error!void {
-    std.debug.assert(request.path().len > 0);
+const permissions = [_]publr.plugin.Permission{.{
+    .key = "http.fetch",
+    .domains = &.{"sampler.example"},
+    .reason = "Holds a key for the sampler service",
+}};
 
-    var session = try publr.admin.require(request, response, ctx) orelse return;
-    const logged = publr.registry.SDK.dispatch(&session.ctx, Logs, .{}) catch |err| {
-        return publr.admin.fail(&session, err, "/admin/settings");
-    };
+/// A status sampler adds to greeter's salutations: the same flow either way it runs.
+const added_statuses = .{.{
+    .to = "greeter.salutation",
+    .status = "sampled",
+    .label = "Sampled",
+    .transitions = .{
+        .{
+            .name = "sample",
+            .from = .{"draft"},
+            .to = "sampled",
+            .label = "Sample it",
+        },
+        .{
+            .name = "release",
+            .from = .{"sampled"},
+            .to = "published",
+            .label = "Release",
+        },
+    },
+}};
 
-    try publr.admin.screen(&session, .ok, publr.admin.views.SamplerSettings, .{
-        .lines = logged.lines,
-        .port = try std.fmt.allocPrint(session.arena, "{d}", .{
-            publr.plugin_states.of(&session.ctx, @This()).port,
-        }),
+const records = [_]type{ Notes.record, Logs.record, Tallies.record, Reviews.record };
+const jobs = [_]type{ WriteNote.job, Tick.job };
+
+const operations = [_]type{
+    Hello.operation,
+    Echo.operation,
+    Note.operation,
+    ReadLogs.operation,
+    Page.operation,
+    Count.operation,
+    NotePanel.operation,
+    Wave.operation,
+    Submit.operation,
+    Later.operation,
+    Measure.operation,
+    Reference.operation,
+};
+
+const hooks = .{
+    publr.before(Note.operation, Shout.run),
+    publr.after(Note.operation, Announce.run),
+    publr.on(Noted.event, LogNote.run),
+    publr.modify("sampler.sample_note.title", NoteTitle.run),
+    publr.modify("sampler.*", Double.run),
+};
+
+const field_groups = .{
+    .{
+        .fields = Profile.Fields,
+        .location = Profile.location,
+    },
+};
+
+const icons = .{
+    .{
+        .name = "note",
+        .svg = @embedFile("icons/note.svg"),
+    },
+};
+
+/// What only a compiled-in plugin carries (routes, Settings pages, operator commands, a state,
+/// process hooks) takes the host's own modules, which the sandbox lacks: its sandboxed build
+/// registers the rest.
+pub const plugin = if (publr.plugin.guest.mode == .native)
+    publr.plugin.define(manifest, .{
+        .records = &records,
+        .jobs = &jobs,
+        .register_fields = field_groups,
+        .operations = operations,
+        .hooks = hooks,
+        .events = &.{Noted.event},
+        .secrets = Secrets,
+        .permissions = permissions,
+        .register_statuses = added_statuses,
+        .menu = &.{notes_menu},
+        .icons = icons,
+        .pages = pages,
+        .panels = panels,
+        .row_actions = row_actions,
+        .settings_pages = Native.settings_pages,
+        .routes = Native.routes,
+        .operator_commands = Native.operator_commands,
+        .State = Native.State,
+        .serving = Native.serving,
+        .before_command = Native.before_command,
+    })
+else
+    publr.plugin.define(manifest, .{
+        .records = &records,
+        .jobs = &jobs,
+        .register_fields = field_groups,
+        .operations = operations,
+        .hooks = hooks,
+        .events = &.{Noted.event},
+        .secrets = Secrets,
+        .permissions = permissions,
+        .register_statuses = added_statuses,
+        .menu = &.{notes_menu},
+        .icons = icons,
+        .pages = pages,
+        .panels = panels,
+        .row_actions = row_actions,
     });
-}
-pub const middleware = [_]type{ Shout, Announce, Log, NoteShown };
-
-pub const Hello = struct {
-    pub const name = "sampler.hello";
-    pub const description = "Say hello to anyone";
-    pub const details = "Anyone may call it, signed in or not.";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const open = true;
-    pub const In = struct {
-        who: []const u8 = "world",
-    };
-    pub const Out = struct {
-        text: []const u8,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .text = "hello, world",
-    };
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        if (in.who.len == 0 or in.who.len > 64) {
-            return error.Invalid;
-        }
-
-        const text = std.fmt.allocPrint(ctx.arena(), "hello, {s}", .{in.who}) catch {
-            return error.OutOfMemory;
-        };
-
-        return .{
-            .text = text,
-        };
-    }
-};
-
-const Point = struct {
-    across: i64,
-    down: i64,
-};
-
-/// Every shape a field may take, answered back as it arrived.
-pub const Echo = struct {
-    pub const name = "sampler.echo";
-    pub const description = "Answer every field back";
-    pub const details = "Administrators may call it; it never fails.";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        text: []const u8 = "",
-        count: i64 = 0,
-        ratio: f64 = 0,
-        flag: bool = false,
-        tags: []const []const u8 = &.{},
-        mood: enum { calm, loud } = .calm,
-        maybe: ?i64 = null,
-        points: []const Point = &.{},
-    };
-    pub const Out = In;
-    pub const example: In = .{
-        .text = "a",
-        .count = 2,
-        .ratio = 0.5,
-        .flag = true,
-    };
-    pub const example_out: Out = example;
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-        std.debug.assert(in.tags.len <= 1024);
-
-        return in;
-    }
-};
-
-/// Its uninstall step: answers how many pieces it was told go; it keeps nothing else.
-pub const Forget = struct {
-    pub const name = "sampler.forget";
-    pub const description = "Clear what it keeps when it is removed with some of its data";
-    pub const details = "Run by core when the plugin is removed with some of its data.";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        remove: []const []const u8 = &.{},
-    };
-    pub const Out = struct {
-        told: u32,
-    };
-    pub const example: In = .{
-        .remove = &.{"type:sample_note"},
-    };
-    pub const example_out: Out = .{
-        .told = 1,
-    };
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        if (in.remove.len > 96) {
-            return error.Invalid;
-        }
-
-        return .{
-            .told = @intCast(in.remove.len),
-        };
-    }
-};
-
-pub const Note = struct {
-    pub const name = "sampler.note";
-    pub const description = "Keep a note, in capitals";
-    pub const details = "Administrators may call it. The before hook puts the note in capitals.";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        note: []const u8,
-    };
-    pub const Out = struct {
-        note: []const u8,
-        total: u32,
-    };
-    pub const example: In = .{
-        .note = "hello",
-    };
-    pub const example_out: Out = .{
-        .note = "HELLO",
-        .total = 1,
-    };
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        if (in.note.len == 0 or in.note.len > 280) {
-            return error.Invalid;
-        }
-
-        _ = try notes.create(ctx, .{
-            .note = in.note,
-        }, .{});
-        _ = try tallies.create(ctx, .{
-            .word = in.note,
-        });
-
-        const counted = try tallies.find(ctx, .{
-            .word = in.note,
-        }, .{});
-
-        std.debug.assert(counted.len > 0);
-
-        const all = try ctx.call(record.List, .{
-            .type = "sample_note",
-            .limit = 200,
-        });
-
-        return .{
-            .note = in.note,
-            .total = @intCast(all.records.len),
-        };
-    }
-};
-
-pub const Logs = struct {
-    pub const name = "sampler.logs";
-    pub const description = "The lines the notes' notices left";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = struct {
-        lines: []const []const u8,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .lines = &.{"noted HELLO"},
-    };
-
-    pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        const all = try logs.find(ctx, .{}, .{
-            .limit = 200,
-        });
-        const lines = ctx.arena().alloc([]const u8, all.len) catch {
-            return error.OutOfMemory;
-        };
-
-        for (all, lines) |item, *line| {
-            line.* = item.value.line;
-        }
-
-        std.mem.sort([]const u8, lines, {}, before);
-
-        return .{
-            .lines = lines,
-        };
-    }
-};
-
-/// The sampler's page: the log as a list, and a button that adds a note through the frame.
-pub const Page = struct {
-    pub const name = "sampler.page";
-    pub const description = "Draws the sampler's page: the log, and a way to add a note";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        query: []const u8 = "",
-        base: []const u8 = "",
-    };
-    pub const Out = struct {
-        html: []const u8,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .html = "<ul><li>noted HELLO</li></ul>",
-    };
-
-    pub fn run(ctx: *PluginCtx, in: In, grant: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-        std.debug.assert(in.query.len <= 4096);
-
-        const listed = try Logs.run(ctx, .{}, grant);
-
-        // Compiled in, the admin's layouts draw it; the sandbox gets them with the design
-        // system drawn by the host, and draws its own markup until then.
-        if (comptime @import("builtin").os.tag != .freestanding) {
-            const request = publr.admin.chrome.in_plugin_frame(ctx, in.base) catch {
-                return error.OutOfMemory;
-            };
-            const View = publr.admin.views.SamplerLog;
-            const html = publr.admin.render.document(ctx.arena(), request, View, .{
-                .lines = listed.lines,
-            }) catch return error.OutOfMemory;
-
-            return .{
-                .html = html,
-            };
-        }
-
-        return .{
-            .html = try own_markup(ctx, listed.lines),
-        };
-    }
-};
-
-fn own_markup(ctx: *PluginCtx, lines: []const []const u8) sdk.Error![]const u8 {
-    std.debug.assert(lines.len <= 200);
-
-    var out: std.Io.Writer.Allocating = .init(ctx.arena());
-    const writer = &out.writer;
-
-    writer.writeAll("<main class=\"p-8\"><ul data-part=\"sampler-log\">") catch {
-        return error.OutOfMemory;
-    };
-
-    for (lines) |line| {
-        writer.print("<li>{s}</li>", .{line}) catch return error.OutOfMemory;
-    }
-
-    writer.writeAll("</ul><button data-part=\"sampler-add\" onclick=\"" ++
-        "publr.call('sampler.note',{note:'from the frame'}).then(()=>publr.navigate('log'))" ++
-        "\">Add a note</button></main>") catch return error.OutOfMemory;
-
-    return out.written();
-}
-
-fn before(_: void, left: []const u8, right: []const u8) bool {
-    return std.mem.lessThan(u8, left, right);
-}
-
-/// Before: the note in capitals, whoever calls.
-pub const Shout = struct {
-    pub const stage: sdk.middleware.Stage = .before;
-    pub const operation = "sampler.note";
-    pub const reason = "Keeps every note in capitals";
-
-    pub fn run(ctx: *PluginCtx, in: *Note.In) sdk.Error!void {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        const upper = ctx.arena().alloc(u8, in.note.len) catch return error.OutOfMemory;
-
-        in.note = std.ascii.upperString(upper, in.note);
-    }
-};
-
-/// After: a notice with the note kept.
-pub const Announce = struct {
-    pub const stage: sdk.middleware.Stage = .after;
-    pub const operation = "sampler.note";
-    pub const reason = "Tells other plugins a note was kept";
-
-    pub fn run(ctx: *PluginCtx, in: *Note.In, out: *const Note.Out) sdk.Error!void {
-        std.debug.assert(out.total > 0);
-
-        ctx.notice("sampler.noted", in.note);
-    }
-};
-
-/// Event: every `sampler.noted` notice leaves a line in the log.
-pub const Log = struct {
-    pub const stage: sdk.middleware.Stage = .on;
-    pub const event = "sampler.noted";
-    pub const reason = "Logs every note kept";
-
-    pub fn run(ctx: *PluginCtx, happened: sdk.middleware.Event) void {
-        std.debug.assert(event.len > 0);
-
-        const subject = switch (happened) {
-            .notice => |notice| notice.subject,
-            else => return,
-        };
-        const line = std.fmt.allocPrint(ctx.arena(), "noted {s}", .{subject}) catch return;
-
-        _ = logs.create(ctx, .{
-            .line = line,
-        }, .{}) catch |err| {
-            ctx.log(@errorName(err));
-        };
-    }
-};
-
-/// How the admin shows a sample note: `Note: <title> (<n> characters)`, the count read from
-/// the record's own fields.
-pub const NoteShown = struct {
-    pub const stage: sdk.middleware.Stage = .display;
-    pub const point = "record.title";
-    pub const content_type = "sample_note";
-    pub const reason = "Shows each sample note with its length";
-
-    pub fn run(ctx: *PluginCtx, in: *sdk.display_hooks.Batch) sdk.Error!void {
-        std.debug.assert(in.items.len <= sdk.display_hooks.batch_items_max);
-
-        for (in.items) |*item| {
-            const note = if (item.fields == .object) item.fields.object.get("note") else null;
-            const length = if (note) |value| (if (value == .string) value.string.len else 0) else 0;
-
-            item.value = std.fmt.allocPrint(ctx.arena(), "Note: {s} ({d} characters)", .{
-                item.value,
-                length,
-            }) catch return error.OutOfMemory;
-        }
-    }
-};

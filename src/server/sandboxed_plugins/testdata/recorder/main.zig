@@ -1,81 +1,82 @@
-//! Keeps every structure change it hears, in its state, and answers them back: what a
-//! plugin recording deployments does, for the smoke to see each change raise its notice.
+//! Keeps every structure change it hears, for the smoke.
+//!
+//! Keeps every structure change it hears, in its own table, and answers them back: what a
+//! plugin recording deployments does, for the smoke to see each write heard `after` it ran.
 //! Everything it brings takes the host's context, so its sandboxed build leaves it out.
+//! Each as the write's name and what it changed (or the event's name and subject), oldest
+//! first.
 const std = @import("std");
 const publr = @import("publr");
 
 const sdk = publr.sdk;
-const Recorder = @This();
 
-pub const manifest: publr.plugin.Manifest = .{
+const manifest: publr.Manifest = .{
     .name = "recorder",
     .version = "0.1.0",
-    .summary = "Keeps every structure change it hears, for the smoke",
 };
 
-pub const namespaces = [_]sdk.operation.Namespace{.{
-    .name = "recorder",
-    .summary = "The structure changes heard since the server started",
-    .details = "Each as the notice's name and its subject, oldest first.",
-}};
-
-pub const operations = [_]type{Seen};
-pub const middleware = [_]type{Heard};
+const operations = [_]type{Seen};
 
 pub const lines_max: u32 = 256;
 
-pub const State = struct {
-    arena: std.mem.Allocator = undefined,
-    lines: [lines_max][]const u8 = undefined,
-    count: u32 = 0,
+/// Kept in the database, not in a state: its hook runs in the server's worker, its read in
+/// the server.
+const schema_sql: [:0]const u8 =
+    \\CREATE TABLE IF NOT EXISTS recorder_lines (
+    \\    id INTEGER PRIMARY KEY,
+    \\    line TEXT NOT NULL
+    \\) STRICT;
+;
 
-    pub fn init(state: *State, process: publr.plugin.Process) anyerror!void {
-        std.debug.assert(process.db_path.len > 0);
+/// The writes that change the structure, each kept as `operation key` after it ran.
+const changed_units = sdk.changed_units;
+const structure = [_]changed_units.Kind{ .content_type, .taxonomy, .field_group, .plugin };
+const hooks = changed_units.hooks(&structure, changed) ++ [_]type{Loaded};
 
-        state.* = .{
-            .arena = process.arena,
-        };
-    }
+fn changed(ctx: *sdk.Ctx, operation: []const u8, unit: changed_units.Unit) void {
+    std.debug.assert(operation.len > 0);
+    std.debug.assert(unit.key.len > 0);
 
-    fn keep(state: *State, name: []const u8, subject: []const u8) void {
-        std.debug.assert(state.count <= lines_max);
+    keep(ctx, operation, unit.key) catch |err| {
+        std.log.warn("recorder: {s} not kept: {t}", .{ operation, err });
+    };
+}
 
-        if (state.count == lines_max) {
-            return;
-        }
-
-        const line = std.fmt.allocPrint(state.arena, "{s} {s}", .{ name, subject }) catch {
-            return;
-        };
-
-        state.lines[state.count] = line;
-        state.count += 1;
-    }
-};
-
-/// Every notice that changes the structure, kept as `name subject`.
-pub const Heard = struct {
+/// The apps loaded from the folder: the server's own event, not a write.
+pub const Loaded = struct {
     pub const stage: sdk.middleware.Stage = .on;
-    pub const reason = "Keeps the structure changes";
+    pub const event = "apps.loaded";
+    pub const reason = "Keeps the apps loaded";
 
-    pub fn run(ctx: *sdk.Ctx, event: sdk.middleware.Event) void {
+    pub fn run(ctx: *sdk.Ctx, event_heard: sdk.middleware.Event) void {
         std.debug.assert(ctx.now_ms >= 0);
 
-        const notice = switch (event) {
-            .notice => |notice| notice,
+        const emitted = switch (event_heard) {
+            .emitted => |found| found,
             else => return,
         };
-        const states = ctx.plugin_states orelse return;
 
-        if (sdk.structure.is_change(notice.name)) {
-            publr.plugin_states.from(states, Recorder).keep(notice.name, notice.subject);
-        }
+        keep(ctx, emitted.name, emitted.subject) catch |err| {
+            std.log.warn("recorder: {s} not kept: {t}", .{ emitted.name, err });
+        };
     }
 };
+
+fn keep(ctx: *sdk.Ctx, name: []const u8, subject: []const u8) !void {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const line = try std.fmt.allocPrint(ctx.arena, "{s} {s}", .{ name, subject });
+    var insert = try ctx.db.prepare("INSERT INTO recorder_lines (line) VALUES (?1)");
+    defer insert.finalize();
+
+    try insert.bind_text(1, line);
+    try insert.exec();
+}
 
 pub const Seen = struct {
     pub const name = "recorder.seen";
-    pub const description = "The structure changes heard since the server started";
+    pub const description = "The structure changes heard";
     pub const details = "Administrators only.";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
@@ -84,19 +85,36 @@ pub const Seen = struct {
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
-        .lines = &.{"content_type.created post"},
+        .lines = &.{"content_type.create post"},
     };
 
     pub fn run(ctx: *sdk.Ctx, _: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
 
-        const states = ctx.plugin_states orelse return .{
-            .lines = &.{},
-        };
-        const state = publr.plugin_states.from(states, Recorder);
+        var select = try ctx.db.prepare("SELECT line FROM recorder_lines ORDER BY id LIMIT ?1");
+        defer select.finalize();
+
+        try select.bind_int(1, lines_max);
+
+        var lines: std.ArrayList([]const u8) = .empty;
+
+        while (try select.step()) {
+            std.debug.assert(lines.items.len < lines_max);
+            const row = try select.read(struct {
+                line: []const u8,
+            }, ctx.arena);
+
+            lines.append(ctx.arena, row.line) catch return error.OutOfMemory;
+        }
 
         return .{
-            .lines = state.lines[0..state.count],
+            .lines = lines.items,
         };
     }
 };
+
+pub const plugin = publr.plugin.define(manifest, .{
+    .operations = operations,
+    .hooks = hooks,
+    .schema_sql = schema_sql,
+});

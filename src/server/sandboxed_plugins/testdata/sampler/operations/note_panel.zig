@@ -1,0 +1,54 @@
+//! Draws the sampler's box on a sample note's form.
+//!
+//! It is told only the record's id and reads the rest itself: which record it was told, and
+//! how many notes there are.
+//!
+//! Example:
+//!   in: { "record": "0190f7a2c3d4" }
+//!   out: { "html": "<p>Note 0190f7a2c3d4, one of 1.</p>" }
+const publr = @import("publr");
+const std = @import("std");
+
+const Notes = @import("../records/notes.zig");
+
+pub const In = struct {
+    /// The note the form is open on
+    record: []const u8,
+    /// The path the project is served under
+    base: []const u8 = "",
+};
+
+pub const Out = struct {
+    /// The box's markup
+    html: []const u8,
+};
+
+/// An id of 1 to 64 characters.
+fn check(in: In, problems: *publr.Problems(In)) void {
+    if (in.record.len == 0 or in.record.len > 64) {
+        problems.add(.record, "An id is 1 to 64 characters.");
+    }
+}
+
+fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
+    std.debug.assert(in.record.len > 0);
+    std.debug.assert(in.record.len <= 64);
+
+    const all = try Notes.typed.find(ctx, .{}, .{
+        .limit = 200,
+    });
+
+    return .{
+        .html = try ctx.print("<p class=\"text-sm\">Note {s}, one of {d}.</p>", .{
+            in.record,
+            all.len,
+        }),
+    };
+}
+
+pub const operation = publr.operation.define(In, Out, .{
+    .name = "note_panel",
+    .kind = .read,
+    .validate = check,
+    .run = run,
+});

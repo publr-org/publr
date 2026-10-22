@@ -1,23 +1,19 @@
+//! Says goodbye.
+//!
 //! The smallest installed plugin: one operation, nothing asked for. What parity installs.
+//! A plugin with one operation and no permissions.
 const std = @import("std");
 const publr = @import("publr");
 
 const sdk = publr.sdk;
 const PluginCtx = publr.plugin.PluginCtx;
 
-pub const manifest: publr.plugin.Manifest = .{
+const manifest: publr.Manifest = .{
     .name = "farewell",
     .version = "0.1.0",
-    .summary = "Says goodbye",
 };
 
-pub const namespaces = [_]sdk.operation.Namespace{.{
-    .name = "farewell",
-    .summary = "Goodbyes",
-    .details = "A plugin with one operation and no permissions.",
-}};
-
-pub const operations = [_]type{ Say, Last };
+const operations = [_]type{ Say, Last };
 
 pub const Say = struct {
     pub const name = "farewell.say";
@@ -35,7 +31,7 @@ pub const Say = struct {
     };
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
+        std.debug.assert(ctx.now().ms >= 0);
 
         if (in.who.len == 0 or in.who.len > 64) {
             return error.Invalid;
@@ -68,7 +64,7 @@ pub const Last = struct {
     };
 
     pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
+        std.debug.assert(ctx.now().ms >= 0);
 
         var names: std.ArrayList([]const u8) = .empty;
 
@@ -82,3 +78,7 @@ pub const Last = struct {
         };
     }
 };
+
+pub const plugin = publr.plugin.define(manifest, .{
+    .operations = operations,
+});

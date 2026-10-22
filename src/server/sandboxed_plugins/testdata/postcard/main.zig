@@ -1,24 +1,21 @@
+//! Writes a postcard.
+//!
 //! A plugin only ever installed, never compiled in: what the smoke adds and enables in the
 //! binary that has every other test plugin built in, so the change is heard there.
+//! A plugin with one operation and no permissions, only ever installed. It adds a status
+//! to greeter's salutations, which a salutation leaves by `deliver` when postcard goes.
 const std = @import("std");
 const publr = @import("publr");
 
 const sdk = publr.sdk;
 const PluginCtx = publr.plugin.PluginCtx;
 
-pub const manifest: publr.plugin.Manifest = .{
+const manifest: publr.Manifest = .{
     .name = "postcard",
     .version = "0.1.0",
-    .summary = "Writes a postcard",
 };
 
-pub const namespaces = [_]sdk.operation.Namespace{.{
-    .name = "postcard",
-    .summary = "Postcards",
-    .details = "A plugin with one operation and no permissions, only ever installed.",
-}};
-
-pub const operations = [_]type{Write};
+const operations = [_]type{Write};
 
 pub const Write = struct {
     pub const name = "postcard.write";
@@ -36,7 +33,7 @@ pub const Write = struct {
     };
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
+        std.debug.assert(ctx.now().ms >= 0);
 
         if (in.from.len == 0 or in.from.len > 64) {
             return error.Invalid;
@@ -51,3 +48,26 @@ pub const Write = struct {
         };
     }
 };
+
+pub const plugin = publr.plugin.define(manifest, .{
+    .operations = operations,
+    .register_statuses = .{.{
+        .to = "greeter.salutation",
+        .status = "posted",
+        .label = "Posted",
+        .transitions = .{
+            .{
+                .name = "post",
+                .from = .{"draft"},
+                .to = "posted",
+                .label = "Post it",
+            },
+            .{
+                .name = "deliver",
+                .from = .{"posted"},
+                .to = "published",
+                .label = "Deliver",
+            },
+        },
+    }},
+});
