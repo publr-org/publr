@@ -507,7 +507,7 @@ fn publr_emit(
     }
 
     if (ctx.parent != null) {
-        ctx.emit_json(name, payload);
+        ctx.emit_json(name, payload, true);
     }
 }
 

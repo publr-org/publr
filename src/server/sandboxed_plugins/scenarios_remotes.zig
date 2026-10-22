@@ -51,7 +51,7 @@ fn detail(scenario: *Scenario, name: []const u8) !plugin_operations.Detail {
 /// How many runs of stocktake's hook on shelf's event its log shows.
 fn heard(scenario: *Scenario) !u32 {
     var worker = scenario.ctx(.system);
-    const drained = try registry.SDK.events.drain(&worker, 8);
+    const drained = try registry.SDK.jobs.drain(&worker, 8);
 
     std.debug.assert(drained <= 8);
 

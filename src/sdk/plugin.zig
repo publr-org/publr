@@ -1579,17 +1579,17 @@ test "a plugin's event: after hooks in the write, on hooks from the queue, a ref
 
     // The `after` hook ran in the write; nothing heard from the queue yet.
     try std.testing.expectEqual(@as(u32, 1), try sdk.testing.count(&ctx, "told"));
-    try std.testing.expectEqual(@as(u32, 2), try sdk.testing.count(&ctx, "event_queue"));
+    try std.testing.expectEqual(@as(u32, 2), try sdk.testing.count(&ctx, "job_queue"));
 
     // Refused by the `after` hook: the write and its events are gone.
     try std.testing.expectError(error.Conflict, TestSDK.dispatch(&ctx, Teller.Tell, .{
         .who = "nobody",
     }));
     try std.testing.expectEqual(@as(u32, 1), try sdk.testing.count(&ctx, "told"));
-    try std.testing.expectEqual(@as(u32, 2), try sdk.testing.count(&ctx, "event_queue"));
+    try std.testing.expectEqual(@as(u32, 2), try sdk.testing.count(&ctx, "job_queue"));
 
     var worker = harness.ctx(.system);
-    try std.testing.expectEqual(@as(u32, 2), try TestSDK.events.drain(&worker, 8));
+    try std.testing.expectEqual(@as(u32, 2), try TestSDK.jobs.drain(&worker, 8));
 
     var select = try ctx.db.prepare("SELECT what, who FROM told ORDER BY rowid");
     defer select.finalize();

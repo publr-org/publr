@@ -15,7 +15,7 @@ const modify_define = @import("modify_define.zig");
 const mods = @import("../mods.zig");
 const error_events = @import("../error_events.zig");
 
-pub const Stage = middleware.Stage;
+const Stage = middleware.Stage;
 
 /// `publr.before(Operation, run)`: changes or refuses the operation's input, inside its write.
 /// Operations only: an event already happened (a sign-in or a transition, which may still be

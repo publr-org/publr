@@ -389,7 +389,8 @@ test "an installed plugin's on hook on an operation hears its answer from the qu
     _ = try scenario.install();
     _ = try scenario.total(admin, greet, "{\"note\":\"hi\"}");
 
-    // Not inside the call: only the operation's own line, its event waiting with the answer.
+    // Not inside the call: only the operation's own line, its hook's run waiting with the
+    // answer.
     var system = scenario.ctx(.system);
     const before = try registry.SDK.dispatch(&system, plugin_log.Log, .{
         .name = "greeter",
@@ -397,20 +398,20 @@ test "an installed plugin's on hook on an operation hears its answer from the qu
 
     try std.testing.expectEqual(@as(usize, 1), before.lines.len);
 
-    var waiting = try system.db.prepare("SELECT subject FROM event_queue WHERE name = ?1");
+    var waiting = try system.db.prepare("SELECT input FROM job_queue WHERE name = ?1");
     defer waiting.finalize();
-    try waiting.bind_text(1, greet);
+    try waiting.bind_text(1, "on:" ++ greet);
     try std.testing.expect(try waiting.step());
 
     const Waiting = struct {
-        subject: []const u8,
+        input: []const u8,
     };
     const row = try waiting.read(Waiting, scenario.harness.fixed.allocator());
 
-    try std.testing.expectEqualStrings("{\"total\":1}", row.subject);
+    try std.testing.expectEqualStrings("{\"total\":1}", row.input);
 
     var worker = scenario.ctx(.system);
-    _ = try registry.SDK.events.drain(&worker, 8);
+    _ = try registry.SDK.jobs.drain(&worker, 8);
 
     var reading = scenario.ctx(.system);
     const after = try registry.SDK.dispatch(&reading, plugin_log.Log, .{

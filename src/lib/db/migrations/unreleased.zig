@@ -6,8 +6,6 @@ pub const one_way = false;
 pub fn up(connection: *db.Db) db.Error!void {
     std.debug.assert(connection.transaction_depth >= 1);
 
-    try add_event_queue(connection);
-
     // The jobs plugins queue, run once their time comes.
     try connection.exec(
         \\CREATE TABLE IF NOT EXISTS job_queue (
@@ -81,19 +79,4 @@ pub fn up(connection: *db.Db) db.Error!void {
     if (!try db.schema.has_column(connection, "rail_pins", "hidden")) {
         try connection.exec("ALTER TABLE rail_pins ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
     }
-}
-
-/// The events waiting for the `on` hooks; 0.4.0's notice_queue is left unread.
-fn add_event_queue(connection: *db.Db) db.Error!void {
-    std.debug.assert(connection.transaction_depth >= 1);
-
-    try connection.exec(
-        \\CREATE TABLE IF NOT EXISTS event_queue (
-        \\    id INTEGER PRIMARY KEY,
-        \\    operation_id INTEGER NOT NULL,
-        \\    name TEXT NOT NULL,
-        \\    subject TEXT NOT NULL,
-        \\    queued_at INTEGER NOT NULL
-        \\) STRICT
-    );
 }

@@ -458,7 +458,6 @@ export fn publr_settle() void {
     // never while a page waits for it.
     const now_ms = publr.sdk.context.wall_clock_ms(instance.project.io);
 
-    publr.queued_events.tick(&instance.project, instance.gpa);
     publr.queued_jobs.tick(&instance.project, instance.gpa, &instance.jobs_clock, now_ms);
 }
 

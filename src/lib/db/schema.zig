@@ -50,7 +50,6 @@ pub const tables = [_][]const u8{
     "activity",
     "errors",
     "plugin_log",
-    "event_queue",
     "job_queue",
     "scheduled_transitions",
 };

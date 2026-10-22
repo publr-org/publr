@@ -11,7 +11,7 @@ const Grant = @import("../grant.zig").Grant;
 const contract = @import("../plugin.zig");
 const plugin_manifest = @import("manifest.zig");
 const runtime = @import("sandboxed.zig");
-const filter_reads = @import("filter_reads.zig");
+const mod_reads = @import("mod_reads.zig");
 const queue = @import("queue.zig");
 const job_define = @import("job_define.zig");
 const words = @import("words.zig");
@@ -80,8 +80,8 @@ pub const SandboxApi = struct {
     facts: wire.Caller = .{},
     /// The `Fails:` of the operation running, for the status of a refusal.
     failures: []const operation_contract.Failure = &.{},
-    /// Set while a filter runs: its reads are noted and answered for the whole batch.
-    reads: ?*filter_reads.Reads = null,
+    /// Set while a modifier runs: its reads are noted and answered for the whole batch.
+    reads: ?*mod_reads.Reads = null,
 
     /// The plugin itself, acting for the account that made the call when there is one.
     pub fn caller(self: *const SandboxApi) caller_view.View {

@@ -230,21 +230,13 @@ pub fn CLI(comptime SDK: type) type {
                         try help.command(Operation, out);
                         return 0;
                     }
-                    const code = try invoke(&ctx, Operation, rest, out, invocation);
-
-                    hand_on_events(&ctx);
-
-                    return code;
+                    return invoke(&ctx, Operation, rest, out, invocation);
                 }
             }
 
             if (invocation.options.sandboxed_plugins) |sandboxed| {
                 if (sandboxed.find(name)) |found| {
-                    const code = try invoke_runtime(&ctx, found, rest, out, invocation);
-
-                    hand_on_events(&ctx);
-
-                    return code;
+                    return invoke_runtime(&ctx, found, rest, out, invocation);
                 }
             }
 
@@ -307,29 +299,6 @@ pub fn CLI(comptime SDK: type) type {
             const footer = "\nRun `publr {s} <verb> --help` for the fields of a command.\n";
             out.print(footer, .{namespace}) catch return error.WriteFailed;
         }
-
-        /// Without a server next to it, the CLI hands the command's queued events to the
-        /// `on` hooks itself once it has committed; in a server, the same.
-        fn hand_on_events(ctx: *sdk.Ctx) void {
-            std.debug.assert(ctx.db.transaction_depth == 0);
-            std.debug.assert(passes_max > 0);
-
-            const take_max = @import("../store/event_queue.zig").take_max;
-            var passes: u32 = 0;
-
-            while (passes < passes_max) : (passes += 1) {
-                const handed = SDK.events.drain(ctx, take_max) catch |err| {
-                    std.log.warn("events: not handed on: {t}", .{err});
-                    return;
-                };
-
-                if (handed < take_max) {
-                    return;
-                }
-            }
-        }
-
-        const passes_max: u32 = 1024;
 
         fn invoke(
             ctx: *sdk.Ctx,
@@ -581,7 +550,7 @@ fn describe(err: sdk.Error, ctx: *const sdk.Ctx) []const u8 {
         error.Sqlite => "database error",
         error.Interrupted => "it asked for more work than a call may do; ask for less",
         error.TooBig => "the answer is too large; ask for less",
-        error.NotYet => "internal error: a filter's read escaped its batch",
+        error.NotYet => "internal error: a modifier's read escaped its batch",
     };
 
     std.debug.assert(text.len > 0);

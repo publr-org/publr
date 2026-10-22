@@ -203,7 +203,7 @@ test "each on hook runs again on its own, as a job, and is kept failed when trie
         .note = "kept",
     });
 
-    try std.testing.expectEqual(1, try ProbeSDK.events.drain(&ctx, 8));
+    try std.testing.expectEqual(3, try ProbeSDK.jobs.drain(&ctx, 8));
     try std.testing.expectEqual(1, try sdk.testing.count(&ctx, "steady_runs"));
 
     // Flaky and Broken wait, each a run of its own; Steady is done.

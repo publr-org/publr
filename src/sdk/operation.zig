@@ -18,8 +18,8 @@ pub const Error = db.Error || error{
     Unavailable,
     BadCredentials,
     InvalidationFailed,
-    /// A filter's read, noted for its batch: the filter runs again once the batch's reads are
-    /// in. Only a filter's first pass sees it.
+    /// A modifier's read, noted for its batch: the modifier runs again once the batch's reads
+    /// are in. Only a modifier's first pass sees it.
     NotYet,
 };
 

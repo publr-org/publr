@@ -4,7 +4,6 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const server = @import("../server.zig");
-const queued_events = @import("queued_events.zig");
 const queued_jobs = @import("queued_jobs.zig");
 const store = @import("../store.zig");
 
@@ -51,7 +50,6 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
             try application.sandboxed_plugins.load_all(&application.connection);
         }
 
-        queued_events.tick(&project, init.gpa);
         queued_jobs.tick(&project, init.gpa, &clock, sdk.context.wall_clock_ms(init.io));
 
         try std.Io.sleep(init.io, .fromMilliseconds(pause_ms), .awake);

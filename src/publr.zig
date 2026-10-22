@@ -187,7 +187,6 @@ pub const forwarding = if (builtin.os.tag == .wasi) void else @import("server/re
 pub const work = if (builtin.os.tag == .wasi) void else @import("server/work.zig");
 pub const queue_worker = if (builtin.os.tag == .wasi) void else @import("server/queue_worker.zig");
 /// Queued work's passes: the worker's on a server, after each answer in the browser.
-pub const queued_events = @import("server/queued_events.zig");
 pub const queued_jobs = @import("server/queued_jobs.zig");
 pub const agent_script = if (builtin.os.tag == .wasi) void else @import("server/agent_script.zig");
 pub const agent = if (builtin.os.tag == .wasi) void else @import("server/agent.zig");

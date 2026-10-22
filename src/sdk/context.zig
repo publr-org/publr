@@ -276,7 +276,7 @@ pub const Ctx = struct {
     plugin_states: ?*anyopaque = null,
     /// How deep calls nest through installed plugins, bounded by `plugins.depth_max`.
     plugin_depth: u32 = 0,
-    /// Set while a display hook or a `before` hook on a sign-in runs: it may read what it is
+    /// Set while a modifier or a `before` hook on a sign-in runs: it may read what it is
     /// granted, never write.
     reads_only: bool = false,
     /// Where the media library keeps its files, where a server made it.
@@ -471,12 +471,14 @@ pub const Ctx = struct {
             return;
         };
 
-        ctx.emit_json(Event.full_name, text);
+        ctx.emit_json(Event.full_name, text, true);
     }
 
-    /// An event by name with its payload as JSON, `after` hooks first: a plugin's typed
-    /// `ctx.emit`, an installed plugin's.
-    pub fn emit_json(ctx: *Ctx, name: []const u8, payload: []const u8) void {
+    /// An event by name with its payload as JSON: kept on the trail and queued for the `on`
+    /// hooks, its `after` hooks run first when `run_after` (a plugin's typed `ctx.emit`, an
+    /// installed plugin's). Core runs them itself, by its own rules, for its events whose
+    /// hooks it runs (a sign-in spares an administrator; a move's hooks hear the transition).
+    pub fn emit_json(ctx: *Ctx, name: []const u8, payload: []const u8, run_after: bool) void {
         std.debug.assert(name.len > 0);
         std.debug.assert(ctx.parent != null);
 
@@ -485,7 +487,7 @@ pub const Ctx = struct {
             .operation_id = ctx.parent.?,
             .name = name,
             .subject = payload,
-        }, true);
+        }, run_after);
     }
 
     /// Keeps one of core's events outside the write running now: a refusal people hear of
@@ -518,27 +520,6 @@ pub const Ctx = struct {
         }) catch {
             std.log.warn("events: {s} not kept: out of memory", .{Event.full_name});
         };
-    }
-
-    /// One of core's events whose `after` hooks core ran itself, by its own rules (a sign-in
-    /// spares an administrator; a move's hooks hear the transition), or none (a copy's exact
-    /// state landed): kept on the trail and queued for the `on` hooks. The payload is the
-    /// event's struct.
-    pub fn emit_heard(ctx: *Ctx, name: []const u8, payload: anytype) void {
-        std.debug.assert(name.len > 0);
-        std.debug.assert(ctx.parent != null);
-
-        const hand = ctx.notify orelse return;
-        const text = std.json.Stringify.valueAlloc(ctx.arena, payload, .{}) catch {
-            ctx.event_refusal = ctx.event_refusal orelse error.OutOfMemory;
-            return;
-        };
-
-        hand(ctx, .{
-            .operation_id = ctx.parent.?,
-            .name = name,
-            .subject = text,
-        }, false);
     }
 
     pub fn allocate_operation_id(ctx: *Ctx) OperationId {

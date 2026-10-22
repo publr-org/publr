@@ -2,11 +2,12 @@
 //! own `.on` middleware) is part of the write: it hears the event inside the write's
 //! transaction, so what it keeps commits or rolls back with the write, and a write over many
 //! records hands it all of them at once when it has a set form (`run_many`). Every `on` hook,
-//! compiled in or installed, hears it from the queue (`event_queue`): queued in the write's
-//! transaction and handed on once the write has committed, by the worker beside the server.
+//! compiled in or installed, hears it from the queue: a job per hook (`job_queue`), queued in
+//! the write's transaction and run once the write has committed, by the worker beside the
+//! server, retried as any job.
 const std = @import("std");
 const sdk = @import("../sdk.zig");
-const event_queue = @import("../store/event_queue.zig");
+const job_queue = @import("../store/job_queue.zig");
 const hook_runs = @import("hook_runs.zig");
 
 const Ctx = sdk.Ctx;
@@ -104,23 +105,78 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             }
         }
 
-        /// Kept for the `on` hooks, in the write's transaction. An event that could not be
-        /// kept fails the write, as a site change not raised does: they would never hear it.
+        /// Kept for the `on` hooks, in the write's transaction: one job per hook that hears
+        /// it (`on:<event>`, `#2` for a plugin's second), its payload the job's input, run
+        /// from the queue once the write commits. A hook that could not be queued fails the
+        /// write, as a site change not raised does: it would never hear it.
         pub fn queue(ctx: *Ctx, emitted: Emitted) void {
             std.debug.assert(emitted.name.len > 0);
             std.debug.assert(emitted.operation_id != 0);
 
-            event_queue.push(
-                ctx.db,
-                emitted.operation_id,
-                emitted.name,
-                emitted.subject,
-                ctx.now_ms,
-            ) catch |err| {
+            queue_hooks(ctx, emitted) catch |err| {
                 ctx.dependency_failure = true;
                 std.log.warn("events: {s} not queued: {t}", .{ emitted.name, err });
             };
         }
+
+        fn queue_hooks(ctx: *Ctx, emitted: Emitted) job_queue.Error!void {
+            std.debug.assert(emitted.name.len > 0);
+
+            const event: Event = .{
+                .emitted = emitted,
+            };
+
+            inline for (registry.middleware, 0..) |Middleware, index| {
+                const listens = comptime Middleware.stage == .on and !intrinsic(Middleware);
+
+                if (listens and sdk.hears(Middleware, event)) {
+                    const ordinal = ordinal_of(index, event);
+
+                    try queue_one(ctx, comptime owner_at(index), ordinal, emitted);
+                }
+            }
+
+            const sandboxed = ctx.sandboxed_plugins orelse return;
+            const hooks = sandboxed.on_hooks(ctx.arena, emitted.name) catch
+                return error.OutOfMemory;
+
+            for (hooks) |hook| {
+                try queue_one(ctx, hook.plugin, hook.ordinal, emitted);
+            }
+        }
+
+        /// One hook's run, due now. A payload over a job's input limit cannot wait in the
+        /// queue: the run is kept failed at once, saying so.
+        fn queue_one(
+            ctx: *Ctx,
+            plugin: []const u8,
+            ordinal: u32,
+            emitted: Emitted,
+        ) job_queue.Error!void {
+            std.debug.assert(plugin.len > 0);
+            std.debug.assert(emitted.subject.len > 0);
+
+            const job: job_queue.Queued = .{
+                .plugin = plugin,
+                .name = try hook_runs.name_of(ctx.arena, emitted.name, ordinal),
+                .input = emitted.subject,
+                .due_at_ms = ctx.now_ms,
+                .now_ms = ctx.now_ms,
+            };
+
+            if (emitted.subject.len <= job_queue.input_bytes_max) {
+                return job_queue.push(ctx.db, job);
+            }
+
+            var kept = job;
+
+            kept.input = "null";
+            std.log.warn("events: {s} is over 64 KiB; its hook is not run", .{emitted.name});
+
+            return job_queue.push_failed(ctx.db, kept, too_large);
+        }
+
+        const too_large = "Not run: its event is over 64 KiB";
 
         /// Whether an `on` hook, compiled in or installed, names the event.
         pub fn heard_outside(ctx: *const Ctx, name: []const u8) bool {
@@ -138,45 +194,6 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             const sandboxed = ctx.sandboxed_plugins orelse return false;
 
             return sandboxed.hooked(.event, name);
-        }
-
-        /// The queued events handed to the `on` hooks, oldest first, up to `max`: what the
-        /// worker does. Each hook runs on its own: one that fails is kept as a job
-        /// (`on:<event>`) to run again, the others are done. Answers how many were handed on.
-        pub fn drain(ctx: *Ctx, max: u32) event_queue.Error!u32 {
-            std.debug.assert(ctx.db.transaction_depth == 0);
-            std.debug.assert(max > 0 and max <= event_queue.take_max);
-
-            const queued = try event_queue.take(ctx.db, ctx.arena, max);
-
-            // The hooks hear them as events of a pass of its own.
-            _ = ctx.allocate_operation_id();
-
-            for (queued) |row| {
-                // What the hooks log for one event is kept as that event's run.
-                var lines: sdk.trail.Lines = .{
-                    .root = 0,
-                    .arena = ctx.arena,
-                };
-
-                std.debug.assert(ctx.lines == null);
-                ctx.lines = &lines;
-                defer ctx.lines = null;
-
-                try deliver(ctx, .{
-                    .operation_id = @intCast(row.operation_id),
-                    .name = row.name,
-                    .subject = row.subject,
-                });
-
-                try keep_lines(ctx, row.name, &lines);
-            }
-
-            if (queued.len > 0) {
-                try event_queue.remove_through(ctx.db, queued[queued.len - 1].id);
-            }
-
-            return @intCast(queued.len);
         }
 
         /// What the hooks logged on one event, on their plugins' Log as `event:<name>`.
@@ -199,67 +216,14 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             SDK.raise_failed(ctx, log.lines(ctx, call, lines.kept()));
         }
 
-        fn deliver(ctx: *Ctx, emitted: Emitted) event_queue.Error!void {
-            std.debug.assert(ctx.db.transaction_depth == 0);
-            std.debug.assert(emitted.operation_id != 0);
-
-            if (ctx.sandboxed_plugins) |sandboxed| {
-                const hooks = sandboxed.on_hooks(ctx.arena, emitted.name) catch
-                    return error.OutOfMemory;
-
-                for (hooks) |hook| {
-                    const job = try hook_runs.name_of(ctx.arena, emitted.name, hook.ordinal);
-                    const problem = run_installed(ctx, sandboxed, hook, job, emitted);
-
-                    try failed_first(ctx, hook.plugin, job, emitted, problem);
-                }
-            }
-
-            const event: Event = .{
-                .emitted = emitted,
-            };
-
-            inline for (registry.middleware, 0..) |Middleware, index| {
-                const listens = comptime Middleware.stage == .on and !intrinsic(Middleware);
-
-                if (listens and sdk.hears(Middleware, event)) {
-                    const plugin = comptime owner_at(index);
-                    const ordinal = ordinal_of(index, event);
-                    const job = try hook_runs.name_of(ctx.arena, emitted.name, ordinal);
-                    const problem = try run_compiled(ctx, Middleware, plugin, job, event);
-
-                    try failed_first(ctx, plugin, job, emitted, problem);
-                }
-            }
-        }
-
-        /// A failed first run, kept as a job to run again: never the other hooks with it.
-        fn failed_first(
+        /// One queued hook's run (`on:<event>` in `job_queue`), by the jobs' worker: its own
+        /// words for why it failed, empty when it ran.
+        pub fn run_hook(
             ctx: *Ctx,
             plugin: []const u8,
             job: []const u8,
-            emitted: Emitted,
-            problem: []const u8,
-        ) event_queue.Error!void {
-            std.debug.assert(plugin.len > 0);
-            std.debug.assert(job.len > 0);
-
-            if (problem.len == 0) {
-                return;
-            }
-
-            try SDK.jobs.failed_first(ctx, .{
-                .plugin = plugin,
-                .name = job,
-                .input = emitted.subject,
-                .due_at_ms = ctx.now_ms,
-                .now_ms = ctx.now_ms,
-            }, problem);
-        }
-
-        /// One queued hook run again (`on:<event>` in `job_queue`): its own words for why it
-        /// failed, empty when it ran.
-        pub fn rerun(ctx: *Ctx, plugin: []const u8, job: []const u8, input: []const u8) []const u8 {
+            input: []const u8,
+        ) []const u8 {
             std.debug.assert(plugin.len > 0);
             std.debug.assert(hook_runs.is_hook(job));
 

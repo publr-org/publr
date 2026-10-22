@@ -577,16 +577,6 @@ CREATE TRIGGER IF NOT EXISTS plugin_log_kept BEFORE UPDATE ON plugin_log
 CREATE TRIGGER IF NOT EXISTS plugin_log_never_removed BEFORE DELETE ON plugin_log
     BEGIN SELECT RAISE(ABORT, 'the plugin log is append-only'); END;
 
--- Events waiting for the `on` hooks: written in the transaction that emitted them, so a
--- rolled-back write queues nothing; delivered once it commits, oldest first, then removed.
-CREATE TABLE IF NOT EXISTS event_queue (
-    id           INTEGER PRIMARY KEY,
-    operation_id INTEGER NOT NULL,
-    name         TEXT NOT NULL,
-    subject      TEXT NOT NULL,
-    queued_at    INTEGER NOT NULL
-) STRICT;
-
 -- Jobs a plugin's code queued: written in the caller's transaction, so a rolled-back write
 -- queues nothing; run once `due_at` comes, removed when done, kept as failed after the last
 -- attempt. A claim (`claimed_until`) lets a run lost to a crash run again.

@@ -1,7 +1,6 @@
 const std = @import("std");
 const limits_module = @import("sdk/limits.zig");
 const model_operation_override = @import("model/operation_override.zig");
-const Transitioned = @import("model/flow.zig").Transitioned;
 const error_events = @import("sdk/error_events.zig");
 const store_settings = @import("store/settings.zig");
 /// Rate limits: the general one and an operation's own `.limit`.
@@ -1223,10 +1222,9 @@ pub fn SDK(comptime registry: Registry) type {
             return @call(.auto, Middleware.run, .{ctx} ++ args);
         }
 
-        /// The `before` or `after` hooks on an event core lets refuse (`publr.auth.SignedIn`),
-        /// compiled in then installed, inside the write that emits it: a hook's error, trap
-        /// or spent budget refuses it. `before` hooks only read: they can refuse, never
-        /// change anything. `spared` (an administrator signing in) is never refused: the
+        /// The `before` or `after` hooks on a sign-in event (`publr.auth.SignedIn`), inside
+        /// the write that emits it (`hooks_on`). `before` hooks only read: they can refuse,
+        /// never change anything. `spared` (an administrator signing in) is never refused: the
         /// refusal is logged and it goes on.
         pub fn event_hooks(
             ctx: *Ctx,
@@ -1249,98 +1247,68 @@ pub fn SDK(comptime registry: Registry) type {
                 ctx.failure = failure;
             };
 
-            return hooks_on_event(ctx, stage, Emitted, payload, spared);
+            const json = try stringify(ctx.arena, payload);
+
+            return hooks_on(ctx, stage, Emitted.full_name, json, Emitted.refusable and !spared);
         }
 
-        fn hooks_on_event(
-            ctx: *Ctx,
-            comptime stage: middleware.Stage,
-            comptime Emitted: type,
-            payload: Emitted.Payload,
-            spared: bool,
-        ) Error!void {
-            comptime std.debug.assert(stage == .before or stage == .after);
-            std.debug.assert(ctx.parent != null);
-
-            const name = Emitted.full_name;
-            const refusable = Emitted.refusable and !spared;
-
-            inline for (registry.middleware) |Middleware| {
-                const listening = comptime Middleware.stage == stage and
-                    @hasDecl(Middleware, "event") and std.mem.eql(u8, Middleware.event, name);
-
-                if (listening) {
-                    var copy = payload;
-                    const ran = if (stage == .before)
-                        invoke_hook(ctx, Middleware, .{&copy})
-                    else
-                        invoke_hook(ctx, Middleware, .{ &copy, &nothing_of(Middleware) });
-
-                    try settle_refusal(ran, refusable, name);
-                }
-            }
-
-            const sandboxed = ctx.sandboxed_plugins orelse return;
-            const input = try stringify(ctx.arena, payload);
-            // A `before` hook may hand back the payload changed; an event's stays as emitted.
-            const ran: Error!void = if (stage == .before)
-                discard(sandboxed.before(ctx, name, input))
-            else
-                sandboxed.after(ctx, name, input, "{}");
-
-            try settle_refusal(ran, refusable, name);
-        }
-
-        /// The `before` or `after` hooks on every transition of one type
-        /// (`<type>.any_transition`), named at run time, inside the write: a hook's error
-        /// refuses the transition.
-        pub fn transition_hooks(
+        /// The `before` or `after` hooks on an event by name (a sign-in, a transition, a
+        /// plugin's own), compiled in then installed, inside the write that emits it: each
+        /// gets the payload read into its own type. A hook's error, trap or spent budget
+        /// refuses the event when it is `refusable`; otherwise it is logged and the rest go on.
+        pub fn hooks_on(
             ctx: *Ctx,
             comptime stage: middleware.Stage,
             name: []const u8,
-            payload: Transitioned,
+            payload: []const u8,
+            refusable: bool,
         ) Error!void {
             comptime std.debug.assert(stage == .before or stage == .after);
             std.debug.assert(name.len > 0);
 
             inline for (registry.middleware) |Middleware| {
                 const listening = comptime Middleware.stage == stage and
-                    @hasDecl(Middleware, "event") and hears_transitions(Middleware);
+                    @hasDecl(Middleware, "event") and @hasDecl(Middleware, "Payload");
 
                 if (listening and std.mem.eql(u8, Middleware.event, name)) {
-                    var copy = payload;
-                    const ran = if (stage == .before)
-                        invoke_hook(ctx, Middleware, .{&copy})
-                    else
-                        invoke_hook(ctx, Middleware, .{ &copy, &nothing_of(Middleware) });
+                    const ran = typed_hook(ctx, stage, Middleware, payload);
 
-                    try settle_refusal(ran, true, name);
+                    try settle_refusal(ran, refusable, name);
                 }
             }
 
             const sandboxed = ctx.sandboxed_plugins orelse return;
-
             const hook_stage: sandboxed_plugins.Stage = if (stage == .before) .before else .after;
 
             if (!sandboxed.hooked(hook_stage, name)) {
                 return;
             }
 
-            const input = try stringify(ctx.arena, payload);
+            // A `before` hook may hand back the payload changed; an event's stays as emitted.
             const ran: Error!void = if (stage == .before)
-                discard(sandboxed.before(ctx, name, input))
+                discard(sandboxed.before(ctx, name, payload))
             else
-                sandboxed.after(ctx, name, input, "{}");
+                sandboxed.after(ctx, name, payload, "{}");
 
-            try settle_refusal(ran, true, name);
+            try settle_refusal(ran, refusable, name);
         }
 
-        /// Whether an event hook takes a transition's payload: on `any_transition` or on one
-        /// transition of a type.
-        fn hears_transitions(comptime Middleware: type) bool {
-            const parameters = @typeInfo(@TypeOf(Middleware.run)).@"fn".params;
+        fn typed_hook(
+            ctx: *Ctx,
+            comptime stage: middleware.Stage,
+            comptime Middleware: type,
+            payload: []const u8,
+        ) Error!void {
+            var value = json_module.parse(Middleware.Payload, ctx.arena, payload, .{
+                .ignore_unknown_fields = true,
+                .allocate = .alloc_always,
+            }) catch return error.Invalid;
 
-            return parameters.len >= 2 and parameters[1].type == *Transitioned;
+            if (stage == .before) {
+                return invoke_hook(ctx, Middleware, .{&value});
+            }
+
+            return invoke_hook(ctx, Middleware, .{ &value, &nothing_of(Middleware) });
         }
 
         /// The empty answer an `after` hook on an event takes beside the payload.
@@ -1605,51 +1573,12 @@ pub fn SDK(comptime registry: Registry) type {
             follow_event(ctx, emitted);
 
             if (after) {
-                event_after_hooks(ctx, emitted.name, emitted.subject);
+                hooks_on(ctx, .after, emitted.name, emitted.subject, true) catch |err| {
+                    ctx.event_refusal = ctx.event_refusal orelse err;
+                };
             }
 
             events.hand(ctx, emitted);
-        }
-
-        /// The `after` hooks on an event emitted by name, compiled in then installed, its
-        /// payload read into each one's type; the first refusal is kept for the write.
-        fn event_after_hooks(ctx: *Ctx, name: []const u8, payload: []const u8) void {
-            std.debug.assert(name.len > 0);
-            std.debug.assert(ctx.parent != null);
-
-            inline for (registry.middleware) |Middleware| {
-                const listening = comptime Middleware.stage == .after and
-                    @hasDecl(Middleware, "event") and @hasDecl(Middleware, "Payload");
-
-                if (listening and std.mem.eql(u8, Middleware.event, name)) {
-                    const ran = after_typed(ctx, Middleware, payload);
-
-                    ran catch |err| {
-                        ctx.event_refusal = ctx.event_refusal orelse err;
-                    };
-                }
-            }
-
-            const sandboxed = ctx.sandboxed_plugins orelse return;
-
-            if (!sandboxed.hooked(.after, name)) {
-                return;
-            }
-
-            sandboxed.after(ctx, name, payload, "{}") catch |err| {
-                ctx.event_refusal = ctx.event_refusal orelse err;
-            };
-        }
-
-        fn after_typed(ctx: *Ctx, comptime Middleware: type, payload: []const u8) Error!void {
-            comptime std.debug.assert(Middleware.stage == .after);
-
-            var value = json_module.parse(Middleware.Payload, ctx.arena, payload, .{
-                .ignore_unknown_fields = true,
-                .allocate = .alloc_always,
-            }) catch return error.Invalid;
-
-            return invoke_hook(ctx, Middleware, .{ &value, &nothing_of(Middleware) });
         }
 
         /// A write about to commit for a `drafts` device: refused when it changed what
@@ -1782,7 +1711,7 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// An `on` hook answers an error: an event is never refused; its words, or the error's
-        /// name, say why, for the run kept as failed (`jobs.failed_first`).
+        /// name, say why, for the run kept as failed.
         fn settle_listener(
             ctx: *Ctx,
             comptime Middleware: type,
@@ -2265,7 +2194,7 @@ test "pre middleware runs before authorization; a refused call emits nothing" {
         .note = "x",
     });
     try std.testing.expectError(error.Denied, denied);
-    try std.testing.expectEqual(@as(u32, 0), try testing.count(&anon, "event_queue"));
+    try std.testing.expectEqual(@as(u32, 0), try testing.count(&anon, "job_queue"));
 }
 
 test "an operation's on hook hears its answer from the queue, after the commit" {
@@ -2294,7 +2223,7 @@ test "an operation's on hook hears its answer from the queue, after the commit" 
     const row = try select.read(Note, harness.fixed.allocator());
     try std.testing.expectEqualStrings("KEPT", row.note);
 
-    // Not inside the request: the hook has not run, its event waits with the answer.
+    // Not inside the request: the hook has not run, its run waits with the answer.
     var journal = try admin.db.prepare(
         "SELECT count(*) FROM sqlite_master WHERE name = 'journal'",
     );
@@ -2302,21 +2231,23 @@ test "an operation's on hook hears its answer from the queue, after the commit" 
     try std.testing.expect(try journal.step());
     try std.testing.expectEqual(@as(i64, 0), journal.read_int());
 
-    var queued = try admin.db.prepare("SELECT name, subject FROM event_queue");
+    var queued = try admin.db.prepare("SELECT plugin, name, input FROM job_queue");
     defer queued.finalize();
     try std.testing.expect(try queued.step());
     const Queued = struct {
+        plugin: []const u8,
         name: []const u8,
-        subject: []const u8,
+        input: []const u8,
     };
     const waiting = try queued.read(Queued, harness.fixed.allocator());
-    try std.testing.expectEqualStrings("hello.record", waiting.name);
-    try std.testing.expectEqualStrings("{\"rows\":1}", waiting.subject);
+    try std.testing.expectEqualStrings("core", waiting.plugin);
+    try std.testing.expectEqualStrings("on:hello.record", waiting.name);
+    try std.testing.expectEqualStrings("{\"rows\":1}", waiting.input);
 
     var worker = harness.ctx(.system);
-    try std.testing.expectEqual(@as(u32, 1), try TestSDK.events.drain(&worker, 8));
+    try std.testing.expectEqual(@as(u32, 1), try TestSDK.jobs.drain(&worker, 8));
     try std.testing.expectEqual(@as(u32, 1), try testing.count(&admin, "journal"));
-    try std.testing.expectEqual(@as(u32, 0), try testing.count(&admin, "event_queue"));
+    try std.testing.expectEqual(@as(u32, 0), try testing.count(&admin, "job_queue"));
 }
 
 test "a write that rolls back drops its event; a failure emits nothing" {
@@ -2337,7 +2268,7 @@ test "a write that rolls back drops its event; a failure emits nothing" {
     try std.testing.expectEqual(@as(u32, 1), try testing.count(&admin, "notes"));
     try std.testing.expectEqual(@as(u32, 0), admin.db.transaction_depth);
     try std.testing.expectEqual(@as(?u64, null), admin.parent);
-    try std.testing.expectEqual(@as(u32, 1), try testing.count(&admin, "event_queue"));
+    try std.testing.expectEqual(@as(u32, 1), try testing.count(&admin, "job_queue"));
 }
 
 test "an operation called through what its plugin publishes: by name, the same checks" {

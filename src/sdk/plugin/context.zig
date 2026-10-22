@@ -25,13 +25,13 @@ pub const PluginCtx = switch (guest.mode) {
 pub const Mode = guest.Mode;
 
 const guest = @import("guest.zig");
-const filter_reads = @import("filter_reads.zig");
+const mod_reads = @import("mod_reads.zig");
 
 /// A native plugin's way into Publr: direct calls through the SDK, full access.
 pub const HostApi = struct {
     inner: *sdk.Ctx,
-    /// Set while a filter runs: its reads are noted and answered for the whole batch.
-    reads: ?*filter_reads.Reads = null,
+    /// Set while a modifier runs: its reads are noted and answered for the whole batch.
+    reads: ?*mod_reads.Reads = null,
 
     /// Who is calling: where from, whether signed in, their roles, whether an
     /// administrator granted them this operation, the visitor's stable id.
@@ -302,7 +302,7 @@ pub const HostApi = struct {
         const text = std.json.Stringify.valueAlloc(self.inner.arena, payload, .{}) catch
             return self.refuse_emit();
 
-        self.inner.emit_json(name, text);
+        self.inner.emit_json(name, text, true);
     }
 
     /// An event that could not be written fails the write, as a refused one does.

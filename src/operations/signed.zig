@@ -86,7 +86,12 @@ fn raise(ctx: *Ctx, comptime Event: type, payload: Event.Payload) void {
     std.debug.assert(Event.full_name.len > 0);
     std.debug.assert(ctx.parent != null);
 
-    ctx.emit_heard(Event.full_name, payload);
+    const text = std.json.Stringify.valueAlloc(ctx.arena, payload, .{}) catch {
+        ctx.event_refusal = ctx.event_refusal orelse error.OutOfMemory;
+        return;
+    };
+
+    ctx.emit_json(Event.full_name, text, false);
 }
 
 test "sign-in hooks: before refuses, after writes in the same write, administrators go on" {
