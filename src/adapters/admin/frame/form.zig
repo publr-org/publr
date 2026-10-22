@@ -212,7 +212,7 @@ fn columns_of(
         column.* = .{
             .name = field.name,
             .label = try label_of(arena, field.name),
-            .kind = kind_of(field, &.{}) orelse "string",
+            .kind = kind_of(field) orelse "string",
         };
     }
 
@@ -249,7 +249,7 @@ fn rows_of(
         for (field.fields, cells, 0..) |column, *cell, at| {
             cell.* = .{
                 .at = @floatFromInt(at),
-                .kind = kind_of(column, &.{}) orelse "string",
+                .kind = kind_of(column) orelse "string",
                 .label = try label_of(arena, column.name),
                 .value = try text_of(arena, column, item),
             };
@@ -358,7 +358,7 @@ test "a list of plain items is drawn as rows, a cell per item field" {
     const values = try std.json.parseFromSliceLeaky(std.json.Value, arena,
         \\{"languages":[{"code":"en","main":true},{"code":"pl"}]}
     , .{});
-    const items = try items_of(PageField, arena, &described, values, &.{});
+    const items = try items_of(PageField, arena, &described, values);
 
     try std.testing.expectEqualStrings("rows", items[0].kind);
     try std.testing.expectEqual(@as(usize, 2), items[0].columns.len);
