@@ -136,7 +136,7 @@ pub fn Of(comptime Domain: type) type {
 
             const known = registry.Kinds.all;
 
-            try values.write(known, ctx.db, id, values.live, row.id, def.fields, parsed);
+            try values.write(known, ctx, ctx.db, id, values.live, row.id, def.fields, parsed);
             ctx.publishes = ctx.publishes or row.def.flow.is_live(status);
 
             return .{

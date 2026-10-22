@@ -602,7 +602,16 @@ pub fn Of(comptime Domain: type) type {
 
                         const fields = new.fields;
 
-                        try values.write(known, ctx.db, record.id, slot, type_id, fields, parsed);
+                        try values.write(
+                            known,
+                            ctx,
+                            ctx.db,
+                            record.id,
+                            slot,
+                            type_id,
+                            fields,
+                            parsed,
+                        );
                     }
 
                     filled += 1;
@@ -680,7 +689,7 @@ pub fn Of(comptime Domain: type) type {
                 };
             };
 
-            try values.write(known, ctx.db, record_id, slot, type_id, new.fields, converted);
+            try values.write(known, ctx, ctx.db, record_id, slot, type_id, new.fields, converted);
         }
 
         fn parse_and_validate(ctx: *Ctx, definition: []const u8) Error!Def {

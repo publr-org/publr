@@ -1,12 +1,15 @@
 //! `publr.field.kind(Value, .{ .name, .validate, .text, .icon })`: a field kind a plugin
 //! brings. Its storage follows `Value` (text, a whole number, a number, yes or no, or a struct
-//! kept as JSON), its words are the `///` on `Value`, and `.validate` runs on every write with
-//! the same `problems` as an operation's.
+//! kept as JSON), its words are the `///` on `Value`, `.validate` runs on every write with
+//! the same `problems` as an operation's, and `.text` (`fn (ctx, value) Error![]const u8`)
+//! is how a value reads in list cells, search and on the site.
 const std = @import("std");
 const kinds = @import("../../model/kinds.zig");
 const field_model = @import("../../model/field.zig");
 const plugin_define = @import("define.zig");
 const operation_define = @import("operation_define.zig");
+const sdk = @import("../../sdk.zig");
+const plugin_context = @import("context.zig");
 
 const option_names = [_][]const u8{ "name", "validate", "text", "editor", "icon" };
 
@@ -51,6 +54,8 @@ pub fn described(
             "kind " ++ id ++ ": " ++ @typeName(Value) ++ " needs a `///` comment: its name, " ++
             "then what it holds");
         const options = Definition.given;
+        const texted = @hasField(@TypeOf(options), "text") and plugin_context.Mode.native ==
+            @import("guest.zig").mode;
 
         return .{
             .id = id,
@@ -63,6 +68,8 @@ pub fn described(
                 &Checked(Definition).check
             else
                 null,
+            .text = if (texted) &Texted(Definition).text else null,
+            .searchable_allowed = texted,
         };
     }
 }
@@ -118,9 +125,7 @@ fn Checked(comptime Definition: type) type {
             var buffer: [16 << 10]u8 = undefined;
             var memory: std.heap.FixedBufferAllocator = .init(&buffer);
             const arena = memory.allocator();
-            const parsed = std.json.parseFromValueLeaky(Definition.Shape, arena, value, .{
-                .ignore_unknown_fields = true,
-            }) catch {
+            const parsed = decoded(Definition.Shape, arena, value) catch {
                 problems.add(path, "not a value of this kind");
                 return;
             };
@@ -131,6 +136,38 @@ fn Checked(comptime Definition: type) type {
             for (found.slice()) |problem| {
                 problems.add(path, problem.message);
             }
+        }
+    };
+}
+
+/// A stored value read back into `Value`: a struct is kept as its JSON text.
+fn decoded(comptime Value: type, arena: std.mem.Allocator, value: std.json.Value) !Value {
+    const options: std.json.ParseOptions = .{
+        .ignore_unknown_fields = true,
+    };
+
+    std.debug.assert(@sizeOf(Value) <= 1 << 16);
+
+    if (value == .string and Value != []const u8) {
+        return std.json.parseFromSliceLeaky(Value, arena, value.string, options);
+    }
+
+    return std.json.parseFromValueLeaky(Value, arena, value, options);
+}
+
+/// The plugin's `.text` over a stored value read back into `Value`.
+fn Texted(comptime Definition: type) type {
+    return struct {
+        fn text(ctx: *anyopaque, value: std.json.Value) ?[]const u8 {
+            const inner: *sdk.Ctx = @ptrCast(@alignCast(ctx));
+            const parsed = decoded(Definition.Shape, inner.arena, value);
+            var wrapped: plugin_context.PluginCtx = .{
+                .inner = inner,
+            };
+
+            std.debug.assert(inner.now_ms >= 0);
+
+            return Definition.given.text(&wrapped, parsed catch return null) catch null;
         }
     };
 }
@@ -175,6 +212,11 @@ test "a field kind from its value's struct and words" {
                 }
             }
         }.validate,
+        .text = struct {
+            fn text(ctx: *plugin_context.PluginCtx, value: Location) sdk.Error![]const u8 {
+                return ctx.print("{d}, {d}", .{ value.lat, value.lng });
+            }
+        }.text,
     });
     const declared = comptime described(Kind, "places", Docs);
 
@@ -182,4 +224,18 @@ test "a field kind from its value's struct and words" {
     try std.testing.expectEqualStrings("Location", declared.label);
     try std.testing.expectEqual(kinds.Storage.long, declared.storage);
     try std.testing.expect(declared.check != null);
+    try std.testing.expect(declared.searchable_allowed);
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    var ctx = harness.ctx(.system);
+    const stored: std.json.Value = .{
+        .string = "{\"lat\":52.5,\"lng\":21}",
+    };
+
+    try std.testing.expectEqualStrings("52.5, 21", declared.text.?(&ctx, stored).?);
+    try std.testing.expect(declared.text.?(&ctx, .{
+        .string = "not a place",
+    }) == null);
 }

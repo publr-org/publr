@@ -171,7 +171,7 @@ pub fn Of(comptime Domain: type) type {
                 const copy = try document.document_of(ctx, row.id, slot, def);
                 const kinds = registry.Kinds.all;
 
-                try values.write(kinds, ctx.db, row.id, slot, row.type_id, def.fields, copy);
+                try values.write(kinds, ctx, ctx.db, row.id, slot, row.type_id, def.fields, copy);
             }
         }
 

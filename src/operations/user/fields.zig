@@ -140,6 +140,7 @@ pub fn write(ctx: *Ctx, user_id: []const u8, defs: []const Def, text: []const u8
     try store.user_values.clear(ctx.db, user_id, live);
     try store.user_values.write(
         registry.Kinds.all,
+        ctx,
         ctx.db,
         user_id,
         live,

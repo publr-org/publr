@@ -20,8 +20,10 @@ const Notes = @import("records/notes.zig");
 const Logs = @import("records/logs.zig");
 const Tallies = @import("records/tallies.zig");
 const Reviews = @import("records/reviews.zig");
+const Visits = @import("records/visits.zig");
 const Profile = @import("records/profile.zig");
 const Noted = @import("events/noted.zig");
+const Place = @import("kinds/place.zig");
 
 const Hello = @import("operations/hello.zig");
 const Echo = @import("operations/echo.zig");
@@ -126,6 +128,8 @@ const added_statuses = .{.{
 }};
 
 const records = [_]type{ Notes.record, Logs.record, Tallies.record, Reviews.record };
+/// Compiled in, a type whose field is of the sampler's own kind.
+const native_records = records ++ [_]type{Visits.record};
 const jobs = [_]type{ WriteNote.job, Tick.job };
 
 const operations = [_]type{
@@ -170,7 +174,8 @@ const icons = .{
 /// registers the rest.
 pub const plugin = if (publr.plugin.guest.mode == .native)
     publr.plugin.define(manifest, .{
-        .records = &records,
+        .records = &native_records,
+        .field_kinds = &.{Place.kind},
         .jobs = &jobs,
         .register_fields = field_groups,
         .operations = operations,

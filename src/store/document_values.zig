@@ -60,8 +60,10 @@ pub fn Store(comptime tables: tables_module.Tables) type {
         const field_scope = "type_id = ?1 AND (field = ?2 OR " ++
             "substr(field, 1, length(?2) + 1) IN (?2 || '.', ?2 || '@'))";
 
+        /// `reader` is the caller's `*sdk.Ctx`, for the search text of a plugin's kind.
         pub fn write(
             known: []const kinds.Kind,
+            reader: ?*anyopaque,
             connection: *db.Db,
             record_id: []const u8,
             slot: []const u8,
@@ -95,6 +97,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                 .record_id = record_id,
                 .slot = slot,
                 .type_id = type_id,
+                .reader = reader,
             };
 
             // Each row stored as the walk reaches it, while its path is there.
@@ -116,6 +119,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             record_id: []const u8,
             slot: []const u8,
             type_id: []const u8,
+            reader: ?*anyopaque,
             failed: ?Error = null,
 
             fn row(context: *anyopaque, flat: document.Flat) document.Error!void {
@@ -153,8 +157,16 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                 if (row_flat.searchable) {
                     const fts = writing.fts;
 
+                    // A plugin's kind is found by what its `.text` says.
+                    const text = if (row_flat.text != null and writing.reader != null)
+                        row_flat.text.?(writing.reader.?, .{
+                            .string = row_flat.value.text,
+                        }) orelse row_flat.value.text
+                    else
+                        row_flat.value.text;
+
                     fts.reset();
-                    try fts.bind_text(1, row_flat.value.text);
+                    try fts.bind_text(1, text);
                     try fts.bind_text(2, writing.record_id);
                     try fts.bind_text(3, writing.slot);
                     try fts.bind_text(4, writing.type_id);

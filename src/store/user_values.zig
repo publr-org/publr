@@ -50,7 +50,7 @@ test "user values live under the user, apart from record and term values" {
     const text = "{\"basic\":{\"bio\":\"Writes Zig\"}}";
     const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{});
 
-    try write(&kinds.core, connection, id, live, type_id, &fields, parsed);
+    try write(&kinds.core, null, connection, id, live, type_id, &fields, parsed);
 
     const rows = try read(connection, arena, id, live);
     try std.testing.expectEqual(@as(usize, 1), rows.len);

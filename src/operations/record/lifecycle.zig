@@ -447,7 +447,7 @@ fn replace_live(ctx: *Ctx, id: []const u8, document: []const u8) !void {
 
     const fields = type_row.def.fields;
 
-    try store.values.write(registry.Kinds.all, ctx.db, id, "live", row.type_id, fields, value);
+    try store.values.write(registry.Kinds.all, ctx, ctx.db, id, "live", row.type_id, fields, value);
 }
 
 test "a document whose rows were replaced from outside lands as a person's move would" {
