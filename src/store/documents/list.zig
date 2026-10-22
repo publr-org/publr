@@ -5,6 +5,7 @@
 const std = @import("std");
 const db = @import("../../lib/db.zig");
 const tables_module = @import("../tables.zig");
+const list_filters = @import("list_filters.zig");
 
 pub const list_max: u32 = 200;
 pub const statuses_filter_max: u32 = 64;
@@ -42,6 +43,10 @@ pub const Record = struct {
     updated_at: i64,
     /// The app it belongs to (`app.zon`'s `.name`); null for the project's own.
     app: ?[]const u8 = null,
+    /// A transition asked for by someone who may not publish; empty when none waits.
+    requested: []const u8 = "",
+    /// Who asked for it.
+    requested_by: ?[]const u8 = null,
 };
 
 /// Only the documents whose ids a JSON array lists.
@@ -82,18 +87,26 @@ pub const App = union(enum) {
     name: []const u8,
 };
 
-pub const Order = enum { updated_desc, created_desc, created_asc, title_asc };
+pub const Order = enum {
+    updated_desc,
+    updated_asc,
+    created_desc,
+    created_asc,
+    title_asc,
+    title_desc,
+    status_asc,
+    status_desc,
+};
 
-pub const Filter = struct {
+pub const Filter = list_filters.Filter;
+pub const Operator = list_filters.Operator;
+pub const filters_max = list_filters.filters_max;
+
+/// An order by one of the record's own fields, by its indexed value; records without one
+/// come last, ties by id.
+pub const Sort = struct {
     field: []const u8,
-    text: ?[]const u8 = null,
-    int: ?i64 = null,
-    real: ?f64 = null,
-    ref: ?[]const u8 = null,
-    /// `ref` is a term: match through the membership index, ancestors included.
-    membership: bool = false,
-    /// Any of these values, a JSON array of text: references or text, compared as stored.
-    values_json: ?[]const u8 = null,
+    descending: bool = false,
 };
 
 /// Who created or last saved a document: this user, or (`exclude`) anyone but this user.
@@ -107,12 +120,18 @@ pub const Query = struct {
     /// the caller may read for a list across the content.
     type_ids: []const []const u8,
     statuses: ?[]const []const u8 = null,
+    /// Of these types only the documents in one of `live_statuses`: a caller reading
+    /// drafts of some types the list spans and only live records of the rest.
+    live_type_ids: []const []const u8 = &.{},
+    live_statuses: []const []const u8 = &.{},
     /// Only these documents: their ids as a JSON array of strings.
     ids_json: ?[]const u8 = null,
     changed: ?bool = null,
+    /// Only documents with a transition waiting (true), or without one (false).
+    requested: ?bool = null,
     search: ?[]const u8 = null,
-    /// A value of one field; only meaningful when the list spans one type.
-    filter: ?Filter = null,
+    /// Conditions on the records' own fields, all of them kept.
+    filters: []const Filter = &.{},
     created_by: ?Author = null,
     updated_by: ?Author = null,
     /// Bounds on the timestamps, milliseconds: `after` inclusive, `before` exclusive.
@@ -126,6 +145,8 @@ pub const Query = struct {
     /// read. A page drawn for a visitor reads live copies only.
     latest: bool = false,
     order: Order = .updated_desc,
+    /// Ordered by a field instead of `order`.
+    sort: ?Sort = null,
     limit: u32 = 50,
     offset: u32 = 0,
 };
@@ -174,7 +195,7 @@ pub fn List(comptime tables: tables_module.Tables) type {
         /// its definition `t` and its live title `title` and slug `slug` values.
         const record_columns = "r.id, r.type_id, t.handle, r.status, r.changed, r.version, " ++
             "title.value, slug.value, r.created_by, r.updated_by, r.created_at, r.updated_at, " ++
-            "r.app";
+            "r.app, r.requested, r.requested_by";
         fn joins(comptime slot: []const u8) []const u8 {
             comptime std.debug.assert(slot.len > 0);
 
@@ -203,21 +224,9 @@ pub fn List(comptime tables: tables_module.Tables) type {
             table ++ " r WHERE ";
         const list_by_title = select_record ++ " WHERE ";
         const list_latest_by_title = select_latest ++ " WHERE ";
-        // Over one type, bound first (`?1`), the lookup index finds the records holding the
-        // value, instead of each record of the type being checked in turn.
-        const list_filter_one_type = " AND r.id IN (SELECT v.record FROM " ++ values ++
-            " v WHERE v.type_id = ?1 AND v.field = ?{d} AND v.value = ?{d} " ++
-            "AND v.slot = {s} AND v.kind <> 'long')";
-        const list_filter = " AND EXISTS (SELECT 1 FROM " ++ values ++ " v WHERE " ++
-            "v.record = r.id AND v.type_id = r.type_id AND v.field = ?{d} AND v.value = ?{d} " ++
-            "AND v.slot = {s} AND v.kind <> 'long')";
-        const list_filter_any = " AND r.id IN (SELECT v.record FROM " ++ values ++
-            " v WHERE v.type_id = ?1 AND v.field = ?{d} AND v.value IN " ++
-            "(SELECT value FROM json_each(?{d})) AND v.slot = {s} AND v.kind <> 'long')";
         const list_search = " AND r.id IN (SELECT record FROM " ++ tables.search ++
             " WHERE " ++ tables.search ++ " MATCH ?{d} AND slot = {s})";
-        const list_membership = " AND EXISTS (SELECT 1 FROM " ++ (tables.assignments orelse "") ++
-            " m WHERE m.record = r.id AND m.field = ?{d} AND m.term = ?{d} AND m.slot = {s})";
+        const FieldFilters = list_filters.Writer(values, tables.assignments);
 
         pub fn list(connection: *db.Db, arena: std.mem.Allocator, query: Query) Error![]Record {
             std.debug.assert(query.type_ids.len > 0 and query.type_ids.len <= type_ids_max);
@@ -227,7 +236,11 @@ pub fn List(comptime tables: tables_module.Tables) type {
             var select = try connection.prepare_dynamic(text);
             defer select.finalize();
 
-            _ = try bind_query(&select, query);
+            const next = try bind_query(&select, query);
+
+            if (query.sort) |sort| {
+                try select.bind_text(next, sort.field);
+            }
 
             var records: std.ArrayList(Record) = .empty;
 
@@ -345,22 +358,29 @@ pub fn List(comptime tables: tables_module.Tables) type {
             var sql: std.Io.Writer.Allocating = .init(arena);
             const writer = &sql.writer;
             const limit = @min(query.limit, list_max);
-            const paging = .{ limit, query.offset };
 
-            if (query.order == .title_asc) {
+            if (query.sort) |sort| {
+                try write_by_field(arena, writer, query, sort);
+            } else if (query.order == .title_asc or query.order == .title_desc) {
                 const head = if (query.latest) list_latest_by_title else list_by_title;
+                const direction = if (query.order == .title_desc) " DESC" else "";
 
                 writer.writeAll(head) catch return error.OutOfMemory;
                 _ = try write_conditions(writer, query);
-                writer.print(" ORDER BY title.value, r.id LIMIT {d} OFFSET {d}", paging) catch {
-                    return error.OutOfMemory;
-                };
+                writer.print(" ORDER BY title.value{s}, r.id LIMIT {d} OFFSET {d}", .{
+                    direction,
+                    limit,
+                    query.offset,
+                }) catch return error.OutOfMemory;
             } else {
                 const order: []const u8 = switch (query.order) {
                     .updated_desc => " ORDER BY r.updated_at DESC, r.id",
+                    .updated_asc => " ORDER BY r.updated_at, r.id",
                     .created_desc => " ORDER BY r.created_at DESC, r.id",
                     .created_asc => " ORDER BY r.created_at, r.id",
-                    .title_asc => unreachable,
+                    .status_asc => " ORDER BY r.status, r.id",
+                    .status_desc => " ORDER BY r.status DESC, r.id",
+                    .title_asc, .title_desc => unreachable,
                 };
 
                 writer.writeAll(list_by_record) catch return error.OutOfMemory;
@@ -377,9 +397,37 @@ pub fn List(comptime tables: tables_module.Tables) type {
             return sql.toOwnedSlice() catch return error.OutOfMemory;
         }
 
-        /// One field's value: through the membership index for a term, the lookup index
-        /// over one type, each record checked over several; any of several values (over
-        /// one type only).
+        /// Ordered by a field's value, joined as `o` after the conditions' placeholders.
+        fn write_by_field(
+            arena: std.mem.Allocator,
+            writer: *std.Io.Writer,
+            query: Query,
+            sort: Sort,
+        ) Error!void {
+            std.debug.assert(sort.field.len > 0);
+            std.debug.assert(query.limit <= list_max);
+
+            var conditions: std.Io.Writer.Allocating = .init(arena);
+            const field = try write_conditions(&conditions.writer, query);
+            const head = if (query.latest) select_latest else select_record;
+            const slot = if (query.latest) latest_slot else live_slot;
+            const direction = if (sort.descending) " DESC" else "";
+
+            writer.print("{s} LEFT JOIN {s} o ON o.record = r.id AND o.ordinal = 0 " ++
+                "AND o.field = ?{d} AND o.slot = {s} WHERE {s} ORDER BY o.value IS NULL, " ++
+                "o.value{s}, r.id LIMIT {d} OFFSET {d}", .{
+                head,
+                values,
+                field,
+                slot,
+                conditions.written(),
+                direction,
+                @min(query.limit, list_max),
+                query.offset,
+            }) catch return error.OutOfMemory;
+        }
+
+        /// One field's filter on the copy the list reads.
         fn write_filter(
             writer: *std.Io.Writer,
             query: Query,
@@ -387,20 +435,19 @@ pub fn List(comptime tables: tables_module.Tables) type {
             bind_index: u32,
         ) Error!void {
             std.debug.assert(bind_index > 1);
-            std.debug.assert(filter.values_json == null or query.type_ids.len == 1);
+            std.debug.assert(list_filters.valid(filter));
 
-            const args = .{ bind_index, bind_index + 1 };
-            const has_assignments = comptime (tables.assignments != null);
+            const one_type = query.type_ids.len == 1;
 
-            if (filter.values_json != null) {
-                try write_slotted(writer, query, list_filter_any, args);
-            } else if (has_assignments and filter.membership) {
-                try write_slotted(writer, query, list_membership, args);
-            } else if (query.type_ids.len == 1) {
-                try write_slotted(writer, query, list_filter_one_type, args);
-            } else {
-                try write_slotted(writer, query, list_filter, args);
+            if (!query.latest) {
+                return FieldFilters.write(writer, filter, live_slot, one_type, bind_index);
             }
+
+            writer.writeAll(" AND (r.changed = 0") catch return error.OutOfMemory;
+            try FieldFilters.write(writer, filter, live_slot, one_type, bind_index);
+            writer.writeAll(" OR r.changed = 1") catch return error.OutOfMemory;
+            try FieldFilters.write(writer, filter, pending_slot, one_type, bind_index);
+            writer.writeAll(")") catch return error.OutOfMemory;
         }
 
         /// Every condition on `r`, with placeholders numbered as `bind_query` binds them;
@@ -422,6 +469,8 @@ pub fn List(comptime tables: tables_module.Tables) type {
                 writer.writeAll(")") catch return error.OutOfMemory;
             }
 
+            try write_live_types(writer, query, &bind_index);
+
             if (query.ids_json != null) {
                 writer.print(list_ids, .{bind_index}) catch return error.OutOfMemory;
                 bind_index += 1;
@@ -435,9 +484,19 @@ pub fn List(comptime tables: tables_module.Tables) type {
                 writer.writeAll(clause) catch return error.OutOfMemory;
             }
 
-            if (query.filter) |filter| {
+            if (query.requested) |requested| {
+                const clause: []const u8 = if (requested)
+                    " AND r.requested <> ''"
+                else
+                    " AND r.requested = ''";
+                writer.writeAll(clause) catch return error.OutOfMemory;
+            }
+
+            std.debug.assert(query.filters.len <= filters_max);
+
+            for (query.filters) |filter| {
                 try write_filter(writer, query, filter, bind_index);
-                bind_index += 2;
+                bind_index += list_filters.binds_of(filter);
             }
 
             if (query.search != null) {
@@ -479,6 +538,28 @@ fn write_app(writer: *std.Io.Writer, app: App, bind_index: u32) Error!void {
             return error.OutOfMemory;
         },
     }
+}
+
+/// The types read live only: their documents in a live status, every other type's in any.
+fn write_live_types(writer: *std.Io.Writer, query: Query, bind_index: *u32) Error!void {
+    std.debug.assert(query.live_type_ids.len <= type_ids_max);
+    std.debug.assert(query.live_statuses.len <= statuses_filter_max);
+
+    if (query.live_type_ids.len == 0) {
+        return;
+    }
+
+    writer.writeAll(" AND (r.type_id NOT IN (") catch return error.OutOfMemory;
+    try write_placeholders(writer, @intCast(query.live_type_ids.len), bind_index);
+    writer.writeAll(")") catch return error.OutOfMemory;
+
+    if (query.live_statuses.len > 0) {
+        writer.writeAll(" OR r.status IN (") catch return error.OutOfMemory;
+        try write_placeholders(writer, @intCast(query.live_statuses.len), bind_index);
+        writer.writeAll(")") catch return error.OutOfMemory;
+    }
+
+    writer.writeAll(")") catch return error.OutOfMemory;
 }
 
 /// `?1, ?2, ?3`: one placeholder per item, from `bind_index` on, which moves past them.
@@ -536,27 +617,22 @@ fn bind_query(select: *db.Statement, query: Query) Error!u31 {
         }
     }
 
+    if (query.live_type_ids.len > 0) {
+        for ([_][]const []const u8{ query.live_type_ids, query.live_statuses }) |list| {
+            for (list) |text| {
+                try select.bind_text(bind_index, text);
+                bind_index += 1;
+            }
+        }
+    }
+
     if (query.ids_json) |ids| {
         try select.bind_text(bind_index, ids);
         bind_index += 1;
     }
 
-    if (query.filter) |filter| {
-        try select.bind_text(bind_index, filter.field);
-
-        if (filter.values_json) |given| {
-            try select.bind_text(bind_index + 1, given);
-        } else if (filter.text) |text| {
-            try select.bind_text(bind_index + 1, text);
-        } else if (filter.real) |real| {
-            try select.bind_real(bind_index + 1, real);
-        } else if (filter.ref) |ref| {
-            try select.bind_text(bind_index + 1, ref);
-        } else {
-            try select.bind_int(bind_index + 1, filter.int orelse 0);
-        }
-
-        bind_index += 2;
+    for (query.filters) |filter| {
+        bind_index = try list_filters.bind(select, filter, bind_index);
     }
 
     if (query.search) |search| {

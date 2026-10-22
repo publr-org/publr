@@ -8,6 +8,7 @@ const next_id = @import("next_id.zig");
 const db = @import("../lib/db.zig");
 const tables_module = @import("tables.zig");
 const list_module = @import("documents/list.zig");
+const requests_module = @import("documents/requests.zig");
 
 pub const id_len = ids.len;
 pub const list_max = list_module.list_max;
@@ -18,6 +19,8 @@ pub const search_len_max: u32 = 256;
 pub const Error = db.Error || error{ NotFound, Conflict };
 pub const Order = list_module.Order;
 pub const Filter = list_module.Filter;
+pub const Operator = list_module.Operator;
+pub const Sort = list_module.Sort;
 pub const Author = list_module.Author;
 pub const Query = list_module.Query;
 pub const Record = list_module.Record;
@@ -40,6 +43,13 @@ pub const Insert = struct {
     app: ?[]const u8 = null,
 };
 
+/// Going into the trash keeps the status the document leaves (SQLite reads `status` as it
+/// was); leaving it clears it.
+const trashed_from_set = "trashed_from = CASE WHEN ?2 = 'trashed' THEN status " ++
+    "WHEN status = 'trashed' THEN '' ELSE trashed_from END";
+const trashed_many_set = "trashed_from = CASE WHEN ?3 = 'trashed' THEN status " ++
+    "WHEN status = 'trashed' THEN '' ELSE trashed_from END";
+
 pub fn Store(comptime tables: tables_module.Tables) type {
     return struct {
         const table = tables.documents;
@@ -51,6 +61,8 @@ pub fn Store(comptime tables: tables_module.Tables) type {
         pub const gathered = List.gathered;
         pub const release = List.release;
         pub const select_record = List.select_record;
+        pub const ask = requests_module.Requests(tables).ask;
+        pub const clear_request = requests_module.Requests(tables).clear;
 
         pub fn insert(
             connection: *db.Db,
@@ -187,7 +199,8 @@ pub fn Store(comptime tables: tables_module.Tables) type {
 
             var statement = try connection.prepare(
                 "UPDATE " ++ table ++ " SET status = ?2, version = version + 1, " ++
-                    "updated_at = ?3, updated_by = ?4, changed = ?5 WHERE id = ?1",
+                    "updated_at = ?3, updated_by = ?4, changed = ?5, " ++
+                    trashed_from_set ++ ", " ++ requests_module.cleared_set ++ " WHERE id = ?1",
             );
             defer statement.finalize();
 
@@ -218,8 +231,9 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             var statement = try connection.prepare(
                 "UPDATE " ++ table ++ " SET status = ?3, version = version + 1, " ++
                     "updated_at = ?4, updated_by = ?5, changed = changed AND id NOT IN " ++
-                    "(SELECT value FROM json_each(?2)) " ++
-                    "WHERE id IN (SELECT value FROM json_each(?1))",
+                    "(SELECT value FROM json_each(?2)), " ++ trashed_many_set ++ ", " ++
+                    requests_module.cleared_set ++
+                    " WHERE id IN (SELECT value FROM json_each(?1))",
             );
             defer statement.finalize();
 
@@ -231,6 +245,34 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             try statement.exec();
 
             return @intCast(connection.changes());
+        }
+
+        /// The status a trashed document had before the trash, for `restore`; empty when
+        /// it was never trashed or is not now.
+        pub fn trashed_from(
+            connection: *db.Db,
+            arena: std.mem.Allocator,
+            id: []const u8,
+        ) Error![]const u8 {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(connection.transaction_depth <= 8);
+
+            var statement = try connection.prepare(
+                "SELECT trashed_from FROM " ++ table ++ " WHERE id = ?1",
+            );
+            defer statement.finalize();
+
+            try statement.bind_text(1, id);
+
+            if (!try statement.step()) {
+                return error.NotFound;
+            }
+
+            const row = try statement.read(struct {
+                trashed_from: []const u8,
+            }, arena);
+
+            return row.trashed_from;
         }
 
         /// Which app a document belongs to, null for the project's own. Not a version of

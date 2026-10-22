@@ -1,15 +1,15 @@
-//! The notices waiting for the extrinsic hooks (`notice_queue`). An operation writes them in
+//! The events waiting for the `on` hooks (`event_queue`). An operation writes them in
 //! its own transaction, so a rolled-back write queues nothing; the server hands them to the
-//! hooks once the write has committed, between requests, oldest first.
+//! hooks once the write has committed, from the worker beside the server, oldest first.
 const std = @import("std");
 const db = @import("../lib/db.zig");
 
 pub const Error = db.Error || error{OutOfMemory};
 
-/// Notices one pass hands on: the rest wait for the next.
+/// Events one pass hands on: the rest wait for the next.
 pub const take_max: u32 = 512;
 
-/// One queued notice, in the column order of `take`.
+/// One queued event, in the column order of `take`.
 pub const Queued = struct {
     id: i64,
     operation_id: i64,
@@ -28,7 +28,7 @@ pub fn push(
     std.debug.assert(operation_id != 0);
 
     var insert = try connection.prepare(
-        "INSERT INTO notice_queue (operation_id, name, subject, queued_at) " ++
+        "INSERT INTO event_queue (operation_id, name, subject, queued_at) " ++
             "VALUES (?1, ?2, ?3, ?4)",
     );
     defer insert.finalize();
@@ -40,13 +40,13 @@ pub fn push(
     try insert.exec();
 }
 
-/// The oldest notices, up to `max`.
+/// The oldest events, up to `max`.
 pub fn take(connection: *db.Db, arena: std.mem.Allocator, max: u32) Error![]const Queued {
     std.debug.assert(max > 0 and max <= take_max);
     std.debug.assert(connection.transaction_depth == 0);
 
     var select = try connection.prepare(
-        "SELECT id, operation_id, name, subject FROM notice_queue ORDER BY id LIMIT ?1",
+        "SELECT id, operation_id, name, subject FROM event_queue ORDER BY id LIMIT ?1",
     );
     defer select.finalize();
 
@@ -62,23 +62,23 @@ pub fn take(connection: *db.Db, arena: std.mem.Allocator, max: u32) Error![]cons
     return rows.items;
 }
 
-/// The notices up to `last_id` handed on: gone from the queue.
+/// The events up to `last_id` handed on: gone from the queue.
 pub fn remove_through(connection: *db.Db, last_id: i64) db.Error!void {
     std.debug.assert(last_id > 0);
     std.debug.assert(connection.transaction_depth == 0);
 
-    var delete = try connection.prepare("DELETE FROM notice_queue WHERE id <= ?1");
+    var delete = try connection.prepare("DELETE FROM event_queue WHERE id <= ?1");
     defer delete.finalize();
 
     try delete.bind_int(1, last_id);
     try delete.exec();
 }
 
-/// Whether any notice waits.
+/// Whether any event waits.
 pub fn waiting(connection: *db.Db) db.Error!bool {
     std.debug.assert(connection.transaction_depth <= 8);
 
-    var select = try connection.prepare("SELECT 1 FROM notice_queue LIMIT 1");
+    var select = try connection.prepare("SELECT 1 FROM event_queue LIMIT 1");
     defer select.finalize();
 
     return select.step();

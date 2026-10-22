@@ -28,6 +28,9 @@ pub const insert = Store.insert;
 pub const get = Store.get;
 pub const save = Store.save;
 pub const set_status = Store.set_status;
+pub const trashed_from = Store.trashed_from;
+pub const ask = Store.ask;
+pub const clear_request = Store.clear_request;
 pub const delete = Store.delete;
 pub const set_app = Store.set_app;
 pub const move_app = Store.move_app;
@@ -196,10 +199,10 @@ test "list: by status, filter on a field value, full-text search, order and pagi
         arena,
         .{
             .type_ids = &.{type_id},
-            .filter = .{
+            .filters = &.{.{
                 .field = "views",
                 .int = 20,
-            },
+            }},
             .order = .title_asc,
         },
     );
@@ -285,10 +288,10 @@ test "list: across types, by author and excluded author, within time bounds" {
     try std.testing.expectEqualStrings("Beta", middle[0].title);
     const filtered_by_field = try list(connection, arena, .{
         .type_ids = &.{ post_id, note_id },
-        .filter = .{
+        .filters = &.{.{
             .field = "views",
             .int = 3,
-        },
+        }},
     });
     try std.testing.expectEqual(@as(usize, 1), filtered_by_field.len);
 }
@@ -341,4 +344,193 @@ test "an app's records: set, cleared, listed by app or as the project's own, mov
         .type_ids = &.{type_id},
         .app = .none,
     })).len);
+}
+
+test "list: every operator on a field, over one type or several; ordered by a field" {
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const connection = &fixture.connection;
+    const type_id = try seed_type(&fixture, arena);
+
+    _ = try seed_record(&fixture, arena, type_id, "Alpha", "published", 10);
+    _ = try seed_record(&fixture, arena, type_id, "Beta", "draft", 20);
+    _ = try seed_record(&fixture, arena, type_id, "Gamma", "published", 30);
+
+    const cases = [_]struct {
+        filter: Filter,
+        titles: []const u8,
+    }{
+        .{
+            .filter = .{
+                .field = "views",
+                .operator = .is_not,
+                .int = 20,
+            },
+            .titles = "Alpha Gamma",
+        },
+        .{
+            .filter = .{
+                .field = "title",
+                .operator = .contains,
+                .text = "AMM",
+            },
+            .titles = "Gamma",
+        },
+        .{
+            .filter = .{
+                .field = "title",
+                .operator = .not_contains,
+                .text = "eta",
+            },
+            .titles = "Alpha Gamma",
+        },
+        .{
+            .filter = .{
+                .field = "title",
+                .operator = .starts_with,
+                .text = "al",
+            },
+            .titles = "Alpha",
+        },
+        .{
+            .filter = .{
+                .field = "views",
+                .operator = .more,
+                .int = 10,
+            },
+            .titles = "Beta Gamma",
+        },
+        .{
+            .filter = .{
+                .field = "views",
+                .operator = .at_most,
+                .int = 20,
+            },
+            .titles = "Alpha Beta",
+        },
+        .{
+            .filter = .{
+                .field = "views",
+                .operator = .between,
+                .int = 20,
+                .int_high = 30,
+            },
+            .titles = "Beta Gamma",
+        },
+        .{
+            .filter = .{
+                .field = "views",
+                .operator = .within,
+                .int = 20,
+                .int_high = 30,
+            },
+            .titles = "Beta",
+        },
+        .{
+            .filter = .{
+                .field = "views",
+                .operator = .outside,
+                .int = 20,
+                .int_high = 30,
+            },
+            .titles = "Alpha Gamma",
+        },
+        .{
+            .filter = .{
+                .field = "views",
+                .operator = .any_of,
+                .values_json = "[10,30]",
+            },
+            .titles = "Alpha Gamma",
+        },
+        .{
+            .filter = .{
+                .field = "views",
+                .operator = .none_of,
+                .values_json = "[10,30]",
+            },
+            .titles = "Beta",
+        },
+        .{
+            .filter = .{
+                .field = "views",
+                .operator = .all_of,
+                .values_json = "[20]",
+            },
+            .titles = "Beta",
+        },
+    };
+
+    for (cases) |case| {
+        for ([_][]const []const u8{ &.{type_id}, &.{ type_id, "elsewhere" } }) |types| {
+            const found = try list(connection, arena, .{
+                .type_ids = types,
+                .filters = &.{case.filter},
+                .order = .title_asc,
+            });
+            var titles: std.ArrayList(u8) = .empty;
+
+            for (found, 0..) |row, index| {
+                try titles.appendSlice(arena, if (index == 0) "" else " ");
+                try titles.appendSlice(arena, row.title);
+            }
+
+            try std.testing.expectEqualStrings(case.titles, titles.items);
+        }
+    }
+
+    const both = try list(connection, arena, .{
+        .type_ids = &.{type_id},
+        .filters = &.{
+            .{
+                .field = "views",
+                .operator = .more,
+                .int = 10,
+            },
+            .{
+                .field = "title",
+                .operator = .starts_with,
+                .text = "g",
+            },
+        },
+    });
+    try std.testing.expectEqual(@as(usize, 1), both.len);
+    try std.testing.expectEqualStrings("Gamma", both[0].title);
+
+    const unread = try insert(connection, std.testing.io, arena, .{
+        .type_id = type_id,
+        .created_by = "u_1",
+        .status = "draft",
+    }, 1_000);
+    const json = "{\"title\":\"Zeta\"}";
+    const document = try std.json.parseFromSliceLeaky(std.json.Value, arena, json, .{});
+    const values = @import("values.zig");
+    const fields = model_content_type.test_post.fields;
+
+    try values.write(&kinds.core, connection, unread, values.live, type_id, fields, document);
+
+    const by_views = try list(connection, arena, .{
+        .type_ids = &.{type_id},
+        .sort = .{
+            .field = "views",
+            .descending = true,
+        },
+        .limit = 3,
+        .offset = 1,
+    });
+    try std.testing.expectEqual(@as(usize, 3), by_views.len);
+    try std.testing.expectEqualStrings("Beta", by_views[0].title);
+    try std.testing.expectEqualStrings("Alpha", by_views[1].title);
+    try std.testing.expectEqualStrings("Zeta", by_views[2].title);
+
+    const newest_title = try list(connection, arena, .{
+        .type_ids = &.{type_id},
+        .order = .title_desc,
+    });
+    try std.testing.expectEqualStrings("Zeta", newest_title[0].title);
 }

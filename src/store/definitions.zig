@@ -4,6 +4,7 @@
 const std = @import("std");
 const db = @import("../lib/db.zig");
 const content_type = @import("../model/content_type.zig");
+const status_model = @import("../model/status.zig");
 const field = @import("../model/field.zig");
 const groups = @import("field_groups.zig");
 const tables_module = @import("tables.zig");
@@ -35,6 +36,9 @@ pub const Brief = struct {
     /// Where the type lives (empty: Global) and who it is shared with.
     app: []const u8 = "",
     shared: ?content_type.Shared = null,
+    menu: content_type.Menu = .{},
+    view: content_type.View = .{},
+    icon: []const u8 = "",
 };
 
 pub fn Store(comptime tables: tables_module.Tables) type {
@@ -229,6 +233,9 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             "json_extract(definition, '$.owner'), json_extract(definition, '$.editor'), " ++
             "coalesce(json_extract(definition, '$.app'), ''), " ++
             "coalesce(json_extract(definition, '$.shared'), ''), " ++
+            "coalesce(json_extract(definition, '$.menu'), ''), " ++
+            "coalesce(json_extract(definition, '$.view'), ''), " ++
+            "coalesce(json_extract(definition, '$.icon'), ''), " ++
             "(SELECT json_array_length(field_groups.definition, '$.fields') " ++
             "FROM field_groups WHERE scope = '" ++ table ++ "' AND owner = " ++ table ++
             ".id) FROM " ++ table;
@@ -244,6 +251,9 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             editor: []const u8,
             app: []const u8,
             shared: []const u8,
+            menu: []const u8,
+            view: []const u8,
+            icon: []const u8,
             fields_len: i64,
         };
 
@@ -265,6 +275,57 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             }
 
             return briefs.items;
+        }
+
+        /// Every type's own statuses, as their flows keep them (`flow.statuses`): read
+        /// straight from the JSON, no definition decoded. Namespaced, so no two share an id.
+        pub fn own_statuses(
+            connection: *db.Db,
+            arena: std.mem.Allocator,
+        ) Error![]const status_model.Status {
+            std.debug.assert(list_max > 0);
+            std.debug.assert(connection.transaction_depth <= 8);
+
+            var select = try connection.prepare(
+                "SELECT own.value ->> 'id', own.value ->> 'label', " ++
+                    "coalesce(own.value ->> 'color', 'neutral'), " ++
+                    "coalesce(own.value ->> 'live', 0), coalesce(own.value ->> 'listed', 1), " ++
+                    "coalesce(own.value ->> 'alias', '') " ++
+                    "FROM " ++ table ++ ", json_each(definition, '$.flow.statuses') AS own " ++
+                    "ORDER BY 1 LIMIT ?1",
+            );
+            defer select.finalize();
+
+            // With core's, at most `statuses_max` in all: what one list's buffer holds.
+            const own_max = status_model.statuses_max - status_model.core_statuses.len;
+
+            try select.bind_int(1, own_max);
+
+            var found: std.ArrayList(status_model.Status) = .empty;
+
+            while (try select.step()) {
+                const row = try select.read(struct {
+                    id: []const u8,
+                    label: []const u8,
+                    color: []const u8,
+                    live: i64,
+                    listed: i64,
+                    alias: []const u8,
+                }, arena);
+
+                std.debug.assert(found.items.len < own_max);
+
+                try found.append(arena, .{
+                    .id = row.id,
+                    .label = row.label,
+                    .color = std.meta.stringToEnum(status_model.Color, row.color) orelse .neutral,
+                    .live = row.live != 0,
+                    .listed = row.listed != 0,
+                    .alias = row.alias,
+                });
+            }
+
+            return found.items;
         }
 
         /// Where a reading of the definitions by name stands: after this name and id; the
@@ -350,6 +411,26 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                 .fields_len = @intCast(columns.fields_len),
                 .app = columns.app,
                 .shared = try shared_of(arena, columns.shared),
+                .menu = try part_of(content_type.Menu, arena, columns.menu),
+                .view = try part_of(content_type.View, arena, columns.view),
+                .icon = columns.icon,
+            };
+        }
+
+        /// A part of a definition's JSON (`menu`, `view`): absent reads as its defaults.
+        fn part_of(comptime Part: type, arena: std.mem.Allocator, text: []const u8) Error!Part {
+            std.debug.assert(text.len <= content_type.definition_bytes_max);
+
+            if (text.len == 0) {
+                return .{};
+            }
+
+            const options: std.json.ParseOptions = .{
+                .allocate = .alloc_always,
+                .ignore_unknown_fields = true,
+            };
+            return std.json.parseFromSliceLeaky(Part, arena, text, options) catch |err| {
+                return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
             };
         }
 

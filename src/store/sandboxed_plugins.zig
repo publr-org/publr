@@ -16,7 +16,8 @@ pub const Row = struct {
     enabled: bool,
     granted: []const u8,
     denied: []const u8,
-    content_access: []const u8,
+    /// Each permission's flags and the types it names, as an administrator left them.
+    grants: []const u8,
     /// A newer module uploaded for it, waiting to be applied.
     next_version: ?[]const u8,
     next_hash: ?[]const u8,
@@ -30,7 +31,7 @@ pub const Row = struct {
 };
 
 const select_row = "SELECT name, version, hash, manifest, enabled, granted, denied, " ++
-    "content_access, next_version, next_hash, next_manifest, previous_version, " ++
+    "grants, next_version, next_hash, next_manifest, previous_version, " ++
     "previous_hash, previous_manifest, installed_at, updated_at FROM sandboxed_plugins";
 
 pub fn get(connection: *db.Db, arena: std.mem.Allocator, name: []const u8) Error!?Row {
@@ -102,6 +103,32 @@ pub fn count(connection: *db.Db) Error!u32 {
     return @intCast(@max(0, select.read_int()));
 }
 
+/// What changes whenever a plugin is added, changed, enabled or removed: for a process that
+/// loaded them to know it should load them again.
+pub const Stamp = struct {
+    count: i64,
+    latest: i64,
+    enabled: i64,
+};
+
+pub fn stamp(connection: *db.Db) Error!Stamp {
+    std.debug.assert(list_max > 0);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var select = try connection.prepare(
+        "SELECT COUNT(*), COALESCE(MAX(updated_at), 0), COALESCE(SUM(enabled), 0) " ++
+            "FROM sandboxed_plugins",
+    );
+    defer select.finalize();
+
+    std.debug.assert(try select.step());
+
+    var arena_state: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+    defer arena_state.deinit();
+
+    return select.read(Stamp, arena_state.allocator());
+}
+
 /// Inserts a plugin, or replaces every column of the one by that name.
 pub fn put(connection: *db.Db, row: Row) Error!void {
     std.debug.assert(row.name.len > 0);
@@ -109,13 +136,13 @@ pub fn put(connection: *db.Db, row: Row) Error!void {
 
     var statement = try connection.prepare(
         "INSERT INTO sandboxed_plugins (name, version, hash, manifest, enabled, granted, " ++
-            "denied, content_access, next_version, next_hash, next_manifest, previous_version, " ++
+            "denied, grants, next_version, next_hash, next_manifest, previous_version, " ++
             "previous_hash, previous_manifest, installed_at, updated_at) VALUES " ++
             "(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16) " ++
             "ON CONFLICT (name) DO UPDATE SET version = excluded.version, " ++
             "hash = excluded.hash, manifest = excluded.manifest, enabled = excluded.enabled, " ++
             "granted = excluded.granted, denied = excluded.denied, " ++
-            "content_access = excluded.content_access, next_version = excluded.next_version, " ++
+            "grants = excluded.grants, next_version = excluded.next_version, " ++
             "next_hash = excluded.next_hash, next_manifest = excluded.next_manifest, " ++
             "previous_version = excluded.previous_version, " ++
             "previous_hash = excluded.previous_hash, " ++
@@ -130,7 +157,7 @@ pub fn put(connection: *db.Db, row: Row) Error!void {
     try statement.bind_int(5, @intFromBool(row.enabled));
     try statement.bind_text(6, row.granted);
     try statement.bind_text(7, row.denied);
-    try statement.bind_text(8, row.content_access);
+    try statement.bind_text(8, row.grants);
     try statement.bind_optional_text(9, row.next_version);
     try statement.bind_optional_text(10, row.next_hash);
     try statement.bind_optional_text(11, row.next_manifest);
@@ -174,7 +201,7 @@ test "put inserts then replaces, list sees it, delete removes it" {
         .enabled = false,
         .granted = "[]",
         .denied = "[]",
-        .content_access = "{\"scope\":\"public\"}",
+        .grants = "[]",
         .next_version = null,
         .next_hash = null,
         .next_manifest = null,

@@ -77,6 +77,37 @@ pub fn holders(connection: *db.Db, name: []const u8) db.Error!u32 {
     return @intCast(select.read_int());
 }
 
+/// Takes the role `name` from every account holding it.
+pub fn forget_role(connection: *db.Db, name: []const u8) db.Error!void {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(name.len <= role.name_len_max);
+
+    var statement = try connection.prepare("DELETE FROM user_roles WHERE role = ?1");
+    defer statement.finalize();
+
+    try statement.bind_text(1, name);
+    try statement.exec();
+}
+
+/// How many accounts hold `name` and no other role.
+pub fn sole_holders(connection: *db.Db, name: []const u8) db.Error!u32 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var select = try connection.prepare(
+        "SELECT count(*) FROM user_roles AS held WHERE held.role = ?1 AND NOT EXISTS " ++
+            "(SELECT 1 FROM user_roles AS other WHERE other.user_id = held.user_id " ++
+            "AND other.role != ?1)",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, name);
+
+    std.debug.assert(try select.step());
+
+    return @intCast(select.read_int());
+}
+
 test "roles are set whole, read in order, counted per role, and go with their account" {
     var fixture: db.testing.Fixture = undefined;
     try fixture.init();
@@ -102,6 +133,13 @@ test "roles are set whole, read in order, counted per role, and go with their ac
     try set(connection, "u1", &.{"editor"});
     try std.testing.expectEqual(@as(u32, 0), try holders(connection, "admin"));
     try std.testing.expectEqual(@as(usize, 0), (try of(connection, arena, "u3")).len);
+
+    try set(connection, "u2", &.{ "subscriber", "editor" });
+    try std.testing.expectEqual(@as(u32, 1), try sole_holders(connection, "editor"));
+    try std.testing.expectEqual(@as(u32, 0), try sole_holders(connection, "subscriber"));
+
+    try forget_role(connection, "editor");
+    try std.testing.expectEqual(@as(u32, 1), try sole_holders(connection, "subscriber"));
 
     try connection.exec("DELETE FROM users WHERE id = 'u2'");
     try std.testing.expectEqual(@as(u32, 0), try holders(connection, "subscriber"));

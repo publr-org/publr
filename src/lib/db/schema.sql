@@ -32,6 +32,30 @@ CREATE TABLE IF NOT EXISTS user_roles (
 
 CREATE INDEX IF NOT EXISTS user_roles_role ON user_roles(role, user_id);
 
+CREATE TABLE IF NOT EXISTS roles (
+    name        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    owner       TEXT NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS role_grants (
+    role    TEXT NOT NULL REFERENCES roles(name) ON DELETE CASCADE,
+    pattern TEXT NOT NULL,
+    PRIMARY KEY (role, pattern)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS role_declarations (
+    owner   TEXT NOT NULL,
+    role    TEXT NOT NULL,
+    pattern TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (owner, role, pattern)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS role_declarations_role ON role_declarations(role, owner);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id          TEXT PRIMARY KEY,
     secret_hash BLOB NOT NULL,
@@ -112,7 +136,10 @@ CREATE TABLE IF NOT EXISTS records (
     updated_at INTEGER NOT NULL,
     created_by TEXT,
     updated_by TEXT,
-    app        TEXT
+    app        TEXT,
+    trashed_from TEXT NOT NULL DEFAULT '',
+    requested  TEXT NOT NULL DEFAULT '',
+    requested_by TEXT
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS records_list ON records(type_id, status, updated_at);
@@ -171,7 +198,10 @@ CREATE TABLE IF NOT EXISTS terms (
     updated_at INTEGER NOT NULL,
     created_by TEXT,
     updated_by TEXT,
-    app        TEXT
+    app        TEXT,
+    trashed_from TEXT NOT NULL DEFAULT '',
+    requested  TEXT NOT NULL DEFAULT '',
+    requested_by TEXT
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS terms_list ON terms(type_id, status, updated_at);
@@ -279,8 +309,37 @@ CREATE TABLE IF NOT EXISTS rail_pins (
     page      TEXT NOT NULL,
     position  INTEGER NOT NULL,
     pinned_at INTEGER NOT NULL,
+    hidden    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, plugin, page)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS shared_rail_pins (
+    plugin    TEXT NOT NULL DEFAULT '',
+    page      TEXT NOT NULL,
+    position  INTEGER NOT NULL,
+    pinned_at INTEGER NOT NULL,
+    PRIMARY KEY (plugin, page)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS shared_views (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    query      TEXT NOT NULL,
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS default_views (
+    user_id    TEXT REFERENCES users(id) ON DELETE CASCADE,
+    type_id    TEXT NOT NULL REFERENCES content_types(id) ON DELETE CASCADE,
+    query      TEXT NOT NULL,
+    updated_by TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS default_views_owner
+    ON default_views (ifnull(user_id, ''), type_id);
 
 CREATE TABLE IF NOT EXISTS ai_conversations (
     id            TEXT PRIMARY KEY,
@@ -446,7 +505,7 @@ CREATE TABLE IF NOT EXISTS sandboxed_plugins (
     enabled            INTEGER NOT NULL,
     granted           TEXT NOT NULL,
     denied            TEXT NOT NULL,
-    content_access    TEXT NOT NULL,
+    grants            TEXT NOT NULL,
     next_version      TEXT,
     next_hash         TEXT,
     next_manifest     TEXT,
@@ -494,12 +553,64 @@ CREATE TRIGGER IF NOT EXISTS errors_kept BEFORE UPDATE ON errors
 CREATE TRIGGER IF NOT EXISTS errors_never_removed BEFORE DELETE ON errors
     BEGIN SELECT RAISE(ABORT, 'the error log is append-only'); END;
 
--- Notices waiting for the extrinsic hooks: written in the transaction that raised them, so a
+-- What plugins logged (`ctx.log`): each line with the call it ran in (an operation,
+-- `job:<plugin>.<name>`, `event:<name>`) and the activity or error entry it went with, 0
+-- for none. Append-only like the two logs.
+CREATE TABLE IF NOT EXISTS plugin_log (
+    id       INTEGER PRIMARY KEY,
+    at       INTEGER NOT NULL,
+    plugin   TEXT NOT NULL,
+    level    TEXT NOT NULL,
+    line     TEXT NOT NULL,
+    call     TEXT NOT NULL,
+    activity INTEGER NOT NULL,
+    error    INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS plugin_log_by_plugin ON plugin_log (plugin, id);
+CREATE INDEX IF NOT EXISTS plugin_log_by_activity ON plugin_log (activity) WHERE activity > 0;
+CREATE INDEX IF NOT EXISTS plugin_log_by_error ON plugin_log (error) WHERE error > 0;
+
+CREATE TRIGGER IF NOT EXISTS plugin_log_kept BEFORE UPDATE ON plugin_log
+    BEGIN SELECT RAISE(ABORT, 'the plugin log is append-only'); END;
+
+CREATE TRIGGER IF NOT EXISTS plugin_log_never_removed BEFORE DELETE ON plugin_log
+    BEGIN SELECT RAISE(ABORT, 'the plugin log is append-only'); END;
+
+-- Events waiting for the `on` hooks: written in the transaction that emitted them, so a
 -- rolled-back write queues nothing; delivered once it commits, oldest first, then removed.
-CREATE TABLE IF NOT EXISTS notice_queue (
+CREATE TABLE IF NOT EXISTS event_queue (
     id           INTEGER PRIMARY KEY,
     operation_id INTEGER NOT NULL,
     name         TEXT NOT NULL,
     subject      TEXT NOT NULL,
     queued_at    INTEGER NOT NULL
 ) STRICT;
+
+-- Jobs a plugin's code queued: written in the caller's transaction, so a rolled-back write
+-- queues nothing; run once `due_at` comes, removed when done, kept as failed after the last
+-- attempt. A claim (`claimed_until`) lets a run lost to a crash run again.
+CREATE TABLE IF NOT EXISTS job_queue (
+    id            INTEGER PRIMARY KEY,
+    plugin        TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    input         TEXT NOT NULL,
+    due_at        INTEGER NOT NULL,
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    claimed_until INTEGER NOT NULL DEFAULT 0,
+    state         TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'failed')),
+    problem       TEXT NOT NULL DEFAULT '',
+    queued_at     INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS job_queue_due ON job_queue (state, due_at);
+
+-- A status transition a person scheduled for a record (`publish` on 5 Nov at 9:00): one per
+-- record, made by the worker once `due_at` comes, as `scheduled_by` with their rights then.
+CREATE TABLE IF NOT EXISTS scheduled_transitions (
+    record_id    TEXT PRIMARY KEY,
+    to_status    TEXT NOT NULL,
+    due_at       INTEGER NOT NULL,
+    scheduled_by TEXT NOT NULL,
+    scheduled_at INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS scheduled_transitions_due ON scheduled_transitions (due_at);

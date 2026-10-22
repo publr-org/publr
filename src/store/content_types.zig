@@ -21,6 +21,7 @@ pub const get_by_handle = Store.get_by_handle;
 pub const list = Store.list;
 pub const count = Store.count;
 pub const list_briefs = Store.list_briefs;
+pub const own_statuses = Store.own_statuses;
 pub const briefs_after = Store.briefs_after;
 pub const brief_by_id = Store.brief_by_id;
 pub const BriefKey = Store.BriefKey;

@@ -535,8 +535,8 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                     "JOIN " ++ documents ++ " h ON h.id = v.record " ++
                     "LEFT JOIN " ++ documents ++ " t ON t.id = v.value " ++
                     "WHERE v.slot IN ('live', 'pending') AND v.kind = 'ref' " ++
-                    "AND h.status <> 'deleted' AND v.value NOT IN (SELECT id FROM users) " ++
-                    "AND (t.id IS NULL OR t.status = 'deleted' " ++
+                    "AND h.status <> 'trashed' AND v.value NOT IN (SELECT id FROM users) " ++
+                    "AND (t.id IS NULL OR t.status = 'trashed' " ++
                     "OR t.type_id <> v.type_id) AND (v.value, v.record, v.field) > (?1, ?2, ?3) " ++
                     "ORDER BY v.value, v.record, v.field LIMIT ?4",
             );

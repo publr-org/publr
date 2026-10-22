@@ -7,6 +7,9 @@ pub const tables = [_][]const u8{
     "migrations",
     "users",
     "user_roles",
+    "roles",
+    "role_grants",
+    "role_declarations",
     "sessions",
     "sign_on_tokens",
     "devices",
@@ -27,6 +30,9 @@ pub const tables = [_][]const u8{
     "snapshots",
     "views",
     "rail_pins",
+    "shared_rail_pins",
+    "shared_views",
+    "default_views",
     "ai_conversations",
     "ai_steps",
     "ai_pictures",
@@ -43,7 +49,10 @@ pub const tables = [_][]const u8{
     "sandboxed_plugins",
     "activity",
     "errors",
-    "notice_queue",
+    "plugin_log",
+    "event_queue",
+    "job_queue",
+    "scheduled_transitions",
 };
 
 pub fn apply(connection: *db.Db) db.Error!void {
@@ -91,6 +100,41 @@ const added_columns = [_]Added{
         .table = "sandboxed_plugins",
         .column = "remove_data",
         .definition = "TEXT NOT NULL DEFAULT '[]'",
+    },
+    .{
+        .table = "rail_pins",
+        .column = "hidden",
+        .definition = "INTEGER NOT NULL DEFAULT 0",
+    },
+    .{
+        .table = "records",
+        .column = "trashed_from",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "terms",
+        .column = "trashed_from",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "records",
+        .column = "requested",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "records",
+        .column = "requested_by",
+        .definition = "TEXT",
+    },
+    .{
+        .table = "terms",
+        .column = "requested",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "terms",
+        .column = "requested_by",
+        .definition = "TEXT",
     },
 };
 

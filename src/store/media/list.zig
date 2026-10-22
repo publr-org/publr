@@ -118,7 +118,7 @@ fn families_clause(arena: std.mem.Allocator, families: []const []const u8) ![]co
     return clause.items;
 }
 
-const from = " FROM media m JOIN records r ON r.id = m.record WHERE r.status <> 'deleted'";
+const from = " FROM media m JOIN records r ON r.id = m.record WHERE r.status <> 'trashed'";
 const in_term = " SELECT 1 FROM record_terms t WHERE t.record = m.record AND t.slot = 'live'";
 const title_value = "SELECT v.value FROM record_values v WHERE v.record = m.record " ++
     "AND v.slot = 'live' AND v.field = 'title' AND v.ordinal = 0";
@@ -430,7 +430,7 @@ pub fn term_counts(
         arena,
         "SELECT c.term, COUNT(*) FROM media m JOIN records r ON r.id = m.record " ++
             "JOIN record_terms c ON c.record = m.record AND c.slot = 'live' " ++
-            "AND c.field = '{s}' WHERE r.status <> 'deleted'{s} GROUP BY c.term",
+            "AND c.field = '{s}' WHERE r.status <> 'trashed'{s} GROUP BY c.term",
         .{ field, where.sql.items },
     );
     var select = try connection.prepare_dynamic(sql);
