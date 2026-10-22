@@ -1,5 +1,5 @@
 import { Publr } from "publr-jsx";
-import { state, onSubmit, cancel_purge, onPreview } from "../RecordEditor.ptsx";
+import { state, onSubmit, cancel_destroy, onPreview } from "../RecordEditor.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { EditorAside } from "../EditorAside.ptsx";
 import { EditorAsideSection } from "../EditorAsideSection.ptsx";
@@ -115,20 +115,20 @@ export function RecordActions({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          {state.purge_armed && (
-            <Callout tone="error" title={Publr.t("Purge “{title}” for good?", { title: state.title })}>
+          {state.destroy_armed && (
+            <Callout tone="error" title={Publr.t("Destroy “{title}” for good?", { title: state.title })}>
               <div class="flex flex-col gap-3">
                 <Text as="p" variant="body-sm">
-                  {Publr.t("It goes with its changes and versions, and can never be restored. To keep a way back, move it to the trash instead.")}
+                  {Publr.t("It goes with its changes and versions, and can never be restored.")}
                 </Text>
                 <form method="post" action={action_route} onSubmit={onSubmit} data-confirmed="true" class="flex gap-2">
                   <input type="hidden" name="csrf" value={csrf} />
                   <input type="hidden" name="expected_version" value={state.version} />
-                  <input type="hidden" name="do" value="purge" />
+                  <input type="hidden" name="transition" value="destroy" />
                   <Button type="submit" size="sm" intent="destructive" disabled={state.submitting}>
-                    {Publr.t("Purge for good")}
+                    {Publr.t("Destroy for good")}
                   </Button>
-                  <Button type="button" size="sm" hierarchy="secondary" onClick={cancel_purge}>
+                  <Button type="button" size="sm" hierarchy="secondary" onClick={cancel_destroy}>
                     {Publr.t("Cancel")}
                   </Button>
                 </form>

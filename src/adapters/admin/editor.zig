@@ -252,7 +252,8 @@ pub fn Editor(comptime domain: Domain) type {
             try saved(session, id);
         }
 
-        /// A status action posted from the aside: publish, discard, purge, or a transition.
+        /// A status action posted from the aside: publish, discard, or a transition (destroy
+        /// among them, for a document in the trash).
         pub fn action(request: *Request, response: *Response, ctx: *Context) Error!void {
             std.debug.assert(request.method() == .post);
             std.debug.assert(ctx.user_data != null);
@@ -286,26 +287,23 @@ pub fn Editor(comptime domain: Domain) type {
                     .id = id,
                     .expected_version = expected,
                 }) catch |err| return admin.fail(session, err, location);
-            } else if (std.mem.eql(u8, verb, "purge")) {
-                _ = registry.SDK.dispatch(&session.ctx, operations.Purge, .{
-                    .id = id,
-                }) catch |err| return admin.fail(session, err, location);
-
-                if (fragment) {
-                    return answer_gone(session, back);
-                }
-
-                return response.redirect(.see_other, back);
             } else {
                 const transition = form.text("transition") orelse {
                     return admin.fail(session, error.Invalid, location);
                 };
-
-                _ = registry.SDK.dispatch(&session.ctx, operations.Transition, .{
+                const moved = registry.SDK.dispatch(&session.ctx, operations.Transition, .{
                     .id = id,
                     .transition = transition,
                     .expected_version = expected,
                 }) catch |err| return admin.fail(session, err, location);
+
+                if (std.mem.eql(u8, moved.status, "destroyed")) {
+                    if (fragment) {
+                        return answer_gone(session, back);
+                    }
+
+                    return response.redirect(.see_other, back);
+                }
             }
 
             if (fragment) {
@@ -321,7 +319,7 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(session.signed_in());
 
             return .{
-                .purge = registry.SDK.may(&session.ctx, operations.Purge),
+                .destroy = registry.SDK.may(&session.ctx, operations.Purge),
                 .publish = registry.SDK.may_on_type(
                     &session.ctx,
                     operations.Publish.name,
@@ -507,7 +505,7 @@ pub fn Editor(comptime domain: Domain) type {
             try answer(session, shape, document, &.{}, .fragment);
         }
 
-        /// A document that is gone (purged): nothing to draw, the script goes to `location`.
+        /// A document that is gone (destroyed): nothing to draw, the script goes to `location`.
         pub fn answer_gone(session: *Session, location: []const u8) Error!void {
             std.debug.assert(location.len > 0);
             std.debug.assert(session.signed_in());
@@ -1061,7 +1059,8 @@ pub fn Editor(comptime domain: Domain) type {
 }
 
 /// The status actions a document offers from where it is: publish, discard, every transition
-/// its type's flow makes out of the current status, and purge for whoever may purge.
+/// its type's flow makes out of the current status, and, in the trash, destroy for whoever
+/// may destroy.
 pub fn actions_of(
     session: *const Session,
     flow: model.flow.Flow,
@@ -1119,10 +1118,10 @@ pub fn actions_of(
         try add_action(arena, &actions, "transition", transition.name, label, destructive);
     }
 
-    if (may.purge) {
-        const label = try session.translated("Purge for good", .{});
+    if (may.destroy and std.mem.eql(u8, status, model.flow.trashed)) {
+        const label = try session.translated("Destroy for good", .{});
 
-        try add_action(arena, &actions, "do", "purge", label, true);
+        try add_action(arena, &actions, "transition", "destroy", label, true);
     }
 
     mark_primary(actions.items);
@@ -1130,9 +1129,9 @@ pub fn actions_of(
     return actions.items;
 }
 
-/// What the person may do beyond writing: purge, and put things live.
+/// What the person may do beyond writing: destroy, and put things live.
 pub const May = struct {
-    purge: bool = false,
+    destroy: bool = false,
     publish: bool = false,
 };
 

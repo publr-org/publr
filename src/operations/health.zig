@@ -361,26 +361,14 @@ test "site health: a type no longer shared and a deleted target are cases; keep 
         });
     }
 
-    const mug = (try SDK.dispatch(&system, record_operations.Create, .{
-        .type = "stock",
-        .document = "{\"title\":\"Blue mug\"}",
-        .status = "published",
-    })).id;
-    const cup = (try SDK.dispatch(&system, record_operations.Create, .{
-        .type = "stock",
-        .document = "{\"title\":\"Cup\"}",
-        .status = "published",
-    })).id;
+    const mug = try live_id(&system, "stock", "{\"title\":\"Blue mug\"}");
+    const cup = try live_id(&system, "stock", "{\"title\":\"Cup\"}");
     const document = try std.fmt.allocPrint(
         system.arena,
         "{{\"title\":\"Mug\",\"stock\":[\"{s}\",\"{s}\"]}}",
         .{ mug, cup },
     );
-    _ = try SDK.dispatch(&system, record_operations.Create, .{
-        .type = "product",
-        .document = document,
-        .status = "published",
-    });
+    _ = try live_id(&system, "product", document);
 
     var admin = harness.ctx(.{
         .user = .{
@@ -481,25 +469,17 @@ test "site health: cases come a page at a time, a case's records counted across 
     var targets: [4][]const u8 = undefined;
 
     for (&targets, 0..) |*target, index| {
-        target.* = (try SDK.dispatch(&system, record_operations.Create, .{
-            .type = "stock",
-            .document = "{\"title\":\"Item\"}",
-            .status = "published",
-        })).id;
+        target.* = try live_id(&system, "stock", "{\"title\":\"Item\"}");
 
         const holders: u32 = if (index == 0) 6 else 1;
         var made: u32 = 0;
 
         while (made < holders) : (made += 1) {
-            _ = try SDK.dispatch(&system, record_operations.Create, .{
-                .type = "product",
-                .document = try std.fmt.allocPrint(
-                    system.arena,
-                    "{{\"title\":\"Product\",\"stock\":\"{s}\"}}",
-                    .{target.*},
-                ),
-                .status = "published",
-            });
+            _ = try live_id(&system, "product", try std.fmt.allocPrint(
+                system.arena,
+                "{{\"title\":\"Product\",\"stock\":\"{s}\"}}",
+                .{target.*},
+            ));
         }
     }
 
@@ -551,4 +531,10 @@ test "site health: cases come a page at a time, a case's records counted across 
     });
     try std.testing.expectEqual(6, unlinked.removed);
     try std.testing.expectEqual(3, (try SDK.dispatch(&admin, Count, .{})).count);
+}
+
+fn live_id(system: *sdk.Ctx, handle: []const u8, document: []const u8) ![]const u8 {
+    std.debug.assert(handle.len > 0);
+
+    return (try record_operations.fixture.published(system, handle, document)).id;
 }

@@ -250,8 +250,8 @@ pub const Create = struct {
         \\The document is validated against the type's fields; the title comes from
         \\the type's `title_field`. When the type has a `slug` field it is filled from
         \\its source (or the title) when the document leaves it empty, and made unique
-        \\per type. The status defaults to the initial status (`draft`); a type may
-        \\restrict which statuses it accepts. A record lives where its type does; only the
+        \\per type. It starts in its flow's first status (`draft`); a status changes only by
+        \\a transition (`record transition`). A record lives where its type does; only the
         \\design's records (templates, parts, patterns, moodboard cards), which each app has
         \\its own of, take `app`: the one named, else the app the request came through.
     ;
@@ -259,7 +259,6 @@ pub const Create = struct {
     pub const In = struct {
         type: []const u8,
         document: []const u8,
-        status: ?[]const u8 = null,
         app: ?[]const u8 = null,
     };
     pub const Out = crud_module.Created;
@@ -276,7 +275,6 @@ pub const Create = struct {
     pub const field_docs: sdk.operation.Docs(In) = .{
         .type = "The content type, by handle or id",
         .document = "The document as a JSON object",
-        .status = "Initial status; the registry's initial status when omitted",
         .app = "A design record's app, by `.name`; refused for any other type",
     };
 
@@ -287,7 +285,7 @@ pub const Create = struct {
             return error.Invalid;
         }
 
-        return crud.create(ctx, granted, in.type, in.document, in.status, in.app);
+        return crud.create(ctx, granted, in.type, in.document, null, in.app);
     }
 };
 
@@ -364,14 +362,11 @@ pub const Save = struct {
         \\Writes the fields the document gives over the copy it changes; a field left out
         \\keeps its value. Validates the whole, keeps the slug unless the document sets one,
         \\bumps `version`. Pass the `version` you last read as `expected_version` and the
-        \\save is refused (`conflict`) if someone saved in between. Without `status`: on a
-        \\live record (or one that already has pending edits) the fields are parked in the
-        \\pending copy and the record is marked `changed`; the live document is untouched
-        \\until `record publish`. Otherwise they go into the record's own document, the old
-        \\one kept as a revision snapshot. With `status`, the record's current one or one a
-        \\registered transition reaches: the fields go straight into the live document (and
-        \\into the pending copy, which stays pending), then the record moves to `status`.
-        \\The type must accept the status and the grant allow it, as for `record create`.
+        \\save is refused (`conflict`) if someone saved in between. On a live record (or one
+        \\that already has pending edits) the fields are parked in the pending copy and the
+        \\record is marked `changed`; the live document is untouched until `record publish`.
+        \\Otherwise they go into the record's own document, the old one kept as a revision
+        \\snapshot. A save never changes the status: that is `record transition`.
         \\`outcome` says what it did: `saved` (into the record's own document),
         \\`changes_saved` (parked), `changes_discarded` (an edit taken back to the live
         \\document), `unchanged`.
@@ -381,7 +376,6 @@ pub const Save = struct {
         id: []const u8,
         document: []const u8,
         expected_version: ?i64 = null,
-        status: ?[]const u8 = null,
     };
     pub const Out = crud_module.Saved;
     pub const example: In = .{
@@ -398,7 +392,6 @@ pub const Save = struct {
         .id = "The record id",
         .document = "The fields to write, as a JSON object; the others keep their values",
         .expected_version = "The `version` you read; refuse if it changed",
-        .status = "Write straight into the live document and end in this status",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -412,7 +405,7 @@ pub const Save = struct {
         // its order.
         try virtual_edit.apply(ctx, granted, in.id, in.document);
 
-        return crud.save(ctx, granted, in.id, in.document, in.expected_version, in.status);
+        return crud.save(ctx, granted, in.id, in.document, in.expected_version, null);
     }
 };
 
@@ -1024,16 +1017,8 @@ test "anonymous callers see live records of public types only; private types are
             .document = example_document,
         },
     );
-    const live = try SDK.dispatch(&admin, Create, .{
-        .type = "post",
-        .document = "{\"title\":\"Live one\",\"body\":\"y\"}",
-        .status = "published",
-    });
-    const secret = try SDK.dispatch(&admin, Create, .{
-        .type = "note",
-        .document = "{\"title\":\"Secret\",\"body\":\"z\"}",
-        .status = "published",
-    });
+    const live = try fixture.published(&admin, "post", "{\"title\":\"Live one\",\"body\":\"y\"}");
+    const secret = try fixture.published(&admin, "note", "{\"title\":\"Secret\",\"body\":\"z\"}");
 
     try std.testing.expectError(error.NotFound, SDK.dispatch(&anon, Get, .{
         .id = draft.id,
@@ -1127,16 +1112,8 @@ test "list across types: every readable type, the ones named, exclusions, one-ty
         .type = "post",
         .document = example_document,
     });
-    _ = try SDK.dispatch(&admin, Create, .{
-        .type = "post",
-        .document = "{\"title\":\"Live one\",\"body\":\"y\"}",
-        .status = "published",
-    });
-    _ = try SDK.dispatch(&admin, Create, .{
-        .type = "note",
-        .document = "{\"title\":\"Secret\",\"body\":\"z\"}",
-        .status = "published",
-    });
+    _ = try fixture.published(&admin, "post", "{\"title\":\"Live one\",\"body\":\"y\"}");
+    _ = try fixture.published(&admin, "note", "{\"title\":\"Secret\",\"body\":\"z\"}");
     _ = try SDK.dispatch(&editor, Create, .{
         .type = "note",
         .document = "{\"title\":\"Mine\",\"body\":\"m\",\"views\":7}",
@@ -1636,21 +1613,13 @@ test "terms fields: a type opts into a taxonomy, records file under terms, ances
         "{{\"title\":\"Filed\",\"topics\":[\"{s}\"]}}",
         .{engineering.id},
     );
-    const record = try SDK.dispatch(&admin, Create, .{
-        .type = "article",
-        .document = filed,
-        .status = "published",
-    });
+    const record = try fixture.published(&admin, "article", filed);
     const painted = try std.fmt.allocPrint(
         harness.fixed.allocator(),
         "{{\"title\":\"Painted\",\"topics\":[\"{s}\"]}}",
         .{art.id},
     );
-    _ = try SDK.dispatch(&admin, Create, .{
-        .type = "article",
-        .document = painted,
-        .status = "published",
-    });
+    _ = try fixture.published(&admin, "article", painted);
 
     const under_tech = try SDK.dispatch(&admin, List, .{
         .type = "article",

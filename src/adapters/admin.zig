@@ -1502,7 +1502,9 @@ test "a settings type uses the shared editor and publishes only after a guarded 
     const record = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "post",
         .document = "{\"title\":\"A post\"}",
-        .status = "published",
+    });
+    _ = try registry.SDK.dispatch(&system, records.Publish, .{
+        .id = record.id,
     });
     const index = try flow.call("GET", "/admin/settings", "");
     try std.testing.expectEqualStrings("/admin/settings/system", index.header("Location").?);

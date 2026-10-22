@@ -80,7 +80,9 @@ test "activity: project.put lists what it put in its order, before what landing 
     const created = try SDK.dispatch(&system, record.Create, .{
         .type = "note",
         .document = "{\"title\":\"One\"}",
-        .status = "published",
+    });
+    _ = try SDK.dispatch(&system, record.Publish, .{
+        .id = created.id,
     });
     const type_rows = try stored_rows.read(
         system.db,
@@ -153,7 +155,9 @@ test "activity: a record's own writes and a move over many, each record by its i
     const one = try SDK.dispatch(&system, record.Create, .{
         .type = "note",
         .document = "{\"title\":\"One\"}",
-        .status = "published",
+    });
+    _ = try SDK.dispatch(&system, record.Publish, .{
+        .id = one.id,
     });
     const two = try SDK.dispatch(&system, record.Create, .{
         .type = "note",

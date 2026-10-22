@@ -55,7 +55,9 @@ pub fn field_hint(hints: []const groq.Hint) ?groq.Hint {
     std.debug.assert(hints.len <= 64);
 
     for (hints) |hint| {
-        const own = hint.attribute.len > 0 and hint.attribute[0] != '_';
+        // A record's `status` is its own column, not one of its fields: the keep finds it.
+        const own = hint.attribute.len > 0 and hint.attribute[0] != '_' and
+            !std.mem.eql(u8, hint.attribute, "status");
 
         if (own and hint.values.len == 1) {
             return hint;

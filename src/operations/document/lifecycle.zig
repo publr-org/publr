@@ -287,7 +287,12 @@ pub fn Of(comptime Domain: type) type {
             }
 
             if (std.mem.eql(u8, name, "destroy")) {
-                return if (may_destroy(ctx))
+                // Plugin code destroys only from a `.destructive` operation.
+                if (ctx.plugin_called and !ctx.destructive) {
+                    return error.Denied;
+                }
+
+                return if (may_destroy(ctx, row.type))
                     destroy(ctx, granted, row)
                 else
                     requests.ask(ctx, row, name);
@@ -361,13 +366,28 @@ pub fn Of(comptime Domain: type) type {
             };
         }
 
-        /// A person who is an administrator, or Publr itself: plugin code, an agent's device
-        /// and a token never erase; they leave the record in the trash.
-        fn may_destroy(ctx: *const Ctx) bool {
+        /// A person who is an administrator, or Publr itself; plugin code only for a person,
+        /// with `records.destroy` on the type. An agent's device, a token and queued work never
+        /// erase; they leave the record in the trash.
+        fn may_destroy(ctx: *Ctx, handle: []const u8) bool {
+            std.debug.assert(ctx.now_ms >= 0);
+            std.debug.assert(handle.len > 0);
+
+            if (ctx.plugin_called) {
+                const person = ctx.caller == .user and is_admin(ctx);
+
+                return person and registry.SDK.may_on_type(ctx, purge_name, handle);
+            }
+
+            return ctx.caller == .system or is_admin(ctx);
+        }
+
+        const purge_name = Domain.namespace ++ ".purge";
+
+        fn is_admin(ctx: *const Ctx) bool {
             std.debug.assert(ctx.now_ms >= 0);
 
             return switch (ctx.caller) {
-                .system => true,
                 .user => |user| for (user.roles) |held| {
                     if (std.mem.eql(u8, held, model.role.admin)) {
                         break true;

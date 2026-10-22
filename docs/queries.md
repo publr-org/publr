@@ -32,8 +32,9 @@ functions, delta mode with `diff::` and `delta::`, and the vendor functions `ide
 and `path()`. A query using them is refused, saying so.
 
 References are record ids: `product == ^._id` compares them, and `->` follows a string id
-as it follows `{ "_ref": id }`. A record is its fields with `_id`, `_type`, `_createdAt`
-and `_updatedAt`.
+as it follows `{ "_ref": id }`. A record is its fields with `_id`, `_type`, `_createdAt`,
+`_updatedAt` and, for content, `status` as stored (`published`, `checkout.placed`):
+`count(*[_type == "checkout.order" && status == "checkout.placed"])`.
 
 ## What it reads
 

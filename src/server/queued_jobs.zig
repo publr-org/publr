@@ -9,7 +9,8 @@ const Project = @import("project.zig").Project;
 
 /// How often the queue is looked at when nothing is due sooner.
 pub const look_ms: i64 = 1000;
-/// How often each repeating job is checked for a run waiting.
+/// How often each repeating job is checked for a run waiting, and the trash for what is past
+/// its time.
 pub const repeat_ms: i64 = 60 * 1000;
 
 pub const Clock = struct {
@@ -71,5 +72,8 @@ fn repeat(project: *const Project, gpa: std.mem.Allocator) void {
 
     _ = registry.SDK.jobs.repeat(&ctx) catch |err| {
         std.log.warn("jobs: repeating ones not queued: {t}", .{err});
+    };
+    _ = @import("../operations/trash.zig").sweep(&ctx) catch |err| {
+        std.log.warn("trash: what is past its time not emptied: {t}", .{err});
     };
 }

@@ -50,7 +50,6 @@ pub const Grant = struct {
     /// The app the caller reads for: only types living in it or shared with it are in
     /// reach. Null: every type, wherever it lives (the admin across apps, the CLI).
     app: ?[]const u8 = null,
-    field_mask: []const []const u8 = &.{},
     record_filter: RecordFilter = .{},
     /// With `public_types_only`: the types reached whatever their kind (named in a plugin's
     /// grant, or its own).
@@ -125,24 +124,19 @@ pub const Grant = struct {
         return !(grant.drafts_public and public) and !contains(grant.draft_types, handle);
     }
 
-    pub fn masks_field(grant: *const Grant, field: []const u8) bool {
-        return contains(grant.field_mask, field);
-    }
-
     pub fn intersect(left: Grant, right: Grant, arena: std.mem.Allocator) operation.Error!Grant {
         if (left.decision == .deny or right.decision == .deny) {
             return deny;
         }
 
-        std.debug.assert(left.field_mask.len <= list_len_max);
-        std.debug.assert(right.field_mask.len <= list_len_max);
+        std.debug.assert(left.any_kind_types.len <= list_len_max);
+        std.debug.assert(right.any_kind_types.len <= list_len_max);
 
         return .{
             .read_only = left.read_only or right.read_only,
             .types = try intersect_lists(left.types, right.types, arena),
             .plugins = try intersect_lists(left.plugins, right.plugins, arena),
             .app = left.app orelse right.app,
-            .field_mask = try union_lists(left.field_mask, right.field_mask, arena),
             .record_filter = RecordFilter.merge(left.record_filter, right.record_filter),
             .any_kind_types = try exempt(
                 left.record_filter.flags.public_types_only,
@@ -257,40 +251,13 @@ fn intersect_lists(
     return out[0..len];
 }
 
-fn union_lists(
-    left: []const []const u8,
-    right: []const []const u8,
-    arena: std.mem.Allocator,
-) operation.Error![]const []const u8 {
-    std.debug.assert(left.len <= list_len_max);
-    std.debug.assert(right.len <= list_len_max);
-
-    var out = arena.alloc([]const u8, left.len + right.len) catch return error.OutOfMemory;
-    var len: u32 = 0;
-
-    for (left) |item| {
-        out[len] = item;
-        len += 1;
-    }
-
-    for (right) |item| {
-        if (!contains(left, item)) {
-            out[len] = item;
-            len += 1;
-        }
-    }
-
-    return out[0..len];
-}
-
-test "intersect: deny wins, lists intersect, masks union, flags or" {
+test "intersect: deny wins, lists intersect, flags or" {
     var buffer: [4096]u8 = undefined;
     var fixed = std.heap.FixedBufferAllocator.init(&buffer);
     const arena = fixed.allocator();
 
     const left: Grant = .{
         .types = &.{ "post", "page" },
-        .field_mask = &.{"secret"},
         .record_filter = .{
             .flags = .{
                 .own_only = true,
@@ -299,7 +266,6 @@ test "intersect: deny wins, lists intersect, masks union, flags or" {
     };
     const right: Grant = .{
         .types = &.{ "page", "tag" },
-        .field_mask = &.{ "secret", "internal" },
         .record_filter = .{
             .flags = .{
                 .live_only = true,
@@ -313,8 +279,6 @@ test "intersect: deny wins, lists intersect, masks union, flags or" {
     try std.testing.expect(both.allows_type("page"));
     try std.testing.expect(!both.allows_type("post"));
     try std.testing.expect(!both.allows_type("tag"));
-    try std.testing.expect(both.masks_field("internal"));
-    try std.testing.expectEqual(@as(u32, 2), @as(u32, @intCast(both.field_mask.len)));
     try std.testing.expect(both.record_filter.flags.own_only);
     try std.testing.expect(both.record_filter.flags.live_only);
 

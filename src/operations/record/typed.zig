@@ -87,18 +87,11 @@ pub fn Ref(comptime Doc: type, comptime type_handle: []const u8) type {
             };
         }
 
-        /// The id alone until resolved; then `{ id, value }`.
+        /// The id alone, whatever the record holds: what an input takes and a log keeps.
         pub fn jsonStringify(self: @This(), writer: anytype) !void {
             std.debug.assert(self.id.len > 0);
 
-            if (self.value == null) {
-                return writer.write(self.id);
-            }
-
-            return writer.write(Resolved{
-                .id = self.id,
-                .value = self.value,
-            });
+            return writer.write(self.id);
         }
     };
 }
@@ -111,7 +104,7 @@ const Post = struct {
     body: []const u8 = "",
     views: i64 = 0,
 };
-const posts = @import("../../sdk/plugin/record_define.zig").Store(Post, "post", false, "draft");
+const posts = @import("../../sdk/plugin/record_define.zig").Store(Post, "post", false);
 
 test "a record's reads and writes: create, get, save a field, find one" {
     var harness: sdk.testing.Harness = undefined;
@@ -156,7 +149,7 @@ test "a record's reads and writes: create, get, save a field, find one" {
     });
     try std.testing.expectError(error.Conflict, posts.find_one(&ctx, "title", "Two"));
 
-    const pages = @import("../../sdk/plugin/record_define.zig").Store(Post, "page", false, "draft");
+    const pages = @import("../../sdk/plugin/record_define.zig").Store(Post, "page", false);
     try std.testing.expectError(error.NotFound, pages.get(&ctx, first));
 }
 

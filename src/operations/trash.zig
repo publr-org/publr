@@ -1,7 +1,9 @@
 //! The trash: what a removal took, kept as it was (a copy of its rows) until it is emptied,
-//! restorable meanwhile. A removal keeps its copy here before it runs (`keep`); the trash
-//! empties what it has held for `trash.keep_days` (30 unless set). Only emptying, or
-//! removing one entry for good, is final, and only a person does it.
+//! restorable meanwhile, and the records in the trash, which stay where they are. A removal
+//! keeps its copy here before it runs (`keep`); the trash empties what it has held for
+//! `trash.keep_days` (30 unless set): copies go, records are destroyed by their `destroy`
+//! transition, hooks and all. Only emptying, or removing one entry for good, is final, and
+//! only a person or Publr itself does it.
 
 const std = @import("std");
 const sdk = @import("../sdk.zig");
@@ -14,6 +16,7 @@ const Error = sdk.Error;
 const copies = store.trash_copy;
 const store_files = @import("../lib/files.zig");
 const registry = @import("../server/registry.zig");
+const records = @import("record.zig");
 const entries = store.trash;
 
 pub const namespace: sdk.operation.Namespace = .{
@@ -24,9 +27,11 @@ pub const namespace: sdk.operation.Namespace = .{
     .details =
     \\Removing a content type, a taxonomy or a field group keeps a copy of everything it
     \\takes (its records, terms, values, snapshots) here before it goes. `trash restore`
-    \\brings it back as it was. The trash empties what it has held for `trash.keep_days`
-    \\days (30 unless set); `trash remove` and `trash empty` remove for good sooner. Those
-    \\two are final, so a device (an agent) lists them for its person instead.
+    \\brings it back as it was. Records in the trash are listed too, by their own id:
+    \\`trash restore` runs their `restore` transition, `trash remove` their `destroy`. The
+    \\trash empties what it has held for `trash.keep_days` days (30 unless set); `trash
+    \\remove` and `trash empty` remove for good sooner. Those two are final, so a device (an
+    \\agent) lists them for its person instead.
     ,
 };
 
@@ -216,6 +221,75 @@ fn empty_expired(ctx: *Ctx) Error!void {
     _ = try empty_all(ctx, true);
 }
 
+/// Records in the trash destroyed by their `destroy` transition, a page at a time: all, or
+/// those trashed more than the trash's days ago; how many went. One that stays (its destroy
+/// waits for a person, a hook refused it) is passed over.
+fn destroy_trashed(ctx: *Ctx, expired_only: bool) Error!u32 {
+    std.debug.assert(ctx.db.transaction_depth >= 1);
+
+    const cutoff = ctx.now_ms - @as(i64, try keep_days(ctx)) * day_ms;
+    var destroyed: u32 = 0;
+    var stayed: u32 = 0;
+
+    while (true) {
+        const page = try trashed_page(ctx, stayed, batch);
+
+        for (page.records) |record| {
+            if (expired_only and record.updated_at > cutoff) {
+                return destroyed;
+            }
+
+            const moved = registry.SDK.dispatch(ctx, records.Transition, .{
+                .id = record.id,
+                .transition = "destroy",
+            }) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => blk: {
+                    ctx.failure = null;
+                    break :blk null;
+                },
+            };
+            const gone = if (moved) |done| std.mem.eql(u8, done.status, "destroyed") else false;
+
+            destroyed += @intFromBool(gone);
+            stayed += @intFromBool(!gone);
+        }
+
+        if (page.records.len < batch) {
+            return destroyed;
+        }
+    }
+}
+
+/// What the trash has held past its time goes for good, whether or not anything new is put
+/// in: Publr itself does it, from the queue's process. How many went.
+pub fn sweep(ctx: *Ctx) Error!u32 {
+    std.debug.assert(ctx.caller == .system);
+    std.debug.assert(ctx.db.transaction_depth == 0);
+
+    var transaction = try ctx.db.transaction();
+    errdefer transaction.rollback();
+
+    const removed = try empty_all(ctx, true) + try destroy_trashed(ctx, true);
+
+    try transaction.commit();
+
+    return removed;
+}
+
+/// The records in the trash, the longest there first.
+fn trashed_page(ctx: *Ctx, offset: u32, limit: u32) Error!records.List.Out {
+    std.debug.assert(limit > 0);
+
+    return registry.SDK.dispatch(ctx, records.List, .{
+        .filters = &.{"status:is:trashed"},
+        .order = .updated_asc,
+        .offset = offset,
+        .limit = limit,
+        .count = true,
+    });
+}
+
 /// How long the trash keeps things: `trash.keep_days`, else 30.
 pub fn keep_days(ctx: *Ctx) Error!u32 {
     std.debug.assert(keep_days_default > 0);
@@ -271,6 +345,10 @@ pub const List = struct {
         entries: []const Shown,
         keep_days: u32,
         total: u32 = 0,
+        /// The records in the trash, the same page of them: `kind` is `record`, `key` the
+        /// type, `id` the record's own.
+        records: []const Shown = &.{},
+        records_total: u32 = 0,
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -286,6 +364,8 @@ pub const List = struct {
         .entries = "What it holds, newest first",
         .keep_days = "How many days it keeps something before removing it for good",
         .total = "How many entries it holds in all (the conversation's, when named)",
+        .records = "Records in the trash, the longest there first; none for a conversation",
+        .records_total = "How many records are in the trash",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -315,10 +395,34 @@ pub const List = struct {
             };
         }
 
+        const days = try keep_days(ctx);
+        const trashed: records.List.Out = if (in.conversation.len > 0)
+            .{
+                .records = &.{},
+            }
+        else
+            try trashed_page(ctx, in.offset, in.limit);
+        const shown = ctx.arena.alloc(Shown, trashed.records.len) catch return error.OutOfMemory;
+
+        for (trashed.records, shown) |record, *item| {
+            item.* = .{
+                .id = record.id,
+                .kind = "record",
+                .key = record.type,
+                .label = record.title,
+                .removed_by = record.updated_by orelse "",
+                .conversation_id = "",
+                .removed_at = record.updated_at,
+                .keep_until = record.updated_at + @as(i64, days) * day_ms,
+            };
+        }
+
         return .{
             .entries = out,
-            .keep_days = try keep_days(ctx),
+            .keep_days = days,
             .total = try entries.count(ctx.db, in.conversation),
+            .records = shown,
+            .records_total = trashed.total,
         };
     }
 };
@@ -365,7 +469,9 @@ pub const Restore = struct {
             return error.Invalid;
         }
 
-        const entry = try entries.get(ctx.db, ctx.arena, in.id) orelse return error.NotFound;
+        const entry = try entries.get(ctx.db, ctx.arena, in.id) orelse {
+            return restore_record(ctx, in.id);
+        };
         const copy = try entries.copy_of(ctx.db, ctx.arena, in.id) orelse return error.NotFound;
 
         if (std.mem.eql(u8, entry.kind, "app_file")) {
@@ -390,12 +496,36 @@ pub const Restore = struct {
     }
 };
 
+/// A record in the trash, back by its `restore` transition.
+fn restore_record(ctx: *Ctx, id: []const u8) Error!Restore.Out {
+    std.debug.assert(id.len > 0);
+
+    const got = try registry.SDK.dispatch(ctx, records.Get, .{
+        .id = id,
+    });
+
+    if (!std.mem.eql(u8, got.record.status, model.flow.trashed)) {
+        return error.NotFound;
+    }
+
+    _ = try registry.SDK.dispatch(ctx, records.Transition, .{
+        .id = id,
+        .transition = "restore",
+    });
+
+    return .{
+        .kind = "record",
+        .key = got.record.type,
+        .label = got.record.title,
+    };
+}
+
 pub const Remove = struct {
     pub const name = "trash.remove";
     pub const description = "Remove one thing in the trash for good";
     pub const details =
-        \\Its copy goes, and it can never be restored. Final, so a device lists it for its
-        \\person instead.
+        \\Its copy goes, and it can never be restored; a record in the trash is destroyed by
+        \\its `destroy` transition. Final, so a device lists it for its person instead.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const destroys = true;
@@ -423,6 +553,17 @@ pub const Remove = struct {
             return error.Invalid;
         }
 
+        if (try entries.get(ctx.db, ctx.arena, in.id) == null) {
+            const moved = try registry.SDK.dispatch(ctx, records.Transition, .{
+                .id = in.id,
+                .transition = "destroy",
+            });
+
+            return .{
+                .removed = std.mem.eql(u8, moved.status, "destroyed"),
+            };
+        }
+
         return .{
             .removed = try drop(ctx, in.id),
         };
@@ -433,8 +574,9 @@ pub const Empty = struct {
     pub const name = "trash.empty";
     pub const description = "Empty the trash: what it holds goes for good";
     pub const details =
-        \\Everything, or only what it has held past `trash.keep_days` with `expired`. Final,
-        \\so a device lists it for its person instead.
+        \\Everything, or only what it has held past `trash.keep_days` with `expired`: copies
+        \\go, records in the trash are destroyed by their `destroy` transition. Final, so a
+        \\device lists it for its person instead. Publr itself empties what is past its time.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const destroys = true;
@@ -456,8 +598,10 @@ pub const Empty = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
+        const removed = try empty_all(ctx, in.expired);
+
         return .{
-            .removed = try empty_all(ctx, in.expired),
+            .removed = removed + try destroy_trashed(ctx, in.expired),
         };
     }
 };

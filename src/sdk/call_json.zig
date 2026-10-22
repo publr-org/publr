@@ -353,12 +353,17 @@ fn has_reference(shape: []const contract.Node) bool {
 }
 
 /// `{ id, value }` for an id: the record of content type `handle`, as `record.get` answers
-/// the caller; not found when it is another type's.
+/// the caller; not found when it is another type's. With no `handle` (any type), `{ id,
+/// type, value, missing }`: the value only when the caller may read it.
 fn record_for(comptime SDK: type, ctx: *Ctx, handle: []const u8, id: Value) Error!Value {
-    std.debug.assert(handle.len > 0);
+    std.debug.assert(handle.len <= 128);
 
     if (id != .string or id.string.len == 0 or id.string.len > 128) {
         return error.Invalid;
+    }
+
+    if (handle.len == 0) {
+        return any_for(SDK, ctx, id);
     }
 
     const asked = std.json.Stringify.valueAlloc(ctx.arena, .{
@@ -391,5 +396,57 @@ fn record_for(comptime SDK: type, ctx: *Ctx, handle: []const u8, id: Value) Erro
 
     return .{
         .object = pair,
+    };
+}
+
+fn any_for(comptime SDK: type, ctx: *Ctx, id: Value) Error!Value {
+    std.debug.assert(id == .string);
+
+    const asked = std.json.Stringify.valueAlloc(ctx.arena, .{
+        .id = id.string,
+    }, .{}) catch {
+        return error.OutOfMemory;
+    };
+    const Reached = struct {
+        reason: ?[]const u8 = null,
+        type: []const u8,
+    };
+    const reached = std.json.parseFromSliceLeaky(
+        Reached,
+        ctx.arena,
+        try call(SDK, ctx, "record.reach", asked),
+        .{
+            .ignore_unknown_fields = true,
+        },
+    ) catch return error.Invalid;
+    var any: std.json.ObjectMap = .empty;
+
+    any.put(ctx.arena, "id", id) catch return error.OutOfMemory;
+    any.put(ctx.arena, "type", .{
+        .string = reached.type,
+    }) catch return error.OutOfMemory;
+
+    if (reached.reason) |reason| {
+        any.put(ctx.arena, "missing", .{
+            .bool = std.mem.eql(u8, reason, "deleted"),
+        }) catch return error.OutOfMemory;
+    } else if (call(SDK, ctx, "record.get", asked)) |answer| {
+        const Got = struct {
+            document: []const u8,
+        };
+        const got = std.json.parseFromSliceLeaky(Got, ctx.arena, answer, .{
+            .ignore_unknown_fields = true,
+        }) catch return error.Invalid;
+        const document = std.json.parseFromSliceLeaky(Value, ctx.arena, got.document, .{}) catch {
+            return error.Invalid;
+        };
+
+        any.put(ctx.arena, "value", document) catch return error.OutOfMemory;
+    } else |err| if (err != error.NotFound) {
+        return err;
+    }
+
+    return .{
+        .object = any,
     };
 }

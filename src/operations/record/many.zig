@@ -14,6 +14,7 @@ const Grant = sdk.Grant;
 const Error = sdk.Error;
 const Transition = record_operations.Transition;
 const Refusals = @import("../../sdk/bulk.zig").Refusals;
+const part_max = many_module.part_max;
 
 pub const TransitionMany = struct {
     pub const name = "record.transition_many";
@@ -29,7 +30,8 @@ pub const TransitionMany = struct {
         \\`not_moved`) while the rest go on. Pending edits of records going live are applied,
         \\as `record publish` does.
         \\Hooks on `record transition` run for each record; event hooks hear each record's
-        \\events as if it had moved on its own.
+        \\events as if it had moved on its own. `destroy` runs `record transition` on each
+        \\record in the trash, one at a time; the others are not moved.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -83,7 +85,8 @@ pub const TransitionMany = struct {
             return error.Invalid;
         }
 
-        const to = try target_of(ctx, in);
+        const destroying = std.mem.eql(u8, in.transition, "destroy");
+        const to = if (destroying) model.flow.trashed else try target_of(ctx, in);
 
         const input: crud_module.ListInput = .{
             .definition = if (named) null else in.type,
@@ -91,7 +94,7 @@ pub const TransitionMany = struct {
             .filters = if (named) &.{} else in.filters,
             .search = if (named) null else in.search,
             .ids = in.ids,
-            .exclude_statuses = &.{to},
+            .exclude_statuses = if (destroying) &.{} else &.{to},
             .limit = store.records.list_max,
         };
         const domain = record_operations.domain;
@@ -100,6 +103,11 @@ pub const TransitionMany = struct {
             .not_moved = 0,
             .failed = &.{},
         };
+
+        if (destroying) {
+            return destroy_each(ctx, query);
+        }
+
         const hooks: ?many_module.Hooks = if (registry.SDK.bulk.hooked(ctx, Transition)) .{
             .before = &before,
             .after = &after,
@@ -111,6 +119,73 @@ pub const TransitionMany = struct {
             .not_moved = outcome.not_moved,
             .failed = outcome.failed,
         };
+    }
+
+    /// Each record the query keeps destroyed on its own, its hooks and all; one not in the
+    /// trash, or whose destroy waits for a person, is not moved.
+    fn destroy_each(ctx: *Ctx, query: store.documents.Query) Error!Out {
+        std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        // Read whole before any is destroyed: a hook's own bulk move gathers again.
+        _ = try store.records.gather(ctx.db, ctx.arena, query);
+
+        var rows: std.ArrayList(store.records.Match) = .empty;
+        var position: i64 = 0;
+
+        while (true) {
+            const part = try store.records.gathered(ctx.db, ctx.arena, position, part_max);
+
+            rows.appendSlice(ctx.arena, part) catch return error.OutOfMemory;
+
+            if (part.len < part_max) {
+                break;
+            }
+
+            position = part[part.len - 1].position;
+        }
+
+        try store.records.release(ctx.db);
+
+        var failed: std.ArrayList(Failed) = .empty;
+        var out: Out = .{
+            .moved = 0,
+            .not_moved = 0,
+            .failed = &.{},
+        };
+
+        for (rows.items) |row| {
+            const moved = registry.SDK.dispatch(ctx, Transition, .{
+                .id = row.id,
+                .transition = "destroy",
+            }) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => blk: {
+                    ctx.failure = null;
+                    break :blk null;
+                },
+            };
+
+            if (moved != null and std.mem.eql(u8, moved.?.status, "destroyed")) {
+                out.moved += 1;
+                continue;
+            }
+
+            out.not_moved += 1;
+
+            if (failed.items.len == many_module.failed_kept_max) {
+                continue;
+            }
+
+            failed.append(ctx.arena, .{
+                .id = row.id,
+                .title = row.title orelse "",
+                .why = if (moved == null) "Not in the trash" else "Waits for a person",
+            }) catch return error.OutOfMemory;
+        }
+
+        out.failed = failed.items;
+
+        return out;
     }
 
     /// Where the transition leads in the types it reaches: one status, or the call is

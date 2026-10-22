@@ -160,13 +160,18 @@ fn repoint(
         return error.OutOfMemory;
     };
 
-    // Saved in its current status: a live child joins or leaves at once, not as a pending
-    // change waiting for its own publish; a draft stays a draft.
-    _ = try registry.SDK.dispatch(ctx, records.Save, .{
+    const saved = try registry.SDK.dispatch(ctx, records.Save, .{
         .id = child,
         .document = document,
-        .status = got.record.status,
     });
+
+    // A live child joins or leaves at once, not as a pending change waiting for its own
+    // publish; a draft stays a draft, and a child with edits of its own waits with them.
+    if (saved.changed and !got.record.changed) {
+        _ = try registry.SDK.dispatch(ctx, records.Publish, .{
+            .id = child,
+        });
+    }
 }
 
 /// The reference after the move: one id set or cleared, or the parent added to or taken

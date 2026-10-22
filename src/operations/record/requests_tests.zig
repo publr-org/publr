@@ -68,17 +68,6 @@ test "a contributor asks; what goes live waits for someone who may publish" {
     try std.testing.expectError(error.Denied, SDK.dispatch(&writer, record.Publish, .{
         .id = created.id,
     }));
-    try std.testing.expectError(error.Denied, SDK.dispatch(&writer, record.Save, .{
-        .id = created.id,
-        .document = "{\"title\":\"Hello\",\"body\":\"x\"}",
-        .status = "published",
-    }));
-
-    try std.testing.expectError(error.Denied, SDK.dispatch(&writer, record.Create, .{
-        .type = "post",
-        .document = "{\"title\":\"Straight out\",\"body\":\"x\"}",
-        .status = "published",
-    }));
 
     // Only the asker withdraws their own; someone who may publish declines any.
     try std.testing.expectError(error.Denied, SDK.dispatch(&other, record.DeclineRequest, .{

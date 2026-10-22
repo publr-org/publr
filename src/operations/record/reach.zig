@@ -315,8 +315,10 @@ test "reach: why a reference stands restricted, and when nothing stands in the w
         ids[index] = (try SDK.dispatch(&system, record_operations.Create, .{
             .type = handle,
             .document = document,
-            .status = "published",
         })).id;
+        _ = try SDK.dispatch(&system, record_operations.Publish, .{
+            .id = ids[index],
+        });
     }
 
     ids[4] = (try SDK.dispatch(&system, record_operations.Create, .{

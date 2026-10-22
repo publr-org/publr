@@ -409,7 +409,9 @@ pub const Harness = struct {
         const created = try registry.SDK.dispatch(&system, record_operations.Create, .{
             .type = "post",
             .document = document,
-            .status = "published",
+        });
+        _ = try registry.SDK.dispatch(&system, record_operations.Publish, .{
+            .id = created.id,
         });
 
         return created.slug.?;
@@ -626,10 +628,12 @@ test "a per-request render reads as the visitor, live records only; a shared one
     _ = try registry.SDK.dispatch(&system, types.Create, .{
         .definition = definition,
     });
-    _ = try registry.SDK.dispatch(&system, record_operations.Create, .{
+    const live = try registry.SDK.dispatch(&system, record_operations.Create, .{
         .type = "note",
         .document = "{\"title\":\"Mine, live\",\"body\":\"x\"}",
-        .status = "published",
+    });
+    _ = try registry.SDK.dispatch(&system, record_operations.Publish, .{
+        .id = live.id,
     });
     _ = try registry.SDK.dispatch(&system, record_operations.Create, .{
         .type = "note",
@@ -881,22 +885,29 @@ test "behind a CDN: built files carry their keys, a write answers with the keys 
     );
     try std.testing.expectEqualStrings("", signed.header(edge.changed_header).?);
 
-    // A post created through the API: exactly the keys it raised.
+    // A post created and published through the API: exactly the keys it raised.
     const cookie = signed.header("Set-Cookie").?;
     const pair = cookie[0..std.mem.indexOfScalar(u8, cookie, ';').?];
     const csrf_at = std.mem.indexOf(u8, signed.body, "\"csrf\":\"").? + 8;
     const csrf = signed.body[csrf_at .. csrf_at + @import("../lib/auth.zig").csrf.token_len];
-    const create = try harness.flow.head("POST /api/record/create HTTP/1.1\r\nHost: h\r\n" ++
-        "Origin: http://h\r\nCookie: {s}\r\nX-Csrf-Token: {s}\r\nContent-Length: 0\r\n\r\n", .{
-        pair,
-        csrf,
-    });
-    const document = "{\"type\":\"post\",\"document\":\"{\\\"title\\\":\\\"More\\\"}\"," ++
-        "\"status\":\"published\"}";
+    const head = "POST /api/record/{s} HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
+        "Cookie: {s}\r\nX-Csrf-Token: {s}\r\nContent-Length: 0\r\n\r\n";
+    const create = try harness.flow.head(head, .{ "create", pair, csrf });
+    const document = "{\"type\":\"post\",\"document\":\"{\\\"title\\\":\\\"More\\\"}\"}";
     const created = try harness.flow.call(create, document);
     try std.testing.expectEqual(@as(u16, 200), created.status.code());
 
-    const changed = created.header(edge.changed_header).?;
+    const id_at = std.mem.indexOf(u8, created.body, "\"id\":\"").? + 6;
+    const id = created.body[id_at..std.mem.indexOfScalarPos(u8, created.body, id_at, '"').?];
+    const publish = try harness.flow.head(head, .{ "publish", pair, csrf });
+    const published = try harness.flow.call(publish, try std.fmt.allocPrint(
+        harness.arena_state.allocator(),
+        "{{\"id\":\"{s}\"}}",
+        .{id},
+    ));
+    try std.testing.expectEqual(@as(u16, 200), published.status.code());
+
+    const changed = published.header(edge.changed_header).?;
     try std.testing.expect(contains(changed, "record:"));
     try std.testing.expect(contains(changed, "type:post"));
 

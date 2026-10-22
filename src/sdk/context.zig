@@ -244,6 +244,9 @@ pub const Ctx = struct {
     /// Whether the operation running now was called by that code: what it asks about its
     /// caller (may it publish) answers for the plugin.
     plugin_called: bool = false,
+    /// Whether that plugin's operation running now is `.destructive`: only then may the core
+    /// operations it calls destroy.
+    destructive: bool = false,
     /// The queued job running (`<plugin>.<name>`): the author of what it changes. Empty
     /// outside a job.
     job: []const u8 = "",

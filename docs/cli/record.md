@@ -13,19 +13,17 @@ every transition is reversible, `record purge` is the only thing that removes. *
 is editing: `record save` writes the fields its document gives (the others keep their
 values); on a live record (or one that already has pending edits) it parks them in a
 *pending copy* and sets `changed`; the live document is untouched until `record publish`
-applies the copy or `record discard_changes` drops it. With `--status`, the fields go
-straight into the live document (and into the pending copy, which stays pending) and the
-record ends in that status: what a plugin does to cancel an order without publishing an
-editor's draft. Unpublish, archive and delete keep pending edits as they are. Whenever a live
+applies the copy or `record discard_changes` drops it. A new record starts in its flow's
+first status, and neither create nor save changes the status: only a transition does. Unpublish, archive and delete keep pending edits as they are. Whenever a live
 document is replaced, the old one is kept as a revision (`snapshot list`).
 Anonymous callers see live records of public types; signed-in users see and
 change what their role allows. Back to the [CLI reference](../cli.md).
 
 | Command | What |
 |---|---|
-| `record create --type <t> --document <json> [--status <s>]` | Create; title from the type's `title_field`; when the type has a `slug` field it is taken from the document or generated from the field's `source` (or the title), unique per type. A record lives where its type does; only a design record (template, part, pattern, moodboard card) takes `--app`, the app it is for |
+| `record create --type <t> --document <json>` | Create, in the flow's first status; title from the type's `title_field`; when the type has a `slug` field it is taken from the document or generated from the field's `source` (or the title), unique per type. A record lives where its type does; only a design record (template, part, pattern, moodboard card) takes `--app`, the app it is for |
 | `record get --id <id> [--purpose delivery\|edit] [--slot <s>]` | Read one record: its latest copy (the pending changes when it has some, else the live document); a visitor reads the live one. `purpose` shapes virtual fields: worked out (`delivery`, default) or as the editor keeps them (`edit`); `slot` names a copy |
-| `record save --id <id> --document <json> [--expected_version <n>] [--status <s>]` | Write the fields given: straight in for drafts, parked as pending edits on live records; with `--status` (the current one, or one a transition reaches) straight into the live document, then to that status; `conflict` if `version` moved; `outcome` says what it did (`saved`, `changes_saved`, `changes_discarded`, `unchanged`) |
+| `record save --id <id> --document <json> [--expected_version <n>]` | Write the fields given: straight in for drafts, parked as pending edits on live records; never the status; `conflict` if `version` moved; `outcome` says what it did (`saved`, `changes_saved`, `changes_discarded`, `unchanged`) |
 | `record publish --id <id> [--expected_version <n>]` | Make the latest document live: draft → published (the type's transition event too), or apply pending edits |
 | `record discard_changes --id <id>` | Drop pending edits, keep the document |
 | `record transition --id <id> --transition <name> [--expected_version <n>]` | Move by a transition of the type's flow, named (`publish`, `archive`, a type's own like `submit`, `trash`, `restore`); refused unless the record is where it starts and you pass its `authorize`; into a live status applies pending edits, out of one keeps them. If you may not publish (`record publish`), a transition into or out of a live status, `destroy`, and `publish` of a live record's changes are asked for instead: `pending: true`, the record as it was, the request kept as `requested`/`requested_by` until someone who may runs that transition or declines it |

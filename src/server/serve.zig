@@ -1166,10 +1166,12 @@ test "an app whose build fails answers 503 until a publish lets it build" {
     try std.testing.expect(cms.header("Location") != null);
     const health = try flow.call("GET /api/health HTTP/1.1\r\nHost: h\r\n\r\n", "");
     try std.testing.expectEqual(.ok, health.status);
-    _ = try registry.SDK.dispatch(&system, records.Create, .{
+    const recovered = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "homepage",
         .document = "{\"hero\":\"Recovered homepage\"}",
-        .status = "published",
+    });
+    _ = try registry.SDK.dispatch(&system, records.Publish, .{
+        .id = recovered.id,
     });
     retry_build(&app, &project, system.now_ms + deps.quiet_ms);
     try std.testing.expect(app.build_ready);

@@ -84,7 +84,9 @@ test "project.put puts a record as kept elsewhere: a person's change, plugins an
     const created = try SDK.dispatch(&admin, record.Create, .{
         .type = "post",
         .document = "{\"title\":\"Hello\",\"body\":\"x\"}",
-        .status = "published",
+    });
+    _ = try SDK.dispatch(&admin, record.Publish, .{
+        .id = created.id,
     });
     const kept = try rows_of(&admin, .record, created.id);
 

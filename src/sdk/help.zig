@@ -342,7 +342,11 @@ fn type_label_depth(comptime Type: type, comptime depth: u32) []const u8 {
             "text"
         else
             "list of " ++ type_label_depth(pointer.child, depth + 1),
-        .@"struct" => |info| if (@hasDecl(Type, "reference")) "id of " ++ Type.handle else blk: {
+        .@"struct" => |info| if (@hasDecl(Type, "handle"))
+            "id of " ++ Type.handle
+        else if (@hasDecl(Type, "reference"))
+            "id of any record"
+        else blk: {
             var joined: []const u8 = "{ ";
 
             for (info.fields, 0..) |field, index| {

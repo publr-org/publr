@@ -324,7 +324,7 @@ pub const remote = struct {
                 @compileError("a remote record is named `<plugin>.<type>`");
             }
 
-            const Typed = @import("record_define.zig").Store(Fields, name, false, "");
+            const Typed = @import("record_define.zig").Store(Fields, name, false);
 
             return struct {
                 pub const remote_record = name;

@@ -181,7 +181,8 @@ fn reference_to(comptime Type: type) []const u8 {
 
         const is_struct = @typeInfo(Type) == .@"struct";
 
-        return if (is_struct and @hasDecl(Type, "reference")) Type.handle else "";
+        // A reference to any type (`publr.record.AnyRef`) names none.
+        return if (is_struct and @hasDecl(Type, "handle")) Type.handle else "";
     }
 }
 

@@ -177,21 +177,29 @@ pub fn save(session: *Session, handle: []const u8, app_name: []const u8, documen
     const existing = try list(session, handle, app_name, key);
 
     if (existing.len > 0) {
-        _ = try registry.SDK.dispatch(&session.ctx, record_operations.Save, .{
+        const saved = try registry.SDK.dispatch(&session.ctx, record_operations.Save, .{
             .id = existing[0].id,
             .document = text,
             .expected_version = existing[0].version,
-            .status = "published",
         });
+
+        if (saved.changed) {
+            _ = try registry.SDK.dispatch(&session.ctx, record_operations.Publish, .{
+                .id = existing[0].id,
+            });
+        }
 
         return;
     }
 
-    _ = try registry.SDK.dispatch(&session.ctx, record_operations.Create, .{
+    const created = try registry.SDK.dispatch(&session.ctx, record_operations.Create, .{
         .type = handle,
         .document = text,
-        .status = "published",
         .app = app_name,
+    });
+
+    _ = try registry.SDK.dispatch(&session.ctx, record_operations.Publish, .{
+        .id = created.id,
     });
 }
 
