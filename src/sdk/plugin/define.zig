@@ -343,6 +343,15 @@ fn declared_content_types(comptime Plugin: type) []const ContentTypeDef {
         }
 
         if (@hasField(Options, "records")) {
+            var fields: u32 = 0;
+
+            for (Plugin.options.records) |Record| {
+                fields += std.meta.fields(Record.Doc).len;
+            }
+
+            // Each record's fields read once, as `record.define` reads them.
+            @setEvalBranchQuota(1000 + fields * record_define.field_branches_max);
+
             for (Plugin.options.records) |Record| {
                 check_record_name(Plugin.manifest.name, Record.type_name);
 
