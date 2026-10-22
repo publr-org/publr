@@ -376,8 +376,11 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
                 if (delivery) |kept| {
                     const result = if (last) "failed" else "waiting";
 
-                    webhook_define.settled(ctx, kept.id, result, problem) catch |settle| {
-                        std.log.warn("webhook delivery {d} not settled: {t}", .{ kept.id, settle });
+                    webhook_define.settled(ctx, kept.id, result, problem) catch |unsettled| {
+                        std.log.warn("webhook delivery {d} not settled: {t}", .{
+                            kept.id,
+                            unsettled,
+                        });
                     };
                 }
 
