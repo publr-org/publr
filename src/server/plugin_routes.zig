@@ -99,7 +99,7 @@ pub fn caller_context(
         return null;
     }
 
-    return identity.context(project, ctx.arena, found.caller);
+    return identity.request_context(project, request, ctx.arena, found.caller);
 }
 
 /// The session a plugin's handler signed someone in to, as this site's session cookie: what

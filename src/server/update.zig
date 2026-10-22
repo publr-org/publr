@@ -21,7 +21,6 @@ pub const Updater = struct {
     io: std.Io,
     db_path: []const u8,
     managed: bool,
-    source: fetch_module.Source,
     /// `serve --auto-update patch`.
     auto: bool = false,
     /// When the next daily look for a patch is due; the first a minute after start.
@@ -132,8 +131,11 @@ pub const Updater = struct {
 
         try cwd.createDirPath(updater.io, dir);
 
-        // A daily look for a patch says nothing until it finds one to apply.
-        if (!std.mem.eql(u8, flag, "--auto")) {
+        // A daily look for a patch says nothing until it finds one to apply; a look for
+        // releases keeps what it finds apart.
+        const updating = std.mem.eql(u8, flag, "--to") or std.mem.eql(u8, flag, "--rollback");
+
+        if (updating) {
             try state_module.write(updater.io, arena, updater.db_path, .{
                 .step = "starting",
                 .target = version,
@@ -190,12 +192,34 @@ pub const Updater = struct {
         return out;
     }
 
-    fn releases(context: *anyopaque, arena: std.mem.Allocator) ?[]const release.Release {
+    fn releases(context: *anyopaque, arena: std.mem.Allocator) sdk_context.Releases {
         const updater = of(context);
+        const now_ms = @import("../sdk.zig").context.wall_clock_ms(updater.io);
+        var looked = state_module.read_looked(updater.io, arena, updater.db_path);
 
-        std.debug.assert(updater.source.listing.len > 0);
+        std.debug.assert(updater.db_path.len > 0);
 
-        return fetch_module.releases(updater.io, arena, updater.source);
+        if (looked.due(now_ms)) {
+            looked.started_ms = now_ms;
+            updater.look(arena, looked) catch |err| {
+                std.log.warn("looking for releases: {t}", .{err});
+                looked.started_ms = 0;
+            };
+        }
+
+        return .{
+            .releases = looked.releases,
+            .looking = looked.looking(now_ms),
+            .problem = looked.problem,
+        };
+    }
+
+    /// `update-run --look releases` started, marked as on its way so one runs at a time.
+    fn look(updater: *Updater, arena: std.mem.Allocator, looked: state_module.Looked) !void {
+        std.debug.assert(looked.started_ms > 0);
+
+        try state_module.write_looked(updater.io, arena, updater.db_path, looked);
+        try updater.spawn(arena, "--look", "releases");
     }
 };
 

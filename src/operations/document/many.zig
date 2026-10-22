@@ -369,8 +369,9 @@ pub fn Of(comptime Domain: type) type {
             try registry.SDK.events.hand_many(ctx, events.items);
         }
 
-        /// The record's own transition event (`post.transitioned`), as a move of its own
-        /// raises it: each record's fact in a write over many.
+        /// The record's own transition events (`post.transitioned`, and a plugin type's
+        /// named one, `shop.order_ship`), as a move of its own raises them: each record's
+        /// facts in a write over many.
         fn add_event(
             ctx: *Ctx,
             events: *std.ArrayList(sdk.Event.Emitted),
@@ -381,19 +382,23 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(ctx.parent != null);
 
-            const payload: model.flow.Transitioned = .{
-                .record = row.id,
-                .transition = def.flow.name_between(row.status, to),
-                .from = row.status,
-                .to = to,
-            };
+            const heard = try lifecycle.transition_heard(ctx, def, row.id, row.status, to);
+            const subject = try sdk.stringify(ctx.arena, heard.payload);
 
             lifecycle.mark_live_change(ctx, def.flow, row.status, to);
             events.append(ctx.arena, .{
                 .operation_id = ctx.parent.?,
-                .name = try model.flow.any_name(ctx.arena, def.handle),
-                .subject = try sdk.stringify(ctx.arena, payload),
+                .name = heard.name,
+                .subject = subject,
             }) catch return error.OutOfMemory;
+
+            if (heard.named.len > 0) {
+                events.append(ctx.arena, .{
+                    .operation_id = ctx.parent.?,
+                    .name = heard.named,
+                    .subject = subject,
+                }) catch return error.OutOfMemory;
+            }
         }
 
         fn note_failures(

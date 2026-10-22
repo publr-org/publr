@@ -176,7 +176,12 @@ pub const Request = struct {
     ) sdk.Error!Operation.Out {
         std.debug.assert(Operation.name.len > 0);
 
-        var ctx = identity_module.context(request.project, request.arena, request.identity.caller);
+        var ctx = identity_module.request_context(
+            request.project,
+            request.http,
+            request.arena,
+            request.identity.caller,
+        );
 
         ctx.app = request.app.spec.name;
         ctx.app_plugins = request.app.spec.plugins;

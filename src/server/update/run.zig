@@ -6,6 +6,7 @@
 //!   publr update-run --to 0.4.0        update to that release
 //!   publr update-run --rollback 0.3.2  go back to the binary kept from that release
 //!   publr update-run --auto patch      the newest patch of this minor, if there is one
+//!   publr update-run --look releases   the releases newer than this one, for `update.check`
 
 const std = @import("std");
 const release = @import("../../model/release.zig");
@@ -61,7 +62,8 @@ pub fn run(init: std.process.Init, db_path: []const u8, args: []const []const u8
     std.debug.assert(version.len > 0);
 
     if (args.len != 2) {
-        report.err("publr update-run: --to <version>, --rollback <version> or --auto patch", .{});
+        report.err("publr update-run: --to <version>, --rollback <version>, --auto patch " ++
+            "or --look releases", .{});
         return 2;
     }
 
@@ -81,6 +83,8 @@ pub fn run(init: std.process.Init, db_path: []const u8, args: []const []const u8
         &rollback
     else if (std.mem.eql(u8, args[0], "--auto") and std.mem.eql(u8, args[1], "patch"))
         &auto_patch
+    else if (std.mem.eql(u8, args[0], "--look") and std.mem.eql(u8, args[1], "releases"))
+        &look
     else
         return 2;
 
@@ -151,6 +155,27 @@ fn rollback(context: *Run) !u8 {
     }
 
     return swap_and_restart(context, previous, restore);
+}
+
+/// The releases newer than this one, kept for `update.check` to answer: a request never
+/// waits on Publr's releases.
+fn look(context: *Run) !u8 {
+    std.debug.assert(version.len > 0);
+
+    const arena = context.arena();
+    const io = context.init.io;
+    const source = fetch.Source.of(context.init.environ_map);
+    const found = fetch.releases(io, arena, source);
+    const now_ms = @import("../../sdk.zig").context.wall_clock_ms(io);
+
+    try state_module.write_looked(io, arena, context.db_path, .{
+        .started_ms = context.started_ms,
+        .looked_ms = @max(now_ms, context.started_ms + 1),
+        .problem = if (found == null) "Publr's releases could not be reached" else "",
+        .releases = found orelse &.{},
+    });
+
+    return 0;
 }
 
 /// The newest patch of this minor, when one is newer: what `serve --auto-update patch` runs

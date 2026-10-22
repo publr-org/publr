@@ -519,7 +519,7 @@ pub fn Of(comptime Domain: type) type {
             };
         }
 
-        const Heard = struct {
+        pub const Heard = struct {
             name: []const u8,
             /// The transition's own hook point, `<plugin>.<type>_<transition>`; empty for a
             /// type no plugin declares, or a move no transition names.
@@ -530,7 +530,7 @@ pub fn Of(comptime Domain: type) type {
 
         /// What hooks on every transition of the record's type hear, and the name they
         /// hook (`model.flow.any_name`).
-        fn transition_heard(
+        pub fn transition_heard(
             ctx: *Ctx,
             def: store.definitions.Def,
             id: []const u8,

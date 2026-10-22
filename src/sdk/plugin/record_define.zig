@@ -536,6 +536,8 @@ pub fn content_type_of(comptime Definition: type, comptime Docs: type) content_t
         // Each field copies its overrides, its options' and its validation's parts, once.
         @setEvalBranchQuota(1000 + std.meta.fields(Document).len * field_branches_max);
 
+        overrides_named(Document, name, options);
+
         for (std.meta.fields(Document)) |field| {
             fields = fields ++ [_]field_model.Def{field_of(Definition, Docs, field)};
         }
@@ -718,6 +720,8 @@ fn field_in(
         if (rows or group) {
             const Row = if (rows) std.meta.Elem(Inner) else Inner;
             var sub: []const field_model.Def = &.{};
+
+            overrides_named(Row, Definition.type_name, overrides);
 
             for (std.meta.fields(Row)) |row_field| {
                 const made = field_in(Definition, Row, overrides, Docs, row_field);
@@ -919,6 +923,24 @@ fn check_named_fields(comptime Document: type, comptime options: anytype) void {
                 }
 
                 field_named(Document, options.name, @tagName(field));
+            }
+        }
+    }
+}
+
+/// Every key of `given.fields` names a field of `Owner`: a misspelt override fails the build
+/// instead of being left unread.
+fn overrides_named(
+    comptime Owner: type,
+    comptime record: []const u8,
+    comptime given: anytype,
+) void {
+    comptime {
+        std.debug.assert(record.len > 0);
+
+        if (@hasField(@TypeOf(given), "fields")) {
+            for (std.meta.fieldNames(@TypeOf(given.fields))) |name| {
+                field_named(Owner, record, name);
             }
         }
     }

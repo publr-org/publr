@@ -143,7 +143,6 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             &view_offer.across_default_columns,
     };
     var list_in = try filters.list_in(arena, effective);
-
     list_in.variant = @import("../variant.zig").chosen(&session);
     list_in.count = true;
 
@@ -151,7 +150,6 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         return admin.fail(&session, err, back);
     };
     var props = try base_props(&page, shown.listed.total);
-
     try fill_header(&props, &page);
     try pills.fill(&props, &page);
     try table.fill(&props, &page, shown.listed.records);

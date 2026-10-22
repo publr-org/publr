@@ -182,6 +182,53 @@ test "records.read .drafts reads drafts of every type it reaches; without it non
     );
 }
 
+test "records.read without .drafts reads the live copy, never a record's pending changes" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    try seeded(&harness, seed_posts_and_notes);
+
+    var system = harness.ctx(.system);
+    const published = try SDK.dispatch(&system, record.List, .{
+        .type = "post",
+        .filters = &.{"status:is:published"},
+    });
+    const id = published.records[0].id;
+
+    _ = try SDK.dispatch(&system, record.Save, .{
+        .id = id,
+        .document = "{\"title\":\"Post unpublished edit\",\"body\":\"x\"}",
+    });
+
+    const held = [_]Held{.{
+        .key = "records.read",
+    }};
+    const access: Access = .{
+        .granted = &.{"records.read"},
+        .held = &held,
+        .own_types = &.{},
+    };
+    var reader = harness.ctx(plugin_caller(&access));
+    const got = try SDK.dispatch(&reader, record.Get, .{
+        .id = id,
+        .purpose = .edit,
+    });
+
+    try std.testing.expectEqualStrings("Post published", got.record.title);
+    try std.testing.expectError(error.NotFound, SDK.dispatch(&reader, record.Get, .{
+        .id = id,
+        .slot = "pending",
+    }));
+
+    const listed = try SDK.dispatch(&reader, record.List, .{
+        .type = "post",
+        .documents = true,
+    });
+
+    try std.testing.expectEqualStrings("Post published", listed.records[0].title);
+    try std.testing.expect(std.mem.indexOf(u8, listed.documents[0], "unpublished") == null);
+}
+
 /// Topics (public) and Desk notes (private), each with a draft and a live term.
 pub fn seed_taxonomies(system: *sdk.Ctx) !void {
     std.debug.assert(system.caller == .system);
