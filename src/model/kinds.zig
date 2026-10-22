@@ -42,6 +42,10 @@ pub const Has = struct {
 /// The kind's own rule over one value that already has the right storage shape.
 pub const Check = checks.Check;
 
+/// How a value of a plugin's kind reads in list cells, search and on the site; `ctx` is the
+/// caller's `*sdk.Ctx` (the model can't name it), null when the value isn't one of the kind.
+pub const Text = *const fn (ctx: *anyopaque, value: std.json.Value) ?[]const u8;
+
 pub const Kind = struct {
     id: []const u8,
     label: []const u8,
@@ -59,6 +63,7 @@ pub const Kind = struct {
     /// A field of the kind may give new records a value to start with.
     default_allowed: bool = false,
     check: ?Check = null,
+    text: ?Text = null,
     /// The kinds whose values this kind takes when a field changes kind.
     convert_from: []const []const u8 = &.{},
 };

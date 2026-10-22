@@ -3,11 +3,11 @@
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
-const settings_tabs = @import("settings_tabs.zig");
+const frame_pages = @import("frame/pages.zig");
 const language_operations = @import("../../operations/user/language.zig");
 
 const views = admin.views;
-const page_path = "/admin/settings/system";
+pub const page_path = "/admin/settings/system";
 
 pub fn show(
     request: *admin.Request,
@@ -33,7 +33,6 @@ pub fn system(
     var session = try admin.require(request, response, ctx) orelse return;
 
     try render(&session, .ok, .{
-        .tab = "general",
         .notice = if (admin.query_param(&session, "saved") != null)
             try session.translated("Saved.", .{})
         else
@@ -89,36 +88,19 @@ fn languages_of(session: *admin.Session) admin.Error![]const views.SettingsSyste
     return items;
 }
 
-/// A tab a plugin adds: System settings' header and tabs over the plugin's sections.
-pub fn render_plugin_tab(
-    session: *admin.Session,
-    tab: []const u8,
-    sections: admin.render.Node,
-) admin.Error!void {
-    std.debug.assert(tab.len > 0);
-    std.debug.assert(session.signed_in());
-
-    try admin.screen(session, .ok, views.SettingsSystem, .{
-        .tab = tab,
-        .can_logs = registry.SDK.may(&session.ctx, @import("../../operations/activity.zig").List),
-        .plugin_tabs = try plugin_tabs_of(session),
-        .sections = sections,
-    }, .{});
-}
-
 const PluginTab = views.SettingsSystem.Plugin_tabsItem;
 
 fn plugin_tabs_of(session: *admin.Session) admin.Error![]const PluginTab {
     std.debug.assert(session.signed_in());
 
-    const found = try settings_tabs.links(session, .system);
+    const all = try frame_pages.all(session);
+    const found = try frame_pages.tabs_of(session.arena, all, frame_pages.system);
     const items = try session.arena.alloc(PluginTab, found.len);
 
-    for (found, items) |link, *item| {
+    for (found, items) |page, *item| {
         item.* = .{
-            .tab = link.tab,
-            .label = link.label,
-            .href = link.href,
+            .label = try session.declared(page.label),
+            .href = try page.href(session.arena),
         };
     }
 
@@ -126,16 +108,14 @@ fn plugin_tabs_of(session: *admin.Session) admin.Error![]const PluginTab {
 }
 
 const Shown = struct {
-    tab: []const u8,
     notice: []const u8 = "",
 };
 
 fn render(session: *admin.Session, status: admin.Status, shown: Shown) admin.Error!void {
-    std.debug.assert(shown.tab.len > 0);
+    std.debug.assert(shown.notice.len < 1024);
     std.debug.assert(session.signed_in());
 
     try admin.screen(session, status, views.SettingsSystem, .{
-        .tab = shown.tab,
         .can_logs = registry.SDK.may(&session.ctx, @import("../../operations/activity.zig").List),
         .plugin_tabs = try plugin_tabs_of(session),
         .languages = try languages_of(session),

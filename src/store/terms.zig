@@ -388,7 +388,7 @@ fn seed_term(
 
     const connection = &fixture.connection;
 
-    try term_values.write(&kinds.core, connection, id, "live", taxonomy_id, fields, parsed);
+    try term_values.write(&kinds.core, null, connection, id, "live", taxonomy_id, fields, parsed);
     try set_parent(&fixture.connection, id, parent_id);
 
     return id;

@@ -1,15 +1,59 @@
+import { Publr } from "publr-jsx";
 import { FormPage } from "../layouts/FormPage.ptsx";
+import { IndexHeader } from "../components/IndexHeader.ptsx";
 import { OperationForm } from "../components/OperationForm.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
 
 export type PluginFormPageProps = {
   title: string;
   /** The plugin's write that saves the form. */
   operation: string;
-  fields: Array<{ name: string; label: string; kind: string; required: boolean; help: string; value: string }>;
+  fields: Array<{
+    name: string;
+    label: string;
+    kind: string;
+    required: boolean;
+    help: string;
+    value: string;
+    columns: Array<{ name: string; label: string; kind: string }>;
+    rows: Array<{ index: number; cells: Array<{ at: number; kind: string; label: string; value: string }> }>;
+  }>;
+  /** A tab of a tabbed page: that page's title and description over its tabs, this one
+   * active. */
+  parent?: string;
+  description?: string;
+  tabs?: Array<{ label: string; href: string; active: boolean }>;
 };
 
 /** A plugin's page by declaration, drawn by the admin itself: no markup of the plugin's,
- * so it needs no frame, and an installed plugin has it as a compiled-in one does. */
-export function PluginFormPage({ title, operation, fields }: PluginFormPageProps) {
-  return <FormPage title={title} editor={<OperationForm title={title} operation={operation} fields={fields} />} />;
+ * so it needs no frame, and an installed plugin has it as a compiled-in one does. A tab of
+ * a tabbed page is drawn in that page, its title and tabs over the form. */
+export function PluginFormPage({ title, operation, fields, parent = "", description = "", tabs = [] }: PluginFormPageProps) {
+  return (
+    <FormPage
+      title={tabs.length > 0 ? parent : title}
+      editor={
+        <OperationForm
+          title={title}
+          operation={operation}
+          fields={fields}
+          header={
+            tabs.length > 0 && (
+              <div data-part="tabbed-page-header">
+                <IndexHeader title={parent} description={description} />
+                <div class="flex items-center gap-4 border-t border-border px-5 py-2">
+                  <TabNav label={parent}>
+                    {tabs.map((tab) => (
+                      <TabNavLink href={tab.href} active={tab.active}>{tab.label}</TabNavLink>
+                    ))}
+                  </TabNav>
+                </div>
+              </div>
+            )
+          }
+        />
+      }
+    />
+  );
 }

@@ -17,6 +17,7 @@ const Session = admin.Session;
 
 pub const prefix = "/admin/plugin";
 pub const all = pages.all;
+pub const tabs_of = pages.tabs_of;
 
 pub fn register(router: anytype) void {
     std.debug.assert(router.routes_len > 0);
@@ -111,6 +112,10 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     var session = try admin.require(request, response, ctx) orelse return;
     const page = try found(&session) orelse return absent(&session);
 
+    if (page.tabs) {
+        return open_first_tab(&session, page);
+    }
+
     if (page.declared()) {
         return @import("frame/form.zig").show(&session, page);
     }
@@ -148,7 +153,7 @@ pub fn frame(request: *Request, response: *Response, ctx: *Context) Error!void {
     var session = try admin.require(request, response, ctx) orelse return;
     const page = try found(&session) orelse return response.text(.not_found, "Not Found");
 
-    if (page.declared()) {
+    if (page.declared() or page.tabs) {
         return response.text(.not_found, "Not Found");
     }
 
@@ -226,6 +231,21 @@ fn serve_frame(
     try response.set_header("Referrer-Policy", "no-referrer");
     try response.set_header("X-Content-Type-Options", "nosniff");
     try response.html(.ok, out.written());
+}
+
+/// A tabbed page opens on its first tab the viewer may see; with none it is not there.
+fn open_first_tab(session: *Session, page: pages.Page) Error!void {
+    std.debug.assert(page.tabs);
+
+    var buffer: [128]u8 = undefined;
+    const all_pages = try pages.all(session);
+    const tabs = try pages.tabs_of(session.arena, all_pages, page.named(&buffer));
+
+    if (tabs.len == 0) {
+        return absent(session);
+    }
+
+    try session.response.redirect(.see_other, try tabs[0].href(session.arena));
 }
 
 fn absent(session: *const Session) Error!void {

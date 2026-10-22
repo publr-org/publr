@@ -67,9 +67,20 @@ pub fn settings(session: *const Session) Error![]Destination {
         }
     }
 
-    for (try frame.all(session)) |page| {
-        if (page.hidden) {
+    const pages = try frame.all(session);
+
+    for (pages) |page| {
+        if (page.hidden or page.parent.len > 0) {
             continue;
+        }
+
+        if (page.tabs) {
+            var buffer: [128]u8 = undefined;
+            const tabs = try frame.tabs_of(arena, pages, page.named(&buffer));
+
+            if (tabs.len == 0) {
+                continue;
+            }
         }
 
         const href = try std.fmt.allocPrint(arena, "{s}/{s}/{s}", .{

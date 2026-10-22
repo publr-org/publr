@@ -86,7 +86,7 @@ pub const Update = struct {
         std.debug.assert(changed);
 
         if (in.document) |text| {
-            const defs = try user_operations.fields.definition(ctx, in.roles);
+            const defs = try user_operations.fields.definition(ctx, found.user.id, in.roles);
 
             try user_operations.fields.write(ctx, found.user.id, defs, text);
         }

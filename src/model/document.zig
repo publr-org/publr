@@ -43,6 +43,8 @@ pub const Flat = struct {
     column: field.Column,
     value: Stored,
     searchable: bool,
+    /// The kind's `.text`, for the search index: a plugin's kind only.
+    text: ?kinds.Text = null,
 };
 
 /// Where `each_row` hands each row of a document: `row` runs while the walk is at the
@@ -284,6 +286,7 @@ const Flattener = struct {
             .column = kinds.column_of(kind.storage),
             .value = stored,
             .searchable = def.searchable and value == .string,
+            .text = kind.text,
         });
     }
 };

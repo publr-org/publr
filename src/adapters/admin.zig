@@ -193,7 +193,6 @@ pub fn query_param(session: *const Session, name: []const u8) ?[]const u8 {
 pub const render = @import("../ui/render.zig");
 pub const drawn = @import("../ui/drawn.zig");
 /// The tabs plugins add to System settings.
-pub const settings_tabs = @import("admin/settings_tabs.zig");
 pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;

@@ -166,7 +166,20 @@ pub const Deps = struct {
 /// point at is read once. One per page or fragment render, in its arena.
 pub const Memo = struct {
     entries: std.StringHashMapUnmanaged(Context.Entry) = .empty,
+    /// Each type's fields, read once when a template prints a field of a plugin's kind.
+    fields: std.StringHashMapUnmanaged([]const model_field.Def) = .empty,
 };
+
+const model_field = @import("../../model/field.zig");
+const model_kinds = @import("../../model/kinds.zig");
+const content_type = @import("../../operations/content_type.zig");
+
+/// Whether any kind this build knows reads through a plugin's `.text`.
+const kinds_with_text = for (registry.Kinds.all) |kind| {
+    if (kind.text != null) {
+        break true;
+    }
+} else false;
 
 pub const Params = struct {
     slug: ?[]const u8 = null,
@@ -194,6 +207,10 @@ pub const Context = struct {
     pub const Data = struct {
         arena: std.mem.Allocator,
         document: std.json.Value,
+        /// The record's render and type, where its fields of a plugin's kind read through
+        /// the kind's `.text`; none for a call's answer or a repeater's row.
+        owner: ?*const Context = null,
+        type: []const u8 = "",
 
         pub fn javascript_value(data: Data, _: std.mem.Allocator) !std.json.Value {
             std.debug.assert(data.document == .object);
@@ -221,6 +238,12 @@ pub const Context = struct {
             std.debug.assert(data.document == .object);
 
             const value = data.document.object.get(key) orelse return null;
+
+            if (kinds_with_text and data.owner != null) {
+                if (data.owner.?.kind_text(data.type, key, value)) |text| {
+                    return text;
+                }
+            }
 
             return switch (value) {
                 .string => |text| text,
@@ -840,8 +863,61 @@ pub const Context = struct {
             .data = .{
                 .arena = ctx.arena,
                 .document = document,
+                .owner = ctx,
+                .type = record.type,
             },
         };
+    }
+
+    /// A field's value as its plugin kind's `.text` reads it; null for a core kind's field.
+    fn kind_text(
+        ctx: *const Context,
+        handle: []const u8,
+        key: []const u8,
+        value: std.json.Value,
+    ) ?[]const u8 {
+        std.debug.assert(key.len > 0);
+
+        if (handle.len == 0) {
+            return null;
+        }
+
+        var sdk_ctx = ctx.sdk_context();
+        const fields = ctx.fields_of(&sdk_ctx, handle) orelse return null;
+
+        for (fields) |field| {
+            if (std.mem.eql(u8, field.name, key)) {
+                const text = model_kinds.lookup(registry.Kinds.all, field.kind).text;
+
+                return (text orelse return null)(&sdk_ctx, value);
+            }
+        }
+
+        return null;
+    }
+
+    fn fields_of(
+        ctx: *const Context,
+        sdk_ctx: *sdk.Ctx,
+        handle: []const u8,
+    ) ?[]const model_field.Def {
+        std.debug.assert(handle.len > 0);
+
+        if (ctx.memo) |memo| {
+            if (memo.fields.get(handle)) |known| {
+                return known;
+            }
+        }
+
+        const row = content_type.find_raw(sdk_ctx, handle) catch return null;
+        const fields = (row orelse return null).def.fields;
+
+        if (ctx.memo) |memo| {
+            // Unremembered, it is read again next time.
+            memo.fields.put(ctx.arena, handle, fields) catch return fields;
+        }
+
+        return fields;
     }
 
     /// A listed record, its document read with its page: remembered like a loaded one.

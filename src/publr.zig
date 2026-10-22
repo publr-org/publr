@@ -82,6 +82,16 @@ pub const remote = @import("sdk/plugin/hook_define.zig").remote;
 /// A secret a plugin declares in its `.secrets` struct: it never holds the value.
 pub const Secret = struct {};
 /// A field kind a plugin brings: `publr.field.kind(Value, .{ .name, .validate })`.
+/// A plugin's own `.register_fields` group on an account, as its struct:
+/// `publr.fields.get(ctx, Profile.Fields, user)`, `publr.fields.save(ctx, Profile.Fields,
+/// user, values)`. Compiled-in plugins only, for now.
+pub const fields = @import("sdk/plugin/fields_api.zig");
+/// What a `.register_location_rules` entry's `matches` is given: the account or file being
+/// edited, and the rule, compared with `rule.compare(value)`.
+pub const location = struct {
+    pub const Target = @import("sdk/plugin/location_rule_define.zig").Target;
+    pub const Rule = @import("sdk/plugin/location_rule_define.zig").Rule;
+};
 pub const field = struct {
     pub const kind = @import("sdk/plugin/field_kind_define.zig").kind;
 };
