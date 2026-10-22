@@ -870,13 +870,13 @@ export function RecordEditor({
                   {Publr.t("Made then as the person who scheduled it, with the rights they hold then.")}
                 </Callout>
                 {may_schedule && (
-                  <div class="flex flex-wrap items-center gap-2">
-                    <form method="post" action={action_route} class="flex flex-wrap items-center gap-2">
+                  <div class="flex flex-wrap items-end gap-2">
+                    <form method="post" action={action_route} class="flex flex-wrap items-end gap-2">
                       <input type="hidden" name="csrf" value={csrf} />
                       <input type="hidden" name="expected_version" value={state.version} />
                       <input type="hidden" name="do" value="schedule" />
                       <input type="hidden" name="transition" value={scheduled_transition} />
-                      <Input name="at" type="datetime-local" size="sm" value={scheduled_at} label={Publr.t("When, UTC")} />
+                      <Input name="at" type="datetime-local" size="sm" value={scheduled_at} label={Publr.t("When, UTC")} classes="w-56" />
                       <Button type="submit" size="sm" hierarchy="secondary">{Publr.t("Change")}</Button>
                     </form>
                     <form method="post" action={action_route}>

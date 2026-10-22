@@ -140,7 +140,7 @@ export function RecordActions({
               </div>
             </Callout>
           )}
-          {may_schedule && state.actions.some((item) => item.name === "transition" && !item.destructive) && (
+          {may_schedule && state.actions.some((item) => (item.name === "transition" || item.value === "publish") && !item.destructive) && (
             <details data-part="schedule">
               <summary class="cursor-pointer text-sm">{Publr.t("Schedule…")}</summary>
               <form method="post" action={action_route} class="mt-3 flex flex-col gap-2">
@@ -150,7 +150,13 @@ export function RecordActions({
                 <NativeSelect name="transition" size="sm" label={Publr.t("Transition")}>
                   {state.actions.map(
                     (item) =>
-                      item.name === "transition" &&
+                      (item.name === "transition" || item.value === "publish") &&
+                      item.primary && <option value={item.value}>{item.label}</option>,
+                  )}
+                  {state.actions.map(
+                    (item) =>
+                      (item.name === "transition" || item.value === "publish") &&
+                      !item.primary &&
                       !item.destructive && <option value={item.value}>{item.label}</option>,
                   )}
                 </NativeSelect>

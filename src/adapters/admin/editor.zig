@@ -1181,8 +1181,6 @@ pub const Requested = struct {
     decline_label: []const u8 = "",
 };
 
-/// The bar over a document someone asked a transition for: who, what, and what the person
-/// looking may do about it.
 const Schedule = struct {
     /// "Publish on 2026-11-05 09:00 UTC"; empty when none is scheduled.
     label: []const u8 = "",
@@ -1226,6 +1224,8 @@ fn scheduled_of(
     };
 }
 
+/// The bar over a document someone asked a transition for: who, what, and what the person
+/// looking may do about it.
 pub fn requested_of(
     session: *Session,
     flow: model.flow.Flow,
