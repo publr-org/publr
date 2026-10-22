@@ -295,6 +295,7 @@ pub fn handle(
             .agents = project.agents,
             .live = project.live,
             .updater = project.updater,
+            .translations = if (project.languages) |languages| languages.view() else null,
         },
     ) catch |failure| blk: {
         err.writer.print("publr: {s}\n", .{@errorName(failure)}) catch {

@@ -213,6 +213,9 @@ pub const Ctx = struct {
     /// The address the request came from (`limits.address_of`); empty for a context no
     /// request made, which no rate limit counts.
     address: []const u8 = "",
+    /// The call came to REST (`/api/<plugin>.<verb>`): a device token there calls from the
+    /// API, not the command line.
+    over_api: bool = false,
     /// The page that sent the request when it is another site's (the `Referer` header);
     /// empty for our own pages and a request that names none. Tells, never grants.
     referer: []const u8 = "",

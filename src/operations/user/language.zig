@@ -125,6 +125,21 @@ pub const Language = struct {
     }
 };
 
+/// The language a person reads, wherever they call from (the admin, REST, the command
+/// line): their own choice, else the site's; empty for English, and for nobody signed in.
+pub fn speaks(ctx: *Ctx) Error![]const u8 {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const user = ctx.caller.user_id() orelse return "";
+    const all = try choices(ctx.arena);
+    const key = std.mem.concat(ctx.arena, u8, &.{ person_prefix, user }) catch {
+        return error.OutOfMemory;
+    };
+    const chosen = try stored(ctx, key, all);
+
+    return if (chosen.len > 0) chosen else stored(ctx, site_key, all);
+}
+
 /// What a key holds, while a plugin still brings the language; empty otherwise.
 fn stored(ctx: *Ctx, key: []const u8, all: []const Choice) Error![]const u8 {
     std.debug.assert(key.len > 0);

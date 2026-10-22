@@ -9,6 +9,7 @@ pub const value_len_max: u32 = 64 << 10;
 pub const Error = sdk.Error || error{ UnknownOp, UnknownFlag, MissingValue, WriteFailed };
 
 const runtime_cli = @import("cli/sandboxed_plugins.zig");
+const language = @import("../operations/user/language.zig");
 const help = sdk.help;
 
 pub const Options = struct {
@@ -30,6 +31,9 @@ pub const Options = struct {
     live: ?sdk.context.Live = null,
     /// Updating Publr, where a server runs it.
     updater: ?sdk.context.Updater = null,
+    /// The installed translations, where a server read them: `ctx.t` speaks the person's
+    /// language.
+    translations: ?sdk.context.Translations = null,
     /// Who runs every command, fixed: a device sending them from elsewhere (`/api/cli`).
     /// `--as` and `--as-admin` are refused then.
     device: ?sdk.Caller = null,
@@ -223,6 +227,8 @@ pub fn CLI(comptime SDK: type) type {
             ctx.live = invocation.options.live;
             ctx.updater = invocation.options.updater;
             ctx.production = invocation.options.production;
+            ctx.translations = invocation.options.translations;
+            ctx.language.locale = language.speaks(&ctx) catch "";
 
             inline for (SDK.operations) |Operation| {
                 if (std.mem.eql(u8, Operation.name, name)) {
@@ -655,23 +661,31 @@ pub fn parse_in(
     var seen: [std.meta.fields(In).len]bool = @splat(false);
     var index: u32 = 0;
 
-    while (index < args.len) : (index += 2) {
+    while (index < args.len) {
         const flag = args[index];
 
         if (!std.mem.startsWith(u8, flag, "--")) {
             problem.set("unexpected argument \"{s}\"", .{flag});
             return error.UnknownFlag;
         }
-        if (index + 1 == args.len) {
+
+        // A yes-or-no flag alone says yes: `--default`.
+        const last = index + 1 == args.len;
+        const alone = flag_is_bool(In, flag[2..]) and
+            (last or std.mem.startsWith(u8, args[index + 1], "--"));
+
+        if (last and !alone) {
             problem.set("flag \"{s}\" needs a value", .{flag});
             return error.MissingValue;
         }
 
-        const value = args[index + 1];
+        const value = if (alone) "true" else args[index + 1];
         var matched = false;
 
+        index += if (alone) 1 else 2;
+
         inline for (std.meta.fields(In), 0..) |field, field_index| {
-            if (std.mem.eql(u8, flag[2..], field.name)) {
+            if (flag_names(flag[2..], field.name)) {
                 const parsed = parse_value(field.type, arena, value) catch {
                     problem.set("invalid value \"{s}\" for --{s} (expected {s})", .{
                         value,
@@ -724,6 +738,38 @@ pub fn parse_in(
     }
 
     return in;
+}
+
+/// Whether `--flag` names the field: as written, or with `-` for each `_`
+/// (`--user-has-role` for `user_has_role`).
+fn flag_names(flag: []const u8, field: []const u8) bool {
+    std.debug.assert(field.len > 0);
+
+    if (flag.len != field.len) {
+        return false;
+    }
+
+    for (flag, field) |given, wanted| {
+        const same = given == wanted or (given == '-' and wanted == '_');
+
+        if (!same) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+fn flag_is_bool(comptime In: type, flag: []const u8) bool {
+    std.debug.assert(flag.len <= value_len_max);
+
+    inline for (std.meta.fields(In)) |field| {
+        if (field.type == bool and flag_names(flag, field.name)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn resolve_user(invocation: Invocation, id_or_email: []const u8) Error!?sdk.Caller {
@@ -879,7 +925,7 @@ test "parse_in fills fields from flags and applies defaults" {
         tags: []const []const u8 = &.{},
         loud: bool = false,
     };
-    var buffer: [1024]u8 = undefined;
+    var buffer: [4096]u8 = undefined;
     var fixed = std.heap.FixedBufferAllocator.init(&buffer);
 
     const arena = fixed.allocator();
@@ -897,6 +943,21 @@ test "parse_in fills fields from flags and applies defaults" {
 
     try std.testing.expectEqual(@as(u32, 3), @as(u32, @intCast(again.tags.len)));
     try std.testing.expectEqualStrings("c", again.tags[2]);
+
+    // A yes-or-no flag alone says yes; a name's `_` may be written `-`.
+    const alone = [_][]const u8{ "--loud", "--name", "zig" };
+
+    try std.testing.expect((try parse_in(In, arena, &alone, &problem, .{})).loud);
+    const last = [_][]const u8{ "--name", "zig", "--loud" };
+
+    try std.testing.expect((try parse_in(In, arena, &last, &problem, .{})).loud);
+
+    const Hyphened = struct {
+        user_has_role: []const []const u8 = &.{},
+    };
+    const roles = try parse_in(Hyphened, arena, &.{ "--user-has-role", "a,b" }, &problem, .{});
+
+    try std.testing.expectEqual(2, roles.user_has_role.len);
 
     // A JSON array keeps a comma inside a value.
     const as_json = [_][]const u8{ "--name", "zig", "--tags", "[\"a,b\",\"c\"]" };
