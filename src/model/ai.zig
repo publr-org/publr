@@ -33,7 +33,9 @@ pub const picture_type_def: content_type.Def = .{
         .name = "title",
         .label = "Title",
         .kind = "string",
-        .required = true,
+        .validation = .{
+            .required = true,
+        },
     }},
 };
 /// The address of the admin page a step shows.

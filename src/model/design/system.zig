@@ -343,12 +343,12 @@ fn contains_folded(haystack: []const u8, needle: []const u8) bool {
     return std.ascii.indexOfIgnoreCase(haystack, needle) != null;
 }
 
-fn one_of(options: []const []const u8, value: []const u8) bool {
-    std.debug.assert(options.len > 0);
+fn one_of(choices: []const []const u8, value: []const u8) bool {
+    std.debug.assert(choices.len > 0);
     std.debug.assert(value.len < 1 << 24);
 
-    for (options) |option| {
-        if (std.mem.eql(u8, option, value)) {
+    for (choices) |choice| {
+        if (std.mem.eql(u8, choice, value)) {
             return true;
         }
     }

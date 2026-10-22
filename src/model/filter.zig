@@ -42,6 +42,8 @@ pub const Constraints = struct {
     status: ?[]const u8 = null,
     status_exclude: bool = false,
     changed: ?bool = null,
+    /// Whether a transition someone asked for waits on it.
+    requested: ?bool = null,
     created_by: ?Author = null,
     updated_by: ?Author = null,
     created_after_ms: ?i64 = null,
@@ -65,7 +67,7 @@ pub const operators_max: u32 = 8;
 pub const Takes = enum { choice, duration, day, nothing };
 
 /// Where a `choice` operator's choices come from.
-pub const Source = enum { none, statuses, users, changes, apps };
+pub const Source = enum { none, statuses, users, changes, requests, apps };
 
 pub const Operator = struct {
     id: []const u8,
@@ -170,6 +172,14 @@ pub const core = [_]Definition{
         .apply = &apply_changed,
     },
     .{
+        .key = "requested",
+        .label = "Approval",
+        .operators = &.{is},
+        .source = .requests,
+        .default_value = "waiting",
+        .apply = &apply_requested,
+    },
+    .{
         .key = "created",
         .label = "Created",
         .operators = &.{ by, within, after, before },
@@ -221,6 +231,23 @@ fn apply_changed(clause: Clause, context: Context, out: *Constraints) Error!void
         out.changed = true;
     } else if (std.mem.eql(u8, clause.value, changes[1].id)) {
         out.changed = false;
+    } else {
+        return error.Invalid;
+    }
+}
+
+fn apply_requested(clause: Clause, context: Context, out: *Constraints) Error!void {
+    std.debug.assert(std.mem.eql(u8, clause.key, "requested"));
+    std.debug.assert(context.now_ms >= 0);
+
+    if (clause.value.len == 0) {
+        return;
+    }
+
+    if (std.mem.eql(u8, clause.value, requests[0].id)) {
+        out.requested = true;
+    } else if (std.mem.eql(u8, clause.value, requests[1].id)) {
+        out.requested = false;
     } else {
         return error.Invalid;
     }
@@ -373,6 +400,18 @@ pub const changes = [_]Choice{
     .{
         .id = "pending",
         .label = "Pending",
+    },
+    .{
+        .id = "none",
+        .label = "None",
+    },
+};
+
+/// Whether a transition someone asked for waits on a record.
+pub const requests = [_]Choice{
+    .{
+        .id = "waiting",
+        .label = "Waiting for approval",
     },
     .{
         .id = "none",

@@ -3,6 +3,8 @@ const kinds = @import("kinds.zig");
 const defaults = @import("defaults.zig");
 
 pub const options = @import("field/options.zig");
+pub const validation = @import("field/validation.zig");
+pub const hint = @import("field/hint.zig");
 pub const conditions = @import("conditions.zig");
 pub const presets = @import("field/presets.zig");
 pub const pattern = @import("field/pattern.zig");
@@ -29,6 +31,7 @@ pub const targets_max: u32 = 64;
 pub const Column = enum { text, int, real, ref, long };
 
 pub const Options = options.Options;
+pub const Validation = validation.Validation;
 
 pub const Def = struct {
     name: []const u8,
@@ -36,10 +39,11 @@ pub const Def = struct {
     /// A kind id from the registry (`string`, `reference`, a plugin's `geo.point`).
     kind: []const u8,
     conditions: conditions.Set = &.{},
-    required: bool = false,
-    /// No two records of the type may hold the same value; a text value held once.
-    unique: bool = false,
     searchable: bool = false,
+    /// Lists can filter by it, when its kind filters at all (`field_filter.family_of`).
+    filterable: bool = true,
+    /// Lists can order by it; null: as its kind does (numbers, money, dates, times).
+    sortable: ?bool = null,
     /// Holds a value per variant beside the main one (`name@pl`, see `variant.zig`): what a
     /// variant is belongs to the plugin that declares the dimension, a language for one.
     variants: bool = false,
@@ -50,6 +54,9 @@ pub const Def = struct {
     help: []const u8 = "",
     /// What a new record starts with, as the text its kind's control posts; empty for none.
     default: []const u8 = "",
+    /// What a value must be for a write to go through.
+    validation: Validation = .{},
+    /// How the field is shown and edited.
     options: Options = .{},
     fields: []const Def = &.{},
 };
@@ -277,7 +284,7 @@ fn validate_def(
         return;
     };
 
-    if (is_layout(def.kind) and (depth > 0 or def.required or def.conditions.len > 0)) {
+    if (is_layout(def.kind) and (depth > 0 or def.validation.required or def.conditions.len > 0)) {
         problems.add(
             def.name,
             "layout elements belong at the top level and have no validation or conditions",
@@ -361,7 +368,7 @@ fn validate_kind_rules(
         problems.add(def.name, "only a terms field names a taxonomy");
     }
 
-    if (def.unique and (!kind.unique_allowed or def.many)) {
+    if (def.validation.unique and (!kind.unique_allowed or def.many)) {
         problems.add(def.name, "only a single text, email or url field can be unique");
     }
 
@@ -404,16 +411,17 @@ fn validate_shape(kind: kinds.Kind, def: Def, problems: *Problems) void {
     std.debug.assert(problems.len <= problems_max);
 
     const set = def.options;
+    const rules = def.validation;
 
-    if (set.pattern.len > options.pattern_len_max) {
+    if (rules.pattern.len > options.pattern_len_max) {
         problems.add(def.name, "a pattern must be up to 255 characters");
     }
 
-    if ((set.pattern.len > 0 or set.preset != .any) and !kind.has.pattern) {
+    if ((rules.pattern.len > 0 or rules.preset != .any) and !kind.has.pattern) {
         problems.add(def.name, "only a text field takes a pattern");
     }
 
-    if (!options.ordered(u32, set.words_min, set.words_max)) {
+    if (!options.ordered(u32, rules.words_min, rules.words_max)) {
         problems.add(def.name, "minimum word count is above the maximum");
     }
 
@@ -421,7 +429,7 @@ fn validate_shape(kind: kinds.Kind, def: Def, problems: *Problems) void {
         problems.add(def.name, "up to 10 decimal places");
     }
 
-    for (set.slug.reserved) |reserved| {
+    for (rules.slug.reserved) |reserved| {
         if (!kinds.valid_slug(reserved)) {
             problems.add(def.name, "a reserved slug must be [a-z0-9] and hyphens");
 
@@ -429,7 +437,7 @@ fn validate_shape(kind: kinds.Kind, def: Def, problems: *Problems) void {
         }
     }
 
-    for (set.url.schemes) |scheme| {
+    for (rules.url.schemes) |scheme| {
         if (!options.valid_scheme(scheme)) {
             problems.add(def.name, "unknown url scheme");
 
@@ -452,7 +460,7 @@ fn validate_lists(kind: kinds.Kind, def: Def, problems: *Problems) void {
     std.debug.assert(std.mem.eql(u8, kind.id, def.kind));
     std.debug.assert(problems.len <= problems_max);
 
-    const set = def.options;
+    const set = def.validation;
     const listed = def.many or is_repeater(def.kind);
     const bounded = set.items_min != null or set.items_max != null;
 
@@ -509,7 +517,7 @@ fn validate_default(kind: kinds.Kind, def: Def, problems: *Problems) void {
 
     if (!kind.default_allowed) {
         problems.add(def.name, "this kind takes no default value");
-    } else if (def.unique) {
+    } else if (def.validation.unique) {
         problems.add(def.name, "a unique field takes no default value");
     } else if (def.default.len > defaults.default_len_max or !defaults.fits(kind, def)) {
         problems.add(def.name, "the default value does not fit the kind");
@@ -521,7 +529,7 @@ fn validate_bounds(def: Def, problems: *Problems) void {
     std.debug.assert(def.name.len <= name_len_max or def.name.len == 0);
     std.debug.assert(problems.len <= problems_max);
 
-    const set = def.options;
+    const set = def.validation;
     const messages = [_][]const u8{
         set.messages.length,     set.messages.range,  set.messages.size,    set.messages.types,
         set.messages.dimensions, set.messages.items,  set.messages.pattern, set.messages.words,
@@ -543,6 +551,10 @@ fn validate_bounds(def: Def, problems: *Problems) void {
         problems.add(def.name, "minimum is above the maximum");
     }
 
+    if (set.hint.len > validation.hint_len_max) {
+        problems.add(def.name, "a hint must be up to 255 characters");
+    }
+
     for (messages) |message| {
         if (message.len > options.message_len_max) {
             problems.add(def.name, "a custom error message must be up to 255 characters");
@@ -556,7 +568,7 @@ fn validate_media(def: Def, problems: *Problems) void {
     std.debug.assert(def.name.len <= name_len_max or def.name.len == 0);
     std.debug.assert(problems.len <= problems_max);
 
-    const media = def.options.media;
+    const media = def.validation.media;
 
     if (media.types.len > options.media_types_max) {
         problems.add(def.name, "too many file types");
@@ -579,7 +591,7 @@ fn validate_media(def: Def, problems: *Problems) void {
         problems.add(def.name, "minimum dimension is above the maximum");
     }
 
-    if (!media.create and !media.link) {
+    if (!def.options.media.create and !def.options.media.link) {
         problems.add(def.name, "a media field must allow creating files, linking them, or both");
     }
 }
@@ -601,10 +613,12 @@ test "definitions: duplicates, select without choices, unknown kind, nesting dep
     var problems: Problems = .{};
     const good = [_]Def{
         .{
+            .validation = .{
+                .required = true,
+            },
             .name = "title",
             .label = "Title",
             .kind = "string",
-            .required = true,
         },
         .{
             .name = "tags",
@@ -737,10 +751,12 @@ test "unique, help, default and the kind's own option rules" {
     var problems: Problems = .{};
     const good = [_]Def{
         .{
+            .validation = .{
+                .unique = true,
+            },
             .name = "sku",
             .label = "SKU",
             .kind = "string",
-            .unique = true,
             .help = "As printed",
         },
         .{
@@ -750,16 +766,16 @@ test "unique, help, default and the kind's own option rules" {
             .default = "Untitled",
         },
         .{
-            .name = "cover",
-            .label = "Cover",
-            .kind = "media",
-            .options = .{
+            .validation = .{
                 .media = .{
                     .types = &.{"image"},
                     .width_min = 100,
                     .size_max = 1000,
                 },
             },
+            .name = "cover",
+            .label = "Cover",
+            .kind = "media",
         },
     };
     validate_defs(&kinds.core, &good, 0, &problems);
@@ -768,17 +784,21 @@ test "unique, help, default and the kind's own option rules" {
     var bad_problems: Problems = .{};
     const bad = [_]Def{
         .{
+            .validation = .{
+                .unique = true,
+            },
             .name = "views",
             .label = "Views",
             .kind = "number",
-            .unique = true,
         },
         .{
+            .validation = .{
+                .unique = true,
+            },
             .name = "tags",
             .label = "Tags",
             .kind = "string",
             .many = true,
-            .unique = true,
         },
         .{
             .name = "link",
@@ -787,10 +807,12 @@ test "unique, help, default and the kind's own option rules" {
             .default = "x",
         },
         .{
+            .validation = .{
+                .unique = true,
+            },
             .name = "code",
             .label = "Code",
             .kind = "string",
-            .unique = true,
             .default = "x",
         },
         .{
@@ -800,21 +822,25 @@ test "unique, help, default and the kind's own option rules" {
             .default = "many",
         },
         .{
-            .name = "short",
-            .label = "Short",
-            .kind = "string",
-            .options = .{
+            .validation = .{
                 .min_len = 5,
                 .max_len = 2,
             },
+            .name = "short",
+            .label = "Short",
+            .kind = "string",
         },
         .{
+            .validation = .{
+                .media = .{
+                    .types = &.{"typeface"},
+                },
+            },
             .name = "cover",
             .label = "Cover",
             .kind = "media",
             .options = .{
                 .media = .{
-                    .types = &.{"typeface"},
                     .create = false,
                     .link = false,
                 },
@@ -830,23 +856,23 @@ test "shapes, lists and the kind groups' own option rules" {
     var problems: Problems = .{};
     const good = [_]Def{
         .{
+            .validation = .{
+                .pattern = "SKU-####",
+            },
             .name = "code",
             .label = "Code",
             .kind = "string",
-            .options = .{
-                .pattern = "SKU-####",
-            },
         },
         .{
-            .name = "tags",
-            .label = "Tags",
-            .kind = "string",
-            .many = true,
-            .options = .{
+            .validation = .{
                 .items_min = 1,
                 .items_max = 5,
                 .distinct = true,
             },
+            .name = "tags",
+            .label = "Tags",
+            .kind = "string",
+            .many = true,
         },
         .{
             .name = "size",
@@ -857,11 +883,13 @@ test "shapes, lists and the kind groups' own option rules" {
             },
         },
         .{
+            .validation = .{
+                .items_max = 10,
+            },
             .name = "faq",
             .label = "FAQ",
             .kind = "repeater",
             .options = .{
-                .items_max = 10,
                 .container = .{
                     .label_field = "question",
                 },
@@ -875,14 +903,14 @@ test "shapes, lists and the kind groups' own option rules" {
             },
         },
         .{
-            .name = "site",
-            .label = "Site",
-            .kind = "url",
-            .options = .{
+            .validation = .{
                 .url = .{
                     .schemes = &.{"https"},
                 },
             },
+            .name = "site",
+            .label = "Site",
+            .kind = "url",
         },
     };
     validate_defs(&kinds.core, &good, 0, &problems);
@@ -891,20 +919,20 @@ test "shapes, lists and the kind groups' own option rules" {
     var bad_problems: Problems = .{};
     const bad = [_]Def{
         .{
+            .validation = .{
+                .pattern = "#",
+            },
             .name = "views",
             .label = "Views",
             .kind = "integer",
-            .options = .{
-                .pattern = "#",
-            },
         },
         .{
+            .validation = .{
+                .items_max = 3,
+            },
             .name = "one",
             .label = "One",
             .kind = "string",
-            .options = .{
-                .items_max = 3,
-            },
         },
         .{
             .name = "size",
@@ -934,24 +962,24 @@ test "shapes, lists and the kind groups' own option rules" {
             },
         },
         .{
-            .name = "site",
-            .label = "Site",
-            .kind = "url",
-            .options = .{
+            .validation = .{
                 .url = .{
                     .schemes = &.{"ftp"},
                 },
             },
+            .name = "site",
+            .label = "Site",
+            .kind = "url",
         },
         .{
-            .name = "slug",
-            .label = "Slug",
-            .kind = "slug",
-            .options = .{
+            .validation = .{
                 .slug = .{
                     .reserved = &.{"Bad Slug"},
                 },
             },
+            .name = "slug",
+            .label = "Slug",
+            .kind = "slug",
         },
     };
     validate_defs(&kinds.core, &bad, 0, &bad_problems);

@@ -226,7 +226,9 @@ pub const type_def: content_type.Def = .{
             .name = "title",
             .label = "Title",
             .kind = "string",
-            .required = true,
+            .validation = .{
+                .required = true,
+            },
             .variants = true,
         },
         .{
@@ -262,14 +264,14 @@ pub const type_def: content_type.Def = .{
 pub const folders_definition =
     \\{"handle":"media_folders","name":"Media folders","hierarchical":true,"single":true,
     \\ "system":true,"applies_to":["media"],"title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
+    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
     \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
 ;
 
 pub const tags_definition =
     \\{"handle":"media_tags","name":"Media tags","system":true,"applies_to":["media"],
     \\ "title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
+    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
     \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
 ;
 

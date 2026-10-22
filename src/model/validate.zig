@@ -137,8 +137,8 @@ fn validate_variants(
 
         var optional = def.*;
 
-        optional.required = false;
-        optional.options.items_min = null;
+        optional.validation.required = false;
+        optional.validation.items_min = null;
 
         var path_buffer: [field.path_len_max]u8 = undefined;
         const path = if (prefix.len == 0)
@@ -170,8 +170,8 @@ fn conditional(def: Def, object: std.json.ObjectMap) Def {
     var effective = def;
 
     if (!field.conditions.matches(def.conditions, object)) {
-        effective.required = false;
-        effective.options.items_min = null;
+        effective.validation.required = false;
+        effective.validation.items_min = null;
     }
 
     return effective;
@@ -204,7 +204,7 @@ fn validate_field(
     const present = value != null and value.? != .null;
 
     if (!present) {
-        if (def.required or (def.options.items_min orelse 0) > 0) {
+        if (def.validation.required or (def.validation.items_min orelse 0) > 0) {
             problems.add(path, "required");
         }
 
@@ -246,7 +246,7 @@ fn validate_many(
         return;
     }
 
-    if (def.required and items.len == 0) {
+    if (def.validation.required and items.len == 0) {
         problems.add(path, "required");
     }
 
@@ -262,21 +262,21 @@ fn check_items(def: Def, items: []const Value, path: []const u8, problems: *Prob
     std.debug.assert(path.len > 0);
     std.debug.assert(items.len <= repeater_items_max);
 
-    const message = def.options.messages.items;
+    const message = def.validation.messages.items;
 
-    if (def.options.items_min) |least| {
+    if (def.validation.items_min) |least| {
         if (items.len < least) {
             problems.add(path, if (message.len > 0) message else "too few items");
         }
     }
 
-    if (def.options.items_max) |most| {
+    if (def.validation.items_max) |most| {
         if (items.len > most) {
             problems.add(path, if (message.len > 0) message else "too many items");
         }
     }
 
-    if (!def.options.distinct) {
+    if (!def.validation.distinct) {
         return;
     }
 
@@ -375,15 +375,15 @@ fn validate_text(kind: Kind, def: Def, value: Value, path: []const u8, problems:
         return;
     }
 
-    const message = def.options.messages.length;
+    const message = def.validation.messages.length;
 
-    if (def.options.min_len) |min_len| {
+    if (def.validation.min_len) |min_len| {
         if (text.len < min_len) {
             problems.add(path, if (message.len > 0) message else "too short");
         }
     }
 
-    if (def.options.max_len) |max_len| {
+    if (def.validation.max_len) |max_len| {
         if (text.len > max_len) {
             problems.add(path, if (message.len > 0) message else "too long");
         }
@@ -403,15 +403,15 @@ fn check_words(def: Def, text: []const u8, path: []const u8, problems: *Problems
     std.debug.assert(text.len <= text_len_max);
 
     const words = field.pattern.word_count(text[0..@min(text.len, field.pattern.text_len_max)]);
-    const message = def.options.messages.words;
+    const message = def.validation.messages.words;
 
-    if (def.options.words_min) |least| {
+    if (def.validation.words_min) |least| {
         if (words < least) {
             problems.add(path, if (message.len > 0) message else "too few words");
         }
     }
 
-    if (def.options.words_max) |most| {
+    if (def.validation.words_max) |most| {
         if (words > most) {
             problems.add(path, if (message.len > 0) message else "too many words");
         }
@@ -422,7 +422,7 @@ fn check_pattern(def: Def, text: []const u8, path: []const u8, problems: *Proble
     std.debug.assert(path.len > 0);
     std.debug.assert(text.len <= text_len_max);
 
-    const shape = def.options;
+    const shape = def.validation;
     const message = shape.messages.pattern;
 
     const too_long = shape.pattern.len > field.options.pattern_len_max;
@@ -463,11 +463,11 @@ fn validate_integer(
     check_range(def, as_float, path, problems);
     check_choices(def, as_float, path, problems);
 
-    if (kind.control == .datetime and def.options.date.from_now and now_ms >= 0) {
+    if (kind.control == .datetime and def.validation.date.from_now and now_ms >= 0) {
         const today = now_ms - @mod(now_ms, day_ms);
 
         if (number < today) {
-            const message = def.options.messages.range;
+            const message = def.validation.messages.range;
 
             problems.add(path, if (message.len > 0) message else "before today");
         }
@@ -514,7 +514,7 @@ fn check_choices(def: Def, number: f64, path: []const u8, problems: *Problems) v
         }
     }
 
-    const message = def.options.messages.choices;
+    const message = def.validation.messages.choices;
 
     problems.add(path, if (message.len > 0) message else "not one of the listed values");
 }
@@ -523,15 +523,15 @@ fn check_range(def: Def, number: f64, path: []const u8, problems: *Problems) voi
     std.debug.assert(path.len > 0);
     std.debug.assert(!std.math.isNan(number));
 
-    const message = def.options.messages.range;
+    const message = def.validation.messages.range;
 
-    if (def.options.min) |min| {
+    if (def.validation.min) |min| {
         if (number < min) {
             problems.add(path, if (message.len > 0) message else "below the minimum");
         }
     }
 
-    if (def.options.max) |max| {
+    if (def.validation.max) |max| {
         if (number > max) {
             problems.add(path, if (message.len > 0) message else "above the maximum");
         }
@@ -654,13 +654,13 @@ pub const valid_slug = kinds.valid_slug;
 
 const test_defs = [_]Def{
     .{
+        .validation = .{
+            .required = true,
+            .max_len = 10,
+        },
         .name = "title",
         .label = "Title",
         .kind = "string",
-        .required = true,
-        .options = .{
-            .max_len = 10,
-        },
     },
     .{
         .name = "slug",
@@ -668,13 +668,13 @@ const test_defs = [_]Def{
         .kind = "slug",
     },
     .{
-        .name = "count",
-        .label = "Count",
-        .kind = "integer",
-        .options = .{
+        .validation = .{
             .min = 0,
             .max = 5,
         },
+        .name = "count",
+        .label = "Count",
+        .kind = "integer",
     },
     .{
         .name = "kind",
@@ -699,10 +699,12 @@ const test_defs = [_]Def{
         .kind = "repeater",
         .fields = &.{
             .{
+                .validation = .{
+                    .required = true,
+                },
                 .name = "image",
                 .label = "Image",
                 .kind = "media",
-                .required = true,
             },
         },
     },
@@ -759,15 +761,15 @@ test "a valid document passes; every kind of mistake is reported at its path" {
 
     var custom: Problems = .{};
     const worded = [_]Def{.{
-        .name = "title",
-        .label = "Title",
-        .kind = "string",
-        .options = .{
+        .validation = .{
             .max_len = 3,
             .messages = .{
                 .length = "Keep it short",
             },
         },
+        .name = "title",
+        .label = "Title",
+        .kind = "string",
     }};
     validate_document(&kinds.core, &worded, try parse(arena, "{\"title\":\"long\"}"), 0, &custom);
     try std.testing.expectEqualStrings("Keep it short", custom.items[0].message);
@@ -789,11 +791,7 @@ test "lists, shapes, listed numbers and days from now" {
 
     const defs = [_]Def{
         .{
-            .name = "tags",
-            .label = "Tags",
-            .kind = "string",
-            .many = true,
-            .options = .{
+            .validation = .{
                 .items_min = 1,
                 .items_max = 2,
                 .distinct = true,
@@ -801,23 +799,27 @@ test "lists, shapes, listed numbers and days from now" {
                     .items = "One or two different tags",
                 },
             },
+            .name = "tags",
+            .label = "Tags",
+            .kind = "string",
+            .many = true,
         },
         .{
+            .validation = .{
+                .pattern = "@@-###",
+            },
             .name = "code",
             .label = "Code",
             .kind = "string",
-            .options = .{
-                .pattern = "@@-###",
-            },
         },
         .{
-            .name = "bio",
-            .label = "Bio",
-            .kind = "text",
-            .options = .{
+            .validation = .{
                 .words_max = 3,
                 .preset = .lowercase,
             },
+            .name = "bio",
+            .label = "Bio",
+            .kind = "text",
         },
         .{
             .name = "size",
@@ -828,14 +830,14 @@ test "lists, shapes, listed numbers and days from now" {
             },
         },
         .{
-            .name = "when",
-            .label = "When",
-            .kind = "datetime",
-            .options = .{
+            .validation = .{
                 .date = .{
                     .from_now = true,
                 },
             },
+            .name = "when",
+            .label = "When",
+            .kind = "datetime",
         },
     };
     const today: i64 = 5 * day_ms + 1000;
@@ -874,13 +876,13 @@ test "conditional requiredness is evaluated on the server and hidden values rema
             .kind = "boolean",
         },
         .{
+            .validation = .{
+                .required = true,
+                .max_len = 5,
+            },
             .name = "caption",
             .label = "Caption",
             .kind = "string",
-            .required = true,
-            .options = .{
-                .max_len = 5,
-            },
             .conditions = &.{
                 .{
                     .rules = &.{

@@ -4,6 +4,7 @@
 //! once written, never change.
 
 const std = @import("std");
+const plugin_contracts = @import("plugin_contracts.zig");
 
 pub const kind_len_max: u32 = 64;
 pub const field_len_max: u32 = 64;
@@ -23,6 +24,9 @@ pub const Collection = struct {
     /// Kept for the whole project, the same whichever app the call comes through: stock
     /// two shops sell from. Otherwise each app's records are its own: a visitor's cart.
     shared: bool = false,
+    /// Each top-level field with its kind, from the record's Zig type: what another plugin's
+    /// `publr.remote.record` on it is checked against.
+    fields: []const plugin_contracts.ProvidedField = &.{},
 };
 
 /// Why a plugin's collections cannot be declared, or null.
@@ -123,7 +127,7 @@ pub fn indexed_text(
     return text;
 }
 
-fn valid_name(name: []const u8, len_max: u32) bool {
+pub fn valid_name(name: []const u8, len_max: u32) bool {
     std.debug.assert(len_max > 0);
 
     if (name.len == 0 or name.len > len_max or !std.ascii.isLower(name[0])) {

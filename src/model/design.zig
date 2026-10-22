@@ -27,7 +27,9 @@ pub const template_def: content_type.Def = .{
             .name = "route",
             .label = "Route",
             .kind = "string",
-            .required = true,
+            .validation = .{
+                .required = true,
+            },
         },
         .{
             .name = "html",
@@ -56,7 +58,9 @@ pub const part_def: content_type.Def = .{
             .name = "name",
             .label = "Name",
             .kind = "string",
-            .required = true,
+            .validation = .{
+                .required = true,
+            },
         },
         .{
             .name = "label",
@@ -90,7 +94,9 @@ pub const pattern_def: content_type.Def = .{
             .name = "name",
             .label = "Name",
             .kind = "string",
-            .required = true,
+            .validation = .{
+                .required = true,
+            },
         },
         .{
             .name = "label",
@@ -121,13 +127,17 @@ pub const pattern_def: content_type.Def = .{
                     .name = "name",
                     .label = "Name",
                     .kind = "string",
-                    .required = true,
+                    .validation = .{
+                        .required = true,
+                    },
                 },
                 .{
                     .name = "label",
                     .label = "Label",
                     .kind = "string",
-                    .required = true,
+                    .validation = .{
+                        .required = true,
+                    },
                 },
                 .{
                     .name = "description",
@@ -175,7 +185,9 @@ pub const moodboard_def: content_type.Def = .{
             .name = "kind",
             .label = "Kind",
             .kind = "string",
-            .required = true,
+            .validation = .{
+                .required = true,
+            },
         },
         .{
             .name = "x",

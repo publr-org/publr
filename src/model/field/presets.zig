@@ -10,7 +10,9 @@ pub fn children(kind: []const u8) []const field.Def {
                 .name = "url",
                 .label = "URL",
                 .kind = "url",
-                .required = true,
+                .validation = .{
+                    .required = true,
+                },
             },
             .{
                 .name = "label",
@@ -36,8 +38,8 @@ pub fn children(kind: []const u8) []const field.Def {
                 .name = "latitude",
                 .label = "Latitude",
                 .kind = "number",
-                .required = true,
-                .options = .{
+                .validation = .{
+                    .required = true,
                     .min = -90,
                     .max = 90,
                 },
@@ -46,8 +48,8 @@ pub fn children(kind: []const u8) []const field.Def {
                 .name = "longitude",
                 .label = "Longitude",
                 .kind = "number",
-                .required = true,
-                .options = .{
+                .validation = .{
+                    .required = true,
                     .min = -180,
                     .max = 180,
                 },

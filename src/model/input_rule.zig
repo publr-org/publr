@@ -4,9 +4,10 @@
 
 const std = @import("std");
 const options = @import("field/options.zig");
+const validation = @import("field/validation.zig");
 const pattern = @import("field/pattern.zig");
 
-pub const Preset = options.Preset;
+pub const Preset = validation.Preset;
 
 pub const Rule = struct {
     /// A number's bounds, inclusive.

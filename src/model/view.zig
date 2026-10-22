@@ -15,7 +15,10 @@ pub const me = filter.me.id;
 
 pub const Error = error{ Invalid, OutOfMemory };
 
-pub const orders = [_][]const u8{ "updated_desc", "created_desc", "title_asc" };
+/// What a list may be ordered by besides a field of its type: `-updated` is newest first.
+pub const core_orders = [_][]const u8{ "title", "created", "updated", "status" };
+pub const per_page_choices = [_]u32{ 10, 20, 50, 100 };
+pub const columns_max: u32 = @import("field.zig").fields_max + 8;
 
 pub const Clause = filter.Clause;
 
@@ -27,13 +30,20 @@ pub const Filters = struct {
     type_view: bool = false,
     clauses: []const Clause = &.{},
     search: ?[]const u8 = null,
+    /// `title`, `-updated` (descending), a field of the type: `total`, `-total`.
     order: ?[]const u8 = null,
+    /// The columns shown, in order: fields of the type and core's (`status`, `updated`,
+    /// `created`, `slug`); null for the type's default.
+    columns: ?[]const []const u8 = null,
+    per_page: ?u32 = null,
 
     pub fn is_empty(filters: Filters) bool {
         std.debug.assert(filters.types.len <= types_max);
 
+        const shaped = filters.columns != null or filters.per_page != null;
+
         return filters.types.len == 0 and !filters.type_view and filters.clauses.len == 0 and
-            filters.search == null and filters.order == null;
+            filters.search == null and filters.order == null and !shaped;
     }
 
     pub fn clause(filters: Filters, key: []const u8) ?Clause {
@@ -118,6 +128,22 @@ pub fn validate(filters: Filters) Error!void {
             return error.Invalid;
         }
     }
+
+    if (filters.per_page) |per_page| {
+        if (std.mem.indexOfScalar(u32, &per_page_choices, per_page) == null) {
+            return error.Invalid;
+        }
+    }
+
+    if (filters.columns) |names| {
+        if (names.len > columns_max) {
+            return error.Invalid;
+        }
+
+        for (names) |name| {
+            try check_text(name, filter.key_len_max);
+        }
+    }
 }
 
 /// The filters with `clause` in place of the clause at `index`, or added at the end when
@@ -183,11 +209,38 @@ fn check_text(text: []const u8, len_max: u32) Error!void {
     std.debug.assert(text.len <= len_max);
 }
 
+/// `title`, `-updated`, a field's name with or without `-`. Whether a field exists and
+/// orders is the list's question.
 pub fn is_order(text: []const u8) bool {
-    std.debug.assert(orders.len == 3);
+    std.debug.assert(core_orders.len == 4);
 
-    for (orders) |candidate| {
-        if (std.mem.eql(u8, candidate, text)) {
+    const name = text;
+    const bare = if (std.mem.startsWith(u8, name, "-")) name[1..] else name;
+
+    if (bare.len == 0 or bare.len > filter.key_len_max) {
+        return false;
+    }
+
+    for (bare) |char| {
+        const allowed = std.ascii.isAlphanumeric(char) or char == '_' or char == '.';
+
+        if (!allowed) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// Whether an order is one of core's own (`title`, `-updated`) rather than a field's.
+pub fn is_core_order(text: []const u8) bool {
+    const name = text;
+    const bare = if (std.mem.startsWith(u8, name, "-")) name[1..] else name;
+
+    std.debug.assert(name.len > 0);
+
+    for (core_orders) |candidate| {
+        if (std.mem.eql(u8, candidate, bare)) {
             return true;
         }
     }
@@ -214,7 +267,7 @@ test "encode and decode round-trip, empty filters encode small, bad shapes are r
                 .value = "7d",
             },
         },
-        .order = "title_asc",
+        .order = "title",
     };
     const text = try encode(arena, filters);
     try std.testing.expect(std.mem.indexOf(u8, text, "\"operator\":\"within\"") != null);
@@ -230,7 +283,12 @@ test "encode and decode round-trip, empty filters encode small, bad shapes are r
         "{\"types\":[],\"type_view\":false,\"clauses\":[]}",
         try encode(arena, .{}),
     );
-    try std.testing.expectError(error.Invalid, decode(arena, "{\"order\":\"sideways\"}"));
+    try std.testing.expectError(error.Invalid, decode(arena, "{\"order\":\"side ways\"}"));
+    try std.testing.expect(is_core_order("-created") and !is_core_order("total"));
+    try std.testing.expectError(error.Invalid, decode(arena, "{\"per_page\":7}"));
+    const shaped = try decode(arena, "{\"order\":\"-total\",\"columns\":[\"total\"]," ++
+        "\"per_page\":50}");
+    try std.testing.expect(!shaped.is_empty());
     try std.testing.expectError(error.Invalid, decode(arena, "{\"type_view\":true}"));
     const twice = "{\"clauses\":[{\"key\":\"status\",\"operator\":\"is\"}," ++
         "{\"key\":\"status\",\"operator\":\"is\",\"value\":\"x\"}]}";

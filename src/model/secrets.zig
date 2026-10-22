@@ -101,6 +101,72 @@ pub fn open(
     return value;
 }
 
+/// A secret a plugin declares in its `.secrets`: its name, the label people see (its
+/// `///`'s first line) and where to find it (the rest).
+pub const Declared = struct {
+    name: []const u8,
+    label: []const u8,
+    help: []const u8 = "",
+};
+
+/// How many secrets one plugin may declare.
+pub const declared_max: u32 = 32;
+
+/// The declared secret called `name`; null when the plugin did not declare it.
+pub fn declared_find(declared: []const Declared, name: []const u8) ?*const Declared {
+    std.debug.assert(declared.len <= declared_max);
+    std.debug.assert(name.len > 0);
+
+    for (declared) |*each| {
+        if (std.mem.eql(u8, each.name, name)) {
+            return each;
+        }
+    }
+
+    return null;
+}
+
+/// The first name in `written` that `declared` lacks: what a plugin's code writes as
+/// `{secret:NAME}` without declaring it. Null when every one is declared.
+pub fn undeclared(declared: []const []const u8, written: []const []const u8) ?[]const u8 {
+    std.debug.assert(declared.len <= declared_max);
+    std.debug.assert(written.len <= 1024);
+
+    for (written) |name| {
+        if (!contains(declared, name)) {
+            return name;
+        }
+    }
+
+    return null;
+}
+
+/// Every valid name written as `{secret:NAME}` in `text`, appended to `out` unless there
+/// already: what a plugin's string literals ask for. Malformed markers are left to the
+/// request that sends them.
+pub fn written_in(
+    arena: std.mem.Allocator,
+    text: []const u8,
+    out: *std.ArrayList([]const u8),
+) error{OutOfMemory}!void {
+    std.debug.assert(text.len <= std.math.maxInt(u32));
+    std.debug.assert(out.items.len <= 1024);
+
+    var rest = text;
+
+    while (std.mem.indexOf(u8, rest, marker_open)) |at| {
+        const after = rest[at + marker_open.len ..];
+        const end = std.mem.indexOfScalar(u8, after, '}') orelse return;
+        const name = after[0..end];
+
+        if (valid_name(name) and !contains(out.items, name) and out.items.len < 1024) {
+            try out.append(arena, try arena.dupe(u8, name));
+        }
+
+        rest = after[end..];
+    }
+}
+
 pub const marker_open = "{secret:";
 
 /// The names `text` asks for with `{secret:NAME}`, in order, each once; at most `list.len`.
@@ -221,4 +287,29 @@ test "a request's secrets are named, then filled in" {
     try std.testing.expectError(error.Unclosed, names_in("{secret:API_KEY", &storage));
     try std.testing.expectError(error.InvalidName, names_in("{secret:api}", &storage));
     try std.testing.expectEqual(@as(usize, 0), (try names_in("plain", &storage)).len);
+}
+
+test "the secrets a plugin writes, and which it did not declare" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var written: std.ArrayList([]const u8) = .empty;
+
+    try written_in(arena, "Bearer {secret:API_KEY} {secret:api} {secret:API_KEY}", &written);
+    try written_in(arena, "x={secret:OTHER}&y={secret:", &written);
+    try std.testing.expectEqual(@as(usize, 2), written.items.len);
+    try std.testing.expectEqualStrings("OTHER", written.items[1]);
+    try std.testing.expect(undeclared(&.{ "API_KEY", "OTHER" }, written.items) == null);
+    try std.testing.expectEqualStrings("OTHER", undeclared(&.{"API_KEY"}, written.items).?);
+
+    const declared = [_]Declared{.{
+        .name = "API_KEY",
+        .label = "Supplier API key",
+    }};
+
+    const found = declared_find(&declared, "API_KEY").?;
+
+    try std.testing.expectEqualStrings("Supplier API key", found.label);
+    try std.testing.expect(declared_find(&declared, "OTHER") == null);
 }

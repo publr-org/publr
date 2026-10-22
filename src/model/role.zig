@@ -20,6 +20,9 @@ pub const Role = struct {
     grants: []const []const u8,
 };
 
+/// Who declared core's roles, in `roles.owner`; a plugin's is its name, the site's empty.
+pub const owner_core = "core";
+
 pub const admin = "admin";
 pub const editor = "editor";
 /// Not an operation but what a role needs to read and write settings singletons (records
@@ -28,17 +31,29 @@ pub const editor = "editor";
 pub const settings_grant = "settings.edit";
 
 const editor_grants = [_][]const u8{
-    "record.*",          "!record.purge",
-    "term.*",            "!term.purge",
-    "media.*",           "snapshot.*",
-    "view.*",            "status.*",
-    "heartbeat.*",       "content_type.get",
-    "content_type.list", "content_type.validate",
-    "taxonomy.get",      "taxonomy.list",
-    "taxonomy.validate", "user.options",
-    "project.status",    "project.impact",
-    "identity.list",     "identity.unlink",
-    "design.moodboard",  "design.save_moodboard",
+    "record.*",              "!record.purge",
+    "term.*",                "!term.purge",
+    "media.*",               "snapshot.*",
+    "view.*",                "status.*",
+    "rail.*",                "heartbeat.*",
+    "content_type.get",      "content_type.list",
+    "content_type.validate", "taxonomy.get",
+    "taxonomy.list",         "taxonomy.validate",
+    "user.options",          "project.status",
+    "project.impact",        "identity.list",
+    "identity.unlink",       "design.moodboard",
+    "design.save_moodboard",
+};
+
+pub const contributor = "contributor";
+
+/// An editor's grants without putting anything live: their transitions into and out of live
+/// statuses, and their published changes, wait for someone who may.
+const contributor_grants = editor_grants ++ [_][]const u8{
+    "!record.publish",
+    "!record.transition_many",
+    "!term.publish",
+    "!term.transition_many",
 };
 
 pub const core = [_]Role{
@@ -54,6 +69,12 @@ pub const core = [_]Role{
         .description = "The content: records, terms and their history; not structure, " ++
             "users or settings.",
         .grants = &editor_grants,
+    },
+    .{
+        .name = contributor,
+        .label = "Contributor",
+        .description = "Writes and edits content; publishing waits for an editor.",
+        .grants = &contributor_grants,
     },
 };
 
@@ -361,7 +382,7 @@ test "a plugin's role is new, or adds its grants to one of the same name" {
     };
     const Roles = Registry(comptime merge(&core, &added));
 
-    try std.testing.expectEqual(@as(usize, 3), Roles.all.len);
+    try std.testing.expectEqual(@as(usize, 4), Roles.all.len);
     try std.testing.expect(Roles.allows(&.{editor}, "newsletter.list"));
     try std.testing.expect(Roles.allows(&.{editor}, "record.save"));
     try std.testing.expect(Roles.allows(&.{"subscriber"}, "app.newsletter.subscribe"));

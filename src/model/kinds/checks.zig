@@ -27,8 +27,8 @@ pub fn slug(def: Def, value: Value, path: []const u8, problems: *Problems) void 
         return;
     }
 
-    if (options.contains(def.options.slug.reserved, value.string)) {
-        const message = def.options.messages.reserved;
+    if (options.contains(def.validation.slug.reserved, value.string)) {
+        const message = def.validation.messages.reserved;
 
         problems.add(path, if (message.len > 0) message else "this slug is reserved");
     }
@@ -54,10 +54,10 @@ pub fn email(def: Def, value: Value, path: []const u8, problems: *Problems) void
         return;
     }
 
-    const domains = def.options.email.domains;
+    const domains = def.validation.email.domains;
 
     if (domains.len > 0 and !options.contains(domains, value.string[at + 1 ..])) {
-        const message = def.options.messages.domain;
+        const message = def.validation.messages.domain;
 
         problems.add(path, if (message.len > 0) message else "not an allowed email domain");
     }
@@ -79,20 +79,20 @@ pub fn url(def: Def, value: Value, path: []const u8, problems: *Problems) void {
     };
     const scheme = text[0..colon];
 
-    if (!options.scheme_allowed(def.options.url, scheme)) {
-        const message = def.options.messages.scheme;
+    if (!options.scheme_allowed(def.validation.url, scheme)) {
+        const message = def.validation.messages.scheme;
 
         problems.add(path, if (message.len > 0) message else "not an allowed url scheme");
 
         return;
     }
 
-    const hosts = def.options.url.hosts;
+    const hosts = def.validation.url.hosts;
     const rest = text[colon + 1 ..];
     const has_host = std.mem.startsWith(u8, rest, "//");
 
     if (hosts.len > 0 and has_host and !options.contains(hosts, host_of(rest))) {
-        const message = def.options.messages.host;
+        const message = def.validation.messages.host;
 
         problems.add(path, if (message.len > 0) message else "not an allowed host");
     }
@@ -209,10 +209,7 @@ test "the kinds' own checks" {
 
     var strict: Problems = .{};
     const work_mail: Def = .{
-        .name = "mail",
-        .label = "Mail",
-        .kind = "email",
-        .options = .{
+        .validation = .{
             .email = .{
                 .domains = &.{"publr.dev"},
             },
@@ -220,6 +217,9 @@ test "the kinds' own checks" {
                 .domain = "Work addresses only",
             },
         },
+        .name = "mail",
+        .label = "Mail",
+        .kind = "email",
     };
     email(work_mail, .{
         .string = "ada@publr.dev",
@@ -232,15 +232,15 @@ test "the kinds' own checks" {
 
     var linked: Problems = .{};
     const phone: Def = .{
-        .name = "call",
-        .label = "Call",
-        .kind = "url",
-        .options = .{
+        .validation = .{
             .url = .{
                 .schemes = &.{ "tel", "https" },
                 .hosts = &.{"publr.dev"},
             },
         },
+        .name = "call",
+        .label = "Call",
+        .kind = "url",
     };
     url(phone, .{
         .string = "tel:+4812345678",
@@ -264,14 +264,14 @@ test "the kinds' own checks" {
 
     var kept: Problems = .{};
     const home: Def = .{
-        .name = "slug",
-        .label = "Slug",
-        .kind = "slug",
-        .options = .{
+        .validation = .{
             .slug = .{
                 .reserved = &.{ "admin", "api" },
             },
         },
+        .name = "slug",
+        .label = "Slug",
+        .kind = "slug",
     };
     slug(home, .{
         .string = "api",

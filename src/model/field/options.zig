@@ -1,7 +1,6 @@
-//! What a field's kind lets an editor tune: limits over a value, the messages shown when
-//! a value breaks them, and the kind-specific groups (a date's shape, a media file's
-//! rules, a reference's behaviour). Every part has a default, so a field carries only
-//! what was set.
+//! How a field is shown and edited: its control, its choices, what it points at, a date's
+//! shape. Rules a value must meet are its `validation`, never here. Every part has a
+//! default, so a field carries only what was set.
 const std = @import("std");
 
 pub const message_len_max: u32 = 255;
@@ -12,43 +11,11 @@ pub const pattern_len_max: u32 = 255;
 pub const decimals_max: u32 = 10;
 pub const dimension_max: u32 = 100_000;
 
-/// The message an editor sees when a value breaks the matching rule; the built-in one
-/// when empty.
-pub const Messages = struct {
-    length: []const u8 = "",
-    range: []const u8 = "",
-    size: []const u8 = "",
-    types: []const u8 = "",
-    dimensions: []const u8 = "",
-    items: []const u8 = "",
-    pattern: []const u8 = "",
-    words: []const u8 = "",
-    domain: []const u8 = "",
-    scheme: []const u8 = "",
-    host: []const u8 = "",
-    reserved: []const u8 = "",
-    choices: []const u8 = "",
-};
-
-/// A shape a text must have, short of writing a pattern.
-pub const Preset = enum {
-    any,
-    digits,
-    letters,
-    alphanumeric,
-    no_spaces,
-    lowercase,
-    uppercase,
-    phone,
-};
-
 /// How a date and time field is shown and posted: a moment, or a day alone.
 pub const DateFormat = enum { datetime, date };
 
 pub const Date = struct {
     format: DateFormat = .datetime,
-    /// Refuse moments before the day the record is written.
-    from_now: bool = false,
 };
 
 pub const TextFormat = enum { plain, markdown };
@@ -67,25 +34,10 @@ pub const RichText = struct {
 pub const Slug = struct {
     /// Once the record is live the slug stays as it is, whatever the source does.
     lock_on_publish: bool = false,
-    /// Slugs the site keeps for itself; refused on any record.
-    reserved: []const []const u8 = &.{},
-    /// A slug someone gave (typed, sent) that another record holds is refused as a
-    /// conflict instead of numbered (`-2`): where the slug is an address the person was
-    /// shown, it must be the one they get. Derived slugs are numbered either way.
-    refuse_taken: bool = false,
 };
 
 pub const Email = struct {
-    /// Empty accepts any domain; else only addresses at these.
-    domains: []const []const u8 = &.{},
     lowercase: bool = false,
-};
-
-pub const Url = struct {
-    /// Empty accepts http and https; else only these, from `url_schemes`.
-    schemes: []const []const u8 = &.{},
-    /// Empty accepts any host; else only these.
-    hosts: []const []const u8 = &.{},
 };
 
 pub const BooleanControl = enum { toggle, checkbox, radio };
@@ -119,10 +71,6 @@ pub const OnDelete = enum { keep, block, clear };
 pub const Reference = struct {
     create: bool = true,
     link: bool = true,
-    /// Only records that are live may be pointed at.
-    live_only: bool = false,
-    /// Only publicly readable record types may be selected.
-    public_only: bool = false,
     /// What purging a record this field points at does to the pointer.
     on_delete: OnDelete = .keep,
 };
@@ -134,28 +82,15 @@ pub const Container = struct {
     add_label: []const u8 = "",
 };
 
-/// The rules a media field puts on the file it points at, and what the field's editor
-/// offers: creating new files, linking existing ones. Sizes in bytes, dimensions in
-/// pixels; a null bound is no bound.
+/// What a media field's editor offers: creating new files, linking existing ones.
 pub const Media = struct {
-    size_min: ?u64 = null,
-    size_max: ?u64 = null,
-    /// Empty accepts any file; else only these, from `media_types`.
-    types: []const []const u8 = &.{},
-    width_min: ?u32 = null,
-    width_max: ?u32 = null,
-    height_min: ?u32 = null,
-    height_max: ?u32 = null,
     create: bool = true,
     link: bool = true,
 };
 
 pub const Options = struct {
-    min: ?f64 = null,
-    max: ?f64 = null,
+    /// How far a number's control steps.
     step: ?f64 = null,
-    min_len: ?u32 = null,
-    max_len: ?u32 = null,
     /// A select's values, or the only values a number may take.
     choices: []const []const u8 = &.{},
     /// What the choices read as, one per choice; empty when the values are the labels.
@@ -172,22 +107,11 @@ pub const Options = struct {
     taxonomy: []const u8 = "",
     rows: ?u32 = null,
     placeholder: []const u8 = "",
-    /// How many values a list holds, and whether every value must differ.
-    items_min: ?u32 = null,
-    items_max: ?u32 = null,
-    distinct: bool = false,
-    /// A shape the text must have: a preset, or a pattern of `*` `?` `#` `@`.
-    preset: Preset = .any,
-    pattern: []const u8 = "",
-    words_min: ?u32 = null,
-    words_max: ?u32 = null,
-    messages: Messages = .{},
     text: Text = .{},
     richtext: RichText = .{},
     date: Date = .{},
     slug: Slug = .{},
     email: Email = .{},
-    url: Url = .{},
     boolean: Boolean = .{},
     number: Number = .{},
     select: Select = .{},
@@ -202,7 +126,7 @@ pub const Options = struct {
     }
 };
 
-fn write_sparse(comptime Struct: type, value: Struct, writer: anytype) !void {
+pub fn write_sparse(comptime Struct: type, value: Struct, writer: anytype) !void {
     comptime std.debug.assert(@typeInfo(Struct) == .@"struct");
     comptime std.debug.assert(std.meta.fields(Struct).len > 0);
 
@@ -311,7 +235,7 @@ pub fn valid_scheme(id: []const u8) bool {
 }
 
 /// Whether a scheme is accepted by the field: http and https when none is listed.
-pub fn scheme_allowed(url: Url, scheme: []const u8) bool {
+pub fn scheme_allowed(url: @import("validation.zig").Url, scheme: []const u8) bool {
     std.debug.assert(url.schemes.len <= list_max);
     std.debug.assert(url_schemes.len >= 2);
 
@@ -377,7 +301,6 @@ test "media types, schemes and bounds" {
     try std.testing.expect(options.media.create and options.media.link);
     try std.testing.expect(options.reference.create and options.reference.link);
     try std.testing.expectEqual(OnDelete.keep, options.reference.on_delete);
-    try std.testing.expectEqual(@as(usize, 0), options.messages.length.len);
 }
 
 test "options are written sparsely and read back whole" {
@@ -390,31 +313,26 @@ test "options are written sparsely and read back whole" {
     try std.testing.expectEqualStrings("{}", nothing);
 
     const set: Options = .{
-        .max_len = 12,
-        .messages = .{
-            .length = "Short",
-        },
+        .step = 2,
         .reference = .{
             .on_delete = .clear,
         },
         .media = .{
-            .types = &.{"image"},
+            .link = false,
         },
         .richtext = .{
             .formats = &.{.bold},
         },
     };
     const text = try std.json.Stringify.valueAlloc(arena, set, .{});
-    const expected = "{\"max_len\":12,\"messages\":{\"length\":\"Short\"}," ++
-        "\"richtext\":{\"formats\":[\"bold\"]},\"reference\":{\"on_delete\":\"clear\"}," ++
-        "\"media\":{\"types\":[\"image\"]}}";
+    const expected = "{\"step\":2,\"richtext\":{\"formats\":[\"bold\"]}," ++
+        "\"reference\":{\"on_delete\":\"clear\"},\"media\":{\"link\":false}}";
     try std.testing.expectEqualStrings(expected, text);
 
     const parsed = try std.json.parseFromSliceLeaky(Options, arena, text, .{});
-    try std.testing.expectEqual(@as(u32, 12), parsed.max_len.?);
+    try std.testing.expectEqual(@as(f64, 2), parsed.step.?);
     try std.testing.expectEqual(OnDelete.clear, parsed.reference.on_delete);
-    try std.testing.expect(parsed.reference.create and parsed.media.link);
-    try std.testing.expectEqualStrings("image", parsed.media.types[0]);
+    try std.testing.expect(parsed.reference.create and !parsed.media.link);
     try std.testing.expectEqual(RichFormat.bold, parsed.richtext.formats.?[0]);
     try std.testing.expect(bare.richtext.formats == null);
 }

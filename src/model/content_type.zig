@@ -5,6 +5,7 @@ const std = @import("std");
 const ids = @import("../lib/id.zig");
 pub const field = @import("field.zig");
 const kinds = @import("kinds.zig");
+pub const flow = @import("flow.zig");
 
 pub const handle_len_max: u32 = 64;
 pub const name_len_max: u32 = 50;
@@ -34,6 +35,26 @@ pub const Shared = struct {
     all: bool = false,
     apps: []const []const u8 = &.{},
 };
+
+/// Where a type's list sits in the admin's menu: under the first of these menu items that
+/// exists (`checkout.orders`), else where content types go.
+pub const Menu = struct {
+    parents: []const []const u8 = &.{},
+    /// `.menu = .none`: no entry in the menu; its pages still open at their addresses.
+    hidden: bool = false,
+};
+
+/// A type's default view of its list, as its plugin gives it: the columns shown after the
+/// title, and where the list starts (filters people can clear, an order: `-number`). What
+/// a list can filter and order by is the fields' to say (`filterable`, `sortable`).
+pub const View = struct {
+    columns: []const []const u8 = &.{},
+    filters: []const @import("filter.zig").Clause = &.{},
+    order: ?[]const u8 = null,
+};
+
+pub const menu_parents_max: u32 = 8;
+pub const view_columns_max: u32 = @import("view.zig").columns_max;
 
 /// A type's name in one of the admin's languages, as the sentences that decline it need it:
 /// its gender and its forms, singular and plural, by case (`genitive`), as the language's
@@ -83,6 +104,8 @@ pub const Def = struct {
     editor_config: []const u8 = "{}",
     title_field: []const u8 = "title",
     statuses: []const []const u8 = &.{},
+    /// Its own statuses and the transitions between them; empty: core's flow.
+    flow: flow.Flow = .{},
     /// A taxonomy whose terms may have a parent term; meaningless on a content type.
     hierarchical: bool = false,
     /// The content types a taxonomy classifies, by handle: each gets an implicit `terms`
@@ -94,8 +117,46 @@ pub const Def = struct {
     /// false leaves it out of that variant: not listed, its address there not found.
     variant_fallback: bool = true,
     group: @import("field_group.zig").Options = .{},
+    menu: Menu = .{},
+    view: View = .{},
     fields: []const field.Def,
 };
+
+/// A type's handle: a name, `[a-z][a-z0-9_]*`, or a plugin's type under the plugin's name
+/// (`products.variant`).
+pub fn valid_handle(handle: []const u8) bool {
+    std.debug.assert(handle_len_max > 0);
+
+    if (handle.len == 0 or handle.len > handle_len_max) {
+        return false;
+    }
+
+    const dot = std.mem.indexOfScalar(u8, handle, '.') orelse return field.valid_name(handle);
+
+    return field.valid_name(handle[0..dot]) and field.valid_name(handle[dot + 1 ..]);
+}
+
+/// What a type's own statuses are named under: the plugin that declares it
+/// (`products.variant` -> `products`), else the type itself.
+pub fn namespace_of(handle: []const u8) []const u8 {
+    std.debug.assert(handle.len > 0);
+
+    const dot = std.mem.indexOfScalar(u8, handle, '.') orelse return handle;
+
+    std.debug.assert(dot > 0);
+
+    return handle[0..dot];
+}
+
+test "a handle is a name, or a plugin's name and the type's" {
+    try std.testing.expect(valid_handle("post"));
+    try std.testing.expect(valid_handle("products.variant"));
+    try std.testing.expect(!valid_handle("products."));
+    try std.testing.expect(!valid_handle("a.b.c"));
+    try std.testing.expect(!valid_handle("Post"));
+    try std.testing.expectEqualStrings("products", namespace_of("products.variant"));
+    try std.testing.expectEqualStrings("post", namespace_of("post"));
+}
 
 pub fn validate_def(known: []const kinds.Kind, def: Def, problems: *field.Problems) void {
     std.debug.assert(problems.len <= field.problems_max);
@@ -115,8 +176,9 @@ pub fn validate_def(known: []const kinds.Kind, def: Def, problems: *field.Proble
         return;
     }
 
-    if (!field.valid_name(def.handle) or def.handle.len > handle_len_max) {
-        problems.add("handle", "handle must be [a-z][a-z0-9_]*, up to 64 characters");
+    if (!valid_handle(def.handle)) {
+        problems.add("handle", "handle must be [a-z][a-z0-9_]*, a plugin's under its name " ++
+            "(`products.variant`), up to 64 characters");
     }
 
     if (def.name.len == 0 or def.name.len > name_len_max) {
@@ -132,6 +194,8 @@ pub fn validate_def(known: []const kinds.Kind, def: Def, problems: *field.Proble
     if (def.statuses.len > statuses_max) {
         problems.add("statuses", "too many statuses");
     }
+
+    validate_flow(def, problems);
 
     if (!valid_url(def.url)) {
         problems.add("url", "url must be path segments of [a-z0-9_-], up to 128 characters");
@@ -380,7 +444,9 @@ pub const test_post: Def = .{
             .name = "title",
             .label = "Title",
             .kind = "string",
-            .required = true,
+            .validation = .{
+                .required = true,
+            },
         },
         .{
             .name = "slug",
@@ -413,6 +479,46 @@ pub const test_post: Def = .{
     },
 };
 
+/// A type's own statuses are named under it and every transition and its start name a status the
+/// type has: what makes the flow one Publr can follow.
+fn validate_flow(def: Def, problems: *field.Problems) void {
+    std.debug.assert(def.handle.len > 0);
+    std.debug.assert(def.flow.transitions.len <= flow.transitions_max);
+
+    if (def.flow.statuses.len > statuses_max) {
+        problems.add("flow", "too many statuses");
+    }
+
+    const namespace = namespace_of(def.handle);
+
+    for (def.flow.statuses) |own| {
+        const named = own.id.len > namespace.len + 1 and
+            std.mem.startsWith(u8, own.id, namespace) and own.id[namespace.len] == '.';
+
+        if (!named or own.label.len == 0) {
+            problems.add("flow", "a type's own status is named under its plugin " ++
+                "(`guestbook.in_review`), or its type when no plugin declares it, and labelled");
+        }
+    }
+
+    if (def.flow.start.len > 0 and def.flow.find(def.flow.start) == null) {
+        problems.add("flow", "it starts in a status it does not have");
+    }
+
+    for (def.flow.transitions) |transition| {
+        const target = def.flow.find(transition.to) != null;
+        var known = transition.name.len > 0 and transition.from.len > 0 and target;
+
+        for (transition.from) |leaving| {
+            known = known and def.flow.find(leaving) != null;
+        }
+
+        if (!known) {
+            problems.add("flow", "a transition is named and goes between statuses the type has");
+        }
+    }
+}
+
 test "definition validation" {
     var problems: field.Problems = .{};
     validate_def(&kinds.core, test_post, &problems);
@@ -441,10 +547,12 @@ test "an email field may title a record, a long text field may not" {
         .name = "Signup",
         .title_field = "email",
         .fields = &.{.{
+            .validation = .{
+                .unique = true,
+            },
             .name = "email",
             .label = "Email",
             .kind = "email",
-            .unique = true,
         }},
     };
     validate_def(&kinds.core, signup, &problems);
@@ -620,12 +728,12 @@ test "malformed definitions are rejected before internal field assumptions" {
             .name = "Post",
             .fields = &.{
                 .{
+                    .validation = .{
+                        .min = std.math.nan(f64),
+                    },
                     .name = "x",
                     .label = "X",
                     .kind = "number",
-                    .options = .{
-                        .min = std.math.nan(f64),
-                    },
                 },
             },
         },

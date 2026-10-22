@@ -92,7 +92,9 @@ pub const test_topics: Def = .{
             .name = "name",
             .label = "Name",
             .kind = "string",
-            .required = true,
+            .validation = .{
+                .required = true,
+            },
         },
         .{
             .name = "slug",

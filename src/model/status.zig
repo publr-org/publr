@@ -13,7 +13,61 @@ pub const Status = struct {
     live: bool = false,
     listed: bool = true,
     initial: bool = false,
+    /// Another plugin's status this one stands in for (`orders.paid`): with that one known,
+    /// it takes its label, colour and visibility, and a filter asking for it finds this one.
+    alias: []const u8 = "",
 };
+
+/// Each status standing in for another (`alias`) given that one's meaning, when the site
+/// knows it; one whose alias is unknown keeps its own.
+pub fn resolve_aliases(statuses: []Status) void {
+    std.debug.assert(statuses.len <= statuses_max * 64);
+
+    for (statuses) |*standing_in| {
+        if (standing_in.alias.len == 0) {
+            continue;
+        }
+
+        for (statuses) |target| {
+            const found = target.alias.len == 0 and std.mem.eql(u8, target.id, standing_in.alias);
+
+            if (found) {
+                standing_in.label = target.label;
+                standing_in.color = target.color;
+                standing_in.live = target.live;
+                break;
+            }
+        }
+    }
+}
+
+test "a status standing in for another takes its meaning when the site knows it" {
+    var statuses = [_]Status{
+        .{
+            .id = "orders.paid",
+            .label = "Paid",
+            .color = .success,
+            .live = true,
+        },
+        .{
+            .id = "shop.paid",
+            .label = "Settled",
+            .alias = "orders.paid",
+        },
+        .{
+            .id = "shop.held",
+            .label = "Held",
+            .alias = "orders.held",
+        },
+    };
+
+    resolve_aliases(&statuses);
+
+    try std.testing.expectEqualStrings("Paid", statuses[1].label);
+    try std.testing.expect(statuses[1].live);
+    try std.testing.expectEqualStrings("Held", statuses[2].label);
+    try std.testing.expect(!statuses[2].live);
+}
 
 pub const Transition = struct {
     from: []const u8,
@@ -39,8 +93,8 @@ pub const core_statuses = [_]Status{
         .listed = false,
     },
     .{
-        .id = "deleted",
-        .label = "Deleted",
+        .id = "trashed",
+        .label = "In the trash",
         .color = .danger,
         .listed = false,
     },
@@ -74,22 +128,27 @@ pub const core_transitions = [_]Transition{
     },
     .{
         .from = "draft",
-        .to = "deleted",
+        .to = "trashed",
         .label = "Delete",
     },
     .{
         .from = "published",
-        .to = "deleted",
+        .to = "trashed",
         .label = "Delete",
     },
     .{
         .from = "archived",
-        .to = "deleted",
+        .to = "trashed",
         .label = "Delete",
     },
     .{
-        .from = "deleted",
+        .from = "trashed",
         .to = "draft",
+        .label = "Restore",
+    },
+    .{
+        .from = "trashed",
+        .to = "archived",
         .label = "Restore",
     },
 };
@@ -225,9 +284,9 @@ test "core registry: draft is initial, published is live, archived is not listed
     try std.testing.expect(Core.allows("published", "archived"));
     try std.testing.expect(!Core.allows("draft", "nope"));
     try std.testing.expect(!Core.allows("archived", "published"));
-    try std.testing.expect(Core.allows("published", "deleted"));
-    try std.testing.expect(Core.allows("deleted", "draft"));
-    try std.testing.expect(!Core.allows("deleted", "published"));
+    try std.testing.expect(Core.allows("published", "trashed"));
+    try std.testing.expect(Core.allows("trashed", "draft"));
+    try std.testing.expect(!Core.allows("trashed", "published"));
 }
 
 test "plugins extend the registry" {

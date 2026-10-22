@@ -46,18 +46,18 @@ pub const Context = struct {
     media_type: []const u8 = "",
 };
 
-pub fn applies(options: Options, context: Context) bool {
-    std.debug.assert(options.location.len <= conditions.groups_max);
+pub fn applies(declared: Options, context: Context) bool {
+    std.debug.assert(declared.location.len <= conditions.groups_max);
 
-    if (!options.active) {
+    if (!declared.active) {
         return false;
     }
 
-    if (options.location.len == 0) {
+    if (declared.location.len == 0) {
         return true;
     }
 
-    for (options.location) |group| {
+    for (declared.location) |group| {
         var matched = group.rules.len > 0;
 
         for (group.rules) |rule| {
@@ -109,8 +109,8 @@ pub fn checked_fields(
     const relaxed = try arena.dupe(@import("field.zig").Def, defs);
 
     for (relaxed) |*field| {
-        field.required = false;
-        field.options.items_min = null;
+        field.validation.required = false;
+        field.validation.items_min = null;
     }
 
     std.debug.assert(relaxed.len == defs.len);

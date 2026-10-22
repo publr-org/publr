@@ -8,225 +8,135 @@ pub const operations_max: u32 = 32;
 /// high waits for an administrator.
 pub const Tier = enum { low, medium, high };
 
-/// What an administrator sees and grants: a key, a sentence, a tier, and the operations it
-/// stands for. `content` marks the permissions whose operations are held to the plugin's
-/// content access; `host` the ones that are a host function rather than operations.
+/// What a key's request may name to narrow it: content types, taxonomies, or domains.
+pub const Narrowing = enum { none, records, taxonomies, domains };
+
+/// A yes/no option on a grant, each a switch in the admin.
+pub const Flag = enum { drafts, private, internal, publish };
+
+pub const flag_tiers = [_]Tier{ .medium, .high, .high, .medium };
+
+/// What an administrator sees and grants: a key, a sentence, the tier it starts at, the
+/// operations it stands for, what narrows it and the flags it takes.
 pub const Permission = struct {
     key: []const u8,
     sentence: []const u8,
     tier: Tier,
     operations: []const []const u8 = &.{},
-    content: bool = false,
-    host: bool = false,
+    narrowing: Narrowing = .none,
+    flags: []const Flag = &.{},
+    /// The tier when it names nothing: every type, not some.
+    wide_tier: ?Tier = null,
+    /// Its operations that need `.publish` on: they put things live or take them off.
+    publishing: []const []const u8 = &.{},
+    /// Its operations that need `.drafts` on: version history holds unpublished text.
+    history: []const []const u8 = &.{},
 };
+
+/// One permission as asked for or as granted: the key, the flags as booleans, the content
+/// types or taxonomies it names (empty: every one), and for `http.fetch` the domains it may
+/// reach (empty: none).
+pub const Held = struct {
+    key: []const u8,
+    records: []const []const u8 = &.{},
+    taxonomies: []const []const u8 = &.{},
+    domains: []const []const u8 = &.{},
+    drafts: bool = false,
+    private: bool = false,
+    internal: bool = false,
+    publish: bool = false,
+
+    pub fn flag(held: *const Held, which: Flag) bool {
+        std.debug.assert(held.key.len > 0);
+
+        return switch (which) {
+            .drafts => held.drafts,
+            .private => held.private,
+            .internal => held.internal,
+            .publish => held.publish,
+        };
+    }
+
+    pub fn set(held: *Held, which: Flag, on: bool) void {
+        std.debug.assert(held.key.len > 0);
+
+        switch (which) {
+            .drafts => held.drafts = on,
+            .private => held.private = on,
+            .internal => held.internal = on,
+            .publish => held.publish = on,
+        }
+    }
+
+    /// The types or taxonomies it names, by what its key narrows.
+    pub fn names(held: *const Held) []const []const u8 {
+        std.debug.assert(held.key.len > 0);
+
+        return if (held.records.len > 0) held.records else held.taxonomies;
+    }
+};
+
+/// The tier of `held` under `entry`: the key's, raised by every flag on and by naming
+/// nothing where that reaches every type.
+pub fn tier_of_held(entry: *const Permission, held: *const Held) Tier {
+    std.debug.assert(entry.key.len > 0);
+    std.debug.assert(std.mem.eql(u8, entry.key, held.key));
+
+    var tier = entry.tier;
+
+    if (entry.wide_tier) |wide| {
+        if (held.names().len == 0 and @intFromEnum(wide) > @intFromEnum(tier)) {
+            tier = wide;
+        }
+    }
+
+    for (entry.flags) |which| {
+        const raised = flag_tiers[@intFromEnum(which)];
+
+        if (held.flag(which) and @intFromEnum(raised) > @intFromEnum(tier)) {
+            tier = raised;
+        }
+    }
+
+    return tier;
+}
 
 /// Granted to every plugin without asking: harmless, and needed to run at all.
 pub const always = [_][]const u8{
     "heartbeat.check",    "project.status", "status.list",
     "internal.create",    "internal.get",   "internal.save",
     "internal.find_one",  "internal.find",  "internal.delete",
-    "project.currencies",
+    "project.currencies", "mod.apply",
 };
 
 /// The record operations a plugin reaches on its own content types without asking.
 pub const own_records = [_][]const u8{
-    "record.get",             "record.list",    "record.create",     "record.save",
-    "record.delete",          "record.publish", "record.transition", "record.discard_changes",
-    "record.purge",           "snapshot.list",  "snapshot.get",      "snapshot.take",
-    "record.validate",        "record.shown",   "record.query",      "record.reach",
+    "record.get",
+    "record.list",
+    "record.create",
+    "record.save",
+    "record.delete",
+    "record.publish",
+    "record.transition",
+    "record.discard_changes",
+    "record.purge",
+    "snapshot.list",
+    "snapshot.get",
+    "snapshot.take",
+    "record.validate",
+    "record.shown",
+    "record.query",
+    "record.reach",
     "record.transition_many",
+    "record.decline_request",
 };
 
-pub const core = [_]Permission{
-    .{
-        .key = "content.read",
-        .sentence = "Read the public content on your site",
-        .tier = .low,
-        .content = true,
-        .operations = &.{
-            "record.get",
-            "record.list",
-            "record.referrers",
-            "record.shown",
-            "record.query",
-            "record.reach",
-            "project.impact",
-        },
-    },
-    .{
-        .key = "taxonomy.read",
-        .sentence = "Read terms, tags, and folders",
-        .tier = .low,
-        .content = true,
-        .operations = &.{
-            "taxonomy.get",
-            "taxonomy.list",
-            "term.get",
-            "term.list",
-            "term.tree",
-        },
-    },
-    .{
-        .key = "schema.read",
-        .sentence = "Read content type definitions",
-        .tier = .low,
-        .operations = &.{
-            "content_type.get",
-            "content_type.list",
-            "custom_fields.list",
-            "custom_fields.get",
-            "content_type.validate",
-            "record.validate",
-            "taxonomy.validate",
-            "term.validate",
-            "custom_fields.validate",
-            "user.validate",
-        },
-    },
-    .{
-        .key = "version.read",
-        .sentence = "Read version history",
-        .tier = .low,
-        .content = true,
-        .operations = &.{
-            "snapshot.list",
-            "snapshot.get",
-        },
-    },
-    .{
-        .key = "site.config",
-        .sentence = "Read site name, description, and URL",
-        .tier = .low,
-    },
-    .{
-        .key = "users.names",
-        .sentence = "See the names of people on your site",
-        .tier = .low,
-        .operations = &.{
-            "user.options",
-        },
-    },
-    .{
-        .key = "content.drafts",
-        .sentence = "Read drafts and unpublished changes",
-        .tier = .medium,
-        .content = true,
-    },
-    .{
-        .key = "content.write",
-        .sentence = "Create, update, and delete content",
-        .tier = .medium,
-        .content = true,
-        .operations = &.{
-            "record.create",
-            "record.save",
-            "record.delete",
-            "record.discard_changes",
-            "snapshot.take",
-            "snapshot.restore",
-        },
-    },
-    .{
-        .key = "taxonomy.write",
-        .sentence = "Create, update, and delete terms",
-        .tier = .medium,
-        .content = true,
-        .operations = &.{
-            "term.create",
-            "term.save",
-            "term.delete",
-            "term.discard_changes",
-        },
-    },
-    .{
-        .key = "release.manage",
-        .sentence = "Publish, unpublish, and schedule content",
-        .tier = .medium,
-        .content = true,
-        .operations = &.{
-            "record.publish",
-            "record.transition",
-            "record.transition_many",
-            "term.publish",
-            "term.transition",
-        },
-    },
-    .{
-        .key = "schema.write",
-        .sentence = "Modify content type definitions",
-        .tier = .medium,
-        .operations = &.{
-            "content_type.create",
-            "content_type.update",
-            "content_type.delete",
-            "taxonomy.create",
-            "taxonomy.update",
-            "taxonomy.delete",
-            "custom_fields.create",
-            "custom_fields.update",
-            "custom_fields.delete",
-        },
-    },
-    .{
-        .key = "settings.own",
-        .sentence = "Read and write its own settings",
-        .tier = .medium,
-    },
-    .{
-        .key = "content.purge",
-        .sentence = "Permanently delete content and its history",
-        .tier = .high,
-        .content = true,
-        .operations = &.{
-            "record.purge",
-            "term.purge",
-            "snapshot.prune",
-        },
-    },
-    .{
-        .key = "users.read",
-        .sentence = "Access user accounts and email addresses",
-        .tier = .high,
-        .operations = &.{
-            "user.list",
-            "user.get",
-        },
-    },
-    .{
-        .key = "users.write",
-        .sentence = "Create and modify user accounts",
-        .tier = .high,
-        .operations = &.{
-            "user.create",
-            "user.update",
-            "user.delete",
-        },
-    },
-    .{
-        .key = "settings.global",
-        .sentence = "Read and write global settings",
-        .tier = .high,
-        .operations = &.{
-            "settings.edit",
-        },
-    },
-    .{
-        .key = "http.fetch",
-        .sentence = "Send requests to the domains it names",
-        .tier = .high,
-        .operations = &.{ "http.fetch", "http.stream", "http.read" },
-    },
-    .{
-        .key = "ai.progress",
-        .sentence = "Show the words a model writes as it writes them",
-        .tier = .low,
-        .operations = &.{"ai.progress"},
-    },
-};
+/// Every key a plugin may ask for.
+pub const core = @import("permission/core.zig").core;
 
 /// The operations no permission names: sessions and passwords, who may sign people in,
-/// setup, who holds what, one person's saved views, an app's types handed to another,
-/// the project's secrets, a person's conversations with a model.
+/// setup, who holds what and what each role grants, one person's saved views, an app's
+/// types handed to another, the project's secrets, a person's conversations with a model.
 /// No grant reaches them.
 pub const never = [_][]const u8{
     "user.sign_in",       "user.sign_out",      "user.set_password",          "user.password_link",
@@ -239,11 +149,10 @@ pub const never = [_][]const u8{
     "ai.ask",             "ai.conversation",    "ai.conversations",           "ai.stop",
     "ai.begin",           "ai.step",            "ai.finish",                  "ai.draft",
     "user.language",      "user.set_language",  "project.set_admin_language", "user.variant",
-    "user.set_variant",   "ai.transcribe",
+    "user.set_variant",   "ai.transcribe",      "view.default",               "view.save_default",
+    "mod.list",           "view.reset_default", "role.get",                   "role.create",
+    "role.update",        "role.reset",         "role.remove",
 };
-
-/// A secret a plugin names is its own permission, `secret.<NAME>`, always high.
-pub const secret_prefix = "secret.";
 
 /// The permission `key` stands for among `catalog`, or null when nothing installed provides it.
 pub fn find(catalog: []const Permission, key: []const u8) ?*const Permission {
@@ -259,16 +168,12 @@ pub fn find(catalog: []const Permission, key: []const u8) ?*const Permission {
     return null;
 }
 
-/// How a key a plugin asks for is tiered: its catalog entry's, `high` for a secret, `medium`
-/// for a call to a plugin it depends on, and null for a key nothing provides (the plugin
+/// How a key a plugin asks for is tiered: its catalog entry's, `medium` for a call to a
+/// plugin it depends on, and null for a key nothing provides (the plugin
 /// installs without it).
 pub fn tier_of(catalog: []const Permission, key: []const u8) ?Tier {
     std.debug.assert(key.len > 0);
     std.debug.assert(key.len <= key_len_max);
-
-    if (is_secret(key)) {
-        return .high;
-    }
 
     if (called_operation(key) != null) {
         return .medium;
@@ -314,27 +219,6 @@ pub fn called_operation(key: []const u8) ?[]const u8 {
     return name;
 }
 
-pub fn is_secret(key: []const u8) bool {
-    std.debug.assert(key.len > 0);
-    std.debug.assert(secret_prefix.len == 7);
-
-    const name = if (std.mem.startsWith(u8, key, secret_prefix)) key[secret_prefix.len..] else "";
-
-    if (name.len == 0 or name.len > key_len_max) {
-        return false;
-    }
-
-    for (name) |char| {
-        const ok = (char >= 'A' and char <= 'Z') or (char >= '0' and char <= '9') or char == '_';
-
-        if (!ok) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 pub fn contains(list: []const []const u8, item: []const u8) bool {
     std.debug.assert(item.len > 0);
     std.debug.assert(list.len <= 1024);
@@ -363,12 +247,11 @@ test "every catalog key is unique, and no permission names an operation that is 
     }
 }
 
-test "tiers: catalog keys by their entry, secrets high, unknown keys unavailable" {
-    try std.testing.expectEqual(Tier.low, tier_of(&core, "content.read").?);
+test "tiers: catalog keys by their entry, unknown keys (a secret's among them) unavailable" {
+    try std.testing.expectEqual(Tier.low, tier_of(&core, "records.read").?);
     try std.testing.expectEqual(Tier.high, tier_of(&core, "http.fetch").?);
-    try std.testing.expectEqual(Tier.high, tier_of(&core, "secret.STRIPE_KEY").?);
-    try std.testing.expect(tier_of(&core, "secret.lower") == null);
-    try std.testing.expect(tier_of(&core, "secret.") == null);
+    try std.testing.expect(tier_of(&core, "secret.STRIPE_KEY") == null);
+    try std.testing.expect(find(&core, "secret.STRIPE_KEY") == null);
     try std.testing.expect(tier_of(&core, "newsletter.send") == null);
 }
 
@@ -390,4 +273,30 @@ test "a call permission names exactly one plugin operation, at the medium tier" 
     }
 
     try std.testing.expectEqual(Tier.medium, tier_of(&core, "call:app.provider.adjust").?);
+}
+
+test "the tier follows what is asked: flags raise it, every type raises a write" {
+    const read = find(&core, "records.read").?;
+    const write = find(&core, "records.write").?;
+
+    try std.testing.expectEqual(Tier.low, tier_of_held(read, &.{
+        .key = "records.read",
+    }));
+    try std.testing.expectEqual(Tier.medium, tier_of_held(read, &.{
+        .key = "records.read",
+        .drafts = true,
+    }));
+    try std.testing.expectEqual(Tier.high, tier_of_held(read, &.{
+        .key = "records.read",
+        .records = &.{"post"},
+        .internal = true,
+    }));
+    try std.testing.expectEqual(Tier.medium, tier_of_held(write, &.{
+        .key = "records.write",
+        .records = &.{"post"},
+        .publish = true,
+    }));
+    try std.testing.expectEqual(Tier.high, tier_of_held(write, &.{
+        .key = "records.write",
+    }));
 }

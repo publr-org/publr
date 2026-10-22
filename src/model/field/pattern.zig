@@ -4,8 +4,9 @@
 //! expressions, nothing an editor cannot read back.
 const std = @import("std");
 const options = @import("options.zig");
+const validation = @import("validation.zig");
 
-const Preset = options.Preset;
+const Preset = validation.Preset;
 
 pub const text_len_max: u32 = 64 << 10;
 
