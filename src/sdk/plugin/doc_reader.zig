@@ -14,6 +14,8 @@ pub const Entry = struct {
 };
 
 pub const entries_max: u32 = 4096;
+pub const files_max: u32 = 512;
+pub const file_bytes_max: u32 = 1 << 20;
 pub const depth_max: u32 = 8;
 pub const key_len_max: u32 = 256;
 
@@ -22,6 +24,61 @@ const Pending = struct {
     key: []const u8,
     depth: u32,
 };
+
+/// One file of a plugin: its path under the plugin's folder and its text.
+pub const File = struct {
+    path: []const u8,
+    text: [:0]const u8,
+};
+
+pub const Placed = @import("checks.zig").Failures.Placed;
+
+/// A plugin's docs module and what its checks found.
+pub const Source = struct {
+    source: []const u8,
+    problems: []const Placed,
+};
+
+/// Every doc comment in a plugin's files and the secrets its strings write, as the Zig source
+/// of its docs module, with every plugin check's problem beside its file: the one reading
+/// the compiled-in build and `publr plugin build` both run.
+pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
+    const checks = @import("checks.zig");
+    const written_secrets = @import("written_secrets.zig");
+
+    std.debug.assert(files.len <= files_max);
+
+    var entries: std.ArrayList(Entry) = .empty;
+    var written: std.ArrayList([]const u8) = .empty;
+    var problems: std.ArrayList(Placed) = .empty;
+    var failures: checks.Failures = .{};
+
+    for (files) |file| {
+        var found: std.ArrayList(checks.Problem) = .empty;
+
+        try read(arena, try file_key(arena, file.path), file.text, &entries);
+        try written_secrets.read(arena, file.text, &written);
+        try checks.check(arena, file.path, file.text, &found);
+        try failures.read(arena, file.path, file.text);
+
+        for (found.items) |problem| {
+            try problems.append(arena, .{
+                .path = file.path,
+                .problem = problem,
+            });
+        }
+    }
+
+    try problems.appendSlice(arena, try failures.problems(arena));
+
+    const words = try generated(arena, entries.items);
+    const secrets = try written_secrets.source(arena, written.items);
+
+    return .{
+        .source = try std.mem.concat(arena, u8, &.{ words, secrets }),
+        .problems = problems.items,
+    };
+}
 
 /// `operations/answer.zig` as Zig names it: `operations.answer`.
 pub fn file_key(arena: std.mem.Allocator, path: []const u8) ![]const u8 {

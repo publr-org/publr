@@ -1,20 +1,11 @@
 const std = @import("std");
 const doc_reader = @import("../src/sdk/plugin/doc_reader.zig");
-const written_secrets = @import("../src/sdk/plugin/written_secrets.zig");
-const checks = @import("../src/sdk/plugin/checks.zig");
 const diagnostic = @import("diagnostic.zig");
 
-pub const files_max: u32 = 512;
-
-const Found = struct {
-    path: []const u8,
-    problem: checks.Problem,
-};
-
-const file_bytes_max: u32 = 1 << 20;
+const files_max = doc_reader.files_max;
 
 /// Every doc comment in the plugin at `dir`, and the secrets its strings write, as the Zig
-/// source of its docs module.
+/// source of its docs module; the build stops on any plugin check's problem.
 pub fn source_of(builder: *std.Build, dir: []const u8) []const u8 {
     std.debug.assert(dir.len > 0);
     std.debug.assert(builder.build_root.path != null);
@@ -30,11 +21,7 @@ pub fn source_of(builder: *std.Build, dir: []const u8) []const u8 {
     var walker = root.walk(arena) catch @panic("OOM");
     defer walker.deinit();
 
-    var entries: std.ArrayList(doc_reader.Entry) = .empty;
-    var written: std.ArrayList([]const u8) = .empty;
-    var problems: std.ArrayList(Found) = .empty;
-    var failures: checks.Failures = .{};
-    var files: u32 = 0;
+    var files: std.ArrayList(doc_reader.File) = .empty;
 
     const walk_failed = "{s}: walking the plugin failed";
 
@@ -43,9 +30,7 @@ pub fn source_of(builder: *std.Build, dir: []const u8) []const u8 {
             continue;
         }
 
-        files += 1;
-
-        if (files > files_max) {
+        if (files.items.len == files_max) {
             diagnostic.fail("{s}: more than {d} Zig files", .{ dir, files_max });
         }
 
@@ -53,48 +38,28 @@ pub fn source_of(builder: *std.Build, dir: []const u8) []const u8 {
             io,
             entry.path,
             arena,
-            .limited(file_bytes_max),
+            .limited(doc_reader.file_bytes_max),
             .of(u8),
             0,
         ) catch diagnostic.fail("{s}/{s}: unreadable or over 1 MiB", .{ dir, entry.path });
-        const key = doc_reader.file_key(arena, entry.path) catch @panic("OOM");
 
-        doc_reader.read(arena, key, text, &entries) catch |err| {
-            diagnostic.fail("{s}/{s}: doc comments: {s}", .{ dir, entry.path, @errorName(err) });
-        };
-        written_secrets.read(arena, text, &written) catch @panic("OOM");
-
-        var found: std.ArrayList(checks.Problem) = .empty;
-        const path = builder.dupe(entry.path);
-
-        checks.check(arena, entry.path, text, &found) catch @panic("OOM");
-        failures.read(arena, path, text) catch @panic("OOM");
-
-        for (found.items) |problem| {
-            problems.append(arena, .{
-                .path = path,
-                .problem = problem,
-            }) catch @panic("OOM");
-        }
-    }
-
-    for (failures.problems(arena) catch @panic("OOM")) |placed| {
-        problems.append(arena, .{
-            .path = placed.path,
-            .problem = placed.problem,
+        files.append(arena, .{
+            .path = builder.dupe(entry.path),
+            .text = text,
         }) catch @panic("OOM");
     }
 
-    fail_on(dir, problems.items);
+    const read = doc_reader.source_of(arena, files.items) catch |err| {
+        diagnostic.fail("{s}: doc comments: {s}", .{ dir, @errorName(err) });
+    };
 
-    const words = doc_reader.generated(arena, entries.items) catch @panic("OOM");
-    const secrets = written_secrets.source(arena, written.items) catch @panic("OOM");
+    fail_on(dir, read.problems);
 
-    return std.mem.concat(arena, u8, &.{ words, secrets }) catch @panic("OOM");
+    return read.source;
 }
 
 /// Stops the build when a check found problems, each printed where it is.
-fn fail_on(dir: []const u8, problems: []const Found) void {
+fn fail_on(dir: []const u8, problems: []const doc_reader.Placed) void {
     std.debug.assert(dir.len > 0);
     std.debug.assert(problems.len <= 1 << 16);
 

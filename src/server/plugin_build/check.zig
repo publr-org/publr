@@ -1,12 +1,9 @@
 //! `publr plugin check --dir <folder>`: the plugin checks over a plugin's source, each
 //! problem with its file and line; exits 1 when there is any. What Publr Cloud's install gate
-//! runs, and what `plugin build` runs first for a plugin registering through `define`.
+//! runs, and what `plugin build` runs first, through the same reading of the plugin.
 const std = @import("std");
-const checks = @import("../../sdk/plugin/checks.zig");
+const doc_reader = @import("../../sdk/plugin/doc_reader.zig");
 const report = @import("../../lib/report.zig");
-
-pub const files_max: u32 = 512;
-const file_bytes_max: u32 = 1 << 20;
 
 pub fn run(init: std.process.Init, args: []const []const u8) !u8 {
     std.debug.assert(args.len < 1 << 16);
@@ -16,23 +13,27 @@ pub fn run(init: std.process.Init, args: []const []const u8) !u8 {
         return 2;
     }
 
-    const found = try problems_in(init, args[1]);
+    const arena = init.arena.allocator();
+    const read = try doc_reader.source_of(arena, try files_in(init, args[1]));
 
-    for (found) |problem| {
-        report.err("{s}/{s}:{d}: {s}", .{ args[1], problem.path, problem.line, problem.message });
-    }
+    reported(args[1], read.problems);
 
-    return if (found.len == 0) 0 else 1;
+    return if (read.problems.len == 0) 0 else 1;
 }
 
-pub const Found = struct {
-    path: []const u8,
-    line: u32,
-    message: []const u8,
-};
+/// Each problem printed where it is.
+pub fn reported(dir: []const u8, problems: []const doc_reader.Placed) void {
+    std.debug.assert(dir.len > 0);
 
-/// Every problem under `dir`.
-pub fn problems_in(init: std.process.Init, dir: []const u8) ![]const Found {
+    for (problems) |placed| {
+        const where = .{ dir, placed.path, placed.problem.line, placed.problem.message };
+
+        report.err("{s}/{s}:{d}: {s}", where);
+    }
+}
+
+/// Every Zig file under `dir`, read.
+pub fn files_in(init: std.process.Init, dir: []const u8) ![]const doc_reader.File {
     std.debug.assert(dir.len > 0);
 
     const arena = init.arena.allocator();
@@ -44,51 +45,29 @@ pub fn problems_in(init: std.process.Init, dir: []const u8) ![]const Found {
     var walker = try root.walk(arena);
     defer walker.deinit();
 
-    var found: std.ArrayList(Found) = .empty;
-    var files: u32 = 0;
-    var failures: checks.Failures = .{};
+    var files: std.ArrayList(doc_reader.File) = .empty;
 
     while (try walker.next(init.io)) |entry| {
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.path, ".zig")) {
             continue;
         }
 
-        files += 1;
-
-        if (files > files_max) {
+        if (files.items.len == doc_reader.files_max) {
             return error.TooManyFiles;
         }
 
-        const text = try root.readFileAllocOptions(
-            init.io,
-            entry.path,
-            arena,
-            .limited(file_bytes_max),
-            .of(u8),
-            0,
-        );
-        var problems: std.ArrayList(checks.Problem) = .empty;
-        const path = try arena.dupe(u8, entry.path);
-
-        try checks.check(arena, path, text, &problems);
-        try failures.read(arena, path, text);
-
-        for (problems.items) |problem| {
-            try found.append(arena, .{
-                .path = path,
-                .line = problem.line,
-                .message = problem.message,
-            });
-        }
-    }
-
-    for (try failures.problems(arena)) |placed| {
-        try found.append(arena, .{
-            .path = placed.path,
-            .line = placed.problem.line,
-            .message = placed.problem.message,
+        try files.append(arena, .{
+            .path = try arena.dupe(u8, entry.path),
+            .text = try root.readFileAllocOptions(
+                init.io,
+                entry.path,
+                arena,
+                .limited(doc_reader.file_bytes_max),
+                .of(u8),
+                0,
+            ),
         });
     }
 
-    return found.items;
+    return files.items;
 }
