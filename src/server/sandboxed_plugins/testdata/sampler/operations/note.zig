@@ -11,6 +11,9 @@ const std = @import("std");
 const Notes = @import("../records/notes.zig");
 const Tallies = @import("../records/tallies.zig");
 
+/// How many tallies hold a word: GROQ reads the sampler's internal records too.
+const tallied = publr.query.prepare(@embedFile("../queries/tallied.groq"), .{});
+
 pub const In = struct {
     /// What the note says
     note: []const u8,
@@ -35,18 +38,18 @@ fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
     std.debug.assert(in.note.len > 0);
     std.debug.assert(in.note.len <= 280);
 
-    _ = try Notes.typed.create(ctx, .{
+    _ = try Notes.record.create(ctx, .{
         .note = in.note,
-    }, .{});
-    _ = try Tallies.typed.create(ctx, .{
+    });
+    _ = try Tallies.record.create(ctx, .{
         .word = in.note,
     });
 
-    const counted = try Tallies.typed.find(ctx, .{
+    const counted = try tallied.execute(ctx, u32, .{
         .word = in.note,
-    }, .{});
+    });
 
-    std.debug.assert(counted.len > 0);
+    std.debug.assert(counted > 0);
 
     const all = try ctx.call(publr.operations.record.List, .{
         .type = "sampler.sample_note",

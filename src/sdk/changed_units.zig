@@ -1,7 +1,8 @@
 //! What core's writes change, as units read from each one's input and answer. Core's readers
 //! (the activity log, a plugin recording deployments) hook these operations `after`, the way
 //! any plugin hooks an operation, and hear each unit; nothing is raised under a second name.
-//! A move over many records names each one in its typed transition event (`Moves`).
+//! A transition over many records names each one in its typed transition event
+//! (`Transitions`).
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const content_types = @import("../operations/content_type.zig");
@@ -22,10 +23,7 @@ const identity_manage = @import("../operations/identity/manage.zig");
 const project_put = @import("../operations/project/put.zig");
 const records = @import("../operations/record.zig");
 const terms = @import("../operations/term.zig");
-const moves = @import("changed_units/moves.zig");
-
-pub const Moves = moves.Moves;
-pub const moved = moves.moved;
+const flow = @import("../model/flow.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -69,53 +67,46 @@ pub const Units = std.ArrayList(Unit);
 
 /// One `after` hook for each write that may change a unit of `kinds`: it hands `keep` each
 /// of those the write changed, in its order.
-pub fn hooks(comptime kinds: []const Kind, comptime keep: Keep) [hooked(bits_of(kinds))]type {
+pub fn hooks(comptime kinds: []const Kind, comptime keep: Keep) [writes_of(kinds).len]type {
     comptime {
-        const wanted = bits_of(kinds);
-        var list: [hooked(wanted)]type = undefined;
-        var count: u32 = 0;
+        // Picking the writes and one hook for each, a few steps per write and kind.
+        @setEvalBranchQuota(writes.len * std.meta.fields(Kind).len * 16 + 1000);
 
-        for (writes) |Write| {
-            if (Write.bits & wanted != 0) {
-                list[count] = Hook(Write, kinds, keep);
-                count += 1;
-            }
+        const chosen = writes_of(kinds);
+        var list: [chosen.len]type = undefined;
+
+        std.debug.assert(chosen.len > 0);
+
+        for (chosen, &list) |Write, *hook| {
+            hook.* = Hook(Write, kinds, keep);
         }
-
-        std.debug.assert(count == list.len);
 
         return list;
     }
 }
 
-fn hooked(comptime wanted: u32) u32 {
-    comptime {
-        std.debug.assert(wanted != 0);
-
-        var count: u32 = 0;
-
-        for (writes) |Write| {
-            if (Write.bits & wanted != 0) {
-                count += 1;
-            }
-        }
-
-        return count;
-    }
-}
-
-/// The kinds as one bit each, so matching a write against a reader is one `and`.
-fn bits_of(comptime kinds: []const Kind) u32 {
+/// The writes that may change a unit of `kinds`.
+fn writes_of(comptime kinds: []const Kind) []const type {
     comptime {
         std.debug.assert(kinds.len > 0);
 
-        var bits: u32 = 0;
+        // Each write's kinds against the reader's, a few steps each.
+        @setEvalBranchQuota(writes.len * std.meta.fields(Kind).len * 16 + 1000);
 
-        for (kinds) |kind| {
-            bits |= @as(u32, 1) << @intFromEnum(kind);
+        var chosen: []const type = &.{};
+
+        for (writes) |Write| {
+            for (Write.kinds) |kind| {
+                if (listed(kinds, kind)) {
+                    chosen = chosen ++ [_]type{Write};
+                    break;
+                }
+            }
         }
 
-        return bits;
+        const done = chosen;
+
+        return done;
     }
 }
 
@@ -138,7 +129,7 @@ fn Hook(comptime Write: type, comptime kinds: []const Kind, comptime keep: Keep)
     return struct {
         pub const stage: sdk.middleware.Stage = .after;
         pub const operation = Operation.name;
-        /// A move over many: each record from its transition event (`Moves`).
+        /// A transition over many: each record from its transition event (`Transitions`).
         pub const by_events = true;
 
         pub fn run(ctx: *Ctx, in: *Operation.In, out: *const Operation.Out) Error!void {
@@ -183,7 +174,6 @@ fn Field(
     return struct {
         pub const Operation = Target;
         pub const kinds: []const Kind = &.{kind};
-        pub const bits = bits_of(kinds);
 
         pub fn units(
             ctx: *Ctx,
@@ -271,7 +261,6 @@ fn Saved(comptime Target: type, comptime kind: Kind) type {
     return struct {
         pub const Operation = Target;
         pub const kinds: []const Kind = &.{kind};
-        pub const bits = bits_of(kinds);
 
         pub fn units(
             ctx: *Ctx,
@@ -293,7 +282,6 @@ fn Saved(comptime Target: type, comptime kind: Kind) type {
 const PluginUpload = struct {
     pub const Operation = plugins.Upload;
     pub const kinds: []const Kind = &.{.plugin};
-    pub const bits = bits_of(kinds);
 
     pub fn units(
         ctx: *Ctx,
@@ -314,7 +302,6 @@ const PluginUpload = struct {
 const PluginRemove = struct {
     pub const Operation = plugins.Remove;
     pub const kinds: []const Kind = &.{ .plugin, .content_type };
-    pub const bits = bits_of(kinds);
 
     pub fn units(
         ctx: *Ctx,
@@ -337,7 +324,6 @@ const PluginRemove = struct {
 const ViewReset = struct {
     pub const Operation = view_defaults.ResetDefault;
     pub const kinds: []const Kind = &.{.view};
-    pub const bits = bits_of(kinds);
 
     pub fn units(
         ctx: *Ctx,
@@ -358,7 +344,6 @@ const ViewReset = struct {
 const TrashRestore = struct {
     pub const Operation = trash.Restore;
     pub const kinds: []const Kind = &.{ .content_type, .taxonomy, .plugin };
-    pub const bits = bits_of(kinds);
 
     pub fn units(
         ctx: *Ctx,
@@ -381,7 +366,6 @@ const TrashRestore = struct {
 const IdentityLinked = struct {
     pub const Operation = identity.SignIn;
     pub const kinds: []const Kind = &.{.user};
-    pub const bits = bits_of(kinds);
 
     pub fn units(
         ctx: *Ctx,
@@ -409,7 +393,6 @@ const ProjectPut = struct {
         .field_group,
         .plugin,
     };
-    pub const bits = bits_of(kinds);
 
     pub fn units(
         ctx: *Ctx,
@@ -436,12 +419,99 @@ const ProjectPut = struct {
     }
 };
 
+/// What a transition event says: the record or term as a unit, and its transition.
+pub const Transition = struct {
+    unit: Unit,
+    transition: flow.Transitioned,
+};
+
+/// An intrinsic listener, inside the write, handing `keep` the record or term each
+/// transition event transitioned.
+pub fn Transitions(comptime keep: Keep) type {
+    return struct {
+        pub const stage: sdk.middleware.Stage = .on;
+        pub const intrinsic = true;
+
+        pub fn run(ctx: *Ctx, event: sdk.Event) void {
+            std.debug.assert(ctx.now_ms >= 0);
+
+            const emitted = switch (event) {
+                .emitted => |found| found,
+                else => return,
+            };
+            const found = transitioned(ctx, emitted) catch |err| {
+                std.log.warn("changed units: {s} not read: {t}", .{ emitted.name, err });
+                return;
+            };
+            const done = found orelse return;
+
+            keep(ctx, emitted.name, done.unit);
+        }
+    };
+}
+
+/// The record or term a transition event transitioned: a type's handle names a record, a
+/// taxonomy's a term. Null for any other event.
+pub fn transitioned(ctx: *Ctx, emitted: sdk.Event.Emitted) Error!?Transition {
+    std.debug.assert(emitted.name.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const handle = handle_of(emitted.name) orelse return null;
+    const payload = std.json.parseFromSliceLeaky(flow.Transitioned, ctx.arena, emitted.subject, .{
+        .ignore_unknown_fields = true,
+    }) catch return null;
+
+    if (payload.record.len == 0) {
+        return null;
+    }
+
+    const kind: Kind = if (try records.domain.definition.find(ctx, handle) != null)
+        .record
+    else if (try terms.domain.definition.find(ctx, handle) != null)
+        .term
+    else
+        return null;
+
+    return .{
+        .unit = .{
+            .kind = kind,
+            .key = payload.record,
+        },
+        .transition = payload,
+    };
+}
+
+/// `post` of `post.transitioned`, `shop.product` of `shop.product_transitioned`.
+fn handle_of(name: []const u8) ?[]const u8 {
+    std.debug.assert(name.len > 0);
+
+    const plain = ".transitioned";
+
+    if (std.mem.endsWith(u8, name, flow.any_suffix)) {
+        const handle = name[0 .. name.len - flow.any_suffix.len];
+
+        if (std.mem.indexOfScalar(u8, handle, '.') != null) {
+            return handle;
+        }
+    }
+
+    if (std.mem.endsWith(u8, name, plain)) {
+        const handle = name[0 .. name.len - plain.len];
+
+        if (handle.len > 0 and std.mem.indexOfScalar(u8, handle, '.') == null) {
+            return handle;
+        }
+    }
+
+    return null;
+}
+
 test "a reader hooks only the writes that may change its kinds" {
-    const views_hooked = comptime hooked(bits_of(&.{.view}));
-    const users_hooked = comptime hooked(bits_of(&.{.user}));
-    const plugins_hooked = comptime hooked(bits_of(&.{.plugin}));
-    const records_hooked = comptime hooked(bits_of(&.{.record}));
-    const terms_hooked = comptime hooked(bits_of(&.{.term}));
+    const views_hooked = comptime writes_of(&.{.view}).len;
+    const users_hooked = comptime writes_of(&.{.user}).len;
+    const plugins_hooked = comptime writes_of(&.{.plugin}).len;
+    const records_hooked = comptime writes_of(&.{.record}).len;
+    const terms_hooked = comptime writes_of(&.{.term}).len;
     const every = comptime hooks(std.enums.values(Kind), keep_nothing);
 
     try std.testing.expectEqual(@as(u32, 5), views_hooked);
@@ -454,12 +524,16 @@ test "a reader hooks only the writes that may change its kinds" {
     try std.testing.expectEqual(writes.len, every.len);
 }
 
-test {
-    _ = moves;
-}
-
 fn keep_nothing(ctx: *Ctx, operation: []const u8, unit: Unit) void {
     std.debug.assert(operation.len > 0);
     std.debug.assert(unit.key.len > 0);
     std.debug.assert(ctx.now_ms >= 0);
+}
+
+test "a transition event names its type's handle; other events none" {
+    try std.testing.expectEqualStrings("post", handle_of("post.transitioned").?);
+    try std.testing.expectEqualStrings("shop.product", handle_of("shop.product_transitioned").?);
+    try std.testing.expectEqual(@as(?[]const u8, null), handle_of("record.save"));
+    try std.testing.expectEqual(@as(?[]const u8, null), handle_of("a.b.transitioned"));
+    try std.testing.expectEqual(@as(?[]const u8, null), handle_of("post_transitioned"));
 }

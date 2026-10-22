@@ -72,7 +72,7 @@ pub fn island(
         return response.text(.not_found, "Not Found");
     };
 
-    const door = try delivery.door(project, ctx.arena, request, response, .island);
+    const door = try delivery.door(project, ctx.arena, request, response);
 
     if (door == .refused) {
         return;
@@ -190,7 +190,7 @@ fn batch(
         return response.text(.forbidden, "Forbidden");
     }
 
-    const door = try delivery.door(project, ctx.arena, request, response, .island);
+    const door = try delivery.door(project, ctx.arena, request, response);
 
     if (door == .refused) {
         return;

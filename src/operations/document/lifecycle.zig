@@ -378,14 +378,13 @@ pub fn Of(comptime Domain: type) type {
         }
 
         /// Whether `row` may end in status `to`: its own status again, or a transition the
-        /// type's flow lists, whose `authorize` the caller passes, and the grant allows.
-        /// Refused before anything is written, whichever operation moves it.
+        /// type's flow lists, whose `authorize` the caller passes. Refused before anything
+        /// is written, whichever operation transitions it.
         pub fn check_move(
             ctx: *Ctx,
             row: Record,
             def: store.definitions.Def,
             to: []const u8,
-            granted: *const Grant,
         ) Error!void {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(to.len > 0);
@@ -406,11 +405,7 @@ pub fn Of(comptime Domain: type) type {
                 return error.Denied;
             }
 
-            try check_status(def, to, granted);
-
-            if (!granted.allows_transition(row.status, to)) {
-                return error.Denied;
-            }
+            try check_status(def, to);
         }
 
         /// A flow's transition from `from` to `to` that says who may make it: the caller
@@ -465,13 +460,14 @@ pub fn Of(comptime Domain: type) type {
             granted: *const Grant,
             pending: Pending,
         ) Error!Moved {
+            std.debug.assert(granted.allows());
             std.debug.assert(row.id.len > 0);
             std.debug.assert(to.len > 0);
 
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
             const applying = pending == .apply_pending and row.changed;
 
-            try check_move(ctx, row, type_row.def, to, granted);
+            try check_move(ctx, row, type_row.def, to);
 
             if (std.mem.eql(u8, row.status, to)) {
                 return error.Invalid;
@@ -589,10 +585,6 @@ pub fn Of(comptime Domain: type) type {
 
             if (!row.changed) {
                 return error.Invalid;
-            }
-
-            if (!granted.allows_transition(row.status, row.status)) {
-                return error.Denied;
             }
 
             try check_references(ctx, row, values.pending);

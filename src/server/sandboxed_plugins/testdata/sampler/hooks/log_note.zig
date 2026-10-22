@@ -9,8 +9,8 @@ pub fn run(ctx: *publr.Ctx, noted: Noted.Payload) publr.Error!void {
     std.debug.assert(noted.note.len > 0);
     std.debug.assert(noted.note.len <= 280);
 
-    _ = try Logs.typed.create(ctx, .{
+    _ = try Logs.record.create(ctx, .{
         .line = try ctx.print("noted {s}", .{noted.note}),
-    }, .{});
+    });
     ctx.log(.info, "on sampler.noted, from the queue: wrote the log line noted {s}", .{noted.note});
 }

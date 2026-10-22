@@ -1,8 +1,7 @@
 //! An operation's intrinsic hooks (`before` and `after`, compiled in or installed) run over
 //! many inputs at once, as a write over many records runs them: each input is still heard
 //! on its own, so a hook refuses one input and the rest go on, but the write itself is done
-//! once for all of them. A compiled-in hook with a set form (`run_many`) is called once
-//! with every input; the others once per input.
+//! once for all of them.
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 
@@ -52,13 +51,9 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
                     Middleware.stage == .before;
 
                 if (applies) {
-                    if (comptime @hasDecl(Middleware, "run_many")) {
-                        try Middleware.run_many(ctx, inputs, refused);
-                    } else {
-                        for (inputs, refused) |input, *reason| {
-                            if (reason.* == null) {
-                                reason.* = try before_one(ctx, Middleware, Operation, input);
-                            }
+                    for (inputs, refused) |input, *reason| {
+                        if (reason.* == null) {
+                            reason.* = try before_one(ctx, Middleware, Operation, input);
                         }
                     }
                 }
@@ -127,18 +122,14 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
                     Middleware.stage == .after;
 
                 if (applies) {
-                    if (comptime @hasDecl(Middleware, "run_many")) {
-                        try Middleware.run_many(ctx, inputs, outputs, refused);
-                    } else {
-                        for (inputs, outputs, refused) |input, output, *reason| {
-                            if (reason.* == null) {
-                                var given = input;
-                                var made = output;
+                    for (inputs, outputs, refused) |input, output, *reason| {
+                        if (reason.* == null) {
+                            var given = input;
+                            var made = output;
 
-                                SDK.invoke_hook(ctx, Middleware, .{ &given, &made }) catch |err| {
-                                    reason.* = try reason_of(ctx, err);
-                                };
-                            }
+                            SDK.invoke_hook(ctx, Middleware, .{ &given, &made }) catch |err| {
+                                reason.* = try reason_of(ctx, err);
+                            };
                         }
                     }
                 }

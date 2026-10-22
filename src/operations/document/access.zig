@@ -67,25 +67,14 @@ pub fn Of(comptime Domain: type) type {
                 return null;
             }
 
-            if (!granted.allows_status(found.status)) {
-                return null;
-            }
-
-            const grant_row: sdk.grant.Row = .{
-                .record_id = found.id,
-                .type_id = found.type_id,
-                .status = found.status,
-                .owner_id = found.created_by,
-            };
-
-            if (!granted.record_filter.accepts(ctx, grant_row)) {
+            if (!granted.record_filter.accepts(ctx, found.created_by)) {
                 return null;
             }
 
             return found;
         }
 
-        pub fn check_status(def: Def, status: []const u8, granted: *const Grant) Error!void {
+        pub fn check_status(def: Def, status: []const u8) Error!void {
             std.debug.assert(def.handle.len > 0);
 
             if (def.flow.find(status) == null) {
@@ -94,10 +83,6 @@ pub fn Of(comptime Domain: type) type {
 
             if (def.statuses.len > 0 and !contains(def.statuses, status)) {
                 return error.Invalid;
-            }
-
-            if (!granted.allows_status(status)) {
-                return error.Denied;
             }
 
             std.debug.assert(status.len > 0);
@@ -194,7 +179,7 @@ pub fn Of(comptime Domain: type) type {
                 else
                     status.listed;
 
-                if (live_ok and requested_ok and granted.allows_status(status.id)) {
+                if (live_ok and requested_ok) {
                     buffer[count] = status.id;
                     count += 1;
                 }

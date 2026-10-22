@@ -1,0 +1,2 @@
+// How many notes there are.
+count(*[_type == "sampler.sample_note"])

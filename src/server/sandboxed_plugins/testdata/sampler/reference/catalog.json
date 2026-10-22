@@ -743,14 +743,14 @@
     ]
   },
   {
-    "id": "typed-records",
+    "id": "query-prepare",
     "group": "Records",
-    "name": "publr.records.of, publr.internal.of",
-    "summary": "A plugin's records as typed values, created and found by field.",
+    "name": "publr.query.prepare(text, options)",
+    "summary": "A GROQ query over the records the caller may read, internal ones included, its $names bound from a struct.",
     "code": [
       {
-        "file": "records/notes.zig",
-        "decl": "typed"
+        "file": "operations/count.zig",
+        "decl": "notes"
       },
       {
         "file": "operations/count.zig",

@@ -241,7 +241,7 @@ fn serve(
         return;
     }
 
-    const door = try delivery.door(project, ctx.arena, request, response, .page);
+    const door = try delivery.door(project, ctx.arena, request, response);
 
     if (door == .refused) {
         return;

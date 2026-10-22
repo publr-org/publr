@@ -542,7 +542,7 @@ pub const Tree = struct {
         const taxonomy = try domain.definition.get(ctx, granted, in.taxonomy);
 
         const live_only = granted.live_only_on(taxonomy.def.handle, taxonomy.def.public);
-        const statuses = try shown_statuses(ctx, granted, live_only);
+        const statuses = try shown_statuses(ctx, live_only);
         const placed = try terms.tree_page(ctx.db, ctx.arena, taxonomy.id, .{
             .statuses_json = statuses,
             .offset = in.offset,
@@ -570,35 +570,22 @@ pub const Tree = struct {
         };
     }
 
-    /// The statuses the caller sees, as a JSON array; empty for every one.
-    fn shown_statuses(ctx: *Ctx, granted: *const Grant, live_only: bool) Error![]const u8 {
-        if (!live_only and granted.statuses == null) {
+    /// The statuses the caller sees, as a JSON array: the live ones of core's flow, which
+    /// terms follow; empty for every one.
+    fn shown_statuses(ctx: *Ctx, live_only: bool) Error![]const u8 {
+        if (!live_only) {
             return "";
         }
 
         var names: std.ArrayList([]const u8) = .empty;
 
-        if (granted.statuses) |listed| {
-            for (listed) |status| {
-                if (!live_only or model.status.Core.is_live(status)) {
-                    try names.append(ctx.arena, status);
-                }
-            }
-        } else {
-            // Terms follow core's flow.
-            for (model.status.Core.all) |status| {
-                if (status.live) {
-                    try names.append(ctx.arena, status.id);
-                }
+        for (model.status.Core.all) |status| {
+            if (status.live) {
+                try names.append(ctx.arena, status.id);
             }
         }
 
-        // No status shown: a list that matches none.
-        if (names.items.len == 0) {
-            return "[\"\"]";
-        }
-
-        std.debug.assert(live_only or granted.statuses != null);
+        std.debug.assert(names.items.len > 0);
 
         return std.json.Stringify.valueAlloc(ctx.arena, names.items, .{}) catch {
             return error.OutOfMemory;

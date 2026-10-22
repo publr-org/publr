@@ -9,11 +9,12 @@ const content_type = @import("../../model/content_type.zig");
 const field_model = @import("../../model/field.zig");
 const internal_record = @import("../../model/internal_record.zig");
 const record_typed = @import("../../operations/record/typed.zig");
-const internal_typed = @import("../../operations/internal/typed.zig");
+const internal_operations = @import("../../operations/internal.zig");
 const plugin_define = @import("define.zig");
 const words = @import("words.zig");
 const conditions = @import("../../model/conditions.zig");
 const record_menu = @import("record_menu.zig");
+const remote_fields = @import("remote_fields.zig");
 
 pub const Scope = enum { project, app };
 
@@ -66,7 +67,6 @@ const FieldOption = enum {
     searchable,
     filterable,
     sortable,
-    help,
     options,
     fields,
 };
@@ -93,10 +93,8 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
 
         const internal = @hasField(Options, "internal") and options.internal;
         const stored = if (internal) own_part(options.name) else options.name;
-        const Typed = if (internal)
-            internal_typed.of(Document, stored)
-        else
-            record_typed.of(Document, stored);
+        const start = if (internal) "" else record_flow.start_status(options);
+        const Kept = Store(Document, stored, internal, start);
 
         check_named_fields(Document, options);
 
@@ -109,18 +107,50 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
             /// collection by its own part (the plugin keeps it).
             pub const stored_name = stored;
             pub const is_internal = internal;
-            pub const typed = Typed;
             /// The record's status as its code reads it: its list's, or `.other`.
             pub const Status = record_flow.Held(record_flow.List(options));
             /// One record as read: `{ id, version, status, changed, value }`.
-            pub const Held = if (internal) Typed.Item else Content(Document, Status);
+            pub const Held = if (internal) Kept.Item else Content(Document, Status);
             pub const Ref = record_typed.Ref(Document, stored);
             /// Every transition on records of the type, as one hook point.
             pub const any_transition = record_flow.AnyTransition(options.name);
             /// Each transition's own hook point: `Posts.transitions.publish`.
             pub const transitions: record_flow.TransitionHooks(options) = .{};
-            pub const get = if (internal) get_internal else get_content;
-            pub const find_one = if (internal) Typed.find_one else find_content;
+
+            /// The record, its pending changes included; not found when it is another type's
+            /// or in the trash, unless `.{ .trashed = true }`. Internal records have no trash.
+            pub fn get(any_ctx: anytype, id: []const u8, get_options: GetOptions) sdk.Error!Held {
+                std.debug.assert(id.len > 0);
+
+                const found = try Kept.get(queue.base_of(any_ctx), id);
+
+                if (comptime internal) {
+                    return found;
+                } else {
+                    const in_trash = std.mem.eql(u8, found.status, "trashed");
+
+                    if (in_trash and !get_options.trashed) {
+                        return error.NotFound;
+                    }
+
+                    return held_of(found);
+                }
+            }
+
+            /// The one record whose unique or indexed `field` holds `value`, or null; two
+            /// make a conflict.
+            pub fn find_one(
+                any_ctx: anytype,
+                comptime field: std.meta.FieldEnum(Document),
+                value: anytype,
+            ) sdk.Error!?Held {
+                const ctx = queue.base_of(any_ctx);
+                const found = try Kept.find_one(ctx, @tagName(field), value) orelse return null;
+
+                std.debug.assert(found.id.len > 0);
+
+                return if (comptime internal) found else held_of(found);
+            }
 
             /// Writes the fields `changes` names onto the record `held` read; the others keep
             /// what they hold. A conflict only when one of those fields changed since `held`
@@ -131,7 +161,7 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
                 comptime check_changes(Document, options.name, @TypeOf(changes));
                 std.debug.assert(held.id.len > 0);
 
-                const now = try Typed.get(ctx, held.id);
+                const now = try Kept.get(ctx, held.id);
 
                 inline for (comptime std.meta.fieldNames(@TypeOf(changes))) |field| {
                     const was = @field(held.value, field);
@@ -142,60 +172,10 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
                     }
                 }
 
-                if (comptime internal) {
-                    _ = try Typed.save(ctx, held.id, changes, null);
-                } else {
-                    _ = try Typed.save(ctx, held.id, changes, .{});
-                }
+                try Kept.save(ctx, held.id, changes);
             }
 
-            /// The record, its pending changes included; not found when it is another type's
-            /// or in the trash, unless `.{ .trashed = true }`.
-            fn get_content(
-                any_ctx: anytype,
-                id: []const u8,
-                get_options: GetOptions,
-            ) sdk.Error!Held {
-                std.debug.assert(id.len > 0);
-
-                const found = held_of(try Typed.get(any_ctx, id));
-                const in_trash = std.mem.eql(u8, @tagName(found.status), "trashed");
-
-                if (in_trash and !get_options.trashed) {
-                    return error.NotFound;
-                }
-
-                return found;
-            }
-
-            /// An internal record by id; internal records have no trash.
-            fn get_internal(
-                any_ctx: anytype,
-                id: []const u8,
-                get_options: GetOptions,
-            ) sdk.Error!Held {
-                _ = get_options;
-
-                std.debug.assert(id.len > 0);
-                std.debug.assert(id.len <= 64 << 10);
-
-                return Typed.get(any_ctx, id);
-            }
-
-            /// The one record whose unique `field` holds `value`, or null.
-            fn find_content(
-                any_ctx: anytype,
-                comptime field: std.meta.FieldEnum(Document),
-                value: anytype,
-            ) sdk.Error!?Held {
-                const found = try Typed.find_one(any_ctx, field, value) orelse return null;
-
-                std.debug.assert(found.id.len > 0);
-
-                return held_of(found);
-            }
-
-            fn held_of(item: Typed.Item) Held {
+            fn held_of(item: Kept.Item) Held {
                 std.debug.assert(item.id.len > 0);
                 std.debug.assert(item.status.len > 0);
 
@@ -214,17 +194,20 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
 
             /// A new record, in its flow's starting status; its id.
             pub fn create(any_ctx: anytype, value: Document) sdk.Error![]const u8 {
-                const ctx = queue.base_of(any_ctx);
-
                 std.debug.assert(options.name.len > 0);
 
-                if (comptime internal) {
-                    return Typed.create(ctx, value);
-                }
+                return Kept.create(queue.base_of(any_ctx), value);
+            }
 
-                return Typed.create(ctx, value, .{
-                    .status = comptime record_flow.start_status(options),
-                });
+            /// Erases an internal record for good; content leaves by the `trash` transition.
+            pub fn delete(any_ctx: anytype, held: Held) sdk.Error!void {
+                comptime if (!internal) {
+                    @compileError("record " ++ options.name ++ ": content is never deleted; " ++
+                        "`transition(ctx, held, .trash)`");
+                };
+                std.debug.assert(held.id.len > 0);
+
+                try Kept.delete(queue.base_of(any_ctx), held.id);
             }
 
             /// Moves the record by one of its flow's transitions, named: `.publish` (a name
@@ -252,6 +235,201 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
             }
         };
     }
+}
+
+/// A stored record type's reads and writes, as ordinary operations through `ctx.call`, so a
+/// native and an installed plugin take the same path and checks: content through `record.*`
+/// (`name` its type), internal records through `internal.*` (`name` its collection). Reads
+/// ignore fields `Document` does not name; a save writes only the fields it is given. Content
+/// starts in `start`.
+pub fn Store(
+    comptime Document: type,
+    comptime name: []const u8,
+    comptime internal: bool,
+    comptime start: []const u8,
+) type {
+    comptime std.debug.assert(@typeInfo(Document) == .@"struct");
+    comptime std.debug.assert(name.len > 0);
+
+    return struct {
+        /// One record as stored: content also has its status, as text, and whether it has
+        /// pending changes.
+        pub const Item = if (internal) struct {
+            id: []const u8,
+            version: i64,
+            value: Document,
+        } else struct {
+            id: []const u8,
+            version: i64,
+            status: []const u8,
+            changed: bool,
+            value: Document,
+        };
+
+        /// The record, content with its pending changes; not found when it is another
+        /// type's.
+        pub fn get(ctx: *PluginCtx, id: []const u8) sdk.Error!Item {
+            std.debug.assert(id.len > 0);
+
+            if (comptime internal) {
+                const got = try ctx.call(internal_operations.Get, .{
+                    .kind = name,
+                    .id = id,
+                });
+
+                return .{
+                    .id = got.id,
+                    .version = got.version,
+                    .value = try decode(ctx, got.document),
+                };
+            } else {
+                const got = try ctx.call(record_operations.Get, .{
+                    .id = id,
+                    .purpose = .edit,
+                });
+
+                if (!std.mem.eql(u8, got.record.type, name)) {
+                    return error.NotFound;
+                }
+
+                return .{
+                    .id = got.record.id,
+                    .version = got.record.version,
+                    .status = got.record.status,
+                    .changed = got.record.changed,
+                    .value = try decode(ctx, got.document),
+                };
+            }
+        }
+
+        /// The one record whose `field` holds `value`, or null; two make a conflict.
+        pub fn find_one(ctx: *PluginCtx, field: []const u8, value: anytype) sdk.Error!?Item {
+            const text = try filter_text(ctx, value);
+
+            if (comptime internal) {
+                const found = try ctx.call(internal_operations.FindOne, .{
+                    .kind = name,
+                    .field = field,
+                    .value = text,
+                });
+                const record = found.record orelse return null;
+
+                return .{
+                    .id = record.id,
+                    .version = record.version,
+                    .value = try decode(ctx, record.document),
+                };
+            } else {
+                const listed = try ctx.call(record_operations.List, .{
+                    .type = name,
+                    .filter_field = field,
+                    .filter_value = text,
+                    .limit = 2,
+                });
+
+                std.debug.assert(listed.records.len <= 2);
+
+                if (listed.records.len > 1) {
+                    return error.Conflict;
+                }
+
+                if (listed.records.len == 0) {
+                    return null;
+                }
+
+                return try get(ctx, listed.records[0].id);
+            }
+        }
+
+        /// A new record holding `value`, content in its flow's starting status; its id.
+        pub fn create(ctx: *PluginCtx, value: Document) sdk.Error![]const u8 {
+            const document = try encode(ctx, value);
+            const id = if (comptime internal)
+                (try ctx.call(internal_operations.Create, .{
+                    .kind = name,
+                    .document = document,
+                })).id
+            else
+                (try ctx.call(record_operations.Create, .{
+                    .type = name,
+                    .document = document,
+                    .status = start,
+                })).id;
+
+            std.debug.assert(id.len > 0);
+
+            return id;
+        }
+
+        /// Writes `fields`, naming some of the document's fields; the others keep theirs.
+        pub fn save(ctx: *PluginCtx, id: []const u8, fields: anytype) sdk.Error!void {
+            std.debug.assert(id.len > 0);
+
+            const document = try encode(ctx, fields);
+
+            if (comptime internal) {
+                _ = try ctx.call(internal_operations.Save, .{
+                    .kind = name,
+                    .id = id,
+                    .document = document,
+                });
+            } else {
+                _ = try ctx.call(record_operations.Save, .{
+                    .id = id,
+                    .document = document,
+                });
+            }
+        }
+
+        pub fn delete(ctx: *PluginCtx, id: []const u8) sdk.Error!void {
+            comptime std.debug.assert(internal);
+            std.debug.assert(id.len > 0);
+
+            const deleted = try ctx.call(internal_operations.Delete, .{
+                .kind = name,
+                .id = id,
+            });
+
+            if (!deleted.deleted) {
+                return error.NotFound;
+            }
+        }
+
+        fn decode(ctx: *PluginCtx, document: []const u8) sdk.Error!Document {
+            std.debug.assert(document.len > 0);
+
+            return std.json.parseFromSliceLeaky(Document, ctx.arena(), document, .{
+                .ignore_unknown_fields = true,
+                .allocate = .alloc_always,
+            }) catch error.Invalid;
+        }
+    };
+}
+
+fn encode(ctx: *PluginCtx, value: anytype) sdk.Error![]const u8 {
+    const text = std.json.Stringify.valueAlloc(ctx.arena(), value, .{
+        .emit_null_optional_fields = false,
+    }) catch return error.OutOfMemory;
+
+    std.debug.assert(text.len > 0);
+    std.debug.assert(text[0] == '{');
+
+    return text;
+}
+
+/// A value as a lookup matches it: text as it is, integers in decimal, `true`/`false`, a
+/// choice by name.
+fn filter_text(ctx: *PluginCtx, value: anytype) sdk.Error![]const u8 {
+    std.debug.assert(ctx.now().ms >= 0);
+
+    return switch (@typeInfo(@TypeOf(value))) {
+        .int, .comptime_int => std.fmt.allocPrint(ctx.arena(), "{d}", .{value}) catch {
+            return error.OutOfMemory;
+        },
+        .bool => if (value) "true" else "false",
+        .@"enum" => @tagName(value),
+        else => @as([]const u8, value),
+    };
 }
 
 /// `save`'s changes name fields of the record's document.
@@ -414,10 +592,6 @@ pub fn field_groups_of(comptime Plugin: type) []const content_type.Def {
 /// core's rules: groups of rules, any group matching.
 fn location_of(comptime given: anytype) conditions.Set {
     comptime {
-        if (@TypeOf(given) == conditions.Set) {
-            return given;
-        }
-
         var groups: []const conditions.Group = &.{};
 
         std.debug.assert(given.len <= conditions.groups_max);
@@ -463,7 +637,7 @@ pub fn collection_of(comptime Definition: type) internal_record.Collection {
             .indexed = indexed_of(options),
             .append_only = @hasField(Options, "append_only") and options.append_only,
             .shared = scope == .project,
-            .fields = @import("remote_fields.zig").declared_of(
+            .fields = remote_fields.declared_of(
                 Definition.type_name,
                 Definition.Doc,
             ),
@@ -622,7 +796,7 @@ fn coerced(comptime Target: type, comptime value: anytype, comptime depth: u32) 
 }
 
 /// The field kind a Zig type stores as: text, whole numbers, numbers, yes or no, a moment,
-/// a choice, a reference.
+/// money, a choice, a reference, or a list of references.
 fn kind_of(
     comptime record_name: []const u8,
     comptime name: []const u8,
@@ -631,40 +805,18 @@ fn kind_of(
     comptime {
         std.debug.assert(name.len > 0);
 
-        const Target = if (is_list(Type)) std.meta.Elem(Type) else Type;
-        const plain = [_]struct {
-            type,
-            []const u8,
-        }{
-            .{ []const u8, "string" },
-            .{ bool, "boolean" },
-            .{ words.Time, "datetime" },
-        };
-
-        for (plain) |pair| {
-            if (Type == pair[0]) {
-                return pair[1];
-            }
-        }
-
-        if (is_reference(Target)) {
+        if (is_list(Type) and is_reference(std.meta.Elem(Type))) {
             return "reference";
         }
 
-        return switch (@typeInfo(Type)) {
-            .int => "integer",
-            .float => "number",
-            .@"enum" => "select",
-            else => @compileError("record " ++ record_name ++ ": field `" ++ name ++ "` is " ++
-                @typeName(Type) ++ "; give it a kind: `.fields = .{ ." ++ name ++
-                " = .{ .kind = \"...\" } }`"),
-        };
+        return remote_fields.kind_of(Type) orelse @compileError("record " ++ record_name ++
+            ": field `" ++ name ++ "` is " ++ @typeName(Type) ++ "; give it a kind: " ++
+            "`.fields = .{ ." ++ name ++ " = .{ .kind = \"...\" } }`");
     }
 }
 
-fn is_reference(comptime Type: type) bool {
-    return @typeInfo(Type) == .@"struct" and @hasDecl(Type, "reference");
-}
+const is_reference = remote_fields.is_reference;
+const is_list = remote_fields.is_list;
 
 /// A list of plain structs: rows of a repeater (a list of references is not).
 fn is_rows(comptime Type: type) bool {
@@ -697,12 +849,6 @@ fn default_of(comptime field: std.builtin.Type.StructField) []const u8 {
             else => "",
         };
     }
-}
-
-fn is_list(comptime Type: type) bool {
-    const info = @typeInfo(Type);
-
-    return info == .pointer and info.pointer.size == .slice and info.pointer.child != u8;
 }
 
 fn kind_needs_targets(comptime Type: type) bool {
@@ -977,7 +1123,7 @@ pub fn statuses_of(comptime Definition: type, comptime Docs: type) []const statu
         var list: []const status_module.Status = &.{};
 
         for (std.meta.fieldNames(Status)) |value| {
-            if (record_flow.listed(&record_flow.core_status_ids, value)) {
+            if (record_flow.listed(record_flow.core_status_ids, value)) {
                 continue;
             }
 

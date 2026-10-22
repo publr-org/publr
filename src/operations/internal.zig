@@ -479,7 +479,7 @@ fn scope_of(
 /// Whether the plugin running reaches another plugin's collection: reading through
 /// `records.read` with `.internal`, or a `records.read` or `records.write` naming it
 /// (`<plugin>.<kind>`); writing only through a `records.write` naming it.
-fn reaches_other(ctx: *Ctx, owner: []const u8, kind: []const u8, writes: bool) Error!bool {
+pub fn reaches_other(ctx: *Ctx, owner: []const u8, kind: []const u8, writes: bool) Error!bool {
     std.debug.assert(owner.len > 0);
     std.debug.assert(kind.len > 0);
 
@@ -771,4 +771,94 @@ test "internal records: nobody else's, and with no plugin running only for those
         .kind = "visit",
     });
     try std.testing.expectError(error.Invalid, unnamed);
+}
+
+test "internal records in GROQ: the plugin's own, in its app, and nobody else's" {
+    var project: Project = undefined;
+    try project.init();
+    defer project.deinit();
+
+    const Query = @import("record.zig").Query;
+
+    var greeter = project.ctx(.anonymous);
+    greeter.plugin = "greeter";
+    _ = try SDK.dispatch(&greeter, Create, .{
+        .kind = "visit",
+        .document = "{\"name\":\"Ada\",\"count\":1}",
+    });
+    _ = try SDK.dispatch(&greeter, Create, .{
+        .kind = "visit",
+        .document = "{\"name\":\"Bob\",\"count\":2}",
+    });
+
+    var in_shop = greeter;
+    in_shop.app = "shop";
+    _ = try SDK.dispatch(&in_shop, Create, .{
+        .kind = "visit",
+        .document = "{\"name\":\"Ada\"}",
+    });
+
+    const named = try SDK.dispatch(&greeter, Query, .{
+        .query = "*[_type == \"greeter.visit\" && name == $name]{ name, count }",
+        .params = "{\"name\":\"Ada\"}",
+    });
+    try std.testing.expectEqualStrings("[{\"name\":\"Ada\",\"count\":1}]", named.result.text);
+
+    const counted = try SDK.dispatch(&greeter, Query, .{
+        .query = "*[_type == \"greeter.visit\" && count > 1] | order(_createdAt desc).name",
+    });
+    try std.testing.expectEqualStrings("[\"Bob\"]", counted.result.text);
+
+    const every = try SDK.dispatch(&greeter, Query, .{
+        .query = "count(*[_type == \"greeter.visit\"])",
+    });
+    try std.testing.expectEqualStrings("2", every.result.text);
+
+    var stranger = project.ctx(.anonymous);
+    stranger.plugin = "farewell";
+    const other = SDK.dispatch(&stranger, Query, .{
+        .query = "*[_type == \"greeter.visit\"]",
+    });
+    try std.testing.expectError(error.Denied, other);
+
+    var operator = project.ctx(.system);
+    const person = SDK.dispatch(&operator, Query, .{
+        .query = "*[_type == \"greeter.visit\"]",
+    });
+    try std.testing.expectError(error.Denied, person);
+}
+
+test "references in an installed plugin: the relay reads the record before it runs" {
+    var project: Project = undefined;
+    try project.init();
+    defer project.deinit();
+
+    var system = project.ctx(.system);
+    const created = try SDK.dispatch(&system, @import("record.zig").Create, .{
+        .type = "greeter.salutation",
+        .document = "{\"note\":\"From the sandbox\"}",
+        .status = "published",
+    });
+    const asked = try std.fmt.allocPrint(system.arena, "{{\"salutation\":\"{s}\"}}", .{
+        created.id,
+    });
+    const answer = try SDK.call_json(&system, "greeter.recall", asked);
+
+    try std.testing.expect(std.mem.indexOf(u8, answer, "From the sandbox") != null);
+
+    const unknown = SDK.call_json(&system, "greeter.recall", "{\"salutation\":\"nope\"}");
+    try std.testing.expectError(error.NotFound, unknown);
+}
+
+test "rules in an installed plugin: the relay refuses a field that breaks one" {
+    var project: Project = undefined;
+    try project.init();
+    defer project.deinit();
+
+    var system = project.ctx(.system);
+    const long = "{\"note\":\"" ++ "x" ** 201 ++ "\"}";
+    const refused = SDK.call_json(&system, "greeter.greet", long);
+
+    try std.testing.expectError(error.Failed, refused);
+    try std.testing.expect(std.mem.indexOf(u8, system.failure.?.message, "note") != null);
 }

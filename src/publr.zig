@@ -119,10 +119,6 @@ pub const authorize = struct {
 pub const views = @import("sdk/plugin/views.zig");
 /// Model providers: the contract, and the two operations a provider plugin registers with.
 pub const ai = @import("sdk/ai.zig");
-/// A plugin's records as typed values: `publr.records.of(Order, "order")`.
-pub const records = @import("operations/record/typed.zig");
-/// A plugin's internal records as typed values: `publr.internal.of(Movement, "movement")`.
-pub const internal = @import("operations/internal/typed.zig");
 pub const routes = @import("server/routes.zig");
 pub const plugin_routes = @import("server/plugin_routes.zig");
 pub const plugin_states = @import("server/plugin_states.zig");

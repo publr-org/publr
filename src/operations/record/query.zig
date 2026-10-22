@@ -9,6 +9,7 @@ const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const access = @import("../document/access.zig");
 const query_dataset = @import("query_dataset.zig");
+const internal_operations = @import("../internal.zig");
 
 const groq = @import("../../lib/groq.zig");
 const Ctx = sdk.Ctx;
@@ -42,7 +43,9 @@ pub const Query = struct {
         \\reaches (a visitor: public ones), every status the grant allows with perspective
         \\`all` (the default), each record's latest copy for a signed-in caller, or live
         \\records only with `published` (a visitor's and a site page's only one), without
-        \\the fields the grant hides. A query naming a type out of reach is refused as
+        \\the fields the grant hides. A plugin
+        \\reads its own internal records too (`_type == "cart.line"`), and another plugin's
+        \\its `records.read` names. A query naming a type out of reach is refused as
         \\`Denied`; a reference to a record the caller may not read is `null`, listed in
         \\`problems`. References are record ids: `product == ^._id` compares them, `->`
         \\follows them. Records in the trash are left out unless `trashed` asks for them.
@@ -216,8 +219,8 @@ fn problems_of(
 
 const types_chunk: u32 = 100;
 
-/// What the caller may read: the readable types, the statuses by perspective, the fields
-/// the grant hides.
+/// What the caller may read: the readable types and internal collections, the statuses by
+/// perspective, the fields the grant hides.
 fn source_of(
     ctx: *Ctx,
     granted: *const Grant,
@@ -261,11 +264,14 @@ fn source_of(
             const visible = !public_only or brief.public or !(visitor or
                 granted.public_only_on(brief.handle));
             const handle = try arena.dupe(u8, brief.handle);
+            // A compiled-in plugin's code reads its own types whoever it runs for, as its
+            // other record operations do.
+            const own = registry.SDK.owns_type(ctx.plugin, brief.handle);
 
-            if (in_reach and visible and kind_readable(ctx, brief.kind, brief.public)) {
+            if (own or (in_reach and visible and kind_readable(ctx, brief.kind, brief.public))) {
                 readable.append(arena, .{
                     .handle = handle,
-                    .live_only = granted.live_only_on(brief.handle, brief.public),
+                    .live_only = !own and granted.live_only_on(brief.handle, brief.public),
                 }) catch return error.OutOfMemory;
             } else {
                 out_of_reach.append(arena, handle) catch return error.OutOfMemory;
@@ -290,16 +296,56 @@ fn source_of(
     const live_only = visitor or perspective == .published;
     const live = try live_statuses(ctx, granted);
 
+    const internal = try internal_of(ctx, &out_of_reach);
+
     return .{
         .ctx = ctx,
         .granted = granted,
         .types = readable.items,
+        .internal = internal,
         .out_of_reach = out_of_reach.items,
         .live = if (live_only) live else null,
         .live_statuses = live,
         .mask = granted.field_mask,
         .owner = if (filter.flags.own_only) try own_user(ctx) else null,
     };
+}
+
+/// The internal record collections a running plugin reads: its own, and another plugin's its
+/// `records.read` reaches (named, or `.internal`); the others are out of reach. Nobody else
+/// reads internal records.
+fn internal_of(
+    ctx: *Ctx,
+    out_of_reach: *std.ArrayList([]const u8),
+) Error![]const query_dataset.Internal {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const arena = ctx.arena;
+    const owned = try registry.internal_collections(ctx, arena);
+    var readable: std.ArrayList(query_dataset.Internal) = .empty;
+
+    for (owned) |each| {
+        const collection = each.collection;
+        const handle = std.fmt.allocPrint(arena, "{s}.{s}", .{
+            each.owner,
+            collection.kind,
+        }) catch return error.OutOfMemory;
+        const own = ctx.plugin.len > 0 and std.mem.eql(u8, each.owner, ctx.plugin);
+        const reached = ctx.plugin.len > 0 and
+            (own or try internal_operations.reaches_other(ctx, each.owner, collection.kind, false));
+
+        if (reached) {
+            readable.append(arena, .{
+                .handle = handle,
+                .owner = each.owner,
+                .collection = collection,
+            }) catch return error.OutOfMemory;
+        } else {
+            out_of_reach.append(arena, handle) catch return error.OutOfMemory;
+        }
+    }
+
+    return readable.items;
 }
 
 /// The caller whose own records a grant limits a query to; only a signed-in user has any.
@@ -329,7 +375,7 @@ fn live_statuses(ctx: *Ctx, granted: *const Grant) Error![]const []const u8 {
     var list: std.ArrayList([]const u8) = .empty;
 
     for (known) |status| {
-        if (status.live and granted.allows_status(status.id)) {
+        if (status.live) {
             list.append(ctx.arena, status.id) catch return error.OutOfMemory;
         }
     }

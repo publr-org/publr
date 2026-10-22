@@ -336,11 +336,7 @@ fn shape_of(comptime Type: type) Field.Shape {
     }
 }
 
-fn is_reference(comptime Type: type) bool {
-    comptime {
-        return @typeInfo(Type) == .@"struct" and @hasDecl(Type, "reference");
-    }
-}
+const is_reference = @import("remote_fields.zig").is_reference;
 
 /// The names a value may take: an enum's, or a list of them's; none for anything else.
 fn values_of(comptime Type: type) []const []const u8 {

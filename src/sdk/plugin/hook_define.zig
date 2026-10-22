@@ -324,7 +324,7 @@ pub const remote = struct {
                 @compileError("a remote record is named `<plugin>.<type>`");
             }
 
-            const Typed = record_typed.of(Fields, name);
+            const Typed = @import("record_define.zig").Store(Fields, name, false, "");
 
             return struct {
                 pub const remote_record = name;
@@ -332,10 +332,15 @@ pub const remote = struct {
                 pub const Doc = Fields;
                 pub const Held = Typed.Item;
                 pub const Ref = record_typed.Ref(Fields, name);
-                pub const find_one = Typed.find_one;
-                pub const find = Typed.find;
-                pub const many = Typed.many;
-                pub const save = Typed.save;
+
+                /// The one record whose unique `field` holds `value`, or null.
+                pub fn find_one(
+                    any_ctx: anytype,
+                    comptime field: std.meta.FieldEnum(Fields),
+                    value: anytype,
+                ) sdk.Error!?Held {
+                    return Typed.find_one(queue.base_of(any_ctx), @tagName(field), value);
+                }
 
                 /// The record, its pending changes included; not found in the trash unless
                 /// `.{ .trashed = true }`.
@@ -346,7 +351,7 @@ pub const remote = struct {
                 ) sdk.Error!Held {
                     std.debug.assert(id.len > 0);
 
-                    const found = try Typed.get(any_ctx, id);
+                    const found = try Typed.get(queue.base_of(any_ctx), id);
 
                     if (std.mem.eql(u8, found.status, "trashed") and !options.trashed) {
                         return error.NotFound;

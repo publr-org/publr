@@ -222,14 +222,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(!std.mem.eql(u8, row.status, to));
 
-            const grant_row: sdk.grant.Row = .{
-                .record_id = row.id,
-                .type_id = row.type_id,
-                .status = row.status,
-                .owner_id = row.created_by,
-            };
-
-            if (!granted.record_filter.accepts(ctx, grant_row)) {
+            if (!granted.record_filter.accepts(ctx, row.created_by)) {
                 return "You may not change it";
             }
 
@@ -254,13 +247,9 @@ pub fn Of(comptime Domain: type) type {
                 return "Needs someone who may publish";
             }
 
-            check_status(type_row.def, to, granted) catch {
+            check_status(type_row.def, to) catch {
                 return "Its type does not take that status";
             };
-
-            if (!granted.allows_transition(row.status, to)) {
-                return "You may not make this move";
-            }
 
             if (type_row.def.flow.is_live(to)) {
                 return try live_refusal(ctx, row, type_row.def);

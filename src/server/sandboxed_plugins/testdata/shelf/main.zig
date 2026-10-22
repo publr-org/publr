@@ -48,6 +48,8 @@ pub const Restocked = publr.event.define(.{
     },
 });
 
+const counted = publr.query.prepare("count(*[_type == \"shelf.item\"])", .{});
+
 pub const CountIn = struct {};
 
 pub const CountOut = struct {
@@ -69,14 +71,10 @@ pub const Count = publr.operation.define(CountIn, CountOut, .{
 fn count(ctx: *publr.Ctx, _: CountIn) publr.Error!CountOut {
     std.debug.assert(ctx.now().ms >= 0);
 
-    const found = try Items.typed.find(ctx, .{}, .{
-        .limit = 50,
-    });
-
-    std.debug.assert(found.len <= 50);
+    const found = try counted.execute(ctx, u32, .{});
 
     return .{
-        .count = @intCast(found.len),
+        .count = found,
     };
 }
 

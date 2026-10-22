@@ -680,7 +680,7 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// Whether the compiled-in plugin whose code runs declares the type a call names.
-        fn owns_type(plugin: []const u8, type_id: ?[]const u8) bool {
+        pub fn owns_type(plugin: []const u8, type_id: ?[]const u8) bool {
             std.debug.assert(plugin.len <= 64);
             std.debug.assert(registry.type_owners.len <= 64 * 64);
 

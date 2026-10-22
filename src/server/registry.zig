@@ -167,6 +167,29 @@ pub fn internal_collection(
     return null;
 }
 
+/// Every internal record collection, compiled in and installed, with the plugin keeping it.
+pub fn internal_collections(
+    ctx: *const sdk.Ctx,
+    arena: std.mem.Allocator,
+) error{OutOfMemory}![]const contract.OwnedCollection {
+    var all: std.ArrayList(contract.OwnedCollection) = .empty;
+
+    try all.appendSlice(arena, native_plugins.merged_internal_collections);
+
+    const sandboxed = ctx.sandboxed_plugins orelse return all.items;
+
+    for (sandboxed.manifests()) |manifest| {
+        for (manifest.internal_records) |collection| {
+            try all.append(arena, .{
+                .owner = manifest.name,
+                .collection = collection,
+            });
+        }
+    }
+
+    return all.items;
+}
+
 /// An operation's shapes as declarations of their own, so each is described on its own when
 /// the binary compiles, whatever else is.
 fn Shapes(comptime Operation: type) type {

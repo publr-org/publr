@@ -12,8 +12,6 @@ const operation = @import("operation.zig");
 pub const gates_max: u32 = 16;
 pub const body_bytes_max: u32 = 64 << 10;
 
-pub const Kind = enum { page, island };
-
 /// What a gate is asked about.
 pub const Delivery = struct {
     /// The system's context: what the gate needs to decide (its own settings, the
@@ -23,14 +21,12 @@ pub const Delivery = struct {
     visitor: caller_module.Caller,
     /// The path asked for, `/` and on; an island's is its `/_islands/…` path.
     path: []const u8,
-    kind: Kind,
 };
 
-/// What the visitor gets instead: a status from 400 to 599 and a page.
+/// What the visitor gets instead: a status from 400 to 599 and a page, HTML.
 pub const Refusal = struct {
     status: u16,
     body: []const u8,
-    content_type: []const u8 = "text/html; charset=utf-8",
 };
 
 pub const Verdict = union(enum) {
@@ -76,7 +72,7 @@ pub fn valid_refusal(refusal: Refusal) bool {
 
     const status_ok = refusal.status >= 400 and refusal.status <= 599;
 
-    return status_ok and refusal.body.len <= body_bytes_max and refusal.content_type.len > 0;
+    return status_ok and refusal.body.len <= body_bytes_max;
 }
 
 const testing = struct {
@@ -115,7 +111,6 @@ test "the first refusal wins, a private say keeps it private, silence changes no
         .ctx = &ctx,
         .visitor = .anonymous,
         .path = "/",
-        .kind = .page,
     };
     var member = anonymous;
     member.visitor = .{

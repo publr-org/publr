@@ -9,7 +9,7 @@
 const publr = @import("publr");
 const std = @import("std");
 
-const Notes = @import("../records/notes.zig");
+const notes = publr.query.prepare(@embedFile("../queries/notes.groq"), .{});
 
 pub const In = struct {
     /// The note the form is open on
@@ -34,14 +34,12 @@ fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
     std.debug.assert(in.record.len > 0);
     std.debug.assert(in.record.len <= 64);
 
-    const all = try Notes.typed.find(ctx, .{}, .{
-        .limit = 200,
-    });
+    const all = try notes.execute(ctx, u32, .{});
 
     return .{
         .html = try ctx.print("<p class=\"text-sm\">Note {s}, one of {d}.</p>", .{
             in.record,
-            all.len,
+            all,
         }),
     };
 }

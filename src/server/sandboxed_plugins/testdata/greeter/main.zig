@@ -45,7 +45,10 @@ pub const Visits = publr.record.define(Visit, .{
     .scope = .app,
 });
 
-const visits = publr.internal.of(Visit, "visit");
+/// How many times a visitor has waved.
+const waves_of = publr.query.prepare(
+    \\count(*[_type == "greeter.visit" && name == $name])
+, .{});
 
 /// Salutation
 ///
@@ -81,39 +84,38 @@ const roles = [_]publr.plugin.Role{.{
 
 const operations = [_]type{ Greet, Count, People, Recall, Wave, Hail };
 
-/// Takes a reference: the caller names a post, the sandbox hands greeter the stored one.
+/// Takes a reference: the caller names a salutation, the sandbox hands greeter the stored one.
 pub const Recall = struct {
     pub const name = "greeter.recall";
-    pub const description = "The title of a post, read by core before greeter runs";
-    pub const details = "Administrators and granted roles call it. An unknown post is not found.";
+    pub const description = "The note of a salutation, read by core before greeter runs";
+    pub const details =
+        "Administrators and granted roles call it. An unknown salutation is not found.";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
-        post: publr.records.Ref(struct {
-            title: []const u8,
-        }, "post"),
+        salutation: Salutations.Ref,
     };
     pub const Out = struct {
-        title: []const u8,
+        note: []const u8,
     };
     pub const example: In = .{
-        .post = .{
+        .salutation = .{
             .id = "a1b2c3d4e5f60718293a4b5c",
         },
     };
     pub const example_out: Out = .{
-        .title = "Hello, world",
+        .note = "Hello, world",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
-        .post = "The post, by id",
+        .salutation = "The salutation, by id",
     };
 
     pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(ctx.now().ms >= 0);
 
-        const post = in.post.value orelse return error.Invalid;
+        const salutation = in.salutation.value orelse return error.Invalid;
 
         return .{
-            .title = post.title,
+            .note = salutation.note,
         };
     }
 };
@@ -154,19 +156,15 @@ fn wave(ctx: *publr.Ctx, _: WaveIn) publr.Error!WaveOut {
         return ctx.fail(.NoVisitor, "Wave from an app's page: there is no visitor here.", .{});
     }
 
-    _ = try visits.create(ctx, .{
+    _ = try Visits.create(ctx, .{
         .name = visitor,
-    });
-
-    const mine = try visits.find(ctx, .{
-        .name = visitor,
-    }, .{
-        .limit = 200,
     });
 
     return .{
         .visitor = visitor,
-        .waves = @intCast(mine.len),
+        .waves = try waves_of.execute(ctx, u32, .{
+            .name = visitor,
+        }),
     };
 }
 
@@ -354,7 +352,7 @@ fn refuse_named(ctx: *publr.Ctx, signed: publr.auth.SignedIn.Payload) publr.Erro
     }
 
     if (std.mem.eql(u8, signed.visitor, writing_visitor)) {
-        const created = visits.create(ctx, .{
+        const created = Visits.create(ctx, .{
             .name = "before",
         });
 
@@ -407,7 +405,7 @@ fn keep_kept(ctx: *publr.Ctx, moved: publr.record.Transitioned) publr.Error!void
 fn note_sign_in(ctx: *publr.Ctx, signed: publr.auth.SignedIn.Payload) publr.Error!void {
     std.debug.assert(signed.user.len > 0);
 
-    _ = try visits.create(ctx, .{
+    _ = try Visits.create(ctx, .{
         .name = try ctx.print("signed:{s}:{s}", .{ signed.method, signed.visitor }),
     });
 }
@@ -416,7 +414,7 @@ fn note_sign_in(ctx: *publr.Ctx, signed: publr.auth.SignedIn.Payload) publr.Erro
 fn note_sign_out(ctx: *publr.Ctx, left: publr.auth.SignedOut.Payload) publr.Error!void {
     std.debug.assert(left.user.len > 0);
 
-    _ = try visits.create(ctx, .{
+    _ = try Visits.create(ctx, .{
         .name = "left",
     });
 }
@@ -435,7 +433,7 @@ fn add_one(ctx: *publr.Ctx, value: *u32) publr.Error!void {
 fn shown(ctx: *publr.Ctx, item: *publr.Title(Salutation)) publr.Error!void {
     std.debug.assert(item.id.len > 0);
 
-    const created = visits.create(ctx, .{
+    const created = Visits.create(ctx, .{
         .name = "display",
     });
     const wrote = if (created) |_| "wrote" else |err| switch (err) {

@@ -190,7 +190,7 @@ const exercised = [_]Part{
     },
     .{
         .name = "to",
-        .where = "greeter recall's post",
+        .where = "greeter recall's salutation",
     },
     .{
         .name = "secret",

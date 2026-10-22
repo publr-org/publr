@@ -24,7 +24,10 @@ pub const Tries = publr.record.define(Try, .{
     .scope = .app,
 });
 
-const tries = publr.internal.of(Try, "try");
+/// How many tries a label has had.
+const tried_of = publr.query.prepare(
+    \\count(*[_type == "printer.try" && label == $label])
+, .{});
 
 pub const PrintIn = struct {
     /// What the label says
@@ -71,19 +74,17 @@ fn print(ctx: *publr.Ctx, in: PrintIn) publr.Error!PrintOut {
 fn send(ctx: *publr.QueueCtx, out: PrintOut) publr.Error!void {
     std.debug.assert(out.label.len > 0);
 
-    _ = try tries.create(ctx, .{
+    _ = try Tries.create(ctx, .{
         .label = out.label,
     });
 
-    const tried = try tries.find(ctx, .{
+    const tried = try tried_of.execute(ctx, u32, .{
         .label = out.label,
-    }, .{
-        .limit = 200,
     });
 
-    ctx.log(.info, "Sending {s}, try {d}", .{ out.label, tried.len });
+    ctx.log(.info, "Sending {s}, try {d}", .{ out.label, tried });
 
-    if (tried.len <= out.fails) {
+    if (tried <= out.fails) {
         return ctx.fail(.Offline, "The printer is offline.", .{});
     }
 
