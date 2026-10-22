@@ -124,6 +124,8 @@ pub const AnyRef = struct {
 
     /// Every `AnyRef` among `value`'s fields, and in its lists of them, read.
     fn read_all(ctx: *PluginCtx, value: anytype) sdk.Error!void {
+        std.debug.assert(ctx.now().ms >= 0);
+
         inline for (std.meta.fields(@TypeOf(value.*))) |field| {
             if (comptime field.type == AnyRef) {
                 @field(value, field.name) = try read(ctx, @field(value, field.name).id);

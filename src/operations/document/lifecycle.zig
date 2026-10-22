@@ -395,7 +395,10 @@ pub fn Of(comptime Domain: type) type {
 
             const held: []const []const u8 = switch (ctx.caller) {
                 .user => |user| user.roles,
-                .plugin => |plugin| if (plugin.on_behalf_of != null) plugin.roles orelse &.{} else &.{},
+                .plugin => |plugin| if (plugin.on_behalf_of == null)
+                    &.{}
+                else
+                    plugin.roles orelse &.{},
                 else => &.{},
             };
 
