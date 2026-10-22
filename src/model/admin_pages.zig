@@ -4,7 +4,7 @@
 const std = @import("std");
 
 /// Who sees the page, beyond being signed in.
-pub const Who = enum { everyone, secrets, structure, update };
+pub const Who = enum { everyone, secrets, providers, structure, update };
 
 /// The groups Settings lists its pages under, in order.
 pub const Group = enum {
@@ -74,6 +74,13 @@ pub const all = [_]Page{
         .label = "AI",
         .icon = "sparkles",
         .who = .secrets,
+        .group = .general,
+    },
+    .{
+        .page = "settings/providers",
+        .label = "Providers",
+        .icon = "stack",
+        .who = .providers,
         .group = .general,
     },
     .{

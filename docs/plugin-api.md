@@ -73,8 +73,8 @@ A missing one fails the build and says where it goes.
 Any other option is a build error.
 
 Decided but not built: `define` refuses these and names the gate that brings them:
-`register_taxonomies`, `register_columns`, `register_components`, `register_providers`, `register_location_rules`, `taxonomies`, `webhooks`. Jobs for
-installed plugins, `.due` and `transition_at`, outside calls from queued work, email, outside search engines and field editors
+`register_taxonomies`, `register_columns`, `register_components`, `register_location_rules`, `taxonomies`, `webhooks`. Jobs for
+installed plugins, `.due` and `transition_at`, outside calls from queued work, outside search engines and field editors
 in the plugin frame come with later gates too.
 
 ## Manifest
@@ -641,7 +641,7 @@ try ctx.enqueue_at(Show, .{ .greeting = .{ .id = id } }, ctx.now().add_minutes(1
 | `http.fetch` | `.domains` | | high |
 | `media.read` | | `.private` | low; high with private files |
 | `media.write` | | | medium |
-| `email.send` | | | medium |
+| `messaging.send` | | | medium |
 
 What each opens:
 
@@ -661,6 +661,8 @@ What each opens:
   someone who may publish to approve; with it, they go live. Private and internal types
   only when named. `records.destroy` alone removes a record for good.
 - Queued work (jobs, `on` hooks) runs with the plugin's own grant, `.publish` included.
+- `messaging.send` lets a plugin emit message events (`publr.messaging.Email`, `Sms`,
+  `Push`) beside its own; without it a message is not sent and the write fails.
 
 A `call:<plugin>.<verb>` key, for another plugin's operation, and `ai.progress` pass as
 they are. Any other key, or an option its key does not take (`.domains` on

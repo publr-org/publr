@@ -31,6 +31,16 @@ pub fn Queue(comptime Base: type) type {
             return self.base.call(Operation, in);
         }
 
+        /// An operation by name with its input as JSON: how a contract's provider is called
+        /// (`publr.providers`), compiled in or installed.
+        pub fn call_json(
+            self: *Self,
+            name: []const u8,
+            input: []const u8,
+        ) @TypeOf(Base.call_json(@as(*Base, undefined), name, input)) {
+            return self.base.call_json(name, input);
+        }
+
         pub fn caller(self: *const Self) @TypeOf(Base.caller(@as(*const Base, undefined))) {
             return self.base.caller();
         }

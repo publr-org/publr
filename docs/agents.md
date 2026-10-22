@@ -197,9 +197,9 @@ pub const plugin = publr.plugin.define(manifest, .{
   write taking facts the server owns. A `Why:` line in the field's `///` passes one when
   the rule does not fit.
 - **Not built yet.** `define` refuses `register_taxonomies`,
-  `register_columns`, `register_components`, `register_providers`,
+  `register_columns`, `register_components`,
   `register_location_rules`, `taxonomies`, `jobs` and `webhooks`, saying they come with a
-  later gate. There is no queued work, no schedule, no email and no outside search engine
+  later gate. There is no queued work, no schedule and no outside search engine
   for plugins yet. When a feature needs one, tell the person what is missing.
 
 ## How to build well
@@ -481,7 +481,7 @@ The keys: `records.read` (`.records`; `.drafts`, `.private`, `.internal`), `reco
 anything the project stores exactly as another copy of it keeps it, ids kept), `terms.read` (`.taxonomies`; the
 read flags), `terms.write` (`.taxonomies`; `.publish`), `schema.read`, `schema.write`,
 `users.names`, `users.read`, `users.write`, `site.read`, `settings.write`, `http.fetch`
-(`.domains`), `media.read` (`.private`), `media.write`, `email.send`, and
+(`.domains`), `media.read` (`.private`), `media.write`, `messaging.send`, and
 `call:<plugin>.<verb>` for another plugin's operation. Reading starts at what a visitor
 sees; name the types you need in `.records` rather than asking for every one. Without
 `.publish` a write makes drafts and asks for transitions to live (`.pending`). A domain is

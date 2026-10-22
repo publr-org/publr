@@ -31,6 +31,9 @@ pub const Permission = struct {
     publishing: []const []const u8 = &.{},
     /// Its operations that need `.drafts` on: version history holds unpublished text.
     history: []const []const u8 = &.{},
+    /// The events it lets a plugin emit beside its own, by prefix: `messaging.` for every
+    /// message (`publr.messaging.Email`).
+    events: []const []const u8 = &.{},
 };
 
 /// One permission as asked for or as granted: the key, the flags as booleans, the content
@@ -219,6 +222,21 @@ pub fn called_operation(key: []const u8) ?[]const u8 {
     return name;
 }
 
+/// The key a plugin needs to emit `event`, one not its own: null when no key lets it.
+pub fn key_for_event(event: []const u8) ?[]const u8 {
+    std.debug.assert(event.len > 0);
+
+    for (core) |permission| {
+        for (permission.events) |prefix| {
+            if (std.mem.startsWith(u8, event, prefix)) {
+                return permission.key;
+            }
+        }
+    }
+
+    return null;
+}
+
 pub fn contains(list: []const []const u8, item: []const u8) bool {
     std.debug.assert(item.len > 0);
     std.debug.assert(list.len <= 1024);
@@ -230,6 +248,12 @@ pub fn contains(list: []const []const u8, item: []const u8) bool {
     }
 
     return false;
+}
+
+test "a message needs messaging.send; a plugin's own events need no key" {
+    try std.testing.expectEqualStrings("messaging.send", key_for_event("messaging.email").?);
+    try std.testing.expectEqualStrings("messaging.send", key_for_event("messaging.push").?);
+    try std.testing.expect(key_for_event("orders.placed") == null);
 }
 
 test "every catalog key is unique, and no permission names an operation that is never granted" {

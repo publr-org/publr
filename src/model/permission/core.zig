@@ -205,9 +205,10 @@ pub const core = [_]Permission{
         },
     },
     .{
-        .key = "email.send",
-        .sentence = "Send emails",
+        .key = "messaging.send",
+        .sentence = "Send emails, text messages and notifications",
         .tier = .medium,
+        .events = &.{"messaging."},
     },
     .{
         .key = "ai.progress",

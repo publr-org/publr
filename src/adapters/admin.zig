@@ -30,6 +30,7 @@ const avatar_pages = @import("admin/avatar.zig");
 const revision_pages = @import("admin/revisions.zig");
 const device_pages = @import("admin/devices.zig");
 const secret_pages = @import("admin/secrets.zig");
+const provider_pages = @import("admin/providers.zig");
 const removal_pages = @import("admin/removals.zig");
 const trash_pages = @import("admin/trash.zig");
 const health_pages = @import("admin/health.zig");
@@ -201,6 +202,7 @@ pub const page_bytes_max: u32 = 4 << 20;
 pub const routes_count: u32 = 164 + preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
+    provider_pages.routes_count +
     design_pages.routes_count + @import("admin/settings_tabs.zig").tabs.len;
 const client_files = @import("../ui/client_files.zig");
 
@@ -328,6 +330,7 @@ fn register_settings_pages(router: *http.Router) void {
 
     design_pages.register(router);
     secret_pages.register(router);
+    provider_pages.register(router);
     removal_pages.register(router);
     trash_pages.register(router);
     health_pages.register(router);

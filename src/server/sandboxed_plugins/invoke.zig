@@ -497,12 +497,21 @@ fn publr_emit(
     std.debug.assert(name.len > 0);
     std.debug.assert(plugin.len > 0);
 
-    // A plugin emits only its own events: `<plugin>.<event>`.
+    // A plugin emits its own events, `<plugin>.<event>`, and those a key it holds lets it
+    // (`messaging.send`: `messaging.email`).
     const own = name.len > plugin.len + 1 and std.mem.startsWith(u8, name, plugin) and
         name[plugin.len] == '.';
+    const key = model.permission.key_for_event(name);
+    const let = if (key) |needed| invocation.loaded.holds(needed) else false;
 
-    if (!own) {
-        log_line(invocation, .warn, "an event not under the plugin's name was not emitted");
+    if (!own and !let) {
+        log_line(invocation, .warn, "an event the plugin may not emit was not emitted");
+
+        // A message without its key fails the write, as compiled in.
+        if (key != null) {
+            ctx.event_refusal = ctx.event_refusal orelse error.Denied;
+        }
+
         return;
     }
 
