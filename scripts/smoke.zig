@@ -43,7 +43,7 @@ pub fn main(init: std.process.Init) !u8 {
     try expect_contains(init, binary, work_dir, &check, "\"echo\": \"smoke\"");
     try expect_contains(init, binary, work_dir, &admin_check, "\"caller\": \"system\"");
     try expect_contains(init, binary, work_dir, &.{"--help"}, "heartbeat check");
-    try expect_contains(init, binary, work_dir, &.{ "user", "--help" }, "user password_link");
+    try expect_namespaces(init, binary, work_dir);
     try expect_compiler(init, binary, bare, work_dir);
     try expect_contains(init, bare, work_dir, &.{"agents"}, "publr plugin build --name");
     try expect_contains(init, bare, work_dir, &.{"skill"}, "name: build-on-publr");
@@ -209,7 +209,8 @@ fn expect_content(
 
     const definition = "{\"handle\":\"post\",\"name\":\"Post\"," ++
         "\"public\":true,\"fields\":[" ++
-        "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\",\"required\":true}," ++
+        "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
+        "\"validation\":{\"required\":true}}," ++
         "{\"name\":\"slug\",\"label\":\"Slug\",\"kind\":\"slug\"," ++
         "\"options\":{\"source\":\"title\"}}," ++
         "{\"name\":\"body\",\"label\":\"Body\",\"kind\":\"richtext\",\"searchable\":true}]}";
@@ -247,7 +248,8 @@ fn expect_taxonomies(
 
     const taxonomy = "{\"handle\":\"topics\",\"name\":\"Topics\",\"public\":true," ++
         "\"hierarchical\":true,\"title_field\":\"name\",\"fields\":[" ++
-        "{\"name\":\"name\",\"label\":\"Name\",\"kind\":\"string\",\"required\":true}," ++
+        "{\"name\":\"name\",\"label\":\"Name\",\"kind\":\"string\"," ++
+        "\"validation\":{\"required\":true}}," ++
         "{\"name\":\"slug\",\"label\":\"Slug\",\"kind\":\"slug\"," ++
         "\"options\":{\"source\":\"name\"}}]}";
     const create_taxonomy = [_][]const u8{
@@ -669,6 +671,18 @@ fn expect_apps_folder(init: std.process.Init, binary: []const u8, work_dir: []co
 }
 
 /// A Publr with no apps: its `serve` opens the admin at `/`.
+/// Namespaces' commands listed, and an operation described as declared and in effect.
+fn expect_namespaces(init: std.process.Init, binary: []const u8, work_dir: []const u8) !void {
+    std.debug.assert(binary.len > 0);
+    std.debug.assert(work_dir.len > 0);
+
+    const get = [_][]const u8{ "--as-admin", "operation", "get", "--name", "operation.list" };
+
+    try expect_contains(init, binary, work_dir, &.{ "user", "--help" }, "user password_link");
+    try expect_contains(init, binary, work_dir, &.{ "operation", "--help" }, "operation limit");
+    try expect_contains(init, binary, work_dir, &get, "\"in_effect\": \"default\"");
+}
+
 fn expect_bare(init: std.process.Init, binary: []const u8, work_dir: []const u8) !void {
     std.debug.assert(binary.len > 0);
     std.debug.assert(work_dir.len > 0);

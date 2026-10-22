@@ -34,6 +34,20 @@ pub const steps = [_][]const []const u8{
     // sampler: an open operation, every field shape, a before hook, an event hook.
     &.{ "sampler", "hello", "--who", "stranger" },
     &.{ "--as", editor, "sampler", "hello" },
+    // A `define` operation untrusted callers reach, its ready answer letting in the signed in.
+    &.{ "sampler", "wave", "--who", "stranger" },
+    &.{ "--as", editor, "sampler", "wave", "--who", "Ada" },
+    // Its `.validate` refusing: every problem beside its field, the same both ways.
+    &.{ "--as", editor, "sampler", "wave", "--who", "" },
+    // A type's own flow, moved by name: the same in both builds.
+    &.{ "--as", admin, "sampler", "submit", "--text", "Looks good" },
+    // The record's own `validate`, run by its plugin's hooks wherever the plugin runs.
+    &.{ "--as", admin, "sampler", "submit", "--text", "spam" },
+    // A value applied under a name and changed by a `*` modifier: 3 doubled to 6 both ways.
+    &.{ "--as", admin, "sampler", "measure", "--text", "abc" },
+    // A job the plugin's code queues, listed for the operator the same in both builds.
+    &.{ "--as", admin, "sampler", "later", "--note", "Remember" },
+    &.{ "--as", admin, "job", "list" },
     &.{
         "--as",
         admin,
@@ -71,16 +85,19 @@ pub const steps = [_][]const []const u8{
     // A page of its own: refused the same both ways. What it draws differs until the
     // sandbox gets the admin's layouts through the host.
     &.{ "--as", editor, "sampler", "page" },
+    &.{ "--as", admin, "sampler", "reference", "--query", "api=before" },
     // A display hook: how people see the notes, never what is stored.
-    &.{ "--as", admin, "record", "shown", "--type", "sample_note" },
-    &.{ "--as", admin, "record", "list", "--type", "sample_note" },
+    &.{ "--as", admin, "record", "shown", "--type", "sampler.sample_note" },
+    &.{ "--as", admin, "record", "list", "--type", "sampler.sample_note" },
     &.{ "--as", admin, "sampler", "note", "--help" },
     // What the plugins declared, as the project now holds it.
-    &.{ "--as", admin, "record", "list", "--type", "salutation" },
-    &.{ "--as", admin, "record", "list", "--type", "sample_note" },
-    &.{ "--as", admin, "content_type", "get", "--handle", "sample_note" },
-    &.{ "--as", admin, "custom_fields", "get", "--group", "sampler_profile" },
+    &.{ "--as", admin, "record", "list", "--type", "greeter.salutation" },
+    &.{ "--as", admin, "record", "list", "--type", "sampler.sample_note" },
+    &.{ "--as", admin, "content_type", "get", "--handle", "sampler.sample_note" },
+    &.{ "--as", admin, "custom_fields", "get", "--group", "sampler" },
     &.{ "--as", admin, "role", "list" },
+    &.{ "--as", admin, "secret", "list" },
+    &.{ "--as", admin, "content_type", "get", "--handle", "greeter.salutation" },
     &.{ "greeter", "--help" },
     &.{ "sampler", "--help" },
 };

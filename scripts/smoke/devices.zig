@@ -99,11 +99,11 @@ fn expect_remote(
         .data = kept,
     });
 
-    const whoami = try run_with(init, binary, work_dir, file, &.{"whoami"});
+    const whoami = try run_signed_in(init, binary, work_dir, file, &.{"whoami"});
 
     try expect_in("whoami", whoami.stdout, "smoke device");
 
-    const types = try run_with(init, binary, work_dir, file, &.{
+    const types = try run_signed_in(init, binary, work_dir, file, &.{
         "--site", address, "content_type", "list",
     });
 
@@ -111,14 +111,14 @@ fn expect_remote(
 
     // Final, so not run: listed for the device's person (a missing record is listed too:
     // the person's own removal finds it gone).
-    const purge = try run_with(init, binary, work_dir, file, &.{
+    const purge = try run_signed_in(init, binary, work_dir, file, &.{
         "--site", address, "record", "purge", "--id", "0190a1b2c3d40001a1b2c3d4",
     });
 
     try expect_in("--site record purge", purge.stderr, "Listed for removal");
 }
 
-fn run_with(
+fn run_signed_in(
     init: std.process.Init,
     binary: []const u8,
     work_dir: []const u8,

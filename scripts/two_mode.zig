@@ -6,7 +6,9 @@ const std = @import("std");
 const scenario = @import("two_mode/scenario.zig");
 const coverage = @import("two_mode/coverage.zig");
 
-const output_bytes_max: u32 = 64 << 10;
+/// What one call may print: as much as an installed plugin may answer (its default
+/// `output_kib`, 1 MiB), with room for the JSON around it.
+const output_bytes_max: u32 = 2 << 20;
 const plugins_max: u32 = 16;
 
 pub const Mode = enum { sandboxed, native };
@@ -120,7 +122,7 @@ fn install(init: std.process.Init, binary: []const u8, dir: []const u8, module: 
         .ignore_unknown_fields = true,
     })).name;
     const enabled = try expect_ok(init, binary, dir, &.{
-        "--as-admin", "plugin", "enable", "--names", name, "--content_access", "all",
+        "--as-admin", "plugin", "enable", "--names", name,
     });
     const Request = struct {
         key: []const u8,

@@ -26,7 +26,7 @@ const step_back_baseline: std.SemanticVersion = .{
     .patch = 0,
 };
 
-const Args = struct {
+const Arguments = struct {
     command: []const u8,
     binary: []const u8,
     version: []const u8,
@@ -63,7 +63,7 @@ pub fn main(init: std.process.Init) !u8 {
     return 2;
 }
 
-fn parse(init: std.process.Init) !Args {
+fn parse(init: std.process.Init) !Arguments {
     std.debug.assert(port > 0);
 
     const arena = init.arena.allocator();
@@ -71,7 +71,7 @@ fn parse(init: std.process.Init) !Args {
 
     _ = iterator.next();
 
-    var args: Args = .{
+    var args: Arguments = .{
         .command = iterator.next() orelse return error.Usage,
         .binary = iterator.next() orelse return error.Usage,
         .version = iterator.next() orelse return error.Usage,
@@ -99,7 +99,7 @@ fn parse(init: std.process.Init) !Args {
 }
 
 /// Every fixture, oldest first, then the lived site.
-fn matrix(init: std.process.Init, given: Args) !u8 {
+fn matrix(init: std.process.Init, given: Arguments) !u8 {
     std.debug.assert(given.fixtures.len > 0);
     std.debug.assert(port > 0);
 
@@ -149,7 +149,7 @@ fn matrix(init: std.process.Init, given: Args) !u8 {
 
 /// The release to step back to, unless it predates tolerant readers: a step back is promised
 /// from the baseline on.
-fn stepping_back(init: std.process.Init, args: Args) !?[]const u8 {
+fn stepping_back(init: std.process.Init, args: Arguments) !?[]const u8 {
     std.debug.assert(args.work.len > 0);
     std.debug.assert(args.version.len > 0);
 
@@ -173,7 +173,7 @@ fn stepping_back(init: std.process.Init, args: Args) !?[]const u8 {
 }
 
 /// One fixture unpacked and checked, its line printed; whether it passed.
-fn one(init: std.process.Init, args: Args, name: []const u8) !bool {
+fn one(init: std.process.Init, args: Arguments, name: []const u8) !bool {
     std.debug.assert(name.len > 0);
 
     const arena = init.arena.allocator();
@@ -224,7 +224,7 @@ fn one(init: std.process.Init, args: Args, name: []const u8) !bool {
 }
 
 /// The next migration drafted against the last release's schema, from its tag.
-fn draft(init: std.process.Init, args: Args) !u8 {
+fn draft(init: std.process.Init, args: Arguments) !u8 {
     std.debug.assert(args.fixtures.len > 0);
 
     const arena = init.arena.allocator();
@@ -281,7 +281,7 @@ fn draft(init: std.process.Init, args: Args) !u8 {
 }
 
 /// The release's fixture, made from nothing, and the lived site carried on to it.
-fn fixture(init: std.process.Init, args: Args) !void {
+fn fixture(init: std.process.Init, args: Arguments) !void {
     std.debug.assert(args.version.len > 0);
 
     const arena = init.arena.allocator();
@@ -309,7 +309,7 @@ fn fixture(init: std.process.Init, args: Args) !void {
 /// side. The first release's is its fresh fixture.
 fn carry_lived(
     init: std.process.Init,
-    args: Args,
+    args: Arguments,
     binary: []const u8,
     fresh_facts: facts_module.Facts,
 ) !void {

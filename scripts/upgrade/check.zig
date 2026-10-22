@@ -31,8 +31,15 @@ pub const Check = struct {
         return error.CheckFailed;
     }
 
-    /// Run `args` with `binary`: its output when it exited 0.
-    fn publr_with(check: *Check, binary: []const u8, args: []const []const u8) ![]const u8 {
+    const PublrOptions = struct {
+        /// Another release's binary; the one being checked when null.
+        binary: ?[]const u8 = null,
+    };
+
+    /// Run `args`: its output when it exited 0.
+    fn publr(check: *Check, args: []const []const u8, options: PublrOptions) ![]const u8 {
+        const binary = options.binary orelse check.binary;
+
         std.debug.assert(args.len > 0);
         std.debug.assert(binary.len > 0);
 
@@ -48,10 +55,6 @@ pub const Check = struct {
         }
 
         return result.stdout;
-    }
-
-    fn publr(check: *Check, args: []const []const u8) ![]const u8 {
-        return check.publr_with(check.binary, args);
     }
 };
 
@@ -86,11 +89,11 @@ pub fn run(check: *Check) !Result {
 
     const started_ms = std.Io.Clock.awake.now(check.init.io).toMilliseconds();
 
-    _ = try check.publr(&.{ "--as-admin", "heartbeat", "check" });
+    _ = try check.publr(&.{ "--as-admin", "heartbeat", "check" }, .{});
     result.gate_ms = std.Io.Clock.awake.now(check.init.io).toMilliseconds() - started_ms;
 
     try expect_shape(check);
-    _ = try check.publr(&.{ "--as-admin", "heartbeat", "check" });
+    _ = try check.publr(&.{ "--as-admin", "heartbeat", "check" }, .{});
 
     // A fixture this very release made, with nothing to run or make, is opened, not updated.
     const opened_by = try std.fmt.allocPrint(check.arena(), "last opened by {s};", .{
@@ -122,20 +125,32 @@ pub fn run(check: *Check) !Result {
 fn expect_back(check: *Check, previous: []const u8, facts: facts_module.Facts) !void {
     std.debug.assert(previous.len > 0);
 
-    _ = try check.publr_with(previous, &.{ "--as-admin", "heartbeat", "check" });
+    _ = try check.publr(&.{ "--as-admin", "heartbeat", "check" }, .{
+        .binary = previous,
+    });
 
     for (facts.records) |record| {
-        const listed = try check.publr_with(previous, &.{
-            "--as-admin", "record", "list", "--type", record.type,
-        });
+        const listed = try check.publr(
+            &.{
+                "--as-admin", "record", "list", "--type", record.type,
+            },
+            .{
+                .binary = previous,
+            },
+        );
 
         try expect_in(check, "record list by the release before", listed, record.title);
     }
 
     for (facts.users) |user| {
-        _ = try check.publr_with(previous, &.{
-            "user", "sign_in", "--email", user.email, "--password", facts_module.password,
-        });
+        _ = try check.publr(
+            &.{
+                "user", "sign_in", "--email", user.email, "--password", facts_module.password,
+            },
+            .{
+                .binary = previous,
+            },
+        );
     }
 }
 
@@ -144,7 +159,7 @@ fn expect_back(check: *Check, previous: []const u8, facts: facts_module.Facts) !
 fn expect_shape(check: *Check) !void {
     std.debug.assert(check.binary.len > 0);
 
-    const found = try check.publr(&.{ "db", "check" });
+    const found = try check.publr(&.{ "db", "check" }, .{});
     const pending = std.mem.indexOf(u8, found, "\nto run ") != null;
     const refused = std.mem.indexOf(u8, found, "\nrefused ") != null;
 
@@ -158,7 +173,7 @@ fn expect_backups(check: *Check, expected: u32) !void {
     std.debug.assert(check.from.len > 0);
     std.debug.assert(expected <= 1);
 
-    const listed = try check.publr(&.{"backups"});
+    const listed = try check.publr(&.{"backups"}, .{});
     const lines: u32 = if (std.mem.startsWith(u8, listed, "No backups"))
         0
     else
@@ -180,32 +195,33 @@ fn expect_facts(check: *Check, facts: facts_module.Facts) !u32 {
     for (facts.users) |user| {
         _ = try check.publr(&.{
             "user", "sign_in", "--email", user.email, "--password", facts_module.password,
-        });
+        }, .{});
         held += 1;
     }
 
     for (facts.records) |record| {
-        const listed = try check.publr(&.{ "--as-admin", "record", "list", "--type", record.type });
+        const list = [_][]const u8{ "--as-admin", "record", "list", "--type", record.type };
+        const listed = try check.publr(&list, .{});
 
         try expect_in(check, "record list", listed, record.title);
         held += 1;
     }
 
     for (facts.terms) |term| {
-        const tree = try check.publr(&.{ "term", "tree", "--taxonomy", term.taxonomy });
+        const tree = try check.publr(&.{ "term", "tree", "--taxonomy", term.taxonomy }, .{});
 
         try expect_in(check, "term tree", tree, term.title);
         held += 1;
     }
 
-    const media = try check.publr(&.{ "--as-admin", "media", "list", "--folder", "unsorted" });
+    const media = try check.publr(&.{ "--as-admin", "media", "list", "--folder", "unsorted" }, .{});
 
     for (facts.media) |item| {
         try expect_in(check, "media list", media, item.filename);
         held += 1;
     }
 
-    const secrets = try check.publr(&.{ "--as-admin", "secret", "list" });
+    const secrets = try check.publr(&.{ "--as-admin", "secret", "list" }, .{});
 
     for (facts.secrets) |secret| {
         try expect_in(check, "secret list", secrets, secret.name);
@@ -279,7 +295,7 @@ fn expect_write(check: *Check, content_type: []const u8) !void {
     const created = try check.publr(&.{
         "--as-admin", "record",     "create",                                   "--type",
         content_type, "--document", "{\"title\":\"Written after the update\"}",
-    });
+    }, .{});
     const Created = struct {
         id: []const u8,
     };
@@ -287,14 +303,14 @@ fn expect_write(check: *Check, content_type: []const u8) !void {
         .ignore_unknown_fields = true,
     });
 
-    _ = try check.publr(&.{ "--as-admin", "record", "publish", "--id", parsed.id });
+    _ = try check.publr(&.{ "--as-admin", "record", "publish", "--id", parsed.id }, .{});
 }
 
 /// The backup the gate took puts the site back as the fixture's release left it.
 fn expect_restore(check: *Check) !void {
     std.debug.assert(check.from.len > 0);
 
-    const listed = try check.publr(&.{"backups"});
+    const listed = try check.publr(&.{"backups"}, .{});
     const to = try std.fmt.allocPrint(check.arena(), "-> {s}\n", .{check.version});
     var lines = std.mem.splitScalar(u8, listed, '\n');
     const name = while (lines.next()) |line| {
@@ -306,7 +322,7 @@ fn expect_restore(check: *Check) !void {
         listed,
     });
 
-    _ = try check.publr(&.{ "restore", name });
+    _ = try check.publr(&.{ "restore", name }, .{});
 
     const db_check = [_][]const u8{ "db", "check" };
     const found = try smoke.run_publr(check.init, check.binary, check.site_dir, &db_check);

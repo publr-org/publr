@@ -38,7 +38,7 @@ const exercised = [_]Part{
     },
     .{
         .name = "hooks",
-        .where = "greeter's after, sampler's before, after, event and display",
+        .where = "greeter's after, sampler's before, after, event and modify",
     },
     .{
         .name = "permissions",
@@ -46,11 +46,11 @@ const exercised = [_]Part{
     },
     .{
         .name = "content_types",
-        .where = "salutation, sample_note, sample_log",
+        .where = "greeter.salutation, sampler.sample_note, sampler.sample_log",
     },
     .{
         .name = "custom_fields",
-        .where = "sampler_profile",
+        .where = "sampler's field group on users",
     },
     .{
         .name = "roles",
@@ -71,6 +71,26 @@ const exercised = [_]Part{
     .{
         .name = "open",
         .where = "sampler hello",
+    },
+    .{
+        .name = "public",
+        .where = "greeter hail",
+    },
+    .{
+        .name = "jobs",
+        .where = "sampler write_note (queued by later), tick (repeating)",
+    },
+    .{
+        .name = "untrusted_callers",
+        .where = "sampler wave",
+    },
+    .{
+        .name = "answer",
+        .where = "sampler wave",
+    },
+    .{
+        .name = "limit",
+        .where = "sampler wave",
     },
     .{
         .name = "fields",
@@ -149,12 +169,24 @@ const exercised = [_]Part{
         .where = "greeter's use of sampler hello",
     },
     .{
+        .name = "events",
+        .where = "greeter's greeted event",
+    },
+    .{
         .name = "operation",
         .where = "greeter's use of sampler hello",
     },
     .{
         .name = "compatible_with",
         .where = "greeter, with sampler",
+    },
+    .{
+        .name = "statuses",
+        .where = "sampler's sampled status on greeter's salutations",
+    },
+    .{
+        .name = "secrets",
+        .where = "sampler's SAMPLER_KEY, listed by secret list",
     },
     .{
         .name = "to",
@@ -177,8 +209,12 @@ const exercised = [_]Part{
         .where = "sampler's log page",
     },
     .{
-        .name = "sections",
-        .where = "sampler's Sample notes section",
+        .name = "menu",
+        .where = "sampler's Sample notes menu item, its notes and logs under it",
+    },
+    .{
+        .name = "icons",
+        .where = "sampler's own icon on its menu item",
     },
     .{
         .name = "panels",
@@ -198,15 +234,11 @@ const exercised = [_]Part{
     },
 };
 
-/// What only the sandbox has: a compiled-in plugin runs with everything, unlimited.
+/// What only the sandbox has: a compiled-in plugin runs unlimited, its grants as asked.
 const sandbox_only = [_]Part{
     .{
         .name = "format",
         .where = "the module's own format number",
-    },
-    .{
-        .name = "allowed_domains",
-        .where = "what the sandbox lets it reach",
     },
     .{
         .name = "depends_on",
@@ -217,20 +249,12 @@ const sandbox_only = [_]Part{
         .where = "the sandbox's CPU, memory and call limits",
     },
     .{
-        .name = "content_access",
-        .where = "what the sandbox lets it read",
-    },
-    .{
         .name = "left_out",
         .where = "what its sandboxed build could not carry",
     },
-    .{
-        .name = "uninstall",
-        .where = "run when an installed plugin is removed; never a built-in",
-    },
 };
 
-const stages_exercised = [_]Hook.Stage{ .before, .after, .event, .display };
+const stages_exercised = [_]Hook.Stage{ .before, .after, .event, .modify };
 const shapes_exercised = [_]Field.Shape{ .string, .integer, .number, .boolean, .strings, .json };
 
 pub fn check() void {

@@ -1,7 +1,7 @@
 //! The admin's messages for translators: `zig run scripts/i18n.zig -- <dir>...` writes a
 //! gettext template (`.pot`) to stdout of every message marked in the `.ptsx`, `.ts`,
 //! `.publr` and `.zig` files under the folders given: `Publr.t("…")`, `Publr.tx("context", "…")`,
-//! `Publr.tn("one", "other", n)`, and in Zig `translated("…")`, `translated_with("…", …)`,
+//! `Publr.tn("one", "other", n)`, and in Zig `translated("…", …)`,
 //! `translated_in("context", "…")`, `translated_count("one", "other", n)`. Each message once,
 //! with every place it is written.
 const std = @import("std");
@@ -36,10 +36,6 @@ const marks = [_]Mark{
     .{
         .pattern = "translated_count(",
         .kind = .plural,
-    },
-    .{
-        .pattern = "translated_with(",
-        .kind = .text,
     },
     .{
         .pattern = "translated(",

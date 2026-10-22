@@ -8,12 +8,18 @@
 //! (`@publr/ui/<Name>.ptsx`, resolved by file stem under `<components_dir>/<Family>/`),
 //! and an icon sprite holding every icon the compiled set names. The whole set
 //! lowers as one program into `<out_dir>`: `<Name>.zig` per module, `views.zig`,
-//! `classes.txt` (the JIT's manifest) and `stores.js`. Anything that does not
+//! `classes.txt` (the JIT's manifest) and `stores.js`, and a stand-in per component an
+//! installed plugin's view may have the host draw (`standins/`). Anything that does not
 //! resolve or lower fails the build by name.
+//!
+//! `--plugin` with one `<plugin_ui_dir>`: an installed plugin's views. The same program, but
+//! only the plugin's modules are written, with their own `views.zig` and the stand-ins beside
+//! them, and no engine: its expressions are lowered or refused.
 const std = @import("std");
 const pjsx = @import("pjsx");
 const request = @import("request");
 const layouts = @import("pjsx_gen/layouts.zig");
+const installed = @import("pjsx_gen/installed.zig");
 
 const Module = pjsx.compiler.ModuleIR;
 /// Stands for the render runtime's node while the request's fields are read.
@@ -22,7 +28,9 @@ const ShapeNode = struct {
 };
 
 const file_bytes_max = 4 << 20;
-const modules_max: u32 = 512;
+/// Every design-system file (281 on 2026-10-22, all compiled for installed plugins' views),
+/// the admin's views and every compiled-in plugin's, with room to grow.
+const modules_max: u32 = 1024;
 const icons_max: u32 = 128;
 const plugin_dirs_max: u32 = 64;
 const runtime_import = "publr-jsx";
@@ -44,6 +52,13 @@ const Set = struct {
     /// The admin's views as a compiled-in plugin's views import them:
     /// `@publr/admin/Layout.ptsx`.
     admin_views: std.ArrayList(pjsx.FileResolver.Import) = .empty,
+    /// The admin's layouts and components, by stem: with the design system, what an installed
+    /// plugin's view may have the host draw. Its pages are its own.
+    admin_parts: std.ArrayList([]const u8) = .empty,
+    /// `--plugin`: an installed plugin's views, its modules by component name; empty for the
+    /// admin's build.
+    own: std.ArrayList([]const u8) = .empty,
+    plugin: bool = false,
 
     fn compile(set: *Set, source: []const u8, label: []const u8) !void {
         std.debug.assert(label.len > 0);
@@ -73,11 +88,13 @@ const Set = struct {
             .io = set.io,
             .imports = imports.items,
         };
-        const module = pjsx.compiler.createPjsxModuleWithResolver(
+        const module = pjsx.compiler.createPjsxModule(
             set.arena,
             source,
             label,
-            resolver.resolver(),
+            .{
+                .resolver = resolver.resolver(),
+            },
         ) catch |err| {
             return report(err, label);
         };
@@ -117,21 +134,42 @@ pub fn main(init: std.process.Init) u8 {
 
 fn run(init: std.process.Init) !u8 {
     const arena = init.arena.allocator();
-    const io = init.io;
     var args = try init.minimal.args.iterateAllocator(arena);
     _ = args.next();
     var first = args.next() orelse return usage();
-    // The views run their compiled expressions through the request's engine.
-    const engine = std.mem.eql(u8, first, "--engine");
+    var given: Args = .{
+        .ui_dir = "",
+        .components_dir = "",
+        .icons_dir = "",
+        .out_dir = "",
+    };
 
-    if (engine) {
+    // The views run their compiled expressions through the request's engine.
+    given.engine = std.mem.eql(u8, first, "--engine");
+
+    if (given.engine) {
         first = args.next() orelse return usage();
     }
 
-    const ui_dir_path = first;
-    const components_dir_path = args.next() orelse return usage();
-    const icons_dir_path = args.next() orelse return usage();
-    const out_dir_path = args.next() orelse return usage();
+    // An installed plugin's views: only its own modules are written, beside stand-ins.
+    given.plugin = std.mem.eql(u8, first, "--plugin");
+
+    if (given.plugin) {
+        first = args.next() orelse return usage();
+    }
+
+    // The admin's build: every design-system component, for installed plugins' views.
+    given.all_components = std.mem.eql(u8, first, "--all-components");
+
+    if (given.all_components) {
+        first = args.next() orelse return usage();
+    }
+
+    given.ui_dir = first;
+    given.components_dir = args.next() orelse return usage();
+    given.icons_dir = args.next() orelse return usage();
+    given.out_dir = args.next() orelse return usage();
+
     var plugin_dirs: std.ArrayList([]const u8) = .empty;
 
     while (args.next()) |plugin_dir| {
@@ -142,48 +180,100 @@ fn run(init: std.process.Init) !u8 {
         try plugin_dirs.append(arena, plugin_dir);
     }
 
-    for ([_][]const u8{ ui_dir_path, components_dir_path, icons_dir_path, out_dir_path }) |path| {
+    given.plugin_dirs = plugin_dirs.items;
+
+    std.debug.assert(given.plugin_dirs.len <= plugin_dirs_max);
+
+    generate(arena, init.io, given) catch |err| switch (err) {
+        error.Usage => return usage(),
+        else => return err,
+    };
+
+    return 0;
+}
+
+/// What a lowering is asked: the admin's views, the design system and the icons it reads,
+/// where it writes, the compiled-in plugins' views, or with `plugin` one installed plugin's.
+pub const Args = struct {
+    ui_dir: []const u8,
+    components_dir: []const u8,
+    icons_dir: []const u8,
+    out_dir: []const u8,
+    plugin_dirs: []const []const u8 = &.{},
+    engine: bool = false,
+    plugin: bool = false,
+    /// Every design-system component, reached by a view or not: only the admin's build, whose
+    /// binary draws them for installed plugins. An app's build compiles what it reaches, so its
+    /// stylesheet carries only those.
+    all_components: bool = false,
+};
+
+/// The lowering: `zig build`'s, through `main`, and `publr plugin build`'s, in its process.
+/// A source that does not resolve or lower fails it by name, printed as it goes.
+pub fn generate(arena: std.mem.Allocator, io: std.Io, given: Args) !void {
+    const paths = [_][]const u8{
+        given.ui_dir,
+        given.components_dir,
+        given.icons_dir,
+        given.out_dir,
+    };
+
+    for (paths) |path| {
         if (path.len == 0) {
-            return usage();
+            return error.Usage;
         }
+    }
+
+    if (given.plugin and given.plugin_dirs.len != 1) {
+        return error.Usage;
     }
 
     const cwd = std.Io.Dir.cwd();
     var set: Set = .{
         .arena = arena,
         .io = io,
-        .engine = engine,
-        .components_dir_path = components_dir_path,
-        .components_dir = try cwd.openDir(io, components_dir_path, .{
+        .engine = given.engine and !given.plugin,
+        .plugin = given.plugin,
+        .components_dir_path = given.components_dir,
+        .components_dir = try cwd.openDir(io, given.components_dir, .{
             .iterate = true,
         }),
     };
     defer set.components_dir.close(io);
 
     try index_components(&set);
-    try compile_ui(&set, ui_dir_path, .admin);
+    try compile_ui(&set, given.ui_dir, .admin);
 
     if (set.modules.items.len == 0) {
-        return report(error.NoModules, ui_dir_path);
+        return report(error.NoModules, given.ui_dir);
     }
 
-    for (plugin_dirs.items) |plugin_dir| {
+    for (given.plugin_dirs) |plugin_dir| {
+        const before = set.modules.items.len;
+
         try compile_ui(&set, plugin_dir, .plugin);
+
+        for (set.modules.items[before..]) |module| {
+            try set.own.append(arena, module.component.name);
+        }
+    }
+
+    if (given.all_components and !given.plugin) {
+        try compile_all_components(&set);
     }
 
     try compile_imports(&set);
 
-    const ui_dirs = try std.mem.concat(arena, []const u8, &.{ &.{ui_dir_path}, plugin_dirs.items });
+    const admin_dir: []const []const u8 = &.{given.ui_dir};
+    const ui_dirs = try std.mem.concat(arena, []const u8, &.{ admin_dir, given.plugin_dirs });
 
-    try compile_sprite(&set, ui_dirs, icons_dir_path);
-    try cwd.createDirPath(io, out_dir_path);
-    var out_dir = try cwd.openDir(io, out_dir_path, .{});
+    try compile_sprite(&set, ui_dirs, given.icons_dir);
+    try cwd.createDirPath(io, given.out_dir);
+    var out_dir = try cwd.openDir(io, given.out_dir, .{});
     defer out_dir.close(io);
     try lower(&set, out_dir);
 
     std.debug.assert(set.modules.items.len > 0);
-
-    return 0;
 }
 
 /// Every `<Family>/<Name>.ptsx` under the design system, by stem.
@@ -289,6 +379,10 @@ fn compile_ui(set: *Set, ui_dir_path: []const u8, owner: enum { admin, plugin })
             return error.Failed;
         }
 
+        if (owner == .admin and !std.mem.startsWith(u8, path, "pages")) {
+            try set.admin_parts.append(set.arena, stem);
+        }
+
         if (owner == .admin) {
             try set.admin_views.append(set.arena, .{
                 .specifier = try std.fmt.allocPrint(set.arena, "@publr/admin/{s}.ptsx", .{stem}),
@@ -332,17 +426,69 @@ fn compile_imports(set: *Set) !void {
 
                 return error.UnresolvedImport;
             };
-            const source = try set.components_dir.readFileAlloc(
-                set.io,
-                path,
-                set.arena,
-                .limited(file_bytes_max),
-            );
-            const marked = try mark_design_system(set.arena, source, stem);
-            const label = try std.fs.path.join(set.arena, &.{ set.components_dir_path, path });
-            try set.compile(marked, label);
+
+            try compile_component(set, stem, path);
         }
     }
+}
+
+/// One design-system component, marked for the audit outline.
+fn compile_component(set: *Set, stem: []const u8, path: []const u8) !void {
+    std.debug.assert(stem.len > 0);
+    std.debug.assert(path.len > 0);
+
+    const source = try set.components_dir.readFileAlloc(
+        set.io,
+        path,
+        set.arena,
+        .limited(file_bytes_max),
+    );
+    const marked = try mark_design_system(set.arena, source, stem);
+    const label = try std.fs.path.join(set.arena, &.{ set.components_dir_path, path });
+
+    try set.compile(marked, label);
+}
+
+/// Every design-system component, reached by a view or not: an installed plugin's view may
+/// have the host draw any of them, so the binary carries them all, drafts (`.next`) aside.
+/// In stem order.
+fn compile_all_components(set: *Set) !void {
+    std.debug.assert(!set.plugin);
+
+    var stems: std.ArrayList([]const u8) = .empty;
+    var iterator = set.components.iterator();
+
+    while (iterator.next()) |entry| {
+        try stems.append(set.arena, entry.key_ptr.*);
+    }
+
+    std.mem.sort([]const u8, stems.items, {}, less_than);
+
+    for (stems.items) |stem| {
+        const path = set.components.get(stem).?;
+
+        // A `.next` file is the design system's draft of a family, never its published part.
+        const draft = std.mem.indexOf(u8, path, ".next.") != null;
+
+        if (draft or set.has(stem) or compiled_file(set, path)) {
+            continue;
+        }
+
+        try compile_component(set, stem, path);
+    }
+}
+
+/// Whether the design system's file at `path` is compiled already, under any stem.
+fn compiled_file(set: *const Set, path: []const u8) bool {
+    std.debug.assert(path.len > 0);
+
+    for (set.modules.items) |module| {
+        if (std.mem.endsWith(u8, module.filename, path)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Audit aid: the root element of a design-system component gets `data-ds="<Stem>"`, so
@@ -569,6 +715,17 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
         program.expressions_field = "publr_expressions";
     }
 
+    if (set.plugin) {
+        const callable = try callable_names(set);
+
+        const own = set.own.items;
+
+        installed.write_plugin(arena, set.io, &program, own, callable, out_dir) catch |err| {
+            return report(err, "plugin");
+        };
+        return;
+    }
+
     for (set.modules.items) |module| {
         const name = module.component.name;
         const code = program.lower(arena, name) catch |err| return report(err, name);
@@ -590,8 +747,17 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
     const stores = browser.written();
     try out_dir.writeFile(set.io, .{
         .sub_path = "views.zig",
-        .data = views,
+        .data = try std.mem.concat(arena, u8, &.{
+            views,
+            "\n/// What an installed plugin's view may have the host draw.\n",
+            "pub const callable = @import(\"callable.zig\");\n",
+        }),
     });
+    try out_dir.writeFile(set.io, .{
+        .sub_path = "callable.zig",
+        .data = try callable_file(set),
+    });
+    try installed.write_stand_ins(arena, set.io, try callable_names(set), out_dir);
     try out_dir.writeFile(set.io, .{
         .sub_path = "classes.txt",
         .data = classes,
@@ -604,6 +770,52 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
         .sub_path = "expressions.js",
         .data = program.serverFile(arena) catch |err| return report(err, "expressions.js"),
     });
+}
+
+/// Every design-system component compiled, and the admin's layouts and components, in
+/// stem order: what an installed plugin's view may have the host draw.
+fn callable_names(set: *Set) ![]const []const u8 {
+    std.debug.assert(set.modules.items.len > 0);
+
+    var names: std.ArrayList([]const u8) = .empty;
+
+    for (set.modules.items) |module| {
+        const stem = stem_of(module.filename);
+        var admin = false;
+
+        for (set.admin_parts.items) |part| {
+            admin = admin or std.mem.eql(u8, part, stem);
+        }
+
+        if (set.components.contains(stem) or admin) {
+            try names.append(set.arena, module.component.name);
+        }
+    }
+
+    std.mem.sort([]const u8, names.items, {}, less_than);
+
+    std.debug.assert(names.items.len <= modules_max);
+
+    return names.items;
+}
+
+/// `callable.zig`: `callable_names` as the host's dispatcher reads them.
+fn callable_file(set: *Set) ![]const u8 {
+    const names = try callable_names(set);
+    var out: std.Io.Writer.Allocating = .init(set.arena);
+
+    std.debug.assert(names.len > 0);
+
+    try out.writer.writeAll("//! Generated by pjsx_gen: what an installed plugin's view " ++
+        "may have the host draw.\npub const names = [_][]const u8{\n");
+
+    for (names) |name| {
+        try out.writer.print("    \"{s}\",\n", .{name});
+    }
+
+    try out.writer.writeAll("};\n");
+
+    return out.written();
 }
 
 /// The helpers islands import from plain modules (`upload_picture` from `PictureTray`),
@@ -714,8 +926,8 @@ fn browser_imports(set: *Set, writer: *std.Io.Writer) !void {
 }
 
 fn usage() u8 {
-    std.debug.print("usage: pjsx_gen [--engine] <ui_dir> <components_dir> <icons_dir> " ++
-        "<out_dir> [<plugin_ui_dir> ...]\n", .{});
+    std.debug.print("usage: pjsx_gen [--engine] [--plugin | --all-components] <ui_dir> " ++
+        "<components_dir> <icons_dir> <out_dir> [<plugin_ui_dir> ...]\n", .{});
 
     return 2;
 }

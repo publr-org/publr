@@ -45,7 +45,7 @@ pub fn expect_browser(init: std.process.Init, binary: []const u8, work_dir: []co
     try environ.put("PUBLR_AI_SCRIPT", script_path);
 
     var child = try std.process.spawn(init.io, .{
-        .argv = &.{ binary, "serve", "--port", "8097" },
+        .argv = &.{ binary, "serve", "--port", "8089" },
         .cwd = .{
             .path = dir,
         },

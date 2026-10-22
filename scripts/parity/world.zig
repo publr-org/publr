@@ -28,7 +28,7 @@ const issuer_seed = [_]u8{7} ** 32;
 
 const page_definition =
     \\{"handle":"page","name":"Page","public":true,
-    \\ "fields":[{"name":"title","label":"Title","kind":"string","required":true}]}
+    \\ "fields":[{"name":"title","label":"Title","kind":"string","validation":{"required":true}}]}
 ;
 const second_document = "{\"title\":\"Hello, world\",\"body\":\"<p>Second.</p>\"}";
 const edited_document = "{\"title\":\"Hello, world\",\"body\":\"<p>Edited.</p>\"}";
@@ -36,7 +36,7 @@ const referring_document = "{\"title\":\"See also\",\"related\":[\"" ++
     records.example_id ++ "\"]}";
 const tags_definition =
     \\{"handle":"tags","name":"Tags","title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
+    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
 ;
 
 /// Everything the printed examples name: Ada, the admin every `--as` points at; an editor
@@ -171,6 +171,9 @@ fn fill_plugins(ctx: *Ctx, dir: []const u8) Error!void {
         .file = next,
     });
     ctx.caller = admin;
+
+    // One greeting, for `plugin log`'s example: greeter logs the note it greeted with.
+    _ = try SDK.call_json(ctx, "greeter.greet", "{\"note\":\"hi\"}");
 
     // One refusal for the error log's example: a plugin that is not there.
     const refused = SDK.dispatch(ctx, plugin_operations.Disable, .{
@@ -505,6 +508,8 @@ fn fill_records(ctx: *Ctx) Error!void {
     });
 
     try record_with_id(ctx, records.example_draft_id);
+    // A contributor's publish waiting on the draft, for `record decline_request`.
+    try store.records.ask(ctx.db, records.example_draft_id, "publish", null);
 
     const referring = try SDK.dispatch(ctx, records.Create, .{
         .type = "post",

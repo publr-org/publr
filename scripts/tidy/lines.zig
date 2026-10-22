@@ -127,6 +127,13 @@ fn short_identifier(line: []const u8) bool {
         if (!declares_identifier(line, start, index)) {
             continue;
         }
+        // The translation function keeps gettext's name, as `Publr.t` does in templates.
+        const translation = std.mem.indexOf(u8, line, "pub fn t(") != null or
+            std.mem.indexOf(u8, line, "pub const t = ") != null;
+
+        if (translation) {
+            continue;
+        }
 
         return true;
     }

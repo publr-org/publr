@@ -65,7 +65,10 @@ pub fn main(init: std.process.Init) !u8 {
 /// case kept or unlinked needs a
 /// broken reference, which the seeded project has none of; choosing between translations,
 /// or listing what one leaves untranslated, needs plugins translating the admin, and it has
-/// none.
+/// none; installing from the marketplace needs the plugins' built modules, which the fixture
+/// catalog does not carry; overriding who may call needs a plugin's operation made with
+/// `publr.operation.define`, which the fixture compiles in none of; and the seeded project's
+/// plugins queue no jobs for `job list` to show; `project put` answers only a plugin's call.
 const skips = [_][]const u8{
     "ai.ask",
     "ai.reply",
@@ -95,6 +98,10 @@ const skips = [_][]const u8{
     "health.unlink",
     "health.choose_translation",
     "health.missing_translations",
+    "plugin.install",
+    "operation.authorize",
+    "job.list",
+    "project.put",
 };
 
 fn skipped(comptime name: []const u8) bool {
@@ -180,14 +187,16 @@ fn seed(init: std.process.Init, dir: []const u8) !void {
     var arena_state = std.heap.ArenaAllocator.init(init.gpa);
     defer arena_state.deinit();
 
-    var ctx = publr.sdk.Ctx.init(.{
-        .caller = .system,
-        .db = &application.connection,
-        .io = init.io,
-        .arena = arena_state.allocator(),
-        .auth = &application.auth,
-        .now_ms = publr.sdk.context.wall_clock_ms(init.io),
-    });
+    var ctx = publr.sdk.Ctx.init(
+        &application.connection,
+        init.io,
+        arena_state.allocator(),
+        &application.auth,
+        .system,
+        .{
+            .now_ms = publr.sdk.context.wall_clock_ms(init.io),
+        },
+    );
 
     ctx.sandboxed_plugins = application.sandboxed();
     ctx.files = application.files_of();

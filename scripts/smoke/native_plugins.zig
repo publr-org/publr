@@ -93,10 +93,11 @@ fn expect_structure(
     std.debug.assert(std.fs.path.isAbsolute(module));
 
     const thing = "{\"handle\":\"thing\",\"name\":\"Thing\",\"fields\":[" ++
-        "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\",\"required\":true}]}";
+        "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
+        "\"validation\":{\"required\":true}}]}";
     const tags = "{\"handle\":\"tags\",\"name\":\"Tags\",\"title_field\":\"name\"," ++
         "\"fields\":[{\"name\":\"name\",\"label\":\"Name\",\"kind\":\"string\"," ++
-        "\"required\":true}]}";
+        "\"validation\":{\"required\":true}}]}";
     const profile = "{\"handle\":\"profile\",\"name\":\"Profile\"," ++
         "\"kind\":\"component\",\"fields\":[]}";
     const steps = [_][]const []const u8{
@@ -117,11 +118,11 @@ fn expect_structure(
     const seen = [_][]const u8{ "--as-admin", "recorder", "seen" };
     const heard = [_][]const u8{
         "apps.loaded ",
-        "content_type.created thing",
-        "taxonomy.created tags",
-        "custom_fields.created profile",
-        "plugin.added postcard",
-        "plugin.enabled postcard",
+        "content_type.create thing",
+        "taxonomy.create tags",
+        "custom_fields.create profile",
+        "plugin.add postcard",
+        "plugin.enable postcard",
     };
 
     for (heard) |line| {

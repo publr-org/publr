@@ -5,7 +5,7 @@ const args_max: u32 = 64;
 const archive_bytes_max: u32 = 64 << 20;
 const window_len = std.compress.flate.max_window_len;
 
-const Args = struct {
+const Arguments = struct {
     archive_path: []const u8,
     target_root: []const u8,
     name: []const u8,
@@ -63,14 +63,14 @@ pub fn run(init: std.process.Init, raw_args: []const []const u8) !u8 {
     return 0;
 }
 
-fn parse_args(init: std.process.Init, list: []const []const u8) !Args {
+fn parse_args(init: std.process.Init, list: []const []const u8) !Arguments {
     std.debug.assert(list.len < 1 << 16);
     std.debug.assert(args_max > 6);
 
     return parse_args_with(init.arena.allocator(), list);
 }
 
-fn parse_args_with(arena: std.mem.Allocator, list: []const []const u8) !Args {
+fn parse_args_with(arena: std.mem.Allocator, list: []const []const u8) !Arguments {
     if (list.len > args_max) {
         return error.TooManyArguments;
     }
@@ -223,7 +223,7 @@ fn copy_path(
 fn write_version(
     io: std.Io,
     target: std.Io.Dir,
-    args: Args,
+    args: Arguments,
     sha256_hex: *const [64]u8,
     files_copied: u32,
 ) !void {
@@ -242,7 +242,7 @@ fn write_version(
 
 fn render_version(
     writer: *std.Io.Writer,
-    args: Args,
+    args: Arguments,
     sha256_hex: *const [64]u8,
     files_copied: u32,
 ) !void {
@@ -295,7 +295,7 @@ test "parse_args needs six arguments; the rest is the keep list" {
 test "render_version writes a ZON manifest with the pins and the keep list" {
     var buffer: [4096]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
-    const args: Args = .{
+    const args: Arguments = .{
         .archive_path = "/tmp/x-1.0.tar.gz",
         .target_root = "/vendor/x",
         .name = "x",

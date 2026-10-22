@@ -264,7 +264,8 @@ fn content(seed: *Seed, filed: Filed) !void {
     ), "-", "_");
     const definition = try std.fmt.allocPrint(arena, "{{\"handle\":\"{s}\",\"name\":\"Fixture " ++
         "{s}\",\"public\":true,\"fields\":[" ++
-        "{{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\",\"required\":true}}," ++
+        "{{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
+        "\"validation\":{{\"required\":true}}}}," ++
         "{{\"name\":\"slug\",\"label\":\"Slug\",\"kind\":\"slug\",\"options\":{{\"source\":" ++
         "\"title\"}}}},{{\"name\":\"body\",\"label\":\"Body\",\"kind\":\"richtext\"," ++
         "\"searchable\":true}},{{\"name\":\"topics\",\"label\":\"Topics\",\"kind\":" ++
@@ -349,7 +350,8 @@ fn taxonomy(seed: *Seed) !Filed {
     ), "-", "_");
     const definition = try std.fmt.allocPrint(arena, "{{\"handle\":\"{s}\",\"name\":\"Topics " ++
         "{s}\",\"public\":true,\"hierarchical\":true,\"title_field\":\"name\",\"fields\":[" ++
-        "{{\"name\":\"name\",\"label\":\"Name\",\"kind\":\"string\",\"required\":true," ++
+        "{{\"name\":\"name\",\"label\":\"Name\",\"kind\":\"string\"," ++
+        "\"validation\":{{\"required\":true}}," ++
         "\"searchable\":true}},{{\"name\":\"slug\",\"label\":\"Slug\",\"kind\":\"slug\"," ++
         "\"options\":{{\"source\":\"name\"}}}}]}}", .{ handle, seed.release });
     const title = try std.fmt.allocPrint(arena, "Topic {s}", .{seed.release});

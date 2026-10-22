@@ -1,6 +1,6 @@
 //! A site's updates from the outside: what `db check` and `db tables` find, the backups and
 //! a restore of one that is not there, `update status` from a running server, and the
-//! Settings › Updates page behind the sign-in.
+//! Settings › Updates page behind the sign-in; then the site moved whole (`bundles.zig`).
 const std = @import("std");
 const smoke = @import("../smoke.zig");
 
@@ -38,6 +38,7 @@ pub fn expect_updates(init: std.process.Init, binary: []const u8, work_dir: []co
 
     try smoke.expect_contains(init, binary, dir, &status, "\"step\": \"idle\"");
     try expect_page(init, port);
+    try @import("bundles.zig").expect_bundles(init, binary, work_dir);
 }
 
 fn expect_page(init: std.process.Init, port: u16) !void {

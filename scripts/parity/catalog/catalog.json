@@ -7,6 +7,14 @@
       "kind": "ai_provider",
       "version": "0.1.0",
       "module": "dist/ai_example.wasm"
+    },
+    {
+      "name": "products",
+      "label": "Products",
+      "summary": "Products and their variants, each variant with a price",
+      "kind": "feature",
+      "version": "0.1.0",
+      "module": "dist/products.wasm"
     }
   ]
 }
