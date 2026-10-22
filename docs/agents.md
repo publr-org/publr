@@ -333,7 +333,7 @@ frame, looking like the admin's own. Keep it that way:
   a status tone is one of neutral, success, warning, error, accent, review, info (the
   build refuses others).
 - **A form by declaration.** A page declared as
-  `.form = .{ .read = Read, .save = Save, .multiline = &.{"description"} }` needs no
+  `.form = .{ .read = Read, .save = Save }` needs no
   views at all: the admin draws the form from `Save`'s input (each field's `///` is its
   help), filled from what `Read` answers, compiled in or installed alike. In
   a page of your own, `@publr/admin/OperationForm.ptsx` does the same from a list of

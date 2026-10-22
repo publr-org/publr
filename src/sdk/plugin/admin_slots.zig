@@ -159,8 +159,6 @@ pub const Form = struct {
     read: type,
     /// A write of the plugin's own taking every field.
     save: type,
-    /// Fields drawn as several lines rather than one.
-    multiline: []const []const u8 = &.{},
 };
 
 pub const SettingsPage = struct {

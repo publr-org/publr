@@ -19,11 +19,9 @@ pub const Page = struct {
     icon: []const u8,
     /// The read that draws it in the frame; empty for a form by declaration.
     operation: []const u8,
-    /// A form by declaration: the read that fills it, the write that saves it, the fields
-    /// drawn as several lines.
+    /// A form by declaration: the read that fills it, the write that saves it.
     read: []const u8 = "",
     save: []const u8 = "",
-    multiline: []const []const u8 = &.{},
     /// Left out of the menu (`.menu = .none`); still opened at its address.
     hidden: bool = false,
 
@@ -68,7 +66,6 @@ pub fn all(session: *const Session) admin.Error![]const Page {
                 .operation = page.operation,
                 .read = page.read,
                 .save = page.save,
-                .multiline = page.multiline,
                 .hidden = page.hidden,
             };
 
@@ -95,7 +92,6 @@ fn native(comptime owned: @import("../../../sdk/plugin.zig").OwnedPage) Page {
             .operation = if (page.operation) |Operation| Operation.name else "",
             .read = if (page.form) |form| form.read.name else "",
             .save = if (page.form) |form| form.save.name else "",
-            .multiline = if (page.form) |form| form.multiline else &.{},
             .hidden = page.menu != null,
         };
     }

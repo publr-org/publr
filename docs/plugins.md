@@ -699,10 +699,10 @@ What the frame draws never reaches the admin, so it needs no sanitizing and no
 permission.
 
 A page can also be a declaration, with no views of the plugin's: `.form = .{ .read =
-Read, .save = Save, .multiline = &.{"description"} }` instead of `.operation`. The admin
+Read, .save = Save }` instead of `.operation`. The admin
 draws it as one of its own pages (no frame: nothing of the plugin's is drawn), a field for
-each field of `Save`'s input (strings, numbers, switches; `multiline` ones as several
-lines; each field's `///` as its help), filled from what `Read` answers; Save calls
+each field of `Save`'s input (strings, numbers, switches; each field's `///` as its
+help), filled from what `Read` answers; Save calls
 `Save` as the person looking. It works the same for an installed plugin, which draws
 nothing else in the admin yet.
 

@@ -234,7 +234,6 @@ pub const Page = struct {
     operation: []const u8 = "",
     read: []const u8 = "",
     save: []const u8 = "",
-    multiline: []const []const u8 = &.{},
     /// `.menu = .none`: left out of the menu, still opened at its address.
     hidden: bool = false,
 };

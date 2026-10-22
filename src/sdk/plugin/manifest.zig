@@ -120,7 +120,6 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .icon = page.icon,
                     .read = form.read.name,
                     .save = form.save.name,
-                    .multiline = form.multiline,
                     .hidden = page.menu != null,
                 }};
             } else if (takes(page.operation.?.run)) {

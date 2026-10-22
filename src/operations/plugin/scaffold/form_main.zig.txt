@@ -141,7 +141,6 @@ const settings: publr.plugin.Page = .{
     .form = .{
         .read = Read,
         .save = Save,
-        .multiline = &.{"description"},
     },
 };
 
