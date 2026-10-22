@@ -58,7 +58,8 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
             }};
         }
 
-        for (contract.jobs_of(Plugin)) |Job| {
+        // A webhook's delivery runs as one of its jobs.
+        for (contract.jobs_of(Plugin) ++ contract.webhooks_of(Plugin)) |Job| {
             entries = entries ++ &[_]Entry{.{
                 .stage = .job,
                 .declaration = Job,
@@ -209,11 +210,6 @@ pub fn HookOut(comptime Middleware: type) type {
 pub fn assert_sandboxable(comptime Plugin: type) void {
     comptime {
         const name = Plugin.manifest.name;
-
-        if (plugin_define.has(Plugin, "webhooks")) {
-            @compileError("plugin " ++ name ++ ": `.webhooks` is for a built-in plugin until " ++
-                "installed plugins run them");
-        }
 
         for (permissions_of(Plugin)) |permission| {
             if (permission.reason.len == 0 or permission.reason.len > reason_len_max) {

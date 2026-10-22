@@ -1,9 +1,9 @@
 //! `publr.webhook.define(Event, .{ .name, .secret, .signature, .run })`: what another server
 //! sends to `/_webhooks/<plugin>.<name>`. Core checks the signature on the raw bytes with the
 //! plugin's declared secret, answers 200 at once and runs `run` as queued work with the body
-//! read as `Event`: JSON, a form (`.body = .form`), or the bytes as they came
-//! (`publr.webhook.Delivery`). Not an operation: no caller, no `.authorize`; the signature is
-//! its only credential. Listed in `.webhooks`.
+//! read as `Event`: JSON, a form (`.body = .form`), or the bytes as they came (`.body = .raw`,
+//! `Event` a `publr.webhook.Delivery`). Not an operation: no caller, no `.authorize`; the
+//! signature is its only credential. Listed in `.webhooks`, by built-in and installed plugins.
 const std = @import("std");
 const job_define = @import("job_define.zig");
 const queue = @import("queue.zig");
@@ -17,38 +17,14 @@ pub const body_bytes_max: u32 = 256 << 10;
 /// How far a timestamped signature's time may be from now.
 pub const tolerance_ms: i64 = 5 * 60 * 1000;
 
-/// How the sender signs.
-pub const Signature = union(enum) {
-    /// An HMAC-SHA256 of the body in a header (`X-Hub-Signature-256: sha256=<hex>`).
-    hmac: struct {
-        header: []const u8,
-        prefix: []const u8 = "",
-        encoding: Encoding = .hex,
-    },
-    /// The timestamped HMAC payment providers send: `t=<seconds>,v1=<hex>` over
-    /// `<seconds>.<body>`, refused when the time is over five minutes off.
-    timestamped: struct {
-        header: []const u8,
-    },
-    /// The secret itself, in a header.
-    token: struct {
-        header: []const u8,
-    },
-};
+pub const wire = @import("../../model/sandboxed_plugin.zig");
 
-pub const Encoding = enum { hex, base64 };
+pub const Signature = wire.Signature;
+pub const Encoding = wire.Encoding;
+pub const Body = wire.Body;
+pub const DeliveryId = wire.DeliveryId;
 
-/// How the body is read into `Event`.
-pub const Body = enum { json, form };
-
-/// Where a delivery's own id is, so a repeat is dropped: a header, or a top-level field.
-pub const DeliveryId = union(enum) {
-    header: []const u8,
-    field: []const u8,
-};
-
-/// A delivery as it came, for `Event = publr.webhook.Delivery`: the body within the cap and
-/// its headers.
+/// A delivery as it came, for `.body = .raw`: the body within the cap and its headers.
 pub const Delivery = struct {
     body: []const u8,
     /// `name: value` lines.
@@ -91,9 +67,11 @@ pub fn define(comptime Event: type, comptime options: anytype) type {
             @compileError("a webhook's `.name` is one word under its plugin: " ++ options.name);
         }
 
-        if (Event == Delivery and @hasField(Options, "body")) {
-            @compileError("webhook " ++ options.name ++ ": a `publr.webhook.Delivery` is the " ++
-                "body as it came; `.body` reads it as something else");
+        const raw = @hasField(Options, "body") and options.body == .raw;
+
+        if ((Event == Delivery) != raw) {
+            @compileError("webhook " ++ options.name ++ ": `.body = .raw` hands `run` a " ++
+                "`publr.webhook.Delivery`, the body as it came; other bodies are read as `Event`");
         }
     }
 
@@ -107,9 +85,7 @@ pub fn define(comptime Event: type, comptime options: anytype) type {
         pub const verb: []const u8 = "webhook_" ++ options.name;
         pub const secret: []const u8 = options.secret;
         pub const signature: Signature = union_of(Signature, options.signature);
-        pub const body: ?Body = if (Event == Delivery)
-            null
-        else if (@hasField(Options, "body")) options.body else .json;
+        pub const body: Body = if (@hasField(Options, "body")) options.body else .json;
         pub const delivery_id: ?DeliveryId = if (@hasField(Options, "delivery_id"))
             union_of(DeliveryId, options.delivery_id)
         else
@@ -117,13 +93,26 @@ pub fn define(comptime Event: type, comptime options: anytype) type {
         pub const on_conflict = null;
         pub const every: ?job_define.Every = null;
         pub const at: job_define.At = .{};
+        pub const due_on: ?job_define.Due = null;
 
         /// The delivery read as `Event` and handed to the plugin's `run`; what it logged is
         /// kept with the delivery, and so is how it ended.
         pub fn run(ctx: anytype, in: Queued) Error!void {
             std.debug.assert(in.delivery > 0);
 
-            const inner = queue.base_of(ctx).inner;
+            const base = queue.base_of(ctx);
+
+            // In an installed plugin's sandbox the host hands the delivery over and keeps
+            // how it ended.
+            if (comptime !@hasField(std.meta.Child(@TypeOf(base)), "inner")) {
+                const event = read(Event, body, base.arena(), in.body, in.headers) catch {
+                    return error.Invalid;
+                };
+
+                return options.run(ctx, event);
+            }
+
+            const inner = base.inner;
             const kept = try deliveries.get(inner.db, inner.arena, in.delivery) orelse {
                 return error.NotFound;
             };
@@ -148,9 +137,13 @@ pub fn define(comptime Event: type, comptime options: anytype) type {
         pub fn on_failure(ctx: anytype, in: Queued, problem: []const u8) void {
             std.debug.assert(problem.len > 0);
 
-            const inner = queue.base_of(ctx).inner;
+            const base = queue.base_of(ctx);
 
-            settled(inner, in.delivery, "failed", problem) catch |err| {
+            if (comptime !@hasField(std.meta.Child(@TypeOf(base)), "inner")) {
+                return;
+            }
+
+            settled(base.inner, in.delivery, "failed", problem) catch |err| {
                 std.log.warn("webhook {s}: delivery {d} not marked failed: {t}", .{
                     options.name,
                     in.delivery,
@@ -201,10 +194,13 @@ fn union_of(comptime Union: type, comptime given: anytype) Union {
 /// What a delivery's queued run carries: the delivery kept.
 pub const Queued = struct {
     delivery: i64,
+    /// For an installed plugin's run, which has no store to read the delivery from.
+    body: []const u8 = "",
+    headers: []const u8 = "",
 };
 
 /// The delivery's result and what its run logged.
-fn settled(inner: anytype, id: i64, result: []const u8, problem: []const u8) Error!void {
+pub fn settled(inner: anytype, id: i64, result: []const u8, problem: []const u8) Error!void {
     std.debug.assert(id > 0);
     std.debug.assert(result.len > 0);
 
@@ -226,19 +222,19 @@ pub fn is_webhook(comptime Candidate: type) bool {
 /// The body read as `Event`: JSON or a form's fields, or the delivery as it came.
 pub fn read(
     comptime Event: type,
-    comptime body: ?Body,
+    comptime body: Body,
     arena: std.mem.Allocator,
     bytes: []const u8,
     headers: []const u8,
 ) !Event {
-    if (comptime Event == Delivery) {
+    if (comptime body == .raw) {
         return .{
             .body = bytes,
             .headers = headers,
         };
     }
 
-    const json = if (body.? == .form) try form_json(arena, bytes) else bytes;
+    const json = if (body == .form) try form_json(arena, bytes) else bytes;
 
     return std.json.parseFromSliceLeaky(Event, arena, json, .{
         .ignore_unknown_fields = true,
@@ -411,34 +407,43 @@ pub fn header_in(headers: []const u8, name: []const u8) ?[]const u8 {
     return null;
 }
 
-/// The delivery's own id, where the webhook says it is; empty when it says none or the
-/// body does not have it.
+/// The delivery's own id, where the webhook says it is (`where`); empty when it says none
+/// or the body does not have it.
 pub fn delivery_id_of(
-    comptime Webhook: type,
+    where: ?DeliveryId,
+    body: Body,
     arena: std.mem.Allocator,
     bytes: []const u8,
     headers: []const u8,
 ) []const u8 {
     std.debug.assert(bytes.len <= body_bytes_max);
 
-    const where = Webhook.delivery_id orelse return "";
-
-    return switch (where) {
+    return switch (where orelse return "") {
         .header => |name| header_in(headers, name) orelse "",
-        .field => |name| field_of(Webhook, arena, bytes, name),
+        .field => |name| field_of(body, arena, bytes, name),
     };
 }
 
-fn field_of(
-    comptime Webhook: type,
-    arena: std.mem.Allocator,
-    bytes: []const u8,
-    name: []const u8,
-) []const u8 {
+/// Whether the body reads as its kind says: any JSON, any form, or any bytes. An installed
+/// plugin's sandbox reads it as its event later.
+pub fn readable(body: Body, arena: std.mem.Allocator, bytes: []const u8) bool {
+    std.debug.assert(bytes.len <= body_bytes_max);
+
+    const json = switch (body) {
+        .raw => return true,
+        .form => form_json(arena, bytes) catch return false,
+        .json => bytes,
+    };
+
+    _ = std.json.parseFromSliceLeaky(std.json.Value, arena, json, .{}) catch return false;
+
+    return true;
+}
+
+fn field_of(body: Body, arena: std.mem.Allocator, bytes: []const u8, name: []const u8) []const u8 {
     std.debug.assert(name.len > 0);
 
-    const form = Webhook.body != null and Webhook.body.? == .form;
-    const json = if (form) form_json(arena, bytes) catch return "" else bytes;
+    const json = if (body == .form) form_json(arena, bytes) catch return "" else bytes;
     const value = std.json.parseFromSliceLeaky(std.json.Value, arena, json, .{}) catch return "";
 
     if (value != .object) {
@@ -529,7 +534,13 @@ test "a form read as its event, and a delivery's id from a field" {
 
     try std.testing.expectEqualStrings("A/1", notice.order);
     try std.testing.expectEqualStrings("paid in full", notice.note);
-    try std.testing.expectEqualStrings("A/1", delivery_id_of(Hook, arena, "order=A%2F1", ""));
+    try std.testing.expectEqualStrings("A/1", delivery_id_of(
+        Hook.delivery_id,
+        Hook.body,
+        arena,
+        "order=A%2F1",
+        "",
+    ));
     try std.testing.expectEqualStrings("webhook_notify", Hook.verb);
     try std.testing.expect(is_webhook(Hook) and job_define.is_job(Hook));
 }

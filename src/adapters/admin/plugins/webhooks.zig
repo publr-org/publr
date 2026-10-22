@@ -14,12 +14,20 @@ const views = admin.views;
 const back = "/admin/settings/plugins";
 
 /// Whether the plugin declares a webhook: its page then has the tab.
-pub fn has_webhooks(plugin: []const u8) bool {
+pub fn has_webhooks(session: *admin.Session, plugin: []const u8) bool {
     std.debug.assert(plugin.len > 0);
 
     for (registry.webhook_owners) |owner| {
         if (std.mem.eql(u8, owner, plugin)) {
             return true;
+        }
+    }
+
+    const sandboxed = session.ctx.sandboxed_plugins orelse return false;
+
+    for (sandboxed.manifests()) |manifest| {
+        if (std.mem.eql(u8, manifest.name, plugin)) {
+            return manifest.webhooks.len > 0;
         }
     }
 

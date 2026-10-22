@@ -54,7 +54,7 @@ pub fn show(
         .overview_href = own,
         .plugins_href = if (detail.mode == .native) back ++ "/built-in" else back,
         .log_href = log_href,
-        .webhooks_href = if (@import("webhooks.zig").has_webhooks(name))
+        .webhooks_href = if (@import("webhooks.zig").has_webhooks(&session, name))
             try std.fmt.allocPrint(session.arena, "{s}/webhooks", .{own})
         else
             "",
