@@ -220,11 +220,15 @@ pub fn seed_taxonomies(system: *sdk.Ctx) !void {
                 .{ handle, status },
             );
 
-            _ = try SDK.dispatch(system, term.Create, .{
+            const in: term.Create.In = .{
                 .taxonomy = handle,
                 .document = document,
-                .status = status,
-            });
+            };
+
+            _ = if (std.mem.eql(u8, status, "draft"))
+                try SDK.dispatch(system, term.Create, in)
+            else
+                try term.published(system, in);
         }
     }
 }

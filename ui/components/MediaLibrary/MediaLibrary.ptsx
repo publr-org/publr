@@ -539,6 +539,12 @@ const named_field = (form: HTMLFormElement, field: string): string =>
 
 const named = (form: HTMLFormElement): string => named_field(form, "name");
 
+/** A new folder or tag, made live: a term starts as a draft and is published. */
+const made_live = async (input: Record<string, unknown>) => {
+  const created = (await write("term.create", input)) as { id: string };
+  await write("term.publish", { id: created.id });
+};
+
 export const folder_made = (event: Event) => {
   event.preventDefault();
   const form = event.currentTarget as HTMLFormElement;
@@ -546,10 +552,9 @@ export const folder_made = (event: Event) => {
   const parent = form.dataset.parent ?? "";
   form.reset();
   if (name === "") return;
-  return done(() => write("term.create", {
+  return done(() => made_live({
     taxonomy: "media_folders",
     document: JSON.stringify({ name }),
-    status: "published",
     ...(parent !== "" ? { parent } : {}),
   }), Publr.t("Folder {name} made", { name }));
 };
@@ -560,7 +565,10 @@ export const folder_renamed = (event: Event) => {
   const name = named(form);
   const id = form.dataset.folder ?? "";
   if (name === "") return;
-  return done(() => write("term.save", { id, document: JSON.stringify({ name }), status: "published" }), Publr.t("Renamed"));
+  return done(async () => {
+    const saved = (await write("term.save", { id, document: JSON.stringify({ name }) })) as { outcome: string };
+    if (saved.outcome === "changes_saved") await write("term.publish", { id });
+  }, Publr.t("Renamed"));
 };
 
 export const folder_moved = (event: Event) => {
@@ -617,10 +625,9 @@ export const tag_made = (event: Event) => {
   const name = named(form);
   form.reset();
   if (name === "") return;
-  return done(() => write("term.create", {
+  return done(() => made_live({
     taxonomy: "media_tags",
     document: JSON.stringify({ name }),
-    status: "published",
   }), Publr.t("Tag {name} made", { name }));
 };
 

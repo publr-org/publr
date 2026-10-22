@@ -75,15 +75,13 @@ test "media: upload in pieces, list and count, write, tag, move, fold a folder, 
     };
     try registry.SDK.bootstrap(&system);
 
-    const photos = try registry.SDK.dispatch(&system, term.Create, .{
+    const photos = try term.published(&system, .{
         .taxonomy = "media_folders",
         .document = "{\"name\":\"Photos\"}",
-        .status = "published",
     });
-    const trips = try registry.SDK.dispatch(&system, term.Create, .{
+    const trips = try term.published(&system, .{
         .taxonomy = "media_folders",
         .document = "{\"name\":\"Trips\"}",
-        .status = "published",
         .parent = photos.id,
     });
     const png = try encode.sample_png(std.testing.allocator, 8, 4);

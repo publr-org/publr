@@ -147,14 +147,14 @@ pub const Create = struct {
         \\The document is validated against the taxonomy's fields; the title comes from
         \\its `title_field`, the slug from the `slug` field's source when the document
         \\leaves it empty, unique per taxonomy. `parent` puts the term under another term
-        \\of the same taxonomy, which must be hierarchical; at most 16 levels. The status
-        \\defaults to the initial status (`draft`).
+        \\of the same taxonomy, which must be hierarchical; at most 16 levels. It starts in
+        \\its flow's first status (`draft`); a status changes only by a transition
+        \\(`term transition`, `term publish`).
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         taxonomy: []const u8,
         document: []const u8,
-        status: ?[]const u8 = null,
         parent: ?[]const u8 = null,
     };
     pub const Out = struct {
@@ -178,7 +178,6 @@ pub const Create = struct {
     pub const field_docs: sdk.operation.Docs(In) = .{
         .taxonomy = "The taxonomy, by handle or id",
         .document = "The document as a JSON object",
-        .status = "Initial status; the registry's initial status when omitted",
         .parent = "The parent term's id (hierarchical taxonomies)",
     };
 
@@ -189,7 +188,7 @@ pub const Create = struct {
             return error.Invalid;
         }
 
-        const created = try crud.create(ctx, granted, in.taxonomy, in.document, in.status, null);
+        const created = try crud.create(ctx, granted, in.taxonomy, in.document, null, null);
 
         if (in.parent) |parent| {
             try place(ctx, created.id, if (parent.len == 0) null else parent);
@@ -204,6 +203,22 @@ pub const Create = struct {
         };
     }
 };
+
+/// A new term made live by publishing it: the media library's folders and tags.
+pub fn published(ctx: *Ctx, in: Create.In) Error!Create.Out {
+    std.debug.assert(in.taxonomy.len > 0);
+    std.debug.assert(in.document.len > 0);
+
+    var created = try registry.SDK.dispatch(ctx, Create, in);
+    const moved = try registry.SDK.dispatch(ctx, Publish, .{
+        .id = created.id,
+    });
+
+    created.status = moved.status;
+    created.version = moved.version;
+
+    return created;
+}
 
 /// Put a term under a parent (or at the root): the parent is a term of the same,
 /// hierarchical, taxonomy, not the term itself nor one below it, and the term lands
@@ -319,7 +334,7 @@ pub const Save = struct {
     pub const description = "Write a term's document, and move it in the hierarchy";
     pub const details =
         \\As `record save`: the fields given, straight in for drafts, parked as pending
-        \\edits on a live term, straight into the live term with `status`;
+        \\edits on a live term until `term publish`, never a change of status;
         \\`expected_version` refuses a stale write. `parent` moves the term under
         \\another term (an empty string makes it a root); left out, it stays where it is.
         \\Moving a term rewrites the assignments of every record filed under it or a
@@ -331,7 +346,6 @@ pub const Save = struct {
         id: []const u8,
         document: []const u8,
         expected_version: ?i64 = null,
-        status: ?[]const u8 = null,
         parent: ?[]const u8 = null,
     };
     pub const Out = struct {
@@ -357,7 +371,6 @@ pub const Save = struct {
         .id = "The term id",
         .document = "The fields to write, as a JSON object; the others keep their values",
         .expected_version = "The `version` you read; refuse if it changed",
-        .status = "Write straight into the live term and end in this status",
         .parent = "The new parent term's id, or empty for none; omit to keep the parent",
     };
 
@@ -369,7 +382,7 @@ pub const Save = struct {
         }
 
         const expected = in.expected_version;
-        const saved = try crud.save(ctx, granted, in.id, in.document, expected, in.status);
+        const saved = try crud.save(ctx, granted, in.id, in.document, expected, null);
 
         if (in.parent) |parent| {
             try place(ctx, in.id, if (parent.len == 0) null else parent);
@@ -663,10 +676,9 @@ test "terms: create with a parent, tree order, save moves, get shows the parent"
             .roles = &.{"editor"},
         },
     });
-    const tech = try SDK.dispatch(&editor, Create, .{
+    const tech = try published(&editor, .{
         .taxonomy = "topics",
         .document = "{\"name\":\"Technology\"}",
-        .status = "published",
     });
     try std.testing.expectEqualStrings("technology", tech.slug.?);
     const engineering = try SDK.dispatch(&editor, Create, .{

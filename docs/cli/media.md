@@ -31,8 +31,8 @@ tags. Signed-in callers only, except `media file` and `media view`. Back to the 
 | `media view --id <id>` | What a page needs to show the file a media field holds: its address (`/media/<key>`), alt text, title and size; anyone for a public file, a private one is not found for anyone not signed in. Templates read it as `Publr.build.media(id)` and `mediaUrl(id, { w, h, fit })` |
 
 Folders and tags themselves are terms: `term create --taxonomy media_folders
---document '{"name":"Photos"}' --status published [--parent <id>]`, `term save
---id <id> --document '{"name":"…"}'` to rename, `--parent` to move.
+--document '{"name":"Photos"}' [--parent <id>]` then `term publish --id <id>`, `term save
+--id <id> --document '{"name":"…"}'` and `term publish` to rename, `--parent` to move.
 
 ```
 $ publr --as-admin media add --file harbour.jpg
