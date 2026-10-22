@@ -307,7 +307,6 @@ pub const SetTimeZone = struct {
     }
 };
 
-pub const operations = [_]type{ List, RunAgain, Schedule, SetTimeZone };
 pub const operations = [_]type{ List, Answer, RunAgain, Schedule, SetTimeZone };
 
 /// Who owns core's own queued work on the job queue.
