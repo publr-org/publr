@@ -1,5 +1,5 @@
-//! Settings › Secrets: what plugins asked for and what is set, a value pasted for each
-//! (never shown again), and Remove.
+//! Settings › Secrets: what plugins declare and what is set, with the plugins using each, a
+//! value pasted for each (never shown again), and Remove.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
@@ -29,7 +29,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     var session = try admin.require(request, response, ctx) orelse return;
     const saved = admin.query_param(&session, "saved") orelse "";
     const notice = if (saved.len > 0)
-        try session.translated("Saved. The value will not be shown again.")
+        try session.translated("Saved. The value will not be shown again.", .{})
     else
         "";
 
@@ -86,7 +86,7 @@ fn screen(
         .next_href = pages.next_href,
         .notice = notice,
         .problem = problem,
-    });
+    }, .{});
 }
 
 /// `POST /admin/settings/secrets/set`: a value for a secret, new or replacing.

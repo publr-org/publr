@@ -1,12 +1,14 @@
 //! Installed plugins in the admin, under Settings: one list of every plugin added, running or
 //! not; the review before enabling one or applying its update; and a plugin's own page,
-//! where each permission is granted or taken back one at a time and a version rolled back.
+//! where each permission and each of its flags is switched on or off and a version rolled
+//! back. A built-in plugin has the same page, read only.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const plugin_operations = @import("../../operations/plugin.zig");
 const settings_nav = @import("settings_nav.zig");
 const rows = @import("plugins/rows.zig");
+const secret_operations = @import("../../operations/secret.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -24,6 +26,7 @@ pub fn register(router: anytype) void {
     router.get(back, &list);
     router.get(back ++ "/built-in", &built_in);
     router.get(back ++ "/:name", &show);
+    router.get(back ++ "/:name/log", &@import("plugins/log.zig").show);
     router.get(back ++ "/:name/enable", &review_enable);
     router.post(back ++ "/:name/enable", &enable);
     router.post(back ++ "/:name/disable", &disable);
@@ -31,8 +34,7 @@ pub fn register(router: anytype) void {
     router.post(back ++ "/:name/update", &update);
     router.post(back ++ "/:name/cancel-update", &cancel_update);
     router.post(back ++ "/:name/rollback", &rollback);
-    router.post(back ++ "/:name/decide", &decide);
-    router.post(back ++ "/:name/access", &access);
+    router.post(back ++ "/:name/grants", &switch_grants);
     router.post(back ++ "/:name/remove", &remove);
     router.post(back ++ "/:name/removal", &removal);
 }
@@ -90,15 +92,16 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     try admin.screen(&session, .ok, views.Plugins, .{
         .tab = "installed",
         .built_in = &.{},
+        .off = &.{},
         .plugins = shown.items,
         .range = pages.range,
         .previous_href = pages.previous_href,
         .next_href = pages.next_href,
-    });
+    }, .{});
 }
 
 /// The Built-in tab: the plugins compiled into this binary. Nothing to decide about them:
-/// a build puts them there, with full access, and only a new build changes them.
+/// a build puts them there, granted what they ask for, and only a new build changes them.
 pub fn built_in(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .get or request.method() == .head);
     std.debug.assert(ctx.user_data != null);
@@ -118,17 +121,31 @@ pub fn built_in(request: *Request, response: *Response, ctx: *Context) Error!voi
             .version = Plugin.manifest.version,
             .summary = Plugin.manifest.summary,
             .brings = comptime brings_of(Plugin),
+            .href = back ++ "/" ++ Plugin.manifest.name,
+        };
+    }
+
+    const off = plugin_operations.contracts.native_off(&session.ctx) catch |err| {
+        return admin.fail(&session, err, "/admin/settings");
+    };
+    const off_items = try session.arena.alloc(views.Plugins.OffItem, off.len);
+
+    for (off, off_items) |remote, *item| {
+        item.* = .{
+            .code = remote.name,
+            .text = remote.why,
         };
     }
 
     try admin.screen(&session, .ok, views.Plugins, .{
         .tab = "built_in",
         .built_in = &shown,
+        .off = off_items,
         .plugins = &.{},
         .range = "",
         .previous_href = "",
         .next_href = "",
-    });
+    }, .{});
 }
 
 /// What a native plugin brings, counted: `2 operations, 1 content type, 1 role`.
@@ -186,23 +203,39 @@ fn brings_of(comptime Plugin: type) []const u8 {
 fn about_of(session: *const Session, name: []const u8) Error!?admin.render.Node {
     std.debug.assert(name.len > 0);
 
+    inline for (registry.native_plugins.all) |Plugin| {
+        if (@hasDecl(Plugin, "settings_text") and std.mem.eql(u8, Plugin.manifest.name, name)) {
+            return cleaned_of(session, Plugin.settings_text);
+        }
+    }
+
     const sandboxed = session.ctx.sandboxed_plugins orelse return null;
 
     for (sandboxed.manifests()) |manifest| {
-        if (!std.mem.eql(u8, manifest.name, name) or manifest.about.len == 0) {
-            continue;
+        if (std.mem.eql(u8, manifest.name, name)) {
+            return cleaned_of(session, manifest.about);
         }
-
-        const sanitize = @import("../../lib/sanitize.zig");
-        const cleaned = sanitize.sanitize(session.arena, manifest.about, .admin) catch return null;
-
-        return admin.render.raw(cleaned);
     }
 
     return null;
 }
 
-/// A plugin's own page.
+fn cleaned_of(session: *const Session, about: []const u8) ?admin.render.Node {
+    std.debug.assert(about.len <= 64 << 10);
+    std.debug.assert(session.signed_in());
+
+    if (about.len == 0) {
+        return null;
+    }
+
+    const sanitize = @import("../../lib/sanitize.zig");
+    const cleaned = sanitize.sanitize(session.arena, about, .admin) catch return null;
+
+    return admin.render.raw(cleaned);
+}
+
+/// A plugin's own page; a built-in one's without what a build decides: enabling, grants,
+/// versions, removal.
 pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .get or request.method() == .head);
     std.debug.assert(ctx.user_data != null);
@@ -214,9 +247,13 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     const base = try std.fmt.allocPrint(arena, "{s}/{s}", .{ back, detail.name });
     var pieces: std.ArrayList(PieceRow) = .empty;
 
+    const compiled_in = detail.mode == .native;
+
     try pieces.appendSlice(arena, try pieces_of(&session, detail.name));
     try admin.screen(&session, .ok, views.Plugin, .{
         .name = detail.name,
+        .built_in = compiled_in,
+        .plugins_href = if (compiled_in) back ++ "/built-in" else back,
         .version = detail.version,
         .summary = detail.summary,
         .about = try about_of(&session, detail.name),
@@ -227,25 +264,59 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .enable_href = try std.fmt.allocPrint(arena, "{s}/enable", .{base}),
         .disable_action = try std.fmt.allocPrint(arena, "{s}/disable", .{base}),
         .rollback_action = try std.fmt.allocPrint(arena, "{s}/rollback", .{base}),
-        .decide_action = try std.fmt.allocPrint(arena, "{s}/decide", .{base}),
-        .access_action = try std.fmt.allocPrint(arena, "{s}/access", .{base}),
+        .grants_action = try std.fmt.allocPrint(arena, "{s}/grants", .{base}),
         .remove_action = try std.fmt.allocPrint(arena, "{s}/remove", .{base}),
         .requests = try rows.requests(
             views.Plugin.RequestsItem,
             &session,
             detail.requests,
-            detail.allowed_domains,
-            true,
+            detail.secrets,
+            if (compiled_in) .read_only else .switches,
         ),
-        .show_access = detail.uses_content,
-        .scope = @tagName(detail.content_access.scope),
-        .recommend = @tagName(detail.recommend.recommend),
-        .note = detail.recommend.note,
-        .types = try rows.type_rows(views.Plugin.TypesItem, &session, detail.content_access.types),
-        .removal_action = try std.fmt.allocPrint(arena, "{s}/removal", .{base}),
+        .missing = try rows.missing(&session, detail.secrets),
+        .removal_action = if (compiled_in) "" else try std.fmt.allocPrint(arena, "{s}/removal", .{
+            base,
+        }),
         .pieces = pieces.items,
         .removes = try removes_of(&session, pieces.items),
-    });
+        .log_href = try std.fmt.allocPrint(arena, "{s}/log", .{base}),
+        .blocked = try lines_of(views.Plugin.BlockedItem, arena, detail.blocked),
+        .off = try off_of(arena, detail.off),
+    }, .{});
+}
+
+/// Lines of words as a callout's items, each without a code.
+fn lines_of(comptime Item: type, arena: std.mem.Allocator, lines: []const []const u8) Error![]Item {
+    const items = try arena.alloc(Item, lines.len);
+
+    std.debug.assert(lines.len <= 64);
+
+    for (lines, items) |line, *item| {
+        item.* = .{
+            .code = "",
+            .text = line,
+        };
+    }
+
+    return items;
+}
+
+fn off_of(
+    arena: std.mem.Allocator,
+    off: []const plugin_operations.contracts.Off,
+) Error![]views.Plugin.OffItem {
+    const items = try arena.alloc(views.Plugin.OffItem, off.len);
+
+    std.debug.assert(off.len <= 64);
+
+    for (off, items) |remote, *item| {
+        item.* = .{
+            .code = remote.name,
+            .text = remote.why,
+        };
+    }
+
+    return items;
 }
 
 const PieceRow = views.Plugin.PiecesItem;
@@ -272,6 +343,12 @@ fn pieces_of(session: *Session, name: []const u8) Error![]PieceRow {
             ),
             .fields => try session.translated(
                 "Custom field group: the fields, not what records hold in them",
+                .{},
+            ),
+            .role => try session.translated_count(
+                "Role, held by {count} account",
+                "Role, held by {count} accounts",
+                piece.count,
             ),
         };
 
@@ -303,22 +380,25 @@ fn removes_of(session: *const Session, pieces: []const PieceRow) Error![]const u
         try going.print(arena, "{s}{s}", .{ separator, piece.label });
     }
 
-    const stops = try session.translated("Its operations and hooks stop.");
+    const stops = try session.translated("Its operations and hooks stop.", .{});
 
     if (going.items.len == 0) {
         const stays = try session.translated(
             "It goes to the trash, restorable; all its data stays.",
+            .{},
         );
 
         return std.fmt.allocPrint(arena, "{s} {s}", .{ stops, stays });
     }
 
-    const goes = try session.translated_with(
+    const goes = try session.translated(
         "It goes to the trash with {pieces}, restorable together; the rest of its data stays.",
-        &.{.{
-            .name = "pieces",
-            .value = going.items,
-        }},
+        .{
+            .values = &.{.{
+                .name = "pieces",
+                .value = going.items,
+            }},
+        },
     );
 
     return std.fmt.allocPrint(arena, "{s} {s}", .{ stops, goes });
@@ -362,37 +442,43 @@ pub fn review_enable(request: *Request, response: *Response, ctx: *Context) Erro
     }
 
     try render_review(&session, .{
-        .title = try session.translated_with("Enable {plugin} {version}", &.{
+        .title = try session.translated(
+            "Enable {plugin} {version}",
             .{
-                .name = "plugin",
-                .value = detail.name,
+                .values = &.{
+                    .{
+                        .name = "plugin",
+                        .value = detail.name,
+                    },
+                    .{
+                        .name = "version",
+                        .value = detail.version,
+                    },
+                },
             },
-            .{
-                .name = "version",
-                .value = detail.version,
-            },
-        }),
+        ),
         .summary = detail.summary,
         .action = try std.fmt.allocPrint(arena, "{s}/enable", .{base}),
-        .allow_label = try session.translated("Allow & Enable"),
+        .allow_label = try session.translated("Allow & Enable", .{}),
         .cancel_href = back,
         .discard_action = "",
-        .requests_title = try session.translated("This plugin wants to"),
+        .requests_title = try session.translated("This plugin wants to", .{}),
         .requests = try rows.requests(
             views.PluginReview.RequestsItem,
             &session,
             detail.requests,
-            detail.allowed_domains,
-            false,
+            detail.secrets,
+            .review,
         ),
         .granted = &.{},
-        .note_text = "Low and medium permissions are granted when it starts; high ones wait " ++
-            "until you grant them on its page. You can take any of them back at any time.",
-        .show_access = detail.uses_content,
-        .scope = @tagName(detail.recommend.recommend),
-        .recommend = @tagName(detail.recommend.recommend),
-        .note = detail.recommend.note,
-        .types = try rows.type_rows(views.PluginReview.TypesItem, &session, &.{}),
+        .note_text = try session.translated(
+            "What you leave switched on is granted when it starts; what you switch off is " ++
+                "not. You can change any of it on its page at any time.",
+            .{},
+        ),
+        .stops_title = try session.translated("Can't be enabled", .{}),
+        .stops = try lines_of(views.PluginReview.StopsItem, arena, detail.blocked),
+        .switches_off = &.{},
     });
 }
 
@@ -407,38 +493,47 @@ pub fn review_update(request: *Request, response: *Response, ctx: *Context) Erro
     const arena = session.arena;
     const base = try std.fmt.allocPrint(arena, "{s}/{s}", .{ back, detail.name });
     const next = detail.update orelse return session.response.redirect(.see_other, base);
-    const domains = detail.allowed_domains;
-    const split = try rows.split_update(&session, next.requests, detail.requests, domains);
+    const split = try rows.split_update(&session, next.requests, detail.requests);
 
     try render_review(&session, .{
-        .title = try session.translated_with("Update {plugin} from {version} to {next}", &.{
+        .title = try session.translated(
+            "Update {plugin} from {version} to {next}",
             .{
-                .name = "plugin",
-                .value = detail.name,
+                .values = &.{
+                    .{
+                        .name = "plugin",
+                        .value = detail.name,
+                    },
+                    .{
+                        .name = "version",
+                        .value = detail.version,
+                    },
+                    .{
+                        .name = "next",
+                        .value = next.version,
+                    },
+                },
             },
-            .{
-                .name = "version",
-                .value = detail.version,
-            },
-            .{
-                .name = "next",
-                .value = next.version,
-            },
-        }),
+        ),
         .summary = detail.summary,
         .action = try std.fmt.allocPrint(arena, "{s}/update", .{base}),
-        .allow_label = try session.translated("Allow & Update"),
+        .allow_label = try session.translated("Allow & Update", .{}),
         .cancel_href = base,
         .discard_action = try std.fmt.allocPrint(arena, "{s}/cancel-update", .{base}),
-        .requests_title = try session.translated("This version also wants to"),
+        .requests_title = try session.translated("This version also wants to", .{}),
         .requests = split.fresh,
         .granted = split.held,
         .note_text = try update_note(&session),
-        .show_access = false,
-        .scope = "public",
-        .recommend = "public",
-        .note = "",
-        .types = &.{},
+        .stops_title = try session.translated(
+            "Can't update yet: these plugins need the version running now",
+            .{},
+        ),
+        .stops = try lines_of(views.PluginReview.StopsItem, arena, next.stops),
+        .switches_off = try lines_of(
+            views.PluginReview.Switches_offItem,
+            arena,
+            next.switches_off,
+        ),
     });
 }
 
@@ -447,9 +542,11 @@ fn update_note(session: *const Session) Error![]const u8 {
 
     const grants = try session.translated(
         "Allowing grants everything the new version asks for.",
+        .{},
     );
     const kept = try session.translated(
         "The version it replaces is kept: you can roll back to it from the plugin's page.",
+        .{},
     );
 
     return std.fmt.allocPrint(session.arena, "{s} {s}", .{ grants, kept });
@@ -466,11 +563,9 @@ const Review = struct {
     requests: []const views.PluginReview.RequestsItem,
     granted: []const views.PluginReview.GrantedItem,
     note_text: []const u8,
-    show_access: bool,
-    scope: []const u8,
-    recommend: []const u8,
-    note: []const u8,
-    types: []const views.PluginReview.TypesItem,
+    stops_title: []const u8,
+    stops: []const views.PluginReview.StopsItem,
+    switches_off: []const views.PluginReview.Switches_offItem,
 };
 
 fn render_review(session: *Session, review: Review) Error!void {
@@ -488,78 +583,74 @@ fn render_review(session: *Session, review: Review) Error!void {
         .requests = review.requests,
         .granted = review.granted,
         .note_text = review.note_text,
-        .show_access = review.show_access,
-        .scope = review.scope,
-        .recommend = review.recommend,
-        .note = review.note,
-        .types = review.types,
-    });
+        .stops_title = review.stops_title,
+        .stops = review.stops,
+        .switches_off = review.switches_off,
+    }, .{});
 }
 
+/// Enables it with what the review left switched on: each key on or off, each flag.
 pub fn enable(request: *Request, response: *Response, ctx: *Context) Error!void {
     var post = try admin.accept(request, response, ctx, back) orelse return;
     const session = &post.session;
     const name = try admin.param(session, "name", back) orelse return;
-    const chosen = rows.access_of(session.arena, &post.form) catch |err| {
-        return admin.fail(session, err, back);
-    };
+    const detail = try get(session, name) orelse return;
+    const chosen = try rows.choices_of(session.arena, &post.form, detail.requests, true);
 
     std.debug.assert(request.method() == .post);
 
     _ = registry.SDK.dispatch(&session.ctx, plugin_operations.Enable, .{
         .names = &.{name},
-        .content_access = chosen.scope,
-        .types = chosen.types,
+        .grants = chosen,
     }) catch |err| return admin.fail(session, err, back);
 
+    try set_secrets(session, &post.form, detail.secrets);
     try redirect_to(session, name);
 }
 
-/// Grant, revoke or deny one request.
-pub fn decide(request: *Request, response: *Response, ctx: *Context) Error!void {
+/// Saves the switches of the plugin's page: each request that changed, one at a time.
+pub fn switch_grants(request: *Request, response: *Response, ctx: *Context) Error!void {
     var post = try admin.accept(request, response, ctx, back) orelse return;
     const session = &post.session;
     const name = try admin.param(session, "name", back) orelse return;
-    const key = post.form.text("key") orelse return admin.fail(session, error.Invalid, back);
-    const change = post.form.text("change") orelse "";
-    const in: plugin_operations.Revoke.In = .{
-        .name = name,
-        .key = key,
-    };
+    const detail = try get(session, name) orelse return;
+    const chosen = try rows.choices_of(session.arena, &post.form, detail.requests, false);
 
     std.debug.assert(request.method() == .post);
 
-    const done = if (std.mem.eql(u8, change, "grant"))
-        registry.SDK.dispatch(&session.ctx, plugin_operations.GrantRequest, in)
-    else if (std.mem.eql(u8, change, "revoke"))
-        registry.SDK.dispatch(&session.ctx, plugin_operations.Revoke, in)
-    else if (std.mem.eql(u8, change, "deny"))
-        registry.SDK.dispatch(&session.ctx, plugin_operations.Deny, in)
-    else
-        error.Invalid;
+    for (chosen) |choice| {
+        _ = registry.SDK.dispatch(&session.ctx, plugin_operations.SetGrant, .{
+            .name = name,
+            .key = choice.key,
+            .on = choice.on,
+            .drafts = choice.drafts,
+            .private = choice.private,
+            .internal = choice.internal,
+            .publish = choice.publish,
+            .domains = choice.domains,
+        }) catch |err| return admin.fail(session, err, back);
+    }
 
-    _ = done catch |err| return admin.fail(session, err, back);
-
+    try set_secrets(session, &post.form, detail.secrets);
     try redirect_to(session, name);
 }
 
-pub fn access(request: *Request, response: *Response, ctx: *Context) Error!void {
-    var post = try admin.accept(request, response, ctx, back) orelse return;
-    const session = &post.session;
-    const name = try admin.param(session, "name", back) orelse return;
-    const chosen = rows.access_of(session.arena, &post.form) catch |err| {
-        return admin.fail(session, err, back);
-    };
+/// Keeps what the form typed for the plugin's secrets (`secret.set`, which never answers a
+/// value); an empty field leaves its secret as it is.
+fn set_secrets(
+    session: *Session,
+    form: *const admin.Form,
+    secrets: []const rows.Secret,
+) Error!void {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(secrets.len <= 32);
 
-    std.debug.assert(request.method() == .post);
-
-    _ = registry.SDK.dispatch(&session.ctx, plugin_operations.SetContentAccess, .{
-        .name = name,
-        .scope = chosen.scope,
-        .types = chosen.types,
-    }) catch |err| return admin.fail(session, err, back);
-
-    try redirect_to(session, name);
+    for (try rows.secrets_posted(session.arena, form, secrets)) |typed| {
+        _ = registry.SDK.dispatch(&session.ctx, secret_operations.Set, .{
+            .name = typed.name,
+            .value = typed.value,
+        }) catch |err| return admin.fail(session, err, back);
+    }
 }
 
 /// A change to one plugin by its name alone: it lands back on the plugin's page, or on

@@ -52,7 +52,7 @@ pub fn write(writer: *std.Io.Writer, base: []const u8, html: []const u8) std.Io.
 fn write_own(writer: *std.Io.Writer, classes: []const u8) std.Io.Writer.Error!void {
     std.debug.assert(classes.len > 0);
 
-    class_merge.write_classes(writer, &.{classes}) catch |err| switch (err) {
+    class_merge.write_classes(writer, &.{classes}, .{}) catch |err| switch (err) {
         error.WriteFailed => return error.WriteFailed,
         error.TooManyClasses => unreachable,
     };
@@ -77,7 +77,7 @@ fn write_named(writer: *std.Io.Writer, html: []const u8) std.Io.Writer.Error!voi
         };
 
         try writer.writeAll(rest[0..value_start]);
-        class_merge.write_classes(writer, &.{value}) catch |err| switch (err) {
+        class_merge.write_classes(writer, &.{value}, .{}) catch |err| switch (err) {
             error.WriteFailed => return error.WriteFailed,
             error.TooManyClasses => try writer.writeAll(rest[value_start..value_end]),
         };

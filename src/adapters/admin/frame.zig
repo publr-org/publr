@@ -129,14 +129,14 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .settings_path = request.path(),
     };
 
-    try admin.screen_with(&session, options, .ok, admin.views.PluginPage, .{
+    try admin.screen(&session, .ok, admin.views.PluginPage, .{
         .title = try session.declared(page.label),
         .src = src,
         .plugin = page.plugin,
         .page = page.path,
         .csrf = session.csrf_token(),
         .operations = try pages.operations_of(&session, page.plugin),
-    });
+    }, options);
 }
 
 /// The frame's document. The plugin's read takes the address's query string; a failure is
@@ -222,10 +222,13 @@ fn serve_frame(session: *Session, operation: []const u8, asked: anytype) Error!v
 fn absent(session: *const Session) Error!void {
     std.debug.assert(session.signed_in());
 
-    const text = try session.translated("No page of a plugin you may open is at this address.");
-    const heading = try session.translated("No such page");
+    const text = try session.translated(
+        "No page of a plugin you may open is at this address.",
+        .{},
+    );
+    const heading = try session.translated("No such page", .{});
 
-    try admin.message(session, heading, text, &.{}, "/admin/settings");
+    try admin.message(session, heading, text, &.{}, "/admin/settings", .{});
 }
 
 fn found(session: *const Session) Error!?pages.Page {

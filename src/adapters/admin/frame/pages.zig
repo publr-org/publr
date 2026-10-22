@@ -24,6 +24,8 @@ pub const Page = struct {
     read: []const u8 = "",
     save: []const u8 = "",
     multiline: []const []const u8 = &.{},
+    /// Left out of the menu (`.menu = .none`); still opened at its address.
+    hidden: bool = false,
 
     pub fn declared(page: Page) bool {
         std.debug.assert(page.path.len > 0);
@@ -67,6 +69,7 @@ pub fn all(session: *const Session) admin.Error![]const Page {
                 .read = page.read,
                 .save = page.save,
                 .multiline = page.multiline,
+                .hidden = page.hidden,
             };
 
             if (sound(manifest, page) and registry.SDK.may_named(&session.ctx, shown.gate())) {
@@ -93,6 +96,7 @@ fn native(comptime owned: @import("../../../sdk/plugin.zig").OwnedPage) Page {
             .read = if (page.form) |form| form.read.name else "",
             .save = if (page.form) |form| form.save.name else "",
             .multiline = if (page.form) |form| form.multiline else &.{},
+            .hidden = page.menu != null,
         };
     }
 }

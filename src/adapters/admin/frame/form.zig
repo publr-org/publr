@@ -27,11 +27,11 @@ pub fn show(session: *Session, page: pages.Page) Error!void {
         .settings_path = session.request.path(),
     };
 
-    try admin.screen_with(session, options, .ok, admin.views.PluginFormPage, .{
+    try admin.screen(session, .ok, admin.views.PluginFormPage, .{
         .title = page.label,
         .operation = page.save,
         .fields = try items_of(session.arena, described, values, page.multiline),
-    });
+    }, options);
 }
 
 /// The save operation's input as its plugin describes it: from the build for a compiled-in
