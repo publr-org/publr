@@ -35,6 +35,8 @@ pub const Field = struct {
     name: []const u8,
     label: []const u8,
     kind: []const u8,
+    /// A column a plugin adds (`.register_columns`), not a field of the type.
+    added: bool = false,
 };
 
 pub const Columns = struct {
@@ -64,7 +66,7 @@ pub fn of(page: *const list.Page, found: []const records.Record) Error!?Columns 
 
     return .{
         .fields = fields,
-        .values = try values_of(page.session, fields, found),
+        .values = try values_of(page, fields, found),
     };
 }
 
@@ -86,6 +88,10 @@ fn fields_of(
     std.debug.assert(columns.len <= model.content_type.view_columns_max);
 
     for (columns) |column| {
+        if (plugin_column(handle, column)) |added| {
+            try fields.append(session.arena, added);
+        }
+
         for (got.definition.fields) |field| {
             const holds = !model.field.is_layout(field.kind);
 
@@ -102,11 +108,35 @@ fn fields_of(
     return fields.items;
 }
 
+/// A column a plugin adds to the type's list, as a field drawn by its kind's cell.
+fn plugin_column(handle: []const u8, name: []const u8) ?Field {
+    std.debug.assert(handle.len > 0);
+
+    for (registry.columns) |column| {
+        if (column.on(handle) and std.mem.eql(u8, column.field, name)) {
+            return .{
+                .name = column.field,
+                .label = column.label,
+                .kind = switch (column.kind) {
+                    .number => "number",
+                    .money => "money",
+                    .date => "datetime",
+                    .text, .status, .link => "string",
+                },
+                .added = true,
+            };
+        }
+    }
+
+    return null;
+}
+
 fn values_of(
-    session: *admin.Session,
+    page: *const list.Page,
     fields: []const Field,
     found: []const records.Record,
 ) Error![]const []const Value {
+    const session = page.session;
     std.debug.assert(fields.len > 0);
 
     const arena = session.arena;
@@ -132,8 +162,11 @@ fn values_of(
     projection.writer.writeAll("*[_id in $ids]{ _id") catch return error.OutOfMemory;
 
     for (fields, 0..) |field, index| {
-        projection.writer.print(", \"c{d}\": {s}", .{ index, field.name }) catch
-            return error.OutOfMemory;
+        // A plugin's column is no field of the type: its value comes with the list.
+        projection.writer.print(", \"c{d}\": {s}", .{
+            index,
+            if (field.added) "null" else field.name,
+        }) catch return error.OutOfMemory;
     }
 
     projection.writer.writeAll(" }") catch return error.OutOfMemory;
@@ -170,6 +203,10 @@ fn values_of(
             const key = std.fmt.bufPrint(&key_buffer, "c{d}", .{index}) catch unreachable;
 
             value.* = item.object.get(key) orelse .null;
+
+            if (fields[index].added) {
+                value.* = page.extended.get(found[position].id, fields[index].name) orelse .null;
+            }
         }
     }
 

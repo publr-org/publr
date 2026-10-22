@@ -40,6 +40,7 @@ const Reference = @import("operations/reference.zig");
 const Motto = @import("operations/motto.zig");
 const HasMotto = @import("rules/has_motto.zig");
 const NoteCount = @import("hooks/note_count.zig");
+const Characters = @import("hooks/characters.zig");
 
 const WriteNote = @import("jobs/write_note.zig");
 const Tick = @import("jobs/tick.zig");
@@ -160,10 +161,14 @@ const hooks = .{
     publr.modify("sampler.*", Double.run),
 };
 /// Compiled in, the count of notes beside each person in People.
-const native_hooks = hooks ++ .{publr.after(publr.operations.user.List, NoteCount.run)};
+const native_hooks = hooks ++ .{
+    publr.after(publr.operations.user.List, NoteCount.run),
+    publr.after(publr.operations.record.List, Characters.run),
+};
 
 /// Two columns on People: the motto the sampler stores on each account, sortable, and how
-/// many notes each person kept, worked out by `NoteCount`.
+/// many notes each person kept, worked out by `NoteCount`; one on greeter's lists, each
+/// salutation's length, from `Characters`.
 const columns = .{
     .{
         .list = "users",
@@ -175,6 +180,12 @@ const columns = .{
         .list = "users",
         .field = "sampler.notes",
         .label = "Notes",
+        .kind = .number,
+    },
+    .{
+        .list = "greeter.*",
+        .field = "sampler.characters",
+        .label = "Characters",
         .kind = .number,
     },
 };

@@ -41,6 +41,8 @@ pub const Page = struct {
     /// view; what Clear changes goes back to.
     resting: Filters = .{},
     default_columns: []const []const u8 = &.{},
+    /// Fields plugins added to the listed records (`.register_columns`).
+    extended: @import("../../../sdk/extended.zig").Extended = .{},
 
     /// The columns shown: the view's, or the ones a view saying none shows.
     pub fn columns(page: *const Page) []const []const u8 {
@@ -148,6 +150,8 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         return admin.fail(&session, err, back);
     };
     var props = try base_props(&page, shown.listed.total);
+
+    page.extended = shown.listed.extended;
 
     try fill_header(&props, &page);
     try pills.fill(&props, &page);
