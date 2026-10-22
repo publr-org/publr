@@ -853,11 +853,15 @@ fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
 
                 const seen = for (named.items) |known| {
                     if (std.mem.eql(u8, known.local, name.local)) {
-                        if (std.mem.eql(u8, known.stem, stem) and std.mem.eql(u8, known.imported, name.imported)) {
+                        const same = std.mem.eql(u8, known.stem, stem) and
+                            std.mem.eql(u8, known.imported, name.imported);
+
+                        if (same) {
                             break true;
                         }
 
-                        std.debug.print("pjsx_gen: two stores import {s} from different modules\n", .{name.local});
+                        std.debug.print("pjsx_gen: two stores import {s} from different " ++
+                            "modules\n", .{name.local});
                         return error.Failed;
                     }
                 } else false;

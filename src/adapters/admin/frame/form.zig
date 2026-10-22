@@ -292,7 +292,11 @@ fn cell_kind(column: model.Field, only_one: []const []const u8) []const u8 {
 
 /// An enumeration's values, each in its own words (`1,000`), else its name as people
 /// read it.
-fn choices_of(comptime Choice: type, arena: std.mem.Allocator, field: model.Field) Error![]const Choice {
+fn choices_of(
+    comptime Choice: type,
+    arena: std.mem.Allocator,
+    field: model.Field,
+) Error![]const Choice {
     std.debug.assert(field.values.len <= contract.values_max);
     std.debug.assert(field.words.len == 0 or field.words.len == field.values.len);
 

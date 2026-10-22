@@ -93,7 +93,7 @@ fn operations_of(comptime Plugin: type) []const Operation {
                     Declared.limit.?.per_minute
                 else
                     0,
-                .fields = fields_of(Declared, Plugin.docs),
+                .fields = fields_of(Declared, docs_of(Plugin)),
                 .input = sdk_operation.input_shape(Declared),
                 .output = shapes.describe(Declared.Out),
                 .secret = @import("../trail.zig").secret_of(Declared),
@@ -421,6 +421,15 @@ fn values_of(comptime Type: type) []const []const u8 {
     }
 }
 
+/// The plugin's words; none for one bound without them (a test's).
+pub fn docs_of(comptime Plugin: type) type {
+    comptime {
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        return if (@hasDecl(Plugin, "docs")) Plugin.docs else plugin_define.Words(.{});
+    }
+}
+
 /// Each value's words, the first line of the `///` on it; none when no value has any.
 fn words_of(comptime Type: type, comptime Docs: type) []const []const u8 {
     comptime {
@@ -443,6 +452,8 @@ fn words_of(comptime Type: type, comptime Docs: type) []const []const u8 {
 
 fn enum_of(comptime Type: type) ?type {
     comptime {
+        std.debug.assert(@typeInfo(Type) != .@"fn");
+
         const Named = switch (@typeInfo(Type)) {
             .optional => |optional| optional.child,
             .pointer => |pointer| if (pointer.child == u8) return null else pointer.child,

@@ -924,7 +924,7 @@ pub fn Merged(comptime plugins: anytype) type {
                 pages = pages ++ &[_]OwnedPage{.{
                     .plugin = Plugin.manifest.name,
                     .page = page,
-                    .docs = Plugin.docs,
+                    .docs = @import("plugin/manifest.zig").docs_of(Plugin),
                 }};
             }
 
