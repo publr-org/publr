@@ -6,6 +6,8 @@ const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 const mods = sdk.mods;
+const sdk_http = @import("http.zig");
+const overrides = @import("operation.zig");
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "mod",
@@ -166,6 +168,24 @@ test "a visitor's call applies values too: modifiers only read, with their own g
     });
     try std.testing.expectEqualStrings("[[]]", kept.values);
     try std.testing.expectError(error.Denied, SDK.dispatch(&visitor, List, .{}));
+}
+
+test "a modifier is pure: no write, no outside call" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var reading = harness.ctx(.system);
+
+    reading.reads_only = true;
+
+    try std.testing.expectError(error.Denied, SDK.dispatch(&reading, sdk_http.Fetch, .{
+        .url = "https://api.example.com/quote",
+    }));
+    try std.testing.expectError(error.Denied, SDK.dispatch(&reading, overrides.Limit, .{
+        .name = "operation.list",
+        .per_minute = 5,
+    }));
 }
 
 test "an installed modifier on `greeter.*` changes each value applied as `greeter.count`" {
