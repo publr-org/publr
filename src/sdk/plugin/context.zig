@@ -119,6 +119,16 @@ pub const HostApi = struct {
         });
     }
 
+    /// SQL on the plugin's own tables (`host.table`), inside the call's transaction. Only a
+    /// plugin with `.extend` has tables; an installed plugin's ctx has no `database`.
+    pub fn database(self: *const PluginCtx) @import("host.zig").Database {
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        return .{
+            .connection = self.inner.db,
+        };
+    }
+
     /// Memory freed when the call ends.
     pub fn alloc(
         self: *const PluginCtx,

@@ -6,7 +6,24 @@ const publr = @import("publr");
 const Sampler = @import("main.zig");
 const Logs = @import("operations/logs.zig");
 
-pub const routes = [_]publr.plugin.Route{.{
+/// What the sampler adds past the plugin API.
+pub fn extend(host: *publr.Host) publr.Error!void {
+    std.debug.assert(host.routes.len == 0);
+
+    inline for (routes) |route| {
+        try host.route(route);
+    }
+
+    inline for (operator_commands) |command| {
+        try host.operator_command(command);
+    }
+
+    try host.state(State);
+    try host.serving(serving);
+    try host.before_command(before_command);
+}
+
+const routes = [_]publr.plugin.Route{.{
     .path = "/admin/sampler",
     .handler = &settings,
 }};
@@ -33,7 +50,7 @@ pub const State = struct {
     }
 };
 
-pub const operator_commands = [_]publr.plugin.OperatorCommand{
+const operator_commands = [_]publr.plugin.OperatorCommand{
     .{
         .name = "ping",
         .handler = &ping,

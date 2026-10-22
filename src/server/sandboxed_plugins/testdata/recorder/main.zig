@@ -21,7 +21,7 @@ pub const lines_max: u32 = 256;
 
 /// Kept in the database, not in a state: its hook runs in the server's worker, its read in
 /// the server.
-const schema_sql: [:0]const u8 =
+const lines_table =
     \\CREATE TABLE IF NOT EXISTS recorder_lines (
     \\    id INTEGER PRIMARY KEY,
     \\    line TEXT NOT NULL
@@ -112,5 +112,12 @@ pub const Seen = struct {
 pub const plugin = publr.plugin.define(manifest, .{
     .operations = operations,
     .hooks = hooks,
-    .schema_sql = schema_sql,
+    .extend = extend,
 });
+
+fn extend(host: *publr.Host) publr.Error!void {
+    try host.table(.{
+        .name = "recorder_lines",
+        .schema = lines_table,
+    });
+}

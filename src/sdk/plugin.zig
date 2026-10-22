@@ -202,13 +202,6 @@ pub fn validate(comptime Plugin: type) void {
             @compileError("plugin " ++ manifest.name ++ ": " ++ message);
         }
 
-        const empty_sql = plugin_define.has(Plugin, "schema_sql") and
-            plugin_define.get(Plugin, "schema_sql").len == 0;
-
-        if (empty_sql) {
-            @compileError("plugin " ++ manifest.name ++ ": `schema_sql` is empty");
-        }
-
         validate_entries(Plugin, manifest.name);
 
         const known: []const kinds.Kind = &kinds.core ++ field_kinds_of(Plugin);
@@ -1448,6 +1441,7 @@ test {
     _ = @import("plugin/admin_described.zig");
     _ = @import("plugin/doc_imports.zig");
     _ = @import("plugin/view_wire.zig");
+    _ = @import("plugin/host.zig");
 }
 
 /// A plugin that emits its own event: an `after` hook keeps it inside the write and refuses
