@@ -121,6 +121,45 @@ test "a transition's authorize holds on every path that moves a record" {
     try std.testing.expectEqualStrings("published", published.status);
 }
 
+test "a move in bulk raises each record's named transition, as a move of its own does" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var admin = harness.ctx(.system);
+    try SDK.bootstrap(&admin);
+    _ = try SDK.dispatch(&admin, types.Create, .{
+        .definition = try model.content_type.encode(admin.arena, reviewed_type),
+    });
+
+    const created = try SDK.dispatch(&admin, record.Create, .{
+        .type = "guestbook.entry",
+        .document = "{\"title\":\"Lovely\"}",
+    });
+    var trail: sdk.trail.Trail = .{
+        .root = 1,
+        .arena = admin.arena,
+    };
+
+    admin.trail = &trail;
+
+    const in_bulk = try SDK.dispatch(&admin, record.TransitionMany, .{
+        .transition = "submit",
+        .ids = &.{created.id},
+    });
+
+    try std.testing.expectEqual(@as(u32, 1), in_bulk.moved);
+
+    var names: [2]bool = .{ false, false };
+
+    for (trail.events.items) |emitted| {
+        names[0] = names[0] or std.mem.eql(u8, emitted.name, "guestbook.entry_transitioned");
+        names[1] = names[1] or std.mem.eql(u8, emitted.name, "guestbook.entry_submit");
+    }
+
+    try std.testing.expect(names[0] and names[1]);
+}
+
 test "the trash: restore goes back where the record was, destroy is a person's, reads skip it" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
