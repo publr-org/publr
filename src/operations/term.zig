@@ -550,10 +550,7 @@ pub const Tree = struct {
         });
         const out = try ctx.arena.alloc(Node, placed.len);
 
-        ctx.depend("type:", taxonomy.def.handle);
-
         for (placed, out) |node, *item| {
-            ctx.depend(domain.depend_prefix, node.id);
             item.* = .{
                 .id = node.id,
                 .parent = node.parent_id,

@@ -13,7 +13,6 @@ const contract = @import("model/contract.zig");
 pub const trail = @import("sdk/trail.zig");
 pub const db = @import("lib/db.zig");
 
-pub const dependencies = @import("sdk/dependencies.zig");
 pub const caller = @import("sdk/caller.zig");
 pub const context = @import("sdk/context.zig");
 pub const operation = @import("sdk/operation.zig");
@@ -2155,6 +2154,9 @@ pub const testing = struct {
         }
     };
 
+    /// Whether `Gate` vetoes every call, for the test that needs it.
+    pub var gate_closed: bool = false;
+
     pub const Gate = struct {
         pub const stage: middleware.Stage = .pre;
 
@@ -2164,7 +2166,7 @@ pub const testing = struct {
 
             _ = kind;
 
-            if (ctx.request_id.len != 0 and std.mem.eql(u8, ctx.request_id, "blocked")) {
+            if (gate_closed) {
                 return error.Vetoed;
             }
         }
@@ -2213,10 +2215,11 @@ test "pre middleware runs before authorization; a refused call emits nothing" {
     defer harness.deinit();
 
     var blocked = harness.ctx(.system);
-    blocked.request_id = "blocked";
+    testing.gate_closed = true;
     const vetoed = TestSDK.dispatch(&blocked, testing.Record, .{
         .note = "x",
     });
+    testing.gate_closed = false;
     try std.testing.expectError(error.Vetoed, vetoed);
 
     var anon = harness.ctx(.anonymous);

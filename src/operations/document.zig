@@ -42,7 +42,6 @@ pub fn Domain(comptime domain_config: Config) type {
         pub const values = config.values;
         pub const definitions = config.definitions;
         pub const namespace = config.namespace;
-        pub const depend_prefix = config.namespace ++ ":";
 
         pub const access = @import("document/access.zig").Of(@This());
         pub const document = @import("document/document.zig").Of(@This());

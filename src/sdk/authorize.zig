@@ -16,8 +16,8 @@ pub const Request = struct {
     operation_name: []const u8,
     kind: operation.Kind,
     resource: operation.Resource,
-    /// The operation says anyone may call it (`pub const open = true`), like signing in:
-    /// a plugin's own open door, such as creating an account. Policies still narrow it.
+    /// Anyone may call it, like signing in: core's own open doors, and a plugin's operation
+    /// with `.untrusted_callers` or `.authorize`. Policies still narrow it.
     open: bool = false,
     /// The type the call names, when the compiled-in plugin whose code runs declares it:
     /// reached whoever the plugin runs for, as an installed plugin reaches its own.

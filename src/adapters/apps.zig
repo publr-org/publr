@@ -16,7 +16,6 @@ pub const framed = @import("apps/framed.zig");
 const Project = @import("../server/project.zig").Project;
 
 pub const spec = @import("apps/spec.zig");
-pub const query = @import("apps/query.zig");
 pub const context = @import("apps/context.zig");
 pub const build = @import("apps/build.zig");
 pub const rebuild = @import("apps/rebuild.zig");
@@ -1215,72 +1214,6 @@ test "every app builds into its own folder, its sitemap at its own address" {
 
     const served = try harness.get("/docs/guide");
     try std.testing.expectEqualStrings("file", served.header("X-Publr-Served").?);
-}
-
-fn query_posts(ctx: *sdk.Ctx) !record_operations.List.Out {
-    return registry.SDK.dispatch(ctx, record_operations.List, .{
-        .type = "post",
-    });
-}
-
-test "operation results collect empty membership and replay only committed scoped tokens" {
-    var harness: Harness = undefined;
-    try harness.init(.{});
-    defer harness.deinit();
-    var system = harness.inner.ctx(.system);
-    const secret = "test-secret-" ** 4;
-    const scope: sdk.dependencies.Scope = .{
-        .project = "example",
-        .authority = "public",
-    };
-    const initial = try query.execute(query_posts, &system, .{}, secret, scope, 60000);
-    try std.testing.expectEqual(@as(usize, 0), initial.value.records.len);
-    try std.testing.expect(!initial.policy.no_store);
-    try std.testing.expect(initial.policy.tags.len > 0);
-    const revision = initial.policy.revision;
-    _ = try harness.publish("From operation bridge");
-    const changed = try query.replay(&system, revision, secret, scope);
-    try std.testing.expect(changed.revision > revision);
-    var matched = false;
-
-    for (changed.tags) |tag| for (initial.policy.tags) |dependency| {
-        if (std.mem.eql(u8, tag, dependency)) {
-            matched = true;
-        }
-    };
-
-    try std.testing.expect(matched);
-    const updated = try query.execute(query_posts, &system, .{}, secret, scope, 60000);
-    try std.testing.expectEqual(@as(usize, 1), updated.value.records.len);
-    const other = try query.replay(
-        &system,
-        revision,
-        secret,
-        .{
-            .project = "example",
-            .authority = "other",
-        },
-    );
-
-    for (other.tags) |tag| for (changed.tags) |dependency| {
-        try std.testing.expect(!std.mem.eql(u8, tag, dependency));
-    };
-
-    var transaction = try system.db.transaction();
-    try harness.index.invalidate(&.{"type:post"}, system.now_ms);
-    try std.testing.expectError(
-        error.UncommittedRead,
-        query.replay(
-            &system,
-            changed.revision,
-            secret,
-            scope,
-        ),
-    );
-    transaction.rollback();
-    const rolled_back = try query.replay(&system, changed.revision, secret, scope);
-    try std.testing.expectEqual(changed.revision, rolled_back.revision);
-    try std.testing.expectEqual(@as(usize, 0), rolled_back.tags.len);
 }
 
 test "`_actions` reaches only operations for untrusted callers: anything else is not there" {

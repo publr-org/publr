@@ -192,7 +192,6 @@ pub fn Of(comptime Domain: type) type {
                 return error.Invalid;
             }
 
-            ctx.depend(Domain.depend_prefix, id);
             const record = try load(ctx, id, granted) orelse return error.NotFound;
             const type_row = try definitions.find(ctx, record.type_id) orelse return error.NotFound;
             const slot = try slot_for(ctx, record, purpose, wanted_slot);
@@ -261,14 +260,6 @@ pub fn Of(comptime Domain: type) type {
 
             const span = try access.visible_types(ctx, granted, in.definition, in.definitions);
 
-            if (in.definition == null and in.definitions.len == 0) {
-                ctx.depend("", Domain.namespace ++ "s");
-            }
-
-            for (span.briefs) |brief| {
-                ctx.depend("type:", brief.handle);
-            }
-
             if (span.briefs.len == 0) {
                 return &.{};
             }
@@ -311,7 +302,6 @@ pub fn Of(comptime Domain: type) type {
                     continue;
                 }
 
-                ctx.depend(Domain.depend_prefix, record.id);
                 try visible.append(ctx.arena, record);
             }
 
