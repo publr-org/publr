@@ -36,6 +36,7 @@ pub fn build(builder: *std.Build) void {
     });
     builder.installArtifact(exe);
     apps.add_check(builder, exe, target);
+    @import("build/native_plugins.zig").add_check(builder, exe, target);
 
     run_cmd.step.dependOn(builder.getInstallStep());
 

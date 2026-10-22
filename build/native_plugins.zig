@@ -1,5 +1,6 @@
 const std = @import("std");
 const diagnostic = @import("diagnostic.zig");
+const plugin_docs = @import("plugin_docs.zig");
 
 pub const dir_default = "plugins";
 pub const plugins_max: u32 = 64;
@@ -71,6 +72,14 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
             @panic("OOM");
     }
 
+    source.appendSlice(builder.allocator, "};\n\npub const docs = .{\n") catch @panic("OOM");
+
+    for (names) |name| {
+        const line = builder.fmt("    @import(\"docs:{s}\"),\n", .{name});
+
+        source.appendSlice(builder.allocator, line) catch @panic("OOM");
+    }
+
     source.appendSlice(builder.allocator, "};\n") catch @panic("OOM");
 
     const root = listing.add("plugins.zig", source.items);
@@ -91,11 +100,32 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
 
         plugin.addImport("publr", library);
         plugins.addImport(name, plugin);
+        const docs = docs_module(builder, listing, dir, name);
+
+        plugins.addImport(builder.fmt("docs:{s}", .{name}), docs);
         modules[index] = plugin;
     }
 
     add_interfaces(builder, library, dir, names, modules[0..names.len]);
     library.addImport("native_plugins", plugins);
+}
+
+/// The plugin's doc comments as a module of their own, which the plugin never imports: the
+/// registry pairs it with the plugin.
+fn docs_module(
+    builder: *std.Build,
+    listing: *std.Build.Step.WriteFile,
+    dir: []const u8,
+    name: []const u8,
+) *std.Build.Module {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(dir.len > 0);
+
+    const text = plugin_docs.source_of(builder, builder.fmt("{s}/{s}", .{ dir, name }));
+
+    return builder.createModule(.{
+        .root_source_file = listing.add(builder.fmt("docs/{s}.zig", .{name}), text),
+    });
 }
 
 /// A plugin's own `interface.zig`, its operations' names and shapes, imported under its
@@ -220,7 +250,11 @@ pub fn add_tests(builder: *std.Build, library: *std.Build.Module, test_step: *st
     const listing = library.import_table.get("native_plugins") orelse
         @panic("native plugins not added");
 
-    for (listing.import_table.values()) |module| {
+    for (listing.import_table.keys(), listing.import_table.values()) |name, module| {
+        if (std.mem.startsWith(u8, name, "docs:")) {
+            continue;
+        }
+
         const tests = builder.addTest(.{
             .root_module = module,
         });
@@ -302,4 +336,27 @@ fn less_than(_: void, left: []const u8, right: []const u8) bool {
     std.debug.assert(right.len > 0);
 
     return std.mem.lessThan(u8, left, right);
+}
+
+/// After the install, on a native build: `publr check-plugins` notes each compiled-in
+/// plugin's remote another compiled-in plugin switches off. A note, never a failure: the
+/// remote is off at run time as an installed plugin's is.
+pub fn add_check(
+    builder: *std.Build,
+    exe: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+) void {
+    std.debug.assert(exe.kind == .exe);
+    std.debug.assert(builder.build_root.path != null);
+
+    if (!target.query.isNative()) {
+        return;
+    }
+
+    const check = builder.addRunArtifact(exe);
+
+    // Inherited, so a note reaches the terminal; a check would capture it and drop it.
+    check.addArg("check-plugins");
+    check.stdio = .inherit;
+    builder.getInstallStep().dependOn(&check.step);
 }

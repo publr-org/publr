@@ -154,6 +154,9 @@ pub fn add_module(
         .target = target,
         .release = optimize != .Debug,
     });
+    const publr_text = builder.dependency("publr_text", .{
+        .target = target,
+    });
     const publr_jit = builder.dependency("publr_jit", .{
         .target = target,
         .optimize = optimize,
@@ -193,20 +196,27 @@ pub fn add_module(
                 .module = publr_ai.module("publr_ai"),
             },
             .{
+                .name = "publr_text",
+                .module = publr_text.module("publr_text"),
+            },
+            .{
                 .name = "publr_jit",
                 .module = publr_jit.module("publr_jit"),
             },
         },
     });
 
-    // The sandbox runs plugins natively; the browser build has none yet, nor a compiler.
-    if (target.result.os.tag != .wasi) {
-        const publr_wasm = builder.dependency("publr_wasm", .{
-            .target = target,
-            .release = optimize != .Debug,
-        });
+    // The sandbox runs installed plugins on WAMR natively and on the browser's own
+    // WebAssembly in the browser build (`publr_wasm` picks by target).
+    const publr_wasm = builder.dependency("publr_wasm", .{
+        .target = target,
+        .release = optimize != .Debug,
+    });
 
-        module.addImport("publr_wasm", publr_wasm.module("publr_wasm"));
+    module.addImport("publr_wasm", publr_wasm.module("publr_wasm"));
+
+    // The browser build has no compiler, nor the files the CLI hands out.
+    if (target.result.os.tag != .wasi) {
         module.addAnonymousImport("agents_guide", .{
             .root_source_file = builder.path("docs/agents.md"),
         });
@@ -220,8 +230,6 @@ pub fn add_module(
             .root_source_file = builder.path("skills/build-on-publr/references/core-changes.md"),
         });
     }
-
-    add_compiler(builder, module, target, optimize, from);
 
     vendors.add_include_paths(builder, module);
     module.linkLibrary(vendors.add_library(builder, target));
@@ -249,6 +257,7 @@ pub fn add_module(
         .root_source_file = generated.expressions,
     });
     add_apps(builder, module, generated, optimize, from);
+    add_compiler(builder, module, target, optimize, from, generated.out);
 
     std.debug.assert(module.link_libc == true);
     std.debug.assert(module.root_source_file != null);
@@ -265,6 +274,7 @@ fn add_compiler(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     from: Sources,
+    views: std.Build.LazyPath,
 ) void {
     std.debug.assert(module.root_source_file != null);
     std.debug.assert(builder.build_root.path != null);
@@ -298,8 +308,50 @@ fn add_compiler(
             builder,
             publr_zig.artifact("pack"),
             limits_module.source(builder, from.limits),
+            .{
+                .views = views,
+                .lowering = lowering(builder, target),
+            },
         ),
     });
+}
+
+/// The views' lowering (`scripts/pjsx_gen.zig` on the PJSX compiler) as an executable for the
+/// target, carried in the SDK archive: `publr plugin build` runs it on an installed plugin's
+/// views, so nothing is compiled to lower them.
+fn lowering(
+    builder: *std.Build,
+    target: std.Build.ResolvedTarget,
+) std.Build.LazyPath {
+    std.debug.assert(builder.build_root.path != null);
+
+    const pjsx = builder.dependency("pjsx", .{
+        .target = target,
+        .optimize = .ReleaseSafe,
+    });
+    const tool = builder.addExecutable(.{
+        .name = "pjsx_gen",
+        .root_module = builder.createModule(.{
+            .root_source_file = builder.path("scripts/pjsx_gen.zig"),
+            .target = target,
+            .optimize = .ReleaseSafe,
+            .imports = &.{
+                .{
+                    .name = "pjsx",
+                    .module = pjsx.module("pjsx"),
+                },
+                // Only `Shape` is read here, so the render runtime is not needed.
+                .{
+                    .name = "request",
+                    .module = builder.createModule(.{
+                        .root_source_file = builder.path("ui/request.zig"),
+                    }),
+                },
+            },
+        }),
+    });
+
+    return tool.getEmittedBin();
 }
 
 /// What the admin's pages run in the browser: the PublrJS runtime from the sibling

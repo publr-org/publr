@@ -12,6 +12,9 @@ const icons_dir = "../icons/icons";
 
 pub const Generated = struct {
     views: *std.Build.Module,
+    /// The folder they are written to: the SDK archive carries it, for installed plugins'
+    /// views to take the real props from (`ds`) and their stand-ins (`standins/`).
+    out: std.Build.LazyPath,
     /// The class manifest for the JIT.
     classes: std.Build.LazyPath,
     /// The client half of the views that keep state in the browser.
@@ -66,6 +69,8 @@ pub fn add(
     const icons = builder.pathFromRoot(icons_dir);
 
     run.addArg("--engine");
+    // The binary draws any design-system component for an installed plugin's view.
+    run.addArg("--all-components");
     run.addDirectoryArg(builder.path("ui"));
     run.addArg(components);
     run.addArg(icons);
@@ -115,6 +120,7 @@ pub fn add(
 
     return .{
         .views = views,
+        .out = out,
         .classes = out.path(builder, "classes.txt"),
         .stores = out.path(builder, "stores.js"),
         .expressions = bytecode(builder, out.path(builder, "expressions.js")),

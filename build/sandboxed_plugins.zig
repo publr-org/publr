@@ -13,7 +13,7 @@ pub const name_len_max: u32 = 32;
 /// The root a plugin is built from for the sandbox: its exports, generated from its
 /// declarations, and the plugin itself as `Plugin`, which the SDK checks its calls against.
 pub const guest_root_source =
-    \\pub const Plugin = @import("plugin");
+    \\pub const Plugin = @import("publr").plugin.Bind(@import("plugin"), @import("plugin_docs"));
     \\
     \\comptime {
     \\    @import("publr").plugin.guest.export_all(Plugin);
@@ -112,11 +112,16 @@ pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8)
 }
 
 /// The SDK a plugin is built against, as `publr plugin build` finds it: `src/` (the Zig
-/// files only), `stubs/` and `guest.zig`, packed by `pack` into one archive.
+/// files only), `stubs/` and `guest.zig`, packed by `pack` into one archive. For a plugin's
+/// views: `ws/`, the admin's views, the design system and the icons as the lowering reads
+/// them; `ui/views` (the generated Zig, for the real props, and the stand-ins);
+/// `ui/request.zig` and a plain `ui/class_merge.zig`; `pjsx/`, the compiler's source, for its
+/// render runtime; and `tools/pjsx_gen`, the lowering, built for this binary's target.
 pub fn sdk_archive(
     builder: *std.Build,
     pack: *std.Build.Step.Compile,
     limits_source: []const u8,
+    parts: ViewsParts,
 ) std.Build.LazyPath {
     std.debug.assert(builder.build_root.path != null);
     std.debug.assert(limits_source.len > 0);
@@ -139,9 +144,86 @@ pub fn sdk_archive(
 
     run.addPrefixedDirectoryArg("stubs/=", stubs.getDirectory());
     run.addPrefixedFileArg("guest.zig=", guest);
+    add_views_parts(builder, run, parts);
 
     return archive;
 }
+
+/// A folder beside this repository in the workspace.
+fn sibling(builder: *std.Build, path: []const u8) std.Build.LazyPath {
+    std.debug.assert(std.mem.startsWith(u8, path, "../"));
+
+    return .{
+        .cwd_relative = builder.pathFromRoot(path),
+    };
+}
+
+/// What installed plugins' views are lowered and built with.
+pub const ViewsParts = struct {
+    /// The admin's generated views and the stand-ins.
+    views: std.Build.LazyPath,
+    /// The lowering, an executable.
+    lowering: std.Build.LazyPath,
+};
+
+/// What lowering and building an installed plugin's views takes, into the archive.
+fn add_views_parts(builder: *std.Build, run: *std.Build.Step.Run, parts: ViewsParts) void {
+    std.debug.assert(builder.build_root.path != null);
+
+    const views = parts.views;
+    const pjsx = builder.dependency("pjsx", .{});
+    const plain = builder.addWriteFiles().add("class_merge.zig", class_merge_plain);
+
+    run.addDecoratedDirectoryArg("ui/views/=", views, ":.zig");
+    // The sources the lowering reads, laid out as in the workspace, so the imports between
+    // the admin, the design system and the icons resolve as they do here.
+    run.addDecoratedDirectoryArg("ws/publr/ui/=", builder.path("ui"), ":.ptsx");
+    run.addDecoratedDirectoryArg("ws/ui/src/=", sibling(builder, "../ui/src"), ":.ptsx");
+    run.addDecoratedDirectoryArg("ws/ui/src/=", sibling(builder, "../ui/src"), ":.ts");
+    run.addDecoratedDirectoryArg("ws/icons/src/=", sibling(builder, "../icons/src"), ":.ts");
+    run.addDecoratedDirectoryArg("ws/icons/icons/=", sibling(builder, "../icons/icons"), ":.svg");
+    run.addPrefixedFileArg("ui/request.zig=", builder.path("ui/request.zig"));
+    run.addPrefixedFileArg("ui/class_merge.zig=", plain);
+    run.addPrefixedFileArg("+tools/pjsx_gen=", parts.lowering);
+    run.addDecoratedDirectoryArg("pjsx/=", pjsx.path("src"), ":.zig");
+
+    // A folder argument is cached by its path alone: each file is an input.
+    const inputs = [_][2][]const u8{
+        .{ "ui", ".ptsx" },
+        .{ "ui", ".zig" },
+        .{ "../ui/src", ".ptsx" },
+        .{ "../ui/src", ".ts" },
+        .{ "../icons/src", ".ts" },
+        .{ "../icons/icons", ".svg" },
+        .{ "../pjsx/src", ".zig" },
+    };
+
+    for (inputs) |input| {
+        for (embed.files_under(builder, input[0], input[1])) |path| {
+            run.addFileInput(.{
+                .cwd_relative = builder.pathFromRoot(path),
+            });
+        }
+    }
+}
+
+/// The class merge an installed plugin's views write with: the parts as they are, joined.
+/// A plugin's own markup takes no classes (the lowering refuses them); what the host draws
+/// is merged by the host's.
+const class_merge_plain =
+    \\const std = @import("std");
+    \\
+    \\pub fn merge_classes(
+    \\    arena: std.mem.Allocator,
+    \\    parts: []const []const u8,
+    \\    options: anytype,
+    \\) ![]const u8 {
+    \\    _ = options;
+    \\
+    \\    return std.mem.join(arena, " ", parts);
+    \\}
+    \\
+;
 
 /// What the plugin SDK imports but never reaches from inside the sandbox: an empty module for
 /// each, and the one declaration it does reach (the storage error names, in `sqlite`).
@@ -158,6 +240,11 @@ fn stubs_of(builder: *std.Build) *std.Build.Step.WriteFile {
     const publr_ai = builder.dependency("publr_ai", .{});
 
     _ = files.addCopyFile(publr_ai.namedLazyPath("amalgamation"), "publr_ai.zig");
+
+    // Not a stub either: `publr.text` is the text library itself.
+    const publr_text = builder.dependency("publr_text", .{});
+
+    _ = files.addCopyFile(publr_text.namedLazyPath("amalgamation"), "publr_text.zig");
 
     for (stub_imports) |name| {
         _ = files.add(builder.fmt("{s}.zig", .{name}), "pub const all = .{};\n");
