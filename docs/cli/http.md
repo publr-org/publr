@@ -1,10 +1,17 @@
 # CLI: `http`
 
 Requests a plugin sends out. `http fetch` is a plugin's alone, granted as `http.fetch`
-(high tier): to the domains it declares in `allowed_domains`, over https, or plain http to
-this machine. `{secret:NAME}` in the address, a header or the body is filled in with the
-secret's value as the request leaves, when the plugin was granted `secret.NAME`; a value the
-answer echoes comes back as `{secret:NAME}`. Sends up to 8 MiB; answers the status and up to
+(high tier): to the domains on that grant (`api.example.com` exactly, `*.example.com` for
+the names under it, `*` for any public address), over https, or in development plain http
+to this machine when it is listed. In production local and private addresses and the server
+itself (its names, what they resolve to, its interfaces' public addresses) are refused,
+checked where the name resolves and connected to the checked address; redirects are followed only within the
+domains. Each request is logged under the call or job run that sent it (method, host, path,
+status, time). An administrator changes the domains with `plugin set_grant --key http.fetch
+--domains`. `{secret:NAME}` in the address, a header or the body is filled in with the
+secret's value as the request leaves, when the plugin declares it in `.secrets` (else
+`SecretNotDeclared`) and it has a value (else "<label> isn't set", `SecretMissing`); a value
+the answer echoes comes back as `{secret:NAME}`. Sends up to 8 MiB; answers the status and up to
 1 MiB of the body.
 Back to the [CLI reference](../cli.md).
 

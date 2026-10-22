@@ -114,7 +114,9 @@ without a migration is allowed and flagged.
 
 ## Upgrade tests
 
-Every release commits a fixture: a site its own binary seeded through the CLI, every table
+Upgrade tests have not started yet: until `fixtures/upgrade/START` names the release they
+start from, there are no fixtures, `zig build upgrade` checks nothing, and a release may change
+stored data freely. From that release on, every release commits a fixture: a site its own binary seeded through the CLI, every table
 filled, with `facts.json` saying what it made (`fixtures/upgrade/<version>.tar.gz`), and
 carries `fixtures/upgrade/lived.tar.gz`, one site every release has opened and seeded on.
 `zig build upgrade` (part of `verify-full` and CI) updates every one with the current build

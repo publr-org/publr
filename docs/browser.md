@@ -70,7 +70,13 @@ Three things the worker does own, because the module cannot reach them:
   at `<folder>/<key>`, and is kept in OPFS from then on: a demo's pictures, fetched only
   when a page shows them. The module resizes images
   as the server does, but keeps their format (no WebP) and keeps no copies. A
-  response's body is read by pointer (`publr_body_ptr`), so it may be bytes.
+  response's body is read by pointer (`publr_body_ptr`), so it may be bytes;
+- **installed plugins' modules**: a plugin uploaded in the admin is kept in `files/plugins/`,
+  added and enabled as on a server, and runs on the browser's own WebAssembly:
+  `publr-sandbox.js` compiles each module in the worker, Publr calls it through its import
+  module `publr_wasm`, and the plugin's calls back into Publr return through the export
+  `publr_wasm_host`. The browser keeps no instruction budget, so a plugin that never
+  returns holds the tab; its memory limit is checked after each call.
 
 ## Building and running it
 

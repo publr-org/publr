@@ -18,7 +18,7 @@ public taxonomies. Back to the [CLI reference](../cli.md).
 | `term save --id <id> --document <json> [--expected_version <n>] [--parent <id>]` | Write the document; `--parent` moves the term (an empty string makes it a root, omitted keeps it), and every record filed under it or a descendant follows; refused while more than 10 000 assignments would change |
 | `term list [--taxonomy <t>] [--taxonomies a,b] [--filters k:op:v,...] [--search] [--slug] [--filter_field --filter_value] [--order] [--limit] [--offset]` | List terms as `record list` lists records; `title_asc` by default |
 | `term tree --taxonomy <t> [--limit <n>] [--offset <n>]` | The terms in tree order, parents first, siblings by title, each with its depth, 50 a page (`--limit` up to 200); `total` counts them all |
-| `term publish --id <id>`, `term discard_changes --id <id>`, `term transition --id <id> --to <status>` | The lifecycle, as for records |
+| `term publish --id <id>`, `term discard_changes --id <id>`, `term transition --id <id> --transition <name>` | The lifecycle, as for records |
 | `term delete --id <id>` | Move to `deleted` (reversible) |
 | `term purge --id <id>` | Remove for good (admins); refused while the term has children or records filed under it |
 | `term validate --taxonomy <t> --document <json>` | Report every problem without saving |

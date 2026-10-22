@@ -16,9 +16,11 @@ reserved for the core.
 
 An operation has a **name** (`namespace.verb`, e.g. `heartbeat.check`), a
 one-line **description**, an **input**, an **output**, and a **kind**: it
-either reads or it writes. What apps call is named `app.<feature>.<verb>`
-(`app.newsletter.subscribe`): a role for an app's visitors grants those and never
-the admin's (see [Auth](auth.md#roles)).
+either reads or it writes. A plugin's operation says who may call it: by default
+administrators and roles granted it, or a ready answer (anyone signed in, a role, any
+visitor) or a check of its own. One that callers without credentials may reach says so
+(`untrusted_callers`); a site's pages call it at `app.<plugin>.<verb>`, where an
+administrator is a signed-in person like any other (see [Auth](auth.md#roles)).
 
 Inputs and outputs are plain data: text, numbers, booleans, lists, small
 records. No pointers, no callbacks, nothing that cannot be written down as
@@ -68,12 +70,16 @@ keeps that intent as a record and runs the operation when the time comes.
 
 ### Calls to parent plugin operations
 
-A child declares `pub const depends_on = .{ "parent@^0.4" };` (or `compatible_with` for a
-parent it only uses when present) and declares each parent operation it uses as a
-`publr.plugin.Remote`, in its own words: what it sends and what it reads. It never imports
-the parent. `PluginCtx.call(Remote, input)` uses the core gateway by operation name in both
-native and installed execution; the shapes are checked against the parent's when both are
-compiled in.
+A child names `"parent@^0.4"` in its `depends_on` (or `compatible_with` for a parent it
+only uses when present) and describes each parent operation it uses as a remote, in its
+own words: what it sends and what it reads. It never imports the parent. `ctx.call(Remote,
+input)` uses the core gateway by operation name in both
+native and installed execution. Records and events of the parent are described the same
+way (`publr.remote.record`, `publr.remote.event`), with only the fields the child reads.
+Each is checked against the parent: when both are compiled in, at enable, and whenever the
+parent changes. A required parent that no longer fits keeps the child off (compiled in
+together, the build fails); an optional one switches only that remote off (compiled in
+together, the build notes it), and a call to it answers `Unavailable`.
 An installed child also requests an exact permission such as
 `.{ .key = "call:app.parent.adjust", .reason = "<why this child needs it>" }`, or
 `call:parent.adjust` for one of its operations that is not an app's.
@@ -124,7 +130,7 @@ An operation that destroys what cannot be had back declares `destroys = true` (d
 content type, purging a record): a device is refused it whatever it may otherwise do,
 and a person does it in the admin. A write by a device allowed only drafts is refused
 whole when it publishes or unpublishes anything (a `*.published` or `*.unpublished`
-notice).
+event).
 
 An operation may declare `open` (anyone may call it, like signing in) and
 `allow_frontmatter_calls` (a dynamic page may run it when it is opened,
@@ -142,11 +148,11 @@ set-password as `POST /api/auth/sign-in|logout|set-password` with a cookie, and
 
 ### Self-describing operations
 
-Operations are grouped in namespaces (`users`, `heartbeat`, later
-`record`, `content_type`, ...), and a namespace is declared with a summary and an
-explanation of what lives in it; the SDK refuses an operation whose
-namespace is undocumented. An operation carries its own documentation next
-to its code: a one-line
+Operations are grouped in namespaces (`users`, `heartbeat`, `record`, a plugin's own),
+and a namespace has a summary and an explanation of what lives in it; the SDK refuses an
+operation whose namespace is undocumented. A plugin's namespace is its own words, the
+`//!` comment of its `main.zig`. An operation carries its own documentation next to its
+code (a plugin's in the doc comment above it, read from the source when it builds): a one-line
 description, a longer explanation (who may call it, what it changes, how it
 fails), a note per input and output field, an example input, an example
 output, and the caller the example runs as. Every adapter renders the same
@@ -165,7 +171,9 @@ append-only (`docs/schema.md`, `activity` and `errors`).
 
 ### The shape
 
-Just enough to see it; the full contract lives in the code and tests.
+Just enough to see it; the full contract lives in the code and tests. A plugin writes
+its operations with `publr.operation.define` and its words as doc comments (see
+[Plugins](plugins.md#operations)); core declares its own like this:
 
 ```zig
 pub const Check = struct {
@@ -186,8 +194,10 @@ output structs, one example call with the answer it gives, and `run`. Optional:
 policies, is read from the input by field name (`type`, `id`, `to`).
 
 An operation fails with the core's errors (`error.Denied`, `error.NotFound`,
-`error.Conflict`, ...) or with a failure its plugin declares, for what the core has no
-word for:
+`error.Conflict`, ...) or with a failure of its own, for what the core has no word for. A
+plugin lists its failures in the operation's `Fails:` words and refuses with
+`ctx.fail(.Unverified, "Verify your email to create more sites", .{})`. Core declares
+them as values:
 
 ```zig
 pub const unverified: sdk.operation.Failure = .{
@@ -219,50 +229,58 @@ six kinds:
 |---|---|---|
 | **pre** | before authorization, for every call | veto (rate limits, abuse protection) |
 | **before** | after authorization, on a named operation | see and change the input, or veto |
-| **after** | on a named operation, after it ran | observe input and output |
-| **on event** | for any operation | react to completed, rejected, failed, or a notice an operation raised |
+| **after** | on a named operation or event, inside the write | observe input and output, or veto (rolls back) |
+| **on** | on a named operation or event, from the queue once the write committed | react to its answer or payload; the only one that may call out |
 | **policy** | during authorization | narrow the grant |
-| **display** | when the admin shows a value of a named type | change how it reads, as text |
+| **filter** | when the admin shows a value of a named type | change how it reads, as text |
 
-A display hook changes how a value is shown, never what is stored or what an operation
-answers. The first point is `record.title`: the admin's lists, its reference picker and
-its reference cards call the hooks once per page, per type, with each record's title and
-all of its fields; the hook writes the titles shown instead (products names a variant
-`Earl Grey, 50 g`). It reads anything else through the SDK, as granted, and may not write
-while it runs. What it answers is text: cut to 512 bytes, control characters made spaces,
-escaped where it is shown. A hook that fails, or answers another batch, changes nothing.
+A filter changes how a value is shown, never what is stored or what an operation answers.
+The first point is a record's title: the admin's lists, its reference picker and its
+reference cards run the filters once per page, per type. A filter is written for one item
+(the record, typed, and what is shown for it) and Publr runs it over the batch in passes,
+reading what the items ask for together between them (products names a variant
+`Earl Grey, 50 g`, reading every variant's product in one list). It reads through the SDK,
+as granted, and may not write or call out. What it answers is text: cut to 512 bytes,
+control characters made spaces, escaped where it is shown. A filter that fails leaves the
+item as it was.
 No hook can put markup or a script on a page; printed markup is always sanitized
 (`set:html`), and a script reaches a page only as an island or an approved plugin script.
 
-An operation can raise a **notice** while it runs (`ctx.notice(name, subject)`),
-a named event with a subject that reaches every event hook. The core raises
-`auth.user_created`, `auth.sign_in_succeeded`, `auth.sign_in_failed`,
-`auth.sign_in_throttled`, `auth.sign_in_locked`, `auth.sign_out`,
-`auth.identity_signed_in`, `auth.identity_linked`, `auth.identity_refused`,
-`auth.identity_unlinked`, `project.initialised`, `auth.password_link_issued` and
-`auth.password_set`; for
-content, outcomes rather than mechanics: `record.created`, `record.saved` (a
-document was written), `record.changed` (first pending edit on a live record),
-`record.changes_saved`, `record.changes_discarded`, `record.published` (a new live
-version, whether from a draft or from pending edits: one listener for "on
-publish"), `record.unpublished`, `record.archived`, `record.deleted`,
-`record.restored`, `record.purged`, plus `record.transitioned` for every status
-move and `content_type.created|updated|deleted`; the term domain raises the
-same set under `term.*` and `taxonomy.*`.
+Every operation emits an **event** under its own name when it succeeds, carrying its
+answer; a failure emits nothing. A plugin declares an event of its own with a typed payload
+(`publr.event.define`) and emits it with `ctx.emit(Event, payload)`; the payload travels as
+JSON. Events are queued in the write's transaction, so a rolled-back write drops them, and
+`on` hooks hear them once it commits. Core's typed events are `role.created|updated|removed`
+(`.role`), `auth.user_created` (`.user`), `internal.created|saved|deleted` (`.record`) and
+the sign-in ones (`publr.auth.SignedIn`, `SignedUp`, `SignedOut`), all declared in one shape
+(`publr.event.define(.{ .name, .payload })`). What is not a successful call is kept outside
+the write that raised it, so a refusal's rollback does not drop it, and heard by `on` hooks
+only: the sign-ins refused (`auth.sign_in_throttled`, `auth.sign_in_failed`,
+`auth.sign_in_locked`, `auth.sign_on_replayed`, `auth.sign_on_failed`,
+`auth.identity_refused`) and `errors.failed` (`publr.errors.Failed`), raised for each
+Error log entry that is an error rather than a refusal the caller was told, for error
+trackers and alerts. Every move of a record or a term raises its type's transition event
+(`post.transitioned`, a plugin's type `shop.product_transitioned`, what
+`Posts.any_transition` hooks) with `.{ .record, .transition, .from, .to }`, and a plugin's
+type also the transition's own (`shop.product_archive`); a move over many raises it for
+each record. What else a record write did is in its own event: `record.save` answers
+`outcome` (`saved` into the record's own document, `changes_saved` parked on a live one,
+`changes_discarded`, `unchanged`), `record.publish` the status it reached.
 
-Every change to the project's **structure** raises a notice too, with what changed as
-its subject: `content_type.*` and `taxonomy.*` above, `custom_fields.created|updated|
-deleted` (a field group's handle), `plugin.added|update_added|enabled|disabled|updated|
-update_cancelled|rolled_back|granted|revoked|denied|content_access_set|removed` (the
-plugin's name), and `apps.loaded` (an app's name, each time `serve` loads the apps from
-the folder, at start and on `publr apps load`). `apps.loaded` is raised by the server
-itself, as the system, outside any operation (`SDK.announce`). `sdk.structure.is_change`
-tells these from content: what a plugin recording deployments listens for.
+Anything else that changed is the operation that changed it, never a second name: a
+plugin enabled is `plugin.enable` finishing, a type changed is `content_type.update`.
+Core's own readers (the activity log, a plugin recording deployments) hook those
+operations `after`, as any plugin would, and read what changed from their input and
+answer (`sdk.changed_units`: a record's or term's id, a type's or taxonomy's handle, a field
+group's, a plugin's name, a view, an account, each unit `project.put` put), and a move over
+many from each record's transition event. The site-changes index hears records the same way. `apps.loaded` (an app's name, each time
+`serve` loads the apps from the folder, at start and on `publr apps load`) is emitted by
+the server itself, as the system, outside any operation (`SDK.announce`).
 
-Beyond hooks, a plugin registers its own **operations**, **statuses**, **field
-kinds** (a descriptor each: storage class, controls, its own value check) and
-**content types** (created when the database opens; the plugin's own records
-live in the same tables as everything else). Drafts, revisions, workflows,
+Beyond hooks, a plugin registers its own **operations**, **records** (content types and
+internal records, with their statuses and moves; created when the database opens, kept in
+the same tables as everything else) and **field kinds** (a storage class and its own value
+check), all in one registration. Drafts, revisions, workflows,
 activity logs, notifications and live updates are all built from these
 pieces.
 

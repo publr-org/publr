@@ -54,6 +54,12 @@ An operation can dispatch other operations. The nested one goes through the
 same pipeline, shares the same transaction, and remembers which operation caused
 it.
 
+What a write leaves for later (events for `on` hooks, jobs a plugin queued) is kept in
+the database in the write's own transaction, and a second process works through it: the
+worker, which `serve` starts beside itself, starts again if it ends, and stops when it stops.
+Two processes, each with one thread, share the database as the command line and a running
+server always have. A slow hook or job never delays a request.
+
 ## Permissions
 
 ```mermaid
@@ -112,7 +118,7 @@ path or a subdomain of its one domain, all over the same plugins. See
 flowchart LR
     T[app templates] --> B[build] --> F[files]
     F --> R[Readers]
-    O[record publish] -->|record.published| I[dependency index] --> B
+    O[record publish] -->|after record.publish| I[dependency index] --> B
 ```
 
 ## Plugins

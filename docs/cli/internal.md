@@ -2,7 +2,7 @@
 
 Internal records are what a plugin keeps for itself and nobody edits: carts,
 reservations, stock movements, logs. One JSON document each, in collections the plugin
-declares (`internal_records`), each with the fields it is found by. They are never
+declares (records with `.internal = true` in `.records`), each with the fields it is found by. They are never
 content: no statuses, drafts, revisions or search, and they never appear in the admin's
 content list. `version` refuses a stale write; an append-only collection refuses `save`
 and `delete`.

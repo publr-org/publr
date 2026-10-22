@@ -117,8 +117,8 @@ rebuild a page).
 
 ```mermaid
 flowchart LR
-    O[record publish] -->|record.published| L1[plugin A]
-    O -->|record.published| L2[plugin B]
+    O[record publish] -->|record.publish| L1[plugin A]
+    O -->|post.transitioned| L2[plugin B]
 ```
 
 ### Put together: the pipeline
@@ -242,7 +242,7 @@ The directory tells you what a file is, what it may import, and how it is tested
 |---|---|---|---|---|
 | model | `model/` | pure rules: data in, data out. No database, no HTTP | `std`, other model files | unit tests, table-driven |
 | store | `store/` | one table per file; functions are statements | `lib/db/`, `model/` | against a fixture database |
-| operation | `operations/` | orchestration: grant, store, model, notices; never SQL | `sdk/`, `store/`, `model/` | scenarios through `dispatch` |
+| operation | `operations/` | orchestration: grant, store, model, events; never SQL | `sdk/`, `store/`, `model/` | scenarios through `dispatch` |
 | adapter | `adapters/{cli,rest,admin,apps}/` | outside format in, operation call, outside format out; never the store | `sdk/`, operations | request in, response out |
 | engine | `template/` | the `.publr` template language: read into a tree, typed, rendered against a context the apps adapter supplies. No database, no HTTP | `std` | unit tests against a stand-in context |
 | pipeline | `sdk/` (+ `sdk/plugin/`) | dispatch, callers, grants, hooks, the plugin contract | `lib/`, `model/` | unit tests |
@@ -256,7 +256,7 @@ becomes a caller: `adapters/rest/identity.zig` (cookie to caller) and `adapters/
 The fourth door faces the other way: `adapters/apps/` is what readers get, each app's
 templates rendered through `record` operations (anonymous when shared, as the
 signed-in visitor per request), built to files and rebuilt from the dependency index
-(`lib/deps/`) when a `record.*` notice raises a key (`operations/project/changes.zig`).
+(`lib/deps/`) when a `record.*` event raises a key (`operations/project/changes.zig`).
 A request goes to the app mounted where it asked. See [Apps](apps.md).
 
 ### Beside the layers
@@ -315,7 +315,7 @@ The "Publish changes" button in the admin, through every layer:
    (`store/snapshots.zig`), renames the `pending` slot to `live`
    (`store/values.zig`), bumps the record with `changed` off
    (`store/records.zig`).
-5. Commit, `record.published` goes to listeners, redirect back to the record.
+5. Commit, `record.publish`'s own event goes to its `on` hooks, redirect back to the record.
 
 ## Part 5: reference
 
@@ -346,8 +346,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `server/project.zig` | 130 | `Project`: the per-process handle handlers get (`connection`, `auth`, static dir, the loaded apps, the domain), which app a request is for, the session cookie's domain |
 | `server/sandboxed_plugins.zig` | 248 | The installed plugins the server holds: the sandbox's runtime, every plugin loaded from its row and file, the hook and operation index, the roles plugins declare |
 | `server/sandboxed_plugins/interface.zig` | 375 | The `sdk.plugins.Plugins` every context carries: find and run a plugin's operation, run its hooks, read a module to install, reload after a change |
-| `server/sandboxed_plugins/invoke.zig` | 316 | One call into a plugin, as itself and within its limits; the host functions it may call (`publr_call`, `publr_notice`, `publr_log`) |
-| `server/sandboxed_plugins/loaded.zig` | 179 | One installed plugin: its module, manifest, grants, own types, content access, limits, and its disposable instance |
+| `server/sandboxed_plugins/invoke.zig` | 316 | One call into a plugin, as itself and within its limits; the host functions it may call (`publr_call`, `publr_emit`, `publr_log`) |
+| `server/sandboxed_plugins/loaded.zig` | 179 | One installed plugin: its module, manifest, grants with their flags, own types, limits, and its disposable instance |
 | `server/sandboxed_plugins/files.zig` | 224 | Modules on the data drive by their hash, uploads arriving in pieces, the sweep of files no row names |
 | `server/sandboxed_plugins/scenarios.zig` | 518 | The sandbox end to end on the fixture plugins: install, call, revoke, update, remove, the admin's pages |
 
@@ -388,7 +388,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `adapters/apps/rerender.zig` | 233 | One artifact rendered again, removed or forgotten; a changed record's own pages |
 | `adapters/apps/middleware.zig` | 278 | An app's `middleware.zig`: the request it sees (the path inside the app) and the answer it gives |
 | `adapters/apps/islands.js` | | The island loader: `<publr-island>` fetches its fragment and replaces itself |
-| `operations/project/changes.zig` | 91 | The `on` middleware: every `record.*` notice raises the record's keys in the index |
+| `operations/project/changes.zig` | 91 | The `on` middleware: every `record.*` event raises the record's keys in the index |
 | `lib/deps.zig` | 16 | The face on `publr_deps` |
 | `lib/time.zig` | 32 | Dates as text |
 
@@ -399,7 +399,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `model/content_type.zig` | 153 | A content type `Def`, its validation, JSON encode/decode, id from handle |
 | `model/validate.zig` | 416 | A JSON document against a type's fields: problems |
 | `model/document.zig` | 487 | A document as rows and back: `flatten` (object to rows, dotted paths, ordinals), `assemble` (rows to object), title and slug rules, path lookup |
-| `model/status.zig` | 189 | The status registry (`draft/published/archived/deleted`, transitions), extensible by plugins |
+| `model/status.zig` | 189 | The status registry (`draft/published/archived/trashed`, transitions), extensible by plugins |
 | `model/convert.zig` | 159 | Value conversion when a field changes kind |
 | `model/evolution.zig` | 200 | Diff two type definitions into a plan (removed, converted, needs rewrite) |
 | `model/account.zig` | 65 | Email normalisation, display-name rule |
@@ -453,7 +453,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `operations/record/fixture.zig` | 18 | The `post` type the record tests write against |
 | `operations/snapshot.zig` | 211 | `snapshot list/get/take/restore/prune` |
 | `operations/view.zig` | 339 | `view list/get/create/update/delete`: private, owner-bound |
-| `operations/plugin.zig` | 402 | `plugin list/get/upload/add/enable/disable/update/rollback/cancel_update/grant/revoke/deny/set_content_access/remove`: administrators only |
+| `operations/plugin.zig` | 402 | `plugin list/get/upload/add/enable/disable/update/rollback/cancel_update/grant/revoke/deny/set_grant/remove`: administrators only |
 | `operations/plugin/lifecycle.zig` | 303 | The checks before a module is taken; add, enable, disable, remove, grant and revoke |
 | `operations/plugin/versions.zig` | 132 | The next version applied, the previous one kept and rolled back to, the grants a version carries over |
 | `operations/plugin/state.zig` | 216 | A plugin's row read and written as data; its requests with where each stands |
@@ -491,26 +491,26 @@ Grouped by kind. Lines are the whole file, tests included.
 | `adapters/admin/nav.zig` | 158 | The Content sidebar: recent, private and saved views, by status, by type |
 | `adapters/admin/revisions.zig` | 214 | Versions explorer + restore |
 | `adapters/admin/plugins.zig` | 378 | Settings > Plugins: one list with enable, disable, update and remove; the enabling and update reviews; a plugin's page with grant, revoke and roll back |
-| `adapters/admin/plugins/rows.zig` | 146 | Plugin requests as rows low to high, with the buttons each state allows; the content access choice |
+| `adapters/admin/plugins/rows.zig` | 146 | Plugin requests as rows low to high, with a switch for each key and flag; what a posted form switched |
 
 #### Infrastructure
 | File | Lines | What |
 |---|---|---|
 | `sdk.zig` | 700 | `Registry`, `SDK(registry)`: `dispatch`, `admit`, `run` in a tx, one error boundary (`as_outcome`), hooks, events; `may` (whether a caller may call an operation) and `reaches_admin` (whether it may use the admin) |
 | `sdk/operation.zig` | 330 | What an operation type must declare; `resource_of(in)`; `Docs(In)`; name helpers (`namespace.verb`, `app.<feature>.verb`) |
-| `sdk/context.zig` | 104 | `Ctx`: caller, db, io, arena, auth, clock, notices |
+| `sdk/context.zig` | 104 | `Ctx`: caller, db, io, arena, auth, clock, events |
 | `sdk/caller.zig` | 174 | `Caller` union (anonymous, user with its roles, system, token, machine, plugin) |
 | `sdk/grant.zig` | 267 | `Grant`: allow/deny, type and status filters, transitions, row filter |
 | `sdk/authorize.zig` | 318 | The core policy (anonymous reads live+public, a user what its roles grant); runs plugin policies |
 | `sdk/middleware.zig` | 89 | Hook stages (`pre`, `before`, `after`, `on`) and event shapes |
 | `sdk/plugin.zig` | 647 | What a plugin module may export; `Merged(plugins)`; compile-time validation |
-| `sdk/plugin/sandboxed.zig` | 320 | What a plugin declares to run in the sandbox (permissions, limits, content access), its entries, what may not be sandboxed |
+| `sdk/plugin/sandboxed.zig` | 320 | What a plugin declares to run in the sandbox (permissions, limits), its entries, what may not be sandboxed |
 | `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |
 | `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `PluginCtx` proxied to the host as JSON, the exports generated for a plugin, its manifest among them |
 | `sdk/plugin/route.zig` | 211 | What a compiled-in plugin's routes and operator commands may be: under prefixes it owns, at most 16 and 8 |
 | `sdk/plugin/admin_slots.zig` | 66 | A compiled-in plugin in the admin: settings pages listed in the sidebar, a top bar item |
 | `sdk/plugin/state.zig` | 71 | A compiled-in plugin's `State` and the process it is made from |
-| `sdk/structure.zig` | 34 | Which notices change a project's structure |
+| `sdk/structure.zig` | 34 | Which events change a project's structure |
 | `sdk/scratch.zig` | 109 | A request's scratch: working memory for a loop's items, given back after each |
 | `sdk/help.zig` | 311 | An operation's `--help`: its fields, output, failures and example, for core and installed plugins alike |
 | `sdk/plugin/wire.zig` | 107 | What crosses the sandbox's boundary: error codes, the result cell, the envelopes |
@@ -547,7 +547,7 @@ Grouped by kind. Lines are the whole file, tests included.
 3. ~~Operation ceremony~~ done: an operation is `name`, `description` (+ `details`, `field_docs`, `output_docs`), `kind`, `In`, `Out`, `example`, `example_out`, `run`. `resource` is read from `In` by field name (`sdk/operation.zig:resource_of`); `seed` became one example world, which then left `src/` entirely (`scripts/parity.zig`); `volatile_fields` went because parity compares the shape of outputs, not values; `example_caller` is derived from what the policy lets an anonymous caller do.
 4. ~~Asserts that restate the compiler~~ done: `tidy` now rejects tautologies, `or true`, type and size restatements (28 removed), fails a non-trivial function only when it asserts nothing, and reports how many functions have a single assertion (two stays the aim: 22 today). Asserts that restate a non-empty argument stay where they say something.
 5. ~~Dead weight~~ done: `sdk/queue.zig` and `enqueue`/`drain` are gone (there is no deferred form of an operation; a plugin that wants "later" keeps the intent as a record).
-6. ~~Mixed files~~ done: `server/routes.zig` is the table (tests moved next to what they test: `lib/auth/http.zig`, `adapters/rest.zig`); `lib/auth/identity.zig` split out of `lib/auth/http.zig`; `record/common.zig` dissolved into `record/access.zig` (who may touch what), `record/document.zig` (the document), the notices into `record/lifecycle.zig`, the test fixture into `record/fixture.zig`.
+6. ~~Mixed files~~ done: `server/routes.zig` is the table (tests moved next to what they test: `lib/auth/http.zig`, `adapters/rest.zig`); `lib/auth/identity.zig` split out of `lib/auth/http.zig`; `record/common.zig` dissolved into `record/access.zig` (who may touch what), `record/document.zig` (the document), the events into `record/lifecycle.zig`, the test fixture into `record/fixture.zig`.
 7. ~~Admin handler skeleton~~ done: `admin.accept(exchange, back)` is the one place a POST is admitted (signed in, parseable form, same origin + CSRF) and `admin.param` the one place a missing route parameter answers not found; handlers start with one line each.
 
 Each item is one reviewable diff. The map is updated with each.

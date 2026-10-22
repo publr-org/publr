@@ -26,7 +26,7 @@ users may read taxonomies; changing them needs an admin. Back to the
 ```
 $ publr --as-admin taxonomy create --definition '{"handle":"topics","name":"Topics",
     "public":true,"hierarchical":true,"title_field":"name","applies_to":["post"],
-    "fields":[{"name":"name","label":"Name","kind":"string","required":true},
+    "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
     {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}'
 { "id": "d4e5…", "handle": "topics" }
 ```

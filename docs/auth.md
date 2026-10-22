@@ -40,9 +40,10 @@ unknown accounts, so nothing about who exists leaks. After a handful of
 failures an account waits before it may try again, for longer each time (one
 minute, then five, fifteen, sixty), and never permanently, so a stranger cannot
 lock a real user out. Every attempt is announced as an event
-(`auth.sign_in_failed`, `auth.sign_in_succeeded`, `auth.sign_in_throttled`) that
-plugins can act on: alerts, CAPTCHA, IP rules, second factors, all belong in
-plugins, not the core.
+(`auth.sign_in_succeeded`; `auth.sign_in_failed`, `auth.sign_in_throttled`,
+`auth.sign_in_locked`, kept though the refused sign-in's write rolls back and heard
+by `on` hooks) that plugins can act on: alerts, CAPTCHA, IP rules, second factors, all
+belong in plugins, not the core.
 
 Browser requests that change something must come from the same origin and
 carry a per-session CSRF token; requests without a browser cookie (the CLI,
@@ -66,8 +67,14 @@ it does not act on GitHub for them.
 
 A button sends the browser to `/auth/<provider>`, which makes a `state` and a PKCE pair,
 keeps them in a ten-minute cookie and redirects to the provider; the provider sends the
-browser back to `/auth/<provider>/callback`, which checks the state and asks the plugin
-who the code stands for. Every offered provider is listed by `identity.providers`, which
+browser back to `/auth/<provider>/callback`, which checks the state and runs the plugin's
+exchange: the one step of a sign-in that waits on another server. It sends requests only to
+the plugin's own `http.fetch` domains (its client secret, a declared secret, filled in as
+they leave), for at most 10 seconds, and answers who the code stands for; it never makes a
+session or picks the account. No answer in time, or an error, and the login says "That
+sign-in didn't go through. Try again."; the plugin's log says why (`sign_in:<provider>`).
+A provider is offered when its client id is in the environment and its declared secrets are
+set. Every offered provider is listed by `identity.providers`, which
 the admin's login page uses and an app's may. The callback is the request's own origin;
 `PUBLR_AUTH_CALLBACK_ORIGIN` advertises another (a public host that sends the browser on to
 a machine the providers cannot reach, during development).
@@ -127,7 +134,7 @@ person approved:
 | Scope | What the device may do |
 |---|---|
 | `read` | read what its account may read |
-| `drafts` | write as its account may, but nothing visitors see changes: a write that publishes or unpublishes something (a `*.published` or `*.unpublished` notice) is refused whole, so edits wait as drafts for a person |
+| `drafts` | write as its account may, but nothing visitors see changes: a write that publishes or unpublishes something (a `*.published` or `*.unpublished` event) is refused whole, so edits wait as drafts for a person |
 | `write` | everything its account may |
 
 Whatever its scope, a device never destroys data for good. An operation that declares
@@ -148,20 +155,30 @@ a device is announced (`auth.device_approved`, `auth.device_revoked`).
 
 ## Roles
 
-A role is data: a name, a label and **grants**. A grant names an operation
+A role is a row: a name, a label and **grants**. A grant names an operation
 (`record.save`), a namespace and everything under it (`record.*`, `app.newsletter.*`),
 or everything (`*`); a grant starting with `!` takes names back from the role. Nothing
 is granted that no grant names. An account holds one or more roles and may call what any
-of them grants. `role list` lists them.
+of them grants; each check reads the roles it holds from the database. `role list` lists
+them, and an administrator changes them with [role](cli/role.md).
 
-Core declares two. `admin` holds `*`. `editor` holds the content: records and terms and
+Core declares three. `admin` holds `*`. `editor` holds the content: records and terms and
 their history, reading the types and taxonomies, but not changing structure, users or
-settings, and not purging. Settings singletons need `settings.edit`, a grant that names
+settings, and not purging. `contributor` is an editor who may not publish: their
+transitions into or out of a live status, and their changes to a live record, are asked
+for and wait for someone who may (see [record](cli/record.md)). Settings singletons need `settings.edit`, a grant that names
 no operation; `admin` holds it through `*`.
 
-Every built-in plugin may declare roles of its own, or add grants to one that exists
-(a plugin giving editors its operations declares `editor` with those grants). A role
-stored on an account that no built-in plugin declares any more grants nothing.
+Every plugin may declare roles of its own (Customer, Store manager, Teacher), or add
+grants to one that exists (a plugin giving editors its operations declares `editor` with
+those grants). Code declares, the site decides: a declared role is made the first time
+its owner declares it (core and built-in plugins when Publr starts, an installed plugin
+when it is enabled), and each later declaration adds only the grants the owner's
+previous one lacked. So what the site changed or took away stays, and a role the site
+removed is never made again. `role reset` puts a declared role's grants back. A plugin's
+own roles are pieces chosen to go with it or stay when it is removed; the grants it added
+to other roles always leave with it. A name an account holds that no role has grants
+nothing. `admin` holds `*` and never changes.
 
 Operations an app calls are named `app.<feature>.<verb>` (`app.newsletter.subscribe`),
 the feature's own namespace: any app may call them. A role for an app's visitors grants

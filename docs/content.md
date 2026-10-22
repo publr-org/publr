@@ -70,7 +70,10 @@ records they name, and Publr always knows where something is referenced. Reads
 put the document back together from its rows. A field may be `unique`: no two
 records of the type hold the same value, checked on every write like a slug. A
 reference field says what purging the record it points at does to the pointer:
-kept, refused, or cleared.
+kept, refused, or cleared. Whether lists can filter and sort by a field is the field's
+own: `filterable` (on unless turned off) and `sortable` (numbers, money, dates and times
+by default, text and choices when asked), set in the field's settings or by its plugin. A
+list's views only choose among them.
 
 A **virtual** field is shown and read as if the record stored it, but works it out from
 other records. The one kind so far, `referenced_by`, is the records of a type whose
@@ -97,12 +100,12 @@ this record taken out of a multiple one), one added points here. A record a sing
 reference holds elsewhere moves here after a confirmation. The reference changes in the
 record's own status: a published variant moves at once, a draft stays a draft. A record
 whose reference is required and single cannot be left without one: removing it from the
-list deletes it (moves it to `deleted`, restorable), after a confirmation.
+list moves it to the trash (restorable), after a confirmation.
 
 Everything that has fields is a record of some type, in the same two tables:
 records, authors, later media items. A type may be private
 (`public: false`): only signed-in callers see it. A plugin declares the types
-it needs in code (`pub const content_types`) and they are created when the
+it needs in code (`.records`, each made with `publr.record.define`) and they are created when the
 database opens; it may also keep state in fields on its own types. Plugins
 extend storage by adding types and fields, never tables.
 
@@ -141,9 +144,10 @@ what its kind shows: `note`, `text`, `url`, `src`, `value`, `title`, `alt`, `fam
 and saved whole through [`design`](cli/design.md).
 
 Two axes describe where a record is. **Status** is publication: a registry,
-`draft`, `published`, `archived`, `deleted` in the core, moved by transitions
-(a plugin can add `scheduled` or `in_review`); every move is reversible,
-`record purge` removes for good. **Changed** is editing: saving a live record
+`draft`, `published`, `archived`, `trashed` in the core, moved by named transitions
+(`publish`, `archive`; a plugin's own like `submit`; `trash`, `restore` and `destroy`
+in every flow); `restore` takes a record back to the status it had (a published one to
+where records start), `destroy` (or `record purge`) removes for good. **Changed** is editing: saving a live record
 parks the document as a pending copy (`slot = pending` in the same value
 rows) and marks the record `changed`; the live document stays until
 `record publish` applies the copy or `record discard_changes` drops it.

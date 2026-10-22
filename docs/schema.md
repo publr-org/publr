@@ -180,10 +180,9 @@ redeemed.
 
 ## `user_roles`
 
-The roles an account holds, one row each, at most 16 per account. A role is
-data declared in code (core's `admin` and `editor`, and each plugin's), not a
-row: a name no built-in plugin declares any more grants nothing. Deleting a
-user removes their rows.
+The roles an account holds, one row each, at most 16 per account. A name with
+no row in `roles` grants nothing. Deleting a user removes their rows; removing a
+role removes its holders' rows.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -192,6 +191,48 @@ user removes their rows.
 
 Primary key `(user_id, role)`. Index `user_roles_role (role, user_id)`: how
 many accounts hold `admin` (the last one stays).
+
+## `roles`
+
+Every role: core's `admin`, `editor` and `contributor`, the ones plugins declare,
+and the ones the site makes. At most 64. `admin` grants `*` and never changes.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `name` | text, primary key | `[a-z][a-z0-9_]*`, 1 to 32 characters |
+| `label` | text | As the admin names it |
+| `description` | text | One sentence, up to 200 characters |
+| `owner` | text | `core`, the plugin that declared it first, or empty for the site |
+| `created_at`, `updated_at` | integer | Timestamps |
+
+## `role_grants`
+
+What a role lets its holders call, one grant each, at most 128 per role: an
+operation (`record.save`), a namespace (`record.*`), `*`, or any of these after
+`!` to take names back.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `role` | text, references `roles` | Whose grant; cascades on delete |
+| `pattern` | text | The grant |
+
+Primary key `(role, pattern)`.
+
+## `role_declarations`
+
+What each owner's code declared, as last applied: the row with an empty
+`pattern` records that the owner declared the role, the others its grants. A
+later declaration adds only the grants the previous one lacked, so what the site
+took away stays away; `role reset` puts a role back to what its declarations
+grant.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `owner` | text | `core` or a plugin's name |
+| `role` | text | The role's name |
+| `pattern` | text | A declared grant, or empty for the role itself |
+
+Primary key `(owner, role, pattern)`. Index `role_declarations_role (role, owner)`.
 
 ## `sessions`
 
@@ -212,9 +253,11 @@ Indexes: `sessions_user_id (user_id)`, `sessions_expires_at (expires_at)`.
 
 ## `views`
 
-A user's saved views of the content list: a name over a set of filters, kept
-as the JSON `view create` takes (`{"types":["post"],"status":"draft",
-"created_by":"me"}`), `me` and relative days resolved when the list is drawn.
+A user's saved views of the content list: a name over a view, kept as the JSON
+`view create` takes: types, filter clauses, search, order, columns, page size and the
+fields offered to filter and order by (`{"types":["order"],"type_view":true,
+"clauses":[{"key":"field.total","operator":"more","value":"4999"}],"order":"-number"}`),
+`me` and relative days resolved when the list is drawn.
 Private: listed, read and changed by the owner alone. Deleting a user removes
 their views. Up to 64 per user.
 
@@ -243,8 +286,54 @@ it. Up to 16 per person. Deleting a user removes their pins.
 | `page` | text | The page |
 | `position` | integer | Its place on the rail, from the top |
 | `pinned_at` | integer | When it was pinned |
+| `hidden` | integer | 1: not a pin but the person's note that they hid a pin made for everyone |
 
 Primary key: `(user_id, plugin, page)`.
+
+## `shared_rail_pins`
+
+The pages administrators pinned to everyone's rail, drawn on each person's rail before
+their own pins unless they hid one (`rail_pins.hidden`). Up to 16.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `plugin` | text | The plugin whose page it is; empty for a core page |
+| `page` | text | The page |
+| `position` | integer | Its place among everyone's pins |
+| `pinned_at` | integer | When it was pinned |
+
+Primary key: `(plugin, page)`.
+
+## `shared_views`
+
+Saved views administrators made for everyone: listed under their type for every person,
+copied by anyone, changed and deleted by administrators. The same JSON as `views`. Up to
+64.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text, primary key | View id |
+| `name` | text | The name the sidebar shows, up to 80 characters |
+| `query` | text | The view, as JSON |
+| `created_by` | text | The administrator who made it |
+| `created_at`, `updated_at` | integer | Timestamps |
+
+## `default_views`
+
+The view a type's list starts at, as saved over its plugin's (`.data_view`): a person's
+own, or everyone's when `user_id` is empty, which administrators save. A person's wins over
+everyone's; Reset to default removes the row. The same JSON as `views`. Deleting the user
+or the type removes it.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `user_id` | text, references `users` | Whose default; null for everyone's; cascades |
+| `type_id` | text, references `content_types` | The type whose list; cascades |
+| `query` | text | The view, as JSON |
+| `updated_by` | text | Who saved it |
+| `updated_at` | integer | When |
+
+Indexes: `default_views_owner (ifnull(user_id, ''), type_id)`, unique.
 
 ## `ai_conversations`
 
@@ -552,7 +641,7 @@ project reads this table again. See [Plugins](plugins.md#installed-plugins-dlp).
 | `enabled` | integer | 1 while it runs; 0 when added and not yet enabled, or disabled |
 | `granted` | text | The permission keys granted, as a JSON array; kept while it is disabled |
 | `denied` | text | The keys an administrator refused, as a JSON array |
-| `content_access` | text | `{"scope":"public"}`, `{"scope":"all"}` or `{"scope":"specific","types":[...]}` |
+| `grants` | text | JSON list, one per permission key: `{"key","records","taxonomies","domains","drafts","private","internal","publish"}`, the flags as an administrator left them (never more than asked) and `http.fetch`'s domains as they listed them; a key with none stored holds its flags and domains as asked |
 | `next_version`, `next_hash`, `next_manifest` | text, nullable | A newer module uploaded for it, waiting to be applied |
 | `previous_version`, `previous_hash`, `previous_manifest` | text, nullable | The version the last update replaced |
 | `installed_at`, `updated_at` | integer | Timestamps |
@@ -565,7 +654,7 @@ fields included) is stored as JSON in `definition`; a few properties are also
 columns for listing. A type's id is derived from its handle (SHA-256, first 24
 hex characters), so a type declared in code has the same id in every database.
 Types created through `content_type create` and types declared by plugins
-(`pub const content_types` in the plugin, applied by `SDK.bootstrap` when the
+(`publr.record.define` in the plugin's `.records`, applied by `SDK.bootstrap` when the
 database opens) live side by side in this table.
 
 | Column | Type | Meaning |
@@ -590,7 +679,8 @@ every write and status change and is the optimistic-concurrency token.
 Deleting a type deletes its records; deleting a record deletes its values.
 
 Two axes: `status` is publication (`draft`, `published`, `archived`,
-`deleted`; moved by transitions), `changed` is editing: `1` while a live
+`trashed`; moved by transitions; `trashed_from` keeps the status a trashed record had,
+for `restore`), `changed` is editing: `1` while a live
 record has edits parked in its `pending` slot, whatever the status. Unpublish,
 archive and delete leave `changed` and the pending copy alone.
 
@@ -605,6 +695,9 @@ archive and delete leave `changed` and the pending copy alone.
 | `created_by` | text, nullable | The user who created it (a fact, not a byline) |
 | `updated_by` | text, nullable | The user of the last save or transition |
 | `app` | text, nullable | A design record's app (template, part, pattern, moodboard card), by the `.name` in its `app.zon`; null for every other record, which lives where its type does |
+| `trashed_from` | text | The status a record in the trash had before it, where `restore` takes it back (a live one goes where records start); empty otherwise |
+| `requested` | text | A transition asked for by someone who may not publish (`publish`, `archive`, `destroy`), waiting for someone who may; empty otherwise. Cleared when the status changes, the changes are published or discarded, or it is declined |
+| `requested_by` | text, nullable | The user who asked |
 
 Indexes: `records_list (type_id, status, updated_at)`; `records_changed
 (type_id, updated_at) WHERE changed = 1`; `records_app (app, updated_at)`.
@@ -712,11 +805,33 @@ call's rollback, in a transaction of its own. Append-only and kept forever like
 | `operation` | text | The top-level operation |
 | `input` | text | The input as JSON, secrets replaced by `•` |
 | `calls` | text | JSON array of the operations it set off inside before failing |
-| `error` | text | The error's name: `Denied`, `Invalid`, `Failed` |
+| `error` | text | The error's name: `Denied`, `Invalid`, `Failed`; `Logged` for a call that answered but whose plugin logged an `.err` line |
 | `message` | text | What went wrong, in words, when there is a message |
 | `failed_in` | text | The inner operation the failure came from; empty when its own |
 
 Triggers `errors_kept`, `errors_never_removed`.
+
+## `plugin_log`
+
+What plugins logged with `ctx.log`: one row per line, at most 100 a call. Written with the
+call's `activity` row inside its transaction, with its `errors` row after a rollback, or
+on its own when a read answered or a queued run ended. Append-only and kept forever like
+`activity`. Read with `plugin log`, and under each entry of `activity list` and
+`errors list`.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | integer | Increasing: the order lines were logged |
+| `at` | integer | When, milliseconds |
+| `plugin` | text | The plugin that logged it |
+| `level` | text | `info`, `warn` or `err` |
+| `line` | text | The line, up to 1 KiB |
+| `call` | text | What it ran in: an operation, `job:<plugin>.<name>`, `event:<name>`, a provider's exchange `sign_in:<provider>` |
+| `activity` | integer | The `activity` row it went with; 0 for none |
+| `error` | integer | The `errors` row it went with; 0 for none |
+
+Indexes `plugin_log_by_plugin`, `plugin_log_by_activity`, `plugin_log_by_error`. Triggers
+`plugin_log_kept`, `plugin_log_never_removed`.
 
 ## `taxonomies`
 
@@ -758,6 +873,8 @@ record: status, pending edits (`changed`), version, revisions in `snapshots`
 | `created_at`, `updated_at` | integer | Timestamps |
 | `created_by`, `updated_by` | text, nullable | The acting users |
 | `app` | text, nullable | Always null: a term lives where its taxonomy does |
+| `trashed_from` | text | As on `records`: the status a term in the trash had |
+| `requested`, `requested_by` | text | As on `records`: a transition waiting for someone who may publish, and who asked |
 
 Indexes: `terms_list (type_id, status, updated_at)`; `terms_changed (type_id,
 updated_at) WHERE changed = 1`; `terms_parent (parent_id)`.
@@ -848,13 +965,36 @@ last change. Keys are `record:<id>`, `type:<handle>`, `records`,
 `template:<app>/<path>` and `asset:<app>`; artifacts are an app and a URL inside it
 (`www:/posts/hello`, `www:/_islands/latest-posts`). See [Apps](apps.md).
 
-## `notice_queue`
+## `event_queue`
 
-The notices waiting for the extrinsic event hooks (see [Plugin API](plugin-api.md)): `id`
-in the order they were raised, the raising operation's `operation_id`, the notice's
-`name` and `subject`, and `queued_at`. A write adds them in its own transaction, so a write
-rolled back queues nothing; the server hands them on between requests, oldest first, and
-removes them.
+The events waiting for the `on` hooks (see [Plugin API](plugin-api.md)): `id` in the order
+they were emitted, the emitting operation's `operation_id`, the event's `name` (a plugin's
+event, one of core's, or an operation's own on success) and `subject` (its payload as JSON,
+an operation's answer for its own), and `queued_at`. A write adds them in its own
+transaction, so a write rolled back queues nothing; the server's worker process hands them
+on, oldest first, and removes them.
+
+## `job_queue`
+
+The jobs plugins queued (see [Plugin API](plugin-api.md)): the `plugin` and the job's
+`name`, its `input` as JSON, and `due_at`, when it may run. A write queues them in its own
+transaction, so a write rolled back queues nothing. The server's worker process runs a job
+once `due_at` has come and removes it when it is done. A job that fails waits again: `attempts` counts the
+runs, and each failure moves `due_at` later, from a minute doubling up to a day. After the
+last attempt `state` is `failed` and `problem` says why; the row stays for the plugin's
+page. An `on` hook's run that failed is kept here too, after its first try (`attempts` 1),
+as its plugin's (`core` for core's own) under `on:<event>` (`#2` for the plugin's second
+hook on it), the event's payload as `input`. `claimed_until` holds a job while it runs: a run lost to a crash is taken up again
+once it passes. `queued_at` is when it was queued. Indexed on `(state, due_at)`, the read
+each pass makes.
+
+## `scheduled_transitions`
+
+A status transition someone scheduled for a record: `record_id` (one per record), the status it goes to
+(`to_status`), when (`due_at`), who scheduled it (`scheduled_by`, an account id, empty for
+the system) and when they did (`scheduled_at`). The server's worker makes the transition once
+`due_at` has come, as that person with their rights then, and removes the row. Indexed on
+`due_at`.
 
 ## Coming with later gates
 

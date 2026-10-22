@@ -156,12 +156,13 @@ A role named there that neither core nor a built-in plugin declares fails the bu
 
 ## Calling operations from a page
 
-An app's pages call what its plugins mark safe for its users, `app.<plugin>.<verb>`, at
-`<mount>/_api/<plugin>/<verb>` (`/_api/cart/add` on the root app, `/shop/_api/cart/add`
-on one mounted at `/shop`). Nothing else is reachable there: core's own operations and a
-plugin's other ones answer not found, and a plugin the app does not list in `.plugins`
-is denied. The call runs as the visitor, for the app, through the same authorization,
-rules, transaction and logs as any other.
+An app's pages call the operations its plugins made for untrusted callers
+(`.untrusted_callers`), at `<mount>/_actions/app.<plugin>.<verb>`
+(`/_actions/app.cart.add` on the root app, `/shop/_actions/app.cart.add` on one mounted at
+`/shop`). Nothing else is reachable there: core's own operations and a plugin's other ones
+answer not found, and a plugin the app does not list in `.plugins` is denied. The call runs
+as the visitor, for the app, through the same authorization (the operation's
+`.authorize`), validation, transaction and logs as any other.
 
 - **An island** posts JSON with the header `Publr-Request: 1` and reads the JSON answer.
 - **A plain form** posts its fields, named as the operation's input; it is sent back with
@@ -169,14 +170,19 @@ rules, transaction and logs as any other.
   with `?error=<name>` added when the call was refused.
 
 ```html
-<form method="post" action="/_api/cart/add">
+<form method="post" action="/_actions/app.cart.add">
   <input type="hidden" name="variant" value="{variant.id}">
   <input type="hidden" name="redirect" value="/cart">
   <button>Add to cart</button>
 </form>
 ```
 
-The request must come from the app's own site (`Origin`); a page elsewhere is refused.
+**Other sites.** An operation for untrusted callers is the author's promise that anyone may
+call it, so a page on another site may too: it asks first (the browser's `OPTIONS`,
+answered with `Access-Control-Allow-Origin: *`) and posts JSON with `Publr-Request: 1`.
+Such a call carries no cookies and runs as nobody signed in; its visitor is the one the page
+names in the `Publr-Visitor` header (24 hex characters it makes and keeps), or none. Forms
+from elsewhere are refused. Where a request seems to come from never adds trust.
 
 A refused form comes back with the refusal's name, `?error=NotEnoughStock` when the
 plugin refused in its own words, and the page says what it wants to about it:
@@ -191,7 +197,7 @@ An island's JSON call gets the plugin's message too: `{ "error": "NotEnoughStock
 ## Visitors
 
 Every visitor has a stable id, the `publr_visitor` cookie (HttpOnly, SameSite=Lax), set
-by the first dynamic page, dynamic island or `_api` call that finds none; a static page
+by the first dynamic page, dynamic island or `_actions` call that finds none; a static page
 never sets it, so built pages stay cacheable. Signed in or not, it stays the same.
 Operations read it as the visitor (`ctx.visitor()` in a plugin): what a cart keys on, or
 a segment a page shows. The activity log names an anonymous visitor `visitor:<id>`.
@@ -206,7 +212,7 @@ an app's type with none unless it says so (`{ "all": true }`, or the apps listed
 Either may change at any time; no record moves.
 
 An app reaches the types living in it and the ones shared with it, and nothing else:
-its templates, islands, frontmatter calls, middleware and `_api` read, reference and
+its templates, islands, frontmatter calls, middleware and `_actions` read, reference and
 call on those types only, whoever is signed in. A warehouse that shares its stock type
 with the website lets the website list stock levels; its suppliers, shared with no one,
 stay in the warehouse. A reference field of an app's type offers that app's reach; one
@@ -323,7 +329,7 @@ rebuilds what read it through the usual `type:<handle>` dependency.
 | `locale()`: the language the page is in (`pl`, the main one's own code), empty on a site without languages: `<html lang={locale}>`; `languages()` (runs as script): the page in every language, `{ code, label, href, current, main }`, for a switch | |
 | `get('order', id)`: the live record by id, null when there is none or it is of another type; `findOne('product', 'sku', 'EG-50')` the one whose field holds the value; `find('variant', { product: id }, { limit, offset })` live records, newest first, filtered on at most one field by equality | `param('error')`: a value from the address's query string, null when absent |
 | `query('*[_type == "variant" && product == $id] \| order(price.GBP) { _id, title, price }', { id: product.id })`: a [GROQ query](queries.md) over what the visitor may read, its answer plain JSON (`variant.title`, not `.data`); a static page that queries rebuilds when any record changes | `query(...)`: the same, per request |
-| | `call('app.inventory.levels', { product: id })`: a plugin's `app.*` read, with its input, as the visitor; the answer is `.data`, plain JSON |
+| | `call('inventory.levels', { product: id })` (or `app.inventory.levels`): a read a plugin made with `publr.operation.define`, with its input, as the visitor; the answer is `.data`, plain JSON |
 | `media(entry.data.photo)`: the file a media field holds, `{ url, alt, title, width, height, key, mime_type }`, null when there is none the visitor may see (a private one, to a visitor); `mediaUrl(entry.data.photo, { w, h, fit: 'cover', q })` its address, resized, empty when none | `media(...)`, `mediaUrl(...)`: the same, per request |
 | `money(entry.data.price)`: a money field in the site's default currency as the site writes it (`£9.25`); `money(entry.data.price, 'EUR')` in that one; empty when the field holds none | `money(...)`: the same, per request |
 | | `getCollection(...)`, `getReferences(...)`: records, read per request |
@@ -619,7 +625,7 @@ On the admin's host, a page loaded in a frame (a preview, the editor's canvas) i
 without `allow-same-origin`: its origin is opaque, the session cookie is not sent from it,
 and `localStorage` and `document.cookie` throw. Everything it sends is a visitor's request,
 never the administrator's: the session is taken out and the frame's own visitor put in,
-derived from the session, so islands, `_api` calls and forms work there as for anyone. A
+derived from the session, so islands, `_actions` calls and forms work there as for anyone. A
 guard script, first in its head, puts a notice ("Hidden while you're signed in") inside
 every frame of another site, which would inherit the sandbox. The toolbar shows in no frame
 the admin made; a page on the site's own origin that frames it (a site embedding Publr for
@@ -769,9 +775,9 @@ project's own database (`deps_*`) that every app shares: `record:<id>` for an en
 `type:<handle>` and `records` for a query, `template:<app>/<path>` for every template it
 went through, `asset:<app>` for the stylesheet it carries inline. A built page or island
 is named with its app, `www:/posts/hello`, so the same path in two apps is two artifacts. A
-`record.*` notice that changes what visitors see raises the record's keys, from whichever
+`record.*` event that changes what visitors see raises the record's keys, from whichever
 door the change came (admin, API, CLI): a publish, an unpublish, a delete, a restore, a
-purge, and a save or status move of a live record. An edit kept as pending changes, or a
+purge, and a save or status transition of a live record. An edit kept as pending changes, or a
 save of a record no visitor sees, raises nothing; it is seen through a preview drawn on
 request (`/admin/preview/<id>`, saved or not), never written to the built site. A changed record's
 own page is drawn again by the `[slug]` routes of its type only. The server takes the batch once it has been quiet for a quarter

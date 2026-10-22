@@ -30,119 +30,177 @@ every other `publr` command is sent to it and takes effect at once: you never re
 (`publr --as-admin plugin list` names the plugins). `publr <namespace> --help` lists a
 namespace's commands, either kind, and `publr <namespace> <verb> --help` explains one.
 
-## Plugins
+## Publr's marketplace first
 
-A feature is a **plugin**: a Zig file that declares operations (what can be done) and
-content types (what is stored). It runs in a sandbox and can only do what the project's
-administrator allowed. This one is complete:
+Before you build a feature (pages, a blog, a shop, bookings), ask Publr's marketplace
+whether plugins give it already. It decides on its side which of its plugins what your
+person asked needs, and answers them best first, leaving out those installed:
 
-```zig
-const publr = @import("publr");
-
-const sdk = publr.sdk;
-const PluginCtx = publr.plugin.PluginCtx;
-
-const Entry = struct { name: []const u8, message: []const u8 };
-const entries = publr.records.of(Entry, "guestbook_entry");
-
-pub const manifest: publr.plugin.Manifest = .{
-    .name = "guestbook",
-    .version = "0.1.0",
-    .summary = "A guestbook visitors sign from the site",
-};
-
-pub const namespaces = [_]sdk.operation.Namespace{.{
-    .name = "app.guestbook",
-    .summary = "What the site's visitors do with the guestbook",
-    .details = "`app.guestbook sign` adds an entry, published at once; anyone may call it.",
-}};
-
-pub const content_types = [_]publr.plugin.ContentTypeDef{.{
-    .handle = "guestbook_entry",
-    .name = "Guestbook entry",
-    .public = true,
-    .title_field = "name",
-    .fields = &.{
-        .{ .name = "name", .label = "Name", .kind = "string", .required = true },
-        .{ .name = "message", .label = "Message", .kind = "string", .required = true },
-    },
-}};
-
-pub const operations = [_]type{Sign};
-
-pub const Sign = struct {
-    pub const name = "app.guestbook.sign";
-    pub const description = "Sign the guestbook";
-    pub const details = "Anyone may call it. A name is 1 to 80 characters, a message 1 to 500.";
-    pub const open = true;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { name: []const u8, message: []const u8 };
-    pub const Out = struct { id: []const u8 };
-    pub const example: In = .{ .name = "Ada", .message = "Lovely site!" };
-    pub const example_out: Out = .{ .id = "3f9c1e0a5b7d2c4e6f8a9b0c" };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .name = "Who signs",
-        .message = "What they write",
-    };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .name = .{ .min_len = 1, .max_len = 80 },
-        .message = .{ .min_len = 1, .max_len = 500 },
-    };
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        const entry: Entry = .{ .name = in.name, .message = in.message };
-        const id = try entries.create(ctx, entry, .{ .status = "published" });
-
-        return .{ .id = id };
-    }
-};
+```sh
+publr plugin find --request "A shop with tea in several sizes, and orders I can manage"
+publr plugin install --name checkout     # with what it requires: products, cart
 ```
 
-- **Names.** Every operation is `<plugin>.<verb>` (`notes.add`), for the people running
-  the site from the admin or the command line, or `app.<plugin>.<verb>`
-  (`app.guestbook.sign`), for an app's users. Anything else fails the build. A plugin
-  cannot be named after one of Publr's own namespaces, or `app`. `app.` says an
-  operation is safe to give an app's users, not who may call it: administrators call
-  `app.*` operations too. Never give one operation two names; if the admin needs
-  different behaviour, that is a second operation.
-- **Declare bounds, don't write them.** `pub const rules: sdk.operation.Rules(In)` holds
-  each input field's bounds (`min`/`max`, `min_len`/`max_len`, `items_min`/`items_max`,
-  `preset`, `pattern`); core refuses a call that breaks them before your code runs, saying
-  which field, and `--help` shows them.
-- **What a site calls is `app.`.** An app's pages reach `app.<plugin>.<verb>` at
-  `<mount>/_api/<plugin>/<verb>` (an island posts JSON with `Publr-Request: 1`, a form
-  posts its fields), as the visitor, only when the app lists the plugin in `.plugins`.
-  `ctx.visitor()` is the visitor's stable id, signed in or not: key carts and the like on
-  it. Never set cookies of your own.
-- **Show, do not store.** How the admin names a record of yours (a variant as `Earl Grey,
-  50 g`) is a display hook (`stage = .display`, `point = "record.title"`,
-  `content_type`), never a title copied into another field. It gets the batch's titles
-  and fields, reads the rest as granted (`publr.records.of(...).many(ctx, ids)`, one
-  call), cannot write, and answers text only.
-- **Refuse in your own words.** `return ctx.fail("NotEnoughStock", "Only 2 left.")`: the
-  name is what a form's redirect carries (`?error=NotEnoughStock`) and a page checks for,
-  the message what an island or the CLI shows. The write rolls back.
-- **Shared or per app.** An internal collection is kept per app unless it says
-  `.shared = true` (stock every shop sells from); a visitor's cart stays per app.
-- **Declare secrets.** `pub const secret = .{"password"}` lists the input fields that
-  hold one. Core logs every call's input (`publr activity list`, `publr errors list`)
-  with them replaced by `•`; a field named like a secret (`password`, `token`, `secret`,
-  `*_key`) is masked even undeclared, but declare it anyway.
-- **Document everything.** Every namespace, operation and field gets its text: an
-  operation its `description`, `details` (who may call it, what it changes, how it fails),
-  `example`, `example_out` and `field_docs`. `publr <namespace> --help` shows them to the
-  people who use the plugin, and to the next agent.
+Each answer says what the plugin gives and what it requires. Install the ones that fit;
+their content types, admin sections and operations are then yours to use. Build only what
+none of them gives: the pages that show them, the fields and taxonomies a site adds, a
+plugin of your own for behaviour nobody offers. High permissions a plugin asks for wait for
+your person under Settings › Plugins.
+
+## Plugins
+
+A feature is a **plugin**: a folder with a `main.zig` that registers operations (what can
+be done) and records (what is stored). It runs in a sandbox and can only do what the
+project's administrator allowed. Its words are its doc comments. This one is complete:
+
+```zig
+//! A guestbook visitors sign from the site.
+//!
+//! `guestbook sign` adds an entry, shown at once; anyone may call it from the site.
+const std = @import("std");
+const publr = @import("publr");
+
+const manifest: publr.Manifest = .{
+    .name = "guestbook",
+    .version = "0.1.0",
+};
+
+/// Guestbook entry
+///
+/// What a visitor wrote.
+pub const Entry = struct {
+    /// Name
+    name: []const u8,
+    /// Message
+    message: []const u8,
+};
+
+pub const Entries = publr.record.define(Entry, .{
+    .name = "guestbook.entry",
+    .public = true,
+});
+
+pub const SignIn = struct {
+    /// Who signs, 1 to 80 characters
+    name: []const u8,
+    /// What they write, 1 to 500 characters
+    message: []const u8,
+};
+
+pub const SignOut = struct {
+    /// The new entry's id
+    id: []const u8,
+};
+
+/// Signs the guestbook.
+///
+/// Anyone may call it, from the site's pages too.
+///
+/// Example:
+///   in: { "name": "Ada", "message": "Lovely site!" }
+///   out: { "id": "3f9c1e0a5b7d2c4e6f8a9b0c" }
+pub const Sign = publr.operation.define(SignIn, SignOut, .{
+    .name = "sign",
+    .kind = .write,
+    .untrusted_callers = true,
+    .validate = check,
+    .run = sign,
+});
+
+fn check(in: SignIn, problems: *publr.Problems(SignIn)) void {
+    if (in.name.len == 0 or in.name.len > 80) {
+        problems.add(.name, "A name is 1 to 80 characters");
+    }
+
+    if (in.message.len == 0 or in.message.len > 500) {
+        problems.add(.message, "A message is 1 to 500 characters");
+    }
+}
+
+fn sign(ctx: *publr.Ctx, in: SignIn) publr.Error!SignOut {
+    return .{ .id = try Entries.create(ctx, .{ .name = in.name, .message = in.message }) };
+}
+
+pub const plugin = publr.plugin.define(manifest, .{
+    .records = &.{Entries},
+    .operations = &.{Sign},
+});
+```
+
+- **One registration.** Everything the plugin brings goes in `publr.plugin.define`, last in
+  `main.zig`. Options are struct fields, so a misspelt one fails the build. Write every use
+  out (`.operations = &.{Sign}`); Publr never looks inside a file for a name.
+- **Words are doc comments.** `main.zig`'s `//!` is the plugin's description (first line)
+  and the text of its settings page (the rest); its namespace's `--help` is made from the
+  same words. An operation's `///` gives its
+  description, details, `Fails:` and `Example:` (an `in:` and an `out:` line of JSON);
+  every field of a record, an input and an output has a `///`. A missing one fails the
+  build and says where it goes. `publr <plugin> --help` shows them.
+- **Names.** An operation is `<plugin>.<verb>` (`guestbook.sign`): `.name` is the verb. A
+  plugin cannot be named after one of Publr's own namespaces, or `app`. Never give one
+  operation two names; if the admin needs different behaviour, that is a second
+  operation.
+- **Who may call.** Leave `.authorize` out and administrators, and roles an administrator
+  granted the operation, may call it; with `.untrusted_callers = true`, anyone may. A
+  ready answer narrows it: `publr.authorize.user_is_signed_in` (needs
+  `.untrusted_callers = true`), `user_has_role(&.{"editor"})`, `plugin_calls`. Or a function of yours,
+  `fn (ctx: *publr.Ctx, in: In) bool`, reading `ctx.caller()`.
+- **What a site calls.** `.untrusted_callers = true` lets anyone call it without
+  credentials: an app's pages at `<mount>/_actions/app.<plugin>.<verb>` (an island posts
+  JSON with `Publr-Request: 1`, a form posts its fields), and any script anywhere. Its
+  input is untrusted: key data to the caller, answer with nothing of other people's.
+  Through that address an administrator is a signed-in person like any other.
+  `ctx.caller().visitor` is the visitor's stable id, signed in or not: key carts and the
+  like on it. Never set cookies of your own.
+- **Check in `.validate`.** `problems.add(.field, "reason")` for each problem; every one is
+  told at once and the call is refused before `run`, answered 422 as
+  `{ "error": "Invalid", "problems": [ { "field", "message" } ] }`. A record checks its own
+  data; check only what belongs to the call.
+- **Rules live on the record.** A field's limits go in its `.validation` in
+  `record.define`'s `.fields` (`.note = .{ .validation = .{ .max_len = 280 } }`), never in
+  an operation and never only in words: every write checks them, the admin's editor
+  included, and the admin shows them beside the field's help, so the help never repeats
+  them. `.validation.hint` replaces that line (`"Up to {max_len} characters"`).
+- **Modify, do not copy.** How the admin names a record of yours (a variant as `Earl Grey,
+  50 g`) is a modifier, `publr.modify("variant.title", title)` in `.hooks`, never a title
+  copied into another field. Its function takes one value (`*publr.Title(Variant)`:
+  `.record` typed, `.title` to change); its reads are batched for the whole list by Publr. A
+  value of yours others may change goes through `ctx.mod("yourplugin.name", value)`. A
+  modifier cannot write or call out.
+- **Refuse in your own words.** List the failure in `Fails:`
+  (`- NotEnoughStock (409): fewer left than asked`) and
+  `return ctx.fail(.NotEnoughStock, "Only {left} left", .{ .left = left })`: the name is
+  what a form's redirect carries (`?error=NotEnoughStock`) and a page checks for, the
+  message what an island or the CLI shows, in the caller's language. The write rolls
+  back.
+- **Shared or per app.** An internal record is kept per project; a visitor's cart that
+  belongs to one app says `.scope = .app`.
+- **Declare secrets.** `.secret = &.{.password}` lists the input fields that hold one (a
+  name that is no field fails the build). Core logs every call's input
+  (`publr activity list`, `publr errors list`) with them replaced by `•`; a field named
+  like a secret (`password`, `token`, `secret`, `*_key`) is masked even undeclared.
 - **State lives in records.** The plugin's instance may be dropped and made again at any
   time; keep nothing in globals.
-- **Records are typed values.** `publr.records.of(Entry, "guestbook_entry")` gives
-  `get` (by id), `find_one` (by a unique field), `find` (many, filtered on at most one
-  field), `create` and `save` (only the fields you give; with `.status = "published"`
-  straight into the live record, publishing nothing else). Never build JSON text by hand.
-  There is no query language: anything a read by identity or one field cannot say is an
-  operation of your plugin.
+- **Records are typed values.** `publr.record.define(Entry, .{ .name = "guestbook.entry"
+  })` makes the type from the struct (named under the plugin: apps, GROQ and `--type` use
+  `guestbook.entry`; a `.validate` on it checks rules across fields on every write) and gives `get` (by id), `find_one` (by a field),
+  `create` and `save` (only the fields you give), and `transition` (a named transition of
+  its flow). Never build JSON text by hand. Anything more is a GROQ query:
+  `publr.query.prepare(text, .{})`, then `execute(ctx, Result, .{ .name = value })`, its
+  `$names` checked against the struct when it compiles.
 - **Reach the rest of Publr through `ctx.call`,** with an operation's type: every one
-  `publr --help` lists is there, under `publr.operations`. The plugin's own content types
-  and operations need no permission.
+  `publr --help` lists is there, under `publr.operations`, and the plugin's own operations
+  by their definitions (`ctx.call(Sign, in)`). The plugin's own records and operations
+  need no permission.
+- **Check before you finish.** `publr plugin check --dir plugins/<name>` names money,
+  times and references kept as plain numbers or text, JSON in text, and an untrusted
+  write taking facts the server owns. A `Why:` line in the field's `///` passes one when
+  the rule does not fit.
+- **Not built yet.** `define` refuses `register_taxonomies`,
+  `register_columns`, `register_components`, `register_providers`,
+  `register_location_rules`, `taxonomies`, `jobs` and `webhooks`, saying they come with a
+  later gate. There is no queued work, no schedule, no email and no outside search engine
+  for plugins yet. When a feature needs one, tell the person what is missing.
 
 ## How to build well
 
@@ -160,8 +218,12 @@ work for.
   screens at all.
 - **Name what you build on.** A plugin that needs another names it in `depends_on`; one
   it only uses when present goes in `compatible_with`. Each operation of theirs you call
-  or hook is a `publr.plugin.Remote("inventory.reserve", Sends, Reads)` in your
-  `remotes`, in your own words, with only the fields you use. Never import another
+  or hook is a `publr.remote.operation("inventory.reserve", Sends, Reads)` in your
+  `.remotes`, in your own words, with only the fields you use;
+  `publr.remote.record("products.variant", Fields)` reads their records and
+  `publr.remote.event("inventory.out_of_stock", Payload)` hears their events the same way,
+  listed in `.remotes` too. A remote that stops fitting is off (`error.Unavailable`), so
+  handle that answer. Never import another
   plugin. Do not make a plugin whose only job is to connect two others; one of them owns
   the connection.
 - **Parents never know their children.** A plugin others extend exposes documented
@@ -177,7 +239,7 @@ work for.
 
 - **The server owns the facts and the rules.** An operation reads what it decides on from
   storage. Its input is the request: a query, answers, a selection, quantities, record
-  IDs. Take a record as `publr.records.Ref(Variant, "variant")`: the caller sends its id,
+  IDs. Take a record as its handle's `Ref` (`Variants.Ref`): the caller sends its id,
   core reads the stored record with the caller's access before your operation runs
   (`in.variant.value.?`), and refuses one that is unknown or not theirs to see. Never records' contents, prices, rules or policies sent by the caller: a visitor can
   send anything.
@@ -192,14 +254,13 @@ work for.
 - **Content is what people manage.** Model it as content types they edit: products,
   variants, orders, methods.
 - **What only your plugin keeps is internal records.** Carts, holds, ledgers, logs:
-  declare each kind (`pub const internal_records = [_]publr.plugin.InternalCollection{
-  .{ .kind = "movement", .indexed = &.{"stock"}, .append_only = true } }`) and use
-  `publr.internal.of(Movement, "movement")`: `get`, `find_one`, `find`, `create`, `save`,
-  `delete`. They never show in the admin's Content, reach only your plugin's records in
+  declare each kind as a record with `.internal = true` and `.indexed` for the fields it is
+  found by (`publr.record.define(Movement, .{ .name = "stock.movement", .internal = true,
+  .indexed = &.{.stock} })`), and use its handle. They never show in the admin's Content, reach only your plugin's records in
   the request's app, and need no permission.
-- **Use the field kinds.** A record pointing at another is a `reference` field
-  (`.options = .{ .to = &.{"product"} }`), a time is `datetime`, a choice is `select`,
-  a price is `money` (`{ "GBP": 850 }`, minor units, in the site's currencies; a template
+- **Use the field kinds.** A record pointing at another holds its `Ref` (a `reference`
+  field), a time is `publr.Time` (a `datetime` field), a choice is an enum (a `select`
+  field), a price is `money` (`.fields = .{ .price = .{ .kind = "money" } }`) (`{ "GBP": 850 }`, minor units, in the site's currencies; a template
   writes it with `Publr.build.money(product.data.price)`). Never a
   record ID in a `string`, never JSON in a `text`, never a time or a price as a number.
 - **What is pointed at is a record.** If anything refers to a part of a record (a
@@ -217,9 +278,10 @@ work for.
   in a record. The admin is on an origin of its own, so a page's scripts never act as
   someone signed in to it: they see the real page. The admin's previews show pages in a
   sandboxed frame, where `localStorage` and `document.cookie` throw and other sites' embeds
-  show a notice; islands, `_api` calls and forms work there. Guard storage with `try`.
+  show a notice; islands, `_actions` calls and forms work there. Guard storage with `try`.
 - **Static first.** A page is built once unless it must know the visitor; a part that does
-  (a cart, stock left) is a dynamic island. Forms post to the plugin's `app.*` operations.
+  (a cart, stock left) is a dynamic island. Forms post to the plugin's operations at
+  `/_actions/app.<plugin>.<verb>`.
 - **Use the patterns people expect.** For a shop: product pages, a cart, a separate
   checkout, a confirmation. Internal documents (packing slips) belong in the admin.
 
@@ -274,8 +336,8 @@ frame, looking like the admin's own. Keep it that way:
   build refuses others).
 - **A form by declaration.** A page declared as
   `.form = .{ .read = Read, .save = Save, .multiline = &.{"description"} }` needs no
-  views at all: the admin draws the form from `Save`'s input (each field's `field_docs`
-  line is its help), filled from what `Read` answers, compiled in or installed alike. In
+  views at all: the admin draws the form from `Save`'s input (each field's `///` is its
+  help), filled from what `Read` answers, compiled in or installed alike. In
   a page of your own, `@publr/admin/OperationForm.ptsx` does the same from a list of
   fields.
 - **Data through `publr/operations`.** `call("notes.add")` writes through one of the
@@ -287,20 +349,18 @@ frame, looking like the admin's own. Keep it that way:
   tokens: in the frame both go through the admin, which runs only what the plugin may.
 - **Typed.** `publr plugin build` writes `ui/operations.d.ts`: every operation's input and
   output, so a misspelt name or field is an error in your editor.
-- **Entries, not chrome.** To put the page in the top bar, declare
-  `pub const top_bar = [_]publr.plugin.Item{.{ .label = "Notes", .icon = "file",
-  .page = "entries", .operation = List, .count = Count }}` (`count`, a read answering
-  `count`, for a number beside it). The admin draws it; it leads only to your pages or
-  `/admin/...`. The rail is the person's: nothing adds to it, and people pin your pages
-  there themselves (`publr rail pin`). Several content types of your own get a section of
-  their own in Content with `pub const sections = [_]publr.plugin.Section{.{ .label = "Shop",
-  .icon = "folder", .types = &.{.{ .handle = "product", .columns = &.{"price"} }} }}`:
-  listed under Sections in Content, with a sidebar of their own. Removing a plugin keeps
-  its data unless an administrator ticks pieces on its page; `pub const uninstall = Forget`
-  (one of your writes, taking `remove`) clears what core does not know is yours when they
-  do. `pub const about` is HTML for the plugin's page under
-  Settings › Plugins: plain text markup, classes only `muted`, `success`, `warning`,
-  `error`; anything else is dropped.
+- **Entries, not chrome.** To put a page in the top bar, the page says `.top_bar = .{
+  .count = Count }` (a read answering `count`, for a number beside it). The admin draws it.
+  The rail is the person's: nothing adds to it, and people pin your pages there themselves
+  (`publr rail pin`). Your content types sit under menu items: declare `.menu = &.{.{ .name
+  = "shop", .label = publr.t("Shop"), .icon = "bag" }}` and give each record `.menu = .{
+  .parent = &.{"<plugin>.shop"} }`; an item with no parent is a part of the admin of its
+  own, its children headings in its sidebar. A record's `.data_view = .{ .columns = &.{
+  .price }, .order = .{ .field = .price, .direction = .asc } }` is where its list starts;
+  whether a field filters or sorts is the field's (`.fields.price = .{ .sortable = true }`). Icons of your own go in `.icons` (SVG,
+  sanitized). Removing a plugin keeps its data unless an administrator ticks pieces on its
+  page; core knows all of it. The text on your plugin's page under Settings › Plugins is
+  `main.zig`'s `//!` past its first line.
 
 ## Pages: apps
 
@@ -346,15 +406,16 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
 </Base>
 ```
 
-- **Panels on other types' forms.** `pub const panels = [_]publr.plugin.Panel{.{ .type =
-  "product", .label = "Stock", .operation = StockPanel }}` adds a box to every product's
+- **Panels on other types' forms.** `.panels = &.{.{ .type = "product", .label =
+  "Stock", .operation = StockPanel }}` in `define` adds a box to every product's
   edit form, whoever's type it is. `StockPanel` is one of your reads taking `record` (the
   record's id, all it is told) and answering `html`; it is drawn in the plugin frame like
   your pages, with `call` and `query` working the same, and reads what else it needs
   itself. Nothing on the type's side knows about it; without the type, there is no panel.
 - **What a page can read.** Built pages see live records of **public** types only: give
-  the plugin's content type `.public = true`, and for pages per record a slug field,
-  `.{ .name = "slug", .label = "Slug", .kind = "slug", .options = .{ .source = "title" } }`.
+  the plugin's record `.public = true`, and for pages per record a slug field,
+  `slug: ?[]const u8 = null` with `.fields = .{ .slug = .{ .kind = "slug", .options =
+  .{ .source = "title" } } }`.
   An entry is `id`, `type`, `slug`, `title`, `created_at`, `updated_at` and `data`, its
   fields (`lesson.data.body`).
 - **Images.** A media field holds the file's id, not its address:
@@ -385,9 +446,9 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
   Static pages save the HTML; no browser JavaScript or Node installation is needed.
   Use seeded randomness. There is no filesystem, network or asynchronous rendering.
 - **Per request.** A page named `<name>.dynamic.publr` renders for each visitor and may
-  read `Publr.request` (`session`, `getCollection`, `call('app.<plugin>.<verb>')` for an
-  operation that allows it). A form posts to the plugin's `app.*` operations through
-  `/api/<namespace>/<verb>`.
+  read `Publr.request` (`session`, `getCollection`, `call('app.<plugin>.<verb>')` for a
+  read that allows it). A form posts to the plugin's operations through
+  `<mount>/_actions/app.<plugin>.<verb>`.
 - **Links** are the app's own: an app at `/learn` writes `/learn/...`.
 - **Interactive components** (`interactive/*.ptsx`) and `middleware.zig` still need a build
   of Publr: an app loaded from a folder has neither. For behaviour in the browser, use
@@ -404,13 +465,37 @@ refuses is named with the reason, and the apps answer 503 until a load succeeds.
 
 ## Permissions: declare, never grant
 
-Anything beyond its own types and operations, a plugin asks for, with a reason:
+Anything beyond its own records and operations, a plugin asks for in `define`, a key with
+yes/no flags and a reason:
 
 ```zig
-pub const permissions = [_]publr.plugin.Permission{
-    .{ .key = "content.read", .reason = "Lists the posts on the notes page" },
-};
+.permissions = &.{
+    .{ .key = "records.read", .reason = "Lists the posts on the notes page" },
+    .{ .key = "records.write", .publish = true, .reason = "Puts new prices live" },
+    .{ .key = "http.fetch", .domains = &.{"api.supplier.com"}, .reason = "Fetches prices" },
+},
 ```
+
+The keys: `records.read` (`.records`; `.drafts`, `.private`, `.internal`), `records.write`
+(`.records`; `.publish`), `records.destroy` (`.records`), `project.put` (`project.put`:
+anything the project stores exactly as another copy of it keeps it, ids kept), `terms.read` (`.taxonomies`; the
+read flags), `terms.write` (`.taxonomies`; `.publish`), `schema.read`, `schema.write`,
+`users.names`, `users.read`, `users.write`, `site.read`, `settings.write`, `http.fetch`
+(`.domains`), `media.read` (`.private`), `media.write`, `email.send`, and
+`call:<plugin>.<verb>` for another plugin's operation. Reading starts at what a visitor
+sees; name the types you need in `.records` rather than asking for every one. Without
+`.publish` a write makes drafts and asks for transitions to live (`.pending`). A domain is
+exact (`api.supplier.com`, no subdomains implied), `*.supplier.com`, or `"*"` for any public
+address; production refuses local and private addresses whatever is listed, and redirects
+stay within the domains. Any other key or option fails the build. They are requests: the
+administrator may refuse any of them, and `ctx.grant(key)` says what the plugin got
+(`.domains` for `http.fetch`).
+
+A secret is not a permission: it is a field of a `.secrets` struct, its `///` the label
+and where to find it, written into a request as `{secret:NAME}`; the plugin never holds
+its value. Declare every one you write (an undeclared one fails the build) and ask for
+`http.fetch`. The administrator fills it in at install or later on the plugin's page;
+until then a request naming it is refused: "Supplier API key isn't set".
 
 The build tells you when one is missing: calling an operation none of the plugin's
 permissions opens fails to compile, naming the key to add. `publr agents` ends with every

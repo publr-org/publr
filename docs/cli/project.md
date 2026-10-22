@@ -97,3 +97,34 @@ Administrators only.
 $ publr --as-admin project move_app --from www --to site
 { "moved": 6 }
 ```
+
+## `put`
+
+Anything the project stores put exactly as another copy of the project keeps it, with its
+ids: what keeps copies (environments, branches) in step, so a thing keeps one id in every
+copy. Each unit is a `kind`, an `id` and its `rows`: its stored rows as JSON objects by
+column, by table, `{}` to remove it. Its own row is updated in place, the rows hanging from
+it replaced whole; a unit already as given is not written, so running a call twice changes
+nothing. Only plugins call it (with `project.put`), and administrators.
+
+| Kind | Id | Tables |
+|---|---|---|
+| `record` | its id | `records`, `record_values`, `record_terms` (search text made again) |
+| `term` | its id | `terms`, `term_values` (search text made again) |
+| `internal` | its id | `internal_records`, `internal_record_values` |
+| `content_type`, `taxonomy` | its id | its row, its `field_groups` row |
+| `field_group` | its handle | its `field_groups` row (scope `custom_fields`) |
+| `role` | its name | `roles`, `role_grants` |
+| `user` | its id | `users`, `user_roles`, `user_values`, `user_search`, `identities` |
+| `plugin` | its name | its `sandboxed_plugins` row: versions and grants, never its files |
+
+A BLOB travels as hex. Records and terms then land as the same change made by a person:
+slugs and unique values free, references live, the replaced live document kept as a
+revision, its events raised; a refused check fails the whole call. The answer lists every
+unit with its outcome: `added`, `replaced`, `removed` or `unchanged`, and a content
+type's or taxonomy's `handle`. Files (plugins' modules, apps, `publr.zon`) are not put.
+
+```
+$ publr --as-admin project put --units '[{"kind":"role","id":"reviewer","rows":"{}"}]'
+{ "put": [{ "kind": "role", "id": "reviewer", "outcome": "removed", "handle": "" }] }
+```

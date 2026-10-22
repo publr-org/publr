@@ -77,11 +77,15 @@ the next free one (at most 20 tries) and prints the port it took. With
 ```
 publr [--db <path>] build [--full] [--out <dir>] [--url <base>] [--apps <dir>]
 publr check-apps
+publr check-plugins
 ```
 
 Writes every app as files, one folder each, only what changed since the last build
 unless `--full`; see [`build`](cli/build.md). `check-apps` compiles every app the binary
 carries and exits 1 naming the one that does not load; `zig build` runs it.
+`check-plugins` prints a note for each compiled-in plugin's remote that another
+compiled-in plugin switches off, and why (`note: stocktake: shelf.count is switched off:
+shelf 0.2.0 has no operation shelf.count`); it always exits 0, and `zig build` runs it too.
 
 ## Apps
 
@@ -108,6 +112,7 @@ be installed.
 
 ```
 publr [--db <path>] plugin build --name <name> [--dir <folder>] [--out <file>]
+publr plugin check --dir <folder>
 ```
 
 Builds the plugin whose source is `<folder>/main.zig` (default
@@ -115,7 +120,10 @@ Builds the plugin whose source is `<folder>/main.zig` (default
 writes it in, then adds and enables it, or applies it as the next version of the one
 already there. The compiler's messages print as they are; built again unchanged, it says
 the plugin is up to date. `--out <file>` only builds it, into that file, and installs
-nothing. See [Plugins](plugins.md).
+nothing. A plugin registered through `publr.plugin.define` is held to the plugin checks
+first, and its doc comments are read beside it as its words. `plugin check --dir <folder>`
+runs the checks alone and prints each problem with its file and line. See
+[Plugins](plugins.md).
 
 `init` and `serve` write the compiler and the SDK plugins build against out once per
 machine (about 35 MB), into `$PUBLR_CACHE_DIR`, else `$XDG_CACHE_HOME/publr`, else
@@ -176,6 +184,11 @@ answer. `--as` and `--as-admin` are refused there; the device is who you are. `l
 revokes the device there and forgets it here; `whoami` says whose it is, its scope and its
 name. With one address kept, `logout` and `whoami` need none.
 
+A folder whose `.publr/site` holds an address builds that Publr: its commands go there as
+if `--site` named it, and `logout` and `whoami` mean it. The setup an Overview offers for
+an agent (`curl … | sh`) writes it. `agents`, `skill`, `login`, `logout`, `whoami`, `work`
+and `work done` always run on this machine.
+
 Where the Publr's host has copies of the site (Publr Cloud's branches), a device works in
 one: `work start` makes it and answers where its commands go, which this machine keeps for
 the folder it runs in (`.publr/work.json`). Every later command from that folder to that
@@ -223,6 +236,26 @@ last opened it, migrations to run, every way its shape differs) and exits 1 when
 refuse it. `publr db tables` counts every table's rows. `publr backups` lists the backups
 taken before each update and `publr restore <name>` puts one back, once `serve` is stopped.
 They open the database without the gate. See [Updates](updates.md) and [`update`](cli/update.md).
+
+## A whole site in one file
+
+`publr pack [<file>]` writes the site in this folder as one file, `<folder>.site.tar.gz`
+unless named: a gzipped tar with a manifest (`publr-site.json`: format, version, the Publr
+that packed it, the release that last opened the database, name, time), `data/` (a
+consistent snapshot of the database, safe while `serve` runs, media, installed plugins, the
+secrets' key) and `site/` (`publr.zon`, `apps/`, `plugins/`). What is only this machine's
+stays behind: sessions, devices, used sign-on tokens and whom the site trusts to sign people
+in, live agents, the build index, caches, backups, agents' logs, plugin builds, built pages
+and the serve marker. `publr unpack <file>` writes a packed site into this folder, which must
+have none; a bundle from a newer format, a name that would land outside the site, or a link
+is refused.
+
+`publr cloud deploy --space <space> --slug <address> [--name <name>] [--cloud <dashboard>]`
+makes this site a Publr Cloud project at `<address>`: it checks the address, packs the site,
+uploads it to the account's dashboard (`PUBLR_CLOUD`, else `https://cloud.publr.app`) with
+the account's token in `PUBLR_CLOUD_TOKEN`, and has the project made from it. The folder then
+carries the link (`cloud.json`: the dashboard, space, project, address and admin) and is
+refused next time: changes reach a live site only through Cloud.
 
 ## Global flags
 
@@ -281,7 +314,7 @@ runnable example.
 | [`heartbeat`](cli/heartbeat.md) | Liveness and version checks |
 | [`project`](cli/project.md) | The installation itself: `publr init`, and what a change rebuilds |
 | [`user`](cli/user.md) | Accounts, roles, passwords and signing in |
-| [`role`](cli/role.md) | What each role lets its accounts call |
+| [`role`](cli/role.md) | The roles, what each lets its accounts call, and changing them |
 | [`identity`](cli/identity.md) | Signing in with a provider: which accounts, and whether sign-up is open |
 | [`device`](cli/device.md) | Agents and tools acting for an account, signed in by link |
 | [`apps`](cli/apps.md) | The project's apps as files, for agents with no file system |
@@ -291,9 +324,12 @@ runnable example.
 | [`term`](cli/term.md) | The terms of the taxonomies, with a record's lifecycle and a parent |
 | [`media`](cli/media.md) | The media library: files, their folders and tags |
 | [`status`](cli/status.md) | The lifecycle states a record can be in |
+| [`job`](cli/job.md) | The work plugins queued, waiting or failed |
+| [`operation`](cli/operation.md) | Every operation, as its code declares it and as this site overrides it |
 | [`snapshot`](cli/snapshot.md) | Frozen copies of records: revisions and other archives |
-| [`view`](cli/view.md) | Saved views: the content list's filters, named and kept per user |
+| [`view`](cli/view.md) | Views of the content list: saved by name, and the default each type starts at |
 | [`rail`](cli/rail.md) | The pages a person pins to their rail |
+| [`mod`](cli/mod.md) | Values plugins change: applied under a name, modified by whoever hooks it |
 | [`ai`](cli/ai.md) | Conversations with a model: a person asks, an agent builds as their device |
 | [`secret`](cli/secret.md) | Secrets plugins name but never hold: API keys, set by an administrator |
 | [`removal`](cli/removal.md) | Removal lists: what an agent asked to remove for good, for its person to confirm |

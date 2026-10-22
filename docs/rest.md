@@ -10,9 +10,19 @@ one.
 - Requests and responses are JSON (`Content-Type: application/json`).
 - Errors are JSON too: `{ "error": "<name>" }` with a matching status
   (`401` wrong credentials, `403` denied or cross-origin, `404` not found, `409` conflict,
-  `422` invalid input, `429` too many attempts, `503` a service it needs is down: try
-  again). A failure a plugin declares answers with its own status and name, and a
-  `message`: `{ "error": "Unverified", "message": "…" }`.
+  `422` invalid input, `429` too many calls or attempts, `503` a service it needs is down:
+  try again). A failure a plugin declares answers with its own status and name, and a
+  `message`: `{ "error": "Unverified", "message": "…" }`. Input refused by a record's
+  fields or an operation's `.validate` names every problem at its field:
+  `{ "error": "Invalid", "problems": [ { "field": "title", "message": "required" } ] }`.
+- An operation's tighter limit counts only untrusted callers: a site's pages and anyone
+  without credentials.
+- Every caller has a general rate limit: 600 calls a minute, counted per account (a
+  device's account too), else per visitor, else per address; one request counts once.
+  An operation may have a tighter limit of its own, for untrusted callers. Answers carry `RateLimit-Limit`,
+  `RateLimit-Remaining` and `RateLimit-Reset` (seconds until the minute starts again);
+  over a limit: `429` with `Retry-After`. Behind a proxy on the same machine, the caller's
+  address is the last hop of `X-Forwarded-For`.
 - Requests that change something must be same-origin (`Origin` or `Referer`
   matches `Host`) and, when a session cookie is present, carry the session's
   CSRF token in `X-Csrf-Token` (you get it from sign-in or `/api/auth/session`).
@@ -31,7 +41,7 @@ prints. Signed-in requests carry the session cookie; writes also carry
 ```
 GET  /api/record/list?type=post&status=published&limit=20
 POST /api/record/create        {"type":"post","document":"{\"title\":\"Hello\"}"}
-POST /api/record/transition    {"id":"…","to":"published"}
+POST /api/record/transition    {"id":"…","transition":"publish"}
 GET  /api/content_type/get?type=post
 GET  /api/record/referrers?id=…
 GET  /api/term/tree?taxonomy=topics

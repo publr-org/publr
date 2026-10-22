@@ -18,6 +18,6 @@ not a case: a reader without access is the design working. Administrators only. 
 | `health choose_translation --locale <code> --id <message> --provider <plugin> [--context <c>]` | Show that plugin's translation of the message; an empty `--provider` goes back to the first-party one |
 | `health missing_translations --locale <code> --domain <name>` | The messages of a domain (`publr`, or a plugin's name) the language does not translate yet, as a `.pot` |
 
-A case is also settled by restoring the record (`record transition --to draft`) or by sharing
+A case is also settled by restoring the record (`record transition --transition restore`) or by sharing
 its type with the app again (`content_type update`), which the admin's Restore and "Share
 with … again" do.
