@@ -180,6 +180,8 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
                 const ctx = queue.base_of(any_ctx);
                 const items = try Kept.many(ctx, ids);
 
+                std.debug.assert(items.len <= ids.len);
+
                 if (comptime internal) {
                     return items;
                 }
