@@ -14,7 +14,7 @@ export const state = Publr.reactive({
  * `notes?week=2`. Nothing else leaves the frame as an address. */
 const page_address = /^([a-z0-9-]{1,48})?(\?[^#]*)?$/;
 
-export function go(to: string, plugin: string = state.plugin, current: string = state.page) {
+export function go(to: string, plugin: string, current: string) {
   const match = page_address.exec(to);
   if (to === "" || !match) return;
   const page = match[1] ?? current;
@@ -36,30 +36,6 @@ export async function run(operation: string, input: unknown, csrf: string): Prom
   const answer = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(answer.message ?? answer.error ?? `refused (${response.status})`);
   return answer;
-}
-
-/** A GROQ read the frame asks for, run by the admin as the plugin for the person looking. */
-export async function read(
-  frame: HTMLIFrameElement,
-  id: number,
-  query: string,
-  params: unknown,
-  plugin: string,
-  csrf: string,
-) {
-  try {
-    const response = await fetch(Publr.url(`/admin/plugin/${plugin}/query`), {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf },
-      body: JSON.stringify({ query, params: params ?? {} }),
-    });
-    const answer = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(answer.message ?? answer.error ?? `refused (${response.status})`);
-    reply(frame, { id, ok: true, value: answer.result });
-  } catch (error) {
-    reply(frame, { id, ok: false, error: (error as Error).message });
-  }
 }
 
 export function reply(frame: HTMLIFrameElement, answer: object) {
@@ -107,10 +83,9 @@ export const received = (event: MessageEvent) => {
   if (!frame || event.source !== frame.contentWindow || !message || message.publr !== 1) return;
   if (message.kind === "hello") reply(frame, { kind: "ready" });
   if (message.kind === "height") state.height = Math.min(Math.max(Number(message.height) || 0, 0), 100000);
-  if (message.kind === "navigate") go(String(message.to));
+  if (message.kind === "navigate") go(String(message.to), state.plugin, state.page);
   const id = Number(message.id);
   if (message.kind === "call") answer(frame, id, String(message.operation), message.input, state.operations, state.csrf);
-  if (message.kind === "query") read(frame, id, String(message.query), message.params, state.plugin, state.csrf);
   if (message.kind === "log") log(frame, id, Number(message.after) || 0, state.plugin, state.csrf);
   // To the tour player beside it: a message to this window, which only the admin sends.
   if (message.kind === "tour") window.postMessage({ publr_tour: message.steps }, location.origin);

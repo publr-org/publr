@@ -41,7 +41,7 @@ fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
     return .{
         .html = try publr.views.render(ctx, in.base, publr.views.all.SamplerNotePanel, .{
             .record = in.record,
-            .total = @floatFromInt(all.len),
+            .total = all.len,
         }),
     };
 }

@@ -86,36 +86,6 @@ pub fn find(
     return null;
 }
 
-/// Whether `plugin` has a panel at all, for whoever may see it: what lets its frame ask for
-/// a GROQ read.
-pub fn any_of(session: *const Session, plugin: []const u8) bool {
-    std.debug.assert(plugin.len > 0);
-
-    inline for (registry.panels) |owned| {
-        const own = std.mem.eql(u8, owned.plugin, plugin);
-
-        if (own and registry.SDK.may(&session.ctx, owned.panel.operation)) {
-            return true;
-        }
-    }
-
-    const sandboxed = session.ctx.sandboxed_plugins orelse return false;
-
-    for (sandboxed.manifests()) |manifest| {
-        if (!std.mem.eql(u8, manifest.name, plugin)) {
-            continue;
-        }
-
-        for (manifest.panels) |panel| {
-            if (sound(manifest, panel) and registry.SDK.may_named(&session.ctx, panel.operation)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
 /// An installed plugin's panel names a type and a label and is drawn by one of its reads.
 fn sound(manifest: model.Manifest, panel: model.Panel) bool {
     std.debug.assert(manifest.name.len > 0);

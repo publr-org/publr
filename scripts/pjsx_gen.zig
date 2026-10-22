@@ -818,12 +818,14 @@ fn callable_file(set: *Set) ![]const u8 {
     return out.written();
 }
 
-/// The helpers islands import from plain modules (`upload_picture` from `PictureTray`),
-/// once each, ahead of the stores that use them.
+/// The helpers islands import from other modules (`upload_picture` from `PictureTray`),
+/// once each, ahead of the stores that use them. A stateful module's are kept in a scope of
+/// their own, only those imported let out, so its other names meet no one else's.
 fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
     std.debug.assert(set.modules.items.len > 0);
 
-    var written: std.ArrayList([]const u8) = .empty;
+    var stems: std.ArrayList([]const u8) = .empty;
+    var wanted: std.ArrayList(std.ArrayList([]const u8)) = .empty;
 
     for (set.modules.items) |module| {
         if (module.component.store_registration == null) {
@@ -837,15 +839,63 @@ fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
 
             const stem = stem_of(import.source);
 
-            if (contains(written.items, stem)) {
-                continue;
+            try refuse_store_bound(set, module, stem, import.names);
+
+            const at = for (stems.items, 0..) |known, index| {
+                if (std.mem.eql(u8, known, stem)) break index;
+            } else blk: {
+                try stems.append(set.arena, stem);
+                try wanted.append(set.arena, .empty);
+                break :blk stems.items.len - 1;
+            };
+
+            const code = module.component.store_registration.?.code;
+
+            // Only what the store runs: a helper passed on as an action is a name, not code.
+            for (import.names) |name| {
+                const helper = !name.type_only and name.imported.len > 0 and
+                    !std.ascii.isUpper(name.imported[0]) and names_word(code, name.local);
+
+                if (helper and !contains(wanted.items[at].items, name.imported)) {
+                    try wanted.items[at].append(set.arena, name.imported);
+                }
             }
-
-            const code = shared_code_of(set, stem) orelse continue;
-
-            try written.append(set.arena, stem);
-            try out.print("\n// {s}\n{s}\n", .{ stem, code });
         }
+    }
+
+    for (stems.items, wanted.items) |stem, names| {
+        if (names.items.len == 0) {
+            continue;
+        }
+
+        const module = module_of(set, stem) orelse continue;
+        const code = module.component.shared_code orelse continue;
+        const plain = module.component.reactive == null and module.component.family == null;
+
+        if (plain) {
+            try out.print("\n// {s}\n{s}\n", .{ stem, code });
+            continue;
+        }
+
+        var shared: std.ArrayList([]const u8) = .empty;
+
+        for (names.items) |name| {
+            for (module.component.declarations) |declaration| {
+                if (!declaration.store_bound and std.mem.eql(u8, declaration.name, name)) {
+                    try shared.append(set.arena, name);
+                }
+            }
+        }
+
+        if (shared.items.len == 0) {
+            continue;
+        }
+
+        const list = try std.mem.join(set.arena, ", ", shared.items);
+
+        try out.print("\n// {s}\nconst {{ {s} }} = (() => {{\n{s}\nreturn {{ {s} }};\n}})();\n", .{
+            stem, list, code, list,
+        });
     }
 }
 
@@ -862,12 +912,66 @@ fn imports_helper(import: anytype) bool {
     return false;
 }
 
-fn shared_code_of(set: *const Set, stem: []const u8) ?[]const u8 {
+/// A helper that reads its module's state runs only in that module's store: an island
+/// whose store calls one fails the build rather than the page.
+fn refuse_store_bound(set: *const Set, importer: anytype, stem: []const u8, names: anytype) !void {
+    std.debug.assert(stem.len > 0);
+
+    const code = importer.component.store_registration.?.code;
+
+    for (set.modules.items) |module| {
+        if (!std.mem.eql(u8, stem_of(std.fs.path.basename(module.filename)), stem)) {
+            continue;
+        }
+
+        for (names) |name| {
+            for (module.component.declarations) |declaration| {
+                if (!name.type_only and declaration.store_bound and
+                    std.mem.eql(u8, declaration.name, name.imported) and
+                    names_word(code, name.local))
+                {
+                    std.debug.print(
+                        "pjsx_gen: {s}: {s} reads {s}'s state, so only {s} may run it\n",
+                        .{ importer.filename, name.imported, stem, stem },
+                    );
+                    return error.Failed;
+                }
+            }
+        }
+    }
+}
+
+/// Whether `code` has `word` as a name of its own, not part of a longer one.
+fn names_word(code: []const u8, word: []const u8) bool {
+    std.debug.assert(word.len > 0);
+
+    var at: usize = 0;
+
+    while (std.mem.indexOfPos(u8, code, at, word)) |found| {
+        const end = found + word.len;
+        const before = found > 0 and is_name_char(code[found - 1]);
+        const after = end < code.len and is_name_char(code[end]);
+
+        if (!before and !after) {
+            return true;
+        }
+
+        at = end;
+    }
+
+    return false;
+}
+
+fn is_name_char(char: u8) bool {
+    return std.ascii.isAlphanumeric(char) or char == '_' or char == '$';
+}
+
+fn module_of(set: *const Set, stem: []const u8) ?*const Module {
     std.debug.assert(stem.len > 0);
 
     for (set.modules.items) |module| {
         if (std.mem.eql(u8, stem_of(std.fs.path.basename(module.filename)), stem)) {
-            return module.component.shared_code;
+            return module;
         }
     }
 

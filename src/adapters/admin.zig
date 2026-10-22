@@ -198,7 +198,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 164 + preview_pages.routes_count +
+pub const routes_count: u32 = 163 + preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
     design_pages.routes_count + @import("admin/settings_tabs.zig").tabs.len;
@@ -408,6 +408,10 @@ fn editor_file(request: *Request, response: *Response, ctx: *Context) Error!void
 
     for (editor_files) |file| {
         if (std.mem.eql(u8, file.path, path)) {
+            if (std.mem.endsWith(u8, path, ".js")) {
+                return script(response, file.data);
+            }
+
             try response.set_body(.ok, editor_file_type(path), file.data);
             try response.set_header("Cache-Control", "no-cache");
             return;
