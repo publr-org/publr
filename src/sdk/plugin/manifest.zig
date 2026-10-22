@@ -93,6 +93,7 @@ fn operations_of(comptime Plugin: type) []const Operation {
                     Declared.limit.?.per_minute
                 else
                     0,
+                .destructive = sdk_operation.destroys(Declared),
                 .fields = fields_of(Declared),
                 .input = sdk_operation.input_shape(Declared),
                 .output = shapes.describe(Declared.Out),

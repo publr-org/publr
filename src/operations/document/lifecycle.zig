@@ -287,8 +287,9 @@ pub fn Of(comptime Domain: type) type {
             }
 
             if (std.mem.eql(u8, name, "destroy")) {
-                // Plugin code destroys only from a `.destructive` operation.
-                if (ctx.plugin_called and !ctx.destructive) {
+                // Plugin code, compiled in or installed, destroys only from a `.destructive`
+                // operation.
+                if (from_plugin(ctx) and !ctx.destructive) {
                     return error.Denied;
                 }
 
@@ -373,10 +374,8 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(ctx.now_ms >= 0);
             std.debug.assert(handle.len > 0);
 
-            if (ctx.plugin_called) {
-                const person = ctx.caller == .user and is_admin(ctx);
-
-                return person and registry.SDK.may_on_type(ctx, purge_name, handle);
+            if (from_plugin(ctx)) {
+                return is_admin(ctx) and registry.SDK.may_on_type(ctx, purge_name, handle);
             }
 
             return ctx.caller == .system or is_admin(ctx);
@@ -384,17 +383,29 @@ pub fn Of(comptime Domain: type) type {
 
         const purge_name = Domain.namespace ++ ".purge";
 
+        /// A compiled-in plugin's code calls as the person it runs for; an installed one as
+        /// itself, for them.
+        fn from_plugin(ctx: *const Ctx) bool {
+            return ctx.plugin_called or ctx.caller == .plugin;
+        }
+
+        /// The person the call is for is an administrator.
         fn is_admin(ctx: *const Ctx) bool {
             std.debug.assert(ctx.now_ms >= 0);
 
-            return switch (ctx.caller) {
-                .user => |user| for (user.roles) |held| {
-                    if (std.mem.eql(u8, held, model.role.admin)) {
-                        break true;
-                    }
-                } else false,
-                else => false,
+            const held: []const []const u8 = switch (ctx.caller) {
+                .user => |user| user.roles,
+                .plugin => |plugin| if (plugin.on_behalf_of != null) plugin.roles orelse &.{} else &.{},
+                else => &.{},
             };
+
+            for (held) |role_name| {
+                if (std.mem.eql(u8, role_name, model.role.admin)) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// Whether `row` may end in status `to`: its own status again, or a transition the

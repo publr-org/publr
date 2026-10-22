@@ -476,6 +476,7 @@ fn declared_installed(plugin: []const u8, found: model.sandboxed_plugin.Operatio
             .plugin = plugin,
             .description = found.description,
             .untrusted_callers = found.untrusted_callers orelse false,
+            .destructive = found.destructive,
             .overridable = defined,
             .authorize = declared_who(found.answer, custom),
             .limit = .{
