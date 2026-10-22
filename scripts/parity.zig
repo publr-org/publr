@@ -1,7 +1,7 @@
 const std = @import("std");
 const publr = @import("publr");
 const command = @import("parity/command.zig");
-const shape = @import("parity/shape.zig");
+const shape = publr.sdk.testing.shape;
 const world = @import("parity/world.zig");
 
 const SDK = publr.registry.SDK;

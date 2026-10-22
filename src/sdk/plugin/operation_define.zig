@@ -111,6 +111,9 @@ pub fn Described(comptime Definition: type, comptime plugin: []const u8, comptim
             pub const Out = Definition.Out;
             pub const example: In = comptime_json.parse(In, parsed.example_in);
             pub const example_out: Out = comptime_json.parse(Out, parsed.example_out);
+            /// The example as written: what an installed plugin's build runs.
+            pub const example_json = parsed.example_in;
+            pub const example_out_json = parsed.example_out;
             pub const field_docs: sdk.operation.Docs(In) = field_words(full_name, In, Docs);
             pub const output_docs: sdk.operation.Docs(Out) = field_words(full_name, Out, Docs);
             pub const failures: []const sdk.operation.Failure = parsed.failures;
