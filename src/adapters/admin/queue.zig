@@ -121,7 +121,7 @@ test "Queued work: a failed job listed with why, Run again queues it to run now"
         .input = "{}",
         .due_at_ms = 1_790_000_000_000,
         .now_ms = 1_790_000_000_000,
-    }, true, "The warehouse did not answer");
+    }, "The warehouse did not answer");
 
     const page = try flow.call("GET", back, "");
 
