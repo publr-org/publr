@@ -41,7 +41,7 @@ pub fn render(
     if (comptime guest.mode == .native) {
         const admin = @import("../../adapters/admin.zig");
         const request = admin.chrome.in_plugin_frame(ctx, base) catch return error.OutOfMemory;
-        const full = props_of(View.Props, props, ctx.inner.view);
+        const full = props_of(View.Props, props, ctx.inner.view, ctx.arena());
 
         return admin.render.document(ctx.arena(), request, View, full) catch error.OutOfMemory;
     }
@@ -67,7 +67,9 @@ pub fn render(
 
     // JSX has no doctype; every page starts with one, as compiled in.
     out.writer.writeAll("<!doctype html>\n") catch return error.OutOfMemory;
-    View.render(&out.writer, ctx.arena(), props_of(View.Props, props, looking)) catch |err| {
+    const full = props_of(View.Props, props, looking, ctx.arena());
+
+    View.render(&out.writer, ctx.arena(), full) catch |err| {
         return as_error(err);
     };
 
@@ -78,13 +80,18 @@ const Looking = @import("../context.zig").View;
 
 /// `props` as the view's `Props`: each prop from `props`, an integer where a number is asked
 /// taken as it is, else its default; `ctx` from `looking`.
-fn props_of(comptime Props: type, props: anytype, looking: Looking) Props {
+fn props_of(
+    comptime Props: type,
+    props: anytype,
+    looking: Looking,
+    arena: std.mem.Allocator,
+) Props {
     const Given = @TypeOf(props);
     var full: Props = undefined;
 
     inline for (@typeInfo(Props).@"struct".fields) |field| {
         if (comptime std.mem.eql(u8, field.name, "ctx")) {
-            @field(full, field.name) = ctx_of(field.type, looking);
+            @field(full, field.name) = ctx_of(field.type, looking, arena);
         } else if (@hasField(Given, field.name)) {
             @field(full, field.name) = number_or(field.type, @field(props, field.name));
         } else if (comptime field.defaultValue() != null) {
@@ -116,25 +123,53 @@ fn number_or(comptime Prop: type, value: anytype) Prop {
     return value;
 }
 
-/// The view's `ctx` as it declares it: `person` and `page` filled from `looking`; what only
-/// the browser has (`query`, `call`, `navigate`) is null here.
-fn ctx_of(comptime Ctx: type, looking: Looking) Ctx {
+/// The view's `ctx` as it declares it: `person` and `page` filled from `looking`, and in a
+/// field kind's editor `value`, `problems` and `options`; what only the browser has
+/// (`query`, `call`, `navigate`, `change`) is null here.
+fn ctx_of(comptime Ctx: type, looking: Looking, arena: std.mem.Allocator) Ctx {
     var out: Ctx = undefined;
+    const editor = looking.editor orelse Looking.Editor{};
 
     inline for (@typeInfo(Ctx).@"struct".fields) |field| {
         if (comptime std.mem.eql(u8, field.name, "person")) {
             @field(out, field.name) = part_of(field.type, looking.person);
         } else if (comptime std.mem.eql(u8, field.name, "page")) {
             @field(out, field.name) = part_of(field.type, looking.page);
+        } else if (comptime std.mem.eql(u8, field.name, "value")) {
+            @field(out, field.name) = value_of(field.type, editor.value, arena);
+        } else if (comptime std.mem.eql(u8, field.name, "problems")) {
+            @field(out, field.name) = editor.problems;
+        } else if (comptime std.mem.eql(u8, field.name, "options")) {
+            @field(out, field.name) = part_of(field.type, editor.options);
         } else if (comptime @typeInfo(field.type) == .optional) {
             @field(out, field.name) = null;
         } else {
-            @compileError("a view's ctx has person, page, query, call and navigate, not ." ++
-                field.name);
+            @compileError("a view's ctx has person, page, query, call, navigate and, in an " ++
+                "editor, value, problems, options and change, not ." ++ field.name);
         }
     }
 
     return out;
+}
+
+/// The value an editor edits as its view declares it. PTSX lowers no nullable object, so on
+/// the server a value that is none (a new record) or not one of the kind is its zero value;
+/// in the browser it is null.
+fn value_of(comptime Value: type, value: std.json.Value, arena: std.mem.Allocator) Value {
+    comptime std.debug.assert(@typeInfo(Value) == .@"struct");
+
+    const parsed = switch (value) {
+        .null => return std.mem.zeroes(Value),
+        // A struct kept as JSON text.
+        .string => |text| std.json.parseFromSliceLeaky(Value, arena, text, .{
+            .ignore_unknown_fields = true,
+        }),
+        else => std.json.parseFromValueLeaky(Value, arena, value, .{
+            .ignore_unknown_fields = true,
+        }),
+    };
+
+    return parsed catch std.mem.zeroes(Value);
 }
 
 fn part_of(comptime Part: type, from: anytype) Part {
@@ -236,11 +271,53 @@ test "a view's props take an integer count as it is, and its ctx is who is looki
             .path = "log",
             .query = "week=2",
         },
-    });
+    }, std.testing.allocator);
 
     try std.testing.expectEqual(@as(f64, 3), full.total);
     try std.testing.expectEqualStrings("Notes", full.title);
     try std.testing.expectEqualStrings("Ann", full.ctx.person.name);
     try std.testing.expectEqualStrings("week=2", full.ctx.page.query);
     try std.testing.expect(full.ctx.query == null);
+}
+
+test "an editor's ctx carries its value, its problems and the field's options" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const Place = struct {
+        name: []const u8,
+        lat: f64,
+    };
+    const Ctx = struct {
+        value: Place,
+        problems: []const []const u8,
+        options: struct {
+            placeholder: []const u8,
+        },
+        change: ?[]const u8,
+    };
+    const stored: std.json.Value = .{
+        .string = "{\"name\":\"Warsaw\",\"lat\":52.2}",
+    };
+    const told = ctx_of(Ctx, .{
+        .editor = .{
+            .value = stored,
+            .problems = &.{"Between -90 and 90."},
+            .options = .{
+                .placeholder = "Where",
+            },
+        },
+    }, arena);
+
+    try std.testing.expectEqualStrings("Warsaw", told.value.name);
+    try std.testing.expectEqualStrings("Between -90 and 90.", told.problems[0]);
+    try std.testing.expectEqualStrings("Where", told.options.placeholder);
+    try std.testing.expect(told.change == null);
+
+    // A new record: no value, the kind's zero value on the server.
+    const fresh = ctx_of(Ctx, .{
+        .editor = .{},
+    }, arena);
+
+    try std.testing.expectEqualStrings("", fresh.value.name);
 }

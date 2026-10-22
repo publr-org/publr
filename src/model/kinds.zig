@@ -46,6 +46,11 @@ pub const Check = checks.Check;
 /// caller's `*sdk.Ctx` (the model can't name it), null when the value isn't one of the kind.
 pub const Text = *const fn (ctx: *anyopaque, value: std.json.Value) ?[]const u8;
 
+/// A plugin kind's editor, drawn whole for the plugin frame under `base`: `ctx` is the
+/// caller's `*sdk.Ctx`, whose view says the value, its problems and the field's options.
+/// Null when it cannot be drawn.
+pub const Editor = *const fn (ctx: *anyopaque, base: []const u8) ?[]const u8;
+
 pub const Kind = struct {
     id: []const u8,
     label: []const u8,
@@ -64,6 +69,8 @@ pub const Kind = struct {
     default_allowed: bool = false,
     check: ?Check = null,
     text: ?Text = null,
+    /// The plugin's own editor, in the plugin frame on the edit form; null for core's control.
+    editor: ?Editor = null,
     /// The kinds whose values this kind takes when a field changes kind.
     convert_from: []const []const u8 = &.{},
 };

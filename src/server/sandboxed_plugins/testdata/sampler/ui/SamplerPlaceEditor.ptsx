@@ -1,0 +1,16 @@
+import type { EditorCtx } from "@publr/admin/Document.ptsx";
+import { PanelPage } from "@publr/admin/PanelPage.ptsx";
+import { SamplerPlaceFields } from "./SamplerPlaceFields.ptsx";
+
+export type SamplerPlaceEditorProps = {
+  ctx: EditorCtx & { value: { name: string; lat: number; lng: number } };
+};
+
+/** A place's own editor on the form: its name and where it is, in the plugin frame. */
+export function SamplerPlaceEditor({ ctx }: SamplerPlaceEditorProps) {
+  return (
+    <PanelPage title="Place">
+      <SamplerPlaceFields ctx={ctx} />
+    </PanelPage>
+  );
+}

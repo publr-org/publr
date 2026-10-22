@@ -1,8 +1,10 @@
-//! `publr.field.kind(Value, .{ .name, .validate, .text, .icon })`: a field kind a plugin
+//! `publr.field.kind(Value, .{ .name, .validate, .text, .editor, .icon })`: a field kind a plugin
 //! brings. Its storage follows `Value` (text, a whole number, a number, yes or no, or a struct
 //! kept as JSON), its words are the `///` on `Value`, `.validate` runs on every write with
 //! the same `problems` as an operation's, and `.text` (`fn (ctx, value) Error![]const u8`)
-//! is how a value reads in list cells, search and on the site.
+//! is how a value reads in list cells, search and on the site. `.editor` is a view
+//! (`publr.views.all.PlaceEditor`) the edit form draws in the plugin frame; its `ctx` carries
+//! the value, its problems, the field's options and `change(value)`, which hands it to the form.
 const std = @import("std");
 const kinds = @import("../../model/kinds.zig");
 const field_model = @import("../../model/field.zig");
@@ -21,11 +23,6 @@ pub fn kind(comptime Value: type, comptime options: anytype) type {
             if (!listed(given)) {
                 @compileError("field kind " ++ options.name ++ ": no option `" ++ given ++ "`");
             }
-        }
-
-        if (@hasField(Options, "editor")) {
-            @compileError("field kind " ++ options.name ++ ": editors come with views in the " ++
-                "plugin frame; until then the form shows the value as JSON");
         }
 
         return struct {
@@ -54,8 +51,9 @@ pub fn described(
             "kind " ++ id ++ ": " ++ @typeName(Value) ++ " needs a `///` comment: its name, " ++
             "then what it holds");
         const options = Definition.given;
-        const texted = @hasField(@TypeOf(options), "text") and plugin_context.Mode.native ==
-            @import("guest.zig").mode;
+        const native = plugin_context.Mode.native == @import("guest.zig").mode;
+        const texted = @hasField(@TypeOf(options), "text") and native;
+        const edited = @hasField(@TypeOf(options), "editor") and native;
 
         return .{
             .id = id,
@@ -69,6 +67,7 @@ pub fn described(
             else
                 null,
             .text = if (texted) &Texted(Definition).text else null,
+            .editor = if (edited) &Edited(Definition).draw else null,
             .searchable_allowed = texted,
         };
     }
@@ -168,6 +167,24 @@ fn Texted(comptime Definition: type) type {
             std.debug.assert(inner.now_ms >= 0);
 
             return Definition.given.text(&wrapped, parsed catch return null) catch null;
+        }
+    };
+}
+
+/// The plugin's `.editor` view drawn whole, for the plugin frame, with what the caller's
+/// `view.editor` says: the value, its problems and the field's options in its `ctx`.
+fn Edited(comptime Definition: type) type {
+    return struct {
+        fn draw(ctx: *anyopaque, base: []const u8) ?[]const u8 {
+            const inner: *sdk.Ctx = @ptrCast(@alignCast(ctx));
+            var wrapped: plugin_context.PluginCtx = .{
+                .inner = inner,
+            };
+
+            std.debug.assert(inner.view.editor != null);
+
+            return @import("views.zig").render(&wrapped, base, Definition.given.editor, .{}) catch
+                null;
         }
     };
 }

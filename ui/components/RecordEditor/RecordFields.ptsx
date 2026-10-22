@@ -114,6 +114,7 @@ export type RecordFieldsProps = {
       card_tone: string;
       card_href: string;
       formats: string;
+      src: string;
       id: string;
       title: string;
       type_label: string;
@@ -151,6 +152,7 @@ export type RecordFieldsProps = {
       card_tone: string;
       card_href: string;
       formats: string;
+      src: string;
       remove: string;
       up: string;
       down: string;
@@ -213,6 +215,7 @@ export type RecordFieldsProps = {
         card_tone: string;
         card_href: string;
         formats: string;
+      src: string;
         remove: string;
         up: string;
         down: string;

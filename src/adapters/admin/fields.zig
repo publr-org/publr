@@ -180,6 +180,8 @@ const Instance = struct {
     types: []const media.Type = &.{},
     accept: []const u8 = "",
     can_upload: bool = true,
+    /// A plugin kind's editor (`editor`): its frame's address, the value the form holds in it.
+    src: []const u8 = "",
 };
 
 /// One row per top-level field, filled from `document` when there is one.
@@ -999,6 +1001,19 @@ fn instance_of(
         instance.down = try print(context.arena, "down:{s}", .{name});
     }
 
+    if (kind.editor != null) {
+        if (try editor_src(context.arena, kind.id, def, current)) |src| {
+            instance.control = "editor";
+            instance.src = src;
+            instance.value = if (current != null and current.? != .null)
+                try json_text(context.arena, current.?)
+            else
+                "";
+
+            return instance;
+        }
+    }
+
     switch (kind.control) {
         .textarea => {
             const markdown = def.options.text.format == .markdown;
@@ -1048,6 +1063,35 @@ fn instance_of(
     }
 
     return instance;
+}
+
+/// The longest value an editor's frame is told in its address; a longer one is edited as JSON.
+const editor_value_max: u32 = 4 << 10;
+
+/// A plugin kind's editor frame, told the value the form holds and the field's options:
+/// `/admin/plugin/places/kinds/location/frame?value=…`; null for a value too long to tell.
+fn editor_src(
+    arena: std.mem.Allocator,
+    id: []const u8,
+    def: Def,
+    current: ?Value,
+) Error!?[]const u8 {
+    const dot = std.mem.indexOfScalar(u8, id, '.') orelse return null;
+    const held = current != null and current.? != .null;
+    const value = if (held) try json_text(arena, current.?) else "";
+
+    std.debug.assert(dot > 0);
+
+    if (value.len > editor_value_max) {
+        return null;
+    }
+
+    return try print(arena, "/admin/plugin/{s}/kinds/{s}/frame?value={s}&placeholder={s}", .{
+        id[0..dot],
+        id[dot + 1 ..],
+        try admin.query_value(arena, value),
+        try admin.query_value(arena, def.options.placeholder),
+    });
 }
 
 /// A switch, a checkbox, or two radios, each with the labels the field gives its states.
@@ -1611,13 +1655,14 @@ fn kind_of(def: Def) Kind {
     return model.kinds.lookup(registry.Kinds.all, def.kind);
 }
 
-/// Groups, repeaters and lists have shapes of their own; a kind without a control, and a
-/// list of booleans (a checkbox cannot say it is absent), are edited as JSON.
+/// Groups, repeaters and lists have shapes of their own; a kind without a control or an
+/// editor of its own, and a list of booleans (a checkbox cannot say it is absent), are
+/// edited as JSON.
 pub fn is_json_edited(kind: Kind, def: Def) bool {
     std.debug.assert(def.name.len > 0);
     std.debug.assert(std.mem.eql(u8, kind.id, def.kind) or kind.id.len == 0);
 
-    return kind.control == .json or (def.many and kind.storage == .bool);
+    return (kind.control == .json and kind.editor == null) or (def.many and kind.storage == .bool);
 }
 
 fn choice_options(arena: std.mem.Allocator, def: Def, current: ?Value) Error![]const Option {

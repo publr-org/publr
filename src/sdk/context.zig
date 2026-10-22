@@ -187,6 +187,20 @@ pub const AppsFolder = struct {
 pub const View = struct {
     person: Person = .{},
     page: Page = .{},
+    /// A field kind's editor: the value it edits, its problems and the field's options.
+    editor: ?Editor = null,
+
+    pub const Editor = struct {
+        /// Null on a new record.
+        value: std.json.Value = .null,
+        problems: []const []const u8 = &.{},
+        options: Options = .{},
+    };
+
+    /// The field's options an editor is told.
+    pub const Options = struct {
+        placeholder: []const u8 = "",
+    };
 
     pub const Person = struct {
         name: []const u8 = "",

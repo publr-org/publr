@@ -18,6 +18,7 @@ import { Text } from "@publr/ui/Text.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
 import { RichTextInput } from "@publr/ui/RichTextInput.ptsx";
 import { FieldColor } from "./RecordEditor/FieldColor.ptsx";
+import { PluginEditor } from "./PluginEditor.ptsx";
 import { FieldEmbed } from "./RecordEditor/FieldEmbed.ptsx";
 import { FieldMarkdown } from "./RecordEditor/FieldMarkdown.ptsx";
 import { RecordMedia } from "./RecordEditor/RecordMedia.ptsx";
@@ -28,7 +29,7 @@ export type FieldControlProps = {
   /** The form field name: `title`, `tags[1]`, `seo.description`, `faq[0].question`. */
   name: string;
   /** input, number, range, datetime, date, textarea, switch, checkbox, radios, select,
-   * slug, card, rich, json; `pick` (a reference pointing nowhere) is drawn by the page, which
+   * slug, card, rich, json, editor (a plugin kind's own, in the plugin frame); `pick` (a reference pointing nowhere) is drawn by the page, which
    * has the target types. Radios and select options come as children. */
   control: string;
   value: string;
@@ -54,6 +55,8 @@ export type FieldControlProps = {
   card_href: string;
   /** The formatting a rich text value's editor offers, comma separated; empty for plain. */
   formats?: string;
+  /** A plugin kind's editor (`editor`): its frame's address. */
+  src?: string;
   /** Set when removing the card deletes its record: why, for the confirmation. */
   delete_note?: string;
   /** The reshape actions of one value in a list; empty when the value stands alone. */
@@ -105,6 +108,7 @@ export function FieldControl({
   card_tone,
   card_href,
   formats = "",
+  src = "",
   delete_note = "",
   remove,
   up,
@@ -215,6 +219,7 @@ export function FieldControl({
             placeholder={placeholder}
           />
         )}
+        {control === "editor" && <PluginEditor name={name} value={value} src={src} />}
         {control === "json" && (
           <Textarea
             id={`field-${name}`}

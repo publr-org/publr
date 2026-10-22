@@ -24,6 +24,7 @@ import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
 import { TextToggle } from "@publr/ui/TextToggle.ptsx";
+import { tell_problems } from "./PluginEditor.ptsx";
 
 /** The editor's client half. The form autosaves: every input marks it dirty and, after a
  * pause, posts it as JSON, which answers the new version (or why it could not be saved).
@@ -438,6 +439,7 @@ const save = mutation(async () => {
     problems?: Array<{ field: string; message: string }>;
   };
   state.problems = problems_by_field(answer.problems ?? []);
+  tell_problems(answer.problems ?? []);
   if (!answer.saved) throw new Error(answer.reason ?? Publr.t("Cannot save yet"));
   if (disposed) return false;
   state.version = String(answer.version ?? "");

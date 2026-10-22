@@ -1,0 +1,35 @@
+import { Publr } from "publr-jsx";
+import type { EditorCtx } from "@publr/admin/Document.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SamplerPlaceFieldsProps = {
+  ctx: EditorCtx & { value: { name: string; lat: number; lng: number } };
+};
+
+/** The place's name, latitude and longitude; each change goes to the form at once, and a
+ * refused save's problems show under them. */
+export function SamplerPlaceFields({ ctx }: SamplerPlaceFieldsProps) {
+  const state = Publr.reactive({ problems: ctx.problems });
+  // What a refused save found: the form tells the frame, and `ctx.problems` follows.
+  Publr.effect(() => {
+    state.problems = ctx.problems;
+  });
+  const read = (id: string) => (document.getElementById(id) as HTMLInputElement).value;
+  const place_typed = () => {
+    ctx.change({ name: read("place-name"), lat: Number(read("place-lat")), lng: Number(read("place-lng")) });
+  };
+
+  return (
+    <div class="flex flex-col gap-2">
+      <Input id="place-name" placeholder={ctx.options.placeholder} value={ctx.value.name} onInput={place_typed} />
+      <div class="flex gap-2">
+        <Input id="place-lat" type="number" value={`${ctx.value.lat}`} onInput={place_typed} />
+        <Input id="place-lng" type="number" value={`${ctx.value.lng}`} onInput={place_typed} />
+      </div>
+      {state.problems.map((problem) => (
+        <Text variant="body-sm" tone="error">{problem}</Text>
+      ))}
+    </div>
+  );
+}

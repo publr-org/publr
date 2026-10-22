@@ -25,6 +25,8 @@ export type RecordValueProps = {
   card_tone: string;
   card_href: string;
   formats: string;
+  /** A plugin kind's editor: its frame's address. */
+  src?: string;
   delete_note?: string;
   remove: string;
   up: string;
@@ -74,6 +76,7 @@ export function RecordValue({
   card_tone,
   card_href,
   formats,
+  src = "",
   delete_note = "",
   remove,
   up,
@@ -105,6 +108,7 @@ export function RecordValue({
       card_tone={card_tone}
       card_href={card_href}
       formats={formats}
+      src={src}
       delete_note={delete_note}
       remove={remove}
       up={up}
