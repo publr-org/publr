@@ -19,6 +19,10 @@ pub const Manifest = @import("sdk/plugin/define.zig").Manifest;
 /// What a plugin's code runs with, and how it fails.
 pub const Ctx = plugin.PluginCtx;
 pub const Error = sdk.Error;
+/// What a built-in plugin's `.extend` registers through: `fn extend(host: *publr.Host)`.
+pub const Host = @import("sdk/plugin/host.zig").Host;
+/// SQL on a built-in plugin's own tables: `ctx.database()`.
+pub const Database = @import("sdk/plugin/host.zig").Database;
 /// `publr.operation.define(In, Out, .{ .name, .kind, .authorize, ... })`.
 pub const operation = struct {
     pub const define = @import("sdk/plugin/operation_define.zig").define;

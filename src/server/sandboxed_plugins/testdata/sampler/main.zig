@@ -185,11 +185,7 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
         .panels = panels,
         .row_actions = row_actions,
         .settings_pages = Native.settings_pages,
-        .routes = Native.routes,
-        .operator_commands = Native.operator_commands,
-        .State = Native.State,
-        .serving = Native.serving,
-        .before_command = Native.before_command,
+        .extend = Native.extend,
     })
 else
     publr.plugin.define(manifest, .{

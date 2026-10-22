@@ -757,7 +757,7 @@ every plugin under `plugins/` that is not compiled in with the same command into
 [Build](build.md#the-plugins).
 
 **Every plugin builds for the sandbox.** What cannot run there is left out of that build,
-never a reason to refuse it: `schema_sql`, `bootstrap` and a sign-in provider (they need
+never a reason to refuse it: `.extend` and all it registers (it needs
 the host), an operation or hook that takes the host's context (`*sdk.Ctx`) rather than
 `*publr.Ctx`, and, until the sandbox runs them, policies, pre hooks, field kinds,
 statuses, transitions, filters, delivery gates, routes, settings pages, `State`, operator
@@ -802,9 +802,10 @@ label, operators, and how a clause constrains the list; the admin's content list
 pill for each) and a sign-in provider (see below). `zig build` finds it, compiles it in and
 wires it up; nothing is registered anywhere else. Its operations appear in the CLI and
 every other adapter, documented from its words. A plugin cannot take a core namespace's
-name, or `app`. The options described below that only a built-in plugin may use (routes,
-state, process hooks, settings pages and tabs, `schema_sql`, migrations, the app picker
-segment) keep their names inside `define`.
+name, or `app`. What only a built-in plugin may add (routes,
+state, process hooks, tables, the app picker segment) goes through `.extend`, `fn (host:
+*publr.Host) publr.Error!void`, one `host.<name>` call each; settings pages and tabs and
+row actions are still options of `define`.
 
 Storage is records and snapshots. A plugin that needs to keep things declares a record
 (`publr.record.define`, usually private) and works with it through its handle. The type is
@@ -815,8 +816,8 @@ redeclaration. Its records get validation, permissions, listing, filtering
 and the admin for free. History goes into
 snapshots (`snapshot take/list/prune`, kinds of the plugin's own); parked
 copies of a document go into slots (`record get --slot`), like the core's
-`pending`. A plugin that truly needs its own table ships `schema_sql`; it runs only when
-the plugin is compiled in. Once a release of the plugin has shipped, a change to those
+`pending`. A plugin that truly needs its own table registers it with `host.table` in `.extend` and
+reads and writes it with `ctx.database()`; it runs only when the plugin is compiled in. Once a release of the plugin has shipped, a change to those
 tables is a migration of its own, the `.migrations` option (`publr.db.migration.Migration`s),
 named by the release that ships it and run by the gate like core's ([Updates](updates.md)).
 
@@ -849,7 +850,7 @@ declares them; after that an update adds only the grants new in it, so what the 
 changed stays. Only an admin gives an account a role; a plugin's open sign-up creates
 accounts with its own. See [Auth](auth.md#roles).
 
-A plugin can declare one **sign-in provider** (`.sign_in_provider`, a
+A plugin can declare one **sign-in provider** (`host.sign_in_provider`, a
 `publr.plugin.SignInProvider`): a name (`github`, in URLs and identity rows), a label
 ("Continue with GitHub"), its mark as one SVG path on a 24 by 24 canvas (brand marks are
 the plugin's, never the icon set's), and three functions: `available`, whether its client
@@ -866,7 +867,7 @@ seconds in all. No answer in time, or an error, and the login says "Try again"; 
 go to the plugin's log under `sign_in:<provider>`. The core does the rest: the routes, the
 cookie, the buttons, and whose account it is ([Auth](auth.md#signing-in-with-a-provider)).
 
-A plugin can answer **HTTP routes** (`.routes`, each a `publr.plugin.Route`): a
+A plugin can answer **HTTP routes** (`host.route`, each a `publr.plugin.Route`): a
 method (`get` or `post`), a path and a handler, `fn (request, response, ctx)` like the
 core's. Every path lives under a prefix the plugin owns, `/admin/<own>`, `/api/<own>` or
 `/auth/<own>`, where `<own>` is its name or one of its namespaces; after the prefix a
@@ -927,7 +928,7 @@ the view's own data only, after `publr.admin.require` for the signed-in session.
   sidebar for whoever may call the operation it names, and lit on that path and every
   path under it. A page that belongs under another's entry says so with
   `publr.admin.screen(&session, .ok, View, props, .{ .settings_path = "/admin/<other>" })`.
-- A segment joined to the app picker (`.app_picker_segment`, a `fn (session: *const
+- A segment joined to the app picker (`host.app_picker_segment`, a `fn (session: *const
   publr.admin.Session, attached: bool, apps: ?publr.admin.render.Node)
   publr.admin.Error!?publr.admin.render.Node`): drawn after the picker as one control where
   the project has apps (`attached` true: draw it as the control's end, `StatusButton
@@ -935,7 +936,7 @@ the view's own data only, after `publr.admin.require` for the signed-in session.
   phone the first segment drawn stands for the whole picker: it shows only its icon
   (`StatusButton compact`), and the drawer it opens lists `apps` first (on phones only),
   the apps the picker would have offered. Only that segment is given them.
-- Where someone who must sign in goes (`.sign_in_at`, a `fn (session: *const
+- Where someone who must sign in goes (`host.sign_in_at`, a `fn (session: *const
   publr.admin.Session) anyerror!?[]const u8`): asked on the login page before the form and
   before a trusted issuer; the first plugin that names an address sends the browser there.
   Null leaves the login as it is. The page they asked for is the login's `return`
@@ -949,7 +950,7 @@ the view's own data only, after `publr.admin.require` for the signed-in session.
   code. An installed plugin's actions count too, when they lead into the admin
   (`/admin/...`) through an operation of its own.
 
-A plugin can **keep state** for as long as the process runs: one `.State` struct, made when the server opens the project (with `pub fn init(state: *State,
+A plugin can **keep state** for as long as the process runs: one `host.state(State)` struct, made when the server opens the project (with `pub fn init(state: *State,
 process: publr.plugin.Process) !void` when its fields need more than defaults; `deinit`
 if it holds something to free) and never in a top-level `var`. An operation, a route or a
 hook reaches it with `publr.plugin_states.of(ctx, @This())` from a context, or
@@ -957,15 +958,15 @@ hook reaches it with `publr.plugin_states.of(ctx, @This())` from a context, or
 
 A plugin can also act on the process around the operations:
 
-- `.before_command`, a `fn (command: *publr.plugin_hooks.Command) !void`, runs before any
+- `host.before_command`, a `fn (command: *publr.plugin_hooks.Command) !void`, runs before any
   command, in name order: it may move the process into another folder
   (`std.process.setCurrentDir`) and take its own arguments off `command.args`, or change
   `command.db_path`. What is left runs as the command.
-- `.serving`, a `fn (serve: publr.plugin_hooks.Serving) !void`, runs once `serve` listens, with
+- `host.serving`, a `fn (serve: publr.plugin_hooks.Serving) !void`, runs once `serve` listens, with
   the project and the port it got, before the first request. It may name the session
   cookie (`serve.project.session_cookie`), so two servers on one host keep their sign-ins
   apart. One that fails stops `serve`.
-- `.operator_commands`, each a `publr.plugin.OperatorCommand`: a name and a
+- `host.operator_command`, each a `publr.plugin.OperatorCommand`: a name and a
   handler, answered at `POST /_publr/<plugin>/<name>` only with the running server's
   operator key, which only processes of the same user on the machine can read
   (`<db>.serve`). `publr.operator.find` and `publr.operator.post` send one.
@@ -1007,7 +1008,7 @@ A write may also say what it does outside the database once it is kept:
 transaction commits, only when no other write encloses it (core's `design.save_system`
 loads the apps this way). Its failure is the call's answer; the write stays.
 
-A plugin can run once the database opens (`.bootstrap`, a `fn (ctx: *sdk.Ctx) sdk.Error!void`),
+A plugin can run once the database opens (`host.bootstrap`, a `fn (ctx: *sdk.Ctx) sdk.Error!void`),
 as the system, after every declared type and field is in place: a setting the product
 needs, a record that must exist. It runs at every start, so it checks before it writes.
 
@@ -1056,7 +1057,7 @@ build with an agent on the visitor's own machine.
 ### An agent's work in a copy
 
 A host that keeps copies of a site (Publr Cloud's branches) names the operation that starts
-an agent's work in one: `.work_start = StartWork`. `publr work start` from a
+an agent's work in one: `try host.work_start(StartWork)`. `publr work start` from a
 device runs it; its answer (`name`, `address`, `preview`, `merge`) tells the device's CLI
 where that folder's commands go from then on. A device's call says `--production` to mean
 the site itself, which a pre hook reads as `ctx.production`; a pre hook that refuses a
@@ -1064,13 +1065,13 @@ device's write with the failure `WorkInABranch` makes the CLI start work and sen
 write there. With `work_start` declared, the Overview's agent steps say that changes go to
 a branch for the person to merge. One plugin at a time; compiled in only.
 
-A host's plugin also says `.hosted = true`: the project's folder is then never
+A host's plugin also calls `host.hosted()`: the project's folder is then never
 the person's, so the Overview always gives the steps for a site elsewhere (get Publr, sign
 in, install the skill), even at an address that looks like this machine.
 
 ### Variants and Settings tabs
 
-A plugin may declare the one **variant dimension** (`.variants`, a
+A plugin may declare the one **variant dimension** (`host.variants`, a
 `publr.plugin.Variants`): the words of the setting every field then has (`label`, `help`),
 the words of the type setting for records not written in a variant (`untranslated`), and a
 read of its own answering `variants`, each `{ code, label, address, main }` in order, the

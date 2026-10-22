@@ -68,7 +68,8 @@ A missing one fails the build and says where it goes.
 | `roles` | `&.{ ... }` of `publr.plugin.Role` | both |
 | `pages`, `panels`, `menu`, `icons` | see [Admin entries](#admin-entries) | both |
 | `translations` | `&.{ .{ .locale, .label, .po } }` | both |
-| `middleware`, `row_actions`, `routes`, `settings_pages`, `settings_tabs`, `app_picker_segment`, `sign_in_at`, `State`, `before_command`, `serving`, `operator_commands`, `bootstrap`, `schema_sql`, `migrations`, `sign_in_provider`, `policies`, `filters`, `delivery_gates`, `variants`, `agents_tab`, `admin_brand`, `work_start`, `hosted` | see [Built-in only](#built-in-only) | built-in |
+| `extend` | `fn (host: *publr.Host) publr.Error!void`, see [Built-in only](#built-in-only) | built-in |
+| `row_actions`, `settings_pages`, `settings_tabs`, `migrations`, `filters`, `agents_tab` | see [Built-in only](#built-in-only) | built-in |
 
 Any other option is a build error.
 
@@ -1011,67 +1012,75 @@ every plugin registered through `define`.
 
 ## Built-in only
 
-These run only when the plugin is compiled in (`publr.zon`, `.plugins.native`). Each is an
-option of `define` under the name shown.
+`.extend` is the one way past the plugin API. Publr calls it once, as it is compiled, and
+having it makes the plugin built-in only (`publr.zon`, `.plugins.native`): its sandboxed
+build leaves it out, and `publr plugin build` says so.
+
+```zig
+fn extend(host: *publr.Host) publr.Error!void {
+    try host.table(.{
+        .name = "notes_seen",
+        .schema = @embedFile("tables/seen.sql"),
+    });
+    try host.route(.{
+        .method = .get,
+        .path = "/admin/notes",
+        .handler = &settings,
+    });
+}
+
+pub const plugin = publr.plugin.define(manifest, .{
+    .operations = &.{Seen},
+    .extend = extend,
+});
+```
 
 ### Routes
 
-```zig
-.routes = &.{.{
-    // .get or .post.
-    .method = .get,
-    // Under /admin/<own>, /api/<own> or /auth/<own>; `:id` segments are parameters.
-    .path = "/admin/notes",
-    .handler = &settings,
-}},
+`host.route(.{ .method, .path, .handler })`: `.get` or `.post`, under `/admin/<own>`,
+`/api/<own>` or `/auth/<own>` (`:id` segments are parameters), a `handler` of `fn
+(*publr.http.Request, *publr.http.Response, *publr.http.Context) publr.http.Error!void`, or
+a `stream` for a large POST body. At most 16 routes. `publr.admin.require` gives the
+signed-in session, `publr.admin.screen` draws an admin page;
+`publr.plugin_routes.caller_context` gives an SDK context as whoever sent the request (CSRF
+checked on writes); `publr.plugin_routes.set_session` signs someone in.
 
-fn settings(
-    request: *publr.http.Request,
-    response: *publr.http.Response,
-    ctx: *publr.http.Context,
-) publr.http.Error!void {
-    var session = try publr.admin.require(request, response, ctx) orelse return;
-    ...
-    try publr.admin.screen(&session, .ok, publr.admin.views.NotesSettings, props, .{});
-}
-```
+### Tables
 
-At most 16 routes. `publr.plugin_routes.caller_context` gives an SDK context as whoever
-sent the request (CSRF checked on writes); `publr.plugin_routes.set_session` signs
-someone in.
-
-### Admin hooks
-
-`.settings_pages` (each `{ label, icon, path, operation }`), `.settings_tabs`,
-`.app_picker_segment` (`fn (*const publr.admin.Session, bool, ?publr.admin.render.Node)
-publr.admin.Error!?publr.admin.render.Node`) and `.sign_in_at` (`fn (*const
-publr.admin.Session) anyerror!?[]const u8`).
+`host.table(.{ .name, .schema })`: one `CREATE TABLE` (with its indexes), named under the
+plugin (`<plugin>` or `<plugin>_...`), made when the database opens. Operations read and
+write it with `ctx.database()`, inside the call's transaction:
+`try ctx.database().exec("INSERT INTO notes_seen (note, at) VALUES (?, ?)", .{ in.note,
+ctx.now() })`; `prepare(sql, values)` gives a statement to step through. Prefer records.
 
 ### State and the process
 
-`.State`, a struct with optional `init(state: *State, process: publr.plugin.Process)` and
-`deinit`, reached with `publr.plugin_states.of(ctx, @This())`; `.before_command` (`fn
-(*publr.plugin_hooks.Command) anyerror!void`); `.serving` (`fn
-(publr.plugin_hooks.Serving) anyerror!void`); `.operator_commands` (each `{ name, handler
-}`, answered at `POST /_publr/<plugin>/<name>` with the operator key only). `Process` is
-`{ io, gpa, arena, db_path, runtime }`, `Command` `{ io, arena, args, db_path }`,
-`Serving` `{ io, arena, project, port }`. Never use a top-level `var`.
+`host.state(State)`, a struct with optional `init(state: *State, process:
+publr.plugin.Process)` and `deinit`, reached with `publr.plugin_states.of(ctx, @This())`;
+`host.bootstrap` (`fn (*sdk.Ctx) sdk.Error!void`, every start, as the system);
+`host.before_command` (`fn (*publr.plugin_hooks.Command) anyerror!void`); `host.serving`
+(`fn (publr.plugin_hooks.Serving) anyerror!void`); `host.operator_command` (`{ name,
+handler }`, answered at `POST /_publr/<plugin>/<name>` with the operator key only).
+`Process` is `{ io, gpa, arena, db_path, runtime }`, `Command` `{ io, arena, args, db_path
+}`, `Serving` `{ io, arena, project, port }`. Never use a top-level `var`.
 
-### Database
+### The admin
 
-`.bootstrap` (`fn (*sdk.Ctx) sdk.Error!void`, every start, as the system),
-`.schema_sql` and `.migrations` (`publr.db.migration.Migration`s). Prefer records; a table
-of its own makes the plugin built-in only. An operation whose `run` takes `*sdk.Ctx` has
-full access to the host and runs only built-in.
+`host.app_picker_segment` (`fn (*const publr.admin.Session, bool,
+?publr.admin.render.Node) publr.admin.Error!?publr.admin.render.Node`), `host.sign_in_at`
+(`fn (*const publr.admin.Session) anyerror!?[]const u8`), `host.admin_brand`,
+`host.variants` (one dimension per site), `host.work_start` (the operation `publr work
+start` calls). Still options of `define`: `.settings_pages` (each `{ label, icon, path,
+operation }`), `.settings_tabs`, `.row_actions`.
 
-### Other built-in options
+### The server
 
-`.sign_in_provider` (see [Plugins](plugins.md#writing-a-built-in-plugin)), `.policies`,
-`.filters`, `.delivery_gates` ([Apps](apps.md#delivery-gates)), `.variants`, `.agents_tab`,
-`.admin_brand`, `.work_start`, `.hosted`, `.row_actions`. `.middleware` takes only the two
-hooks `publr.before/after/on` don't say: on every operation before it runs (`stage = .pre`)
-and on every event inside the write (`stage = .on` with no `event`). Their shapes are in
-`src/sdk/plugin.zig` and the `src/model/` file each names.
+`host.sign_in_provider` (see [Plugins](plugins.md#writing-a-built-in-plugin)),
+`host.policy`, `host.delivery_gate` ([Apps](apps.md#delivery-gates)), `host.hosted()` (the
+site runs on Publr Cloud). `host.middleware` takes only the two hooks `publr.before/after/on`
+don't say: on every operation before it runs (`stage = .pre`) and on every event inside the
+write (`stage = .on` with no `event`). An operation whose `run` takes `*sdk.Ctx` has full
+access to the host and runs only built-in.
 
 ## Model providers
 

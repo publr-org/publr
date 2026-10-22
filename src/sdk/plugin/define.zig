@@ -74,7 +74,6 @@ pub fn Bind(comptime Module: type, comptime Docs: type) type {
         }
 
         check_options(plugin.manifest.name, @TypeOf(plugin.options));
-        check_middleware(plugin.manifest.name, @TypeOf(plugin.options), plugin.options);
 
         const Bound = struct {
             pub const manifest: Described = .{
@@ -83,6 +82,13 @@ pub fn Bind(comptime Module: type, comptime Docs: type) type {
                 .summary = summary,
             };
             pub const options = plugin.options;
+            // Null without `.extend`, and in the sandbox, which has none of the host's seams:
+            // its build names `extend` as left out.
+            pub const host = if (@hasField(@TypeOf(plugin.options), "extend") and
+                @import("guest.zig").mode == .native)
+                host_define.extended(plugin.manifest.name, plugin.options.extend)
+            else
+                null;
             pub const docs = Docs;
             pub const source = Module;
             pub const settings_text = Docs.rest("main").?;
@@ -102,34 +108,16 @@ const options_known = [_][]const u8{
     "secrets",         "depends_on", "compatible_with", "remotes", "field_kinds",
     "register_fields", "roles",      "translations",    "limits",  "pages",
     "panels",          "jobs",       "menu",            "icons",   "register_statuses",
+    "extend",
 };
 
-/// What only a built-in plugin takes, until `.extend` holds them: the server's own seams.
-/// `middleware` takes only the two no hook says: every operation before it runs (`.pre`) and
-/// every event inside the write (`.on` without an `event`).
+/// What only a built-in plugin takes outside `.extend`, until each finds its place.
 const options_built_in = [_][]const u8{
-    "middleware",
-    "policies",
-    "variants",
     "row_actions",
     "settings_pages",
     "settings_tabs",
-    "routes",
-    "operator_commands",
     "migrations",
-    "schema_sql",
-    "bootstrap",
-    "sign_in_provider",
-    "sign_in_at",
-    "State",
-    "serving",
-    "before_command",
-    "admin_brand",
     "agents_tab",
-    "app_picker_segment",
-    "work_start",
-    "hosted",
-    "delivery_gates",
     "filters",
 };
 
@@ -183,44 +171,26 @@ fn listed_in(comptime names: []const []const u8, comptime name: []const u8) bool
     }
 }
 
-/// `.middleware` holds only the server's two seams no hook says: a hook on every operation
-/// before it runs, or on every event inside the write.
-fn check_middleware(
-    comptime plugin: []const u8,
-    comptime Options: type,
-    comptime given: anytype,
-) void {
-    comptime {
-        std.debug.assert(plugin.len > 0);
-
-        if (!@hasField(Options, "middleware")) {
-            return;
-        }
-
-        for (given.middleware) |Middleware| {
-            const every_operation = Middleware.stage == .pre;
-            const every_event = Middleware.stage == .on and !@hasDecl(Middleware, "event");
-
-            if (!every_operation and !every_event) {
-                @compileError("plugin " ++ plugin ++ ": `" ++ @typeName(Middleware) ++ "` " ++
-                    "belongs in `.hooks`: `publr.before`, `publr.after`, `publr.on` or " ++
-                    "`publr.modify`");
-            }
-        }
-    }
-}
-
 /// Whether the plugin has the option `name`: a field of `define`'s options, or a declaration of
 /// a plugin still written part by part.
 pub fn has(comptime Plugin: type, comptime name: []const u8) bool {
     std.debug.assert(name.len > 0);
 
     if (comptime bound(Plugin)) {
+        if (comptime host_define.seam(name)) {
+            if (comptime !extends(Plugin)) {
+                return false;
+            }
+
+            return comptime Plugin.host.has(name);
+        }
+
         const Options = @TypeOf(Plugin.options);
         const listed_kind = std.mem.eql(u8, name, "content_types") or
             std.mem.eql(u8, name, "internal_records");
         const from_records = @hasField(Options, "records") and listed_kind;
-        const hook_lists = @hasField(Options, "hooks") or @hasField(Options, "records");
+        const hook_lists = @hasField(Options, "hooks") or @hasField(Options, "records") or
+            comptime host_hooks(Plugin).len > 0;
         const from_hooks = hook_lists and std.mem.eql(u8, name, "middleware");
         const from_groups = @hasField(Options, "register_fields") and
             std.mem.eql(u8, name, "custom_fields");
@@ -237,6 +207,10 @@ pub fn has(comptime Plugin: type, comptime name: []const u8) bool {
 /// The option `name`; a list comes back as a slice either way.
 pub fn get(comptime Plugin: type, comptime name: []const u8) Got(Plugin, name) {
     std.debug.assert(comptime has(Plugin, name));
+
+    if (comptime bound(Plugin) and host_define.seam(name)) {
+        return comptime Plugin.host.get(name);
+    }
 
     if (comptime bound(Plugin) and std.mem.eql(u8, name, "operations")) {
         return comptime described_operations(Plugin);
@@ -402,7 +376,7 @@ fn check_record_name(comptime plugin: []const u8, comptime name: []const u8) voi
     }
 }
 
-/// A bound plugin's hooks: `.middleware` listed the old way, then `.hooks`, each
+/// A bound plugin's hooks: what `.extend` gave `host.middleware`, then `.hooks`, each
 /// `publr.before`, `publr.after`, `publr.on` and `publr.modify` given its plugin's name.
 fn declared_hooks(comptime Plugin: type) []const type {
     comptime {
@@ -412,9 +386,7 @@ fn declared_hooks(comptime Plugin: type) []const type {
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        if (@hasField(Options, "middleware")) {
-            list = list ++ as_slice(type, Plugin.options.middleware);
-        }
+        list = list ++ host_hooks(Plugin);
 
         if (@hasField(Options, "hooks")) {
             for (Plugin.options.hooks, 0..) |Hook, position| {
@@ -571,6 +543,31 @@ const Panel = @import("admin_slots.zig").Panel;
 const RowAction = @import("admin_slots.zig").RowAction;
 const SettingsPage = @import("admin_slots.zig").SettingsPage;
 const admin_described = @import("admin_described.zig");
+const host_define = @import("host.zig");
+
+/// Whether a bound plugin has `.extend`.
+fn extends(comptime Plugin: type) bool {
+    comptime std.debug.assert(bound(Plugin));
+
+    if (!@hasDecl(Plugin, "host")) {
+        return false;
+    }
+
+    return @TypeOf(Plugin.host) != @TypeOf(null);
+}
+
+/// What `.extend` gave `host.middleware`.
+fn host_hooks(comptime Plugin: type) []const type {
+    comptime {
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        if (!extends(Plugin)) {
+            return &.{};
+        }
+
+        return Plugin.host.middlewares;
+    }
+}
 const Kind = @import("../../model/kinds.zig").Kind;
 
 fn as_slice(comptime Item: type, comptime value: anytype) []const Item {
@@ -589,6 +586,10 @@ const ContentTypeDef = @import("../../model/content_type.zig").Def;
 const Collection = @import("../../model/internal_record.zig").Collection;
 
 pub fn Got(comptime Plugin: type, comptime name: []const u8) type {
+    if (bound(Plugin) and host_define.seam(name)) {
+        return host_define.Host.Got(Plugin.host, name);
+    }
+
     if (bound(Plugin) and std.mem.eql(u8, name, "operations")) {
         return []const type;
     }

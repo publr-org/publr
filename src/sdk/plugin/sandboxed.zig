@@ -121,6 +121,7 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
     comptime {
         const contract = @import("../plugin.zig");
         const never = [_][]const u8{
+            "extend",
             "schema_sql",
             "migrations",
             "bootstrap",

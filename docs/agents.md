@@ -300,7 +300,7 @@ Zig needed), then installs it: a new plugin is added and enabled, one already th
 this as its next version, the previous kept to roll back to. When the compiler reports an
 error, fix the source and run it again. To change a plugin, edit it, raise `.version`, and
 build again. Built again unchanged, it says it is up to date. When it says it builds
-"without" something (a `schema_sql`, an operation that takes the host's context), that part
+"without" something (an `extend`, an operation that takes the host's context), that part
 does not run in the sandbox; calls to it answer unavailable.
 
 Check it:

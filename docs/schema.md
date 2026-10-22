@@ -999,7 +999,7 @@ the system) and when they did (`scheduled_at`). The server's worker makes the tr
 ## Coming with later gates
 
 API token tables come with the tokens gate. A built-in plugin that truly needs its own table names it
-`<plugin>_<table>` and creates it from `schema_sql` when the database opens;
+`<plugin>_<table>` and creates it with `host.table` in `.extend` when the database opens;
 the default, for every plugin, is a declared content type.
 
 Custom-field schemas use `field_groups` with scope `custom_fields` and the group handle as owner.
