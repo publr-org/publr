@@ -974,15 +974,16 @@ before a page shows it; core writes the `<symbol>` around it.
 }},
 ```
 
-A panel is a read taking `record` and `base`, answering `html`, drawn in the plugin frame
-on every record of the type. Row actions are built-in only. What the plugin's page in the
+A panel is a read taking `record` and `base`, answering `html` drawn by its view on the
+`PanelPage` layout (`publr.views.render`), shown in the plugin frame on every record of the
+type. Row actions are built-in only. What the plugin's page in the
 admin says about it is its `//!` past the first line, through the admin's sanitizer.
 
 ### Admin views in PTSX
 
 Views live in `ui/<Name>.ptsx` beside `main.zig`, import `@publr/ui/<Name>.ptsx` and
 `@publr/admin/<Name>.ptsx`, and return an admin layout (`IndexPage`, `FormPage`,
-`HubPage`, `CardPage`, `ListDetailPage`). A page's read draws one and answers it, the same
+`HubPage`, `CardPage`, `ListDetailPage`; `PanelPage` for a panel). A page's read draws one and answers it, the same
 either way the plugin runs:
 
 ```zig

@@ -157,7 +157,7 @@ pub fn frame(request: *Request, response: *Response, ctx: *Context) Error!void {
         .base = session.project.admin_path(),
     };
 
-    try serve_frame(&session, page.operation, asked);
+    try serve_frame(&session, page.operation, asked, .page);
 }
 
 /// A panel's document, `?record=<id>`: the panel's read told the record and the base path.
@@ -188,20 +188,29 @@ pub fn panel_frame(request: *Request, response: *Response, ctx: *Context) Error!
         .base = session.project.admin_path(),
     };
 
-    try serve_frame(&session, panel.operation, asked);
+    try serve_frame(&session, panel.operation, asked, .panel);
 }
 
 /// The frame's document, drawn by `operation` from `asked`; a failure is told inside the
-/// frame, which keeps the admin around it.
-fn serve_frame(session: *Session, operation: []const u8, asked: anytype) Error!void {
+/// frame, which keeps the admin around it. A panel is drawn by its view
+/// (`publr.views.render`), a whole document; anything else is told as a failure.
+fn serve_frame(
+    session: *Session,
+    operation: []const u8,
+    asked: anytype,
+    shown: enum { page, panel },
+) Error!void {
     std.debug.assert(operation.len > 0);
     std.debug.assert(session.signed_in());
 
     const response = session.response;
     const base = session.project.admin_path();
-    const html = drawn(session, operation, asked) catch |err| blk: {
+    const html = drawn(session, operation, asked, shown == .panel) catch |err| blk: {
         const text = if (err == error.Failed and session.ctx.failure != null)
             session.ctx.failure.?.message
+        else if (err == error.NotAView)
+            "This panel's read answers markup of its own; a panel draws its view with " ++
+                "publr.views.render on the PanelPage layout."
         else
             @errorName(err);
 
@@ -242,8 +251,8 @@ fn found(session: *const Session) Error!?pages.Page {
     return pages.find(session, plugin, path);
 }
 
-/// What the plugin's read answers as `html`.
-fn drawn(session: *Session, operation: []const u8, asked: anytype) ![]const u8 {
+/// What the plugin's read answers as `html`; a view's whole document when `view` is asked.
+fn drawn(session: *Session, operation: []const u8, asked: anytype, view: bool) ![]const u8 {
     std.debug.assert(operation.len > 0);
     std.debug.assert(session.signed_in());
 
@@ -256,6 +265,10 @@ fn drawn(session: *Session, operation: []const u8, asked: anytype) ![]const u8 {
         .ignore_unknown_fields = true,
         .allocate = .alloc_always,
     });
+
+    if (view and !document.whole(parsed.html)) {
+        return error.NotAView;
+    }
 
     return parsed.html;
 }
