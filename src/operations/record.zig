@@ -567,7 +567,7 @@ pub const List = struct {
         }
 
         const read = if (crud.reads_latest(ctx))
-            try domain.listed.edit_documents_of(ctx, listed)
+            try domain.listed.edit_documents_of(ctx, granted, listed)
         else
             try domain.listed.documents_of(ctx, listed);
         var records_shown: []const Record = listed;

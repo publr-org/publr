@@ -272,6 +272,7 @@ pub const registry: sdk.Registry = .{
     .bootstrap = &bootstrap,
     .log = activity.log,
     .removal = removal.prepare,
+    .core_job = job.run_core,
 };
 
 pub const SDK = sdk.SDK(registry);

@@ -60,12 +60,17 @@ pub const Updater = struct {
     start: *const fn (context: *anyopaque, action: UpdateAction, version: []const u8) ?[]const u8,
     /// What the last update did, and what can be done now.
     status: *const fn (context: *anyopaque, arena: std.mem.Allocator) UpdateStatus,
-    /// The releases newer than this one, from where Publr publishes them; null when they
-    /// could not be reached.
-    releases: *const fn (
-        context: *anyopaque,
-        arena: std.mem.Allocator,
-    ) ?[]const @import("../model/release.zig").Release,
+    /// The releases newer than this one as the last look found them; a new look starts in
+    /// the background when that one is over a minute old (`update-run --look`).
+    releases: *const fn (context: *anyopaque, arena: std.mem.Allocator) Releases,
+};
+
+pub const Releases = struct {
+    releases: []const @import("../model/release.zig").Release = &.{},
+    /// A look is on its way: ask again for what it finds.
+    looking: bool = false,
+    /// Why the last look failed; empty when it answered.
+    problem: []const u8 = "",
 };
 
 pub const UpdateAction = enum { apply, rollback };

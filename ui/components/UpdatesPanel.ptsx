@@ -137,18 +137,23 @@ Publr.effect(() => {
   return () => window.clearTimeout(timer);
 });
 
+/** Publr's releases are looked at in the background: while a look is on its way, what it
+ * finds is asked for again. */
 export const check = async () => {
   state.checking = true;
   state.note = "";
   try {
     const found = await call("check", "GET");
     state.releases = found.releases.map(labelled);
+    if (found.looking) {
+      window.setTimeout(check, 1500);
+      return;
+    }
     state.checked = true;
   } catch (error) {
     state.note = Publr.t("Could not reach Publr's releases: {reason}", { reason: (error as Error).message });
-  } finally {
-    state.checking = false;
   }
+  state.checking = false;
 };
 
 export const apply = async (event: MouseEvent) => {

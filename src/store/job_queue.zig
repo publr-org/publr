@@ -6,6 +6,8 @@ const db = @import("../lib/db.zig");
 
 pub const Error = db.Error || error{OutOfMemory};
 
+/// Who core's own jobs belong to: its outside work, queued as a plugin's is.
+pub const core = "publr";
 /// Jobs one pass runs: the rest wait for the next.
 pub const take_max: u32 = 64;
 /// The largest input a job is queued with, as JSON.

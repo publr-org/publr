@@ -33,8 +33,10 @@ pub const Item = struct {
     created_at: i64,
     /// Taken in from the media folder; no one has looked at it yet.
     unreviewed: bool = false,
-    /// Its file is gone from the media folder.
+    /// Its file is gone from the media folder, or never came.
     missing: bool = false,
+    /// Its bytes are on their way (`media.import`): referenced already, served once here.
+    pending: bool = false,
 };
 
 pub const example_item: Item = .{
@@ -211,6 +213,7 @@ pub fn item_of(row: anytype, title: []const u8) Item {
         .created_at = row.created_at,
         .unreviewed = row.unreviewed,
         .missing = row.missing,
+        .pending = row.hash.len == 0 and !row.missing,
     };
 }
 

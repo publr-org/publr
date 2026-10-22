@@ -15,7 +15,8 @@ pub const namespace: sdk.operation.Namespace = .{
     .area = .system,
     .summary = "Requests a plugin sends out, its secrets filled in as they leave",
     .details =
-    \\A plugin granted `http.fetch` sends a request to a domain on its grant (exact,
+    \\From queued work alone (a job, an `on` hook), never a request someone waits on, a
+    \\plugin granted `http.fetch` sends a request to a domain on its grant (exact,
     \\`*.example.com`, or `*` for any public address): https, or in development plain
     \\http to this machine when listed. In production local and private addresses and the
     \\server itself are refused, whatever is listed; redirects stay within the domains, and
@@ -30,7 +31,8 @@ pub const namespace: sdk.operation.Namespace = .{
 pub const operations = [_]type{ Fetch, stream.Stream, stream.Read };
 
 pub const stream = @import("http_stream.zig");
-const timed = @import("http_timed.zig");
+/// A request given up on after its time limit: for host code calling its own servers.
+pub const timed = @import("http_timed.zig");
 const form_parts = @import("http_form.zig");
 const guards = @import("http_guard.zig");
 const downloads = @import("http_download.zig");
@@ -57,12 +59,12 @@ pub const Fetch = struct {
     pub const plugins_only = true;
     pub const description = "Send a request out, as the calling plugin";
     pub const details =
-        \\Answers the status and the body (up to 1 MiB). Refused unless the caller is a plugin
-        \\granted `http.fetch`, every hop's host is among the grant's domains (and, in
-        \\production, resolves to no local or private address), and every `{secret:NAME}`
-        \\it names is declared in the plugin's `.secrets` and has a value (else "<label>
-        \\isn't set"). Logged under the call or run: method, host, path, status, time; never
-        \\the query, headers or bodies.
+        \\Answers the status and the body (up to 1 MiB). Refused outside queued work (a job, an
+        \\`on` hook), and unless the caller is a plugin granted `http.fetch`, every hop's
+        \\host is among the grant's domains (and, in production, resolves to no local or
+        \\private address), and every `{secret:NAME}` it names is declared in the plugin's
+        \\`.secrets` and has a value (else "<label> isn't set"). Logged under the call or
+        \\run: method, host, path, status, time; never the query, headers or bodies.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -103,6 +105,11 @@ pub const Fetch = struct {
         std.debug.assert(headers_max > 0);
 
         const fetcher = fetcher_of(ctx) orelse return error.Denied;
+
+        // Nothing a request waits on reaches another server.
+        if (ctx.job.len == 0) {
+            return ctx.fail(not_queued);
+        }
 
         return fetch_as(ctx, fetcher, in, timed.timeout_ms);
     }
@@ -196,6 +203,12 @@ pub const not_allowed: sdk.operation.Failure = .{
     .name = "NotAllowed",
     .status = 403,
     .message = "Not a domain on the plugin's http.fetch grant, or an address refused here",
+};
+
+pub const not_queued: sdk.operation.Failure = .{
+    .name = "NotQueued",
+    .status = 409,
+    .message = "Outside calls run in queued work only: a job or an `on` hook",
 };
 
 pub const unreachable_failure: sdk.operation.Failure = .{
@@ -410,6 +423,39 @@ fn send(
 pub const Downloaded = downloads.Downloaded;
 pub const download = downloads.download;
 pub const public_host = downloads.public_host;
+pub const not_public = downloads.not_public;
+
+test "http.fetch is refused outside queued work, whatever the plugin is granted" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try registry.SDK.bootstrap(&system);
+
+    const held = [_]model.permission.Held{.{
+        .key = "http.fetch",
+        .domains = &.{"api.example.com"},
+    }};
+    const access: plugin_access.Access = .{
+        .granted = &.{"http.fetch"},
+        .held = &held,
+        .own_types = &.{},
+    };
+    var plugin = harness.ctx(.{
+        .plugin = .{
+            .name = "courier",
+            .capabilities = &.{},
+            .access = &access,
+        },
+    });
+    const sent = registry.SDK.dispatch(&plugin, Fetch, .{
+        .url = "https://api.example.com/quote",
+    });
+
+    try std.testing.expectError(error.Failed, sent);
+    try std.testing.expectEqualStrings("NotQueued", plugin.failure.?.name);
+}
 
 test "a compiled-in plugin is held to its http.fetch domains, as an installed one is" {
     const plugin_module = @import("../sdk/plugin.zig");

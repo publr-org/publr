@@ -11,6 +11,7 @@ const http = @import("../lib/http.zig");
 const apps_adapter = @import("../adapters/apps.zig");
 const model_app = @import("../model/app.zig");
 const sdk = @import("../sdk.zig");
+const store = @import("../store.zig");
 const build_command = @import("build.zig");
 const apps_host = @import("apps_host.zig");
 const plugin_build = @import("plugin_build.zig");
@@ -164,9 +165,10 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
     defer keeper.stop();
 
     const worker: ?*queue_worker.Keeper = if (browser_dir == null) &keeper else null;
+    var plugins = try Plugins.of(&application);
 
     try listener.enable_shutdown_signals();
-    try run_loop(&listener, &project, worker, @as(i64, flags.idle_stop_s) * std.time.ms_per_s);
+    try run_loop(&listener, &project, worker, &plugins, flags.idle_stop_s);
 
     return if (project.restart_requested) .restart else .stopped;
 }
@@ -212,7 +214,6 @@ fn helpers_of(init: std.process.Init, db_path: [:0]const u8, auto_update: bool) 
             .io = init.io,
             .db_path = db_path,
             .managed = is_managed(init),
-            .source = update.fetch.Source.of(init.environ_map),
             .auto = auto_update,
         },
     };
@@ -378,7 +379,6 @@ fn carry_on_interrupted(init: std.process.Init, project: *routes.Project) !void 
     std.debug.assert(project.connection.transaction_depth == 0);
     std.debug.assert(project.static_dir == null);
 
-    const store = @import("../store.zig");
     const now_ms = sdk.context.wall_clock_ms(init.io);
     const arena = init.arena.allocator();
 
@@ -415,7 +415,6 @@ fn end_interrupted(init: std.process.Init, project: *routes.Project) !void {
     std.debug.assert(project.connection.transaction_depth == 0);
     std.debug.assert(project.static_dir == null);
 
-    const store = @import("../store.zig");
     const now_ms = sdk.context.wall_clock_ms(init.io);
 
     const ended = try store.ai_conversations.interrupt_all(
@@ -570,12 +569,46 @@ fn claim(
     return try operator.open(init.io, init.arena.allocator(), db_path, port, url);
 }
 
+/// The installed plugins a job changed in the worker (`publr queue-run`, installing from
+/// the marketplace): loaded again here, as the worker loads again the ones changed here.
+const Plugins = struct {
+    application: *server.Server,
+    loaded: store.sandboxed_plugins.Stamp,
+
+    fn of(application: *server.Server) !Plugins {
+        return .{
+            .application = application,
+            .loaded = try store.sandboxed_plugins.stamp(&application.connection),
+        };
+    }
+
+    fn tick(plugins: *Plugins) void {
+        const connection = &plugins.application.connection;
+
+        std.debug.assert(connection.transaction_depth == 0);
+
+        const now_loaded = store.sandboxed_plugins.stamp(connection) catch return;
+
+        if (std.meta.eql(now_loaded, plugins.loaded)) {
+            return;
+        }
+
+        plugins.loaded = now_loaded;
+        plugins.application.sandboxed_plugins.load_all(connection) catch |err| {
+            std.log.err("plugins: reload failed: {t}", .{err});
+        };
+    }
+};
+
 fn run_loop(
     listener: *http.App,
     project: *routes.Project,
     worker: ?*queue_worker.Keeper,
-    idle_stop_ms: i64,
+    plugins: *Plugins,
+    idle_stop_s: u32,
 ) !void {
+    const idle_stop_ms = @as(i64, idle_stop_s) * std.time.ms_per_s;
+
     std.debug.assert(tick_ms > 0);
     std.debug.assert(idle_stop_ms >= 0);
 
@@ -599,6 +632,7 @@ fn run_loop(
 
         if (worker) |keeper| {
             keeper.tick(sdk.context.wall_clock_ms(project.io));
+            plugins.tick();
         }
 
         if (project.apps.len > 0) {

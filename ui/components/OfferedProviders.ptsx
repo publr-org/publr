@@ -1,14 +1,14 @@
 import { Publr } from "publr-jsx";
-import { awaited } from "publr";
-import { httpOperation } from "publr/transport";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { ProviderPicker } from "./ProviderPicker.ptsx";
+import { asked_in, landed, reload_without, Waiting } from "./QueuedWork.ptsx";
 
 type Offered = {
   offered: Array<{ name: string; label: string; summary: string }>;
   reached: boolean;
+  looking: boolean;
 };
 
 /** Filled once the page is drawn: Publr's plugin server is never waited on to draw it. */
@@ -16,18 +16,41 @@ export const state = Publr.reactive({
   looked: false,
   reached: true,
   offered: [] as Offered["offered"],
+  /** The providers ticked are installing in the background (`?setting_up=<id>`). */
+  installing: false,
+  problem: "",
 });
 
-const found = awaited(() => httpOperation<Offered>("/admin/settings/ai/offered", {
-  headers: { Accept: "application/json" },
-})(), { key: () => ["ai-offered"], cache: { ttl: 60000, tags: ["plugins"] } });
+/** The list as Publr last read it, asked again while its first read is on its way. */
+const look = async () => {
+  try {
+    const response = await fetch(Publr.url("/admin/settings/ai/offered"), {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+    const value: Offered = await response.json();
+    if (value.looking) {
+      window.setTimeout(look, 1000);
+      return;
+    }
+    state.reached = value.reached;
+    state.offered = value.offered;
+  } catch {
+    state.reached = false;
+  }
+  state.looked = true;
+};
 
 Publr.effect(() => {
-  if (found.isPending) return;
-  const value = found.value;
-  state.looked = true;
-  state.reached = value ? value.reached : false;
-  state.offered = value ? value.offered : [];
+  void look();
+  const asked = asked_in("setting_up");
+  if (asked === "") return;
+  state.installing = true;
+  void landed(asked).then((found) => {
+    if (found.state === "done") return reload_without("setting_up");
+    state.installing = false;
+    state.problem = found.problem ?? "";
+  });
 });
 
 export type OfferedProvidersProps = {
@@ -42,6 +65,12 @@ export type OfferedProvidersProps = {
 export function OfferedProviders({ from = "", title = "" }: OfferedProvidersProps) {
   return (
     <div class="flex flex-col gap-4" data-part="offered-providers">
+      {state.installing && <Waiting title={Publr.t("Installing the providers…")} />}
+      {state.problem !== "" && (
+        <Callout tone="error" title={Publr.t("The providers could not be installed")}>
+          {state.problem}
+        </Callout>
+      )}
       {!state.looked && (
         <Text as="p" variant="body-sm" tone="muted">
           {Publr.t("Looking up the official providers…")}

@@ -1,5 +1,6 @@
 //! Setting a provider up: the providers Publr's plugin server offers (`catalog.zig`), some
-//! installed and started in a click, and a test call to the one chosen.
+//! installed and started in a click, and a test call to the one chosen. What reaches
+//! another server runs as core's queued work (`job.zig`): the calls answer at once.
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
@@ -10,6 +11,9 @@ const providers = @import("providers.zig");
 const catalog = @import("catalog.zig");
 const lifecycle = @import("../plugin/lifecycle.zig");
 const state = @import("../plugin/state.zig");
+const jobs = @import("../job.zig");
+const http_stream = @import("../http_stream.zig");
+const market = @import("../plugin/market.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -34,14 +38,16 @@ pub const Catalog = struct {
     pub const details =
         \\The official provider plugins on Publr's plugin server (plugins.publr.app, or the
         \\folder or address `PUBLR_PLUGIN_CATALOG` names), each marked when it is installed
-        \\already. `reached` is false, and the list empty, when the server could not be
-        \\reached. Administrators only.
+        \\already: the list as last read, read again in the background once it is an hour
+        \\old. `looking` while the first read is on its way; `reached` is false, and the
+        \\list empty, when the server could not be reached. Administrators only.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
     pub const Out = struct {
         offered: []const Offered,
         reached: bool,
+        looking: bool = false,
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -56,6 +62,7 @@ pub const Catalog = struct {
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .offered = "Each provider: its plugin's name, label, summary, and whether it is installed",
         .reached = "Whether the list of official plugins could be read",
+        .looking = "Whether the list is being read for the first time: ask again shortly",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -64,20 +71,10 @@ pub const Catalog = struct {
 
         _ = in;
 
-        const file = catalog.read(ctx) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => {
-                ctx.failure = null;
-
-                return .{
-                    .offered = &.{},
-                    .reached = false,
-                };
-            },
-        };
+        const kept = try catalog.kept(ctx);
         var offered: std.ArrayList(Offered) = .empty;
 
-        for (file.plugins) |plugin| {
+        for (kept.plugins) |plugin| {
             if (!std.mem.eql(u8, plugin.kind, "ai_provider")) {
                 continue;
             }
@@ -92,7 +89,8 @@ pub const Catalog = struct {
 
         return .{
             .offered = offered.items,
-            .reached = true,
+            .reached = kept.reached,
+            .looking = kept.looking,
         };
     }
 };
@@ -101,18 +99,20 @@ pub const SetUp = struct {
     pub const name = "ai.set_up";
     pub const description = "Install and start model providers from the official plugins";
     pub const details =
-        \\Each provider's built module is fetched from the catalog and added as an installed
+        \\Answers at once with an id, `job answer` reading how it went. In the background,
+        \\each provider's built module is fetched from the catalog and added as an installed
         \\plugin, as uploading it does, then enabled and granted sending requests out, its
         \\key and its raised limits: what a provider needs to answer. Anything else it asks
         \\for waits for an administrator under Plugins. One already added is only enabled.
-        \\All or none. Administrators only.
+        \\All or none; the answer lists the plugins set up. Administrators only.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         names: []const []const u8,
     };
     pub const Out = struct {
-        names: []const []const u8,
+        /// What `job.answer` reads: `{ names }` once they run.
+        asked: []const u8,
     };
     pub const rules: sdk.operation.Rules(In) = .{
         .names = .{
@@ -124,50 +124,35 @@ pub const SetUp = struct {
         .names = &.{"ai_example"},
     };
     pub const example_out: Out = .{
-        .names = &.{"ai_example"},
+        .asked = "6a1f0c2e9b3d4a5f60718293",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .names = "The provider plugins' names, as the catalog lists them",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
-        .names = "The plugins set up, now running",
+        .asked = "For `job answer`: `{ names }`, the plugins set up and running",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const file = try catalog.read(ctx);
-
-        for (in.names) |wanted| {
-            const entry = for (file.plugins) |plugin| {
-                if (std.mem.eql(u8, plugin.name, wanted)) {
-                    break plugin;
-                }
-            } else {
-                return error.NotFound;
-            };
-
-            if (try store.sandboxed_plugins.get(ctx.db, ctx.arena, entry.name) == null) {
-                _ = try lifecycle.add(ctx, try catalog.stage(ctx, entry));
-            }
-
-            try start(ctx, entry.name);
-        }
-
         return .{
-            .names = in.names,
+            .asked = try jobs.ask(ctx, "install", market.Installing{
+                .names = in.names,
+                .providers = true,
+            }),
         };
     }
 };
 
-/// Enables it, granting what a provider is set up for: requests out and the room a model's
+/// Grants an enabled provider what it is set up for: requests out and the room a model's
 /// answer takes (its raised limits). Its key is a secret it declares, set apart.
-fn start(ctx: *Ctx, name: []const u8) Error!void {
+pub fn grant_provider(ctx: *Ctx, name: []const u8) Error!void {
     std.debug.assert(name.len > 0);
     std.debug.assert(ctx.now_ms >= 0);
 
-    const enabled = try lifecycle.enable(ctx, name, &.{});
+    const enabled = try state.load(ctx, name);
     const shown = try state.requests_of(
         ctx.arena,
         &enabled.manifest,
@@ -181,7 +166,12 @@ fn start(ctx: *Ctx, name: []const u8) Error!void {
             std.mem.startsWith(u8, request.key, "limit.");
 
         if (wanted and request.state == .pending) {
-            _ = try lifecycle.decide(ctx, name, request.key, .grant);
+            const SDK = @import("../../server/registry.zig").SDK;
+
+            _ = try SDK.dispatch(ctx, @import("../plugin.zig").GrantRequest, .{
+                .name = name,
+                .key = request.key,
+            });
         }
     }
 }
@@ -190,29 +180,31 @@ pub const Test = struct {
     pub const name = "ai.test";
     pub const description = "Ask a provider for one short answer, to check it works";
     pub const details =
-        \\One small request with the provider's key: `ok` when it answered, else what went
-        \\wrong in its words. The server waits for the answer, a second or two.
-        \\Administrators only.
+        \\One small request with the provider's key, sent in the background: answers at once
+        \\with an id, and `job answer` reads `{ ok, reply }` a second or two later: `ok` when
+        \\it answered, else what went wrong in its words. Administrators only.
     ;
-    pub const kind: sdk.operation.Kind = .read;
+    pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         provider: []const u8,
         model: []const u8 = "",
     };
     pub const Out = struct {
-        ok: bool,
-        reply: []const u8,
+        /// What `job.answer` reads: `{ ok, reply }`.
+        asked: []const u8,
     };
     pub const example: In = .{
         .provider = "ai_example",
     };
     pub const example_out: Out = .{
-        .ok = true,
-        .reply = "OK",
+        .asked = "6a1f0c2e9b3d4a5f60718293",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .provider = "The plugin that provides it",
         .model = "One of its models; empty for its default",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .asked = "For `job answer`: `{ ok, reply }`, whether it answered and its words",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -224,40 +216,75 @@ pub const Test = struct {
 
         _ = try providers.find(ctx, in.provider) orelse return error.NotFound;
 
-        const asked = [_]lib_ai.Message{.{
-            .role = .user,
-            .parts = &.{lib_ai.Part.of_text("Reply with the single word OK.")},
-        }};
-        const request = lib_ai.request_json(ctx.arena, .{
-            .model = in.model,
-            .messages = &asked,
-            .output_tokens_max = 16,
-        }) catch return error.OutOfMemory;
-        const input = std.json.Stringify.valueAlloc(ctx.arena, sdk_ai.Completion.In{
-            .request = request,
-        }, .{}) catch return error.OutOfMemory;
-        const operation = std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{
-            in.provider,
-            sdk_ai.complete_verb,
-        }) catch return error.OutOfMemory;
-        const SDK = @import("../../server/registry.zig").SDK;
-        const output = SDK.call_json(ctx, operation, input) catch |err| {
-            const failure = if (ctx.failure) |found| found.message else @errorName(err);
-
-            ctx.failure = null;
-
-            return .{
-                .ok = false,
-                .reply = failure,
-            };
-        };
-
         return .{
-            .ok = true,
-            .reply = try reply_of(ctx, output),
+            .asked = try jobs.ask(ctx, "ai_test", Testing{
+                .provider = in.provider,
+                .model = in.model,
+            }),
         };
     }
 };
+
+pub const Testing = struct {
+    asked: []const u8 = "",
+    provider: []const u8,
+    model: []const u8 = "",
+};
+
+pub const Tested = struct {
+    ok: bool,
+    reply: []const u8,
+};
+
+/// The `ai_test` job: the provider's `complete` asked for one word, its answer or what went
+/// wrong kept for whoever asked.
+pub fn test_job(ctx: *Ctx, in: Testing) Error!void {
+    std.debug.assert(ctx.job.len > 0);
+    std.debug.assert(in.asked.len > 0);
+
+    const asked = [_]lib_ai.Message{.{
+        .role = .user,
+        .parts = &.{lib_ai.Part.of_text("Reply with the single word OK.")},
+    }};
+    const request = lib_ai.request_json(ctx.arena, .{
+        .model = in.model,
+        .messages = &asked,
+        .output_tokens_max = 16,
+    }) catch return error.OutOfMemory;
+    const input = std.json.Stringify.valueAlloc(ctx.arena, sdk_ai.Completion.In{
+        .request = request,
+    }, .{}) catch return error.OutOfMemory;
+    const operation = std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{
+        in.provider,
+        sdk_ai.complete_verb,
+    }) catch return error.OutOfMemory;
+    const SDK = @import("../../server/registry.zig").SDK;
+    // A provider reads its model's answer as it arrives: the responses it opens are held
+    // here for the run.
+    var streams: http_stream.Streams = .{};
+    defer streams.deinit();
+
+    ctx.streams = &streams;
+    defer ctx.streams = null;
+
+    const output = SDK.call_json(ctx, operation, input) catch |err| {
+        return jobs.answer(ctx, in.asked, Tested{
+            .ok = false,
+            .reply = jobs.problem_of(ctx, err),
+        });
+    };
+    const reply = reply_of(ctx, output) catch |err| {
+        return jobs.answer(ctx, in.asked, Tested{
+            .ok = false,
+            .reply = jobs.problem_of(ctx, err),
+        });
+    };
+
+    return jobs.answer(ctx, in.asked, Tested{
+        .ok = true,
+        .reply = reply,
+    });
+}
 
 fn reply_of(ctx: *Ctx, output: []const u8) Error![]const u8 {
     std.debug.assert(output.len > 0);

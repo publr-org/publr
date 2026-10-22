@@ -1,5 +1,6 @@
 import { Publr } from "publr-jsx";
 import { Status } from "@publr/ui/Status.ptsx";
+import { landed } from "./QueuedWork.ptsx";
 
 /** The key held to talk, kept for this browser: it belongs to the keyboard. */
 const key_storage = "publr-talk-key";
@@ -67,7 +68,8 @@ export type Listener = {
   cancelled: () => void;
 };
 
-/** Hold the talk key, speak, let go: the recording is turned into words by `ai.transcribe`.
+/** Hold the talk key, speak, let go: the recording is turned into words by `ai.transcribe`,
+ * in the background.
  * Answers a function that stops listening. */
 export const listen = (csrf: () => string, listener: Listener) => {
   let held = false;
@@ -158,10 +160,13 @@ export const listen = (csrf: () => string, listener: Listener) => {
         headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf() },
         body: JSON.stringify({ audio, format }),
       });
-      const answer = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(answer.message ?? answer.error ?? `${response.status}`);
+      const asked = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(asked.message ?? asked.error ?? `${response.status}`);
+      // Written down in the background: the words are read once they land.
+      const found = await landed(asked.asked);
+      if (found.state !== "done") throw new Error(found.problem ?? "");
       if (mine !== turn) return;
-      const words = `${answer.text ?? ""}`.trim();
+      const words = `${found.answer?.text ?? ""}`.trim();
       if (words === "") {
         listener.failed(Publr.t("Nothing was heard. Hold the key while you speak."));
         return;

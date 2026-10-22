@@ -164,6 +164,32 @@ pub fn set_missing(connection: *db.Db, record: []const u8, missing: bool) db.Err
     try update.exec();
 }
 
+/// A Pending file's facts, once its bytes came.
+pub const Facts = struct {
+    size: i64,
+    width: ?i64,
+    height: ?i64,
+    hash: []const u8,
+};
+
+pub fn filled(connection: *db.Db, record: []const u8, facts: Facts) db.Error!void {
+    std.debug.assert(record.len > 0);
+    std.debug.assert(facts.size > 0 and facts.hash.len > 0);
+
+    var update = try connection.prepare(
+        "UPDATE media SET size = ?2, width = ?3, height = ?4, hash = ?5, missing = 0 " ++
+            "WHERE record = ?1",
+    );
+    defer update.finalize();
+
+    try update.bind_text(1, record);
+    try update.bind_int(2, facts.size);
+    try bind_optional_int(&update, 3, facts.width);
+    try bind_optional_int(&update, 4, facts.height);
+    try update.bind_text(5, facts.hash);
+    try update.exec();
+}
+
 pub const Kept = struct {
     record: []const u8,
     storage_key: []const u8,

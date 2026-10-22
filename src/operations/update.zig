@@ -112,7 +112,9 @@ pub const Check = struct {
     pub const name = "update.check";
     pub const description = "List the releases newer than this one, with what each would do";
     pub const details =
-        \\Asks GitHub, where Publr publishes its releases. Each comes with its kind against
+        \\Answers what the last look at GitHub, where Publr publishes its releases, found, and
+        \\starts a new look in the background when that one is over a minute old: while
+        \\`looking`, ask again for what it finds. Each release comes with its kind against
         \\this release (patch, minor, major) and its notes. Nothing is changed.
     ;
     pub const kind: sdk.operation.Kind = .read;
@@ -122,6 +124,7 @@ pub const Check = struct {
         version: []const u8,
         managed: bool,
         releases: []const release.Release,
+        looking: bool,
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -134,11 +137,13 @@ pub const Check = struct {
             .published_at = "2026-11-02T10:00:00Z",
             .url = "https://github.com/publr-org/publr/releases/tag/v0.4.0",
         }},
+        .looking = false,
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .version = "The release running",
         .managed = "Whether Publr Cloud keeps it up to date",
         .releases = "Newer releases, newest first: version, kind, notes, published_at, url",
+        .looking = "A look for newer releases is on its way: ask again for what it finds",
     };
 
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
@@ -146,13 +151,17 @@ pub const Check = struct {
         std.debug.assert(heartbeat.version.len > 0);
 
         const updater = ctx.updater orelse return error.Unavailable;
-        const releases = updater.releases(updater.context, ctx.arena) orelse
+        const found = updater.releases(updater.context, ctx.arena);
+
+        if (!found.looking and found.problem.len > 0) {
             return ctx.fail(unreachable_failure);
+        }
 
         return .{
             .version = heartbeat.version,
             .managed = updater.managed,
-            .releases = releases,
+            .releases = found.releases,
+            .looking = found.looking,
         };
     }
 };

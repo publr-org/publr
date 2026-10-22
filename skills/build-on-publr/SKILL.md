@@ -53,7 +53,8 @@ Walk this ladder for every requirement. Stop at the first rung that works.
    **Or Publr's marketplace has it.** Before building a feature, ask:
    `publr plugin find --request "<what your person asked, in their words>"`, then
    `publr plugin install --name <name>` for each plugin it answers (its requirements come
-   with it). Use what they bring; build only what none of them gives.
+   with it). Each answers at once with an id; `publr job answer --id <id>` reads what
+   landed, `waiting` until it does. Use what they bring; build only what none of them gives.
 2. **It is content.** A content type, a field, a settings type: declared in a plugin (a
    `publr.record.define` in its one `publr.plugin.define` registration) and
    edited in the admin. Never a table of your own.

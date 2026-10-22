@@ -1,0 +1,47 @@
+import { Publr } from "publr-jsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+
+type Landed = {
+  state: string;
+  answer?: { ok?: boolean; reply?: string; text?: string };
+  problem?: string;
+};
+
+/** What work a page queued answered (`job.answer`), asked every second until it lands. */
+export const landed = async (id: string): Promise<Landed> => {
+  for (;;) {
+    try {
+      const response = await fetch(Publr.url(`/api/job/answer?id=${encodeURIComponent(id)}`), {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      const found = await response.json().catch(() => ({}));
+      if (!response.ok) return { state: "failed", problem: found.message ?? found.error ?? `${response.status}` };
+      if (found.state !== "waiting") return found;
+    } catch {
+      // The server is restarting: asked again in a moment.
+    }
+    await new Promise((done) => window.setTimeout(done, 1000));
+  }
+};
+
+/** The id a page came back with after queuing work: `?<name>=<id>`. */
+export const asked_in = (name: string): string =>
+  typeof window === "undefined" ? "" : new URL(window.location.href).searchParams.get(name) ?? "";
+
+/** The page drawn again without the id, once the work it waited on ran. */
+export const reload_without = (name: string) => {
+  const url = new URL(window.location.href);
+  url.searchParams.delete(name);
+  window.location.replace(url.toString());
+};
+
+export type WaitingProps = {
+  /** What runs in the background, said while it does. */
+  title: string;
+};
+
+/** Work a page queued, said while it runs: its answer replaces it once it lands. */
+export function Waiting({ title }: WaitingProps) {
+  return <Callout title={title} />;
+}

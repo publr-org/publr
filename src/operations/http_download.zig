@@ -29,6 +29,7 @@ const unreachable_failure: sdk.operation.Failure = .{
 };
 
 /// `url`, https or http, on a public host, up to `bytes_max`, into `allocator`'s memory.
+/// Queued work only, as a plugin's `http.fetch` is: nothing a request waits on downloads.
 pub fn download(
     ctx: *Ctx,
     allocator: std.mem.Allocator,
@@ -46,6 +47,10 @@ pub fn download(
 
     if (!web or !public_host(host)) {
         return ctx.fail(not_public);
+    }
+
+    if (ctx.job.len == 0) {
+        return ctx.fail(@import("http.zig").not_queued);
     }
 
     if (builtin.os.tag == .wasi) {
@@ -119,4 +124,20 @@ test "a public host by name: never this machine or a private network's" {
     try std.testing.expect(!public_host("172.20.1.1"));
     try std.testing.expect(public_host("172.40.1.1"));
     try std.testing.expect(!public_host("printer.local"));
+}
+
+test "core downloads in queued work only: never in a request" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.system);
+
+    try std.testing.expectError(error.Failed, download(
+        &ctx,
+        std.testing.allocator,
+        "https://example.com/harbour.png",
+        1024,
+    ));
+    try std.testing.expectEqualStrings("NotQueued", ctx.failure.?.name);
 }

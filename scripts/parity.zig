@@ -68,7 +68,9 @@ pub fn main(init: std.process.Init) !u8 {
 /// none; installing from the marketplace needs the plugins' built modules, which the fixture
 /// catalog does not carry; overriding who may call needs a plugin's operation made with
 /// `publr.operation.define`, which the fixture compiles in none of; and the seeded project's
-/// plugins queue no jobs for `job list` to show; `project put` answers only a plugin's call.
+/// plugins queue no jobs for `job list` to show; `project put` answers only a plugin's call;
+/// asking the marketplace answers a new id each time, and `job answer` reads only an id
+/// someone was given.
 const skips = [_][]const u8{
     "ai.ask",
     "ai.reply",
@@ -102,6 +104,8 @@ const skips = [_][]const u8{
     "operation.authorize",
     "job.list",
     "project.put",
+    "plugin.find",
+    "job.answer",
 };
 
 fn skipped(comptime name: []const u8) bool {
