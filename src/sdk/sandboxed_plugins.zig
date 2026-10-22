@@ -41,6 +41,8 @@ pub const Operation = struct {
     input: []const @import("../model/contract.zig").Node = &.{},
     /// Input fields never written to the logs.
     secret: []const []const u8 = &.{},
+    /// What every caller is told when it is on its way out; empty when it is not.
+    deprecated: []const u8 = "",
     /// Which plugin, and which of its entries, runs it: the host's own numbering.
     sandboxed_plugin: u32,
     entry: u32,

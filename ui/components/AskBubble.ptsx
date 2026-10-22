@@ -256,12 +256,12 @@ export const send = async () => {
   try {
     const pictures = await Promise.all(uploads);
     if (state.id !== "" && state.chat !== "") {
-      await post("ai/reply", { id: state.id, prompt, pictures });
+      await post("ai.reply", { id: state.id, prompt, pictures });
       state.chat = "open";
       keep();
       started();
     } else {
-      const asked = await post("ai/ask", { prompt, page: page_now(), pictures });
+      const asked = await post("ai.ask", { prompt, page: page_now(), pictures });
       begin(asked.id, prompt);
     }
     close();
@@ -344,7 +344,7 @@ const refresh = async () => {
   }
   reading = true;
   try {
-    const address = Publr.url(`/api/ai/conversation?id=${encodeURIComponent(state.id)}&after=${after}`);
+    const address = Publr.url(`/api/ai.conversation?id=${encodeURIComponent(state.id)}&after=${after}`);
     const response = await fetch(address, { credentials: "same-origin" });
     if (!response.ok) throw new Error(`${response.status}`);
     apply(await response.json());
@@ -494,7 +494,7 @@ const resume = async () => {
   if (saved.id === "" || saved.chat === "") return;
   followed = saved.followed;
   try {
-    const address = Publr.url(`/api/ai/conversation?id=${encodeURIComponent(saved.id)}`);
+    const address = Publr.url(`/api/ai.conversation?id=${encodeURIComponent(saved.id)}`);
     const response = await fetch(address, { credentials: "same-origin" });
     if (!response.ok) throw new Error(`${response.status}`);
     const read = await response.json();
@@ -532,7 +532,7 @@ export const dismiss = () => {
 
 export const stop = async () => {
   try {
-    await post("ai/stop", { id: state.id });
+    await post("ai.stop", { id: state.id });
     state.label = labels.stopping;
   } catch (error) {
     state.note = Publr.t("Could not stop it: {reason}", { reason: (error as Error).message });
@@ -549,7 +549,7 @@ export const replied = async (event: Event) => {
   if (prompt === "" || state.live) return;
   state.reply = "";
   try {
-    await post("ai/reply", { id: state.id, prompt, pictures: [] });
+    await post("ai.reply", { id: state.id, prompt, pictures: [] });
     started();
   } catch (error) {
     state.reply = prompt;
@@ -561,7 +561,7 @@ export const replied = async (event: Event) => {
 export const undo = async (event: MouseEvent) => {
   const entry = (event.currentTarget as HTMLButtonElement).value;
   try {
-    await post("trash/restore", { id: entry });
+    await post("trash.restore", { id: entry });
     state.undone = [...state.undone, entry];
     (frame_window() ?? window).location.reload();
   } catch (error) {

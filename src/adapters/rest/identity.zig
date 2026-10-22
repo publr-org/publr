@@ -595,7 +595,7 @@ test "a device's bearer token: its account, its scope, no CSRF; revoked, anonymo
         .name = "laptop",
         .scope = "drafts",
     }, 1);
-    const template = "{s} /api/device/{s} HTTP/1.1\r\nHost: h\r\n" ++
+    const template = "{s} /api/device.{s} HTTP/1.1\r\nHost: h\r\n" ++
         "Authorization: Bearer {s}\r\nContent-Length: 0\r\n\r\n";
     const token = created.token_text();
 
@@ -613,7 +613,7 @@ test "a device's bearer token: its account, its scope, no CSRF; revoked, anonymo
     const after = try flow.call(try flow.head(template, .{ "GET", "list", token }), "");
     try std.testing.expectEqual(@as(u16, 403), after.status.code());
 
-    const malformed = "GET /api/device/list HTTP/1.1\r\nHost: h\r\n" ++
+    const malformed = "GET /api/device.list HTTP/1.1\r\nHost: h\r\n" ++
         "Authorization: Basic x\r\n\r\n";
     try std.testing.expectEqual(@as(u16, 403), (try flow.call(malformed, "")).status.code());
 }

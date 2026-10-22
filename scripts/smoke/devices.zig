@@ -52,7 +52,7 @@ fn expect_signed_in(
 
     const arena = init.arena.allocator();
     const asked = "{\"name\":\"smoke device\"}";
-    const start = try smoke.http_post(init, port, "/api/device/start", asked);
+    const start = try smoke.http_post(init, port, "/api/device.start", asked);
     const started = try body_as(Started, arena, start);
     const approve = [_][]const u8{
         "--as",   email,             "device",  "approve",
@@ -64,11 +64,11 @@ fn expect_signed_in(
     const code = try std.fmt.allocPrint(arena, "{{\"device_code\":\"{s}\"}}", .{
         started.device_code,
     });
-    const polled = try smoke.http_post(init, port, "/api/device/poll", code);
+    const polled = try smoke.http_post(init, port, "/api/device.poll", code);
 
     try expect_in("device poll", polled, "\"state\":\"approved\"");
 
-    const claim = try smoke.http_post(init, port, "/api/device/claim", code);
+    const claim = try smoke.http_post(init, port, "/api/device.claim", code);
     const claimed = try body_as(Claimed, arena, claim);
 
     try expect_remote(init, binary, work_dir, port, claimed.token);

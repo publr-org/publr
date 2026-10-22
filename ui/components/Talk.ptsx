@@ -152,7 +152,7 @@ export const listen = (csrf: () => string, listener: Listener) => {
     listener.writing();
     try {
       const audio = await base64_of(new Blob(chunks, { type: format }));
-      const response = await fetch(Publr.url("/api/ai/transcribe"), {
+      const response = await fetch(Publr.url("/api/ai.transcribe"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf() },

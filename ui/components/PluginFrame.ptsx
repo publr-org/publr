@@ -23,9 +23,8 @@ export function go(to: string, plugin: string = state.plugin, current: string = 
 }
 
 export async function run(operation: string, input: unknown, csrf: string): Promise<unknown> {
-  const dot = operation.indexOf(".");
   const response = await fetch(
-    Publr.url(`/api/${operation.slice(0, dot)}/${operation.slice(dot + 1)}`),
+    Publr.url(`/api/${operation}`),
     {
       method: "POST",
       credentials: "same-origin",

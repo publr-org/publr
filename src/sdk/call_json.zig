@@ -247,6 +247,10 @@ fn run_pipeline(
         try @import("../sdk.zig").refuse_broken(ctx, found.input, value);
     }
 
+    if (found.deprecated.len > 0) {
+        SDK.note_deprecated(ctx, found.deprecated);
+    }
+
     const changed = if (sandboxed.hooked(.before, found.name))
         try sandboxed.before(ctx, found.name, input)
     else

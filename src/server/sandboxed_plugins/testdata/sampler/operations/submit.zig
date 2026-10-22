@@ -1,4 +1,5 @@
-//! Writes a review and submits it: the type's own flow, moved by name.
+//! Writes a review and submits it: the type's own flow, moved by name, then reads it back
+//! among several by id.
 //!
 //! Example:
 //!   in: { "text": "Looks good" }
@@ -27,8 +28,10 @@ fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
     const written = try Reviews.record.get(ctx, id, .{});
     const moved = try Reviews.record.transition(ctx, written, .submit);
     const held = try Reviews.record.get(ctx, id, .{});
+    const read_back = try Reviews.record.many(ctx, &.{ id, "000000000000000000000000" });
 
     std.debug.assert(moved == .done);
+    std.debug.assert(read_back.len == 1);
 
     return .{
         .status = @tagName(held.status),

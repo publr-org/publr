@@ -82,6 +82,8 @@ pub const SandboxApi = struct {
     failures: []const operation_contract.Failure = &.{},
     /// Set while a modifier runs: its reads are noted and answered for the whole batch.
     reads: ?*mod_reads.Reads = null,
+    /// The refusal the last call came back with, by name; empty for none.
+    last_failure: []const u8 = "",
 
     /// The plugin itself, acting for the account that made the call when there is one.
     pub fn caller(self: *const SandboxApi) caller_view.View {
@@ -327,7 +329,17 @@ pub const SandboxApi = struct {
         };
         const status = publr_call(name.ptr, name.len, input.ptr, @intCast(input.len), &result);
 
+        self.last_failure = "";
+
         if (status != wire.ok) {
+            // A refusal comes back with its name, for `failure()`.
+            if (status == wire.code_of(error.Failed) and result.len > 0) {
+                const named = take(result);
+                defer allocator.free(named);
+
+                self.last_failure = self.arena_allocator.dupe(u8, named) catch "";
+            }
+
             return wire.error_of(status);
         }
 
@@ -335,6 +347,14 @@ pub const SandboxApi = struct {
         defer allocator.free(output);
 
         return self.arena_allocator.dupe(u8, output) catch error.OutOfMemory;
+    }
+
+    /// Which refusal the last `call` came back with as `error.Failed`, by its `Fails:` name
+    /// (`NotEnoughStock`); empty when it came back without one.
+    pub fn failure(self: *const SandboxApi) []const u8 {
+        std.debug.assert(self.name.len > 0);
+
+        return self.last_failure;
     }
 
     /// Emits an event made with `publr.event.define`, its payload as JSON: the host runs its

@@ -164,6 +164,37 @@ pub fn waiting_for(connection: *db.Db, plugin: []const u8, name: []const u8) db.
     return select.step();
 }
 
+/// The problem of the latest kept run of a plugin's job `name`, or of its later hooks on the
+/// same event (`name#2`); empty when none failed.
+pub fn last_problem(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    plugin: []const u8,
+    name: []const u8,
+) Error![]const u8 {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(name.len > 0);
+
+    var select = try connection.prepare(
+        "SELECT problem FROM job_queue WHERE plugin = ?1 AND (name = ?2 OR name LIKE ?2 || " ++
+            "'#%') AND problem != '' ORDER BY id DESC LIMIT 1",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, plugin);
+    try select.bind_text(2, name);
+
+    if (!try select.step()) {
+        return "";
+    }
+
+    const Found = struct {
+        problem: []const u8,
+    };
+
+    return (try select.read(Found, arena)).problem;
+}
+
 /// A job as the operator sees it, in the column order of `list`.
 pub const Listed = struct {
     plugin: []const u8,

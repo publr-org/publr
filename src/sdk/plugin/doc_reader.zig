@@ -137,7 +137,38 @@ fn collect_definitions(
         const key = try std.fmt.allocPrint(arena, "operation:{s}", .{verb});
 
         try add(arena, out, key, words);
+
+        // Its own `.validate` and `.authorize` functions' `///`: the "Checked" and "Who may
+        // call it" lines.
+        inline for (.{ "validate", "authorize" }) |part| {
+            if (option_of(tree, init, "operation.define", part)) |given| {
+                if (try function_doc(arena, tree, given)) |function_words| {
+                    const part_key = try std.fmt.allocPrint(arena, "{s}:{s}", .{ key, part });
+
+                    try add(arena, out, part_key, function_words);
+                }
+            }
+        }
     }
+}
+
+/// The `///` of the file's function a name stands for; null for anything else.
+fn function_doc(arena: std.mem.Allocator, tree: *const Ast, node: Ast.Node.Index) !?[]const u8 {
+    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+
+    if (tree.nodeTag(node) != .identifier) {
+        return null;
+    }
+
+    const function = root_named(tree, tree.tokenSlice(tree.nodeMainToken(node))) orelse {
+        return null;
+    };
+
+    if (tree.nodeTag(function) != .fn_decl) {
+        return null;
+    }
+
+    return member_doc(arena, tree, function);
 }
 
 /// A hook's or modifier's reason, its `run` function's `///`, filed under `hook:<position>` in
@@ -678,28 +709,36 @@ test "an operation's words filed under its name" {
         \\/// Counts the answers.
         \\pub const counts = publr.operation.define(CountsIn, CountsOut, .{
         \\    .name = "counts",
+        \\    .validate = check,
+        \\    .authorize = own,
         \\});
+        \\
+        \\/// A page of the site.
+        \\fn check(in: CountsIn, problems: anytype) void {}
+        \\
+        \\/// The person who asked.
+        \\fn own(ctx: anytype, in: CountsIn) bool {}
         \\
     ;
     var entries: std.ArrayList(Entry) = .empty;
 
     try read(arena, "operations.answer", text, &entries);
 
-    var answer: ?[]const u8 = null;
-    var counts: ?[]const u8 = null;
+    const expected = [_][2][]const u8{
+        .{ "operation:answer", "Records a visitor's answer." },
+        .{ "operation:counts", "Counts the answers." },
+        .{ "operation:counts:validate", "A page of the site." },
+        .{ "operation:counts:authorize", "The person who asked." },
+    };
 
-    for (entries.items) |entry| {
-        if (std.mem.eql(u8, entry.key, "operation:answer")) {
-            answer = entry.text;
-        }
-
-        if (std.mem.eql(u8, entry.key, "operation:counts")) {
-            counts = entry.text;
-        }
+    for (expected) |pair| {
+        for (entries.items) |entry| {
+            if (std.mem.eql(u8, entry.key, pair[0])) {
+                try std.testing.expectEqualStrings(pair[1], entry.text);
+                break;
+            }
+        } else return error.TestUnexpectedResult;
     }
-
-    try std.testing.expectEqualStrings("Records a visitor's answer.", answer.?);
-    try std.testing.expectEqualStrings("Counts the answers.", counts.?);
 }
 
 test "a hook's reason is its run function's words, by its place in .hooks" {

@@ -124,6 +124,19 @@ pub fn Described(comptime Definition: type, comptime plugin: []const u8, comptim
             } else null;
             pub const secret: []const []const u8 = secret_names(options);
             pub const deprecated: ?sdk.operation.Deprecated = deprecated_of(options);
+            /// The `.validate` function's `///`: what is checked, the "Checked" line.
+            pub const checked: []const u8 = plugin_define.words(
+                Docs,
+                "operation:" ++ Definition.verb ++ ":validate",
+            ) orelse "";
+            /// The "Who may call it" line: a ready answer in words, or the `.authorize`
+            /// function's `///`.
+            pub const who_may_call: []const u8 = who_of(
+                full_name,
+                answer,
+                @hasField(Options, "authorize") and @TypeOf(options.authorize) != Answer,
+                plugin_define.words(Docs, "operation:" ++ Definition.verb ++ ":authorize"),
+            );
 
             pub fn run(ctx: *PluginCtx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
                 std.debug.assert(name.len > 0);
@@ -384,6 +397,37 @@ fn answer_of(comptime options: anytype, comptime untrusted: bool) ?Answer {
     }
 }
 
+/// Who may call, as `--help` says it.
+fn who_of(
+    comptime full_name: []const u8,
+    comptime answer: ?Answer,
+    comptime custom: bool,
+    comptime function_words: ?[]const u8,
+) []const u8 {
+    comptime {
+        if (custom) {
+            return function_words orelse "the plugin's own check";
+        }
+
+        const ready = answer orelse return "administrators, and roles granted " ++ full_name;
+
+        return switch (ready) {
+            .visitor => "anyone",
+            .signed_in => "anyone signed in",
+            .plugin_calls => "other plugins",
+            .roles => |names| roles: {
+                var joined: []const u8 = "administrators, and anyone with the role ";
+
+                for (names, 0..) |role, index| {
+                    joined = joined ++ (if (index == 0) "" else " or ") ++ role;
+                }
+
+                break :roles joined;
+            },
+        };
+    }
+}
+
 /// `.deprecated` as written, `.since` with `.instead` and `.why` when given.
 fn deprecated_of(comptime options: anytype) ?sdk.operation.Deprecated {
     comptime {
@@ -488,6 +532,81 @@ test "an operation described from its words" {
     try std.testing.expectEqualStrings(
         "helpful.answer is deprecated since 0.4.0; call helpful.rate instead",
         comptime sdk.operation.deprecation_text(Operation),
+    );
+    try std.testing.expectEqualStrings("anyone", Operation.who_may_call);
+}
+
+test "--help says what is checked and who may call, in the functions' words" {
+    const In = struct {
+        page: []const u8,
+    };
+    const Out = struct {
+        yes: u32,
+    };
+    const Docs = @import("define.zig").Words(.{
+        .{ "operation:answer", "Records an answer.\n\nExample:\n  in: { \"page\": \"/a\" }\n" ++
+            "  out: { \"yes\": 1 }" },
+        .{ "operation:answer:validate", "A page of 1 to 200 characters." },
+        .{ "operation:answer:authorize", "The person whose page it is." },
+        .{ @typeName(In) ++ ".page", "The page" },
+        .{ @typeName(Out) ++ ".yes", "Yes answers" },
+    });
+    const parts = struct {
+        fn run(_: *PluginCtx, _: In) sdk.Error!Out {
+            return .{
+                .yes = 1,
+            };
+        }
+
+        fn own(_: *PluginCtx, _: In) bool {
+            return true;
+        }
+
+        fn check(_: In, _: *Problems(In)) void {}
+    };
+    const Own = Described(define(In, Out, .{
+        .name = "answer",
+        .kind = .write,
+        .authorize = parts.own,
+        .validate = parts.check,
+        .run = parts.run,
+    }), "helpful", Docs);
+    const Roles = Described(define(In, Out, .{
+        .name = "answer",
+        .kind = .write,
+        .authorize = Answer{
+            .roles = &.{ "moderator", "editor" },
+        },
+        .run = parts.run,
+    }), "helpful", Docs);
+    const Default = Described(define(In, Out, .{
+        .name = "answer",
+        .kind = .write,
+        .run = parts.run,
+    }), "other", @import("define.zig").Words(.{
+        .{ "operation:answer", "Records an answer.\n\nExample:\n  in: { \"page\": \"/a\" }\n" ++
+            "  out: { \"yes\": 1 }" },
+        .{ @typeName(In) ++ ".page", "The page" },
+        .{ @typeName(Out) ++ ".yes", "Yes answers" },
+    }));
+    var buffer: [2048]u8 = undefined;
+    var out: std.Io.Writer = .fixed(&buffer);
+
+    try sdk.help.command(Own, &out);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        out.buffered(),
+        "\nChecked: A page of 1 to 200 characters.\n" ++
+            "Who may call it: The person whose page it is.\n",
+    ) != null);
+    try std.testing.expectEqualStrings(
+        "administrators, and anyone with the role moderator or editor",
+        Roles.who_may_call,
+    );
+    try std.testing.expectEqualStrings("", Default.checked);
+    try std.testing.expectEqualStrings(
+        "administrators, and roles granted other.answer",
+        Default.who_may_call,
     );
 }
 

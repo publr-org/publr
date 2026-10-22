@@ -92,6 +92,13 @@ pub const Create = struct {
         const scope = target.scope;
         const id = try records.insert(ctx.db, ctx.io, ctx.arena, scope, in.document, ctx.now_ms);
 
+        // Records meant to vanish go as new ones come: no cleanup job, no trash step.
+        if (target.collection.expires) |expires| {
+            const cutoff = ctx.now_ms - @as(i64, expires.after_days) * std.time.ms_per_day;
+
+            _ = try records.delete_expired(ctx.db, scope.plugin, scope.kind, expires.from, cutoff);
+        }
+
         try index(ctx, target.collection, id, given);
         try changed(ctx, Created, scope, id);
 

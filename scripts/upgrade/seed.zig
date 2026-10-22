@@ -301,7 +301,7 @@ fn content(seed: *Seed, filed: Filed) !void {
         .status = "published",
     });
     try seed.made.pages.append(arena, .{
-        .path = try std.fmt.allocPrint(arena, "/api/record/list?type={s}", .{handle}),
+        .path = try std.fmt.allocPrint(arena, "/api/record.list?type={s}", .{handle}),
         .contains = live,
     });
 }

@@ -17,8 +17,8 @@ pub const query_pairs_max: u32 = 64;
 pub fn register(router: *http.Router) void {
     std.debug.assert(router.routes_len > 0);
 
-    router.post("/api/:namespace/:verb", &call);
-    router.get("/api/:namespace/:verb", &call);
+    router.post("/api/:name", &call);
+    router.get("/api/:name", &call);
 
     std.debug.assert(router.routes_len >= 2);
 }
@@ -28,8 +28,14 @@ fn call(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.path().len > 0);
 
     const project = Project.of(ctx);
-    const namespace = request.param("namespace") orelse return not_found(response);
-    const verb = request.param("verb") orelse return not_found(response);
+    // `/api/<plugin>.<verb>`: the operation's name whole, as every caller writes it.
+    const name = request.param("name") orelse return not_found(response);
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return not_found(response);
+
+    if (dot == 0 or dot + 1 == name.len) {
+        return not_found(response);
+    }
+
     const identity = identity_module.identify(request, ctx.arena, project);
     const is_read = request.method() == .get or request.method() == .head;
 
@@ -38,14 +44,7 @@ fn call(request: *Request, response: *Response, ctx: *Context) Error!void {
     }
 
     inline for (registry.SDK.operations) |Operation| {
-        const same_namespace = std.mem.eql(
-            u8,
-            comptime sdk.operation.namespace(Operation.name),
-            namespace,
-        );
-        const same_verb = std.mem.eql(u8, comptime sdk.operation.verb(Operation.name), verb);
-
-        if (same_namespace and same_verb) {
+        if (std.mem.eql(u8, Operation.name, name)) {
             if (is_read and Operation.kind != .read) {
                 return response.json(.method_not_allowed, .{
                     .@"error" = "use POST",
@@ -56,7 +55,7 @@ fn call(request: *Request, response: *Response, ctx: *Context) Error!void {
         }
     }
 
-    return invoke_runtime(request, response, ctx, identity.caller, namespace, verb, is_read);
+    return invoke_runtime(request, response, ctx, identity.caller, name, is_read);
 }
 
 /// An operation an installed plugin brings: JSON in the body, or flags in the query for a read.
@@ -65,18 +64,14 @@ fn invoke_runtime(
     response: *Response,
     ctx: *Context,
     caller: sdk.Caller,
-    namespace: []const u8,
-    verb: []const u8,
+    name: []const u8,
     is_read: bool,
 ) Error!void {
-    std.debug.assert(namespace.len > 0);
-    std.debug.assert(verb.len > 0);
+    std.debug.assert(name.len > 0);
+    std.debug.assert(std.mem.indexOfScalar(u8, name, '.') != null);
 
     const project = Project.of(ctx);
     const sandboxed = project.sandboxed_plugins orelse return not_found(response);
-    const name = std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{ namespace, verb }) catch {
-        return error.OutOfMemory;
-    };
     const found = sandboxed.find(name) orelse return not_found(response);
 
     if (is_read and found.kind != .read) {
@@ -236,7 +231,7 @@ fn not_found(response: *Response) Error!void {
 
 const routes = @import("../server/routes.zig");
 
-test "rest: every operation is reachable under /api/<namespace>/<verb>, with the same rules" {
+test "rest: every operation is reachable under /api/<name>, with the same rules" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -256,14 +251,18 @@ test "rest: every operation is reachable under /api/<namespace>/<verb>, with the
     try @import("../operations/user.zig").seed_admin(&system);
     try @import("../operations/record.zig").fixture.post_type(&system);
 
-    const check = try flow.call("GET /api/heartbeat/check?echo=hi HTTP/1.1\r\nHost: h\r\n\r\n", "");
+    const check = try flow.call("GET /api/heartbeat.check?echo=hi HTTP/1.1\r\nHost: h\r\n\r\n", "");
     try std.testing.expectEqual(@as(u16, 200), check.status.code());
     try std.testing.expect(std.mem.indexOf(u8, check.body, "\"echo\":\"hi\"") != null);
 
-    const unknown = try flow.call("GET /api/nope/verb HTTP/1.1\r\nHost: h\r\n\r\n", "");
+    const unknown = try flow.call("GET /api/nope.verb HTTP/1.1\r\nHost: h\r\n\r\n", "");
     try std.testing.expectEqual(@as(u16, 404), unknown.status.code());
 
-    const write_head = "POST /api/record/create HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
+    // The name whole, never split into a path.
+    const split = try flow.call("GET /api/heartbeat/check HTTP/1.1\r\nHost: h\r\n\r\n", "");
+    try std.testing.expectEqual(@as(u16, 404), split.status.code());
+
+    const write_head = "POST /api/record.create HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
         "Content-Length: 0\r\n\r\n";
     const doc = "{\"type\":\"post\"," ++
         "\"document\":\"{\\\"title\\\":\\\"Via REST\\\",\\\"body\\\":\\\"x\\\"}\"}";
@@ -281,26 +280,26 @@ test "rest: every operation is reachable under /api/<namespace>/<verb>, with the
     const csrf_at = std.mem.indexOf(u8, signed.body, "\"csrf\":\"").? + 8;
     const csrf_len = @import("../lib/auth.zig").csrf.token_len;
     const csrf_token = signed.body[csrf_at .. csrf_at + csrf_len];
-    const authed_template = "POST /api/record/create HTTP/1.1\r\nHost: h\r\n" ++
+    const authed_template = "POST /api/record.create HTTP/1.1\r\nHost: h\r\n" ++
         "Origin: http://h\r\nCookie: {s}\r\nX-Csrf-Token: {s}\r\nContent-Length: 0\r\n\r\n";
     const authed_head = try flow.head(authed_template, .{ cookie_pair, csrf_token });
     const created = try flow.call(authed_head, doc);
     try std.testing.expectEqual(@as(u16, 200), created.status.code());
     try std.testing.expect(std.mem.indexOf(u8, created.body, "\"slug\":\"via-rest\"") != null);
 
-    const list_template = "GET /api/record/list?type=post HTTP/1.1\r\nHost: h\r\n" ++
+    const list_template = "GET /api/record.list?type=post HTTP/1.1\r\nHost: h\r\n" ++
         "Cookie: {s}\r\n\r\n";
     const listed = try flow.call(try flow.head(list_template, .{cookie_pair}), "");
     try std.testing.expect(std.mem.indexOf(u8, listed.body, "Via REST") != null);
 
     const anon_list = try flow.call(
-        "GET /api/record/list?type=post HTTP/1.1\r\nHost: h\r\n\r\n",
+        "GET /api/record.list?type=post HTTP/1.1\r\nHost: h\r\n\r\n",
         "",
     );
     try std.testing.expect(std.mem.indexOf(u8, anon_list.body, "Via REST") == null);
 
     const wrong_method = try flow.call(
-        "GET /api/record/create?type=post HTTP/1.1\r\nHost: h\r\n\r\n",
+        "GET /api/record.create?type=post HTTP/1.1\r\nHost: h\r\n\r\n",
         "",
     );
     try std.testing.expectEqual(@as(u16, 405), wrong_method.status.code());
@@ -335,10 +334,10 @@ test "oversized health echo returns HTTP 422 and subsequent requests still work"
         },
         arena_state.allocator(),
     );
-    const oversized = "GET /api/heartbeat/check?echo=" ++ "x" ** 257 ++
+    const oversized = "GET /api/heartbeat.check?echo=" ++ "x" ** 257 ++
         " HTTP/1.1\r\nHost: h\r\n\r\n";
     const refused = try flow.call(oversized, "");
     try std.testing.expectEqual(@as(u16, 422), refused.status.code());
-    const healthy = try flow.call("GET /api/heartbeat/check HTTP/1.1\r\nHost: h\r\n\r\n", "");
+    const healthy = try flow.call("GET /api/heartbeat.check HTTP/1.1\r\nHost: h\r\n\r\n", "");
     try std.testing.expectEqual(@as(u16, 200), healthy.status.code());
 }

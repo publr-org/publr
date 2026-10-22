@@ -15,7 +15,7 @@ publr record query --query '*[_type == "product" && slug == $slug][0]{
 }' --params '{"slug":"earl-grey"}'
 ```
 
-The same operation is `GET /api/record/query?query=…&params=…`.
+The same operation is `GET /api/record.query?query=…&params=…`.
 
 ## What a query can say
 

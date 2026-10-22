@@ -243,6 +243,36 @@ pub fn collections_of(
 }
 
 /// Every record of one of a plugin's collections, across apps.
+/// Clears a collection's records whose `created_at` (or `updated_at`) is before `cutoff_ms`,
+/// in every app; how many went.
+pub fn delete_expired(
+    connection: *db.Db,
+    plugin: []const u8,
+    kind: []const u8,
+    from: model.Expires.From,
+    cutoff_ms: i64,
+) Error!u32 {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(kind.len > 0);
+
+    const by_created = "DELETE FROM internal_records WHERE plugin = ?1 AND kind = ?2 AND " ++
+        "created_at < ?3";
+    const by_updated = "DELETE FROM internal_records WHERE plugin = ?1 AND kind = ?2 AND " ++
+        "updated_at < ?3";
+    var statement = switch (from) {
+        .created => try connection.prepare(by_created),
+        .updated => try connection.prepare(by_updated),
+    };
+    defer statement.finalize();
+
+    try statement.bind_text(1, plugin);
+    try statement.bind_text(2, kind);
+    try statement.bind_int(3, cutoff_ms);
+    try statement.exec();
+
+    return @intCast(connection.changes());
+}
+
 pub fn delete_collection(connection: *db.Db, plugin: []const u8, kind: []const u8) Error!void {
     std.debug.assert(plugin.len > 0);
     std.debug.assert(kind.len > 0);
@@ -284,4 +314,35 @@ pub fn ids_of_collection(
     };
 
     return (try select.read(Ids, arena)).ids;
+}
+
+test "expired records go, in every app, by their creation or last change" {
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    const connection = &fixture.connection;
+    const day = std.time.ms_per_day;
+    const scope: Scope = .{
+        .plugin = "shop",
+        .app = "",
+        .kind = "code",
+    };
+    var in_app = scope;
+
+    in_app.app = "store";
+
+    try insert_as(connection, scope, "a00000000000000000000001", "{}", 1 * day);
+    try insert_as(connection, in_app, "a00000000000000000000002", "{}", 2 * day);
+    try insert_as(connection, scope, "a00000000000000000000003", "{}", 40 * day);
+
+    const cutoff = 9 * day;
+
+    const other_kind = try delete_expired(connection, "shop", "cart", .updated, cutoff);
+    const created = try delete_expired(connection, "shop", "code", .created, cutoff);
+    const again = try delete_expired(connection, "shop", "code", .updated, cutoff);
+
+    try std.testing.expectEqual(0, other_kind);
+    try std.testing.expectEqual(2, created);
+    try std.testing.expectEqual(0, again);
 }

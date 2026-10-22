@@ -48,6 +48,7 @@ const Option = enum {
     menu,
     data_view,
     append_only,
+    expires,
 };
 
 const record_flow = @import("record_flow.zig");
@@ -93,6 +94,12 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
 
         const internal = @hasField(Options, "internal") and options.internal;
         const stored = if (internal) own_part(options.name) else options.name;
+
+        if (@hasField(Options, "expires") and !internal) {
+            @compileError("record " ++ options.name ++ ": `.expires` is for internal records " ++
+                "(`.internal = true`); content goes to the trash");
+        }
+
         const start = if (internal) "" else record_flow.start_status(options);
         const Kept = Store(Document, stored, internal, start);
 
@@ -165,6 +172,27 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
                 }
 
                 try Kept.save(ctx, held.id, changes);
+            }
+
+            /// Several records by id; one the caller cannot read, or in the trash, is left
+            /// out, so the answer may be shorter and is in no promised order.
+            pub fn many(any_ctx: anytype, ids: []const []const u8) sdk.Error![]const Held {
+                const ctx = queue.base_of(any_ctx);
+                const items = try Kept.many(ctx, ids);
+
+                if (comptime internal) {
+                    return items;
+                }
+
+                var found: std.ArrayList(Held) = .empty;
+
+                for (items) |item| {
+                    if (!std.mem.eql(u8, item.status, "trashed")) {
+                        found.append(ctx.arena(), held_of(item)) catch return error.OutOfMemory;
+                    }
+                }
+
+                return found.items;
             }
 
             fn held_of(item: Kept.Item) Held {
@@ -323,6 +351,54 @@ pub fn Store(
 
                 return try get(ctx, listed.records[0].id);
             }
+        }
+
+        /// The records of these ids, content live; an id with no record readable is left
+        /// out, so the answer may be shorter and is in no promised order.
+        pub fn many(ctx: *PluginCtx, ids: []const []const u8) sdk.Error![]const Item {
+            std.debug.assert(ids.len <= record_operations.list_max);
+
+            if (comptime internal) {
+                var found: std.ArrayList(Item) = .empty;
+
+                for (ids) |id| {
+                    const item = get(ctx, id) catch |err| switch (err) {
+                        error.NotFound, error.Denied => continue,
+                        else => return err,
+                    };
+
+                    found.append(ctx.arena(), item) catch return error.OutOfMemory;
+                }
+
+                return found.items;
+            }
+
+            if (ids.len == 0) {
+                return &.{};
+            }
+
+            const listed = try ctx.call(record_operations.List, .{
+                .type = name,
+                .ids = ids,
+                .limit = @intCast(ids.len),
+                .documents = true,
+                .expand = false,
+            });
+            const items = ctx.arena().alloc(Item, listed.records.len) catch {
+                return error.OutOfMemory;
+            };
+
+            for (listed.records, listed.documents, items) |row, document, *target| {
+                target.* = .{
+                    .id = row.id,
+                    .version = row.version,
+                    .status = row.status,
+                    .changed = row.changed,
+                    .value = try decode(ctx, document),
+                };
+            }
+
+            return items;
         }
 
         /// A new record holding `value`, content in its flow's starting status; its id.
@@ -657,11 +733,27 @@ pub fn collection_of(comptime Definition: type) internal_record.Collection {
             .kind = Definition.stored_name,
             .indexed = indexed_of(options),
             .append_only = @hasField(Options, "append_only") and options.append_only,
+            .expires = if (@hasField(Options, "expires")) expires_of(options.expires) else null,
             .shared = scope == .project,
             .fields = remote_fields.declared_of(
                 Definition.type_name,
                 Definition.Doc,
             ),
+        };
+    }
+}
+
+/// `.expires = .{ .after_days = 30, .from = .updated }` as written; `.from` is `.updated`
+/// when left out.
+fn expires_of(comptime given: anytype) internal_record.Expires {
+    comptime {
+        if (given.after_days == 0) {
+            @compileError("`.expires.after_days` is 1 or more");
+        }
+
+        return .{
+            .after_days = given.after_days,
+            .from = if (@hasField(@TypeOf(given), "from")) given.from else .updated,
         };
     }
 }

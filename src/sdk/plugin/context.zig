@@ -214,7 +214,21 @@ pub const HostApi = struct {
             try remote_reachable(self.inner, Operation.name);
         }
 
+        self.inner.failure = null;
+
         return registry.SDK.call(self.inner, comptime registered(Operation), in);
+    }
+
+    /// Which refusal the last `ctx.call` came back with as `error.Failed`, by its `Fails:`
+    /// name (`NotEnoughStock`); empty when it came back without one.
+    pub fn failure(self: *const PluginCtx) []const u8 {
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        const found = self.inner.failure orelse return "";
+
+        std.debug.assert(found.name.len > 0);
+
+        return found.name;
     }
 
     /// A remote operation answers `Unavailable` while it is off: its plugin is not there,
@@ -484,4 +498,25 @@ fn registered(comptime Operation: type) type {
         @compileError("operation " ++ Operation.verb ++ " is not listed in its plugin's " ++
             "`.operations`");
     }
+}
+
+test "ctx.failure() names the refusal a call came back with" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var inner = harness.ctx(.system);
+    var ctx: HostApi = .{
+        .inner = &inner,
+    };
+
+    try std.testing.expectEqualStrings("", ctx.failure());
+    const refused: error{Failed}!void = inner.fail(.{
+        .name = "NotEnoughStock",
+        .status = 409,
+        .message = "Only 2 left",
+    });
+
+    try std.testing.expectError(error.Failed, refused);
+    try std.testing.expectEqualStrings("NotEnoughStock", ctx.failure());
 }
