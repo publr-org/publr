@@ -37,6 +37,7 @@ const Submit = @import("operations/submit.zig");
 const Later = @import("operations/later.zig");
 const Measure = @import("operations/measure.zig");
 const Reference = @import("operations/reference.zig");
+const Motto = @import("operations/motto.zig");
 
 const WriteNote = @import("jobs/write_note.zig");
 const Tick = @import("jobs/tick.zig");
@@ -146,6 +147,8 @@ const operations = [_]type{
     Measure.operation,
     Reference.operation,
 };
+/// Compiled in, a write to the sampler's own field group on users.
+const native_operations = operations ++ [_]type{Motto.operation};
 
 const hooks = .{
     publr.before(Note.operation, Shout.run),
@@ -178,7 +181,7 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
         .field_kinds = &.{Place.kind},
         .jobs = &jobs,
         .register_fields = field_groups,
-        .operations = operations,
+        .operations = native_operations,
         .hooks = hooks,
         .events = &.{Noted.event},
         .secrets = Secrets,
