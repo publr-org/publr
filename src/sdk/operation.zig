@@ -25,10 +25,6 @@ pub const Error = db.Error || error{
 
 pub const Kind = enum { read, write };
 
-/// A way an operation fails that the core's errors do not name, declared by the plugin that
-/// owns the operation and raised with `ctx.fail`: "your email is not verified", "the plan's
-/// limit is reached". An operation lists the ones it can end with in `failures`, for its
-/// documentation.
 /// Whether the operation destroys what cannot be had back (`pub const destroys = true`):
 /// a device never may; a person does it in the admin.
 pub fn destroys(comptime Operation: type) bool {
@@ -49,6 +45,9 @@ pub const drafts_only: Failure = .{
     .message = "This device saves drafts only; a person publishes them in the admin",
 };
 
+/// A way an operation fails that the core's errors do not name, raised with `ctx.fail`:
+/// "your email is not verified", "the plan's limit is reached". A plugin's operation lists
+/// the ones it can end with on its `Fails:` lines.
 pub const Failure = struct {
     /// What REST answers (`{ "error": "Unverified" }`): letters only, starting upper-case.
     name: []const u8,
@@ -142,63 +141,6 @@ pub const Page = struct {
 };
 pub const page_limit_max: u32 = 200;
 
-pub fn PageOut(comptime Item: type) type {
-    comptime std.debug.assert(@sizeOf(Item) > 0);
-
-    return struct {
-        items: []const Item,
-        next_offset: ?u32 = null,
-    };
-}
-
-/// The bounds an operation declares on its input's fields (`pub const rules`), checked by
-/// core before it runs: `.{ .quantity = .{ .min = 1, .max = 20 } }`.
-pub fn Rules(comptime Shape: type) type {
-    comptime {
-        const Rule = @import("../model/input_rule.zig").Rule;
-        const none: Rule = .{};
-        const default_ptr: ?*const anyopaque = @ptrCast(&none);
-
-        std.debug.assert(@typeInfo(Shape).@"struct".fields.len <= fields_max);
-
-        return @Struct(
-            .auto,
-            null,
-            std.meta.fieldNames(Shape),
-            &@splat(Rule),
-            &@splat(.{
-                .default_value_ptr = default_ptr,
-            }),
-        );
-    }
-}
-
-/// The shape of what an operation takes, its declared rules on its top-level fields.
-pub fn input_shape(comptime Operation: type) []const @import("../model/contract.zig").Node {
-    comptime {
-        const contract = @import("../model/contract.zig");
-        const described = contract.describe(Operation.In);
-
-        std.debug.assert(described.len > 0);
-
-        if (!@hasDecl(Operation, "rules")) {
-            return described;
-        }
-
-        var nodes = described[0..described.len].*;
-
-        for (&nodes) |*node| {
-            if (node.parent == 0 and @hasField(@TypeOf(Operation.rules), node.name)) {
-                node.rule = @field(Operation.rules, node.name);
-            }
-        }
-
-        const fixed = nodes;
-
-        return &fixed;
-    }
-}
-
 pub fn field_doc(
     comptime Operation: type,
     comptime docs_name: []const u8,
@@ -227,13 +169,6 @@ pub const Deprecated = struct {
     /// Why, in a sentence, when the name of the replacement does not say.
     why: []const u8 = "",
 };
-
-/// Whether pages on any site may call the operation through an app's `_api`: only when it
-/// says so itself (`pub const public = true`), never by default. Such a call carries no
-/// cookies and runs as an anonymous visitor (the `publr-visitor` header names it).
-pub fn public(comptime Operation: type) bool {
-    return @hasDecl(Operation, "public") and Operation.public;
-}
 
 pub fn deprecation(comptime Operation: type) ?Deprecated {
     comptime {
@@ -288,16 +223,6 @@ pub fn validate(comptime Operation: type) void {
             @compileError(Operation.name ++ ": missing `run`");
         }
 
-        if (@hasDecl(Operation, "public")) {
-            // Any site calls only what anyone may call, through an app (`app.*`).
-            if (Operation.public and !(@hasDecl(Operation, "open") and Operation.open)) {
-                @compileError(Operation.name ++ ": `public` needs `open = true`");
-            }
-            if (Operation.public and !std.mem.startsWith(u8, Operation.name, "app.")) {
-                @compileError(Operation.name ++ ": `public` is for `app.*` operations");
-            }
-        }
-
         if (!@hasDecl(Operation, "example")) {
             @compileError(Operation.name ++ ": missing `example: In`");
         }
@@ -343,14 +268,6 @@ pub fn validate(comptime Operation: type) void {
                 }
             }
         }
-
-        const gone = @hasDecl(Operation, "resource") or @hasDecl(Operation, "seed") or
-            @hasDecl(Operation, "volatile_fields") or @hasDecl(Operation, "example_caller");
-
-        if (gone) {
-            @compileError(Operation.name ++ ": `resource`, `seed`, `volatile_fields` and " ++
-                "`example_caller` are gone; the resource is read from `In` by field name");
-        }
     }
 }
 
@@ -363,8 +280,7 @@ pub fn type_of(in: anytype) ?[]const u8 {
     return if (@hasField(In, "type")) in.type else null;
 }
 
-/// `namespace.verb`, or `app.<feature>.verb` for what apps call: the grants a role gives
-/// its visitors name those (`app.newsletter.*`), never the admin's (`newsletter.*`).
+/// `namespace.verb`; `app.` is part of an address (`/_actions/app.x.y`), never of a name.
 pub fn assert_name(comptime name: []const u8) void {
     comptime {
         if (name.len == 0 or name.len > name_len_max) {
@@ -383,10 +299,8 @@ pub fn assert_name(comptime name: []const u8) void {
             }
         }
 
-        const dots_wanted: u32 = if (is_app(name)) 2 else 1;
-
-        if (dots != dots_wanted) {
-            @compileError("operation name must be namespace.verb or app.feature.verb: " ++ name);
+        if (dots != 1) {
+            @compileError("operation name must be namespace.verb: " ++ name);
         }
 
         const doubled = std.mem.indexOf(u8, name, "..") != null;
@@ -395,14 +309,6 @@ pub fn assert_name(comptime name: []const u8) void {
             @compileError("operation name: " ++ name);
         }
     }
-}
-
-/// Whether an operation is one apps call: `app.<feature>.<verb>`.
-pub fn is_app(name: []const u8) bool {
-    std.debug.assert(name.len > 0);
-    std.debug.assert(name.len <= name_len_max);
-
-    return std.mem.startsWith(u8, name, "app.");
 }
 
 /// JSON an operation answers as it is, written through untouched: a query's result.
@@ -474,8 +380,7 @@ fn assert_decl(comptime Operation: type, comptime decl: []const u8, comptime Typ
     }
 }
 
-/// Everything before the verb: `record` of `record.create`, `app.newsletter` of
-/// `app.newsletter.subscribe`.
+/// Everything before the verb: `record` of `record.create`.
 pub fn namespace(name: []const u8) []const u8 {
     @setEvalBranchQuota(100_000);
 
@@ -495,11 +400,7 @@ pub fn verb(name: []const u8) []const u8 {
 test "namespace and verb split" {
     try std.testing.expectEqualStrings("record", namespace("record.create"));
     try std.testing.expectEqualStrings("create", verb("record.create"));
-    try std.testing.expectEqualStrings("app.newsletter", namespace("app.newsletter.subscribe"));
-    try std.testing.expectEqualStrings("subscribe", verb("app.newsletter.subscribe"));
-    try std.testing.expect(is_app("app.newsletter.subscribe"));
-    try std.testing.expect(!is_app("newsletter.list"));
-    comptime assert_name("app.newsletter.subscribe");
+    comptime assert_name("newsletter.subscribe");
 }
 
 test "serialisable types are accepted, pointers to single items rejected at comptime" {

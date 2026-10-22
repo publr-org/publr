@@ -53,7 +53,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .menu = @import("menu_define.zig").entries_of(Plugin),
             .icons = @import("menu_define.zig").icons_of(Plugin),
             .panels = panels_of(Plugin),
-            .top_bar = items_of(Plugin, "top_bar"),
+            .top_bar = items_of(Plugin),
             .row_actions = row_actions_of(Plugin),
             // The rest of `main.zig`'s `//!`, past its first line: shown on its page.
             .about = if (@hasDecl(Plugin, "settings_text")) Plugin.settings_text else "",
@@ -68,20 +68,13 @@ fn operations_of(comptime Plugin: type) []const Operation {
 
         var list: []const Operation = &.{};
 
-        for (runtime.runtime_entries(Plugin)) |entry| {
-            if (entry.stage != .operation) {
-                continue;
-            }
-
-            const Declared = entry.declaration;
-
+        for (operation_types(Plugin)) |Declared| {
             list = list ++ &[_]Operation{.{
                 .name = Declared.name,
                 .kind = if (Declared.kind == .read) .read else .write,
                 .description = Declared.description,
                 .details = if (@hasDecl(Declared, "details")) Declared.details else "",
                 .open = @hasDecl(Declared, "open") and Declared.open,
-                .public = sdk_operation.public(Declared),
                 .untrusted_callers = if (@hasDecl(Declared, "untrusted_callers"))
                     Declared.untrusted_callers
                 else
@@ -92,7 +85,7 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 else
                     0,
                 .fields = fields_of(Declared),
-                .input = sdk_operation.input_shape(Declared),
+                .input = shapes.describe(Declared.In),
                 .output = shapes.describe(Declared.Out),
                 .secret = @import("../trail.zig").secret_of(Declared),
                 .checked = if (@hasDecl(Declared, "checked")) Declared.checked else "",
@@ -131,7 +124,6 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .icon = page.icon,
                     .read = form.read.name,
                     .save = form.save.name,
-                    .multiline = form.multiline,
                     .hidden = page.menu != null,
                 }};
             } else if (takes(page.operation.?.run)) {
@@ -149,10 +141,10 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
     }
 }
 
-/// The plugin's entries in `list` whose operations run in the sandbox.
-fn items_of(comptime Plugin: type, comptime list: []const u8) []const sandboxed_plugin.Item {
+/// The plugin's top bar entries whose operations run in the sandbox.
+fn items_of(comptime Plugin: type) []const sandboxed_plugin.Item {
     comptime {
-        const declared = @import("admin_slots.zig").items_of(Plugin, list);
+        const declared = @import("admin_slots.zig").items_of(Plugin);
         const takes = @import("context.zig").takes_plugin_ctx;
         var items: []const sandboxed_plugin.Item = &.{};
 
@@ -169,7 +161,6 @@ fn items_of(comptime Plugin: type, comptime list: []const u8) []const sandboxed_
                 .label = item.label,
                 .icon = item.icon,
                 .page = item.page,
-                .href = item.href,
                 .operation = item.operation.name,
                 .count = if (item.count) |Count| Count.name else "",
             }};
@@ -414,8 +405,64 @@ fn operation_types(comptime Plugin: type) []const type {
     }
 }
 
-test "the test plugin's manifest names its operation, fields and content type" {
-    const Greeter = @import("../plugin.zig").testing.Greeter;
+test "a plugin's manifest names its operation, fields, hook and record" {
+    const sdk = @import("../../sdk.zig");
+    const PluginCtx = @import("context.zig").PluginCtx;
+    const hook_define = @import("hook_define.zig");
+    const Greeting = struct {
+        note: []const u8,
+    };
+    const In = struct {
+        who: []const u8,
+        times: u32 = 1,
+    };
+    const Out = struct {
+        text: []const u8,
+    };
+    const Docs = plugin_define.Words(.{
+        .{ "main", "Test plugin: greets, and keeps the greetings as records" },
+        .{ "operation:greet", "Greet someone\n\nExample:\n  in: { \"who\": \"world\" }\n" ++
+            "  out: { \"text\": \"hello, world\" }" },
+        .{ @typeName(In) ++ ".who", "Whom to greet" },
+        .{ @typeName(In) ++ ".times", "How many times" },
+        .{ @typeName(Out) ++ ".text", "The greeting" },
+        .{ @typeName(Greeting), "Greeting" },
+        .{ @typeName(Greeting) ++ ".note", "Note" },
+        .{ "hook:0", "Says when someone was greeted" },
+    });
+    const Greet = @import("operation_define.zig").define(In, Out, .{
+        .name = "greet",
+        .kind = .write,
+        .deprecated = .{
+            .since = "0.1.0",
+        },
+        .run = struct {
+            fn run(_: *PluginCtx, in: In) sdk.Error!Out {
+                return .{
+                    .text = in.who,
+                };
+            }
+        }.run,
+    });
+    const Module = struct {
+        pub const plugin = plugin_define.define(.{
+            .name = "greeter",
+            .version = "0.1.0",
+        }, .{
+            .records = &.{@import("record_define.zig").define(Greeting, .{
+                .name = "greeter.greeting",
+            })},
+            .permissions = &.{.{
+                .key = "records.write",
+                .reason = "Keeps every greeting as a record",
+            }},
+            .operations = &.{Greet},
+            .hooks = &.{hook_define.after(Greet, struct {
+                fn run(_: *PluginCtx, _: *In, _: *const Out) sdk.Error!void {}
+            }.run)},
+        });
+    };
+    const Greeter = plugin_define.Bind(Module, Docs);
     const manifest = comptime of(Greeter);
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -433,7 +480,7 @@ test "the test plugin's manifest names its operation, fields and content type" {
     try std.testing.expectEqual(Field.Shape.string, manifest.operations[0].fields[0].shape);
     try std.testing.expect(manifest.operations[0].fields[0].required);
     try std.testing.expect(std.mem.indexOf(u8, text, "\"records.write\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, text, "\"greeting\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "\"greeter.greeting\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "Usage: publr greeter") != null);
     // An installed plugin's callers are told it is on its way out, as a compiled-in one's.
     try std.testing.expectEqualStrings(

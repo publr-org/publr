@@ -36,11 +36,11 @@ pub fn command(comptime Operation: type, out: *std.Io.Writer) Error!void {
     }
 
     if (fields.len > 0) {
-        write(out, "\nFields:\n") catch return error.WriteFailed;
+        out.writeAll("\nFields:\n") catch return error.WriteFailed;
         try print_field_docs(Operation, Operation.In, "field_docs", true, out);
     }
 
-    write(out, "\nOutput:\n") catch return error.WriteFailed;
+    out.writeAll("\nOutput:\n") catch return error.WriteFailed;
     try print_field_docs(Operation, Operation.Out, "output_docs", false, out);
     try print_failures(Operation, out);
     try print_rules(Operation, out);
@@ -70,15 +70,17 @@ fn print_rules(comptime Operation: type, out: *std.Io.Writer) Error!void {
 
 /// The failures the operation declares beyond the core's errors, as REST names them.
 fn print_failures(comptime Operation: type, out: *std.Io.Writer) Error!void {
-    comptime std.debug.assert(Operation.name.len > 0);
+    const failures = comptime @import("plugin/words.zig").failures_of(Operation);
 
-    if (!@hasDecl(Operation, "failures") or Operation.failures.len == 0) {
+    comptime std.debug.assert(failures.len <= operation.problems_max);
+
+    if (failures.len == 0) {
         return;
     }
 
-    write(out, "\nFails with:\n") catch return error.WriteFailed;
+    out.writeAll("\nFails with:\n") catch return error.WriteFailed;
 
-    for (Operation.failures) |failure| {
+    for (failures) |failure| {
         out.print("\n  {s} ({d})  {s}\n", .{
             failure.name,
             failure.status,
@@ -117,68 +119,6 @@ fn print_field_docs(
         if (doc.len > 0) {
             out.print("      {s}\n", .{doc}) catch return error.WriteFailed;
         }
-
-        const rule = comptime rule_of(Operation, field.name, is_input);
-
-        if (rule.len > 0) {
-            out.print("      {s}\n", .{rule}) catch return error.WriteFailed;
-        }
-    }
-}
-
-/// An input field's declared rule in words: `1 to 20`, `up to 80 characters`.
-fn rule_of(
-    comptime Operation: type,
-    comptime field: []const u8,
-    comptime is_input: bool,
-) []const u8 {
-    comptime {
-        std.debug.assert(field.len > 0);
-
-        if (!is_input or !@hasDecl(Operation, "rules")) {
-            return "";
-        }
-
-        if (!@hasField(@TypeOf(Operation.rules), field)) {
-            return "";
-        }
-
-        const rule = @field(Operation.rules, field);
-        var words: []const u8 = "";
-
-        words = words ++ bounds("", rule.min, rule.max);
-        words = words ++ bounds(" characters", rule.min_len, rule.max_len);
-        words = words ++ bounds(" items", rule.items_min, rule.items_max);
-
-        if (rule.preset != .any) {
-            words = words ++ (if (words.len > 0) "; " else "") ++ @tagName(rule.preset);
-        }
-
-        if (rule.pattern.len > 0) {
-            words = words ++ (if (words.len > 0) "; " else "") ++ "like " ++ rule.pattern;
-        }
-
-        return words;
-    }
-}
-
-fn bounds(comptime unit: []const u8, comptime low: anytype, comptime high: anytype) []const u8 {
-    comptime {
-        std.debug.assert(unit.len < 16);
-
-        if (low != null and high != null) {
-            return std.fmt.comptimePrint("{d} to {d}{s}", .{ low.?, high.?, unit });
-        }
-
-        if (low) |least| {
-            return std.fmt.comptimePrint("at least {d}{s}", .{ least, unit });
-        }
-
-        if (high) |most| {
-            return std.fmt.comptimePrint("up to {d}{s}", .{ most, unit });
-        }
-
-        return "";
     }
 }
 
@@ -218,7 +158,7 @@ fn print_example(comptime Operation: type, out: *std.Io.Writer) Error!void {
         }
     }
 
-    write(out, "\n") catch return error.WriteFailed;
+    out.writeAll("\n") catch return error.WriteFailed;
 
     var buffer: [8 << 10]u8 = undefined;
     var json: std.Io.Writer = .fixed(&buffer);
@@ -252,20 +192,20 @@ fn print_example_text(text: []const u8, out: *std.Io.Writer) Error!void {
     }
 
     if (std.mem.indexOfAny(u8, text, " \"\n") == null) {
-        write(out, text) catch return error.WriteFailed;
+        out.writeAll(text) catch return error.WriteFailed;
 
         return;
     }
 
-    write(out, "'") catch return error.WriteFailed;
+    out.writeAll("'") catch return error.WriteFailed;
 
     var lines = std.mem.splitScalar(u8, text, '\n');
 
     while (lines.next()) |line| {
-        write(out, line) catch return error.WriteFailed;
+        out.writeAll(line) catch return error.WriteFailed;
     }
 
-    write(out, "'") catch return error.WriteFailed;
+    out.writeAll("'") catch return error.WriteFailed;
 }
 
 /// A list as you would type it: its items with commas between, no spaces.
@@ -275,7 +215,7 @@ fn print_example_list(items: anytype, out: *std.Io.Writer) Error!void {
 
     for (items, 0..) |item, index| {
         if (index > 0) {
-            write(out, ",") catch return error.WriteFailed;
+            out.writeAll(",") catch return error.WriteFailed;
         }
 
         try print_example_value(item, out);
@@ -288,9 +228,9 @@ fn print_example_value(value: anytype, out: *std.Io.Writer) Error!void {
     comptime std.debug.assert(@typeInfo(Value) != .void);
 
     switch (@typeInfo(Value)) {
-        .bool => write(out, if (value) "true" else "false") catch return error.WriteFailed,
+        .bool => out.writeAll(if (value) "true" else "false") catch return error.WriteFailed,
         .int, .float => out.print("{d}", .{value}) catch return error.WriteFailed,
-        .@"enum" => write(out, @tagName(value)) catch return error.WriteFailed,
+        .@"enum" => out.writeAll(@tagName(value)) catch return error.WriteFailed,
         .optional => try print_example_value(value.?, out),
         .pointer => |pointer| if (pointer.child == u8)
             try print_example_text(value, out)
@@ -306,9 +246,9 @@ fn print_example_value(value: anytype, out: *std.Io.Writer) Error!void {
 fn print_example_json(value: anytype, out: *std.Io.Writer) Error!void {
     std.debug.assert(out.buffer.len > 0 or out.end == 0);
 
-    write(out, "'") catch return error.WriteFailed;
+    out.writeAll("'") catch return error.WriteFailed;
     std.json.Stringify.value(value, .{}, out) catch return error.WriteFailed;
-    write(out, "'") catch return error.WriteFailed;
+    out.writeAll("'") catch return error.WriteFailed;
 }
 
 /// Whether a list of it is written comma-separated (`a,b`): text and names. Any other list,
@@ -383,10 +323,6 @@ fn type_label_depth(comptime Type: type, comptime depth: u32) []const u8 {
     comptime std.debug.assert(label.len < 4096);
 
     return label;
-}
-
-fn write(out: *std.Io.Writer, text: []const u8) !void {
-    try out.writeAll(text);
 }
 
 test "an example value prints the way a shell reads it, apostrophes inside double quotes" {

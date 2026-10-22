@@ -116,42 +116,27 @@ fn hook_left_out(comptime Middleware: type) ?[]const u8 {
 pub fn left_out(comptime Plugin: type) []const []const u8 {
     comptime {
         const contract = @import("../plugin.zig");
-        const never = [_][]const u8{
-            "extend",
-            "schema_sql",
-            "migrations",
-            "bootstrap",
-            "sign_in_provider",
-        };
-        const later = [_][]const u8{
-            "policies",
-            "field_kinds",
-            "delivery_gates",
-            "filters",
-            "routes",
-            "settings_pages",
-            "sign_in_at",
-            "admin_brand",
-            "app_picker_segment",
-            "State",
-            "operator_commands",
-            "before_command",
-            "serving",
-        };
+        // `.middleware` holds hooks and `.row_actions` travel in the manifest.
+        const carried = [_][]const u8{ "middleware", "row_actions" };
         var list: []const []const u8 = &.{};
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        for (never) |declaration| {
-            if (plugin_define.has(Plugin, declaration)) {
-                list = list ++ &[_][]const u8{"`" ++ declaration ++ "`: needs a native plugin"};
+        if (plugin_define.has(Plugin, "extend")) {
+            list = list ++ &[_][]const u8{"`extend`: needs a native plugin"};
+        }
+
+        for (plugin_define.options_built_in) |option| {
+            const left = plugin_define.has(Plugin, option) and
+                !plugin_define.listed_in(&carried, option);
+
+            if (left) {
+                list = list ++ &[_][]const u8{"`" ++ option ++ "`: built-in only"};
             }
         }
 
-        for (later) |declaration| {
-            if (plugin_define.has(Plugin, declaration)) {
-                list = list ++ &[_][]const u8{"`" ++ declaration ++ "`: not in the sandbox yet"};
-            }
+        if (plugin_define.has(Plugin, "field_kinds")) {
+            list = list ++ &[_][]const u8{"`field_kinds`: not in the sandbox yet"};
         }
 
         for (contract.operations_of(Plugin)) |Operation| {
@@ -293,12 +278,8 @@ pub fn check_call(comptime operation_name: []const u8) void {
             const optional = @import("../plugin.zig").compatible_with_of(Plugin);
             const declared = depends_on.of(Plugin) ++ optional;
 
-            for (declared) |text| {
-                const target = depends_on.parse(text).name;
-
-                if (@import("../plugin_access.zig").own(target, operation_name)) {
-                    return;
-                }
+            if (depends_on.names_owner(declared, operation_name)) {
+                return;
             }
 
             @compileError(label ++
@@ -356,6 +337,6 @@ test "what the sandbox cannot run is left out and named, never refused" {
     const list = comptime left_out(Plugin);
 
     try std.testing.expectEqual(@as(usize, 2), list.len);
-    try std.testing.expectEqualStrings("`schema_sql`: needs a native plugin", list[0]);
-    try std.testing.expectEqualStrings("`policies`: not in the sandbox yet", list[1]);
+    try std.testing.expectEqualStrings("`policies`: built-in only", list[0]);
+    try std.testing.expectEqualStrings("`schema_sql`: built-in only", list[1]);
 }

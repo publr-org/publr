@@ -8,9 +8,6 @@ pub const Error = operation.Error;
 /// Every call answers 0 or the code of one error of the SDK's set.
 pub const ok: u32 = 0;
 
-/// The import module the host's functions live in, and their names.
-pub const import_module = "env";
-
 /// A result the host writes into the guest's memory: where its output is and how long.
 pub const Result = extern struct {
     ptr: u32,
@@ -18,9 +15,6 @@ pub const Result = extern struct {
 };
 
 pub const result_bytes: u32 = @sizeOf(Result);
-
-/// The kind of entry a guest's `publr_invoke` runs, in manifest order.
-pub const Stage = enum { operation, before, after, event };
 
 /// Every error of the SDK's set, in the order that numbers them on the wire. The order of an
 /// error set's `@typeInfo` differs between two compilations, so it is written out here, once,

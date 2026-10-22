@@ -15,7 +15,7 @@ pub fn kind(comptime Value: type, comptime options: anytype) type {
         const Options = @TypeOf(options);
 
         for (std.meta.fieldNames(Options)) |given| {
-            if (!listed(given)) {
+            if (!plugin_define.listed_in(&option_names, given)) {
                 @compileError("field kind " ++ options.name ++ ": no option `" ++ given ++ "`");
             }
         }
@@ -144,18 +144,6 @@ fn Wrapped(comptime Value: type) type {
     return struct {
         value: Value,
     };
-}
-
-fn listed(comptime name: []const u8) bool {
-    std.debug.assert(name.len > 0);
-
-    for (option_names) |candidate| {
-        if (std.mem.eql(u8, candidate, name)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 test "a field kind from its value's struct and words" {

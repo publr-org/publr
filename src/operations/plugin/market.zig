@@ -50,11 +50,6 @@ pub const Find = struct {
     pub const Out = struct {
         plugins: []const Pick,
     };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .request = .{
-            .max_len = request_len_max,
-        },
-    };
     pub const example: In = .{
         .request = "A shop with products in sizes, and orders I can manage",
     };
@@ -75,7 +70,17 @@ pub const Find = struct {
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
-        std.debug.assert(in.request.len <= request_len_max);
+
+        const characters = std.unicode.utf8CountCodepoints(in.request) catch in.request.len;
+
+        if (characters > request_len_max) {
+            return ctx.refuse(&.{.{
+                .field = "request",
+                .message = std.fmt.comptimePrint("A request is at most {d} characters.", .{
+                    request_len_max,
+                }),
+            }});
+        }
 
         if (std.mem.trim(u8, in.request, " \n\t").len == 0) {
             return error.Invalid;

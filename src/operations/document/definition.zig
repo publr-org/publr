@@ -128,7 +128,7 @@ pub fn Of(comptime Domain: type) type {
                 return find_uncached(ctx, handle_or_id);
             }
 
-            if (cache.get(arena, key)) |kept| {
+            if (cache.get(key)) |kept| {
                 const found: *const Row = @ptrCast(@alignCast(kept));
 
                 return found.*;
@@ -144,7 +144,7 @@ pub fn Of(comptime Domain: type) type {
             const kept = try arena.create(Row);
 
             kept.* = expanded;
-            cache.put(arena, key, kept);
+            cache.put(key, kept);
 
             return expanded;
         }

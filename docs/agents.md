@@ -196,10 +196,9 @@ pub const plugin = publr.plugin.define(manifest, .{
   times and references kept as plain numbers or text, JSON in text, and an untrusted
   write taking facts the server owns. A `Why:` line in the field's `///` passes one when
   the rule does not fit.
-- **Not built yet.** `define` refuses `register_taxonomies`,
-  `register_columns`, `register_components`, `register_providers`,
-  `register_location_rules`, `taxonomies`, `jobs` and `webhooks`, saying they come with a
-  later gate. There is no queued work, no schedule, no email and no outside search engine
+- **Not built yet.** `define` has no `register_taxonomies`, `register_columns`,
+  `register_components`, `register_providers`, `register_location_rules`, `taxonomies` or
+  `webhooks` option and fails the build on one. There is no queued work, no schedule, no email and no outside search engine
   for plugins yet. When a feature needs one, tell the person what is missing.
 
 ## How to build well
@@ -307,8 +306,7 @@ Check it:
 
 ```sh
 publr --as-admin plugin get --name guestbook     # version, what it asked for, what waits
-publr guestbook --help                           # a plugin's own commands, when its
-                                                 # namespace is not `app.*`
+publr guestbook --help                           # the plugin's own commands
 curl -X POST http://127.0.0.1:8080/api/guestbook.sign \
   -H 'content-type: application/json' -H 'origin: http://127.0.0.1:8080' \
   -d '{"name":"Ada","message":"hi"}'             # one for untrusted callers, as a visitor
@@ -335,7 +333,7 @@ frame, looking like the admin's own. Keep it that way:
   a status tone is one of neutral, success, warning, error, accent, review, info (the
   build refuses others).
 - **A form by declaration.** A page declared as
-  `.form = .{ .read = Read, .save = Save, .multiline = &.{"description"} }` needs no
+  `.form = .{ .read = Read, .save = Save }` needs no
   views at all: the admin draws the form from `Save`'s input (each field's `///` is its
   help), filled from what `Read` answers, compiled in or installed alike. In
   a page of your own, `@publr/admin/OperationForm.ptsx` does the same from a list of

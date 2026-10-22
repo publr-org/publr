@@ -19,13 +19,6 @@ pub const Time = struct {
         return time.ms < other.ms;
     }
 
-    pub fn after(time: Time, other: Time) bool {
-        std.debug.assert(time.ms >= 0);
-        std.debug.assert(other.ms >= 0);
-
-        return time.ms > other.ms;
-    }
-
     pub fn add_minutes(time: Time, minutes: i64) Time {
         std.debug.assert(time.ms >= 0);
         std.debug.assert(minutes > -(1 << 40) and minutes < (1 << 40));
@@ -190,5 +183,5 @@ test "named values filled, statuses found" {
     };
 
     try std.testing.expect(now.before(now.add_minutes(1)));
-    try std.testing.expect(now.add_days(1).after(now));
+    try std.testing.expect(now.before(now.add_days(1)));
 }

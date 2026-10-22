@@ -1,6 +1,5 @@
 import { HubPage } from "../layouts/HubPage.ptsx";
 import { AgentSetup } from "../components/AgentSetup.ptsx";
-import { PluginAbout } from "../components/PluginAbout.ptsx";
 import { Publr } from "publr-jsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { Card } from "@publr/ui/Card.ptsx";
@@ -43,10 +42,6 @@ export type DashboardProps = {
   agent_prompt: string;
   /** The person's earlier conversations, newest first. */
   earlier: Array<{ id: string; prompt: string; label: string; href: string }>;
-  /** A plugin's own "Your agent" tab, sanitized, shown instead of the commands; absent when none. */
-  agents_tab?: JSX.Element;
-  /** The plugin that tab comes from, named on its box. */
-  agents_tab_from?: string;
   /** The site's host sends an agent's changes to a branch (`registry.work_start`). */
   branch_work?: boolean;
   /** Words handed over from a site page (`?ask=`), in the prompt for the person to send. */
@@ -66,8 +61,6 @@ export function Dashboard({
   agent_command,
   agent_prompt,
   earlier,
-  agents_tab,
-  agents_tab_from,
   branch_work = false,
   asked = "",
   asked_on = "",
@@ -93,10 +86,7 @@ export function Dashboard({
               {Publr.t("Your agent")}
             </TabNavLink>
           </TabNav>
-          {mode === "agents" && agents_tab && (
-            <PluginAbout name={agents_tab_from ?? ""}>{agents_tab}</PluginAbout>
-          )}
-          {mode === "agents" && !agents_tab && (
+          {mode === "agents" && (
             <AgentSetup
               folder_command={folder_command}
               install_command={install_command}

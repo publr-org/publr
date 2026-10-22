@@ -46,7 +46,6 @@ pub const version_range = @import("model/version_range.zig");
 pub const currency = @import("model/currency.zig");
 pub const money = @import("model/money.zig");
 pub const secret = @import("model/secret.zig");
-pub const input_rule = @import("model/input_rule.zig");
 pub const filter = @import("model/filter.zig");
 pub const field_filter = @import("model/field_filter.zig");
 pub const data_view = @import("model/data_view.zig");

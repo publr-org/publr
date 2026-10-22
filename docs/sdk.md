@@ -132,11 +132,9 @@ and a person does it in the admin. A write by a device allowed only drafts is re
 whole when it publishes or unpublishes anything (a `*.published` or `*.unpublished`
 event).
 
-An operation may declare `open` (anyone may call it, like signing in) and
-`allow_frontmatter_calls` (a dynamic page may run it when it is opened,
-`Publr.request.call()`; see [Apps](apps.md)). The second is a promise that being
-triggered by a visit, with no form and no CSRF token, is harmless: marking something
-seen, counting a view.
+An operation may declare `open` (anyone may call it, like signing in). Any read may run
+from a dynamic page when it is opened (`Publr.request.call()`; see [Apps](apps.md)); a
+write never does, since a visit carries no form and no CSRF token.
 
 Users and sessions are ordinary operations: `project.init` (first admin,
 exactly once), `user.create` (with a password, a generated one, or a

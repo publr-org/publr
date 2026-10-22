@@ -876,7 +876,7 @@ const settings: publr.plugin.Page = .{
     .path = "settings",
     .label = "Notes settings",
     .icon = "settings",
-    .form = .{ .read = Read, .save = Save, .multiline = &.{"description"} },
+    .form = .{ .read = Read, .save = Save },
 };
 
 // in define

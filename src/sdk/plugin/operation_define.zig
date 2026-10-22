@@ -31,7 +31,7 @@ pub fn define(comptime Input: type, comptime Output: type, comptime options: any
         const Options = @TypeOf(options);
 
         for (std.meta.fieldNames(Options)) |given| {
-            if (!listed(&option_names, given)) {
+            if (!plugin_define.listed_in(&option_names, given)) {
                 @compileError("operation " ++ options.name ++ ": no option `" ++ given ++ "`");
             }
         }
@@ -471,18 +471,6 @@ fn secret_names(comptime options: anytype) []const []const u8 {
 
         return &kept;
     }
-}
-
-fn listed(comptime names: []const []const u8, comptime name: []const u8) bool {
-    std.debug.assert(name.len > 0);
-
-    for (names) |candidate| {
-        if (std.mem.eql(u8, candidate, name)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 test "an operation described from its words" {

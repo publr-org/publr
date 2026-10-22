@@ -374,10 +374,10 @@ pub const SandboxApi = struct {
         publr_emit(name.ptr, @intCast(name.len), text.ptr, @intCast(text.len));
     }
 
-    /// A line in the host's log, attributed to the plugin.
-    /// Refuses the call in the plugin's own words: `return ctx.fail("NotEnoughStock", "Only 2
-    /// left")`. The name is what a form's redirect carries (`?error=NotEnoughStock`), the
-    /// message what a person reads. The write rolls back like any other error's.
+    /// Refuses the call in the plugin's own words: `return ctx.fail(.NotEnoughStock, "Only
+    /// {left} left", .{ .left = 2 })`. The name is what a form's redirect carries
+    /// (`?error=NotEnoughStock`), the message what a person reads. The write rolls back like
+    /// any other error's.
     pub fn fail(
         self: *SandboxApi,
         comptime name: @TypeOf(.enum_literal),
@@ -415,6 +415,7 @@ pub const SandboxApi = struct {
         return error.Invalid;
     }
 
+    /// A line in the host's log, attributed to the plugin.
     pub fn log(
         self: *SandboxApi,
         comptime level: words.Level,

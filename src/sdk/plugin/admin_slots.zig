@@ -57,10 +57,8 @@ pub const Item = struct {
     label: []const u8,
     /// An icon of the set; a name the admin does not carry shows the plugin icon.
     icon: []const u8,
-    /// One of the plugin's own pages, by its `path`. Or `href`.
-    page: []const u8 = "",
-    /// An address in the admin (`/admin/...`), when it leads elsewhere than the plugin's page.
-    href: []const u8 = "",
+    /// One of the plugin's own pages, by its `path`.
+    page: []const u8,
     /// Shown to whoever may call it.
     operation: type,
     /// A read of the plugin's own with no input, answering `count`: shown beside the label.
@@ -70,12 +68,12 @@ pub const Item = struct {
 pub const items_max: u32 = 4;
 
 /// The plugin's top bar entries: its pages that say `.top_bar`, checked.
-pub fn items_of(comptime Plugin: type, comptime list: []const u8) []const Item {
+pub fn items_of(comptime Plugin: type) []const Item {
     comptime {
         const name = Plugin.manifest.name;
         var items: []const Item = &.{};
 
-        std.debug.assert(std.mem.eql(u8, list, "top_bar"));
+        std.debug.assert(name.len > 0);
 
         if (!plugin_define.has(Plugin, "pages")) {
             return &.{};
@@ -160,8 +158,6 @@ pub const Form = struct {
     read: type,
     /// A write of the plugin's own taking every field.
     save: type,
-    /// Fields drawn as several lines rather than one.
-    multiline: []const []const u8 = &.{},
 };
 
 pub const SettingsPage = struct {

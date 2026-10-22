@@ -74,12 +74,6 @@ pub const List = struct {
     pub const Out = struct {
         entries: []const Item,
     };
-    pub const rules: sdk.operation.Rules(In) = .{
-        .limit = .{
-            .min = 1,
-            .max = store.activity.list_max,
-        },
-    };
     pub const example: In = .{
         .operation = "plugin.enable",
     };
@@ -111,7 +105,15 @@ pub const List = struct {
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
-        std.debug.assert(in.limit <= store.activity.list_max);
+
+        if (in.limit < 1 or in.limit > store.activity.list_max) {
+            return ctx.refuse(&.{.{
+                .field = "limit",
+                .message = std.fmt.comptimePrint("A page is 1 to {d} entries.", .{
+                    store.activity.list_max,
+                }),
+            }});
+        }
 
         const rows = try store.activity.list(ctx.db, ctx.arena, .{
             .actor = in.actor,

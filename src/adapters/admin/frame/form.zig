@@ -30,7 +30,7 @@ pub fn show(session: *Session, page: pages.Page) Error!void {
     try admin.screen(session, .ok, admin.views.PluginFormPage, .{
         .title = page.label,
         .operation = page.save,
-        .fields = try items_of(session.arena, described, values, page.multiline),
+        .fields = try items_of(session.arena, described, values),
     }, options);
 }
 
@@ -71,14 +71,13 @@ fn items_of(
     arena: std.mem.Allocator,
     described: []const model.Field,
     values: std.json.Value,
-    multiline: []const []const u8,
 ) Error![]const Item {
     std.debug.assert(described.len <= 256);
 
     var items: std.ArrayList(Item) = .empty;
 
     for (described) |field| {
-        const kind = kind_of(field, multiline) orelse continue;
+        const kind = kind_of(field) orelse continue;
 
         try items.append(arena, .{
             .name = field.name,
@@ -94,17 +93,13 @@ fn items_of(
 }
 
 /// How a field is drawn; null for one a form does not draw (a list, an object).
-fn kind_of(field: model.Field, multiline: []const []const u8) ?[]const u8 {
+fn kind_of(field: model.Field) ?[]const u8 {
     std.debug.assert(field.name.len > 0);
 
     return switch (field.shape) {
         .boolean => "boolean",
         .integer, .number => "number",
-        .string => for (multiline) |name| {
-            if (std.mem.eql(u8, name, field.name)) {
-                break "text";
-            }
-        } else "string",
+        .string => "string",
         .strings, .json => null,
     };
 }
@@ -170,11 +165,11 @@ test "a declared form's fields: kinds, labels and values from what the read answ
     const values = try std.json.parseFromSliceLeaky(std.json.Value, arena,
         \\{"site_title":"Acme","description":"Anvils","visits":3}
     , .{});
-    const items = try items_of(arena, &described, values, &.{"description"});
+    const items = try items_of(arena, &described, values);
 
     try std.testing.expectEqual(@as(usize, 3), items.len);
     try std.testing.expectEqualStrings("Site title", items[0].label);
-    try std.testing.expectEqualStrings("text", items[1].kind);
+    try std.testing.expectEqualStrings("string", items[1].kind);
     try std.testing.expectEqualStrings("Under the title", items[1].help);
     try std.testing.expectEqualStrings("3", items[2].value);
 }

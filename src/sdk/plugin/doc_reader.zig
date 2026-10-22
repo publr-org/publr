@@ -14,6 +14,8 @@ pub const Entry = struct {
 };
 
 pub const entries_max: u32 = 4096;
+pub const files_max: u32 = 512;
+pub const file_bytes_max: u32 = 1 << 20;
 pub const depth_max: u32 = 8;
 pub const key_len_max: u32 = 256;
 
@@ -22,6 +24,61 @@ const Pending = struct {
     key: []const u8,
     depth: u32,
 };
+
+/// One file of a plugin: its path under the plugin's folder and its text.
+pub const File = struct {
+    path: []const u8,
+    text: [:0]const u8,
+};
+
+pub const Placed = @import("checks.zig").Failures.Placed;
+
+/// A plugin's docs module and what its checks found.
+pub const Source = struct {
+    source: []const u8,
+    problems: []const Placed,
+};
+
+/// Every doc comment in a plugin's files and the secrets its strings write, as the Zig source
+/// of its docs module, with every plugin check's problem beside its file: the one reading
+/// the compiled-in build and `publr plugin build` both run.
+pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
+    const checks = @import("checks.zig");
+    const written_secrets = @import("written_secrets.zig");
+
+    std.debug.assert(files.len <= files_max);
+
+    var entries: std.ArrayList(Entry) = .empty;
+    var written: std.ArrayList([]const u8) = .empty;
+    var problems: std.ArrayList(Placed) = .empty;
+    var failures: checks.Failures = .{};
+
+    for (files) |file| {
+        var found: std.ArrayList(checks.Problem) = .empty;
+
+        try read(arena, try file_key(arena, file.path), file.text, &entries);
+        try written_secrets.read(arena, file.text, &written);
+        try checks.check(arena, file.path, file.text, &found);
+        try failures.read(arena, file.path, file.text);
+
+        for (found.items) |problem| {
+            try problems.append(arena, .{
+                .path = file.path,
+                .problem = problem,
+            });
+        }
+    }
+
+    try problems.appendSlice(arena, try failures.problems(arena));
+
+    const words = try generated(arena, entries.items);
+    const secrets = try written_secrets.source(arena, written.items);
+
+    return .{
+        .source = try std.mem.concat(arena, u8, &.{ words, secrets }),
+        .problems = problems.items,
+    };
+}
 
 /// `operations/answer.zig` as Zig names it: `operations.answer`.
 pub fn file_key(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
@@ -283,7 +340,7 @@ fn option_of(
     const call = tree.fullCall(&call_buffer, node) orelse return null;
     const function = node_source(tree, call.ast.fn_expr);
 
-    if (std.mem.indexOf(u8, function, callee) == null or call.ast.params.len == 0) {
+    if (!std.mem.endsWith(u8, function, callee) or call.ast.params.len == 0) {
         return null;
     }
 
@@ -352,43 +409,18 @@ fn node_source(tree: *const Ast, node: Ast.Node.Index) []const u8 {
 }
 
 /// The `.name` a `<callee>(..., .{ .name = "x", ... })` call gives; null for any other node.
-fn defined_name(tree: *const Ast, node: Ast.Node.Index, callee: []const u8) ?[]const u8 {
+fn defined_name(tree: *const Ast, node: Ast.Node.Index, comptime callee: []const u8) ?[]const u8 {
     std.debug.assert(callee.len > 0);
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
 
-    var call_buffer: [1]Ast.Node.Index = undefined;
-    const call = tree.fullCall(&call_buffer, node) orelse return null;
-    const function_start = tree.tokenStart(tree.firstToken(call.ast.fn_expr));
-    const function_end_token = tree.lastToken(call.ast.fn_expr);
-    const function_end = tree.tokenStart(function_end_token) +
-        tree.tokenSlice(function_end_token).len;
-    const function = tree.source[function_start..function_end];
+    const field = option_of(tree, node, callee, "name") orelse return null;
 
-    if (!std.mem.endsWith(u8, function, callee) or call.ast.params.len == 0) {
+    if (tree.nodeTag(field) != .string_literal) {
         return null;
     }
 
-    var init_buffer: [2]Ast.Node.Index = undefined;
-    const options = call.ast.params[call.ast.params.len - 1];
-    const init = tree.fullStructInit(&init_buffer, options) orelse return null;
+    const literal = tree.tokenSlice(tree.nodeMainToken(field));
 
-    for (init.ast.fields) |field| {
-        const name_token = tree.firstToken(field) - 2;
-
-        if (!std.mem.eql(u8, tree.tokenSlice(name_token), "name")) {
-            continue;
-        }
-
-        if (tree.nodeTag(field) != .string_literal) {
-            return null;
-        }
-
-        const literal = tree.tokenSlice(tree.nodeMainToken(field));
-
-        return literal[1 .. literal.len - 1];
-    }
-
-    return null;
+    return literal[1 .. literal.len - 1];
 }
 
 fn add(

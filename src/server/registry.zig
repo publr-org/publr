@@ -290,7 +290,7 @@ pub const registry: sdk.Registry = .{
     .type_owners = &type_owners(native_plugins.merged_content_types),
     .plugin_grants = native_plugins.merged_plugin_grants,
     .schemas = native_plugins.merged_schemas,
-    .migrations = &db.migrations.core ++ native_plugins.merged_migrations,
+    .migrations = &db.migrations.core,
     .bootstrap = &bootstrap,
     .log = activity.log,
     .removal = removal.prepare,
@@ -300,9 +300,7 @@ pub const SDK = sdk.SDK(registry);
 
 pub const Kinds = kind_registry.Registry(&kind_registry.core ++ native_plugins.merged_field_kinds);
 
-pub const Filters = filter_registry.Registry(
-    &filter_registry.core ++ native_plugins.merged_filters,
-);
+pub const Filters = filter_registry.Registry(&filter_registry.core);
 
 /// The webhooks the native plugins declare, and the plugin of each.
 pub const webhooks = native_plugins.merged_webhooks;
@@ -323,7 +321,6 @@ pub const sign_in_at = native_plugins.merged_sign_in_at;
 pub const admin_brand = native_plugins.merged_admin_brand;
 pub const app_picker_segment = native_plugins.merged_app_picker_segment;
 pub const variants = native_plugins.merged_variants;
-pub const agents_tab = native_plugins.merged_agents_tab;
 pub const work_start = native_plugins.merged_work_start;
 pub const hosted = native_plugins.merged_hosted;
 pub const translations = native_plugins.merged_translations;

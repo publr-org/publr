@@ -399,16 +399,13 @@ fn range_of(list: []const []const u8, plugin: []const u8) ?[]const u8 {
     return null;
 }
 
-/// The plugin a remote belongs to: `inventory` for `inventory.adjust` and for
-/// `app.inventory.reserve`.
+/// The plugin a remote belongs to: `inventory` for `inventory.adjust`.
 pub fn plugin_of(operation: []const u8) []const u8 {
     std.debug.assert(operation.len > 0);
 
-    const app = std.mem.startsWith(u8, operation, "app.");
-    const rest = if (app) operation["app.".len..] else operation;
-    const dot = std.mem.indexOfScalar(u8, rest, '.') orelse rest.len;
+    const dot = std.mem.indexOfScalar(u8, operation, '.') orelse operation.len;
 
-    return rest[0..dot];
+    return operation[0..dot];
 }
 
 /// A finding in plain words: `products 0.2.0 has no sku on products.variant`.
@@ -501,13 +498,13 @@ test "contracts: fit, out of range, misfit, absent" {
         .plugin = "inventory",
         .version = "1.4.0",
         .operations = &.{.{
-            .name = "app.inventory.reserve",
+            .name = "inventory.reserve",
             .input = comptime contract.describe(Accepts),
             .output = comptime contract.describe(Answers),
         }},
     };
     const fitting: Used = .{
-        .name = "app.inventory.reserve",
+        .name = "inventory.reserve",
         .input = comptime contract.describe(struct {
             sku: []const u8,
             quantity: u32,
@@ -517,7 +514,7 @@ test "contracts: fit, out of range, misfit, absent" {
         }),
     };
     const misfitting: Used = .{
-        .name = "app.inventory.reserve",
+        .name = "inventory.reserve",
         .input = comptime contract.describe(struct {
             sku: []const u8,
         }),
@@ -554,9 +551,9 @@ test "contracts: fit, out of range, misfit, absent" {
     optional.compatible_with = &.{"inventory"};
     try std.testing.expectEqual(@as(u32, 1), check(optional, &.{provider}, &out));
     try std.testing.expect(!out[0].required);
-    try std.testing.expect(!remote_on(optional, &.{provider}, "app.inventory.reserve"));
-    try std.testing.expect(!remote_on(optional, &.{}, "app.inventory.reserve"));
-    try std.testing.expect(remote_on(optional, &.{}, "app.other.call"));
+    try std.testing.expect(!remote_on(optional, &.{provider}, "inventory.reserve"));
+    try std.testing.expect(!remote_on(optional, &.{}, "inventory.reserve"));
+    try std.testing.expect(remote_on(optional, &.{}, "other.call"));
     try std.testing.expectEqual(@as(u32, 1), check(optional, &.{}, &out));
     try std.testing.expectEqual(Why.absent, out[0].why);
 }

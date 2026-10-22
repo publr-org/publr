@@ -122,8 +122,6 @@ pub const Operation = struct {
     description: []const u8,
     details: []const u8 = "",
     open: bool = false,
-    /// Any site may call it (`pub const public = true`); never without saying so.
-    public: bool = false,
     /// Made with `publr.operation.define`: whether callers without credentials may call it.
     /// Null for an operation declared part by part.
     untrusted_callers: ?bool = null,
@@ -243,7 +241,6 @@ pub const Page = struct {
     operation: []const u8 = "",
     read: []const u8 = "",
     save: []const u8 = "",
-    multiline: []const []const u8 = &.{},
     /// `.menu = .none`: left out of the menu, still opened at its address.
     hidden: bool = false,
 };
@@ -253,8 +250,7 @@ pub const Page = struct {
 pub const Item = struct {
     label: []const u8,
     icon: []const u8,
-    page: []const u8 = "",
-    href: []const u8 = "",
+    page: []const u8,
     operation: []const u8,
     count: []const u8 = "",
 };

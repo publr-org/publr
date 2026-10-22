@@ -278,7 +278,7 @@ fn test_manifest(
         .depends_on = depends,
         .compatible_with = works,
         .remotes = &.{.{
-            .name = "app.inventory.reserve",
+            .name = "inventory.reserve",
             .input = comptime contract.describe(Sends),
             .output = comptime contract.describe(struct {
                 held: bool,
@@ -297,7 +297,7 @@ test "contracts: a required misfit refuses, an optional one does not" {
         .plugin = "inventory",
         .version = "1.4.0",
         .operations = &.{.{
-            .name = "app.inventory.reserve",
+            .name = "inventory.reserve",
             .input = comptime contract.describe(Reserve),
             .output = comptime contract.describe(struct {
                 held: bool,

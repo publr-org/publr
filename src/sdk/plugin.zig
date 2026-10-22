@@ -8,7 +8,6 @@ const remote_contract = @import("plugin/remote_contract.zig");
 const sdk = @import("../sdk.zig");
 const plugin_context = @import("plugin/context.zig");
 const plugin_types = @import("plugin/types.zig");
-const filter_module = @import("../model/filter.zig");
 const content_type = @import("../model/content_type.zig");
 const field = @import("../model/field.zig");
 const kinds = @import("../model/kinds.zig");
@@ -23,10 +22,10 @@ pub const types = plugin_types;
 pub const define = plugin_define.define;
 pub const Bind = plugin_define.Bind;
 pub const ContentTypeDef = content_type.Def;
-pub const DeclaredType = plugin_types.Declared;
+const DeclaredType = plugin_types.Declared;
 pub const InternalCollection = @import("../model/internal_record.zig").Collection;
 /// An internal record collection with the plugin that declared it.
-pub const OwnedCollection = struct {
+const OwnedCollection = struct {
     owner: []const u8,
     collection: InternalCollection,
 };
@@ -38,7 +37,6 @@ pub const Entry = runtime.Entry;
 pub const runtime_entries = runtime.runtime_entries;
 pub const HookIn = runtime.HookIn;
 pub const HookOut = runtime.HookOut;
-pub const plugin_manifest = @import("plugin/manifest.zig");
 pub const route = @import("plugin/route.zig");
 pub const Route = route.Route;
 pub const OperatorCommand = route.OperatorCommand;
@@ -125,13 +123,6 @@ pub const OwnedSettingsTab = struct {
     tab: SettingsTab,
 };
 
-/// What a plugin shows in place of the Overview's "Your agent" commands: its
-/// `pub const agents_tab` HTML, which the admin sanitizes and draws in a box named after it.
-pub const AgentsTab = struct {
-    plugin: []const u8,
-    html: []const u8,
-};
-
 pub const OwnedItem = struct {
     plugin: []const u8,
     item: Item,
@@ -145,13 +136,10 @@ pub const OwnedPage = struct {
 pub const state = @import("plugin/state.zig");
 pub const depends_on = @import("plugin/depends_on.zig");
 pub const Process = state.Process;
-pub const wire = @import("plugin/wire.zig");
 pub const guest = @import("plugin/guest.zig");
 pub const content_types_max: u32 = 64;
 
 pub const name_len_max: u32 = 32;
-pub const version_len_max: u32 = 32;
-pub const summary_len_max: u32 = 200;
 pub const plugins_max: u32 = 64;
 
 /// Whose admin it is, as a plugin's `admin_brand(ctx)` says: its name in the window's title
@@ -175,21 +163,12 @@ pub fn validate(comptime Plugin: type) void {
         const manifest: Manifest = Plugin.manifest;
         assert_name(manifest.name, label);
 
-        if (manifest.version.len == 0 or manifest.version.len > version_len_max) {
-            @compileError("plugin " ++ manifest.name ++ ": `manifest.version` is 1 to 32 chars");
-        }
-
-        if (manifest.summary.len == 0 or manifest.summary.len > summary_len_max) {
-            @compileError("plugin " ++ manifest.name ++ ": `manifest.summary` is 1 to 200 chars");
-        }
-
         for (operations_of(Plugin)) |Operation| {
             sdk.operation.validate(Operation);
 
             if (!@import("plugin_access.zig").own(manifest.name, Operation.name)) {
                 @compileError("plugin " ++ manifest.name ++ ": operation " ++ Operation.name ++
-                    " is outside its namespaces, `" ++ manifest.name ++ ".<verb>` and `app." ++
-                    manifest.name ++ ".<verb>`");
+                    " is outside its namespace, `" ++ manifest.name ++ ".<verb>`");
             }
         }
 
@@ -567,11 +546,11 @@ fn declared_in(comptime list: []const []const u8, comptime name: []const u8) ?[]
 }
 
 /// A plugin's entries in `list`, each checked to name its own operations.
-fn owned_items(comptime Plugin: type, comptime list: []const u8) []const OwnedItem {
+fn owned_items(comptime Plugin: type) []const OwnedItem {
     comptime {
         var owned: []const OwnedItem = &.{};
 
-        for (admin_slots.items_of(Plugin, list)) |item| {
+        for (admin_slots.items_of(Plugin)) |item| {
             const counted = if (item.count) |Count| owns_operation(Plugin, Count) else true;
 
             if (!owns_operation(Plugin, item.operation) or !counted) {
@@ -702,30 +681,6 @@ pub fn schema_of(comptime Plugin: type) ?[:0]const u8 {
     }
 }
 
-/// A plugin's migrations, each its own: a plugin migrates only its own tables.
-pub fn migrations_of(comptime Plugin: type) []const db.migration.Migration {
-    comptime {
-        std.debug.assert(@hasDecl(Plugin, "manifest"));
-
-        if (!plugin_define.has(Plugin, "migrations")) {
-            return &.{};
-        }
-
-        const list: []const db.migration.Migration = plugin_define.get(Plugin, "migrations");
-
-        for (list) |migration| {
-            if (!std.mem.eql(u8, migration.source, Plugin.manifest.name)) {
-                @compileError("plugin " ++ Plugin.manifest.name ++ ": migration " ++
-                    migration.name ++ " names `" ++ migration.source ++ "` as its source");
-            }
-        }
-
-        std.debug.assert(list.len <= db.migration.migrations_max);
-
-        return list;
-    }
-}
-
 /// What a plugin's routes may live under: its name and its namespaces.
 fn owned_of(comptime Plugin: type) []const []const u8 {
     comptime {
@@ -758,11 +713,9 @@ pub fn Merged(comptime plugins: anytype) type {
         var plugin_grants: []const sdk.PluginGrants = &.{};
         var internal_collections: []const OwnedCollection = &.{};
         var schemas: []const [:0]const u8 = &.{};
-        var migrations: []const db.migration.Migration = &.{};
         var field_kinds: []const kinds.Kind = &.{};
         var content_types: []const DeclaredType = &.{};
         var custom_fields: []const DeclaredType = &.{};
-        var filters: []const filter_module.Definition = &.{};
         var delivery_gates: []const sdk.delivery.Gate = &.{};
         var sign_in_providers: []const SignInProvider = &.{};
         var routes: []const route.Declared = &.{};
@@ -778,7 +731,6 @@ pub fn Merged(comptime plugins: anytype) type {
         var admin_brand: []const type = &.{};
         var app_picker_segment: []const type = &.{};
         var dimension: ?variants.Dimension = null;
-        var agents_tab: ?AgentsTab = null;
         var work_start: ?[]const u8 = null;
         var hosted = false;
         var settings_tabs: []const OwnedSettingsTab = &.{};
@@ -860,7 +812,7 @@ pub fn Merged(comptime plugins: anytype) type {
                 }};
             }
 
-            top_bar = top_bar ++ owned_items(Plugin, "top_bar");
+            top_bar = top_bar ++ owned_items(Plugin);
 
             for (admin_slots.panels_of(Plugin)) |panel| {
                 if (!owns_operation(Plugin, panel.operation)) {
@@ -917,17 +869,6 @@ pub fn Merged(comptime plugins: anytype) type {
                 dimension = declared;
             }
 
-            if (plugin_define.has(Plugin, "agents_tab")) {
-                if (agents_tab != null) {
-                    @compileError("two plugins declare `agents_tab`; one at a time");
-                }
-
-                agents_tab = .{
-                    .plugin = Plugin.manifest.name,
-                    .html = plugin_define.get(Plugin, "agents_tab"),
-                };
-            }
-
             if (plugin_define.has(Plugin, "hosted")) {
                 hosted = hosted or plugin_define.get(Plugin, "hosted");
             }
@@ -965,15 +906,6 @@ pub fn Merged(comptime plugins: anytype) type {
 
             if (schema_of(Plugin)) |sql| {
                 schemas = schemas ++ &[_][:0]const u8{sql};
-            }
-
-            migrations = migrations ++ migrations_of(Plugin);
-
-            if (plugin_define.has(Plugin, "filters")) {
-                const declared: []const filter_module.Definition =
-                    plugin_define.get(Plugin, "filters");
-
-                filters = filters ++ declared;
             }
 
             if (plugin_define.has(Plugin, "delivery_gates")) {
@@ -1054,11 +986,9 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_plugin_grants = plugin_grants;
             pub const merged_internal_collections = internal_collections;
             pub const merged_schemas = schemas;
-            pub const merged_migrations = migrations;
             pub const merged_field_kinds = field_kinds;
             pub const merged_content_types = content_types;
             pub const merged_custom_fields = custom_fields;
-            pub const merged_filters = filters;
             pub const merged_delivery_gates = delivery_gates;
             pub const merged_sign_in_providers = sign_in_providers;
             pub const merged_routes = routes;
@@ -1090,8 +1020,6 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_translations = translations;
             /// The variant dimension a plugin declares, if one does.
             pub const merged_variants = dimension;
-            /// What a plugin shows in the Overview's "Your agent" tab, if one does.
-            pub const merged_agents_tab = agents_tab;
             /// The operation `publr work start` runs, where a hosting service's plugin
             /// sends a device's work to a copy of the project (`pub const work_start`).
             pub const merged_work_start = work_start;
@@ -1110,99 +1038,6 @@ pub fn Merged(comptime plugins: anytype) type {
 }
 
 pub const testing = struct {
-    /// A plugin that can run in the sandbox: an operation, a hook asked for with a reason,
-    /// and the permission it needs.
-    pub const Greeter = struct {
-        pub const manifest: Manifest = .{
-            .name = "greeter",
-            .version = "0.1.0",
-            .summary = "Test plugin: greets, and counts the greetings as records",
-        };
-        pub const namespaces = [_]sdk.operation.Namespace{.{
-            .name = "greeter",
-            .summary = "Greetings",
-            .details = "A test namespace for the sandbox.",
-        }};
-        pub const content_types = [_]ContentTypeDef{.{
-            .handle = "greeting",
-            .name = "Greeting",
-            .title_field = "note",
-            .fields = &.{.{
-                .validation = .{
-                    .required = true,
-                },
-                .name = "note",
-                .label = "Note",
-                .kind = "string",
-            }},
-        }};
-        pub const permissions = [_]@import("../model/sandboxed_plugin.zig").Ask{.{
-            .key = "records.write",
-            .records = &.{"greeting"},
-            .reason = "Keeps every greeting as a record",
-        }};
-        pub const operations = [_]type{Greet};
-        pub const middleware = [_]type{Counted};
-
-        pub const Greet = struct {
-            pub const name = "greeter.greet";
-            pub const description = "Greet someone";
-            pub const kind: sdk.operation.Kind = .write;
-            pub const In = struct {
-                who: []const u8,
-                times: u32 = 1,
-            };
-            pub const Out = struct {
-                text: []const u8,
-            };
-            pub const example: In = .{
-                .who = "world",
-            };
-            pub const example_out: Out = .{
-                .text = "hello, world",
-            };
-            pub const field_docs: sdk.operation.Docs(In) = .{
-                .who = "Whom to greet",
-            };
-            pub const deprecated: sdk.operation.Deprecated = .{
-                .since = "0.1.0",
-            };
-
-            pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-                std.debug.assert(in.who.len > 0);
-                std.debug.assert(ctx.now().ms >= 0);
-
-                const text = std.fmt.allocPrint(ctx.arena(), "hello, {s}", .{in.who}) catch {
-                    return error.OutOfMemory;
-                };
-
-                return .{
-                    .text = text,
-                };
-            }
-        };
-
-        pub const Counted = struct {
-            pub const stage: sdk.middleware.Stage = .after;
-            pub const operation = "greeter.greet";
-            pub const reason = "Says when someone was greeted";
-
-            pub fn run(ctx: *PluginCtx, in: *Greet.In, out: *const Greet.Out) sdk.Error!void {
-                std.debug.assert(out.text.len > 0);
-                ctx.emit(Greeted, .{
-                    .who = in.who,
-                });
-            }
-        };
-
-        pub const Greeted = hook_define.event(.{
-            .name = "greeted",
-            .payload = struct {
-                who: []const u8,
-            },
-        });
-    };
-
     pub const Hello = struct {
         pub const manifest: Manifest = .{
             .name = "hello",
@@ -1473,8 +1308,8 @@ test "the test plugin passes the contract and merges into a registry" {
 
 test {
     _ = job_define;
-    _ = plugin_manifest;
-    _ = wire;
+    _ = @import("plugin/manifest.zig");
+    _ = @import("plugin/wire.zig");
     _ = runtime;
     _ = @import("plugin/remote_fields.zig");
     _ = @import("plugin/remote_contract.zig");

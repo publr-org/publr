@@ -246,8 +246,7 @@ fn input_of(sdk_ctx: *sdk.Ctx, name: []const u8, form: *const Form) !?[]const u8
     var problem: cli.Problem = .{};
 
     inline for (registry.SDK.operations) |Operation| {
-        const callable = comptime std.mem.startsWith(u8, Operation.name, "app.") or
-            @hasDecl(Operation, "untrusted_callers");
+        const callable = comptime @hasDecl(Operation, "untrusted_callers");
 
         if (callable) {
             if (std.mem.eql(u8, Operation.name, name)) {

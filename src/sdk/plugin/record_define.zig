@@ -1280,7 +1280,7 @@ pub fn statuses_of(comptime Definition: type, comptime Docs: type) []const statu
         var list: []const status_module.Status = &.{};
 
         for (std.meta.fieldNames(Status)) |value| {
-            if (record_flow.listed(record_flow.core_status_ids, value)) {
+            if (plugin_define.listed_in(&record_flow.core_status_ids, value)) {
                 continue;
             }
 

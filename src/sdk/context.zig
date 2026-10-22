@@ -7,14 +7,11 @@ const Scratch = @import("scratch.zig").Scratch;
 const DefinitionCache = @import("definition_cache.zig").DefinitionCache;
 
 pub const OperationId = u64;
-pub const request_id_len_max: u32 = 64;
 
 /// Where an emitted event goes: `after` hooks by name when `after` (a plugin's event, core's
 /// typed ones), then the queue for the `on` hooks.
 pub const Notify = *const fn (ctx: *Ctx, emitted: Emitted, after: bool) void;
 
-/// The folder the running server reads the project's apps from, and a way to read them
-/// again: what the `apps` operations change.
 /// Builds a sandboxed plugin from its sources in the project, in a process of its own (the
 /// server answers on meanwhile), then installs it: what `plugin build` starts for an agent.
 pub const PluginBuilder = struct {
@@ -181,6 +178,8 @@ pub const LanguageDisagreements = struct {
     conflicts: []const @import("../model/i18n/conflicts.zig").Conflict,
 };
 
+/// The folder the running server reads the project's apps from, and a way to read them
+/// again: what the `apps` operations change.
 pub const AppsFolder = struct {
     context: *anyopaque,
     dir: []const u8,
@@ -189,7 +188,6 @@ pub const AppsFolder = struct {
 };
 
 pub const Ctx = struct {
-    dependencies: ?*@import("dependencies.zig").Collector = null,
     dependency_failure: bool = false,
 
     /// Why the last operation ended with `error.Failed`: set by `fail`, read by adapters.
@@ -197,7 +195,6 @@ pub const Ctx = struct {
     /// What was wrong with the input when it ended with `error.Invalid`, every field at
     /// once: set by `refuse`, answered as `problems`.
     problems: []const @import("operation.zig").Problem = &.{},
-    publish_policy: ?*const fn (*Ctx, OperationPolicy) anyerror!void = null,
     caller: Caller,
     /// Reads made to render a page for a visitor: live records only and never a write,
     /// whoever the caller is, so a signed-in visitor never sees a draft on the site.
@@ -213,7 +210,7 @@ pub const Ctx = struct {
     /// the API: a document created on the way belongs to it.
     app: []const u8 = "",
     /// The visitor's stable id (the `publr_visitor` cookie) when the call came from an app's
-    /// page, island or `_api`; empty otherwise. Beside the user once they sign in.
+    /// page, island or `/_actions`; empty otherwise. Beside the user once they sign in.
     visitor: []const u8 = "",
     /// The address the request came from (`limits.address_of`); empty for a context no
     /// request made, which no rate limit counts.
@@ -259,7 +256,6 @@ pub const Ctx = struct {
     io: std.Io,
     arena: std.mem.Allocator,
     auth: *AuthState,
-    request_id: []const u8 = "",
     parent: ?OperationId = null,
     now_ms: i64,
     next_operation_id: OperationId = 1,
@@ -350,7 +346,6 @@ pub const Ctx = struct {
         caller: Caller,
         options: Options,
     ) Ctx {
-        std.debug.assert(options.request_id.len <= request_id_len_max);
         std.debug.assert(options.now_ms >= 0);
 
         return .{
@@ -359,59 +354,8 @@ pub const Ctx = struct {
             .io = io,
             .arena = arena,
             .auth = auth,
-            .request_id = options.request_id,
             .now_ms = options.now_ms,
         };
-    }
-
-    pub const OperationPolicy = struct {
-        revision: u64,
-        no_store: bool,
-        revalidate: bool,
-        expires: ?i64,
-        tags: []const []const u8,
-    };
-
-    /// Called by name from the PJSX runtime, hence the name.
-    pub fn publrPolicy(ctx: *Ctx, policy: anytype) !void {
-        std.debug.assert(policy.expires == null or policy.expires.? >= 0);
-
-        const restricted = policy.no_store or policy.revalidate or
-            policy.expires != null or policy.tags.len > 0;
-
-        if (ctx.publish_policy) |publish| {
-            return publish(ctx, .{
-                .revision = policy.revision,
-                .no_store = policy.no_store,
-                .revalidate = policy.revalidate,
-                .expires = policy.expires,
-                .tags = policy.tags,
-            });
-        }
-
-        if (restricted) {
-            return error.PolicyHeadersRequired;
-        }
-    }
-
-    pub fn collecting(ctx: *Ctx, collector: *@import("dependencies.zig").Collector) Ctx {
-        std.debug.assert(collector != ctx.dependencies);
-        std.debug.assert(collector.keys.items.len == 0);
-
-        var owned = ctx.*;
-
-        collector.parent = ctx.dependencies;
-        owned.dependencies = collector;
-
-        return owned;
-    }
-
-    pub fn depend(ctx: *Ctx, prefix: []const u8, id: []const u8) void {
-        std.debug.assert(prefix.len + id.len > 0);
-
-        if (ctx.dependencies) |collector| {
-            collector.depend(prefix, id);
-        }
     }
 
     /// Working memory for a loop's items: `mark` before an item, `rewind` after it.
@@ -538,7 +482,6 @@ pub const Ctx = struct {
     }
 
     pub const Options = struct {
-        request_id: []const u8 = "",
         now_ms: i64 = 0,
     };
 };

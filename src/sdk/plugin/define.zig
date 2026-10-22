@@ -1,7 +1,6 @@
 //! One registration: `pub const plugin = publr.plugin.define(manifest, options)`. The words
 //! come from the plugin's doc comments, which the build hands over beside it; `Bind` pairs
-//! the two into the type every reader takes, and `has`/`get` read an option whether the
-//! plugin is written this way or still declares its parts one by one.
+//! the two into the type every reader takes, and `has`/`get` read its options.
 const std = @import("std");
 const doc_reader = @import("doc_reader.zig");
 
@@ -52,8 +51,7 @@ pub fn defined(comptime Module: type) bool {
     }
 }
 
-/// The plugin as every reader takes it. A plugin still declaring its parts one by one passes
-/// through as it is; one using `define` gets its manifest with the description from `main.zig`'s
+/// The plugin as every reader takes it: its manifest with the description from `main.zig`'s
 /// `//!`, its options, and its words.
 pub fn Bind(comptime Module: type, comptime Docs: type) type {
     comptime {
@@ -71,6 +69,10 @@ pub fn Bind(comptime Module: type, comptime Docs: type) type {
         if (summary.len == 0 or summary.len > summary_len_max) {
             @compileError("plugin " ++ plugin.manifest.name ++ ": the first line of main.zig's " ++
                 "`//!` is the description, 1 to 200 characters");
+        }
+
+        if (plugin.manifest.version.len > version_len_max) {
+            @compileError("plugin " ++ plugin.manifest.name ++ ": `version` is 1 to 32 chars");
         }
 
         check_options(plugin.manifest.name, @TypeOf(plugin.options));
@@ -101,6 +103,7 @@ pub fn Bind(comptime Module: type, comptime Docs: type) type {
 }
 
 const summary_len_max: u32 = 200;
+const version_len_max: u32 = 32;
 
 /// What `define` takes.
 const options_known = [_][]const u8{
@@ -112,23 +115,11 @@ const options_known = [_][]const u8{
 };
 
 /// What only a built-in plugin takes outside `.extend`, until each finds its place.
-const options_built_in = [_][]const u8{
+pub const options_built_in = [_][]const u8{
     "row_actions",
     "settings_pages",
     "settings_tabs",
-    "migrations",
-    "agents_tab",
-    "filters",
 };
-
-/// Options decided for gates still to come: a plugin using one is told which, never ignored.
-const options_later = [_][2][]const u8{
-    .{ "register_taxonomies", "taxonomies on other plugins' types" },
-    .{ "register_columns", "columns on lists the plugin does not own" },
-    .{ "register_components", "slots on the site" },
-    .{ "register_providers", "contracts and providers" },
-    .{ "register_location_rules", "location rules of the plugin's own" },
-    .{ "taxonomies", "taxonomies declared by plugins" },
 };
 
 fn check_options(comptime plugin: []const u8, comptime Options: type) void {
@@ -136,19 +127,12 @@ fn check_options(comptime plugin: []const u8, comptime Options: type) void {
         std.debug.assert(plugin.len > 0);
 
         const fields = std.meta.fieldNames(Options).len;
-        const listed = options_known.len + options_built_in.len + options_later.len;
+        const listed = options_known.len + options_built_in.len;
 
         // Each option's name against every known one, a byte at a time.
         @setEvalBranchQuota(1000 + fields * listed * 64);
 
         for (std.meta.fieldNames(Options)) |name| {
-            for (options_later) |later| {
-                if (std.mem.eql(u8, later[0], name)) {
-                    @compileError("plugin " ++ plugin ++ ": `." ++ name ++ "` is decided but " ++
-                        "not built yet: " ++ later[1] ++ " come with a later gate");
-                }
-            }
-
             if (!listed_in(&options_known, name) and !listed_in(&options_built_in, name)) {
                 @compileError("plugin " ++ plugin ++ ": `define` has no option `." ++ name ++ "`");
             }
@@ -156,7 +140,7 @@ fn check_options(comptime plugin: []const u8, comptime Options: type) void {
     }
 }
 
-fn listed_in(comptime names: []const []const u8, comptime name: []const u8) bool {
+pub fn listed_in(comptime names: []const []const u8, comptime name: []const u8) bool {
     comptime {
         std.debug.assert(name.len > 0);
 
@@ -211,58 +195,12 @@ pub fn get(comptime Plugin: type, comptime name: []const u8) Got(Plugin, name) {
         return comptime Plugin.host.get(name);
     }
 
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "operations")) {
-        return comptime described_operations(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "content_types")) {
-        return comptime declared_content_types(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "internal_records")) {
-        return comptime declared_collections(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "middleware")) {
-        return comptime declared_hooks(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "namespaces")) {
-        return comptime declared_namespaces(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "pages")) {
-        return comptime declared_pages(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "panels")) {
-        const listed = as_slice(Panel, Plugin.options.panels);
-
-        return comptime admin_described.each(Plugin, Panel, listed);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "row_actions")) {
-        const listed = as_slice(RowAction, Plugin.options.row_actions);
-
-        return comptime admin_described.each(Plugin, RowAction, listed);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "settings_pages")) {
-        const listed = as_slice(SettingsPage, Plugin.options.settings_pages);
-
-        return comptime admin_described.each(Plugin, SettingsPage, listed);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "field_kinds")) {
-        return comptime declared_kinds(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "custom_fields")) {
-        return comptime declared_field_groups(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "permissions")) {
-        return comptime @import("permission_define.zig").asks_of(Plugin);
+    if (comptime bound(Plugin)) {
+        inline for (resolvers) |entry| {
+            if (comptime std.mem.eql(u8, entry[0], name)) {
+                return comptime entry[2](Plugin);
+            }
+        }
     }
 
     const value = if (comptime bound(Plugin))
@@ -275,6 +213,51 @@ pub fn get(comptime Plugin: type, comptime name: []const u8) Got(Plugin, name) {
         .@"struct" => |shape| if (shape.is_tuple) &value else value,
         else => value,
     };
+}
+
+/// The options a bound plugin's readers take in their core shape, each `.{ name, Item, of }`:
+/// operations and pages given their words, hooks with their records', and so on.
+const resolvers = .{
+    .{ "operations", type, described_operations },
+    .{ "content_types", ContentTypeDef, declared_content_types },
+    .{ "internal_records", Collection, declared_collections },
+    .{ "middleware", type, declared_hooks },
+    .{ "namespaces", Namespace, declared_namespaces },
+    .{ "pages", Page, declared_pages },
+    .{ "panels", Panel, described_panels },
+    .{ "row_actions", RowAction, described_row_actions },
+    .{ "settings_pages", SettingsPage, described_settings_pages },
+    .{ "field_kinds", Kind, declared_kinds },
+    .{ "custom_fields", ContentTypeDef, declared_field_groups },
+    .{ "permissions", @import("../../model/sandboxed_plugin.zig").Ask, asks_of },
+};
+
+fn described_panels(comptime Plugin: type) []const Panel {
+    std.debug.assert(Plugin.manifest.name.len > 0);
+
+    return admin_described.each(Plugin, Panel, as_slice(Panel, Plugin.options.panels));
+}
+
+fn described_row_actions(comptime Plugin: type) []const RowAction {
+    std.debug.assert(Plugin.manifest.name.len > 0);
+
+    const listed = as_slice(RowAction, Plugin.options.row_actions);
+
+    return admin_described.each(Plugin, RowAction, listed);
+}
+
+fn described_settings_pages(comptime Plugin: type) []const SettingsPage {
+    std.debug.assert(Plugin.manifest.name.len > 0);
+
+    const listed = as_slice(SettingsPage, Plugin.options.settings_pages);
+
+    return admin_described.each(Plugin, SettingsPage, listed);
+}
+
+fn asks_of(comptime Plugin: type) []const @import("../../model/sandboxed_plugin.zig").Ask {
+    std.debug.assert(Plugin.manifest.name.len > 0);
+
+    return @import("permission_define.zig").asks_of(Plugin);
 }
 
 /// A bound plugin's operations: each `publr.operation.define` given its words and its
@@ -301,8 +284,7 @@ fn described_operations(comptime Plugin: type) []const type {
     }
 }
 
-/// A bound plugin's content types: those it lists the old way, then every `.records`
-/// entry that is not internal.
+/// A bound plugin's content types: every `.records` entry that is not internal.
 fn declared_content_types(comptime Plugin: type) []const ContentTypeDef {
     comptime {
         const record_define = @import("record_define.zig");
@@ -310,10 +292,6 @@ fn declared_content_types(comptime Plugin: type) []const ContentTypeDef {
         var list: []const ContentTypeDef = &.{};
 
         std.debug.assert(Plugin.manifest.name.len > 0);
-
-        if (@hasField(Options, "content_types")) {
-            list = list ++ as_slice(ContentTypeDef, Plugin.options.content_types);
-        }
 
         if (@hasField(Options, "records")) {
             for (Plugin.options.records) |Record| {
@@ -340,10 +318,6 @@ fn declared_collections(comptime Plugin: type) []const Collection {
         var list: []const Collection = &.{};
 
         std.debug.assert(Plugin.manifest.name.len > 0);
-
-        if (@hasField(Options, "internal_records")) {
-            list = list ++ as_slice(Collection, Plugin.options.internal_records);
-        }
 
         if (@hasField(Options, "records")) {
             for (Plugin.options.records) |Record| {
@@ -424,13 +398,9 @@ fn declared_kinds(comptime Plugin: type) []const Kind {
         std.debug.assert(Plugin.manifest.name.len > 0);
 
         for (Plugin.options.field_kinds) |Listed| {
-            const made = @TypeOf(Listed) == type and field_kind_define.is_definition(Listed);
-            const declared = if (made)
-                field_kind_define.described(Listed, Plugin.manifest.name, Plugin.docs)
-            else
-                Listed;
-
-            list = list ++ [_]Kind{declared};
+            list = list ++ [_]Kind{
+                field_kind_define.described(Listed, Plugin.manifest.name, Plugin.docs),
+            };
         }
 
         const done = list;
@@ -439,61 +409,32 @@ fn declared_kinds(comptime Plugin: type) []const Kind {
     }
 }
 
-/// A bound plugin's field groups: `custom_fields` the old way, then `.register_fields`.
+/// A bound plugin's field groups: its `.register_fields`.
 fn declared_field_groups(comptime Plugin: type) []const ContentTypeDef {
     comptime {
-        const record_define = @import("record_define.zig");
-        const Options = @TypeOf(Plugin.options);
-        var list: []const ContentTypeDef = &.{};
-
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        if (@hasField(Options, "custom_fields")) {
-            list = list ++ as_slice(ContentTypeDef, Plugin.options.custom_fields);
-        }
-
-        if (@hasField(Options, "register_fields")) {
-            list = list ++ record_define.field_groups_of(Plugin);
-        }
-
-        const done = list;
-
-        return done;
+        return @import("record_define.zig").field_groups_of(Plugin);
     }
 }
 
 /// A bound plugin's pages, each operation they name given its words and its plugin's name.
 fn declared_pages(comptime Plugin: type) []const Page {
     comptime {
-        const operation_define = @import("operation_define.zig");
-        const plugin = Plugin.manifest.name;
         var list: []const Page = &.{};
 
-        std.debug.assert(plugin.len > 0);
+        std.debug.assert(Plugin.manifest.name.len > 0);
 
         for (as_slice(Page, Plugin.options.pages)) |page| {
             var made = page;
 
             if (page.operation) |Operation| {
-                if (operation_define.is_definition(Operation)) {
-                    made.operation = operation_define.Described(Operation, plugin, Plugin.docs);
-                }
+                made.operation = admin_described.described(Plugin, Operation);
             }
 
             if (page.form) |form| {
-                var described_form = form;
-
-                const Docs = Plugin.docs;
-
-                if (operation_define.is_definition(form.read)) {
-                    described_form.read = operation_define.Described(form.read, plugin, Docs);
-                }
-
-                if (operation_define.is_definition(form.save)) {
-                    described_form.save = operation_define.Described(form.save, plugin, Docs);
-                }
-
-                made.form = described_form;
+                made.form.?.read = admin_described.described(Plugin, form.read);
+                made.form.?.save = admin_described.described(Plugin, form.save);
             }
 
             if (page.top_bar) |shown| {
@@ -513,15 +454,10 @@ fn declared_pages(comptime Plugin: type) []const Page {
     }
 }
 
-/// A bound plugin's namespace: its own words, the description and the settings text,
-/// unless it still lists namespaces itself.
+/// A bound plugin's namespace: its own words, the description and the settings text.
 fn declared_namespaces(comptime Plugin: type) []const Namespace {
     comptime {
         std.debug.assert(Plugin.manifest.name.len > 0);
-
-        if (@hasField(@TypeOf(Plugin.options), "namespaces")) {
-            return as_slice(Namespace, Plugin.options.namespaces);
-        }
 
         const own = [_]Namespace{.{
             .name = Plugin.manifest.name,
@@ -589,52 +525,12 @@ pub fn Got(comptime Plugin: type, comptime name: []const u8) type {
         return host_define.Host.Got(Plugin.host, name);
     }
 
-    if (bound(Plugin) and std.mem.eql(u8, name, "operations")) {
-        return []const type;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "content_types")) {
-        return []const ContentTypeDef;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "internal_records")) {
-        return []const Collection;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "middleware")) {
-        return []const type;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "permissions")) {
-        return []const @import("../../model/sandboxed_plugin.zig").Ask;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "field_kinds")) {
-        return []const Kind;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "pages")) {
-        return []const Page;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "panels")) {
-        return []const Panel;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "row_actions")) {
-        return []const RowAction;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "settings_pages")) {
-        return []const SettingsPage;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "namespaces")) {
-        return []const Namespace;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "custom_fields")) {
-        return []const ContentTypeDef;
+    if (bound(Plugin)) {
+        inline for (resolvers) |entry| {
+            if (std.mem.eql(u8, entry[0], name)) {
+                return []const entry[1];
+            }
+        }
     }
 
     const Value = if (bound(Plugin))

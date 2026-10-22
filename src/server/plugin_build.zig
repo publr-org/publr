@@ -4,6 +4,7 @@
 //! the next version when it is already there. What it asks for is granted by tier, as when
 //! an administrator adds it; high requests wait for approval.
 const std = @import("std");
+const doc_reader = @import("../sdk/plugin/doc_reader.zig");
 const wasm = @import("publr_wasm");
 const toolchain = @import("toolchain.zig");
 const invoke = @import("sandboxed_plugins/invoke.zig");
@@ -53,13 +54,20 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         return 1;
     };
 
-    if (try refused_by_checks(init, request.dir, main_path)) {
+    const check = @import("plugin_build/check.zig");
+    const read = try doc_reader.source_of(
+        init.arena.allocator(),
+        try check.files_in(init, request.dir),
+    );
+
+    if (read.problems.len > 0) {
+        check.reported(request.dir, read.problems);
         return 1;
     }
 
     const docs_path = try std.fmt.allocPrint(init.arena.allocator(), "{s}.docs.zig", .{built});
 
-    try @import("plugin_build/docs.zig").write(init, request.dir, docs_path);
+    try write_docs(init, docs_path, read.source);
 
     const views = @import("plugin_build/views.zig").lower(init, tools, request.dir, built) catch {
         return 1;
@@ -590,15 +598,13 @@ const sdk_context = @import("../sdk/context.zig");
 
 /// Every plugin is held to the plugin checks before it compiles; each problem is told with
 /// its file and line.
-fn refused_by_checks(init: std.process.Init, dir: []const u8, main_path: []const u8) !bool {
-    std.debug.assert(dir.len > 0);
-    std.debug.assert(main_path.len > 0);
+/// The plugin's docs module, beside its built module.
+fn write_docs(init: std.process.Init, path: []const u8, source: []const u8) !void {
+    std.debug.assert(path.len > 0);
 
-    const found = try @import("plugin_build/check.zig").problems_in(init, dir);
-
-    for (found) |problem| {
-        report.err("{s}/{s}:{d}: {s}", .{ dir, problem.path, problem.line, problem.message });
-    }
-
-    return found.len > 0;
+    try std.Io.Dir.cwd().createDirPath(init.io, std.fs.path.dirname(path) orelse ".");
+    try std.Io.Dir.cwd().writeFile(init.io, .{
+        .sub_path = path,
+        .data = source,
+    });
 }

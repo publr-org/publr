@@ -11,7 +11,6 @@ const contract = @import("model/contract.zig");
 pub const trail = @import("sdk/trail.zig");
 pub const db = @import("lib/db.zig");
 
-pub const dependencies = @import("sdk/dependencies.zig");
 pub const caller = @import("sdk/caller.zig");
 pub const context = @import("sdk/context.zig");
 pub const operation = @import("sdk/operation.zig");
@@ -822,9 +821,9 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// Whether the caller may use the admin: its roles grant some operation of the
-        /// admin's, neither an app's (`app.*`) nor one open to everyone. What an anonymous
-        /// visitor may read (live public records) does not count: an account whose roles
-        /// grant only what apps call never gets in.
+        /// admin's, neither one apps call (`.untrusted_callers`) nor one open to everyone.
+        /// What an anonymous visitor may read (live public records) does not count: an
+        /// account whose roles grant only what apps call never gets in.
         pub fn reaches_admin(ctx: *const Ctx) bool {
             // Each operation's name is read once at comptime, a byte at a time.
             @setEvalBranchQuota(registry.operations.len * operation.name_len_max * 2);
@@ -837,7 +836,8 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             inline for (registry.operations) |Operation| {
-                const app_only = comptime operation.is_app(Operation.name);
+                const app_only = @hasDecl(Operation, "untrusted_callers") and
+                    Operation.untrusted_callers;
                 const open = @hasDecl(Operation, "open") and Operation.open;
 
                 if (!app_only and !open) {
@@ -987,8 +987,6 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(granted.allows());
             std.debug.assert(ctx.parent != null);
 
-            try check_rules(ctx, Operation, in);
-
             if (comptime operation.deprecation(Operation) != null) {
                 note_deprecated(ctx, comptime operation.deprecation_text(Operation));
             }
@@ -1033,24 +1031,6 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             return out;
-        }
-
-        /// The bounds the operation declares on its input (`rules`), checked before anything
-        /// runs, the same way an installed operation's are.
-        fn check_rules(ctx: *Ctx, comptime Operation: type, in: Operation.In) Error!void {
-            std.debug.assert(ctx.parent != null);
-
-            if (comptime !@hasDecl(Operation, "rules")) {
-                return;
-            }
-
-            const text = try stringify(ctx.arena, in);
-            const value = json_module.parse(std.json.Value, ctx.arena, text, .{}) catch {
-                return error.Invalid;
-            };
-            const shape = comptime operation.input_shape(Operation);
-
-            try refuse_broken(ctx, shape, value);
         }
 
         /// Every reference in the input read now, as the caller may see it: an operation
@@ -1931,22 +1911,6 @@ fn absent_plugin(comptime registry: Registry, comptime name: []const u8) bool {
     }
 }
 
-/// Refuses an input whose fields break the rules its shape carries, saying which and how.
-pub fn refuse_broken(ctx: *Ctx, shape: []const contract.Node, value: std.json.Value) Error!void {
-    std.debug.assert(shape.len > 0);
-    std.debug.assert(ctx.now_ms >= 0);
-
-    var buffer: [operation.failure_message_len_max]u8 = undefined;
-    const why = contract.rules_broken(shape, value, &buffer) orelse return;
-    const message = ctx.arena.dupe(u8, why) catch return error.OutOfMemory;
-
-    return ctx.fail(.{
-        .name = "InvalidInput",
-        .status = 400,
-        .message = message,
-    });
-}
-
 fn is_reference(comptime Type: type) bool {
     comptime {
         return @typeInfo(Type) == .@"struct" and @hasDecl(Type, "reference");
@@ -1964,16 +1928,14 @@ fn is_reference_list(comptime Type: type) bool {
     }
 }
 
-/// The plugin an operation name belongs to: `inventory` for `inventory.adjust` and for
-/// `app.inventory.reserve`.
+/// The plugin an operation name belongs to: `inventory` for `inventory.adjust`.
 pub fn plugin_of(comptime name: []const u8) []const u8 {
     comptime {
         std.debug.assert(std.mem.indexOfScalar(u8, name, '.') != null);
 
-        const rest = if (std.mem.startsWith(u8, name, "app.")) name["app.".len..] else name;
-        const dot = std.mem.indexOfScalar(u8, rest, '.') orelse rest.len;
+        const dot = std.mem.indexOfScalar(u8, name, '.') orelse name.len;
 
-        return rest[0..dot];
+        return name[0..dot];
     }
 }
 
@@ -2116,6 +2078,9 @@ pub const testing = struct {
         }
     };
 
+    /// Whether `Gate` vetoes every call, for the test that needs it.
+    pub var gate_closed: bool = false;
+
     pub const Gate = struct {
         pub const stage: middleware.Stage = .pre;
 
@@ -2125,7 +2090,7 @@ pub const testing = struct {
 
             _ = kind;
 
-            if (ctx.request_id.len != 0 and std.mem.eql(u8, ctx.request_id, "blocked")) {
+            if (gate_closed) {
                 return error.Denied;
             }
         }
@@ -2174,10 +2139,11 @@ test "pre middleware runs before authorization; a refused call emits nothing" {
     defer harness.deinit();
 
     var blocked = harness.ctx(.system);
-    blocked.request_id = "blocked";
+    testing.gate_closed = true;
     const blocked_call = TestSDK.dispatch(&blocked, testing.Record, .{
         .note = "x",
     });
+    testing.gate_closed = false;
     try std.testing.expectError(error.Denied, blocked_call);
 
     var anon = harness.ctx(.anonymous);
@@ -2296,9 +2262,12 @@ test "an operation called through what its plugin publishes: by name, the same c
 }
 
 const Subscribe = struct {
-    pub const name = "app.news.subscribe";
+    pub const name = "news.subscribe";
     pub const description = "Test operation an app calls";
     pub const kind: operation.Kind = .read;
+    pub const untrusted_callers = true;
+    pub const open = false;
+    pub const answer: ?@import("model/caller_answer.zig").Answer = null;
     pub const In = struct {};
     pub const Out = struct {
         ok: bool,
@@ -2565,67 +2534,4 @@ test "ctx.plugin: an operation's plugin, a hook's own, kept by a core call" {
     }
 
     try std.testing.expect(!try select.step());
-}
-
-test "rules: a field that breaks one refuses the call before it runs, naming the field" {
-    const Order = struct {
-        pub const name = "shop.order";
-        pub const description = "Test operation: order some";
-        pub const kind: operation.Kind = .write;
-        pub const In = struct {
-            quantity: u32,
-            code: []const u8 = "AB",
-        };
-        pub const Out = struct {
-            quantity: u32,
-        };
-        pub const rules: operation.Rules(In) = .{
-            .quantity = .{
-                .min = 1,
-                .max = 20,
-            },
-            .code = .{
-                .min_len = 2,
-                .preset = .uppercase,
-            },
-        };
-        pub const example: In = .{
-            .quantity = 1,
-        };
-        pub const example_out: Out = .{
-            .quantity = 1,
-        };
-
-        pub fn run(_: *Ctx, in: In, _: *const Grant) Error!Out {
-            std.debug.assert(in.quantity >= 1 and in.quantity <= 20);
-
-            return .{
-                .quantity = in.quantity,
-            };
-        }
-    };
-    const Checked = SDK(.{
-        .operations = &.{Order},
-    });
-    var harness: testing.Harness = undefined;
-    try harness.init();
-    defer harness.deinit();
-
-    var ctx = harness.ctx(.system);
-    const kept = try Checked.dispatch(&ctx, Order, .{
-        .quantity = 3,
-    });
-    try std.testing.expectEqual(@as(u32, 3), kept.quantity);
-
-    try std.testing.expectError(error.Failed, Checked.dispatch(&ctx, Order, .{
-        .quantity = 21,
-    }));
-    try std.testing.expect(std.mem.indexOf(u8, ctx.failure.?.message, "quantity") != null);
-
-    const lowercase = Checked.dispatch(&ctx, Order, .{
-        .quantity = 2,
-        .code = "ab",
-    });
-    try std.testing.expectError(error.Failed, lowercase);
-    try std.testing.expect(std.mem.indexOf(u8, ctx.failure.?.message, "code") != null);
 }

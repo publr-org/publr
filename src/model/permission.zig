@@ -396,7 +396,7 @@ pub fn tier_of(key: []const u8) ?Tier {
     return permission.tier;
 }
 
-/// The operation a `call:<plugin>.<verb>` or `call:app.<plugin>.<verb>` key names: exactly
+/// The operation a `call:<plugin>.<verb>` key names: exactly
 /// one operation, never a namespace. That it is a plugin's, one the caller depends on, is
 /// checked where the plugin is known.
 pub fn called_operation(key: []const u8) ?[]const u8 {
@@ -408,8 +408,7 @@ pub fn called_operation(key: []const u8) ?[]const u8 {
         return null;
     }
 
-    const name = key[prefix.len..];
-    const tail = if (std.mem.startsWith(u8, name, "app.")) name["app.".len..] else name;
+    const tail = key[prefix.len..];
     const dot = std.mem.indexOfScalar(u8, tail, '.') orelse return null;
 
     if (dot == 0 or dot + 1 == tail.len) {
@@ -428,7 +427,7 @@ pub fn called_operation(key: []const u8) ?[]const u8 {
 
     std.debug.assert(tail.len >= 3);
 
-    return name;
+    return tail;
 }
 
 pub fn contains(list: []const []const u8, item: []const u8) bool {
@@ -468,8 +467,6 @@ test "tiers: catalog keys by their entry, unknown keys (a secret's among them) u
 }
 
 test "a call permission names exactly one plugin operation, at the medium tier" {
-    const target = called_operation("call:app.provider.adjust").?;
-    try std.testing.expectEqualStrings("app.provider.adjust", target);
     try std.testing.expectEqualStrings(
         "provider.adjust",
         called_operation("call:provider.adjust").?,
@@ -484,7 +481,7 @@ test "a call permission names exactly one plugin operation, at the medium tier" 
         try std.testing.expect(called_operation(key) == null);
     }
 
-    try std.testing.expectEqual(Tier.medium, tier_of("call:app.provider.adjust").?);
+    try std.testing.expectEqual(Tier.medium, tier_of("call:provider.adjust").?);
 }
 
 test "the tier follows what is asked: flags raise it, every type raises a write" {

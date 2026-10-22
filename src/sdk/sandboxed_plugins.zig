@@ -25,8 +25,6 @@ pub const Operation = struct {
     kind: operation.Kind,
     description: []const u8 = "",
     open: bool = false,
-    /// Any site may call it through an app (`public = true`).
-    public: bool = false,
     /// Made with `publr.operation.define`: whether callers without credentials may call it;
     /// null for one declared part by part.
     untrusted_callers: ?bool = null,

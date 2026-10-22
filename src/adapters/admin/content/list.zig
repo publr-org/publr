@@ -108,7 +108,6 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         model.view.decode(arena, found.query) catch Filters{}
     else
         address;
-    const overrides = view_id != null and filters.any_present(query);
     const typed = try view_offer.of(&session, base);
     const offer = typed orelse view_offer.across_types();
     const resting = if (saved != null)
@@ -118,7 +117,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     else
         try default_base(arena, address, listed_types.types);
 
-    const given = if (overrides) address else base;
+    const given = if (view_id != null and filters.any_present(query)) address else base;
     const started = if (saved == null and base.type_view and filters.bare(query))
         resting
     else

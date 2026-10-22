@@ -278,16 +278,12 @@ fn naming(operation_name: []const u8) ?*const permission.Permission {
     return null;
 }
 
-/// Whether `operation_name` is in the plugin's own namespace: `<name>.*`, `app.<name>.*`.
+/// Whether `operation_name` is in the plugin's own namespace: `<name>.*`.
 pub fn own(name: []const u8, operation_name: []const u8) bool {
     std.debug.assert(name.len > 0);
     std.debug.assert(operation_name.len > 0);
 
-    const namespace = operation.namespace(operation_name);
-    const app_namespace = std.mem.startsWith(u8, namespace, "app.") and
-        std.mem.eql(u8, namespace[4..], name);
-
-    return std.mem.eql(u8, namespace, name) or app_namespace;
+    return std.mem.eql(u8, operation.namespace(operation_name), name);
 }
 
 /// Whether a granted `call:` permission names exactly this operation of a plugin it depends
@@ -304,24 +300,9 @@ fn calls_dependency(access: *const Access, operation_name: []const u8) bool {
         }
 
         for ([_][]const []const u8{ access.depends_on, access.compatible_with }) |list| {
-            if (names_owner(list, operation_name)) {
+            if (plugin_depends_on.names_owner(list, operation_name)) {
                 return true;
             }
-        }
-    }
-
-    return false;
-}
-
-fn names_owner(list: []const []const u8, operation_name: []const u8) bool {
-    std.debug.assert(operation_name.len > 0);
-    std.debug.assert(list.len <= plugin_depends_on.depends_on_max * 2);
-
-    for (list) |text| {
-        const parent = if (text.len > 0) plugin_depends_on.parse(text).name else "";
-
-        if (parent.len > 0 and own(parent, operation_name)) {
-            return true;
         }
     }
 
@@ -351,7 +332,6 @@ test "own namespace and harmless calls need nothing; never is never" {
     };
 
     try std.testing.expect((try granted_for(arena, &access, "greeter.greet", null)).allows());
-    try std.testing.expect((try granted_for(arena, &access, "app.greeter.join", null)).allows());
     try std.testing.expect((try granted_for(arena, &access, "heartbeat.check", null)).allows());
     try std.testing.expect(!(try granted_for(arena, &access, "user.list", null)).allows());
 
@@ -500,27 +480,19 @@ test "an exact plugin call needs both its grant and a declared parent" {
     const arena = arena_state.allocator();
     var access: Access = .{
         .held = &.{.{
-            .key = "call:app.provider.adjust",
+            .key = "call:provider.adjust",
         }},
         .own_types = &.{},
     };
     const request: Request = .{
-        .operation_name = "app.provider.adjust",
+        .operation_name = "provider.adjust",
     };
     try std.testing.expect(!(try grant(arena, "child", &access, request)).allows());
     access.depends_on = &.{"provider@^0.3"};
     try std.testing.expect((try grant(arena, "child", &access, request)).allows());
     try std.testing.expect(!(try grant(arena, "child", &access, .{
-        .operation_name = "app.provider.purge",
+        .operation_name = "provider.purge",
     })).allows());
-
-    access.held = &.{.{
-        .key = "call:provider.adjust",
-    }};
-    try std.testing.expect((try grant(arena, "child", &access, .{
-        .operation_name = "provider.adjust",
-    })).allows());
-    try std.testing.expect(!(try grant(arena, "child", &access, request)).allows());
 
     access.held = &.{};
     try std.testing.expect(!(try grant(arena, "child", &access, request)).allows());
