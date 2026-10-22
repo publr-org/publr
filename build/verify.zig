@@ -8,6 +8,7 @@ const tidy = @import("tidy.zig");
 const wasm = @import("wasm.zig");
 const tests = @import("tests.zig");
 const sandboxed_plugins = @import("sandboxed_plugins.zig");
+const native_plugins = @import("native_plugins.zig");
 const two_mode = @import("two_mode.zig");
 
 pub const Parts = struct {
@@ -39,6 +40,12 @@ pub fn add(builder: *std.Build, parts: Parts) void {
     slim.dependOn(parts.checks.core);
     slim.dependOn(parts.fmt);
     slim.dependOn(tidy_check);
+
+    if (project_plugins(builder, parts)) |both| {
+        slim.dependOn(both);
+        full.dependOn(both);
+    }
+
     const wasm_step = wasm.add_check(builder, parts.from);
 
     full.dependOn(parts.checks.step);
@@ -79,4 +86,42 @@ pub fn add(builder: *std.Build, parts: Parts) void {
     if (hook.add_check(builder, parts.checks.fixture_exe, browser_step)) |local_hook| {
         full.dependOn(local_hook);
     }
+}
+
+/// The plugins under `-Dplugins` beside a project (`-Dplugins=../plugins`): every one compiled
+/// in, and each `publr.zon` leaves out of the binary built for the sandbox too, so a plugin is
+/// checked every way it may run. Null when the folder holds none, as Publr's own has.
+fn project_plugins(builder: *std.Build, parts: Parts) ?*std.Build.Step {
+    std.debug.assert(parts.from.plugins_dir.len > 0);
+
+    const built = sandboxed_plugins.add(builder, parts.exe, parts.from.plugins_dir);
+
+    if (built.names.len == 0) {
+        return null;
+    }
+
+    const step = builder.step(
+        "project-plugins",
+        "Build every plugin under -Dplugins compiled in, and each for the sandbox",
+    );
+
+    for (built.names, built.files) |name, file| {
+        if (!native_plugins.is_native(parts.from.native, name)) {
+            file.addStepDependencies(step);
+        }
+    }
+
+    var every = parts.from;
+
+    every.native = .all;
+
+    const module = core.add_module(builder, parts.target, parts.optimize, every);
+    const compiled = builder.addExecutable(.{
+        .name = "publr-project-plugins",
+        .root_module = core.add_entry(builder, "src/main.zig", module),
+    });
+
+    step.dependOn(&compiled.step);
+
+    return step;
 }
