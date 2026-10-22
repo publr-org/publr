@@ -12,13 +12,11 @@ const shapes = @import("../../model/contract.zig");
 /// The name of the custom section the manifest travels in.
 pub const section_name = "publr";
 pub const format = sandboxed_plugin.format;
-pub const bytes_max: u32 = 1 << 20;
 
 pub const Manifest = sandboxed_plugin.Manifest;
 pub const Operation = sandboxed_plugin.Operation;
 pub const Field = sandboxed_plugin.Field;
 pub const Hook = sandboxed_plugin.Hook;
-pub const RemoteUse = sandboxed_plugin.RemoteUse;
 
 pub fn of(comptime Plugin: type) Manifest {
     comptime {

@@ -258,28 +258,14 @@ pub const SandboxApi = struct {
     /// Passes `value` through every modifier of `name` (`publr.modify(name, …)` in any
     /// plugin) and answers what they made of it; with none, the value as it went.
     pub fn mod(self: *SandboxApi, comptime name: []const u8, value: anytype) Error!@TypeOf(value) {
-        const changed = try self.mod_all(name, @TypeOf(value), &.{value});
-
-        std.debug.assert(changed.len == 1);
-
-        return changed[0];
-    }
-
-    /// `mod` for several values at once: a modifier's reads are made together for all.
-    pub fn mod_all(
-        self: *SandboxApi,
-        comptime name: []const u8,
-        comptime Value: type,
-        values: []const Value,
-    ) Error![]const Value {
         comptime {
             if (!mods.valid(name, false)) {
                 @compileError("`" ++ name ++ "` is no mod name: dotted parts of a-z, 0-9 and _");
             }
         }
 
-        std.debug.assert(values.len <= mods.items_max);
-
+        const Value = @TypeOf(value);
+        const values: []const Value = &.{value};
         const memory = self.arena();
         const text = std.json.Stringify.valueAlloc(memory, values, .{}) catch {
             return error.OutOfMemory;
@@ -289,10 +275,12 @@ pub const SandboxApi = struct {
             .values = text,
         });
 
-        return std.json.parseFromSliceLeaky([]const Value, memory, answered.values, .{
+        const changed = std.json.parseFromSliceLeaky([]const Value, memory, answered.values, .{
             .ignore_unknown_fields = true,
             .allocate = .alloc_always,
-        }) catch values;
+        }) catch return value;
+
+        return if (changed.len == 1) changed[0] else value;
     }
 
     /// Runs `Operation` in the host as this plugin, with its grants: `error.Denied` when an

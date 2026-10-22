@@ -284,7 +284,6 @@ pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) E
         error.Invalid => .unprocessable_content,
         error.NotFound => .not_found,
         error.Conflict => .conflict,
-        error.Vetoed => .forbidden,
         error.Interrupted, error.TooBig => .unprocessable_content,
         error.InvalidationFailed,
         error.NotYet,

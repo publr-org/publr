@@ -5,7 +5,7 @@ const Logs = @import("../records/logs.zig");
 const Noted = @import("../events/noted.zig");
 
 /// Logs every note kept
-pub fn run(ctx: *publr.Ctx, noted: Noted.Payload) publr.Error!void {
+pub fn run(ctx: *publr.QueueCtx, noted: Noted.Payload) publr.Error!void {
     std.debug.assert(noted.note.len > 0);
     std.debug.assert(noted.note.len <= 280);
 

@@ -49,7 +49,7 @@ pub fn signed_up(ctx: *Ctx, user: User, method: []const u8) Error!void {
 /// Someone signed out: `after` hooks, which never stop it, then the event.
 pub fn signed_out(ctx: *Ctx, user_id: []const u8) Error!void {
     std.debug.assert(user_id.len > 0);
-    std.debug.assert(!events.refusable(events.SignedOut.full_name));
+    comptime std.debug.assert(!events.SignedOut.refusable);
 
     const payload: events.SignedOut.Payload = .{
         .user = user_id,

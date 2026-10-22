@@ -9,24 +9,18 @@ const Error = operation.Error;
 /// `modify` changes a value applied under a name (`mods.zig`), never what an operation does.
 pub const Stage = enum { pre, before, after, on, modify };
 
+/// An operation's end, refused or failed alike, or an event emitted.
 pub const Event = union(enum) {
-    completed: Completed,
-    rejected: Failed,
-    failed: Failed,
+    completed: Ended,
+    failed: Ended,
     emitted: Emitted,
 
-    pub const Completed = struct {
+    pub const Ended = struct {
         operation_name: []const u8,
         operation_id: u64,
-        duration_ns: u64,
-    };
-    pub const Failed = struct {
-        operation_name: []const u8,
-        operation_id: u64,
-        err: operation.Error,
     };
     /// An event emitted under its name (`<plugin>.<event>`, `role.created`, or an operation's
-    /// own on success), its payload as JSON or, for core's events not yet typed, a text.
+    /// own on success), its payload as JSON.
     pub const Emitted = struct {
         operation_id: u64,
         name: []const u8,

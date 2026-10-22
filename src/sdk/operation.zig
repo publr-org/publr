@@ -10,7 +10,6 @@ pub const Error = db.Error || error{
     Invalid,
     NotFound,
     Conflict,
-    Vetoed,
     Throttled,
     /// The operation's own failure, one the core does not name: `ctx.failure` says which
     /// (a `Failure` its plugin declares), and the adapters answer with its status and name.

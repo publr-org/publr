@@ -98,7 +98,7 @@ fn hook_left_out(comptime Middleware: type) ?[]const u8 {
             return "it takes the host's context";
         }
 
-        if (!@hasDecl(Middleware, "reason")) {
+        if (!@hasDecl(Middleware, "reason") or Middleware.reason.len == 0) {
             return "it has no `reason` (a hook is asked for like a permission)";
         }
 

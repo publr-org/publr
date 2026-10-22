@@ -338,28 +338,6 @@ pub fn content_types_of(comptime Plugin: type) []const ContentTypeDef {
     }
 }
 
-/// The custom field groups a plugin declares on users or media, each with its location
-/// rules (`destination`); created or updated when the database opens, fields locked.
-/// Another plugin's operation, as this plugin uses it: its name, what this plugin sends and
-/// the part of the answer it reads. Listed in the plugin's `remotes`, it is called
-/// (`ctx.call(Reserve, ...)`) and hooked like any operation; its plugin must be named in
-/// `depends_on` or `compatible_with`. Checked against the real operation when both are
-/// compiled in, and when either is installed.
-pub fn Remote(
-    comptime operation_name: []const u8,
-    comptime Input: type,
-    comptime Output: type,
-) type {
-    comptime sdk.operation.assert_name(operation_name);
-
-    return struct {
-        pub const name = operation_name;
-        pub const In = Input;
-        pub const Out = Output;
-        pub const remote = true;
-    };
-}
-
 /// What a plugin uses of other plugins, `.remotes = &.{ Reserve, Variant, OutOfStock }`:
 /// `publr.remote.operation`, `publr.remote.record` and `publr.remote.event`.
 pub fn remotes_of(comptime Plugin: type) []const type {
@@ -564,84 +542,34 @@ fn check_remotes(comptime plugins: anytype) []const remote_contract.Off {
                 const target = sdk.plugin_of(name);
                 const label = "plugin " ++ Plugin.manifest.name ++ ": " ++ name ++ " ";
 
-                const required = lists(depends_on.of(Plugin), target);
+                const required = declared_in(depends_on.of(Plugin), target);
                 const optional = declared_in(compatible_with_of(Plugin), target);
-
-                if (!required and optional == null) {
-                    @compileError(label ++ "belongs to " ++ target ++
-                        ", named in neither `depends_on` nor `compatible_with`");
-                }
+                const named = if (required != null) required else optional;
+                const declared = named orelse @compileError(label ++ "belongs to " ++ target ++
+                    ", named in neither `depends_on` nor `compatible_with`");
 
                 for (plugins) |Provider| {
                     if (!std.mem.eql(u8, Provider.manifest.name, target)) {
                         continue;
                     }
 
-                    if (!required) {
-                        if (remote_contract.misfit_compiled(Used, Provider, optional.?)) |why| {
-                            off = off ++ &[_]remote_contract.Off{.{
-                                .plugin = Plugin.manifest.name,
-                                .name = name,
-                                .why = why,
-                            }};
-                        }
-                    } else if (@hasDecl(Used, "remote")) {
-                        check_against(label, Used, operations_of(Provider));
-                    } else {
-                        remote_contract.check_compiled(label, Used, Provider);
+                    const why = remote_contract.misfit_compiled(Used, Provider, declared) orelse
+                        continue;
+
+                    if (required != null) {
+                        @compileError(label ++ "does not fit: " ++ why);
                     }
+
+                    off = off ++ &[_]remote_contract.Off{.{
+                        .plugin = Plugin.manifest.name,
+                        .name = name,
+                        .why = why,
+                    }};
                 }
             }
         }
 
         return off;
-    }
-}
-
-fn check_against(
-    comptime label: []const u8,
-    comptime Used: type,
-    comptime provided: []const type,
-) void {
-    comptime {
-        const contract = @import("../model/contract.zig");
-
-        for (provided) |Operation| {
-            if (std.mem.eql(u8, Operation.name, Used.name)) {
-                const sent = contract.describe(Used.In);
-                const read = contract.describe(Used.Out);
-                const accepted = contract.describe(Operation.In);
-                const given = contract.describe(Operation.Out);
-
-                if (contract.check_input(sent, accepted)) |problem| {
-                    @compileError(label ++ "sends " ++ described(problem, sent, accepted));
-                }
-
-                if (contract.check_output(read, given)) |problem| {
-                    @compileError(label ++ "reads " ++ described(problem, read, given));
-                }
-
-                return;
-            }
-        }
-
-        @compileError(label ++ "is not an operation of its plugin");
-    }
-}
-
-fn described(
-    comptime problem: @import("../model/contract.zig").Problem,
-    comptime user: []const @import("../model/contract.zig").Node,
-    comptime providing: []const @import("../model/contract.zig").Node,
-) []const u8 {
-    comptime {
-        const contract = @import("../model/contract.zig");
-        var buffer: [256]u8 = undefined;
-        const nodes = if (problem.on_user_side) user else providing;
-        const path = contract.path_of(nodes, problem.node, &buffer);
-        const shown = if (path.len == 0) "its whole value" else path;
-
-        return shown ++ " in a way that does not fit: it " ++ contract.reason_text(problem.reason);
     }
 }
 
@@ -657,20 +585,6 @@ fn declared_in(comptime list: []const []const u8, comptime name: []const u8) ?[]
         }
 
         return null;
-    }
-}
-
-fn lists(comptime list: []const []const u8, comptime name: []const u8) bool {
-    comptime {
-        std.debug.assert(name.len > 0);
-
-        for (list) |text| {
-            if (std.mem.eql(u8, depends_on.parse(text).name, name)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
 
@@ -1617,17 +1531,19 @@ const Teller = struct {
         try line(ctx, "kept", told.who);
     }
 
-    fn heard(ctx: *PluginCtx, told: Told.Payload) sdk.Error!void {
-        std.debug.assert(ctx.inner.db.transaction_depth == 0);
+    fn heard(ctx: *QueueCtx, told: Told.Payload) sdk.Error!void {
+        std.debug.assert(ctx.base.inner.db.transaction_depth == 0);
 
-        try line(ctx, "heard", told.who);
+        try line(ctx.base, "heard", told.who);
     }
 
-    fn answered(ctx: *PluginCtx, out: Tell.Out) sdk.Error!void {
-        std.debug.assert(ctx.inner.db.transaction_depth == 0);
+    fn answered(ctx: *QueueCtx, out: Tell.Out) sdk.Error!void {
+        std.debug.assert(ctx.base.inner.db.transaction_depth == 0);
 
-        try line(ctx, "answered", out.told);
+        try line(ctx.base, "answered", out.told);
     }
+
+    const QueueCtx = @import("plugin/queue.zig").Queue(PluginCtx);
 
     fn line(ctx: *PluginCtx, comptime what: []const u8, who: []const u8) sdk.Error!void {
         std.debug.assert(who.len > 0);
@@ -1751,7 +1667,7 @@ test "a remote operation that fits the compiled-in one it names; the manifest ca
         };
         pub const compatible_with = .{"provider@^1.0"};
         pub const remotes = [_]type{Adjust};
-        pub const Adjust = Remote(
+        pub const Adjust = @import("plugin/hook_define.zig").remote.operation(
             "provider.adjust",
             struct {
                 sku: []const u8,

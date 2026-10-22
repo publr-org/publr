@@ -417,7 +417,9 @@ pub const Ctx = struct {
 
         const set_aside = try ctx.arena.create(Scratch);
 
-        set_aside.* = try .init(ctx.arena, @import("scratch.zig").bytes_default);
+        set_aside.* = .{
+            .fixed = .init(try ctx.arena.alloc(u8, @import("scratch.zig").bytes_default)),
+        };
         ctx.scratch_set_aside = set_aside;
 
         std.debug.assert(ctx.scratch_set_aside != null);

@@ -1,6 +1,6 @@
 //! An `on` hook's failed run, kept in `job_queue` so the jobs' machinery runs it again: named
-//! `on:<event>` (`on:<event>#2` for a plugin's second hook on it), the event's payload as its
-//! input.
+//! `on:<event>` (`on:<event>#2` for a plugin's second hook on it), the event's payload (JSON)
+//! as its input.
 const std = @import("std");
 const job_queue = @import("../store/job_queue.zig");
 
@@ -63,39 +63,7 @@ pub fn target_of(job: []const u8) ?Target {
     };
 }
 
-/// The event's payload as a job's input: kept as it is when it is JSON, as a JSON string
-/// when it is text.
-pub fn input_of(arena: std.mem.Allocator, subject: []const u8) error{OutOfMemory}![]const u8 {
-    std.debug.assert(job_queue.input_bytes_max > 0);
-
-    const json = subject.len > 0 and (subject[0] == '{' or subject[0] == '[');
-    const input = if (json) subject else try std.json.Stringify.valueAlloc(arena, subject, .{});
-
-    std.debug.assert(input.len > 0);
-
-    return input;
-}
-
-/// The payload back from the kept input.
-pub fn subject_of(
-    arena: std.mem.Allocator,
-    input: []const u8,
-) error{ OutOfMemory, Invalid }![]const u8 {
-    std.debug.assert(input.len > 0);
-
-    if (input[0] != '"') {
-        return input;
-    }
-
-    return std.json.parseFromSliceLeaky([]const u8, arena, input, .{
-        .allocate = .alloc_always,
-    }) catch |err| switch (err) {
-        error.OutOfMemory => error.OutOfMemory,
-        else => error.Invalid,
-    };
-}
-
-test "a kept hook run's name and input go there and back" {
+test "a kept hook run's name goes there and back" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
 
@@ -111,15 +79,6 @@ test "a kept hook run's name and input go there and back" {
     try std.testing.expectEqual(null, target_of("on:"));
     try std.testing.expectEqual(null, target_of("on:x#1"));
     try std.testing.expectEqual(null, target_of("on:x#nine"));
-
-    const text = try input_of(arena, "a1b2");
-
-    try std.testing.expectEqualStrings("\"a1b2\"", text);
-    try std.testing.expectEqualStrings("a1b2", try subject_of(arena, text));
-    try std.testing.expectEqualStrings("{\"rows\":1}", try input_of(arena, "{\"rows\":1}"));
-    try std.testing.expectEqualStrings("{\"rows\":1}", try subject_of(arena, "{\"rows\":1}"));
-    try std.testing.expectEqualStrings("\"\"", try input_of(arena, ""));
-    try std.testing.expectError(error.Invalid, subject_of(arena, "\"open"));
 }
 
 const sdk = @import("../sdk.zig");

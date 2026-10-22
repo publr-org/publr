@@ -35,7 +35,6 @@ const refusals = [_][]const u8{
     "Invalid",
     "NotFound",
     "Conflict",
-    "Vetoed",
     "Throttled",
     "Failed",
     "BadCredentials",

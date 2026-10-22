@@ -39,7 +39,7 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
                 }
             }
 
-            if (heard_outside(ctx, emitted.name, true)) {
+            if (heard_outside(ctx, emitted.name)) {
                 queue(ctx, emitted);
             }
         }
@@ -63,7 +63,7 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             }
 
             for (many) |emitted| {
-                if (heard_outside(ctx, emitted.name, true)) {
+                if (heard_outside(ctx, emitted.name)) {
                     queue(ctx, emitted);
                 }
             }
@@ -122,24 +122,16 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             };
         }
 
-        /// Whether an `on` hook, compiled in or installed, hears the event. `everything`: a
-        /// listener of every event counts too (core's own); an operation's answer is queued
-        /// only for hooks that name it.
-        pub fn heard_outside(ctx: *const Ctx, name: []const u8, everything: bool) bool {
+        /// Whether an `on` hook, compiled in or installed, names the event.
+        pub fn heard_outside(ctx: *const Ctx, name: []const u8) bool {
             std.debug.assert(name.len > 0);
             std.debug.assert(registry.middleware.len <= sdk.middleware.middleware_max);
 
             inline for (registry.middleware) |Middleware| {
                 const listens = comptime Middleware.stage == .on and !intrinsic(Middleware);
 
-                if (listens) {
-                    if (comptime @hasDecl(Middleware, "event")) {
-                        if (std.mem.eql(u8, Middleware.event, name)) {
-                            return true;
-                        }
-                    } else if (everything) {
-                        return true;
-                    }
+                if (listens and std.mem.eql(u8, Middleware.event, name)) {
+                    return true;
                 }
             }
 
@@ -256,12 +248,10 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
                 return;
             }
 
-            const input = try hook_runs.input_of(ctx.arena, emitted.subject);
-
             try SDK.jobs.failed_first(ctx, .{
                 .plugin = plugin,
                 .name = job,
-                .input = input,
+                .input = emitted.subject,
                 .due_at_ms = ctx.now_ms,
                 .now_ms = ctx.now_ms,
             }, problem);
@@ -274,12 +264,10 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(hook_runs.is_hook(job));
 
             const target = hook_runs.target_of(job) orelse return hook_runs.gone;
-            const subject = hook_runs.subject_of(ctx.arena, input) catch
-                return "its event no longer reads";
             const emitted: Emitted = .{
                 .operation_id = ctx.allocate_operation_id(),
                 .name = target.event,
-                .subject = subject,
+                .subject = input,
             };
             const event: Event = .{
                 .emitted = emitted,

@@ -569,7 +569,6 @@ fn describe(err: sdk.Error, ctx: *const sdk.Ctx) []const u8 {
         error.Invalid => "invalid input",
         error.NotFound => "not found",
         error.Conflict => "conflict: it already exists or was already done",
-        error.Vetoed => "vetoed by a plugin",
         error.Throttled => "too many calls or failed attempts; wait before trying again",
         error.Failed => if (ctx.failure) |failure| failure.message else "failed",
         error.Unavailable => "a service it needs is unavailable; nothing changed, try again",

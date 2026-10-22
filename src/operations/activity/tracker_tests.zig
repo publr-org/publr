@@ -9,6 +9,7 @@ const activity = @import("../activity.zig");
 const store = @import("../../store.zig");
 
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
+const QueueCtx = @import("../../sdk/plugin/queue.zig").Queue(PluginCtx);
 
 /// Breaks on purpose, and records every error it hears of, as an error tracker would.
 const Tracker = struct {
@@ -63,8 +64,8 @@ const Tracker = struct {
         }
     };
 
-    fn track(ctx: *PluginCtx, failed: error_events.Failed.Payload) sdk.Error!void {
-        std.debug.assert(ctx.inner.db.transaction_depth == 0);
+    fn track(ctx: *QueueCtx, failed: error_events.Failed.Payload) sdk.Error!void {
+        std.debug.assert(ctx.base.inner.db.transaction_depth == 0);
         std.debug.assert(failed.entry > 0);
 
         ctx.log(.info, "Tracked {s} {s}: {s} by {s}", .{

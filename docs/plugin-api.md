@@ -185,7 +185,7 @@ pub const ReserveIn = struct {
 
 ### Errors
 
-`publr.Error` is `Denied`, `Invalid`, `NotFound`, `Conflict`, `Vetoed`, `Throttled`,
+`publr.Error` is `Denied`, `Invalid`, `NotFound`, `Conflict`, `Throttled`,
 `Failed`, `Unavailable`, `BadCredentials`, `InvalidationFailed`, `OutOfMemory` and the
 database's errors. A failure of the plugin's own is `ctx.fail` (below). Any error from a
 write rolls back the write, its hooks and every call it made.
@@ -514,8 +514,8 @@ went. Modifiers run in order: compiled-in plugins first, then installed ones as 
 loaded. A modifier's function takes the value by pointer, typed by its parameter; a value
 that does not read as that type is left as it was. What the owner does with the answer is
 its own: shown, or saved. Core applies every record's title as `<type>.title`
-(`publr.Title(Doc)`: `.id`, `.record` typed, `.title` to change). `ctx.mod_all` applies a
-list of values at once; a modifier is still written for one, and Publr runs it over them in
+(`publr.Title(Doc)`: `.id`, `.record` typed, `.title` to change). Core applies titles a
+list at a time; a modifier is still written for one, and Publr runs it over them in
 passes: the first only notes what each reads, then every noted `get` is read in one list and
 anything else once per distinct input, and the next pass answers from them, at most 4
 rounds. A modifier is pure: no writes, no outside calls; one that fails leaves the value as

@@ -168,7 +168,7 @@ fn failure_of(
     std.debug.assert(name.len > 0);
 
     return switch (err) {
-        error.Invalid, error.NotFound, error.Denied, error.Conflict, error.Vetoed => null,
+        error.Invalid, error.NotFound, error.Denied, error.Conflict => null,
         error.Failed, error.Throttled, error.Unavailable => null,
         error.OutOfMemory => error.OutOfMemory,
         else => .{

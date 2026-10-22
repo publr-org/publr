@@ -2,7 +2,6 @@ const std = @import("std");
 const limits_module = @import("sdk/limits.zig");
 const model_operation_override = @import("model/operation_override.zig");
 const Transitioned = @import("model/flow.zig").Transitioned;
-const auth_events = @import("sdk/auth_events.zig");
 const error_events = @import("sdk/error_events.zig");
 const store_settings = @import("store/settings.zig");
 /// Rate limits: the general one and an operation's own `.limit`.
@@ -38,6 +37,15 @@ pub const Error = operation.Error;
 pub const Grant = grant.Grant;
 pub const Policy = authorize.Policy;
 pub const Event = middleware.Event;
+/// An app loaded from the folder, as the server started or the folder changed: core's own
+/// event, emitted outside any operation.
+pub const AppsLoaded = @import("sdk/plugin/hook_define.zig").event(.{
+    .name = "apps.loaded",
+    .payload = struct {
+        /// The app's name
+        app: []const u8,
+    },
+});
 pub const Scratch = scratch.Scratch;
 pub const DefinitionCache = definition_cache.DefinitionCache;
 
@@ -148,7 +156,6 @@ pub fn SDK(comptime registry: Registry) type {
 
             const operation_id = ctx.allocate_operation_id();
             const parent = ctx.parent;
-            const started = std.Io.Clock.awake.now(ctx.io);
             const notify = ctx.notify;
             var trail_state: trail.Trail = .{
                 .root = operation_id,
@@ -165,10 +172,9 @@ pub fn SDK(comptime registry: Registry) type {
 
             const granted = admit_counted(ctx, Operation, in, parent == null) catch |err| {
                 emit(ctx, .{
-                    .rejected = .{
+                    .failed = .{
                         .operation_name = Operation.name,
                         .operation_id = operation_id,
-                        .err = err,
                     },
                 });
                 const secret = comptime trail.secret_of(Operation);
@@ -207,13 +213,10 @@ pub fn SDK(comptime registry: Registry) type {
             const result = run(ctx, Operation, in, &granted);
 
             if (result) |_| {
-                const ended = std.Io.Clock.awake.now(ctx.io);
-                const elapsed: u64 = @intCast(@max(0, started.durationTo(ended).nanoseconds));
                 emit(ctx, .{
                     .completed = .{
                         .operation_name = Operation.name,
                         .operation_id = operation_id,
-                        .duration_ns = elapsed,
                     },
                 });
                 log_lines(ctx, Operation.name);
@@ -222,7 +225,6 @@ pub fn SDK(comptime registry: Registry) type {
                     .failed = .{
                         .operation_name = Operation.name,
                         .operation_id = operation_id,
-                        .err = err,
                     },
                 });
                 const secret = comptime trail.secret_of(Operation);
@@ -412,7 +414,7 @@ pub fn SDK(comptime registry: Registry) type {
             ctx.kept_events = null;
 
             for (list.items) |emitted| {
-                if (events.heard_outside(ctx, emitted.name, false)) {
+                if (events.heard_outside(ctx, emitted.name)) {
                     events.queue(ctx, emitted);
                 }
             }
@@ -1261,7 +1263,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.parent != null);
 
             const name = Emitted.full_name;
-            const refusable = auth_events.refusable(name) and !spared;
+            const refusable = Emitted.refusable and !spared;
 
             inline for (registry.middleware) |Middleware| {
                 const listening = comptime Middleware.stage == stage and
@@ -1544,14 +1546,20 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// An event emitted outside any operation: what the server itself did (the apps
-        /// loaded from the folder). `on` hooks hear it from the queue as any other.
-        pub fn announce(ctx: *Ctx, name: []const u8, subject: []const u8) void {
-            std.debug.assert(name.len > 0);
+        /// loaded from the folder, `AppsLoaded`). `on` hooks hear it from the queue as any
+        /// other.
+        pub fn announce(ctx: *Ctx, comptime Emitted: type, payload: Emitted.Payload) void {
+            comptime std.debug.assert(Emitted.full_name.len > 0);
             std.debug.assert(ctx.parent == null);
+
+            const subject = stringify(ctx.arena, payload) catch |err| {
+                std.log.warn("events: {s} not announced: {t}", .{ Emitted.full_name, err });
+                return;
+            };
 
             emit_event(ctx, .{
                 .operation_id = ctx.allocate_operation_id(),
-                .name = name,
+                .name = Emitted.full_name,
                 .subject = subject,
             }, false);
         }
@@ -1564,7 +1572,7 @@ pub fn SDK(comptime registry: Registry) type {
                 .completed => |done| if (done.operation_id != open.root) {
                     open.called(ctx, done.operation_name, false);
                 },
-                .rejected, .failed => |failed| if (failed.operation_id != open.root) {
+                .failed => |failed| if (failed.operation_id != open.root) {
                     open.called(ctx, failed.operation_name, true);
                 },
                 .emitted => |emitted| open.emitted(.{
@@ -1664,9 +1672,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.next_operation_id > 1);
             std.debug.assert(registry.middleware.len <= middleware.middleware_max);
 
-            if (event == .emitted) {
-                return emit_event(ctx, event.emitted, false);
-            }
+            std.debug.assert(event != .emitted);
 
             if (ctx.trail) |open| {
                 follow(ctx, open, event);
@@ -1677,8 +1683,7 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             inline for (registry.middleware) |Middleware| {
-                const listens = comptime Middleware.stage == .on and
-                    events.intrinsic(Middleware) and !@hasDecl(Middleware, "Payload");
+                const listens = comptime Middleware.stage == .on and events.intrinsic(Middleware);
 
                 if (listens and hears(Middleware, event)) {
                     _ = run_listener(ctx, Middleware, event);
@@ -1693,7 +1698,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(name.len > 0);
             std.debug.assert(ctx.parent != null);
 
-            if (!events.heard_outside(ctx, name, false)) {
+            if (!events.heard_outside(ctx, name)) {
                 return;
             }
 
@@ -1705,7 +1710,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(name.len > 0);
             std.debug.assert(ctx.parent != null);
 
-            if (!events.heard_outside(ctx, name, false)) {
+            if (!events.heard_outside(ctx, name)) {
                 return;
             }
 
@@ -1826,7 +1831,7 @@ pub fn hears(comptime Middleware: type, event: Event) bool {
 
     const name = switch (event) {
         .completed => |completed| completed.operation_name,
-        .rejected, .failed => |failed| failed.operation_name,
+        .failed => |failed| failed.operation_name,
         .emitted => |emitted| emitted.name,
     };
 
@@ -2201,7 +2206,7 @@ pub const testing = struct {
             _ = kind;
 
             if (ctx.request_id.len != 0 and std.mem.eql(u8, ctx.request_id, "blocked")) {
-                return error.Vetoed;
+                return error.Denied;
             }
         }
     };
@@ -2250,10 +2255,10 @@ test "pre middleware runs before authorization; a refused call emits nothing" {
 
     var blocked = harness.ctx(.system);
     blocked.request_id = "blocked";
-    const vetoed = TestSDK.dispatch(&blocked, testing.Record, .{
+    const blocked_call = TestSDK.dispatch(&blocked, testing.Record, .{
         .note = "x",
     });
-    try std.testing.expectError(error.Vetoed, vetoed);
+    try std.testing.expectError(error.Denied, blocked_call);
 
     var anon = harness.ctx(.anonymous);
     const denied = TestSDK.dispatch(&anon, testing.Record, .{
