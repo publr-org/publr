@@ -102,6 +102,7 @@ const options_known = [_][]const u8{
     "secrets",         "depends_on", "compatible_with", "remotes", "field_kinds",
     "register_fields", "roles",      "translations",    "limits",  "pages",
     "panels",          "jobs",       "menu",            "icons",   "register_statuses",
+    "webhooks",
 };
 
 /// What only a built-in plugin takes, until `.extend` holds them: the server's own seams.
@@ -141,7 +142,6 @@ const options_later = [_][2][]const u8{
     .{ "register_providers", "contracts and providers" },
     .{ "register_location_rules", "location rules of the plugin's own" },
     .{ "taxonomies", "taxonomies declared by plugins" },
-    .{ "webhooks", "incoming webhooks" },
 };
 
 fn check_options(comptime plugin: []const u8, comptime Options: type) void {

@@ -210,6 +210,11 @@ pub fn assert_sandboxable(comptime Plugin: type) void {
     comptime {
         const name = Plugin.manifest.name;
 
+        if (plugin_define.has(Plugin, "webhooks")) {
+            @compileError("plugin " ++ name ++ ": `.webhooks` is for a built-in plugin until " ++
+                "installed plugins run them");
+        }
+
         for (permissions_of(Plugin)) |permission| {
             if (permission.reason.len == 0 or permission.reason.len > reason_len_max) {
                 @compileError("plugin " ++ name ++ ": permission " ++ permission.key ++

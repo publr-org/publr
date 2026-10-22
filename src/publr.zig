@@ -87,6 +87,14 @@ pub const job = struct {
     pub const define = @import("sdk/plugin/job_define.zig").define;
     pub const define_recurring = @import("sdk/plugin/job_define.zig").define_recurring;
 };
+/// What another server sends: `publr.webhook.define(Event, .{ .name, .secret, .signature,
+/// .run })` at `/_webhooks/<plugin>.<name>`, listed in `.webhooks`.
+pub const webhook = struct {
+    pub const define = @import("sdk/plugin/webhook_define.zig").define;
+    pub const Signature = @import("sdk/plugin/webhook_define.zig").Signature;
+    pub const DeliveryId = @import("sdk/plugin/webhook_define.zig").DeliveryId;
+    pub const Delivery = @import("sdk/plugin/webhook_define.zig").Delivery;
+};
 /// What queued work (a job) runs with: every call `Ctx` has, and `fetch`, queued work's
 /// alone. Record handles and queries take either.
 pub const QueueCtx = @import("sdk/plugin/queue.zig").Queue(Ctx);
