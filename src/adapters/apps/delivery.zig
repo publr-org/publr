@@ -26,7 +26,6 @@ pub fn door(
     arena: std.mem.Allocator,
     request: *const Request,
     response: *Response,
-    kind: sdk.delivery.Kind,
 ) !Door {
     std.debug.assert(request.path().len > 0);
     std.debug.assert(project.delivery_gates.len <= sdk.delivery.gates_max);
@@ -40,7 +39,6 @@ pub fn door(
         .ctx = &ctx,
         .visitor = identity_module.identify(request, arena, project).caller,
         .path = request.path(),
-        .kind = kind,
     };
 
     switch (try sdk.delivery.decide(project.delivery_gates, &delivery)) {
@@ -53,7 +51,7 @@ pub fn door(
             const status = std.enums.fromInt(http.Status, refusal.status) orelse .forbidden;
 
             try keep_private(response);
-            try response.set_body(status, refusal.content_type, refusal.body);
+            try response.set_body(status, "text/html; charset=utf-8", refusal.body);
             return .refused;
         },
     }

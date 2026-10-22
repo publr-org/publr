@@ -116,7 +116,7 @@ pub fn Of(comptime Domain: type) type {
 
             const status = if (held_back) initial else wanted;
 
-            try access.check_status(row.def, status, granted);
+            try access.check_status(row.def, status);
 
             var parsed = try document.parse_document(ctx, row.def, text, true);
             const title = try document_module.titled(ctx, row.def, parsed);
@@ -300,14 +300,7 @@ pub fn Of(comptime Domain: type) type {
             var visible: std.ArrayList(Record) = .empty;
 
             for (rows) |record| {
-                const grant_row: sdk.grant.Row = .{
-                    .record_id = record.id,
-                    .type_id = record.type_id,
-                    .status = record.status,
-                    .owner_id = record.created_by,
-                };
-
-                if (!granted.record_filter.accepts(ctx, grant_row)) {
+                if (!granted.record_filter.accepts(ctx, record.created_by)) {
                     continue;
                 }
 
@@ -418,7 +411,7 @@ pub fn Of(comptime Domain: type) type {
             for (statuses_in.known) |status| {
                 const live_ok = !statuses_in.live_only or status.live;
 
-                if (live_ok and granted.allows_status(status.id)) {
+                if (live_ok) {
                     statuses_in.buffer[kept] = status.id;
                     kept += 1;
                 }
@@ -565,7 +558,7 @@ pub fn Of(comptime Domain: type) type {
             var live: std.ArrayList([]const u8) = .empty;
 
             for (known) |status| {
-                if (status.live and granted.allows_status(status.id)) {
+                if (status.live) {
                     live.append(ctx.arena, status.id) catch return error.OutOfMemory;
                 }
             }

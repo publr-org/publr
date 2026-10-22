@@ -14,6 +14,9 @@ pub const params_max: u32 = 32;
 pub const Options = struct {
     /// Read trashed records too; every other query leaves them out.
     trashed: bool = false,
+    /// `.published`: live records only, as a visitor reads them; `.all`: every status the
+    /// caller may read.
+    perspective: record.Query.Perspective = .all,
 };
 
 pub fn prepare(comptime text: []const u8, comptime options: Options) type {
@@ -50,6 +53,7 @@ pub fn prepare(comptime text: []const u8, comptime options: Options) type {
                     .query = text,
                     .params = bound,
                     .trashed = options.trashed,
+                    .perspective = options.perspective,
                 });
 
                 return std.json.parseFromSliceLeaky(Result, arena, answer.result.text, .{

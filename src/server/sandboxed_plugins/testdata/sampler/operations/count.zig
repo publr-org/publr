@@ -8,7 +8,8 @@
 const publr = @import("publr");
 const std = @import("std");
 
-const Notes = @import("../records/notes.zig");
+/// The notes counted: `count(*[_type == "sampler.sample_note"])`.
+const notes = publr.query.prepare(@embedFile("../queries/notes.groq"), .{});
 
 pub const In = struct {};
 
@@ -20,14 +21,12 @@ pub const Out = struct {
 fn run(ctx: *publr.Ctx, _: In) publr.Error!Out {
     std.debug.assert(ctx.now().ms >= 0);
 
-    const all = try Notes.typed.find(ctx, .{}, .{
-        .limit = 200,
-    });
+    const all = try notes.execute(ctx, i64, .{});
 
-    std.debug.assert(all.len <= 200);
+    std.debug.assert(all >= 0);
 
     return .{
-        .count = @intCast(all.len),
+        .count = all,
     };
 }
 

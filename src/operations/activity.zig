@@ -446,10 +446,10 @@ const Units = struct {
     }
 };
 
-/// The units the call's writes changed, kept on its trail where each write started; a move
-/// over many records, each record its transition event names.
+/// The units the call's writes changed, kept on its trail where each write started; a
+/// transition over many records, each record its transition event names.
 pub const middleware = changed_units.hooks(std.enums.values(changed_units.Kind), keep_unit) ++
-    [_]type{changed_units.Moves(&.{ .record, .term }, keep_unit)};
+    [_]type{changed_units.Transitions(keep_unit)};
 
 const changed_units = sdk.changed_units;
 

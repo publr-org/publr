@@ -93,7 +93,7 @@ fn holds_of(
     }
 }
 
-fn is_reference(comptime Type: type) bool {
+pub fn is_reference(comptime Type: type) bool {
     return @typeInfo(Type) == .@"struct" and @hasDecl(Type, "reference");
 }
 
@@ -121,7 +121,7 @@ pub fn declared_of(
 
             declared.* = .{
                 .name = field.name,
-                .kind = kind_of(if (many) std.meta.Elem(Plain) else Plain),
+                .kind = kind_of(if (many) std.meta.Elem(Plain) else Plain) orelse "group",
                 .many = many,
             };
         }
@@ -132,9 +132,10 @@ pub fn declared_of(
     }
 }
 
-/// The kind a value of `Type` is kept as: text `string`, whole numbers `integer`, a choice
-/// `select`; a struct of its own fields (or anything else) `group`.
-fn kind_of(comptime Type: type) []const u8 {
+/// The field kind a value of `Type` is kept as: text `string`, whole numbers `integer`, a
+/// moment `datetime`, money's JSON map `money`, a choice `select`, a reference; null for
+/// anything else (a struct of its own fields is a group).
+pub fn kind_of(comptime Type: type) ?[]const u8 {
     comptime {
         std.debug.assert(@typeInfo(Type) != .optional);
 
@@ -162,13 +163,13 @@ fn kind_of(comptime Type: type) []const u8 {
             .int => "integer",
             .float => "number",
             .@"enum" => "select",
-            else => "group",
+            else => null,
         };
     }
 }
 
 /// A list of values (several of a kind), never text.
-fn is_list(comptime Type: type) bool {
+pub fn is_list(comptime Type: type) bool {
     const info = @typeInfo(Type);
 
     return info == .pointer and info.pointer.size == .slice and info.pointer.child != u8;

@@ -10,7 +10,7 @@ const status_module = @import("../../model/status.zig");
 const caller_answer = @import("../../model/caller_answer.zig");
 
 /// Core's statuses: any record lists them by name and they keep core's meaning.
-pub const core_status_ids = [_][]const u8{ "draft", "published", "archived", "trashed" };
+pub const core_status_ids = std.meta.fieldNames(CoreStatus);
 
 /// Every status of the list but the transition's target, never the trash.
 pub const any = &.{.any};
@@ -83,24 +83,18 @@ pub fn Held(comptime Status: type) type {
 pub fn AnyTransition(comptime handle: []const u8) type {
     comptime std.debug.assert(handle.len > 0);
 
-    return struct {
-        pub const publr_event_definition = true;
-        pub const Payload = flow_model.Transitioned;
-        pub const verb = flow_model.any_name_of(handle);
-        pub const full_name = verb;
-        pub const refusable = true;
-    };
+    return EventPoint(flow_model.any_name_of(handle));
 }
 
-/// One transition's hook point: `publr.before(Posts.transitions.publish, run)`,
-/// heard for that transition alone, its run given what `any_transition` gets.
-pub fn NamedTransition(comptime handle: []const u8, comptime name: []const u8) type {
+/// A transition hook point heard by `verb`: every transition's, or one transition's alone
+/// (`publr.before(Posts.transitions.publish, run)`), its run given what `any_transition` gets.
+fn EventPoint(comptime name: []const u8) type {
     comptime std.debug.assert(name.len > 0);
 
     return struct {
         pub const publr_event_definition = true;
         pub const Payload = flow_model.Transitioned;
-        pub const verb = handle ++ "_" ++ name;
+        pub const verb = name;
         pub const full_name = verb;
         pub const refusable = true;
     };
@@ -130,7 +124,7 @@ pub fn TransitionHooks(comptime options: anytype) type {
         var attributes: [names.len]std.builtin.Type.StructField.Attributes = undefined;
 
         for (names, &types, &attributes) |name, *field_type, *attribute| {
-            const Hook = NamedTransition(handle, name);
+            const Hook = EventPoint(handle ++ "_" ++ name);
 
             field_type.* = type;
             attribute.* = .{
@@ -183,7 +177,7 @@ pub fn status_id(comptime handle: []const u8, comptime value: []const u8) []cons
     comptime {
         std.debug.assert(value.len > 0);
 
-        if (listed(&core_status_ids, value)) {
+        if (listed(core_status_ids, value)) {
             return value;
         }
 
@@ -343,7 +337,7 @@ pub fn alias_of(comptime options: anytype, comptime value: []const u8) []const u
         const aliases = options.status.alias;
 
         for (std.meta.fieldNames(@TypeOf(aliases))) |own| {
-            if (!@hasField(Status, own) or listed(&core_status_ids, own)) {
+            if (!@hasField(Status, own) or listed(core_status_ids, own)) {
                 @compileError("record " ++ options.name ++ ": `.alias` names one of its own " ++
                     "statuses, not `" ++ own ++ "`");
             }
@@ -455,7 +449,7 @@ fn added_id(
             return plugin ++ "." ++ name;
         }
 
-        if (listed(&core_status_ids, name)) {
+        if (listed(core_status_ids, name)) {
             return name;
         }
 

@@ -134,7 +134,7 @@ fn names_of(
 
         for (given) |literal| {
             const field = @tagName(literal);
-            const own = @hasField(Definition.Doc, field) and !layout_override(Definition, field);
+            const own = @hasField(Definition.Doc, field);
 
             if (!own and !listed(&core_columns, field)) {
                 @compileError("record " ++ name ++ ": `.data_view." ++ option ++ "` names `" ++
@@ -147,27 +147,6 @@ fn names_of(
         const done = names;
 
         return done;
-    }
-}
-
-/// Whether `.fields.<field>.kind` makes it a field that holds no value.
-fn layout_override(comptime Definition: type, comptime field: []const u8) bool {
-    comptime {
-        const given = Definition.given;
-
-        std.debug.assert(field.len > 0);
-
-        if (!@hasField(@TypeOf(given), "fields") or !@hasField(@TypeOf(given.fields), field)) {
-            return false;
-        }
-
-        const override = @field(given.fields, field);
-
-        if (!@hasField(@TypeOf(override), "kind")) {
-            return false;
-        }
-
-        return field_model.is_layout(override.kind);
     }
 }
 

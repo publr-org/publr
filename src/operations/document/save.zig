@@ -150,7 +150,7 @@ pub fn Of(comptime Domain: type) type {
                 return error.Invalid;
             }
 
-            try lifecycle.check_move(ctx, row, def, to, granted);
+            try lifecycle.check_move(ctx, row, def, to);
 
             const live = def.flow.is_live(row.status);
             var parsed = try merged(ctx, row, def, values.live, given);
@@ -452,34 +452,4 @@ test "a save with another status moves along a registered transition only" {
         .status = "nope",
     });
     try std.testing.expectError(error.Invalid, unknown);
-}
-
-test "a save is refused a status its grant does not allow" {
-    var harness: sdk.testing.Harness = undefined;
-    try harness.init();
-    defer harness.deinit();
-
-    var system = harness.ctx(.system);
-    try SDK.bootstrap(&system);
-    try records.fixture.post_type(&system);
-
-    const created = try SDK.dispatch(&system, records.Create, .{
-        .type = "post",
-        .document = "{\"title\":\"One\"}",
-    });
-    var drafts_only = Grant.allow_all;
-    drafts_only.statuses = &.{"draft"};
-
-    var transaction = try system.db.transaction();
-    defer transaction.rollback();
-
-    const denied = records.domain.crud.save(
-        &system,
-        &drafts_only,
-        created.id,
-        "{\"title\":\"Two\"}",
-        null,
-        "published",
-    );
-    try std.testing.expectError(error.Denied, denied);
 }

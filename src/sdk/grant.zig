@@ -5,23 +5,11 @@ const content_type = @import("../model/content_type.zig");
 const plugin_contracts = @import("../model/plugin_contracts.zig");
 
 pub const list_len_max: u32 = 64;
-pub const resolvers_max: u32 = 8;
 
 pub const Decision = enum { allow, deny };
 
-pub const Row = struct {
-    record_id: []const u8,
-    type_id: []const u8,
-    status: []const u8,
-    owner_id: ?[]const u8,
-};
-
-pub const Resolver = *const fn (ctx: *const Ctx, row: Row) bool;
-
 pub const RecordFilter = struct {
     flags: Flags = .{},
-    resolvers: [resolvers_max]Resolver = undefined,
-    resolvers_len: u8 = 0,
 
     pub const Flags = packed struct(u8) {
         own_only: bool = false,
@@ -30,50 +18,26 @@ pub const RecordFilter = struct {
         _padding: u5 = 0,
     };
 
-    pub fn add_resolver(filter: *RecordFilter, resolver: Resolver) void {
-        std.debug.assert(filter.resolvers_len < resolvers_max);
-        filter.resolvers[filter.resolvers_len] = resolver;
-        filter.resolvers_len += 1;
-    }
+    /// Whether a record made by `owner_id` is in reach: any, unless `own_only` keeps the
+    /// caller to their own.
+    pub fn accepts(filter: *const RecordFilter, ctx: *const Ctx, owner_id: ?[]const u8) bool {
+        std.debug.assert(ctx.now_ms >= 0);
 
-    pub fn accepts(filter: *const RecordFilter, ctx: *const Ctx, row: Row) bool {
-        std.debug.assert(filter.resolvers_len <= resolvers_max);
-        std.debug.assert(row.record_id.len > 0);
-
-        if (filter.flags.own_only) {
-            const owner = row.owner_id orelse return false;
-            const me = ctx.caller.user_id() orelse return false;
-            if (!std.mem.eql(u8, owner, me)) {
-                return false;
-            }
+        if (!filter.flags.own_only) {
+            return true;
         }
 
-        for (filter.resolvers[0..filter.resolvers_len]) |resolve| {
-            if (!resolve(ctx, row)) {
-                return false;
-            }
-        }
+        const owner = owner_id orelse return false;
+        const me = ctx.caller.user_id() orelse return false;
 
-        return true;
+        return std.mem.eql(u8, owner, me);
     }
 
     fn merge(left: RecordFilter, right: RecordFilter) RecordFilter {
-        std.debug.assert(left.resolvers_len <= resolvers_max);
-        std.debug.assert(left.resolvers_len + right.resolvers_len <= resolvers_max);
-
-        var out = left;
-
-        out.flags = @bitCast(@as(u8, @bitCast(left.flags)) | @as(u8, @bitCast(right.flags)));
-
-        for (right.resolvers[0..right.resolvers_len]) |resolver| out.add_resolver(resolver);
-
-        return out;
+        return .{
+            .flags = @bitCast(@as(u8, @bitCast(left.flags)) | @as(u8, @bitCast(right.flags))),
+        };
     }
-};
-
-pub const Transition = struct {
-    from: []const u8,
-    to: []const u8,
 };
 
 pub const Grant = struct {
@@ -86,9 +50,7 @@ pub const Grant = struct {
     /// The app the caller reads for: only types living in it or shared with it are in
     /// reach. Null: every type, wherever it lives (the admin across apps, the CLI).
     app: ?[]const u8 = null,
-    statuses: ?[]const []const u8 = null,
     field_mask: []const []const u8 = &.{},
-    transitions: ?[]const Transition = null,
     record_filter: RecordFilter = .{},
     /// With `public_types_only`: the types reached whatever their kind (named in a plugin's
     /// grant, or its own).
@@ -163,28 +125,6 @@ pub const Grant = struct {
         return !(grant.drafts_public and public) and !contains(grant.draft_types, handle);
     }
 
-    pub fn allows_status(grant: *const Grant, status: []const u8) bool {
-        const list = grant.statuses orelse return true;
-        return contains(list, status);
-    }
-
-    pub fn allows_transition(grant: *const Grant, from: []const u8, to: []const u8) bool {
-        std.debug.assert(from.len > 0);
-        std.debug.assert(to.len > 0);
-
-        const list = grant.transitions orelse return true;
-
-        for (list) |transition| {
-            const from_any = std.mem.eql(u8, transition.from, "*");
-            const from_ok = from_any or std.mem.eql(u8, transition.from, from);
-            if (from_ok and std.mem.eql(u8, transition.to, to)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     pub fn masks_field(grant: *const Grant, field: []const u8) bool {
         return contains(grant.field_mask, field);
     }
@@ -202,9 +142,7 @@ pub const Grant = struct {
             .types = try intersect_lists(left.types, right.types, arena),
             .plugins = try intersect_lists(left.plugins, right.plugins, arena),
             .app = left.app orelse right.app,
-            .statuses = try intersect_lists(left.statuses, right.statuses, arena),
             .field_mask = try union_lists(left.field_mask, right.field_mask, arena),
-            .transitions = if (left.transitions != null) left.transitions else right.transitions,
             .record_filter = RecordFilter.merge(left.record_filter, right.record_filter),
             .any_kind_types = try exempt(
                 left.record_filter.flags.public_types_only,
@@ -361,7 +299,6 @@ test "intersect: deny wins, lists intersect, masks union, flags or" {
     };
     const right: Grant = .{
         .types = &.{ "page", "tag" },
-        .statuses = &.{"published"},
         .field_mask = &.{ "secret", "internal" },
         .record_filter = .{
             .flags = .{
@@ -376,8 +313,6 @@ test "intersect: deny wins, lists intersect, masks union, flags or" {
     try std.testing.expect(both.allows_type("page"));
     try std.testing.expect(!both.allows_type("post"));
     try std.testing.expect(!both.allows_type("tag"));
-    try std.testing.expect(both.allows_status("published"));
-    try std.testing.expect(!both.allows_status("draft"));
     try std.testing.expect(both.masks_field("internal"));
     try std.testing.expectEqual(@as(u32, 2), @as(u32, @intCast(both.field_mask.len)));
     try std.testing.expect(both.record_filter.flags.own_only);
@@ -449,7 +384,7 @@ test "plugins: the project's own types always, a plugin's only when listed" {
     try std.testing.expect((try Grant.intersect(every, site, arena)).allows_owner("newsletter"));
 }
 
-test "record filter: own_only and resolver chain" {
+test "record filter: own_only keeps the caller to their own" {
     var harness: @import("../sdk.zig").testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -460,31 +395,14 @@ test "record filter: own_only and resolver chain" {
         },
     });
 
-    var filter: RecordFilter = .{
+    const filter: RecordFilter = .{
         .flags = .{
             .own_only = true,
         },
     };
-    const mine: Row = .{
-        .record_id = "e_1",
-        .type_id = "post",
-        .status = "draft",
-        .owner_id = "u_1",
-    };
-    const theirs: Row = .{
-        .record_id = "e_2",
-        .type_id = "post",
-        .status = "draft",
-        .owner_id = "u_9",
-    };
 
-    try std.testing.expect(filter.accepts(&ctx, mine));
-    try std.testing.expect(!filter.accepts(&ctx, theirs));
-
-    filter.add_resolver(&reject_posts);
-    try std.testing.expect(!filter.accepts(&ctx, mine));
-}
-
-fn reject_posts(_: *const Ctx, row: Row) bool {
-    return !std.mem.eql(u8, row.type_id, "post");
+    try std.testing.expect(filter.accepts(&ctx, "u_1"));
+    try std.testing.expect(!filter.accepts(&ctx, "u_9"));
+    try std.testing.expect(!filter.accepts(&ctx, null));
+    try std.testing.expect((RecordFilter{}).accepts(&ctx, "u_9"));
 }

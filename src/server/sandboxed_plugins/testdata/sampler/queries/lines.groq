@@ -1,0 +1,2 @@
+// The lines the log keeps, at most 200.
+*[_type == "sampler.sample_log"][0...200].line

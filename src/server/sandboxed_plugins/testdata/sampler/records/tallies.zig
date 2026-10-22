@@ -10,6 +10,3 @@ pub const record = publr.record.define(Tally, .{
     .indexed = &.{.word},
     .append_only = true,
 });
-
-/// The tallies, read by kind.
-pub const typed = publr.internal.of(Tally, "tally");

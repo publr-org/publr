@@ -291,8 +291,9 @@ not found; `Notes.get(ctx, id, .{ .trashed = true })` reads it),
 start), `Notes.save(ctx, held, .{ .note = "..." })` (writes only the fields named onto the
 record read; a conflict only when one of them changed since `held` was read; never the
 status), `Notes.transition(ctx, held, .publish)`. `Notes.Held` is `{ id, version, status,
-changed, value }`, its `status` the record's enum; `Notes.Ref` takes one by id. Its own
-types need no permission.
+changed, value }`, its `status` the record's enum; `Notes.Ref` takes one by id. An internal
+record has no status: `{ id, version, value }`, and `Lines.delete(ctx, held)` erases it.
+Lists are GROQ ([Queries](#queries)). Its own types need no permission.
 
 ### Statuses
 
@@ -403,7 +404,10 @@ const found = try recent.execute(ctx, []const Found, .{ .since = since });
 
 GROQ, run as the caller with their access applied, trashed records left out. `$names` are
 bound from the struct `execute` is given; a `$name` it lacks, or a field the query never
-names, fails the build. `.{ .trashed = true }` includes records in the trash.
+names, fails the build. `.{ .trashed = true }` includes records in the trash;
+`.{ .perspective = .published }` reads live records only, as a visitor does. A plugin's
+code reads its own internal records the same way (`_type == "cart.line"`, in the request's
+app), and another plugin's only through a `records.read` naming them (or `.internal`).
 
 ## Hooks and events
 
@@ -761,7 +765,7 @@ the real thing: when both are compiled in, when the plugin is enabled, and whene
 other plugin is installed, enabled, updated, disabled or removed. Every listed field must
 be there with a fitting kind: an operation's and an event's by their JSON shape, a
 record's by field kind (text reads any text kind and a reference's id, a number a number
-field, a `publr.records.Ref` a reference, money's JSON map money). An internal record's
+field, an `X.Ref` a reference, money's JSON map money). An internal record's
 fields have kinds too, from its Zig type (text `string`, whole numbers `integer`, a
 `bool` `boolean`, `publr.Time` `datetime`, an enum `select`, any other struct `group`),
 so a remote record on one is checked the same way.

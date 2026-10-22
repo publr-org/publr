@@ -51,7 +51,7 @@ pub const Provider = struct {
 pub const Remote = enum { operation, record, event };
 
 /// The kinds of field a remote record's Zig type can read: text reads any text kind and a
-/// reference's id, a `publr.records.Ref` a reference, a list of text several values.
+/// reference's id, an `X.Ref` a reference, a list of text several values.
 pub const Holds = enum {
     text,
     integer,

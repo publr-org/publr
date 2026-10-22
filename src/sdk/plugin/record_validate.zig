@@ -76,7 +76,7 @@ fn Checks(comptime Definition: type) type {
         fn check(ctx: *PluginCtx, id: []const u8) sdk.Error!void {
             std.debug.assert(id.len > 0);
 
-            const held = Definition.typed.get(ctx, id) catch |err| switch (err) {
+            const held = Definition.get(ctx, id, .{}) catch |err| switch (err) {
                 error.NotFound => return,
                 else => |other| return other,
             };

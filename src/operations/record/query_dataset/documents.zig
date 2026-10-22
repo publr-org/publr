@@ -1,7 +1,6 @@
 //! A record as a query sees it, and the order queries read records in.
 
 const std = @import("std");
-const records = @import("../../record.zig");
 const groq = @import("../../../lib/groq.zig");
 
 const Value = groq.Value;
@@ -15,10 +14,18 @@ pub fn by_id(_: void, left: Value, right: Value) bool {
     return std.mem.order(u8, left_id, right_id) == .lt;
 }
 
+/// The columns a query sees as `_` attributes.
+pub const Columns = struct {
+    id: []const u8,
+    type: []const u8,
+    created_at: i64,
+    updated_at: i64,
+};
+
 /// A record as a query sees it: its columns as `_` attributes, then its fields as stored.
 pub fn document_of(
     arena: std.mem.Allocator,
-    record: records.Record,
+    record: Columns,
     text: []const u8,
     mask: []const []const u8,
 ) groq.DatasetError!Value {

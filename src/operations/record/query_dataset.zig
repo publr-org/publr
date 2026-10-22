@@ -10,6 +10,7 @@ const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const records = @import("../record.zig");
+const internal = @import("../internal.zig");
 const hinted = @import("query_dataset/hints.zig");
 const documents_module = @import("query_dataset/documents.zig");
 
@@ -30,11 +31,21 @@ pub const Type = struct {
     live_only: bool = false,
 };
 
+/// An internal record collection the running plugin reads, by its full name.
+pub const Internal = struct {
+    /// `<plugin>.<kind>`, what `_type` names it by.
+    handle: []const u8,
+    owner: []const u8,
+    collection: model.internal_record.Collection,
+};
+
 pub const Source = struct {
     ctx: *Ctx,
     granted: *const Grant,
     /// Readable types, by handle.
     types: []const Type,
+    /// Readable internal record collections.
+    internal: []const Internal = &.{},
     /// Types the caller may not read: a query naming one is refused.
     out_of_reach: []const []const u8,
     /// The type a refused query named.
@@ -108,6 +119,20 @@ pub const Source = struct {
 
             try source.read_type(arena, .{
                 .type = each,
+                .ids = ids,
+                .field = field,
+                .keep = keep,
+            }, &documents);
+        }
+
+        for (source.internal) |each| {
+            if (wanted_types) |types| {
+                if (!hinted.holds_string(types, each.handle)) {
+                    continue;
+                }
+            }
+
+            try source.read_internal(arena, each, .{
                 .ids = ids,
                 .field = field,
                 .keep = keep,
@@ -271,7 +296,12 @@ pub const Source = struct {
         std.debug.assert(listed.records.len <= window.size);
 
         for (listed.records, listed.documents) |record, text| {
-            const document = try documents_module.document_of(page, record, text, source.mask);
+            const document = try documents_module.document_of(page, .{
+                .id = record.id,
+                .type = record.type,
+                .created_at = record.created_at,
+                .updated_at = record.updated_at,
+            }, text, source.mask);
             const kept = if (read.keep) |keep| try keep.of(document) else true;
 
             if (kept) {
@@ -280,6 +310,117 @@ pub const Source = struct {
         }
 
         return @intCast(listed.records.len);
+    }
+
+    /// An internal collection's records: the ids named, else a page at a time, narrowed by
+    /// the hinted field when the collection indexes it.
+    fn read_internal(
+        source: *Source,
+        arena: std.mem.Allocator,
+        collection: Internal,
+        read: InternalRead,
+        documents: *std.ArrayList(Value),
+    ) groq.DatasetError!void {
+        std.debug.assert(collection.handle.len > 0);
+
+        if (read.ids) |wanted| {
+            for (wanted) |id| {
+                const got = registry.SDK.dispatch(source.ctx, internal.Get, .{
+                    .plugin = collection.owner,
+                    .kind = collection.collection.kind,
+                    .id = id,
+                }) catch |err| switch (err) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.NotFound, error.Denied, error.Invalid => continue,
+                    else => return error.DatasetFailed,
+                };
+
+                try source.keep_internal(arena, arena, .{
+                    .handle = collection.handle,
+                    .item = got,
+                    .keep = read.keep,
+                }, documents);
+            }
+
+            return;
+        }
+
+        const hint = read.field;
+        const indexed = if (hint) |given|
+            model.internal_record.indexes(collection.collection, given.attribute)
+        else
+            false;
+        const value = if (indexed) hinted.text_of(arena, hint.?.values[0]) catch null else null;
+        var offset: u32 = 0;
+
+        while (true) {
+            const scratch = try source.ctx.scratch();
+            const begun = scratch.mark();
+            defer scratch.rewind(begun);
+
+            var paged = source.ctx.*;
+
+            paged.arena = scratch.allocator();
+            defer source.ctx.next_operation_id = paged.next_operation_id;
+
+            const found = registry.SDK.dispatch(&paged, internal.Find, .{
+                .plugin = collection.owner,
+                .kind = collection.collection.kind,
+                .field = if (value != null) hint.?.attribute else null,
+                .value = value,
+                .limit = page_size,
+                .offset = offset,
+            }) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.NotFound, error.Denied, error.Invalid => return,
+                else => return error.DatasetFailed,
+            };
+
+            for (found.records) |item| {
+                try source.keep_internal(arena, paged.arena, .{
+                    .handle = collection.handle,
+                    .item = item,
+                    .keep = read.keep,
+                }, documents);
+            }
+
+            source.read += @intCast(found.records.len);
+
+            if (source.read > documents_max) {
+                return error.TooMuchWork;
+            }
+
+            if (found.records.len < page_size) {
+                return;
+            }
+
+            offset += page_size;
+        }
+    }
+
+    /// An internal record as a document, built in `page`, copied into `arena` when kept.
+    fn keep_internal(
+        source: *Source,
+        arena: std.mem.Allocator,
+        page: std.mem.Allocator,
+        read: InternalItem,
+        documents: *std.ArrayList(Value),
+    ) groq.DatasetError!void {
+        std.debug.assert(source.ctx.now_ms >= 0);
+        std.debug.assert(read.handle.len > 0);
+
+        const item = read.item;
+        const document = try documents_module.document_of(page, .{
+            .id = item.id,
+            .type = read.handle,
+            .created_at = item.created_at,
+            .updated_at = item.updated_at,
+        }, item.document, source.mask);
+        const kept = if (read.keep) |wanted| try wanted.of(document) else true;
+
+        if (kept) {
+            try documents.append(arena, try groq.values.copy(arena, document));
+        }
     }
 
     fn find(
@@ -369,6 +510,20 @@ const Read = struct {
     ids: ?[]const []const u8 = null,
     field: ?groq.Hint = null,
     keep: ?groq.Keep = null,
+};
+
+/// One internal record read: its collection's full name, the record, what to keep.
+const InternalItem = struct {
+    handle: []const u8,
+    item: internal.Item,
+    keep: ?groq.Keep,
+};
+
+/// What an internal collection's read asks for: its ids, one field's value, what to keep.
+const InternalRead = struct {
+    ids: ?[]const []const u8,
+    field: ?groq.Hint,
+    keep: ?groq.Keep,
 };
 
 /// What every page of a read filters on: one field's value, the status and owner clauses.

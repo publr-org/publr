@@ -25,6 +25,3 @@ pub const record = publr.record.define(SampleNote, .{
         .columns = &.{.note},
     },
 });
-
-/// The notes, read by type.
-pub const typed = publr.records.of(SampleNote, "sampler.sample_note");

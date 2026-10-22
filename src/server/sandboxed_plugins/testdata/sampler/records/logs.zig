@@ -22,6 +22,3 @@ pub const record = publr.record.define(SampleLog, .{
         .parent = &.{"sampler.notes"},
     },
 });
-
-/// The log's lines, read by type.
-pub const typed = publr.records.of(SampleLog, "sampler.sample_log");

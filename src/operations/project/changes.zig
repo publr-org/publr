@@ -173,7 +173,7 @@ fn raise_many(ctx: *Ctx, events: []const Event.Emitted) !void {
     var subjects: std.ArrayList([]const u8) = .empty;
 
     for (events) |emitted| {
-        const found = try sdk.changed_units.moved(ctx, emitted) orelse continue;
+        const found = try sdk.changed_units.transitioned(ctx, emitted) orelse continue;
 
         if (found.unit.kind == .record) {
             try moves.append(ctx.arena, found.transition);

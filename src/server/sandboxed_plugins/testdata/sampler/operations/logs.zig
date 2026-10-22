@@ -6,7 +6,7 @@
 const publr = @import("publr");
 const std = @import("std");
 
-const Logs = @import("../records/logs.zig");
+const logged = publr.query.prepare(@embedFile("../queries/lines.groq"), .{});
 
 pub const In = struct {};
 
@@ -19,16 +19,9 @@ pub const Out = struct {
 pub fn lines_of(ctx: *publr.Ctx) publr.Error![]const []const u8 {
     std.debug.assert(ctx.now().ms >= 0);
 
-    const all = try Logs.typed.find(ctx, .{}, .{
-        .limit = 200,
-    });
-    const lines = try ctx.alloc([]const u8, @intCast(all.len));
+    const lines = try logged.execute(ctx, [][]const u8, .{});
 
-    std.debug.assert(all.len <= 200);
-
-    for (all, lines) |item, *line| {
-        line.* = item.value.line;
-    }
+    std.debug.assert(lines.len <= 200);
 
     std.mem.sort([]const u8, lines, {}, before);
 
