@@ -691,8 +691,8 @@ is the easy default. The frame reaches the admin only through the bridge:
   viewer, through the usual checks, and resolves with its output. Anything else is
   refused.
 - `publr.navigate("log?week=2")`, and every link clicked, goes to another of the
-  plugin's pages (`?week=2` alone stays on this one). A link to another site opens in a
-  new tab.
+  plugin's pages (`?week=2` alone stays on this one) or to an address in the admin
+  (`/admin/roles/add`). A link to another site opens in a new tab.
 - The frame grows with what it shows.
 
 What the frame draws never reaches the admin, so it needs no sanitizing and no
@@ -705,6 +705,14 @@ each field of `Save`'s input (strings, numbers, switches; `multiline` ones as se
 lines; each field's `///` as its help), filled from what `Read` answers; Save calls
 `Save` as the person looking. It works the same for an installed plugin, which draws
 nothing else in the admin yet.
+
+A page with `.tabs = true` is a tabbed page: the admin draws its title and a tab bar, and
+other pages fill it by naming it in `.parent` (`&.{ "products.settings", "core.system" }`,
+the first that exists, else System settings). Core has two: System settings
+(`core.system`) and Users (`core.users`), each with its own tab first. A tab is a form, or
+a page drawn by its operation in the frame under the tab bar (Users › Roles); `.action =
+.{ .label = "Add role", .href = "/admin/roles/add" }` puts its primary action in the
+tabbed page's header.
 
 In a page's PTSX, `publr/operations` does the talking, the same in the frame and on an
 admin page: `call("guestbook.sign")` is a write through one of the plugin's operations
@@ -1068,7 +1076,7 @@ A host's plugin also says `.hosted = true`: the project's folder is then never
 the person's, so the Overview always gives the steps for a site elsewhere (get Publr, sign
 in, install the skill), even at an address that looks like this machine.
 
-### Variants and Settings tabs
+### Variants
 
 A plugin may declare the one **variant dimension** (`.variants`, a
 `publr.plugin.Variants`): the words of the setting every field then has (`label`, `help`),
@@ -1078,16 +1086,6 @@ main one first. The core draws the setting, stores and reads the values (see
 [Content](content.md#languages-and-other-variants)), offers the switch in its editors and
 serves each variant's pages under its address. The languages plugin is one: a language is
 a variant.
-
-A plugin may add a section to a tab of System settings, or of Users with `.page =
-.users` (`.settings_tabs`, each a `publr.plugin.SettingsTab`): the tab's name
-(`localization`, `roles`) and label, a view whose `draw(session)` returns the section drawn
-with the admin's components, the operation that decides who sees it (its own or core's),
-and optionally the page's primary action while the tab is open (`.action_label = "Add
-role"`, `.action_href`). Plugins naming the same tab share it, their sections in plugin
-order; the tab shows while any plugin adds to it, and a page no plugin adds to shows no
-tabs. A refused save draws a System settings tab again with
-`publr.admin.settings_tabs.show_refused`. Compiled in only, for now.
 
 ### Its data, when it is removed
 

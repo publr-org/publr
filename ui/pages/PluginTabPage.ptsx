@@ -1,0 +1,55 @@
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { PluginFrame } from "../components/PluginFrame.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
+
+export type PluginTabPageProps = {
+  /** The tab's own name. */
+  title: string;
+  src: string;
+  plugin: string;
+  page: string;
+  csrf: string;
+  operations: string[];
+  /** The tabbed page's title and description, over its tabs, this one active. */
+  parent: string;
+  description?: string;
+  tabs: Array<{ label: string; href: string; active: boolean }>;
+  /** The tab's primary action, in the tabbed page's header. */
+  action_label?: string;
+  action_href?: string;
+};
+
+/** A plugin's page that is a tab of a tabbed page: that page's header and tab bar, and the
+ * plugin frame under them, edge to edge. */
+export function PluginTabPage({
+  title,
+  src,
+  plugin,
+  page,
+  csrf,
+  operations,
+  parent,
+  description = "",
+  tabs,
+  action_label = "",
+  action_href = "",
+}: PluginTabPageProps) {
+  return (
+    <IndexPage
+      title={parent}
+      description={description}
+      actions={action_label !== "" && <Button href={action_href}>{action_label}</Button>}
+      tabs={
+        <TabNav label={parent}>
+          {tabs.map((tab) => (
+            <TabNavLink href={tab.href} active={tab.active}>{tab.label}</TabNavLink>
+          ))}
+        </TabNav>
+      }
+    >
+      <PluginFrame src={src} title={title} plugin={plugin} page={page} csrf={csrf} operations={operations} />
+    </IndexPage>
+  );
+}

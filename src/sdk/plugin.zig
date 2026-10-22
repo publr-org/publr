@@ -102,7 +102,6 @@ pub const Word = struct {
 pub const Variants = variants.Dimension;
 pub const Variant = variants.Variant;
 pub const SettingsPage = admin_slots.SettingsPage;
-pub const SettingsTab = admin_slots.SettingsTab;
 pub const RowAction = admin_slots.RowAction;
 pub const Page = admin_slots.Page;
 pub const Item = admin_slots.Item;
@@ -119,11 +118,6 @@ pub const OwnedPanel = struct {
 pub const OwnedSettingsPage = struct {
     plugin: []const u8,
     page: SettingsPage,
-};
-
-pub const OwnedSettingsTab = struct {
-    plugin: []const u8,
-    tab: SettingsTab,
 };
 
 /// What a plugin shows in place of the Overview's "Your agent" commands: its
@@ -860,7 +854,6 @@ pub fn Merged(comptime plugins: anytype) type {
         var agents_tab: ?AgentsTab = null;
         var work_start: ?[]const u8 = null;
         var hosted = false;
-        var settings_tabs: []const OwnedSettingsTab = &.{};
         var translations: []const OwnedTranslation = &.{};
         var operator_commands: []const route.DeclaredCommand = &.{};
         var before_command: []const type = &.{};
@@ -908,15 +901,6 @@ pub fn Merged(comptime plugins: anytype) type {
                 settings_pages = settings_pages ++ &[_]OwnedSettingsPage{owned};
             }
             row_actions = row_actions ++ admin_slots.row_actions_of(Plugin);
-
-            // A tab may be gated by core's operations too, as a settings page may: a tab
-            // over core's data (Users › Roles) is shown to whoever may read that data.
-            for (admin_slots.settings_tabs_of(Plugin)) |tab| {
-                settings_tabs = settings_tabs ++ &[_]OwnedSettingsTab{.{
-                    .plugin = Plugin.manifest.name,
-                    .tab = tab,
-                }};
-            }
 
             for (admin_slots.pages_of(Plugin)) |page| {
                 const used: []const type = if (page.tabs)
@@ -1140,8 +1124,6 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_sign_in_providers = sign_in_providers;
             pub const merged_routes = routes;
             pub const merged_settings_pages = settings_pages;
-            /// Every plugin's sections of Users tabs, in name order.
-            pub const merged_settings_tabs = settings_tabs;
             /// Every plugin's actions on other pages' rows, in name order.
             pub const merged_row_actions = row_actions;
             /// Every plugin's own pages, in name order.

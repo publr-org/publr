@@ -114,7 +114,6 @@ const options_built_in = [_][]const u8{
     "variants",
     "row_actions",
     "settings_pages",
-    "settings_tabs",
     "routes",
     "operator_commands",
     "migrations",

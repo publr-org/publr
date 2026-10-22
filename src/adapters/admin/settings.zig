@@ -7,7 +7,7 @@ const frame_pages = @import("frame/pages.zig");
 const language_operations = @import("../../operations/user/language.zig");
 
 const views = admin.views;
-pub const page_path = "/admin/settings/system";
+const page_path = "/admin/settings/system";
 
 pub fn show(
     request: *admin.Request,

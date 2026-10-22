@@ -138,6 +138,8 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .multiline = form.multiline,
                     .hidden = page.menu != null,
                     .parent = page.parent,
+                    .action_label = if (page.action) |action| action.label else "",
+                    .action_href = if (page.action) |action| action.href else "",
                 }};
             } else if (takes(page.operation.?.run)) {
                 list = list ++ &[_]sandboxed_plugin.Page{.{
@@ -146,6 +148,9 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .icon = page.icon,
                     .operation = page.operation.?.name,
                     .hidden = page.menu != null,
+                    .parent = page.parent,
+                    .action_label = if (page.action) |action| action.label else "",
+                    .action_href = if (page.action) |action| action.href else "",
                 }};
             }
         }

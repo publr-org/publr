@@ -68,7 +68,7 @@ A missing one fails the build and says where it goes.
 | `roles` | `&.{ ... }` of `publr.plugin.Role` | both |
 | `pages`, `panels`, `menu`, `icons` | see [Admin entries](#admin-entries) | both |
 | `translations` | `&.{ .{ .locale, .label, .po } }` | both |
-| `middleware`, `row_actions`, `routes`, `settings_pages`, `settings_tabs`, `app_picker_segment`, `sign_in_at`, `State`, `before_command`, `serving`, `operator_commands`, `bootstrap`, `schema_sql`, `migrations`, `sign_in_provider`, `policies`, `filters`, `delivery_gates`, `variants`, `agents_tab`, `admin_brand`, `work_start`, `hosted` | see [Built-in only](#built-in-only) | built-in |
+| `middleware`, `row_actions`, `routes`, `settings_pages`, `app_picker_segment`, `sign_in_at`, `State`, `before_command`, `serving`, `operator_commands`, `bootstrap`, `schema_sql`, `migrations`, `sign_in_provider`, `policies`, `filters`, `delivery_gates`, `variants`, `agents_tab`, `admin_brand`, `work_start`, `hosted` | see [Built-in only](#built-in-only) | built-in |
 
 Any other option is a build error.
 
@@ -882,6 +882,11 @@ const settings: publr.plugin.Page = .{
 field. Each field's `///` is its help. Pages, their top bar counts, panels, row actions and
 Settings pages may name operations made with `publr.operation.define`.
 
+A page that says `.tabs = true` is a tabbed page the admin draws; a page naming it in
+`.parent` (`&.{ "products.settings", "core.system" }`, the first that exists, else System
+settings; Users is `core.users`) is one of its tabs: a form, or drawn by its operation in
+the frame under the tab bar, with `.action = .{ .label, .href }` in the header.
+
 A page that also says `.top_bar = .{ .count = Count }` is in the top bar too, for whoever may
 see it; `Count` is a read with no input answering `count: i64`, shown beside its label.
 
@@ -1042,7 +1047,7 @@ someone in.
 
 ### Admin hooks
 
-`.settings_pages` (each `{ label, icon, path, operation }`), `.settings_tabs`,
+`.settings_pages` (each `{ label, icon, path, operation }`),
 `.app_picker_segment` (`fn (*const publr.admin.Session, bool, ?publr.admin.render.Node)
 publr.admin.Error!?publr.admin.render.Node`) and `.sign_in_at` (`fn (*const
 publr.admin.Session) anyerror!?[]const u8`).

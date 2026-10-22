@@ -35,7 +35,7 @@ pub fn show(session: *Session, page: pages.Page) Error!void {
 }
 
 /// A tab of a tabbed page: that page's title and tab bar over the form, its entry lit in
-/// the menu. System settings' own General leads its tabs.
+/// the menu.
 fn show_tab(
     session: *Session,
     all: []const pages.Page,
@@ -45,57 +45,19 @@ fn show_tab(
     std.debug.assert(parent.len > 0);
 
     const fields = try fields_of(session, page, PageField) orelse return;
-    const system = std.mem.eql(u8, parent, pages.system);
-    const tabs = try pages.tabs_of(session.arena, all, parent);
-    var links: std.ArrayList(Tab) = .empty;
-    var title: []const u8 = undefined;
-    var description: []const u8 = "";
-    var address: []const u8 = undefined;
-
-    if (system) {
-        const settings = @import("../settings.zig");
-
-        title = try session.translated("System settings", .{});
-        description = try session.translated(
-            "How this Publr runs, and the conventions the site follows.",
-            .{},
-        );
-        address = settings.page_path;
-        try links.append(session.arena, .{
-            .label = try session.translated("General", .{}),
-            .href = settings.page_path,
-            .active = false,
-        });
-    } else {
-        var buffer: [128]u8 = undefined;
-        const tabbed = for (all) |one| {
-            if (one.tabs and std.mem.eql(u8, one.named(&buffer), parent)) {
-                break one;
-            }
-        } else unreachable;
-
-        title = try session.declared(tabbed.label);
-        address = try tabbed.href(session.arena);
-    }
-
-    for (tabs) |tab| {
-        try links.append(session.arena, .{
-            .label = try session.declared(tab.label),
-            .href = try tab.href(session.arena),
-            .active = std.mem.eql(u8, tab.plugin, page.plugin) and
-                std.mem.eql(u8, tab.path, page.path),
-        });
-    }
+    const header = try pages.header_of(Tab, session, all, page, parent);
 
     try admin.screen(session, .ok, admin.views.PluginFormPage, .{
         .title = try session.declared(page.label),
         .operation = page.save,
         .fields = fields,
-        .parent = title,
-        .description = description,
-        .tabs = links.items,
+        .parent = header.title,
+        .description = header.description,
+        .tabs = header.tabs,
+        .action_label = page.action_label,
+        .action_href = page.action_href,
     }, .{
-        .settings_path = address,
+        .settings_path = header.address,
     });
 }
 
