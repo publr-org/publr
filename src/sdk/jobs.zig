@@ -585,3 +585,22 @@ test "queued work fetches through the plugin's grant: an anonymous caller is ref
         .url = "https://api.example.com/quote",
     }));
 }
+
+test "queued work applies a mod and calls an operation by name, as a request's code does" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.system);
+    var wrapped: PluginCtx = .{
+        .inner = &ctx,
+    };
+    var queued: QueueCtx = .{
+        .base = &wrapped,
+    };
+
+    const greeting: []const u8 = "Hello";
+
+    try std.testing.expectEqualStrings("Hello", try queued.mod("probe.greeting", greeting));
+    try std.testing.expectError(error.NotFound, queued.call_json("probe.nothing", "{}"));
+}
