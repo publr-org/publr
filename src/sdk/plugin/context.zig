@@ -214,10 +214,10 @@ pub const HostApi = struct {
     /// Inside an operation, or at the top when an `on` hook hears a queued event.
     pub fn call(self: *PluginCtx, comptime Operation: type, in: Operation.In) Error!Operation.Out {
         std.debug.assert(self.inner.now_ms >= 0);
-        comptime std.debug.assert(registered(Operation).name.len > 0);
+        comptime std.debug.assert(registry.SDK.bound(Operation).name.len > 0);
 
         if (self.reads) |reads| {
-            return reads.answer(Operation.Out, comptime registered(Operation).name, in);
+            return reads.answer(Operation.Out, comptime registry.SDK.bound(Operation).name, in);
         }
 
         if (comptime @hasDecl(Operation, "remote")) {
@@ -226,7 +226,7 @@ pub const HostApi = struct {
 
         self.inner.failure = null;
 
-        return registry.SDK.call(self.inner, comptime registered(Operation), in);
+        return registry.SDK.call(self.inner, comptime registry.SDK.bound(Operation), in);
     }
 
     /// Which refusal the last `ctx.call` came back with as `error.Failed`, by its `Fails:`
@@ -488,26 +488,6 @@ fn running_failures(operation_name: []const u8) []const sdk.operation.Failure {
     }
 
     return &.{};
-}
-
-/// The operation the core runs for `Operation`: itself, or, for one a plugin made with
-/// `publr.operation.define`, the bound operation it became, so the plugin's own code calls
-/// its operations by their definitions.
-fn registered(comptime Operation: type) type {
-    comptime {
-        if (!@hasDecl(Operation, "publr_operation_definition")) {
-            return Operation;
-        }
-
-        for (registry.SDK.operations) |Candidate| {
-            if (@hasDecl(Candidate, "definition") and Candidate.definition == Operation) {
-                return Candidate;
-            }
-        }
-
-        @compileError("operation " ++ Operation.verb ++ " is not listed in its plugin's " ++
-            "`.operations`");
-    }
 }
 
 test "ctx.failure() names the refusal a call came back with" {

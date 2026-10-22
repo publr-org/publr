@@ -15,8 +15,8 @@ pub const Dimension = struct {
     /// The admin's picker of the variant content shows in, top right: `Content language`.
     /// Empty: no picker.
     picker: []const u8 = "",
-    /// A read of the plugin's own taking nothing and answering `variants`: every `Variant`
-    /// in the order people see them, the main one first.
+    /// A read of the plugin's own (`publr.operation.define`) taking nothing and answering
+    /// `variants`: every `Variant` in the order people see them, the main one first.
     list: type,
     /// The type setting for records not written in a variant: shown in its main values
     /// (`keep`), or left out of it (`omit`). Unnamed: the setting is not offered.
@@ -54,8 +54,8 @@ pub fn of(comptime Plugin: type) ?Dimension {
             return null;
         }
 
-        const declared: Dimension = plugin_define.get(Plugin, "variants");
-        const List = declared.list;
+        var declared: Dimension = plugin_define.get(Plugin, "variants");
+        const List = @import("operation_define.zig").Described(declared.list, name, Plugin.docs);
 
         if (declared.label.len == 0 or declared.help.len == 0) {
             @compileError("plugin " ++ name ++ ": `variants` needs a label and help");
@@ -65,6 +65,10 @@ pub fn of(comptime Plugin: type) ?Dimension {
             @compileError("plugin " ++ name ++ ": `variants.list` is a read answering `variants`");
         }
 
-        return declared;
+        declared.list = List;
+
+        const done = declared;
+
+        return done;
     }
 }

@@ -25,7 +25,7 @@ pub const ContentTypeDef = content_type.Def;
 const DeclaredType = plugin_types.Declared;
 pub const InternalCollection = @import("../model/internal_record.zig").Collection;
 /// An internal record collection with the plugin that declared it.
-const OwnedCollection = struct {
+pub const OwnedCollection = struct {
     owner: []const u8,
     collection: InternalCollection,
 };
@@ -878,7 +878,8 @@ pub fn Merged(comptime plugins: anytype) type {
                     @compileError("two plugins declare `work_start`; one at a time");
                 }
 
-                work_start = plugin_define.get(Plugin, "work_start").name;
+                work_start = Plugin.manifest.name ++ "." ++
+                    plugin_define.get(Plugin, "work_start").verb;
             }
 
             operator_commands = operator_commands ++ route.operator_commands_of(Plugin);

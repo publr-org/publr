@@ -141,7 +141,32 @@ pub fn SDK(comptime registry: Registry) type {
             return null;
         }
 
-        pub fn dispatch(ctx: *Ctx, comptime Operation: type, in: Operation.In) Error!Operation.Out {
+        /// The operation the core runs for `Given`: itself, or, for one a plugin made with
+        /// `publr.operation.define`, the bound operation it became, so a plugin's own code
+        /// names its operations by their definitions.
+        pub fn bound(comptime Given: type) type {
+            comptime {
+                if (!@hasDecl(Given, "publr_operation_definition")) {
+                    return Given;
+                }
+
+                // Each registered operation looked at once.
+                @setEvalBranchQuota(1000 + registry.operations.len * 4);
+
+                for (registry.operations) |Candidate| {
+                    if (@hasDecl(Candidate, "definition") and Candidate.definition == Given) {
+                        return Candidate;
+                    }
+                }
+
+                @compileError("operation " ++ Given.verb ++ " is not listed in its plugin's " ++
+                    "`.operations`");
+            }
+        }
+
+        pub fn dispatch(ctx: *Ctx, comptime Given: type, in: Given.In) Error!Given.Out {
+            const Operation = comptime bound(Given);
+
             comptime {
                 if (find(Operation.name) != Operation) {
                     @compileError("operation not registered: " ++ Operation.name);
@@ -755,7 +780,9 @@ pub fn SDK(comptime registry: Registry) type {
 
         /// Whether the caller may call `Operation` at all, whatever the input: what a page
         /// asks before it offers the action, never instead of the call's own check.
-        pub fn may(ctx: *const Ctx, comptime Operation: type) bool {
+        pub fn may(ctx: *const Ctx, comptime Given: type) bool {
+            const Operation = comptime bound(Given);
+
             comptime std.debug.assert(find(Operation.name) == Operation);
             std.debug.assert(ctx.now_ms >= 0);
 
@@ -1782,6 +1809,9 @@ fn owner_of(
             return "";
         }
 
+        // Each item looked at once.
+        @setEvalBranchQuota(1000 + items.len * 4);
+
         for (items, owners) |candidate, owner| {
             if (candidate == Item) {
                 return owner;
@@ -2325,7 +2355,7 @@ test "roles: an account calls what its roles grant; one granted only apps never 
     try stored_roles.apply(&system, "news", &.{.{
         .name = "subscriber",
         .label = "Subscriber",
-        .grants = &.{"app.news.*"},
+        .grants = &.{"news.*"},
     }});
 
     var subscriber = harness.ctx(.{
