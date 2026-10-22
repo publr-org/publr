@@ -1,19 +1,20 @@
-//! A model provider, as a plugin registers one: two operations, `<plugin>.describe_provider`
-//! (who it is, its models, how its key is made) and `<plugin>.complete` (a request in, a
-//! response out, both as `publr_ai`'s JSON). Core finds every provider installed by those
-//! names, lists them under Settings › AI, and has a conversation's agent call the one
-//! chosen. A provider calls its model through `http.fetch`, its key written
-//! `{secret:NAME}`, so it never holds the key.
+//! Model providers: core's `ai.model` contract. A plugin makes its operations with
+//! `Describe` (who it is, its models, how its key is made) and `Complete` (a request in, a
+//! response out, both as `publr_ai`'s JSON), optionally `Transcribe` and `Read`, and
+//! registers them as a provider. Core lists the providers under Settings › AI and has a
+//! conversation's agent call the one chosen. A provider calls its model through
+//! `http.fetch`, its key written `{secret:NAME}`, so it never holds the key.
 //!
 //! ```zig
-//! pub const operations = [_]type{
-//!     publr.ai.Describe("example_ai", .{ .id = "example_ai", .label = "Example", ... }),
-//!     publr.ai.Complete("example_ai", complete),
-//! };
+//! const Describe = publr.ai.Describe("example_ai", .{ .id = "example_ai", ... });
+//! const Complete = publr.ai.Complete("example_ai", complete);
 //!
-//! fn complete(ctx: *PluginCtx, request: publr.ai.Request) publr.sdk.Error!publr.ai.Response {
-//!     // Turn the request into the model's own, send it with http.fetch, read its answer.
-//! }
+//! .operations = &.{ Describe, Complete },
+//! .register_providers = .{.{
+//!     .contract = publr.ai.contract,
+//!     .name = "example_ai",
+//!     .operations = .{ .describe = Describe, .complete = Complete },
+//! }},
 //! ```
 
 const std = @import("std");
@@ -59,11 +60,10 @@ pub fn error_message(arena: std.mem.Allocator, body: []const u8) []const u8 {
     return if (parsed.@"error".message.len > 0) parsed.@"error".message else start;
 }
 
-pub const describe_verb = "describe_provider";
-pub const transcribe_verb = speech.transcribe_verb;
+const describe_verb = "describe_provider";
 pub const Speech = speech.Speech;
 pub const Transcribe = speech.Transcribe;
-pub const read_verb = "read_page";
+const read_verb = "read_page";
 
 /// What a page reads as, at most: the model reads it, not a person.
 pub const page_text_len_max: u32 = 48 << 10;
@@ -338,7 +338,37 @@ fn attribute(tag: []const u8, name: []const u8) []const u8 {
 
     return rest[2..end];
 }
-pub const complete_verb = "complete";
+const complete_verb = "complete";
+
+/// The `ai.model` contract: `describe` and `complete` required, `transcribe` and
+/// `read_page` optional.
+pub const contract = @import("contract.zig").define(.{
+    .name = "ai.model",
+    .operations = .{
+        .describe = struct {
+            pub const In = struct {};
+            pub const Out = Description;
+        },
+        .complete = Completion,
+    },
+    .optional = .{
+        .transcribe = struct {
+            pub const In = Speech;
+            pub const Out = struct {
+                text: []const u8,
+            };
+        },
+        .read_page = struct {
+            pub const In = struct {
+                url: []const u8,
+            };
+            pub const Out = struct {
+                status: u16,
+                text: []const u8,
+            };
+        },
+    },
+});
 
 /// `<plugin>.describe_provider`: who the provider is, what models it offers, how its key is
 /// made. Anyone may read it; it holds nothing secret.

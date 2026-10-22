@@ -1076,9 +1076,11 @@ and on every event inside the write (`stage = .on` with no `event`). Their shape
 ## Model providers
 
 A plugin becomes a model provider by listing operations built by `publr.ai` in
-`.operations`: `publr.ai.Describe("<name>", .{...})` and `publr.ai.Complete("<name>",
+`.operations` (`publr.ai.Describe("<name>", .{...})`, `publr.ai.Complete("<name>",
 complete)`, and `publr.ai.Transcribe("<name>", transcribe)` when it turns speech into
-text. See [Plugins](plugins.md#model-providers).
+text) and registering them into core's `ai.model` contract with `.register_providers`:
+`.{ .contract = publr.ai.contract, .name, .operations = .{ .describe, .complete } }`. See
+[Plugins](plugins.md#model-providers).
 
 ## Building
 

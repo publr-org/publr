@@ -1,4 +1,4 @@
-//! A provider plugin, as the agent calls it: `<plugin>.complete` run here, in the agent's
+//! An `ai.model` provider, as the agent calls it: its `complete` run here, in the agent's
 //! own process with its own connection to the project, so a model taking its time never
 //! holds up the server. The plugin calls out through `http.fetch`, which fills in its key.
 
@@ -13,16 +13,15 @@ const http_stream = @import("../../operations/http_stream.zig");
 pub const PluginProvider = struct {
     application: *server.Server,
     io: std.Io,
-    /// `<plugin>.complete`.
-    operation: []const u8,
+    /// The provider's name in the `ai.model` contract.
+    name: []const u8,
     /// The responses the plugin reads as streams, open across its calls.
     streams: http_stream.Streams = .{},
     /// Where the words go as the plugin streams them.
     progress: ?sdk.context.Progress = null,
 
     pub fn provider(plugin_provider: *PluginProvider) ai.Provider {
-        std.debug.assert(plugin_provider.operation.len > 0);
-        std.debug.assert(std.mem.endsWith(u8, plugin_provider.operation, sdk_ai.complete_verb));
+        std.debug.assert(plugin_provider.name.len > 0);
 
         return .{
             .context = plugin_provider,
@@ -37,12 +36,11 @@ pub const PluginProvider = struct {
         url: []const u8,
     ) ![]const u8 {
         std.debug.assert(url.len > 0);
-        std.debug.assert(plugin_provider.operation.len > sdk_ai.complete_verb.len);
+        std.debug.assert(plugin_provider.name.len > 0);
 
         var ctx = plugin_provider.context_of(arena);
-        const operation_name = plugin_provider.operation;
-        const plugin = operation_name[0 .. operation_name.len - sdk_ai.complete_verb.len];
-        const operation = try std.mem.concat(arena, u8, &.{ plugin, sdk_ai.read_verb });
+        const operation = try plugin_provider.part(&ctx, "read_page") orelse
+            return "This provider does not read pages.";
         const input = try std.json.Stringify.valueAlloc(arena, .{
             .url = url,
         }, .{});
@@ -72,14 +70,11 @@ pub const PluginProvider = struct {
     /// Whether the provider says its models look at pictures; one written before pictures
     /// were does not say, and is sent none.
     pub fn reads_pictures(plugin_provider: *PluginProvider, arena: std.mem.Allocator) bool {
-        std.debug.assert(plugin_provider.operation.len > sdk_ai.complete_verb.len);
+        std.debug.assert(plugin_provider.name.len > 0);
 
         var ctx = plugin_provider.context_of(arena);
-        const operation_name = plugin_provider.operation;
-        const plugin = operation_name[0 .. operation_name.len - sdk_ai.complete_verb.len];
-        const operation = std.mem.concat(arena, u8, &.{ plugin, sdk_ai.describe_verb }) catch {
+        const operation = (plugin_provider.part(&ctx, "describe") catch return false) orelse
             return false;
-        };
         const output = registry.SDK.call_json(&ctx, operation, "{}") catch return false;
         const Said = struct {
             pictures: bool = false,
@@ -94,7 +89,7 @@ pub const PluginProvider = struct {
     fn context_of(plugin_provider: *PluginProvider, arena: std.mem.Allocator) sdk.Ctx {
         const application = plugin_provider.application;
 
-        std.debug.assert(plugin_provider.operation.len > 0);
+        std.debug.assert(plugin_provider.name.len > 0);
 
         var ctx = sdk.Ctx.init(
             &application.connection,
@@ -116,6 +111,16 @@ pub const PluginProvider = struct {
         return ctx;
     }
 
+    /// The provider's operation for `name`, while it is on and has that part.
+    fn part(plugin_provider: *PluginProvider, ctx: *sdk.Ctx, name: []const u8) !?[]const u8 {
+        std.debug.assert(name.len > 0);
+
+        const providers = @import("../../operations/ai/providers.zig");
+        const found = try providers.registered(ctx, plugin_provider.name) orelse return null;
+
+        return found.operation_of(name);
+    }
+
     fn complete(
         context: *anyopaque,
         arena: std.mem.Allocator,
@@ -132,7 +137,10 @@ pub const PluginProvider = struct {
             .request = request_text,
         };
         const input = std.json.Stringify.valueAlloc(arena, in, .{}) catch return error.OutOfMemory;
-        const output = registry.SDK.call_json(&ctx, plugin_provider.operation, input) catch |err| {
+        const operation = (plugin_provider.part(&ctx, "complete") catch |err| {
+            return failure_of(&ctx, err);
+        }) orelse return error.Unavailable;
+        const output = registry.SDK.call_json(&ctx, operation, input) catch |err| {
             return failure_of(&ctx, err);
         };
         const out = std.json.parseFromSliceLeaky(sdk_ai.Completion.Out, arena, output, .{

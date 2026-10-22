@@ -242,12 +242,13 @@ request is refused in words: "Supplier API key isn't set" (`SecretMissing`).
 
 ### Model providers
 
-A plugin becomes a model provider by registering two operations, built by `publr.ai`:
+A plugin becomes a model provider by registering a provider of core's `ai.model` contract
+(`publr.ai.contract`, through `.register_providers`) with two operations built by `publr.ai`:
 `publr.ai.Describe("<name>", .{...})` (its label, models, default model, and its key: the
 secret it is kept under, where it is made, what to do there, how it starts) and
 `publr.ai.Complete("<name>", complete)`, where `complete` turns a `publr.ai.Request` into a
-`publr.ai.Response` by calling its API through `http.fetch`. Core finds every provider
-installed by those names, lists them under Settings › AI, and has a conversation's agent
+`publr.ai.Response` by calling its API through `http.fetch`. Core lists every provider of
+the contract that is on under Settings › AI, and has a conversation's agent
 call the one chosen, in the agent's own process. Publr's official providers are published at
 `https://plugins.publr.app` (a `catalog.json` and the built modules it lists;
 `PUBLR_PLUGIN_CATALOG` names another folder or address). The Overview and Settings › AI
@@ -264,7 +265,7 @@ permission of its own) as they come; `publr.ai.Events` splits the stream into it
 `data:` lines.
 
 A provider that turns speech into text says `.speech = true` in its description and adds
-`publr.ai.Transcribe("<name>", transcribe)`: a recording (`publr.ai.Speech`: base64 audio,
+`publr.ai.Transcribe("<name>", transcribe)` as its `transcribe` part: a recording (`publr.ai.Speech`: base64 audio,
 up to 768 KiB, and its media type, `audio/webm`, `audio/ogg`, `audio/mp4`, `audio/wav` or
 `audio/mpeg`) in, its words out. Core's [`ai transcribe`](cli/ai.md) calls it. A file goes
 to an API as a form upload: `http.fetch`'s `form`, whose file parts are base64, is written
