@@ -135,6 +135,9 @@ const core_namespace_names = names: {
 };
 
 comptime {
+    // Each name against each plugin's, a byte at a time.
+    @setEvalBranchQuota(1000 + bound_plugins.len * reserved_names.len * contract.name_len_max);
+
     for (bound_plugins) |Plugin| {
         for (reserved_names) |reserved| {
             if (std.mem.eql(u8, Plugin.manifest.name, reserved)) {
@@ -215,6 +218,9 @@ pub fn native_providers(
     const list = try arena.alloc(plugin_contracts.Provider, plugins.len);
 
     std.debug.assert(plugins.len <= 64);
+
+    // Unrolled: a few branches a plugin, and a few an operation.
+    @setEvalBranchQuota(1000 + plugins.len * 64 + sdk.operations_max * 8);
 
     inline for (plugins, list) |Plugin, *provider| {
         const operations = comptime contract.operations_of(Plugin);
