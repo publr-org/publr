@@ -641,11 +641,11 @@ fn declared_in(comptime list: []const []const u8, comptime name: []const u8) ?[]
 }
 
 /// A plugin's entries in `list`, each checked to name its own operations.
-fn owned_items(comptime Plugin: type, comptime list: []const u8) []const OwnedItem {
+fn owned_items(comptime Plugin: type) []const OwnedItem {
     comptime {
         var owned: []const OwnedItem = &.{};
 
-        for (admin_slots.items_of(Plugin, list)) |item| {
+        for (admin_slots.items_of(Plugin)) |item| {
             const counted = if (item.count) |Count| owns_operation(Plugin, Count) else true;
 
             if (!owns_operation(Plugin, item.operation) or !counted) {
@@ -873,7 +873,7 @@ pub fn Merged(comptime plugins: anytype) type {
                 }};
             }
 
-            top_bar = top_bar ++ owned_items(Plugin, "top_bar");
+            top_bar = top_bar ++ owned_items(Plugin);
 
             for (admin_slots.panels_of(Plugin)) |panel| {
                 if (!owns_operation(Plugin, panel.operation)) {

@@ -55,7 +55,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .menu = @import("menu_define.zig").entries_of(Plugin),
             .icons = @import("menu_define.zig").icons_of(Plugin),
             .panels = panels_of(Plugin),
-            .top_bar = items_of(Plugin, "top_bar"),
+            .top_bar = items_of(Plugin),
             .row_actions = row_actions_of(Plugin),
             // The rest of `main.zig`'s `//!`, past its first line: shown on its page.
             .about = if (@hasDecl(Plugin, "settings_text")) Plugin.settings_text else "",
@@ -137,10 +137,10 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
     }
 }
 
-/// The plugin's entries in `list` whose operations run in the sandbox.
-fn items_of(comptime Plugin: type, comptime list: []const u8) []const sandboxed_plugin.Item {
+/// The plugin's top bar entries whose operations run in the sandbox.
+fn items_of(comptime Plugin: type) []const sandboxed_plugin.Item {
     comptime {
-        const declared = @import("admin_slots.zig").items_of(Plugin, list);
+        const declared = @import("admin_slots.zig").items_of(Plugin);
         const takes = @import("context.zig").takes_plugin_ctx;
         var items: []const sandboxed_plugin.Item = &.{};
 
@@ -157,7 +157,6 @@ fn items_of(comptime Plugin: type, comptime list: []const u8) []const sandboxed_
                 .label = item.label,
                 .icon = item.icon,
                 .page = item.page,
-                .href = item.href,
                 .operation = item.operation.name,
                 .count = if (item.count) |Count| Count.name else "",
             }};

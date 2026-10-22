@@ -1,7 +1,7 @@
 //! The entries plugins add to the top bar:
 //! compiled-in plugins' from the build, installed ones' from their manifests, each shown
-//! to whoever may call its operation and leading only into the admin: one of the plugin's
-//! pages, or an admin address. An installed plugin's entry naming an operation not its own
+//! to whoever may call its operation and leading only to one of the plugin's pages. An
+//! installed plugin's entry naming an operation not its own
 //! is never shown.
 const std = @import("std");
 const admin = @import("../admin.zig");
@@ -22,24 +22,19 @@ pub const Entry = struct {
     count: []const u8,
 };
 
-pub const List = enum { top_bar };
-
-/// The entries in `list` the viewer may see, compiled-in plugins' first, in name order.
-pub fn of(session: *const Session, comptime list: List) admin.Error![]const Entry {
+/// The top bar entries the viewer may see, compiled-in plugins' first, in name order.
+pub fn of(session: *const Session) admin.Error![]const Entry {
     std.debug.assert(session.signed_in());
 
     var entries: std.ArrayList(Entry) = .empty;
-    const native = comptime switch (list) {
-        .top_bar => registry.top_bar,
-    };
 
-    inline for (native) |owned| {
+    inline for (registry.top_bar) |owned| {
         if (registry.SDK.may(&session.ctx, owned.item.operation)) {
             try entries.append(session.arena, .{
                 .plugin = owned.plugin,
                 .label = owned.item.label,
                 .icon = owned.item.icon,
-                .href = try href_of(session, owned.plugin, owned.item.page, owned.item.href),
+                .href = try href_of(session, owned.plugin, owned.item.page),
                 .count = if (owned.item.count) |Count| Count.name else "",
             });
         }
@@ -60,7 +55,7 @@ pub fn of(session: *const Session, comptime list: List) admin.Error![]const Entr
                     .plugin = manifest.name,
                     .label = item.label,
                     .icon = item.icon,
-                    .href = try href_of(session, manifest.name, item.page, item.href),
+                    .href = try href_of(session, manifest.name, item.page),
                     .count = item.count,
                 });
             }
@@ -96,28 +91,18 @@ fn href_of(
     session: *const Session,
     plugin: []const u8,
     page: []const u8,
-    href: []const u8,
 ) admin.Error![]const u8 {
     std.debug.assert(plugin.len > 0);
-
-    if (page.len == 0) {
-        return href;
-    }
+    std.debug.assert(page.len > 0);
 
     return std.fmt.allocPrint(session.arena, "{s}/{s}/{s}", .{ frame.prefix, plugin, page });
 }
 
-/// An installed plugin's entry: a label, its own operations, and an address in the admin
-/// or a page of its own.
+/// An installed plugin's entry: a label, its own operations, and a page of its own.
 fn sound(manifest: model.Manifest, item: model.Item) bool {
     std.debug.assert(manifest.name.len > 0);
 
-    const into_admin = std.mem.startsWith(u8, item.href, "/admin/") and
-        std.mem.indexOf(u8, item.href, "//") == null;
-    const leads = if (item.page.len > 0)
-        item.href.len == 0 and has_page(manifest, item.page)
-    else
-        into_admin;
+    const leads = item.page.len > 0 and has_page(manifest, item.page);
     const counted = item.count.len == 0 or own_kind(manifest, item.count) == .read;
 
     return item.label.len > 0 and leads and counted and own_kind(manifest, item.operation) != null;
@@ -178,17 +163,13 @@ test "an installed plugin's entry leads into the admin through its own operation
         .operation = "notes.list",
         .count = "notes.count",
     };
-    var away = good;
     var foreign = good;
     var no_page = good;
 
-    away.page = "";
-    away.href = "https://evil.example";
     foreign.operation = "user.list";
     no_page.page = "missing";
 
     try std.testing.expect(sound(manifest, good));
-    try std.testing.expect(!sound(manifest, away));
     try std.testing.expect(!sound(manifest, foreign));
     try std.testing.expect(!sound(manifest, no_page));
 }

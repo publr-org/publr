@@ -243,8 +243,7 @@ pub const Page = struct {
 pub const Item = struct {
     label: []const u8,
     icon: []const u8,
-    page: []const u8 = "",
-    href: []const u8 = "",
+    page: []const u8,
     operation: []const u8,
     count: []const u8 = "",
 };

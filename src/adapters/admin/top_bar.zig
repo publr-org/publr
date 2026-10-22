@@ -73,7 +73,7 @@ const Entry = admin.views.TopBarEntry;
 fn entries_of(session: *const Session) []const Node {
     std.debug.assert(session.signed_in());
 
-    const listed = items.of(session, .top_bar) catch return &.{};
+    const listed = items.of(session) catch return &.{};
     const reading = session.arena.create(Session) catch return &.{};
     var nodes: std.ArrayList(Node) = .empty;
 
