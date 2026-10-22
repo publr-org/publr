@@ -341,6 +341,76 @@ test "an installed plugin's status joins another's flow; its records leave when 
     try std.testing.expectEqualStrings("published", out.record.status);
 }
 
+test "an installed messaging provider sends what core hands it; with none, nothing is sent" {
+    var scenario: Scenario = undefined;
+    try scenario.init();
+    defer scenario.deinit();
+
+    const messaging = @import("../../sdk/messaging.zig");
+    const contract = @import("../../sdk/contract.zig");
+    const email: messaging.Message = .{
+        .channel = "email",
+        .to = "ada@example.com",
+        .subject = "Hello",
+        .text = "Hello, Ada",
+    };
+    var before = scenario.ctx(.system);
+
+    try std.testing.expect(try messaging.deliver(&before, email) == null);
+
+    _ = try scenario.install();
+    try scenario.temporary.dir.writeFile(std.testing.io, .{
+        .sub_path = "postcard.wasm",
+        .data = @embedFile("sandboxed_plugin_postcard"),
+    });
+
+    const postcard = try std.mem.concat(std.testing.allocator, u8, &.{
+        scenario.path[0 .. scenario.path.len - "greeter.wasm".len],
+        "postcard.wasm",
+    });
+    defer std.testing.allocator.free(postcard);
+
+    _ = try scenario.add(postcard);
+
+    var enabling = scenario.ctx(.system);
+    _ = try registry.SDK.dispatch(&enabling, plugin_operations.Enable, .{
+        .names = &.{"postcard"},
+    });
+
+    var system = scenario.ctx(.system);
+    const listed = try contract.enabled(&system, "messaging", &.{});
+
+    try std.testing.expectEqual(@as(usize, 1), listed.len);
+    try std.testing.expectEqualStrings("postcard", listed[0].plugin);
+    try std.testing.expectEqualStrings("postcard.send", listed[0].operation_of("send").?);
+
+    const id = try messaging.deliver(&system, email);
+
+    try std.testing.expectEqualStrings("postcard to ada@example.com", id.?);
+
+    // A channel it does not cover, or files it cannot send: nobody hears it.
+    var sms = email;
+    sms.channel = "sms";
+    try std.testing.expect(try messaging.deliver(&system, sms) == null);
+
+    var with_files = email;
+    with_files.attachments = &.{.{
+        .name = "invoice.pdf",
+        .url = "https://example.com/invoice.pdf",
+    }};
+    try std.testing.expect(try messaging.deliver(&system, with_files) == null);
+
+    // Switched off by the administrator: nothing is sent.
+    var admin_ctx = scenario.ctx(admin);
+    _ = try registry.SDK.dispatch(&admin_ctx, @import("../../operations/provider.zig").Set, .{
+        .contract = "messaging",
+        .off = &.{"postcard"},
+    });
+
+    system = scenario.ctx(.system);
+    try std.testing.expect(try messaging.deliver(&system, email) == null);
+}
+
 test "what an installed plugin logs goes with the call's entry and on its own log" {
     const activity = @import("../../operations/activity.zig");
     const errors = @import("../../operations/errors.zig");

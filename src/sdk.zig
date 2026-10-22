@@ -2379,6 +2379,8 @@ test {
     _ = @import("sdk/plugin/checks.zig");
     _ = @import("sdk/plugin/secret_define.zig");
     _ = @import("sdk/plugin/written_secrets.zig");
+    _ = @import("sdk/contract.zig");
+    _ = @import("sdk/messaging.zig");
     _ = limits_module;
 }
 

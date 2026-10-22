@@ -49,6 +49,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .remotes = @import("remote_contract.zig").uses_of(Plugin),
             .events = @import("remote_contract.zig").events_of(Plugin),
             .compatible_with = contract.compatible_with_of(Plugin),
+            .providers = @import("../contract.zig").registered_of(Plugin),
             .pages = pages_of(Plugin),
             .menu = @import("menu_define.zig").entries_of(Plugin),
             .icons = @import("menu_define.zig").icons_of(Plugin),

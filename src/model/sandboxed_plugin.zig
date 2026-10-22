@@ -102,6 +102,8 @@ pub const Manifest = struct {
     /// The events it declares (`.events`), by full name, with their payloads' shapes.
     events: []const Event = &.{},
     compatible_with: []const []const u8 = &.{},
+    /// The providers it registers into contracts.
+    providers: []const @import("provider.zig").Registered = &.{},
     pages: []const Page = &.{},
     menu: []const MenuEntry = &.{},
     icons: []const PluginIcon = &.{},

@@ -7,7 +7,7 @@ const operation = @import("../operation.zig");
 const Grant = @import("../grant.zig").Grant;
 const PluginCtx = @import("../plugin/context.zig").PluginCtx;
 
-pub const transcribe_verb = "transcribe";
+const transcribe_verb = "transcribe";
 
 /// A recording, at most two minutes of the browser's compressed speech.
 pub const audio_bytes_max: u32 = 768 << 10;
