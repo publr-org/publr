@@ -23,15 +23,22 @@ pub fn Of(comptime Domain: type) type {
         }
 
         /// What an editor sees: the pending copy of a record with unpublished changes, the
-        /// live document of the others.
-        pub fn edit_documents_of(ctx: *Ctx, records: []const Record) Error![]const []const u8 {
+        /// live document of the others and of a type `granted` reads live only.
+        pub fn edit_documents_of(
+            ctx: *Ctx,
+            granted: *const sdk.Grant,
+            records: []const Record,
+        ) Error![]const []const u8 {
             std.debug.assert(records.len <= 1024);
 
             const live = try documents_in(ctx, records, values.live);
             var changed: std.ArrayList(Record) = .empty;
+            const pending_of = try ctx.arena.alloc(bool, records.len);
 
-            for (records) |record| {
-                if (record.changed) {
+            for (records, pending_of) |record, *pending| {
+                pending.* = record.changed and !try live_only(ctx, granted, record);
+
+                if (pending.*) {
                     changed.append(ctx.arena, record) catch return error.OutOfMemory;
                 }
             }
@@ -44,14 +51,26 @@ pub fn Of(comptime Domain: type) type {
             const texts = @constCast(live);
             var next: u32 = 0;
 
-            for (records, texts) |record, *text| {
-                if (record.changed) {
+            for (pending_of, texts) |is_pending, *text| {
+                if (is_pending) {
                     text.* = pending[next];
                     next += 1;
                 }
             }
 
             return texts;
+        }
+
+        fn live_only(ctx: *Ctx, granted: *const sdk.Grant, record: Record) Error!bool {
+            std.debug.assert(record.id.len > 0);
+
+            if (!granted.record_filter.flags.live_only) {
+                return false;
+            }
+
+            const type_row = try definitions.find(ctx, record.type_id) orelse return true;
+
+            return granted.live_only_on(type_row.def.handle, type_row.def.public);
         }
 
         fn documents_in(

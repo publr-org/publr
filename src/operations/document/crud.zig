@@ -195,7 +195,8 @@ pub fn Of(comptime Domain: type) type {
             ctx.depend(Domain.depend_prefix, id);
             const record = try load(ctx, id, granted) orelse return error.NotFound;
             const type_row = try definitions.find(ctx, record.type_id) orelse return error.NotFound;
-            const slot = try slot_for(ctx, record, purpose, wanted_slot);
+            const live_only = granted.live_only_on(type_row.def.handle, type_row.def.public);
+            const slot = try slot_for(ctx, record, purpose, wanted_slot, live_only);
 
             std.debug.assert(slot.len > 0);
             const parsed = try document.document_of(ctx, record.id, slot, type_row.def);
@@ -219,12 +220,15 @@ pub fn Of(comptime Domain: type) type {
             row: Record,
             purpose: Purpose,
             wanted: ?[]const u8,
+            live_only: bool,
         ) Error![]const u8 {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(ctx.now_ms >= 0);
 
             if (wanted) |slot| {
-                if (ctx.caller == .anonymous and !std.mem.eql(u8, slot, values.live)) {
+                const live_ok = ctx.caller != .anonymous and !live_only;
+
+                if (!live_ok and !std.mem.eql(u8, slot, values.live)) {
                     return error.NotFound;
                 }
 
@@ -235,7 +239,9 @@ pub fn Of(comptime Domain: type) type {
 
             std.debug.assert(purpose == .edit or purpose == .delivery);
 
-            if (row.changed and reads_latest(ctx)) {
+            // A grant reading the type live only never sees pending changes, whoever the
+            // plugin acts for.
+            if (row.changed and reads_latest(ctx) and !live_only) {
                 return values.pending;
             }
 
@@ -524,7 +530,8 @@ pub fn Of(comptime Domain: type) type {
                         .name = name,
                     },
                 } else null,
-                .latest = reads_latest(ctx),
+                // A type the grant reads live only keeps the whole list to live copies.
+                .latest = reads_latest(ctx) and !split.live_only and split.type_ids.len == 0,
                 .order = in.order,
                 .limit = in.limit,
                 .offset = in.offset,
