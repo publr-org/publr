@@ -309,8 +309,7 @@ pub fn resource_of(in: anytype) Resource {
     return resource;
 }
 
-/// `namespace.verb`, or `app.<feature>.verb` for what apps call: the grants a role gives
-/// its visitors name those (`app.newsletter.*`), never the admin's (`newsletter.*`).
+/// `namespace.verb`; `app.` is part of an address (`/_actions/app.x.y`), never of a name.
 pub fn assert_name(comptime name: []const u8) void {
     comptime {
         if (name.len == 0 or name.len > name_len_max) {
@@ -329,10 +328,8 @@ pub fn assert_name(comptime name: []const u8) void {
             }
         }
 
-        const dots_wanted: u32 = if (is_app(name)) 2 else 1;
-
-        if (dots != dots_wanted) {
-            @compileError("operation name must be namespace.verb or app.feature.verb: " ++ name);
+        if (dots != 1) {
+            @compileError("operation name must be namespace.verb: " ++ name);
         }
 
         const doubled = std.mem.indexOf(u8, name, "..") != null;
@@ -341,14 +338,6 @@ pub fn assert_name(comptime name: []const u8) void {
             @compileError("operation name: " ++ name);
         }
     }
-}
-
-/// Whether an operation is one apps call: `app.<feature>.<verb>`.
-pub fn is_app(name: []const u8) bool {
-    std.debug.assert(name.len > 0);
-    std.debug.assert(name.len <= name_len_max);
-
-    return std.mem.startsWith(u8, name, "app.");
 }
 
 /// JSON an operation answers as it is, written through untouched: a query's result.
@@ -420,8 +409,7 @@ fn assert_decl(comptime Operation: type, comptime decl: []const u8, comptime Typ
     }
 }
 
-/// Everything before the verb: `record` of `record.create`, `app.newsletter` of
-/// `app.newsletter.subscribe`.
+/// Everything before the verb: `record` of `record.create`.
 pub fn namespace(name: []const u8) []const u8 {
     @setEvalBranchQuota(100_000);
 
@@ -441,11 +429,7 @@ pub fn verb(name: []const u8) []const u8 {
 test "namespace and verb split" {
     try std.testing.expectEqualStrings("record", namespace("record.create"));
     try std.testing.expectEqualStrings("create", verb("record.create"));
-    try std.testing.expectEqualStrings("app.newsletter", namespace("app.newsletter.subscribe"));
-    try std.testing.expectEqualStrings("subscribe", verb("app.newsletter.subscribe"));
-    try std.testing.expect(is_app("app.newsletter.subscribe"));
-    try std.testing.expect(!is_app("newsletter.list"));
-    comptime assert_name("app.newsletter.subscribe");
+    comptime assert_name("newsletter.subscribe");
 }
 
 test "serialisable types are accepted, pointers to single items rejected at comptime" {

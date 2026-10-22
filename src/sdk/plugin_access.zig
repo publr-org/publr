@@ -297,16 +297,12 @@ fn naming(
     return null;
 }
 
-/// Whether `operation_name` is in the plugin's own namespace: `<name>.*`, `app.<name>.*`.
+/// Whether `operation_name` is in the plugin's own namespace: `<name>.*`.
 pub fn own(name: []const u8, operation_name: []const u8) bool {
     std.debug.assert(name.len > 0);
     std.debug.assert(operation_name.len > 0);
 
-    const namespace = operation.namespace(operation_name);
-    const app_namespace = std.mem.startsWith(u8, namespace, "app.") and
-        std.mem.eql(u8, namespace[4..], name);
-
-    return std.mem.eql(u8, namespace, name) or app_namespace;
+    return std.mem.eql(u8, operation.namespace(operation_name), name);
 }
 
 /// Whether a granted `call:` permission names exactly this operation of a plugin it depends
@@ -376,7 +372,6 @@ test "own namespace and harmless calls need nothing; never is never" {
     };
 
     try std.testing.expect((try granted_for(arena, &access, "greeter.greet", null)).allows());
-    try std.testing.expect((try granted_for(arena, &access, "app.greeter.join", null)).allows());
     try std.testing.expect((try granted_for(arena, &access, "heartbeat.check", null)).allows());
     try std.testing.expect(!(try granted_for(arena, &access, "user.list", null)).allows());
 
@@ -535,27 +530,20 @@ test "an exact plugin call needs both its grant and a declared parent" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var access: Access = .{
-        .granted = &.{"call:app.provider.adjust"},
+        .granted = &.{"call:provider.adjust"},
         .own_types = &.{},
     };
     const request: Request = .{
-        .operation_name = "app.provider.adjust",
+        .operation_name = "provider.adjust",
         .kind = .write,
     };
     try std.testing.expect(!(try grant(arena, "child", &access, request)).allows());
     access.depends_on = &.{"provider@^0.3"};
     try std.testing.expect((try grant(arena, "child", &access, request)).allows());
     try std.testing.expect(!(try grant(arena, "child", &access, .{
-        .operation_name = "app.provider.purge",
+        .operation_name = "provider.purge",
         .kind = .write,
     })).allows());
-
-    access.granted = &.{"call:provider.adjust"};
-    try std.testing.expect((try grant(arena, "child", &access, .{
-        .operation_name = "provider.adjust",
-        .kind = .write,
-    })).allows());
-    try std.testing.expect(!(try grant(arena, "child", &access, request)).allows());
 
     access.granted = &.{};
     try std.testing.expect(!(try grant(arena, "child", &access, request)).allows());

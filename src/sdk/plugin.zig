@@ -168,8 +168,7 @@ pub fn validate(comptime Plugin: type) void {
 
             if (!@import("plugin_access.zig").own(manifest.name, Operation.name)) {
                 @compileError("plugin " ++ manifest.name ++ ": operation " ++ Operation.name ++
-                    " is outside its namespaces, `" ++ manifest.name ++ ".<verb>` and `app." ++
-                    manifest.name ++ ".<verb>`");
+                    " is outside its namespace, `" ++ manifest.name ++ ".<verb>`");
             }
         }
 

@@ -823,9 +823,9 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// Whether the caller may use the admin: its roles grant some operation of the
-        /// admin's, neither an app's (`app.*`) nor one open to everyone. What an anonymous
-        /// visitor may read (live public records) does not count: an account whose roles
-        /// grant only what apps call never gets in.
+        /// admin's, neither one apps call (`.untrusted_callers`) nor one open to everyone.
+        /// What an anonymous visitor may read (live public records) does not count: an
+        /// account whose roles grant only what apps call never gets in.
         pub fn reaches_admin(ctx: *const Ctx) bool {
             // Each operation's name is read once at comptime, a byte at a time.
             @setEvalBranchQuota(registry.operations.len * operation.name_len_max * 2);
@@ -838,7 +838,8 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             inline for (registry.operations) |Operation| {
-                const app_only = comptime operation.is_app(Operation.name);
+                const app_only = @hasDecl(Operation, "untrusted_callers") and
+                    Operation.untrusted_callers;
                 const open = @hasDecl(Operation, "open") and Operation.open;
 
                 if (!app_only and !open and !authorize.is_open_operation(Operation.name)) {
@@ -2002,16 +2003,14 @@ fn is_reference_list(comptime Type: type) bool {
     }
 }
 
-/// The plugin an operation name belongs to: `inventory` for `inventory.adjust` and for
-/// `app.inventory.reserve`.
+/// The plugin an operation name belongs to: `inventory` for `inventory.adjust`.
 pub fn plugin_of(comptime name: []const u8) []const u8 {
     comptime {
         std.debug.assert(std.mem.indexOfScalar(u8, name, '.') != null);
 
-        const rest = if (std.mem.startsWith(u8, name, "app.")) name["app.".len..] else name;
-        const dot = std.mem.indexOfScalar(u8, rest, '.') orelse rest.len;
+        const dot = std.mem.indexOfScalar(u8, name, '.') orelse name.len;
 
-        return rest[0..dot];
+        return name[0..dot];
     }
 }
 
@@ -2336,9 +2335,12 @@ test "an operation called through what its plugin publishes: by name, the same c
 }
 
 const Subscribe = struct {
-    pub const name = "app.news.subscribe";
+    pub const name = "news.subscribe";
     pub const description = "Test operation an app calls";
     pub const kind: operation.Kind = .read;
+    pub const untrusted_callers = true;
+    pub const open = false;
+    pub const answer: ?@import("model/caller_answer.zig").Answer = null;
     pub const In = struct {};
     pub const Out = struct {
         ok: bool,
@@ -2388,7 +2390,7 @@ const RolesSDK = SDK(.{
         .{
             .name = "subscriber",
             .label = "Subscriber",
-            .grants = &.{"app.news.*"},
+            .grants = &.{"news.*"},
         },
     }),
 });
