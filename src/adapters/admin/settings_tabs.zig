@@ -1,25 +1,38 @@
-//! The tabs plugins add to System settings: each tab's page holds the sections every plugin
-//! naming it draws, in plugin order, under System settings' own header and tabs.
+//! The tabs plugins add to a Settings page (System settings, Users): each tab's page holds
+//! the sections every plugin naming it draws, in plugin order, under the page's own header
+//! and tabs.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 
 const views = admin.views;
-const page_path = "/admin/settings/system";
-const Tab = views.SettingsSystem.Plugin_tabsItem;
+const TabPage = @import("../../sdk/plugin.zig").SettingsTabPage;
 
-/// Each plugin tab's page at `/admin/settings/system/<tab>`.
+/// A tab link, as the pages draw them.
+pub const Link = struct {
+    tab: []const u8,
+    label: []const u8,
+    href: []const u8,
+};
+
+/// What the open tab puts in its page's header: its primary action, if any.
+pub const Action = struct {
+    label: []const u8 = "",
+    href: []const u8 = "",
+};
+
+/// Each plugin tab's page at `<page path>/<tab>`.
 pub fn register(router: anytype) void {
     std.debug.assert(tabs.len <= 64);
 
     inline for (tabs) |tab| {
-        const Shown = Page(tab.tab);
+        const Shown = Page(tab.page, tab.tab);
 
-        router.get("/admin/settings/system/" ++ tab.tab, &Shown.show);
+        router.get(comptime tab.page.path() ++ "/" ++ tab.tab, &Shown.show);
     }
 }
 
-/// Every tab a plugin adds, once each, in the order first declared.
+/// Every tab a plugin adds, once each per page, in the order first declared.
 pub const tabs = distinct_tabs();
 
 fn distinct_tabs() []const registry_tab {
@@ -32,11 +45,13 @@ fn distinct_tabs() []const registry_tab {
             var seen = false;
 
             for (found) |known| {
-                seen = seen or std.mem.eql(u8, known.tab, owned.tab.tab);
+                seen = seen or (known.page == owned.tab.page and
+                    std.mem.eql(u8, known.tab, owned.tab.tab));
             }
 
             if (!seen) {
                 found = found ++ &[_]registry_tab{.{
+                    .page = owned.tab.page,
                     .tab = owned.tab.tab,
                     .label = owned.tab.tab_label,
                 }};
@@ -48,23 +63,24 @@ fn distinct_tabs() []const registry_tab {
 }
 
 const registry_tab = struct {
+    page: TabPage,
     tab: []const u8,
     label: []const u8,
 };
 
-/// The links to the plugin tabs the viewer may see.
-pub fn links(session: *admin.Session) admin.Error![]const Tab {
+/// The links to the plugin tabs of `page` the viewer may see.
+pub fn links(session: *admin.Session, page: TabPage) admin.Error![]const Link {
     std.debug.assert(session.signed_in());
     std.debug.assert(tabs.len <= 64);
 
-    var shown: std.ArrayList(Tab) = .empty;
+    var shown: std.ArrayList(Link) = .empty;
 
     inline for (tabs) |tab| {
-        if (may_see(session, tab.tab)) {
+        if (tab.page == page and may_see(session, tab.page, tab.tab)) {
             shown.append(session.arena, .{
                 .tab = tab.tab,
                 .label = try session.declared(tab.label),
-                .href = page_path ++ "/" ++ tab.tab,
+                .href = comptime tab.page.path() ++ "/" ++ tab.tab,
             }) catch return error.OutOfMemory;
         }
     }
@@ -72,12 +88,12 @@ pub fn links(session: *admin.Session) admin.Error![]const Tab {
     return shown.items;
 }
 
-fn may_see(session: *admin.Session, comptime tab: []const u8) bool {
+fn may_see(session: *admin.Session, comptime page: TabPage, comptime tab: []const u8) bool {
     std.debug.assert(tab.len > 0);
     std.debug.assert(session.signed_in());
 
     inline for (registry.settings_tabs) |owned| {
-        if (comptime std.mem.eql(u8, owned.tab.tab, tab)) {
+        if (comptime ours(owned.tab, page, tab)) {
             if (registry.SDK.may(&session.ctx, owned.tab.operation)) {
                 return true;
             }
@@ -85,6 +101,10 @@ fn may_see(session: *admin.Session, comptime tab: []const u8) bool {
     }
 
     return false;
+}
+
+fn ours(comptime declared: anytype, comptime page: TabPage, comptime tab: []const u8) bool {
+    return declared.page == page and std.mem.eql(u8, declared.tab, tab);
 }
 
 /// The tab drawn again after `plugin`'s save was refused: its section is `section` (what was
@@ -101,9 +121,9 @@ pub fn show_refused(
     var sections: std.ArrayList(admin.render.Node) = .empty;
 
     inline for (registry.settings_tabs) |owned| {
-        const ours = comptime std.mem.eql(u8, owned.tab.tab, tab);
+        const mine = comptime ours(owned.tab, .system, tab);
 
-        if (ours and registry.SDK.may(&session.ctx, owned.tab.operation)) {
+        if (mine and registry.SDK.may(&session.ctx, owned.tab.operation)) {
             const node = if (std.mem.eql(u8, owned.plugin, plugin))
                 section
             else
@@ -118,8 +138,8 @@ pub fn show_refused(
     try @import("settings.zig").render_plugin_tab(session, tab, body);
 }
 
-/// The page of the plugin tab `tab`: its sections, drawn by their plugins.
-pub fn Page(comptime tab: []const u8) type {
+/// The page of the plugin tab `tab` of `page`: its sections, drawn by their plugins.
+pub fn Page(comptime page: TabPage, comptime tab: []const u8) type {
     return struct {
         pub fn show(
             request: *admin.Request,
@@ -131,25 +151,36 @@ pub fn Page(comptime tab: []const u8) type {
 
             var session = try admin.require(request, response, ctx) orelse return;
 
-            if (!may_see(&session, tab)) {
+            if (!may_see(&session, page, tab)) {
                 return admin.missing(request, response, ctx);
             }
 
             var sections: std.ArrayList(admin.render.Node) = .empty;
+            var action: Action = .{};
 
             inline for (registry.settings_tabs) |owned| {
-                const ours = comptime std.mem.eql(u8, owned.tab.tab, tab);
+                const mine = comptime ours(owned.tab, page, tab);
 
-                if (ours and registry.SDK.may(&session.ctx, owned.tab.operation)) {
+                if (mine and registry.SDK.may(&session.ctx, owned.tab.operation)) {
                     const node = try owned.tab.view.draw(&session);
 
                     sections.append(session.arena, node) catch return error.OutOfMemory;
+
+                    if (action.label.len == 0 and owned.tab.action_label.len > 0) {
+                        action = .{
+                            .label = try session.declared(owned.tab.action_label),
+                            .href = owned.tab.action_href,
+                        };
+                    }
                 }
             }
 
             const body = try admin.render.all(session.arena, sections.items);
 
-            try @import("settings.zig").render_plugin_tab(&session, tab, body);
+            switch (page) {
+                .system => try @import("settings.zig").render_plugin_tab(&session, tab, body),
+                .users => try @import("users.zig").render_plugin_tab(&session, tab, body, action),
+            }
         }
     };
 }

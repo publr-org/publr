@@ -35,10 +35,12 @@ pub fn node(session: *admin.Session, path: []const u8) admin.Error!admin.render.
             .href = destination.href,
             .icon = std.meta.stringToEnum(@FieldType(Page, "icon"), destination.icon) orelse
                 .package,
+            .custom_icon = "",
             .active = if (structure) in_structure(path) else chrome.under(path, destination.href),
             .plugin = destination.plugin,
             .page = destination.page,
             .pinned = destination.pinned,
+            .shared = destination.shared,
             .count = if (health) try health_count(session) else "",
             .group = try group_of(session, destination, previous),
             .heading = try heading_of(session, destination, previous),
@@ -49,6 +51,7 @@ pub fn node(session: *admin.Session, path: []const u8) admin.Error!admin.render.
         .pages = pages,
         .csrf = session.csrf_token(),
         .back = path,
+        .admin = session.ctx.caller.holds("admin"),
     });
 }
 
@@ -96,7 +99,7 @@ fn heading_of(
     }
 
     if (destination.app.len == 0) {
-        return session.translated("Global");
+        return session.translated("Global", .{});
     }
 
     const app = session.project.find(destination.app) orelse return destination.app;

@@ -2,6 +2,7 @@
 //! app the admin shows where the project has apps, with what plugins join to it
 //! (`app_picker_segment`); where it has none, those segments stand on their own.
 const std = @import("std");
+const plugin_define = @import("../../sdk/plugin/define.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const items = @import("items.zig");
@@ -105,7 +106,8 @@ fn segments_of(session: *const Session, attached: bool, apps: ?Node, into: []Nod
 
     inline for (registry.app_picker_segment) |Plugin| {
         const given = if (count == 0) apps else null;
-        const segment = Plugin.app_picker_segment(session, attached, given) catch |err| blk: {
+        const draw = plugin_define.get(Plugin, "app_picker_segment");
+        const segment = draw(session, attached, given) catch |err| blk: {
             std.log.warn("plugin {s}: app picker segment: {t}", .{ Plugin.manifest.name, err });
             break :blk null;
         };

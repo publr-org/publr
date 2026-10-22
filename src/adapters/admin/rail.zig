@@ -44,15 +44,18 @@ fn change(request: *Request, response: *Response, ctx: *Context, pinning: bool) 
 
     std.debug.assert(back.len > 0);
 
+    const everyone = std.mem.eql(u8, post.form.get("for_everyone") orelse "", "1");
     const done = if (pinning)
         registry.SDK.dispatch(&session.ctx, rail.Pin, .{
             .plugin = plugin,
             .page = page,
+            .for_everyone = everyone,
         })
     else
         registry.SDK.dispatch(&session.ctx, rail.Unpin, .{
             .plugin = plugin,
             .page = page,
+            .for_everyone = everyone,
         });
 
     _ = done catch |err| {

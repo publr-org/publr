@@ -71,7 +71,11 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
     try append_built_in(session, &private, address, on_view);
     try append_saved(session, &private, current.view_id);
 
-    for (registry.Statuses.all) |status| {
+    const known = @import("../../operations/status.zig").known(&session.ctx) catch {
+        return error.OutOfMemory;
+    };
+
+    for (known) |status| {
         const clauses = [_]Clause{.{
             .key = "status",
             .operator = "is",
@@ -84,7 +88,7 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
         statuses.append(arena, row) catch return error.OutOfMemory;
     }
 
-    const changed_label = try session.translated("Changed");
+    const changed_label = try session.translated("Changed", .{});
     const changed_row = try row_of(arena, changed_label, changed_only, address, on_view);
 
     statuses.append(arena, changed_row) catch {
@@ -95,17 +99,22 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
 
     for (listed.types) |summary| {
         // A plugin's section lists its own types; they are not listed twice.
-        if (model.design.is_design(summary.handle) or
+        if (summary.menu_hidden or model.design.is_design(summary.handle) or
             @import("sections.zig").holds(in_sections, summary.handle))
         {
             continue;
         }
 
+        // The type's own list, at the default view each person starts at.
         const one_type: Filters = .{
             .types = &.{summary.handle},
             .type_view = true,
         };
-        const row = try row_of(arena, summary.name, one_type, address, on_view);
+        var row = try row_of(arena, summary.name, one_type, address, on_view);
+        const shown = current.filters;
+
+        row.active = !on_view and shown.type_view and shown.types.len == 1 and
+            std.mem.eql(u8, shown.types[0], summary.handle);
         const appended = switch (summary.kind) {
             .record => record_types.append(arena, .{
                 .label = row.label,
@@ -136,6 +145,7 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
         .sections = try sections_of(session, in_sections),
         .csrf = session.csrf_token(),
         .back = address,
+        .admin = session.ctx.caller.holds("admin"),
     });
 }
 
@@ -198,7 +208,7 @@ fn group_by_app(session: *const Session, items: []TypeItem) Error!void {
         item.heading = if (!starts)
             ""
         else if (app.len == 0)
-            try session.translated("Global")
+            try session.translated("Global", .{})
         else if (session.project.find(app)) |found|
             found.spec.label
         else
@@ -218,14 +228,18 @@ fn sections_of(
     const items = try session.arena.alloc(SectionItem, listed.len);
 
     for (listed, items) |destination, *item| {
+        const Icon = @FieldType(SectionItem, "icon");
+        const picked = @import("plugin_icons.zig").pick(Icon, session, destination.icon, .package);
+
         item.* = .{
             .label = destination.label,
             .href = destination.href,
-            .icon = std.meta.stringToEnum(@FieldType(SectionItem, "icon"), destination.icon) orelse
-                .package,
+            .icon = picked.icon,
+            .custom_icon = picked.custom_icon,
             .plugin = destination.plugin,
             .page = destination.page,
             .pinned = destination.pinned,
+            .shared = destination.shared,
         };
     }
 
@@ -269,11 +283,11 @@ fn append_built_in(
         filter: Filters,
     }{
         .{
-            .label = try session.translated("Created by me"),
+            .label = try session.translated("Created by me", .{}),
             .filter = created_by_me,
         },
         .{
-            .label = try session.translated("Updated by me"),
+            .label = try session.translated("Updated by me", .{}),
             .filter = updated_by_me,
         },
     };
