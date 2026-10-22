@@ -80,7 +80,8 @@ fn screen(
 }
 
 /// `GET /admin/settings/ai/offered`: the official providers not installed yet, as JSON, for
-/// the page to ask once it is drawn; only this answer waits on Publr's plugin server.
+/// the page to ask once it is drawn: the list as last read from Publr's plugin server, or
+/// `looking` while the first read is on its way.
 fn offered_json(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .get or request.method() == .head);
     std.debug.assert(ctx.user_data != null);
@@ -101,6 +102,7 @@ fn offered_json(request: *Request, response: *Response, ctx: *Context) Error!voi
         return response.json(.ok, .{
             .offered = &[_]setup.Offered{},
             .reached = false,
+            .looking = false,
         });
     };
     var offered: std.ArrayList(setup.Offered) = .empty;
@@ -114,6 +116,7 @@ fn offered_json(request: *Request, response: *Response, ctx: *Context) Error!voi
     try response.json(.ok, .{
         .offered = offered.items,
         .reached = catalog.reached,
+        .looking = catalog.looking,
     });
 }
 
@@ -247,6 +250,8 @@ fn choose(request: *Request, response: *Response, ctx: *Context) Error!void {
     try response.redirect(.see_other, back ++ "?said=chosen");
 }
 
+/// The test runs in the background: the page comes back with its id (`tested`), and shows
+/// the answer once it lands.
 fn test_provider(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .post);
     std.debug.assert(ctx.user_data != null);
@@ -259,32 +264,9 @@ fn test_provider(request: *Request, response: *Response, ctx: *Context) Error!vo
     const tested = registry.SDK.dispatch(&session.ctx, setup.Test, asked) catch |err| {
         return refused(session, err, "");
     };
+    const next = try std.fmt.allocPrint(session.arena, back ++ "?tested={s}", .{tested.asked});
 
-    if (!tested.ok) {
-        const problem = try session.translated(
-            "The test call failed: {reply}",
-            .{
-                .values = &.{.{
-                    .name = "reply",
-                    .value = tested.reply,
-                }},
-            },
-        );
-
-        return screen(session, .ok, "", problem);
-    }
-
-    const notice = try session.translated(
-        "It works. The model answered “{reply}”.",
-        .{
-            .values = &.{.{
-                .name = "reply",
-                .value = tested.reply,
-            }},
-        },
-    );
-
-    try screen(session, .ok, notice, "");
+    try response.redirect(.see_other, next);
 }
 
 /// Where the Overview's forms come back to.
@@ -320,13 +302,21 @@ fn set_up(request: *Request, response: *Response, ctx: *Context) Error!void {
         return screen(session, .unprocessable_content, "", none);
     }
 
-    _ = registry.SDK.dispatch(&session.ctx, setup.SetUp, .{
+    const set_up_now = registry.SDK.dispatch(&session.ctx, setup.SetUp, .{
         .names = names.items,
     }) catch |err| {
         return refused(session, err, "");
     };
 
-    try response.redirect(.see_other, if (from_overview(form)) overview else back);
+    // They install in the background: the page comes back with its id, and is drawn again
+    // once they run.
+    const page = if (from_overview(form)) overview ++ "&" else back ++ "?";
+    const next = try std.fmt.allocPrint(session.arena, "{s}setting_up={s}", .{
+        page,
+        set_up_now.asked,
+    });
+
+    try response.redirect(.see_other, next);
 }
 
 /// The page again with why a post was refused: the operation's own words when it gave any.

@@ -59,7 +59,7 @@ pub fn library(
         .kind = filter.kind,
         .size_filter = filter.size,
         .visibility = filter.visibility,
-        .items = try items_of(arena, listed.items),
+        .items = try items_of(arena, listed.items, try session.translated("Downloading…", .{})),
         .total = @floatFromInt(listed.total),
         .all = @floatFromInt(listed.all),
         .unsorted = @floatFromInt(listed.unsorted),
@@ -583,7 +583,13 @@ fn add_filters_of(
 
 const Item = views.Media.ItemsItem;
 
-fn items_of(arena: std.mem.Allocator, items: []const media.Item) admin.Error![]const Item {
+/// The files as tiles; a Pending one (`media.import`, its bytes on their way) says
+/// `downloading` and shows no picture yet.
+fn items_of(
+    arena: std.mem.Allocator,
+    items: []const media.Item,
+    downloading: []const u8,
+) admin.Error![]const Item {
     std.debug.assert(items.len <= 200);
 
     const out = try arena.alloc(Item, items.len);
@@ -599,12 +605,12 @@ fn items_of(arena: std.mem.Allocator, items: []const media.Item) admin.Error![]c
                 try std.fmt.allocPrint(arena, "/media/{s}?w=480&h=480&fit=cover", .{item.key})
             else
                 "",
-            .image = image and !item.missing,
-            .video = std.mem.eql(u8, item.family, "video") and !item.missing,
+            .image = image and !item.missing and !item.pending,
+            .video = std.mem.eql(u8, item.family, "video") and !item.missing and !item.pending,
             .src = try std.fmt.allocPrint(arena, "/media/{s}", .{item.key}),
             .kind = try explorer.kind_of(arena, item.filename),
             .icon = enum_of(@FieldType(Item, "icon"), explorer.icon_of(item.family)),
-            .facts = try explorer.facts_of(arena, item),
+            .facts = if (item.pending) downloading else try explorer.facts_of(arena, item),
             .missing = item.missing,
             .selected = false,
         };

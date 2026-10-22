@@ -1,12 +1,19 @@
-//! `ai.transcribe`: what a person said into the admin, as text. The recording goes to the
-//! provider that hears (the chosen one when it does, else the first connected one that
-//! does) and is not kept.
+//! `ai.transcribe`: what a person said into the admin, as text. The recording is kept as a
+//! private file (`ai_recording`, apart from the library), and a job (core's queued work)
+//! sends it to the provider that hears (the chosen one when it does, else the first
+//! connected one that does); the page reads the words once they land (`job.answer`).
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const sdk_ai = @import("../../sdk/ai.zig");
 const environment = @import("../../lib/environment.zig");
 const providers = @import("providers.zig");
+const model = @import("../../model.zig");
+const files_module = @import("../../lib/files.zig");
+const upload = @import("../media/upload.zig");
+const library = @import("../media/library.zig");
+const jobs = @import("../job.zig");
+const audio_bytes_max = @import("../../sdk/ai/speech.zig").audio_bytes_max;
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -23,12 +30,14 @@ pub const Transcribe = struct {
     pub const description = "Turn a recording of speech into its words";
     pub const details =
         \\`audio` is the recording, base64, up to 768 KiB (two minutes of the browser's
-        \\compressed speech); `format` its media type. A connected provider that hears
-        \\answers: the one chosen when it does, else the first with a key set that does.
-        \\Nothing is kept. Anyone signed in who may ask; fails with NoHearer when no
-        \\connected provider turns speech into text.
+        \\compressed speech); `format` its media type. It is kept as a private recording,
+        \\and answers at once with an id: a connected provider that hears (the one chosen
+        \\when it does, else the first with a key set that does) turns it into words in the
+        \\background, and `job answer` reads `{ text, provider }` once they land. Anyone
+        \\signed in who may ask; fails with NoHearer when no connected provider turns speech
+        \\into text.
     ;
-    pub const kind: sdk.operation.Kind = .read;
+    pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
     pub const example_signed_in = true;
     pub const In = struct {
@@ -36,17 +45,15 @@ pub const Transcribe = struct {
         format: []const u8,
     };
     pub const Out = struct {
-        text: []const u8,
-        /// The plugin that heard it.
-        provider: []const u8,
+        /// What `job.answer` reads: `{ text, provider }`.
+        asked: []const u8,
     };
     pub const example: In = .{
         .audio = "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYEC",
         .format = "audio/webm;codecs=opus",
     };
     pub const example_out: Out = .{
-        .text = "Add a contact page.",
-        .provider = "ai_example",
+        .asked = "6a1f0c2e9b3d4a5f60718293",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .audio = "The recording, base64",
@@ -54,8 +61,8 @@ pub const Transcribe = struct {
             "audio/mpeg); parameters such as codecs are ignored",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
-        .text = "What was said",
-        .provider = "The provider that heard it; `scripted` in tests",
+        .asked = "For `job answer`: `{ text, provider }`, what was said and the provider " ++
+            "that heard it (`scripted` in tests)",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -75,22 +82,45 @@ pub const Transcribe = struct {
             return error.Invalid;
         }
 
-        const plugin = try providers.hearer(ctx) orelse {
-            if (environment.get(providers.script_variable) == null) {
-                return ctx.fail(no_hearer);
-            }
+        const plugin = try providers.hearer(ctx) orelse "";
 
-            return .{
-                .text = environment.get(heard_variable) orelse "Scripted words",
-                .provider = providers.scripted,
-            };
-        };
+        if (plugin.len == 0 and environment.get(providers.script_variable) == null) {
+            return ctx.fail(no_hearer);
+        }
+
+        const decoder = std.base64.standard.Decoder;
+        const bytes = ctx.arena.alloc(u8, decoder.calcSizeForSlice(speech.audio) catch {
+            return error.Invalid;
+        }) catch return error.OutOfMemory;
+
+        decoder.decode(bytes, speech.audio) catch return error.Invalid;
+
+        const kept = try upload.add(
+            ctx,
+            try library.files_of(ctx),
+            model.ai.recording_type_def,
+            speech.file_name(),
+            bytes,
+            null,
+        );
 
         return .{
-            .text = try heard(ctx, plugin, speech),
-            .provider = plugin,
+            .asked = try jobs.ask(ctx, "transcribe", Hearing{
+                .key = kept.key,
+                .format = speech.format,
+                .plugin = plugin,
+            }),
         };
     }
+};
+
+pub const Hearing = struct {
+    asked: []const u8 = "",
+    /// The recording, kept private: its key.
+    key: []const u8,
+    format: []const u8,
+    /// The provider that hears; empty for the scripted words.
+    plugin: []const u8,
 };
 
 const no_hearer: sdk.operation.Failure = .{
@@ -99,6 +129,49 @@ const no_hearer: sdk.operation.Failure = .{
     .message = "No connected provider turns speech into text: connect one that does under " ++
         "Settings > AI",
 };
+
+const Heard = struct {
+    text: []const u8,
+    provider: []const u8,
+};
+
+/// The `transcribe` job: the recording read from where it is kept and sent to the provider
+/// that hears; its words, or why there are none, kept for whoever asked.
+pub fn transcribe_job(ctx: *Ctx, in: Hearing) Error!void {
+    std.debug.assert(ctx.job.len > 0);
+    std.debug.assert(in.asked.len > 0);
+
+    if (in.plugin.len == 0) {
+        return jobs.answer(ctx, in.asked, Heard{
+            .text = environment.get(heard_variable) orelse "Scripted words",
+            .provider = providers.scripted,
+        });
+    }
+
+    const files = try library.files_of(ctx);
+    const bytes = files.read(ctx.arena, .files, in.key, audio_bytes_max) catch {
+        return jobs.fail(ctx, in.asked, "The recording is gone");
+    };
+    const encoder = std.base64.standard.Encoder;
+    const audio = ctx.arena.alloc(u8, encoder.calcSize(bytes.len)) catch {
+        return error.OutOfMemory;
+    };
+    const text = heard(ctx, in.plugin, .{
+        .audio = encoder.encode(audio, bytes),
+        .format = in.format,
+    }) catch |err| {
+        if (err == error.OutOfMemory) {
+            return error.OutOfMemory;
+        }
+
+        return jobs.fail(ctx, in.asked, jobs.problem_of(ctx, err));
+    };
+
+    return jobs.answer(ctx, in.asked, Heard{
+        .text = text,
+        .provider = in.plugin,
+    });
+}
 
 /// `<plugin>.transcribe`, as the system: who may ask was checked, the plugin's own
 /// operations are core's to call.

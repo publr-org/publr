@@ -31,7 +31,8 @@ pub const namespace: sdk.operation.Namespace = .{
 pub const operations = [_]type{ Fetch, stream.Stream, stream.Read };
 
 pub const stream = @import("http_stream.zig");
-const timed = @import("http_timed.zig");
+/// A request given up on after its time limit: for host code calling its own servers.
+pub const timed = @import("http_timed.zig");
 const form_parts = @import("http_form.zig");
 const guards = @import("http_guard.zig");
 const downloads = @import("http_download.zig");
@@ -422,6 +423,7 @@ fn send(
 pub const Downloaded = downloads.Downloaded;
 pub const download = downloads.download;
 pub const public_host = downloads.public_host;
+pub const not_public = downloads.not_public;
 
 test "http.fetch is refused outside queued work, whatever the plugin is granted" {
     var harness: sdk.testing.Harness = undefined;

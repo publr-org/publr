@@ -38,6 +38,31 @@ pub const picture_type_def: content_type.Def = .{
         },
     }},
 };
+pub const recording_type_handle = "ai_recording";
+
+/// The media type of what a person says into the admin to be written down (`ai.transcribe`):
+/// kept apart from the media library, private, read only by the job that sends it to the
+/// provider that hears.
+pub const recording_type_def: content_type.Def = .{
+    .handle = recording_type_handle,
+    .name = "Recording",
+    .plural_name = "Recordings",
+    .description = "What a person said into the admin, to be written down.",
+    .kind = .media,
+    .families = &.{ "audio", "video" },
+    .icon = "audio",
+    .system = true,
+    .owner = content_type.core_owner,
+    .title_field = "title",
+    .fields = &.{.{
+        .name = "title",
+        .label = "Title",
+        .kind = "string",
+        .validation = .{
+            .required = true,
+        },
+    }},
+};
 /// The address of the admin page a step shows.
 pub const href_len_max: u32 = 512;
 /// Conversations listed, newest first.

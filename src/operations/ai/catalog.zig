@@ -1,10 +1,14 @@
 //! Where official plugins come from: Publr's plugin server, or the folder or address
 //! `PUBLR_PLUGIN_CATALOG` names. It holds `catalog.json` and the built modules it lists.
+//! From the web, it is read in queued work only: pages answer the copy the `ai_catalog` job
+//! keeps, looked at again when it is an hour old.
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const environment = @import("../../lib/environment.zig");
+const store = @import("../../store.zig");
+const jobs = @import("../job.zig");
 const http = @import("../http.zig");
 const lifecycle = @import("../plugin/lifecycle.zig");
 
@@ -14,6 +18,10 @@ const Error = sdk.Error;
 pub const variable = "PUBLR_PLUGIN_CATALOG";
 pub const address_default = "https://plugins.publr.app";
 const catalog_bytes_max: u32 = 64 << 10;
+/// How old a kept catalog may be before it is looked at again; one not reached, a minute.
+const fresh_ms: i64 = 60 * 60 * 1000;
+const retry_ms: i64 = 60 * 1000;
+const kept_key = "plugin.catalog";
 
 pub const Entry = struct {
     name: []const u8,
@@ -58,7 +66,84 @@ fn on_the_web(from: []const u8) bool {
     return std.mem.startsWith(u8, from, "https://") or std.mem.startsWith(u8, from, "http://");
 }
 
-/// The catalog's entries; fails with `unreachable_failure` when it cannot be read.
+/// The catalog as last looked at, in a page's request: read at once from a folder; from the
+/// web, the kept copy (`looking` while none is), a look queued when it is old.
+pub const Kept = struct {
+    at: i64 = 0,
+    reached: bool = false,
+    plugins: []const Entry = &.{},
+    /// A look is on its way and nothing was kept before it.
+    looking: bool = false,
+};
+
+pub fn kept(ctx: *Ctx) Error!Kept {
+    std.debug.assert(fresh_ms > retry_ms);
+
+    if (!on_the_web(source())) {
+        const file = read(ctx) catch |err| {
+            if (err == error.OutOfMemory) {
+                return error.OutOfMemory;
+            }
+
+            ctx.failure = null;
+
+            return .{};
+        };
+
+        return .{
+            .at = ctx.now_ms,
+            .reached = true,
+            .plugins = file.plugins,
+        };
+    }
+
+    const text = try store.settings.get(ctx.db, ctx.arena, kept_key);
+    var found: Kept = if (text) |json| std.json.parseFromSliceLeaky(Kept, ctx.arena, json, .{
+        .ignore_unknown_fields = true,
+        .allocate = .alloc_always,
+    }) catch .{} else .{};
+    const age_max = if (found.reached) fresh_ms else retry_ms;
+    const waiting = try store.job_queue.waiting_for(ctx.db, jobs.core, "ai_catalog");
+
+    if (ctx.now_ms - found.at >= age_max and !waiting) {
+        try jobs.enqueue(ctx, "ai_catalog", struct {}{});
+    }
+
+    found.looking = text == null;
+
+    return found;
+}
+
+/// The `ai_catalog` job: the catalog read from Publr's plugin server and kept; one that
+/// cannot be reached is kept as not reached, and looked at again a minute later.
+pub fn refresh(ctx: *Ctx, in: struct {}) Error!void {
+    std.debug.assert(ctx.job.len > 0);
+    std.debug.assert(fresh_ms > retry_ms);
+
+    _ = in;
+
+    const file = read(ctx) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => blk: {
+            ctx.failure = null;
+            break :blk null;
+        },
+    };
+    const text = std.json.Stringify.valueAlloc(ctx.arena, Kept{
+        .at = ctx.now_ms,
+        .reached = file != null,
+        .plugins = if (file) |found| found.plugins else &.{},
+    }, .{}) catch return error.OutOfMemory;
+
+    if (text.len > store.settings.value_len_max) {
+        return ctx.fail(unreachable_failure);
+    }
+
+    try store.settings.set(ctx.db, kept_key, text, ctx.now_ms);
+}
+
+/// The catalog's entries; fails with `unreachable_failure` when it cannot be read. From the
+/// web, queued work only.
 pub fn read(ctx: *Ctx) Error!File {
     std.debug.assert(catalog_bytes_max > 0);
 

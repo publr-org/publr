@@ -10,6 +10,10 @@ const ai = @import("../../lib/ai.zig");
 const sdk_ai = @import("../../sdk/ai.zig");
 const http_stream = @import("../../operations/http_stream.zig");
 
+/// What a turn runs as: core's queued work (`ai.ask` starts it, answering at once), in the
+/// agent's own process.
+const turn_job = "publr.turn";
+
 pub const PluginProvider = struct {
     application: *server.Server,
     io: std.Io,
@@ -107,6 +111,8 @@ pub const PluginProvider = struct {
             },
         );
 
+        // The turn is queued work, never a request: the provider may call out.
+        ctx.job = turn_job;
         ctx.sandboxed_plugins = application.sandboxed();
         ctx.plugin_states = &application.plugin_states;
         ctx.files = application.files_of();

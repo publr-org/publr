@@ -61,8 +61,10 @@ pub const instructions =
     \\   feature (pages, a blog, a shop, bookings, a newsletter), ask Publr's marketplace
     \\   before you build anything: `plugin find --request "<what the person asked, in
     \\   their words>"`, then `plugin install --name <name>` for each plugin it answers
-    \\   (what it requires comes with it). Build only what none of them gives: their types
-    \\   and operations are yours to use, and the pages that show them are yours to write.
+    \\   (what it requires comes with it); each answers at once with an id, and
+    \\   `job answer --id <id>` reads what landed (`waiting` until it does). Build only
+    \\   what none of them gives: their types and operations are yours to use, and the
+    \\   pages that show them are yours to write.
     \\2. Plan: for anything bigger than one change, call `plan` with the steps you will
     \\   take, and call it again as each is done. The person sees it.
     \\3. Build a page at a time: write a page and what it needs (its layout, components,
