@@ -265,7 +265,7 @@ fn run_pipeline(
     const output = try sandboxed.run(ctx, found, resolved);
 
     if (sandboxed.hooked(.after, found.name)) {
-        try sandboxed.after(ctx, found.name, changed, output);
+        try sandboxed.after(ctx, found.name, changed, output, null);
     }
 
     return output;

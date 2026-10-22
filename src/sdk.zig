@@ -1306,7 +1306,7 @@ pub fn SDK(comptime registry: Registry) type {
             const ran: Error!void = if (stage == .before)
                 discard(sandboxed.before(ctx, name, input))
             else
-                sandboxed.after(ctx, name, input, "{}");
+                sandboxed.after(ctx, name, input, "{}", null);
 
             try settle_refusal(ran, refusable, name);
         }
@@ -1350,7 +1350,7 @@ pub fn SDK(comptime registry: Registry) type {
             const ran: Error!void = if (stage == .before)
                 discard(sandboxed.before(ctx, name, input))
             else
-                sandboxed.after(ctx, name, input, "{}");
+                sandboxed.after(ctx, name, input, "{}", null);
 
             try settle_refusal(ran, true, name);
         }
@@ -1425,8 +1425,12 @@ pub fn SDK(comptime registry: Registry) type {
 
             const input = try stringify(ctx.arena, in);
             const output = try stringify(ctx.arena, out);
+            const extended = if (comptime @hasField(Operation.Out, "extended"))
+                out.extended
+            else
+                null;
 
-            try sandboxed.after(ctx, Operation.name, input, output);
+            try sandboxed.after(ctx, Operation.name, input, output, extended);
         }
 
         /// Whether any modifier, compiled in or installed, takes values applied as `name`.
@@ -1650,7 +1654,7 @@ pub fn SDK(comptime registry: Registry) type {
                 return;
             }
 
-            sandboxed.after(ctx, name, payload, "{}") catch |err| {
+            sandboxed.after(ctx, name, payload, "{}", null) catch |err| {
                 ctx.event_refusal = ctx.event_refusal orelse err;
             };
         }

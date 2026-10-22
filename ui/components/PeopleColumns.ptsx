@@ -1,0 +1,35 @@
+import { Publr } from "publr-jsx";
+import { state, toggle_column } from "./PeopleTable.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuCheckboxItem } from "@publr/ui/DropdownMenuCheckboxItem.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+
+export type PeopleColumnsProps = {
+  columns: Array<{ field: string; label: string }>;
+};
+
+/** Columns, above People's table: a check per column a plugin adds, ticked when shown. */
+export function PeopleColumns({ columns }: PeopleColumnsProps) {
+  return (
+    <div class="flex justify-end">
+      <DropdownMenu classes="flex items-center">
+        <DropdownMenuTrigger asChild>
+          <Button type="button" hierarchy="tertiary" size="sm">
+            <Icon name="columns" size="sm" />
+            <span>{Publr.t("Columns")}</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="right" classes="min-w-48">
+          {columns.map((column) => (
+            <DropdownMenuCheckboxItem checked={!state.hidden.includes(column.field)} data-field={column.field} onClick={toggle_column}>
+              {column.label}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}

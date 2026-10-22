@@ -280,6 +280,42 @@ pub const location_rules = native_plugins.merged_location_rules;
 /// The columns compiled-in plugins add to lists they don't own.
 pub const columns = native_plugins.merged_columns;
 
+/// Every plugin's columns on lists it doesn't own: compiled-in plugins', then the installed
+/// ones' from their manifests.
+pub fn all_columns(ctx: *const sdk.Ctx) error{OutOfMemory}![]const Column {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const sandboxed = ctx.sandboxed_plugins orelse return columns;
+    var list: std.ArrayList(Column) = .empty;
+
+    try list.appendSlice(ctx.arena, columns);
+
+    for (sandboxed.manifests()) |manifest| {
+        for (manifest.columns) |column| {
+            const own = std.mem.startsWith(u8, column.field, manifest.name) and
+                column.field.len > manifest.name.len + 1 and
+                column.field[manifest.name.len] == '.';
+
+            if (!own or column.list.len == 0) {
+                continue;
+            }
+
+            try list.append(ctx.arena, .{
+                .plugin = manifest.name,
+                .list = column.list,
+                .field = column.field,
+                .label = column.label,
+                .kind = column.kind,
+                .stored = column.stored,
+            });
+        }
+    }
+
+    return list.items;
+}
+
+pub const Column = @import("../sdk/plugin/column_define.zig").Column;
+
 pub const Filters = filter_registry.Registry(
     &filter_registry.core ++ native_plugins.merged_filters,
 );

@@ -1,16 +1,8 @@
 import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { Pager } from "../components/Pager.ptsx";
+import { PeopleTable } from "../components/PeopleTable.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
-import { Link } from "@publr/ui/Link.ptsx";
-import { Status } from "@publr/ui/Status.ptsx";
-import { Text } from "@publr/ui/Text.ptsx";
-import { Table } from "@publr/ui/Table.ptsx";
-import { TableHeader } from "@publr/ui/TableHeader.ptsx";
-import { TableHead } from "@publr/ui/TableHead.ptsx";
-import { TableBody } from "@publr/ui/TableBody.ptsx";
-import { TableRow } from "@publr/ui/TableRow.ptsx";
-import { TableCell } from "@publr/ui/TableCell.ptsx";
 import { TabNav } from "@publr/ui/TabNav.ptsx";
 import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
 
@@ -30,7 +22,9 @@ export type UsersProps = {
   }>;
   /** Columns plugins add (`.register_columns`): `kind` is number, money, date, text, status
    * or link; a column of a stored field sorts the list through `sort_href`. */
-  columns?: Array<{ label: string; kind: string; sort_href: string; sorted: string }>;
+  columns?: Array<{ field: string; label: string; kind: string; sort_href: string; sorted: string }>;
+  /** The columns this person hides, by field (`user.columns`). */
+  hidden?: string[];
   /** "51–100 of 230" when there is more than one page; empty otherwise. */
   range: string;
   /** The pages before and after this one; empty at either end. */
@@ -52,6 +46,7 @@ export type UsersProps = {
 export function Users({
   users,
   columns = [],
+  hidden = [],
   range,
   previous_href,
   next_href,
@@ -90,75 +85,7 @@ export function Users({
       footer={own && range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
     >
       {!own && sections}
-      {own && (
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{Publr.t("Name")}</TableHead>
-            <TableHead>{Publr.t("Email")}</TableHead>
-            <TableHead>{Publr.t("Roles")}</TableHead>
-            <TableHead>{Publr.t("Status")}</TableHead>
-            {columns.map((column) => (
-              <TableHead align={column.kind === "number" || column.kind === "money" ? "right" : "left"}>
-                {column.sort_href === "" ? column.label : (
-                  <Link href={column.sort_href} variant="body-sm" tone="default">
-                    {column.label}{column.sorted === "ascending" ? " ↑" : column.sorted === "descending" ? " ↓" : ""}
-                  </Link>
-                )}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {users.map((user) => (
-            <TableRow>
-              <TableCell>
-                <Link href={user.href} variant="body-sm" tone="default">
-                  {user.name}
-                </Link>
-                {user.me && (
-                  <Text as="span" variant="body-sm" tone="muted">
-                    {" "}
-                    {Publr.t("(you)")}
-                  </Text>
-                )}
-              </TableCell>
-              <TableCell>
-                <Text as="span" variant="body-sm" tone="muted">
-                  {user.email}
-                </Text>
-              </TableCell>
-              <TableCell>
-                <Text as="span" variant="body-sm" tone="muted">
-                  {user.roles}
-                </Text>
-              </TableCell>
-              <TableCell>
-                {user.active ? (
-                  <Status tone="success">{Publr.t("Active")}</Status>
-                ) : (
-                  <Status tone="warning">{Publr.t("Invited")}</Status>
-                )}
-              </TableCell>
-              {(user.cells ?? []).map((cell, index) => (
-                <TableCell align={columns[index].kind === "number" || columns[index].kind === "money" ? "right" : "left"}
-                  numeric={columns[index].kind === "number" || columns[index].kind === "money" || columns[index].kind === "date"}>
-                  {cell.text === "" ? (
-                    <Text as="span" variant="body-sm" tone="muted">—</Text>
-                  ) : columns[index].kind === "status" ? (
-                    <Status tone="neutral">{cell.text}</Status>
-                  ) : columns[index].kind === "link" ? (
-                    <Link href={cell.text} variant="body-sm" tone="default">{cell.text}</Link>
-                  ) : (
-                    <Text as="span" variant="body-sm" tone="muted">{cell.text}</Text>
-                  )}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      )}
+      {own && <PeopleTable users={users} columns={columns} hidden={hidden} />}
     </IndexPage>
   );
 }

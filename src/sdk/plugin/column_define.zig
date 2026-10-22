@@ -6,7 +6,7 @@
 const std = @import("std");
 const record_define = @import("record_define.zig");
 
-pub const Kind = enum { number, money, date, text, status, link };
+pub const Kind = @import("../../model/sandboxed_plugin.zig").ColumnKind;
 
 pub const Column = struct {
     plugin: []const u8,

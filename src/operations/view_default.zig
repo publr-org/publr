@@ -391,7 +391,7 @@ fn plugin_columns(ctx: *Ctx, handle: []const u8, own: []const Named) Error![]con
 
     columns.appendSlice(ctx.arena, own) catch return error.OutOfMemory;
 
-    for (registry.columns) |column| {
+    for (try registry.all_columns(ctx)) |column| {
         if (column.on(handle)) {
             columns.append(ctx.arena, .{
                 .name = column.field,

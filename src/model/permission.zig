@@ -151,7 +151,8 @@ pub const never = [_][]const u8{
     "user.language",      "user.set_language",  "project.set_admin_language", "user.variant",
     "user.set_variant",   "ai.transcribe",      "view.default",               "view.save_default",
     "mod.list",           "view.reset_default", "role.get",                   "role.create",
-    "role.update",        "role.reset",         "role.remove",
+    "role.update",        "role.reset",         "role.remove",                "user.columns",
+    "user.set_columns",
 };
 
 /// The permission `key` stands for among `catalog`, or null when nothing installed provides it.

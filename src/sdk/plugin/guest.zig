@@ -464,6 +464,9 @@ pub fn Exports(comptime Plugin: type) type {
     const entries = contract.runtime_entries(Plugin);
 
     return struct {
+        /// Whose fields an `after` hook adds to a list read's rows.
+        const plugin_name: []const u8 = Plugin.manifest.name;
+
         pub fn alloc(len: u32) callconv(.c) u32 {
             const bytes = allocator.alloc(u8, @max(len, 1)) catch return 0;
 
@@ -549,7 +552,7 @@ pub fn Exports(comptime Plugin: type) type {
             return switch (item.stage) {
                 .operation => run_operation(item.declaration, input, result, arena),
                 .before, .modify => run_before(item.declaration, input, result, arena),
-                .after => run_after(item.declaration, input, arena),
+                .after => run_after(item.declaration, input, result, arena),
                 .event => run_event(item.declaration, input, arena),
                 .job => run_job(item.declaration, input, arena),
             };
@@ -608,6 +611,7 @@ pub fn Exports(comptime Plugin: type) type {
         fn run_after(
             comptime Middleware: type,
             input: []const u8,
+            result: *wire.Result,
             arena: std.mem.Allocator,
         ) Error!void {
             const In = contract.HookIn(Middleware);
@@ -617,8 +621,19 @@ pub fn Exports(comptime Plugin: type) type {
             };
             var ctx = context(arena, envelope);
             var in = envelope.in;
+            var out = envelope.out;
 
-            try Middleware.run(&ctx, &in, &envelope.out);
+            // A list read's rows extended by this hook, answered back for the host to add
+            // under the plugin's name.
+            if (comptime @hasField(@TypeOf(out), "extended")) {
+                out.extended = try @import("../extended.zig").Extended.start(arena, &plugin_name);
+            }
+
+            try Middleware.run(&ctx, &in, &out);
+
+            if (comptime @hasField(@TypeOf(out), "extended")) {
+                try reply(out.extended, result);
+            }
         }
 
         fn run_event(

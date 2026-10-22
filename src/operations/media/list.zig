@@ -76,6 +76,20 @@ pub const List = struct {
         folders: []const Folder,
         tags: []const Tag,
         periods: []const Period,
+        /// Fields plugins add to each file (`.register_columns` on `media`), by its id.
+        extended: sdk.Extended = .{},
+
+        /// A field of the hooking plugin's own on a file: `out.extend(item, "stock.uses", 3)`.
+        pub fn extend(
+            out: *const Out,
+            item: library.Item,
+            field: []const u8,
+            value: anytype,
+        ) Error!void {
+            std.debug.assert(item.id.len > 0);
+
+            return out.extended.put(item.id, field, value);
+        }
     };
     pub const example: In = .{
         .folder = "unsorted",
@@ -124,6 +138,7 @@ pub const List = struct {
         .folders = "Every folder in tree order, with its depth and count",
         .tags = "Every tag, with its count",
         .periods = "The months files were uploaded in, newest first, with counts",
+        .extended = "Fields plugins add to each file, by its id",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {

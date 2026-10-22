@@ -59,7 +59,8 @@ pub fn library(
         .kind = filter.kind,
         .size_filter = filter.size,
         .visibility = filter.visibility,
-        .items = try items_of(arena, listed.items),
+        .items = try items_of(arena, listed.items, try columns_of(&session), listed.extended),
+        .columns = try columns_of(&session),
         .total = @floatFromInt(listed.total),
         .all = @floatFromInt(listed.all),
         .unsorted = @floatFromInt(listed.unsorted),
@@ -583,7 +584,31 @@ fn add_filters_of(
 
 const Item = views.Media.ItemsItem;
 
-fn items_of(arena: std.mem.Allocator, items: []const media.Item) admin.Error![]const Item {
+/// The columns plugins add to the library (`.register_columns` on `media`).
+fn columns_of(session: *const admin.Session) admin.Error![]const views.Media.ColumnsItem {
+    std.debug.assert(session.signed_in());
+
+    var columns: std.ArrayList(views.Media.ColumnsItem) = .empty;
+
+    for (try registry.all_columns(&session.ctx)) |column| {
+        if (column.on("media")) {
+            try columns.append(session.arena, .{
+                .field = column.field,
+                .label = column.label,
+            });
+        }
+    }
+
+    return columns.items;
+}
+
+/// Each file as a tile: its facts end with what plugins' columns say about it.
+fn items_of(
+    arena: std.mem.Allocator,
+    items: []const media.Item,
+    columns: []const views.Media.ColumnsItem,
+    extended: @import("../../sdk.zig").Extended,
+) admin.Error![]const Item {
     std.debug.assert(items.len <= 200);
 
     const out = try arena.alloc(Item, items.len);
@@ -604,7 +629,13 @@ fn items_of(arena: std.mem.Allocator, items: []const media.Item) admin.Error![]c
             .src = try std.fmt.allocPrint(arena, "/media/{s}", .{item.key}),
             .kind = try explorer.kind_of(arena, item.filename),
             .icon = enum_of(@FieldType(Item, "icon"), explorer.icon_of(item.family)),
-            .facts = try explorer.facts_of(arena, item),
+            .facts = try facts_with(
+                arena,
+                try explorer.facts_of(arena, item),
+                columns,
+                extended,
+                item.id,
+            ),
             .missing = item.missing,
             .selected = false,
         };
@@ -759,4 +790,30 @@ test "media over http: the library, a file's page and its form, the file served"
     const hidden = try flow.call("GET", served_path, "");
 
     try std.testing.expectEqual(.not_found, hidden.status);
+}
+
+/// `facts` followed by each plugin column's label and value the file has: ` · Uses 3`.
+fn facts_with(
+    arena: std.mem.Allocator,
+    facts: []const u8,
+    columns: []const views.Media.ColumnsItem,
+    extended: @import("../../sdk.zig").Extended,
+    id: []const u8,
+) admin.Error![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(arena);
+
+    out.writer.writeAll(facts) catch return error.OutOfMemory;
+
+    for (columns) |column| {
+        const value = extended.get(id, column.field) orelse continue;
+        const text = switch (value) {
+            .string => |string| string,
+            .null => continue,
+            else => std.json.Stringify.valueAlloc(arena, value, .{}) catch return error.OutOfMemory,
+        };
+
+        out.writer.print(" · {s} {s}", .{ column.label, text }) catch return error.OutOfMemory;
+    }
+
+    return out.written();
 }
