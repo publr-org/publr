@@ -26,14 +26,10 @@ pub const Loaded = struct {
     instance: ?wasm.Instance = null,
     result_offset: u32 = 0,
     granted: []const []const u8,
+    /// The permissions it holds now, each with its flags as an administrator left them.
+    held: []const model.permission.Held,
     own_types: []const []const u8,
-    content_access: ContentAccess,
     limits: sandboxed_plugin.Effective,
-
-    pub const ContentAccess = struct {
-        scope: sandboxed_plugin.ContentAccess.Scope = .public,
-        types: []const []const u8 = &.{},
-    };
 
     /// Loads a stored row and its module. `bytes` become the plugin's; on error, freed.
     pub fn init(
@@ -53,8 +49,8 @@ pub const Loaded = struct {
             .manifest = undefined,
             .module = undefined,
             .granted = &.{},
+            .held = &.{},
             .own_types = &.{},
-            .content_access = .{},
             .limits = sandboxed_plugin.limits_default,
         };
         errdefer loaded.arena_state.deinit();
@@ -68,11 +64,17 @@ pub const Loaded = struct {
 
         const manifest_text = try arena.dupe(u8, row.manifest);
         const granted_text = try arena.dupe(u8, row.granted);
-        const access_text = try arena.dupe(u8, row.content_access);
+        const grants_text = try arena.dupe(u8, row.grants);
+        const Held = model.permission.Held;
 
         loaded.manifest = try json.parse(sandboxed_plugin.Manifest, arena, manifest_text, options);
         loaded.granted = try json.parse([]const []const u8, arena, granted_text, options);
-        loaded.content_access = try json.parse(ContentAccess, arena, access_text, options);
+        loaded.held = try sandboxed_plugin.held_now(
+            arena,
+            loaded.manifest.permissions,
+            loaded.granted,
+            try json.parse([]const Held, arena, grants_text, options),
+        );
         loaded.limits = sandboxed_plugin.effective_limits(loaded.manifest.limits, loaded.granted);
         loaded.own_types = try own_types_of(arena, &loaded.manifest);
 
@@ -118,18 +120,26 @@ pub const Loaded = struct {
         }
 
         var problem: wasm.Problem = .{};
-        var instance = wasm.Instance.init(&loaded.module, .{
-            .memory_pages_max = loaded.limits.memory_mib * 16,
-            .stack_bytes = stack_bytes,
-        }, &problem) catch |err| {
+        var instance = wasm.Instance.init(
+            &loaded.module,
+            loaded.limits.memory_mib * 16,
+            &problem,
+            .{
+                .stack_bytes = stack_bytes,
+            },
+        ) catch |err| {
             std.log.err("plugin {s}: {s}", .{ loaded.name(), problem.text() });
             return err;
         };
         errdefer instance.deinit();
 
-        const offset = try instance.call("publr_alloc", &.{wire.result_bytes}, .{
-            .instructions_max = 100_000,
-        }, &problem);
+        const offset = try instance.call(
+            "publr_alloc",
+            &.{wire.result_bytes},
+            100_000,
+            &problem,
+            .{},
+        );
 
         if (offset == 0) {
             return error.OutOfMemory;

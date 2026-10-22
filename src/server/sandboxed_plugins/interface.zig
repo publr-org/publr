@@ -4,7 +4,6 @@ const std = @import("std");
 const wasm = @import("publr_wasm");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
-const store = @import("../../store.zig");
 const files_module = @import("files.zig");
 const invoke_module = @import("invoke.zig");
 const Loaded = @import("loaded.zig").Loaded;
@@ -19,7 +18,8 @@ pub const vtable: sdk.sandboxed_plugins.SandboxedPlugins.VTable = .{
     .receive = &receive,
     .consume = &consume,
     .stage = &stage,
-    .roles = &roles_of,
+    .statuses = &statuses_of,
+    .remote_off = &remote_off,
     .find = &find,
     .manifests = &manifests,
     .run = &run,
@@ -27,20 +27,31 @@ pub const vtable: sdk.sandboxed_plugins.SandboxedPlugins.VTable = .{
     .before = &before,
     .after = &after,
     .event = &event,
-    .display = &display,
+    .on_hooks = &on_hooks,
+    .on = &on,
+    .modify = &modify,
     .call_as = &call_as,
+    .job = &job,
 };
 
 fn host_of(context: *anyopaque) *Host {
     return @ptrCast(@alignCast(context));
 }
 
-fn roles_of(context: *anyopaque) ?[]const model.role.Role {
+fn statuses_of(context: *anyopaque) ?[]const model.flow.Added {
     const host = host_of(context);
 
     std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
 
-    return host.roles;
+    return host.statuses;
+}
+
+fn remote_off(context: *anyopaque, plugin: []const u8, name: []const u8) bool {
+    const host = host_of(context);
+
+    std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
+
+    return host.remote_off(plugin, name);
 }
 
 fn receive(
@@ -152,6 +163,10 @@ fn find(context: *anyopaque, name: []const u8) ?sdk.sandboxed_plugins.Operation 
         .kind = if (declared.kind == .read) .read else .write,
         .description = declared.description,
         .open = declared.open,
+        .public = declared.public,
+        .untrusted_callers = declared.untrusted_callers,
+        .limit = declared.limit,
+        .answer = declared.answer,
         .fields = declared.fields,
         .help = declared.help,
         .input = declared.input,
@@ -207,6 +222,42 @@ fn call_as(
     return @import("../registry.zig").SDK.call_json(ctx, name, input);
 }
 
+/// Runs installed plugin `plugin`'s job `name` as the plugin; `last` lets its `.on_failure`
+/// hear a failure that ends it.
+fn job(
+    context: *anyopaque,
+    ctx: *sdk.Ctx,
+    plugin: []const u8,
+    name: []const u8,
+    input: []const u8,
+    last: bool,
+) sdk.Error!void {
+    const host = host_of(context);
+    const loaded = host.find_loaded(plugin) orelse return error.NotFound;
+    const manifest = loaded.manifest;
+
+    std.debug.assert(name.len > 0);
+    std.debug.assert(input.len > 0);
+
+    var found: ?usize = null;
+
+    for (manifest.jobs, 0..) |declared, index| {
+        if (std.mem.eql(u8, declared.name, name)) {
+            found = index;
+        }
+    }
+
+    const position = found orelse return error.NotFound;
+    const entry = manifest.operations.len + manifest.hooks.len + position;
+    const both = std.fmt.allocPrint(ctx.arena, "{{\"last\":{},\"in\":{s}}}", .{
+        last,
+        input,
+    }) catch return error.OutOfMemory;
+    var access = try access_of(loaded, ctx);
+
+    _ = try invoke_module.invoke_spread(loaded, ctx, &access, @intCast(entry), both);
+}
+
 fn hooked(context: *anyopaque, hook_stage: sdk.sandboxed_plugins.Stage, name: []const u8) bool {
     const host = host_of(context);
 
@@ -214,6 +265,12 @@ fn hooked(context: *anyopaque, hook_stage: sdk.sandboxed_plugins.Stage, name: []
 
     if (host.hooks.count() == 0) {
         return false;
+    }
+
+    if (hook_stage == .modify) {
+        var buffer: [64]Target = undefined;
+
+        return modifiers_of(host, name, &buffer).len > 0;
     }
 
     var key_buffer: [128]u8 = undefined;
@@ -252,18 +309,63 @@ fn before(
     return current;
 }
 
-fn display(
+/// The installed modifiers whose name takes `name` (`*.title` takes `variant.title`), in the
+/// order the plugins were loaded, then declared.
+fn modifiers_of(host: *Host, name: []const u8, buffer: []Target) []const Target {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(buffer.len > 0);
+
+    const prefix = "modify:";
+    var found: u32 = 0;
+    var entries = host.hooks.iterator();
+
+    while (entries.next()) |entry| {
+        const key = entry.key_ptr.*;
+
+        if (!std.mem.startsWith(u8, key, prefix)) {
+            continue;
+        }
+
+        if (!sdk.mods.matches(key[prefix.len..], name)) {
+            continue;
+        }
+
+        for (entry.value_ptr.*) |target| {
+            if (found < buffer.len) {
+                buffer[found] = target;
+                found += 1;
+            }
+        }
+    }
+
+    const listed = buffer[0..found];
+
+    std.mem.sort(Target, listed, {}, struct {
+        fn before(_: void, left: Target, right: Target) bool {
+            if (left.sandboxed_plugin != right.sandboxed_plugin) {
+                return left.sandboxed_plugin < right.sandboxed_plugin;
+            }
+
+            return left.entry < right.entry;
+        }
+    }.before);
+
+    return listed;
+}
+
+fn modify(
     context: *anyopaque,
     ctx: *sdk.Ctx,
-    target: []const u8,
+    name: []const u8,
     input: []const u8,
 ) sdk.Error![]const u8 {
     const host = host_of(context);
     var current = input;
+    var buffer: [64]Target = undefined;
 
-    std.debug.assert(target.len > 0);
+    std.debug.assert(name.len > 0);
 
-    for (targets_of(host, .display, target)) |found| {
+    for (modifiers_of(host, name, &buffer)) |found| {
         const loaded = &host.loaded.items[found.sandboxed_plugin];
         var access = try access_of(loaded, ctx);
 
@@ -308,44 +410,101 @@ fn invoke_after(
     return invoke_module.invoke_spread(loaded, ctx, access, entry, both);
 }
 
+/// An operation's end reloads the plugins when an administrator changed them. A queued
+/// event reaches the `on` hooks one by one, through `on_hooks` and `on`.
 fn event(context: *anyopaque, ctx: *sdk.Ctx, happened: sdk.Event) void {
     const host = host_of(context);
 
     std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(happened != .emitted);
 
     if (changed_plugins(happened) and ctx.db.transaction_depth == 0) {
         host.load_all(ctx.db) catch |err| std.log.err("plugins: reload failed: {t}", .{err});
-        return;
+    }
+}
+
+const OnHook = sdk.sandboxed_plugins.OnHook;
+
+fn on_hooks(
+    context: *anyopaque,
+    arena: std.mem.Allocator,
+    name: []const u8,
+) sdk.Error![]const OnHook {
+    const host = host_of(context);
+
+    std.debug.assert(name.len > 0);
+
+    if (host.hooks.count() == 0) {
+        return &.{};
     }
 
-    if (host.hooks.count() == 0 or ctx.plugin_depth >= sdk.sandboxed_plugins.depth_max) {
-        return;
-    }
-
-    const name = switch (happened) {
-        .completed => |completed| completed.operation_name,
-        .rejected, .failed => |failed| failed.operation_name,
-        .notice => |notice| notice.name,
-    };
     const targets = targets_of(host, .event, name);
+    const found = arena.alloc(OnHook, targets.len) catch return error.OutOfMemory;
 
-    if (targets.len == 0) {
-        return;
-    }
-
-    const input = event_json(ctx, happened, name) catch return;
-
-    ctx.plugin_depth += 1;
-    defer ctx.plugin_depth -= 1;
-
-    for (targets) |target| {
-        const loaded = &host.loaded.items[target.sandboxed_plugin];
-        var access = access_of(loaded, ctx) catch continue;
-
-        _ = invoke_module.invoke(loaded, ctx, &access, target.entry, input) catch |err| {
-            std.log.warn("plugin {s}: event hook on {s}: {t}", .{ loaded.name(), name, err });
+    for (targets, found, 0..) |target, *hook, index| {
+        hook.* = .{
+            .plugin = host.loaded.items[target.sandboxed_plugin].name(),
+            .ordinal = ordinal_of(targets[0..index], target),
         };
     }
+
+    std.debug.assert(found.len == targets.len);
+
+    return found;
+}
+
+/// Which of its plugin's hooks on the event `target` is: how many came before it.
+fn ordinal_of(earlier: []const Target, target: Target) u32 {
+    std.debug.assert(target.sandboxed_plugin < sandboxed_plugins_max);
+
+    var ordinal: u32 = 0;
+
+    for (earlier) |before_it| {
+        if (before_it.sandboxed_plugin == target.sandboxed_plugin) {
+            ordinal += 1;
+        }
+    }
+
+    return ordinal;
+}
+
+fn on(
+    context: *anyopaque,
+    ctx: *sdk.Ctx,
+    hook: OnHook,
+    name: []const u8,
+    subject: []const u8,
+) sdk.Error!void {
+    const host = host_of(context);
+
+    std.debug.assert(hook.plugin.len > 0);
+    std.debug.assert(name.len > 0);
+
+    if (ctx.plugin_depth >= sdk.sandboxed_plugins.depth_max) {
+        return error.Unavailable;
+    }
+
+    const targets = targets_of(host, .event, name);
+
+    for (targets, 0..) |target, index| {
+        const loaded = &host.loaded.items[target.sandboxed_plugin];
+        const same = std.mem.eql(u8, loaded.name(), hook.plugin) and
+            ordinal_of(targets[0..index], target) == hook.ordinal;
+
+        if (same) {
+            const input = try payload_json(ctx, subject);
+            var access = try access_of(loaded, ctx);
+
+            ctx.plugin_depth += 1;
+            defer ctx.plugin_depth -= 1;
+
+            _ = try invoke_module.invoke(loaded, ctx, &access, target.entry, input);
+
+            return;
+        }
+    }
+
+    return error.NotFound;
 }
 
 /// Whether an administrator just changed the plugins: they are loaded again once it commits.
@@ -361,7 +520,7 @@ fn changed_plugins(happened: sdk.Event) bool {
     // Listing, reading and adding change nothing that runs: an added module is not active,
     // and a next version waits until it is applied.
     const unchanged = [_][]const u8{
-        "plugin.list", "plugin.get", "plugin.upload", "plugin.add",
+        "plugin.list", "plugin.get", "plugin.upload", "plugin.add", "plugin.find",
     };
 
     for (unchanged) |other| {
@@ -375,76 +534,28 @@ fn changed_plugins(happened: sdk.Event) bool {
         std.mem.eql(u8, name, "ai.set_up");
 }
 
-fn event_json(ctx: *sdk.Ctx, happened: sdk.Event, name: []const u8) sdk.Error![]const u8 {
-    std.debug.assert(name.len > 0);
+/// An event's payload as a hook's input: JSON as emitted; one of core's events not yet
+/// typed carries a text, handed on as a JSON string.
+fn payload_json(ctx: *sdk.Ctx, subject: []const u8) sdk.Error![]const u8 {
+    if (subject.len > 0 and (subject[0] == '{' or subject[0] == '[')) {
+        return subject;
+    }
 
-    const wire = @import("../../sdk/plugin/wire.zig");
-    const shaped: wire.Event = switch (happened) {
-        .completed => .{
-            .kind = .completed,
-            .name = name,
-        },
-        .rejected => |failed| .{
-            .kind = .rejected,
-            .name = name,
-            .err = @errorName(failed.err),
-        },
-        .failed => |failed| .{
-            .kind = .failed,
-            .name = name,
-            .err = @errorName(failed.err),
-        },
-        .notice => |notice| .{
-            .kind = .notice,
-            .name = name,
-            .subject = notice.subject,
-        },
-    };
-
-    return sdk.stringify(ctx.arena, shaped);
+    return sdk.stringify(ctx.arena, subject);
 }
 
-/// What the plugin may reach this call: its grants, its own types, and the types its
-/// content access names (public ones read from the definitions now).
+/// What the plugin may reach this call: its grants with their flags, and its own types.
 fn access_of(loaded: *Loaded, ctx: *sdk.Ctx) sdk.Error!sdk.plugin_access.Access {
     std.debug.assert(loaded.name().len > 0);
     std.debug.assert(ctx.now_ms >= 0);
 
-    var access: sdk.plugin_access.Access = .{
+    return .{
         .granted = loaded.granted,
+        .held = loaded.held,
         .depends_on = loaded.manifest.depends_on,
         .compatible_with = loaded.manifest.compatible_with,
         .own_types = loaded.own_types,
-        .types = null,
+        .secrets = loaded.manifest.secrets,
+        .remotes = loaded.manifest.remotes,
     };
-
-    switch (loaded.content_access.scope) {
-        .all => {},
-        .specific => {
-            access.types = try std.mem.concat(ctx.arena, []const u8, &.{
-                loaded.own_types,
-                loaded.content_access.types,
-            });
-        },
-        .public => access.types = try public_types(ctx, loaded.own_types),
-    }
-
-    return access;
-}
-
-fn public_types(ctx: *sdk.Ctx, own: []const []const u8) sdk.Error![]const []const u8 {
-    std.debug.assert(own.len <= 64);
-
-    const briefs = try store.content_types.list_briefs(ctx.db, ctx.arena);
-    var types: std.ArrayList([]const u8) = .empty;
-
-    try types.appendSlice(ctx.arena, own);
-
-    for (briefs) |brief| {
-        if (brief.public) {
-            try types.append(ctx.arena, brief.handle);
-        }
-    }
-
-    return types.items;
 }
