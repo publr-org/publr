@@ -117,6 +117,17 @@ pub const authorize = struct {
 /// A plugin's page from its own PTSX view, the same HTML either way it runs:
 /// `publr.views.render(ctx, in.base, publr.views.all.SamplerLog, props)`.
 pub const views = @import("sdk/plugin/views.zig");
+/// A named set of operations providers implement: `publr.contract.define(.{ .name,
+/// .operations, .optional, .component })`.
+pub const contract = struct {
+    pub const define = @import("sdk/contract.zig").define;
+};
+/// The enabled providers of a contract, in the administrator's order:
+/// `publr.providers(ctx, Contract, .{ .can = &.{.refund} })`.
+pub const providers = @import("sdk/contract.zig").providers;
+/// Messages Publr hands to providers: `ctx.emit(publr.messaging.Email, .{ .to, .subject,
+/// .text })`, and the `messaging` contract providers register into.
+pub const messaging = @import("sdk/messaging.zig");
 /// Model providers: the contract, and the two operations a provider plugin registers with.
 pub const ai = @import("sdk/ai.zig");
 /// A plugin's records as typed values: `publr.records.of(Order, "order")`.

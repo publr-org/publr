@@ -842,6 +842,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var delivery_gates: []const sdk.delivery.Gate = &.{};
         var roles: []const Role = &.{};
         var sign_in_providers: []const SignInProvider = &.{};
+        var providers: []const @import("../model/provider.zig").Registered = &.{};
         var routes: []const route.Declared = &.{};
         var settings_pages: []const OwnedSettingsPage = &.{};
         var row_actions: []const RowAction = &.{};
@@ -1055,6 +1056,8 @@ pub fn Merged(comptime plugins: anytype) type {
                     @as([]const sdk.delivery.Gate, plugin_define.get(Plugin, "delivery_gates"));
             }
 
+            providers = providers ++ @import("contract.zig").registered_of(Plugin);
+
             if (plugin_define.has(Plugin, "sign_in_provider")) {
                 var declared: SignInProvider = plugin_define.get(Plugin, "sign_in_provider");
 
@@ -1077,6 +1080,18 @@ pub fn Merged(comptime plugins: anytype) type {
             for (sign_in_providers[index + 1 ..]) |other| {
                 if (std.mem.eql(u8, declared.name, other.name)) {
                     @compileError("two plugins declare the sign-in provider " ++ declared.name);
+                }
+            }
+        }
+
+        for (providers, 0..) |declared, index| {
+            for (providers[index + 1 ..]) |other| {
+                const same = std.mem.eql(u8, declared.contract, other.contract) and
+                    std.mem.eql(u8, declared.name, other.name);
+
+                if (same) {
+                    @compileError("two providers of " ++ declared.contract ++ " are named " ++
+                        declared.name);
                 }
             }
         }
@@ -1132,6 +1147,8 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_filters = filters;
             pub const merged_delivery_gates = delivery_gates;
             pub const merged_sign_in_providers = sign_in_providers;
+            /// Every provider the plugins register into a contract, in plugin order.
+            pub const merged_providers = providers;
             pub const merged_routes = routes;
             pub const merged_settings_pages = settings_pages;
             /// Every plugin's sections of System settings tabs, in name order.
