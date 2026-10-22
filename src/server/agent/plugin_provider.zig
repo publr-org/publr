@@ -96,14 +96,16 @@ pub const PluginProvider = struct {
 
         std.debug.assert(plugin_provider.operation.len > 0);
 
-        var ctx = sdk.Ctx.init(.{
-            .caller = .system,
-            .db = &application.connection,
-            .io = plugin_provider.io,
-            .arena = arena,
-            .auth = &application.auth,
-            .now_ms = sdk.context.wall_clock_ms(plugin_provider.io),
-        });
+        var ctx = sdk.Ctx.init(
+            &application.connection,
+            plugin_provider.io,
+            arena,
+            &application.auth,
+            .system,
+            .{
+                .now_ms = sdk.context.wall_clock_ms(plugin_provider.io),
+            },
+        );
 
         ctx.sandboxed_plugins = application.sandboxed();
         ctx.plugin_states = &application.plugin_states;
@@ -154,10 +156,7 @@ fn failure_of(ctx: *const sdk.Ctx, err: anyerror) ai.Error {
 
     std.log.warn("provider: {s}: {s}", .{ failure.name, failure.message });
 
-    const no_key = std.mem.eql(u8, failure.name, "SecretMissing") or
-        std.mem.eql(u8, failure.name, "SecretNotGranted");
-
-    if (no_key) {
+    if (std.mem.eql(u8, failure.name, "SecretMissing")) {
         return error.KeyMissing;
     }
 

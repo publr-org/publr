@@ -281,10 +281,10 @@ fn take_turn(
             .history = begun.history,
         });
 
-    const outcome = try ai.run(arena, provider, try tools.of(arena), reporter.observer(), .{
+    const turn_tools = try tools.of(arena);
+    const outcome = try ai.run(arena, provider, turn_tools, reporter.observer(), messages, .{
         .model = begun.model,
         .system = try system_of(arena, reporter.channel),
-        .messages = messages,
         .steps_max = steps_max,
         // Within what every listed model writes in one reply; a provider that streams is
         // never timed out by a long one. One cut off there is carried on from.

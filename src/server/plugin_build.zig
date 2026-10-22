@@ -53,7 +53,23 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         return 1;
     };
 
-    if (try compile(init, tools, request, built) != 0) {
+    if (try refused_by_checks(init, request.dir, main_path)) {
+        return 1;
+    }
+
+    const docs_path = try std.fmt.allocPrint(init.arena.allocator(), "{s}.docs.zig", .{built});
+
+    try @import("plugin_build/docs.zig").write(init, request.dir, docs_path);
+
+    const views = @import("plugin_build/views.zig").lower(init, tools, request.dir, built) catch {
+        return 1;
+    };
+
+    if (try compile(init, tools, request, .{
+        .out = built,
+        .docs = docs_path,
+        .views = views,
+    }) != 0) {
         return 1;
     }
 
@@ -113,18 +129,26 @@ fn parse(arena: std.mem.Allocator, args: []const []const u8) ?Request {
 
 /// Runs the compiler on the plugin, its messages going to this process's stderr as they are;
 /// its exit code.
+/// Where a build goes and what it takes beside the plugin's source.
+const Paths = struct {
+    out: []const u8,
+    docs: []const u8,
+    /// The plugin's lowered views (`views.zig`), when it has any.
+    views: ?[]const u8 = null,
+};
+
 fn compile(
     init: std.process.Init,
     tools: toolchain.Toolchain,
     request: Request,
-    out_path: []const u8,
+    paths: Paths,
 ) !u8 {
-    std.debug.assert(out_path.len > 0);
+    std.debug.assert(paths.out.len > 0);
     std.debug.assert(request.dir.len > 0);
 
-    const argv = try compile_argv(init, tools, request, out_path);
+    const argv = try compile_argv(init, tools, request, paths);
 
-    try std.Io.Dir.cwd().createDirPath(init.io, std.fs.path.dirname(out_path) orelse ".");
+    try std.Io.Dir.cwd().createDirPath(init.io, std.fs.path.dirname(paths.out) orelse ".");
 
     var child = try std.process.spawn(init.io, .{
         .argv = argv,
@@ -145,8 +169,10 @@ fn compile_argv(
     init: std.process.Init,
     tools: toolchain.Toolchain,
     request: Request,
-    out_path: []const u8,
+    paths: Paths,
 ) ![]const []const u8 {
+    const out_path = paths.out;
+    const docs_path = paths.docs;
     const arena = init.arena.allocator();
     const stubs = try stub_names(init, tools.sdk);
     const cache = try std.fs.path.join(arena, &.{ std.fs.path.dirname(tools.sdk).?, "zig-cache" });
@@ -165,7 +191,7 @@ fn compile_argv(
 
     try argv.appendSlice(arena, &.{ tools.compiler, "build-exe", "--stack", "262144" });
     try argv.appendSlice(arena, &target);
-    try argv.appendSlice(arena, &.{ "--dep", "publr", "--dep", "plugin" });
+    try argv.appendSlice(arena, &.{ "--dep", "publr", "--dep", "plugin", "--dep", "plugin_docs" });
     try argv.append(arena, try std.fmt.allocPrint(arena, "-Mroot={s}/guest.zig", .{tools.sdk}));
     try argv.appendSlice(arena, &target);
 
@@ -173,9 +199,17 @@ fn compile_argv(
         try argv.appendSlice(arena, &.{ "--dep", stub });
     }
 
+    if (paths.views != null) {
+        try argv.appendSlice(arena, &.{ "--dep", "plugin_views" });
+    }
+
     const publr_module = try std.fmt.allocPrint(arena, "-Mpublr={s}/src/publr.zig", .{tools.sdk});
 
     try argv.append(arena, publr_module);
+
+    if (paths.views) |views| {
+        try views_modules(arena, &argv, &target, tools.sdk, views);
+    }
 
     // The plugin's own `interface.zig`, under its own name, for its own files: another
     // plugin's is never wired in (it declares the contract it uses instead).
@@ -198,8 +232,15 @@ fn compile_argv(
     }
 
     try argv.append(arena, try std.fmt.allocPrint(arena, "-Mplugin={s}/main.zig", .{request.dir}));
+    try argv.appendSlice(arena, &target);
+    try argv.append(arena, try std.fmt.allocPrint(arena, "-Mplugin_docs={s}", .{docs_path}));
 
     for (stubs) |stub| {
+        // A plugin with views runs the real render runtime, defined with them.
+        if (paths.views != null and std.mem.eql(u8, stub, "runtime")) {
+            continue;
+        }
+
         const path = try std.fmt.allocPrint(arena, "-M{s}={s}/stubs/{s}.zig", .{
             stub,
             tools.sdk,
@@ -215,6 +256,71 @@ fn compile_argv(
     try argv.append(arena, try std.fmt.allocPrint(arena, "-femit-bin={s}", .{out_path}));
 
     return argv.items;
+}
+
+/// A plugin's views as modules: its own (`plugin_views`), the real props of what the host
+/// draws for it (`ds`), and what both are written against (`runtime`, `request`, a plain
+/// `class_merge`).
+fn views_modules(
+    arena: std.mem.Allocator,
+    argv: *std.ArrayList([]const u8),
+    target: []const []const u8,
+    sdk: []const u8,
+    views: []const u8,
+) !void {
+    std.debug.assert(views.len > 0);
+    std.debug.assert(target.len > 0);
+
+    const Module = struct {
+        name: []const u8,
+        deps: []const []const u8,
+        /// Under the lowered views rather than the SDK.
+        own: bool = false,
+        file: []const u8,
+    };
+    const modules = [_]Module{
+        .{
+            .name = "plugin_views",
+            .deps = &.{ "runtime", "request", "ds", "publr" },
+            .own = true,
+            .file = "views.zig",
+        },
+        .{
+            .name = "ds",
+            .deps = &.{ "runtime", "request" },
+            .file = "ui/views/views.zig",
+        },
+        .{
+            .name = "request",
+            .deps = &.{"runtime"},
+            .file = "ui/request.zig",
+        },
+        .{
+            .name = "runtime",
+            .deps = &.{"class_merge"},
+            .file = "pjsx/template_runtime.zig",
+        },
+        .{
+            .name = "class_merge",
+            .deps = &.{},
+            .file = "ui/class_merge.zig",
+        },
+    };
+
+    for (modules) |module| {
+        const name = module.name;
+        const deps = module.deps;
+        const folder = if (module.own) views else sdk;
+        const path = try std.fmt.allocPrint(arena, "-M{s}={s}/{s}", .{ name, folder, module.file });
+
+        try argv.appendSlice(arena, target);
+
+        for (deps) |dep| {
+            try argv.appendSlice(arena, &.{ "--dep", dep });
+        }
+
+        try argv.append(arena, path);
+    }
 }
 
 /// The modules the SDK imports that only the host has, each a stub in `<sdk>/stubs/`.
@@ -304,10 +410,7 @@ fn manifest_of(gpa: std.mem.Allocator, arena: std.mem.Allocator, module_bytes: [
     var runtime: wasm.Runtime = undefined;
     var problem: wasm.Problem = .{};
 
-    try runtime.init(.{
-        .heap = heap,
-        .imports = &invoke.imports,
-    });
+    try runtime.init(heap, &invoke.imports, .{});
     defer runtime.deinit();
 
     var module = wasm.Module.load(&runtime, module_bytes, &problem) catch |err| {
@@ -317,16 +420,12 @@ fn manifest_of(gpa: std.mem.Allocator, arena: std.mem.Allocator, module_bytes: [
     };
     defer module.unload();
 
-    var instance = try wasm.Instance.init(&module, .{
-        .memory_pages_max = 256,
-    }, &problem);
+    var instance = try wasm.Instance.init(&module, 256, &problem, .{});
     defer instance.deinit();
 
-    const budget: wasm.Instance.CallOptions = .{
-        .instructions_max = manifest_instructions_max,
-    };
-    const cell = try instance.call("publr_alloc", &.{wire.result_bytes}, budget, &problem);
-    const status = try instance.call("publr_manifest", &.{cell}, budget, &problem);
+    const budget = manifest_instructions_max;
+    const cell = try instance.call("publr_alloc", &.{wire.result_bytes}, budget, &problem, .{});
+    const status = try instance.call("publr_manifest", &.{cell}, budget, &problem, .{});
 
     if (cell == 0 or status != wire.ok) {
         return error.NoManifest;
@@ -488,3 +587,18 @@ pub const Builder = struct {
 };
 
 const sdk_context = @import("../sdk/context.zig");
+
+/// Every plugin is held to the plugin checks before it compiles; each problem is told with
+/// its file and line.
+fn refused_by_checks(init: std.process.Init, dir: []const u8, main_path: []const u8) !bool {
+    std.debug.assert(dir.len > 0);
+    std.debug.assert(main_path.len > 0);
+
+    const found = try @import("plugin_build/check.zig").problems_in(init, dir);
+
+    for (found) |problem| {
+        report.err("{s}/{s}:{d}: {s}", .{ dir, problem.path, problem.line, problem.message });
+    }
+
+    return found.len > 0;
+}

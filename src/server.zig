@@ -7,12 +7,8 @@ const sdk = @import("sdk.zig");
 const builtin = @import("builtin");
 const files = @import("lib/files.zig");
 
-/// The sandbox runs plugins natively; the browser build has none yet.
-pub const sandboxed_plugins = if (builtin.os.tag == .wasi)
-    void
-else
-    @import("server/sandboxed_plugins.zig");
-const SandboxHost = if (builtin.os.tag == .wasi) void else sandboxed_plugins.Host;
+pub const sandboxed_plugins = @import("server/sandboxed_plugins.zig");
+const SandboxHost = sandboxed_plugins.Host;
 const PluginStates = @import("server/plugin_states.zig").States;
 const Languages = @import("server/languages.zig").Languages;
 pub const gate = if (builtin.os.tag == .wasi) void else @import("server/gate.zig");
@@ -39,6 +35,8 @@ pub const Server = struct {
     definitions: sdk.DefinitionCache,
     /// The admin's languages: a catalogue per language the plugins translate it into.
     languages: Languages,
+    /// The rate limits every request's calls count against (`sdk/limits.zig`).
+    limits: sdk.limits.Limits,
 
     pub fn init(server: *Server, process: std.process.Init, db_path: [:0]const u8) !void {
         std.debug.assert(db_path.len > 0);
@@ -72,6 +70,10 @@ pub const Server = struct {
         try server.auth.init(process.gpa, process.io, .{});
         errdefer server.auth.deinit();
 
+        // Keyed like the sign-in throttle: from the process's own secret.
+        server.limits = .{};
+        @memcpy(&server.limits.secret, server.auth.secret[0..server.limits.secret.len]);
+
         try server.open_gate(process, db_path);
         server.index = try deps.Index.open(&server.connection, .{
             .quiet_ms = deps.quiet_ms,
@@ -86,14 +88,12 @@ pub const Server = struct {
 
         try server.apply_declared_types(process);
 
-        if (SandboxHost != void) {
-            const dir = try sandboxed_plugins_dir(process.arena.allocator(), db_path);
+        const plugins_dir = try sandboxed_plugins_dir(process.arena.allocator(), db_path);
 
-            try server.sandboxed_plugins.init(process.gpa, process.io, dir);
-            errdefer server.sandboxed_plugins.deinit();
+        try server.sandboxed_plugins.init(process.gpa, process.io, plugins_dir);
+        errdefer server.sandboxed_plugins.deinit();
 
-            try server.sandboxed_plugins.load_all(&server.connection);
-        }
+        try server.sandboxed_plugins.load_all(&server.connection);
 
         try server.plugin_states.init(.{
             .io = process.io,
@@ -118,15 +118,17 @@ pub const Server = struct {
             return;
         }
 
-        _ = try gate.open(&server.connection, .{
-            .io = process.io,
-            .gpa = process.gpa,
-            .runtime = &server.runtime,
-            .db_path = db_path,
-            .release = @import("publr.zig").version,
-            .now_ms = sdk.context.wall_clock_ms(process.io),
-            .auth = &server.auth,
-        });
+        _ = try gate.open(
+            &server.connection,
+            process.io,
+            process.gpa,
+            &server.runtime,
+            &server.auth,
+            db_path,
+            @import("publr.zig").version,
+            sdk.context.wall_clock_ms(process.io),
+            .{},
+        );
     }
 
     /// Where the media library's files are, for every context this server makes.
@@ -142,10 +144,7 @@ pub const Server = struct {
     /// What every context this server makes carries: the installed plugins, or none.
     pub fn sandboxed(server: *Server) ?*const sdk.sandboxed_plugins.SandboxedPlugins {
         std.debug.assert(server.runtime.open_count == 1);
-
-        if (SandboxHost == void) {
-            return null;
-        }
+        std.debug.assert(server.sandboxed_plugins.heap.len == sandboxed_plugins.heap_bytes);
 
         return server.sandboxed_plugins.sandboxed_plugins();
     }
@@ -157,14 +156,16 @@ pub const Server = struct {
         var arena_state = std.heap.ArenaAllocator.init(process.gpa);
         defer arena_state.deinit();
 
-        var ctx = sdk.Ctx.init(.{
-            .caller = .system,
-            .db = &server.connection,
-            .io = process.io,
-            .arena = arena_state.allocator(),
-            .auth = &server.auth,
-            .now_ms = sdk.context.wall_clock_ms(process.io),
-        });
+        var ctx = sdk.Ctx.init(
+            &server.connection,
+            process.io,
+            arena_state.allocator(),
+            &server.auth,
+            .system,
+            .{
+                .now_ms = sdk.context.wall_clock_ms(process.io),
+            },
+        );
 
         try registry.SDK.bootstrap(&ctx);
     }
@@ -175,9 +176,7 @@ pub const Server = struct {
 
         server.plugin_states.deinit();
 
-        if (SandboxHost != void) {
-            server.sandboxed_plugins.deinit();
-        }
+        server.sandboxed_plugins.deinit();
 
         server.media.close();
         server.languages.deinit();
@@ -244,8 +243,9 @@ fn ensure_parent_dir(io: std.Io, path: []const u8) !void {
 }
 
 test {
-    if (SandboxHost != void) {
-        _ = sandboxed_plugins;
+    _ = sandboxed_plugins;
+
+    if (builtin.os.tag != .wasi) {
         _ = gate;
     }
 }

@@ -84,25 +84,29 @@ pub fn handle(
     var out: std.Io.Writer.Allocating = .init(ctx.arena);
     var err: std.Io.Writer.Allocating = .init(ctx.arena);
     var failed: []const u8 = "";
-    const code = cli.CLI(registry.SDK).run(.{
-        .db = project.connection,
-        .io = project.io,
-        .arena = ctx.arena,
-        .auth = project.auth,
-        .now_ms = sdk.context.wall_clock_ms(project.io),
-        .err = &err.writer,
-        .sandboxed_plugins = project.sandboxed_plugins,
-        .plugin_states = project.plugin_states,
-        .files = project.files,
-        .apps = project.apps_folder(),
-        .builder = project.builder,
-        .agents = project.agents,
-        .live = project.live,
-        .updater = project.updater,
-        .device = identity.caller,
-        .production = envelope.production,
-        .failed = &failed,
-    }, args, &out.writer) catch |failure| blk: {
+    const code = cli.CLI(registry.SDK).run(
+        project.connection,
+        project.io,
+        ctx.arena,
+        project.auth,
+        args,
+        &out.writer,
+        .{
+            .now_ms = sdk.context.wall_clock_ms(project.io),
+            .err = &err.writer,
+            .sandboxed_plugins = project.sandboxed_plugins,
+            .plugin_states = project.plugin_states,
+            .files = project.files,
+            .apps = project.apps_folder(),
+            .builder = project.builder,
+            .agents = project.agents,
+            .live = project.live,
+            .updater = project.updater,
+            .device = identity.caller,
+            .production = envelope.production,
+            .failed = &failed,
+        },
+    ) catch |failure| blk: {
         err.writer.print("publr: {s}\n", .{@errorName(failure)}) catch {
             return response.text(.internal_server_error, @errorName(failure));
         };

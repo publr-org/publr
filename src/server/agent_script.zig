@@ -1,7 +1,8 @@
 //! `GET /api/agent/<code>`: the setup an agent's computer runs, `curl -fsSL <it> | sh`. It
 //! installs the publr command (Publr's installer, carried in this binary), signs the
 //! computer in to this site with the sign-in the Overview offered (`device offer`, the code
-//! in the address), and gives the agent in the folder it runs in the Publr skill. Nothing in
+//! in the address), gives the agent in the folder it runs in the Publr skill, and names the
+//! site in `.publr/site` so the folder's commands go there. Nothing in
 //! it is secret beyond the code, which works once, for ten minutes.
 const std = @import("std");
 const http = @import("../lib/http.zig");
@@ -99,8 +100,10 @@ const template =
     \\    exit 1
     \\fi
     \\"$bin_dir/publr" skill install
+    \\mkdir -p .publr
+    \\printf '%s\n' "$site" > .publr/site
     \\echo
-    \\echo "Done. Start your agent in $(pwd) and ask: it builds with the publr command."
+    \\echo "Done. Start your agent in $(pwd) and ask: publr commands from here go to $site."
     \\
 ;
 

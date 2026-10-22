@@ -14,6 +14,14 @@ pub const probes = @import("gate/probes.zig");
 pub const release_key = "publr.release";
 
 pub const Options = struct {
+    /// Back the whole site up before an update; off where there are no files (the browser).
+    backup: bool = true,
+    /// The folder around the site (`publr.zon`, apps); the one `publr` runs in when null.
+    project_dir: ?[]const u8 = null,
+};
+
+/// One open of a site's database: what it reads, and how the caller asked for it.
+const Opening = struct {
     io: std.Io,
     gpa: std.mem.Allocator,
     runtime: *db.Runtime,
@@ -22,10 +30,8 @@ pub const Options = struct {
     release: []const u8,
     now_ms: i64,
     auth: *auth.State,
-    /// Back the whole site up before an update; off where there are no files (the browser).
-    backup: bool = true,
-    /// The folder around the site (`publr.zon`, apps); the one `publr` runs in when null.
-    project_dir: ?[]const u8 = null,
+    backup: bool,
+    project_dir: ?[]const u8,
 };
 
 pub const Outcome = enum {
@@ -45,16 +51,43 @@ pub const Error = error{DatabaseRefused};
 /// database is made; an older one is backed up and migrated; one a newer release migrated
 /// is opened only when this release can still run on it; and a database whose shape is not
 /// what its migrations say is refused, saying why, before a visitor meets it.
-pub fn open(connection: *db.Db, options: Options) !Outcome {
-    std.debug.assert(options.release.len > 0);
+pub fn open(
+    connection: *db.Db,
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    runtime: *db.Runtime,
+    auth_state: *auth.State,
+    db_path: []const u8,
+    release: []const u8,
+    now_ms: i64,
+    options: Options,
+) !Outcome {
+    std.debug.assert(release.len > 0);
     std.debug.assert(connection.transaction_depth == 0);
 
-    var arena_state = std.heap.ArenaAllocator.init(options.gpa);
+    return pass(connection, .{
+        .io = io,
+        .gpa = gpa,
+        .runtime = runtime,
+        .db_path = db_path,
+        .release = release,
+        .now_ms = now_ms,
+        .auth = auth_state,
+        .backup = options.backup,
+        .project_dir = options.project_dir,
+    });
+}
+
+fn pass(connection: *db.Db, opening: Opening) !Outcome {
+    std.debug.assert(opening.release.len > 0);
+    std.debug.assert(connection.transaction_depth == 0);
+
+    var arena_state = std.heap.ArenaAllocator.init(opening.gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
     if (!try db.schema.has_table(connection, "settings")) {
-        try make_fresh(connection, options);
+        try make_fresh(connection, opening);
         return .fresh;
     }
 
@@ -66,14 +99,14 @@ pub fn open(connection: *db.Db, options: Options) !Outcome {
     const plan = try db.migration.plan_of(arena, registry.SDK.migrations, recorded);
 
     if (plan.unknown.len > 0 and !plan.newer_compatible()) {
-        refuse_newer(before orelse "an unknown release", options.release, plan.unknown);
+        refuse_newer(before orelse "an unknown release", opening.release, plan.unknown);
         return error.DatabaseRefused;
     }
 
-    var expected = try expected_database(options.runtime);
+    var expected = try expected_database(opening.runtime);
     defer expected.close();
 
-    const same_release = before != null and std.mem.eql(u8, before.?, options.release);
+    const same_release = before != null and std.mem.eql(u8, before.?, opening.release);
     const missing = try lacks_schema(connection, &expected, arena);
     const updating = !same_release or plan.changes() or missing;
 
@@ -81,11 +114,11 @@ pub fn open(connection: *db.Db, options: Options) !Outcome {
         return .unchanged;
     }
 
-    if (options.backup) {
-        try back_up(connection, arena, options, before orelse "");
+    if (opening.backup) {
+        try back_up(connection, arena, opening, before orelse "");
     }
 
-    try update(connection, &expected, arena, options, .{
+    try update(connection, &expected, arena, opening, .{
         .plan = plan,
         .adopt = before == null,
         .record_release = !same_release,
@@ -98,23 +131,23 @@ pub fn open(connection: *db.Db, options: Options) !Outcome {
 fn back_up(
     connection: *db.Db,
     arena: std.mem.Allocator,
-    options: Options,
+    opening: Opening,
     before: []const u8,
 ) !void {
     std.debug.assert(connection.transaction_depth == 0);
-    std.debug.assert(options.backup);
+    std.debug.assert(opening.backup);
 
-    const site = try backup.Site.of(options.io, arena, options.db_path, options.project_dir);
+    const site = try backup.Site.of(opening.io, arena, opening.db_path, opening.project_dir);
     const made = try backup.make(site, connection, arena, .{
         .from = before,
-        .to = options.release,
-        .at_ms = options.now_ms,
+        .to = opening.release,
+        .at_ms = opening.now_ms,
         .database = site.database,
     }, .{});
 
     report.info("publr: backed the site up to {s} before opening it with {s}\n", .{
         made,
-        options.release,
+        opening.release,
     });
 }
 
@@ -152,11 +185,11 @@ fn update(
     connection: *db.Db,
     expected: *db.Db,
     arena: std.mem.Allocator,
-    options: Options,
+    opening: Opening,
     steps: Steps,
 ) !void {
     std.debug.assert(connection.transaction_depth == 0);
-    std.debug.assert(options.now_ms > 0);
+    std.debug.assert(opening.now_ms > 0);
 
     // A table rebuild drops and renames: references are checked once, before commit.
     try connection.exec("PRAGMA foreign_keys = OFF");
@@ -167,7 +200,7 @@ fn update(
     var transaction = try connection.transaction();
     defer transaction.rollback();
 
-    try db.migration.run(connection, steps.plan, options.now_ms);
+    try db.migration.run(connection, steps.plan, opening.now_ms);
     try apply_schema(connection);
 
     if (steps.adopt) {
@@ -176,11 +209,11 @@ fn update(
 
     try check_shape(connection, expected, arena);
     try check_integrity(connection, arena);
-    try check_probes(connection, arena, options);
+    try check_probes(connection, arena, opening);
 
     if (steps.record_release) {
-        try settings.set(connection, release_key, options.release, options.now_ms);
-        try record_update(connection, arena, options, steps.before);
+        try settings.set(connection, release_key, opening.release, opening.now_ms);
+        try record_update(connection, arena, opening, steps.before);
     }
 
     try transaction.commit();
@@ -191,20 +224,20 @@ fn update(
 fn record_update(
     connection: *db.Db,
     arena: std.mem.Allocator,
-    options: Options,
+    opening: Opening,
     before: []const u8,
 ) !void {
     std.debug.assert(connection.transaction_depth >= 1);
-    std.debug.assert(options.release.len > 0);
+    std.debug.assert(opening.release.len > 0);
 
     const input = try std.json.Stringify.valueAlloc(arena, .{
         .from = before,
-        .to = options.release,
+        .to = opening.release,
     }, .{});
 
     try activity.append(connection, .{
         .id = 0,
-        .at = options.now_ms,
+        .at = opening.now_ms,
         .actor = "system",
         .app = "",
         .operation = "publr.updated",
@@ -214,16 +247,16 @@ fn record_update(
     });
 }
 
-fn make_fresh(connection: *db.Db, options: Options) !void {
+fn make_fresh(connection: *db.Db, opening: Opening) !void {
     std.debug.assert(connection.transaction_depth == 0);
-    std.debug.assert(options.now_ms > 0);
+    std.debug.assert(opening.now_ms > 0);
 
     var transaction = try connection.transaction();
     defer transaction.rollback();
 
     try apply_schema(connection);
-    try db.migration.record_all(connection, registry.SDK.migrations, options.now_ms);
-    try settings.set(connection, release_key, options.release, options.now_ms);
+    try db.migration.record_all(connection, registry.SDK.migrations, opening.now_ms);
+    try settings.set(connection, release_key, opening.release, opening.now_ms);
     try transaction.commit();
 }
 
@@ -399,11 +432,11 @@ fn check_integrity(connection: *db.Db, arena: std.mem.Allocator) !void {
     }
 }
 
-fn check_probes(connection: *db.Db, arena: std.mem.Allocator, options: Options) !void {
+fn check_probes(connection: *db.Db, arena: std.mem.Allocator, opening: Opening) !void {
     std.debug.assert(connection.transaction_depth >= 1);
-    std.debug.assert(options.now_ms > 0);
+    std.debug.assert(opening.now_ms > 0);
 
-    const failed = try probes.run(connection, options.io, arena, options.auth, options.now_ms);
+    const failed = try probes.run(connection, opening.io, arena, opening.auth, opening.now_ms);
 
     if (failed) |failure| {
         refusal("publr: the database refused a {s}: {s}; nothing was changed", .{

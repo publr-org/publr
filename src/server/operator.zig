@@ -276,23 +276,27 @@ pub fn handle(
     };
     var out: std.Io.Writer.Allocating = .init(ctx.arena);
     var err: std.Io.Writer.Allocating = .init(ctx.arena);
-    const code = cli.CLI(registry.SDK).run(.{
-        .db = project.connection,
-        .io = project.io,
-        .arena = ctx.arena,
-        .auth = project.auth,
-        .now_ms = sdk.context.wall_clock_ms(project.io),
-        .err = &err.writer,
-        .password_env = envelope.password,
-        .sandboxed_plugins = project.sandboxed_plugins,
-        .plugin_states = project.plugin_states,
-        .files = project.files,
-        .apps = project.apps_folder(),
-        .builder = project.builder,
-        .agents = project.agents,
-        .live = project.live,
-        .updater = project.updater,
-    }, envelope.args, &out.writer) catch |failure| blk: {
+    const code = cli.CLI(registry.SDK).run(
+        project.connection,
+        project.io,
+        ctx.arena,
+        project.auth,
+        envelope.args,
+        &out.writer,
+        .{
+            .now_ms = sdk.context.wall_clock_ms(project.io),
+            .err = &err.writer,
+            .password_env = envelope.password,
+            .sandboxed_plugins = project.sandboxed_plugins,
+            .plugin_states = project.plugin_states,
+            .files = project.files,
+            .apps = project.apps_folder(),
+            .builder = project.builder,
+            .agents = project.agents,
+            .live = project.live,
+            .updater = project.updater,
+        },
+    ) catch |failure| blk: {
         err.writer.print("publr: {s}\n", .{@errorName(failure)}) catch {
             return response.text(.internal_server_error, @errorName(failure));
         };
@@ -347,19 +351,23 @@ pub const Commands = struct {
 
         std.debug.assert(commands.arena_bytes.len == server.request_arena_bytes);
 
-        return cli.CLI(registry.SDK).run(.{
-            .db = &application.connection,
-            .io = commands.init.io,
-            .arena = fixed.allocator(),
-            .auth = &application.auth,
-            .now_ms = sdk.context.wall_clock_ms(commands.init.io),
-            .password_env = commands.init.environ_map.get("PUBLR_PASSWORD"),
-            .sandboxed_plugins = application.sandboxed(),
-            .plugin_states = &application.plugin_states,
-            .files = application.files_of(),
-            .apps = commands.checker.folder(),
-            .builder = try commands.local_builder(),
-        }, args, out);
+        return cli.CLI(registry.SDK).run(
+            &application.connection,
+            commands.init.io,
+            fixed.allocator(),
+            &application.auth,
+            args,
+            out,
+            .{
+                .now_ms = sdk.context.wall_clock_ms(commands.init.io),
+                .password_env = commands.init.environ_map.get("PUBLR_PASSWORD"),
+                .sandboxed_plugins = application.sandboxed(),
+                .plugin_states = &application.plugin_states,
+                .files = application.files_of(),
+                .apps = commands.checker.folder(),
+                .builder = try commands.local_builder(),
+            },
+        );
     }
 
     /// Builds started here install into the database themselves once built.

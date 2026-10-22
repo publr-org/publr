@@ -4,6 +4,7 @@ const std = @import("std");
 const registry = @import("registry.zig");
 const sdk = @import("../sdk.zig");
 const state = @import("../sdk/plugin/state.zig");
+const plugin_define = @import("../sdk/plugin/define.zig");
 
 const stateful = registry.stateful_plugins;
 
@@ -13,7 +14,7 @@ fn state_types() [stateful.len]type {
     std.debug.assert(types.len == stateful.len);
 
     for (stateful, &types) |Plugin, *State| {
-        State.* = Plugin.State;
+        State.* = plugin_define.get(Plugin, "State");
     }
 
     return types;
@@ -33,7 +34,7 @@ pub const States = struct {
         inline for (stateful, 0..) |Plugin, index| {
             const value = &states.values[index];
 
-            if (@hasDecl(Plugin.State, "init")) {
+            if (@hasDecl(plugin_define.get(Plugin, "State"), "init")) {
                 try value.init(process);
             } else {
                 value.* = .{};
@@ -55,7 +56,7 @@ pub const States = struct {
         std.debug.assert(count <= stateful.len);
 
         inline for (stateful, 0..) |Plugin, index| {
-            if (index < count and @hasDecl(Plugin.State, "deinit")) {
+            if (index < count and @hasDecl(plugin_define.get(Plugin, "State"), "deinit")) {
                 states.values[index].deinit();
             }
         }
@@ -63,14 +64,14 @@ pub const States = struct {
 };
 
 /// A plugin's state, through what a context carries.
-pub fn of(ctx: *const sdk.Ctx, comptime Plugin: type) *Plugin.State {
+pub fn of(ctx: *const sdk.Ctx, comptime Plugin: type) *StateOf(Plugin) {
     std.debug.assert(ctx.now_ms >= 0);
 
     return from(ctx.plugin_states orelse @panic("no plugin states in this context"), Plugin);
 }
 
 /// A plugin's state, through the opaque pointer a project or a context carries.
-pub fn from(states: *anyopaque, comptime Plugin: type) *Plugin.State {
+pub fn from(states: *anyopaque, comptime Plugin: type) *StateOf(Plugin) {
     const index = comptime index_of(Plugin);
     const typed: *States = @ptrCast(@alignCast(states));
 
@@ -80,11 +81,18 @@ pub fn from(states: *anyopaque, comptime Plugin: type) *Plugin.State {
 fn index_of(comptime Plugin: type) u32 {
     comptime {
         for (stateful, 0..) |Candidate, index| {
-            if (Candidate == Plugin) {
+            const bound_from = @hasDecl(Candidate, "source") and Candidate.source == Plugin;
+
+            if (Candidate == Plugin or bound_from) {
                 return index;
             }
         }
 
-        @compileError("plugin " ++ Plugin.manifest.name ++ " keeps no `State`");
+        @compileError("plugin " ++ @typeName(Plugin) ++ " keeps no `State`");
     }
+}
+
+/// A plugin's `State`, whether it is passed as its module or as the type it is bound to.
+fn StateOf(comptime Plugin: type) type {
+    return plugin_define.get(stateful[index_of(Plugin)], "State");
 }

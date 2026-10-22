@@ -5,6 +5,10 @@
 const std = @import("std");
 
 pub const path = ".publr/work.json";
+/// The Publr elsewhere this folder builds, its address on one line: the agent setup writes
+/// it, and commands from the folder go there without `--site`.
+pub const site_path = ".publr/site";
+const site_bytes_max: u32 = 512;
 const file_bytes_max: u32 = 16 << 10;
 
 /// The open work. `site` is the address signed in to; `address` where commands go now.
@@ -55,6 +59,27 @@ pub fn open(init: std.process.Init, site: ?[]const u8) !?Work {
     }
 
     return work;
+}
+
+/// The site `.publr/site` names; null when the folder has none.
+pub fn folder_site(init: std.process.Init) !?[]const u8 {
+    std.debug.assert(site_bytes_max > 0);
+
+    const arena = init.arena.allocator();
+    const limit: std.Io.Limit = .limited(site_bytes_max);
+    const text = std.Io.Dir.cwd().readFileAlloc(init.io, site_path, arena, limit) catch |err| {
+        return switch (err) {
+            error.FileNotFound => null,
+            else => err,
+        };
+    };
+    const site = std.mem.trim(u8, text, " \n\r\t");
+
+    if (site.len == 0) {
+        return null;
+    }
+
+    return site;
 }
 
 /// The work `work start` answered for `site` with `text`; null when it is not one.

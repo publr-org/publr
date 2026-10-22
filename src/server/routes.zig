@@ -28,7 +28,10 @@ const Context = http.Context;
 
 pub const Project = @import("project.zig").Project;
 /// `/auth/<provider>` and its callback, for every provider a plugin declares.
-pub const provider_routes = rest_providers.Routes(registry.sign_in_providers);
+pub const provider_routes = rest_providers.Routes(
+    registry.sign_in_providers,
+    rest_providers.compiled,
+);
 /// What compiled-in plugins answer, under the prefixes they own.
 pub const native_plugin_routes = plugin_routes.Routes(registry.plugin_routes);
 /// What compiled-in plugins answer the CLI next to the server, behind the operator key.
@@ -79,7 +82,7 @@ pub fn register(router: *http.Router) void {
     else
         5 + plugin_operator_commands.routes_count;
     const fixed = 9 + operator_routes + provider_routes.routes_count +
-        native_plugin_routes.routes_count;
+        native_plugin_routes.routes_count - native_plugin_routes.streams_count;
 
     std.debug.assert(router.routes_len == fixed + admin.routes_count + apps_adapter.routes_count +
         media_adapter.routes_count);

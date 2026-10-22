@@ -6,6 +6,7 @@ const apps_state = @import("../adapters/apps/state.zig");
 const model_app = @import("../model/app.zig");
 const sdk = @import("../sdk.zig");
 const registry = @import("registry.zig");
+const outside_model = @import("../model/outside.zig");
 
 const App = apps_state.App;
 
@@ -53,6 +54,8 @@ pub const Project = struct {
     auto_update: ?*@import("update.zig").Updater = null,
     /// The admin's languages, where a server built them; null: English only.
     languages: ?*@import("languages.zig").Languages = null,
+    /// The rate limits a request's calls count against; null where nothing is limited.
+    limits: ?*sdk.limits.Limits = null,
     /// The working memory every context made for a request shares; null where there is no
     /// server (a context then sets its own aside).
     scratch: ?*sdk.Scratch = null,
@@ -91,6 +94,8 @@ pub const Project = struct {
     admin_base: []const u8 = "",
     /// The site's own origin, where the admin's host sends everything that is the site's.
     site_origin: []const u8 = "",
+    /// Where plugins' outside calls may go, from the site's address (`outside_of`).
+    outside: outside_model.Rule = .{},
     /// Asked before an app delivers a page or an island: the plugins' gates.
     delivery_gates: []const sdk.delivery.Gate = registry.native_plugins.merged_delivery_gates,
 
@@ -240,4 +245,36 @@ test "the session cookie is shared across subdomains only for a named domain" {
     try std.testing.expect(address("127.0.0.1"));
     try std.testing.expect(address("::1"));
     try std.testing.expect(!address("example.com"));
+}
+
+/// The rule plugins' outside calls follow on a server whose site and admin answer at these
+/// origins (either may be empty): their hosts are its own, and so are the public addresses
+/// on the machine's interfaces. `serve` and its queue worker both get it from here.
+pub fn outside_of(
+    arena: std.mem.Allocator,
+    site_origin: []const u8,
+    admin_origin: []const u8,
+) error{OutOfMemory}!outside_model.Rule {
+    std.debug.assert(site_origin.len <= 64 << 10);
+    std.debug.assert(admin_origin.len <= 64 << 10);
+
+    var hosts: std.ArrayList([]const u8) = .empty;
+
+    for ([_][]const u8{ site_origin, admin_origin }) |origin| {
+        const host = outside_model.host_of_origin(origin);
+
+        if (host.len > 0) {
+            try hosts.append(arena, host);
+        }
+    }
+
+    var rule = outside_model.rule_of(registry.hosted, site_origin, hosts.items);
+
+    rule.own_addresses = try @import("interfaces.zig").public(arena);
+
+    return rule;
+}
+
+test {
+    _ = @import("interfaces.zig");
 }

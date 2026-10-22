@@ -7,6 +7,7 @@ const builtin = @import("builtin");
 const credentials = @import("credentials.zig");
 const remote = @import("remote.zig");
 const device = @import("../model/device.zig");
+const work = @import("work.zig");
 
 const Started = struct {
     device_code: []const u8,
@@ -56,12 +57,15 @@ pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8
         return 2;
     };
 
+    // Without an address, the site this folder builds (`.publr/site`), else the only one.
+    const address = options.address orelse try work.folder_site(init);
+
     if (std.mem.eql(u8, command, "logout")) {
-        return logout(init, out, options.address);
+        return logout(init, out, address);
     }
 
     if (std.mem.eql(u8, command, "whoami")) {
-        return whoami(init, out, options.address);
+        return whoami(init, out, address);
     }
 
     std.debug.assert(std.mem.eql(u8, command, "login"));

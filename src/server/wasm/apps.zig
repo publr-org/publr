@@ -36,12 +36,12 @@ pub const Host = struct {
 
         const now_ms = publr.sdk.context.wall_clock_ms(host.io);
 
-        try apps.load.open(host.project, source.specs, loaded, host.gpa, host.index, .{
+        try apps.load.open(host.project, source.specs, loaded, host.gpa, host.index, now_ms, .{
             .base_url = host.base_url,
             // Their `public/` files are the project's, as `serve` reads them.
             .apps_dir = apps.folder.resolve_dir(host.io, base_options.apps_dir),
             .diagnostic = &host.reason,
-        }, now_ms);
+        });
         host.source = source;
         host.loaded = loaded;
 

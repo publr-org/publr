@@ -5,6 +5,7 @@ const probe_page: u32 = 200;
 const db = @import("../../lib/db.zig");
 const auth = @import("../../lib/auth.zig");
 const sdk = @import("../../sdk.zig");
+const store = @import("../../store.zig");
 const registry = @import("../registry.zig");
 const user = @import("../../operations/user.zig");
 const record = @import("../../operations/record.zig");
@@ -38,16 +39,18 @@ pub fn run(
     var savepoint = try connection.transaction();
     defer savepoint.rollback();
 
-    var ctx = sdk.Ctx.init(.{
-        .caller = .system,
-        .db = connection,
-        .io = io,
-        .arena = arena,
-        .auth = auth_state,
-        .now_ms = now_ms,
-    });
+    var ctx = sdk.Ctx.init(
+        connection,
+        io,
+        arena,
+        auth_state,
+        .system,
+        .{
+            .now_ms = now_ms,
+        },
+    );
 
-    for (registry.SDK.roles, 0..) |role, index| {
+    for (try store.roles.list(connection, arena), 0..) |role, index| {
         const email = try std.fmt.allocPrint(arena, "probe-{d}@probe.publr.invalid", .{index});
         const created = registry.SDK.dispatch(&ctx, user.Create, .{
             .email = email,

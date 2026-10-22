@@ -57,7 +57,12 @@ pub const instructions =
     \\
     \\How to work on anything bigger:
     \\1. Look first: what types, records, apps and pages exist (`content_type list`,
-    \\   `apps files`), and, for a site to build like another, the reference itself.
+    \\   `apps files`), and, for a site to build like another, the reference itself. For a
+    \\   feature (pages, a blog, a shop, bookings, a newsletter), ask Publr's marketplace
+    \\   before you build anything: `plugin find --request "<what the person asked, in
+    \\   their words>"`, then `plugin install --name <name>` for each plugin it answers
+    \\   (what it requires comes with it). Build only what none of them gives: their types
+    \\   and operations are yours to use, and the pages that show them are yours to write.
     \\2. Plan: for anything bigger than one change, call `plan` with the steps you will
     \\   take, and call it again as each is done. The person sees it.
     \\3. Build a page at a time: write a page and what it needs (its layout, components,

@@ -4,9 +4,13 @@ const publr = @import("publr");
 const db = publr.db;
 const files = publr.lib.files;
 const routes = publr.routes;
-const auth = publr.auth;
+const auth = publr.lib.auth;
 const http = publr.http;
 const browser_apps = @import("wasm/apps.zig");
+const SandboxHost = publr.server.sandboxed_plugins.Host;
+
+/// Where installed plugins' modules live: `plugins/` in the project's files, in OPFS.
+const plugins_dir = "plugins";
 
 const heap_bytes: u32 = 16 << 20;
 const response_bytes_max: u32 = 8 << 20;
@@ -70,6 +74,10 @@ const State = struct {
     /// The project's apps, from its folder in OPFS or built into the module, rendered on
     /// request.
     apps: browser_apps.Host,
+    /// The installed plugins, each run on the browser's own WebAssembly by the worker.
+    plugins: SandboxHost,
+    /// When the browser next looks at the jobs queued.
+    jobs_clock: publr.queued_jobs.Clock = .{},
     /// The address the worker serves Publr at; `project.base` and the router read its path.
     address_buffer: [address_bytes_max]u8,
 };
@@ -129,13 +137,14 @@ export fn publr_init() i32 {
             error.Bootstrap => 7,
             error.Apps => 8,
             error.Memory => 9,
+            error.Plugins => 10,
         };
     };
     state = instance;
     return 0;
 }
 
-const InitError = error{ Heap, Runtime, Database, Arena, Auth, Bootstrap, Apps, Memory };
+const InitError = error{ Heap, Runtime, Database, Arena, Auth, Bootstrap, Apps, Memory, Plugins };
 
 fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     comptime std.debug.assert(response_bytes_max < arena_bytes);
@@ -182,6 +191,7 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     instance.response = &.{};
     instance.body = &.{};
     instance.allocations = @splat(null);
+    instance.jobs_clock = .{};
     instance.deferred = files.Deferred.init(gpa);
     instance.project.files = .{
         .deferred = &instance.deferred,
@@ -190,6 +200,13 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     apply_declared_types(instance) catch |err| {
         return if (err == error.OutOfMemory) error.Memory else error.Bootstrap;
     };
+    instance.plugins.init(gpa, instance.io_backend.io(), plugins_dir) catch {
+        return error.Plugins;
+    };
+    errdefer instance.plugins.deinit();
+    // Nothing is loaded yet: the database is empty until the worker imports this browser's
+    // own (`publr_import`), and loading sweeps away every module no row names.
+    instance.project.sandboxed_plugins = instance.plugins.sandboxed_plugins();
     // As `serve` does: apps that will not open answer 503, saying why, and the admin stays up.
     open_apps(instance) catch |err| {
         if (err == error.OutOfMemory) {
@@ -238,6 +255,7 @@ export fn publr_deinit() void {
     }
 
     instance.apps.close();
+    instance.plugins.deinit();
     instance.deferred.deinit();
     instance.gpa.free(instance.response);
     instance.auth.deinit();
@@ -435,6 +453,13 @@ export fn publr_settle() void {
 
     instance.deferred.settle();
     instance.body = &.{};
+
+    // The browser has no worker process: queued work runs once an answer is handed over,
+    // never while a page waits for it.
+    const now_ms = publr.sdk.context.wall_clock_ms(instance.project.io);
+
+    publr.queued_events.tick(&instance.project, instance.gpa);
+    publr.queued_jobs.tick(&instance.project, instance.gpa, &instance.jobs_clock, now_ms);
 }
 
 /// An allocation the worker made, out of the table: its owner is whoever takes it.
@@ -504,6 +529,11 @@ export fn publr_import(ptr: [*]const u8, len: u32) i32 {
     instance.connection.close();
     instance.connection = candidate;
     accepted = true;
+    // The plugins this database has installed, from their rows; one that will not load is
+    // logged and left out, as `serve` does.
+    instance.plugins.load_all(&instance.connection) catch |err| {
+        std.log.err("plugins: not loaded: {t}", .{err});
+    };
 
     std.debug.assert(instance.connection.transaction_depth == 0);
 
@@ -551,18 +581,21 @@ fn apply_types(instance: *State, connection: *db.Db) !void {
     std.debug.assert(instance.arena_buffer.len == arena_bytes);
 
     var arena_state = std.heap.FixedBufferAllocator.init(instance.arena_buffer);
-    var ctx = publr.sdk.Ctx.init(.{
-        .caller = .system,
-        .db = connection,
-        .io = instance.io_backend.io(),
-        .arena = arena_state.allocator(),
-        .auth = &instance.auth,
-        .now_ms = publr.sdk.context.wall_clock_ms(instance.io_backend.io()),
-    });
+    var ctx = publr.sdk.Ctx.init(
+        connection,
+        instance.io_backend.io(),
+        arena_state.allocator(),
+        &instance.auth,
+        .system,
+        .{
+            .now_ms = publr.sdk.context.wall_clock_ms(instance.io_backend.io()),
+        },
+    );
 
     try publr.operations.media.bootstrap(&ctx);
     try publr.operations.design.bootstrap(&ctx);
     try publr.plugin.types.apply_all(&ctx);
+    try publr.registry.apply_declared_roles(&ctx);
 }
 
 fn build_request(parsed: RequestJson) !http.Head {

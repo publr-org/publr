@@ -47,16 +47,19 @@ const Site = struct {
     fn open(site: *Site, release_name: []const u8) !gate.Outcome {
         std.debug.assert(release_name.len > 0);
 
-        return gate.open(&site.connection, .{
-            .io = std.testing.io,
-            .gpa = std.testing.allocator,
-            .runtime = &site.runtime,
-            .db_path = site.db_path,
-            .release = release_name,
-            .now_ms = now_ms,
-            .auth = &site.auth,
-            .project_dir = site.root,
-        });
+        return gate.open(
+            &site.connection,
+            std.testing.io,
+            std.testing.allocator,
+            &site.runtime,
+            &site.auth,
+            site.db_path,
+            release_name,
+            now_ms,
+            .{
+                .project_dir = site.root,
+            },
+        );
     }
 
     fn release(site: *Site) !?[]const u8 {

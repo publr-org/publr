@@ -17,6 +17,16 @@ pub const Conflict = struct {
 pub fn Routes(comptime declared: []const route.Declared) type {
     return struct {
         pub const routes_count: u32 = declared.len;
+        /// The routes that stream their body, registered apart from the rest.
+        pub const streams_count: u32 = count: {
+            var streams: u32 = 0;
+
+            for (declared) |one| {
+                streams += @intFromBool(one.route.stream != null);
+            }
+
+            break :count streams;
+        };
 
         /// Before any core route, so a plugin's path is never answered by a core pattern.
         pub fn register(router: *http.Router) void {
@@ -25,13 +35,15 @@ pub fn Routes(comptime declared: []const route.Declared) type {
             std.debug.assert(before + routes_count <= router.routes.len);
 
             inline for (declared) |one| {
-                switch (one.route.method) {
-                    .get => router.get(one.route.path, one.route.handler),
-                    .post => router.post(one.route.path, one.route.handler),
+                if (one.route.stream) |stream| {
+                    router.stream(.post, one.route.path, stream);
+                } else switch (one.route.method) {
+                    .get => router.get(one.route.path, one.route.handler.?),
+                    .post => router.post(one.route.path, one.route.handler.?),
                 }
             }
 
-            std.debug.assert(router.routes_len == before + routes_count);
+            std.debug.assert(router.routes_len == before + routes_count - streams_count);
         }
 
         /// The first core route, registered after the plugins' from `first_core` on, that a
@@ -173,6 +185,31 @@ test "a plugin's route answers, as whoever sent the request" {
     const refused = try served.send(arena, foreign);
 
     try std.testing.expectEqual(@as(u16, 403), refused.status.code());
+}
+
+test "a plugin's streamed route takes the body as it comes" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var served: Served = undefined;
+    served.init(&harness);
+
+    try std.testing.expectEqual(@as(u32, 1), TestRoutes.streams_count);
+
+    const parsed = try http.parse("POST /api/hello/upload HTTP/1.1\r\nHost: h\r\n" ++
+        "Content-Length: 5\r\n\r\n");
+    const wire = parsed.complete;
+    var request: http.Request = .{
+        .inner = &wire,
+        .body = "bytes",
+    };
+    const answered = served.app.handle(arena, &request);
+
+    try std.testing.expectEqual(@as(u16, 201), answered.status.code());
+    try std.testing.expectEqualStrings("{\"bytes\":5}", answered.body);
 }
 
 test "a core route under a plugin's prefix is refused; one beside it is not" {

@@ -88,7 +88,7 @@ pub const AppsHost = struct {
         const project = host.project;
         const apps = host.apps;
 
-        try apps_adapter.load.open(project, specs, apps, host.gpa, host.index, options, now_ms);
+        try apps_adapter.load.open(project, specs, apps, host.gpa, host.index, now_ms, options);
         try host.serve_builds();
         host.announce(specs);
     }

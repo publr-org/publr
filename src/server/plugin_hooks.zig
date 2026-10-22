@@ -2,6 +2,7 @@
 //! it runs (`before_command`), act once `serve` listens (`serving`), and answer commands the
 //! CLI next to a running server sends it (`operator_commands`, behind the operator key).
 const std = @import("std");
+const plugin_define = @import("../sdk/plugin/define.zig");
 const http = @import("../lib/http.zig");
 const registry = @import("registry.zig");
 const operator = @import("operator.zig");
@@ -31,14 +32,14 @@ pub fn before_command(command: *Command) !void {
     std.debug.assert(command.db_path.len > 0);
 
     inline for (registry.before_command) |Plugin| {
-        const Hook = @TypeOf(Plugin.before_command);
+        const Hook = @TypeOf(plugin_define.get(Plugin, "before_command"));
 
         comptime if (Hook != fn (*Command) anyerror!void) {
             @compileError("plugin " ++ Plugin.manifest.name ++ ": `before_command` is " ++
                 "`pub fn before_command(command: *publr.plugin_hooks.Command) !void`");
         };
 
-        try Plugin.before_command(command);
+        try plugin_define.get(Plugin, "before_command")(command);
     }
 
     std.debug.assert(command.db_path.len > 0);
@@ -50,14 +51,14 @@ pub fn serving(serve: Serving) !void {
     std.debug.assert(serve.port > 0);
 
     inline for (registry.serving) |Plugin| {
-        const Hook = @TypeOf(Plugin.serving);
+        const Hook = @TypeOf(plugin_define.get(Plugin, "serving"));
 
         comptime if (Hook != fn (Serving) anyerror!void) {
             @compileError("plugin " ++ Plugin.manifest.name ++ ": `serving` is " ++
                 "`pub fn serving(serve: publr.plugin_hooks.Serving) !void`");
         };
 
-        try Plugin.serving(serve);
+        try plugin_define.get(Plugin, "serving")(serve);
     }
 }
 

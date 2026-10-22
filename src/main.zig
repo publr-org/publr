@@ -63,8 +63,8 @@ fn run(init: std.process.Init) !u8 {
     if (try site_of(init, &rest)) |address| {
         production = taken(&rest, "--production") or production;
 
-        if (rest.len > 0 and !is_account(rest[0]) and !is_local_work(rest)) {
-            return try publr.remote.forward(init, address, rest, production, out);
+        if (rest.len > 0 and !stays_here(rest)) {
+            return try publr.forwarding.forward(init, address, rest, production, out);
         }
     }
 
@@ -118,6 +118,17 @@ fn is_account(command: []const u8) bool {
         std.mem.eql(u8, command, "whoami");
 }
 
+/// What runs on this machine whichever site the command names: signing in and out, the
+/// folder's open work, the skill for its agent and the guide this binary carries.
+fn stays_here(args: []const []const u8) bool {
+    std.debug.assert(args.len > 0);
+
+    const guide = args.len == 1 and std.mem.eql(u8, args[0], "agents");
+
+    return is_account(args[0]) or is_local_work(args) or guide or
+        std.mem.eql(u8, args[0], "skill");
+}
+
 /// `publr work` and `work done`: the folder's, never sent; `work start` is the site's.
 fn is_local_work(args: []const []const u8) bool {
     std.debug.assert(args.len > 0);
@@ -141,7 +152,8 @@ fn taken(rest: *[]const []const u8, flag: []const u8) bool {
 }
 
 /// The Publr elsewhere a command goes to: `--site <address>` (taken off the words), else
-/// `PUBLR_SITE`, else the site of the work open in this folder; null to run it here.
+/// `PUBLR_SITE`, else the site of the work open in this folder, else the one the folder
+/// builds (`.publr/site`); null to run it here.
 fn site_of(init: std.process.Init, rest: *[]const []const u8) !?[]const u8 {
     const named = rest.len >= 2 and std.mem.eql(u8, rest.*[0], "--site");
     const site = if (named)
@@ -150,6 +162,8 @@ fn site_of(init: std.process.Init, rest: *[]const []const u8) !?[]const u8 {
         variable
     else if (try publr.work.open(init, null)) |work|
         work.site
+    else if (try publr.work.folder_site(init)) |folder|
+        folder
     else
         return null;
 
@@ -209,16 +223,20 @@ fn run_command(
 
         var fixed = std.heap.FixedBufferAllocator.init(arena_bytes);
 
-        return cli.CLI(registry.SDK).run(.{
-            .db = &application.connection,
-            .io = init.io,
-            .arena = fixed.allocator(),
-            .auth = &application.auth,
-            .now_ms = sdk.context.wall_clock_ms(init.io),
-            .password_env = init.environ_map.get("PUBLR_PASSWORD"),
-            .sandboxed_plugins = application.sandboxed(),
-            .files = application.files_of(),
-        }, args, out);
+        return cli.CLI(registry.SDK).run(
+            &application.connection,
+            init.io,
+            fixed.allocator(),
+            &application.auth,
+            args,
+            out,
+            .{
+                .now_ms = sdk.context.wall_clock_ms(init.io),
+                .password_env = init.environ_map.get("PUBLR_PASSWORD"),
+                .sandboxed_plugins = application.sandboxed(),
+                .files = application.files_of(),
+            },
+        );
     }
 
     var commands: publr.operator.Commands = .{
@@ -268,8 +286,8 @@ fn collect_args(init: std.process.Init, storage: *[args_max][]const u8) ![]const
 }
 
 /// The commands that are not operations: `serve`, `build`, `zig`, `login`, `logout`, `whoami`,
-/// `skill`, `new`, `db check`, `backups`, `restore` and `check-apps`. Null for anything else,
-/// which the CLI answers.
+/// `skill`, `new`, `db check`, `backups`, `restore`, `pack`, `unpack`, `cloud deploy`,
+/// `check-apps` and `check-plugins`. Null for anything else, which the CLI answers.
 fn tool(
     init: std.process.Init,
     out: *std.Io.Writer,
@@ -296,13 +314,15 @@ fn tool(
     const plugin_build = rest.len > 1 and std.mem.eql(u8, rest[0], "plugin") and
         std.mem.eql(u8, rest[1], "build") and !has_flag(rest, "--files") and
         !has_flag(rest, "--help");
+    const plugin_check = rest.len > 1 and std.mem.eql(u8, rest[0], "plugin") and
+        std.mem.eql(u8, rest[1], "check") and !has_flag(rest, "--help");
     const login = is_account(rest[0]);
 
     // In the browser there is no server, no build and no compiler: the modules are `void`
     // there.
     if (builtin.os.tag == .wasi) {
-        if (serve or build or zig or plugin_build or agents or agent or apps_load or login or
-            skill or new_site)
+        if (serve or build or zig or plugin_build or plugin_check or agents or agent or
+            apps_load or login or skill or new_site)
         {
             return error.Unsupported;
         }
@@ -339,12 +359,28 @@ fn tool(
             return try publr.plugin_build.run(init, db_path, rest[2..]);
         }
 
+        if (plugin_check) {
+            return try publr.plugin_check.run(init, rest[2..]);
+        }
+
         if (serve) {
             return try publr.serve.run(init, db_path, rest[1..]);
         }
 
+        if (std.mem.eql(u8, rest[0], "queue-run")) {
+            return try publr.queue_worker.run(init, db_path, rest[1..]);
+        }
+
         if (std.mem.eql(u8, rest[0], "update-run")) {
             return try publr.update.run(init, db_path, rest[1..]);
+        }
+
+        if (publr.cloud_deploy.handles(rest) and !has_flag(rest, "--help")) {
+            return try publr.cloud_deploy.run(init, out, db_path, rest);
+        }
+
+        if (publr.bundle.handles(rest) and !has_flag(rest, "--help")) {
+            return try publr.bundle.run(init, out, db_path, rest);
         }
 
         if (publr.database.handles(rest) and !has_flag(rest, "--help")) {
@@ -360,7 +396,29 @@ fn tool(
         return try check_apps(init, out);
     }
 
+    if (rest.len == 1 and std.mem.eql(u8, rest[0], "check-plugins")) {
+        return check_plugins();
+    }
+
     return null;
+}
+
+/// `publr check-plugins`: a note for each compiled-in plugin's remote another compiled-in
+/// plugin switches off, and why; always 0, as the build it runs after passes.
+fn check_plugins() u8 {
+    const off = publr.registry.remotes_off;
+
+    std.debug.assert(off.len <= 64 * 64);
+
+    for (off) |remote| {
+        report.info("note: {s}: {s} is switched off: {s}\n", .{
+            remote.plugin,
+            remote.name,
+            remote.why,
+        });
+    }
+
+    return 0;
 }
 
 /// `publr check-apps`: 0 when every compiled-in app compiles, else 1 and the reason, the

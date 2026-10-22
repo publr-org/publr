@@ -1,4 +1,5 @@
 const std = @import("std");
+const queue_worker = @import("queue_worker.zig");
 const limits = @import("../model/limits.zig");
 const plugin_hooks = @import("plugin_hooks.zig");
 const server = @import("../server.zig");
@@ -110,7 +111,7 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
     const search_span: u16 = if (flags.port == null) port_search_max else 0;
     var options = server_options(first_port, browser_dir != null);
 
-    var listener = start_server(init.gpa, &options, search_span) catch |err| {
+    var listener = start_server(init.gpa, search_span, &options) catch |err| {
         if (err == error.AddressInUse) {
             _ = usage_port_in_use(@max(first_port, 1), search_span);
             return .refused;
@@ -159,10 +160,44 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
         update.served(init.io, init.arena.allocator(), db_path, @import("../publr.zig").version);
     }
 
+    var keeper = try keeper_of(init, db_path, &project);
+    defer keeper.stop();
+
+    const worker: ?*queue_worker.Keeper = if (browser_dir == null) &keeper else null;
+
     try listener.enable_shutdown_signals();
-    try run_loop(&listener, &project, init.gpa, @as(i64, flags.idle_stop_s) * std.time.ms_per_s);
+    try run_loop(&listener, &project, worker, @as(i64, flags.idle_stop_s) * std.time.ms_per_s);
 
     return if (project.restart_requested) .restart else .stopped;
+}
+
+/// Queued work runs in a process of its own, so a slow hook or job never delays a request.
+fn keeper_of(
+    init: std.process.Init,
+    db_path: [:0]const u8,
+    project: *const routes.Project,
+) !queue_worker.Keeper {
+    std.debug.assert(db_path.len > 0);
+
+    const arena = init.arena.allocator();
+    // The site's and the admin's addresses: where its plugins' outside calls may go.
+    const argv = try arena.dupe([]const u8, &.{
+        try std.process.executablePathAlloc(init.io, arena),
+        "--db",
+        db_path,
+        "queue-run",
+        "--site-url",
+        project.site_origin,
+        "--admin-url",
+        project.admin_origin,
+    });
+
+    std.debug.assert(argv.len == 8);
+
+    return .{
+        .io = init.io,
+        .argv = argv,
+    };
 }
 
 fn helpers_of(init: std.process.Init, db_path: [:0]const u8, auto_update: bool) Helpers {
@@ -244,6 +279,7 @@ fn project_of(
         .scratch = &application.scratch,
         .definitions = &application.definitions,
         .languages = &application.languages,
+        .limits = &application.limits,
     };
 }
 
@@ -296,6 +332,11 @@ fn split_hosts(
     project.admin_origin = model_app.origin_of(admin_url);
     project.admin_base = model_app.path_of(admin_url);
     project.site_origin = model_app.origin_of(site_url);
+    project.outside = try @import("project.zig").outside_of(
+        arena,
+        project.site_origin,
+        project.admin_origin,
+    );
 
     std.debug.assert(project.split());
 }
@@ -532,7 +573,7 @@ fn claim(
 fn run_loop(
     listener: *http.App,
     project: *routes.Project,
-    gpa: std.mem.Allocator,
+    worker: ?*queue_worker.Keeper,
     idle_stop_ms: i64,
 ) !void {
     std.debug.assert(tick_ms > 0);
@@ -556,7 +597,9 @@ fn run_loop(
             listener.engine.stop();
         }
 
-        @import("queued_notices.zig").tick(project, gpa);
+        if (worker) |keeper| {
+            keeper.tick(sdk.context.wall_clock_ms(project.io));
+        }
 
         if (project.apps.len > 0) {
             tick_apps(project);
@@ -896,8 +939,8 @@ fn text_option(flags: *Flags, arg: []const u8) ?*[]const u8 {
 
 fn start_server(
     gpa: std.mem.Allocator,
-    options: *http.Options,
     search_span: u16,
+    options: *http.Options,
 ) http.App.Error!http.App {
     std.debug.assert(search_span <= port_search_max);
     std.debug.assert(options.port > 0 or search_span == 0);
@@ -1084,10 +1127,10 @@ test "an app whose build fails answers 503 until a publish lets it build" {
     const path = try scratch.dir.realPathFileAlloc(std.testing.io, ".", system.arena);
     const www = apps_adapter.spec.find("www").?;
     var app: apps_adapter.App = undefined;
-    try app.init(www, std.testing.allocator, std.testing.io, &index, .{
+    try app.init(www, std.testing.allocator, std.testing.io, &index, 0, .{
         .output_dir = path,
         .apps_dir = "fixtures/apps",
-    }, 0);
+    });
     defer app.deinit();
     var diagnostic: engine.Diagnostic = .{
         .arena = system.arena,
@@ -1096,7 +1139,7 @@ test "an app whose build fails answers 503 until a publish lets it build" {
         .rel = "content/index.publr",
         .source = "---\nconst home = Publr.build.getEntry({ type: 'homepage' });\n" ++
             "const hero = home.data.hero ?? '';\n---\n<h1>{hero}</h1>",
-    }}, app.pages().options, &diagnostic);
+    }}, &diagnostic, app.pages().options);
     defer std.testing.allocator.destroy(program);
     defer program.deinit();
     const original = app.program;

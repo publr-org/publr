@@ -67,7 +67,7 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
 
     const options = flags.options;
 
-    apps_adapter.load.open(&project, specs, apps, init.gpa, index, options, now_ms) catch |err| {
+    apps_adapter.load.open(&project, specs, apps, init.gpa, index, now_ms, options) catch |err| {
         report.err_reason(reason.text(), "publr build: the apps do not load: {s}", .{
             @errorName(err),
         });
