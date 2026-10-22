@@ -5,6 +5,7 @@ import { UploadPlugin } from "../components/UploadPlugin.ptsx";
 import { TabNav } from "@publr/ui/TabNav.ptsx";
 import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
 import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
@@ -23,7 +24,11 @@ export type PluginsProps = {
    * into this binary. */
   tab: string;
   /** The plugins built into this binary: always there, full access, nothing to decide. */
-  built_in: Array<{ name: string; version: string; summary: string; brings: string }>;
+  /** `href`: the plugin's own page. */
+  built_in: Array<{ name: string; version: string; summary: string; brings: string; href: string }>;
+  /** On the Built-in tab: each built-in plugin's remote that is off (`plugin: remote`), and
+   * why. */
+  off: Array<{ code: string; text: string }>;
   plugins: Array<{
     href: string;
     name: string;
@@ -46,7 +51,7 @@ export type PluginsProps = {
 
 /** Every plugin added, running or not: enable one to review what it asks for, update one
  * a newer module was uploaded for, stop one. Removing one is on its own page. */
-export function Plugins({ tab, built_in, plugins, range, previous_href, next_href }: PluginsProps) {
+export function Plugins({ tab, built_in, off, plugins, range, previous_href, next_href }: PluginsProps) {
   return (
     <IndexPage
       title={Publr.t("Plugins")}
@@ -57,6 +62,13 @@ export function Plugins({ tab, built_in, plugins, range, previous_href, next_hre
           : Publr.t("Built into this binary: always running, with full access. A new build changes them.")
       }
       actions={tab === "installed" && <UploadPlugin csrf={Publr.request.session.csrf} />}
+      notice={
+        off.length > 0 && (
+          <Callout tone="warning" title={Publr.t("Switched off")} items={off}>
+            {Publr.t("These parts answer as unavailable and their hooks don't run until the other plugin fits. The rest works.")}
+          </Callout>
+        )
+      }
       tabs={
         <TabNav label={Publr.t("Plugins")}>
           <TabNavLink href="/admin/settings/plugins" active={tab === "installed"}>
@@ -95,9 +107,9 @@ export function Plugins({ tab, built_in, plugins, range, previous_href, next_hre
             {built_in.map((row) => (
               <TableRow>
                 <TableCell>
-                  <Text as="p" variant="body-sm">
+                  <Link href={row.href} variant="body-sm" tone="default">
                     {row.name}
-                  </Text>
+                  </Link>
                   <Text as="p" variant="body-sm" tone="muted">
                     {row.summary}
                   </Text>

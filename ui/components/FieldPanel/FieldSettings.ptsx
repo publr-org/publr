@@ -15,6 +15,12 @@ export type FieldSettingsProps = {
   is_title: boolean;
   can_search: boolean;
   searchable: boolean;
+  /** Lists can filter by fields of the kind; whether this one is offered. */
+  can_filter: boolean;
+  filterable: boolean;
+  /** Lists can order by fields of the kind; whether this one is offered. */
+  can_sort: boolean;
+  sortable: boolean;
   can_translate?: boolean;
   translates?: boolean;
   translate_label?: string;
@@ -44,6 +50,10 @@ export function FieldSettings({
   is_title,
   can_search,
   searchable,
+  can_filter,
+  filterable,
+  can_sort,
+  sortable,
   can_translate = false,
   translates = false,
   translate_label = "",
@@ -95,6 +105,30 @@ export function FieldSettings({
             label={Publr.t("Searchable")}
             description={Publr.t("Indexed for full-text search in the content list and the API.")}
           />
+        )}
+        {can_filter && (
+          <div>
+            <input type="hidden" name="filterable_offered" value="1" />
+            <CheckboxField
+              id="filterable"
+              name="filterable"
+              checked={filterable}
+              label={Publr.t("Filterable")}
+              description={Publr.t("Lists offer it in Filter.")}
+            />
+          </div>
+        )}
+        {can_sort && (
+          <div>
+            <input type="hidden" name="sortable_offered" value="1" />
+            <CheckboxField
+              id="sortable"
+              name="sortable"
+              checked={sortable}
+              label={Publr.t("Sortable")}
+              description={Publr.t("Lists can be sorted by it.")}
+            />
+          </div>
         )}
         {has_target && (
           <fieldset class="m-0 min-w-0 border-0 p-0">

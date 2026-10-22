@@ -31,6 +31,9 @@ export type FormBodyProps = {
   bare?: boolean;
   /** The form, or what is shown of the one thing. */
   children?: JSX.Element;
+  /** Under the column, edge to edge with no gutter: a table that needs the room (a role's
+   * permissions), as a list page's list. */
+  band?: JSX.Element;
   /** One column, the aside under the form: a narrow panel (a visual record's Entry). */
   stacked?: boolean;
   /** Centred in the sheet: a record, edited in focus. Everything else sits at the gutter. */
@@ -57,6 +60,7 @@ export function FormBody({
   in_drawer = false,
   bare = false,
   stacked = false,
+  band,
   children,
 }: FormBodyProps) {
   return (
@@ -82,6 +86,7 @@ export function FormBody({
           {notice}
           {children}
         </div>
+        {band && <div class="pt-6">{band}</div>}
       </div>
       {!bare && side}
       {!bare && !side && (aside || danger) && (

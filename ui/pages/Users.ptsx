@@ -11,6 +11,8 @@ import { TableHead } from "@publr/ui/TableHead.ptsx";
 import { TableBody } from "@publr/ui/TableBody.ptsx";
 import { TableRow } from "@publr/ui/TableRow.ptsx";
 import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
 
 export type UsersProps = {
   users: Array<{
@@ -29,18 +31,60 @@ export type UsersProps = {
   /** The pages before and after this one; empty at either end. */
   previous_href: string;
   next_href: string;
+  /** The tab shown: `users`, or one a plugin adds (`roles`). */
+  tab?: string;
+  /** The tabs plugins add, after Users' own; none draws no tabs. */
+  plugin_tabs?: Array<{ tab: string; label: string; href: string }>;
+  /** A plugin tab's sections, each drawn by the plugin that adds it. */
+  sections?: JSX.Element;
+  /** A plugin tab's primary action, in place of Add user. */
+  action_label?: string;
+  action_href?: string;
 };
 
 /** The accounts, oldest first, a page at a time, and a way to add one. There is always one:
  * whoever looks. */
-export function Users({ users, range, previous_href, next_href }: UsersProps) {
+export function Users({
+  users,
+  range,
+  previous_href,
+  next_href,
+  tab = "users",
+  plugin_tabs = [],
+  sections,
+  action_label = "",
+  action_href = "",
+}: UsersProps) {
+  const own = tab === "users";
   return (
     <IndexPage
       title={Publr.t("Users")}
       description={Publr.t("Who may sign in, and what they may do.")}
-      actions={<Button href="/admin/settings/users/new">{Publr.t("Add user")}</Button>}
-      footer={range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
+      actions={
+        own ? (
+          <Button href="/admin/settings/users/new">{Publr.t("Add user")}</Button>
+        ) : (
+          action_label !== "" && <Button href={action_href}>{action_label}</Button>
+        )
+      }
+      tabs={
+        plugin_tabs.length > 0 && (
+          <TabNav label={Publr.t("Users")}>
+            <TabNavLink href="/admin/settings/users" active={own}>
+              {Publr.t("Users")}
+            </TabNavLink>
+            {plugin_tabs.map((item) => (
+              <TabNavLink href={item.href} active={tab === item.tab}>
+                {item.label}
+              </TabNavLink>
+            ))}
+          </TabNav>
+        )
+      }
+      footer={own && range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
     >
+      {!own && sections}
+      {own && (
       <Table>
         <TableHeader>
           <TableRow>
@@ -85,6 +129,7 @@ export function Users({ users, range, previous_href, next_href }: UsersProps) {
           ))}
         </TableBody>
       </Table>
+      )}
     </IndexPage>
   );
 }

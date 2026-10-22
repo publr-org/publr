@@ -37,6 +37,13 @@ export type ActivityProps = {
     what: string;
     /** The input as sent, secrets masked. */
     input: string;
+    /** What plugins logged during the call (`ctx.log`), in order. */
+    lines: Array<{
+      plugin: string;
+      /** `info`, `warn` or `err`. */
+      level: string;
+      line: string;
+    }>;
     /** The whole entry as indented JSON, for its dialog. */
     json: string;
   }>;
@@ -133,6 +140,11 @@ export function Activity({ tab, entries, older_href }: ActivityProps) {
               </TableCell>
               <TableCell>
                 <Text variant="body-sm">{entry.what}</Text>
+                {entry.lines.map((logged) => (
+                  <Text variant="body-sm" tone={logged.level === "err" ? "error" : logged.level === "warn" ? "warning" : "muted"}>
+                    <Code>{logged.plugin}</Code> {logged.level === "err" ? Publr.t("Error") : logged.level === "warn" ? Publr.t("Warning") : ""} {logged.line}
+                  </Text>
+                ))}
               </TableCell>
               <TableCell>
                 <Code classes="break-all">{entry.input}</Code>

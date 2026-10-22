@@ -5,6 +5,8 @@ import { Text } from "@publr/ui/Text.ptsx";
 import { IndexSection } from "./IndexSection.ptsx";
 
 export type PluginDataProps = {
+  /** Where the choice posts; empty for a built-in plugin, which is never removed: its data
+   * is listed only. */
   action: string;
   /** What the plugin manages, as the database holds it; ticked: goes with the plugin. */
   pieces: Array<{ key: string; label: string; detail: string; chosen: boolean }>;
@@ -21,7 +23,17 @@ export function PluginData({ action, pieces }: PluginDataProps) {
           {Publr.t("It keeps no content types, internal records or field groups of its own.")}
         </Text>
       )}
-      {pieces.length > 0 && (
+      {pieces.length > 0 && action === "" && (
+        <div class="flex flex-col gap-3">
+          {pieces.map((piece) => (
+            <div class="flex flex-col gap-0.5" data-piece={piece.key}>
+              <Text as="p" variant="body-md">{piece.label}</Text>
+              <Text as="p" variant="body-sm" tone="muted">{piece.detail}</Text>
+            </div>
+          ))}
+        </div>
+      )}
+      {pieces.length > 0 && action !== "" && (
         <form method="post" action={action} class="flex flex-col gap-4">
           <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
           <Text as="p" variant="body-sm" tone="muted">

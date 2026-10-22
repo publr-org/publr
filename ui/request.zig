@@ -41,6 +41,8 @@ pub fn Shape(comptime Node: type) type {
             sidebar: ?Node,
             /// The sidebar's heading, for a plugin's section; the admin's own otherwise.
             sidebar_heading: ?Node = null,
+            /// Plugins' own icons, their drawings sanitized, beside the set's sprite.
+            plugin_icons: ?Node = null,
             /// The plugin's section the page is in, and where it opens: the crumbs' first.
             section: []const u8 = "",
             section_href: []const u8 = "",

@@ -2,7 +2,6 @@ import { PluginAbout } from "../components/PluginAbout.ptsx";
 import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { ConfirmAction } from "../components/ConfirmAction.ptsx";
-import { ContentAccess } from "../components/ContentAccess.ptsx";
 import { IndexSection } from "../components/IndexSection.ptsx";
 import { PluginRequests } from "../components/PluginRequests.ptsx";
 import { PluginData } from "../components/PluginData.ptsx";
@@ -10,11 +9,18 @@ import { Button } from "@publr/ui/Button.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
 
 export type PluginProps = {
   name: string;
   version: string;
   summary: string;
+  /** Built into this binary: always running, granted what it asks for; nothing here to
+   * enable, switch, update or remove. */
+  built_in: boolean;
+  /** The plugins list it is under: the Built-in tab for a built-in plugin. */
+  plugins_href: string;
   /** What the plugin says about itself, sanitized; absent when it says nothing. */
   about?: JSX.Element;
   enabled: boolean;
@@ -26,8 +32,8 @@ export type PluginProps = {
   enable_href: string;
   disable_action: string;
   rollback_action: string;
-  decide_action: string;
-  access_action: string;
+  /** Where the requests' switches post. */
+  grants_action: string;
   remove_action: string;
   requests: Array<{
     key: string;
@@ -36,28 +42,39 @@ export type PluginProps = {
     tier: string;
     state: string;
     note: string;
-    can_grant: boolean;
-    can_revoke: boolean;
-    can_deny: boolean;
+    on: boolean;
+    editable: boolean;
+    flags: Array<{ name: string; label: string; on: boolean }>;
+    takes_domains: boolean;
+    domains: string;
+    anywhere: boolean;
+    secrets: Array<{ name: string; label: string; help: string; set: boolean; status: string }>;
   }>;
-  show_access: boolean;
-  scope: string;
-  recommend: string;
-  note: string;
-  types: Array<{ handle: string; name: string; checked: boolean }>;
+  /** Where the choice of what goes with it posts; empty for a built-in plugin. */
   removal_action: string;
   pieces: Array<{ key: string; label: string; detail: string; chosen: boolean }>;
   /** What removing it takes along, for the confirm. */
   removes: string;
+  /** Its Log tab: what its code logged. */
+  log_href: string;
+  /** The labels of the secrets it declares that have no value yet, joined; empty for none. */
+  missing: string;
+  /** Why it can't be enabled: each plugin it needs that does not fit, in plain words. */
+  blocked: Array<{ code: string; text: string }>;
+  /** Each remote of a plugin it works with that is off, and why. */
+  off: Array<{ code: string; text: string }>;
 };
 
 /** One plugin: whether it runs, its versions (an update waiting, the previous one to roll
- * back to), what it wants to do, granted or revoked one at a time, and its content access.
- * Revoking takes effect on its next call. */
+ * back to), and what it wants to do: each key and each flag it asked for switched on or off,
+ * saved together. A change takes effect on its next call. A built-in plugin's reads the same,
+ * without the switches and the actions: a build decides those. */
 export function Plugin({
   name,
   version,
   summary,
+  built_in,
+  plugins_href,
   about,
   enabled,
   update,
@@ -66,25 +83,24 @@ export function Plugin({
   enable_href,
   disable_action,
   rollback_action,
-  decide_action,
-  access_action,
+  grants_action,
   remove_action,
   requests,
-  show_access,
-  scope,
-  recommend,
-  note,
-  types,
   removal_action,
   pieces,
   removes,
+  log_href,
+  missing,
+  blocked,
+  off,
 }: PluginProps) {
   return (
     <IndexPage
       title={name}
-      parents={[{ label: Publr.t("Plugins"), href: "/admin/settings/plugins" }]}
+      parents={[{ label: Publr.t("Plugins"), href: plugins_href }]}
       description={summary}
       actions={
+        !built_in && (
         <div class="contents">
           <ConfirmAction
             inline
@@ -107,18 +123,39 @@ export function Plugin({
               <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
               <Button type="submit" hierarchy="secondary">{Publr.t("Disable")}</Button>
             </form>
+          ) : blocked.length > 0 ? null : requests.length === 0 ? (
+            // Asking for nothing, it has nothing to review: Enable starts it.
+            <form method="post" action={enable_href}>
+              <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+              <Button type="submit">{Publr.t("Enable")}</Button>
+            </form>
           ) : (
             <Button href={enable_href}>{Publr.t("Enable")}</Button>
           )}
         </div>
+        )
       }
       meta={
         <div class="contents">
-          {enabled ? <Status tone="success">{Publr.t("Enabled")}</Status> : <Status tone="neutral">{Publr.t("Disabled")}</Status>}
+          {built_in ? (
+            <Status tone="success">{Publr.t("Built in")}</Status>
+          ) : enabled ? (
+            <Status tone="success">{Publr.t("Enabled")}</Status>
+          ) : (
+            <Status tone="neutral">{Publr.t("Disabled")}</Status>
+          )}
           <Text as="span" variant="body-sm" tone="muted">
             {Publr.t("Version {version}", { version })}
           </Text>
         </div>
+      }
+      tabs={
+        <TabNav label={name}>
+          <TabNavLink href={"/admin/settings/plugins/" + name} active>
+            {Publr.t("Overview")}
+          </TabNavLink>
+          <TabNavLink href={log_href}>{Publr.t("Log")}</TabNavLink>
+        </TabNav>
       }
       notice={
         <>
@@ -127,29 +164,41 @@ export function Plugin({
               {Publr.t("This version keeps running until you review and apply it.")}
             </Callout>
           )}
+          {blocked.length > 0 && (
+            <Callout tone="warning" title={Publr.t("Can't be enabled")} items={blocked}>
+              {Publr.t("A plugin it needs is missing or does not fit. Update or replace it, then enable this one.")}
+            </Callout>
+          )}
+          {off.length > 0 && (
+            <Callout tone="warning" title={Publr.t("Switched off")} items={off}>
+              {Publr.t("These parts answer as unavailable and their hooks don't run until the other plugin fits. The rest works.")}
+            </Callout>
+          )}
+          {missing !== "" && (
+            <Callout tone="warning" title={Publr.t("Not set yet: {secrets}", { secrets: missing })}>
+              {built_in
+                ? Publr.t("Its requests that need them are refused until they are set. Set them under Settings, Secrets.")
+                : Publr.t("Its requests that need them are refused until they are set. Paste them under its outside requests below.")}
+            </Callout>
+          )}
           {about && <PluginAbout name={name}>{about}</PluginAbout>}
         </>
       }
     >
-      <IndexSection
-        title={Publr.t("This plugin wants to")}
-        empty={requests.length === 0 ? Publr.t("Nothing beyond its own operations and content types.") : undefined}
-      >
-        <PluginRequests csrf={Publr.request.session.csrf} action={decide_action} requests={requests} />
-      </IndexSection>
-      {show_access && (
-        <IndexSection padded title={Publr.t("Content access")}>
-          <form method="post" action={access_action} class="flex flex-col gap-4">
-            <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
-            <ContentAccess scope={scope} recommend={recommend} note={note} types={types} />
-            <div>
-              <Button type="submit" hierarchy="secondary">
-                {Publr.t("Save content access")}
-              </Button>
+      <form method="post" action={grants_action} class="contents">
+        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+        <IndexSection
+          title={Publr.t("This plugin wants to")}
+          empty={requests.length === 0 ? Publr.t("Nothing beyond its own operations and content types.") : undefined}
+        >
+          <PluginRequests requests={requests} />
+          {requests.length > 0 && !built_in && (
+            <div class="flex justify-end pt-4">
+              <Button type="submit" hierarchy="secondary">{Publr.t("Save permissions")}</Button>
             </div>
-          </form>
+          )}
         </IndexSection>
-      )}
+      </form>
       <PluginData action={removal_action} pieces={pieces} />
     </IndexPage>
   );

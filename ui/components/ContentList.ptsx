@@ -26,6 +26,7 @@ import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
 import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
 import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 import { DropdownMenuSearch } from "@publr/ui/DropdownMenuSearch.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
 
 export type ContentListProps = {
   csrf: string;
@@ -45,6 +46,15 @@ export type ContentListProps = {
   save_href: string;
   delete_href: string;
   rename_href: string;
+  /** A type's default view is open (its handle): saving changes saves where its list
+   * starts. Whether the caller saved their own, whether administrators saved everyone's. */
+  default_type: string;
+  own_default: boolean;
+  everyone_default: boolean;
+  /** Administrators save, copy and reset for everyone too. */
+  is_admin: boolean;
+  /** The saved view open was made for everyone: only administrators change it. */
+  view_shared: boolean;
   /** One record type in scope: a button; several: a menu of them. */
   new_href: string;
   new_label: string;
@@ -59,23 +69,27 @@ export type ContentListProps = {
   empty_text: string;
   /** How many records the filters match, every page together. */
   total: number;
-  /** The filters in force as `record.transition_many` takes them, to move every match. */
+  /** The filters in force as `record.transition_many` takes them, to transition every match. */
   match_type: string;
   match_types: string[];
   match_filters: string[];
   match_search: string;
-  /** The statuses records can be moved to, for the selection's actions: the action's name
+  /** The statuses records can change to, for the selection's actions: the action's name
    * and the status's. */
-  moves: Array<{ to: string; label: string; status: string }>;
+  transitions: Array<{ name: string; label: string; status: string }>;
   pages: Required<DataTableProps>["pages"];
   previous_href: string;
   next_href: string;
   range_text: string;
+  sort_options: Required<DataTableProps>["sort_options"];
+  direction_options: Required<DataTableProps>["direction_options"];
+  page_size_options: Required<DataTableProps>["page_size_options"];
+  properties: Required<DataTableProps>["properties"];
 };
 
 type Conditions = { type: string; types: string[]; filters: string[]; search: string };
 
-type Moved = {
+type Transitioned = {
   moved: number;
   not_moved: number;
   failed: Array<{ id: string; title: string; why: string }>;
@@ -92,12 +106,17 @@ export const state = Publr.reactive({
   save_href: "",
   delete_href: "",
   rename_href: "",
+  default_type: "",
+  own_default: false,
+  everyone_default: false,
+  is_admin: false,
+  view_shared: false,
   new_href: "",
   new_label: "",
   new_targets: [] as ContentListProps["new_targets"],
   conditions: { type: "", types: [], filters: [], search: "" } as Conditions,
-  moves: [] as ContentListProps["moves"],
-  moving: false,
+  transitions: [] as ContentListProps["transitions"],
+  transitioning: false,
   note: "",
   /** The table's selection, as its `datatableselectionchange` reports it. */
   selected_ids: [] as string[],
@@ -122,6 +141,11 @@ export const onDatatableload = (event: Event) => {
   state.save_href = event.detail.save_href;
   state.delete_href = event.detail.delete_href;
   state.rename_href = event.detail.rename_href;
+  state.default_type = event.detail.default_type;
+  state.own_default = event.detail.own_default;
+  state.everyone_default = event.detail.everyone_default;
+  state.is_admin = event.detail.is_admin;
+  state.view_shared = event.detail.view_shared;
   state.new_href = event.detail.new_href;
   state.new_label = event.detail.new_label;
   state.new_targets = event.detail.new_targets;
@@ -136,37 +160,37 @@ export const onDatatableselectionchange = (event: Event) => {
 
 /** The selection's records in one call: the ones ticked, or every match when the whole
  * of it is selected. */
-const move_selection = async (to: string): Promise<Moved> => {
+const transition_selection = async (transition: string): Promise<Transitioned> => {
   if (!state.all_matching) {
-    return (await send("record.transition_many", { to, ids: [...state.selected_ids] })) as Moved;
+    return (await send("record.transition_many", { transition, ids: [...state.selected_ids] })) as Transitioned;
   }
   const { type, types, filters, search } = state.conditions;
   return (await send("record.transition_many", {
-    to,
+    transition,
     matching: true,
     type: type || undefined,
     types,
     filters,
     search: search || undefined,
-  })) as Moved;
+  })) as Transitioned;
 };
 
 let note_timer: ReturnType<typeof setTimeout> | undefined = undefined;
 
-export const moveSelected = async (event: Event) => {
+export const transitionSelected = async (event: Event) => {
   const button = event.currentTarget as HTMLButtonElement;
-  const to = button.value;
-  const label = state.moves.find((move) => move.to === to)?.status ?? to;
-  if (!to || state.moving) return;
-  state.moving = true;
+  const name = button.value;
+  const label = state.transitions.find((transition) => transition.name === name)?.status ?? name;
+  if (!name || state.transitioning) return;
+  state.transitioning = true;
   clearTimeout(note_timer);
   try {
-    state.note = Publr.t("Moving…");
-    const done = await move_selection(to);
+    state.note = Publr.t("Changing status…");
+    const done = await transition_selection(name);
     state.note =
       done.not_moved === 0
-        ? Publr.tn("{count} moved to {status}", "{count} moved to {status}", done.moved, { status: label })
-        : Publr.tn("{count} moved to {status}, {failed} could not move: {why}", "{count} moved to {status}, {failed} could not move: {why}", done.moved, {
+        ? Publr.tn("{count} changed to {status}", "{count} changed to {status}", done.moved, { status: label })
+        : Publr.tn("{count} changed to {status}, {failed} could not change: {why}", "{count} changed to {status}, {failed} could not change: {why}", done.moved, {
             status: label,
             failed: done.not_moved,
             why: done.failed[0]?.why ?? "",
@@ -174,7 +198,7 @@ export const moveSelected = async (event: Event) => {
   } catch (error) {
     state.note = Publr.t("Not done: {reason}", { reason: (error as Error).message });
   } finally {
-    state.moving = false;
+    state.transitioning = false;
   }
   button.dispatchEvent(new CustomEvent("datatablereload", { bubbles: true }));
   clearTimeout(note_timer);
@@ -199,6 +223,11 @@ export function ContentList({
   save_href,
   delete_href,
   rename_href,
+  default_type,
+  own_default,
+  everyone_default,
+  is_admin,
+  view_shared,
   new_href,
   new_label,
   new_targets,
@@ -215,11 +244,15 @@ export function ContentList({
   match_types,
   match_filters,
   match_search,
-  moves,
+  transitions,
   pages,
   previous_href,
   next_href,
   range_text,
+  sort_options,
+  direction_options,
+  page_size_options,
+  properties,
 }: ContentListProps) {
   state.title = title;
   state.shown_text = shown_text;
@@ -231,6 +264,11 @@ export function ContentList({
   state.save_href = save_href;
   state.delete_href = delete_href;
   state.rename_href = rename_href;
+  state.default_type = default_type;
+  state.own_default = own_default;
+  state.everyone_default = everyone_default;
+  state.is_admin = is_admin;
+  state.view_shared = view_shared;
   state.new_href = new_href;
   state.new_label = new_label;
   state.new_targets = new_targets;
@@ -240,7 +278,7 @@ export function ContentList({
     filters: match_filters,
     search: match_search,
   };
-  state.moves = moves;
+  state.transitions = transitions;
 
   return (
     <div
@@ -263,21 +301,25 @@ export function ContentList({
         previous_href={previous_href}
         next_href={next_href}
         range_text={range_text}
+        sort_options={sort_options}
+        direction_options={direction_options}
+        page_size_options={page_size_options}
+        properties={properties}
         selectable
         bulk={
           <BulkActions>
-            {state.moves.map((move) => (
-              <span key={move.to} class="contents">
-                {move.to !== "deleted" && (
-                  <BulkActionsItem value={move.to} onClick={moveSelected} disabled={state.moving}>
-                    {move.label}
+            {state.transitions.map((transition) => (
+              <span key={transition.name} class="contents">
+                {transition.name !== "trash" && (
+                  <BulkActionsItem value={transition.name} onClick={transitionSelected} disabled={state.transitioning}>
+                    {transition.label}
                   </BulkActionsItem>
                 )}
               </span>
             ))}
             <BulkActionsSeparator />
-            {state.moves.some((move) => move.to === "deleted") && (
-              <BulkActionsItem variant="destructive" value="deleted" onClick={moveSelected} disabled={state.moving}>
+            {state.transitions.some((transition) => transition.name === "trash") && (
+              <BulkActionsItem variant="destructive" value="trash" onClick={transitionSelected} disabled={state.transitioning}>
                 <Icon name="trash" size="xs" />
                 {Publr.t("Delete")}
               </BulkActionsItem>
@@ -350,19 +392,38 @@ export function ContentList({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="right">
-                    {is_saved && (
-                      <span class="contents">
-                        {state.view_changed && (
-                          <form method="post" action={state.save_href}>
-                            <input type="hidden" name="csrf" value={csrf} />
-                            <input type="hidden" name="filters" value={state.filters_query} />
-                            <DropdownMenuItem type="submit">
-                              <Icon name="bookmark" size="sm" />
-                              {Publr.t("Save changes to this view")}
-                            </DropdownMenuItem>
-                          </form>
-                        )}
-                      </span>
+                    {state.is_saved && state.view_changed && (!state.view_shared || state.is_admin) && (
+                      <form method="post" action={state.save_href}>
+                        <input type="hidden" name="csrf" value={csrf} />
+                        <input type="hidden" name="filters" value={state.filters_query} />
+                        <DropdownMenuItem type="submit">
+                          <Icon name="bookmark" size="sm" />
+                          {Publr.t("Save changes to this view")}
+                        </DropdownMenuItem>
+                      </form>
+                    )}
+                    {state.default_type !== "" && state.view_changed && (
+                      <form method="post" action="/admin/default-views/save">
+                        <input type="hidden" name="csrf" value={csrf} />
+                        <input type="hidden" name="type" value={state.default_type} />
+                        <input type="hidden" name="filters" value={state.filters_query} />
+                        <DropdownMenuItem type="submit">
+                          <Icon name="bookmark" size="sm" />
+                          {state.is_admin ? Publr.t("Save changes just for me") : Publr.t("Save changes")}
+                        </DropdownMenuItem>
+                      </form>
+                    )}
+                    {state.default_type !== "" && state.view_changed && state.is_admin && (
+                      <form method="post" action="/admin/default-views/save">
+                        <input type="hidden" name="csrf" value={csrf} />
+                        <input type="hidden" name="type" value={state.default_type} />
+                        <input type="hidden" name="filters" value={state.filters_query} />
+                        <input type="hidden" name="for_everyone" value="1" />
+                        <DropdownMenuItem type="submit">
+                          <Icon name="users" size="sm" />
+                          {Publr.t("Save changes for everyone")}
+                        </DropdownMenuItem>
+                      </form>
                     )}
                     <DialogTrigger asChild>
                       <DropdownMenuItem>
@@ -382,7 +443,28 @@ export function ContentList({
                         {Publr.t("Clear changes")}
                       </DropdownMenuItem>
                     )}
-                    {state.is_saved && (
+                    {state.default_type !== "" && state.own_default && (
+                      <form method="post" action="/admin/default-views/reset">
+                        <input type="hidden" name="csrf" value={csrf} />
+                        <input type="hidden" name="type" value={state.default_type} />
+                        <DropdownMenuItem type="submit">
+                          <Icon name="reset" size="sm" />
+                          {Publr.t("Reset to default")}
+                        </DropdownMenuItem>
+                      </form>
+                    )}
+                    {state.default_type !== "" && state.everyone_default && state.is_admin && (
+                      <form method="post" action="/admin/default-views/reset">
+                        <input type="hidden" name="csrf" value={csrf} />
+                        <input type="hidden" name="type" value={state.default_type} />
+                        <input type="hidden" name="for_everyone" value="1" />
+                        <DropdownMenuItem type="submit">
+                          <Icon name="reset" size="sm" />
+                          {Publr.t("Reset to default for everyone")}
+                        </DropdownMenuItem>
+                      </form>
+                    )}
+                    {state.is_saved && (!state.view_shared || state.is_admin) && (
                       <form method="post" action={state.delete_href}>
                         <input type="hidden" name="csrf" value={csrf} />
                         <DropdownMenuItem type="submit" variant="destructive">
@@ -396,7 +478,9 @@ export function ContentList({
                 <DialogContent>
                   <DialogTitle>{state.is_saved ? Publr.t("New view") : Publr.t("Copy view")}</DialogTitle>
                   <DialogDescription>
-                    {Publr.t("The filters in force are saved under this name, for you alone.")}
+                    {state.is_admin
+                      ? Publr.t("The view as it is now is saved under this name, for you or for everyone.")
+                      : Publr.t("The view as it is now is saved under this name, for you alone.")}
                   </DialogDescription>
                   <form method="post" action="/admin/views/create">
                     <input type="hidden" name="csrf" value={csrf} />
@@ -411,6 +495,15 @@ export function ContentList({
                         maxLength={80}
                       />
                     </Field>
+                    {state.is_admin && (
+                      <Field classes="mt-4">
+                        <FieldLabel htmlFor="new-view-for">{Publr.t("Who sees it")}</FieldLabel>
+                        <NativeSelect id="new-view-for" name="for_everyone" size="md">
+                          <option value="0">{Publr.t("Just for me")}</option>
+                          <option value="1">{Publr.t("For everyone")}</option>
+                        </NativeSelect>
+                      </Field>
+                    )}
                     <div class="mt-5 flex justify-end gap-2">
                       <DialogClose asChild>
                         <Button type="button" hierarchy="secondary">

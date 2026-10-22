@@ -1,5 +1,5 @@
 import { Publr } from "publr-jsx";
-import { call } from "publr/operations";
+import { call, Refused } from "publr/operations";
 import { EditorAsideSection } from "./EditorAsideSection.ptsx";
 import { FormBody } from "./FormBody.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
@@ -27,18 +27,25 @@ export const state = Publr.reactive({
   fields: [] as Field[],
   status: Publr.t("All changes saved"),
   busy: false,
+  /** What the last save's refusal said of each field, by its name. */
+  problems: {} as Record<string, string>,
 });
 
 const saveForm = call(() => state.save);
 
-/** The status line follows the save: saving, its refusal, or saved. */
+/** The status line follows the save: saving, its refusal, or saved; a refused input puts
+ * each problem under its field. */
 Publr.effect(() => {
   state.busy = saveForm.isPending;
+  const refused = saveForm.isError && saveForm.error instanceof Refused ? saveForm.error.problems : [];
+  state.problems = Object.fromEntries(refused.map((problem) => [problem.field, problem.message]));
   state.status = state.busy
     ? Publr.t("Saving…")
-    : saveForm.isError
-      ? Publr.t("Not saved: {reason}", { reason: (saveForm.error as Error).message })
-      : Publr.t("All changes saved");
+    : refused.length > 0
+      ? Publr.t("Not saved: check the marked fields")
+      : saveForm.isError
+        ? Publr.t("Not saved: {reason}", { reason: (saveForm.error as Error).message })
+        : Publr.t("All changes saved");
 });
 
 export const typed = (event: Event) => {
@@ -64,6 +71,7 @@ export function OperationForm({ title, operation, fields, note = "" }: Operation
   state.fields = fields;
   state.status = Publr.t("All changes saved");
   state.busy = false;
+  state.problems = {};
 
   return (
     <div class="flex grow flex-col" data-part="operation-form" onInput={typed} onChange={typed}>
@@ -80,7 +88,7 @@ export function OperationForm({ title, operation, fields, note = "" }: Operation
         <div class="flex flex-col gap-7">
           {state.fields.map((field) => (
             <FieldRow key={field.name} label={field.label} htmlFor={`field-${field.name}`}
-              required={field.required} description={field.help}>
+              required={field.required} description={field.help} error={state.problems[field.name] ?? ""}>
               {field.kind === "text" && <Textarea id={`field-${field.name}`} name={field.name} value={field.value} rows={8} />}
               {field.kind === "boolean" && <Switch id={`field-${field.name}`} name={field.name} checked={field.value === "true"} />}
               {field.kind === "string" && (

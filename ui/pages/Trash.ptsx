@@ -68,7 +68,7 @@ export function Trash({ entries, keep_days, range, previous_href, next_href, not
           </form>
           <Text as="p" variant="body-sm" tone="muted">
             {Publr.t("Deleted records and terms wait in their own lists:")}{" "}
-            <Link href="/admin/content?status=is:deleted">{Publr.t("records in the trash")}</Link>.
+            <Link href="/admin/content?status=is:trashed">{Publr.t("records in the trash")}</Link>.
           </Text>
         </div>
       }

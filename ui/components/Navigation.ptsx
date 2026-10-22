@@ -157,6 +157,12 @@ const navigation = Publr.createStore(
           if (shared.references.length) references?.to(target);
           else structure?.to(target);
         },
+        /** One step back in the browser's history; the link's own address when there is none. */
+        goBack(_data: unknown = {}, context?: { event: Event }) {
+          if (window.history.length <= 1) return;
+          context?.event.preventDefault();
+          window.history.back();
+        },
         rename(root: HTMLElement | null, title: string) {
           if (!root) return;
           const level = shared.references.find((level) => level.panel?.contains(root));

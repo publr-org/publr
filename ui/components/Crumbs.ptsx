@@ -20,51 +20,51 @@ export function Crumbs({ title, parents }: CrumbsProps) {
       <Breadcrumb>
         <BreadcrumbList>
           {Publr.request.admin.area === "overview" && (
-            <BreadcrumbItem>
+            <BreadcrumbItem classes="shrink-0">
               <BreadcrumbPage>{Publr.t("Overview")}</BreadcrumbPage>
             </BreadcrumbItem>
           )}
           {Publr.request.admin.area === "content" && (
-            <BreadcrumbItem>
+            <BreadcrumbItem classes="shrink-0">
               <BreadcrumbLink href="/admin/content">{Publr.t("Content")}</BreadcrumbLink>
             </BreadcrumbItem>
           )}
           {Publr.request.admin.area === "media" && title === "Media" && (
-            <BreadcrumbItem>
+            <BreadcrumbItem classes="shrink-0">
               <BreadcrumbPage>{Publr.t("Media")}</BreadcrumbPage>
             </BreadcrumbItem>
           )}
           {Publr.request.admin.area === "media" && title !== "Media" && (
-            <BreadcrumbItem>
+            <BreadcrumbItem classes="shrink-0">
               <BreadcrumbLink href="/admin/media">{Publr.t("Media")}</BreadcrumbLink>
             </BreadcrumbItem>
           )}
           {Publr.request.admin.area === "design" && (
-            <BreadcrumbItem>
+            <BreadcrumbItem classes="shrink-0">
               <BreadcrumbLink href="/admin/design/system">{Publr.t("Design")}</BreadcrumbLink>
             </BreadcrumbItem>
           )}
           {Publr.request.admin.area === "section" && (
-            <BreadcrumbItem>
+            <BreadcrumbItem classes="shrink-0">
               <BreadcrumbLink href={Publr.request.admin.section_href}>{Publr.request.admin.section}</BreadcrumbLink>
             </BreadcrumbItem>
           )}
           {Publr.request.admin.area === "settings" && (
-            <BreadcrumbItem>
+            <BreadcrumbItem classes="shrink-0">
               <BreadcrumbLink href="/admin/settings">{Publr.t("Settings")}</BreadcrumbLink>
             </BreadcrumbItem>
           )}
           {parents.map((parent) => (
-            <BreadcrumbItem separated>
+            <BreadcrumbItem separated classes="shrink-0">
               <BreadcrumbLink href={parent.href}>{parent.label}</BreadcrumbLink>
             </BreadcrumbItem>
           ))}
           {Publr.request.admin.area !== "overview" && (Publr.request.admin.area !== "media" || title !== "Media") && (
             <BreadcrumbItem separated>
-              <span hidden={(Publr.stores.navigation as NavigationStore).open}>
+              <span class="flex min-w-0" hidden={(Publr.stores.navigation as NavigationStore).open}>
                 <BreadcrumbPage>{title}</BreadcrumbPage>
               </span>
-              <span hidden={!(Publr.stores.navigation as NavigationStore).open}>
+              <span class="flex min-w-0" hidden={!(Publr.stores.navigation as NavigationStore).open}>
                 <BreadcrumbLink
                   href="#"
                   onClick={(Publr.stores.navigation as NavigationStore).back}
@@ -78,10 +78,10 @@ export function Crumbs({ title, parents }: CrumbsProps) {
           )}
           {(Publr.stores.navigation as NavigationStore).levels.map((level) => (
             <BreadcrumbItem key={level.depth} separated data-part="drawer-crumb-row">
-              <span hidden={!level.top}>
+              <span class="flex min-w-0" hidden={!level.top}>
                 <BreadcrumbPage>{level.title}</BreadcrumbPage>
               </span>
-              <span hidden={level.top}>
+              <span class="flex min-w-0" hidden={level.top}>
                 <BreadcrumbLink
                   href="#"
                   onClick={(Publr.stores.navigation as NavigationStore).back}

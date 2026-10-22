@@ -1,4 +1,5 @@
 import { Publr } from "publr-jsx";
+import { PluginTour } from "./PluginTour.ptsx";
 
 export const frame_ref = Publr.ref<HTMLIFrameElement>();
 export const state = Publr.reactive({
@@ -86,15 +87,33 @@ export async function answer(
   }
 }
 
+/** The plugin's own log lines after `after`, newest first: what its code logged as it ran,
+ * read as the person looking. Only its own plugin's. */
+export async function log(frame: HTMLIFrameElement, id: number, after: number, plugin: string, csrf: string) {
+  try {
+    const answer = (await run("plugin.log", { name: plugin, limit: 50 }, csrf)) as {
+      lines?: Array<{ id: number }>;
+    };
+    const lines = (answer.lines ?? []).filter((line) => line.id > after);
+    reply(frame, { id, ok: true, value: { lines } });
+  } catch (error) {
+    reply(frame, { id, ok: false, error: (error as Error).message });
+  }
+}
+
 export const received = (event: MessageEvent) => {
   const frame = frame_ref.current;
   const message = event.data;
   if (!frame || event.source !== frame.contentWindow || !message || message.publr !== 1) return;
+  if (message.kind === "hello") reply(frame, { kind: "ready" });
   if (message.kind === "height") state.height = Math.min(Math.max(Number(message.height) || 0, 0), 100000);
   if (message.kind === "navigate") go(String(message.to));
   const id = Number(message.id);
   if (message.kind === "call") answer(frame, id, String(message.operation), message.input, state.operations, state.csrf);
   if (message.kind === "query") read(frame, id, String(message.query), message.params, state.plugin, state.csrf);
+  if (message.kind === "log") log(frame, id, Number(message.after) || 0, state.plugin, state.csrf);
+  // To the tour player beside it: a message to this window, which only the admin sends.
+  if (message.kind === "tour") window.postMessage({ publr_tour: message.steps }, location.origin);
 };
 
 export type PluginFrameProps = {
@@ -117,14 +136,17 @@ export function PluginFrame({ src, title, plugin, page, csrf, operations }: Plug
   state.operations = operations;
   state.height = 0;
   return (
-    <iframe
-      ref={frame_ref}
-      src={src}
-      title={title}
-      sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
-      class="block min-h-full w-full flex-1 border-0"
-      style={state.height > 0 ? `height:${state.height}px` : ""}
-      onWindowMessage={received}
-    ></iframe>
+    <div class="contents">
+      <iframe
+        ref={frame_ref}
+        src={src}
+        title={title}
+        sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+        class="block min-h-full w-full flex-1 border-0"
+        style={state.height > 0 ? `height:${state.height}px` : ""}
+        onWindowMessage={received}
+      ></iframe>
+      <PluginTour />
+    </div>
   );
 }

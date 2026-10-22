@@ -12,7 +12,7 @@ import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { TalkKey } from "../components/TalkKey.ptsx";
 import { ProviderKey } from "../components/ProviderKey.ptsx";
-import { ProviderPicker } from "../components/ProviderPicker.ptsx";
+import { OfferedProviders } from "../components/OfferedProviders.ptsx";
 
 export type SettingsAiProps = {
   /** The providers installed, the one in use first. */
@@ -31,17 +31,13 @@ export type SettingsAiProps = {
     /** What it asks for (sending requests out, its key) waits for approval. */
     pending: boolean;
   }>;
-  /** The official providers that can be set up in a click. */
-  offered: Array<{ name: string; label: string; summary: string }>;
-  /** Whether Publr's plugin server answered with its list. */
-  reached: boolean;
   notice: string;
   problem: string;
 };
 
 /** Models on the project's own keys: the providers installed, each with its key, its
  * model and a test; the one conversations use; and the ones that can be set up. */
-export function SettingsAi({ providers, offered, reached, notice, problem }: SettingsAiProps) {
+export function SettingsAi({ providers, notice, problem }: SettingsAiProps) {
   return (
     <FormPage
       title={Publr.t("AI")}
@@ -54,11 +50,6 @@ export function SettingsAi({ providers, offered, reached, notice, problem }: Set
             </Callout>
           )}
           {notice !== "" && <Callout title={notice} />}
-          {!reached && (
-            <Callout tone="warning" title={Publr.t("Publr's plugin server could not be reached")}>
-              {Publr.t("Try again later, or upload a provider's .wasm under Plugins.")}
-            </Callout>
-          )}
         </div>
       }
     >
@@ -130,12 +121,7 @@ export function SettingsAi({ providers, offered, reached, notice, problem }: Set
           </Card>
         ))}
         {providers.length > 0 && <TalkKey />}
-        {offered.length > 0 && (
-          <div class="flex flex-col gap-3">
-            <SectionTitle title={providers.length === 0 ? Publr.t("Pick your providers") : Publr.t("Add another")} />
-            <ProviderPicker offered={offered} />
-          </div>
-        )}
+        <OfferedProviders title={providers.length === 0 ? Publr.t("Pick your providers") : Publr.t("Add another")} />
       </div>
     </FormPage>
   );

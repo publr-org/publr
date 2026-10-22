@@ -1,38 +1,65 @@
 import { Publr } from "publr-jsx";
-import { Button } from "@publr/ui/Button.ptsx";
 import { Code } from "@publr/ui/Code.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
+import { Switch } from "@publr/ui/Switch.ptsx";
 import { Table } from "@publr/ui/Table.ptsx";
 import { TableBody } from "@publr/ui/TableBody.ptsx";
 import { TableCell } from "@publr/ui/TableCell.ptsx";
 import { TableRow } from "@publr/ui/TableRow.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
+import { Textarea } from "@publr/ui/Textarea.ptsx";
 
 export type PluginRequestsProps = {
-  csrf: string;
-  /** Where Grant, Revoke and Deny post; empty for a list without buttons. */
-  action: string;
   requests: Array<{
     key: string;
     sentence: string;
     /** The plugin's own reason, as it wrote it. */
     reason: string;
-    /** `low`, `medium` or `high`. */
+    /** `low`, `medium` or `high`, with the flags on now. */
     tier: string;
-    /** `granted`, `pending`, `denied` or `unavailable`; empty on an install page. */
+    /** `granted`, `pending`, `denied` or `unavailable`. */
     state: string;
-    /** A line under the key: the domains a fetch may reach, what an unavailable key needs. */
+    /** A line under the key: the types it names, the domains a fetch may reach, what an
+     * unavailable key needs. */
     note: string;
-    can_grant: boolean;
-    can_revoke: boolean;
-    can_deny: boolean;
+    /** Whether the key is switched on: granted. */
+    on: boolean;
+    /** Whether the switches show: a form around the table posts them. */
+    editable: boolean;
+    /** Each flag it asked for, as set now. */
+    flags: Array<{ name: string; label: string; on: boolean }>;
+    /** `http.fetch`: it takes domains, shown in a box to edit when editable. */
+    takes_domains: boolean;
+    /** Its domains as set now, one a line. */
+    domains: string;
+    /** `*` is among them: it can reach any address on the internet. */
+    anywhere: boolean;
+    /** `http.fetch`: the secrets the plugin declares, which its requests carry. */
+    secrets: Array<{
+      name: string;
+      label: string;
+      /** Where to find it, as the plugin says. */
+      help: string;
+      set: boolean;
+      /** "Set", or "Set, shared with ai_openai" when other plugins name it too. */
+      status: string;
+    }>;
   }>;
 };
 
 /** What a plugin wants to do, one request a row of a table under its section's heading: what
- * it would do, why ("because it: ..."), the permission's key; then how risky it is, where it
- * stands, and a button for each change an administrator may make. */
-export function PluginRequests({ csrf, action, requests }: PluginRequestsProps) {
+ * it would do, why ("because it: ..."), the types it names, the permission's key; then how
+ * risky it is with the flags on now, where it stands, and (editable) a switch for the key and
+ * one for each flag it asked for, set as asked. The form around the table posts them: `keys`
+ * names every row, `on` the keys switched on, each flag's name the keys it is on for, and
+ * `domains` the box of domains `http.fetch` may reach, one a line. Under `http.fetch`, a field
+ * for each secret the plugin declares, posted as `secret:<NAME>`: optional, write-only ("Set"
+ * with Replace, never the value). */
+export function PluginRequests({ requests }: PluginRequestsProps) {
   return (
     <Table>
       <TableBody>
@@ -48,6 +75,74 @@ export function PluginRequests({ csrf, action, requests }: PluginRequestsProps) 
                   <Code>{request.key}</Code>
                   {request.note !== "" && <Text as="span" variant="body-xs" tone="muted">{request.note}</Text>}
                 </div>
+                {request.anywhere && (
+                  <Text as="p" variant="body-sm" tone="warning">
+                    {Publr.t("Can send data to any address on the internet")}
+                  </Text>
+                )}
+                {request.editable && (
+                  <div class="flex flex-col gap-2 pt-2">
+                    <input type="hidden" name="keys" value={request.key} />
+                    {request.flags.map((flag) => (
+                      <label class="flex items-center gap-2" data-flag={flag.name}>
+                        <Switch name={flag.name} value={request.key} checked={flag.on} />
+                        <Text as="span" variant="body-sm">{flag.label}</Text>
+                      </label>
+                    ))}
+                    {request.takes_domains && (
+                      <Field>
+                        <FieldLabel htmlFor="domains">{Publr.t("Domains it may reach, one per line")}</FieldLabel>
+                        <Textarea id="domains" name="domains" value={request.domains} rows={3} placeholder={"api.example.com"} />
+                        <Text as="p" variant="body-xs" tone="muted">
+                          {Publr.t("A name like api.example.com; *.example.com for every name under it; * for any address on the internet.")}
+                        </Text>
+                      </Field>
+                    )}
+                  </div>
+                )}
+                {request.secrets.length > 0 && (
+                  <div class="flex flex-col gap-3 pt-2" data-part="secrets">
+                    {request.secrets.map((secret) => (
+                      <Field>
+                        <FieldLabel htmlFor={"secret-" + secret.name}>{secret.label}</FieldLabel>
+                        {secret.help !== "" && <FieldDescription>{secret.help}</FieldDescription>}
+                        <div class="flex flex-wrap items-center gap-2" data-secret={secret.name}>
+                          <Code>{secret.name}</Code>
+                          {secret.set ? (
+                            <Status tone="success">{secret.status}</Status>
+                          ) : (
+                            <Status tone="warning">{Publr.t("Not set")}</Status>
+                          )}
+                        </div>
+                        {request.editable && !secret.set && (
+                          <Input
+                            type="password"
+                            id={"secret-" + secret.name}
+                            name={"secret:" + secret.name}
+                            autocomplete="off"
+                            placeholder={Publr.t("Optional: paste it now or later")}
+                          />
+                        )}
+                        {request.editable && secret.set && (
+                          <details data-part="replace">
+                            <summary class="inline-flex cursor-pointer">
+                              <Text as="span" variant="body-sm">{Publr.t("Replace")}</Text>
+                            </summary>
+                            <div class="pt-2">
+                              <Input
+                                type="password"
+                                id={"secret-" + secret.name}
+                                name={"secret:" + secret.name}
+                                autocomplete="off"
+                                placeholder={Publr.t("Paste a new value")}
+                              />
+                            </div>
+                          </details>
+                        )}
+                      </Field>
+                    ))}
+                  </div>
+                )}
               </div>
             </TableCell>
             <TableCell align="right">
@@ -63,29 +158,11 @@ export function PluginRequests({ csrf, action, requests }: PluginRequestsProps) 
                 {request.state === "pending" && <Status tone="review">{Publr.t("Pending")}</Status>}
                 {request.state === "denied" && <Status tone="error">{Publr.t("Denied")}</Status>}
                 {request.state === "unavailable" && <Status tone="neutral">{Publr.t("Unavailable")}</Status>}
-                {action !== "" && request.can_grant && (
-                  <form method="post" action={action}>
-                    <input type="hidden" name="csrf" value={csrf} />
-                    <input type="hidden" name="key" value={request.key} />
-                    <input type="hidden" name="change" value="grant" />
-                    <Button type="submit" size="sm" hierarchy="secondary">{Publr.t("Grant")}</Button>
-                  </form>
-                )}
-                {action !== "" && request.can_revoke && (
-                  <form method="post" action={action}>
-                    <input type="hidden" name="csrf" value={csrf} />
-                    <input type="hidden" name="key" value={request.key} />
-                    <input type="hidden" name="change" value="revoke" />
-                    <Button type="submit" size="sm" hierarchy="secondary">{Publr.t("Revoke")}</Button>
-                  </form>
-                )}
-                {action !== "" && request.can_deny && (
-                  <form method="post" action={action}>
-                    <input type="hidden" name="csrf" value={csrf} />
-                    <input type="hidden" name="key" value={request.key} />
-                    <input type="hidden" name="change" value="deny" />
-                    <Button type="submit" size="sm" hierarchy="tertiary">{Publr.t("Deny")}</Button>
-                  </form>
+                {request.editable && (
+                  <label class="flex items-center gap-2" data-switch="key">
+                    <Text as="span" variant="body-sm">{Publr.t("Allowed")}</Text>
+                    <Switch name="on" value={request.key} checked={request.on} />
+                  </label>
                 )}
               </div>
             </TableCell>

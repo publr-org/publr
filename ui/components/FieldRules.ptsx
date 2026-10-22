@@ -14,7 +14,9 @@ import { WordsRule } from "./FieldRules/WordsRule.ptsx";
 import { LengthRule } from "./FieldRules/LengthRule.ptsx";
 import { ItemsRule } from "./FieldRules/ItemsRule.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { FieldRow } from "@publr/ui/FieldRow.ptsx";
 import { Heading } from "@publr/ui/Heading.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
 
 /** The validation rules of one field, each a checkbox that reveals its bounds and
  * custom message while ticked. Which rules appear is the kind's (its descriptor's
@@ -28,6 +30,9 @@ export type FieldRulesProps = {
   required?: boolean;
   can_unique?: boolean;
   unique?: boolean;
+  /** The field's own rules line, and the one its rules write when it has none. */
+  hint?: string;
+  hint_default?: string;
   has_length?: boolean;
   limit_length?: boolean;
   min_len?: string;
@@ -106,6 +111,8 @@ export function FieldRules({
   required = false,
   can_unique = false,
   unique = false,
+  hint = "",
+  hint_default = "",
   has_length = false,
   limit_length = false,
   min_len = "",
@@ -332,6 +339,15 @@ export function FieldRules({
             dimensions_message={dimensions_message}
           />
         )}
+        <FieldRow
+          label={Publr.t("Rules hint")}
+          htmlFor="hint"
+          description={Publr.t("Shown beside the help. Left empty, the rules above are written out. A bound goes in as {bounds}.", {
+            bounds: "{min_len} {max_len} {min} {max} {items_min} {items_max} {words_min} {words_max}",
+          })}
+        >
+          <Input id="hint" name="hint" value={hint} placeholder={hint_default} maxLength={255} />
+        </FieldRow>
       </div>
     </section>
   );

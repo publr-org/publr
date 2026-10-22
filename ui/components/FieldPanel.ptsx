@@ -66,6 +66,11 @@ export type FieldPanelProps = {
   /** Only string, text and richtext fields can be searched. */
   can_search: boolean;
   searchable: boolean;
+  /** Whether lists may filter and sort by the field, where its kind can. */
+  can_filter: boolean;
+  filterable: boolean;
+  can_sort: boolean;
+  sortable: boolean;
   /** The site has a second language (or another variant): the field may hold a value in
    * each. The setting's words are the plugin's: `Translate`. */
   can_translate?: boolean;
@@ -139,6 +144,10 @@ export function FieldPanel({
   many,
   can_search,
   searchable,
+  can_filter,
+  filterable,
+  can_sort,
+  sortable,
   can_translate = false,
   translates = false,
   translate_label = "",
@@ -207,7 +216,7 @@ export function FieldPanel({
             is_new={is_new}
           />
           {can_be_many && <FieldMultiplicity many={many} is_new={is_new} />}
-          {(can_title || can_search || can_translate || has_target || has_taxonomy || has_source || has_choices) && (
+          {(can_title || can_search || can_filter || can_sort || can_translate || has_target || has_taxonomy || has_source || has_choices) && (
             <FieldSettings
               can_translate={can_translate}
               translates={translates}
@@ -218,6 +227,10 @@ export function FieldPanel({
               is_title={is_title}
               can_search={can_search}
               searchable={searchable}
+              can_filter={can_filter}
+              filterable={filterable}
+              can_sort={can_sort}
+              sortable={sortable}
               has_target={has_target}
               targets={targets}
               has_taxonomy={has_taxonomy}

@@ -10,7 +10,7 @@ import { MultiSelectItem } from "@publr/ui/MultiSelectItem.ptsx";
 import { PanelTab } from "@publr/ui/PanelTab.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
-import { onLayoutTab } from "../RecordEditor.ptsx";
+import { onLayoutTab, state as editor } from "../RecordEditor.ptsx";
 import { RecordGroup } from "./RecordGroup.ptsx";
 import { RecordMany } from "./RecordMany.ptsx";
 import { RecordList } from "./RecordList.ptsx";
@@ -32,6 +32,8 @@ export type RecordFieldsProps = {
     required: boolean;
     /** The line shown under the control, from the field's definition; empty for none. */
     help: string;
+    /** The field's rules written out (or its own hint), beside the help; empty for none. */
+    hint: string;
     /** A group or repeater folded away until opened. */
     collapsed: boolean;
     /** A group past the fold, drawn without its parts: its value rides in `json_value`
@@ -260,6 +262,8 @@ export function RecordFields({
           htmlFor={`field-${field.name}`}
           required={field.required}
           description={field.help}
+          hint={field.hint}
+          error={editor.problems[field.name] ?? ""}
         >
         {field.shape === "tab" && <PanelTab id={`layout-tab-${field.name}`}
           panel={`layout-panel-${field.name}`} selected={false} label={field.label} onClick={onLayoutTab} />}

@@ -1,7 +1,6 @@
 import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { ConfirmAction } from "../components/ConfirmAction.ptsx";
-import { ContentAccess } from "../components/ContentAccess.ptsx";
 import { IndexSection } from "../components/IndexSection.ptsx";
 import { PluginRequests } from "../components/PluginRequests.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
@@ -27,9 +26,13 @@ export type PluginReviewProps = {
     tier: string;
     state: string;
     note: string;
-    can_grant: boolean;
-    can_revoke: boolean;
-    can_deny: boolean;
+    on: boolean;
+    editable: boolean;
+    flags: Array<{ name: string; label: string; on: boolean }>;
+    takes_domains: boolean;
+    domains: string;
+    anywhere: boolean;
+    secrets: Array<{ name: string; label: string; help: string; set: boolean; status: string }>;
   }>;
   /** On an update, what it holds already. */
   granted: Array<{
@@ -39,22 +42,27 @@ export type PluginReviewProps = {
     tier: string;
     state: string;
     note: string;
-    can_grant: boolean;
-    can_revoke: boolean;
-    can_deny: boolean;
+    on: boolean;
+    editable: boolean;
+    flags: Array<{ name: string; label: string; on: boolean }>;
+    takes_domains: boolean;
+    domains: string;
+    anywhere: boolean;
+    secrets: Array<{ name: string; label: string; help: string; set: boolean; status: string }>;
   }>;
   /** What allowing grants, in a sentence. */
   note_text: string;
-  /** Whether it asks for content: then the content access choice comes with enabling. */
-  show_access: boolean;
-  scope: string;
-  recommend: string;
-  note: string;
-  types: Array<{ handle: string; name: string; checked: boolean }>;
+  /** What stops it, each in plain words: plugins it needs that do not fit (enabling), or
+   * enabled plugins that need the version running now (updating). Allow is hidden. */
+  stops_title: string;
+  stops: Array<{ code: string; text: string }>;
+  /** On an update, the remotes of other plugins it would switch off. */
+  switches_off: Array<{ code: string; text: string }>;
 };
 
 /** What enabling or updating a plugin grants, before it is done: every request with the
- * plugin's reason and risk, low to high; allowed from the title band. */
+ * plugin's reason and risk, low to high, and (enabling) a switch for each key and each flag
+ * it asked for, set as asked; allowed from the title band with what is left on. */
 export function PluginReview({
   title,
   summary,
@@ -66,11 +74,9 @@ export function PluginReview({
   requests,
   granted,
   note_text,
-  show_access,
-  scope,
-  recommend,
-  note,
-  types,
+  stops_title,
+  stops,
+  switches_off,
 }: PluginReviewProps) {
   return (
     <IndexPage
@@ -91,30 +97,35 @@ export function PluginReview({
           {cancel_href !== "" && (
             <Button href={cancel_href} hierarchy="secondary">{Publr.t("Cancel")}</Button>
           )}
-          <Button type="submit" form="plugin-review">{allow_label}</Button>
+          {stops.length === 0 && <Button type="submit" form="plugin-review">{allow_label}</Button>}
         </div>
       }
-      notice={<Callout title={Publr.t("Nothing changes until you allow it")}>{note_text}</Callout>}
+      notice={
+        <>
+          {stops.length > 0 && <Callout tone="warning" title={stops_title} items={stops} />}
+          {switches_off.length > 0 && (
+            <Callout tone="warning" title={Publr.t("This switches off parts of other plugins")} items={switches_off}>
+              {Publr.t("Their calls to these answer as unavailable and their hooks don't run. The rest of each plugin works.")}
+            </Callout>
+          )}
+          <Callout title={Publr.t("Nothing changes until you allow it")}>{note_text}</Callout>
+        </>
+      }
     >
-      <IndexSection
-        title={requests_title}
-        empty={requests.length === 0 ? Publr.t("Nothing beyond its own operations and content types.") : undefined}
-      >
-        <PluginRequests csrf={Publr.request.session.csrf} action="" requests={requests} />
-      </IndexSection>
-      {granted.length > 0 && (
-        <IndexSection title={Publr.t("It already may")}>
-          <PluginRequests csrf={Publr.request.session.csrf} action="" requests={granted} />
-        </IndexSection>
-      )}
       <form id="plugin-review" method="post" action={action} class="contents">
         <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
-        {show_access && (
-          <IndexSection padded title={Publr.t("Content access")}>
-            <ContentAccess scope={scope} recommend={recommend} note={note} types={types} />
-          </IndexSection>
-        )}
+        <IndexSection
+          title={requests_title}
+          empty={requests.length === 0 ? Publr.t("Nothing beyond its own operations and content types.") : undefined}
+        >
+          <PluginRequests requests={requests} />
+        </IndexSection>
       </form>
+      {granted.length > 0 && (
+        <IndexSection title={Publr.t("It already may")}>
+          <PluginRequests requests={granted} />
+        </IndexSection>
+      )}
     </IndexPage>
   );
 }

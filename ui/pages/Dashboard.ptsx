@@ -10,7 +10,7 @@ import { IsoField } from "@publr/ui/IsoField.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
 import { AskBox } from "../components/AskBox.ptsx";
 import { ProviderKey } from "../components/ProviderKey.ptsx";
-import { ProviderPicker } from "../components/ProviderPicker.ptsx";
+import { OfferedProviders } from "../components/OfferedProviders.ptsx";
 import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { TabNav } from "@publr/ui/TabNav.ptsx";
@@ -31,10 +31,6 @@ export type DashboardProps = {
     key_url: string;
     key_steps: string;
   }>;
-  /** Not connected and none installed: the official providers to pick from. */
-  offered?: Array<{ name: string; label: string; summary: string }>;
-  /** Whether Publr's plugin server answered with its list. */
-  reached?: boolean;
   /** `cd` into the project's folder; empty unless the admin is open on this machine. */
   folder_command: string;
   /** The project's own binary installing the skill, run from its folder. */
@@ -64,8 +60,6 @@ export function Dashboard({
   mode,
   connected,
   providers = [],
-  offered = [],
-  reached = true,
   folder_command,
   install_command,
   login_command,
@@ -138,14 +132,7 @@ export function Dashboard({
                       />
                     </div>
                   ))}
-                  {providers.length === 0 && offered.length > 0 && (
-                    <ProviderPicker offered={offered} from="overview" />
-                  )}
-                  {providers.length === 0 && !reached && (
-                    <Callout tone="warning" title={Publr.t("Publr's plugin server could not be reached")}>
-                      {Publr.t("Try again later, or upload a provider's .wasm under Plugins.")}
-                    </Callout>
-                  )}
+                  {providers.length === 0 && <OfferedProviders from="overview" />}
                   {providers.length > 0 && (
                     <Link href="/admin/settings/ai" variant="body-sm">
                       {Publr.t("Add another provider")}

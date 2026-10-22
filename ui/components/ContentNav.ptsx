@@ -25,13 +25,19 @@ export type ContentNavProps = {
     label: string;
     href: string;
     icon: IconName;
+    /** A plugin's own icon, in the page's sprite; empty for one of the set. */
+    custom_icon: string;
     plugin: string;
     page: string;
     pinned: boolean;
+    /** Pinned by an administrator for everyone. */
+    shared: boolean;
   }>;
   /** For the pins' forms: the session's token, and this page to come back to. */
   csrf: string;
   back: string;
+  /** Administrators pin for everyone too. */
+  admin: boolean;
 };
 
 /** The Content section's sidebar: the ways of looking at the content. Recent first; then
@@ -52,6 +58,7 @@ export function ContentNav({
   sections,
   csrf,
   back,
+  admin,
 }: ContentNavProps) {
   return (
     <div class="flex flex-col">
@@ -136,12 +143,12 @@ export function ContentNav({
       {sections.map((section) => (
         <div class="group flex items-center gap-1">
           <SidebarNavItem href={section.href} classes="min-w-0 flex-1">
-            <Icon name={section.icon} size="sm" classes="shrink-0" />
+            <Icon name={section.icon} custom_icon={section.custom_icon} size="sm" classes="shrink-0" />
             <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">
               {section.label}
             </Text>
           </SidebarNavItem>
-          <PinButton plugin={section.plugin} page={section.page} pinned={section.pinned} csrf={csrf} back={back} />
+          <PinButton plugin={section.plugin} page={section.page} pinned={section.pinned} shared={section.shared} admin={admin} csrf={csrf} back={back} />
         </div>
       ))}
       {settings.length > 0 && <SidebarNavEyebrow>{Publr.t("Settings")}</SidebarNavEyebrow>}

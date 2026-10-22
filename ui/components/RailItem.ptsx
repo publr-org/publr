@@ -5,13 +5,15 @@ export type RailItemProps = {
   href: string;
   label: string;
   icon_name: IconName;
+  /** A plugin's own icon, in the page's sprite; empty for one of the set. */
+  custom_icon?: string;
   active: boolean;
   /** `_blank` for a link that leaves the admin, like the site. */
   target?: string;
 };
 
 /** One section on the admin's dark rail: an icon link, lit when the page is in it. */
-export function RailItem({ href, label, icon_name, active, target = "" }: RailItemProps) {
+export function RailItem({ href, label, icon_name, custom_icon = "", active, target = "" }: RailItemProps) {
   return (
     <a
       href={href}
@@ -26,7 +28,7 @@ export function RailItem({ href, label, icon_name, active, target = "" }: RailIt
           : "text-rail-muted hover:bg-rail-accent/60 hover:text-rail-foreground",
       ]}
     >
-      <Icon name={icon_name} size="md" />
+      <Icon name={icon_name} custom_icon={custom_icon} size="md" />
     </a>
   );
 }

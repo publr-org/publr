@@ -27,6 +27,7 @@ export function Document({ title, children }: DocumentProps) {
       <body class="min-h-screen bg-background text-foreground antialiased">
         <Navigation>
           <IconSprite />
+          {Publr.request.admin.plugin_icons}
           {children}
         </Navigation>
       </body>

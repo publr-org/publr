@@ -1,4 +1,5 @@
-import { Dynamic } from "publr-jsx";
+import type { NavigationStore } from "./Navigation.ptsx";
+import { Dynamic, Publr } from "publr-jsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import type { IconName } from "@publr/ui/Icon.ptsx";
@@ -8,12 +9,38 @@ export type SidebarHeadingProps = {
   icon: IconName;
   /** Where the heading leads: the top of what the sidebar lists. */
   href?: string;
+  /** The icon turns into a way back on hover: one step back in the browser's history. */
+  back?: boolean;
+  /** A plugin's own icon, in the page's sprite; empty for one of the set. */
+  custom_icon?: string;
 };
 
 /** A sidebar's heading band, level with the top bar: the icon and the name of what the
  * sidebar lists. The area sidebar and the sidebars pages draw (a list column, the design
  * builder's styles) open with it, so every sidebar starts the same. */
-export function SidebarHeading({ label, icon, href = "" }: SidebarHeadingProps) {
+export function SidebarHeading({ label, icon, href = "", back = false, custom_icon = "" }: SidebarHeadingProps) {
+  if (back) {
+    return (
+      <div class="flex h-14 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-5 text-sidebar-foreground" data-part="sidebar-heading">
+        <a
+          href={href}
+          onClick={(Publr.stores.navigation as NavigationStore).goBack}
+          aria-label={Publr.t("Back")}
+          title={Publr.t("Back")}
+          class="group grid shrink-0 place-items-center rounded-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring"
+        >
+          <Icon name={icon} custom_icon={custom_icon} size="sm" classes="col-start-1 row-start-1 group-hover:invisible" />
+          <Icon name="arrow-left" size="sm" classes="invisible col-start-1 row-start-1 group-hover:visible" />
+        </a>
+        <a href={href} class="min-w-0 rounded-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring">
+          <Text as="span" variant="heading-sm" classes="truncate">
+            {label}
+          </Text>
+        </a>
+      </div>
+    );
+  }
+
   return (
     <Dynamic
       as={href === "" ? "div" : "a"}
@@ -21,7 +48,7 @@ export function SidebarHeading({ label, icon, href = "" }: SidebarHeadingProps) 
       class="flex h-14 shrink-0 items-center gap-2.5 border-b border-sidebar-border px-5 text-sidebar-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring"
       data-part="sidebar-heading"
     >
-      <Icon name={icon} size="sm" classes="shrink-0" />
+      <Icon name={icon} custom_icon={custom_icon} size="sm" classes="shrink-0" />
       <Text as="span" variant="heading-sm" classes="truncate">
         {label}
       </Text>

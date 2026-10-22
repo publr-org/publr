@@ -1,0 +1,119 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+
+export type PluginLogProps = {
+  name: string;
+  summary: string;
+  /** The plugin's own page, for the Overview tab. */
+  overview_href: string;
+  /** The plugins list it is under: the Built-in tab for a built-in plugin. */
+  plugins_href: string;
+  /** This page. */
+  log_href: string;
+  /** The lines, newest first. */
+  lines: Array<{
+    /** The day, `YYYY-MM-DD`, UTC. */
+    date: string;
+    /** The time of day, `HH:MM:SS`, UTC. */
+    time: string;
+    /** `info`, `warn` or `err`. */
+    level: string;
+    line: string;
+    /** The operation, `job:<plugin>.<name>` or `event:<name>` it was logged in. */
+    call: string;
+  }>;
+  /** The next page back, or empty at the oldest. */
+  older_href: string;
+};
+
+/** What one plugin logged with `ctx.log`, newest first, read only: its Log tab. */
+export function PluginLog({ name, summary, overview_href, plugins_href, log_href, lines, older_href }: PluginLogProps) {
+  return (
+    <IndexPage
+      title={name}
+      parents={[{ label: Publr.t("Plugins"), href: plugins_href }]}
+      description={summary}
+      tabs={
+        <TabNav label={name}>
+          <TabNavLink href={overview_href}>{Publr.t("Overview")}</TabNavLink>
+          <TabNavLink href={log_href} active>
+            {Publr.t("Log")}
+          </TabNavLink>
+        </TabNav>
+      }
+      empty={
+        lines.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("Nothing logged yet")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("What this plugin's code logs shows here, kept for good.")}</EmptyDescription>
+          </Empty>
+        )
+      }
+      footer={
+        older_href !== "" && (
+          <Button href={older_href} hierarchy="secondary" size="sm">
+            {Publr.t("Older")}
+          </Button>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("Date")}</TableHead>
+            <TableHead>{Publr.t("Time")}</TableHead>
+            <TableHead>{Publr.t("Level")}</TableHead>
+            <TableHead>{Publr.t("In")}</TableHead>
+            <TableHead>{Publr.t("Line")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {lines.map((logged) => (
+            <TableRow>
+              <TableCell classes="whitespace-nowrap">
+                <Text variant="body-sm" tone="muted">
+                  {logged.date}
+                </Text>
+              </TableCell>
+              <TableCell classes="whitespace-nowrap">
+                <Text variant="body-sm" tone="muted">
+                  {logged.time}
+                </Text>
+              </TableCell>
+              <TableCell>
+                {logged.level === "err" ? (
+                  <Status tone="error">{Publr.t("Error")}</Status>
+                ) : logged.level === "warn" ? (
+                  <Status tone="warning">{Publr.t("Warning")}</Status>
+                ) : (
+                  <Status tone="neutral">{Publr.t("Info")}</Status>
+                )}
+              </TableCell>
+              <TableCell>
+                <Code>{logged.call}</Code>
+              </TableCell>
+              <TableCell>
+                <Text variant="body-sm">{logged.line}</Text>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

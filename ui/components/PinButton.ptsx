@@ -1,26 +1,77 @@
 import { Publr } from "publr-jsx";
 import { SidebarNavAction } from "@publr/ui/SidebarNavAction.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 
 export type PinButtonProps = {
   /** The plugin whose page it is; empty for a core page. */
   plugin: string;
   page: string;
   pinned: boolean;
+  /** Pinned by an administrator for everyone: unpinning hides it for this person. */
+  shared: boolean;
+  /** Administrators choose: just for themselves, or for everyone. */
+  admin: boolean;
   csrf: string;
   /** The page to come back to. */
   back: string;
 };
 
 /** Pins a page to the person's rail, or takes it off, from the end of its sidebar row; the
- * page the person is on comes back. */
-export function PinButton({ plugin, page, pinned, csrf, back }: PinButtonProps) {
+ * page the person is on comes back. An administrator picks whose rail: theirs, or
+ * everyone's. */
+export function PinButton({ plugin, page, pinned, shared, admin, csrf, back }: PinButtonProps) {
   return (
-    <form method="post" action={pinned ? "/admin/rail/unpin" : "/admin/rail/pin"} class="flex">
-      <input type="hidden" name="csrf" value={csrf} />
-      <input type="hidden" name="plugin" value={plugin} />
-      <input type="hidden" name="page" value={page} />
-      <input type="hidden" name="back" value={back} />
-      <SidebarNavAction label={pinned ? Publr.t("Unpin from the rail") : Publr.t("Pin to the rail")} icon="pin" on={pinned} />
-    </form>
+    <>
+      {admin ? (
+        <DropdownMenu classes="flex">
+          <DropdownMenuTrigger asChild>
+            <SidebarNavAction
+              type="button"
+              label={pinned ? Publr.t("Unpin from the rail") : Publr.t("Pin to the rail")}
+              icon="pin"
+              on={pinned}
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="right">
+            <form method="post" action={pinned ? "/admin/rail/unpin" : "/admin/rail/pin"}>
+              <input type="hidden" name="csrf" value={csrf} />
+              <input type="hidden" name="plugin" value={plugin} />
+              <input type="hidden" name="page" value={page} />
+              <input type="hidden" name="back" value={back} />
+              <DropdownMenuItem type="submit">
+                {pinned ? (shared ? Publr.t("Hide just for me") : Publr.t("Unpin")) : Publr.t("Just for me")}
+              </DropdownMenuItem>
+            </form>
+            {(!pinned || shared) && (
+              <form method="post" action={pinned ? "/admin/rail/unpin" : "/admin/rail/pin"}>
+                <input type="hidden" name="csrf" value={csrf} />
+                <input type="hidden" name="plugin" value={plugin} />
+                <input type="hidden" name="page" value={page} />
+                <input type="hidden" name="back" value={back} />
+                <input type="hidden" name="for_everyone" value="1" />
+                <DropdownMenuItem type="submit">
+                  {pinned ? Publr.t("Unpin for everyone") : Publr.t("For everyone")}
+                </DropdownMenuItem>
+              </form>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <form method="post" action={pinned ? "/admin/rail/unpin" : "/admin/rail/pin"} class="flex">
+          <input type="hidden" name="csrf" value={csrf} />
+          <input type="hidden" name="plugin" value={plugin} />
+          <input type="hidden" name="page" value={page} />
+          <input type="hidden" name="back" value={back} />
+          <SidebarNavAction
+            label={pinned ? (shared ? Publr.t("Hide from your rail") : Publr.t("Unpin from the rail")) : Publr.t("Pin to the rail")}
+            icon="pin"
+            on={pinned}
+          />
+        </form>
+      )}
+    </>
   );
 }

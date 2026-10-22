@@ -1,0 +1,172 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type TourStep = {
+  /** An admin page to show: `/admin/content?type=sampler.sample_note`. */
+  go?: string;
+  /** Or a link on the page shown, by its text, followed on Next. */
+  follow?: string;
+  /** What to point at: its text, or `css:` and a selector. */
+  find?: string;
+  /** What to look for there. */
+  say: string;
+};
+
+export const tour_frame = Publr.ref<HTMLIFrameElement>();
+export const state = Publr.reactive({
+  open: false,
+  at: 0,
+  steps: [] as TourStep[],
+  say: "",
+  count: "",
+  pointed: false,
+  x: 0,
+  y: 0,
+  width: 0,
+  height: 0,
+});
+
+/** An admin address: a path under /admin, nothing else. */
+const admin_path = /^\/admin(\/[^\s]*)?$/;
+
+/** Starts a tour a plugin's page asked for, at its first step. */
+export function start(steps: unknown) {
+  const given = Array.isArray(steps) ? steps.slice(0, 32) : [];
+  const kept = given.filter((step) => step && typeof step.say === "string") as TourStep[];
+  if (kept.length === 0 || !kept[0].go || !admin_path.test(kept[0].go)) return;
+  state.steps = kept;
+  state.open = true;
+  show(0);
+}
+
+/** A tour handed over by the plugin frame beside it: a message from this window only. */
+export const asked = (event: MessageEvent) => {
+  if (event.source !== window || event.origin !== location.origin) return;
+  const steps = event.data?.publr_tour;
+  if (steps) start(steps);
+};
+
+export function close() {
+  state.open = false;
+  state.steps = [];
+}
+
+/** The page's element a step points at: by its text, or `css:` a selector. */
+function locate(doc: Document, find: string): Element | null {
+  if (find.startsWith("css:")) return doc.querySelector(find.slice(4));
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  let partial: Element | null = null;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = (node.textContent ?? "").trim();
+    if (text === find) return node.parentElement;
+    if (!partial && text.includes(find)) partial = node.parentElement;
+  }
+  return partial;
+}
+
+/** Outlines what the step points at and moves the cursor there, once its page is drawn. */
+export function point() {
+  const frame = tour_frame.current;
+  const step = state.steps[state.at];
+  const doc = frame?.contentDocument;
+  state.pointed = false;
+  if (!frame || !step || !doc) return;
+  const target = locate(doc, step.find ?? step.follow ?? "");
+  if (!target) return;
+  target.scrollIntoView({ block: "center" });
+  const box = target.getBoundingClientRect();
+  state.x = Math.round(box.left);
+  state.y = Math.round(box.top);
+  state.width = Math.round(box.width);
+  state.height = Math.round(box.height);
+  state.pointed = true;
+}
+
+/** Step `at`: its words, and its page when it names one. */
+function show(at: number) {
+  const step = state.steps[at];
+  if (!step) return;
+  state.at = at;
+  state.say = step.say;
+  state.count = `${at + 1} / ${state.steps.length}`;
+  const frame = tour_frame.current;
+  if (step.go && admin_path.test(step.go)) {
+    if (frame) frame.src = Publr.url(step.go);
+    return;
+  }
+  setTimeout(point, 50);
+}
+
+/** The next step: a link the step names is followed first, when it leads within the admin. */
+export function next() {
+  const step = state.steps[state.at];
+  const frame = tour_frame.current;
+  const doc = frame?.contentDocument;
+  if (step?.follow && doc && frame) {
+    const link = locate(doc, step.follow)?.closest("a[href]");
+    const href = link?.getAttribute("href") ?? "";
+    if (admin_path.test(href.replace(/^https?:\/\/[^/]+/, ""))) {
+      frame.src = href;
+      state.at = state.at + 1;
+      const following = state.steps[state.at];
+      if (!following) return close();
+      state.say = following.say;
+      state.count = `${state.at + 1} / ${state.steps.length}`;
+      return;
+    }
+  }
+  if (state.at + 1 >= state.steps.length) return close();
+  show(state.at + 1);
+}
+
+export function back() {
+  if (state.at > 0) show(state.at - 1);
+}
+
+/** A tour a plugin's page asked for, over the admin: its steps one at a time, the page each
+ * names drawn in a frame of the admin's own, what to look at outlined, the cursor on it. It
+ * goes to pages and follows links; it never presses anything. */
+export function PluginTour() {
+  return (
+    <div
+      class={state.open ? "fixed inset-0 z-50 flex flex-col bg-background/80 p-6 backdrop-blur-sm" : "hidden"}
+      data-part="plugin-tour"
+      onWindowMessage={asked}
+    >
+      <div class="flex items-center gap-3 rounded-t-lg border border-b-0 border-border bg-background px-4 py-3">
+        <Text as="span" variant="body-xs" tone="muted">
+          {state.count}
+        </Text>
+        <Text as="p" variant="body-md" classes="min-w-0 flex-1">
+          {state.say}
+        </Text>
+        <Button type="button" hierarchy="secondary" size="sm" onClick={back}>
+          {Publr.t("Back")}
+        </Button>
+        <Button type="button" size="sm" onClick={next}>
+          {Publr.t("Next")}
+        </Button>
+        <Button type="button" hierarchy="tertiary" size="sm" onClick={close}>
+          {Publr.t("Close")}
+        </Button>
+      </div>
+      <div class="relative min-h-0 flex-1 overflow-hidden rounded-b-lg border border-border bg-background">
+        <iframe ref={tour_frame} title={state.say} class="block size-full border-0" onLoad={point}></iframe>
+        <div
+          class={state.pointed ? "pointer-events-none absolute rounded-md ring-4 ring-primary/70 transition-all duration-500" : "hidden"}
+          style={`left:${state.x - 6}px;top:${state.y - 6}px;width:${state.width + 12}px;height:${state.height + 12}px`}
+        ></div>
+        <div
+          class={state.pointed ? "pointer-events-none absolute size-5 transition-all duration-700" : "hidden"}
+          style={`left:${state.x + state.width / 2}px;top:${state.y + state.height / 2}px`}
+          data-part="plugin-tour-cursor"
+        >
+          <svg viewBox="0 0 24 24" class="size-5 drop-shadow" aria-hidden="true">
+            <path d="M4 2 L4 20 L9 15 L13 22 L16 20.5 L12 13.5 L19 13.5 Z" fill="black" stroke="white" stroke-width="1.5" />
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+}

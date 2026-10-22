@@ -1,0 +1,59 @@
+import { Publr } from "publr-jsx";
+import { awaited } from "publr";
+import { httpOperation } from "publr/transport";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { ProviderPicker } from "./ProviderPicker.ptsx";
+
+type Offered = {
+  offered: Array<{ name: string; label: string; summary: string }>;
+  reached: boolean;
+};
+
+/** Filled once the page is drawn: Publr's plugin server is never waited on to draw it. */
+export const state = Publr.reactive({
+  looked: false,
+  reached: true,
+  offered: [] as Offered["offered"],
+});
+
+const found = awaited(() => httpOperation<Offered>("/admin/settings/ai/offered", {
+  headers: { Accept: "application/json" },
+})(), { key: () => ["ai-offered"], cache: { ttl: 60000, tags: ["plugins"] } });
+
+Publr.effect(() => {
+  if (found.isPending) return;
+  const value = found.value;
+  state.looked = true;
+  state.reached = value ? value.reached : false;
+  state.offered = value ? value.offered : [];
+});
+
+export type OfferedProvidersProps = {
+  /** `overview` when it sits on the Overview, which the form comes back to. */
+  from?: string;
+  /** A heading over the providers, shown only when there are some. */
+  title?: string;
+};
+
+/** The official model providers not installed yet, asked of Publr's plugin server after the
+ * page is drawn, ready to install in one go. */
+export function OfferedProviders({ from = "", title = "" }: OfferedProvidersProps) {
+  return (
+    <div class="flex flex-col gap-4" data-part="offered-providers">
+      {!state.looked && (
+        <Text as="p" variant="body-sm" tone="muted">
+          {Publr.t("Looking up the official providers…")}
+        </Text>
+      )}
+      {state.offered.length > 0 && title !== "" && <SectionTitle title={title} />}
+      {state.offered.length > 0 && <ProviderPicker offered={state.offered} from={from} />}
+      {state.looked && !state.reached && (
+        <Callout tone="warning" title={Publr.t("Publr's plugin server could not be reached")}>
+          {Publr.t("Try again later, or upload a provider's .wasm under Plugins.")}
+        </Callout>
+      )}
+    </div>
+  );
+}

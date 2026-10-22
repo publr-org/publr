@@ -51,6 +51,15 @@ export function RecordActions({
       {!is_new && (
         <EditorAsideSection>
           <DropdownMenu>
+            {!state.has_primary && (
+              <DropdownMenuTrigger asChild>
+                <Button type="button" hierarchy="secondary" classes="w-full" disabled={state.submitting}>
+                  {Publr.t("Actions")}
+                  <Icon name="chevron-down" size="sm" />
+                </Button>
+              </DropdownMenuTrigger>
+            )}
+            {state.has_primary && (
             <SplitButton classes="w-full">
               {state.actions.map(
                 (item) =>
@@ -76,6 +85,7 @@ export function RecordActions({
                 </Button>
               </DropdownMenuTrigger>
             </SplitButton>
+            )}
             <DropdownMenuContent align="right">
               {state.actions.map(
                 (item) =>

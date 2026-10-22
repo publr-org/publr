@@ -83,6 +83,8 @@ export const state = Publr.reactive({
   changed: false,
   parks: false,
   has_destructive: false,
+  /** Whether an action is the split button's face; else the menu stands alone. */
+  has_primary: false,
   actions: [] as RecordAction[],
   /** How many values the form holds now, and the most an entry may: from three quarters
    * of it, the editor says so, and past it a save is refused. */
@@ -94,7 +96,20 @@ export const state = Publr.reactive({
   /** The language the translated fields show, by code; empty for the main one. */
   language: "",
   languages: [] as Array<{ code: string; label: string }>,
+  /** What the last refused save said, under each top-level field by its name. */
+  problems: {} as Record<string, string>,
 });
+
+/** Each refused path under its top-level field (`gallery[2].caption` under `gallery`), the
+ * first problem a field has. */
+const problems_by_field = (list: Array<{ field: string; message: string }>) => {
+  const by_field: Record<string, string> = {};
+  for (const problem of list) {
+    const field = problem.field.split(/[.[]/)[0];
+    if (field !== "" && !(field in by_field)) by_field[field] = problem.message;
+  }
+  return by_field;
+};
 
 /** The form's own fields, not values of the entry. */
 const form_fields = new Set(["csrf", "type", "expected_version"]);
@@ -420,7 +435,9 @@ const save = mutation(async () => {
     saved: boolean; id?: string; version?: number; title?: string; reason?: string;
     status?: string; status_label?: string; changed?: boolean; parks?: boolean;
     has_destructive?: boolean; actions?: RecordAction[];
+    problems?: Array<{ field: string; message: string }>;
   };
+  state.problems = problems_by_field(answer.problems ?? []);
   if (!answer.saved) throw new Error(answer.reason ?? Publr.t("Cannot save yet"));
   if (disposed) return false;
   state.version = String(answer.version ?? "");
@@ -431,6 +448,7 @@ const save = mutation(async () => {
     state.parks = answer.parks ?? state.parks;
     state.has_destructive = answer.has_destructive ?? state.has_destructive;
     state.actions = answer.actions;
+    state.has_primary = answer.actions.some((item) => item.primary);
   }
   state.dirty = state.edit_revision !== revision;
   state.saved_text = state.dirty ? Publr.t("Unsaved changes") : Publr.t("All changes saved");
@@ -720,6 +738,14 @@ export type RecordEditorProps = {
   /** The values the entry holds, and the most it may; 0 for no count shown. */
   values_count?: number;
   values_max?: number;
+  /** A transition someone who may not publish asked for: who (empty when none waits),
+   * its label and name; whether the person may approve it (run it), and the label of
+   * dropping it (Decline, Withdraw for the asker; empty when they may not). */
+  request_by?: string;
+  request_label?: string;
+  request_transition?: string;
+  request_may_approve?: boolean;
+  request_decline_label?: string;
 };
 
 export function RecordEditor({
@@ -756,6 +782,11 @@ export function RecordEditor({
   languages = [],
   values_count = 0,
   values_max = 0,
+  request_by = "",
+  request_label = "",
+  request_transition = "",
+  request_may_approve = false,
+  request_decline_label = "",
 }: RecordEditorProps) {
   state.id = id;
   state.values_max = values_max;
@@ -776,7 +807,9 @@ export function RecordEditor({
   state.parks = parks;
   state.has_destructive = has_destructive;
   state.actions = actions;
+  state.has_primary = actions.some((item) => item.primary);
   state.languages = languages;
+  state.problems = problems_by_field(problems.map((problem) => ({ field: problem.code, message: problem.text })));
 
   return (
     <div
@@ -815,6 +848,38 @@ export function RecordEditor({
               </div>
             )}
           </div>
+        }
+        notice={
+          request_by !== "" ? (
+            <div class="flex flex-col gap-3" data-part="request">
+              <Callout
+                tone="info"
+                title={Publr.t("{who} asked for “{transition}”", { who: request_by, transition: request_label })}
+              >
+                {request_may_approve
+                  ? Publr.t("Approve it to make it now, or decline it.")
+                  : Publr.t("It waits for someone who may publish.")}
+              </Callout>
+              <div class="flex flex-wrap items-center gap-2">
+                {request_may_approve && (
+                  <form method="post" action={action_route}>
+                    <input type="hidden" name="csrf" value={csrf} />
+                    <input type="hidden" name="expected_version" value={state.version} />
+                    <input type="hidden" name="transition" value={request_transition} />
+                    <Button type="submit" size="sm" hierarchy="primary">{Publr.t("Approve")}</Button>
+                  </form>
+                )}
+                {request_decline_label !== "" && (
+                  <form method="post" action={action_route}>
+                    <input type="hidden" name="csrf" value={csrf} />
+                    <input type="hidden" name="expected_version" value={state.version} />
+                    <input type="hidden" name="do" value="decline" />
+                    <Button type="submit" size="sm" hierarchy="secondary">{request_decline_label}</Button>
+                  </form>
+                )}
+              </div>
+            </div>
+          ) : undefined
         }
         problems={problems}
         problems_title={Publr.t("The record was not saved.")}

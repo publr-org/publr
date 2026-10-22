@@ -13,10 +13,14 @@ export type SettingsNavProps = {
     label: string;
     href: string;
     icon: IconName;
+    /** A plugin's own icon, in the page's sprite; empty for one of the set. */
+    custom_icon: string;
     active: boolean;
     plugin: string;
     page: string;
     pinned: boolean;
+    /** Pinned by an administrator for everyone. */
+    shared: boolean;
     /** What waits there, as a number (Site Health's cases); empty when nothing does. */
     count: string;
     /** Over the first page of a group, the group's name; empty for the rest. */
@@ -27,9 +31,11 @@ export type SettingsNavProps = {
   /** For the pins' forms: the session's token, and this page to come back to. */
   csrf: string;
   back: string;
+  /** Administrators pin for everyone too. */
+  admin: boolean;
 };
 
-export function SettingsNav({ pages, csrf, back }: SettingsNavProps) {
+export function SettingsNav({ pages, csrf, back, admin }: SettingsNavProps) {
   return (
     <div data-slot="pages" class="flex flex-col">
       {pages.map((page) => (
@@ -44,11 +50,13 @@ export function SettingsNav({ pages, csrf, back }: SettingsNavProps) {
           )}
         <div class="group flex items-center gap-1">
           <SidebarNavItem href={page.href} active={page.active} classes="min-w-0 flex-1">
-            <Icon name={page.icon} size="sm" classes="shrink-0" />
+            <Icon name={page.icon} custom_icon={page.custom_icon} size="sm" classes="shrink-0" />
             <Text as="span" variant="nav" classes="min-w-0 flex-1 truncate">{page.label}</Text>
             {page.count !== "" && <Badge size="xs">{page.count}</Badge>}
           </SidebarNavItem>
-          <PinButton plugin={page.plugin} page={page.page} pinned={page.pinned} csrf={csrf} back={back} />
+          {page.page !== "" && (
+            <PinButton plugin={page.plugin} page={page.page} pinned={page.pinned} shared={page.shared} admin={admin} csrf={csrf} back={back} />
+          )}
         </div>
         </div>
       ))}
