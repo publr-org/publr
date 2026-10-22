@@ -383,7 +383,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(ctx.parent != null);
 
             const heard = try lifecycle.transition_heard(ctx, def, row.id, row.status, to);
-            const subject = try sdk.stringify(ctx.arena, heard.payload);
+            const subject = heard.payload;
 
             lifecycle.mark_live_change(ctx, def.flow, row.status, to);
             events.append(ctx.arena, .{

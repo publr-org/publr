@@ -436,14 +436,12 @@ test "http.fetch is refused outside queued work, whatever the plugin is granted"
         .domains = &.{"api.example.com"},
     }};
     const access: plugin_access.Access = .{
-        .granted = &.{"http.fetch"},
         .held = &held,
         .own_types = &.{},
     };
     var plugin = harness.ctx(.{
         .plugin = .{
             .name = "courier",
-            .capabilities = &.{},
             .access = &access,
         },
     });

@@ -204,7 +204,6 @@ test "records.read without .drafts reads the live copy, never a record's pending
         .key = "records.read",
     }};
     const access: Access = .{
-        .granted = &.{"records.read"},
         .held = &held,
         .own_types = &.{},
     };
