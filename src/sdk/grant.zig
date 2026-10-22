@@ -2,6 +2,7 @@ const std = @import("std");
 const Ctx = @import("context.zig").Ctx;
 const operation = @import("operation.zig");
 const content_type = @import("../model/content_type.zig");
+const plugin_contracts = @import("../model/plugin_contracts.zig");
 
 pub const list_len_max: u32 = 64;
 pub const resolvers_max: u32 = 8;
@@ -89,6 +90,17 @@ pub const Grant = struct {
     field_mask: []const []const u8 = &.{},
     transitions: ?[]const Transition = null,
     record_filter: RecordFilter = .{},
+    /// With `public_types_only`: the types reached whatever their kind (named in a plugin's
+    /// grant, or its own).
+    any_kind_types: []const []const u8 = &.{},
+    /// With `live_only`: the types whose drafts are read all the same, and whether every
+    /// public type's are (a plugin's `records.write`, its own types).
+    draft_types: []const []const u8 = &.{},
+    drafts_public: bool = false,
+    /// The plugin reading, and what it uses of others: a record type it describes with
+    /// `publr.remote.record` answers only the fields listed, and `Unavailable` while off.
+    remote_user: []const u8 = "",
+    remotes: []const plugin_contracts.Used = &.{},
 
     pub const deny: Grant = .{
         .decision = .deny,
@@ -128,6 +140,27 @@ pub const Grant = struct {
         const app = grant.app orelse return true;
 
         return content_type.reaches(home, shared, app);
+    }
+
+    /// Whether only public types are in reach for the type `handle`.
+    pub fn public_only_on(grant: *const Grant, handle: []const u8) bool {
+        std.debug.assert(handle.len > 0);
+        std.debug.assert(grant.any_kind_types.len <= list_len_max);
+
+        return grant.record_filter.flags.public_types_only and
+            !contains(grant.any_kind_types, handle);
+    }
+
+    /// Whether only live records of the type `handle` (public or not) are in reach.
+    pub fn live_only_on(grant: *const Grant, handle: []const u8, public: bool) bool {
+        std.debug.assert(handle.len > 0);
+        std.debug.assert(grant.draft_types.len <= list_len_max);
+
+        if (!grant.record_filter.flags.live_only) {
+            return false;
+        }
+
+        return !(grant.drafts_public and public) and !contains(grant.draft_types, handle);
     }
 
     pub fn allows_status(grant: *const Grant, status: []const u8) bool {
@@ -173,9 +206,81 @@ pub const Grant = struct {
             .field_mask = try union_lists(left.field_mask, right.field_mask, arena),
             .transitions = if (left.transitions != null) left.transitions else right.transitions,
             .record_filter = RecordFilter.merge(left.record_filter, right.record_filter),
+            .any_kind_types = try exempt(
+                left.record_filter.flags.public_types_only,
+                left.any_kind_types,
+                right.record_filter.flags.public_types_only,
+                right.any_kind_types,
+                arena,
+            ),
+            .draft_types = try exempt(
+                left.record_filter.flags.live_only,
+                left.draft_types,
+                right.record_filter.flags.live_only,
+                right.draft_types,
+                arena,
+            ),
+            .drafts_public = drafts_public_of(left, right),
+            .remote_user = if (left.remote_user.len > 0) left.remote_user else right.remote_user,
+            .remotes = if (left.remotes.len > 0) left.remotes else right.remotes,
         };
     }
+
+    /// The fields a remote record of type `handle` is read with; null when the type is no
+    /// remote record of the reading plugin.
+    pub fn remote_fields(
+        grant: *const Grant,
+        handle: []const u8,
+    ) ?[]const plugin_contracts.UsedField {
+        std.debug.assert(handle.len > 0);
+        std.debug.assert(grant.remotes.len <= plugin_contracts.findings_max);
+
+        for (grant.remotes) |used| {
+            if (used.kind == .record and std.mem.eql(u8, used.name, handle)) {
+                return used.fields;
+            }
+        }
+
+        return null;
+    }
+
+    fn drafts_public_of(left: Grant, right: Grant) bool {
+        const left_live = left.record_filter.flags.live_only;
+        const right_live = right.record_filter.flags.live_only;
+
+        std.debug.assert(left.decision == .allow);
+        std.debug.assert(right.decision == .allow);
+
+        if (left_live and right_live) {
+            return left.drafts_public and right.drafts_public;
+        }
+
+        return if (left_live) left.drafts_public else right.drafts_public;
+    }
 };
+
+/// What stays exempt from a narrowing flag when two grants meet: where both set the flag,
+/// what both exempt; where one does, its own exemptions.
+fn exempt(
+    left_flag: bool,
+    left: []const []const u8,
+    right_flag: bool,
+    right: []const []const u8,
+    arena: std.mem.Allocator,
+) operation.Error![]const []const u8 {
+    std.debug.assert(left.len <= list_len_max);
+    std.debug.assert(right.len <= list_len_max);
+
+    if (left_flag and right_flag) {
+        return (try intersect_lists(left, right, arena)) orelse &.{};
+    }
+
+    if (left_flag) {
+        return left;
+    }
+
+    return if (right_flag) right else &.{};
+}
 
 fn contains(list: []const []const u8, item: []const u8) bool {
     std.debug.assert(list.len <= list_len_max);
@@ -280,6 +385,45 @@ test "intersect: deny wins, lists intersect, masks union, flags or" {
 
     const denied = try Grant.intersect(left, Grant.deny, arena);
     try std.testing.expect(!denied.allows());
+}
+
+test "exemptions: what both grants exempt from a flag both set, else the setter's own" {
+    var buffer: [4096]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&buffer);
+    const arena = fixed.allocator();
+    const visitor: Grant = .{
+        .record_filter = .{
+            .flags = .{
+                .live_only = true,
+                .public_types_only = true,
+            },
+        },
+    };
+    const plugin: Grant = .{
+        .any_kind_types = &.{"notes"},
+        .draft_types = &.{"notes"},
+        .drafts_public = true,
+        .record_filter = .{
+            .flags = .{
+                .live_only = true,
+                .public_types_only = true,
+            },
+        },
+    };
+    const person: Grant = .{};
+
+    const alone = try Grant.intersect(person, plugin, arena);
+
+    try std.testing.expect(!alone.public_only_on("notes"));
+    try std.testing.expect(alone.public_only_on("post"));
+    try std.testing.expect(!alone.live_only_on("notes", false));
+    try std.testing.expect(!alone.live_only_on("post", true));
+    try std.testing.expect(alone.live_only_on("secret", false));
+
+    const both = try Grant.intersect(visitor, plugin, arena);
+
+    try std.testing.expect(both.public_only_on("notes"));
+    try std.testing.expect(both.live_only_on("post", true));
 }
 
 test "plugins: the project's own types always, a plugin's only when listed" {

@@ -2,6 +2,7 @@
 //! the server opens the project and handed to its operations, routes and hooks. A plugin
 //! keeps state here, never in a top-level `var`.
 const std = @import("std");
+const plugin_define = @import("define.zig");
 const db = @import("../../lib/db.zig");
 
 /// What a plugin's `State.init` is given: the process's allocator for what lives as long as
@@ -22,7 +23,7 @@ pub fn stateful(comptime plugins: anytype) []const type {
         var list: []const type = &.{};
 
         for (plugins) |Plugin| {
-            if (!@hasDecl(Plugin, "State")) {
+            if (!plugin_define.has(Plugin, "State")) {
                 continue;
             }
 
@@ -38,7 +39,7 @@ pub fn stateful(comptime plugins: anytype) []const type {
 
 fn check(comptime Plugin: type) void {
     comptime {
-        const State = Plugin.State;
+        const State = plugin_define.get(Plugin, "State");
         const name = Plugin.manifest.name;
 
         std.debug.assert(name.len > 0);

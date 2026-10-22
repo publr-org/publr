@@ -23,7 +23,7 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(registry.middleware.len <= sdk.middleware.middleware_max);
 
             inline for (registry.middleware) |Middleware| {
-                const applies = comptime sdk.middleware.applies(Middleware, Operation);
+                const applies = comptime in_bulk(Middleware, Operation);
 
                 if (applies) {
                     return true;
@@ -48,7 +48,7 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(ctx.parent != null);
 
             inline for (registry.middleware) |Middleware| {
-                const applies = comptime sdk.middleware.applies(Middleware, Operation) and
+                const applies = comptime in_bulk(Middleware, Operation) and
                     Middleware.stage == .before;
 
                 if (applies) {
@@ -123,7 +123,7 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(inputs.len == refused.len);
 
             inline for (registry.middleware) |Middleware| {
-                const applies = comptime sdk.middleware.applies(Middleware, Operation) and
+                const applies = comptime in_bulk(Middleware, Operation) and
                     Middleware.stage == .after;
 
                 if (applies) {
@@ -159,6 +159,17 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
             }
         }
     };
+}
+
+/// Whether a hook on `Operation` runs over a bulk write's inputs. Core's readers of what
+/// changed (`changed_units`, the site-changes index) hear a move over many from each
+/// record's transition event instead (`pub const by_events = true`).
+fn in_bulk(comptime Middleware: type, comptime Operation: type) bool {
+    comptime {
+        const reader = @hasDecl(Middleware, "by_events") and Middleware.by_events;
+
+        return sdk.middleware.applies(Middleware, Operation) and !reader;
+    }
 }
 
 /// A hook's refusal in words: its own message, else the error's name. Running out of

@@ -2,6 +2,7 @@
 //! `/admin/<own>`, `/api/<own>` or `/auth/<own>`, where `<own>` is its name or one of its
 //! namespaces, so no two plugins, and no plugin and the core, answer the same path.
 const std = @import("std");
+const plugin_define = @import("define.zig");
 pub const http = @import("../../lib/http.zig");
 
 pub const routes_max: u32 = 16;
@@ -9,12 +10,19 @@ pub const areas = [_][]const u8{ "/admin/", "/api/", "/auth/" };
 
 pub const Method = enum { get, post };
 pub const Handler = *const fn (*http.Request, *http.Response, *http.Context) http.Error!void;
+/// A POST whose body is taken as it arrives, a piece at a time, so a body larger than a
+/// request may be (an upload) never sits in memory: `open` once the head is in, `write`
+/// for each piece, then `finish` to answer, or `abort` when the client goes away.
+pub const Stream = http.Router.Stream;
 
 pub const Route = struct {
     method: Method = .get,
     /// `/api/<own>/...`; `:name` segments after the prefix are parameters.
     path: []const u8,
-    handler: Handler,
+    /// Answers once the whole body is in, at most a request's size.
+    handler: ?Handler = null,
+    /// Or, for a POST: takes the body as it arrives. A route has one or the other.
+    stream: ?*const Stream = null,
 };
 
 /// A route with the plugin that declares it and the prefix it owns (`/api/sampler`).
@@ -32,11 +40,11 @@ pub fn routes_of(comptime Plugin: type, comptime owned: []const []const u8) []co
 
         std.debug.assert(owned.len > 0);
 
-        if (!@hasDecl(Plugin, "routes")) {
+        if (!plugin_define.has(Plugin, "routes")) {
             return &.{};
         }
 
-        const routes: []const Route = &Plugin.routes;
+        const routes: []const Route = plugin_define.get(Plugin, "routes");
 
         if (routes.len == 0 or routes.len > routes_max) {
             @compileError("plugin " ++ name ++ ": `routes` holds 1 to 16 routes");
@@ -51,6 +59,16 @@ pub fn routes_of(comptime Plugin: type, comptime owned: []const []const u8) []co
             if (!owns(owned, prefix)) {
                 @compileError("plugin " ++ name ++ ": route " ++ route.path ++
                     " is under " ++ prefix ++ ", which is neither its name nor a namespace");
+            }
+
+            if ((route.handler == null) == (route.stream == null)) {
+                @compileError("plugin " ++ name ++ ": route " ++ route.path ++
+                    " takes a `handler` or a `stream`, one of the two");
+            }
+
+            if (route.stream != null and route.method != .post) {
+                @compileError("plugin " ++ name ++ ": route " ++ route.path ++
+                    " streams its body, so it is a POST");
             }
 
             list = list ++ &[_]Declared{.{
@@ -106,11 +124,11 @@ pub fn operator_commands_of(comptime Plugin: type) []const DeclaredCommand {
 
         std.debug.assert(name.len > 0);
 
-        if (!@hasDecl(Plugin, "operator_commands")) {
+        if (!plugin_define.has(Plugin, "operator_commands")) {
             return &.{};
         }
 
-        const commands: []const OperatorCommand = &Plugin.operator_commands;
+        const commands: []const OperatorCommand = plugin_define.get(Plugin, "operator_commands");
 
         if (commands.len == 0 or commands.len > operator_commands_max) {
             @compileError("plugin " ++ name ++ ": `operator_commands` holds 1 to 8 commands");

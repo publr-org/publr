@@ -1,4 +1,13 @@
 const std = @import("std");
+const limits_module = @import("sdk/limits.zig");
+const model_operation_override = @import("model/operation_override.zig");
+const Transitioned = @import("model/flow.zig").Transitioned;
+const auth_events = @import("sdk/auth_events.zig");
+const error_events = @import("sdk/error_events.zig");
+const store_settings = @import("store/settings.zig");
+/// Rate limits: the general one and an operation's own `.limit`.
+pub const limits = limits_module;
+const plugin_operations = @import("sdk/plugin/operation_define.zig");
 const builtin = @import("builtin");
 const contract = @import("model/contract.zig");
 pub const trail = @import("sdk/trail.zig");
@@ -10,15 +19,16 @@ pub const context = @import("sdk/context.zig");
 pub const operation = @import("sdk/operation.zig");
 pub const grant = @import("sdk/grant.zig");
 pub const authorize = @import("sdk/authorize.zig");
+pub const stored_roles = @import("sdk/roles.zig");
 pub const middleware = @import("sdk/middleware.zig");
-pub const display_hooks = @import("sdk/display.zig");
+pub const mods = @import("sdk/mods.zig");
 pub const delivery = @import("sdk/delivery.zig");
 pub const provider = @import("sdk/provider.zig");
 pub const sandboxed_plugins = @import("sdk/sandboxed_plugins.zig");
 pub const plugin_access = @import("sdk/plugin_access.zig");
 pub const call_json = @import("sdk/call_json.zig");
 pub const help = @import("sdk/help.zig");
-pub const structure = @import("sdk/structure.zig");
+pub const changed_units = @import("sdk/changed_units.zig");
 pub const scratch = @import("sdk/scratch.zig");
 pub const definition_cache = @import("sdk/definition_cache.zig");
 
@@ -45,6 +55,12 @@ pub const TypeOwner = struct {
     owner: []const u8,
 };
 
+/// What a compiled-in plugin holds: everything its `.permissions` ask for, as asked.
+pub const PluginGrants = struct {
+    name: []const u8,
+    access: plugin_access.Access,
+};
+
 pub const Registry = struct {
     operations: []const type,
     namespaces: []const operation.Namespace = &.{},
@@ -54,9 +70,15 @@ pub const Registry = struct {
     /// core's. Left empty, nothing belongs to a plugin.
     operation_owners: []const []const u8 = &.{},
     middleware_owners: []const []const u8 = &.{},
+    /// The jobs compiled-in plugins declare (`publr.job.define`), and the plugin of each.
+    jobs: []const type = &.{},
+    job_owners: []const []const u8 = &.{},
     /// The content types compiled-in plugins declare: a plugin's code reaches its own types
     /// whoever it runs for, as an installed plugin's does.
     type_owners: []const TypeOwner = &.{},
+    /// Each compiled-in plugin's grants: its code's calls are held to them whoever it runs
+    /// for. Null holds nothing to them.
+    plugin_grants: ?[]const PluginGrants = null,
     schemas: []const [:0]const u8 = &.{},
     /// The chain a database is migrated along: core's, then each compiled-in plugin's.
     migrations: []const db.migration.Migration = &.{},
@@ -136,12 +158,12 @@ pub fn SDK(comptime registry: Registry) type {
 
             ctx.publishes = ctx.publishes and parent != null;
             ctx.parent = operation_id;
-            ctx.notify = &emit_notice;
+            ctx.notify = &emit_event;
             defer ctx.parent = parent;
             defer ctx.notify = notify;
             defer trail_close(ctx, opened);
 
-            const granted = admit(ctx, Operation, in) catch |err| {
+            const granted = admit_counted(ctx, Operation, in, parent == null) catch |err| {
                 emit(ctx, .{
                     .rejected = .{
                         .operation_name = Operation.name,
@@ -152,6 +174,11 @@ pub fn SDK(comptime registry: Registry) type {
                 const secret = comptime trail.secret_of(Operation);
 
                 log_failure(ctx, Operation.name, input_text(ctx, in), secret, err);
+
+                if (parent == null) {
+                    flush_kept(ctx);
+                }
+
                 return err;
             };
 
@@ -169,6 +196,14 @@ pub fn SDK(comptime registry: Registry) type {
 
             defer ctx.plugin = running;
 
+            const was_code = ctx.plugin_code;
+            const was_called = ctx.plugin_called;
+
+            ctx.plugin_called = was_code;
+            ctx.plugin_code = owner.len > 0;
+            defer ctx.plugin_code = was_code;
+            defer ctx.plugin_called = was_called;
+
             const result = run(ctx, Operation, in, &granted);
 
             if (result) |_| {
@@ -181,6 +216,7 @@ pub fn SDK(comptime registry: Registry) type {
                         .duration_ns = elapsed,
                     },
                 });
+                log_lines(ctx, Operation.name);
             } else |err| {
                 emit(ctx, .{
                     .failed = .{
@@ -192,6 +228,10 @@ pub fn SDK(comptime registry: Registry) type {
                 const secret = comptime trail.secret_of(Operation);
 
                 log_failure(ctx, Operation.name, input_text(ctx, in), secret, err);
+            }
+
+            if (parent == null) {
+                flush_kept(ctx);
             }
 
             return result;
@@ -207,6 +247,14 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             ctx.trail = state;
+            state.lines = .{
+                .root = state.root,
+                .arena = state.arena,
+            };
+
+            if (ctx.lines == null) {
+                ctx.lines = &state.lines.?;
+            }
 
             return true;
         }
@@ -215,8 +263,41 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(!opened or ctx.trail != null);
 
             if (opened) {
+                if (ctx.lines == &ctx.trail.?.lines.?) {
+                    ctx.lines = null;
+                }
+
                 ctx.trail = null;
             }
+        }
+
+        /// The lines of the top-level call running now when it gathered them itself.
+        fn own_lines(ctx: *Ctx) ?*trail.Lines {
+            std.debug.assert(ctx.parent != null);
+
+            const lines = ctx.lines orelse return null;
+
+            if (!at_top(ctx) or lines.root != ctx.trail.?.root) {
+                return null;
+            }
+
+            return lines;
+        }
+
+        /// A top-level call answered: what plugins logged in it, when no entry took it (a
+        /// read; a write's lines went with its activity entry).
+        pub fn log_lines(ctx: *Ctx, name: []const u8) void {
+            std.debug.assert(name.len > 0);
+
+            const log = registry.log orelse return;
+            const lines = own_lines(ctx) orelse return;
+
+            if (lines.stored or lines.items.items.len == 0) {
+                return;
+            }
+
+            lines.stored = true;
+            raise_failed(ctx, log.lines(ctx, name, lines.kept()));
         }
 
         /// Whether the call running now is the top-level one its trail was opened for.
@@ -254,9 +335,14 @@ pub fn SDK(comptime registry: Registry) type {
                 return;
             }
 
-            const entry = ctx.trail.?.entry(name, input, secret);
+            var entry = ctx.trail.?.entry(name, input, secret);
 
-            try log.activity(ctx, &entry);
+            if (own_lines(ctx)) |lines| {
+                entry.lines = lines.kept();
+                lines.stored = true;
+            }
+
+            raise_failed(ctx, try log.activity(ctx, &entry));
         }
 
         /// A top-level call refused or failed, after its rollback: its error entry.
@@ -280,11 +366,160 @@ pub fn SDK(comptime registry: Registry) type {
 
             entry.error_name = @errorName(err);
 
+            if (own_lines(ctx)) |lines| {
+                entry.lines = lines.kept();
+                lines.stored = true;
+            }
+
             if (entry.failed_in.len == 0) {
                 entry.message = if (own) |failure| failure.message else "";
             }
 
-            log.failure(ctx, &entry);
+            raise_failed(ctx, log.failure(ctx, &entry));
+        }
+
+        /// An Error log entry just written: `publr.errors.Failed` for it when it is an error,
+        /// not a refusal, kept outside the write like the entry.
+        pub fn raise_failed(ctx: *Ctx, logged: ?trail.Logged) void {
+            std.debug.assert(ctx.now_ms >= 0);
+
+            const entry = logged orelse return;
+
+            std.debug.assert(entry.entry > 0);
+
+            if (!error_events.raises(entry.error_name, entry.what)) {
+                return;
+            }
+
+            ctx.keep(error_events.Failed, entry);
+
+            if (ctx.db.transaction_depth == 0) {
+                flush_kept(ctx);
+            }
+        }
+
+        /// The events kept outside the write (`ctx.keep`) queued for the `on` hooks that hear
+        /// them, once no write is open: what a rollback would have dropped.
+        pub fn flush_kept(ctx: *Ctx) void {
+            std.debug.assert(ctx.now_ms >= 0);
+
+            const list = ctx.kept_events orelse return;
+
+            if (ctx.db.transaction_depth > 0) {
+                return;
+            }
+
+            ctx.kept_events = null;
+
+            for (list.items) |emitted| {
+                if (events.heard_outside(ctx, emitted.name, false)) {
+                    events.queue(ctx, emitted);
+                }
+            }
+        }
+
+        /// What an operation made with `publr.operation.define` says of its callers.
+        pub const Declared = struct {
+            untrusted_callers: bool,
+            answer: ?plugin_operations.Answer,
+            open: bool,
+        };
+
+        /// The site's answer to who may call `name`; null when the code's stands.
+        fn answer_override(ctx: *const Ctx, name: []const u8) Error!?plugin_operations.Answer {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            const override = model_operation_override;
+            const key = try override.authorize_key(ctx.arena, name);
+            const text = try store_settings.get(ctx.db, ctx.arena, key) orelse return null;
+
+            return override.parse_answer(ctx.arena, text);
+        }
+
+        /// The site's limit on `name`, calls a minute per caller (`operation limit`); null
+        /// when the code's stands.
+        fn limit_override(ctx: *const Ctx, name: []const u8) Error!?u32 {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            const key = try model_operation_override.limit_key(ctx.arena, name);
+            const text = try store_settings.get(ctx.db, ctx.arena, key) orelse return null;
+
+            return std.fmt.parseInt(u32, text, 10) catch null;
+        }
+
+        /// A top-level call is counted against the rate limits first.
+        fn admit_counted(
+            ctx: *Ctx,
+            comptime Operation: type,
+            in: Operation.In,
+            top: bool,
+        ) Error!Grant {
+            std.debug.assert(ctx.parent != null);
+            comptime std.debug.assert(Operation.name.len > 0);
+
+            if (top) {
+                try check_limits(ctx, Operation.name, comptime limit_of(Operation));
+            }
+
+            return admit(ctx, Operation, in);
+        }
+
+        /// An operation's own `.limit`, calls a minute per caller; null for none.
+        fn limit_of(comptime Operation: type) ?u32 {
+            comptime {
+                std.debug.assert(Operation.name.len > 0);
+
+                if (!@hasDecl(Operation, "limit")) {
+                    return null;
+                }
+
+                const declared = Operation.limit orelse return null;
+
+                return declared.per_minute;
+            }
+        }
+
+        /// The general limit, once a context, then the operation's own, for a caller from
+        /// outside: their account, else their visitor id, else their address. A context no
+        /// request made has none of them and is not counted. The operation's own limit (and
+        /// the site's override of it) counts untrusted callers only: a site's page scripts,
+        /// and anyone calling without credentials.
+        pub fn check_limits(ctx: *Ctx, name: []const u8, per_minute: ?u32) Error!void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(per_minute == null or per_minute.? > 0);
+
+            const table = ctx.limits orelse return;
+            const anonymous = if (ctx.visitor.len > 0) ctx.visitor else ctx.address;
+            const subject = ctx.caller.user_id() orelse anonymous;
+
+            if (subject.len == 0) {
+                return;
+            }
+
+            if (!ctx.counted) {
+                ctx.counted = true;
+                ctx.rate = table.take(subject, "", limits_module.general_per_minute, ctx.now_ms);
+
+                if (!ctx.rate.?.allowed) {
+                    return error.Throttled;
+                }
+            }
+
+            const untrusted = ctx.app_plugins != null or !ctx.caller.is_authenticated();
+
+            if (!untrusted) {
+                return;
+            }
+
+            const own = try limit_override(ctx, name) orelse per_minute orelse return;
+            const outcome = table.take(subject, name, own, ctx.now_ms);
+
+            if (!outcome.allowed) {
+                ctx.rate = outcome;
+                return error.Throttled;
+            }
         }
 
         fn admit(ctx: *Ctx, comptime Operation: type, in: Operation.In) Error!Grant {
@@ -310,12 +545,58 @@ pub fn SDK(comptime registry: Registry) type {
                 }
             }
 
+            try admit_declared(ctx, Operation);
+
             return authorize_request(ctx, .{
                 .operation_name = Operation.name,
                 .kind = Operation.kind,
                 .resource = operation.resource_of(in),
                 .open = @hasDecl(Operation, "open") and Operation.open,
             });
+        }
+
+        /// What an operation made with `publr.operation.define` says of its callers: without
+        /// `.untrusted_callers` nobody calls it without credentials, and a ready answer to
+        /// `.authorize` is checked here, by the host, before anything runs.
+        fn admit_declared(ctx: *const Ctx, comptime Operation: type) Error!void {
+            std.debug.assert(ctx.now_ms >= 0);
+            comptime std.debug.assert(Operation.name.len > 0);
+
+            if (comptime !@hasDecl(Operation, "untrusted_callers")) {
+                return;
+            }
+
+            return admit_answer(ctx, Operation.name, .{
+                .untrusted_callers = Operation.untrusted_callers,
+                .answer = Operation.answer,
+                .open = Operation.open,
+            });
+        }
+
+        /// The same for any operation, compiled in or installed. Through an app's address an
+        /// operation with no `.authorize` is never reached: there, administrators are
+        /// signed-in people like any other, and the default answer is theirs.
+        pub fn admit_answer(ctx: *const Ctx, name: []const u8, declared: Declared) Error!void {
+            std.debug.assert(ctx.now_ms >= 0);
+            std.debug.assert(declared.answer == null or declared.open);
+
+            const through_app = ctx.app_plugins != null;
+
+            if (!declared.untrusted_callers and !ctx.caller.is_authenticated()) {
+                return error.Denied;
+            }
+
+            if (through_app and !declared.open) {
+                return error.Denied;
+            }
+
+            // A site's answer stands in for the code's (`operation authorize`).
+            const overridden = try answer_override(ctx, name);
+            const ready = overridden orelse declared.answer orelse return;
+
+            if (!plugin_operations.admits(ready, ctx.caller, through_app)) {
+                return error.Denied;
+            }
         }
 
         /// A call made for an app reaches only the plugins the app lists (`.plugins` in its
@@ -354,17 +635,51 @@ pub fn SDK(comptime registry: Registry) type {
                 named.own_types = try ctx.arena.dupe([]const u8, &.{request.resource.type_id.?});
             }
 
+            if (ctx.caller != .plugin and ctx.plugin_code) {
+                named.plugin_access = compiled_access(ctx.plugin);
+            }
+
             const granted = try authorize.authorize(
                 ctx,
                 named,
                 registry.policies,
-                roles_in_force(ctx),
+                try held_roles(ctx),
             );
 
             std.debug.assert(granted.allows());
             std.debug.assert(!(granted.read_only and request.kind == .write));
 
             return granted;
+        }
+
+        /// Every compiled-in plugin's grants.
+        pub fn compiled_grants() []const PluginGrants {
+            std.debug.assert(registry.operations.len > 0);
+
+            const listed = registry.plugin_grants orelse return &.{};
+
+            std.debug.assert(listed.len <= 1 << 10);
+
+            return listed;
+        }
+
+        /// The grants of the compiled-in plugin whose code runs; null for none running.
+        pub fn compiled_access(plugin: []const u8) ?*const plugin_access.Access {
+            std.debug.assert(plugin.len <= 64);
+
+            const listed = registry.plugin_grants orelse return null;
+
+            if (plugin.len == 0) {
+                return null;
+            }
+
+            for (listed) |*each| {
+                if (std.mem.eql(u8, each.name, plugin)) {
+                    return &each.access;
+                }
+            }
+
+            return null;
         }
 
         /// Whether the compiled-in plugin whose code runs declares the type a call names.
@@ -388,15 +703,18 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// The build's roles, with what installed plugins declare merged in.
-        pub fn roles_in_force(ctx: *const Ctx) []const role.Role {
-            std.debug.assert(registry.roles.len > 0);
+        /// The stored roles the caller holds, or the account an installed plugin acts for.
+        pub fn held_roles(ctx: *const Ctx) Error![]const role.Role {
+            std.debug.assert(ctx.now_ms >= 0);
 
-            const sandboxed = ctx.sandboxed_plugins orelse return registry.roles;
-            const merged = sandboxed.roles() orelse return registry.roles;
+            const names = ctx.caller.roles() orelse switch (ctx.caller) {
+                .plugin => |plugin| plugin.roles orelse return &.{},
+                .anonymous, .user, .token, .machine, .system => return &.{},
+            };
 
-            std.debug.assert(merged.len >= registry.roles.len);
+            std.debug.assert(names.len <= role.user_roles_max);
 
-            return merged;
+            return stored_roles.held(ctx, names);
         }
 
         /// Runs the pre hooks every native plugin holds, before authorization: each sees the
@@ -446,7 +764,8 @@ pub fn SDK(comptime registry: Registry) type {
                 .resource = .{},
                 .open = @hasDecl(Operation, "open") and Operation.open,
             };
-            const granted = authorize.authorize(ctx, request, registry.policies, registry.roles);
+            const held = held_roles(ctx) catch return false;
+            const granted = authorize.authorize(ctx, request, registry.policies, held);
 
             return if (granted) |_| true else |_| false;
         }
@@ -471,10 +790,37 @@ pub fn SDK(comptime registry: Registry) type {
                 .resource = .{},
                 .open = found.open,
             };
-            const in_force = roles_in_force(ctx);
-            const granted = authorize.authorize(ctx, request, registry.policies, in_force);
+            const held = held_roles(ctx) catch return false;
+            const granted = authorize.authorize(ctx, request, registry.policies, held);
 
             return if (granted) |_| true else |_| false;
+        }
+
+        /// `may`, for the built-in operation `name` on a record of the type `handle`: a
+        /// plugin reaches its own types whoever it runs for.
+        pub fn may_on_type(ctx: *Ctx, name: []const u8, handle: []const u8) bool {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(handle.len > 0);
+
+            inline for (registry.operations) |Operation| {
+                if (std.mem.eql(u8, Operation.name, name)) {
+                    const asked_by_plugin = ctx.caller != .plugin and ctx.plugin_called;
+                    const request: authorize.Request = .{
+                        .operation_name = Operation.name,
+                        .kind = Operation.kind,
+                        .resource = .{
+                            .type_id = handle,
+                        },
+                        .plugin_access = if (asked_by_plugin) compiled_access(ctx.plugin) else null,
+                    };
+
+                    _ = authorize_request(ctx, request) catch return false;
+
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// Whether the caller may use the admin: its roles grant some operation of the
@@ -514,7 +860,7 @@ pub fn SDK(comptime registry: Registry) type {
 
             const held = ctx.caller.roles() orelse return may_any(ctx);
 
-            return role.permit(registry.roles, held, name);
+            return stored_roles.allows(ctx, held, name);
         }
 
         /// A caller that is not an account (the system, a plugin, a machine token) may use
@@ -552,7 +898,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.parent != null);
 
             if (Operation.kind == .read) {
-                return run_pipeline(ctx, Operation, in, granted);
+                return run_read(ctx, Operation, in, granted);
             }
 
             // A write may change a definition: what this request read of them is read again.
@@ -567,10 +913,21 @@ pub fn SDK(comptime registry: Registry) type {
             ctx.dependency_failure = false;
             defer ctx.dependency_failure = previous_failure;
 
+            const previous_refusal = ctx.event_refusal;
+
+            ctx.event_refusal = null;
+            defer ctx.event_refusal = previous_refusal;
+
             var transaction = try ctx.db.transaction();
             errdefer transaction.rollback();
 
             const out = try run_pipeline(ctx, Operation, in, granted);
+
+            if (ctx.event_refusal) |refused| {
+                return refused;
+            }
+
+            try queue_answer(ctx, Operation.name, out);
 
             if (ctx.dependency_failure) {
                 return error.InvalidationFailed;
@@ -594,6 +951,31 @@ pub fn SDK(comptime registry: Registry) type {
                     try Operation.committed(ctx, in, out);
                 }
             }
+
+            return out;
+        }
+
+        /// A read: no write of its own, its event queued in the enclosing write, if any.
+        fn run_read(
+            ctx: *Ctx,
+            comptime Operation: type,
+            in: Operation.In,
+            granted: *const Grant,
+        ) Error!Operation.Out {
+            comptime std.debug.assert(Operation.kind == .read);
+
+            const previous_refusal = ctx.event_refusal;
+
+            ctx.event_refusal = null;
+            defer ctx.event_refusal = previous_refusal;
+
+            const out = try run_pipeline(ctx, Operation, in, granted);
+
+            if (ctx.event_refusal) |refused| {
+                return refused;
+            }
+
+            try queue_answer(ctx, Operation.name, out);
 
             return out;
         }
@@ -630,6 +1012,11 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             try resolve_references(ctx, Operation, &input);
+
+            const started = ctx.trail_start;
+
+            ctx.trail_start = if (ctx.trail) |open| open.mark() else 0;
+            defer ctx.trail_start = started;
 
             const out = try invoke_run(ctx, Operation, input, granted);
 
@@ -808,11 +1195,20 @@ pub fn SDK(comptime registry: Registry) type {
             const owners = registry.middleware_owners;
             const owner = comptime owner_of(registry.middleware, owners, Middleware);
 
+            if (hook_off(ctx, owner, Middleware)) {
+                return;
+            }
+
             if (owner.len > 0) {
                 ctx.plugin = owner;
             }
 
             defer ctx.plugin = running;
+
+            const was_code = ctx.plugin_code;
+
+            ctx.plugin_code = owner.len > 0;
+            defer ctx.plugin_code = was_code;
 
             if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
                 var wrapped: PluginCtx = .{
@@ -823,6 +1219,158 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             return @call(.auto, Middleware.run, .{ctx} ++ args);
+        }
+
+        /// The `before` or `after` hooks on an event core lets refuse (`publr.auth.SignedIn`),
+        /// compiled in then installed, inside the write that emits it: a hook's error, trap
+        /// or spent budget refuses it. `before` hooks only read: they can refuse, never
+        /// change anything. `spared` (an administrator signing in) is never refused: the
+        /// refusal is logged and it goes on.
+        pub fn event_hooks(
+            ctx: *Ctx,
+            comptime stage: middleware.Stage,
+            comptime Emitted: type,
+            payload: Emitted.Payload,
+            spared: bool,
+        ) Error!void {
+            comptime std.debug.assert(stage == .before or stage == .after);
+            std.debug.assert(ctx.parent != null);
+
+            const reads_only = ctx.reads_only;
+
+            ctx.reads_only = reads_only or stage == .before;
+            defer ctx.reads_only = reads_only;
+
+            const failure = ctx.failure;
+
+            defer if (spared) {
+                ctx.failure = failure;
+            };
+
+            return hooks_on_event(ctx, stage, Emitted, payload, spared);
+        }
+
+        fn hooks_on_event(
+            ctx: *Ctx,
+            comptime stage: middleware.Stage,
+            comptime Emitted: type,
+            payload: Emitted.Payload,
+            spared: bool,
+        ) Error!void {
+            comptime std.debug.assert(stage == .before or stage == .after);
+            std.debug.assert(ctx.parent != null);
+
+            const name = Emitted.full_name;
+            const refusable = auth_events.refusable(name) and !spared;
+
+            inline for (registry.middleware) |Middleware| {
+                const listening = comptime Middleware.stage == stage and
+                    @hasDecl(Middleware, "event") and std.mem.eql(u8, Middleware.event, name);
+
+                if (listening) {
+                    var copy = payload;
+                    const ran = if (stage == .before)
+                        invoke_hook(ctx, Middleware, .{&copy})
+                    else
+                        invoke_hook(ctx, Middleware, .{ &copy, &nothing_of(Middleware) });
+
+                    try settle_refusal(ran, refusable, name);
+                }
+            }
+
+            const sandboxed = ctx.sandboxed_plugins orelse return;
+            const input = try stringify(ctx.arena, payload);
+            // A `before` hook may hand back the payload changed; an event's stays as emitted.
+            const ran: Error!void = if (stage == .before)
+                discard(sandboxed.before(ctx, name, input))
+            else
+                sandboxed.after(ctx, name, input, "{}");
+
+            try settle_refusal(ran, refusable, name);
+        }
+
+        /// The `before` or `after` hooks on every transition of one type
+        /// (`<type>.any_transition`), named at run time, inside the write: a hook's error
+        /// refuses the transition.
+        pub fn transition_hooks(
+            ctx: *Ctx,
+            comptime stage: middleware.Stage,
+            name: []const u8,
+            payload: Transitioned,
+        ) Error!void {
+            comptime std.debug.assert(stage == .before or stage == .after);
+            std.debug.assert(name.len > 0);
+
+            inline for (registry.middleware) |Middleware| {
+                const listening = comptime Middleware.stage == stage and
+                    @hasDecl(Middleware, "event") and hears_transitions(Middleware);
+
+                if (listening and std.mem.eql(u8, Middleware.event, name)) {
+                    var copy = payload;
+                    const ran = if (stage == .before)
+                        invoke_hook(ctx, Middleware, .{&copy})
+                    else
+                        invoke_hook(ctx, Middleware, .{ &copy, &nothing_of(Middleware) });
+
+                    try settle_refusal(ran, true, name);
+                }
+            }
+
+            const sandboxed = ctx.sandboxed_plugins orelse return;
+
+            const hook_stage: sandboxed_plugins.Stage = if (stage == .before) .before else .after;
+
+            if (!sandboxed.hooked(hook_stage, name)) {
+                return;
+            }
+
+            const input = try stringify(ctx.arena, payload);
+            const ran: Error!void = if (stage == .before)
+                discard(sandboxed.before(ctx, name, input))
+            else
+                sandboxed.after(ctx, name, input, "{}");
+
+            try settle_refusal(ran, true, name);
+        }
+
+        /// Whether an event hook takes a transition's payload: on `any_transition` or on one
+        /// transition of a type.
+        fn hears_transitions(comptime Middleware: type) bool {
+            const parameters = @typeInfo(@TypeOf(Middleware.run)).@"fn".params;
+
+            return parameters.len >= 2 and parameters[1].type == *Transitioned;
+        }
+
+        /// The empty answer an `after` hook on an event takes beside the payload.
+        fn nothing_of(comptime Middleware: type) Nothing(Middleware) {
+            return .{};
+        }
+
+        fn Nothing(comptime Middleware: type) type {
+            const parameters = @typeInfo(@TypeOf(Middleware.run)).@"fn".params;
+
+            return std.meta.Child(parameters[2].type.?);
+        }
+
+        fn discard(answer: Error![]const u8) Error!void {
+            const changed = try answer;
+
+            std.debug.assert(changed.len <= in_bytes_max);
+        }
+
+        fn settle_refusal(ran: Error!void, refusable: bool, name: []const u8) Error!void {
+            std.debug.assert(name.len > 0);
+
+            ran catch |err| {
+                if (refusable or err == error.OutOfMemory) {
+                    return err;
+                }
+
+                std.log.warn("a hook on {s} refused ({t}); it does not stop this one", .{
+                    name,
+                    err,
+                });
+            };
         }
 
         /// An installed plugin's `before` hook sees the input as JSON and may hand back another.
@@ -859,154 +1407,156 @@ pub fn SDK(comptime registry: Registry) type {
             try sandboxed.after(ctx, Operation.name, input, output);
         }
 
-        /// Whether any display hook on `point` changes `content_type`'s values.
-        pub fn displayed(ctx: *Ctx, comptime point: []const u8, content_type: []const u8) bool {
-            std.debug.assert(content_type.len > 0);
-            std.debug.assert(point.len > 0);
+        /// Whether any modifier, compiled in or installed, takes values applied as `name`.
+        pub fn modified(ctx: *Ctx, name: []const u8) bool {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(name.len <= mods.name_len_max);
 
             inline for (registry.middleware) |Middleware| {
-                const on_point = comptime Middleware.stage == .display and
-                    std.mem.eql(u8, Middleware.point, point);
-
-                if (on_point and std.mem.eql(u8, Middleware.content_type, content_type)) {
-                    return true;
+                if (comptime Middleware.stage == .modify) {
+                    if (mods.matches(Middleware.pattern, name)) {
+                        return true;
+                    }
                 }
             }
 
             const sandboxed = ctx.sandboxed_plugins orelse return false;
-            var buffer: [128]u8 = undefined;
-            const target = display_hooks.target_text(&buffer, point, content_type) catch {
-                return false;
-            };
 
-            return sandboxed.hooked(.display, target);
+            return sandboxed.hooked(.modify, name);
         }
 
-        /// Runs every display hook on `point` for records of `content_type`, compiled in,
-        /// then installed, each changing the batch's values in place; what they answer is
-        /// settled as text (`display.zig`). A hook that fails changes nothing; the hooks
-        /// run as their plugins, reading what they are granted, never writing.
-        pub fn display(
-            ctx: *Ctx,
-            comptime point: []const u8,
-            content_type: []const u8,
-            batch: *display_hooks.Batch,
-        ) Error!void {
-            std.debug.assert(content_type.len > 0);
-            std.debug.assert(batch.items.len <= display_hooks.batch_items_max);
+        /// Runs every modifier whose name takes `name` over the batch, compiled-in plugins
+        /// first in their order, then installed ones, each handed what the one before
+        /// answered. Modifiers run as their plugins, reading what they are granted, never
+        /// writing; one that fails changes nothing.
+        pub fn modify(ctx: *Ctx, name: []const u8, batch: *mods.Batch) Error!void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(batch.items.len <= mods.items_max);
 
-            var shown = ctx.*;
-            shown.reads_only = true;
+            if (!mods.valid(name, false)) {
+                return error.Invalid;
+            }
+
+            var reading = ctx.*;
+            reading.reads_only = true;
 
             inline for (registry.middleware) |Middleware| {
-                const on_point = comptime Middleware.stage == .display and
-                    std.mem.eql(u8, Middleware.point, point);
-
-                if (on_point and std.mem.eql(u8, Middleware.content_type, content_type)) {
-                    try display_native(&shown, Middleware, batch);
+                if (comptime Middleware.stage == .modify) {
+                    if (mods.matches(Middleware.pattern, name)) {
+                        try modify_native(&reading, Middleware, batch);
+                    }
                 }
             }
 
             if (ctx.sandboxed_plugins) |sandboxed| {
-                try display_sandboxed(&shown, sandboxed, point, content_type, batch);
+                try modify_sandboxed(&reading, sandboxed, name, batch);
             }
-
-            try display_hooks.settle(ctx.arena, batch);
         }
 
-        fn display_native(
-            ctx: *Ctx,
-            comptime Middleware: type,
-            batch: *display_hooks.Batch,
-        ) Error!void {
+        fn modify_native(ctx: *Ctx, comptime Middleware: type, batch: *mods.Batch) Error!void {
             std.debug.assert(ctx.reads_only);
-            std.debug.assert(Middleware.stage == .display);
+            std.debug.assert(Middleware.stage == .modify);
 
             const owners = registry.middleware_owners;
             const owner = comptime owner_of(registry.middleware, owners, Middleware);
-            const before_hook = try copy_values(ctx.arena, batch);
+            const before_modifier = ctx.arena.dupe(std.json.Value, batch.items) catch {
+                return error.OutOfMemory;
+            };
 
             ctx.plugin = owner;
+
+            const was_code = ctx.plugin_code;
+
+            ctx.plugin_code = true;
+            defer ctx.plugin_code = was_code;
 
             var wrapped: PluginCtx = .{
                 .inner = ctx,
             };
 
             Middleware.run(&wrapped, batch) catch |err| {
-                const point = Middleware.point;
+                const pattern = Middleware.pattern;
 
-                std.log.warn("plugin {s}: display hook on {s}: {t}", .{ owner, point, err });
-                restore_values(batch, before_hook);
+                std.log.warn("plugin {s}: modifier on {s}: {t}", .{ owner, pattern, err });
+                @memcpy(batch.items, before_modifier);
             };
         }
 
-        fn display_sandboxed(
+        fn modify_sandboxed(
             ctx: *Ctx,
             sandboxed: *const sandboxed_plugins.SandboxedPlugins,
-            point: []const u8,
-            content_type: []const u8,
-            batch: *display_hooks.Batch,
+            name: []const u8,
+            batch: *mods.Batch,
         ) Error!void {
             std.debug.assert(ctx.reads_only);
-            std.debug.assert(point.len > 0);
+            std.debug.assert(name.len > 0);
 
-            var buffer: [128]u8 = undefined;
-            const target = display_hooks.target_text(&buffer, point, content_type) catch return;
-
-            if (!sandboxed.hooked(.display, target)) {
+            if (!sandboxed.hooked(.modify, name)) {
                 return;
             }
 
             const input = try stringify(ctx.arena, batch.*);
-            const answer = sandboxed.display(ctx, target, input) catch |err| {
-                std.log.warn("display hooks on {s}: {t}", .{ target, err });
+            const answer = sandboxed.modify(ctx, name, input) catch |err| {
+                std.log.warn("modifiers on {s}: {t}", .{ name, err });
                 return;
             };
-            const changed = json_module.parse(display_hooks.Batch, ctx.arena, answer, .{
+            const changed = json_module.parse(mods.Batch, ctx.arena, answer, .{
                 .allocate = .alloc_always,
                 .ignore_unknown_fields = true,
             }) catch return;
 
-            _ = display_hooks.take(batch, changed);
+            _ = mods.take(batch, changed);
         }
 
-        fn copy_values(
-            arena: std.mem.Allocator,
-            batch: *const display_hooks.Batch,
-        ) Error![]const []const u8 {
-            std.debug.assert(batch.items.len <= display_hooks.batch_items_max);
+        /// Every modifier, compiled in then installed: whose it is, the name it takes, why.
+        pub fn modifiers(ctx: *Ctx) Error![]const mods.Modifier {
+            std.debug.assert(ctx.now_ms >= 0);
 
-            const values = arena.alloc([]const u8, batch.items.len) catch return error.OutOfMemory;
+            var out: std.ArrayList(mods.Modifier) = .empty;
 
-            for (batch.items, values) |item, *value| {
-                value.* = item.value;
+            inline for (registry.middleware) |Middleware| {
+                if (comptime Middleware.stage == .modify) {
+                    const owners = registry.middleware_owners;
+
+                    out.append(ctx.arena, .{
+                        .plugin = comptime owner_of(registry.middleware, owners, Middleware),
+                        .name = Middleware.pattern,
+                        .reason = if (@hasDecl(Middleware, "reason")) Middleware.reason else "",
+                    }) catch return error.OutOfMemory;
+                }
             }
 
-            return values;
-        }
+            const sandboxed = ctx.sandboxed_plugins orelse return out.items;
 
-        fn restore_values(batch: *display_hooks.Batch, values: []const []const u8) void {
-            std.debug.assert(values.len == batch.items.len);
-
-            for (batch.items, values) |*item, value| {
-                item.value = value;
+            for (sandboxed.manifests()) |manifest| {
+                for (manifest.hooks) |hook| {
+                    if (hook.stage == .modify) {
+                        out.append(ctx.arena, .{
+                            .plugin = manifest.name,
+                            .name = hook.target,
+                            .reason = hook.reason,
+                        }) catch return error.OutOfMemory;
+                    }
+                }
             }
+
+            return out.items;
         }
 
-        /// A notice raised outside any operation: what the server itself did (the apps
-        /// loaded from the folder). Event hooks see it as they see any other.
+        /// An event emitted outside any operation: what the server itself did (the apps
+        /// loaded from the folder). `on` hooks hear it from the queue as any other.
         pub fn announce(ctx: *Ctx, name: []const u8, subject: []const u8) void {
             std.debug.assert(name.len > 0);
             std.debug.assert(ctx.parent == null);
 
-            emit_notice(ctx, .{
+            emit_event(ctx, .{
                 .operation_id = ctx.allocate_operation_id(),
                 .name = name,
                 .subject = subject,
-            });
+            }, false);
         }
 
-        /// An inner call's end or a notice, kept on the top-level call's trail.
+        /// An inner call's end or an event, kept on the top-level call's trail.
         fn follow(ctx: *Ctx, open: *trail.Trail, event: Event) void {
             std.debug.assert(open.root != 0);
 
@@ -1017,47 +1567,81 @@ pub fn SDK(comptime registry: Registry) type {
                 .rejected, .failed => |failed| if (failed.operation_id != open.root) {
                     open.called(ctx, failed.operation_name, true);
                 },
-                .notice => |notice| open.noticed(.{
-                    .name = notice.name,
-                    .subject = notice.subject,
+                .emitted => |emitted| open.emitted(.{
+                    .name = emitted.name,
+                    .subject = emitted.subject,
                 }),
             }
         }
 
-        /// One of many notices a write hands on at once (`notices.hand_many`): kept on the
-        /// trail, and marking the write as one that changed what visitors see.
-        pub fn follow_notice(ctx: *Ctx, notice: Event.Notice) void {
-            std.debug.assert(notice.name.len > 0);
-            std.debug.assert(notice.operation_id != 0);
-
-            const published = std.mem.endsWith(u8, notice.name, ".published");
-            const unpublished = std.mem.endsWith(u8, notice.name, ".unpublished");
-
-            if (published or unpublished) {
-                ctx.publishes = true;
-            }
+        /// An event a write raised, one or one of many (`events.hand_many`): kept on the
+        /// trail.
+        pub fn follow_event(ctx: *Ctx, emitted: Event.Emitted) void {
+            std.debug.assert(emitted.name.len > 0);
+            std.debug.assert(emitted.operation_id != 0);
 
             if (ctx.trail) |open| {
                 follow(ctx, open, .{
-                    .notice = notice,
+                    .emitted = emitted,
                 });
             }
         }
 
-        pub fn emit_notice(ctx: *Ctx, notice: Event.Notice) void {
-            std.debug.assert(notice.name.len > 0);
-            std.debug.assert(notice.operation_id != 0);
+        /// An event emitted inside a call: kept on the trail, its `after` hooks run now when
+        /// `after` (a refusal fails the write before it commits), then handed to the
+        /// intrinsic listeners and queued for the `on` hooks (`events.zig`).
+        pub fn emit_event(ctx: *Ctx, emitted: Event.Emitted, after: bool) void {
+            std.debug.assert(emitted.name.len > 0);
+            std.debug.assert(emitted.operation_id != 0);
 
-            const published = std.mem.endsWith(u8, notice.name, ".published");
-            const unpublished = std.mem.endsWith(u8, notice.name, ".unpublished");
+            follow_event(ctx, emitted);
 
-            if (published or unpublished) {
-                ctx.publishes = true;
+            if (after) {
+                event_after_hooks(ctx, emitted.name, emitted.subject);
             }
 
-            emit(ctx, .{
-                .notice = notice,
-            });
+            events.hand(ctx, emitted);
+        }
+
+        /// The `after` hooks on an event emitted by name, compiled in then installed, its
+        /// payload read into each one's type; the first refusal is kept for the write.
+        fn event_after_hooks(ctx: *Ctx, name: []const u8, payload: []const u8) void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.parent != null);
+
+            inline for (registry.middleware) |Middleware| {
+                const listening = comptime Middleware.stage == .after and
+                    @hasDecl(Middleware, "event") and @hasDecl(Middleware, "Payload");
+
+                if (listening and std.mem.eql(u8, Middleware.event, name)) {
+                    const ran = after_typed(ctx, Middleware, payload);
+
+                    ran catch |err| {
+                        ctx.event_refusal = ctx.event_refusal orelse err;
+                    };
+                }
+            }
+
+            const sandboxed = ctx.sandboxed_plugins orelse return;
+
+            if (!sandboxed.hooked(.after, name)) {
+                return;
+            }
+
+            sandboxed.after(ctx, name, payload, "{}") catch |err| {
+                ctx.event_refusal = ctx.event_refusal orelse err;
+            };
+        }
+
+        fn after_typed(ctx: *Ctx, comptime Middleware: type, payload: []const u8) Error!void {
+            comptime std.debug.assert(Middleware.stage == .after);
+
+            var value = json_module.parse(Middleware.Payload, ctx.arena, payload, .{
+                .ignore_unknown_fields = true,
+                .allocate = .alloc_always,
+            }) catch return error.Invalid;
+
+            return invoke_hook(ctx, Middleware, .{ &value, &nothing_of(Middleware) });
         }
 
         /// A write about to commit for a `drafts` device: refused when it changed what
@@ -1072,19 +1656,20 @@ pub fn SDK(comptime registry: Registry) type {
             }
         }
 
-        /// An operation's end reaches every event hook as it happens. A notice reaches the
-        /// intrinsic ones now, inside the write that raised it, and is queued for the
-        /// extrinsic ones, which hear it once the write has committed (`notices.zig`).
+        /// An operation's end, kept on the trail and heard by core's intrinsic listeners (a
+        /// deployment closing); an installed plugin's change reloads the plugins. An event goes
+        /// on to its hooks (`emit_event`). No `on` hook hears an operation's end here: its own
+        /// event is queued with its answer inside its write (`queue_answer`).
         pub fn emit(ctx: *Ctx, event: Event) void {
             std.debug.assert(ctx.next_operation_id > 1);
             std.debug.assert(registry.middleware.len <= middleware.middleware_max);
 
-            if (ctx.trail) |open| {
-                follow(ctx, open, event);
+            if (event == .emitted) {
+                return emit_event(ctx, event.emitted, false);
             }
 
-            if (event == .notice) {
-                return notices.hand(ctx, event.notice);
+            if (ctx.trail) |open| {
+                follow(ctx, open, event);
             }
 
             if (ctx.sandboxed_plugins) |sandboxed| {
@@ -1092,38 +1677,144 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             inline for (registry.middleware) |Middleware| {
-                if (Middleware.stage == .on and hears(Middleware, event)) {
-                    run_listener(ctx, Middleware, event);
+                const listens = comptime Middleware.stage == .on and
+                    events.intrinsic(Middleware) and !@hasDecl(Middleware, "Payload");
+
+                if (listens and hears(Middleware, event)) {
+                    _ = run_listener(ctx, Middleware, event);
                 }
             }
         }
 
-        pub fn run_listener(ctx: *Ctx, comptime Middleware: type, event: Event) void {
+        /// An operation succeeded: its event, under its own name and carrying its answer, is
+        /// queued inside its write for the `on` hooks that hear it, compiled in or installed.
+        /// A nested call's goes into its parent's write; a rollback drops it.
+        pub fn queue_answer(ctx: *Ctx, name: []const u8, out: anytype) Error!void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.parent != null);
+
+            if (!events.heard_outside(ctx, name, false)) {
+                return;
+            }
+
+            return queue_answer_json(ctx, name, try stringify(ctx.arena, out));
+        }
+
+        /// `queue_answer` for an installed operation's answer, JSON already.
+        pub fn queue_answer_json(ctx: *Ctx, name: []const u8, out: []const u8) Error!void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.parent != null);
+
+            if (!events.heard_outside(ctx, name, false)) {
+                return;
+            }
+
+            events.queue(ctx, .{
+                .operation_id = ctx.parent.?,
+                .name = name,
+                .subject = out,
+            });
+        }
+
+        /// One `on` hook hearing a queued event: a typed one gets the payload read into its
+        /// type (an operation's answer, an event's payload); a failure is logged in the run.
+        /// Answers the hook's own words for why it failed; empty when it ran or never fails.
+        pub fn run_listener(ctx: *Ctx, comptime Middleware: type, event: Event) []const u8 {
             comptime std.debug.assert(Middleware.stage == .on);
             std.debug.assert(ctx.now_ms >= 0);
+
+            const running = ctx.plugin;
+            const owners = registry.middleware_owners;
+            const owner = comptime owner_of(registry.middleware, owners, Middleware);
+
+            if (hook_off(ctx, owner, Middleware)) {
+                return "";
+            }
+
+            if (owner.len > 0) {
+                ctx.plugin = owner;
+            }
+
+            defer ctx.plugin = running;
+
+            const was_code = ctx.plugin_code;
+
+            ctx.plugin_code = owner.len > 0;
+            defer ctx.plugin_code = was_code;
+
+            if (comptime @hasDecl(Middleware, "Payload")) {
+                std.debug.assert(event == .emitted);
+
+                const text = event.emitted.subject;
+                const payload = json_module.parse(Middleware.Payload, ctx.arena, text, .{
+                    .ignore_unknown_fields = true,
+                    .allocate = .alloc_always,
+                }) catch {
+                    return settle_listener(ctx, Middleware, event, @as(Error!void, error.Invalid));
+                };
+
+                if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
+                    var wrapped: PluginCtx = .{
+                        .inner = ctx,
+                    };
+                    const ran = Middleware.run(&wrapped, payload);
+
+                    return settle_listener(ctx, Middleware, event, ran);
+                }
+
+                return settle_listener(ctx, Middleware, event, Middleware.run(ctx, payload));
+            }
 
             if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
                 var wrapped: PluginCtx = .{
                     .inner = ctx,
                 };
 
-                Middleware.run(&wrapped, event);
-            } else {
-                Middleware.run(ctx, event);
+                return settle_listener(ctx, Middleware, event, Middleware.run(&wrapped, event));
             }
+
+            return settle_listener(ctx, Middleware, event, Middleware.run(ctx, event));
         }
 
-        /// The notices' way to the event hooks, and the intrinsic operation hooks a bulk
+        /// An `on` hook answers an error: an event is never refused; its words, or the error's
+        /// name, say why, for the run kept as failed (`jobs.failed_first`).
+        fn settle_listener(
+            ctx: *Ctx,
+            comptime Middleware: type,
+            event: Event,
+            ran: anytype,
+        ) []const u8 {
+            comptime std.debug.assert(Middleware.stage == .on);
+
+            if (comptime @typeInfo(@TypeOf(ran)) != .error_union) {
+                return "";
+            }
+
+            ran catch |err| {
+                const name = if (event == .emitted) event.emitted.name else "";
+                const said = if (ctx.failure) |failure| failure.message else "";
+
+                std.log.warn("a hook on {s} failed: {t}", .{ name, err });
+
+                return if (said.len > 0) said else @errorName(err);
+            };
+
+            return "";
+        }
+
+        /// The events' way to the `on` hooks, and the intrinsic operation hooks a bulk
         /// write runs over many inputs at once.
-        pub const notices = @import("sdk/notices.zig").Notices(@This(), registry);
+        pub const events = @import("sdk/events.zig").Events(@This(), registry);
         pub const bulk = @import("sdk/bulk.zig").Bulk(@This(), registry);
+        /// The queued jobs, run between requests.
+        pub const jobs = @import("sdk/jobs.zig").Jobs(@This(), registry);
     };
 }
 
 const json_module = @import("lib/json.zig");
 
 /// Whether an event hook sees this event: every one, or only the one it names (`event`),
-/// by the operation's name or the notice's, as an installed plugin's hook does.
+/// by the operation's name or the event's, as an installed plugin's hook does.
 pub fn hears(comptime Middleware: type, event: Event) bool {
     std.debug.assert(Middleware.stage == .on);
 
@@ -1136,7 +1827,7 @@ pub fn hears(comptime Middleware: type, event: Event) bool {
     const name = switch (event) {
         .completed => |completed| completed.operation_name,
         .rejected, .failed => |failed| failed.operation_name,
-        .notice => |notice| notice.name,
+        .emitted => |emitted| emitted.name,
     };
 
     return std.mem.eql(u8, name, Middleware.event);
@@ -1151,6 +1842,27 @@ pub fn stringify(arena: std.mem.Allocator, value: anytype) Error![]const u8 {
 }
 
 /// The plugin `Item` belongs to, from a list and its owners by position; empty for the core's.
+/// A compiled-in plugin's hook on one of its remotes that is off (its plugin is not there,
+/// or it does not fit) does not run.
+fn hook_off(ctx: *const Ctx, owner: []const u8, comptime Middleware: type) bool {
+    const target = comptime if (@hasDecl(Middleware, "event"))
+        Middleware.event
+    else if (@hasDecl(Middleware, "operation"))
+        Middleware.operation
+    else
+        "";
+
+    std.debug.assert(ctx.now_ms >= 0);
+
+    if (owner.len == 0 or target.len == 0) {
+        return false;
+    }
+
+    const sandboxed = ctx.sandboxed_plugins orelse return false;
+
+    return sandboxed.remote_off(owner, target);
+}
+
 fn owner_of(
     comptime items: []const type,
     comptime owners: []const []const u8,
@@ -1171,9 +1883,17 @@ fn owner_of(
     }
 }
 
+/// Branches the registry's own checks take (roles, namespaces, policies), whatever its size.
+const validation_branches_base: u32 = 100_000;
+/// Branches one operation's checks add at most: its shapes walked once, its name compared
+/// with every other's.
+const validation_branches_per_operation: u32 = 512;
+
 fn validate_registry(comptime registry: Registry) void {
     comptime {
-        @setEvalBranchQuota(100_000);
+        @setEvalBranchQuota(validation_branches_base +
+            registry.operations.len * validation_branches_per_operation +
+            registry.operations.len * registry.operations.len);
 
         const owned_operations = registry.operation_owners.len;
         const owned_middleware = registry.middleware_owners.len;
@@ -1230,7 +1950,9 @@ fn validate_registry(comptime registry: Registry) void {
 
         for (registry.middleware) |Middleware| {
             middleware.validate(Middleware);
-            const targets_operation = Middleware.stage == .before or Middleware.stage == .after;
+            // A hook on an event (`auth.signed_in`) is named for it, not for an operation.
+            const targets_operation = (Middleware.stage == .before or
+                Middleware.stage == .after) and !@hasDecl(Middleware, "event");
             const unknown = targets_operation and find_name(registry, Middleware.operation) == null;
 
             if (unknown and !absent_plugin(registry, Middleware.operation)) {
@@ -1386,6 +2108,10 @@ pub const testing = struct {
             };
             try harness.auth.init(std.testing.allocator, std.testing.io, params);
             harness.fixed = std.heap.FixedBufferAllocator.init(harness.buffer);
+
+            var system = harness.ctx(.system);
+
+            try stored_roles.apply(&system, role.owner_core, &role.core);
         }
 
         pub fn deinit(harness: *Harness) void {
@@ -1401,13 +2127,14 @@ pub const testing = struct {
             std.debug.assert(harness.fixture.connection.transaction_depth == 0);
             std.debug.assert(harness.buffer.len == harness_arena_bytes);
 
-            var made = Ctx.init(.{
-                .caller = who,
-                .db = &harness.fixture.connection,
-                .io = std.testing.io,
-                .arena = harness.fixed.allocator(),
-                .auth = &harness.auth,
-            });
+            var made = Ctx.init(
+                &harness.fixture.connection,
+                std.testing.io,
+                harness.fixed.allocator(),
+                &harness.auth,
+                who,
+                .{},
+            );
 
             made.scratch_set_aside = &harness.scratch;
 
@@ -1479,32 +2206,23 @@ pub const testing = struct {
         }
     };
 
+    /// An `on` hook on `hello.record`: hears its answer from the queue, after the commit.
     pub const Journal = struct {
         pub const stage: middleware.Stage = .on;
+        pub const event = "hello.record";
+        pub const Payload = Record.Out;
 
-        pub fn run(ctx: *Ctx, event: Event) void {
+        pub fn run(ctx: *Ctx, out: Payload) Error!void {
             std.debug.assert(ctx.db.transaction_depth == 0);
-            std.debug.assert(event != .completed or event.completed.operation_id != 0);
+            std.debug.assert(ctx.parent == null);
 
-            const ddl = "CREATE TABLE IF NOT EXISTS journal " ++
-                "(operation TEXT NOT NULL, ok INTEGER NOT NULL)";
+            try ctx.db.exec("CREATE TABLE IF NOT EXISTS journal (rows INTEGER NOT NULL)");
 
-            ctx.db.exec(ddl) catch return;
-
-            const insert_sql = "INSERT INTO journal (operation, ok) VALUES (?1, ?2)";
-            var insert = ctx.db.prepare(insert_sql) catch return;
+            var insert = try ctx.db.prepare("INSERT INTO journal (rows) VALUES (?1)");
             defer insert.finalize();
 
-            const operation_name = switch (event) {
-                .completed => |event_info| event_info.operation_name,
-                .rejected, .failed => |event_info| event_info.operation_name,
-                .notice => |notice| notice.name,
-            };
-            const ok: i64 = if (event == .completed) 1 else 0;
-
-            insert.bind_text(1, operation_name) catch return;
-            insert.bind_int(2, ok) catch return;
-            _ = insert.step() catch return;
+            try insert.bind_int(1, out.rows);
+            try insert.exec();
         }
     };
 
@@ -1525,7 +2243,7 @@ const TestSDK = SDK(.{
     .middleware = &.{ testing.Gate, testing.Shout, testing.Journal },
 });
 
-test "pre middleware runs before authorization and a denial is journaled as rejected" {
+test "pre middleware runs before authorization; a refused call emits nothing" {
     var harness: testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -1542,14 +2260,10 @@ test "pre middleware runs before authorization and a denial is journaled as reje
         .note = "x",
     });
     try std.testing.expectError(error.Denied, denied);
-
-    var select = try anon.db.prepare("SELECT count(*) FROM journal WHERE ok = 0");
-    defer select.finalize();
-    try std.testing.expect(try select.step());
-    try std.testing.expectEqual(@as(i64, 2), select.read_int());
+    try std.testing.expectEqual(@as(u32, 0), try testing.count(&anon, "event_queue"));
 }
 
-test "write operation: anonymous denied, system commits, before-middleware, events journaled" {
+test "an operation's on hook hears its answer from the queue, after the commit" {
     var harness: testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -1575,10 +2289,32 @@ test "write operation: anonymous denied, system commits, before-middleware, even
     const row = try select.read(Note, harness.fixed.allocator());
     try std.testing.expectEqualStrings("KEPT", row.note);
 
-    try std.testing.expectEqual(@as(u32, 2), try testing.count(&admin, "journal"));
+    // Not inside the request: the hook has not run, its event waits with the answer.
+    var journal = try admin.db.prepare(
+        "SELECT count(*) FROM sqlite_master WHERE name = 'journal'",
+    );
+    defer journal.finalize();
+    try std.testing.expect(try journal.step());
+    try std.testing.expectEqual(@as(i64, 0), journal.read_int());
+
+    var queued = try admin.db.prepare("SELECT name, subject FROM event_queue");
+    defer queued.finalize();
+    try std.testing.expect(try queued.step());
+    const Queued = struct {
+        name: []const u8,
+        subject: []const u8,
+    };
+    const waiting = try queued.read(Queued, harness.fixed.allocator());
+    try std.testing.expectEqualStrings("hello.record", waiting.name);
+    try std.testing.expectEqualStrings("{\"rows\":1}", waiting.subject);
+
+    var worker = harness.ctx(.system);
+    try std.testing.expectEqual(@as(u32, 1), try TestSDK.events.drain(&worker, 8));
+    try std.testing.expectEqual(@as(u32, 1), try testing.count(&admin, "journal"));
+    try std.testing.expectEqual(@as(u32, 0), try testing.count(&admin, "event_queue"));
 }
 
-test "write operation failure rolls back and journals a failed event" {
+test "a write that rolls back drops its event; a failure emits nothing" {
     var harness: testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -1596,11 +2332,7 @@ test "write operation failure rolls back and journals a failed event" {
     try std.testing.expectEqual(@as(u32, 1), try testing.count(&admin, "notes"));
     try std.testing.expectEqual(@as(u32, 0), admin.db.transaction_depth);
     try std.testing.expectEqual(@as(?u64, null), admin.parent);
-
-    var select = try admin.db.prepare("SELECT count(*) FROM journal WHERE ok = 0");
-    defer select.finalize();
-    try std.testing.expect(try select.step());
-    try std.testing.expectEqual(@as(i64, 1), select.read_int());
+    try std.testing.expectEqual(@as(u32, 1), try testing.count(&admin, "event_queue"));
 }
 
 test "an operation called through what its plugin publishes: by name, the same checks" {
@@ -1699,6 +2431,10 @@ test "roles: an account calls what its roles grant; one granted only apps never 
     try harness.init();
     defer harness.deinit();
 
+    var system = harness.ctx(.system);
+
+    try stored_roles.apply(&system, "news", RolesSDK.roles[role.core.len..]);
+
     var subscriber = harness.ctx(.{
         .user = .{
             .id = "u_1",
@@ -1745,6 +2481,12 @@ test "roles: an account calls what its roles grant; one granted only apps never 
 
 test {
     std.testing.refAllDecls(@This());
+    _ = @import("sdk/jobs.zig");
+    _ = @import("sdk/hook_runs.zig");
+    _ = @import("sdk/plugin/checks.zig");
+    _ = @import("sdk/plugin/secret_define.zig");
+    _ = @import("sdk/plugin/written_secrets.zig");
+    _ = limits_module;
 }
 
 test "a failing after hook rolls back the operation body and earlier hooks" {

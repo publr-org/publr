@@ -73,14 +73,14 @@ fn dispatch(
     defer SDK.trail_close(ctx, opened);
     ctx.publishes = ctx.publishes and parent != null;
     ctx.parent = operation_id;
-    ctx.notify = &SDK.emit_notice;
+    ctx.notify = &SDK.emit_event;
     ctx.plugin_depth += 1;
     defer ctx.parent = parent;
     defer ctx.notify = notify;
     defer ctx.within = within;
     defer ctx.plugin_depth -= 1;
 
-    admit(SDK, ctx, found, input) catch |err| {
+    admit_counted(SDK, ctx, found, input, parent == null) catch |err| {
         SDK.emit(ctx, .{
             .rejected = .{
                 .operation_name = found.name,
@@ -89,6 +89,10 @@ fn dispatch(
             },
         });
         SDK.log_failure(ctx, found.name, input, found.secret, err);
+
+        if (parent == null) {
+            SDK.flush_kept(ctx);
+        }
 
         return err;
     };
@@ -105,6 +109,7 @@ fn dispatch(
                 .duration_ns = 0,
             },
         });
+        SDK.log_lines(ctx, found.name);
     } else |err| {
         SDK.emit(ctx, .{
             .failed = .{
@@ -116,7 +121,29 @@ fn dispatch(
         SDK.log_failure(ctx, found.name, input, found.secret, err);
     }
 
+    if (parent == null) {
+        SDK.flush_kept(ctx);
+    }
+
     return result;
+}
+
+/// A top-level call is counted against the rate limits first.
+fn admit_counted(
+    comptime SDK: type,
+    ctx: *Ctx,
+    found: sandboxed_plugins.Operation,
+    input: []const u8,
+    top: bool,
+) Error!void {
+    std.debug.assert(found.name.len > 0);
+    std.debug.assert(ctx.parent != null);
+
+    if (top) {
+        try SDK.check_limits(ctx, found.name, if (found.limit > 0) found.limit else null);
+    }
+
+    return admit(SDK, ctx, found, input);
 }
 
 fn admit(
@@ -130,6 +157,14 @@ fn admit(
 
     try SDK.run_pre_hooks(ctx, found.name, found.kind);
     try SDK.check_fence(ctx, plugin_names.plugin_of(found.name));
+
+    if (found.untrusted_callers) |untrusted| {
+        try SDK.admit_answer(ctx, found.name, .{
+            .untrusted_callers = untrusted,
+            .answer = found.answer,
+            .open = found.open,
+        });
+    }
 
     const fields = json.parse(ResourceFields, ctx.arena, input, .{
         .ignore_unknown_fields = true,
@@ -158,11 +193,25 @@ fn run(
     std.debug.assert(ctx.parent != null);
     std.debug.assert(input.len > 0);
 
+    // As `SDK.run`: the operation's event queued with its answer on success, inside the
+    // write; hooks inside the write's transaction, nested writes as savepoints.
+    const previous_refusal = ctx.event_refusal;
+
+    ctx.event_refusal = null;
+    defer ctx.event_refusal = previous_refusal;
+
     if (found.kind == .read) {
-        return run_pipeline(SDK, ctx, sandboxed, found, input);
+        const answer = try run_pipeline(SDK, ctx, sandboxed, found, input);
+
+        if (ctx.event_refusal) |refused| {
+            return refused;
+        }
+
+        try SDK.queue_answer_json(ctx, found.name, answer);
+
+        return answer;
     }
 
-    // As `SDK.run`: hooks inside the write's transaction, nested writes as savepoints.
     const previous_failure = ctx.dependency_failure;
 
     ctx.dependency_failure = false;
@@ -172,6 +221,12 @@ fn run(
     errdefer transaction.rollback();
 
     const output = try run_pipeline(SDK, ctx, sandboxed, found, input);
+
+    if (ctx.event_refusal) |refused| {
+        return refused;
+    }
+
+    try SDK.queue_answer_json(ctx, found.name, output);
 
     if (ctx.dependency_failure) {
         return error.InvalidationFailed;

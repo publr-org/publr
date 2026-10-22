@@ -152,10 +152,12 @@ const declared_greeting = [_]Declared{.{
         .title_field = "note",
         .fields = &.{
             .{
+                .validation = .{
+                    .required = true,
+                },
                 .name = "note",
                 .label = "Note",
                 .kind = "string",
-                .required = true,
             },
             .{
                 .name = "slug",
@@ -196,7 +198,8 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
     const with_extra =
         \\{"handle":"greeting","name":"Greeting","title_field":"note",
         \\ "public":true,
-        \\ "fields":[{"name":"note","label":"Note","kind":"string","required":true,"locked":true},
+        \\ "fields":[{"name":"note","label":"Note","kind":"string",
+        \\ "validation":{"required":true},"locked":true},
         \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"note"},"locked":true},
         \\ {"name":"mood","label":"Mood","kind":"string"}]}
     ;
@@ -213,7 +216,8 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
     const tampered =
         \\{"handle":"greeting","name":"Greeting","title_field":"note",
         \\ "public":true,
-        \\ "fields":[{"name":"note","label":"Renamed","kind":"text","required":false},
+        \\ "fields":[{"name":"note","label":"Renamed","kind":"text",
+        \\ "validation":{"required":false}},
         \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"note"},"locked":true},
         \\ {"name":"mood","label":"Mood","kind":"string"}]}
     ;

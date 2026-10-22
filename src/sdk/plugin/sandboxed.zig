@@ -1,12 +1,12 @@
 //! What a plugin declares to run in the sandbox, on top of what every plugin declares: the
-//! permissions it asks for and why, the domains it fetches from, the limits it needs, the
+//! permissions it asks for and why (`http.fetch` with its domains), the limits it needs, the
 //! plugins it cannot work without. `manifest.zig` turns all of it into the manifest.
 const std = @import("std");
+const plugin_define = @import("define.zig");
 const sdk_operation = @import("../operation.zig");
 const middleware = @import("../middleware.zig");
 
 pub const permissions_max: u32 = 64;
-pub const domains_max: u32 = 32;
 pub const reason_len_max: u32 = 200;
 pub const entries_max: u32 = 256;
 
@@ -20,14 +20,12 @@ pub const Permission = sandboxed_plugin.Ask;
 /// More than the defaults, asked for with a reason; each raised limit waits for approval.
 pub const Limits = sandboxed_plugin.Limits;
 /// Which content the plugin recommends it be given; the administrator decides.
-pub const ContentAccess = sandboxed_plugin.ContentAccess;
-
 /// One thing the host can run in a plugin's module: an operation or a hook.
 pub const Entry = struct {
     stage: Stage,
     declaration: type,
 
-    pub const Stage = enum { operation, before, after, event, display };
+    pub const Stage = enum { operation, before, after, event, modify, job };
 };
 
 /// Every operation, then every hook, in declaration order, that runs in the sandbox: the
@@ -60,8 +58,16 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
             }};
         }
 
+        for (contract.jobs_of(Plugin)) |Job| {
+            entries = entries ++ &[_]Entry{.{
+                .stage = .job,
+                .declaration = Job,
+            }};
+        }
+
         if (entries.len > entries_max) {
-            @compileError("plugin " ++ Plugin.manifest.name ++ ": too many operations and hooks");
+            @compileError("plugin " ++ Plugin.manifest.name ++ ": too many operations, hooks " ++
+                "and jobs");
         }
 
         return entries;
@@ -77,7 +83,7 @@ fn hook_stage(comptime Plugin: type, comptime Middleware: type) Entry.Stage {
             .before => .before,
             .after => .after,
             .on => .event,
-            .display => .display,
+            .modify => .modify,
             .pre => unreachable,
         };
     }
@@ -124,8 +130,6 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
             "policies",
             "field_kinds",
             "delivery_gates",
-            "statuses",
-            "transitions",
             "filters",
             "routes",
             "settings_pages",
@@ -142,13 +146,13 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
         std.debug.assert(Plugin.manifest.name.len > 0);
 
         for (never) |declaration| {
-            if (@hasDecl(Plugin, declaration)) {
+            if (plugin_define.has(Plugin, declaration)) {
                 list = list ++ &[_][]const u8{"`" ++ declaration ++ "`: needs a native plugin"};
             }
         }
 
         for (later) |declaration| {
-            if (@hasDecl(Plugin, declaration)) {
+            if (plugin_define.has(Plugin, declaration)) {
                 list = list ++ &[_][]const u8{"`" ++ declaration ++ "`: not in the sandbox yet"};
             }
         }
@@ -174,8 +178,8 @@ fn hook_target(comptime Middleware: type) []const u8 {
     comptime {
         std.debug.assert(@hasDecl(Middleware, "stage"));
 
-        if (Middleware.stage == .display) {
-            return @import("../display.zig").target_of(Middleware);
+        if (Middleware.stage == .modify) {
+            return Middleware.pattern;
         }
 
         if (@hasDecl(Middleware, "operation")) {
@@ -217,27 +221,13 @@ pub fn assert_sandboxable(comptime Plugin: type) void {
 
 pub fn permissions_of(comptime Plugin: type) []const Permission {
     comptime {
-        if (!@hasDecl(Plugin, "permissions")) {
+        if (!plugin_define.has(Plugin, "permissions")) {
             return &.{};
         }
 
-        const list: []const Permission = &Plugin.permissions;
+        const list: []const Permission = plugin_define.get(Plugin, "permissions");
 
         std.debug.assert(list.len <= permissions_max);
-
-        return list;
-    }
-}
-
-pub fn strings_of(comptime Plugin: type, comptime declaration: []const u8) []const []const u8 {
-    comptime {
-        if (!@hasDecl(Plugin, declaration)) {
-            return &.{};
-        }
-
-        const list: []const []const u8 = &@field(Plugin, declaration);
-
-        std.debug.assert(list.len <= domains_max);
 
         return list;
     }
@@ -260,7 +250,6 @@ test "entries number operations first, then hooks, and read a hook's shapes from
     try std.testing.expect(HookIn(Hook) == Plugin.Record.In);
     try std.testing.expect(HookOut(Hook) == Plugin.Record.Out);
     try std.testing.expectEqual(0, comptime permissions_of(Plugin).len);
-    try std.testing.expectEqual(0, comptime strings_of(Plugin, "allowed_domains").len);
 }
 
 /// Checked where a sandboxed plugin calls `operation_name`, as that call compiles: a call no

@@ -5,7 +5,6 @@ pub const version = "0.4.0";
 
 pub const lib = @import("lib.zig");
 pub const db = lib.db;
-pub const auth = lib.auth;
 pub const http = lib.http;
 pub const report = lib.report;
 pub const sdk = @import("sdk.zig");
@@ -15,6 +14,109 @@ pub const cli = @import("adapters/cli.zig");
 pub const server = @import("server.zig");
 pub const registry = @import("server/registry.zig");
 pub const plugin = @import("sdk/plugin.zig");
+/// What a plugin is called and which version it is: `publr.plugin.define(manifest, options)`.
+pub const Manifest = @import("sdk/plugin/define.zig").Manifest;
+/// What a plugin's code runs with, and how it fails.
+pub const Ctx = plugin.PluginCtx;
+pub const Error = sdk.Error;
+/// `publr.operation.define(In, Out, .{ .name, .kind, .authorize, ... })`.
+pub const operation = struct {
+    pub const define = @import("sdk/plugin/operation_define.zig").define;
+    pub const Kind = @import("sdk/plugin/operation_define.zig").Kind;
+};
+/// `publr.record.define(Document, .{ .name, .internal, ... })` and a reference to any record.
+pub const record = struct {
+    pub const define = @import("sdk/plugin/record_define.zig").define;
+    pub const AnyRef = @import("sdk/plugin/record_define.zig").AnyRef;
+    /// One transition of a record's flow: `[_]publr.record.Transition(Status){ ... }`.
+    pub const Transition = @import("sdk/plugin/record_flow.zig").Transition;
+    /// Every status but the transition's target and the trash: `.from = publr.record.any`.
+    pub const any = @import("sdk/plugin/record_flow.zig").any;
+    /// What a hook on `X.any_transition` hears: `.{ .record, .transition, .from, .to }`.
+    pub const Transitioned = @import("model/flow.zig").Transitioned;
+};
+/// GROQ queries with `$names` bound from a struct: `publr.query.prepare(text, .{})`.
+pub const query = struct {
+    pub const prepare = @import("sdk/plugin/query_define.zig").prepare;
+};
+/// Changes or refuses an operation's input inside its write: `publr.before(Sign, refuse_links)`.
+pub const before = @import("sdk/plugin/hook_define.zig").before;
+/// Runs inside the write after an operation or an event; may refuse, rolling it back.
+pub const after = @import("sdk/plugin/hook_define.zig").after;
+/// Runs from the queue once the write committed, with the operation's answer or the event's
+/// payload: `publr.on(Orders.place, send_confirmation)`.
+pub const on = @import("sdk/plugin/hook_define.zig").on;
+/// A menu item in the admin: `.{ .name, .label = publr.t("Orders"), .icon, .record, .parent }`.
+pub const MenuItem = @import("sdk/plugin/menu_define.zig").MenuItem;
+/// An icon of a plugin's own: `.{ .name = "bag", .svg = @embedFile("icons/bag.svg") }`.
+pub const Icon = @import("sdk/plugin/menu_define.zig").Icon;
+/// JS's `String` for plugins: `publr.text.starts_with(name, "admin")`,
+/// `publr.text.upper(ctx, name)`. See `sdk/plugin/text.zig`.
+pub const text = @import("sdk/plugin/text.zig");
+/// Text a person reads, written where it is declared and translated where it is shown.
+pub const t = @import("sdk/plugin/menu_define.zig").t;
+/// Changes the value applied under a name, wherever its owner applies it (`ctx.mod`):
+/// `publr.modify("variant.title", title)`, `*` for one part (`*.title`).
+pub const modify = @import("sdk/plugin/hook_define.zig").modify;
+/// A record's title as core applies it, `<type>.title`: `.id`, the record's fields typed
+/// (`.record`), and the `.title` to change.
+pub const Title = @import("sdk/plugin/modify_define.zig").Title;
+/// People signing in, up and out, hooked by type: `publr.after(publr.auth.SignedIn, run)`;
+/// sign-ins refused (`SignInFailed`, `SignOnFailed` …), heard with `publr.on` only.
+pub const auth = @import("sdk/auth_events.zig");
+/// Everything that lands in the Error log as an error: `publr.on(publr.errors.Failed, run)`.
+pub const errors = struct {
+    pub const Failed = @import("sdk/error_events.zig").Failed;
+};
+/// Something that happens that is not a call: `publr.event.define(.{ .name, .payload })`,
+/// emitted with `ctx.emit(Event, payload)`.
+pub const event = struct {
+    pub const define = @import("sdk/plugin/hook_define.zig").event;
+};
+/// Another plugin's operations, records and events, with only what this plugin uses.
+pub const remote = @import("sdk/plugin/hook_define.zig").remote;
+/// A secret a plugin declares in its `.secrets` struct: it never holds the value.
+pub const Secret = struct {};
+/// A field kind a plugin brings: `publr.field.kind(Value, .{ .name, .validate })`.
+pub const field = struct {
+    pub const kind = @import("sdk/plugin/field_kind_define.zig").kind;
+};
+/// Queued work: `publr.job.define(In, .{ .name, .run })` for `ctx.enqueue`,
+/// `publr.job.define_recurring(.{ .name, .run, .every, .at })` for what repeats.
+pub const job = struct {
+    pub const define = @import("sdk/plugin/job_define.zig").define;
+    pub const define_recurring = @import("sdk/plugin/job_define.zig").define_recurring;
+};
+/// What queued work (a job) runs with: every call `Ctx` has, and `fetch`, queued work's
+/// alone. Record handles and queries take either.
+pub const QueueCtx = @import("sdk/plugin/queue.zig").Queue(Ctx);
+/// What a sign-in provider's `exchange` runs with: `fetch` to its own domains, within a
+/// short time, and `log`; nothing else.
+pub const ExchangeCtx = @import("sdk/provider.zig").ExchangeCtx;
+/// A moment, as a `datetime` field holds it.
+pub const Time = @import("sdk/plugin/words.zig").Time;
+/// An operation on its way out: `.deprecated = .{ .since = "0.4.0", .instead = "x.y" }`.
+pub const Deprecated = @import("sdk/operation.zig").Deprecated;
+/// What `.validate` fills: `problems.add(.page, "Must start with /")`.
+pub const Problems = @import("sdk/plugin/operation_define.zig").Problems;
+/// Ready answers to who may call an operation.
+pub const authorize = struct {
+    const Answer = @import("sdk/plugin/operation_define.zig").Answer;
+
+    pub const user_is_signed_in: Answer = .signed_in;
+    pub const plugin_calls: Answer = .plugin_calls;
+
+    pub fn user_has_role(comptime roles: []const []const u8) Answer {
+        comptime std.debug.assert(roles.len > 0);
+
+        return .{
+            .roles = roles,
+        };
+    }
+};
+/// A plugin's page from its own PTSX view, the same HTML either way it runs:
+/// `publr.views.render(ctx, in.base, publr.views.all.SamplerLog, props)`.
+pub const views = @import("sdk/plugin/views.zig");
 /// Model providers: the contract, and the two operations a provider plugin registers with.
 pub const ai = @import("sdk/ai.zig");
 /// A plugin's records as typed values: `publr.records.of(Order, "order")`.
@@ -46,6 +148,7 @@ pub const operations = struct {
     pub const identity = @import("operations/identity.zig");
     pub const status = @import("operations/status.zig");
     pub const role = @import("operations/role.zig");
+    pub const operation = @import("operations/operation.zig");
     pub const content_type = @import("operations/content_type.zig");
     pub const record = @import("operations/record.zig");
     pub const taxonomy = @import("operations/taxonomy.zig");
@@ -66,16 +169,26 @@ pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.z
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");
 pub const toolchain = if (builtin.os.tag == .wasi) void else @import("server/toolchain.zig");
 pub const plugin_build = if (builtin.os.tag == .wasi) void else @import("server/plugin_build.zig");
+pub const plugin_check = if (builtin.os.tag == .wasi)
+    void
+else
+    @import("server/plugin_build/check.zig");
 pub const operator = if (builtin.os.tag == .wasi) void else @import("server/operator.zig");
 pub const database = if (builtin.os.tag == .wasi) void else @import("server/database.zig");
+pub const bundle = if (builtin.os.tag == .wasi) void else @import("server/bundle.zig");
+pub const cloud_deploy = if (builtin.os.tag == .wasi) void else @import("server/cloud_deploy.zig");
 pub const update = if (builtin.os.tag == .wasi) void else @import("server/update.zig");
 pub const agents = if (builtin.os.tag == .wasi) void else @import("server/agents.zig");
 pub const apps_load = if (builtin.os.tag == .wasi) void else @import("server/apps_load.zig");
 pub const login = if (builtin.os.tag == .wasi) void else @import("server/login.zig");
 pub const skill = if (builtin.os.tag == .wasi) void else @import("server/skill.zig");
 pub const new_site = if (builtin.os.tag == .wasi) void else @import("server/new_site.zig");
-pub const remote = if (builtin.os.tag == .wasi) void else @import("server/remote.zig");
+pub const forwarding = if (builtin.os.tag == .wasi) void else @import("server/remote.zig");
 pub const work = if (builtin.os.tag == .wasi) void else @import("server/work.zig");
+pub const queue_worker = if (builtin.os.tag == .wasi) void else @import("server/queue_worker.zig");
+/// Queued work's passes: the worker's on a server, after each answer in the browser.
+pub const queued_events = @import("server/queued_events.zig");
+pub const queued_jobs = @import("server/queued_jobs.zig");
 pub const agent_script = if (builtin.os.tag == .wasi) void else @import("server/agent_script.zig");
 pub const agent = if (builtin.os.tag == .wasi) void else @import("server/agent.zig");
 

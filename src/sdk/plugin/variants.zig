@@ -3,6 +3,7 @@
 //! variant); the core draws its setting on every field, reads the list where it shows or
 //! serves variants, and knows nothing else about what a variant is.
 const std = @import("std");
+const plugin_define = @import("define.zig");
 const model_variant = @import("../../model/variant.zig");
 
 /// `pub const variants: publr.plugin.Variants` in a plugin.
@@ -49,11 +50,11 @@ pub fn of(comptime Plugin: type) ?Dimension {
     comptime {
         const name = Plugin.manifest.name;
 
-        if (!@hasDecl(Plugin, "variants")) {
+        if (!plugin_define.has(Plugin, "variants")) {
             return null;
         }
 
-        const declared: Dimension = Plugin.variants;
+        const declared: Dimension = plugin_define.get(Plugin, "variants");
         const List = declared.list;
 
         if (declared.label.len == 0 or declared.help.len == 0) {

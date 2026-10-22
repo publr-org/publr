@@ -2,14 +2,16 @@ const std = @import("std");
 const db = @import("../lib/db.zig");
 const Caller = @import("caller.zig").Caller;
 const AuthState = @import("../lib/auth.zig").State;
-const Notice = @import("middleware.zig").Event.Notice;
+const Emitted = @import("middleware.zig").Event.Emitted;
 const Scratch = @import("scratch.zig").Scratch;
 const DefinitionCache = @import("definition_cache.zig").DefinitionCache;
 
 pub const OperationId = u64;
 pub const request_id_len_max: u32 = 64;
 
-pub const Notify = *const fn (ctx: *Ctx, notice: Notice) void;
+/// Where an emitted event goes: `after` hooks by name when `after` (a plugin's event, core's
+/// typed ones), then the queue for the `on` hooks.
+pub const Notify = *const fn (ctx: *Ctx, emitted: Emitted, after: bool) void;
 
 /// The folder the running server reads the project's apps from, and a way to read them
 /// again: what the `apps` operations change.
@@ -187,6 +189,9 @@ pub const Ctx = struct {
 
     /// Why the last operation ended with `error.Failed`: set by `fail`, read by adapters.
     failure: ?@import("operation.zig").Failure = null,
+    /// What was wrong with the input when it ended with `error.Invalid`, every field at
+    /// once: set by `refuse`, answered as `problems`.
+    problems: []const @import("operation.zig").Problem = &.{},
     publish_policy: ?*const fn (*Ctx, OperationPolicy) anyerror!void = null,
     caller: Caller,
     /// Reads made to render a page for a visitor: live records only and never a write,
@@ -205,6 +210,21 @@ pub const Ctx = struct {
     /// The visitor's stable id (the `publr_visitor` cookie) when the call came from an app's
     /// page, island or `_api`; empty otherwise. Beside the user once they sign in.
     visitor: []const u8 = "",
+    /// The address the request came from (`limits.address_of`); empty for a context no
+    /// request made, which no rate limit counts.
+    address: []const u8 = "",
+    /// The page that sent the request when it is another site's (the `Referer` header);
+    /// empty for our own pages and a request that names none. Tells, never grants.
+    referer: []const u8 = "",
+    /// The process's rate limits; null where calls are not limited (the CLI on its own,
+    /// tests, the browser build).
+    limits: ?*@import("limits.zig").Limits = null,
+    /// Where the caller stands against the limit that answered last: the `RateLimit-*`
+    /// headers. Set once the context counted its first call.
+    rate: ?@import("limits.zig").Outcome = null,
+    /// The context counted its first top-level call against the general limit: one request
+    /// counts once, however many calls it makes.
+    counted: bool = false,
     /// The plugins whose content types the caller may reach here: an app's `.plugins`, or
     /// the admin narrowed to that app. Null: every plugin's.
     app_plugins: ?[]const []const u8 = null,
@@ -218,6 +238,15 @@ pub const Ctx = struct {
     /// The plugin whose code is running: its operation or one of its hooks, compiled in or
     /// installed. Empty for the core's own code; a core operation a plugin calls keeps it.
     plugin: []const u8 = "",
+    /// Whether that plugin's own code makes the calls now (its operation, hook or job), not a
+    /// core operation it called: a compiled-in plugin's calls are held to its grants then.
+    plugin_code: bool = false,
+    /// Whether the operation running now was called by that code: what it asks about its
+    /// caller (may it publish) answers for the plugin.
+    plugin_called: bool = false,
+    /// The queued job running (`<plugin>.<name>`): the author of what it changes. Empty
+    /// outside a job.
+    job: []const u8 = "",
     /// The language the admin speaks to the caller, for a page a plugin draws: its
     /// catalogue for the render and its script for the browser. Empty outside the admin.
     language: Language = .{},
@@ -230,15 +259,25 @@ pub const Ctx = struct {
     now_ms: i64,
     next_operation_id: OperationId = 1,
     notify: ?Notify = null,
+    /// Events kept outside the write that raised them (a sign-in refused, an error): queued
+    /// for `on` hooks once the top-level call ended, kept or rolled back (`SDK.flush_kept`).
+    kept_events: ?*std.ArrayList(Emitted) = null,
     /// The top-level call's trail, for the activity and error logs (`sdk/trail.zig`).
     trail: ?*@import("trail.zig").Trail = null,
+    /// Where on the trail the operation running now started (`Trail.mark`): what its
+    /// `after` hooks place the units it changed at.
+    trail_start: u32 = 0,
+    /// What plugins log (`ctx.log`) during the top-level call or queued run; null outside
+    /// one, where a line goes to the server's output.
+    lines: ?*@import("trail.zig").Lines = null,
     /// The installed plugins installed in the project: their operations and hooks.
     sandboxed_plugins: ?*const @import("sandboxed_plugins.zig").SandboxedPlugins = null,
     /// Every compiled-in plugin's `State` (`publr.plugin_states.of`), where a server made them.
     plugin_states: ?*anyopaque = null,
     /// How deep calls nest through installed plugins, bounded by `plugins.depth_max`.
     plugin_depth: u32 = 0,
-    /// Set while a display hook runs: it may read what it is granted, never write.
+    /// Set while a display hook or a `before` hook on a sign-in runs: it may read what it is
+    /// granted, never write.
     reads_only: bool = false,
     /// Where the media library keeps its files, where a server made it.
     files: ?@import("../lib/files.zig").Files = null,
@@ -265,8 +304,15 @@ pub const Ctx = struct {
     /// The device sending the call said `--production`: it means the site itself, not a copy
     /// of it. The core reads it nowhere; a hosting service's plugin may.
     production: bool = false,
-    /// A write so far changed what visitors see (a `published` or `unpublished` notice):
-    /// what a `drafts` device may not do.
+    /// Where plugins' outside calls may go: production (the default) refuses local and
+    /// private addresses and the server's own hosts; a laptop's `serve` over plain http
+    /// lets a listed `localhost` in.
+    outside: @import("../model/outside.zig").Rule = .{},
+    /// The first refusal of an `after` hook on an event emitted in this write: the write
+    /// fails with it before it commits.
+    event_refusal: ?@import("operation.zig").Error = null,
+    /// A write so far changed what visitors see (a document put live or taken off, set by
+    /// the move itself): what a `drafts` device may not do.
     publishes: bool = false,
     /// The request's scratch (`scratch.zig`), set aside the first time a loop asks for it
     /// and shared by every call nested in the request, and by copies of this context.
@@ -291,16 +337,23 @@ pub const Ctx = struct {
         return view.say(view.context, ctx.arena, locale, message);
     }
 
-    pub fn init(options: Options) Ctx {
+    pub fn init(
+        database: *db.Db,
+        io: std.Io,
+        arena: std.mem.Allocator,
+        auth: *AuthState,
+        caller: Caller,
+        options: Options,
+    ) Ctx {
         std.debug.assert(options.request_id.len <= request_id_len_max);
         std.debug.assert(options.now_ms >= 0);
 
         return .{
-            .caller = options.caller,
-            .db = options.db,
-            .io = options.io,
-            .arena = options.arena,
-            .auth = options.auth,
+            .caller = caller,
+            .db = database,
+            .io = io,
+            .arena = arena,
+            .auth = auth,
             .request_id = options.request_id,
             .now_ms = options.now_ms,
         };
@@ -356,8 +409,6 @@ pub const Ctx = struct {
         }
     }
 
-    /// Ends the operation with a failure its plugin declares: `return ctx.fail(unverified);`.
-    /// The write is rolled back like any other error's.
     /// Working memory for a loop's items: `mark` before an item, `rewind` after it.
     pub fn scratch(ctx: *Ctx) error{OutOfMemory}!*Scratch {
         if (ctx.scratch_set_aside) |set_aside| {
@@ -381,6 +432,8 @@ pub const Ctx = struct {
         }
     }
 
+    /// Ends the operation with a failure its plugin declares: `return ctx.fail(unverified);`.
+    /// The write is rolled back like any other error's.
     pub fn fail(ctx: *Ctx, failure: @import("operation.zig").Failure) error{Failed} {
         std.debug.assert(failure.name.len > 0);
         std.debug.assert(failure.status >= 400 and failure.status <= 599);
@@ -390,16 +443,100 @@ pub const Ctx = struct {
         return error.Failed;
     }
 
-    pub fn notice(ctx: *Ctx, name: []const u8, subject: []const u8) void {
+    /// Refuses the input with every problem found at once: `error.Invalid`, answered as
+    /// `{ "error": "Invalid", "problems": [ { "field", "message" } ] }`.
+    pub fn refuse(
+        ctx: *Ctx,
+        problems: []const @import("operation.zig").Problem,
+    ) error{Invalid} {
+        std.debug.assert(problems.len > 0);
+        std.debug.assert(problems.len <= @import("operation.zig").problems_max);
+
+        ctx.problems = problems;
+
+        return error.Invalid;
+    }
+
+    /// Emits one of core's events (`role.created`, made with `publr.event.define`): `after`
+    /// hooks on it run now, inside the write; `on` hooks hear it from the queue once it
+    /// commits.
+    pub fn emit(ctx: *Ctx, comptime Event: type, payload: Event.Payload) void {
+        comptime std.debug.assert(Event.full_name.len > 0);
+        std.debug.assert(ctx.parent != null);
+
+        const text = std.json.Stringify.valueAlloc(ctx.arena, payload, .{}) catch {
+            ctx.event_refusal = ctx.event_refusal orelse error.OutOfMemory;
+            return;
+        };
+
+        ctx.emit_json(Event.full_name, text);
+    }
+
+    /// An event by name with its payload as JSON, `after` hooks first: a plugin's typed
+    /// `ctx.emit`, an installed plugin's.
+    pub fn emit_json(ctx: *Ctx, name: []const u8, payload: []const u8) void {
         std.debug.assert(name.len > 0);
         std.debug.assert(ctx.parent != null);
 
-        const emit = ctx.notify orelse return;
-        emit(ctx, .{
+        const hand = ctx.notify orelse return;
+        hand(ctx, .{
             .operation_id = ctx.parent.?,
             .name = name,
-            .subject = subject,
-        });
+            .subject = payload,
+        }, true);
+    }
+
+    /// Keeps one of core's events outside the write running now: a refusal people hear of
+    /// (`publr.auth.SignInFailed`) or an error (`publr.errors.Failed`). Only `on` hooks hear
+    /// it, once the top-level call ended; the write rolling back does not drop it.
+    pub fn keep(ctx: *Ctx, comptime Event: type, payload: Event.Payload) void {
+        comptime std.debug.assert(Event.full_name.len > 0);
+        std.debug.assert(ctx.now_ms >= 0);
+
+        const text = std.json.Stringify.valueAlloc(ctx.arena, payload, .{}) catch {
+            std.log.warn("events: {s} not kept: out of memory", .{Event.full_name});
+            return;
+        };
+        const list = ctx.kept_events orelse made: {
+            const made = ctx.arena.create(std.ArrayList(Emitted)) catch {
+                std.log.warn("events: {s} not kept: out of memory", .{Event.full_name});
+                return;
+            };
+
+            made.* = .empty;
+            ctx.kept_events = made;
+            break :made made;
+        };
+        const operation_id = ctx.parent orelse ctx.allocate_operation_id();
+
+        list.append(ctx.arena, .{
+            .operation_id = operation_id,
+            .name = Event.full_name,
+            .subject = text,
+        }) catch {
+            std.log.warn("events: {s} not kept: out of memory", .{Event.full_name});
+        };
+    }
+
+    /// One of core's events whose `after` hooks core ran itself, by its own rules (a sign-in
+    /// spares an administrator; a move's hooks hear the transition), or none (a copy's exact
+    /// state landed): kept on the trail and queued for the `on` hooks. The payload is the
+    /// event's struct.
+    pub fn emit_heard(ctx: *Ctx, name: []const u8, payload: anytype) void {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(ctx.parent != null);
+
+        const hand = ctx.notify orelse return;
+        const text = std.json.Stringify.valueAlloc(ctx.arena, payload, .{}) catch {
+            ctx.event_refusal = ctx.event_refusal orelse error.OutOfMemory;
+            return;
+        };
+
+        hand(ctx, .{
+            .operation_id = ctx.parent.?,
+            .name = name,
+            .subject = text,
+        }, false);
     }
 
     pub fn allocate_operation_id(ctx: *Ctx) OperationId {
@@ -413,11 +550,6 @@ pub const Ctx = struct {
     }
 
     pub const Options = struct {
-        caller: Caller,
-        db: *db.Db,
-        io: std.Io,
-        arena: std.mem.Allocator,
-        auth: *AuthState,
         request_id: []const u8 = "",
         now_ms: i64 = 0,
     };
@@ -447,13 +579,14 @@ test "operation ids are unique and increasing within a ctx" {
 
     var buffer: [256]u8 = undefined;
     var fixed = std.heap.FixedBufferAllocator.init(&buffer);
-    var ctx = Ctx.init(.{
-        .caller = .system,
-        .db = &fixture.connection,
-        .io = std.testing.io,
-        .arena = fixed.allocator(),
-        .auth = &auth_state,
-    });
+    var ctx = Ctx.init(
+        &fixture.connection,
+        std.testing.io,
+        fixed.allocator(),
+        &auth_state,
+        .system,
+        .{},
+    );
 
     const first = ctx.allocate_operation_id();
     const second = ctx.allocate_operation_id();

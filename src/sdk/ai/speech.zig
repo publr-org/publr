@@ -68,6 +68,7 @@ pub fn Transcribe(
         ;
         pub const kind: operation.Kind = .read;
         pub const operator_only = true;
+        pub const failures = @import("../ai.zig").provider_failures;
         pub const In = Speech;
         pub const Out = struct {
             text: []const u8,

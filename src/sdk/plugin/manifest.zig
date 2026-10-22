@@ -2,6 +2,7 @@
 //! generated at build time from the plugin's declarations, read by the host before anything
 //! runs. One shape for both, so they cannot drift.
 const std = @import("std");
+const plugin_define = @import("define.zig");
 const runtime = @import("sandboxed.zig");
 const sdk_operation = @import("../operation.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
@@ -34,27 +35,30 @@ pub fn of(comptime Plugin: type) Manifest {
             .namespaces = namespaces_of(Plugin),
             .operations = operations_of(Plugin),
             .hooks = hooks_of(Plugin),
+            .jobs = jobs_of(Plugin),
             .permissions = runtime.permissions_of(Plugin),
-            .allowed_domains = runtime.strings_of(Plugin, "allowed_domains"),
+            .secrets = @import("secret_define.zig").declared_of(Plugin),
             .depends_on = @import("depends_on.zig").of(Plugin),
-            .limits = if (@hasDecl(Plugin, "limits")) Plugin.limits else .{},
-            .content_access = if (@hasDecl(Plugin, "content_access"))
-                Plugin.content_access
+            .limits = if (plugin_define.has(Plugin, "limits"))
+                plugin_define.get(Plugin, "limits")
             else
                 .{},
             .content_types = contract.content_types_of(Plugin),
             .custom_fields = contract.custom_fields_of(Plugin),
             .roles = contract.roles_of(Plugin),
+            .statuses = @import("record_flow.zig").registered_of(Plugin),
             .internal_records = contract.internal_records_of(Plugin),
-            .remotes = remotes_of(Plugin),
+            .remotes = @import("remote_contract.zig").uses_of(Plugin),
+            .events = @import("remote_contract.zig").events_of(Plugin),
             .compatible_with = contract.compatible_with_of(Plugin),
             .pages = pages_of(Plugin),
-            .sections = sections_of(Plugin),
+            .menu = @import("menu_define.zig").entries_of(Plugin),
+            .icons = @import("menu_define.zig").icons_of(Plugin),
             .panels = panels_of(Plugin),
             .top_bar = items_of(Plugin, "top_bar"),
             .row_actions = row_actions_of(Plugin),
-            .uninstall = uninstall_of(Plugin),
-            .about = if (@hasDecl(Plugin, "about")) Plugin.about else "",
+            // The rest of `main.zig`'s `//!`, past its first line: shown on its page.
+            .about = if (@hasDecl(Plugin, "settings_text")) Plugin.settings_text else "",
             .left_out = runtime.left_out(Plugin),
         };
     }
@@ -79,6 +83,16 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 .description = Declared.description,
                 .details = if (@hasDecl(Declared, "details")) Declared.details else "",
                 .open = @hasDecl(Declared, "open") and Declared.open,
+                .public = sdk_operation.public(Declared),
+                .untrusted_callers = if (@hasDecl(Declared, "untrusted_callers"))
+                    Declared.untrusted_callers
+                else
+                    null,
+                .answer = if (@hasDecl(Declared, "answer")) Declared.answer else null,
+                .limit = if (@hasDecl(Declared, "limit") and Declared.limit != null)
+                    Declared.limit.?.per_minute
+                else
+                    0,
                 .fields = fields_of(Declared),
                 .input = sdk_operation.input_shape(Declared),
                 .output = shapes.describe(Declared.Out),
@@ -114,6 +128,7 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .read = form.read.name,
                     .save = form.save.name,
                     .multiline = form.multiline,
+                    .hidden = page.menu != null,
                 }};
             } else if (takes(page.operation.?.run)) {
                 list = list ++ &[_]sandboxed_plugin.Page{.{
@@ -121,6 +136,7 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .label = page.label,
                     .icon = page.icon,
                     .operation = page.operation.?.name,
+                    .hidden = page.menu != null,
                 }};
             }
         }
@@ -177,33 +193,6 @@ fn panels_of(comptime Plugin: type) []const sandboxed_plugin.Panel {
     }
 }
 
-fn sections_of(comptime Plugin: type) []const sandboxed_plugin.Section {
-    comptime {
-        var sections: []const sandboxed_plugin.Section = &.{};
-
-        std.debug.assert(Plugin.manifest.name.len > 0);
-
-        for (@import("admin_slots.zig").sections_of(Plugin)) |section| {
-            var listed: []const sandboxed_plugin.SectionType = &.{};
-
-            for (section.types) |one| {
-                listed = listed ++ &[_]sandboxed_plugin.SectionType{.{
-                    .handle = one.handle,
-                    .columns = one.columns,
-                }};
-            }
-
-            sections = sections ++ &[_]sandboxed_plugin.Section{.{
-                .label = section.label,
-                .icon = section.icon,
-                .types = listed,
-            }};
-        }
-
-        return sections;
-    }
-}
-
 fn row_actions_of(comptime Plugin: type) []const sandboxed_plugin.RowAction {
     comptime {
         var actions: []const sandboxed_plugin.RowAction = &.{};
@@ -224,24 +213,6 @@ fn row_actions_of(comptime Plugin: type) []const sandboxed_plugin.RowAction {
     }
 }
 
-fn remotes_of(comptime Plugin: type) []const RemoteUse {
-    comptime {
-        std.debug.assert(Plugin.manifest.name.len > 0);
-
-        var list: []const RemoteUse = &.{};
-
-        for (@import("../plugin.zig").remotes_of(Plugin)) |Used| {
-            list = list ++ &[_]RemoteUse{.{
-                .operation = Used.name,
-                .input = shapes.describe(Used.In),
-                .output = shapes.describe(Used.Out),
-            }};
-        }
-
-        return list;
-    }
-}
-
 fn hooks_of(comptime Plugin: type) []const Hook {
     comptime {
         std.debug.assert(Plugin.manifest.name.len > 0);
@@ -251,15 +222,15 @@ fn hooks_of(comptime Plugin: type) []const Hook {
         for (runtime.runtime_entries(Plugin)) |entry| {
             const Declared = entry.declaration;
             const stage: Hook.Stage = switch (entry.stage) {
-                .operation => continue,
+                .operation, .job => continue,
                 .before => .before,
                 .after => .after,
                 .event => .event,
-                .display => .display,
+                .modify => .modify,
             };
             const target = switch (stage) {
                 .event => Declared.event,
-                .display => @import("../display.zig").target_of(Declared),
+                .modify => Declared.pattern,
                 .before, .after => Declared.operation,
             };
 
@@ -267,6 +238,36 @@ fn hooks_of(comptime Plugin: type) []const Hook {
                 .stage = stage,
                 .target = target,
                 .reason = Declared.reason,
+            }};
+        }
+
+        return list;
+    }
+}
+
+fn jobs_of(comptime Plugin: type) []const sandboxed_plugin.Job {
+    comptime {
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        var list: []const sandboxed_plugin.Job = &.{};
+
+        for (runtime.runtime_entries(Plugin)) |entry| {
+            if (entry.stage != .job) {
+                continue;
+            }
+
+            const Job = entry.declaration;
+            const every = Job.every;
+
+            list = list ++ &[_]sandboxed_plugin.Job{.{
+                .name = Job.verb,
+                .every = if (every) |given| @tagName(given) else "",
+                .minutes = if (every) |given| switch (given) {
+                    .minutes => |count| count,
+                    else => 0,
+                } else 0,
+                .hour = Job.at.hour,
+                .minute = Job.at.minute,
             }};
         }
 
@@ -431,34 +432,7 @@ test "the test plugin's manifest names its operation, fields and content type" {
     try std.testing.expectEqual(@as(usize, 1), manifest.operations.len);
     try std.testing.expectEqual(Field.Shape.string, manifest.operations[0].fields[0].shape);
     try std.testing.expect(manifest.operations[0].fields[0].required);
-    try std.testing.expect(std.mem.indexOf(u8, text, "\"content.write\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "\"records.write\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "\"greeting\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "Usage: publr greeter") != null);
-}
-
-/// The write a plugin runs when it is removed with some of its data: one of its own, taking
-/// `remove`, the keys of the pieces going (`type:<handle>`, `internal:<collection>`,
-/// `fields:<group>`), to clear what core does not know is its.
-pub fn uninstall_of(comptime Plugin: type) []const u8 {
-    comptime {
-        const contract = @import("../plugin.zig");
-        const name = Plugin.manifest.name;
-
-        if (!@hasDecl(Plugin, "uninstall")) {
-            return "";
-        }
-
-        const Uninstall = Plugin.uninstall;
-
-        if (!contract.owns_operation(Plugin, Uninstall) or Uninstall.kind != .write) {
-            @compileError("plugin " ++ name ++ ": `uninstall` is one of its own writes");
-        }
-
-        if (!@hasField(Uninstall.In, "remove")) {
-            @compileError("plugin " ++ name ++ ": `uninstall` takes `remove`, the keys of " ++
-                "the pieces of its data going");
-        }
-
-        return Uninstall.name;
-    }
 }

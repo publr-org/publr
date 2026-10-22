@@ -8,13 +8,16 @@ const middleware = @import("middleware.zig");
 
 pub const Error = operation.Error;
 const Role = @import("../model/role.zig").Role;
+const Added = @import("../model/flow.zig").Added;
 
 /// How deep calls may nest through plugins: a plugin's operation calling another's.
 pub const depth_max: u32 = 8;
 
-pub const Stage = enum { before, after, event, display };
+pub const Stage = enum { before, after, event, modify };
 
 pub const Manifest = @import("../model/sandboxed_plugin.zig").Manifest;
+const sandboxed_plugin = @import("../model/sandboxed_plugin.zig");
+pub const Job = sandboxed_plugin.Job;
 
 /// An operation an installed plugin brings, as the SDK authorizes and runs it.
 pub const Operation = struct {
@@ -22,6 +25,14 @@ pub const Operation = struct {
     kind: operation.Kind,
     description: []const u8 = "",
     open: bool = false,
+    /// Any site may call it through an app (`public = true`).
+    public: bool = false,
+    /// Made with `publr.operation.define`: whether callers without credentials may call it;
+    /// null for one declared part by part.
+    untrusted_callers: ?bool = null,
+    answer: ?@import("../model/caller_answer.zig").Answer = null,
+    /// Its own rate limit, calls a minute per caller; 0 for none.
+    limit: u32 = 0,
     /// Its input's fields, for an adapter that reads flags or a form into JSON.
     fields: []const @import("../model/sandboxed_plugin.zig").Field = &.{},
     /// Its `--help`, as the build rendered it.
@@ -33,6 +44,13 @@ pub const Operation = struct {
     /// Which plugin, and which of its entries, runs it: the host's own numbering.
     sandboxed_plugin: u32,
     entry: u32,
+};
+
+/// An installed `on` hook hearing an event: its plugin, and which of that plugin's hooks on
+/// the event it is (0 for its first).
+pub const OnHook = struct {
+    plugin: []const u8,
+    ordinal: u32,
 };
 
 /// A module read and checked, its file stored: what installing and updating work from.
@@ -70,8 +88,11 @@ pub const SandboxedPlugins = struct {
             found: Operation,
             input: []const u8,
         ) Error![]const u8,
-        /// The build's roles with the ones plugins declare merged in; null when none do.
-        roles: *const fn (context: *anyopaque) ?[]const Role,
+        /// The build's added statuses with the ones plugins are granted; null when none are.
+        statuses: *const fn (context: *anyopaque) ?[]const Added,
+        /// Whether `plugin`'s remote `name` is off: its plugin is not there, or it does not
+        /// fit what that plugin is now.
+        remote_off: *const fn (context: *anyopaque, plugin: []const u8, name: []const u8) bool,
         hooked: *const fn (context: *anyopaque, hook_stage: Stage, name: []const u8) bool,
         before: *const fn (
             context: *anyopaque,
@@ -97,14 +118,37 @@ pub const SandboxedPlugins = struct {
             name: []const u8,
             input: []const u8,
         ) Error![]const u8,
-        /// Every display hook on `target` (`record.title/variant`) in turn, each handed the
-        /// batch the one before it answered; the last answer, as JSON.
-        display: *const fn (
+        /// Every installed modifier whose name takes `target` (`variant.title`) in turn, each
+        /// handed the batch the one before it answered; the last answer, as JSON.
+        modify: *const fn (
             context: *anyopaque,
             ctx: *Ctx,
             target: []const u8,
             input: []const u8,
         ) Error![]const u8,
+        /// The installed `on` hooks that hear the event `name`, in the order they run.
+        on_hooks: *const fn (
+            context: *anyopaque,
+            arena: std.mem.Allocator,
+            name: []const u8,
+        ) Error![]const OnHook,
+        /// Runs one installed `on` hook on a queued event, its payload as `subject`.
+        on: *const fn (
+            context: *anyopaque,
+            ctx: *Ctx,
+            hook: OnHook,
+            name: []const u8,
+            subject: []const u8,
+        ) Error!void,
+        /// Runs an installed plugin's queued job; `last`: its final attempt.
+        job: *const fn (
+            context: *anyopaque,
+            ctx: *Ctx,
+            plugin: []const u8,
+            name: []const u8,
+            input: []const u8,
+            last: bool,
+        ) Error!void,
     };
 
     /// Writes one piece of an upload into the uploads folder; answers how much it holds.
@@ -170,8 +214,19 @@ pub const SandboxedPlugins = struct {
         return sandboxed.vtable.run(sandboxed.context, ctx, found, input);
     }
 
-    pub fn roles(sandboxed: *const SandboxedPlugins) ?[]const Role {
-        const found = sandboxed.vtable.roles(sandboxed.context);
+    pub fn remote_off(
+        sandboxed: *const SandboxedPlugins,
+        plugin: []const u8,
+        name: []const u8,
+    ) bool {
+        std.debug.assert(plugin.len > 0);
+        std.debug.assert(name.len > 0);
+
+        return sandboxed.vtable.remote_off(sandboxed.context, plugin, name);
+    }
+
+    pub fn statuses(sandboxed: *const SandboxedPlugins) ?[]const Added {
+        const found = sandboxed.vtable.statuses(sandboxed.context);
 
         std.debug.assert(found == null or found.?.len > 0);
 
@@ -212,7 +267,7 @@ pub const SandboxedPlugins = struct {
         return sandboxed.vtable.call_as(sandboxed.context, ctx, plugin, name, input);
     }
 
-    pub fn display(
+    pub fn modify(
         sandboxed: *const SandboxedPlugins,
         ctx: *Ctx,
         target: []const u8,
@@ -221,7 +276,7 @@ pub const SandboxedPlugins = struct {
         std.debug.assert(target.len > 0);
         std.debug.assert(input.len > 0);
 
-        return sandboxed.vtable.display(sandboxed.context, ctx, target, input);
+        return sandboxed.vtable.modify(sandboxed.context, ctx, target, input);
     }
 
     pub fn after(
@@ -235,6 +290,68 @@ pub const SandboxedPlugins = struct {
         std.debug.assert(ctx.parent != null);
 
         return sandboxed.vtable.after(sandboxed.context, ctx, name, input, output);
+    }
+
+    pub fn job(
+        sandboxed: *const SandboxedPlugins,
+        ctx: *Ctx,
+        plugin: []const u8,
+        name: []const u8,
+        input: []const u8,
+        last: bool,
+    ) Error!void {
+        std.debug.assert(plugin.len > 0);
+        std.debug.assert(name.len > 0);
+
+        return sandboxed.vtable.job(sandboxed.context, ctx, plugin, name, input, last);
+    }
+
+    /// The job `plugin` declares as `name`; null when no installed plugin does.
+    pub fn job_of(
+        sandboxed: *const SandboxedPlugins,
+        plugin: []const u8,
+        name: []const u8,
+    ) ?sandboxed_plugin.Job {
+        std.debug.assert(plugin.len > 0);
+        std.debug.assert(name.len > 0);
+
+        for (sandboxed.manifests()) |manifest| {
+            if (!std.mem.eql(u8, manifest.name, plugin)) {
+                continue;
+            }
+
+            for (manifest.jobs) |declared| {
+                if (std.mem.eql(u8, declared.name, name)) {
+                    return declared;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    pub fn on_hooks(
+        sandboxed: *const SandboxedPlugins,
+        arena: std.mem.Allocator,
+        name: []const u8,
+    ) Error![]const OnHook {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(depth_max > 0);
+
+        return sandboxed.vtable.on_hooks(sandboxed.context, arena, name);
+    }
+
+    pub fn on(
+        sandboxed: *const SandboxedPlugins,
+        ctx: *Ctx,
+        hook: OnHook,
+        name: []const u8,
+        subject: []const u8,
+    ) Error!void {
+        std.debug.assert(hook.plugin.len > 0);
+        std.debug.assert(name.len > 0);
+
+        return sandboxed.vtable.on(sandboxed.context, ctx, hook, name, subject);
     }
 
     pub fn event(sandboxed: *const SandboxedPlugins, ctx: *Ctx, happened: middleware.Event) void {

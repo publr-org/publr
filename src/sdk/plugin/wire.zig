@@ -20,7 +20,7 @@ pub const Result = extern struct {
 pub const result_bytes: u32 = @sizeOf(Result);
 
 /// The kind of entry a guest's `publr_invoke` runs, in manifest order.
-pub const Stage = enum { operation, before, after, event, display };
+pub const Stage = enum { operation, before, after, event };
 
 /// Every error of the SDK's set, in the order that numbers them on the wire. The order of an
 /// error set's `@typeInfo` differs between two compilations, so it is written out here, once,
@@ -29,7 +29,7 @@ const names = [_][]const u8{
     "Denied",      "Invalid",    "NotFound",    "Conflict",       "Vetoed",
     "Throttled",   "Failed",     "Unavailable", "BadCredentials", "InvalidationFailed",
     "Sqlite",      "Constraint", "Busy",        "ReadOnly",       "OutOfMemory",
-    "Interrupted", "TooBig",
+    "Interrupted", "TooBig",     "NotYet",
 };
 
 comptime {
@@ -69,12 +69,37 @@ pub fn error_of(code: u32) Error {
     return error.Invalid;
 }
 
+/// Who is calling, as the host's `ctx.caller()` sees it, so the guest's answers the same.
+pub const Caller = struct {
+    from: @import("caller_view.zig").Kind = .plugin,
+    /// The calling plugin's name when `from` is `.plugin`.
+    plugin: []const u8 = "",
+    /// The other site that sent the request, when one did.
+    referer: []const u8 = "",
+    signed_in: bool = false,
+    roles: []const []const u8 = &.{},
+    granted: bool = false,
+};
+
 /// What the guest reads before its entry's own input: when it runs and for whom.
 pub fn Envelope(comptime In: type) type {
     return struct {
         now_ms: i64,
         on_behalf_of: ?[]const u8 = null,
         visitor: []const u8 = "",
+        caller: Caller = .{},
+        in: In,
+    };
+}
+
+/// What a queued job reads: its input, and whether this is its last attempt.
+pub fn JobEnvelope(comptime In: type) type {
+    return struct {
+        now_ms: i64,
+        on_behalf_of: ?[]const u8 = null,
+        visitor: []const u8 = "",
+        caller: Caller = .{},
+        last: bool = false,
         in: In,
     };
 }
@@ -85,18 +110,11 @@ pub fn AfterEnvelope(comptime In: type, comptime Out: type) type {
         now_ms: i64,
         on_behalf_of: ?[]const u8 = null,
         visitor: []const u8 = "",
+        caller: Caller = .{},
         in: In,
         out: Out,
     };
 }
-
-/// An event as a guest sees it: the operation (or notice) name, and for a notice, its subject.
-pub const Event = struct {
-    kind: enum { completed, rejected, failed, notice },
-    name: []const u8,
-    subject: []const u8 = "",
-    err: []const u8 = "",
-};
 
 test "every error round-trips through its code; unknown codes are Invalid" {
     const all = @typeInfo(Error).error_set.?;

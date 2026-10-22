@@ -3,6 +3,7 @@
 //! `^0.2`: the same leftmost non-zero part, no older). A compiled-in plugin's requirements
 //! are checked when the binary is built; an installed plugin's when it is enabled.
 const std = @import("std");
+const plugin_define = @import("define.zig");
 
 pub const depends_on_max: u32 = 16;
 const version_range = @import("../../model/version_range.zig");
@@ -46,11 +47,11 @@ pub fn of(comptime Plugin: type) []const []const u8 {
     comptime {
         std.debug.assert(@hasDecl(Plugin, "manifest"));
 
-        if (!@hasDecl(Plugin, "depends_on")) {
+        if (!plugin_define.has(Plugin, "depends_on")) {
             return &.{};
         }
 
-        return &Plugin.depends_on;
+        return plugin_define.get(Plugin, "depends_on");
     }
 }
 

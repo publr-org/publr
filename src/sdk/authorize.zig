@@ -22,11 +22,15 @@ pub const Request = struct {
     /// The type the call names, when the compiled-in plugin whose code runs declares it:
     /// reached whoever the plugin runs for, as an installed plugin reaches its own.
     own_types: []const []const u8 = &.{},
+    /// The grants of the compiled-in plugin whose code makes the call: it gets no more than
+    /// they allow, whoever it runs for.
+    plugin_access: ?*const plugin_access.Access = null,
 };
 
 pub const Policy = *const fn (ctx: *const Ctx, request: Request) Grant;
 
 pub const open_operations = [_][]const u8{
+    "mod.apply",
     "project.init",
     "project.status",
     "user.set_password",
@@ -110,7 +114,7 @@ fn role_grant(roles: []const Role, held: []const []const u8, request: Request) G
 
 pub fn is_open_operation(operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
-    std.debug.assert(open_operations.len == 5);
+    std.debug.assert(open_operations.len == 6);
 
     for (open_operations) |name| {
         if (std.mem.eql(u8, operation_name, name)) {
@@ -200,7 +204,7 @@ fn plugin_grant(ctx: *const Ctx, request: Request, roles: []const Role) operatio
     std.debug.assert(request.operation_name.len > 0);
     std.debug.assert(plugin.name.len > 0);
 
-    const granted = plugin_access.grant(plugin.name, access, .{
+    const granted = try plugin_access.grant(ctx.arena, plugin.name, access, .{
         .operation_name = request.operation_name,
         .kind = request.kind,
         .type_id = request.resource.type_id,
@@ -235,6 +239,22 @@ pub fn authorize(
     std.debug.assert(request.operation_name.len > 0);
 
     var result = try core_policy(ctx, request, roles);
+
+    // A compiled-in plugin is held to its grants for what a permission names; what none
+    // names (its own seams into core, other plugins' operations) stays as its build made it.
+    if (request.plugin_access) |access| {
+        if (result.allows() and plugin_access.names_operation(access, request.operation_name)) {
+            std.debug.assert(ctx.plugin.len > 0);
+
+            const held = try plugin_access.grant(ctx.arena, ctx.plugin, access, .{
+                .operation_name = request.operation_name,
+                .kind = request.kind,
+                .type_id = request.resource.type_id,
+            });
+
+            result = try Grant.intersect(result, held, ctx.arena);
+        }
+    }
 
     for (policies) |policy| {
         if (!result.allows()) {
@@ -302,6 +322,60 @@ test "core policy: a plugin's own type is reached whoever it runs for, only that
     not_own.own_types = &.{};
 
     try std.testing.expectError(error.Denied, authorize(&anon, not_own, &.{}, &role.core));
+}
+
+test "a compiled-in plugin's code is held to its grants, queued work included" {
+    var harness: Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    const held = [_]@import("../model/permission.zig").Held{.{
+        .key = "records.write",
+        .records = &.{"note"},
+    }};
+    const access: plugin_access.Access = .{
+        .granted = &.{"records.write"},
+        .held = &held,
+        .own_types = &.{},
+    };
+    // A job runs as the system, its plugin's code still held to the plugin's grant.
+    var queued = harness.ctx(.system);
+
+    queued.plugin = "prices";
+
+    var save: Request = .{
+        .operation_name = "record.save",
+        .kind = .write,
+        .resource = .{
+            .type_id = "note",
+        },
+        .plugin_access = &access,
+    };
+    const granted = try authorize(&queued, save, &.{}, &role.core);
+
+    try std.testing.expect(granted.allows_type("note"));
+
+    save.resource.type_id = "post";
+    try std.testing.expectError(error.Denied, authorize(&queued, save, &.{}, &role.core));
+
+    const publish: Request = .{
+        .operation_name = "record.publish",
+        .kind = .write,
+        .resource = .{
+            .type_id = "note",
+        },
+        .plugin_access = &access,
+    };
+
+    try std.testing.expectError(error.Denied, authorize(&queued, publish, &.{}, &role.core));
+
+    // What no permission names stays as the build made it.
+    _ = try authorize(&queued, .{
+        .operation_name = "project.set_currencies",
+        .kind = .write,
+        .resource = .{},
+        .plugin_access = &access,
+    }, &.{}, &role.core);
 }
 
 test "core policy: anonymous reads live+public only, writes denied; users and system full" {

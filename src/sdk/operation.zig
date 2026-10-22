@@ -19,6 +19,9 @@ pub const Error = db.Error || error{
     Unavailable,
     BadCredentials,
     InvalidationFailed,
+    /// A filter's read, noted for its batch: the filter runs again once the batch's reads are
+    /// in. Only a filter's first pass sees it.
+    NotYet,
 };
 
 pub const Kind = enum { read, write };
@@ -56,6 +59,15 @@ pub const Failure = struct {
     message: []const u8,
 };
 
+/// One thing wrong with a call's input, beside its field: `.validate`'s `problems.add`.
+pub const Problem = struct {
+    /// A field of the input, as named in it.
+    field: []const u8,
+    /// For people, shown beside the field.
+    message: []const u8,
+};
+
+pub const problems_max: u32 = 64;
 pub const failure_name_len_max: u32 = 64;
 pub const failure_message_len_max: u32 = 200;
 
@@ -84,6 +96,24 @@ pub const Namespace = struct {
     name: []const u8,
     summary: []const u8,
     details: []const u8,
+    /// What people call it: `Media library`. Empty shows the name.
+    label: []const u8 = "",
+    /// Where it sits when roles are edited.
+    area: Area = .site,
+
+    pub const Area = enum {
+        /// What editors write: records, terms, media, their history.
+        content,
+        /// The site's structure and setup: types, fields, apps, design.
+        site,
+        /// Accounts, roles and how people sign in.
+        people,
+        /// How this Publr runs: plugins, secrets, updates, logs.
+        system,
+        /// What every role needs or no one grants by hand (liveness, a person's own pins
+        /// and views): not listed when roles are edited, its grants kept as they are.
+        background,
+    };
 };
 
 pub const Resource = struct {
@@ -208,13 +238,20 @@ pub const Deprecated = struct {
     why: []const u8 = "",
 };
 
+/// Whether pages on any site may call the operation through an app's `_api`: only when it
+/// says so itself (`pub const public = true`), never by default. Such a call carries no
+/// cookies and runs as an anonymous visitor (the `publr-visitor` header names it).
+pub fn public(comptime Operation: type) bool {
+    return @hasDecl(Operation, "public") and Operation.public;
+}
+
 pub fn deprecation(comptime Operation: type) ?Deprecated {
     comptime {
         if (!@hasDecl(Operation, "deprecated")) {
             return null;
         }
 
-        const found: Deprecated = Operation.deprecated;
+        const found: Deprecated = @as(?Deprecated, Operation.deprecated) orelse return null;
 
         std.debug.assert(found.since.len > 0);
 
@@ -239,13 +276,9 @@ fn validate_deprecated(comptime Operation: type) void {
     comptime {
         std.debug.assert(Operation.name.len > 0);
 
-        if (!@hasDecl(Operation, "deprecated")) {
-            return;
-        }
+        const found = deprecation(Operation) orelse return;
 
-        assert_decl(Operation, "deprecated", Deprecated);
-
-        _ = std.SemanticVersion.parse(Operation.deprecated.since) catch
+        _ = std.SemanticVersion.parse(found.since) catch
             @compileError(Operation.name ++ ": `deprecated.since` is the release, `0.4.0`");
     }
 }
@@ -263,6 +296,16 @@ pub fn validate(comptime Operation: type) void {
 
         if (!@hasDecl(Operation, "run")) {
             @compileError(Operation.name ++ ": missing `run`");
+        }
+
+        if (@hasDecl(Operation, "public")) {
+            // Any site calls only what anyone may call, through an app (`app.*`).
+            if (Operation.public and !(@hasDecl(Operation, "open") and Operation.open)) {
+                @compileError(Operation.name ++ ": `public` needs `open = true`");
+            }
+            if (Operation.public and !std.mem.startsWith(u8, Operation.name, "app.")) {
+                @compileError(Operation.name ++ ": `public` is for `app.*` operations");
+            }
         }
 
         if (!@hasDecl(Operation, "example")) {
@@ -294,7 +337,7 @@ pub fn validate(comptime Operation: type) void {
         if (@hasDecl(Operation, "destroys")) {
             assert_decl(Operation, "destroys", bool);
 
-            if (Operation.kind != .write) {
+            if (Operation.destroys and Operation.kind != .write) {
                 @compileError(Operation.name ++ ": only a write destroys");
             }
         }

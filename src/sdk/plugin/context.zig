@@ -1,6 +1,15 @@
 const std = @import("std");
+const mods = @import("../mods.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
+const words = @import("words.zig");
+const permission_define = @import("permission_define.zig");
+const plugin_define = @import("define.zig");
+const Ask = @import("../../model/sandboxed_plugin.zig").Ask;
+const caller_view = @import("caller_view.zig");
+const role = @import("../../model/role.zig");
+const job_define = @import("job_define.zig");
+const job_queue = @import("../../store/job_queue.zig");
 
 pub const Caller = sdk.Caller;
 pub const Error = sdk.Error;
@@ -16,32 +25,173 @@ pub const PluginCtx = switch (guest.mode) {
 pub const Mode = guest.Mode;
 
 const guest = @import("guest.zig");
+const filter_reads = @import("filter_reads.zig");
 
 /// A native plugin's way into Publr: direct calls through the SDK, full access.
 pub const HostApi = struct {
     inner: *sdk.Ctx,
+    /// Set while a filter runs: its reads are noted and answered for the whole batch.
+    reads: ?*filter_reads.Reads = null,
 
-    pub fn caller(self: *const PluginCtx) Caller {
+    /// Who is calling: where from, whether signed in, their roles, whether an
+    /// administrator granted them this operation, the visitor's stable id.
+    pub fn caller(self: *const PluginCtx) caller_view.View {
         std.debug.assert(self.inner.now_ms >= 0);
         std.debug.assert(self.inner.next_operation_id > 0);
 
-        return self.inner.caller;
+        const through_app = self.inner.app_plugins != null;
+        const raw = self.inner.caller;
+        const granted_here = !through_app and self.inner.within.len > 0 and
+            granted_by_role(self.inner, self.inner.within);
+
+        return .{
+            .from = caller_view.from_of(raw, through_app, self.inner.job),
+            .visitor = self.inner.visitor,
+            .referer = self.inner.referer,
+            .raw = raw,
+            .granted_here = granted_here,
+        };
     }
 
-    pub fn now_ms(self: *const PluginCtx) i64 {
-        std.debug.assert(self.inner.now_ms >= 0);
-        std.debug.assert(self.inner.next_operation_id > 0);
+    fn granted_by_role(inner: *const sdk.Ctx, operation_name: []const u8) bool {
+        std.debug.assert(operation_name.len > 0);
 
-        return self.inner.now_ms;
+        const raw = inner.caller;
+
+        if (raw == .system) {
+            return true;
+        }
+
+        const held = raw.roles() orelse return false;
+
+        return sdk.stored_roles.allows(inner, held, operation_name);
     }
 
-    /// The visitor's stable id when the call came from an app, signed in or not; empty
-    /// otherwise. What a cart keys on.
-    pub fn visitor(self: *const PluginCtx) []const u8 {
+    /// What the plugin was given for a request: compiled in, exactly what its `.permissions`
+    /// asked for, since whoever built the binary chose its plugins.
+    pub fn grant(self: *const PluginCtx, comptime key: []const u8) permission_define.Grant {
         std.debug.assert(self.inner.now_ms >= 0);
-        std.debug.assert(self.inner.visitor.len <= 64);
 
-        return self.inner.visitor;
+        return permission_define.Grant.of(key, held_in(asks_of_running(self.inner.plugin), key));
+    }
+
+    /// The call's time, one value for the whole call.
+    pub fn now(self: *const PluginCtx) words.Time {
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        return .{
+            .ms = self.inner.now_ms,
+        };
+    }
+
+    /// Queues `Job` to run after this call, between requests, as the plugin. Inside a write,
+    /// a rolled-back write queues nothing: `try ctx.enqueue(ReleaseHold, .{ .hold = ref })`.
+    pub fn enqueue(self: *PluginCtx, comptime Job: type, in: Job.Input) Error!void {
+        std.debug.assert(self.inner.now_ms >= 0);
+        comptime std.debug.assert(job_define.is_job(Job));
+
+        return self.enqueue_at(Job, in, self.now());
+    }
+
+    /// `enqueue` with when it may run: never before `at`, about a minute after it at most.
+    pub fn enqueue_at(
+        self: *PluginCtx,
+        comptime Job: type,
+        in: Job.Input,
+        at: words.Time,
+    ) Error!void {
+        comptime std.debug.assert(job_define.is_job(Job));
+        std.debug.assert(self.inner.plugin.len > 0);
+
+        const memory = self.inner.arena;
+        const input = std.json.Stringify.valueAlloc(memory, in, .{}) catch return error.OutOfMemory;
+
+        if (input.len > job_queue.input_bytes_max) {
+            return error.Invalid;
+        }
+
+        try job_queue.push(self.inner.db, .{
+            .plugin = self.inner.plugin,
+            .name = Job.verb,
+            .input = input,
+            .due_at_ms = @max(at.ms, self.inner.now_ms),
+            .now_ms = self.inner.now_ms,
+        });
+    }
+
+    /// Memory freed when the call ends.
+    pub fn alloc(
+        self: *const PluginCtx,
+        comptime Item: type,
+        count: u32,
+    ) error{OutOfMemory}![]Item {
+        std.debug.assert(count <= 1 << 24);
+
+        return self.inner.arena.alloc(Item, count);
+    }
+
+    /// Formatted text in memory freed when the call ends.
+    pub fn print(
+        self: *const PluginCtx,
+        comptime format: []const u8,
+        args: anytype,
+    ) error{OutOfMemory}![]const u8 {
+        comptime std.debug.assert(format.len > 0);
+
+        return std.fmt.allocPrint(self.inner.arena, format, args);
+    }
+
+    /// Text for people, in the caller's language, each `{name}` filled from `values`.
+    pub fn t(self: *const PluginCtx, comptime text: []const u8, values: anytype) []const u8 {
+        comptime std.debug.assert(text.len > 0);
+
+        return self.said(text, "", null, values);
+    }
+
+    /// The same for a count: `ctx.tn("{count} item", "{count} items", count, .{ .count = count })`.
+    pub fn tn(
+        self: *const PluginCtx,
+        comptime one: []const u8,
+        comptime many: []const u8,
+        count: u64,
+        values: anytype,
+    ) []const u8 {
+        comptime std.debug.assert(one.len > 0 and many.len > 0);
+
+        return self.said(one, many, count, values);
+    }
+
+    fn said(
+        self: *const PluginCtx,
+        comptime text: []const u8,
+        comptime plural: []const u8,
+        count: ?u64,
+        values: anytype,
+    ) []const u8 {
+        std.debug.assert(text.len > 0);
+
+        const memory = self.inner.arena;
+        const fields = std.meta.fields(@TypeOf(values));
+        var filled: [fields.len]@import("../context.zig").Message.Value = undefined;
+
+        inline for (fields, &filled) |field, *slot| {
+            slot.* = .{
+                .name = field.name,
+                .value = words.shown(memory, @field(values, field.name)) catch "",
+            };
+        }
+
+        const locale = if (self.inner.language.locale.len > 0)
+            self.inner.language.locale
+        else
+            self.inner.variant;
+
+        return self.inner.say(locale, .{
+            .id = text,
+            .plural = plural,
+            .count = if (count) |number| @floatFromInt(number) else null,
+            .values = &filled,
+        }) catch text;
     }
 
     pub fn arena(self: *const PluginCtx) std.mem.Allocator {
@@ -51,40 +201,190 @@ pub const HostApi = struct {
         return self.inner.arena;
     }
 
-    /// Inside an operation, or at the top when an event hook hears a queued notice.
+    /// Inside an operation, or at the top when an `on` hook hears a queued event.
     pub fn call(self: *PluginCtx, comptime Operation: type, in: Operation.In) Error!Operation.Out {
         std.debug.assert(self.inner.now_ms >= 0);
-        std.debug.assert(Operation.name.len > 0);
+        comptime std.debug.assert(registered(Operation).name.len > 0);
 
-        return registry.SDK.call(self.inner, Operation, in);
+        if (self.reads) |reads| {
+            return reads.answer(Operation.Out, comptime registered(Operation).name, in);
+        }
+
+        if (comptime @hasDecl(Operation, "remote")) {
+            try remote_reachable(self.inner, Operation.name);
+        }
+
+        return registry.SDK.call(self.inner, comptime registered(Operation), in);
     }
 
-    pub fn notice(self: *PluginCtx, name: []const u8, subject: []const u8) void {
+    /// A remote operation answers `Unavailable` while it is off: its plugin is not there,
+    /// or it does not fit what that plugin is now.
+    fn remote_reachable(inner: *const sdk.Ctx, comptime name: []const u8) Error!void {
+        const compiled_in = comptime for (registry.SDK.operations) |Candidate| {
+            if (std.mem.eql(u8, Candidate.name, name)) {
+                break true;
+            }
+        } else false;
+
         std.debug.assert(name.len > 0);
+
+        const off = registry.remotes_off;
+        const is_off = @import("remote_contract.zig").is_off;
+
+        if (inner.plugin.len > 0 and is_off(off, inner.plugin, name)) {
+            return error.Unavailable;
+        }
+
+        const sandboxed = inner.sandboxed_plugins orelse {
+            return if (compiled_in) {} else error.Unavailable;
+        };
+
+        if (inner.plugin.len > 0 and sandboxed.remote_off(inner.plugin, name)) {
+            return error.Unavailable;
+        }
+
+        if (!compiled_in and sandboxed.find(name) == null) {
+            return error.Unavailable;
+        }
+    }
+
+    /// Passes `value` through every modifier of `name` (`publr.modify(name, …)` in any
+    /// plugin) and answers what they made of it; with none, the value as it went.
+    pub fn mod(self: *PluginCtx, comptime name: []const u8, value: anytype) Error!@TypeOf(value) {
+        const changed = try self.mod_all(name, @TypeOf(value), &.{value});
+
+        std.debug.assert(changed.len == 1);
+
+        return changed[0];
+    }
+
+    /// `mod` for several values at once: a modifier's reads are made together for all.
+    pub fn mod_all(
+        self: *PluginCtx,
+        comptime name: []const u8,
+        comptime Value: type,
+        values: []const Value,
+    ) Error![]const Value {
+        comptime {
+            if (!mods.valid(name, false)) {
+                @compileError("`" ++ name ++ "` is no mod name: dotted parts of a-z, 0-9 and _");
+            }
+        }
+
+        std.debug.assert(values.len <= mods.items_max);
+
+        const memory = self.arena();
+        const text = std.json.Stringify.valueAlloc(memory, values, .{}) catch {
+            return error.OutOfMemory;
+        };
+        const answered = try self.call(mods.Apply, .{
+            .name = name,
+            .values = text,
+        });
+
+        return std.json.parseFromSliceLeaky([]const Value, memory, answered.values, .{
+            .ignore_unknown_fields = true,
+            .allocate = .alloc_always,
+        }) catch values;
+    }
+
+    /// Calls an operation by name, JSON in and out, through the same checks.
+    pub fn call_json(self: *PluginCtx, name: []const u8, input: []const u8) Error![]const u8 {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(self.reads == null);
+
+        return registry.SDK.call_json(self.inner, name, input);
+    }
+
+    /// Emits an event: `ctx.emit(OutOfStock, .{ .variant = ref })`, a type made with
+    /// `publr.event.define`, its payload carried as JSON. `after` hooks on it run now, inside
+    /// the write (a refusal rolls it back); `on` hooks hear it from the queue once it commits.
+    pub fn emit(self: *PluginCtx, comptime Event: type, payload: Event.Payload) void {
+        comptime std.debug.assert(@hasDecl(Event, "publr_event_definition"));
         std.debug.assert(self.inner.parent != null);
 
-        self.inner.notice(name, subject);
+        const name = if (comptime Event.full_name.len > 0)
+            Event.full_name
+        else
+            std.fmt.allocPrint(self.inner.arena, "{s}.{s}", .{
+                self.inner.plugin,
+                Event.verb,
+            }) catch
+                return self.refuse_emit();
+        const text = std.json.Stringify.valueAlloc(self.inner.arena, payload, .{}) catch
+            return self.refuse_emit();
+
+        self.inner.emit_json(name, text);
     }
 
-    /// Refuses the call in the plugin's own words: `return ctx.fail("NotEnoughStock", "Only 2
-    /// left")`. The name is what a form's redirect carries, the message what a person reads.
-    pub fn fail(self: *PluginCtx, name: []const u8, message: []const u8) error{Failed} {
-        std.debug.assert(name.len > 0);
+    /// An event that could not be written fails the write, as a refused one does.
+    fn refuse_emit(self: *PluginCtx) void {
+        self.inner.event_refusal = self.inner.event_refusal orelse error.OutOfMemory;
+    }
+
+    /// Refuses the call in the plugin's own words: `return ctx.fail(.NotEnoughStock, "Only
+    /// {left} left", .{ .left = left })`. The name is what a form's redirect carries, the
+    /// message what a person reads, its status the one the operation's `Fails:` gives.
+    pub fn fail(
+        self: *PluginCtx,
+        comptime name: @TypeOf(.enum_literal),
+        comptime text: []const u8,
+        values: anytype,
+    ) error{Failed} {
         std.debug.assert(self.inner.now_ms >= 0);
+        comptime std.debug.assert(@tagName(name).len > 0);
+
+        const message = self.t(text, values);
 
         return self.inner.fail(.{
-            .name = name,
-            .status = 409,
-            .message = message,
+            .name = @tagName(name),
+            .status = words.status_of(running_failures(self.inner.within), @tagName(name)),
+            .message = words.kept(message),
         });
     }
 
-    /// A line in the log, attributed to the plugin.
-    pub fn log(self: *PluginCtx, line: []const u8) void {
-        std.debug.assert(line.len > 0);
+    /// Refuses the input with every problem `.validate` found, each beside its field.
+    pub fn refuse(
+        self: *PluginCtx,
+        problems: []const sdk.operation.Problem,
+    ) error{ Invalid, OutOfMemory } {
+        std.debug.assert(problems.len > 0);
         std.debug.assert(self.inner.now_ms >= 0);
 
-        std.log.info("plugin: {s}", .{line});
+        const kept = try self.inner.arena.dupe(sdk.operation.Problem, problems);
+
+        return self.inner.refuse(kept);
+    }
+
+    /// A line in the log, attributed to the plugin and the call: kept with the call's
+    /// activity or error entry and on the plugin's Log tab; the server's output outside one.
+    pub fn log(
+        self: *PluginCtx,
+        comptime level: words.Level,
+        comptime format: []const u8,
+        args: anytype,
+    ) void {
+        comptime std.debug.assert(format.len > 0);
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        const line = std.fmt.allocPrint(self.inner.arena, format, args) catch format;
+        const plugin = self.inner.plugin;
+
+        if (self.inner.lines) |lines| {
+            lines.add(.{
+                .plugin = plugin,
+                .level = @field(sdk.trail.Level, @tagName(level)),
+                .text = line,
+            });
+
+            return;
+        }
+
+        switch (level) {
+            .info => std.log.info("plugin {s}: {s}", .{ plugin, line }),
+            .warn => std.log.warn("plugin {s}: {s}", .{ plugin, line }),
+            .err => std.log.err("plugin {s}: {s}", .{ plugin, line }),
+        }
     }
 };
 
@@ -96,5 +396,104 @@ pub fn takes_plugin_ctx(comptime function: anytype) bool {
         std.debug.assert(info.@"fn".params.len >= 1);
 
         return info.@"fn".params[0].type == *PluginCtx;
+    }
+}
+
+/// The grant among `asks` for `key`, as asked; null when it asks for none.
+pub fn held_in(asks: []const Ask, key: []const u8) ?@import("../../model/permission.zig").Held {
+    std.debug.assert(key.len > 0);
+    std.debug.assert(asks.len <= permission_define.asks_max);
+
+    for (asks) |ask| {
+        if (std.mem.eql(u8, ask.key, key)) {
+            return ask.held();
+        }
+    }
+
+    return null;
+}
+
+/// What the compiled-in plugin `plugin` asked for in its `.permissions`; nothing for any other.
+fn asks_of_running(plugin: []const u8) []const Ask {
+    std.debug.assert(plugin.len <= 64);
+
+    inline for (registry.native_plugins.all) |Plugin| {
+        if (std.mem.eql(u8, Plugin.manifest.name, plugin)) {
+            if (comptime !plugin_define.has(Plugin, "permissions")) {
+                return &.{};
+            }
+
+            return comptime plugin_define.get(Plugin, "permissions");
+        }
+    }
+
+    return &.{};
+}
+
+test "a compiled-in plugin is granted what it asked for, nothing more" {
+    const asks = [_]Ask{.{
+        .key = "records.write",
+        .records = &.{"products.variant"},
+        .reason = "Puts the supplier's new prices in",
+    }};
+    const write = permission_define.Grant.of("records.write", held_in(&asks, "records.write"));
+
+    try std.testing.expect(write.on and !write.publish);
+    try std.testing.expect(!permission_define.Grant.of(
+        "records.read",
+        held_in(&asks, "records.read"),
+    ).on);
+    try std.testing.expect(!permission_define.Grant.of(
+        "http.fetch",
+        held_in(asks_of_running("no_such_plugin"), "http.fetch"),
+    ).on);
+}
+
+test "a compiled-in plugin's http.fetch grant answers its domains as asked" {
+    const asks = [_]Ask{.{
+        .key = "http.fetch",
+        .domains = &.{ "api.supplier.com", "*.supplier-cdn.com" },
+        .reason = "Downloads the supplier's price list",
+    }};
+    const fetch = permission_define.Grant.of("http.fetch", held_in(&asks, "http.fetch"));
+
+    try std.testing.expect(fetch.on);
+    try std.testing.expectEqual(@as(usize, 2), fetch.domains.len);
+    try std.testing.expectEqualStrings("*.supplier-cdn.com", fetch.domains[1]);
+    try std.testing.expectEqual(@as(usize, 0), permission_define.Grant.off.domains.len);
+}
+
+/// The `Fails:` of the compiled-in operation running now; none for any other.
+fn running_failures(operation_name: []const u8) []const sdk.operation.Failure {
+    std.debug.assert(operation_name.len <= sdk.operation.name_len_max * 2);
+
+    inline for (registry.SDK.operations) |Operation| {
+        if (comptime @hasDecl(Operation, "failures")) {
+            if (std.mem.eql(u8, Operation.name, operation_name)) {
+                return comptime words.failures_of(Operation);
+            }
+        }
+    }
+
+    return &.{};
+}
+
+/// The operation the core runs for `Operation`: itself, or, for one a plugin made with
+/// `publr.operation.define`, the bound operation it became, so the plugin's own code calls
+/// its operations by their definitions.
+fn registered(comptime Operation: type) type {
+    comptime {
+        if (!@hasDecl(Operation, "publr_operation_definition")) {
+            return Operation;
+        }
+
+        for (registry.SDK.operations) |Candidate| {
+            if (@hasDecl(Candidate, "definition") and Candidate.definition == Operation) {
+                return Candidate;
+            }
+        }
+
+        @compileError("operation " ++ Operation.verb ++ " is not listed in its plugin's " ++
+            "`.operations`");
     }
 }

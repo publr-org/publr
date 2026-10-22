@@ -1,10 +1,11 @@
 //! Where a plugin shows in the admin. Any plugin: its own pages, shown in the plugin frame
-//! and listed in the Settings sidebar. Compiled in only, for now: settings pages, listed in
-//! the Settings sidebar, an item in the top bar, and actions on the rows of another
-//! plugin's page. A settings page is one of the plugin's own routes; the top bar item is a
-//! function the admin calls for every signed-in page; a row action is data the page's owner
-//! reads.
+//! and listed in the Settings sidebar, sections, panels, an item in the top bar, and actions
+//! on the rows of another plugin's page. Compiled in only, for now: settings pages, listed
+//! in the Settings sidebar, and settings tabs. A settings page is one of the plugin's own
+//! routes; the top bar item is a function the admin calls for every signed-in page; a row
+//! action is data the page's owner reads.
 const std = @import("std");
+const plugin_define = @import("define.zig");
 const route = @import("route.zig");
 
 pub const settings_pages_max: u32 = 8;
@@ -30,6 +31,12 @@ pub const Page = struct {
     /// A form the admin draws itself, with no markup of the plugin's: the fields of
     /// `save`'s input, filled from what `read` answers. It works in the sandbox as it is.
     form: ?Form = null,
+    /// Also in the top bar, for whoever may see the page: `.{ .count = Unseen }`, a read of
+    /// the plugin's own with no input answering `count`, shown beside the label.
+    top_bar: ?TopBar = null,
+    /// `.none`: no entry in the menu; the page still opens at its address, for links of the
+    /// plugin's own.
+    menu: ?enum { none } = null,
 
     /// The operation that decides who sees the page: the drawing read, or the form's.
     pub fn gate(comptime page: Page) type {
@@ -37,6 +44,10 @@ pub const Page = struct {
             return page.operation orelse page.form.?.read;
         }
     }
+};
+
+pub const TopBar = struct {
+    count: ?type = null,
 };
 
 /// An entry a plugin adds to the top bar: data only, the
@@ -58,164 +69,44 @@ pub const Item = struct {
 
 pub const items_max: u32 = 4;
 
-/// The entries a plugin adds to `list` (`top_bar`), checked.
+/// The plugin's top bar entries: its pages that say `.top_bar`, checked.
 pub fn items_of(comptime Plugin: type, comptime list: []const u8) []const Item {
     comptime {
         const name = Plugin.manifest.name;
+        var items: []const Item = &.{};
 
-        // The rail is the person's: a plugin's pages and sections are pinned there by them.
-        if (@hasDecl(Plugin, "rail")) {
-            @compileError("plugin " ++ name ++ ": the rail is the person's, no plugin adds " ++
-                "to it; declare `pages` or `sections`, and people pin them to their rail");
-        }
+        std.debug.assert(std.mem.eql(u8, list, "top_bar"));
 
-        if (!@hasDecl(Plugin, list)) {
+        if (!plugin_define.has(Plugin, "pages")) {
             return &.{};
         }
 
-        const items: []const Item = &@field(Plugin, list);
+        for (plugin_define.get(Plugin, "pages")) |page| {
+            const shown = page.top_bar orelse continue;
 
-        if (items.len == 0 or items.len > items_max) {
-            @compileError("plugin " ++ name ++ ": `" ++ list ++ "` holds 1 to 4 entries");
-        }
-
-        for (items) |item| {
-            const leads = (item.page.len > 0) != (item.href.len > 0);
-
-            if (item.label.len == 0 or item.icon.len == 0 or !leads) {
-                @compileError("plugin " ++ name ++ ": a `" ++ list ++ "` entry needs a label, " ++
-                    "an icon, and a `page` or an `href`, one of them");
-            }
-
-            if (item.href.len > 0 and !std.mem.startsWith(u8, item.href, "/admin/")) {
-                @compileError("plugin " ++ name ++ ": entry " ++ item.label ++
-                    " leads to an address in the admin, `/admin/...`");
-            }
-
-            if (item.count) |Count| {
+            if (shown.count) |Count| {
                 if (Count.kind != .read or !@hasField(Count.Out, "count")) {
-                    @compileError("plugin " ++ name ++ ": entry " ++ item.label ++
+                    @compileError("plugin " ++ name ++ ": page " ++ page.path ++
                         " counts with a read answering `count`");
                 }
             }
+
+            items = items ++ &[_]Item{.{
+                .label = page.label,
+                .icon = page.icon,
+                .page = page.path,
+                .operation = page.gate(),
+                .count = shown.count,
+            }};
         }
 
-        return items;
-    }
-}
-
-/// A part of the admin of its own, listed in the Content sidebar and pinned to the rail by
-/// whoever wants it there: some of the plugin's content types, listed and edited as the
-/// admin's content is. Data, the same in both modes.
-pub const Section = struct {
-    label: []const u8,
-    icon: []const u8,
-    types: []const SectionType,
-};
-
-pub const SectionType = struct {
-    /// One of the plugin's own record types, by handle.
-    handle: []const u8,
-    /// Fields shown in its list after the title, by name: of the kinds a cell can show.
-    columns: []const []const u8 = &.{},
-};
-
-pub const section_types_max: u32 = 8;
-pub const columns_max: u32 = 4;
-
-/// The kinds a list cell shows as text.
-pub const column_kinds = [_][]const u8{
-    "string",  "text",   "email",   "url",      "slug",  "select",
-    "integer", "number", "boolean", "datetime", "money", "color",
-};
-
-pub fn column_kind(kind: []const u8) bool {
-    std.debug.assert(column_kinds.len > 0);
-
-    for (column_kinds) |allowed| {
-        if (std.mem.eql(u8, allowed, kind)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/// The plugin's sections, checked against its own content types.
-pub fn sections_of(comptime Plugin: type) []const Section {
-    comptime {
-        const name = Plugin.manifest.name;
-
-        if (!@hasDecl(Plugin, "sections")) {
-            return &.{};
+        if (items.len > items_max) {
+            @compileError("plugin " ++ name ++ ": at most 4 pages are in the top bar");
         }
 
-        const sections: []const Section = &Plugin.sections;
-        const owned = @import("../plugin.zig").content_types_of(Plugin);
+        const done = items;
 
-        if (sections.len > items_max) {
-            @compileError("plugin " ++ name ++ ": `sections` holds at most 4");
-        }
-
-        for (sections) |section| {
-            const counted = section.types.len > 0 and section.types.len <= section_types_max;
-
-            if (section.label.len == 0 or section.icon.len == 0 or !counted) {
-                @compileError("plugin " ++ name ++ ": a section needs a label, an icon and " ++
-                    "1 to 8 types");
-            }
-
-            for (section.types) |listed| {
-                check_section_type(name, owned, listed);
-            }
-        }
-
-        return sections;
-    }
-}
-
-fn check_section_type(
-    comptime name: []const u8,
-    comptime owned: anytype,
-    comptime listed: SectionType,
-) void {
-    comptime {
-        for (owned) |def| {
-            if (!std.mem.eql(u8, def.handle, listed.handle)) {
-                continue;
-            }
-
-            if (def.kind != .record or listed.columns.len > columns_max) {
-                @compileError("plugin " ++ name ++ ": section type " ++ listed.handle ++
-                    " is a record type with at most 4 columns");
-            }
-
-            for (listed.columns) |column| {
-                if (!has_column(def.fields, column)) {
-                    @compileError("plugin " ++ name ++ ": column " ++ column ++ " of " ++
-                        listed.handle ++ " is a field of a kind a cell shows");
-                }
-            }
-
-            return;
-        }
-
-        @compileError("plugin " ++ name ++ ": section type " ++ listed.handle ++
-            " is not one of its content types");
-    }
-}
-
-fn has_column(comptime fields: anytype, comptime column: []const u8) bool {
-    comptime {
-        std.debug.assert(column.len > 0);
-
-        for (fields) |field| {
-            if (std.mem.eql(u8, field.name, column)) {
-                return column_kind(field.kind);
-            }
-        }
-
-        return false;
+        return done;
     }
 }
 
@@ -238,11 +129,11 @@ pub fn panels_of(comptime Plugin: type) []const Panel {
     comptime {
         const name = Plugin.manifest.name;
 
-        if (!@hasDecl(Plugin, "panels")) {
+        if (!plugin_define.has(Plugin, "panels")) {
             return &.{};
         }
 
-        const panels: []const Panel = &Plugin.panels;
+        const panels: []const Panel = plugin_define.get(Plugin, "panels");
 
         if (panels.len == 0 or panels.len > panels_max) {
             @compileError("plugin " ++ name ++ ": `panels` holds 1 to 8");
@@ -282,11 +173,27 @@ pub const SettingsPage = struct {
     operation: type,
 };
 
-/// A section a plugin adds to a tab of System settings (`/admin/settings/system/<tab>`).
-/// Plugins naming the same tab share it, their sections in plugin order; the tab shows
-/// while any plugin adds to it. Compiled in only: `view.draw(session)` draws the section
-/// with the admin's own components, and the plugin's routes take what it posts.
+/// The Settings pages plugins add tabs to: System settings
+/// (`/admin/settings/system/<tab>`) and Users (`/admin/settings/users/<tab>`).
+pub const SettingsTabPage = enum {
+    system,
+    users,
+
+    pub fn path(page: SettingsTabPage) []const u8 {
+        return switch (page) {
+            .system => "/admin/settings/system",
+            .users => "/admin/settings/users",
+        };
+    }
+};
+
+/// A section a plugin adds to a tab of a Settings page, System settings unless `page` says
+/// Users. Plugins naming the same tab share it, their sections in plugin order; the tab
+/// shows while any plugin adds to it, and a page with none shows no tabs. Compiled in only:
+/// `view.draw(session)` draws the section with the admin's own components, and the plugin's
+/// routes take what it posts.
 pub const SettingsTab = struct {
+    page: SettingsTabPage = .system,
     /// Lowercase letters and dashes: `localization`.
     tab: []const u8,
     /// The tab's name: `Localization`. Plugins sharing a tab give the same one.
@@ -295,11 +202,17 @@ pub const SettingsTab = struct {
     view: type,
     /// Shown to whoever may call this operation.
     operation: type,
+    /// The page's primary action while the tab is open (`Add role`), a path in the admin;
+    /// empty for none.
+    action_label: []const u8 = "",
+    action_href: []const u8 = "",
 };
 
 pub const settings_tabs_max: u32 = 4;
 /// The tabs System settings has of its own: a plugin's tab is named otherwise.
 pub const own_settings_tabs = [_][]const u8{ "general", "currencies", "activity", "errors" };
+/// What Users' own addresses take after `/admin/settings/users/`.
+pub const own_users_paths = [_][]const u8{ "users", "new", "create" };
 
 /// The settings tab sections a plugin declares, checked.
 pub fn settings_tabs_of(comptime Plugin: type) []const SettingsTab {
@@ -308,11 +221,11 @@ pub fn settings_tabs_of(comptime Plugin: type) []const SettingsTab {
 
         std.debug.assert(name.len > 0);
 
-        if (!@hasDecl(Plugin, "settings_tabs")) {
+        if (!plugin_define.has(Plugin, "settings_tabs")) {
             return &.{};
         }
 
-        const tabs: []const SettingsTab = &Plugin.settings_tabs;
+        const tabs: []const SettingsTab = plugin_define.get(Plugin, "settings_tabs");
 
         if (tabs.len == 0 or tabs.len > settings_tabs_max) {
             @compileError("plugin " ++ name ++ ": `settings_tabs` holds 1 to 4 sections");
@@ -321,7 +234,11 @@ pub fn settings_tabs_of(comptime Plugin: type) []const SettingsTab {
         for (tabs) |tab| {
             if (!valid_tab(tab.tab) or tab.tab_label.len == 0) {
                 @compileError("plugin " ++ name ++ ": a settings tab is named in lowercase " ++
-                    "letters and dashes, not one of System settings' own, and has a label");
+                    "letters and dashes, not one of its page's own, and has a label");
+            }
+
+            if (tab.page == .users and taken_by_users(tab.tab)) {
+                @compileError("plugin " ++ name ++ ": tab " ++ tab.tab ++ " is a Users path");
             }
 
             if (!@hasDecl(tab.view, "draw")) {
@@ -357,6 +274,20 @@ fn valid_tab(comptime tab: []const u8) bool {
     }
 }
 
+fn taken_by_users(comptime tab: []const u8) bool {
+    comptime {
+        std.debug.assert(tab.len > 0);
+
+        for (own_users_paths) |own| {
+            if (std.mem.eql(u8, own, tab)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
 /// An item in the menu on each row of a page a plugin owns: the page names its slot and
 /// what `kind` and `{name}` mean for its rows, so a plugin building on another adds to its
 /// page without either knowing the other's code.
@@ -377,11 +308,11 @@ pub fn row_actions_of(comptime Plugin: type) []const RowAction {
     comptime {
         const name = Plugin.manifest.name;
 
-        if (!@hasDecl(Plugin, "row_actions")) {
+        if (!plugin_define.has(Plugin, "row_actions")) {
             return &.{};
         }
 
-        const actions: []const RowAction = &Plugin.row_actions;
+        const actions: []const RowAction = plugin_define.get(Plugin, "row_actions");
 
         if (actions.len == 0 or actions.len > row_actions_max) {
             @compileError("plugin " ++ name ++ ": `row_actions` holds 1 to 8 actions");
@@ -407,11 +338,11 @@ pub fn pages_of(comptime Plugin: type) []const Page {
     comptime {
         const name = Plugin.manifest.name;
 
-        if (!@hasDecl(Plugin, "pages")) {
+        if (!plugin_define.has(Plugin, "pages")) {
             return &.{};
         }
 
-        const pages: []const Page = &Plugin.pages;
+        const pages: []const Page = plugin_define.get(Plugin, "pages");
 
         if (pages.len == 0 or pages.len > pages_max) {
             @compileError("plugin " ++ name ++ ": `pages` holds 1 to 8 pages");
@@ -522,11 +453,11 @@ pub fn settings_pages_of(
 
         std.debug.assert(name.len > 0);
 
-        if (!@hasDecl(Plugin, "settings_pages")) {
+        if (!plugin_define.has(Plugin, "settings_pages")) {
             return &.{};
         }
 
-        const pages: []const SettingsPage = &Plugin.settings_pages;
+        const pages: []const SettingsPage = plugin_define.get(Plugin, "settings_pages");
 
         if (pages.len == 0 or pages.len > settings_pages_max) {
             @compileError("plugin " ++ name ++ ": `settings_pages` holds 1 to 8 pages");

@@ -361,7 +361,7 @@ pub fn Describe(comptime plugin: []const u8, comptime about: Description) type {
 
         pub fn run(ctx: *PluginCtx, in: In, granted: *const Grant) operation.Error!Out {
             std.debug.assert(granted.allows());
-            std.debug.assert(ctx.now_ms() >= 0);
+            std.debug.assert(ctx.now().ms >= 0);
 
             _ = in;
 
@@ -380,6 +380,26 @@ pub const Completion = struct {
     };
 };
 
+/// How a provider refuses `complete` and `transcribe`: core's agent tells them apart
+/// (`server/agent/plugin_provider.zig`). A provider plugin fails with these names alone.
+pub const provider_failures = [_]operation.Failure{
+    .{
+        .name = "KeyRejected",
+        .status = 409,
+        .message = "The provider refused its key",
+    },
+    .{
+        .name = "Limited",
+        .status = 409,
+        .message = "The provider's limit for the key is reached for now",
+    },
+    .{
+        .name = "Unavailable",
+        .status = 409,
+        .message = "The provider did not answer, or its answer broke off",
+    },
+};
+
 /// `<plugin>.complete`: one call to the model. `answer` gets the request parsed and turns
 /// the model's reply into a response.
 pub fn Complete(
@@ -396,6 +416,7 @@ pub fn Complete(
         ;
         pub const kind: operation.Kind = .read;
         pub const operator_only = true;
+        pub const failures = provider_failures;
         pub const In = Completion.In;
         pub const Out = Completion.Out;
         pub const example: In = .{

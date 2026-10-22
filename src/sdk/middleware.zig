@@ -6,14 +6,14 @@ pub const middleware_max: u32 = 256;
 
 const Error = operation.Error;
 
-/// `display` changes how a value is shown (`display.zig`), never what an operation does.
-pub const Stage = enum { pre, before, after, on, display };
+/// `modify` changes a value applied under a name (`mods.zig`), never what an operation does.
+pub const Stage = enum { pre, before, after, on, modify };
 
 pub const Event = union(enum) {
     completed: Completed,
     rejected: Failed,
     failed: Failed,
-    notice: Notice,
+    emitted: Emitted,
 
     pub const Completed = struct {
         operation_name: []const u8,
@@ -25,7 +25,9 @@ pub const Event = union(enum) {
         operation_id: u64,
         err: operation.Error,
     };
-    pub const Notice = struct {
+    /// An event emitted under its name (`<plugin>.<event>`, `role.created`, or an operation's
+    /// own on success), its payload as JSON or, for core's events not yet typed, a text.
+    pub const Emitted = struct {
         operation_id: u64,
         name: []const u8,
         subject: []const u8,
@@ -51,7 +53,9 @@ pub fn validate(comptime Middleware: type) void {
                 }
                 operation.assert_name(Middleware.operation);
             },
-            .display => @import("display.zig").validate(Middleware),
+            .modify => if (!@hasDecl(Middleware, "pattern")) {
+                @compileError(@typeName(Middleware) ++ ": a modifier names its `pattern`");
+            },
             .pre, .on => {},
         }
     }
