@@ -299,6 +299,7 @@ fn source_of(
         .live_statuses = live,
         .mask = granted.field_mask,
         .owner = if (filter.flags.own_only) try own_user(ctx) else null,
+        .users = @import("query_dataset/users.zig").reach_of(ctx),
     };
 }
 

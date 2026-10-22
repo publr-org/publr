@@ -2,7 +2,8 @@
 //! (types in reach, statuses by perspective, own records when the grant says so), narrowed
 //! by the filter's hints (`_type`, `_id`, one field's value); `->` by id, an unreadable
 //! record named as such. Each record is a document: `_id`, `_type`, `_createdAt`,
-//! `_updatedAt` and its fields, without the ones the grant hides.
+//! `_updatedAt` and its fields, without the ones the grant hides. Accounts are documents of
+//! `_type == "user"` (`query_dataset/users.zig`).
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
@@ -12,6 +13,7 @@ const store = @import("../../store.zig");
 const records = @import("../record.zig");
 const hinted = @import("query_dataset/hints.zig");
 const documents_module = @import("query_dataset/documents.zig");
+const users = @import("query_dataset/users.zig");
 
 const groq = @import("../../lib/groq.zig");
 const Value = groq.Value;
@@ -50,6 +52,8 @@ pub const Source = struct {
     owner: ?[]const u8 = null,
     /// Records in the trash too; every other read leaves them out.
     trashed: bool = false,
+    /// What the caller may read of accounts, documents of `_type == "user"`.
+    users: users.Reach = .none,
     read: u32 = 0,
 
     const vtable: groq.Dataset.VTable = .{
@@ -94,10 +98,23 @@ pub const Source = struct {
                     return error.OutOfReach;
                 }
             }
+
+            if (source.users == .none and hinted.holds_string(types, users.handle)) {
+                source.refused_type = users.handle;
+                return error.OutOfReach;
+            }
         }
 
         const ids = try hinted.id_list(arena, hints);
         const field = hinted.field_hint(hints);
+        const wants_users = if (wanted_types) |types|
+            hinted.holds_string(types, users.handle)
+        else
+            true;
+
+        if (source.users != .none and wants_users) {
+            try users.read(source.ctx, arena, source.users, ids, documents_max, &documents);
+        }
 
         for (source.types) |each| {
             if (wanted_types) |types| {
@@ -291,6 +308,14 @@ pub const Source = struct {
 
         if (id.len == 0 or id.len > 64) {
             return .missing;
+        }
+
+        if (source.users != .none) {
+            if (try users.one(source.ctx, arena, source.users, id)) |account| {
+                return .{
+                    .document = account,
+                };
+            }
         }
 
         const ids = try arena.alloc([]const u8, 1);
