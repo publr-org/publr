@@ -156,13 +156,15 @@ A role named there that neither core nor a built-in plugin declares fails the bu
 
 ## Calling operations from a page
 
-An app's pages call the operations its plugins made for untrusted callers
-(`.untrusted_callers`), at `<mount>/_actions/app.<plugin>.<verb>`
-(`/_actions/app.cart.add` on the root app, `/shop/_actions/app.cart.add` on one mounted at
-`/shop`). Nothing else is reachable there: core's own operations and a plugin's other ones
-answer not found, and a plugin the app does not list in `.plugins` is denied. The call runs
-as the visitor, for the app, through the same authorization (the operation's
-`.authorize`), validation, transaction and logs as any other.
+An app's pages call any operation its plugins made with `publr.operation.define`, at
+`<mount>/_actions/app.<plugin>.<verb>` (`/_actions/app.cart.add` on the root app,
+`/shop/_actions/app.cart.add` on one mounted at `/shop`). Credentials and the operation's
+`.authorize` decide who gets through: one for untrusted callers (`.untrusted_callers`)
+takes anyone it lets in; any other only someone signed in it lets in, where an
+administrator is a signed-in person like any other (left out, `.authorize` lets in the roles
+granted the operation). Core's own operations answer not found there, and a plugin the app
+does not list in `.plugins` is denied. The call runs as the visitor, for the app, through
+the same authorization, validation, transaction and logs as any other.
 
 - **An island** posts JSON with the header `Publr-Request: 1` and reads the JSON answer.
 - **A plain form** posts its fields, named as the operation's input; it is sent back with
@@ -178,7 +180,7 @@ as the visitor, for the app, through the same authorization (the operation's
 ```
 
 **Other sites.** An operation for untrusted callers is the author's promise that anyone may
-call it, so a page on another site may too: it asks first (the browser's `OPTIONS`,
+call it, so a page on another site may too (no other operation answers it): it asks first (the browser's `OPTIONS`,
 answered with `Access-Control-Allow-Origin: *`) and posts JSON with `Publr-Request: 1`.
 Such a call carries no cookies and runs as nobody signed in; its visitor is the one the page
 names in the `Publr-Visitor` header (24 hex characters it makes and keeps), or none. Forms
@@ -192,7 +194,8 @@ const refused = Publr.request.param('error');
 ```
 
 An island's JSON call gets the plugin's message too: `{ "error": "NotEnoughStock",
-"message": "Only 2 left." }`.
+"message": "Only 2 left.", "problems": [] }`, and a refused input every problem beside its
+field in `problems`.
 
 ## Visitors
 

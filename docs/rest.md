@@ -8,13 +8,16 @@ one.
 ## Conventions
 
 - Requests and responses are JSON (`Content-Type: application/json`).
-- Errors are JSON too: `{ "error": "<name>" }` with a matching status
-  (`401` wrong credentials, `403` denied or cross-origin, `404` not found, `409` conflict,
-  `422` invalid input, `429` too many calls or attempts, `503` a service it needs is down:
-  try again). A failure a plugin declares answers with its own status and name, and a
-  `message`: `{ "error": "Unverified", "message": "…" }`. Input refused by a record's
-  fields or an operation's `.validate` names every problem at its field:
-  `{ "error": "Invalid", "problems": [ { "field": "title", "message": "required" } ] }`.
+- Every refusal is JSON in one shape, `{ "error", "message", "problems" }`, with a
+  matching status (`401` wrong credentials, `403` denied or cross-origin, `404` not found,
+  `409` conflict, `422` invalid input, `429` too many calls or attempts, `503` a service it
+  needs is down: try again). `error` is the refusal's name, `message` says it for a person,
+  and `problems` names every problem at its field when the input was refused (empty
+  otherwise). A failure a plugin declares answers with its own status, name and message:
+  `{ "error": "Unverified", "message": "…", "problems": [] }`. Input refused by a record's
+  fields or an operation's `.validate`:
+  `{ "error": "Invalid", "message": "…", "problems": [ { "field": "title", "message": "required" } ] }`.
+- A device token calling here calls from the API: `ctx.caller().from` is `.api`.
 - An operation's tighter limit counts only untrusted callers: a site's pages and anyone
   without credentials.
 - Every caller has a general rate limit: 600 calls a minute, counted per account (a
@@ -49,8 +52,8 @@ POST /api/term.create          {"taxonomy":"topics","document":"{\"name\":\"Engi
 ```
 
 Plugins' operations appear the same way, `<plugin>.<verb>` (`POST /api/newsletter.subscribe`).
-Unknown operations answer `404 { "error": "unknown_operation" }`; `GET` on a
-write operation answers `405`.
+Unknown operations answer `404 { "error": "NotFound", … }`; `GET` on a write operation
+answers `405`.
 
 ## The apps
 

@@ -234,9 +234,10 @@ pub fn rate_headers(response: *Response, ctx: *const sdk.Ctx) Error!void {
     }
 }
 
-/// The operation's error as JSON: `{ "error": "<name>" }` with a matching status. A
-/// plugin's own failure (`error.Failed`) answers with its declared name, status and message.
-/// Too many calls (`error.Throttled`) also says when to try again (`Retry-After`).
+/// The operation's refusal as JSON, one shape for every caller: `{ "error", "message",
+/// "problems" }` with a matching status. A plugin's own failure (`error.Failed`) answers
+/// with its declared name, status and message; a refused input with every problem beside
+/// its field. Too many calls (`error.Throttled`) also says when to try again (`Retry-After`).
 pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) Error!void {
     std.debug.assert(@errorName(err).len > 0);
     std.debug.assert(response.headers_len <= 32);
@@ -253,32 +254,24 @@ pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) E
         }
     }
 
+    const none: []const sdk.operation.Problem = &.{};
+
     if (err == error.Failed) {
-        const failure = ctx.failure orelse {
-            return response.json(.internal_server_error, .{
-                .@"error" = "Failed",
+        if (ctx.failure) |failure| {
+            const declared = std.enums.fromInt(http.Status, failure.status) orelse
+                .unprocessable_content;
+
+            return response.json(declared, .{
+                .@"error" = failure.name,
+                .message = failure.message,
+                .problems = none,
             });
-        };
-        const declared = std.enums.fromInt(http.Status, failure.status) orelse
-            .unprocessable_content;
-
-        return response.json(declared, .{
-            .@"error" = failure.name,
-            .message = failure.message,
-        });
-    }
-
-    if (err == error.Invalid and ctx.problems.len > 0) {
-        return response.json(.unprocessable_content, .{
-            .@"error" = "Invalid",
-            .problems = ctx.problems,
-        });
+        }
     }
 
     const status: http.Status = switch (err) {
         error.BadCredentials => .unauthorized,
         error.Throttled => .too_many_requests,
-        error.Failed => unreachable,
         error.Unavailable => .service_unavailable,
         error.Denied => .forbidden,
         error.Invalid => .unprocessable_content,
@@ -286,6 +279,8 @@ pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) E
         error.Conflict => .conflict,
         error.Vetoed => .forbidden,
         error.Interrupted, error.TooBig => .unprocessable_content,
+        // Failed with nothing declared is the operation's bug: a server error, never a guess.
+        error.Failed,
         error.InvalidationFailed,
         error.NotYet,
         error.OutOfMemory,
@@ -298,7 +293,54 @@ pub fn respond_error(response: *Response, err: sdk.Error, ctx: *const sdk.Ctx) E
 
     try response.json(status, .{
         .@"error" = @errorName(err),
+        .message = message_of(err),
+        .problems = if (err == error.Invalid) ctx.problems else none,
     });
+}
+
+/// A refusal an adapter makes before any operation runs, in the shape every refusal takes.
+pub fn refuse(
+    response: *Response,
+    status: http.Status,
+    name: []const u8,
+    message: []const u8,
+) Error!void {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(message.len > 0);
+
+    const none: []const sdk.operation.Problem = &.{};
+
+    return response.json(status, .{
+        .@"error" = name,
+        .message = message,
+        .problems = none,
+    });
+}
+
+/// What core's own refusals say, for a person reading them.
+fn message_of(err: sdk.Error) []const u8 {
+    std.debug.assert(@errorName(err).len > 0);
+
+    return switch (err) {
+        error.BadCredentials => "Sign in again: these credentials are not accepted.",
+        error.Throttled => "Too many calls. Wait a moment and try again.",
+        error.Unavailable => "A service this needs is not answering. Try again later.",
+        error.Denied, error.Vetoed => "You may not do this.",
+        error.Invalid => "Some of what was sent is not right.",
+        error.NotFound => "Nothing was found.",
+        error.Conflict => "This changed meanwhile. Load it again and retry.",
+        error.Interrupted => "This was stopped before it finished.",
+        error.TooBig => "This is too big.",
+        error.Failed,
+        error.InvalidationFailed,
+        error.NotYet,
+        error.OutOfMemory,
+        error.Busy,
+        error.Constraint,
+        error.ReadOnly,
+        error.Sqlite,
+        => "Something went wrong on the server.",
+    };
 }
 
 const routes = @import("../../server/routes.zig");
@@ -323,7 +365,8 @@ test "a plugin's failure answers with its declared status, name and message" {
     try respond_error(&response, error.Failed, &ctx);
     try std.testing.expectEqual(@as(u16, 403), response.status.code());
     try std.testing.expectEqualStrings(
-        "{\"error\":\"Unverified\",\"message\":\"Verify your email first\"}",
+        "{\"error\":\"Unverified\",\"message\":\"Verify your email first\"," ++
+            "\"problems\":[]}",
         response.body,
     );
 
@@ -360,17 +403,19 @@ test "a refused input answers every problem beside its field" {
     };
     try respond_error(&response, error.Invalid, &ctx);
     try std.testing.expectEqual(@as(u16, 422), response.status.code());
-    try std.testing.expectEqualStrings("{\"error\":\"Invalid\",\"problems\":[" ++
+    try std.testing.expectEqualStrings("{\"error\":\"Invalid\"," ++
+        "\"message\":\"Some of what was sent is not right.\",\"problems\":[" ++
         "{\"field\":\"name\",\"message\":\"A name is 1 to 80 characters.\"}," ++
         "{\"field\":\"message\",\"message\":\"Write a message.\"}]}", response.body);
 
-    // Invalid with no problems named stays the bare core error.
+    // Invalid with no problems named: the same shape, an empty list.
     var bare = harness.ctx(.anonymous);
     var plain: Response = .{
         .arena = bare.arena,
     };
     try respond_error(&plain, error.Invalid, &bare);
-    try std.testing.expectEqualStrings("{\"error\":\"Invalid\"}", plain.body);
+    try std.testing.expectEqualStrings("{\"error\":\"Invalid\"," ++
+        "\"message\":\"Some of what was sent is not right.\",\"problems\":[]}", plain.body);
 }
 
 test "per-user answers are never cacheable by a shared cache, signed in or not" {
