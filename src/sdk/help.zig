@@ -43,7 +43,29 @@ pub fn command(comptime Operation: type, out: *std.Io.Writer) Error!void {
     write(out, "\nOutput:\n") catch return error.WriteFailed;
     try print_field_docs(Operation, Operation.Out, "output_docs", false, out);
     try print_failures(Operation, out);
+    try print_rules(Operation, out);
     try print_example(Operation, out);
+}
+
+/// What `.validate` checks and who may call, in the plugin's words where it wrote them.
+fn print_rules(comptime Operation: type, out: *std.Io.Writer) Error!void {
+    const checked = @hasDecl(Operation, "checked") and Operation.checked.len > 0;
+    const who = @hasDecl(Operation, "who_may_call");
+
+    comptime std.debug.assert(Operation.name.len > 0);
+
+    if (checked or who) {
+        write(out, "\n") catch return error.WriteFailed;
+    }
+
+    if (checked) {
+        out.print("Checked: {s}\n", .{Operation.checked}) catch return error.WriteFailed;
+    }
+
+    if (who) {
+        out.print("Who may call it: {s}\n", .{Operation.who_may_call}) catch
+            return error.WriteFailed;
+    }
 }
 
 /// The failures the operation declares beyond the core's errors, as REST names them.
