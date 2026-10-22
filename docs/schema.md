@@ -988,6 +988,13 @@ hook on it), the event's payload as `input`. `claimed_until` holds a job while i
 once it passes. `queued_at` is when it was queued. Indexed on `(state, due_at)`, the read
 each pass makes.
 
+## `job_due`
+
+The moment each `.due` job (a job following a record's datetime field) last queued for a
+record: the job's `plugin` and `name`, the `record`, and the field's `moment` then. A write to
+the record queues the job again only when the field holds another moment, so each value runs
+once per job; an edit moving it takes back the waiting run of the old one. Gone with the record.
+
 ## `scheduled_transitions`
 
 A transition someone scheduled for a record (`record.transition_at`): `record_id` (one per

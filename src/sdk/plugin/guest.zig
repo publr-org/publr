@@ -130,8 +130,8 @@ pub const SandboxApi = struct {
         comptime std.debug.assert(job_define.is_job(Job));
         std.debug.assert(self.name.len > 0);
 
-        if (comptime Job.every != null) {
-            @compileError("a repeating job runs on its own; it is never queued");
+        if (comptime Job.every != null or Job.due_on != null) {
+            @compileError("a repeating or `.due` job runs on its own; it is never queued");
         }
 
         const text = std.json.Stringify.valueAlloc(self.arena_allocator, .{
@@ -641,7 +641,13 @@ pub fn Exports(comptime Plugin: type) type {
         fn run_job(comptime Job: type, input: []const u8, arena: std.mem.Allocator) Error!void {
             comptime std.debug.assert(job_define.is_job(Job));
 
-            const In = if (Job.Input == void) struct {} else Job.Input;
+            const due = comptime Job.due_on != null;
+            const In = if (Job.Input == void)
+                struct {}
+            else if (due)
+                job_define.DueInput
+            else
+                Job.Input;
             const envelope = json.parse(wire.JobEnvelope(In), arena, input, parse_options) catch {
                 return error.Invalid;
             };
@@ -649,10 +655,17 @@ pub fn Exports(comptime Plugin: type) type {
             var ctx: queue.Queue(SandboxApi) = .{
                 .base = &base,
             };
+            // A `.due` job gets its record as it is now; one gone or in the trash runs nothing.
+            const in: Job.Input = if (comptime Job.Input == void) {} else if (due)
+                Job.Record.get(&ctx, envelope.in.record, .{}) catch |err| {
+                    return if (err == error.NotFound) {} else err;
+                }
+            else
+                envelope.in;
             const ran = if (comptime Job.Input == void)
                 Job.run(&ctx)
             else
-                Job.run(&ctx, envelope.in);
+                Job.run(&ctx, in);
 
             ran catch |err| {
                 // A conflict ends the job: `.on_conflict` hears it now, the host keeps it.
@@ -660,7 +673,7 @@ pub fn Exports(comptime Plugin: type) type {
                     if (comptime Job.Input == void) {
                         Job.on_conflict(&ctx);
                     } else {
-                        Job.on_conflict(&ctx, envelope.in);
+                        Job.on_conflict(&ctx, in);
                     }
 
                     return err;
@@ -670,7 +683,7 @@ pub fn Exports(comptime Plugin: type) type {
                     if (comptime Job.Input == void) {
                         Job.on_failure(&ctx, @errorName(err));
                     } else {
-                        Job.on_failure(&ctx, envelope.in, @errorName(err));
+                        Job.on_failure(&ctx, in, @errorName(err));
                     }
                 }
 

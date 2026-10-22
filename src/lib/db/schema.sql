@@ -604,6 +604,16 @@ CREATE TABLE IF NOT EXISTS job_queue (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS job_queue_due ON job_queue (state, due_at);
 
+-- The moment each `.due` job last queued for a record's datetime field: each value runs once
+-- per job; an edit moving it queues the job again for the new one.
+CREATE TABLE IF NOT EXISTS job_due (
+    plugin TEXT NOT NULL,
+    name   TEXT NOT NULL,
+    record TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+    moment INTEGER NOT NULL,
+    PRIMARY KEY (plugin, name, record)
+) STRICT;
+
 -- A status transition a person scheduled for a record (`publish` on 5 Nov at 9:00): one per
 -- record, made by the worker once `due_at` comes, as `scheduled_by` with their rights then.
 CREATE TABLE IF NOT EXISTS scheduled_transitions (

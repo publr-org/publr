@@ -173,6 +173,28 @@ pub fn run_again(connection: *db.Db, id: i64, now_ms: i64) db.Error!bool {
     return connection.changes() > 0;
 }
 
+/// The waiting runs of this plugin's job taken back, all but one running now.
+pub fn forget_waiting(
+    connection: *db.Db,
+    plugin: []const u8,
+    name: []const u8,
+    now_ms: i64,
+) db.Error!void {
+    std.debug.assert(plugin.len > 0 and name.len > 0);
+    std.debug.assert(now_ms >= 0);
+
+    var delete = try connection.prepare(
+        "DELETE FROM job_queue WHERE plugin = ?1 AND name = ?2 AND state = 'waiting' AND " ++
+            "claimed_until <= ?3",
+    );
+    defer delete.finalize();
+
+    try delete.bind_text(1, plugin);
+    try delete.bind_text(2, name);
+    try delete.bind_int(3, now_ms);
+    try delete.exec();
+}
+
 /// Whether a job of this plugin and name waits to run.
 pub fn waiting_for(connection: *db.Db, plugin: []const u8, name: []const u8) db.Error!bool {
     std.debug.assert(plugin.len > 0);
@@ -187,6 +209,125 @@ pub fn waiting_for(connection: *db.Db, plugin: []const u8, name: []const u8) db.
     try select.bind_text(2, name);
 
     return select.step();
+}
+
+/// A `.due` job following one record: its field's moment now, null when the field is empty.
+pub const Follow = struct {
+    plugin: []const u8,
+    name: []const u8,
+    record: []const u8,
+    moment: ?i64,
+    offset_ms: i64,
+    now_ms: i64,
+};
+
+/// A record's field moved (or was set first): its job queued for the new moment, at once when
+/// that is past, the waiting one for the old moment taken back. A moment the job already
+/// had queued (or ran for) queues nothing again: each value runs once per job.
+pub fn follow(connection: *db.Db, arena: std.mem.Allocator, due: Follow) Error!void {
+    std.debug.assert(due.plugin.len > 0 and due.name.len > 0);
+    std.debug.assert(due.record.len > 0);
+
+    var select = try connection.prepare(
+        "SELECT moment FROM job_due WHERE plugin = ?1 AND name = ?2 AND record = ?3",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, due.plugin);
+    try select.bind_text(2, due.name);
+    try select.bind_text(3, due.record);
+
+    const had: ?i64 = if (try select.step()) select.read_int() else null;
+
+    if (std.meta.eql(had, due.moment)) {
+        return;
+    }
+
+    const input = try std.json.Stringify.valueAlloc(arena, .{
+        .record = due.record,
+    }, .{});
+
+    var forget = try connection.prepare(
+        "DELETE FROM job_queue WHERE plugin = ?1 AND name = ?2 AND input = ?3 AND " ++
+            "state = 'waiting' AND claimed_until <= ?4",
+    );
+    defer forget.finalize();
+
+    try forget.bind_text(1, due.plugin);
+    try forget.bind_text(2, due.name);
+    try forget.bind_text(3, input);
+    try forget.bind_int(4, due.now_ms);
+    try forget.exec();
+
+    const moment = due.moment orelse {
+        var drop = try connection.prepare(
+            "DELETE FROM job_due WHERE plugin = ?1 AND name = ?2 AND record = ?3",
+        );
+        defer drop.finalize();
+
+        try drop.bind_text(1, due.plugin);
+        try drop.bind_text(2, due.name);
+        try drop.bind_text(3, due.record);
+        try drop.exec();
+
+        return;
+    };
+
+    var keep = try connection.prepare(
+        "INSERT INTO job_due (plugin, name, record, moment) VALUES (?1, ?2, ?3, ?4) " ++
+            "ON CONFLICT (plugin, name, record) DO UPDATE SET moment = excluded.moment",
+    );
+    defer keep.finalize();
+
+    try keep.bind_text(1, due.plugin);
+    try keep.bind_text(2, due.name);
+    try keep.bind_text(3, due.record);
+    try keep.bind_int(4, moment);
+    try keep.exec();
+
+    try push(connection, .{
+        .plugin = due.plugin,
+        .name = due.name,
+        .input = input,
+        .due_at_ms = @max(moment + due.offset_ms, due.now_ms),
+        .now_ms = due.now_ms,
+    });
+}
+
+/// The moment a record's datetime field holds in its live copy: null when the record is not
+/// of `type` (by its full name), the inner null when the field is empty.
+pub fn moment_of(
+    connection: *db.Db,
+    record: []const u8,
+    type_name: []const u8,
+    field: []const u8,
+) db.Error!??i64 {
+    std.debug.assert(record.len > 0);
+    std.debug.assert(type_name.len > 0 and field.len > 0);
+
+    var select = try connection.prepare(
+        "SELECT v.value FROM records r JOIN content_types t ON t.id = r.type_id " ++
+            "LEFT JOIN record_values v ON v.record = r.id AND v.slot = 'live' AND " ++
+            "v.field = ?3 AND v.ordinal = 0 AND v.kind = 'int' WHERE r.id = ?1 AND t.handle = ?2",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, record);
+    try select.bind_text(2, type_name);
+    try select.bind_text(3, field);
+
+    if (!try select.step()) {
+        return null;
+    }
+
+    const Row = struct {
+        value: ?i64,
+    };
+    var no_memory: [0]u8 = .{};
+    var fixed = std.heap.FixedBufferAllocator.init(&no_memory);
+    const row = try select.read(Row, fixed.allocator());
+
+    return row.value;
 }
 
 /// A job as the operator sees it, in the column order of `list`.

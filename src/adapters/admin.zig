@@ -227,7 +227,7 @@ pub fn register(router: *http.Router) void {
     router.post("/admin/logout", &auth_pages.logout);
     router.get("/admin/settings", &settings_pages.show);
     router.get("/admin/settings/system", &settings_pages.system);
-    router.post("/admin/settings/system", &settings_pages.save_language);
+    router.post("/admin/settings/system", &settings_pages.save);
     router.get("/admin/settings/system/activity", &activity_pages.show_activity);
     router.get("/admin/settings/system/errors", &activity_pages.show_errors);
 

@@ -36,6 +36,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .operations = operations_of(Plugin),
             .hooks = hooks_of(Plugin),
             .jobs = jobs_of(Plugin),
+            .webhooks = webhooks_of(Plugin),
             .permissions = runtime.permissions_of(Plugin),
             .secrets = @import("secret_define.zig").declared_of(Plugin),
             .depends_on = @import("depends_on.zig").of(Plugin),
@@ -268,6 +269,27 @@ fn jobs_of(comptime Plugin: type) []const sandboxed_plugin.Job {
                 } else 0,
                 .hour = Job.at.hour,
                 .minute = Job.at.minute,
+                .due = Job.due_on,
+            }};
+        }
+
+        return list;
+    }
+}
+
+fn webhooks_of(comptime Plugin: type) []const sandboxed_plugin.Webhook {
+    comptime {
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        var list: []const sandboxed_plugin.Webhook = &.{};
+
+        for (@import("../plugin.zig").webhooks_of(Plugin)) |Webhook| {
+            list = list ++ &[_]sandboxed_plugin.Webhook{.{
+                .name = Webhook.name,
+                .secret = Webhook.secret,
+                .signature = Webhook.signature,
+                .body = Webhook.body,
+                .delivery_id = Webhook.delivery_id,
             }};
         }
 

@@ -1,5 +1,6 @@
 //! Queued work, reached from the ⋯ menu beside System settings' tabs: the jobs waiting to
-//! run and the ones that failed for good, each failed one with Run again.
+//! run and the ones that failed for good, each failed one with Run again, and the repeating
+//! jobs, each with its time and Pause.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
@@ -13,13 +14,14 @@ const Error = admin.Error;
 const views = admin.views;
 
 pub const back = "/admin/settings/system/queue";
-pub const routes_count: u32 = 2;
+pub const routes_count: u32 = 3;
 
 pub fn register(router: anytype) void {
     std.debug.assert(router.routes_len > 0);
 
     router.get(back, &list);
     router.post(back ++ "/:id/run", &run_again);
+    router.post(back ++ "/repeat", &schedule);
 }
 
 pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -30,6 +32,8 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     const done = admin.query_param(&session, "done") orelse "";
     const notice = if (std.mem.eql(u8, done, "again"))
         try session.translated("Queued to run again now.", .{})
+    else if (std.mem.eql(u8, done, "schedule"))
+        try session.translated("Saved.", .{})
     else
         "";
 
@@ -61,11 +65,82 @@ fn screen(session: *admin.Session, notice: []const u8, problem: []const u8) Erro
         };
     }
 
+    const repeating = try arena.alloc(views.Queue.RepeatingItem, listed.repeating.len);
+
+    for (listed.repeating, repeating) |item, *row| {
+        row.* = .{
+            .plugin = item.plugin,
+            .name = item.name,
+            .every = item.every,
+            .minutes = @floatFromInt(item.minutes),
+            .time = try std.fmt.allocPrint(arena, "{d:0>2}:{d:0>2}", .{ item.hour, item.minute }),
+            .minute = @floatFromInt(item.minute),
+            .paused = item.paused,
+        };
+    }
+
     try admin.screen(session, .ok, views.Queue, .{
         .jobs = rows,
+        .repeating = repeating,
+        .time_zone = listed.time_zone,
         .notice = notice,
         .problem = problem,
     }, .{});
+}
+
+/// `POST …/queue/repeat`: a repeating job's new time (`time`, or `minute` for an hourly
+/// one), or `act` `pause` or `resume`.
+pub fn schedule(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .post);
+    std.debug.assert(ctx.user_data != null);
+
+    var post = try admin.accept(request, response, ctx, back) orelse return;
+    const session = &post.session;
+    const plugin = post.form.text("plugin") orelse "";
+    const name = post.form.text("name") orelse "";
+    const act = post.form.text("act") orelse "save";
+    const listed = registry.SDK.dispatch(&session.ctx, job.List, .{}) catch |err| {
+        return admin.fail(session, err, back);
+    };
+    const current = for (listed.repeating) |item| {
+        if (std.mem.eql(u8, item.plugin, plugin) and std.mem.eql(u8, item.name, name)) {
+            break item;
+        }
+    } else return screen(session, "", try session.translated("No such repeating job.", .{}));
+    var hour = current.hour;
+    var minute = current.minute;
+
+    if (post.form.text("time")) |time| {
+        const colon = std.mem.indexOfScalar(u8, time, ':') orelse time.len;
+
+        hour = std.fmt.parseInt(u8, time[0..colon], 10) catch 24;
+        minute = std.fmt.parseInt(u8, time[@min(colon + 1, time.len)..], 10) catch 60;
+    }
+
+    if (post.form.text("minute")) |text| {
+        minute = std.fmt.parseInt(u8, text, 10) catch 60;
+    }
+
+    const paused = if (std.mem.eql(u8, act, "pause"))
+        true
+    else if (std.mem.eql(u8, act, "resume"))
+        false
+    else
+        current.paused;
+
+    _ = registry.SDK.dispatch(&session.ctx, job.Schedule, .{
+        .plugin = plugin,
+        .name = name,
+        .hour = hour,
+        .minute = minute,
+        .paused = paused,
+    }) catch |err| {
+        const failure = if (err == error.Failed) session.ctx.failure else null;
+
+        return screen(session, "", if (failure) |found| found.message else @errorName(err));
+    };
+
+    try response.redirect(.see_other, back ++ "?done=schedule");
 }
 
 pub fn run_again(request: *Request, response: *Response, ctx: *Context) Error!void {

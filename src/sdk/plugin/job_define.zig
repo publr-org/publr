@@ -1,8 +1,10 @@
 //! `publr.job.define(In, .{ .name, .run, .on_failure })`: work a plugin's code queues with
 //! `ctx.enqueue(Job, in)`, run later by the server's worker, as the plugin, never in the
 //! caller's request. A run that fails is tried again later; after the last attempt
-//! `on_failure` hears why, and the job is kept as failed.
+//! `on_failure` hears why, and the job is kept as failed. A job with `.due` is queued by a
+//! record instead: when its datetime field's moment comes.
 const std = @import("std");
+const words = @import("words.zig");
 
 /// The runs a job gets before it is kept as failed.
 pub const attempts_max: u32 = 8;
@@ -19,10 +21,17 @@ pub const Every = union(enum) {
 };
 
 /// When in the day (`.every = .day`) or the hour (`.every = .hour`, `minute` only) it runs,
-/// in UTC.
+/// in the site's time zone.
 pub const At = struct {
     hour: u8 = 0,
     minute: u8 = 0,
+};
+
+pub const Due = @import("../../model/sandboxed_plugin.zig").Due;
+
+/// What a `.due` job is queued with: the record it runs for.
+pub const DueInput = struct {
+    record: []const u8,
 };
 
 const minute_ms: i64 = 60 * 1000;
@@ -50,6 +59,11 @@ pub fn define_recurring(comptime options: anytype) type {
             @compileError("a recurring job says how often: `.every = .day`, `.hour` or " ++
                 "`.{ .minutes = 15 }`");
         }
+
+        if (@hasField(@TypeOf(options), "due")) {
+            @compileError("a job runs either again and again (`.every`) or when a record's " ++
+                "field says (`.due`), not both");
+        }
     }
 
     return Defined(void, options);
@@ -70,18 +84,25 @@ fn Defined(comptime In: type, comptime options: anytype) type {
         for (std.meta.fieldNames(Options)) |field| {
             const known = std.mem.eql(u8, field, "name") or std.mem.eql(u8, field, "run") or
                 std.mem.eql(u8, field, "on_failure") or std.mem.eql(u8, field, "every") or
-                std.mem.eql(u8, field, "at") or std.mem.eql(u8, field, "on_conflict");
+                std.mem.eql(u8, field, "at") or std.mem.eql(u8, field, "on_conflict") or
+                std.mem.eql(u8, field, "due");
 
             if (!known) {
                 @compileError("a job takes `.name`, `.run`, `.on_failure`, `.on_conflict`, " ++
-                    "`.every` and `.at`, not `." ++ field ++ "`; `.due` comes with a later gate");
+                    "`.every`, `.at` and `.due`, not `." ++ field ++ "`");
             }
         }
     }
 
+    const due: ?Due = if (@hasField(Options, "due")) due_of(In, options.due) else null;
+
     return struct {
         pub const is_job = true;
-        pub const Input = In;
+        /// What `run` takes: the record as it is now for a `.due` job.
+        pub const Input = if (due != null) In.Held else In;
+        /// The record definition a `.due` job follows, else void.
+        pub const Record = if (due != null) In else void;
+        pub const due_on: ?Due = due;
         pub const verb: []const u8 = options.name;
         pub const run = options.run;
         pub const on_failure = if (@hasField(Options, "on_failure")) options.on_failure else null;
@@ -132,6 +153,92 @@ fn at_of(comptime given: anytype) At {
     std.debug.assert(made.hour < 24 and made.minute < 60);
 
     return made;
+}
+
+/// `.due = .{ .field = .starts_at, .before = .{ .days = 3 } }` on a job of a content record
+/// (`publr.job.define(Events.record, ...)`), the field a `publr.Time`.
+fn due_of(comptime Record: type, comptime given: anytype) Due {
+    comptime {
+        const Given = @TypeOf(given);
+
+        if (!@hasDecl(Record, "publr_record_definition") or Record.is_internal) {
+            @compileError("a job with `.due` takes the content record it follows: " ++
+                "`publr.job.define(Events.record, .{ .due = ... })`");
+        }
+
+        if (!@hasField(Given, "field")) {
+            @compileError("`.due` names the record's datetime field: `.field = .starts_at`");
+        }
+
+        const field = @tagName(given.field);
+
+        if (!@hasField(Record.Doc, field)) {
+            @compileError("`.due`: " ++ Record.type_name ++ " has no field `" ++ field ++ "`");
+        }
+
+        const Field = @FieldType(Record.Doc, field);
+
+        if (Field != words.Time and Field != ?words.Time) {
+            @compileError("`.due` follows a datetime field (`publr.Time`); `" ++ field ++
+                "` is not one");
+        }
+
+        var offset_ms: i64 = 0;
+
+        for (std.meta.fieldNames(Given)) |name| {
+            if (std.mem.eql(u8, name, "before")) {
+                offset_ms -= offset_of(given.before);
+            } else if (std.mem.eql(u8, name, "after")) {
+                offset_ms += offset_of(given.after);
+            } else if (!std.mem.eql(u8, name, "field")) {
+                @compileError("`.due` takes `.field`, `.before` and `.after`, not `." ++ name ++
+                    "`");
+            }
+        }
+
+        return .{
+            .type = Record.type_name,
+            .field = field,
+            .offset_ms = offset_ms,
+        };
+    }
+}
+
+/// An offset shaped like `.every`: `.day`, `.hour`, or `.{ .days = 3 }`, `.{ .hours = 2 }`,
+/// `.{ .minutes = 30 }`, together if need be.
+fn offset_of(comptime given: anytype) i64 {
+    comptime {
+        if (@typeInfo(@TypeOf(given)) == .enum_literal) {
+            return switch (@field(Every, @tagName(given))) {
+                .day => day_ms,
+                .hour => hour_ms,
+                .minutes => @compileError("an offset of minutes is `.{ .minutes = 30 }`"),
+            };
+        }
+
+        var made: i64 = 0;
+
+        for (std.meta.fieldNames(@TypeOf(given))) |unit| {
+            const count: i64 = @field(given, unit);
+            const each: i64 = if (std.mem.eql(u8, unit, "days"))
+                day_ms
+            else if (std.mem.eql(u8, unit, "hours"))
+                hour_ms
+            else if (std.mem.eql(u8, unit, "minutes"))
+                minute_ms
+            else
+                @compileError("an offset is in `.days`, `.hours` or `.minutes`, not `." ++
+                    unit ++ "`");
+
+            if (count < 0) {
+                @compileError("an offset counts forward: `.before` or `.after` says which way");
+            }
+
+            made += count * each;
+        }
+
+        return made;
+    }
 }
 
 pub fn is_job(comptime Candidate: type) bool {

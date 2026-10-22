@@ -7,6 +7,7 @@ pub fn up(connection: *db.Db) db.Error!void {
     std.debug.assert(connection.transaction_depth >= 1);
 
     try add_event_queue(connection);
+    try add_job_due(connection);
 
     // The jobs plugins queue, run once their time comes.
     try connection.exec(
@@ -84,6 +85,20 @@ pub fn up(connection: *db.Db) db.Error!void {
 }
 
 /// The events waiting for the `on` hooks; 0.4.0's notice_queue is left unread.
+fn add_job_due(connection: *db.Db) db.Error!void {
+    std.debug.assert(connection.transaction_depth >= 1);
+
+    try connection.exec(
+        \\CREATE TABLE IF NOT EXISTS job_due (
+        \\    plugin TEXT NOT NULL,
+        \\    name TEXT NOT NULL,
+        \\    record TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+        \\    moment INTEGER NOT NULL,
+        \\    PRIMARY KEY (plugin, name, record)
+        \\) STRICT
+    );
+}
+
 fn add_event_queue(connection: *db.Db) db.Error!void {
     std.debug.assert(connection.transaction_depth >= 1);
 

@@ -52,6 +52,7 @@ pub const tables = [_][]const u8{
     "plugin_log",
     "event_queue",
     "job_queue",
+    "job_due",
     "scheduled_transitions",
     "webhook_deliveries",
 };

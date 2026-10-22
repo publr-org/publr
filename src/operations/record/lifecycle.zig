@@ -189,7 +189,11 @@ pub const Publish = struct {
             return error.Invalid;
         }
 
-        return moved_out(try lifecycle.publish(ctx, granted, in.id, in.expected_version));
+        const published = try lifecycle.publish(ctx, granted, in.id, in.expected_version);
+
+        try registry.SDK.jobs.follow(ctx, in.id);
+
+        return moved_out(published);
     }
 };
 

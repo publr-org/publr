@@ -288,7 +288,11 @@ pub const Create = struct {
             return error.Invalid;
         }
 
-        return crud.create(ctx, granted, in.type, in.document, in.status, in.app);
+        const created = try crud.create(ctx, granted, in.type, in.document, in.status, in.app);
+
+        try SDK.jobs.follow(ctx, created.id);
+
+        return created;
     }
 };
 
@@ -421,7 +425,19 @@ pub const Save = struct {
         // its order.
         try virtual_edit.apply(ctx, granted, in.id, in.document);
 
-        return crud.save(ctx, granted, in.id, in.document, in.expected_version, in.status);
+        const saved = try crud.save(
+            ctx,
+            granted,
+            in.id,
+            in.document,
+            in.expected_version,
+            in.status,
+        );
+
+        // A `.due` job follows what the live copy holds now.
+        try SDK.jobs.follow(ctx, in.id);
+
+        return saved;
     }
 };
 
