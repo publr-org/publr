@@ -1,0 +1,119 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type QueueProps = {
+  /** Waiting jobs first, soonest due first, then the failed ones. */
+  jobs: Array<{
+    plugin: string;
+    /** The job's name, `on:<event>` for an `on` hook kept to run again. */
+    name: string;
+    /** Failed for good: it runs again only when someone asks. */
+    failed: boolean;
+    /** How many runs failed. */
+    tries: number;
+    /** When it is due, `YYYY-MM-DD`, UTC. */
+    date: string;
+    /** When it is due, `HH:MM:SS`, UTC. */
+    time: string;
+    /** Why the last run failed; empty when none did. */
+    problem: string;
+    /** Run again, for a failed one. */
+    run_action: string;
+  }>;
+  notice: string;
+  problem: string;
+};
+
+/** The work plugins queued that waits to run, and what failed for good with why, each
+ * with Run again. Reached from the menu beside System settings' tabs. */
+export function Queue({ jobs, notice, problem }: QueueProps) {
+  return (
+    <IndexPage
+      title={Publr.t("Queued work")}
+      parents={[{ label: Publr.t("System settings"), href: "/admin/settings/system" }]}
+      description={Publr.t("Work plugins run between requests. A run that fails tries again later, up to eight times; after the last it waits here until you run it again.")}
+      notice={
+        (problem !== "" || notice !== "") && (
+          <div class="flex flex-col gap-3">
+            {problem !== "" && (
+              <Callout tone="error" title={Publr.t("Not done")}>
+                {problem}
+              </Callout>
+            )}
+            {notice !== "" && <Callout title={notice} />}
+          </div>
+        )
+      }
+      empty={
+        jobs.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("Nothing queued")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("No work waits to run, and nothing has failed.")}</EmptyDescription>
+          </Empty>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("Job")}</TableHead>
+            <TableHead>{Publr.t("State")}</TableHead>
+            <TableHead>{Publr.t("Due")}</TableHead>
+            <TableHead>{Publr.t("Last problem")}</TableHead>
+            <TableHead> </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {jobs.map((job) => (
+            <TableRow>
+              <TableCell>
+                <Code>{`${job.plugin}.${job.name}`}</Code>
+              </TableCell>
+              <TableCell classes="whitespace-nowrap">
+                {job.failed ? (
+                  <Status tone="error">{Publr.tn("Failed after {count} try", "Failed after {count} tries", job.tries)}</Status>
+                ) : job.tries > 0 ? (
+                  <Status tone="warning">{Publr.tn("Waiting, {count} try failed", "Waiting, {count} tries failed", job.tries)}</Status>
+                ) : (
+                  <Status tone="neutral">{Publr.t("Waiting")}</Status>
+                )}
+              </TableCell>
+              <TableCell classes="whitespace-nowrap">
+                <Text variant="body-sm" tone="muted">
+                  {`${job.date} ${job.time}`}
+                </Text>
+              </TableCell>
+              <TableCell>
+                <Text variant="body-sm">{job.problem}</Text>
+              </TableCell>
+              <TableCell>
+                {job.failed && (
+                  <form method="post" action={job.run_action} class="flex justify-end">
+                    <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                    <Button hierarchy="secondary" size="sm" type="submit">
+                      {Publr.t("Run again")}
+                    </Button>
+                  </form>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

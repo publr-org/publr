@@ -34,6 +34,7 @@ pub const List = struct {
     pub const example: In = .{};
     pub const example_out: Out = .{
         .jobs = &.{.{
+            .id = 7,
             .plugin = "hello",
             .name = "show",
             .input = "{\"greeting\":\"0a1b2c3d4e5f60718293a4b5\"}",
@@ -44,8 +45,8 @@ pub const List = struct {
         }},
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
-        .jobs = "Each job: its plugin and name, its input as JSON, when it is due (ms), how " ++
-            "many runs failed, `waiting` or `failed`, and the last problem",
+        .jobs = "Each job: its id, its plugin and name, its input as JSON, when it is due " ++
+            "(ms), how many runs failed, `waiting` or `failed`, and the last problem",
     };
 
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
@@ -58,4 +59,40 @@ pub const List = struct {
     }
 };
 
-pub const operations = [_]type{List};
+pub const RunAgain = struct {
+    pub const name = "job.run_again";
+    pub const description = "Run a failed job again";
+    pub const details =
+        \\Administrators only. The job waits to run at once, its tries counted afresh, as it
+        \\was first queued. Refused when no failed job has that id.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const In = struct {
+        job: i64,
+    };
+    pub const Out = struct {};
+    pub const example: In = .{
+        .job = 7,
+    };
+    pub const example_out: Out = .{};
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .job = "The failed job's id, from `job.list`",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        if (in.job <= 0) {
+            return error.Invalid;
+        }
+
+        if (!try store.job_queue.run_again(ctx.db, in.job, ctx.now_ms)) {
+            return error.NotFound;
+        }
+
+        return .{};
+    }
+};
+
+pub const operations = [_]type{ List, RunAgain };
