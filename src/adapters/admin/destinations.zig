@@ -24,6 +24,8 @@ pub const Destination = struct {
     icon: []const u8,
     href: []const u8,
     pinned: bool = false,
+    /// Pinned by an administrator for everyone.
+    shared: bool = false,
     /// Where Settings lists it.
     group: model.admin_pages.Group = .general,
     /// The app a settings section belongs to; empty for a Global one and the rest.
@@ -66,6 +68,10 @@ pub fn settings(session: *const Session) Error![]Destination {
     }
 
     for (try frame.all(session)) |page| {
+        if (page.hidden) {
+            continue;
+        }
+
         const href = try std.fmt.allocPrint(arena, "{s}/{s}/{s}", .{
             frame.prefix,
             page.plugin,
@@ -126,11 +132,14 @@ pub fn content(session: *const Session, all: []const sections.Section) Error![]D
     return listed;
 }
 
-/// A section's name for a pin: its first type's handle.
+/// A section's name for a pin: its menu item's, under its plugin (`products`, `section/shop`).
 pub fn section_page(arena: std.mem.Allocator, section: sections.Section) Error![]const u8 {
     std.debug.assert(section.types.len > 0);
+    std.debug.assert(section.name.len > section.plugin.len);
 
-    return std.fmt.allocPrint(arena, "section/{s}", .{section.types[0].handle});
+    const local = section.name[section.plugin.len + 1 ..];
+
+    return std.fmt.allocPrint(arena, "section/{s}", .{local});
 }
 
 const RailEntry = admin.views.RailEntries.EntriesItem;
@@ -176,13 +185,15 @@ pub fn rail_of(
         else
             in == null and chrome.under(path, found.href);
 
-        const icon = std.meta.stringToEnum(@FieldType(RailEntry, "icon"), found.icon);
+        const Icon = @FieldType(RailEntry, "icon");
+        const picked = @import("plugin_icons.zig").pick(Icon, session, found.icon, .package);
 
         lit = lit or here;
         try shown.append(session.arena, .{
             .href = found.href,
             .label = found.label,
-            .icon = icon orelse .package,
+            .icon = picked.icon,
+            .custom_icon = picked.custom_icon,
             .active = here,
         });
     }
@@ -224,11 +235,14 @@ fn mark_pinned(session: *const Session, listed: []Destination) Error!void {
     const pins = registry.SDK.dispatch(&reading.ctx, rail.List, .{}) catch return;
 
     for (listed) |*destination| {
-        destination.pinned = pinned_in(pins.pins, destination.*);
+        const pin = pinned_in(pins.pins, destination.*);
+
+        destination.pinned = pin != null;
+        destination.shared = if (pin) |found| found.shared else false;
     }
 }
 
-fn pinned_in(pins: []const rail.Pinned, destination: Destination) bool {
+fn pinned_in(pins: []const rail.Pinned, destination: Destination) ?rail.Pinned {
     std.debug.assert(destination.page.len > 0);
 
     for (pins) |pin| {
@@ -236,11 +250,11 @@ fn pinned_in(pins: []const rail.Pinned, destination: Destination) bool {
             std.mem.eql(u8, destination.page, pin.page);
 
         if (same) {
-            return true;
+            return pin;
         }
     }
 
-    return false;
+    return null;
 }
 
 fn sees(session: *const Session, who: model.admin_pages.Who) bool {
@@ -280,7 +294,7 @@ fn append_settings_sections(
         }) catch return;
 
         for (all.types) |summary| {
-            if (summary.kind != .settings) {
+            if (summary.kind != .settings or summary.menu_hidden) {
                 continue;
             }
 

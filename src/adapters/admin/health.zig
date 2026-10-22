@@ -41,11 +41,14 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     var session = try admin.require(request, response, ctx) orelse return;
     const done = admin.query_param(&session, "done") orelse "";
     const notice = if (std.mem.eql(u8, done, "fixed"))
-        try session.translated("Done: the record is back, or shared again.")
+        try session.translated("Done: the record is back, or shared again.", .{})
     else if (std.mem.eql(u8, done, "unlinked"))
-        try session.translated("The references were taken out of the records that held them.")
+        try session.translated("The references were taken out of the records that held them.", .{})
     else if (std.mem.eql(u8, done, "kept"))
-        try session.translated("Kept as it is: it comes back here if anything about it changes.")
+        try session.translated(
+            "Kept as it is: it comes back here if anything about it changes.",
+            .{},
+        )
     else
         "";
 
@@ -91,7 +94,7 @@ fn screen(session: *Session, notice: []const u8, problem: []const u8) Error!void
         .next_href = next_href,
         .notice = notice,
         .problem = problem,
-    });
+    }, .{});
 }
 
 fn item_of(session: *Session, case: health.Case) Error!Item {
@@ -116,16 +119,21 @@ fn item_of(session: *Session, case: health.Case) Error!Item {
 
     return .{
         .key = try std.fmt.allocPrint(arena, "{s}|{s}", .{ case.target, case.app }),
-        .title = if (case.reason == .gone) try session.translated("Removed record") else case.title,
+        .title = if (case.reason == .gone) try session.translated(
+            "Removed record",
+            .{},
+        ) else case.title,
         .type_name = try type_name(session, case.type),
         .href = if (case.reason == .gone)
             ""
         else
             try std.fmt.allocPrint(arena, "/admin/content/{s}", .{case.target}),
         .why = switch (case.reason) {
-            .deleted => try session.translated("Deleted, in the trash"),
-            .gone => try session.translated("Deleted for good"),
-            .not_shared => try session.translated_with("No longer shared with {app}", named),
+            .deleted => try session.translated("Deleted, in the trash", .{}),
+            .gone => try session.translated("Deleted for good", .{}),
+            .not_shared => try session.translated("No longer shared with {app}", .{
+                .values = named,
+            }),
         },
         .holders = holders,
         .more_holders = if (case.holders_total > case.holders.len)
@@ -137,9 +145,11 @@ fn item_of(session: *Session, case: health.Case) Error!Item {
         else
             "",
         .fix = switch (case.reason) {
-            .deleted => try session.translated("Restore"),
+            .deleted => try session.translated("Restore", .{}),
             .gone => "",
-            .not_shared => try session.translated_with("Share with {app} again", named),
+            .not_shared => try session.translated("Share with {app} again", .{
+                .values = named,
+            }),
         },
         .kept = case.kept,
     };
@@ -168,7 +178,7 @@ pub fn act(request: *Request, response: *Response, ctx: *Context) Error!void {
     const ticked = try values_of(session.arena, &post.form, "case");
 
     if (ticked.len == 0) {
-        return screen(session, "", try session.translated("Tick the cases first."));
+        return screen(session, "", try session.translated("Tick the cases first.", .{}));
     }
 
     return run(session, response, bulk, ticked);
@@ -245,7 +255,7 @@ fn fix(session: *Session, target: []const u8, app: []const u8) !void {
     if (app.len == 0) {
         _ = try registry.SDK.dispatch(&across, record_operations.Transition, .{
             .id = target,
-            .to = "draft",
+            .transition = "restore",
         });
         return;
     }
@@ -290,7 +300,7 @@ fn app_label(session: *const Session, name: []const u8) Error![]const u8 {
     std.debug.assert(session.project.apps.len <= 1024);
 
     if (name.len == 0) {
-        return session.translated("Global types");
+        return session.translated("Global types", .{});
     }
 
     const app = session.project.find(name) orelse return name;

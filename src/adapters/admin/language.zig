@@ -114,10 +114,15 @@ pub fn menu_of(session: *Session) admin.Error!?admin.render.Node {
 
     items[0] = .{
         .locale = "",
-        .label = try session.translated_with("Site default ({language})", &.{.{
-            .name = "language",
-            .value = site_label,
-        }}),
+        .label = try session.translated(
+            "Site default ({language})",
+            .{
+                .values = &.{.{
+                    .name = "language",
+                    .value = site_label,
+                }},
+            },
+        ),
         .current = shown.chosen.len == 0,
     };
 

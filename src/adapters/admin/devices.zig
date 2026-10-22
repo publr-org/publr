@@ -60,7 +60,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .range = pages.range,
         .previous_href = pages.previous_href,
         .next_href = pages.next_href,
-    });
+    }, .{});
 }
 
 pub fn revoke(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -101,7 +101,7 @@ pub fn approve_page(request: *Request, response: *Response, ctx: *Context) Error
         .code = code,
         .email = session.identity.email,
         .asked = asked.scope,
-    });
+    }, .{});
 }
 
 /// The person's decision: Approve with the scope they chose, or Deny.
@@ -127,15 +127,20 @@ pub fn decide(request: *Request, response: *Response, ctx: *Context) Error!void 
             .scope = scope,
         }) catch |err| return admin.fail(session, err, back);
 
-        const acts = try session.translated_with("{device} can act for you now.", &.{.{
-            .name = "device",
-            .value = asked.name,
-        }});
-        const close = try session.translated("Go back to it; this page can be closed.");
+        const acts = try session.translated(
+            "{device} can act for you now.",
+            .{
+                .values = &.{.{
+                    .name = "device",
+                    .value = asked.name,
+                }},
+            },
+        );
+        const close = try session.translated("Go back to it; this page can be closed.", .{});
         const text = try std.fmt.allocPrint(session.arena, "{s} {s}", .{ acts, close });
-        const heading = try session.translated("Device approved");
+        const heading = try session.translated("Device approved", .{});
 
-        return admin.message(session, heading, text, &[_]Problem{}, back);
+        return admin.message(session, heading, text, &[_]Problem{}, back, .{});
     }
 
     _ = registry.SDK.dispatch(&session.ctx, people.Deny, .{
@@ -144,13 +149,18 @@ pub fn decide(request: *Request, response: *Response, ctx: *Context) Error!void 
         return admin.fail(session, err, back);
     };
 
-    const text = try session.translated_with("{device} was turned away.", &.{.{
-        .name = "device",
-        .value = asked.name,
-    }});
-    const heading = try session.translated("Device denied");
+    const text = try session.translated(
+        "{device} was turned away.",
+        .{
+            .values = &.{.{
+                .name = "device",
+                .value = asked.name,
+            }},
+        },
+    );
+    const heading = try session.translated("Device denied", .{});
 
-    try admin.message(session, heading, text, &[_]Problem{}, back);
+    try admin.message(session, heading, text, &[_]Problem{}, back, .{});
 }
 
 const Problem = struct {
@@ -164,10 +174,11 @@ fn gone(session: *const admin.Session) Error!void {
 
     const passed = try session.translated(
         "It was approved or denied already, or ten minutes passed.",
+        .{},
     );
-    const again = try session.translated("Ask the device to sign in again for a new link.");
+    const again = try session.translated("Ask the device to sign in again for a new link.", .{});
     const text = try std.fmt.allocPrint(session.arena, "{s} {s}", .{ passed, again });
-    const heading = try session.translated("This request is not waiting");
+    const heading = try session.translated("This request is not waiting", .{});
 
-    try admin.message(session, heading, text, &[_]Problem{}, back);
+    try admin.message(session, heading, text, &[_]Problem{}, back, .{});
 }

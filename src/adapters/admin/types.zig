@@ -44,30 +44,34 @@ pub fn kind_text(session: *const Session, kind: Kind) admin.Error!KindText {
     return switch (kind) {
         .record => .{
             .kind = .record,
-            .label = try session.translated("Record type"),
+            .label = try session.translated("Record type", .{}),
             .description = try session.translated(
                 "Holds any number of records: posts, pages, hotels, players.",
+                .{},
             ),
         },
         .settings => .{
             .kind = .settings,
-            .label = try session.translated("Settings"),
+            .label = try session.translated("Settings", .{}),
             .description = try session.translated(
                 "Holds exactly one record: the homepage, the header, general options.",
+                .{},
             ),
         },
         .component => .{
             .kind = .component,
-            .label = try session.translated("Component"),
+            .label = try session.translated("Component", .{}),
             .description = try session.translated(
                 "Holds no records of its own: a set of fields for other types to reuse.",
+                .{},
             ),
         },
         .media => .{
             .kind = .media,
-            .label = try session.translated("Media"),
+            .label = try session.translated("Media", .{}),
             .description = try session.translated(
                 "Holds files, shown only where the plugin that declares it draws them.",
+                .{},
             ),
         },
     };

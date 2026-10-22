@@ -73,7 +73,7 @@ pub fn library(
         .periods = sides.periods,
         .years = sides.years,
         .months = sides.months,
-    });
+    }, .{});
 }
 
 /// Whether the files are in a folder on a server, which people can put files into by hand.
@@ -291,7 +291,7 @@ fn years_of(
 
     try out.append(arena, .{
         .value = "0",
-        .label = try session.translated("Any year"),
+        .label = try session.translated("Any year", .{}),
         .selected = filter.year == 0,
     });
 
@@ -325,7 +325,7 @@ fn months_of(
 
     try out.append(arena, .{
         .value = "0",
-        .label = try session.translated("Any month"),
+        .label = try session.translated("Any month", .{}),
         .selected = filter.month == 0,
     });
 
@@ -367,7 +367,9 @@ fn page_text_of(
             .value = try std.fmt.allocPrint(arena, "{d}", .{pages}),
         },
     };
-    const where = try session.translated_with("Page {page} of {pages}", values);
+    const where = try session.translated("Page {page} of {pages}", .{
+        .values = values,
+    });
     const files = try session.translated_count("{count} file", "{count} files", total);
 
     return std.fmt.allocPrint(arena, "{s} · {s}", .{ where, files });
@@ -415,26 +417,26 @@ fn pills_of(session: *const admin.Session, filter: explorer.Filter) admin.Error!
     const kinds = [_]Choice{
         .{
             .value = "image",
-            .label = try session.translated("Images"),
+            .label = try session.translated("Images", .{}),
         },
         .{
             .value = "video",
-            .label = try session.translated("Videos"),
+            .label = try session.translated("Videos", .{}),
         },
         .{
             .value = "audio",
-            .label = try session.translated("Audio"),
+            .label = try session.translated("Audio", .{}),
         },
         .{
             .value = "pdf",
-            .label = try session.translated("PDFs"),
+            .label = try session.translated("PDFs", .{}),
         },
         .{
             .value = "other",
-            .label = try session.translated("Other files"),
+            .label = try session.translated("Other files", .{}),
         },
     };
-    const type_label = try session.translated("Type");
+    const type_label = try session.translated("Type", .{});
 
     try pills.append(arena, try pill_of(session, filter, .kind, type_label, &kinds));
 
@@ -442,18 +444,18 @@ fn pills_of(session: *const admin.Session, filter: explorer.Filter) admin.Error!
         const sizes = [_]Choice{
             .{
                 .value = "small",
-                .label = try session.translated("Under 1 MB"),
+                .label = try session.translated("Under 1 MB", .{}),
             },
             .{
                 .value = "medium",
-                .label = try session.translated("1 to 10 MB"),
+                .label = try session.translated("1 to 10 MB", .{}),
             },
             .{
                 .value = "large",
-                .label = try session.translated("Over 10 MB"),
+                .label = try session.translated("Over 10 MB", .{}),
             },
         };
-        const label = try session.translated("Size");
+        const label = try session.translated("Size", .{});
 
         try pills.append(arena, try pill_of(session, filter, .size, label, &sizes));
     }
@@ -462,14 +464,14 @@ fn pills_of(session: *const admin.Session, filter: explorer.Filter) admin.Error!
         const visibilities = [_]Choice{
             .{
                 .value = "public",
-                .label = try session.translated("Public"),
+                .label = try session.translated("Public", .{}),
             },
             .{
                 .value = "private",
-                .label = try session.translated("Private"),
+                .label = try session.translated("Private", .{}),
             },
         };
-        const label = try session.translated("Visibility");
+        const label = try session.translated("Visibility", .{});
         const pill = try pill_of(session, filter, .visibility, label, &visibilities);
 
         try pills.append(arena, pill);
@@ -512,7 +514,7 @@ fn pill_of(
     const arena = session.arena;
     const any = current.len == 0 or std.mem.eql(u8, current, "any");
     const options = try arena.alloc(PillOption, choices.len + 1);
-    const any_label = try session.translated("Any");
+    const any_label = try session.translated("Any", .{});
     var value: []const u8 = any_label;
 
     options[0] = .{
@@ -562,14 +564,14 @@ fn add_filters_of(
     const out = try arena.alloc(AddFilter, 2);
 
     out[0] = .{
-        .label = try session.translated("Size"),
+        .label = try session.translated("Size", .{}),
         .href = try std.fmt.allocPrint(arena, "{s}#filter-size", .{
             try explorer.href_of(arena, with(filter, .size, "any")),
         }),
         .added = filter.size.len > 0,
     };
     out[1] = .{
-        .label = try session.translated("Visibility"),
+        .label = try session.translated("Visibility", .{}),
         .href = try std.fmt.allocPrint(arena, "{s}#filter-visibility", .{
             try explorer.href_of(arena, with(filter, .visibility, "any")),
         }),

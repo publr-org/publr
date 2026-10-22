@@ -7,7 +7,6 @@ const identity_module = @import("../rest/identity.zig");
 const ai = @import("../../operations/ai.zig");
 const ai_model = @import("../../model/ai.zig");
 const providers = @import("../../operations/ai/providers.zig");
-const setup = @import("../../operations/ai/setup.zig");
 const agent_setup = @import("agent_setup.zig");
 
 const Props = admin.views.Dashboard.Props;
@@ -208,28 +207,6 @@ fn fill_providers(session: *admin.Session, props: *Props) admin.Error!void {
     }
 
     props.providers = waiting.items;
-
-    if (waiting.items.len > 0) {
-        return;
-    }
-
-    const catalog = registry.SDK.dispatch(&session.ctx, setup.Catalog, .{}) catch |err| {
-        return if (err == error.OutOfMemory) error.OutOfMemory else {};
-    };
-    var offered: std.ArrayList(admin.views.Dashboard.OfferedItem) = .empty;
-
-    for (catalog.offered) |item| {
-        if (!item.installed) {
-            try offered.append(arena, .{
-                .name = item.name,
-                .label = item.label,
-                .summary = item.summary,
-            });
-        }
-    }
-
-    props.offered = offered.items;
-    props.reached = catalog.reached;
 }
 
 /// The person's conversations, newest first, each leading to its workspace.
@@ -261,12 +238,12 @@ fn label_of(session: *const admin.Session, state: []const u8) admin.Error![]cons
     std.debug.assert(state.len <= 64);
 
     const labels = [_][2][]const u8{
-        .{ "running", try session.translated("Working") },
-        .{ "stopping", try session.translated("Stopping") },
-        .{ "finished", try session.translated("Done") },
-        .{ "stopped", try session.translated("Stopped") },
-        .{ "waiting", try session.translated("Waiting for you") },
-        .{ "failed", try session.translated("Failed") },
+        .{ "running", try session.translated("Working", .{}) },
+        .{ "stopping", try session.translated("Stopping", .{}) },
+        .{ "finished", try session.translated("Done", .{}) },
+        .{ "stopped", try session.translated("Stopped", .{}) },
+        .{ "waiting", try session.translated("Waiting for you", .{}) },
+        .{ "failed", try session.translated("Failed", .{}) },
     };
 
     for (labels) |pair| {

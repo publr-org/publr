@@ -51,5 +51,5 @@ pub fn screen(session: *Session, app: *const App) Error!void {
             try definitions.host_url_of(session),
             base,
         }),
-    });
+    }, .{});
 }

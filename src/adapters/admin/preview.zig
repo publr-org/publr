@@ -38,7 +38,7 @@ const holder = @embedFile("preview/holder.js");
 pub const page_for = page_module.page_for;
 
 pub fn register(router: anytype) void {
-    std.debug.assert(router.routes_len < 256 - routes_count);
+    std.debug.assert(router.routes_len < router.routes.len - routes_count);
 
     const before = router.routes_len;
 
@@ -63,11 +63,11 @@ pub fn tab(request: *admin.Request, response: *Response, ctx: *admin.Context) ad
     const asked = admin.query_param(&session, "path");
     const kept = if (asked) |at| if (plain_path(at)) at else null else null;
     const path = kept orelse try own_path(&session, id) orelse {
-        return response.text(.not_found, try session.translated("No page shows this record."));
+        return response.text(.not_found, try session.translated("No page shows this record.", .{}));
     };
     const project = session.project;
     const pass = identity_module.preview_pass(project, session.arena, id, user) catch {
-        return response.text(.bad_request, try session.translated("No such record."));
+        return response.text(.bad_request, try session.translated("No such record.", .{}));
     };
     var out: std.Io.Writer.Allocating = .init(session.arena);
 

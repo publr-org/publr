@@ -35,7 +35,7 @@ pub fn system(
     try render(&session, .ok, .{
         .tab = "general",
         .notice = if (admin.query_param(&session, "saved") != null)
-            try session.translated("Saved.")
+            try session.translated("Saved.", .{})
         else
             "",
     });
@@ -101,9 +101,28 @@ pub fn render_plugin_tab(
     try admin.screen(session, .ok, views.SettingsSystem, .{
         .tab = tab,
         .can_logs = registry.SDK.may(&session.ctx, @import("../../operations/activity.zig").List),
-        .plugin_tabs = try settings_tabs.links(session),
+        .plugin_tabs = try plugin_tabs_of(session),
         .sections = sections,
-    });
+    }, .{});
+}
+
+const PluginTab = views.SettingsSystem.Plugin_tabsItem;
+
+fn plugin_tabs_of(session: *admin.Session) admin.Error![]const PluginTab {
+    std.debug.assert(session.signed_in());
+
+    const found = try settings_tabs.links(session, .system);
+    const items = try session.arena.alloc(PluginTab, found.len);
+
+    for (found, items) |link, *item| {
+        item.* = .{
+            .tab = link.tab,
+            .label = link.label,
+            .href = link.href,
+        };
+    }
+
+    return items;
 }
 
 const Shown = struct {
@@ -118,8 +137,8 @@ fn render(session: *admin.Session, status: admin.Status, shown: Shown) admin.Err
     try admin.screen(session, status, views.SettingsSystem, .{
         .tab = shown.tab,
         .can_logs = registry.SDK.may(&session.ctx, @import("../../operations/activity.zig").List),
-        .plugin_tabs = try settings_tabs.links(session),
+        .plugin_tabs = try plugin_tabs_of(session),
         .languages = try languages_of(session),
         .notice = shown.notice,
-    });
+    }, .{});
 }

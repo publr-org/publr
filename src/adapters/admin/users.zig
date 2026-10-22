@@ -3,7 +3,9 @@ const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const user_operations = @import("../../operations/user.zig");
+const role_operations = @import("../../operations/role.zig");
 const settings_nav = @import("settings_nav.zig");
+const settings_tabs = @import("settings_tabs.zig");
 const fields = @import("fields.zig");
 const editor = @import("editor.zig");
 const model = @import("../../model.zig");
@@ -52,13 +54,14 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     const arena = session.arena;
     const rows = try arena.alloc(views.Users.UsersItem, listed.users.len);
     const me = session.ctx.caller.user_id() orelse "";
+    const roles = try roles_in(&session);
 
     for (listed.users, rows) |user, *row| {
         row.* = .{
             .href = try std.fmt.allocPrint(arena, "{s}/{s}", .{ back, user.id }),
             .name = user.display_name,
             .email = user.email,
-            .roles = try labels_of(arena, user.roles),
+            .roles = try labels_of(arena, roles, user.roles),
             .active = user.active,
             .me = std.mem.eql(u8, user.id, me),
         };
@@ -78,7 +81,48 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .range = pages.range,
         .previous_href = pages.previous_href,
         .next_href = pages.next_href,
-    });
+        .plugin_tabs = try plugin_tabs_of(&session),
+    }, .{});
+}
+
+/// A plugin's tab of Users: its sections under Users' header and tabs.
+pub fn render_plugin_tab(
+    session: *Session,
+    tab: []const u8,
+    sections: admin.render.Node,
+    action: settings_tabs.Action,
+) Error!void {
+    std.debug.assert(tab.len > 0);
+    std.debug.assert(session.signed_in());
+
+    try admin.screen(session, .ok, views.Users, .{
+        .users = &.{},
+        .range = "",
+        .previous_href = "",
+        .next_href = "",
+        .tab = tab,
+        .plugin_tabs = try plugin_tabs_of(session),
+        .sections = sections,
+        .action_label = action.label,
+        .action_href = action.href,
+    }, .{});
+}
+
+fn plugin_tabs_of(session: *Session) Error![]const views.Users.Plugin_tabsItem {
+    std.debug.assert(session.signed_in());
+
+    const found = try settings_tabs.links(session, .users);
+    const items = try session.arena.alloc(views.Users.Plugin_tabsItem, found.len);
+
+    for (found, items) |link, *item| {
+        item.* = .{
+            .tab = link.tab,
+            .label = link.label,
+            .href = link.href,
+        };
+    }
+
+    return items;
 }
 
 pub fn new_page(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -100,7 +144,7 @@ pub fn create(request: *Request, response: *Response, ctx: *Context) Error!void 
     var shape: Shape = .{
         .name = post.form.text("display_name") orelse "",
         .email = post.form.text("email") orelse "",
-        .roles = try roles_of(session.arena, &post.form),
+        .roles = try roles_of(session, &post.form),
     };
     const created = registry.SDK.dispatch(&session.ctx, user_operations.Create, .{
         .email = shape.email,
@@ -154,7 +198,7 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
 
     // The signed-in user's own roles are fixed on the form, so they are not posted.
     if (!std.mem.eql(u8, id, me)) {
-        shape.roles = try roles_of(session.arena, form);
+        shape.roles = try roles_of(session, form);
     }
 
     shape.name = form.text("display_name") orelse "";
@@ -163,7 +207,7 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
         return;
     }
 
-    const form_defs = try editor.varied(session, shape.defs, null);
+    const form_defs = try editor.varied(session, shape.defs, .{});
     const document = fields.decode.document_of(session.arena, form_defs, form) orelse {
         return admin.fail(session, error.Invalid, back);
     };
@@ -261,7 +305,7 @@ fn reshaped(session: *Session, shape: *Shape, form: *const admin.Form) Error!boo
     std.debug.assert(form.len <= admin.form_pairs_max);
 
     const verb = form.text("reshape") orelse return false;
-    const form_defs = try editor.varied(session, shape.defs, null);
+    const form_defs = try editor.varied(session, shape.defs, .{});
     const posted = fields.decode.value_of(session.arena, form_defs, form) catch {
         try admin.fail(session, error.Invalid, back);
 
@@ -335,7 +379,9 @@ fn field_rows(session: *Session, shape: Shape) Error!?admin.render.Node {
         .slug_prefix = "",
         .files = try fields.media.files_of(session, def.fields, shape.document),
     };
-    const form_defs = try editor.varied(session, shape.defs, shape.document);
+    const form_defs = try editor.varied(session, shape.defs, .{
+        .document = shape.document,
+    });
     const rows = try fields.rows_of(context, form_defs, shape.document);
 
     return try admin.render.view(session.arena, views.RecordFields, .{
@@ -353,7 +399,7 @@ fn render_form(session: *Session, status: admin.Status, shape: Shape) Error!void
     const own = try std.fmt.allocPrint(arena, "{s}/{s}", .{ back, shape.id });
 
     try admin.screen(session, status, views.UserForm, .{
-        .title = if (is_new) try session.translated("New user") else shape.name,
+        .title = if (is_new) try session.translated("New user", .{}) else shape.name,
         .action = if (is_new) back ++ "/create" else try std.mem.concat(arena, u8, &.{
             own,
             "/update",
@@ -362,7 +408,7 @@ fn render_form(session: *Session, status: admin.Status, shape: Shape) Error!void
         .is_me = !is_new and std.mem.eql(u8, shape.id, me),
         .name = shape.name,
         .email = shape.email,
-        .roles = try choices_of(arena, shape.roles),
+        .roles = try choices_of(session, shape.roles),
         .invited = shape.invited,
         .link = shape.link,
         .link_action = try std.mem.concat(arena, u8, &.{ own, "/password-link" }),
@@ -371,7 +417,7 @@ fn render_form(session: *Session, status: admin.Status, shape: Shape) Error!void
         .fields = try field_rows(session, shape),
         .languages = try editor.languages_of(views.UserForm.LanguagesItem, session),
         .problems = shape.problems,
-    });
+    }, .{});
 }
 
 const Verb = enum { create, update, delete };
@@ -386,26 +432,42 @@ fn reason(session: *const Session, err: anyerror, verb: Verb) Error!?[]const u8 
         error.Invalid => switch (verb) {
             .create => "the name or the email is not valid, no role is ticked, or the " ++
                 "password is shorter than 8 characters",
-            .update => try session.translated("the name is not valid, or no role is ticked"),
-            .delete => try session.translated("you cannot delete yourself"),
+            .update => try session.translated("the name is not valid, or no role is ticked", .{}),
+            .delete => try session.translated("you cannot delete yourself", .{}),
         },
         error.Conflict => switch (verb) {
-            .create => try session.translated("an account with that email already exists"),
-            .update => try session.translated("the last admin must stay an admin"),
-            .delete => try session.translated("the last admin cannot be deleted"),
+            .create => try session.translated("an account with that email already exists", .{}),
+            .update => try session.translated("the last admin must stay an admin", .{}),
+            .delete => try session.translated("the last admin cannot be deleted", .{}),
         },
         else => null,
     };
 }
 
-/// The roles ticked on the form, each once, in the order the project declares them.
-fn roles_of(arena: std.mem.Allocator, form: *const admin.Form) Error![]const []const u8 {
-    std.debug.assert(form.len <= admin.form_pairs_max);
-    std.debug.assert(registry.Roles.all.len > 0);
+/// Every role the project has, in the order they were made; none when they cannot be read.
+fn roles_in(session: *Session) Error![]const role_operations.Listed {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(model.role.roles_max > 0);
 
+    const listed = registry.SDK.dispatch(&session.ctx, role_operations.List, .{}) catch |err| {
+        return switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            else => &.{},
+        };
+    };
+
+    return listed.roles;
+}
+
+/// The roles ticked on the form, each once, in the order the project made them.
+fn roles_of(session: *Session, form: *const admin.Form) Error![]const []const u8 {
+    std.debug.assert(form.len <= admin.form_pairs_max);
+    std.debug.assert(session.signed_in());
+
+    const arena = session.arena;
     var ticked: std.ArrayList([]const u8) = .empty;
 
-    for (registry.Roles.all) |role| {
+    for (try roles_in(session)) |role| {
         for (form.pairs[0..form.len]) |pair| {
             if (std.mem.eql(u8, pair.name, "roles") and std.mem.eql(u8, pair.value, role.name)) {
                 ticked.append(arena, role.name) catch return error.OutOfMemory;
@@ -420,14 +482,14 @@ fn roles_of(arena: std.mem.Allocator, form: *const admin.Form) Error![]const []c
 
 /// Every role the project has, ticked when the account holds it.
 fn choices_of(
-    arena: std.mem.Allocator,
+    session: *Session,
     held: []const []const u8,
 ) Error![]const views.UserForm.RolesItem {
     std.debug.assert(held.len <= model.role.user_roles_max);
-    std.debug.assert(registry.Roles.all.len > 0);
+    std.debug.assert(session.signed_in());
 
-    const roles = registry.Roles.all;
-    const choices = arena.alloc(views.UserForm.RolesItem, roles.len) catch
+    const roles = try roles_in(session);
+    const choices = session.arena.alloc(views.UserForm.RolesItem, roles.len) catch
         return error.OutOfMemory;
 
     for (roles, choices) |role, *choice| {
@@ -442,15 +504,23 @@ fn choices_of(
     return choices;
 }
 
-/// The roles' labels, comma-separated; a name no native code declares shows as is.
-fn labels_of(arena: std.mem.Allocator, held: []const []const u8) Error![]const u8 {
+/// The roles' labels, comma-separated; a name no role has any more shows as is.
+fn labels_of(
+    arena: std.mem.Allocator,
+    roles: []const role_operations.Listed,
+    held: []const []const u8,
+) Error![]const u8 {
     std.debug.assert(held.len <= model.role.user_roles_max);
-    std.debug.assert(registry.Roles.all.len > 0);
+    std.debug.assert(roles.len <= model.role.roles_max);
 
     var text: std.ArrayList(u8) = .empty;
 
     for (held, 0..) |name, index| {
-        const label = if (registry.Roles.get(name)) |role| role.label else name;
+        const label = for (roles) |role| {
+            if (std.mem.eql(u8, role.name, name)) {
+                break role.label;
+            }
+        } else name;
 
         if (index > 0) {
             text.appendSlice(arena, ", ") catch return error.OutOfMemory;

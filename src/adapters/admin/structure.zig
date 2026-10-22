@@ -11,5 +11,5 @@ pub fn show(
 
     var session = try admin.require(request, response, ctx) orelse return;
 
-    try admin.screen(&session, .ok, admin.views.Structure, .{});
+    try admin.screen(&session, .ok, admin.views.Structure, .{}, .{});
 }

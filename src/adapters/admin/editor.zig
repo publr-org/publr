@@ -194,7 +194,7 @@ pub fn Editor(comptime domain: Domain) type {
                 return;
             }
 
-            const form_defs = try varied(session, def.fields, null);
+            const form_defs = try varied(session, def.fields, .{});
             const document = fields.decode.document_of(session.arena, form_defs, form) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
@@ -227,7 +227,7 @@ pub fn Editor(comptime domain: Domain) type {
                 return;
             }
 
-            const defs = try varied(session, shape.def.fields, null);
+            const defs = try varied(session, shape.def.fields, .{});
             const document = fields.decode.document_of(session.arena, defs, form) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
@@ -273,6 +273,14 @@ pub fn Editor(comptime domain: Domain) type {
                     .id = id,
                     .expected_version = expected,
                 }) catch |err| return admin.fail(session, err, location);
+            } else if (std.mem.eql(u8, verb, "decline")) {
+                if (comptime !@hasDecl(operations, "DeclineRequest")) {
+                    return admin.fail(session, error.Invalid, location);
+                } else {
+                    _ = registry.SDK.dispatch(&session.ctx, operations.DeclineRequest, .{
+                        .id = id,
+                    }) catch |err| return admin.fail(session, err, location);
+                }
             } else if (std.mem.eql(u8, verb, "discard")) {
                 _ = registry.SDK.dispatch(&session.ctx, operations.DiscardChanges, .{
                     .id = id,
@@ -289,13 +297,13 @@ pub fn Editor(comptime domain: Domain) type {
 
                 return response.redirect(.see_other, back);
             } else {
-                const to = form.text("to") orelse {
+                const transition = form.text("transition") orelse {
                     return admin.fail(session, error.Invalid, location);
                 };
 
                 _ = registry.SDK.dispatch(&session.ctx, operations.Transition, .{
                     .id = id,
-                    .to = to,
+                    .transition = transition,
                     .expected_version = expected,
                 }) catch |err| return admin.fail(session, err, location);
             }
@@ -308,6 +316,20 @@ pub fn Editor(comptime domain: Domain) type {
         }
 
         /// The definition a new document is of, from the query, or a not-found page.
+        fn may_of(session: *Session, row: Record) May {
+            std.debug.assert(row.id.len > 0);
+            std.debug.assert(session.signed_in());
+
+            return .{
+                .purge = registry.SDK.may(&session.ctx, operations.Purge),
+                .publish = registry.SDK.may_on_type(
+                    &session.ctx,
+                    operations.Publish.name,
+                    row.type,
+                ),
+            };
+        }
+
         fn load_definition(session: *Session) Error!?Shape {
             std.debug.assert(session.signed_in());
             std.debug.assert(back.len > 0);
@@ -451,9 +473,9 @@ pub fn Editor(comptime domain: Domain) type {
             const shape = try load(session, id) orelse return;
             const row = shape.loaded.?.row;
 
-            const status = registry.Statuses.find(row.status);
-            const may_purge = registry.SDK.may(&session.ctx, operations.Purge);
-            const actions = try actions_of(session, row, may_purge);
+            const flow = shape.def.flow;
+            const status = flow.find(row.status);
+            const actions = try actions_of(session, flow, row, may_of(session, row));
 
             session.response.json(.ok, .{
                 .saved = true,
@@ -463,7 +485,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .status = row.status,
                 .status_label = try status_label_of(session, status, row.status),
                 .changed = row.changed,
-                .parks = row.changed or registry.Statuses.is_live(row.status),
+                .parks = row.changed or flow.is_live(row.status),
                 .actions = actions,
                 .has_destructive = has_destructive(actions),
             }) catch return error.OutOfMemory;
@@ -502,7 +524,7 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(form.len <= admin.form_pairs_max);
 
             const verb = form.text("reshape") orelse return false;
-            const defs = try varied(session, shape.def.fields, null);
+            const defs = try varied(session, shape.def.fields, .{});
             const posted = fields.decode.value_of(session.arena, defs, form) catch {
                 try admin.fail(session, error.Invalid, back);
 
@@ -602,6 +624,8 @@ pub fn Editor(comptime domain: Domain) type {
             const verdict = .{
                 .saved = false,
                 .reason = reason,
+                // Each under its field, as the write refused them.
+                .problems = if (err == error.Invalid) session.ctx.problems else &.{},
             };
 
             session.response.json(.ok, verdict) catch return error.OutOfMemory;
@@ -618,31 +642,40 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(shape.def.handle.len > 0);
 
             if (err == error.Conflict) {
-                return session.translated("Not saved: changed elsewhere, reload the page");
+                return session.translated("Not saved: changed elsewhere, reload the page", .{});
             }
 
             if (err != error.Invalid) {
-                return session.translated("Not saved");
+                return session.translated("Not saved", .{});
+            }
+
+            if (session.ctx.problems.len > 0) {
+                return session.translated("Not saved: check the marked fields", .{});
             }
 
             const problems = try problems_of(session, shape, document);
 
             if (problems.len == 0) {
-                return session.translated("Not saved: the document is not valid");
+                return session.translated("Not saved: the document is not valid", .{});
             }
 
             const first = problems[0];
 
-            return session.translated_with("Not saved: {field} {problem}", &.{
+            return session.translated(
+                "Not saved: {field} {problem}",
                 .{
-                    .name = "field",
-                    .value = first.code,
+                    .values = &.{
+                        .{
+                            .name = "field",
+                            .value = first.code,
+                        },
+                        .{
+                            .name = "problem",
+                            .value = first.text,
+                        },
+                    },
                 },
-                .{
-                    .name = "problem",
-                    .value = first.text,
-                },
-            });
+            );
         }
 
         fn problems_of(
@@ -702,13 +735,15 @@ pub fn Editor(comptime domain: Domain) type {
                     .has_fields = def.fields.len > 0,
                     .schema_href = try print(arena, "/admin/structure/settings/{s}", .{def.handle}),
                     .editor = editor_panel,
-                });
+                }, .{});
             }
 
             const title = if (shape.loaded) |full|
                 (if (full.row.title.len > 0) full.row.title else full.row.id)
             else
-                try session.translated_with("New {type}", try nouns.values(session, def));
+                try session.translated("New {type}", .{
+                    .values = try nouns.values(session, def),
+                });
 
             const parents = try arena.alloc(views.RecordForm.ParentsItem, 1);
 
@@ -733,7 +768,7 @@ pub fn Editor(comptime domain: Domain) type {
             const none: design_hand.Handed = .{};
             const handed = if (visual != null) handed_of(session, shape, title, document) else none;
 
-            try admin.screen_with(session, one_type, .ok, views.RecordForm, .{
+            try admin.screen(session, .ok, views.RecordForm, .{
                 .title = title,
                 .parents = parents,
                 .focus = std.mem.eql(u8, domain.section, "content"),
@@ -742,7 +777,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .editor_site = try editor_site.json(session, record_app),
                 .editor_templates = handed.templates,
                 .editor_patterns = handed.patterns,
-            });
+            }, one_type);
         }
 
         /// A visual record's template, parts and patterns for the block editor, a new one's
@@ -783,13 +818,14 @@ pub fn Editor(comptime domain: Domain) type {
 
             const def = shape.def;
             const status_now = if (shape.loaded) |full| full.row.status else "";
-            const live = shape.loaded != null and registry.Statuses.is_live(status_now);
+            const live = shape.loaded != null and def.flow.is_live(status_now);
 
             return .{
                 .arena = session.arena,
                 .session = session,
                 .users = try user_options(session, def.fields),
                 .referenced = try referenced_of(session, def, document),
+                .statuses = statuses_known(session) catch return error.OutOfMemory,
                 .types = try types_of(session, def),
                 .terms = try terms_of(session, def),
                 .slug_prefix = try slug_prefix_of(session, def),
@@ -827,7 +863,7 @@ pub fn Editor(comptime domain: Domain) type {
                 text,
                 .{},
             ) catch return admin.fail(session, error.Invalid, back);
-            const defs = try varied(session, def.fields, null);
+            const defs = try varied(session, def.fields, .{});
             const base = path[0 .. std.mem.indexOfScalar(u8, path, '[') orelse path.len];
             var document: std.json.ObjectMap = .empty;
             var held = std.json.Array.init(session.arena);
@@ -880,7 +916,9 @@ pub fn Editor(comptime domain: Domain) type {
             const def = shape.def;
             var fold: fields.Fold = .{};
             const context = try context_of(session, shape, document, &fold);
-            const form_defs = try varied(session, def.fields, document);
+            const form_defs = try varied(session, def.fields, .{
+                .document = document,
+            });
             const rows = try fields.rows_of(context, form_defs, document);
             const field_rows = try admin.render.view(arena, views.RecordFields, .{
                 .group_visible = model.field_group.applies(def.group, .{
@@ -909,10 +947,11 @@ pub fn Editor(comptime domain: Domain) type {
 
             if (shape.loaded) |full| {
                 const row = full.row;
-                const parks = row.changed or registry.Statuses.is_live(row.status);
-                const status = registry.Statuses.find(row.status);
-                const may_purge = registry.SDK.may(&session.ctx, operations.Purge);
-                const actions = try actions_of(session, row, may_purge);
+                const parks = row.changed or def.flow.is_live(row.status);
+                const status = def.flow.find(row.status);
+                const may = may_of(session, row);
+                const actions = try actions_of(session, def.flow, row, may);
+                const requested = try requested_of(session, def.flow, row, may);
                 const versions_href = if (domain.versions)
                     try print(arena, "{s}/{s}/revisions", .{ back, row.id })
                 else
@@ -963,6 +1002,11 @@ pub fn Editor(comptime domain: Domain) type {
                     .aside = aside,
                     .impact = null,
                     .languages = try languages_of(views.RecordEditor.LanguagesItem, session),
+                    .request_by = requested.by,
+                    .request_label = requested.label,
+                    .request_transition = requested.transition,
+                    .request_may_approve = requested.may_approve,
+                    .request_decline_label = requested.decline_label,
                 });
             }
 
@@ -982,9 +1026,11 @@ pub fn Editor(comptime domain: Domain) type {
                 .type = def.handle,
                 .type_name = if (def.kind == .settings) def.description else def.name,
                 .type_href = try type_href_of(session, def, taxonomy),
-                .title = if (def.kind == .settings) def.name else try session.translated_with(
+                .title = if (def.kind == .settings) def.name else try session.translated(
                     "New {type}",
-                    try nouns.values(session, def),
+                    .{
+                        .values = try nouns.values(session, def),
+                    },
                 ),
                 .expected_version = "",
                 .status = "",
@@ -1014,52 +1060,67 @@ pub fn Editor(comptime domain: Domain) type {
     };
 }
 
-/// The status actions a document offers from where it is: publish, discard, every
-/// transition out of the current status, and purge for whoever may purge.
-pub fn actions_of(session: *const Session, row: Record, may_purge: bool) Error![]const Action {
+/// The status actions a document offers from where it is: publish, discard, every transition
+/// its type's flow makes out of the current status, and purge for whoever may purge.
+pub fn actions_of(
+    session: *const Session,
+    flow: model.flow.Flow,
+    row: Record,
+    may: May,
+) Error![]const Action {
     std.debug.assert(row.id.len > 0);
     std.debug.assert(row.status.len > 0);
 
     const arena = session.arena;
     const status = row.status;
-    const live = registry.Statuses.is_live(status);
+    const live = flow.is_live(status);
+    const publishes = !live and flow.allows(status, "published");
     var actions: std.ArrayList(Action) = .empty;
 
+    // Someone who may not publish asks for it: the `publish` transition, kept on the record.
+    const verb = if (may.publish) "do" else "transition";
+
     if (live and row.changed) {
-        const label = try session.translated("Publish changes");
+        const label = if (may.publish)
+            try session.translated("Publish changes", .{})
+        else
+            try session.translated("Ask to publish changes", .{});
 
-        try add_action(arena, &actions, "do", "publish", label, false);
-    } else if (!live and registry.Statuses.allows(status, "published")) {
-        const label = try session.translated_in("verb", "Publish");
+        try add_action(arena, &actions, verb, "publish", label, false);
+    } else if (publishes) {
+        const label = if (may.publish)
+            try session.translated_in("verb", "Publish")
+        else
+            try session.translated("Ask to publish", .{});
 
-        try add_action(arena, &actions, "do", "publish", label, false);
+        try add_action(arena, &actions, verb, "publish", label, false);
     }
 
     if (row.changed) {
-        const label = try session.translated("Discard changes");
+        const label = try session.translated("Discard changes", .{});
 
         try add_action(arena, &actions, "do", "discard", label, true);
     }
 
-    for (registry.Statuses.all_transitions) |transition| {
-        const from_here = std.mem.eql(u8, transition.from, "*") or
-            std.mem.eql(u8, transition.from, status);
-        const skip = registry.Statuses.is_live(transition.to) or
-            std.mem.eql(u8, transition.to, status);
+    var buffer: [model.flow.transitions_max + 1]model.flow.Target = undefined;
 
-        if (!from_here or skip) {
+    for (flow.out_of(status, &buffer)) |transition| {
+        // Publishing has its own button; a type's other transitions into a live status do not.
+        const covered = std.mem.eql(u8, transition.to, "published") and (publishes or live) or
+            (!flow.own() and flow.is_live(transition.to));
+
+        if (covered or std.mem.eql(u8, transition.to, status)) {
             continue;
         }
 
-        const destructive = std.mem.eql(u8, transition.to, "deleted");
-
+        const destructive = std.mem.eql(u8, transition.name, "trash");
         const label = try session.declared(transition.label);
 
-        try add_action(arena, &actions, "to", transition.to, label, destructive);
+        try add_action(arena, &actions, "transition", transition.name, label, destructive);
     }
 
-    if (may_purge) {
-        const label = try session.translated("Purge for good");
+    if (may.purge) {
+        const label = try session.translated("Purge for good", .{});
 
         try add_action(arena, &actions, "do", "purge", label, true);
     }
@@ -1067,6 +1128,80 @@ pub fn actions_of(session: *const Session, row: Record, may_purge: bool) Error![
     mark_primary(actions.items);
 
     return actions.items;
+}
+
+/// What the person may do beyond writing: purge, and put things live.
+pub const May = struct {
+    purge: bool = false,
+    publish: bool = false,
+};
+
+/// The transition someone asked for on a document, as the editor's bar shows it.
+pub const Requested = struct {
+    /// Who asked, by name; empty when nothing waits.
+    by: []const u8 = "",
+    label: []const u8 = "",
+    transition: []const u8 = "",
+    may_approve: bool = false,
+    /// `Decline`, or `Withdraw` for the asker; empty when the person may do neither.
+    decline_label: []const u8 = "",
+};
+
+/// The bar over a document someone asked a transition for: who, what, and what the person
+/// looking may do about it.
+pub fn requested_of(
+    session: *Session,
+    flow: model.flow.Flow,
+    row: Record,
+    may: May,
+) Error!Requested {
+    std.debug.assert(row.id.len > 0);
+    std.debug.assert(session.signed_in());
+
+    if (row.requested.len == 0) {
+        return .{};
+    }
+
+    const asker = row.requested_by orelse "";
+    const own = asker.len > 0 and std.mem.eql(u8, asker, session.ctx.caller.user_id() orelse "");
+    const label = if (std.mem.eql(u8, row.requested, "publish") and flow.is_live(row.status))
+        try session.translated("Publish changes", .{})
+    else if (flow.named(row.requested, row.status)) |target|
+        try session.declared(target.label)
+    else
+        row.requested;
+
+    return .{
+        .by = if (own) try session.translated("You", .{}) else try asker_name(session, asker),
+        .label = label,
+        .transition = row.requested,
+        .may_approve = may.publish,
+        .decline_label = if (own)
+            try session.translated("Withdraw", .{})
+        else if (may.publish)
+            try session.translated("Decline", .{})
+        else
+            "",
+    };
+}
+
+fn asker_name(session: *Session, id: []const u8) Error![]const u8 {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(id.len <= 128);
+
+    const someone = try session.translated("Someone", .{});
+    const options = @import("../../operations/user.zig").Options;
+    const got = registry.SDK.dispatch(&session.ctx, options, .{
+        .limit = 200,
+    }) catch return someone;
+
+    for (got.users) |user| {
+        if (std.mem.eql(u8, user.id, id)) {
+            return user.label;
+        }
+    }
+
+    return someone;
 }
 
 /// The split button's face: publishing when it is on offer, else the first action that
@@ -1144,7 +1279,7 @@ fn delete_notes_of(session: *Session, def: Def) Error![]const fields.DeleteNote 
         for (got.definition.fields) |child_field| {
             const named = std.mem.eql(u8, child_field.name, field.options.via);
 
-            if (named and child_field.required and !child_field.many) {
+            if (named and child_field.validation.required and !child_field.many) {
                 const note = try delete_note(session, got.definition.name, child_field.label);
 
                 try notes.append(session.arena, .{
@@ -1164,20 +1299,22 @@ fn delete_note(session: *const Session, type_name: []const u8, field: []const u8
     std.debug.assert(type_name.len > 0);
     std.debug.assert(field.len > 0);
 
-    const deletes = try session.translated_with(
+    const deletes = try session.translated(
         "A {type} cannot be left without its {field}, so removing it from here deletes it.",
-        &.{
-            .{
-                .name = "type",
-                .value = type_name,
-            },
-            .{
-                .name = "field",
-                .value = field,
+        .{
+            .values = &.{
+                .{
+                    .name = "type",
+                    .value = type_name,
+                },
+                .{
+                    .name = "field",
+                    .value = field,
+                },
             },
         },
     );
-    const restore = try session.translated("You can restore it from Deleted.");
+    const restore = try session.translated("You can restore it from Deleted.", .{});
 
     return print(session.arena, "{s} {s}", .{ deletes, restore });
 }
@@ -1368,16 +1505,21 @@ fn unshared_notice(session: *Session, def: Def) Error![]const u8 {
     std.debug.assert(session.signed_in());
 
     if (def.app.len == 0) {
-        return session.translated("Not a Global type");
+        return session.translated("Not a Global type", .{});
     }
 
     const app = session.project.find(def.app);
     const label = if (app) |found| found.spec.label else def.app;
 
-    return session.translated_with("No longer shared with {app}", &.{.{
-        .name = "app",
-        .value = label,
-    }});
+    return session.translated(
+        "No longer shared with {app}",
+        .{
+            .values = &.{.{
+                .name = "app",
+                .value = label,
+            }},
+        },
+    );
 }
 
 /// The card of a record a reference holds that the admin cannot list: deleted (leading to
@@ -1399,11 +1541,11 @@ fn restricted_card(
     const type_name = if (gone) "" else name_of(names, reach.type);
     const notice = switch (reason) {
         .deleted => if (gone)
-            try session.translated("Deleted for good")
+            try session.translated("Deleted for good", .{})
         else
-            try session.translated("Deleted, in the trash"),
-        .access => try session.translated("Not readable here"),
-        .not_shared => try session.translated("Not shared with this app"),
+            try session.translated("Deleted, in the trash", .{}),
+        .access => try session.translated("Not readable here", .{}),
+        .not_shared => try session.translated("Not shared with this app", .{}),
     };
 
     // The admin may read a record in the trash: its card keeps its title.
@@ -1413,7 +1555,7 @@ fn restricted_card(
         }) catch null
     else
         null;
-    const fallback = if (gone) try session.translated("Removed record") else type_name;
+    const fallback = if (gone) try session.translated("Removed record", .{}) else type_name;
     const title = if (trashed) |got| got.record.title else fallback;
 
     return .{
@@ -1422,7 +1564,7 @@ fn restricted_card(
             .id = id,
             .type_id = "",
             .type = reach.type,
-            .status = "deleted",
+            .status = "trashed",
             .changed = false,
             .version = 0,
             .title = if (title.len > 0) title else fallback,
@@ -1587,7 +1729,7 @@ fn add_path_types(
         const design = model.design.is_design(summary.handle);
 
         if (summary.kind == .record and wanted and !design and
-            (!field.options.reference.public_only or summary.public))
+            (!field.validation.reference.public_only or summary.public))
         {
             options.append(session.arena, .{
                 .handle = summary.handle,
@@ -1737,6 +1879,13 @@ fn expected_version_of(form: *const Form) ?i64 {
     return std.fmt.parseInt(i64, text, 10) catch null;
 }
 
+fn statuses_known(session: *Session) ![]const model.status.Status {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(session.ctx.now_ms > 0);
+
+    return @import("../../operations/status.zig").known(&session.ctx);
+}
+
 test {
     std.testing.refAllDecls(@This());
 }
@@ -1778,17 +1927,22 @@ pub fn user_options(
 
 /// The fields as the form draws and reads them: each varied field followed by its variants
 /// (`name@pl`) on a site with more than one.
+pub const VariedOptions = struct {
+    /// The record being edited: each variant's placeholder is its main value.
+    document: ?Value = null,
+};
+
 pub fn varied(
     session: *Session,
     defs: []const model.field.Def,
-    document: ?Value,
+    options: VariedOptions,
 ) Error![]const model.field.Def {
     std.debug.assert(session.signed_in());
     std.debug.assert(defs.len <= model.field.fields_max);
 
     const codes = try variant_codes(session);
 
-    return fields.variants.expanded(session.arena, defs, codes, document);
+    return fields.variants.expanded(session.arena, defs, codes, options.document);
 }
 
 /// The codes of the site's variants other than the main one; none on a site with one.

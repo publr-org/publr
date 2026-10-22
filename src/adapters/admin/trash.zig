@@ -33,12 +33,13 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     var session = try admin.require(request, response, ctx) orelse return;
     const done = admin.query_param(&session, "done") orelse "";
     const notice = if (std.mem.eql(u8, done, "restored"))
-        try session.translated("Restored, with everything it held.")
+        try session.translated("Restored, with everything it held.", .{})
     else if (std.mem.eql(u8, done, "removed"))
-        try session.translated("Removed for good.")
+        try session.translated("Removed for good.", .{})
     else if (std.mem.eql(u8, done, "kept"))
         try session.translated(
             "Saved: everything in the trash goes that many days after it was removed.",
+            .{},
         )
     else
         "";
@@ -68,9 +69,13 @@ fn screen(session: *admin.Session, notice: []const u8, problem: []const u8) Erro
             .value = at,
         }};
         const removed = if (entry.conversation_id.len > 0)
-            try session.translated_with("By an agent, {when}", when)
+            try session.translated("By an agent, {when}", .{
+                .values = when,
+            })
         else
-            try session.translated_with("By a person, {when}", when);
+            try session.translated("By a person, {when}", .{
+                .values = when,
+            });
 
         row.* = .{
             .label = entry.label,
@@ -98,7 +103,7 @@ fn screen(session: *admin.Session, notice: []const u8, problem: []const u8) Erro
         .next_href = pages.next_href,
         .notice = notice,
         .problem = problem,
-    });
+    }, .{});
 }
 
 pub fn restore(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -160,13 +165,19 @@ pub fn keep(request: *Request, response: *Response, ctx: *Context) Error!void {
     const session = &post.session;
     const text = std.mem.trim(u8, post.form.get("days") orelse "", " ");
     const days = std.fmt.parseInt(u32, text, 10) catch {
-        return screen(session, "", try session.translated("Days are a whole number, 1 to 3650."));
+        return screen(session, "", try session.translated(
+            "Days are a whole number, 1 to 3650.",
+            .{},
+        ));
     };
 
     _ = registry.SDK.dispatch(&session.ctx, trash.Keep, .{
         .days = days,
     }) catch {
-        return screen(session, "", try session.translated("Days are a whole number, 1 to 3650."));
+        return screen(session, "", try session.translated(
+            "Days are a whole number, 1 to 3650.",
+            .{},
+        ));
     };
 
     try response.redirect(.see_other, back ++ "?done=kept");

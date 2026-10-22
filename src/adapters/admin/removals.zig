@@ -75,7 +75,7 @@ pub fn lists(request: *Request, response: *Response, ctx: *Context) Error!void {
         .range = pages.range,
         .previous_href = pages.previous_href,
         .next_href = pages.next_href,
-    });
+    }, .{});
 }
 
 /// `GET /admin/removals/:id`: one list to review.
@@ -87,7 +87,7 @@ pub fn review(request: *Request, response: *Response, ctx: *Context) Error!void 
     const id = try admin.param(&session, "id", back) orelse return;
     const done = admin.query_param(&session, "done") orelse "";
     const notice = if (done.len > 0)
-        try session.translated("Done. What was removed is gone; what you kept stays.")
+        try session.translated("Done. What was removed is gone; what you kept stays.", .{})
     else
         "";
 
@@ -142,7 +142,7 @@ fn screen(
         .items = items,
         .notice = notice,
         .problem = problem,
-    });
+    }, .{});
 }
 
 /// Where the list came from, in words.
@@ -150,22 +150,24 @@ fn origin_of(session: *admin.Session, conversation_id: []const u8) Error![]const
     std.debug.assert(session.signed_in());
 
     if (conversation_id.len == 0) {
-        return session.translated("Your agent asked to remove these for good.");
+        return session.translated("Your agent asked to remove these for good.", .{});
     }
 
     const read = registry.SDK.dispatch(&session.ctx, ai.Get, .{
         .id = conversation_id,
         .after = model_ai.steps_max,
-    }) catch return session.translated("An agent asked to remove these for good.");
+    }) catch return session.translated("An agent asked to remove these for good.", .{});
 
     const prompt = model_ai.clipped(read.conversation.prompt, 120);
 
-    return session.translated_with(
+    return session.translated(
         "Your agent asked to remove these for good, in “{prompt}”.",
-        &.{.{
-            .name = "prompt",
-            .value = prompt,
-        }},
+        .{
+            .values = &.{.{
+                .name = "prompt",
+                .value = prompt,
+            }},
+        },
     );
 }
 

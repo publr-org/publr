@@ -23,13 +23,14 @@ pub fn system(request: *Request, response: *Response, ctx: *Context) Error!void 
     std.debug.assert(ctx.user_data != null);
 
     var session = try admin.require(request, response, ctx) orelse return;
-    const what = try session.translated("The app's colors, type, spacing and fonts.");
+    const what = try session.translated("The app's colors, type, spacing and fonts.", .{});
     const publish = try session.translated(
         "Publish writes them into its app.zon, and every page shows them.",
+        .{},
     );
     const page: Page = .{
         .tab = "system",
-        .title = try session.translated("Design system"),
+        .title = try session.translated("Design system", .{}),
         .description = try std.fmt.allocPrint(session.arena, "{s} {s}", .{ what, publish }),
     };
     const app = files.app_of(&session, admin.query_param(&session, "app")) orelse {
@@ -46,7 +47,7 @@ pub fn moodboard(request: *Request, response: *Response, ctx: *Context) Error!vo
     var session = try admin.require(request, response, ctx) orelse return;
     const page: Page = .{
         .tab = "moodboard",
-        .title = try session.translated("Moodboard"),
+        .title = try session.translated("Moodboard", .{}),
         .description = "What the site should feel like: notes, links, images, colors, fonts " ++
             "and Figma frames, each with why it is here.",
     };
@@ -62,7 +63,7 @@ pub fn moodboard(request: *Request, response: *Response, ctx: *Context) Error!vo
         .app = app.spec.name,
         .app_label = app.spec.label,
         .items = items,
-    });
+    }, .{});
 }
 
 const Data = struct {
@@ -119,5 +120,5 @@ fn choose(session: *Session, page: Page) Error!void {
         .choices = choices,
         .fonts = "[]",
         .editor_site = "",
-    });
+    }, .{});
 }

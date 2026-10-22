@@ -28,7 +28,7 @@ pub const Scope = union(enum) {
         std.debug.assert(scope != .app or scope.app.spec.label.len > 0);
 
         return switch (scope) {
-            .all => session.translated("All apps"),
+            .all => session.translated("All apps", .{}),
             .app => |app| app.spec.label,
         };
     }
@@ -129,7 +129,7 @@ fn choices_of(comptime Choice: type, session: *const Session) admin.Error![]Choi
 
     choices[0] = .{
         .value = "",
-        .label = try session.translated("All apps"),
+        .label = try session.translated("All apps", .{}),
         .current = scope == .all,
         .href = "",
     };
@@ -189,7 +189,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .narrowed = scope == .app,
         .several = apps.len > 1,
         .csrf = session.csrf_token(),
-    });
+    }, .{});
 }
 
 /// Where an app's site opens: its own path on this host (the base the project is served

@@ -53,33 +53,44 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         }) catch return error.OutOfMemory;
     }
 
-    try admin.screen_with(&session, .{
-        .content = .{
-            .filters = .{
-                .types = &.{full.record.type},
-                .type_view = true,
+    try admin.screen(
+        &session,
+        .ok,
+        views.Revisions,
+        .{
+            .title = try session.translated(
+                "Versions of {record}",
+                .{
+                    .values = &.{.{
+                        .name = "record",
+                        .value = record_title,
+                    }},
+                },
+            ),
+            .record_title = record_title,
+            .record_href = try record_href(arena, full.record.id),
+            .status = full.record.status,
+            .changed = full.record.changed,
+            .updated = admin.time_text(arena, full.record.updated_at),
+            .updated_by = full.record.updated_by orelse "",
+            .rows = rows.items,
+            .older_href = if (listed.next_before == 0)
+                ""
+            else
+                try std.fmt.allocPrint(arena, "/admin/content/{s}/revisions?before={d}", .{
+                    full.record.id,
+                    listed.next_before,
+                }),
+        },
+        .{
+            .content = .{
+                .filters = .{
+                    .types = &.{full.record.type},
+                    .type_view = true,
+                },
             },
         },
-    }, .ok, views.Revisions, .{
-        .title = try session.translated_with("Versions of {record}", &.{.{
-            .name = "record",
-            .value = record_title,
-        }}),
-        .record_title = record_title,
-        .record_href = try record_href(arena, full.record.id),
-        .status = full.record.status,
-        .changed = full.record.changed,
-        .updated = admin.time_text(arena, full.record.updated_at),
-        .updated_by = full.record.updated_by orelse "",
-        .rows = rows.items,
-        .older_href = if (listed.next_before == 0)
-            ""
-        else
-            try std.fmt.allocPrint(arena, "/admin/content/{s}/revisions?before={d}", .{
-                full.record.id,
-                listed.next_before,
-            }),
-    });
+    );
 }
 
 /// One snapshot, field by field, with a way to bring it back.
@@ -107,44 +118,60 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     const fields = try fields_of(arena, got.definition.fields, document);
     const record_title = if (full.record.title.len > 0) full.record.title else full.record.id;
 
-    try admin.screen_with(&session, .{
-        .content = .{
-            .filters = .{
-                .types = &.{full.record.type},
-                .type_view = true,
+    try admin.screen(
+        &session,
+        .ok,
+        views.Revision,
+        .{
+            .title = try session.translated(
+                "Version {number} of {record}",
+                .{
+                    .values = &.{
+                        .{
+                            .name = "number",
+                            .value = try std.fmt.allocPrint(arena, "{d}", .{seq}),
+                        },
+                        .{
+                            .name = "record",
+                            .value = record_title,
+                        },
+                    },
+                },
+            ),
+            .versions_title = try session.translated(
+                "Versions of {record}",
+                .{
+                    .values = &.{.{
+                        .name = "record",
+                        .value = record_title,
+                    }},
+                },
+            ),
+            .versions_href = std.fmt.allocPrint(arena, "/admin/content/{s}/revisions", .{
+                full.record.id,
+            }) catch return error.OutOfMemory,
+            .record_href = try record_href(arena, full.record.id),
+            .kind = item.kind,
+            .at = admin.time_text(arena, item.at),
+            .by = item.by orelse try session.translated("nobody", .{}),
+            .fields = fields,
+            .restore_action = std.fmt.allocPrint(arena, "/admin/content/{s}/restore", .{
+                full.record.id,
+            }) catch return error.OutOfMemory,
+            .seq = std.fmt.allocPrint(arena, "{d}", .{seq}) catch return error.OutOfMemory,
+            .expected_version = std.fmt.allocPrint(arena, "{d}", .{full.record.version}) catch {
+                return error.OutOfMemory;
             },
         },
-    }, .ok, views.Revision, .{
-        .title = try session.translated_with("Version {number} of {record}", &.{
-            .{
-                .name = "number",
-                .value = try std.fmt.allocPrint(arena, "{d}", .{seq}),
+        .{
+            .content = .{
+                .filters = .{
+                    .types = &.{full.record.type},
+                    .type_view = true,
+                },
             },
-            .{
-                .name = "record",
-                .value = record_title,
-            },
-        }),
-        .versions_title = try session.translated_with("Versions of {record}", &.{.{
-            .name = "record",
-            .value = record_title,
-        }}),
-        .versions_href = std.fmt.allocPrint(arena, "/admin/content/{s}/revisions", .{
-            full.record.id,
-        }) catch return error.OutOfMemory,
-        .record_href = try record_href(arena, full.record.id),
-        .kind = item.kind,
-        .at = admin.time_text(arena, item.at),
-        .by = item.by orelse try session.translated("nobody"),
-        .fields = fields,
-        .restore_action = std.fmt.allocPrint(arena, "/admin/content/{s}/restore", .{
-            full.record.id,
-        }) catch return error.OutOfMemory,
-        .seq = std.fmt.allocPrint(arena, "{d}", .{seq}) catch return error.OutOfMemory,
-        .expected_version = std.fmt.allocPrint(arena, "{d}", .{full.record.version}) catch {
-            return error.OutOfMemory;
         },
-    });
+    );
 }
 
 /// Each field of the type with its value in the snapshot, as indented JSON; empty when the

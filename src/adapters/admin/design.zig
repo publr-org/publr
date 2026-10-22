@@ -25,7 +25,7 @@ const templates_path = "/admin/design/templates";
 const home_path = "/admin/design/system";
 
 pub fn register(router: *http.Router) void {
-    std.debug.assert(router.routes_len < 256 - routes_count);
+    std.debug.assert(router.routes_len < router.routes.len - routes_count);
 
     const before = router.routes_len;
 
@@ -72,7 +72,7 @@ fn templates(request: *Request, response: *Response, ctx: *Context) Error!void {
     try admin.screen(&session, .ok, views.DesignTemplates, .{
         .templates = template_rows.items,
         .parts = part_rows.items,
-    });
+    }, .{});
 }
 
 fn list_app(
@@ -149,5 +149,5 @@ fn patterns(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     try admin.screen(&session, .ok, views.DesignPatterns, .{
         .patterns = rows.items,
-    });
+    }, .{});
 }

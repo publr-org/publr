@@ -5,6 +5,8 @@ const spaces = @import("schema_space.zig");
 const rules = @import("field_conditions.zig");
 const model = @import("../../model.zig");
 const registry = @import("../../server/registry.zig");
+const role_operations = @import("../../operations/role.zig");
+const Listed = role_operations.Listed;
 
 pub fn show(
     request: *admin.Request,
@@ -36,7 +38,7 @@ pub fn render(
     const hub = try std.fmt.allocPrint(session.arena, "/admin/custom-fields/{s}", .{def.handle});
 
     try admin.screen(session, .ok, admin.views.FieldGroup, .{
-        .title = if (fresh) try session.translated("New field group") else def.name,
+        .title = if (fresh) try session.translated("New field group", .{}) else def.name,
         .name = def.name,
         .handle = def.handle,
         .fresh = fresh,
@@ -61,7 +63,7 @@ pub fn render(
             def.handle,
             def,
         ),
-    });
+    }, .{});
 }
 
 pub fn save(
@@ -124,7 +126,11 @@ fn subjects_of(session: *admin.Session) ![]const admin.views.RuleBuilder.Subject
         labels[index] = try session.declared(kind.label);
     }
 
-    const roles = registry.Roles.all;
+    const listed = registry.SDK.dispatch(&session.ctx, role_operations.List, .{});
+    const roles: []const Listed = if (listed) |found| found.roles else |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => &.{},
+    };
     const role_names = try session.arena.alloc([]const u8, roles.len);
     const role_labels = try session.arena.alloc([]const u8, roles.len);
 
@@ -136,19 +142,19 @@ fn subjects_of(session: *admin.Session) ![]const admin.views.RuleBuilder.Subject
     const defs = [_]model.field.Def{
         .{
             .name = "destination",
-            .label = try session.translated("Location"),
+            .label = try session.translated("Location", .{}),
             .kind = "select",
             .options = .{
                 .choices = &.{ "user", "media" },
                 .labels = try session.arena.dupe([]const u8, &.{
-                    try session.translated("User"),
-                    try session.translated("Media"),
+                    try session.translated("User", .{}),
+                    try session.translated("Media", .{}),
                 }),
             },
         },
         .{
             .name = "role",
-            .label = try session.translated("User role"),
+            .label = try session.translated("User role", .{}),
             .kind = "select",
             .options = .{
                 .choices = role_names,
@@ -157,7 +163,7 @@ fn subjects_of(session: *admin.Session) ![]const admin.views.RuleBuilder.Subject
         },
         .{
             .name = "media_type",
-            .label = try session.translated("Media type"),
+            .label = try session.translated("Media type", .{}),
             .kind = "select",
             .options = .{
                 .choices = values,

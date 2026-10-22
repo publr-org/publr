@@ -37,7 +37,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         row.* = .{
             .name = backup.name,
             .from = if (backup.from.len == 0)
-                try session.translated("a site from before 0.3.0")
+                try session.translated("a site from before 0.3.0", .{})
             else
                 backup.from,
             .to = backup.to,
@@ -55,19 +55,29 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .busy = label.len > 0,
         .step_label = label,
         .headline = try headline_of(&session, status),
-        .back_label = try session.translated_with("Go back to {version}", &.{.{
-            .name = "version",
-            .value = previous,
-        }}),
-        .newest_label = try session.translated_with("Publr {version} is the newest release.", &.{.{
-            .name = "version",
-            .value = status.version,
-        }}),
+        .back_label = try session.translated(
+            "Go back to {version}",
+            .{
+                .values = &.{.{
+                    .name = "version",
+                    .value = previous,
+                }},
+            },
+        ),
+        .newest_label = try session.translated(
+            "Publr {version} is the newest release.",
+            .{
+                .values = &.{.{
+                    .name = "version",
+                    .value = status.version,
+                }},
+            },
+        ),
         .target = status.target,
         .message = status.message,
         .previous = previous,
         .backups = rows,
-    });
+    }, .{});
 }
 
 /// What the page's callout says for the step: as the panel says it once it follows.
@@ -85,18 +95,24 @@ fn headline_of(session: *const admin.Session, status: update.Status.Out) Error![
     }};
 
     if (status.managed) {
-        return session.translated_with("Publr {version}, kept up to date by Publr Cloud", current);
+        return session.translated("Publr {version}, kept up to date by Publr Cloud", .{
+            .values = current,
+        });
     }
 
     if (std.mem.eql(u8, status.step, "failed")) {
-        return session.translated_with("The update to {version} did not go through", target);
+        return session.translated("The update to {version} did not go through", .{
+            .values = target,
+        });
     }
 
     if (std.mem.eql(u8, status.step, "done")) {
         return status.message;
     }
 
-    return session.translated_with("Updating to {version}", target);
+    return session.translated("Updating to {version}", .{
+        .values = target,
+    });
 }
 
 /// The step an update is at, as the page says it; empty when none is under way.
@@ -105,27 +121,27 @@ fn label_of(session: *const admin.Session, step: []const u8) Error![]const u8 {
     std.debug.assert(session.signed_in());
 
     if (std.mem.eql(u8, step, "starting")) {
-        return session.translated("Starting");
+        return session.translated("Starting", .{});
     }
 
     if (std.mem.eql(u8, step, "downloading")) {
-        return session.translated("Downloading the release");
+        return session.translated("Downloading the release", .{});
     }
 
     if (std.mem.eql(u8, step, "verifying")) {
-        return session.translated("Checking it is the release Publr signed");
+        return session.translated("Checking it is the release Publr signed", .{});
     }
 
     if (std.mem.eql(u8, step, "rehearsing")) {
-        return session.translated("Rehearsing on a copy of this site");
+        return session.translated("Rehearsing on a copy of this site", .{});
     }
 
     if (std.mem.eql(u8, step, "swapping")) {
-        return session.translated("Backing up and swapping it in");
+        return session.translated("Backing up and swapping it in", .{});
     }
 
     if (std.mem.eql(u8, step, "restarting")) {
-        return session.translated("Restarting");
+        return session.translated("Restarting", .{});
     }
 
     return "";

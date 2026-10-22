@@ -41,6 +41,7 @@ pub fn show_activity(
             .operation = item.operation,
             .what = try changed_text(session.arena, item.units, item.calls),
             .input = item.input,
+            .lines = try lines_of(session.arena, item.lines),
             .json = try json_of(session.arena, item),
         };
     }
@@ -86,6 +87,7 @@ pub fn show_errors(
                 said,
             }),
             .input = item.input,
+            .lines = try lines_of(session.arena, item.lines),
             .json = try json_of(session.arena, item),
         };
     }
@@ -93,6 +95,25 @@ pub fn show_errors(
     const oldest = if (listed.entries.len == page_size) listed.entries[page_size - 1].id else 0;
 
     try render(&session, "errors", entries, try older(session.arena, errors_path, oldest));
+}
+
+fn lines_of(
+    arena: std.mem.Allocator,
+    lines: []const activity.Line,
+) admin.Error![]const views.Activity.LinesItem {
+    std.debug.assert(lines.len <= @import("../../sdk.zig").trail.lines_max + 1);
+
+    const shown = try arena.alloc(views.Activity.LinesItem, lines.len);
+
+    for (lines, shown) |line, *item| {
+        item.* = .{
+            .plugin = line.plugin,
+            .level = line.level,
+            .line = line.line,
+        };
+    }
+
+    return shown;
 }
 
 fn render(
@@ -108,7 +129,7 @@ fn render(
         .tab = tab,
         .entries = entries,
         .older_href = older_href,
-    });
+    }, .{});
 }
 
 /// Every working device, to name the changes they made; none when they cannot be listed.
@@ -201,13 +222,13 @@ fn value_of(arena: std.mem.Allocator, value: anytype) admin.Error!std.json.Value
     return std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch .null;
 }
 
-const When = struct {
+pub const When = struct {
     date: []const u8,
     time: []const u8,
 };
 
 /// The day and the time of day, UTC, from one stored moment.
-fn when_of(arena: std.mem.Allocator, at: i64) admin.Error!When {
+pub fn when_of(arena: std.mem.Allocator, at: i64) admin.Error!When {
     std.debug.assert(at >= 0);
 
     const text = time.datetime_text(arena, at) catch |err| switch (err) {
@@ -229,7 +250,7 @@ fn when_of(arena: std.mem.Allocator, at: i64) admin.Error!When {
 }
 
 /// `before=<id>` from the query, the page asked for.
-fn before_of(query: []const u8) ?i64 {
+pub fn before_of(query: []const u8) ?i64 {
     std.debug.assert(query.len <= 1 << 16);
 
     const prefix = "before=";
@@ -241,7 +262,7 @@ fn before_of(query: []const u8) ?i64 {
     return std.fmt.parseInt(i64, query[prefix.len..], 10) catch null;
 }
 
-fn older(arena: std.mem.Allocator, path: []const u8, oldest: i64) admin.Error![]const u8 {
+pub fn older(arena: std.mem.Allocator, path: []const u8, oldest: i64) admin.Error![]const u8 {
     std.debug.assert(path.len > 0);
 
     if (oldest == 0) {

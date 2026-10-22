@@ -2,6 +2,7 @@
 //! they may open, the plugins' top bar items, which area the address is in and that area's
 //! sidebar. Filled once per page from the session; the views never forward it.
 const std = @import("std");
+const plugin_define = @import("../../sdk/plugin/define.zig");
 const AdminBrand = @import("../../sdk/plugin.zig").AdminBrand;
 const avatar = @import("avatar.zig");
 const admin = @import("../admin.zig");
@@ -173,11 +174,12 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
             .sidebar = if (in) |section|
                 try sections.sidebar_of(session, section, options.content)
             else
-                try sidebar_of(session, area, options, path),
+                try sidebar_of(session, area, path, options),
             .sidebar_heading = if (in) |section|
                 try sections.heading_of(session, section)
             else
                 null,
+            .plugin_icons = try @import("plugin_icons.zig").sprite(session),
             .section = if (in) |section| section.label else "",
             .section_href = if (in) |section| section.href() else "",
             .site_href = admin.app_scope.site_href(session),
@@ -209,7 +211,7 @@ fn brand_of(session: *const Session) AdminBrand {
 
     inline for (registry.admin_brand) |Plugin| {
         var asking = session.ctx;
-        const named = Plugin.admin_brand(&asking) catch |err| blk: {
+        const named = plugin_define.get(Plugin, "admin_brand")(&asking) catch |err| blk: {
             std.log.warn("plugin {s}: admin brand: {t}", .{ Plugin.manifest.name, err });
             break :blk AdminBrand{};
         };
@@ -270,8 +272,8 @@ fn sheet_alone(session: *const Session) bool {
 fn sidebar_of(
     session: *const Session,
     area: Area,
-    options: Options,
     path: []const u8,
+    options: Options,
 ) admin.Error!?Node {
     std.debug.assert(session.signed_in());
     std.debug.assert(path.len > 0);
@@ -321,7 +323,9 @@ const ContentSidebar = struct {
 
         const node = try nav.nav_content(sidebar.session, sidebar.current);
 
-        try node.render_with(writer, arena, request);
+        try node.render(writer, arena, .{
+            .request = request,
+        });
     }
 };
 
@@ -340,7 +344,9 @@ const SettingsSidebar = struct {
 
         const node = try settings_nav.node(sidebar.session, sidebar.path);
 
-        try node.render_with(writer, arena, request);
+        try node.render(writer, arena, .{
+            .request = request,
+        });
     }
 };
 

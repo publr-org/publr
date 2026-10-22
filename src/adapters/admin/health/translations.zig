@@ -36,10 +36,10 @@ pub fn page(request: *Request, response: *Response, ctx: *Context) Error!void {
         .disagreements = items,
         .open = @floatFromInt(listed.open),
         .notice = if (admin.query_param(&session, "picked") != null)
-            try session.translated("Picked: the admin shows it from the next page on.")
+            try session.translated("Picked: the admin shows it from the next page on.", .{})
         else
             "",
-    });
+    }, .{});
 }
 
 fn disagreement_of(session: *Session, disagreement: translations.Disagreement) Error!Disagreement {

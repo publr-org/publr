@@ -59,12 +59,16 @@ pub fn save(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     var session = try admin.require(request, response, ctx) orelse return;
     const form = Form.parse(session.arena, request.body) orelse {
-        return answer(&session, null, try session.translated("Not saved: the form did not parse."));
+        return answer(&session, null, try session.translated(
+            "Not saved: the form did not parse.",
+            .{},
+        ));
     };
 
     if (!session.guard(&form)) {
         const reason = try session.translated(
             "Not saved: the request did not come from this site.",
+            .{},
         );
 
         return answer(&session, null, reason);
@@ -72,12 +76,15 @@ pub fn save(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     const kind_text = field(&session, &form, "kind");
     const kind = std.meta.stringToEnum(Kind, kind_text) orelse {
-        const reason = try session.translated("Not saved: nothing to save by that kind.");
+        const reason = try session.translated("Not saved: nothing to save by that kind.", .{});
 
         return answer(&session, null, reason);
     };
     const app = files.app_of(&session, field(&session, &form, "app")) orelse {
-        return answer(&session, kind, try session.translated("Not saved: no app to save it in."));
+        return answer(&session, kind, try session.translated(
+            "Not saved: no app to save it in.",
+            .{},
+        ));
     };
     const name = field(&session, &form, "name");
 
@@ -91,10 +98,15 @@ pub fn save(request: *Request, response: *Response, ctx: *Context) Error!void {
         .{};
 
     if (pattern_settings.problem(settings)) |why| {
-        const reason = try session.translated_with("Not saved: {reason}.", &.{.{
-            .name = "reason",
-            .value = why,
-        }});
+        const reason = try session.translated(
+            "Not saved: {reason}.",
+            .{
+                .values = &.{.{
+                    .name = "reason",
+                    .value = why,
+                }},
+            },
+        );
 
         return answer(&session, kind, reason);
     }
@@ -117,10 +129,15 @@ pub fn save(request: *Request, response: *Response, ctx: *Context) Error!void {
     };
 
     done catch |err| {
-        const reason = try session.translated_with("Not saved: {reason}", &.{.{
-            .name = "reason",
-            .value = @errorName(err),
-        }});
+        const reason = try session.translated(
+            "Not saved: {reason}",
+            .{
+                .values = &.{.{
+                    .name = "reason",
+                    .value = @errorName(err),
+                }},
+            },
+        );
 
         return answer(&session, kind, reason);
     };
@@ -208,7 +225,7 @@ fn refused(
             const routes = try files.templated_routes(session.arena, app);
 
             if (!files.contains(routes, name)) {
-                return try session.translated("Not saved: that route has no template region.");
+                return try session.translated("Not saved: that route has no template region.", .{});
             }
 
             const output = field(session, form, "output");
@@ -218,22 +235,25 @@ fn refused(
             };
 
             if (regions.find(output, whole, regions.slot_attribute, "content") == null) {
-                return try session.translated("A template needs a content slot.");
+                return try session.translated("A template needs a content slot.", .{});
             }
         },
         .part => {
             if (!files.contains(try files.part_names(session.arena, app), name)) {
-                return try session.translated("Not saved: no file places that part.");
+                return try session.translated("Not saved: no file places that part.", .{});
             }
         },
         .pattern, .@"reset-part", .@"remove-pattern" => {
             if (!design.valid_name(name)) {
-                return try session.translated("Not saved: a name is letters, digits, - and _.");
+                return try session.translated(
+                    "Not saved: a name is letters, digits, - and _.",
+                    .{},
+                );
             }
         },
         .@"reset-template" => {
             if (name.len == 0 or name.len > 1024) {
-                return try session.translated("Not saved: no route named.");
+                return try session.translated("Not saved: no route named.", .{});
             }
         },
     }
@@ -265,9 +285,9 @@ fn answer(session: *Session, kind: ?Kind, reason: ?[]const u8) Error!void {
     }
 
     if (reason) |why| {
-        const heading = try session.translated("Not saved");
+        const heading = try session.translated("Not saved", .{});
 
-        return admin.message(session, heading, why, &[_]Problem{}, back);
+        return admin.message(session, heading, why, &[_]Problem{}, back, .{});
     }
 
     try session.response.redirect(.see_other, back);

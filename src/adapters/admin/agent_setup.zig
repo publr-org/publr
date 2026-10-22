@@ -32,13 +32,13 @@ pub fn of(session: *admin.Session, site: []const u8) admin.Error!Setup {
         offered.code,
     });
     const working = if (registry.work_start != null)
-        try print(arena, branch_work, .{ site, site })
+        try print(arena, branch_work, .{})
     else
         try print(arena, live_work, .{});
 
     return .{
         .command = command,
-        .prompt = try print(arena, prompt, .{ site, command, site, site, working }),
+        .prompt = try print(arena, prompt, .{ site, command, working }),
     };
 }
 
@@ -53,14 +53,16 @@ const prompt =
     \\
     \\   {s}
     \\
-    \\   It installs the publr command in ~/.local/bin, signs this computer in to my site and
-    \\   puts the Publr skill in .agents/skills and .claude/skills. If it says it was used or
-    \\   is too old, ask me for a new prompt from my site's Overview.
+    \\   It installs the publr command in ~/.local/bin, signs this computer in to my site,
+    \\   puts the Publr skill in .agents/skills and .claude/skills, and names my site in
+    \\   .publr/site. If it says it was used or is too old, ask me for a new prompt from my
+    \\   site's Overview.
     \\2. Read the skill (.claude/skills/build-on-publr/SKILL.md, the same in .agents/skills)
     \\   and run `publr agents` for the whole guide. If `publr` is not found yet, use
     \\   ~/.local/bin/publr.
-    \\3. My site runs elsewhere: send it every command with `publr --site {s} <command>`.
-    \\   `publr --site {s} --help` lists what it can do, its plugins included.
+    \\3. My site runs elsewhere, and every publr command from this folder goes to it: there
+    \\   is no site in this folder to look for. `publr --help` lists what it can do, its
+    \\   plugins included.
     \\4. {s}
     \\5. Never ask me for a password or a token.
     \\
@@ -68,10 +70,10 @@ const prompt =
 
 const branch_work =
     \\Your changes go to a branch of my site, never the live site. Start one for each task
-    \\   with `publr --site {s} work start --name "<the task>"`; your later commands from
-    \\   this folder go there. When you are done, give me its Preview and Merge links. Change
-    \\   the live site only when I ask, adding `--production` to that call (`publr --site
-    \\   {s} --production <command>`).
+    \\   with `publr work start --name "<the task>"`; your later commands from this folder
+    \\   go there. When you are done, give me its Preview and Merge links. Change the live
+    \\   site only when I ask, adding `--production` to that call (`publr --production
+    \\   <command>`).
 ;
 
 const live_work =

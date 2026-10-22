@@ -117,7 +117,7 @@ fn each(
 
     const arena = session.arena;
     const app_clause = try std.fmt.allocPrint(arena, "app:is:{s}", .{app_name});
-    const filters = [_][]const u8{ "status:not:deleted", app_clause };
+    const filters = [_][]const u8{ "status:not:trashed", app_clause };
     const scratch = try session.ctx.scratch();
     var offset: u32 = 0;
 

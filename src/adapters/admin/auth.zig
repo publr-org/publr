@@ -1,4 +1,6 @@
 const std = @import("std");
+const sdk = @import("../../sdk.zig");
+const plugin_define = @import("../../sdk/plugin/define.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const project_operations = @import("../../operations/project.zig");
@@ -6,6 +8,7 @@ const sign_in_operations = @import("../../operations/sign_in.zig");
 const sign_on_operations = @import("../../operations/sign_on.zig");
 const identity_operations = @import("../../operations/identity.zig");
 const identity_module = @import("../rest/identity.zig");
+const visitor_module = @import("../apps/visitor.zig");
 const rest_auth = @import("../rest/auth.zig");
 const dashboard = @import("dashboard.zig");
 const language_operations = @import("../../operations/user/language.zig");
@@ -33,7 +36,7 @@ pub fn home(request: *Request, response: *Response, ctx: *Context) Error!void {
         return response.redirect(.see_other, "/admin/login");
     }
 
-    try admin.screen(&session, .ok, views.Dashboard, try dashboard.props_of(&session));
+    try admin.screen(&session, .ok, views.Dashboard, try dashboard.props_of(&session), .{});
 }
 
 fn initialised(session: *Session) Error!bool {
@@ -131,29 +134,29 @@ pub fn setup(request: *Request, response: *Response, ctx: *Context) Error!void {
     const parsed = Form.parse(arena, request.body);
     const chosen = if (parsed) |posted| posted.text("language") orelse "" else "";
     const form = parsed orelse {
-        const problem = try session.translated("bad form");
+        const problem = try session.translated("bad form", .{});
 
         return render_setup(&session, response, chosen, problem);
     };
 
     if (!session.guard(&form)) {
-        const problem = try session.translated("cross-origin request refused");
+        const problem = try session.translated("cross-origin request refused", .{});
 
         return render_setup(&session, response, chosen, problem);
     }
 
     const email = form.text("email") orelse {
-        const problem = try session.translated("email is required");
+        const problem = try session.translated("email is required", .{});
 
         return render_setup(&session, response, chosen, problem);
     };
     const name = form.text("display_name") orelse {
-        const problem = try session.translated("name is required");
+        const problem = try session.translated("name is required", .{});
 
         return render_setup(&session, response, chosen, problem);
     };
     const password = form.get("password") orelse {
-        const problem = try session.translated("password is required");
+        const problem = try session.translated("password is required", .{});
 
         return render_setup(&session, response, chosen, problem);
     };
@@ -181,7 +184,7 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
             return response.redirect(.see_other, "/admin/content");
         }
 
-        const turned_back = try session.translated("This account has no access to the admin.");
+        const turned_back = try session.translated("This account has no access to the admin.", .{});
 
         return render_login(&session, turned_back);
     }
@@ -199,11 +202,16 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
     }
 
     const declined = admin.query_param(&session, "sign_on") != null;
-    const refused = admin.query_param(&session, "identity") != null;
+    const identity = admin.query_param(&session, "identity");
+    const refused = identity != null;
+    // The provider gave no answer in time, or an error: nothing about the account.
+    const failed = refused and std.mem.eql(u8, identity.?, "failed");
     const notice: ?[]const u8 = if (declined)
-        try session.translated("Sign in with your password.")
+        try session.translated("Sign in with your password.", .{})
+    else if (failed)
+        try session.translated("That sign-in didn't go through. Try again.", .{})
     else if (refused)
-        try session.translated("That account could not be signed in. Try your password.")
+        try session.translated("That account could not be signed in. Try your password.", .{})
     else
         null;
 
@@ -217,7 +225,7 @@ fn sign_in_elsewhere(session: *const Session) Error!?[]const u8 {
     comptime std.debug.assert(registry.sign_in_at.len <= 64);
 
     inline for (registry.sign_in_at) |Plugin| {
-        const location = Plugin.sign_in_at(session) catch |err| blk: {
+        const location = plugin_define.get(Plugin, "sign_in_at")(session) catch |err| blk: {
             std.log.warn("plugin {s}: sign-in: {t}", .{ Plugin.manifest.name, err });
             break :blk null;
         };
@@ -278,7 +286,9 @@ fn render_login(session: *const Session, problem: ?[]const u8) Error!void {
     std.debug.assert(response.body.len == 0);
     std.debug.assert(problem == null or problem.?.len > 0);
 
-    const offered = identity_operations.providers.offered(arena, registry.sign_in_providers) catch {
+    var reading = session.ctx;
+    const providers = identity_operations.providers;
+    const offered = providers.offered(&reading, registry.sign_in_providers) catch {
         return error.OutOfMemory;
     };
     const buttons = try arena.alloc(views.Login.ProvidersItem, offered.len);
@@ -328,18 +338,18 @@ pub fn login(request: *Request, response: *Response, ctx: *Context) Error!void {
     var session = Session.open(request, response, ctx);
     const arena = ctx.arena;
     const form = Form.parse(arena, request.body) orelse {
-        return render_login(&session, try session.translated("bad form"));
+        return render_login(&session, try session.translated("bad form", .{}));
     };
 
     if (!session.guard(&form)) {
-        return render_login(&session, try session.translated("cross-origin request refused"));
+        return render_login(&session, try session.translated("cross-origin request refused", .{}));
     }
 
     const email = form.text("email") orelse {
-        return render_login(&session, try session.translated("email is required"));
+        return render_login(&session, try session.translated("email is required", .{}));
     };
     const password = form.get("password") orelse {
-        return render_login(&session, try session.translated("password is required"));
+        return render_login(&session, try session.translated("password is required", .{}));
     };
 
     try start_session(&session, email, password, "/admin/login", .{});
@@ -364,14 +374,15 @@ pub fn start_session(
     std.debug.assert(back.len > 0);
 
     var anonymous = identity_module.context(session.project, session.arena, .anonymous);
+
+    // The id the person had before signing in, for the sign-in's hooks.
+    anonymous.visitor = visitor_module.of(session.project, session.request) orelse "";
+
     const out = registry.SDK.dispatch(&anonymous, sign_in_operations.SignIn, .{
         .email = email,
         .password = password,
     }) catch |err| {
-        const problem: []const u8 = if (err == error.BadCredentials)
-            try session.translated("wrong email or password")
-        else
-            @errorName(err);
+        const problem = try refusal_text(session, &anonymous, err);
 
         return if (std.mem.eql(u8, back, "/admin/login"))
             render_login(session, problem)
@@ -394,7 +405,7 @@ pub fn start_session(
             .token = out.token,
         }) catch |err| return admin.fail(session, err, back);
 
-        const turned_back = try session.translated("This account has no access to the admin.");
+        const turned_back = try session.translated("This account has no access to the admin.", .{});
 
         return render_login(session, turned_back);
     }
@@ -421,6 +432,26 @@ pub fn start_session(
     try session.response.redirect(.see_other, then);
 }
 
+/// What the login form says when signing in fails: a plugin's refusal in its own words
+/// (`ctx.fail`), else that the sign-in was refused, never an error's name for a refusal.
+fn refusal_text(session: *Session, signing: *const sdk.Ctx, err: anyerror) Error![]const u8 {
+    std.debug.assert(signing.parent == null);
+    std.debug.assert(signing.caller == .anonymous);
+
+    return switch (err) {
+        error.BadCredentials => try session.translated("wrong email or password", .{}),
+        error.Failed => if (signing.failure) |failure|
+            failure.message
+        else
+            try session.translated("This sign-in was refused.", .{}),
+        error.Denied, error.Unavailable => try session.translated(
+            "This sign-in was refused.",
+            .{},
+        ),
+        else => @errorName(err),
+    };
+}
+
 pub fn logout(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .post);
     std.debug.assert(ctx.user_data != null);
@@ -435,6 +466,7 @@ pub fn logout(request: *Request, response: *Response, ctx: *Context) Error!void 
     if (session.identity.token) |token| {
         const sign_out = sign_in_operations.SignOut;
 
+        session.ctx.visitor = visitor_module.of(session.project, request) orelse "";
         _ = registry.SDK.dispatch(&session.ctx, sign_out, .{
             .token = token,
         }) catch |err| {

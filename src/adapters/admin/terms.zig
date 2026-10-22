@@ -181,7 +181,8 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     const rows = try arena.alloc(views.Terms.TermsItem, tree.terms.len);
 
     for (tree.terms, rows) |term, *row| {
-        const status = registry.Statuses.find(term.status);
+        // Terms follow core's flow.
+        const status = model.status.Core.find(term.status);
         const add_child_href = if (def.hierarchical)
             try print(arena, "{s}/new?type={s}&parent={s}", .{ back, handle, term.id })
         else
@@ -192,7 +193,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             .title = if (term.title.len > 0) term.title else term.id,
             .slug = term.slug orelse "",
             .status = if (status) |known| known.label else term.status,
-            .published = registry.Statuses.is_live(term.status),
+            .published = model.status.Core.is_live(term.status),
             .depth = term.depth,
             .indent = record_form.indent_of(term.depth),
             .add_child_href = add_child_href,
@@ -219,7 +220,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .range = pages.range,
         .previous_href = pages.previous_href,
         .next_href = pages.next_href,
-    });
+    }, .{});
 }
 
 test "a term's title is indented by its depth" {

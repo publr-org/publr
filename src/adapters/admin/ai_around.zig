@@ -48,5 +48,5 @@ pub fn around(request: *Request, response: *Response, ctx: *Context) Error!void 
             session.project.admin_path(),
             page,
         }),
-    });
+    }, .{});
 }

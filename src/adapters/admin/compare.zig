@@ -284,7 +284,8 @@ const StatusShown = struct {
 fn status_of(id: []const u8) StatusShown {
     std.debug.assert(id.len <= 64);
 
-    const known = registry.Statuses.find(id) orelse {
+    // Core's statuses by label; a type's own shows by its id, which this view cannot look up.
+    const known = @import("../../model/status.zig").Core.find(id) orelse {
         return .{
             .label = id,
             .tone = "neutral",

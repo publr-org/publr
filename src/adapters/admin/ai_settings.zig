@@ -20,6 +20,7 @@ pub fn register(router: anytype) void {
     std.debug.assert(router.routes_len > 0);
 
     router.get(back, &show);
+    router.get(back ++ "/offered", &offered_json);
     router.post(back ++ "/key", &key);
     router.post(back ++ "/choose", &choose);
     router.post(back ++ "/test", &test_provider);
@@ -40,11 +41,11 @@ fn notice_of(session: *const admin.Session, said: []const u8) Error![]const u8 {
     std.debug.assert(said.len <= 64 << 10);
 
     if (std.mem.eql(u8, said, "key")) {
-        return session.translated("Key saved. It will not be shown again.");
+        return session.translated("Key saved. It will not be shown again.", .{});
     }
 
     if (std.mem.eql(u8, said, "chosen")) {
-        return session.translated("Saved. Conversations use this provider now.");
+        return session.translated("Saved. Conversations use this provider now.", .{});
     }
 
     return "";
@@ -62,9 +63,6 @@ fn screen(
     const listed = registry.SDK.dispatch(&session.ctx, providers.Providers, .{}) catch |err| {
         return admin.fail(session, err, "/admin/settings");
     };
-    const catalog = registry.SDK.dispatch(&session.ctx, setup.Catalog, .{}) catch |err| {
-        return admin.fail(session, err, "/admin/settings");
-    };
     const arena = session.arena;
     const rows = try arena.alloc(views.SettingsAi.ProvidersItem, listed.providers.len);
 
@@ -74,24 +72,48 @@ fn screen(
 
     try mark_pending(session, listed.providers, rows);
 
-    var offered: std.ArrayList(views.SettingsAi.OfferedItem) = .empty;
+    try admin.screen(session, status, views.SettingsAi, .{
+        .providers = rows,
+        .notice = notice,
+        .problem = problem,
+    }, .{});
+}
+
+/// `GET /admin/settings/ai/offered`: the official providers not installed yet, as JSON, for
+/// the page to ask once it is drawn; only this answer waits on Publr's plugin server.
+fn offered_json(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .get or request.method() == .head);
+    std.debug.assert(ctx.user_data != null);
+
+    var session = admin.Session.open(request, response, ctx);
+
+    if (!session.signed_in() or !registry.SDK.reaches_admin(&session.ctx)) {
+        return response.json(.unauthorized, .{
+            .@"error" = "sign_in_required",
+        });
+    }
+
+    const catalog = registry.SDK.dispatch(&session.ctx, setup.Catalog, .{}) catch |err| {
+        if (err == error.OutOfMemory) {
+            return error.OutOfMemory;
+        }
+
+        return response.json(.ok, .{
+            .offered = &[_]setup.Offered{},
+            .reached = false,
+        });
+    };
+    var offered: std.ArrayList(setup.Offered) = .empty;
 
     for (catalog.offered) |item| {
         if (!item.installed) {
-            try offered.append(arena, .{
-                .name = item.name,
-                .label = item.label,
-                .summary = item.summary,
-            });
+            try offered.append(session.arena, item);
         }
     }
 
-    try admin.screen(session, status, views.SettingsAi, .{
-        .providers = rows,
+    try response.json(.ok, .{
         .offered = offered.items,
         .reached = catalog.reached,
-        .notice = notice,
-        .problem = problem,
     });
 }
 
@@ -196,7 +218,7 @@ fn key(request: *Request, response: *Response, ctx: *Context) Error!void {
     };
 
     _ = registry.SDK.dispatch(&session.ctx, secret.Set, asked) catch |err| {
-        return refused(session, err, try session.translated("Paste the whole key."));
+        return refused(session, err, try session.translated("Paste the whole key.", .{}));
     };
 
     try response.redirect(.see_other, if (from_overview(&post.form))
@@ -217,7 +239,7 @@ fn choose(request: *Request, response: *Response, ctx: *Context) Error!void {
     };
 
     _ = registry.SDK.dispatch(&session.ctx, providers.Choose, asked) catch |err| {
-        const invalid = try session.translated("That model is not one the provider offers.");
+        const invalid = try session.translated("That model is not one the provider offers.", .{});
 
         return refused(session, err, invalid);
     };
@@ -239,20 +261,27 @@ fn test_provider(request: *Request, response: *Response, ctx: *Context) Error!vo
     };
 
     if (!tested.ok) {
-        const problem = try session.translated_with("The test call failed: {reply}", &.{.{
-            .name = "reply",
-            .value = tested.reply,
-        }});
+        const problem = try session.translated(
+            "The test call failed: {reply}",
+            .{
+                .values = &.{.{
+                    .name = "reply",
+                    .value = tested.reply,
+                }},
+            },
+        );
 
         return screen(session, .ok, "", problem);
     }
 
-    const notice = try session.translated_with(
+    const notice = try session.translated(
         "It works. The model answered “{reply}”.",
-        &.{.{
-            .name = "reply",
-            .value = tested.reply,
-        }},
+        .{
+            .values = &.{.{
+                .name = "reply",
+                .value = tested.reply,
+            }},
+        },
     );
 
     try screen(session, .ok, notice, "");
@@ -286,7 +315,7 @@ fn set_up(request: *Request, response: *Response, ctx: *Context) Error!void {
     }
 
     if (names.items.len == 0) {
-        const none = try session.translated("Tick at least one provider.");
+        const none = try session.translated("Tick at least one provider.", .{});
 
         return screen(session, .unprocessable_content, "", none);
     }

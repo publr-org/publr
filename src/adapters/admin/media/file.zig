@@ -75,7 +75,7 @@ pub fn show(
         .on_server = library.on_server(&session),
         .languages = try editor.languages_of(views.MediaFile.LanguagesItem, &session),
         .translations = try translations_shown(arena, detail.translations),
-    });
+    }, .{});
 }
 
 fn shown_of(item: media.Item) @FieldType(views.MediaFile.Props, "shown") {

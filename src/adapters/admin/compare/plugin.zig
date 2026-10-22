@@ -13,6 +13,7 @@ pub const Row = struct {
     manifest: []const u8 = "",
     granted: []const u8 = "[]",
     denied: []const u8 = "[]",
+    grants: []const u8 = "[]",
     enabled: ?bool = null,
 };
 
@@ -40,7 +41,16 @@ pub fn values_of(arena: std.mem.Allocator, row: Row) !RowValues {
     const manifest = try plugin_state.parse_manifest(arena, row.manifest);
     const granted = try names_in(arena, row.granted);
     const denied = try names_in(arena, row.denied);
-    const requests = try plugin_state.requests_of(arena, &manifest, granted, denied);
+    const grants = std.json.parseFromSliceLeaky(
+        []const @import("../../../model/permission.zig").Held,
+        arena,
+        row.grants,
+        .{
+            .allocate = .alloc_always,
+            .ignore_unknown_fields = true,
+        },
+    ) catch &.{};
+    const requests = try plugin_state.requests_of(arena, &manifest, granted, denied, grants);
     const shown = try arena.alloc([]const u8, requests.len);
 
     std.debug.assert(requests.len <= requests_max);
@@ -52,6 +62,7 @@ pub fn values_of(arena: std.mem.Allocator, row: Row) !RowValues {
             .reason = request.reason,
             .tier = @tagName(request.tier),
             .state = @tagName(request.state),
+            .flags = request.flags,
         }, .{});
     }
 

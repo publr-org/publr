@@ -1,5 +1,5 @@
-//! Titles as the admin shows them: each record's own (its id when it has none), then
-//! whatever display hooks its type has (`sdk/display.zig`). Text, escaped where shown.
+//! Titles as the admin shows them: each record's own (its id when it has none), then what
+//! plugins modifying `<type>.title` make of it (`sdk/mods.zig`). Text, escaped where shown.
 
 const std = @import("std");
 const admin = @import("../admin.zig");
@@ -7,13 +7,10 @@ const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const records = @import("../../operations/record.zig");
 
-const Item = sdk.display_hooks.Item;
-const Batch = sdk.display_hooks.Batch;
+const shown_titles = @import("../../operations/record/shown.zig");
 const Error = admin.Error;
 
-pub const point = @import("../../operations/record/shown.zig").point;
-
-/// One title per record, in order: `record.shown` asked only when a hook is on a type
+/// One title per record, in order: `record.shown` asked only when a modifier takes a type
 /// the page holds, so a page with none costs nothing.
 pub fn titles(ctx: *sdk.Ctx, found: []const records.Record) Error![]const []const u8 {
     std.debug.assert(found.len <= records.list_max);
@@ -24,7 +21,7 @@ pub fn titles(ctx: *sdk.Ctx, found: []const records.Record) Error![]const []cons
         title.* = if (record.title.len > 0) record.title else record.id;
     }
 
-    if (found.len == 0 or !any_hooked(ctx, found)) {
+    if (found.len == 0 or !try any_modified(ctx, found)) {
         return shown;
     }
 
@@ -54,11 +51,15 @@ pub fn titles(ctx: *sdk.Ctx, found: []const records.Record) Error![]const []cons
     return shown;
 }
 
-fn any_hooked(ctx: *sdk.Ctx, found: []const records.Record) bool {
+fn any_modified(ctx: *sdk.Ctx, found: []const records.Record) Error!bool {
     std.debug.assert(found.len <= records.list_max);
 
     for (found) |record| {
-        if (registry.SDK.displayed(ctx, point, record.type)) {
+        const name = shown_titles.title_name(ctx.arena, record.type) catch {
+            return error.OutOfMemory;
+        };
+
+        if (registry.SDK.modified(ctx, name)) {
             return true;
         }
     }
@@ -66,7 +67,7 @@ fn any_hooked(ctx: *sdk.Ctx, found: []const records.Record) bool {
     return false;
 }
 
-test "an installed display hook: one call per batch, text back, no writes while it runs" {
+test "an installed modifier: its reads come for the batch, text back, no writes while it runs" {
     const internal = @import("../../operations/internal.zig");
     var project: internal.TestProject = undefined;
     try project.init();
@@ -74,27 +75,50 @@ test "an installed display hook: one call per batch, text back, no writes while 
 
     var ctx = project.ctx(.system);
     const note = "{\"note\":\"hi\"}";
+    const empty = "{\"note\":\"\"}";
     const fields = try std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, note, .{});
-    var items = [_]Item{
-        .{
-            .id = "a",
-            .value = "First",
-            .fields = fields,
-        },
-        .{
-            .id = "b",
-            .value = "Second",
-        },
+    const stored = try registry.SDK.dispatch(&ctx, @import("../../operations/record.zig").Create, .{
+        .type = "greeter.salutation",
+        .document = note,
+    });
+    const blank = try std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, empty, .{});
+    var items = [_]std.json.Value{
+        try title_item(ctx.arena, stored.id, "First", fields),
+        try title_item(ctx.arena, "b", "Second", blank),
     };
-    var batch: Batch = .{
+    var batch: sdk.mods.Batch = .{
         .items = &items,
     };
 
-    try std.testing.expect(registry.SDK.displayed(&ctx, point, "salutation"));
-    try std.testing.expect(!registry.SDK.displayed(&ctx, point, "post"));
-    try registry.SDK.display(&ctx, point, "salutation", &batch);
+    try std.testing.expect(registry.SDK.modified(&ctx, "greeter.salutation.title"));
+    try std.testing.expect(!registry.SDK.modified(&ctx, "post.title"));
+    try registry.SDK.modify(&ctx, "greeter.salutation.title", &batch);
 
-    try std.testing.expectEqualStrings("<script>x</script>First|hi|Denied ", items[0].value);
-    try std.testing.expectEqualStrings("<script>x</script>Second||Denied ", items[1].value);
+    const first = try sdk.mods.cleaned(ctx.arena, items[0].object.get("title").?.string);
+    const second = try sdk.mods.cleaned(ctx.arena, items[1].object.get("title").?.string);
+
+    try std.testing.expectEqualStrings("<script>x</script>First|hi|Denied ", first);
+    try std.testing.expectEqualStrings("<script>x</script>Second|NotFound|Denied ", second);
     try std.testing.expect(!ctx.reads_only);
+}
+
+fn title_item(
+    arena: std.mem.Allocator,
+    id: []const u8,
+    title: []const u8,
+    fields: std.json.Value,
+) !std.json.Value {
+    var item: std.json.ObjectMap = .empty;
+
+    try item.put(arena, "id", .{
+        .string = id,
+    });
+    try item.put(arena, "title", .{
+        .string = title,
+    });
+    try item.put(arena, "record", fields);
+
+    return .{
+        .object = item,
+    };
 }

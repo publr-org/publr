@@ -81,17 +81,19 @@ fn content_type_words(session: *const Session) Error!Words {
 
     const conflict = try session.translated(
         "another content type has this handle, or content holds values the change would lose",
+        .{},
     );
 
     return .{
-        .title = try session.translated("Content types"),
-        .new_label = try session.translated("New content type"),
-        .empty_title = try session.translated("No content types yet"),
+        .title = try session.translated("Content types", .{}),
+        .new_label = try session.translated("New content type", .{}),
+        .empty_title = try session.translated("No content types yet", .{}),
         .empty_description = try session.translated(
             "A content type is a name and a list of fields. Create the first one.",
+            .{},
         ),
         .conflict = conflict,
-        .denied = try session.translated("you may not change content types"),
+        .denied = try session.translated("you may not change content types", .{}),
     };
 }
 
@@ -100,19 +102,21 @@ fn taxonomy_words(session: *const Session) Error!Words {
 
     const conflict = try session.translated(
         "another taxonomy has this handle, or content holds values the change would lose",
+        .{},
     );
     const what = try session.translated(
         "A taxonomy is a set of terms records are filed under: categories, tags.",
+        .{},
     );
-    const first = try session.translated("Create the first one.");
+    const first = try session.translated("Create the first one.", .{});
 
     return .{
-        .title = try session.translated("Taxonomies"),
-        .new_label = try session.translated("New taxonomy"),
-        .empty_title = try session.translated("No taxonomies yet"),
+        .title = try session.translated("Taxonomies", .{}),
+        .new_label = try session.translated("New taxonomy", .{}),
+        .empty_title = try session.translated("No taxonomies yet", .{}),
         .empty_description = try std.fmt.allocPrint(session.arena, "{s} {s}", .{ what, first }),
         .conflict = conflict,
-        .denied = try session.translated("you may not change taxonomies"),
+        .denied = try session.translated("you may not change taxonomies", .{}),
     };
 }
 
@@ -121,18 +125,20 @@ fn settings_words(session: *const Session) Error!Words {
 
     const conflict = try session.translated(
         "another settings section has this handle, or content holds values the change would lose",
+        .{},
     );
     const empty_description = try session.translated(
         "Define a settings section, then add the fields your editors can configure.",
+        .{},
     );
 
     return .{
-        .title = try session.translated("Settings"),
-        .new_label = try session.translated("New settings section"),
-        .empty_title = try session.translated("No settings yet"),
+        .title = try session.translated("Settings", .{}),
+        .new_label = try session.translated("New settings section", .{}),
+        .empty_title = try session.translated("No settings yet", .{}),
         .empty_description = empty_description,
         .conflict = conflict,
-        .denied = try session.translated("you may not change settings"),
+        .denied = try session.translated("you may not change settings", .{}),
     };
 }
 
@@ -141,15 +147,16 @@ fn component_words(session: *const Session) Error!Words {
 
     const conflict = try session.translated(
         "another component has this handle, or content holds values the change would lose",
+        .{},
     );
 
     return .{
-        .title = try session.translated("Components"),
-        .new_label = try session.translated("New component"),
-        .empty_title = try session.translated("No components yet"),
-        .empty_description = try session.translated("Create a reusable set of fields."),
+        .title = try session.translated("Components", .{}),
+        .new_label = try session.translated("New component", .{}),
+        .empty_title = try session.translated("No components yet", .{}),
+        .empty_description = try session.translated("Create a reusable set of fields.", .{}),
         .conflict = conflict,
-        .denied = try session.translated("you may not change components"),
+        .denied = try session.translated("you may not change components", .{}),
     };
 }
 
@@ -175,7 +182,9 @@ const term_fields = [_]model.field.Def{
         .name = "name",
         .label = "Name",
         .kind = "string",
-        .required = true,
+        .validation = .{
+            .required = true,
+        },
     },
     .{
         .name = "slug",
@@ -292,15 +301,15 @@ pub fn Pages(comptime domain: Domain) type {
                 .empty_description = words.empty_description,
                 .show_kind = !domain.is_taxonomy and domain.fixed_kind == null,
                 .manage_label = if (domain.is_taxonomy)
-                    try session.translated("Terms")
+                    try session.translated("Terms", .{})
                 else
-                    try session.translated("Manage"),
+                    try session.translated("Manage", .{}),
                 .types = items.items,
                 .total = @floatFromInt(listed.total),
                 .range = pages.range,
                 .previous_href = pages.previous_href,
                 .next_href = pages.next_href,
-            });
+            }, .{});
         }
 
         fn kind_label(session: *const Session, kind: Kind) Error![]const u8 {
@@ -308,10 +317,10 @@ pub fn Pages(comptime domain: Domain) type {
             std.debug.assert(back.len > 0);
 
             return switch (kind) {
-                .record => session.translated("Record type"),
-                .settings => session.translated("Settings"),
-                .component => session.translated("Component"),
-                .media => session.translated("Media"),
+                .record => session.translated("Record type", .{}),
+                .settings => session.translated("Settings", .{}),
+                .component => session.translated("Component", .{}),
+                .media => session.translated("Media", .{}),
             };
         }
 
@@ -412,7 +421,7 @@ pub fn Pages(comptime domain: Domain) type {
             }, own_name, back_href);
 
             try admin.screen(session, .ok, views.TypeForm, .{
-                .title = if (is_new) words.new_label else try session.translated("Settings"),
+                .title = if (is_new) words.new_label else try session.translated("Settings", .{}),
                 .parents = parents,
                 .cancel_href = back_href orelse back,
                 .noun = try session.declared(domain.noun),
@@ -470,7 +479,7 @@ pub fn Pages(comptime domain: Domain) type {
                 .visual = model.editor.is_visual(def.editor),
                 .rich_fields = try type_editor.choices(arena, def),
                 .delete_action = delete_action,
-            });
+            }, .{});
         }
 
         pub fn create(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -785,7 +794,7 @@ fn parents_of(
     const items = try session.arena.alloc(views.TypeForm.ParentsItem, count);
 
     items[0] = .{
-        .label = try session.translated("Structure"),
+        .label = try session.translated("Structure", .{}),
         .href = "/admin/structure",
     };
     items[1] = list;

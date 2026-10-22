@@ -137,7 +137,7 @@ pub fn workspace(request: *Request, response: *Response, ctx: *Context) Error!vo
         .review_path = read.removal.href,
         .undoable = trash_entries.len > 0,
         .trash_entries = trash_entries,
-    });
+    }, .{});
 }
 
 const trash_prefix = "/admin/trash?entry=";
@@ -152,10 +152,10 @@ fn refused_in_preview(session: *const admin.Session) Error!bool {
         return false;
     }
 
-    const text = try session.translated("The AI workspace can't open inside its own preview.");
-    const heading = try session.translated("Not in the preview");
+    const text = try session.translated("The AI workspace can't open inside its own preview.", .{});
+    const heading = try session.translated("Not in the preview", .{});
 
-    try admin.message(session, heading, text, &.{}, "/admin/content");
+    try admin.message(session, heading, text, &.{}, "/admin/content", .{});
 
     return true;
 }
@@ -194,10 +194,15 @@ fn step_of(
             step.summary;
 
         shown.trash_entry = "";
-        shown.summary = try session.translated_with("{summary} (no longer in the trash)", &.{.{
-            .name = "summary",
-            .value = words,
-        }});
+        shown.summary = try session.translated(
+            "{summary} (no longer in the trash)",
+            .{
+                .values = &.{.{
+                    .name = "summary",
+                    .value = words,
+                }},
+            },
+        );
     }
 
     return shown;

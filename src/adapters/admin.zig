@@ -191,13 +191,14 @@ pub fn query_param(session: *const Session, name: []const u8) ?[]const u8 {
 }
 
 pub const render = @import("../ui/render.zig");
+pub const drawn = @import("../ui/drawn.zig");
 /// The tabs plugins add to System settings.
 pub const settings_tabs = @import("admin/settings_tabs.zig");
 pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 161 + preview_pages.routes_count +
+pub const routes_count: u32 = 164 + preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
     design_pages.routes_count + @import("admin/settings_tabs.zig").tabs.len;
@@ -210,7 +211,7 @@ const class_book_js = "import { useClassBook } from \"./publr-class-merge.js\";\
     "useClassBook(" ++ @embedFile("admin_class_book_json") ++ ");\n";
 
 pub fn register(router: *http.Router) void {
-    std.debug.assert(router.routes_len < 256 - routes_count);
+    std.debug.assert(router.routes_len < router.routes.len - routes_count);
 
     const before = router.routes_len;
 
@@ -270,15 +271,28 @@ pub fn register(router: *http.Router) void {
     router.post("/admin/content/:id/save", &content_pages.save);
     router.post("/admin/content/:id/action", &content_pages.action);
     router.post("/admin/app", &app_scope.choose);
-    router.post("/admin/views/create", &content_pages.view_pages.create);
-    router.post("/admin/views/:id/save", &content_pages.view_pages.save);
-    router.post("/admin/views/:id/rename", &content_pages.view_pages.rename);
-    router.post("/admin/views/:id/delete", &content_pages.view_pages.delete);
+    register_views(router);
     router.get("/admin/content/:id/revisions", &revision_pages.list);
     router.get("/admin/content/:id/revisions/:seq", &revision_pages.show);
     router.post("/admin/content/:id/restore", &revision_pages.restore);
 
     std.debug.assert(router.routes_len == before + routes_count);
+}
+
+/// The content list's saved views and the defaults a type's list opens with.
+fn register_views(router: *http.Router) void {
+    std.debug.assert(router.routes_len > 0);
+
+    const before = router.routes_len;
+
+    router.post("/admin/views/create", &content_pages.view_pages.create);
+    router.post("/admin/views/:id/save", &content_pages.view_pages.save);
+    router.post("/admin/views/:id/rename", &content_pages.view_pages.rename);
+    router.post("/admin/views/:id/delete", &content_pages.view_pages.delete);
+    router.post("/admin/default-views/save", &content_pages.view_pages.save_default);
+    router.post("/admin/default-views/reset", &content_pages.view_pages.reset_default);
+
+    std.debug.assert(router.routes_len == before + 6);
 }
 
 /// The media library's pages, and a record's page drawn from its edit copy.
@@ -298,7 +312,7 @@ fn register_media(router: *http.Router) void {
 
 /// The Overview, and its agents step for a tool that opens the agent's terminal itself.
 fn register_overview(router: *http.Router) void {
-    std.debug.assert(router.routes_len < 256 - 2);
+    std.debug.assert(router.routes_len < router.routes.len - 2);
 
     const before = router.routes_len;
 
@@ -362,7 +376,7 @@ fn register_fields(router: *http.Router, comptime base: []const u8) void {
 }
 
 fn register_assets(router: *http.Router) void {
-    std.debug.assert(router.routes_len < 256 - client_files.names.len - 5);
+    std.debug.assert(router.routes_len < router.routes.len - client_files.names.len - 5);
     router.get("/admin/styles.css", &styles);
     router.get("/admin/stores.js", &stores);
     router.get("/admin/class-book.js", &class_book);
@@ -487,7 +501,7 @@ pub const Session = struct {
             .arena = ctx.arena,
             .project = project,
             .identity = identity,
-            .ctx = identity_module.context(project, ctx.arena, identity.caller),
+            .ctx = identity_module.request_context(project, request, ctx.arena, identity.caller),
         };
 
         _ = identity.csrf_token(project, &session.csrf);
@@ -517,9 +531,18 @@ pub const Session = struct {
         return session;
     }
 
+    pub const TranslatedOptions = struct {
+        /// What fills the message's `{name}` placeholders.
+        values: []const Placeholder = &.{},
+    };
+
     /// `Publr.t` for text the adapters write: the message in the person's language.
-    pub fn translated(session: *const Session, id: []const u8) Error![]const u8 {
-        return language_module.text(session, "", id, &.{});
+    pub fn translated(
+        session: *const Session,
+        id: []const u8,
+        options: TranslatedOptions,
+    ) Error![]const u8 {
+        return language_module.text(session, "", id, options.values);
     }
 
     /// A declared label (a status, a page in the sidebar, a field kind) in the person's
@@ -531,15 +554,6 @@ pub const Session = struct {
         }
 
         return language_module.text(session, "", label, &.{});
-    }
-
-    /// The message with its `{name}` placeholders filled.
-    pub fn translated_with(
-        session: *const Session,
-        id: []const u8,
-        values: []const Placeholder,
-    ) Error![]const u8 {
-        return language_module.text(session, "", id, values);
     }
 
     /// The message meant in `context` (`verb`).
@@ -598,25 +612,13 @@ pub const chrome = @import("admin/chrome.zig");
 
 /// A signed-in page: the view with its own data, and the request its layout reads the
 /// chrome from (who is signed in, the area of the address, its sidebar, the top bar).
+/// `options` place a page whose sidebar entry the address alone does not say.
 pub fn screen(
     session: *const Session,
     status: Status,
     comptime View: type,
     props: View.Props,
-) Error!void {
-    std.debug.assert(session.signed_in());
-    std.debug.assert(session.response.body.len == 0);
-
-    try screen_with(session, .{}, status, View, props);
-}
-
-/// `screen`, for a page whose sidebar entry the address alone does not say.
-pub fn screen_with(
-    session: *const Session,
     options: chrome.Options,
-    status: Status,
-    comptime View: type,
-    props: View.Props,
 ) Error!void {
     std.debug.assert(session.response.body.len == 0);
     std.debug.assert(@hasDecl(View, "render"));
@@ -749,25 +751,40 @@ pub fn fail(session: *const Session, err: anyerror, back: []const u8) Error!void
     const text = if (failure) |declared| declared.message else @errorName(err);
 
     if (err == error.NotFound) {
-        const heading = try session.translated("There is no such page");
+        const heading = try session.translated("There is no such page", .{});
         const said = try session.translated(
             "What this address points to does not exist: it was removed, or never made.",
+            .{},
         );
 
-        return message_with(session, .not_found, heading, said, &.{}, back);
+        return message(session, heading, said, &.{}, back, .{
+            .status = .not_found,
+        });
     }
 
     if (err == error.Denied) {
-        const heading = try session.translated("This is not yours to open");
+        const heading = try session.translated("This is not yours to open", .{});
         const said = try session.translated(
             "Your account may not see or change what this page is for.",
+            .{},
         );
 
-        return message_with(session, .forbidden, heading, said, &.{}, back);
+        return message(session, heading, said, &.{}, back, .{
+            .status = .forbidden,
+        });
     }
 
-    try message(session, try session.translated("Something went wrong"), text, &.{}, back);
+    try message(session, try session.translated(
+        "Something went wrong",
+        .{},
+    ), text, &.{}, back, .{});
 }
+
+pub const MessageOptions = struct {
+    /// A page that is not there says so to the browser and to whatever asks before showing
+    /// it (the AI workspace's preview).
+    status: Status = .ok,
+};
 
 /// The problems page: what was refused and why, with a way back.
 pub fn message(
@@ -776,22 +793,7 @@ pub fn message(
     text: []const u8,
     problems: anytype,
     back: []const u8,
-) Error!void {
-    std.debug.assert(heading.len > 0);
-    std.debug.assert(back.len > 0);
-
-    try message_with(session, .ok, heading, text, problems, back);
-}
-
-/// The problems page, answered with `status`: a page that is not there says so to the
-/// browser and to whatever asks before showing it (the AI workspace's preview).
-fn message_with(
-    session: *const Session,
-    status: Status,
-    heading: []const u8,
-    text: []const u8,
-    problems: anytype,
-    back: []const u8,
+    options: MessageOptions,
 ) Error!void {
     std.debug.assert(heading.len > 0);
     std.debug.assert(back.len > 0);
@@ -811,12 +813,12 @@ fn message_with(
     // stays under Settings. Before sign-in there is none.
     const request = try chrome.request_of(session, .{});
 
-    try render.page(session.response, session.arena, request, status, views.Message, .{
+    try render.page(session.response, session.arena, request, options.status, views.Message, .{
         .heading = heading,
         .text = text,
         .problems = items.items,
         .link_href = back,
-        .link_label = try session.translated("Back"),
+        .link_label = try session.translated("Back", .{}),
     });
 }
 
@@ -1873,14 +1875,21 @@ pub fn missing(request: *Request, response: *Response, ctx: *Context) Error!void
 
     var session = try require(request, response, ctx) orelse return;
 
-    const nothing_here = try session.translated("Nothing in the admin lives at this address.");
-    const why = try session.translated("It may have moved, or the link that led here was wrong.");
+    const nothing_here = try session.translated("Nothing in the admin lives at this address.", .{});
+    const why = try session.translated(
+        "It may have moved, or the link that led here was wrong.",
+        .{},
+    );
 
     try screen(&session, .not_found, views.Message, .{
-        .heading = try session.translated("There is no such page"),
+        .heading = try session.translated("There is no such page", .{}),
         .text = try std.fmt.allocPrint(session.arena, "{s} {s}", .{ nothing_here, why }),
         .problems = &.{},
         .link_href = "/admin",
-        .link_label = try session.translated("Go to the overview"),
-    });
+        .link_label = try session.translated("Go to the overview", .{}),
+    }, .{});
+}
+
+test {
+    _ = drawn;
 }

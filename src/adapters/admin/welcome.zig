@@ -119,7 +119,10 @@ pub fn save(request: *Request, response: *Response, ctx: *Context) Error!void {
     const back = if (local) back_asked else "/admin/content";
 
     if (!session.guard(&form)) {
-        return draw(&session, token, back, try session.translated("cross-origin request refused"));
+        return draw(&session, token, back, try session.translated(
+            "cross-origin request refused",
+            .{},
+        ));
     }
 
     if (token.len > 0) {
@@ -157,7 +160,7 @@ fn invited(
             anonymous.failure.?.message
         else
             try session.translated("This invitation is used or has expired. " ++
-                "Ask an administrator for a new one.");
+                "Ask an administrator for a new one.", .{});
 
         return draw(session, token, back, problem);
     };

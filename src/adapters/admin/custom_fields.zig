@@ -29,15 +29,15 @@ pub fn list(
                 },
             ),
             .status = if (group.active)
-                try session.translated("Active")
+                try session.translated("Active", .{})
             else
-                try session.translated("Inactive"),
+                try session.translated("Inactive", .{}),
         };
     }
 
     try admin.screen(&session, .ok, admin.views.CustomFields, .{
         .groups = rows,
-    });
+    }, .{});
 }
 
 pub fn new_page(
