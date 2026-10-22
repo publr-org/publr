@@ -138,6 +138,11 @@ const added_columns = [_]Added{
         .column = "requested_by",
         .definition = "TEXT",
     },
+    .{
+        .table = "media",
+        .column = "pending",
+        .definition = "INTEGER NOT NULL DEFAULT 0",
+    },
 };
 
 fn add_columns(connection: *db.Db) db.Error!void {

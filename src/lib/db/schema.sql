@@ -286,7 +286,8 @@ CREATE TABLE IF NOT EXISTS media (
     private     INTEGER NOT NULL,
     created_at  INTEGER NOT NULL,
     unreviewed  INTEGER NOT NULL DEFAULT 0,
-    missing     INTEGER NOT NULL DEFAULT 0
+    missing     INTEGER NOT NULL DEFAULT 0,
+    pending     INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS media_created ON media(created_at, record);

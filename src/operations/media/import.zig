@@ -107,7 +107,7 @@ pub fn import_job(ctx: *Ctx, in: Importing) Error!void {
 
     const pending = try store.media.get(ctx.db, ctx.arena, in.record) orelse return;
 
-    if (pending.hash.len > 0) {
+    if (!pending.pending) {
         return;
     }
 
@@ -119,7 +119,7 @@ pub fn import_job(ctx: *Ctx, in: Importing) Error!void {
 }
 
 fn filled(ctx: *Ctx, pending: store.media.Row, url: []const u8) Error!void {
-    std.debug.assert(pending.hash.len == 0);
+    std.debug.assert(pending.pending);
 
     const allocator = library.file_allocator;
     const downloaded = try http.download(ctx, allocator, url, files_module.bytes_max);

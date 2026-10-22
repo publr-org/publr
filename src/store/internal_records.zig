@@ -242,6 +242,22 @@ pub fn collections_of(
     return rows.items;
 }
 
+/// The scope's records made before `before_ms`: what is kept only a while.
+pub fn delete_before(connection: *db.Db, scope: Scope, before_ms: i64) Error!void {
+    assert_scope(scope);
+    std.debug.assert(before_ms <= std.math.maxInt(i64));
+
+    var statement = try connection.prepare(
+        "DELETE FROM internal_records WHERE plugin = ?1 AND app = ?2 AND kind = ?3 " ++
+            "AND created_at < ?4",
+    );
+    defer statement.finalize();
+
+    try bind_scope(&statement, scope);
+    try statement.bind_int(4, before_ms);
+    try statement.exec();
+}
+
 /// Every record of one of a plugin's collections, across apps.
 pub fn delete_collection(connection: *db.Db, plugin: []const u8, kind: []const u8) Error!void {
     std.debug.assert(plugin.len > 0);

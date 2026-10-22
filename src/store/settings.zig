@@ -48,21 +48,6 @@ pub fn delete(connection: *db.Db, key: []const u8) db.Error!void {
     try statement.exec();
 }
 
-/// Removes the keys starting with `prefix` last set before `before_ms`.
-pub fn delete_before(connection: *db.Db, prefix: []const u8, before_ms: i64) db.Error!void {
-    std.debug.assert(prefix.len > 0 and prefix.len < key_len_max);
-    std.debug.assert(before_ms <= std.math.maxInt(i64));
-
-    var statement = try connection.prepare(
-        "DELETE FROM settings WHERE substr(key, 1, length(?1)) = ?1 AND updated_at < ?2",
-    );
-    defer statement.finalize();
-
-    try statement.bind_text(1, prefix);
-    try statement.bind_int(2, before_ms);
-    try statement.exec();
-}
-
 test "get returns null until set; set upserts" {
     var fixture: db.testing.Fixture = undefined;
     try fixture.init();
