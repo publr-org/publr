@@ -148,12 +148,14 @@ test "listed documents: read with their page, the same as one read each, in list
 
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
         .definition = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[" ++
-            "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\",\"required\":true}," ++
+            "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
+            "\"validation\":{\"required\":true}}," ++
             "{\"name\":\"tags\",\"label\":\"Tags\",\"kind\":\"string\",\"many\":true}]}",
     });
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
         .definition = "{\"handle\":\"memo\",\"name\":\"Memo\",\"fields\":[" ++
-            "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\",\"required\":true}]}",
+            "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
+            "\"validation\":{\"required\":true}}]}",
     });
 
     const first = try registry.SDK.dispatch(&system, records.Create, .{

@@ -18,15 +18,15 @@ const example_draft_id = term_operations.example_draft_id;
 
 pub const Transition = struct {
     pub const name = "term.transition";
-    pub const description = "Move a term to another status (publish, unpublish, archive, ...)";
+    pub const description = "Move a term by a transition of its flow: publish, archive, ...";
     pub const details =
-        \\As `record transition`: a registered move, into a live status applies pending
+        \\As `record transition`: the transition by name, into a live status applies pending
         \\edits, out of one keeps them. Bumps `version`.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         id: []const u8,
-        to: []const u8,
+        transition: []const u8,
         expected_version: ?i64 = null,
     };
     pub const Out = struct {
@@ -36,7 +36,7 @@ pub const Transition = struct {
     };
     pub const example: In = .{
         .id = example_draft_id,
-        .to = "published",
+        .transition = "publish",
     };
     pub const example_out: Out = .{
         .status = "published",
@@ -45,7 +45,7 @@ pub const Transition = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The term id",
-        .to = "The target status id",
+        .transition = "The transition's name, `publish`",
         .expected_version = "The `version` you read; refuse if it changed",
     };
 
@@ -56,7 +56,9 @@ pub const Transition = struct {
             return error.Invalid;
         }
 
-        return moved_out(try lifecycle.transition(ctx, granted, in.id, in.to, in.expected_version));
+        const expected = in.expected_version;
+
+        return moved_out(try lifecycle.transition(ctx, granted, in.id, in.transition, expected));
     }
 };
 
@@ -148,7 +150,7 @@ pub const Delete = struct {
         .id = example_id,
     };
     pub const example_out: Out = .{
-        .status = "deleted",
+        .status = "trashed",
         .changed = false,
         .version = 2,
     };
@@ -280,10 +282,10 @@ test "term lifecycle: pending edits, publish, delete; purge refuses children and
     const deleted = try SDK.dispatch(&admin, Delete, .{
         .id = created.id,
     });
-    try std.testing.expectEqualStrings("deleted", deleted.status);
+    try std.testing.expectEqualStrings("trashed", deleted.status);
     const restored = try SDK.dispatch(&admin, Transition, .{
         .id = created.id,
-        .to = "draft",
+        .transition = "restore",
     });
     try std.testing.expectEqualStrings("draft", restored.status);
 

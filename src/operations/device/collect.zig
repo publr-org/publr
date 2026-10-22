@@ -149,8 +149,6 @@ pub const Claim = struct {
             .scope = request.scope,
         }, ctx.now_ms);
 
-        ctx.notice("auth.device_approved", created.device.id);
-
         return .{
             .token = try ctx.arena.dupe(u8, created.token_text()),
             .user_id = user_id,
@@ -217,7 +215,6 @@ pub const Redeem = struct {
         }, ctx.now_ms);
 
         std.debug.assert(created.device.user_id.len > 0);
-        ctx.notice("auth.device_approved", created.device.id);
 
         return .{
             .token = try ctx.arena.dupe(u8, created.token_text()),

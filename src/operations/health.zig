@@ -18,6 +18,8 @@ pub const Case = cases_module.Case;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "health",
+    .label = "Site health",
+    .area = .site,
     .summary = "Site Health: what is quietly wrong in the project, to decide case by case",
     .details =
     \\Broken references first: records that point at a record in the trash (`deleted`),
@@ -323,10 +325,12 @@ test "site health: a type no longer shared and a deleted target are cases; keep 
 
     const types = @import("content_type.zig");
     const title: model.field.Def = .{
+        .validation = .{
+            .required = true,
+        },
         .name = "title",
         .label = "Title",
         .kind = "string",
-        .required = true,
     };
     var stock: model.content_type.Def = .{
         .handle = "stock",
@@ -443,10 +447,12 @@ test "site health: cases come a page at a time, a case's records counted across 
 
     const types = @import("content_type.zig");
     const title: model.field.Def = .{
+        .validation = .{
+            .required = true,
+        },
         .name = "title",
         .label = "Title",
         .kind = "string",
-        .required = true,
     };
     const stock: model.content_type.Def = .{
         .handle = "stock",

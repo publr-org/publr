@@ -18,6 +18,8 @@ const entries = store.trash;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "trash",
+    .label = "Trash",
+    .area = .content,
     .summary = "The trash: what was removed, restorable until it is emptied",
     .details =
     \\Removing a content type, a taxonomy or a field group keeps a copy of everything it
@@ -379,7 +381,6 @@ pub const Restore = struct {
 
         try put_back(ctx, try entries.files_of(ctx.db, ctx.arena, in.id));
         _ = try entries.delete(ctx.db, in.id);
-        ctx.notice(try std.fmt.allocPrint(ctx.arena, "{s}.restored", .{entry.kind}), entry.key);
 
         return .{
             .kind = entry.kind,

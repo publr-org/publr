@@ -13,6 +13,8 @@ pub const read = @import("media/read.zig");
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "media",
+    .label = "Media library",
+    .area = .content,
     .summary = "The media library: files, their folders and tags",
     .details =
     \\Every file is a published record of a media type. The library's is the core `media`

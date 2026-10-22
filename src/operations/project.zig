@@ -9,6 +9,7 @@ pub const changes = @import("project/changes.zig");
 pub const impact = @import("project/impact.zig");
 pub const move_app = @import("project/move_app.zig");
 pub const currencies = @import("project/currencies.zig");
+pub const Put = @import("project/put.zig").Put;
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -17,12 +18,15 @@ const role = @import("../model/role.zig");
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "project",
+    .label = "Project",
+    .area = .site,
     .summary = "The installation itself: first-run setup",
     .details =
     \\What a fresh Publr project needs before it can be used. `publr init` (short for
     \\`project init`) sets it up: it creates the first admin and marks the project as
     \\initialised, exactly once. `project impact` says what a change rebuilds in the
-    \\apps' builds.
+    \\apps' builds. `project put` puts anything it stores exactly as another copy of the
+    \\project keeps it, ids kept: what keeps copies (environments, branches) in step.
     ,
 };
 
@@ -109,8 +113,9 @@ pub const Init = struct {
         const stamp = std.fmt.bufPrint(&stamp_buffer, "{d}", .{ctx.now_ms}) catch unreachable;
 
         try settings.set(ctx.db, setup_key, stamp, ctx.now_ms);
-        ctx.notice("project.initialised", created.user_id);
-        ctx.notice("auth.user_created", created.user_id);
+        ctx.emit(user.UserCreated, .{
+            .user = created.user_id,
+        });
 
         return .{
             .user_id = created.user_id,
@@ -178,8 +183,10 @@ pub const operations = [_]type{
     currencies.Currencies,
     currencies.SetCurrencies,
     @import("user/language.zig").SetSiteLanguage,
+    Put,
 };
-pub const middleware = [_]type{changes.RecordChanged};
+pub const middleware = [_]type{changes.RecordChanged} ++ changes.hooks ++
+    @import("activity.zig").middleware;
 
 const TestSDK = sdk.SDK(.{
     .operations = &operations,
@@ -261,4 +268,9 @@ test "init sets the site language and the first admin's own, never asked again; 
     try std.testing.expect(shown.answered);
     try std.testing.expectEqualStrings("en", shown.site);
     try std.testing.expectEqualStrings("en", shown.shown);
+}
+
+test {
+    _ = @import("project/put_tests.zig");
+    _ = @import("project/changes_tests.zig");
 }

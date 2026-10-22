@@ -13,6 +13,8 @@ const Def = content_type.Def;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "taxonomy",
+    .label = "Taxonomies",
+    .area = .content,
     .summary = "Taxonomies: the classifications records are filed under",
     .details =
     \\A taxonomy is the schema of its terms, as a content type is the schema of its
@@ -34,12 +36,12 @@ pub const brief_of = definition.brief_of;
 
 const new_definition =
     \\{"handle":"regions","name":"Regions","title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
+    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
 ;
 pub const example_definition =
     \\{"handle":"topics","name":"Topics","public":true,"hierarchical":true,
     \\ "title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
+    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
     \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
 ;
 const example_id = "d4e5f60718293a4b5c6d7e8f";
@@ -324,6 +326,8 @@ pub const Delete = struct {
     };
     pub const Out = struct {
         deleted: bool,
+        /// The handle it had.
+        handle: []const u8,
         terms_removed: u32,
         /// Its trash entry: `trash restore --id` brings it back.
         trash: []const u8 = "",
@@ -333,6 +337,7 @@ pub const Delete = struct {
     };
     pub const example_out: Out = .{
         .deleted = true,
+        .handle = "tags",
         .terms_removed = 0,
         .trash = "0190a1b2c3d40001a1b2c3d4",
     };
@@ -352,6 +357,7 @@ pub const Delete = struct {
 
         return .{
             .deleted = deleted.deleted,
+            .handle = deleted.handle,
             .terms_removed = deleted.removed,
             .trash = deleted.trash,
         };
@@ -461,7 +467,7 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     const renamed =
         \\{"handle":"topics","name":"Subjects","public":true,"hierarchical":true,
         \\ "title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
         \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
     ;
     const updated = try SDK.dispatch(&admin, Update, .{

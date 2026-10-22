@@ -15,6 +15,8 @@ const snapshot = store.snapshots;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "snapshot",
+    .label = "Versions",
+    .area = .content,
     .summary = "Frozen copies of a record's document: revisions and other archives",
     .details =
     \\A snapshot is a read-only, point-in-time copy of a record's document, numbered per
@@ -246,8 +248,6 @@ pub const Restore = struct {
             .document = item.document,
             .expected_version = in.expected_version,
         });
-
-        ctx.notice("snapshot.restored", row.id);
 
         return .{
             .version = saved.version,

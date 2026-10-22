@@ -8,19 +8,28 @@ const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 const views = store.views;
+const shared_views = store.shared_views;
 const Filters = model.view.Filters;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "view",
-    .summary = "Saved views: the content list's filters, named and kept per user",
+    .label = "Saved views",
+    .area = .background,
+    .summary = "Views of the content list: saved by name, and the default each type starts at",
     .details =
-    \\A view is a name over a set of filters for the content list: which types, which
-    \\status, whose records, since when, a search, an order. Views are private: each
-    \\belongs to the user who saved it, and nobody else sees or changes it. The filters
-    \\travel as JSON: the types, one clause per filter (`{"key":"status","operator":"is",
-    \\"value":"draft"}`, as `record list --filters` takes them), a search, an order.
-    \\`me` and durations are resolved when the list is drawn, so a saved view stays
-    \\current. Signed-in callers only.
+    \\A view is how the content list looks: which types, filter clauses, a search, an
+    \\order, the columns shown, the page size, and the fields offered to filter and order
+    \\by. It travels as JSON: one clause per filter (`{"key":"status","operator":"is",
+    \\"value":"draft"}`, `{"key":"field.total","operator":"more","value":"4999"}`, as
+    \\`record list --filters` takes them), `order` as `title` or `-updated` (descending)
+    \\or a field (`-total`). `me` and durations are resolved when the list is drawn, so a
+    \\saved view stays current.
+    \\
+    \\Saved views are a person's own, or made for everyone by an administrator
+    \\(`for_everyone`): listed for all, copied by anyone, changed by administrators. A
+    \\type's default view starts from its plugin's (`.data_view`), then the one
+    \\administrators saved for everyone, then the person's own (`view default`,
+    \\`view save-default`, `view reset-default`). Signed-in callers only.
     ,
 };
 
@@ -35,6 +44,8 @@ pub const Saved = struct {
     query: []const u8,
     created_at: i64,
     updated_at: i64,
+    /// Made by an administrator for everyone.
+    shared: bool = false,
 };
 
 pub const example_id = "5e6f7a8b9c0d1e2f3a4b5c6d";
@@ -51,10 +62,10 @@ const example_saved: Saved = .{
 
 pub const List = struct {
     pub const name = "view.list";
-    pub const description = "List the caller's saved views, by name";
+    pub const description = "List the caller's saved views and those made for everyone";
     pub const details =
-        \\Only the caller's own views: a view is never shared. `query` holds the filters as
-        \\the content list takes them.
+        \\The caller's own views by name, then the ones made for everyone (`shared`).
+        \\`query` holds the view as the content list takes it.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
@@ -74,10 +85,17 @@ pub const List = struct {
 
         const owner = ctx.caller.user_id() orelse return error.Denied;
         const rows = try views.list_by_user(ctx.db, ctx.arena, owner);
-        const out = ctx.arena.alloc(Saved, rows.len) catch return error.OutOfMemory;
+        const shared = try shared_views.list(ctx.db, ctx.arena);
+        const out = ctx.arena.alloc(Saved, rows.len + shared.len) catch {
+            return error.OutOfMemory;
+        };
 
-        for (rows, out) |row, *saved| {
+        for (rows, out[0..rows.len]) |row, *saved| {
             saved.* = saved_of(row);
+        }
+
+        for (shared, out[rows.len..]) |row, *saved| {
+            saved.* = shared_of(row);
         }
 
         return .{
@@ -90,7 +108,7 @@ pub const Get = struct {
     pub const name = "view.get";
     pub const description = "Read one saved view";
     pub const details =
-        \\Not found unless the view is the caller's own.
+        \\Not found unless the view is the caller's own or made for everyone.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -116,28 +134,32 @@ pub const Get = struct {
             return error.Invalid;
         }
 
-        const row = try own(ctx, in.id);
-
         return .{
-            .view = saved_of(row),
+            .view = switch (try find(ctx, in.id)) {
+                .own => |row| saved_of(row),
+                .shared => |row| shared_of(row),
+            },
         };
     }
 };
 
 pub const Create = struct {
     pub const name = "view.create";
-    pub const description = "Save the content list's filters as a view of the caller's own";
+    pub const description = "Save the content list as a view of the caller's own, or everyone's";
     pub const details =
-        \\`name` is up to 80 characters; `query` is the filters as JSON, every key optional:
+        \\`name` is up to 80 characters; `query` is the view as JSON, every key optional:
         \\`types` (handles), `type_view` (one type's own view), `clauses` (each a `key`,
         \\an `operator` and a `value` of a filter the registry knows: `status is draft`,
-        \\`created by me`, `updated within 7d`, `created before 2026-01-01`), `search`,
-        \\`order` (`updated_desc`, `created_desc`, `title_asc`). Up to 64 views per user.
+        \\`created by me`, `updated within 7d`, `created before 2026-01-01`; or on a field,
+        \\`field.total more 4999`), `search`, `order` (`title`, `-updated`, `-total`),
+        \\`columns`, `per_page` (10, 20, 50, 100), `filterable`, `orderable`. Up to 64 views
+        \\per user. `for_everyone` makes it everyone's (up to 64): administrators only.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         name: []const u8,
         query: []const u8 = "{}",
+        for_everyone: bool = false,
     };
     pub const Out = Saved;
     pub const example: In = .{
@@ -147,7 +169,8 @@ pub const Create = struct {
     pub const example_out: Out = example_saved;
     pub const field_docs: sdk.operation.Docs(In) = .{
         .name = "The view's name, as the sidebar shows it",
-        .query = "The filters, as JSON",
+        .query = "The view, as JSON",
+        .for_everyone = "Made for everyone (administrators only)",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -161,6 +184,10 @@ pub const Create = struct {
         const clean_name = try check_name(in.name);
         const query = try check_query(ctx, in.query);
 
+        if (in.for_everyone) {
+            return create_shared(ctx, owner, clean_name, query);
+        }
+
         if (try views.count_by_user(ctx.db, owner) >= per_user_max) {
             return error.Invalid;
         }
@@ -169,17 +196,16 @@ pub const Create = struct {
         const id = try views.insert(ctx.db, ctx.io, ctx.arena, owner, clean_name, query, now_ms);
         const row = try views.get(ctx.db, ctx.arena, id) orelse return error.NotFound;
 
-        ctx.notice("view.created", id);
-
         return saved_of(row);
     }
 };
 
 pub const Update = struct {
     pub const name = "view.update";
-    pub const description = "Rename a saved view, or give it new filters, or both";
+    pub const description = "Rename a saved view, or give it a new view, or both";
     pub const details =
-        \\Fields left out keep their value. The caller's own views only.
+        \\Fields left out keep their value. The caller's own views, and (administrators)
+        \\the ones made for everyone.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -206,17 +232,27 @@ pub const Update = struct {
             return error.Invalid;
         }
 
-        const row = try own(ctx, in.id);
-        const clean_name = if (in.name) |text| try check_name(text) else row.name;
-        const query = if (in.query) |text| try check_query(ctx, text) else row.query;
+        const found = try find_changing(ctx, in.id);
 
-        try views.update(ctx.db, row.id, clean_name, query, ctx.now_ms);
+        switch (found) {
+            .own => |row| {
+                const clean_name = if (in.name) |text| try check_name(text) else row.name;
+                const query = if (in.query) |text| try check_query(ctx, text) else row.query;
 
-        const updated = try views.get(ctx.db, ctx.arena, row.id) orelse return error.NotFound;
+                try views.update(ctx.db, row.id, clean_name, query, ctx.now_ms);
+            },
+            .shared => |row| {
+                const clean_name = if (in.name) |text| try check_name(text) else row.name;
+                const query = if (in.query) |text| try check_query(ctx, text) else row.query;
 
-        ctx.notice("view.updated", row.id);
+                try shared_views.update(ctx.db, row.id, clean_name, query, ctx.now_ms);
+            },
+        }
 
-        return saved_of(updated);
+        return switch (try find(ctx, in.id)) {
+            .own => |row| saved_of(row),
+            .shared => |row| shared_of(row),
+        };
     }
 };
 
@@ -224,8 +260,8 @@ pub const Delete = struct {
     pub const name = "view.delete";
     pub const description = "Delete a saved view";
     pub const details =
-        \\The caller's own views only. Nothing else is touched: a view is only a way of
-        \\looking at the content.
+        \\The caller's own views, and (administrators) the ones made for everyone. Nothing
+        \\else is touched: a view is only a way of looking at the content.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -251,10 +287,10 @@ pub const Delete = struct {
             return error.Invalid;
         }
 
-        const row = try own(ctx, in.id);
-        const deleted = try views.delete(ctx.db, row.id);
-
-        ctx.notice("view.deleted", row.id);
+        const deleted = switch (try find_changing(ctx, in.id)) {
+            .own => |row| try views.delete(ctx.db, row.id),
+            .shared => |row| try shared_views.delete(ctx.db, row.id),
+        };
 
         return .{
             .deleted = deleted,
@@ -262,10 +298,17 @@ pub const Delete = struct {
     }
 };
 
-pub const operations = [_]type{ List, Get, Create, Update, Delete };
+pub const operations = [_]type{ List, Get, Create, Update, Delete } ++
+    @import("view_default.zig").operations;
 
-/// The caller's own view, or `NotFound`: another user's view does not exist to them.
-fn own(ctx: *Ctx, id: []const u8) Error!views.View {
+const Found = union(enum) {
+    own: views.View,
+    shared: shared_views.View,
+};
+
+/// The caller's own view or one made for everyone, or `NotFound`: another user's view does
+/// not exist to them.
+fn find(ctx: *Ctx, id: []const u8) Error!Found {
     std.debug.assert(ctx.now_ms >= 0);
 
     if (id.len == 0 or id.len > 128) {
@@ -273,13 +316,66 @@ fn own(ctx: *Ctx, id: []const u8) Error!views.View {
     }
 
     const owner = ctx.caller.user_id() orelse return error.Denied;
-    const row = try views.get(ctx.db, ctx.arena, id) orelse return error.NotFound;
 
-    if (!std.mem.eql(u8, row.user_id, owner)) {
+    if (try views.get(ctx.db, ctx.arena, id)) |row| {
+        if (std.mem.eql(u8, row.user_id, owner)) {
+            return .{
+                .own = row,
+            };
+        }
+
         return error.NotFound;
     }
 
-    return row;
+    const shared = try shared_views.get(ctx.db, ctx.arena, id) orelse return error.NotFound;
+
+    return .{
+        .shared = shared,
+    };
+}
+
+/// A view the caller may change: their own, or one made for everyone when they administer.
+fn find_changing(ctx: *Ctx, id: []const u8) Error!Found {
+    const found = try find(ctx, id);
+
+    std.debug.assert(id.len > 0);
+
+    if (found == .shared and !ctx.caller.holds("admin")) {
+        return error.Denied;
+    }
+
+    return found;
+}
+
+fn create_shared(
+    ctx: *Ctx,
+    owner: []const u8,
+    clean_name: []const u8,
+    query: []const u8,
+) Error!Saved {
+    std.debug.assert(owner.len > 0);
+    std.debug.assert(clean_name.len > 0);
+
+    if (!ctx.caller.holds("admin")) {
+        return error.Denied;
+    }
+
+    if (try shared_views.count(ctx.db) >= shared_views.count_max) {
+        return error.Invalid;
+    }
+
+    const id = try shared_views.insert(
+        ctx.db,
+        ctx.io,
+        ctx.arena,
+        clean_name,
+        query,
+        owner,
+        ctx.now_ms,
+    );
+    const row = try shared_views.get(ctx.db, ctx.arena, id) orelse return error.NotFound;
+
+    return shared_of(row);
 }
 
 fn check_name(text: []const u8) Error![]const u8 {
@@ -294,9 +390,10 @@ fn check_name(text: []const u8) Error![]const u8 {
     return trimmed;
 }
 
-/// The filters, checked and written back in one shape: every clause names a filter the
-/// registry knows, one of its operators, and a value that operator takes.
-fn check_query(ctx: *Ctx, text: []const u8) Error![]const u8 {
+/// The view, checked and written back in one shape: every clause names a filter the
+/// registry knows, one of its operators, and a value that operator takes; a clause on a
+/// field (`field.total`) is checked by the list that reads it, against the type.
+pub fn check_query(ctx: *Ctx, text: []const u8) Error![]const u8 {
     std.debug.assert(query_bytes_max > 0);
 
     const filters = model.view.decode(ctx.arena, text) catch |err| return switch (err) {
@@ -305,6 +402,10 @@ fn check_query(ctx: *Ctx, text: []const u8) Error![]const u8 {
     };
 
     for (filters.clauses, 0..) |clause, index| {
+        if (model.field_filter.field_of(clause.key) != null) {
+            continue;
+        }
+
         const def = registry.Filters.find(clause.key) orelse return error.Invalid;
         const operator = def.operator(clause.operator) orelse return error.Invalid;
 
@@ -322,6 +423,20 @@ fn check_query(ctx: *Ctx, text: []const u8) Error![]const u8 {
     return model.view.encode(ctx.arena, filters) catch |err| return switch (err) {
         error.OutOfMemory => error.OutOfMemory,
         error.Invalid => error.Invalid,
+    };
+}
+
+fn shared_of(row: shared_views.View) Saved {
+    std.debug.assert(row.id.len > 0);
+    std.debug.assert(row.name.len > 0);
+
+    return .{
+        .id = row.id,
+        .name = row.name,
+        .query = row.query,
+        .created_at = row.created_at,
+        .updated_at = row.updated_at,
+        .shared = true,
     };
 }
 
@@ -422,10 +537,10 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
     try std.testing.expectEqualStrings(created.query, renamed.query);
     const refiltered = try SDK.dispatch(&ada, Update, .{
         .id = created.id,
-        .query = "{\"order\":\"title_asc\"}",
+        .query = "{\"order\":\"title\"}",
     });
     try std.testing.expectEqualStrings("My drafts", refiltered.name);
-    try std.testing.expect(std.mem.indexOf(u8, refiltered.query, "title_asc") != null);
+    try std.testing.expect(std.mem.indexOf(u8, refiltered.query, "\"title\"") != null);
     try std.testing.expectError(
         error.NotFound,
         SDK.dispatch(&bob, Update, .{
@@ -437,7 +552,7 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
         error.Invalid,
         SDK.dispatch(&ada, Update, .{
             .id = created.id,
-            .query = "{\"order\":\"nope\"}",
+            .query = "{\"order\":\"no pe\"}",
         }),
     );
     try std.testing.expectError(error.Invalid, SDK.dispatch(&ada, Create, .{
@@ -477,4 +592,45 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
         .id = created.id,
     }));
     try std.testing.expectEqual(@as(usize, 1), (try SDK.dispatch(&ada, List, .{})).views.len);
+
+    const everyone_in: Create.In = .{
+        .name = "Unpaid",
+        .query = "{\"order\":\"-total\"}",
+        .for_everyone = true,
+    };
+    try std.testing.expectError(error.Denied, SDK.dispatch(&ada, Create, everyone_in));
+
+    const admin_account = try SDK.dispatch(&admin, users.Create, .{
+        .email = "root@example.com",
+        .display_name = "Root",
+    });
+    var root = harness.ctx(.{
+        .user = .{
+            .id = admin_account.user_id,
+            .roles = &.{"admin"},
+        },
+    });
+    const everyone = try SDK.dispatch(&root, Create, everyone_in);
+    try std.testing.expect(everyone.shared);
+
+    const listed = try SDK.dispatch(&bob, List, .{});
+    try std.testing.expectEqual(@as(usize, 2), listed.views.len);
+    try std.testing.expect(listed.views[1].shared);
+    try std.testing.expectEqualStrings("Unpaid", (try SDK.dispatch(&bob, Get, .{
+        .id = everyone.id,
+    })).view.name);
+    try std.testing.expectError(error.Denied, SDK.dispatch(&bob, Update, .{
+        .id = everyone.id,
+        .name = "Mine now",
+    }));
+    try std.testing.expectError(error.Denied, SDK.dispatch(&bob, Delete, .{
+        .id = everyone.id,
+    }));
+    try std.testing.expectEqualStrings("Unpaid orders", (try SDK.dispatch(&root, Update, .{
+        .id = everyone.id,
+        .name = "Unpaid orders",
+    })).name);
+    try std.testing.expect((try SDK.dispatch(&root, Delete, .{
+        .id = everyone.id,
+    })).deleted);
 }

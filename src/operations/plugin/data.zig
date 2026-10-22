@@ -1,13 +1,14 @@
 //! What a plugin's data is, read from the database: the content types it owns with their
-//! records, the collections of internal records it keeps, the custom field groups it
-//! declared. Each a piece with a key (`type:<handle>`, `internal:<collection>`,
-//! `fields:<group>`), so an administrator chooses which go when it is removed, and the
-//! removal takes those into the plugin's trash entry.
+//! records, the collections of internal records it keeps, the custom field groups and the
+//! roles it declared. Each a piece with a key (`type:<handle>`, `internal:<collection>`,
+//! `fields:<group>`, `role:<name>`), so an administrator chooses which go when it is
+//! removed, and the removal takes those into the plugin's trash entry.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const state = @import("state.zig");
 const record = @import("../record.zig");
+const role_rows = @import("../role/rows.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -16,14 +17,15 @@ const definition = record.domain.definition;
 
 pub const pieces_max: u32 = 96;
 
-pub const Kind = enum { type, internal, fields };
+pub const Kind = enum { type, internal, fields, role };
 
 pub const Piece = struct {
     key: []const u8,
     kind: Kind,
     /// As the admin names it: the type's or group's name, the collection's.
     label: []const u8,
-    /// Records or internal records it holds; 0 for a field group.
+    /// Records or internal records it holds, the accounts holding a role; 0 for a field
+    /// group.
     count: u32,
     /// Chosen to go with the plugin when it is removed.
     chosen: bool,
@@ -82,6 +84,24 @@ pub fn pieces_of(ctx: *Ctx, decoded: state.Decoded) Error![]Piece {
             .kind = .fields,
             .label = if (def.name.len > 0) def.name else def.handle,
             .count = 0,
+            .chosen = has(chosen, key),
+        });
+    }
+
+    for (decoded.manifest.roles) |declared| {
+        const row = try store.roles.get(ctx.db, ctx.arena, declared.name) orelse continue;
+
+        if (!std.mem.eql(u8, row.owner, name)) {
+            continue;
+        }
+
+        const key = try key_of(ctx, "role", declared.name);
+
+        try append(ctx, &pieces, .{
+            .key = key,
+            .kind = .role,
+            .label = row.label,
+            .count = try store.user_roles.holders(ctx.db, row.name),
             .chosen = has(chosen, key),
         });
     }
@@ -161,16 +181,22 @@ pub fn roots_of(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]co
                 .column = "owner",
                 .keys = try quoted(ctx, handle),
             }) catch return error.OutOfMemory,
+            .role => roots.appendSlice(ctx.arena, try role_rows.roots_of(ctx, handle)) catch {
+                return error.OutOfMemory;
+            },
         }
     }
 
     return roots.items;
 }
 
-/// Deletes the pieces, their copy kept in the plugin's trash entry already.
-pub fn drop(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error!void {
+/// Deletes the pieces, their copy kept in the plugin's trash entry already. Answers the
+/// handles of the content types it deleted.
+pub fn drop(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]const []const u8 {
     std.debug.assert(plugin.len > 0);
     std.debug.assert(ctx.db.transaction_depth >= 1);
+
+    var types: std.ArrayList([]const u8) = .empty;
 
     for (pieces) |piece| {
         const handle = handle_of(piece.key);
@@ -180,12 +206,23 @@ pub fn drop(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error!void {
                 const row = try store.content_types.get_by_handle(ctx.db, ctx.arena, handle) orelse
                     continue;
 
-                try definition.drop_kept(ctx, row.id, handle);
+                try definition.drop_kept(ctx, row.id);
+                types.append(ctx.arena, handle) catch return error.OutOfMemory;
             },
             .internal => try store.internal_records.delete_collection(ctx.db, plugin, handle),
             .fields => try store.field_groups.delete(ctx.db, .custom_fields, handle),
+            .role => {
+                if (try store.user_roles.sole_holders(ctx.db, handle) > 0) {
+                    return error.Conflict;
+                }
+
+                try role_rows.drop(ctx, handle);
+                try store.role_declarations.forget_role(ctx.db, handle);
+            },
         }
     }
+
+    return types.items;
 }
 
 /// "Course (12 records), enrolments (340 internal records), SEO (field group)".
@@ -209,6 +246,11 @@ pub fn summary_of(ctx: *Ctx, pieces: []const Piece) Error![]const u8 {
                 piece.count,
             }),
             .fields => text.print(ctx.arena, "{s}{s} (field group)", .{ separator, piece.label }),
+            .role => text.print(ctx.arena, "{s}{s} (role, {d} holders)", .{
+                separator,
+                piece.label,
+                piece.count,
+            }),
         };
 
         written catch return error.OutOfMemory;

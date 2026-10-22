@@ -1,5 +1,5 @@
-//! A plugin's row read and written as data: its manifest, what is granted and denied, its
-//! content access, and the requests an administrator sees with where each one stands.
+//! A plugin's row read and written as data: its manifest, what is granted and denied, each
+//! permission's flags, and the requests an administrator sees with where each one stands.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
@@ -11,23 +11,29 @@ const Error = sdk.Error;
 const sandboxed_plugin = model.sandboxed_plugin;
 const permission = model.permission;
 
-pub const Scope = sandboxed_plugin.ContentAccess.Scope;
-
-/// Which content the plugin may reach: public types, every type, or the ones listed.
-pub const ContentAccess = struct {
-    scope: Scope = .public,
-    types: []const []const u8 = &.{},
-};
-
 /// One request as the install page and the plugin's page show it.
 pub const Request = struct {
     key: []const u8,
     sentence: []const u8,
     reason: []const u8,
+    /// Its risk with the flags on now.
     tier: permission.Tier,
     state: State,
+    /// The content types or taxonomies it names; empty for every one.
+    names: []const []const u8 = &.{},
+    /// `http.fetch`'s domains as set now: exact, `*.example.com`, or `*` (anywhere public).
+    domains: []const []const u8 = &.{},
+    /// On an update's review: the domains the new version adds, joining the list on Allow.
+    new_domains: []const []const u8 = &.{},
+    /// Each flag it asked for, and whether it is on now.
+    flags: []const Flag = &.{},
 
     pub const State = enum { granted, pending, denied, unavailable };
+
+    pub const Flag = struct {
+        name: permission.Flag,
+        on: bool,
+    };
 };
 
 /// A row with its JSON columns decoded.
@@ -36,8 +42,13 @@ pub const Decoded = struct {
     manifest: sandboxed_plugin.Manifest,
     granted: []const []const u8,
     denied: []const []const u8,
-    content_access: ContentAccess,
+    /// Each permission's flags as an administrator left them.
+    grants: []const permission.Held,
+    /// Built in, read from its declarations (no row holds it), or installed.
+    mode: Mode = .sandboxed,
 };
+
+pub const Mode = @import("../../sdk/plugin/context.zig").Mode;
 
 const parse_options: std.json.ParseOptions = .{
     .allocate = .alloc_always,
@@ -71,12 +82,7 @@ pub fn decode(arena: std.mem.Allocator, row: store.sandboxed_plugins.Row) Error!
         .denied = json.parse([]const []const u8, arena, row.denied, parse_options) catch {
             return error.Invalid;
         },
-        .content_access = json.parse(
-            ContentAccess,
-            arena,
-            row.content_access,
-            parse_options,
-        ) catch {
+        .grants = json.parse([]const permission.Held, arena, row.grants, parse_options) catch {
             return error.Invalid;
         },
     };
@@ -97,12 +103,14 @@ pub fn parse_manifest(arena: std.mem.Allocator, text: []const u8) Error!sandboxe
     return manifest;
 }
 
-/// Everything the manifest asks for, each with where it stands for this plugin.
+/// Everything the manifest asks for, each with where it stands for this plugin and, for a
+/// permission, its flags as set now.
 pub fn requests_of(
     arena: std.mem.Allocator,
     manifest: *const sandboxed_plugin.Manifest,
     granted: []const []const u8,
     denied: []const []const u8,
+    grants: []const permission.Held,
 ) Error![]const Request {
     std.debug.assert(manifest.name.len > 0);
     std.debug.assert(granted.len <= sandboxed_plugin.requests_max);
@@ -131,9 +139,42 @@ pub fn requests_of(
             .tier = request.tier,
             .state = state,
         };
+
+        if (request.asked) |as_asked| {
+            const set = sandboxed_plugin.as_set(as_asked, grants);
+
+            shown.tier = permission.tier_of_held(permission.find(catalog, request.key).?, &set);
+            shown.names = set.names();
+            shown.domains = set.domains;
+            shown.flags = try flags_of(arena, as_asked, set);
+        }
     }
 
     return out;
+}
+
+fn flags_of(
+    arena: std.mem.Allocator,
+    asked: permission.Held,
+    set: permission.Held,
+) Error![]const Request.Flag {
+    std.debug.assert(asked.key.len > 0);
+    std.debug.assert(std.mem.eql(u8, asked.key, set.key));
+
+    var flags: std.ArrayList(Request.Flag) = .empty;
+
+    inline for (std.meta.fields(permission.Flag)) |field| {
+        const flag: permission.Flag = @enumFromInt(field.value);
+
+        if (asked.flag(flag)) {
+            flags.append(arena, .{
+                .name = flag,
+                .on = set.flag(flag),
+            }) catch return error.OutOfMemory;
+        }
+    }
+
+    return flags.items;
 }
 
 pub fn encode(arena: std.mem.Allocator, value: anytype) Error![]const u8 {
@@ -185,13 +226,13 @@ pub fn save(ctx: *Ctx, decoded: Decoded) Error!void {
 
     row.granted = try encode(ctx.arena, decoded.granted);
     row.denied = try encode(ctx.arena, decoded.denied);
-    row.content_access = try encode(ctx.arena, decoded.content_access);
+    row.grants = try encode(ctx.arena, decoded.grants);
     row.updated_at = ctx.now_ms;
 
     try store.sandboxed_plugins.put(ctx.db, row);
 }
 
-test "requests show where each one stands" {
+test "requests show where each one stands, with each flag asked for as set now" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -202,7 +243,9 @@ test "requests show where each one stands" {
         .summary = "Greets",
         .permissions = &.{
             .{
-                .key = "content.write",
+                .key = "records.write",
+                .records = &.{"post"},
+                .publish = true,
                 .reason = "Keeps greetings",
             },
             .{
@@ -219,12 +262,26 @@ test "requests show where each one stands" {
             },
         },
     };
-    const shown = try requests_of(arena, &manifest, &.{"content.write"}, &.{"http.fetch"});
+    const switched = [_]permission.Held{.{
+        .key = "records.write",
+        .publish = false,
+    }};
+    const shown = try requests_of(
+        arena,
+        &manifest,
+        &.{"records.write"},
+        &.{"http.fetch"},
+        &switched,
+    );
 
     try std.testing.expectEqual(Request.State.granted, shown[0].state);
     try std.testing.expectEqual(Request.State.pending, shown[1].state);
     try std.testing.expectEqual(Request.State.denied, shown[2].state);
     try std.testing.expectEqual(Request.State.unavailable, shown[3].state);
+    try std.testing.expectEqual(@as(usize, 1), shown[0].flags.len);
+    try std.testing.expect(!shown[0].flags[0].on);
+    try std.testing.expectEqualStrings("post", shown[0].names[0]);
+    try std.testing.expectEqual(permission.Tier.medium, shown[0].tier);
     try std.testing.expectEqual(@as(usize, 2), (try with(arena, &.{"a"}, "b")).len);
     try std.testing.expectEqual(@as(usize, 0), (try without(arena, &.{"a"}, "a")).len);
 }

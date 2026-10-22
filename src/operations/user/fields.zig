@@ -273,7 +273,7 @@ fn seed_group(ctx: *Ctx, handle: []const u8, role: []const u8) Error!void {
             "\"title_field\":\"\",\"group\":{{\"location\":[{{\"rules\":" ++
             "[{{\"field\":\"destination\",\"value\":\"user\"}}{s}]}}]}}," ++
             "\"fields\":[{{\"name\":\"bio\",\"label\":\"Bio\",\"kind\":\"string\"," ++
-            "\"required\":true}}]}}",
+            "\"validation\":{{\"required\":true}}}}]}}",
         .{ handle, handle, role_rule },
     );
 

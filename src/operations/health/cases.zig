@@ -442,7 +442,7 @@ fn broken(types: *Types, link: Link) Error!?Broken {
         };
     }
 
-    if (std.mem.eql(u8, link.target_status, "deleted")) {
+    if (std.mem.eql(u8, link.target_status, "trashed")) {
         return .{
             .reason = .deleted,
             .app = "",

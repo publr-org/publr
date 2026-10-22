@@ -5,13 +5,17 @@
 //! cannot be canceled mid-answer): it ends on its own and frees what it holds.
 
 const std = @import("std");
+const guard_module = @import("http_guard.zig");
+const outside = @import("../model/outside.zig");
+
+pub const Guard = guard_module.Guard;
 
 /// How long one request may take, connecting to the last byte.
 pub const timeout_ms: u32 = 20_000;
 /// How often a caller looks whether its request ended.
 const look_every_ms: u32 = 25;
 
-pub const Error = error{ TimedOut, Unreachable, TooBig, OutOfMemory };
+pub const Error = error{ TimedOut, Unreachable, TooBig, OutOfMemory, Refused };
 
 pub const Request = struct {
     url: []const u8,
@@ -20,19 +24,39 @@ pub const Request = struct {
     headers: []const std.http.Header = &.{},
     /// The answer's body, at most.
     body_max: u32,
+    /// Where it may go: checked on every hop, redirects followed by hand. Null for core's
+    /// own calls, which go anywhere.
+    guard: ?Guard = null,
 };
 
 pub const Answer = struct {
     status: std.http.Status,
     /// In the caller's allocator.
     body: []u8,
+    /// Each hop it took, the last one answered (none without a guard).
+    hops: []const Hop = &.{},
+};
+
+/// One request on the way: where it went and what it answered (0 when refused or failed).
+pub const Hop = struct {
+    host: []const u8,
+    path: []const u8,
+    status: u16,
+    refusal: ?outside.Refusal = null,
+};
+
+/// What a guarded request went through, for the caller's log; the hops' text in `arena`.
+pub const Trace = struct {
+    arena: std.mem.Allocator,
+    hops: [guard_module.hops_max + 1]Hop = undefined,
+    count: u32 = 0,
 };
 
 const State = enum(u8) { running, done, given_up };
 
 /// One request and what it answered, in memory of its own: freed by the caller once it
 /// ended in time, or by itself once it ends after the caller gave up.
-const Job = struct {
+pub const Job = struct {
     arena_state: std.heap.ArenaAllocator,
     io: std.Io,
     request: Request,
@@ -40,6 +64,9 @@ const Job = struct {
     status: std.http.Status = .ok,
     body: []const u8 = "",
     failed: ?Error = null,
+    trace: Trace = .{
+        .arena = std.heap.page_allocator,
+    },
 
     fn run(job: *Job) void {
         std.debug.assert(job.request.url.len > 0);
@@ -55,6 +82,10 @@ const Job = struct {
 
     fn fetch(job: *Job) void {
         std.debug.assert(job.request.body_max > 0);
+
+        if (job.request.guard) |guard| {
+            return @import("http_hops.zig").run(job, guard);
+        }
 
         const arena = job.arena_state.allocator();
         const buffer = arena.alloc(u8, job.request.body_max) catch {
@@ -87,12 +118,31 @@ const Job = struct {
     }
 };
 
-/// `request`, answered within `limit_ms`, its body copied into `allocator`.
+/// `request`, unguarded (core's own), answered within `limit_ms`, its body copied into
+/// `allocator`.
 pub fn fetch(
     io: std.Io,
     allocator: std.mem.Allocator,
     request: Request,
     limit_ms: u32,
+) Error!Answer {
+    std.debug.assert(request.guard == null);
+
+    var trace: Trace = .{
+        .arena = allocator,
+    };
+
+    return fetch_traced(io, allocator, request, limit_ms, &trace);
+}
+
+/// `fetch` for a guarded request too: its hops left in `trace` whether it went through or
+/// not.
+pub fn fetch_traced(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    request: Request,
+    limit_ms: u32,
+    trace: *Trace,
 ) Error!Answer {
     std.debug.assert(limit_ms > 0 and limit_ms <= 10 * 60 * 1000);
     std.debug.assert(request.url.len > 0);
@@ -115,6 +165,8 @@ pub fn fetch(
         std.heap.page_allocator.destroy(job);
     }
 
+    try traced(job, trace);
+
     if (job.failed) |failure| {
         return failure;
     }
@@ -122,7 +174,27 @@ pub fn fetch(
     return .{
         .status = job.status,
         .body = allocator.dupe(u8, job.body) catch return error.OutOfMemory,
+        .hops = trace.hops[0..trace.count],
     };
+}
+
+/// The job's hops copied into the trace's memory, for the caller to log.
+fn traced(job: *const Job, trace: *Trace) Error!void {
+    std.debug.assert(job.trace.count <= trace.hops.len);
+    std.debug.assert(trace.count == 0);
+
+    const arena = trace.arena;
+
+    for (job.trace.hops[0..job.trace.count], trace.hops[0..job.trace.count]) |hop, *kept| {
+        kept.* = .{
+            .host = arena.dupe(u8, hop.host) catch return error.OutOfMemory,
+            .path = arena.dupe(u8, hop.path) catch return error.OutOfMemory,
+            .status = hop.status,
+            .refusal = hop.refusal,
+        };
+    }
+
+    trace.count = job.trace.count;
 }
 
 /// The job, its request copied into its own memory, running in a thread of its own.

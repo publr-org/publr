@@ -33,6 +33,8 @@ pub const Destination = enum {
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "custom_fields",
+    .label = "Custom fields",
+    .area = .site,
     .summary = "Field schemas for users and media",
     .details = "Administrators define the additional fields shared by every user or media item. " ++
         "These schemas do not create content types or settings documents.",
@@ -131,7 +133,7 @@ pub const Validate = struct {
 
         const invalid = def.kind != .component or def.public or def.system or
             def.owner.len > 0 or !std.mem.eql(u8, def.handle, in.group) or def.url.len > 0 or
-            !valid_location(def.group.location);
+            !try valid_location(ctx, def.group.location);
 
         if (invalid) {
             const problems = try ctx.arena.alloc(model.field.Problem, 1);
@@ -196,9 +198,6 @@ pub const Update = struct {
             .fields = canonical.fields,
             .options = canonical.group,
         });
-        const created = std.mem.eql(u8, ctx.within, Create.name);
-
-        ctx.notice(if (created) "custom_fields.created" else "custom_fields.updated", in.group);
 
         return .{
             .definition = canonical,
@@ -361,7 +360,6 @@ pub const Delete = struct {
             }},
         });
         try store.field_groups.delete(ctx.db, .custom_fields, in.group);
-        ctx.notice("custom_fields.deleted", in.group);
         return .{
             .deleted = true,
             .trash = trash_id,
@@ -369,15 +367,16 @@ pub const Delete = struct {
     }
 };
 
-fn valid_location(groups: model.field.conditions.Set) bool {
+fn valid_location(ctx: *const sdk.Ctx, groups: model.field.conditions.Set) sdk.Error!bool {
     std.debug.assert(groups.len <= model.field.conditions.groups_max);
+    std.debug.assert(ctx.now_ms >= 0);
 
     for (groups) |group| {
         for (group.rules) |rule| {
             const accepted = if (std.mem.eql(u8, rule.field, "destination"))
                 std.meta.stringToEnum(Destination, rule.value) != null
             else if (std.mem.eql(u8, rule.field, "role"))
-                registry.Roles.get(rule.value) != null
+                try sdk.stored_roles.exists(ctx, rule.value)
             else if (std.mem.eql(u8, rule.field, "media_type"))
                 model.field.options.valid_media_type(rule.value)
             else

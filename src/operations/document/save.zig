@@ -20,6 +20,9 @@ pub const Saved = struct {
     version: i64,
     slug: ?[]const u8,
     changed: bool,
+    /// What the save did: `saved` (the live document written), `changes_saved` (kept as
+    /// pending changes), `changes_discarded` (an edit taken back), `unchanged`.
+    outcome: []const u8,
 };
 
 pub fn Of(comptime Domain: type) type {
@@ -30,7 +33,6 @@ pub fn Of(comptime Domain: type) type {
         const document = Domain.document;
         const lifecycle = Domain.lifecycle;
         const load = Domain.access.load;
-        const notice_name = Domain.notice_name;
         const title_of = model.document.title_of;
 
         pub fn save(
@@ -55,7 +57,7 @@ pub fn Of(comptime Domain: type) type {
                 return save_live(ctx, granted, row, type_row.def, given, expected, to);
             }
 
-            const live = registry.Statuses.is_live(row.status);
+            const live = type_row.def.flow.is_live(row.status);
             const park = row.changed or live;
             const base = if (row.changed) values.pending else values.live;
             var parsed = try merged(ctx, row, type_row.def, base, given);
@@ -79,23 +81,20 @@ pub fn Of(comptime Domain: type) type {
             }
 
             const version = try documents.save(ctx.db, row.id, actor, expected, ctx.now_ms, kept);
-
-            if (!park) {
-                ctx.notice(notice_name("saved"), row.id);
-            } else if (unchanged) {
-                if (row.changed) {
-                    ctx.notice(notice_name("changes_discarded"), row.id);
-                }
-            } else if (!row.changed) {
-                ctx.notice(notice_name("changed"), row.id);
-            } else {
-                ctx.notice(notice_name("changes_saved"), row.id);
-            }
+            const outcome = if (!park)
+                "saved"
+            else if (!unchanged)
+                "changes_saved"
+            else if (row.changed)
+                "changes_discarded"
+            else
+                "unchanged";
 
             return .{
                 .version = version,
                 .slug = slug,
                 .changed = kept,
+                .outcome = outcome,
             };
         }
 
@@ -151,9 +150,9 @@ pub fn Of(comptime Domain: type) type {
                 return error.Invalid;
             }
 
-            try lifecycle.check_move(row, def, to, granted);
+            try lifecycle.check_move(ctx, row, def, to, granted);
 
-            const live = registry.Statuses.is_live(row.status);
+            const live = def.flow.is_live(row.status);
             var parsed = try merged(ctx, row, def, values.live, given);
             const slug = try checked(ctx, row, def, &parsed, live);
             const actor = ctx.caller.user_id();
@@ -169,8 +168,6 @@ pub fn Of(comptime Domain: type) type {
                 try write(ctx, row, def, values.pending, pending);
             }
 
-            ctx.notice(notice_name("saved"), row.id);
-
             if (!std.mem.eql(u8, row.status, to)) {
                 version = (try lifecycle.settle(ctx, row, to, granted)).version;
             }
@@ -179,6 +176,7 @@ pub fn Of(comptime Domain: type) type {
                 .version = version,
                 .slug = slug,
                 .changed = row.changed,
+                .outcome = "saved",
             };
         }
 
@@ -253,7 +251,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(parsed.* == .object);
 
-            const title = try title_of(def, parsed.*);
+            const title = try @import("document.zig").titled(ctx, def, parsed.*);
             const type_id = row.type_id;
             const slug = try document.unique_slug(ctx, type_id, def, parsed, title, row.id, live);
 
@@ -439,7 +437,7 @@ test "a save with another status moves along a registered transition only" {
 
     _ = try SDK.dispatch(&system, records.Transition, .{
         .id = created.id,
-        .to = "archived",
+        .transition = "archive",
     });
     const unregistered = SDK.dispatch(&system, records.Save, .{
         .id = created.id,

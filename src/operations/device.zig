@@ -20,6 +20,8 @@ const user_code_attempts: u32 = 4;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "device",
+    .label = "Devices and agents",
+    .area = .people,
     .summary = "Agents and tools acting for an account, signed in by link",
     .details =
     \\A device (an agent, the CLI on another machine) asks with `device start` and shows

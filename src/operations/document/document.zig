@@ -73,7 +73,7 @@ pub fn Of(comptime Domain: type) type {
             );
 
             if (!problems.is_empty()) {
-                return error.Invalid;
+                return ctx.refuse(try refusal_of(ctx, &problems));
             }
 
             try currencies.refuse_others(ctx, def.fields, parsed);
@@ -110,7 +110,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(document == .object);
 
             for (def.fields) |field| {
-                if (!field.unique) {
+                if (!field.validation.unique) {
                     continue;
                 }
 
@@ -175,8 +175,8 @@ pub fn Of(comptime Domain: type) type {
                     };
                     const reference = std.mem.eql(u8, field.kind, "reference");
                     const user = std.mem.eql(u8, field.kind, "user");
-                    const narrowed = field.options.reference.live_only or
-                        field.options.reference.public_only;
+                    const narrowed = field.validation.reference.live_only or
+                        field.validation.reference.public_only;
 
                     if (user or (reference and narrowed)) {
                         refuse_target(checking.ctx, field.*, item.value.text) catch |err| {
@@ -223,7 +223,7 @@ pub fn Of(comptime Domain: type) type {
 
             const target = try store.records.get(ctx.db, ctx.arena, id) orelse return error.Invalid;
 
-            if (field.options.reference.public_only) {
+            if (field.validation.reference.public_only) {
                 const target_type = try store.content_types.get_by_id(
                     ctx.db,
                     ctx.arena,
@@ -234,7 +234,9 @@ pub fn Of(comptime Domain: type) type {
                 }
             }
 
-            if (field.options.reference.live_only and !registry.Statuses.is_live(target.status)) {
+            const live = try @import("../status.zig").is_live(ctx, target.status);
+
+            if (field.validation.reference.live_only and !live) {
                 return error.Invalid;
             }
         }
@@ -328,7 +330,7 @@ pub fn Of(comptime Domain: type) type {
                 // A slug the site keeps is never anyone's: a derived one is numbered past it
                 // (a given one was refused when the document was checked).
                 const kept = model.field.options.contains(
-                    slug_field.options.slug.reserved,
+                    slug_field.validation.slug.reserved,
                     candidate,
                 );
 
@@ -338,7 +340,7 @@ pub fn Of(comptime Domain: type) type {
                     return candidate;
                 }
 
-                if (given_text and slug_field.options.slug.refuse_taken) {
+                if (given_text and slug_field.validation.slug.refuse_taken) {
                     return error.Conflict;
                 }
 
@@ -444,6 +446,45 @@ pub fn Of(comptime Domain: type) type {
             };
         }
     };
+}
+
+/// The document's title; an empty or missing one refused under the title field's name, as
+/// any other required field is.
+pub fn titled(ctx: *Ctx, def: Def, document: Value) Error![]const u8 {
+    std.debug.assert(document == .object);
+    std.debug.assert(def.fields.len <= model.field.fields_max);
+
+    return model.document.title_of(def, document) catch |err| {
+        const title_field = model.content_type.title_field_of(def) orelse return err;
+        const told = try ctx.arena.alloc(sdk.operation.Problem, 1);
+
+        told[0] = .{
+            .field = title_field.name,
+            .message = "required",
+        };
+
+        return ctx.refuse(told);
+    };
+}
+
+/// The document's problems as a refusal answers them: each under its field's path.
+pub fn refusal_of(
+    ctx: *Ctx,
+    problems: *const model.field.Problems,
+) Error![]const sdk.operation.Problem {
+    std.debug.assert(!problems.is_empty());
+    std.debug.assert(problems.len <= sdk.operation.problems_max);
+
+    const told = try ctx.arena.alloc(sdk.operation.Problem, problems.len);
+
+    for (problems.slice(), told) |problem, *one| {
+        one.* = .{
+            .field = ctx.arena.dupe(u8, problem.path) catch return error.OutOfMemory,
+            .message = problem.message,
+        };
+    }
+
+    return told;
 }
 
 pub fn copy_problems(ctx: *Ctx, problems: *const model.field.Problems) Error![]const Problem {

@@ -15,6 +15,8 @@ pub const files_max: u32 = 4096;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "apps",
+    .label = "Apps",
+    .area = .site,
     .summary = "The project's apps as files, for agents with no file system",
     .details =
     \\Each app is a folder in the project's `apps/` (`apps/<name>/app.zon` and its
@@ -232,9 +234,9 @@ pub const Write = struct {
             return error.TooBig;
         }
 
-        // Written before the drafts check runs at commit: noticed first, so a drafts device
-        // is refused before anything reaches the folder.
-        ctx.notice("apps.published", in.path);
+        // An app file is live once loaded: the call publishes, and a drafts device is refused
+        // here, before anything reaches the folder, not only at commit.
+        ctx.publishes = true;
         try refuse_drafts(ctx);
 
         var root = try open_root(ctx, try folder_of(ctx), true);
@@ -307,7 +309,7 @@ pub const Remove = struct {
             return error.Invalid;
         }
 
-        ctx.notice("apps.published", in.path);
+        ctx.publishes = true;
         try refuse_drafts(ctx);
 
         var root = try open_root(ctx, try folder_of(ctx), false);

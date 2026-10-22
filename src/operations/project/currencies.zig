@@ -279,7 +279,7 @@ test "money: amounts per currency, only the site's, found and sorted by one" {
 
     const definition =
         \\{"handle":"product","name":"Product","fields":[
-        \\ {"name":"title","label":"Title","kind":"string","required":true},
+        \\ {"name":"title","label":"Title","kind":"string","validation":{"required":true}},
         \\ {"name":"price","label":"Price","kind":"money"}]}
     ;
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
@@ -331,7 +331,7 @@ test "money: amounts per currency, only the site's, found and sorted by one" {
 
     const nested_definition =
         \\{"handle":"menu","name":"Menu","fields":[
-        \\ {"name":"title","label":"Title","kind":"string","required":true},
+        \\ {"name":"title","label":"Title","kind":"string","validation":{"required":true}},
         \\ {"name":"dishes","label":"Dishes","kind":"repeater","fields":[
         \\  {"name":"name","label":"Name","kind":"string"},
         \\  {"name":"cost","label":"Cost","kind":"group","fields":[

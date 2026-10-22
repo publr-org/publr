@@ -9,6 +9,8 @@ pub const version = "0.4.0";
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "heartbeat",
+    .label = "Liveness",
+    .area = .background,
     .summary = "Liveness and version checks",
     .details =
     \\Operations that never touch data: use them to check that Publr is up, which

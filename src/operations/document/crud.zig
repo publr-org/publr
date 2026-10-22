@@ -1,12 +1,14 @@
 //! Create, get, save, list, referrers and validate: the bodies both domains share.
 
 const std = @import("std");
+const field_conditions = @import("field_conditions.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const access_module = @import("access.zig");
 const document_module = @import("document.zig");
+const statuses = @import("../status.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -54,6 +56,8 @@ pub const ListInput = struct {
     /// Never records in these statuses, whatever the filters ask.
     exclude_statuses: []const []const u8 = &.{},
     order: Order = .updated_desc,
+    /// Ordered by a field of the one definition instead: `total`, `-total` descending.
+    sort: ?[]const u8 = null,
     limit: u32 = 50,
     offset: u32 = 0,
     /// `slug` matches this variant's slug (`slug@pl`) first, the main one when none does.
@@ -68,7 +72,6 @@ pub fn Of(comptime Domain: type) type {
         const access = Domain.access;
         const document = Domain.document;
         const load = access.load;
-        const notice_name = Domain.notice_name;
         const title_of = model.document.title_of;
         const slug_of = model.document.slug_of;
 
@@ -100,11 +103,23 @@ pub fn Of(comptime Domain: type) type {
 
             try Domain.config.check_create(ctx, row);
 
-            const status = wanted_status orelse registry.Statuses.initial().id;
+            const requests = Domain.lifecycle.requests;
+            const initial = row.def.flow.initial().id;
+            const wanted = wanted_status orelse initial;
+            const held_back = row.def.flow.is_live(wanted) and
+                !requests.may_publish(ctx, row.def.handle);
+
+            // A plugin without `.publish` makes it in the first status; a person is refused.
+            if (held_back and !plugin_running(ctx)) {
+                return error.Denied;
+            }
+
+            const status = if (held_back) initial else wanted;
+
             try access.check_status(row.def, status, granted);
 
             var parsed = try document.parse_document(ctx, row.def, text, true);
-            const title = try title_of(row.def, parsed);
+            const title = try document_module.titled(ctx, row.def, parsed);
             const def = row.def;
             const slug = try document.unique_slug(ctx, row.id, def, &parsed, title, null, false);
 
@@ -122,11 +137,7 @@ pub fn Of(comptime Domain: type) type {
             const known = registry.Kinds.all;
 
             try values.write(known, ctx.db, id, values.live, row.id, def.fields, parsed);
-            ctx.notice(notice_name("created"), id);
-
-            if (registry.Statuses.is_live(status)) {
-                ctx.notice(notice_name("published"), id);
-            }
+            ctx.publishes = ctx.publishes or row.def.flow.is_live(status);
 
             return .{
                 .id = id,
@@ -264,7 +275,10 @@ pub fn Of(comptime Domain: type) type {
 
             const constraints = try constraints_of(ctx, in.filters);
             var statuses_buffer: [model.status.statuses_max][]const u8 = undefined;
-            var query = try query_of(ctx, in, granted, span, constraints, &statuses_buffer);
+            var query = try query_of(ctx, in, granted, span, constraints, .{
+                .known = try statuses.known(ctx),
+                .buffer = &statuses_buffer,
+            });
 
             if (query.statuses != null and query.statuses.?.len == 0) {
                 return &.{};
@@ -274,7 +288,12 @@ pub fn Of(comptime Domain: type) type {
 
             // A record not translated into the variant keeps its main slug there too.
             if (rows.len == 0 and in.slug != null and in.variant.len > 0) {
-                query.filter.?.field = model.variant.split(query.filter.?.field).name;
+                const renamed = ctx.arena.dupe(store.documents.Filter, query.filters) catch {
+                    return error.OutOfMemory;
+                };
+
+                renamed[0].field = model.variant.split(renamed[0].field).name;
+                query.filters = renamed;
                 rows = try documents.list(ctx.db, ctx.arena, query);
             }
 
@@ -317,7 +336,10 @@ pub fn Of(comptime Domain: type) type {
 
             const constraints = try constraints_of(ctx, in.filters);
             var statuses_buffer: [model.status.statuses_max][]const u8 = undefined;
-            const query = try query_of(ctx, in, granted, span, constraints, &statuses_buffer);
+            const query = try query_of(ctx, in, granted, span, constraints, .{
+                .known = try statuses.known(ctx),
+                .buffer = &statuses_buffer,
+            });
 
             if (query.statuses != null and query.statuses.?.len == 0) {
                 return 0;
@@ -351,12 +373,22 @@ pub fn Of(comptime Domain: type) type {
             const statuses_buffer = ctx.arena.create([model.status.statuses_max][]const u8) catch {
                 return error.OutOfMemory;
             };
-            var query = try query_of(ctx, in, granted, span, constraints, statuses_buffer);
+            const known = try statuses.known(ctx);
+            var query = try query_of(ctx, in, granted, span, constraints, .{
+                .known = known,
+                .buffer = statuses_buffer,
+            });
 
             // Records named are found in any status the caller may see, archived or deleted
             // too: someone picked them where they are.
             if (in.ids.len > 0 and constraints.status == null) {
-                query.statuses = any_status(granted, statuses_buffer, in.exclude_statuses);
+                const split = try live_split(ctx, granted, span, known);
+
+                query.statuses = any_status(granted, .{
+                    .live_only = split.live_only,
+                    .known = known,
+                    .buffer = statuses_buffer,
+                }, in.exclude_statuses);
             }
 
             if (query.statuses != null and query.statuses.?.len == 0) {
@@ -366,26 +398,33 @@ pub fn Of(comptime Domain: type) type {
             return query;
         }
 
+        const AnyStatus = struct {
+            /// Every type the query spans is read live only.
+            live_only: bool,
+            known: []const model.status.Status,
+            buffer: *[model.status.statuses_max][]const u8,
+        };
+
         fn any_status(
             granted: *const Grant,
-            buffer: *[model.status.statuses_max][]const u8,
+            statuses_in: AnyStatus,
             excluded: []const []const u8,
         ) []const []const u8 {
             std.debug.assert(granted.allows());
-            std.debug.assert(registry.Statuses.all.len <= model.status.statuses_max);
+            std.debug.assert(statuses_in.known.len <= model.status.statuses_max);
 
             var kept: u32 = 0;
 
-            for (registry.Statuses.all) |status| {
-                const live_ok = !granted.record_filter.flags.live_only or status.live;
+            for (statuses_in.known) |status| {
+                const live_ok = !statuses_in.live_only or status.live;
 
                 if (live_ok and granted.allows_status(status.id)) {
-                    buffer[kept] = status.id;
+                    statuses_in.buffer[kept] = status.id;
                     kept += 1;
                 }
             }
 
-            return without(buffer, kept, excluded);
+            return without(statuses_in.buffer, kept, excluded);
         }
 
         /// Every clause, checked and applied by the filter it names, added up.
@@ -400,17 +439,22 @@ pub fn Of(comptime Domain: type) type {
                 .user_id = ctx.caller.user_id(),
                 .now_ms = ctx.now_ms,
             };
-            const parsed = ctx.arena.alloc(model.filter.Clause, clauses.len) catch {
-                return error.OutOfMemory;
-            };
+            var parsed: std.ArrayList(model.filter.Clause) = .empty;
 
-            for (clauses, parsed) |text, *clause| {
-                clause.* = model.filter.parse_clause(text) orelse return error.Invalid;
+            // A clause on the records' own fields is the store's (`field_conditions`).
+            for (clauses) |text| {
+                if (!field_conditions.is_field(text)) {
+                    const clause = model.filter.parse_clause(text) orelse return error.Invalid;
+
+                    parsed.append(ctx.arena, clause) catch return error.OutOfMemory;
+                }
             }
 
             var out: model.filter.Constraints = .{};
 
-            registry.Filters.apply_all(parsed, context, &out) catch return error.Invalid;
+            registry.Filters.apply_all(parsed.items, context, &out) catch {
+                return error.Invalid;
+            };
 
             return out;
         }
@@ -420,13 +464,21 @@ pub fn Of(comptime Domain: type) type {
         fn query_of(
             ctx: *Ctx,
             in: ListInput,
-            granted: *const Grant,
+            granted_in: *const Grant,
             span: access_module.Span,
             constraints: model.filter.Constraints,
-            statuses_buffer: *[model.status.statuses_max][]const u8,
+            listed: access_module.Statuses,
         ) Error!store.documents.Query {
             std.debug.assert(span.briefs.len > 0);
             std.debug.assert(in.limit > 0);
+
+            // Each type by its own grant: drafts where it reads them, live records elsewhere.
+            const split = try live_split(ctx, granted_in, span, listed.known);
+            var narrowed = granted_in.*;
+
+            narrowed.record_filter.flags.live_only = split.live_only;
+
+            const granted = &narrowed;
 
             const type_ids = ctx.arena.alloc([]const u8, span.briefs.len) catch {
                 return error.OutOfMemory;
@@ -438,18 +490,28 @@ pub fn Of(comptime Domain: type) type {
 
             const status = constraints.status;
             const exclude = constraints.status_exclude;
-            const allowed = access.allowed_statuses(granted, status, exclude, statuses_buffer);
+            const allowed = access.allowed_statuses(granted, status, exclude, listed);
 
             return .{
                 .type_ids = type_ids,
                 .statuses = if (allowed) |kept|
-                    without(statuses_buffer, @intCast(kept.len), in.exclude_statuses)
+                    without(listed.buffer, @intCast(kept.len), in.exclude_statuses)
                 else
                     null,
+                .live_type_ids = split.type_ids,
+                .live_statuses = split.statuses,
                 .ids_json = if (in.ids.len == 0) null else try sdk.stringify(ctx.arena, in.ids),
                 .changed = constraints.changed,
+                .requested = constraints.requested,
                 .search = in.search,
-                .filter = try slug_or_filter(ctx.arena, span, in),
+                .filters = try field_conditions.filters_of(
+                    ctx.arena,
+                    span.single,
+                    try slug_or_filter(ctx.arena, span, in),
+                    in.filters,
+                    ctx.now_ms,
+                ),
+                .sort = try field_conditions.sort_of(span.single, in.sort),
                 .created_by = created_by_of(ctx, granted, constraints.created_by),
                 .updated_by = author_of(constraints.updated_by),
                 .created_after_ms = constraints.created_after_ms,
@@ -466,6 +528,52 @@ pub fn Of(comptime Domain: type) type {
                 .order = in.order,
                 .limit = in.limit,
                 .offset = in.offset,
+            };
+        }
+
+        /// Which of the span's types the grant reads live only: every one (`live_only`), or
+        /// some, kept to their live statuses while the rest show drafts too.
+        const LiveSplit = struct {
+            live_only: bool,
+            type_ids: []const []const u8 = &.{},
+            statuses: []const []const u8 = &.{},
+        };
+
+        fn live_split(
+            ctx: *Ctx,
+            granted: *const Grant,
+            span: access_module.Span,
+            known: []const model.status.Status,
+        ) Error!LiveSplit {
+            std.debug.assert(span.briefs.len > 0);
+            std.debug.assert(known.len <= model.status.statuses_max);
+
+            var live_types: std.ArrayList([]const u8) = .empty;
+
+            for (span.briefs) |brief| {
+                if (granted.live_only_on(brief.handle, brief.public)) {
+                    live_types.append(ctx.arena, brief.id) catch return error.OutOfMemory;
+                }
+            }
+
+            if (live_types.items.len == 0 or live_types.items.len == span.briefs.len) {
+                return .{
+                    .live_only = live_types.items.len > 0,
+                };
+            }
+
+            var live: std.ArrayList([]const u8) = .empty;
+
+            for (known) |status| {
+                if (status.live and granted.allows_status(status.id)) {
+                    live.append(ctx.arena, status.id) catch return error.OutOfMemory;
+                }
+            }
+
+            return .{
+                .live_only = false,
+                .type_ids = live_types.items,
+                .statuses = live.items,
             };
         }
 
@@ -554,6 +662,7 @@ pub fn Of(comptime Domain: type) type {
 
                 return .{
                     .field = field,
+                    .operator = .any_of,
                     .values_json = given,
                 };
             }
@@ -688,4 +797,13 @@ fn without(
     }
 
     return buffer[0..len];
+}
+
+/// Whether a plugin's code made the call: an installed plugin, or a compiled-in one's
+/// operation, hook or job.
+fn plugin_running(ctx: *const Ctx) bool {
+    std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(ctx.plugin.len <= 64);
+
+    return ctx.caller == .plugin or ctx.plugin_called;
 }

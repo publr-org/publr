@@ -72,7 +72,7 @@ pub const File = struct {
         const row = try store.media.by_key(ctx.db, ctx.arena, in.key) orelse return error.NotFound;
         const signed_in = ctx.caller != .anonymous;
 
-        if (row.private and !signed_in) {
+        if (row.private and (!signed_in or library.public_only(granted))) {
             return error.NotFound;
         }
 

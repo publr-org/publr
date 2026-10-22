@@ -71,7 +71,7 @@ pub const View = struct {
 
         const row = try store.media.get(ctx.db, ctx.arena, in.id) orelse return error.NotFound;
 
-        if (row.private and ctx.caller == .anonymous) {
+        if (row.private and (ctx.caller == .anonymous or library.public_only(granted))) {
             return error.NotFound;
         }
 

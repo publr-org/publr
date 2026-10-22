@@ -114,7 +114,7 @@ fn reason_of(
     std.debug.assert(def.handle.len > 0);
     std.debug.assert(found.id.len > 0);
 
-    if (std.mem.eql(u8, found.status, "deleted")) {
+    if (std.mem.eql(u8, found.status, "trashed")) {
         return .deleted;
     }
 
@@ -130,9 +130,9 @@ fn reason_of(
         return null;
     }
 
-    const live_only = granted.record_filter.flags.live_only or ctx.delivery;
+    const live_only = granted.live_only_on(def.handle, def.public) or ctx.delivery;
 
-    if (live_only and !registry.Statuses.is_live(found.status)) {
+    if (live_only and !try @import("../status.zig").is_live(ctx, found.status)) {
         return null;
     }
 

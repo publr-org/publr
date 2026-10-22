@@ -161,31 +161,29 @@ pub const SetUp = struct {
     }
 };
 
-/// Enables it, granting what a provider is set up for: requests out, its secrets, and the
-/// room a model's answer takes (its raised limits).
+/// Enables it, granting what a provider is set up for: requests out and the room a model's
+/// answer takes (its raised limits). Its key is a secret it declares, set apart.
 fn start(ctx: *Ctx, name: []const u8) Error!void {
     std.debug.assert(name.len > 0);
     std.debug.assert(ctx.now_ms >= 0);
 
-    const enabled = try lifecycle.enable(ctx, name, .{});
+    const enabled = try lifecycle.enable(ctx, name, &.{});
     const shown = try state.requests_of(
         ctx.arena,
         &enabled.manifest,
         enabled.granted,
         enabled.denied,
+        enabled.grants,
     );
 
     for (shown) |request| {
         const wanted = std.mem.eql(u8, request.key, "http.fetch") or
-            std.mem.startsWith(u8, request.key, "secret.") or
             std.mem.startsWith(u8, request.key, "limit.");
 
         if (wanted and request.state == .pending) {
             _ = try lifecycle.decide(ctx, name, request.key, .grant);
         }
     }
-
-    ctx.notice("plugin.enabled", name);
 }
 
 pub const Test = struct {

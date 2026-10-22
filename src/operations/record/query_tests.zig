@@ -14,10 +14,12 @@ const author_type: model.content_type.Def = .{
     .public = true,
     .fields = &.{
         .{
+            .validation = .{
+                .required = true,
+            },
             .name = "name",
             .label = "Name",
             .kind = "string",
-            .required = true,
         },
         .{
             .name = "books",
@@ -38,10 +40,12 @@ const book_type: model.content_type.Def = .{
     .public = true,
     .fields = &.{
         .{
+            .validation = .{
+                .required = true,
+            },
             .name = "title",
             .label = "Title",
             .kind = "string",
-            .required = true,
         },
         .{
             .name = "views",
@@ -75,16 +79,20 @@ const chapter_type: model.content_type.Def = .{
     .public = true,
     .fields = &.{
         .{
+            .validation = .{
+                .required = true,
+            },
             .name = "title",
             .label = "Title",
             .kind = "string",
-            .required = true,
         },
         .{
+            .validation = .{
+                .required = true,
+            },
             .name = "book",
             .label = "Book",
             .kind = "reference",
-            .required = true,
             .options = .{
                 .to = &.{"book"},
             },
@@ -95,10 +103,12 @@ const ledger_type: model.content_type.Def = .{
     .handle = "ledger",
     .name = "Ledger",
     .fields = &.{.{
+        .validation = .{
+            .required = true,
+        },
         .name = "title",
         .label = "Title",
         .kind = "string",
-        .required = true,
     }},
 };
 
@@ -306,6 +316,31 @@ test "query: a hidden field is as if the type had none; own records are the call
     try std.testing.expectEqualStrings("[{\"title\":\"Bob's\"}]", mine.result.text);
 }
 
+test "query: a grant naming types by handle, as a plugin's own types are, reaches just those" {
+    var library: Library = .{};
+    try library.init();
+    defer library.deinit();
+
+    var admin = library.as_admin();
+
+    admin.parent = admin.allocate_operation_id();
+
+    const own_types: sdk.Grant = .{
+        .types = &.{"book"},
+    };
+    const books = try Query.run(&admin, .{
+        .query = "count(*[_type == \"book\"])",
+    }, &own_types);
+
+    try std.testing.expect(!std.mem.eql(u8, books.result.text, "0"));
+
+    const authors = Query.run(&admin, .{
+        .query = "*[_type == \"author\"]",
+    }, &own_types);
+
+    try std.testing.expectError(error.Denied, authors);
+}
+
 test "virtual: an author's books are the books pointing at it, in the order kept, then made" {
     var library: Library = .{};
     try library.init();
@@ -412,7 +447,7 @@ test "virtual: leaving out a record that needs its parent deletes it, restorable
         .purpose = .edit,
     });
 
-    try std.testing.expectEqualStrings("deleted", gone.record.status);
+    try std.testing.expectEqualStrings("trashed", gone.record.status);
     try std.testing.expect(contains(gone.document, book_id));
 
     const got = try SDK.dispatch(&admin, record.Get, .{

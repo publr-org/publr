@@ -3,6 +3,7 @@
 //! sandboxed plugin take the same path and the same checks. Reads give the live document
 //! and ignore fields the type does not name; a save writes only the fields it is given.
 
+const queue = @import("../../sdk/plugin/queue.zig");
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const record = @import("../record.zig");
@@ -52,12 +53,21 @@ pub fn Ref(comptime Doc: type, comptime type_handle: []const u8) type {
             if (try source.peekNextTokenType() == .string) {
                 const id = try std.json.innerParse([]const u8, allocator, source, options);
 
+                // A reference names a record: an empty one names none.
+                if (id.len == 0) {
+                    return error.UnexpectedToken;
+                }
+
                 return .{
                     .id = id,
                 };
             }
 
             const resolved = try std.json.innerParse(Resolved, allocator, source, options);
+
+            if (resolved.id.len == 0) {
+                return error.UnexpectedToken;
+            }
 
             return .{
                 .id = resolved.id,
@@ -71,12 +81,20 @@ pub fn Ref(comptime Doc: type, comptime type_handle: []const u8) type {
             options: std.json.ParseOptions,
         ) std.json.ParseFromValueError!@This() {
             if (source == .string) {
+                if (source.string.len == 0) {
+                    return error.UnexpectedToken;
+                }
+
                 return .{
                     .id = source.string,
                 };
             }
 
             const resolved = try std.json.innerParseFromValue(Resolved, allocator, source, options);
+
+            if (resolved.id.len == 0) {
+                return error.UnexpectedToken;
+            }
 
             return .{
                 .id = resolved.id,
@@ -122,12 +140,16 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
     return struct {
         pub const Item = Record(Document);
 
-        /// The live record; not found when it is another type's or has never been live.
-        pub fn get(ctx: *PluginCtx, id: []const u8) Error!Item {
+        /// The live record; not found when it is another type's or has never been live. Its
+        /// virtual fields as stored, the shape of `Document`, as `many` reads them.
+        pub fn get(any_ctx: anytype, id: []const u8) Error!Item {
+            const ctx = queue.base_of(any_ctx);
+
             std.debug.assert(id.len > 0);
 
             const got = try ctx.call(record.Get, .{
                 .id = id,
+                .purpose = .edit,
             });
 
             if (!std.mem.eql(u8, got.record.type, handle)) {
@@ -139,10 +161,12 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
 
         /// The one record whose unique `field` holds `value`, or null; two make a conflict.
         pub fn find_one(
-            ctx: *PluginCtx,
+            any_ctx: anytype,
             comptime field: std.meta.FieldEnum(Document),
             value: anytype,
         ) Error!?Item {
+            const ctx = queue.base_of(any_ctx);
+
             const text = try filter_text(ctx, value);
             const listed = try ctx.call(record.List, .{
                 .type = handle,
@@ -165,7 +189,9 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
         }
 
         /// A new record holding `value`; its id.
-        pub fn create(ctx: *PluginCtx, value: Document, options: Create) Error![]const u8 {
+        pub fn create(any_ctx: anytype, value: Document, options: Create) Error![]const u8 {
+            const ctx = queue.base_of(any_ctx);
+
             const document = try encode(ctx, value);
             const created = try ctx.call(record.Create, .{
                 .type = handle,
@@ -181,11 +207,13 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
         /// Writes `fields`, a struct naming some of the document's fields; the others keep
         /// their values.
         pub fn save(
-            ctx: *PluginCtx,
+            any_ctx: anytype,
             id: []const u8,
             fields: anytype,
             options: Save,
         ) Error!record.Save.Out {
+            const ctx = queue.base_of(any_ctx);
+
             comptime check_fields(@TypeOf(fields));
             std.debug.assert(id.len > 0);
 
@@ -201,7 +229,9 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
 
         /// A page of records, newest first; `where` is `.{}` or names one field:
         /// `.{ .product = product_id }`.
-        pub fn find(ctx: *PluginCtx, where: anytype, page: Page) Error![]const Item {
+        pub fn find(any_ctx: anytype, where: anytype, page: Page) Error![]const Item {
+            const ctx = queue.base_of(any_ctx);
+
             const Where = @TypeOf(where);
             const keys = comptime std.meta.fieldNames(Where);
 
@@ -234,7 +264,9 @@ pub fn of(comptime Document: type, comptime handle: []const u8) type {
 
         /// The live records of these ids, in one list; an id with no record readable is
         /// left out, so the answer may be shorter and is in no promised order.
-        pub fn many(ctx: *PluginCtx, ids: []const []const u8) Error![]const Item {
+        pub fn many(any_ctx: anytype, ids: []const []const u8) Error![]const Item {
+            const ctx = queue.base_of(any_ctx);
+
             std.debug.assert(ids.len <= record.list_max);
 
             if (ids.len == 0) {
@@ -312,7 +344,7 @@ fn encode(ctx: *PluginCtx, value: anytype) Error![]const u8 {
 fn filter_text(ctx: *PluginCtx, value: anytype) Error![]const u8 {
     const Value = @TypeOf(value);
 
-    std.debug.assert(ctx.now_ms() >= 0);
+    std.debug.assert(ctx.now().ms >= 0);
 
     return switch (@typeInfo(Value)) {
         .int, .comptime_int => std.fmt.allocPrint(ctx.arena(), "{d}", .{value}) catch {

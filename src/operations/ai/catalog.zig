@@ -23,6 +23,8 @@ pub const Entry = struct {
     version: []const u8 = "",
     /// The built module, relative to the catalog.
     module: []const u8 = "",
+    /// The plugins it needs installed first, by name.
+    requires: []const []const u8 = &.{},
 };
 
 pub const File = struct {

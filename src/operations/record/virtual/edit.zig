@@ -104,10 +104,10 @@ fn write_difference(
         }
 
         // A record that needs its parent is deleted (restorable) rather than left without.
-        if (reference.required and !reference.many) {
+        if (reference.validation.required and !reference.many) {
             const away: records.Transition.In = .{
                 .id = child,
-                .to = "deleted",
+                .transition = "trash",
             };
 
             _ = try registry.SDK.dispatch(ctx, records.Transition, away);
@@ -280,7 +280,7 @@ fn points_here(
         };
     };
 
-    const deleted = std.mem.eql(u8, got.record.status, "deleted");
+    const deleted = std.mem.eql(u8, got.record.status, "trashed");
 
     if (deleted or !std.mem.eql(u8, got.record.type, def.options.to[0])) {
         return false;

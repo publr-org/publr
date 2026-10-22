@@ -13,6 +13,8 @@ const Def = content_type.Def;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "content_type",
+    .label = "Content types",
+    .area = .site,
     .summary = "Content types: the shapes records are made of",
     .details =
     \\A content type is data, not code: a handle, names, a kind, whether it is public,
@@ -36,11 +38,11 @@ pub const brief_of = definition.brief_of;
 
 const new_definition =
     \\{"handle":"note","name":"Note","public":false,
-    \\ "fields":[{"name":"title","label":"Title","kind":"string","required":true}]}
+    \\ "fields":[{"name":"title","label":"Title","kind":"string","validation":{"required":true}}]}
 ;
 pub const example_definition =
     \\{"handle":"post","name":"Post","public":true,
-    \\ "fields":[{"name":"title","label":"Title","kind":"string","required":true},
+    \\ "fields":[{"name":"title","label":"Title","kind":"string","validation":{"required":true}},
     \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"title"}},
     \\ {"name":"body","label":"Body","kind":"richtext","searchable":true},
     \\ {"name":"related","label":"Related","kind":"reference","many":true,
@@ -57,11 +59,11 @@ pub const Create = struct {
         \\`form`), `editor_config`, `title_field` (default `title`: records take their
         \\title from the field of that name when the type has one), `statuses` (restrict
         \\to some of the registered statuses), and `fields`, which may be empty. Each
-        \\field: `name`, `label`, `kind`, and optionally `required`, `filterable`,
-        \\`searchable`, `many` (a list of values; any kind but slug and group),
-        \\`options` (`min`, `max`, `min_len`, `max_len`, `choices`,
-        \\`source`, `to`, `taxonomy`, `rows`) and `fields` for group/repeater. Use
-        \\`content_type validate` to see problems.
+        \\field: `name`, `label`, `kind`, and optionally `filterable`, `searchable`, `many`
+        \\(a list of values; any kind but slug and group), `validation` (the rules:
+        \\`required`, `unique`, `min`, `max`, `min_len`, `max_len`, `hint`, ...), `options`
+        \\(how it is edited: `choices`, `source`, `to`, `taxonomy`, `rows`, ...) and
+        \\`fields` for group/repeater. Use `content_type validate` to see problems.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -279,6 +281,8 @@ pub const Delete = struct {
     };
     pub const Out = struct {
         deleted: bool,
+        /// The handle it had.
+        handle: []const u8,
         records_removed: u32,
         /// Its trash entry: `trash restore --id` brings it back.
         trash: []const u8 = "",
@@ -288,6 +292,7 @@ pub const Delete = struct {
     };
     pub const example_out: Out = .{
         .deleted = true,
+        .handle = "page",
         .records_removed = 0,
         .trash = "0190a1b2c3d40001a1b2c3d4",
     };
@@ -307,6 +312,7 @@ pub const Delete = struct {
 
         return .{
             .deleted = deleted.deleted,
+            .handle = deleted.handle,
             .records_removed = deleted.removed,
             .trash = deleted.trash,
         };

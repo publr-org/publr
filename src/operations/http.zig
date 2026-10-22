@@ -11,12 +11,17 @@ const secrets = model.secrets;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "http",
+    .label = "Outside requests",
+    .area = .system,
     .summary = "Requests a plugin sends out, its secrets filled in as they leave",
     .details =
-    \\A plugin granted `http.fetch` sends a request to a domain it declared
-    \\(`allowed_domains`): https, or plain http to this machine. Where it writes
+    \\A plugin granted `http.fetch` sends a request to a domain on its grant (exact,
+    \\`*.example.com`, or `*` for any public address): https, or in development plain
+    \\http to this machine when listed. In production local and private addresses and the
+    \\server itself are refused, whatever is listed; redirects stay within the domains, and
+    \\each request is logged (host, path, status). Where it writes
     \\`{secret:NAME}` (in the address, a header or the body) the secret's value is filled
-    \\in as the request leaves, when the plugin was granted `secret.NAME`; the plugin never
+    \\in as the request leaves, when the plugin declares it in `.secrets`; the plugin never
     \\holds it, and a value the answer echoes back is put back as `{secret:NAME}`. Plugins
     \\only.
     ,
@@ -27,6 +32,11 @@ pub const operations = [_]type{ Fetch, stream.Stream, stream.Read };
 pub const stream = @import("http_stream.zig");
 const timed = @import("http_timed.zig");
 const form_parts = @import("http_form.zig");
+const guards = @import("http_guard.zig");
+const downloads = @import("http_download.zig");
+const request_log = @import("http_log.zig");
+const plugin_access = @import("../sdk/plugin_access.zig");
+const registry = @import("../server/registry.zig");
 
 pub const headers_max: u32 = 16;
 pub const FormPart = form_parts.Part;
@@ -48,8 +58,11 @@ pub const Fetch = struct {
     pub const description = "Send a request out, as the calling plugin";
     pub const details =
         \\Answers the status and the body (up to 1 MiB). Refused unless the caller is a plugin
-        \\granted `http.fetch`, the address's host is one it declared, and every
-        \\`{secret:NAME}` it names was granted (`secret.NAME`) and has a value.
+        \\granted `http.fetch`, every hop's host is among the grant's domains (and, in
+        \\production, resolves to no local or private address), and every `{secret:NAME}`
+        \\it names is declared in the plugin's `.secrets` and has a value (else "<label>
+        \\isn't set"). Logged under the call or run: method, host, path, status, time; never
+        \\the query, headers or bodies.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -78,7 +91,7 @@ pub const Fetch = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .method = "GET, POST, PUT, PATCH or DELETE",
-        .url = "https, or http to this machine; may hold {secret:NAME}",
+        .url = "https, or http to this machine in development; may hold {secret:NAME}",
         .headers = "Up to 16, as name and value; values may hold {secret:NAME}",
         .body = "Up to 8 MiB; may hold {secret:NAME}",
         .form = "Up to 16 parts in place of the body: name, value, and for a file " ++
@@ -89,36 +102,100 @@ pub const Fetch = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(headers_max > 0);
 
-        const plugin = switch (ctx.caller) {
-            .plugin => |plugin| plugin,
-            else => return error.Denied,
-        };
-        const Method = std.http.Method;
-        const method = std.meta.stringToEnum(Method, in.method) orelse return error.Invalid;
-        const host = host_of(in.url) orelse return error.Invalid;
+        const fetcher = fetcher_of(ctx) orelse return error.Denied;
 
-        if (in.headers.len > headers_max or in.body.len > body_bytes_max) {
-            return error.Invalid;
-        }
-
-        if (!allowed(ctx, plugin.name, host)) {
-            return ctx.fail(not_allowed);
-        }
-
-        var filling = try Filling.of(ctx, plugin, in);
-
-        if (in.form.len > 0) {
-            try with_form(ctx, &filling, in);
-        }
-
-        return send(ctx, method, &filling);
+        return fetch_as(ctx, fetcher, in, timed.timeout_ms);
     }
 };
+
+/// `in` sent for `fetcher` under its guard and secrets, given up on after `limit_ms`: what
+/// `http.fetch` runs, and a sign-in provider's exchange with its own shorter limit.
+pub fn fetch_as(ctx: *Ctx, fetcher: Fetcher, in: Fetch.In, limit_ms: u32) Error!Fetch.Out {
+    std.debug.assert(fetcher.name.len > 0);
+    std.debug.assert(limit_ms > 0 and limit_ms <= timed.timeout_ms);
+
+    const Method = std.http.Method;
+    const method = std.meta.stringToEnum(Method, in.method) orelse return error.Invalid;
+    const uri = std.Uri.parse(in.url) catch return error.Invalid;
+
+    if (in.headers.len > headers_max or in.body.len > body_bytes_max) {
+        return error.Invalid;
+    }
+
+    const guard = guard_of(ctx, fetcher);
+
+    if (guards.refusal_of_name(guard, uri)) |refusal| {
+        request_log.refused(ctx, fetcher.name, in.method, uri, refusal);
+
+        return ctx.fail(not_allowed);
+    }
+
+    var filling = Filling.of(ctx, fetcher.access, in) catch |err| {
+        if (err == error.Failed) {
+            const reason = if (ctx.failure) |failure| failure.message else "a secret";
+
+            request_log.refused_because(ctx, fetcher.name, in.method, uri, reason);
+        }
+
+        return err;
+    };
+
+    if (in.form.len > 0) {
+        try with_form(ctx, &filling, in);
+    }
+
+    return send(ctx, method, &filling, fetcher, guard, limit_ms);
+}
+
+/// The plugin a call goes out for: an installed one by its grants, a compiled-in one (its
+/// code calling, whoever it runs for) by the grants it was built with. Null for core's own
+/// code, which calls out by other ways.
+pub const Fetcher = struct {
+    name: []const u8,
+    access: *const plugin_access.Access,
+};
+
+pub fn fetcher_of(ctx: *Ctx) ?Fetcher {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const name = switch (ctx.caller) {
+        .plugin => |plugin| plugin.name,
+        else => if (ctx.plugin_called) ctx.plugin else "",
+    };
+
+    if (name.len == 0) {
+        return null;
+    }
+
+    const installed = switch (ctx.caller) {
+        .plugin => |plugin| plugin.access,
+        else => null,
+    };
+    const access = installed orelse registry.SDK.compiled_access(name) orelse return null;
+
+    return .{
+        .name = name,
+        .access = access,
+    };
+}
+
+/// Where `fetcher` may send: the domains on its `http.fetch` grant (none when it is off),
+/// under the server's address rules.
+pub fn guard_of(ctx: *const Ctx, fetcher: Fetcher) guards.Guard {
+    std.debug.assert(fetcher.name.len > 0);
+
+    const held = fetcher.access.held_of("http.fetch");
+
+    return .{
+        .domains = if (held) |grant| grant.domains else &.{},
+        .rule = ctx.outside,
+    };
+}
 
 pub const not_allowed: sdk.operation.Failure = .{
     .name = "NotAllowed",
     .status = 403,
-    .message = "Not a domain the plugin declared",
+    .message = "Not a domain on the plugin's http.fetch grant, or an address refused here",
 };
 
 pub const unreachable_failure: sdk.operation.Failure = .{
@@ -135,7 +212,7 @@ pub const Filling = struct {
     headers: []const std.http.Header,
     body: []const u8,
 
-    pub fn of(ctx: *Ctx, plugin: sdk.Caller.Plugin, in: Fetch.In) Error!Filling {
+    pub fn of(ctx: *Ctx, access: *const plugin_access.Access, in: Fetch.In) Error!Filling {
         std.debug.assert(in.url.len > 0);
         std.debug.assert(in.headers.len <= headers_max);
 
@@ -147,25 +224,22 @@ pub const Filling = struct {
         const values = try ctx.arena.alloc([]const u8, names.len);
 
         for (names, values) |secret_name, *value| {
-            const key = try std.fmt.allocPrint(ctx.arena, "secret.{s}", .{secret_name});
-            const access = plugin.access orelse return error.Denied;
-
-            if (!access.has(key)) {
+            const declared = secrets.declared_find(access.secrets, secret_name) orelse {
                 return ctx.fail(.{
-                    .name = "SecretNotGranted",
+                    .name = "SecretNotDeclared",
                     .status = 403,
-                    .message = key,
+                    .message = "The plugin names a secret it does not declare in .secrets",
                 });
-            }
+            };
 
             value.* = try secret.value_of(ctx, secret_name) orelse {
-                const missing: sdk.operation.Failure = .{
+                return ctx.fail(.{
                     .name = "SecretMissing",
                     .status = 409,
-                    .message = secret_name,
-                };
-
-                return ctx.fail(missing);
+                    .message = try std.fmt.allocPrint(ctx.arena, "{s} isn't set", .{
+                        declared.label,
+                    }),
+                });
             };
         }
 
@@ -280,7 +354,14 @@ fn fill(
     };
 }
 
-fn send(ctx: *Ctx, method: std.http.Method, filling: *const Filling) Error!Fetch.Out {
+fn send(
+    ctx: *Ctx,
+    method: std.http.Method,
+    filling: *const Filling,
+    fetcher: Fetcher,
+    guard: guards.Guard,
+    limit_ms: u32,
+) Error!Fetch.Out {
     std.debug.assert(filling.url.len > 0);
     std.debug.assert(answer_bytes_max > 0);
 
@@ -288,175 +369,91 @@ fn send(ctx: *Ctx, method: std.http.Method, filling: *const Filling) Error!Fetch
         return error.Unavailable;
     }
 
+    var trace: timed.Trace = .{
+        .arena = ctx.arena,
+    };
+    const started = std.Io.Clock.awake.now(ctx.io);
     // In memory of its own (TLS loads the system's certificates, more than a request
     // holds), within the time limit; the answer is copied into the call's arena.
-    const result = timed.fetch(ctx.io, ctx.arena, .{
+    const result = timed.fetch_traced(ctx.io, ctx.arena, .{
         .url = filling.url,
         .method = method,
         .payload = if (filling.body.len > 0) filling.body else null,
         .headers = filling.headers,
         .body_max = answer_bytes_max,
-    }, timed.timeout_ms) catch |err| {
-        std.log.warn("http.fetch {s}: {t}", .{ ctx.plugin, err });
+        .guard = guard,
+    }, limit_ms, &trace);
+    const elapsed = started.durationTo(std.Io.Clock.awake.now(ctx.io));
+
+    try request_log.hops(ctx, fetcher.name, @tagName(method), filling, &trace, elapsed);
+
+    const answer = result catch |err| {
+        if (err == error.Refused) {
+            return ctx.fail(not_allowed);
+        }
+
+        std.log.warn("http.fetch {s}: {t}", .{ fetcher.name, err });
+
+        if (err == error.TimedOut) {
+            try request_log.gave_up(ctx, fetcher.name, @tagName(method), filling, limit_ms);
+        }
 
         return ctx.fail(unreachable_failure);
     };
 
     return .{
-        .status = @intFromEnum(result.status),
-        .body = try filling.scrub(ctx, result.body),
+        .status = @intFromEnum(answer.status),
+        .body = try filling.scrub(ctx, answer.body),
     };
 }
 
-/// What core itself downloads (a file to import): a plain GET of a public address.
-pub const Downloaded = struct {
-    status: u16,
-    bytes: []const u8,
-    /// What the caller frees with its allocator; `bytes` lie in it.
-    buffer: []u8,
-};
+pub const Downloaded = downloads.Downloaded;
+pub const download = downloads.download;
+pub const public_host = downloads.public_host;
 
-/// `url`, https or http, on a public host (never this machine or its network), up to
-/// `bytes_max`, into `allocator`'s memory.
-pub fn download(
-    ctx: *Ctx,
-    allocator: std.mem.Allocator,
-    url: []const u8,
-    bytes_max: u32,
-) Error!Downloaded {
-    std.debug.assert(bytes_max > 0);
-    std.debug.assert(url.len > 0);
-
-    const uri = std.Uri.parse(url) catch return error.Invalid;
-    const host = switch (uri.host orelse return error.Invalid) {
-        .raw, .percent_encoded => |text| text,
+test "a compiled-in plugin is held to its http.fetch domains, as an installed one is" {
+    const plugin_module = @import("../sdk/plugin.zig");
+    const Courier = struct {
+        pub const manifest: plugin_module.Manifest = .{
+            .name = "courier",
+            .version = "0.1.0",
+            .summary = "Test plugin: sends",
+        };
+        pub const permissions = [_]model.sandboxed_plugin.Ask{.{
+            .key = "http.fetch",
+            .domains = &.{ "api.supplier.com", "localhost" },
+            .reason = "Sends prices",
+        }};
     };
-    const web = std.mem.eql(u8, uri.scheme, "https") or std.mem.eql(u8, uri.scheme, "http");
+    const grants = comptime plugin_module.grants_of(Courier);
+    var ctx: Ctx = undefined;
 
-    if (!web or host.len == 0 or on_this_machine(host) or on_its_network(host)) {
-        return ctx.fail(not_public);
-    }
+    ctx.outside = .{};
 
-    if (builtin.os.tag == .wasi) {
-        return error.Unavailable;
-    }
-
-    const result = timed.fetch(ctx.io, allocator, .{
-        .url = url,
-        .body_max = bytes_max,
-    }, timed.timeout_ms) catch |err| {
-        std.log.warn("download {s}: {t}", .{ url, err });
-
-        return ctx.fail(unreachable_failure);
+    const fetcher: Fetcher = .{
+        .name = "courier",
+        .access = &grants.access,
     };
+    const guard = guard_of(&ctx, fetcher);
+    const listed = try std.Uri.parse("https://api.supplier.com/prices");
+    const elsewhere = try std.Uri.parse("https://elsewhere.example.org/");
+    const under = try std.Uri.parse("https://eu.api.supplier.com/prices");
+    const here = try std.Uri.parse("http://localhost:8080/");
 
-    return .{
-        .status = @intFromEnum(result.status),
-        .bytes = result.body,
-        .buffer = result.body,
-    };
-}
+    try std.testing.expectEqual(null, guards.refusal_of_name(guard, listed));
+    try std.testing.expect(guards.refusal_of_name(guard, elsewhere).? == .not_listed);
+    try std.testing.expect(guards.refusal_of_name(guard, under).? == .not_listed);
+    try std.testing.expect(guards.refusal_of_name(guard, here).? == .local);
 
-const not_public: sdk.operation.Failure = .{
-    .name = "NotPublic",
-    .status = 422,
-    .message = "Only an http or https address on the web: never this machine or its network",
-};
-
-/// A host on the web, never this machine or its network: what may be downloaded from.
-pub fn public_host(host: []const u8) bool {
-    std.debug.assert(host.len <= 64 << 10);
-
-    return host.len > 0 and !on_this_machine(host) and !on_its_network(host);
-}
-
-/// A private address: never downloaded from on the server's behalf.
-fn on_its_network(host: []const u8) bool {
-    std.debug.assert(host.len <= 64 << 10);
-
-    const prefixes = [_][]const u8{ "10.", "192.168.", "169.254.", "0.", "[fc", "[fd", "[fe80" };
-
-    for (prefixes) |prefix| {
-        if (std.mem.startsWith(u8, host, prefix)) {
-            return true;
-        }
-    }
-
-    if (std.mem.startsWith(u8, host, "172.")) {
-        const rest = host[4..];
-        const dot = std.mem.indexOfScalar(u8, rest, '.') orelse return false;
-        const second = std.fmt.parseInt(u8, rest[0..dot], 10) catch return false;
-
-        return second >= 16 and second <= 31;
-    }
-
-    return std.mem.endsWith(u8, host, ".local") or std.mem.endsWith(u8, host, ".internal");
-}
-
-fn on_this_machine(host: []const u8) bool {
-    std.debug.assert(host.len <= 64 << 10);
-
-    return std.mem.eql(u8, host, "localhost") or std.mem.startsWith(u8, host, "127.") or
-        std.mem.endsWith(u8, host, ".localhost") or std.mem.eql(u8, host, "[::1]");
-}
-
-/// The host of an https address, or of an http one on this machine; null otherwise.
-pub fn host_of(url: []const u8) ?[]const u8 {
-    std.debug.assert(url.len <= 64 << 10);
-
-    const uri = std.Uri.parse(url) catch return null;
-    const host = switch (uri.host orelse return null) {
-        .raw, .percent_encoded => |text| text,
-    };
-    const secure = std.mem.eql(u8, uri.scheme, "https");
-    const local = on_this_machine(host);
-
-    if (host.len == 0 or !(secure or (std.mem.eql(u8, uri.scheme, "http") and local))) {
-        return null;
-    }
-
-    return host;
-}
-
-/// Whether `plugin` declared `host` (or a domain it is under), or `*`: any address, but
-/// never this machine, which a plugin names outright when it means it. A plugin compiled in
-/// is the core's own: it may reach anywhere.
-pub fn allowed(ctx: *Ctx, plugin: []const u8, host: []const u8) bool {
-    std.debug.assert(plugin.len > 0);
-    std.debug.assert(host.len > 0);
-
-    const sandboxed = ctx.sandboxed_plugins orelse return true;
-
-    for (sandboxed.manifests()) |manifest| {
-        if (!std.mem.eql(u8, manifest.name, plugin)) {
-            continue;
-        }
-
-        for (manifest.allowed_domains) |domain| {
-            const under = std.mem.endsWith(u8, host, domain) and host.len > domain.len and
-                host[host.len - domain.len - 1] == '.';
-            const anywhere = std.mem.eql(u8, domain, "*") and !on_this_machine(host);
-
-            if (std.mem.eql(u8, host, domain) or under or anywhere) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    return true;
-}
-
-test "an address goes out over https, or plain http to this machine" {
-    try std.testing.expectEqualStrings("api.example.com", host_of("https://api.example.com/v1").?);
-    try std.testing.expectEqualStrings("localhost", host_of("http://localhost:11434/v1").?);
-    try std.testing.expect(host_of("http://api.example.com/v1") == null);
-    try std.testing.expect(host_of("ftp://example.com") == null);
-    try std.testing.expect(host_of("not a url") == null);
+    ctx.outside.production = false;
+    try std.testing.expectEqual(null, guards.refusal_of_name(guard_of(&ctx, fetcher), here));
 }
 
 test {
     _ = timed;
     _ = form_parts;
+    _ = guards;
+    _ = downloads;
+    _ = request_log;
+    _ = @import("http_hops.zig");
 }

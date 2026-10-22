@@ -19,6 +19,8 @@ const steps = store.ai_steps;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "ai",
+    .label = "AI conversations",
+    .area = .system,
     .summary = "Conversations with a model: a person asks, an agent builds as their device",
     .details =
     \\A person asks for something in plain words (`ai ask`); an agent then works on the
@@ -170,7 +172,6 @@ pub const Ask = struct {
             });
         }
 
-        ctx.notice("ai.asked", id);
         live.changed(ctx, id);
 
         return conversation_of(try own(ctx, id));
@@ -249,7 +250,6 @@ pub const Reply = struct {
             });
         }
 
-        ctx.notice("ai.asked", row.id);
         live.changed(ctx, row.id);
 
         return conversation_of(try own(ctx, row.id));
@@ -503,7 +503,6 @@ pub const Stop = struct {
 
         if (ai.State.parse(row.state) == .running) {
             _ = try conversations.set_state(ctx.db, row.id, .stopping, ctx.now_ms);
-            ctx.notice("ai.stopping", row.id);
             live.changed(ctx, row.id);
         }
 

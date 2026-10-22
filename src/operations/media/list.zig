@@ -141,6 +141,10 @@ pub const List = struct {
 
         filter.type_id = media_type.id;
 
+        if (library.public_only(granted)) {
+            filter.private = false;
+        }
+
         const limit = @max(1, @min(in.limit, listing.page_max));
         const rows = try listing.items(ctx.db, ctx.arena, filter, limit, in.offset);
         const items = try ctx.arena.alloc(library.Item, rows.len);

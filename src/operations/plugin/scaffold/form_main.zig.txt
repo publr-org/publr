@@ -1,94 +1,152 @@
-//! __Title__: one set of settings people edit on a page of its own in the admin.
+//! One set of settings, edited on a page of its own.
+//!
+//! Read them with `__name__ read`, change them with `__name__ save`. The page in the admin is
+//! a form drawn from `save`'s input, filled from what `read` answers.
 const std = @import("std");
 const publr = @import("publr");
 
-const sdk = publr.sdk;
-const PluginCtx = publr.plugin.PluginCtx;
-const Settings = struct { title: []const u8, description: []const u8 = "" };
-const settings = publr.records.of(Settings, "__name___settings");
-
-pub const manifest: publr.plugin.Manifest = .{
+const manifest: publr.Manifest = .{
     .name = "__name__",
     .version = "0.1.0",
-    .summary = "One set of settings, edited on a page of its own",
 };
 
-pub const namespaces = [_]sdk.operation.Namespace{.{
-    .name = "__name__",
-    .summary = "__Title__'s settings",
-    .details = "Read them with `__name__ read`, change them with `__name__ save`.",
-}};
+/// __Title__ settings
+///
+/// The plugin's one set of settings.
+pub const Settings = struct {
+    /// Title
+    ///
+    /// The site's name.
+    title: []const u8,
+    /// Description
+    ///
+    /// Shown under the title.
+    description: []const u8 = "",
+};
 
-pub const content_types = [_]publr.plugin.ContentTypeDef{.{
-    .handle = "__name___settings",
-    .name = "__Title__ settings",
+pub const Stored = publr.record.define(Settings, .{
+    .name = "__name__.settings",
     .kind = .settings,
-    .title_field = "title",
-    .fields = &.{
-        .{ .name = "title", .label = "Title", .kind = "string", .required = true },
-        .{ .name = "description", .label = "Description", .kind = "text" },
+    // Edited on the plugin's own page; no second entry in the menu.
+    .menu = .none,
+    // The record checks its own data on every write, whoever writes; the rules also show
+    // beside each field's help.
+    .fields = .{
+        .title = .{
+            .validation = .{
+                .min_len = 1,
+                .max_len = 160,
+            },
+        },
+        .description = .{
+            .kind = "text",
+            .validation = .{
+                .max_len = 2000,
+            },
+        },
     },
-}};
+});
 
-pub const operations = [_]type{ Read, Save };
+const the_settings = publr.query.prepare(
+    \\*[_type == "__name__.settings"][0]{ "id": _id, title, description }
+, .{});
 
-/// The page is a declaration: the admin draws the form from `Save`'s input, filled from
-/// what `Read` answers, the same compiled in or installed.
-pub const pages = [_]publr.plugin.Page{.{
+const Found = struct {
+    id: []const u8,
+    title: []const u8,
+    description: []const u8 = "",
+};
+
+pub const ReadIn = struct {};
+
+pub const ReadOut = struct {
+    /// The site's name
+    title: []const u8,
+    /// Shown under the title
+    description: []const u8 = "",
+};
+
+/// The settings as they are.
+///
+/// Administrators, and callers granted `__name__.read`. Before the first save, an empty
+/// title.
+///
+/// Example:
+///   in: {}
+///   out: { "title": "My site", "description": "" }
+pub const Read = publr.operation.define(ReadIn, ReadOut, .{
+    .name = "read",
+    .kind = .read,
+    .run = read,
+});
+
+fn read(ctx: *publr.Ctx, _: ReadIn) publr.Error!ReadOut {
+    std.debug.assert(ctx.now().ms >= 0);
+
+    const found = try the_settings.execute(ctx, ?Found, .{}) orelse return .{ .title = "" };
+
+    return .{
+        .title = found.title,
+        .description = found.description,
+    };
+}
+
+pub const SaveIn = struct {
+    /// The site's name
+    title: []const u8,
+    /// Shown under the title
+    description: []const u8 = "",
+};
+
+pub const SaveOut = struct {
+    /// The settings' id
+    id: []const u8,
+};
+
+/// Changes the settings.
+///
+/// Administrators, and callers granted `__name__.save`.
+///
+/// Example:
+///   in: { "title": "My site", "description": "" }
+///   out: { "id": "0a1b2c3d4e5f60718293a4b5" }
+pub const Save = publr.operation.define(SaveIn, SaveOut, .{
+    .name = "save",
+    .kind = .write,
+    .run = save,
+});
+
+fn save(ctx: *publr.Ctx, in: SaveIn) publr.Error!SaveOut {
+    std.debug.assert(in.title.len <= 1 << 16);
+
+    const value: Settings = .{
+        .title = in.title,
+        .description = in.description,
+    };
+    const found = try the_settings.execute(ctx, ?Found, .{}) orelse {
+        return .{ .id = try Stored.create(ctx, value) };
+    };
+
+    _ = try Stored.save(ctx, found.id, value, .{});
+
+    return .{
+        .id = found.id,
+    };
+}
+
+const settings: publr.plugin.Page = .{
     .path = "settings",
     .label = "__Title__",
     .icon = "settings",
-    .form = .{ .read = Read, .save = Save, .multiline = &.{"description"} },
-}};
-
-pub const Read = struct {
-    pub const name = "__name__.read";
-    pub const description = "The settings as they are";
-    pub const details = "Administrators, and callers granted `__name__.read`. Before the first save, an empty title.";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = Settings;
-    pub const example: In = .{};
-    pub const example_out: Out = .{ .title = "My site", .description = "" };
-
-    pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        const found = try settings.find(ctx, .{}, .{ .limit = 1 });
-
-        return if (found.len == 0) .{ .title = "" } else found[0].value;
-    }
+    .form = .{
+        .read = Read,
+        .save = Save,
+        .multiline = &.{"description"},
+    },
 };
 
-pub const Save = struct {
-    pub const name = "__name__.save";
-    pub const description = "Change the settings";
-    pub const details = "Administrators, and callers granted `__name__.save`. Fails as invalid when the title is not 1 to 160 characters.";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = Settings;
-    pub const Out = struct { id: []const u8 };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .title = "The site's name",
-        .description = "Shown under the title",
-    };
-    pub const example: In = .{ .title = "My site", .description = "" };
-    pub const example_out: Out = .{ .id = "0a1b2c3d4e5f60718293a4b5" };
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        if (in.title.len == 0 or in.title.len > 160 or in.description.len > 2000) {
-            return error.Invalid;
-        }
-
-        const found = try settings.find(ctx, .{}, .{ .limit = 1 });
-
-        if (found.len == 0) {
-            return .{ .id = try settings.create(ctx, in, .{}) };
-        }
-
-        _ = try settings.save(ctx, found[0].id, in, .{});
-
-        return .{ .id = found[0].id };
-    }
-};
+pub const plugin = publr.plugin.define(manifest, .{
+    .records = &.{Stored},
+    .operations = &.{ Read, Save },
+    .pages = &.{settings},
+});

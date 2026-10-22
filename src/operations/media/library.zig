@@ -260,6 +260,15 @@ pub fn save(ctx: *Ctx, id: []const u8, document: anytype) Error!void {
 
 /// The file's row, or `NotFound`: one only the library writes, so a record of the type
 /// without one is not a file.
+/// Whether the grant keeps private files out of reach: a plugin's `media.read` without
+/// `.private`.
+pub fn public_only(granted: *const sdk.Grant) bool {
+    std.debug.assert(granted.allows());
+    std.debug.assert(granted.field_mask.len <= sdk.grant.list_len_max);
+
+    return granted.record_filter.flags.public_types_only;
+}
+
 pub fn row_of(ctx: *Ctx, id: []const u8) Error!store.media.Row {
     std.debug.assert(id.len > 0);
     std.debug.assert(ctx.now_ms >= 0);

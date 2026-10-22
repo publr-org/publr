@@ -2,6 +2,7 @@
 //! Every call is an `internal` operation through `ctx.call`, so it reaches the calling
 //! plugin's own records in the request's app, compiled in or installed alike.
 
+const queue = @import("../../sdk/plugin/queue.zig");
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const internal = @import("../internal.zig");
@@ -28,7 +29,9 @@ pub fn of(comptime Document: type, comptime kind: []const u8) type {
     return struct {
         pub const Item = Record(Document);
 
-        pub fn get(ctx: *PluginCtx, id: []const u8) Error!Item {
+        pub fn get(any_ctx: anytype, id: []const u8) Error!Item {
+            const ctx = queue.base_of(any_ctx);
+
             std.debug.assert(id.len > 0);
 
             const got = try ctx.call(internal.Get, .{
@@ -57,7 +60,9 @@ pub fn of(comptime Document: type, comptime kind: []const u8) type {
         }
 
         /// A page of records, newest first; `where` is `.{}` or names one indexed field.
-        pub fn find(ctx: *PluginCtx, where: anytype, page: Page) Error![]const Item {
+        pub fn find(any_ctx: anytype, where: anytype, page: Page) Error![]const Item {
+            const ctx = queue.base_of(any_ctx);
+
             const Where = @TypeOf(where);
             const keys = comptime std.meta.fieldNames(Where);
 
@@ -88,7 +93,9 @@ pub fn of(comptime Document: type, comptime kind: []const u8) type {
         }
 
         /// A new record holding `value`; its id.
-        pub fn create(ctx: *PluginCtx, value: Document) Error![]const u8 {
+        pub fn create(any_ctx: anytype, value: Document) Error![]const u8 {
+            const ctx = queue.base_of(any_ctx);
+
             const created = try ctx.call(internal.Create, .{
                 .kind = kind,
                 .document = try encode(ctx, value),
@@ -102,11 +109,13 @@ pub fn of(comptime Document: type, comptime kind: []const u8) type {
         /// Writes `fields`, naming some of the document's fields; the others keep their
         /// values. Its new version.
         pub fn save(
-            ctx: *PluginCtx,
+            any_ctx: anytype,
             id: []const u8,
             fields: anytype,
             expected_version: ?i64,
         ) Error!i64 {
+            const ctx = queue.base_of(any_ctx);
+
             comptime check_fields(@TypeOf(fields));
             std.debug.assert(id.len > 0);
 
@@ -121,7 +130,9 @@ pub fn of(comptime Document: type, comptime kind: []const u8) type {
         }
 
         /// Whether the record was there to delete.
-        pub fn delete(ctx: *PluginCtx, id: []const u8) Error!bool {
+        pub fn delete(any_ctx: anytype, id: []const u8) Error!bool {
+            const ctx = queue.base_of(any_ctx);
+
             std.debug.assert(id.len > 0);
 
             const deleted = try ctx.call(internal.Delete, .{
@@ -185,7 +196,7 @@ fn encode(ctx: *PluginCtx, value: anytype) Error![]const u8 {
 fn filter_text(ctx: *PluginCtx, value: anytype) Error![]const u8 {
     const Value = @TypeOf(value);
 
-    std.debug.assert(ctx.now_ms() >= 0);
+    std.debug.assert(ctx.now().ms >= 0);
 
     return switch (@typeInfo(Value)) {
         .int, .comptime_int => std.fmt.allocPrint(ctx.arena(), "{d}", .{value}) catch {

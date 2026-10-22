@@ -31,6 +31,7 @@ pub const Link = struct {
     };
     pub const Out = struct {
         linked: bool,
+        user_id: []const u8,
     };
     pub const example: In = .{
         .user = "ada@example.com",
@@ -41,6 +42,7 @@ pub const Link = struct {
     };
     pub const example_out: Out = .{
         .linked = true,
+        .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The account to link to, by id or email",
@@ -53,6 +55,7 @@ pub const Link = struct {
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .linked = "Always true",
+        .user_id = "The account's id",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
@@ -75,10 +78,10 @@ pub const Link = struct {
         }
 
         try identity_operations.link(ctx, user_id, identity);
-        ctx.notice("auth.identity_linked", user_id);
 
         return .{
             .linked = true,
+            .user_id = user_id,
         };
     }
 };
@@ -165,6 +168,7 @@ pub const Unlink = struct {
     };
     pub const Out = struct {
         unlinked: bool,
+        user_id: []const u8,
     };
     pub const example: In = .{
         .provider = "github",
@@ -172,6 +176,7 @@ pub const Unlink = struct {
     };
     pub const example_out: Out = .{
         .unlinked = true,
+        .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .provider = identity_operations.in_docs.provider,
@@ -180,6 +185,7 @@ pub const Unlink = struct {
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .unlinked = "Always true",
+        .user_id = "The account's id",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
@@ -209,10 +215,9 @@ pub const Unlink = struct {
         const removed = try store.identities.delete(ctx.db, identity.provider, identity.id);
         std.debug.assert(removed);
 
-        ctx.notice("auth.identity_unlinked", user_id);
-
         return .{
             .unlinked = true,
+            .user_id = user_id,
         };
     }
 };
@@ -235,7 +240,7 @@ fn subject(ctx: *Ctx, named: ?[]const u8) Error![]const u8 {
     if (ctx.caller == .user and !std.mem.eql(u8, user_id, ctx.caller.user.id)) {
         const held = ctx.caller.user.roles;
 
-        if (!@import("../../server/registry.zig").Roles.allows(held, "user.update")) {
+        if (!sdk.stored_roles.allows(ctx, held, "user.update")) {
             return error.Denied;
         }
     }

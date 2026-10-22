@@ -11,6 +11,8 @@ const Error = sdk.Error;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "user",
+    .label = "Users",
+    .area = .people,
     .summary = "Accounts, roles, passwords and signing in",
     .details =
     \\Everything about who may use Publr. The first admin comes from `publr init`;
@@ -126,7 +128,9 @@ pub const Create = struct {
             const created = try create_pending_user(ctx, in.email, in.display_name, in.roles);
             const link = try issue_link(ctx, created);
 
-            ctx.notice("auth.user_created", created);
+            ctx.emit(UserCreated, .{
+                .user = created,
+            });
 
             return .{
                 .user_id = created,
@@ -137,7 +141,9 @@ pub const Create = struct {
         }
 
         const created = try create_user(ctx, in.email, in.display_name, in.password, in.roles);
-        ctx.notice("auth.user_created", created.user_id);
+        ctx.emit(UserCreated, .{
+            .user = created.user_id,
+        });
 
         return .{
             .user_id = created.user_id,
@@ -189,8 +195,6 @@ pub const PasswordLink = struct {
 
         const credentials = try find_user(ctx, in.user) orelse return error.NotFound;
         const link = try issue_link(ctx, credentials.user.id);
-
-        ctx.notice("auth.password_link_issued", credentials.user.id);
 
         return .{
             .user_id = credentials.user.id,
@@ -247,7 +251,6 @@ pub const SetPassword = struct {
 
         try store.users.set_password(ctx.db, credentials.user.id, password_hash, ctx.now_ms);
         _ = try store.sessions.destroy_all(ctx.db, credentials.user.id);
-        ctx.notice("auth.password_set", credentials.user.id);
 
         return .{
             .user_id = credentials.user.id,
@@ -471,18 +474,17 @@ fn create_pending_user(
     return insert_user(ctx, raw_email, raw_display_name, null, roles);
 }
 
-/// Roles an account may be given: one to sixteen, each once, each declared by core or a
-/// native plugin.
-pub fn valid_roles(roles: []const []const u8) bool {
+/// Roles an account may be given: one to sixteen, each once, each a stored role.
+pub fn valid_roles(ctx: *const Ctx, roles: []const []const u8) Error!bool {
     std.debug.assert(role.user_roles_max > 0);
-    std.debug.assert(registry.Roles.all.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
 
     if (roles.len == 0 or roles.len > role.user_roles_max) {
         return false;
     }
 
     for (roles, 0..) |name, index| {
-        if (registry.Roles.get(name) == null) {
+        if (!try sdk.stored_roles.exists(ctx, name)) {
             return false;
         }
 
@@ -506,7 +508,7 @@ fn insert_user(
     std.debug.assert(ctx.now_ms >= 0);
     std.debug.assert(password_hash == null or password_hash.?.len > 0);
 
-    if (!valid_roles(roles)) {
+    if (!try valid_roles(ctx, roles)) {
         return error.Invalid;
     }
 
@@ -813,3 +815,15 @@ test "user field options are available to editors without account details" {
     try std.testing.expectEqual(@as(usize, 2), output_fields.len);
     try std.testing.expectError(error.Denied, TestSDK.dispatch(&anon, Options, .{}));
 }
+
+/// An account was made: by an administrator, by signing up, through a sign-in provider, or
+/// the first one when the project was set up.
+pub const UserCreated = event_define(.{
+    .name = "auth.user_created",
+    .payload = struct {
+        /// The new account
+        user: []const u8,
+    },
+});
+
+const event_define = @import("../sdk/plugin/hook_define.zig").event;

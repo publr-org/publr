@@ -52,14 +52,6 @@ pub fn Domain(comptime domain_config: Config) type {
         pub const listed = @import("document/listed.zig").Of(@This());
         pub const variants = @import("document/variants.zig").Of(@This());
         pub const definition = @import("document/definition.zig").Of(@This());
-
-        /// `record.created`, `term.published`: the notice names of the domain.
-        pub fn notice_name(comptime verb: []const u8) []const u8 {
-            comptime std.debug.assert(verb.len > 0);
-            comptime std.debug.assert(namespace.len > 0);
-
-            return namespace ++ "." ++ verb;
-        }
     };
 }
 

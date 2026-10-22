@@ -11,10 +11,14 @@ const types = @import("../content_type.zig");
 const versions = @import("versions.zig");
 const depends_on = @import("../../sdk/plugin/depends_on.zig");
 const contracts = @import("contracts.zig");
+const grants = @import("grants.zig");
+const auth_events = @import("../../sdk/auth_events.zig");
+const error_events = @import("../../sdk/error_events.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 const sandboxed_plugin = model.sandboxed_plugin;
+const statuses = @import("statuses.zig");
 
 pub fn sandboxed(ctx: *Ctx) Error!*const sdk.sandboxed_plugins.SandboxedPlugins {
     std.debug.assert(ctx.now_ms >= 0);
@@ -79,6 +83,18 @@ fn check(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!void {
         return error.Invalid;
     }
 
+    if (sandboxed_plugin.statuses_problem(name, manifest.statuses) != null) {
+        return error.Invalid;
+    }
+
+    if (grants.problem(manifest) != null) {
+        return error.Invalid;
+    }
+
+    if (before_unrefusable(manifest)) {
+        return error.Invalid;
+    }
+
     for (manifest.permissions) |ask| {
         const target = model.permission.called_operation(ask.key) orelse continue;
 
@@ -88,6 +104,34 @@ fn check(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!void {
     }
 
     std.debug.assert(ctx.now_ms >= 0);
+}
+
+/// Whether the manifest asks for a `before` hook on an event that already happened when it
+/// is emitted (`auth.signed_out`), or a `before` or `after` hook on one kept outside the
+/// write (`errors.failed`): a compiled-in plugin's build stops on it.
+pub fn before_unrefusable(manifest: *const sandboxed_plugin.Manifest) bool {
+    std.debug.assert(manifest.name.len > 0);
+    std.debug.assert(manifest.hooks.len <= sandboxed_plugin.requests_max);
+
+    for (manifest.hooks) |hook| {
+        if (hook_refused(hook.stage, hook.target)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Whether a hook of `stage` may never be on `target`.
+pub fn hook_refused(hook_stage: sandboxed_plugin.Hook.Stage, target: []const u8) bool {
+    std.debug.assert(target.len > 0);
+    std.debug.assert(auth_events.unrefusable.len > 0);
+
+    if (hook_stage == .before and auth_events.before_refused(target)) {
+        return true;
+    }
+
+    return (hook_stage == .before or hook_stage == .after) and error_events.on_only(target);
 }
 
 /// Whether an operation belongs to a plugin the manifest depends on: the only kind a `call:`
@@ -170,8 +214,8 @@ fn provided(ctx: *Ctx, text: []const u8) bool {
     return depends_on.satisfies(row.version, wanted.range);
 }
 
-/// Creates or brings up to date the content types and custom fields the plugin declares,
-/// as the system: owned by the plugin, their declared fields locked.
+/// Creates or brings up to date the content types, custom fields and roles the plugin
+/// declares, as the system: owned by the plugin, their declared fields locked.
 pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!void {
     std.debug.assert(manifest.name.len > 0);
     std.debug.assert(manifest.content_types.len <= 64);
@@ -202,6 +246,8 @@ pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!
             .def = def,
         });
     }
+
+    try sdk.stored_roles.apply(ctx, manifest.name, manifest.roles);
 }
 
 /// What adding a module did: a plugin new to the list, or a newer version of one there.
@@ -234,7 +280,6 @@ pub fn add(ctx: *Ctx, checked: Checked) Error!Added {
         decoded.row.next_hash = checked.staged.hash;
         decoded.row.next_manifest = checked.staged.manifest;
         try state.save(ctx, decoded);
-        ctx.notice("plugin.update_added", added.name);
 
         return .{
             .name = added.name,
@@ -256,7 +301,7 @@ pub fn add(ctx: *Ctx, checked: Checked) Error!Added {
             .enabled = false,
             .granted = "[]",
             .denied = "[]",
-            .content_access = "{}",
+            .grants = "[]",
             .next_version = null,
             .next_hash = null,
             .next_manifest = null,
@@ -269,19 +314,16 @@ pub fn add(ctx: *Ctx, checked: Checked) Error!Added {
         .manifest = manifest,
         .granted = &.{},
         .denied = &.{},
-        .content_access = .{
-            .scope = manifest.content_access.recommend,
-        },
+        .grants = &.{},
     });
-    ctx.notice("plugin.added", added.name);
 
     return added;
 }
 
 /// Starts it: the plugins it depends on must be there, its content types are created, and
-/// it is granted what enabling grants (see `versions.carried`), with the content access
-/// chosen. A plugin disabled before keeps what it held.
-pub fn enable(ctx: *Ctx, name: []const u8, access: state.ContentAccess) Error!state.Decoded {
+/// it is granted what enabling grants (see `versions.carried`), then what a person chose on
+/// its review (each key on or off, each flag). A plugin disabled before keeps what it held.
+pub fn enable(ctx: *Ctx, name: []const u8, chosen: []const grants.Choice) Error!state.Decoded {
     std.debug.assert(name.len > 0);
 
     var decoded = try state.load(ctx, name);
@@ -292,7 +334,7 @@ pub fn enable(ctx: *Ctx, name: []const u8, access: state.ContentAccess) Error!st
         }
     }
 
-    try contracts.check_user(ctx, &decoded.manifest, try contracts.providers(ctx, null));
+    try contracts.check_user(ctx, &decoded.manifest, try contracts.providers(ctx, .{}));
     try apply_types(ctx, &decoded.manifest);
 
     const asked = try requests(ctx, &decoded.manifest);
@@ -300,7 +342,15 @@ pub fn enable(ctx: *Ctx, name: []const u8, access: state.ContentAccess) Error!st
     const held = decoded.granted;
 
     decoded.granted = try versions.carried(ctx.arena, asked, held, decoded.denied, false);
-    decoded.content_access = access;
+
+    if (chosen.len > grants.choices_max) {
+        return error.Invalid;
+    }
+
+    for (chosen) |choice| {
+        try grants.apply(ctx.arena, &decoded, choice);
+    }
+
     decoded.row.enabled = true;
     try state.save(ctx, decoded);
 
@@ -313,6 +363,7 @@ pub fn disable(ctx: *Ctx, name: []const u8) Error!state.Decoded {
 
     var decoded = try state.load(ctx, name);
 
+    try statuses.leave(ctx, name, null);
     decoded.row.enabled = false;
     try state.save(ctx, decoded);
 
@@ -342,6 +393,7 @@ pub fn remove(ctx: *Ctx, name: []const u8) Error!void {
         return error.NotFound;
     }
 
+    try statuses.leave(ctx, name, null);
     try store.sandboxed_plugins.delete(ctx.db, name);
 }
 
@@ -357,6 +409,7 @@ pub fn decide(ctx: *Ctx, name: []const u8, key: []const u8, change: Change) Erro
         &decoded.manifest,
         decoded.granted,
         decoded.denied,
+        decoded.grants,
     );
     const request = for (shown) |candidate| {
         if (std.mem.eql(u8, candidate.key, key)) {
@@ -382,7 +435,47 @@ pub fn decide(ctx: *Ctx, name: []const u8, key: []const u8, change: Change) Erro
         },
     }
 
+    try statuses.leave(ctx, name, &decoded);
     try state.save(ctx, decoded);
 
     return decoded;
+}
+
+test "a before hook on signing out is refused at install; on signing in it is taken" {
+    const hooks_out = [_]sandboxed_plugin.Hook{.{
+        .stage = .before,
+        .target = "auth.signed_out",
+        .reason = "Keeps people signed in",
+    }};
+    const hooks_in = [_]sandboxed_plugin.Hook{
+        .{
+            .stage = .before,
+            .target = "auth.signed_in",
+            .reason = "Keeps suspended accounts out",
+        },
+        .{
+            .stage = .after,
+            .target = "auth.signed_out",
+            .reason = "Empties the bag",
+        },
+    };
+    const refused: sandboxed_plugin.Manifest = .{
+        .name = "keeper",
+        .version = "0.1.0",
+        .summary = "Keeps",
+        .hooks = &hooks_out,
+    };
+    const taken_manifest: sandboxed_plugin.Manifest = .{
+        .name = "keeper",
+        .version = "0.1.0",
+        .summary = "Keeps",
+        .hooks = &hooks_in,
+    };
+
+    try std.testing.expect(before_unrefusable(&refused));
+    try std.testing.expect(!before_unrefusable(&taken_manifest));
+    // Kept outside the write: `on` only.
+    try std.testing.expect(hook_refused(.after, "errors.failed"));
+    try std.testing.expect(hook_refused(.before, "auth.sign_in_failed"));
+    try std.testing.expect(!hook_refused(.event, "errors.failed"));
 }

@@ -32,7 +32,7 @@ pub fn settings_denied(ctx: *const Ctx) bool {
 
     const held = ctx.caller.roles() orelse return false;
 
-    return !registry.Roles.allows(held, model.role.settings_grant);
+    return !sdk.stored_roles.allows(ctx, held, model.role.settings_grant);
 }
 
 pub fn Of(comptime Domain: type) type {
@@ -61,9 +61,9 @@ pub fn Of(comptime Domain: type) type {
                 return null;
             }
 
-            const live_only = granted.record_filter.flags.live_only;
+            const live_only = granted.live_only_on(type_row.def.handle, type_row.def.public);
 
-            if (live_only and !registry.Statuses.is_live(found.status)) {
+            if (live_only and !type_row.def.flow.is_live(found.status)) {
                 return null;
             }
 
@@ -88,7 +88,7 @@ pub fn Of(comptime Domain: type) type {
         pub fn check_status(def: Def, status: []const u8, granted: *const Grant) Error!void {
             std.debug.assert(def.handle.len > 0);
 
-            if (registry.Statuses.find(status) == null) {
+            if (def.flow.find(status) == null) {
                 return error.Invalid;
             }
 
@@ -179,14 +179,15 @@ pub fn Of(comptime Domain: type) type {
             granted: *const Grant,
             requested: ?[]const u8,
             exclude: bool,
-            buffer: *[model.status.statuses_max][]const u8,
+            listed: Statuses,
         ) ?[]const []const u8 {
             std.debug.assert(granted.allows());
-            std.debug.assert(buffer.len == model.status.statuses_max);
+            std.debug.assert(listed.known.len <= listed.buffer.len);
 
+            const buffer = listed.buffer;
             var count: u32 = 0;
 
-            for (registry.Statuses.all) |status| {
+            for (listed.known) |status| {
                 const live_ok = !granted.record_filter.flags.live_only or status.live;
                 const requested_ok = if (requested) |wanted|
                     wanted_status(status, wanted, exclude)
@@ -204,12 +205,19 @@ pub fn Of(comptime Domain: type) type {
     };
 }
 
+/// Every status the site knows (`status.known`), and room for the ones a list keeps.
+pub const Statuses = struct {
+    known: []const model.status.Status,
+    buffer: *[model.status.statuses_max][]const u8,
+};
+
 /// The status asked for, or, excluding it, any listed status but it.
 fn wanted_status(status: model.status.Status, wanted: []const u8, exclude: bool) bool {
     std.debug.assert(status.id.len > 0);
     std.debug.assert(wanted.len > 0);
 
-    const same = std.mem.eql(u8, wanted, status.id);
+    const same = std.mem.eql(u8, wanted, status.id) or
+        (status.alias.len > 0 and std.mem.eql(u8, wanted, status.alias));
 
     return if (exclude) status.listed and !same else same;
 }

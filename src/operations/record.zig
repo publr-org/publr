@@ -11,6 +11,7 @@ pub const fixture = @import("record/fixture.zig");
 const lifecycle = @import("record/lifecycle.zig");
 const virtual = @import("record/virtual.zig");
 const virtual_edit = @import("record/virtual/edit.zig");
+const remote_view = @import("record/remote_view.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -19,6 +20,8 @@ const records = store.records;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "record",
+    .label = "Records",
+    .area = .content,
     .summary = "The content itself: one document per record, in one status",
     .details =
     \\A record is one document of one content type in one status. Documents are JSON
@@ -219,6 +222,7 @@ pub const DiscardChanges = lifecycle.DiscardChanges;
 pub const Delete = lifecycle.Delete;
 pub const Purge = lifecycle.Purge;
 pub const TransitionMany = @import("record/many.zig").TransitionMany;
+pub const DeclineRequest = @import("record/requests.zig").DeclineRequest;
 
 pub const example_id = "a1b2c3d4e5f60718293a4b5c";
 pub const example_changed_id = "b2c3d4e5f60718293a4b5c6d";
@@ -347,6 +351,8 @@ pub const Get = struct {
             got.document = try virtual_edit.with_members(ctx, granted, got.record, got.document);
         }
 
+        got.document = try remote_view.view(ctx, granted, got.record.type, got.document);
+
         return got;
     }
 };
@@ -366,6 +372,9 @@ pub const Save = struct {
         \\registered transition reaches: the fields go straight into the live document (and
         \\into the pending copy, which stays pending), then the record moves to `status`.
         \\The type must accept the status and the grant allow it, as for `record create`.
+        \\`outcome` says what it did: `saved` (into the record's own document),
+        \\`changes_saved` (parked), `changes_discarded` (an edit taken back to the live
+        \\document), `unchanged`.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -383,6 +392,7 @@ pub const Save = struct {
         .version = 3,
         .slug = "hello-world",
         .changed = true,
+        .outcome = "changes_saved",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The record id",
@@ -440,6 +450,7 @@ pub const List = struct {
         ids: []const []const u8 = &.{},
         exclude_statuses: []const []const u8 = &.{},
         order: Order = .updated_desc,
+        sort: ?[]const u8 = null,
         limit: u32 = 50,
         offset: u32 = 0,
         /// Also count every record the list's conditions keep, past this page.
@@ -470,7 +481,9 @@ pub const List = struct {
         .type = "One content type, by handle or id",
         .types = "Several content types, by handle or id; " ++
             "neither: every readable regular content type",
-        .filters = "Clauses, `key:operator:value` each: `status:is:draft`, `updated:within:7d`",
+        .filters = "Clauses, `key:operator:value` each: `status:is:draft`, " ++
+            "`updated:within:7d`; on a field of one type, `field.total:more:4999`, " ++
+            "`field.placed:in_the_past:7d`, `field.size:any_of:[\"s\",\"m\"]`",
         .search = "Full-text query over searchable fields",
         .slug = "Only the record whose slug field holds this value (a type with a slug field)",
         .filter_field = "A field path (`views`, `seo.title`, `tags`); one type only",
@@ -478,7 +491,9 @@ pub const List = struct {
         .filter_values = "With `filter_field`: any of these values (references or text)",
         .ids = "Only these records, by id (up to the page size)",
         .exclude_statuses = "Never records in these statuses, whatever `filters` ask",
-        .order = "`updated_desc` (default), `created_desc` or `title_asc`",
+        .order = "`updated_desc` (default), `updated_asc`, `created_desc`, `created_asc`, " ++
+            "`title_asc`, `title_desc`, `status_asc` or `status_desc`",
+        .sort = "Order by a field of one type instead of `order`: `total`, `-total` descending",
         .limit = "Page size, up to 200",
         .offset = "Rows to skip",
         .count = "Also return `total`: every record the conditions keep, past this page " ++
@@ -510,6 +525,7 @@ pub const List = struct {
             .ids = in.ids,
             .exclude_statuses = in.exclude_statuses,
             .order = in.order,
+            .sort = in.sort,
             .limit = in.limit,
             .offset = in.offset,
             .variant = code orelse "",
@@ -553,6 +569,8 @@ pub const List = struct {
 
             try virtual.expand(ctx, records_shown, writable, clauses);
         }
+
+        try remote_view.view_all(ctx, granted, records_shown, @constCast(documents));
 
         return .{
             .records = records_shown,
@@ -656,12 +674,16 @@ pub const Reach = @import("record/reach.zig").Reach;
 test {
     _ = @import("record/reach.zig");
     _ = @import("record/many.zig");
+    _ = @import("record/flow_tests.zig");
+    _ = @import("record/requests_tests.zig");
+    _ = @import("record/grant_tests.zig");
+    _ = remote_view;
 }
 
 pub const operations = [_]type{
-    Create,    Get,    Save,           Transition, Publish,  List,
-    Referrers, Delete, DiscardChanges, Purge,      Validate, Shown,
-    Query,     Reach,  TransitionMany,
+    Create,    Get,    Save,           Transition,     Publish,  List,
+    Referrers, Delete, DiscardChanges, Purge,          Validate, Shown,
+    Query,     Reach,  TransitionMany, DeclineRequest,
 };
 
 const SDK = registry.SDK;
@@ -744,16 +766,18 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
         },
     );
     try std.testing.expectError(error.Invalid, invalid);
+    // Refused with the field it was about, as every caller is answered.
+    try std.testing.expectEqualStrings("title", editor.problems[0].field);
 
     const published = try SDK.dispatch(&editor, Transition, .{
         .id = first.id,
-        .to = "published",
+        .transition = "publish",
     });
     try std.testing.expectEqualStrings("published", published.status);
     try std.testing.expectEqual(@as(i64, 3), published.version);
     const bad_move = SDK.dispatch(&editor, Transition, .{
         .id = first.id,
-        .to = "nope",
+        .transition = "nope",
     });
     try std.testing.expectError(error.Invalid, bad_move);
 
@@ -799,7 +823,7 @@ test "a unique field refuses a value another record holds; a new record takes de
         .definition =
         \\{"handle":"product","name":"Product","public":true,"title_field":"title","fields":[
         \\{"name":"title","label":"Title","kind":"string","default":"Untitled"},
-        \\{"name":"sku","label":"SKU","kind":"string","unique":true},
+        \\{"name":"sku","label":"SKU","kind":"string","validation":{"unique":true}},
         \\{"name":"stock","label":"Stock","kind":"integer","default":"5"}]}
         ,
     });
@@ -913,21 +937,25 @@ test "a slug field that refuses taken slugs: a given one conflicts, a derived on
     strict.name = "Address";
     strict.fields = &.{
         .{
+            .validation = .{
+                .required = true,
+            },
             .name = "title",
             .label = "Title",
             .kind = "string",
-            .required = true,
         },
         .{
+            .validation = .{
+                .slug = .{
+                    .refuse_taken = true,
+                    .reserved = &.{"admin"},
+                },
+            },
             .name = "slug",
             .label = "Slug",
             .kind = "slug",
             .options = .{
                 .source = "title",
-                .slug = .{
-                    .refuse_taken = true,
-                    .reserved = &.{"admin"},
-                },
             },
         },
     };
@@ -1203,6 +1231,84 @@ test "list across types: every readable type, the ones named, exclusions, one-ty
     try std.testing.expectEqual(@as(usize, 1), sevens.records.len);
 }
 
+test "list by a type's own fields: clauses on fields, an order by one; one type only" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    try seed_admin_type(&harness);
+
+    var admin = harness.ctx(.{
+        .user = .{
+            .id = "u_admin",
+            .roles = &.{"admin"},
+        },
+    });
+    var note = model.content_type.test_post;
+    note.handle = "note";
+    note.name = "Note";
+    _ = try SDK.dispatch(&admin, types.Create, .{
+        .definition = try model.content_type.encode(harness.fixed.allocator(), note),
+    });
+    const documents_given = [_][]const u8{
+        "{\"title\":\"Alpha\",\"body\":\"<p>a</p>\",\"views\":10}",
+        "{\"title\":\"Beta\",\"body\":\"<p>b</p>\",\"views\":30}",
+        "{\"title\":\"Gamma\",\"body\":\"<p>c</p>\",\"views\":20}",
+    };
+
+    for (documents_given) |given| {
+        _ = try SDK.dispatch(&admin, Create, .{
+            .type = "post",
+            .document = given,
+        });
+    }
+
+    const busy = try SDK.dispatch(&admin, List, .{
+        .type = "post",
+        .filters = &.{ "field.views:at_least:20", "status:is:draft" },
+        .sort = "-views",
+    });
+    try std.testing.expectEqual(@as(usize, 2), busy.records.len);
+    try std.testing.expectEqualStrings("Beta", busy.records[0].title);
+    try std.testing.expectEqualStrings("Gamma", busy.records[1].title);
+
+    const named = try SDK.dispatch(&admin, List, .{
+        .type = "post",
+        .filters = &.{"field.title:starts_with:al"},
+    });
+    try std.testing.expectEqual(@as(usize, 1), named.records.len);
+
+    const by_views = try SDK.dispatch(&admin, List, .{
+        .type = "post",
+        .sort = "views",
+    });
+    try std.testing.expectEqualStrings("Alpha", by_views.records[0].title);
+
+    const refused = [_]List.In{
+        .{
+            .filters = &.{"field.views:more:1"},
+        },
+        .{
+            .type = "post",
+            .filters = &.{"field.views:contains:1"},
+        },
+        .{
+            .type = "post",
+            .filters = &.{"field.nope:is:1"},
+        },
+        .{
+            .type = "post",
+            .sort = "body",
+        },
+        .{
+            .sort = "views",
+        },
+    };
+
+    for (refused) |in| {
+        try std.testing.expectError(error.Invalid, SDK.dispatch(&admin, List, in));
+    }
+}
+
 test "validate reports problems; filters and search go through the projection" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
@@ -1287,7 +1393,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
     });
     const definition =
         \\{"handle":"person","name":"Person","title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
         \\ {"name":"handle","label":"Handle","kind":"slug","options":{"source":"name"}},
         \\ {"name":"age","label":"Age","kind":"integer"}]}
     ;
@@ -1319,7 +1425,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
 
     const widened =
         \\{"handle":"person","name":"Person","title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
         \\ {"name":"handle","label":"Handle","kind":"slug","options":{"source":"name"}},
         \\ {"name":"age","label":"Age","kind":"number"}]}
     ;
@@ -1345,7 +1451,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
 
     const narrowed =
         \\{"handle":"person","name":"Person","title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
         \\ {"name":"handle","label":"Handle","kind":"slug","options":{"source":"name"}}]}
     ;
     const refused = SDK.dispatch(
@@ -1438,7 +1544,7 @@ test "adding a slug field to a type backfills existing records, duplicates get s
     });
     const without =
         \\{"handle":"hotel","name":"Hotel","title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
     ;
     _ = try SDK.dispatch(&admin, types.Create, .{
         .definition = without,
@@ -1453,7 +1559,7 @@ test "adding a slug field to a type backfills existing records, duplicates get s
 
     const with_slug =
         \\{"handle":"hotel","name":"Hotel","title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
         \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
     ;
     const updated = try SDK.dispatch(&admin, types.Update, .{
@@ -1490,7 +1596,7 @@ test "terms fields: a type opts into a taxonomy, records file under terms, ances
     const unknown_taxonomy = SDK.dispatch(&admin, types.Create, .{
         .definition =
         \\{"handle":"article","name":"Article","fields":[
-        \\{"name":"title","label":"Title","kind":"string","required":true},
+        \\{"name":"title","label":"Title","kind":"string","validation":{"required":true}},
         \\{"name":"topics","label":"Topics","kind":"terms","many":true,
         \\"options":{"taxonomy":"topics"}}]}
         ,
@@ -1503,7 +1609,7 @@ test "terms fields: a type opts into a taxonomy, records file under terms, ances
     _ = try SDK.dispatch(&admin, types.Create, .{
         .definition =
         \\{"handle":"article","name":"Article","public":true,"fields":[
-        \\{"name":"title","label":"Title","kind":"string","required":true},
+        \\{"name":"title","label":"Title","kind":"string","validation":{"required":true}},
         \\{"name":"topics","label":"Topics","kind":"terms","many":true,
         \\"options":{"taxonomy":"topics"}}]}
         ,
@@ -1618,7 +1724,7 @@ test "a taxonomy applying to a type gives it an implicit terms field; detaching 
     const applying =
         \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
         \\ "applies_to":["post"],
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
     ;
     _ = try SDK.dispatch(&admin, taxonomies.Create, .{
         .definition = applying,
@@ -1671,7 +1777,7 @@ test "a taxonomy applying to a type gives it an implicit terms field; detaching 
 
     const detached =
         \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
     ;
     _ = try SDK.dispatch(&admin, taxonomies.Update, .{
         .taxonomy = "topics",

@@ -78,6 +78,11 @@ pub const Read = struct {
         }
 
         const row = try store.media.by_key(ctx.db, ctx.arena, in.key) orelse return error.NotFound;
+
+        if (row.private and library.public_only(granted)) {
+            return error.NotFound;
+        }
+
         const handle = try store.media.type_of(ctx.db, ctx.arena, row.record) orelse {
             return error.NotFound;
         };

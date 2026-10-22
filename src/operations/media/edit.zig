@@ -92,6 +92,11 @@ pub const Get = struct {
         std.debug.assert(ctx.now_ms >= 0);
 
         const row = try library.row_of(ctx, in.id);
+
+        if (row.private and library.public_only(granted)) {
+            return error.NotFound;
+        }
+
         const written = try library.written_of(ctx, row.record);
         const translated = try translations_of(ctx, row.record);
         const title = if (written.title.len > 0) written.title else row.filename;

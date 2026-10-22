@@ -1,7 +1,9 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const publr_auth = @import("../sdk/auth_events.zig");
 const auth = @import("../lib/auth.zig");
 const store = @import("../store.zig");
+const signing = @import("signed.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -72,7 +74,9 @@ pub const SignIn = struct {
         const key = ctx.auth.throttle.key_for(email);
 
         if (ctx.auth.throttle.wait_ms(key, ctx.now_ms) > 0) {
-            ctx.notice("auth.sign_in_throttled", email);
+            ctx.keep(publr_auth.SignInThrottled, .{
+                .email = email,
+            });
 
             return error.Throttled;
         }
@@ -86,9 +90,14 @@ pub const SignIn = struct {
         const verified = ctx.auth.verify_password(stored_hash, in.password, ctx.io);
 
         if (active_hash == null or !verified) {
-            ctx.notice("auth.sign_in_failed", email);
+            ctx.keep(publr_auth.SignInFailed, .{
+                .email = email,
+            });
+
             if (ctx.auth.throttle.record_failure(key, ctx.now_ms) > 0) {
-                ctx.notice("auth.sign_in_locked", email);
+                ctx.keep(publr_auth.SignInLocked, .{
+                    .email = email,
+                });
             }
 
             return error.BadCredentials;
@@ -97,11 +106,13 @@ pub const SignIn = struct {
         ctx.auth.throttle.record_success(key);
 
         const user_id = found.?.user.id;
+
+        try signing.before(ctx, found.?.user, "password");
         _ = try store.sessions.cleanup(ctx.db, ctx.now_ms);
         const created = try store.sessions.create(ctx.db, ctx.io, ctx.arena, user_id, ctx.now_ms);
         const token = try ctx.arena.dupe(u8, created.token_text());
 
-        ctx.notice("auth.sign_in_succeeded", user_id);
+        try signing.after(ctx, found.?.user, "password");
 
         return .{
             .token = token,
@@ -158,7 +169,7 @@ pub const SignOut = struct {
         };
 
         try store.sessions.destroy(ctx.db, validated.id);
-        ctx.notice("auth.sign_out", validated.user_id);
+        try signing.signed_out(ctx, validated.user_id);
 
         return .{
             .destroyed = true,

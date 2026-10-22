@@ -4,6 +4,7 @@ const trash = @import("trash.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
 const environment = @import("../lib/environment.zig");
+const registry = @import("../server/registry.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -13,11 +14,14 @@ const kept = store.secrets;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "secret",
+    .label = "Secrets",
+    .area = .system,
     .summary = "Secrets plugins name but never hold: API keys, set by an administrator",
     .details =
-    \\A plugin asks for `secret.<NAME>` (a high-tier permission) and writes `{secret:NAME}`
-    \\where the value goes in a request it sends out; the value is filled in as the request
-    \\leaves, so the plugin never sees it. A value comes from the environment variable of
+    \\A plugin declares the secrets it uses in `.secrets` (not a permission) and writes
+    \\`{secret:NAME}` where the value goes in a request it sends out; the value is filled in
+    \\as the request leaves, so the plugin never sees it. Names are site-wide: plugins
+    \\naming the same one share its value. A value comes from the environment variable of
     \\the same name when one is set, else from what an administrator set here, kept sealed
     \\with the project's key: `PUBLR_SECRET_KEY`, else `secret.key` beside the database.
     \\A value is never answered back. Administrators only.
@@ -34,7 +38,7 @@ pub const Listed = struct {
     name: []const u8,
     /// `environment` (the variable wins), `kept` (set here), or `missing`.
     source: []const u8,
-    /// The plugins that asked for it.
+    /// The plugins that declare it, installed and built in.
     used_by: []const []const u8,
     updated_at: i64,
 };
@@ -48,10 +52,10 @@ const example_listed: Listed = .{
 
 pub const List = struct {
     pub const name = "secret.list";
-    pub const description = "List the secrets: those plugins asked for and those set";
+    pub const description = "List the secrets: those plugins declare and those set";
     pub const details =
         \\Each with where its value comes from (`environment`, `kept` or `missing`) and the
-        \\plugins that asked for it; never a value. `key` says where the project's key is:
+        \\plugins that declare it; never a value. `key` says where the project's key is:
         \\`environment`, `file`, or `none` until a secret is first set.
     ;
     pub const kind: sdk.operation.Kind = .read;
@@ -66,7 +70,7 @@ pub const List = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .limit = "How many at most; 50 when omitted, up to 200",
-        .offset = "How many to pass over first: the set ones by name, then the asked-for",
+        .offset = "How many to pass over first: the set ones by name, then the declared",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -81,7 +85,7 @@ pub const List = struct {
             return error.Invalid;
         }
 
-        // The set ones by name, then the ones plugins asked for that are not set yet.
+        // The set ones by name, then the ones plugins declare that are not set yet.
         const set_count = try kept.count(ctx.db);
         const missing = try asked_missing(ctx);
         var listed: std.ArrayList(Listed) = .empty;
@@ -158,12 +162,11 @@ pub const Set = struct {
         };
 
         try kept.put(ctx.db, in.name, sealed, ctx.now_ms);
-        ctx.notice("secret.set", in.name);
 
         return .{
             .name = in.name,
             .source = source_of(try environment_value(ctx.arena, in.name) != null, true),
-            .used_by = try users_of(ctx, in.name),
+            .used_by = try users_of(ctx, in.name, ""),
             .updated_at = ctx.now_ms,
         };
     }
@@ -221,10 +224,6 @@ pub const Remove = struct {
         }
 
         const removed = try kept.delete(ctx.db, in.name);
-
-        if (removed) {
-            ctx.notice("secret.removed", in.name);
-        }
 
         return .{
             .removed = removed,
@@ -352,23 +351,21 @@ const bad_key: sdk.operation.Failure = .{
     .message = "The project's key is not 64 hex digits",
 };
 
-/// Adds every secret an installed plugin asked for that `names` lacks.
-/// The secrets plugins asked for that are not set, each once, in the plugins' order.
+/// The secrets plugins declare that are not set, each once, in the plugins' order.
 fn asked_missing(ctx: *Ctx) Error![]const []const u8 {
     std.debug.assert(ctx.now_ms >= 0);
 
     var names: std.ArrayList([]const u8) = .empty;
-    const sandboxed = ctx.sandboxed_plugins orelse return names.items;
 
-    for (sandboxed.manifests()) |manifest| {
-        for (manifest.permissions) |ask| {
-            const asked = secret_in(ask.key) orelse continue;
+    for (try declarers(ctx)) |declarer| {
+        for (declarer.secrets) |declared| {
+            const known = find_name(names.items, declared.name);
 
-            if (find_name(names.items, asked) or try kept.get(ctx.db, ctx.arena, asked) != null) {
+            if (known or try is_set(ctx, declared.name)) {
                 continue;
             }
 
-            try names.append(ctx.arena, asked);
+            try names.append(ctx.arena, try ctx.arena.dupe(u8, declared.name));
         }
     }
 
@@ -376,47 +373,83 @@ fn asked_missing(ctx: *Ctx) Error![]const []const u8 {
 }
 
 /// A secret as the list shows it.
-fn listed_of(ctx: *Ctx, secret_name: []const u8, is_set: bool, updated_at: i64) Error!Listed {
+fn listed_of(ctx: *Ctx, secret_name: []const u8, is_kept: bool, updated_at: i64) Error!Listed {
     std.debug.assert(secret_name.len > 0);
 
     const from_environment = try environment_value(ctx.arena, secret_name) != null;
 
     return .{
         .name = secret_name,
-        .source = source_of(from_environment, is_set),
-        .used_by = try users_of(ctx, secret_name),
+        .source = source_of(from_environment, is_kept),
+        .used_by = try users_of(ctx, secret_name, ""),
         .updated_at = updated_at,
     };
 }
 
-/// The plugins that asked for `secret.<name>`.
-fn users_of(ctx: *Ctx, secret_name: []const u8) Error![]const []const u8 {
-    std.debug.assert(secret_name.len > 0);
+/// Whether `secret_name` has a value: an environment variable, or one kept here.
+pub fn is_set(ctx: *Ctx, secret_name: []const u8) Error!bool {
+    std.debug.assert(secrets.valid_name(secret_name));
+    std.debug.assert(ctx.now_ms >= 0);
 
-    var users: std.ArrayList([]const u8) = .empty;
-    const sandboxed = ctx.sandboxed_plugins orelse return users.items;
+    if (try environment_value(ctx.arena, secret_name) != null) {
+        return true;
+    }
 
-    for (sandboxed.manifests()) |manifest| {
-        for (manifest.permissions) |ask| {
-            const asked = secret_in(ask.key) orelse continue;
+    return try kept.get(ctx.db, ctx.arena, secret_name) != null;
+}
 
-            if (std.mem.eql(u8, asked, secret_name)) {
-                try users.append(ctx.arena, manifest.name);
+/// A plugin and the secrets it declares.
+pub const Declarer = struct {
+    plugin: []const u8,
+    secrets: []const secrets.Declared,
+};
+
+/// Every plugin that declares secrets: the installed ones running, then the built-in ones.
+pub fn declarers(ctx: *Ctx) Error![]const Declarer {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    var found: std.ArrayList(Declarer) = .empty;
+
+    if (ctx.sandboxed_plugins) |sandboxed| {
+        for (sandboxed.manifests()) |manifest| {
+            if (manifest.secrets.len > 0) {
+                try found.append(ctx.arena, .{
+                    .plugin = manifest.name,
+                    .secrets = manifest.secrets,
+                });
             }
         }
     }
 
-    return users.items;
-}
-
-fn secret_in(key: []const u8) ?[]const u8 {
-    std.debug.assert(key.len <= 64 << 10);
-
-    if (key.len == 0 or !model.permission.is_secret(key)) {
-        return null;
+    for (registry.SDK.compiled_grants()) |compiled| {
+        if (compiled.access.secrets.len > 0) {
+            try found.append(ctx.arena, .{
+                .plugin = compiled.name,
+                .secrets = compiled.access.secrets,
+            });
+        }
     }
 
-    return key[model.permission.secret_prefix.len..];
+    return found.items;
+}
+
+/// The plugins that declare `secret_name`, but `except` (a plugin's own page asks who
+/// else uses it).
+pub fn users_of(ctx: *Ctx, secret_name: []const u8, except: []const u8) Error![]const []const u8 {
+    std.debug.assert(secret_name.len > 0);
+
+    var users: std.ArrayList([]const u8) = .empty;
+
+    for (try declarers(ctx)) |declarer| {
+        const declares = secrets.declared_find(declarer.secrets, secret_name) != null;
+
+        // Copied: an installed plugin's manifest goes when the host reloads it.
+        if (declares and !std.mem.eql(u8, declarer.plugin, except)) {
+            try users.append(ctx.arena, try ctx.arena.dupe(u8, declarer.plugin));
+        }
+    }
+
+    return users.items;
 }
 
 fn find_name(names: []const []const u8, wanted: []const u8) bool {

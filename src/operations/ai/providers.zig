@@ -123,7 +123,6 @@ pub const Choose = struct {
 
         try store.settings.set(ctx.db, provider_key, in.provider, ctx.now_ms);
         try store.settings.set(ctx.db, model_key, in.model, ctx.now_ms);
-        ctx.notice("ai.chosen", in.provider);
 
         return .{
             .provider = in.provider,

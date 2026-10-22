@@ -5,10 +5,12 @@
 
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const publr_auth = @import("../sdk/auth_events.zig");
 const store = @import("../store.zig");
 const model = @import("../model/identity.zig");
 const role = @import("../model/role.zig");
 const registry = @import("../server/registry.zig");
+const signing = @import("signed.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -18,6 +20,8 @@ pub const open_sign_up_key = "identity.open_sign_up";
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "identity",
+    .label = "Sign-in accounts",
+    .area = .people,
     .summary = "Signing in with a provider: GitHub, Google, whichever plugins are compiled in",
     .details =
     \\A provider plugin proves who someone is; the core keeps which account that identity
@@ -97,6 +101,8 @@ pub const SignIn = struct {
         roles: []const []const u8,
         expires_at: i64,
         created: bool,
+        /// The identity was just linked to the account with its email.
+        linked: bool = false,
     };
     pub const example: In = example_in;
     pub const example_out: Out = .{
@@ -105,6 +111,7 @@ pub const SignIn = struct {
         .roles = &.{"editor"},
         .expires_at = 1792232000000,
         .created = false,
+        .linked = false,
     };
     pub const field_docs = in_docs;
     pub const output_docs: sdk.operation.Docs(Out) = .{
@@ -113,6 +120,7 @@ pub const SignIn = struct {
         .roles = "The roles it holds",
         .expires_at = "When the session expires if unused, Unix milliseconds",
         .created = "True when the account was created by this sign-in",
+        .linked = "True when this sign-in linked the identity to the account with its email",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
@@ -127,11 +135,16 @@ pub const SignIn = struct {
 
         std.debug.assert(found.user.active);
 
+        if (resolved.created) {
+            try signing.signed_up(ctx, found.user, identity.provider);
+        }
+
+        try signing.before(ctx, found.user, identity.provider);
         _ = try store.sessions.cleanup(ctx.db, ctx.now_ms);
         const user_id = found.user.id;
         const created = try store.sessions.create(ctx.db, ctx.io, ctx.arena, user_id, ctx.now_ms);
 
-        ctx.notice("auth.identity_signed_in", found.user.id);
+        try signing.after(ctx, found.user, identity.provider);
 
         return .{
             .token = try ctx.arena.dupe(u8, created.token_text()),
@@ -139,6 +152,7 @@ pub const SignIn = struct {
             .roles = found.user.roles,
             .expires_at = created.session.expires_at,
             .created = resolved.created,
+            .linked = resolved.linked,
         };
     }
 };
@@ -146,6 +160,7 @@ pub const SignIn = struct {
 const Resolved = struct {
     user_id: []const u8,
     created: bool,
+    linked: bool = false,
 };
 
 /// Whose identity this is, linking or creating on the way; `BadCredentials` when nobody's.
@@ -165,28 +180,34 @@ fn resolve(ctx: *Ctx, identity: model.Identity) Error!Resolved {
     }
 
     const email = verified_email(ctx, identity) orelse {
-        ctx.notice("auth.identity_refused", identity.provider);
+        ctx.keep(publr_auth.IdentityRefused, .{
+            .provider = identity.provider,
+            .why = "unverified",
+        });
 
         return error.BadCredentials;
     };
 
     if (try store.users.find_by_email(ctx.db, ctx.arena, email)) |existing| {
         try link(ctx, existing.user.id, identity);
-        ctx.notice("auth.identity_linked", existing.user.id);
 
         return .{
             .user_id = existing.user.id,
             .created = false,
+            .linked = true,
         };
     }
 
     const open_role = try store.settings.get(ctx.db, ctx.arena, open_sign_up_key) orelse {
-        ctx.notice("auth.identity_refused", identity.provider);
+        ctx.keep(publr_auth.IdentityRefused, .{
+            .provider = identity.provider,
+            .why = "closed",
+        });
 
         return error.BadCredentials;
     };
 
-    if (registry.Roles.get(open_role) == null) {
+    if (!try sdk.stored_roles.exists(ctx, open_role)) {
         return error.Invalid;
     }
 
@@ -199,7 +220,9 @@ fn resolve(ctx: *Ctx, identity: model.Identity) Error!Resolved {
     });
 
     try link(ctx, user_id, identity);
-    ctx.notice("auth.user_created", user_id);
+    ctx.emit(@import("user.zig").UserCreated, .{
+        .user = user_id,
+    });
 
     return .{
         .user_id = user_id,
@@ -290,7 +313,7 @@ pub const Configure = struct {
             };
         }
 
-        const declared = registry.Roles.get(in.open_sign_up) != null;
+        const declared = try sdk.stored_roles.exists(ctx, in.open_sign_up);
 
         if (!declared or std.mem.eql(u8, in.open_sign_up, role.admin)) {
             return error.Invalid;

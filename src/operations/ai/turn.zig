@@ -87,7 +87,6 @@ pub const Begin = struct {
         }, ctx.now_ms);
 
         try conversations.set_device(ctx.db, row.id, created.device.id);
-        ctx.notice("auth.device_approved", created.device.id);
 
         const said = try history_of(ctx, row);
 
@@ -339,7 +338,6 @@ pub const Finish = struct {
 
         if (row.device_id.len > 0) {
             _ = try store.devices.revoke(ctx.db, row.device_id, ctx.now_ms);
-            ctx.notice("auth.device_revoked", row.device_id);
         }
 
         const answer = ai.clipped(in.answer, ai.detail_len_max);
@@ -360,7 +358,6 @@ pub const Finish = struct {
             .output_tokens = in.output_tokens,
             .cached_tokens = in.cached_tokens,
         }, ctx.now_ms);
-        ctx.notice("ai.finished", row.id);
 
         try conversations.set_draft(ctx.db, row.id, "");
         try store.ai_browsers.settle(ctx.db, row.id);

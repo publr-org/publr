@@ -14,6 +14,8 @@ const terms = store.terms;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "term",
+    .label = "Terms",
+    .area = .content,
     .summary = "The terms of the taxonomies: what records are classified under",
     .details =
     \\A term is one document of one taxonomy in one status, with the same lifecycle as a
@@ -336,6 +338,8 @@ pub const Save = struct {
         version: i64,
         slug: ?[]const u8,
         changed: bool,
+        /// `saved`, `changes_saved`, `changes_discarded` or `unchanged`, as `record save`.
+        outcome: []const u8,
         parent: ?[]const u8,
     };
     pub const example: In = .{
@@ -346,6 +350,7 @@ pub const Save = struct {
         .version = 3,
         .slug = "engineering",
         .changed = true,
+        .outcome = "changes_saved",
         .parent = example_parent_id,
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
@@ -374,6 +379,7 @@ pub const Save = struct {
             .version = saved.version,
             .slug = saved.slug,
             .changed = saved.changed,
+            .outcome = saved.outcome,
             .parent = try terms.parent_of(ctx.db, ctx.arena, in.id),
         };
     }
@@ -535,7 +541,8 @@ pub const Tree = struct {
 
         const taxonomy = try domain.definition.get(ctx, granted, in.taxonomy);
 
-        const statuses = try shown_statuses(ctx, granted);
+        const live_only = granted.live_only_on(taxonomy.def.handle, taxonomy.def.public);
+        const statuses = try shown_statuses(ctx, granted, live_only);
         const placed = try terms.tree_page(ctx.db, ctx.arena, taxonomy.id, .{
             .statuses_json = statuses,
             .offset = in.offset,
@@ -564,9 +571,7 @@ pub const Tree = struct {
     }
 
     /// The statuses the caller sees, as a JSON array; empty for every one.
-    fn shown_statuses(ctx: *Ctx, granted: *const Grant) Error![]const u8 {
-        const live_only = granted.record_filter.flags.live_only;
-
+    fn shown_statuses(ctx: *Ctx, granted: *const Grant, live_only: bool) Error![]const u8 {
         if (!live_only and granted.statuses == null) {
             return "";
         }
@@ -575,12 +580,13 @@ pub const Tree = struct {
 
         if (granted.statuses) |listed| {
             for (listed) |status| {
-                if (!live_only or registry.Statuses.is_live(status)) {
+                if (!live_only or model.status.Core.is_live(status)) {
                     try names.append(ctx.arena, status);
                 }
             }
         } else {
-            for (registry.Statuses.all) |status| {
+            // Terms follow core's flow.
+            for (model.status.Core.all) |status| {
                 if (status.live) {
                     try names.append(ctx.arena, status.id);
                 }
@@ -770,7 +776,7 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
     _ = try SDK.dispatch(&admin, taxonomy_operations.Create, .{
         .definition =
         \\{"handle":"tags","name":"Tags","title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true}]}
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
         ,
     });
     const one = try SDK.dispatch(&admin, Create, .{
@@ -815,7 +821,7 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
         .taxonomy = "topics",
         .definition =
         \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","required":true},
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
         \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
         ,
     });

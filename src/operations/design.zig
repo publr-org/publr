@@ -19,6 +19,8 @@ pub const Item = moodboard.Item;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "design",
+    .label = "Design",
+    .area = .site,
     .summary = "An app's design system and moodboard",
     .details =
     \\An app's design system is its design tokens and fonts, kept in its `app.zon`

@@ -357,8 +357,6 @@ pub const Revoke = struct {
             return error.NotFound;
         }
 
-        ctx.notice("auth.device_revoked", device.id);
-
         return .{
             .revoked = true,
         };

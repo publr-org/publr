@@ -46,6 +46,7 @@ pub const Hooks = struct {
 pub const Hook = fn (
     ctx: *Ctx,
     ids: []const []const u8,
+    name: []const u8,
     to: []const u8,
     refused: Refusals,
 ) Error!void;
@@ -61,17 +62,24 @@ pub fn Of(comptime Domain: type) type {
 
         /// Every document `query` keeps moved to `to`; the ones in `to` already are left out
         /// by the caller's query.
+        /// Every record `query` keeps, moved by the transition `name` into `to` (where that
+        /// transition leads); one whose status it does not leave is refused.
         pub fn move(
             ctx: *Ctx,
             granted: *const Grant,
             query: store.documents.Query,
+            name: []const u8,
             to: []const u8,
             hooks: ?Hooks,
         ) Error!Outcome {
             std.debug.assert(ctx.db.transaction_depth >= 1);
             std.debug.assert(to.len > 0);
 
-            if (registry.Statuses.find(to) == null) {
+            if (to.len > model.status.id_len_max) {
+                return error.Invalid;
+            }
+
+            if (try @import("../status.zig").find(ctx, to) == null) {
                 return error.Invalid;
             }
 
@@ -104,6 +112,7 @@ pub fn Of(comptime Domain: type) type {
             while (parts < parts_max) : (parts += 1) {
                 const read = try move_part(ctx, granted, .{
                     .after = position,
+                    .name = name,
                     .to = to,
                     .hooks = hooks,
                 }, &outcome, &failed);
@@ -134,6 +143,7 @@ pub fn Of(comptime Domain: type) type {
         /// only failures stay in the arena. Answers how many it read and the last id.
         const Part = struct {
             after: i64,
+            name: []const u8,
             to: []const u8,
             hooks: ?Hooks,
         };
@@ -167,13 +177,13 @@ pub fn Of(comptime Domain: type) type {
                 };
             }
 
-            const refused = try checked(ctx, granted, rows, part.to);
+            const refused = try checked(ctx, granted, rows, part.name, part.to);
 
             if (part.hooks) |given| {
-                try given.before(ctx, try ids_of(ctx.arena, rows), part.to, refused);
+                try given.before(ctx, try ids_of(ctx.arena, rows), part.name, part.to, refused);
             }
 
-            try write_part(ctx, rows, part.to, refused, part.hooks);
+            try write_part(ctx, rows, part, refused);
             try note_failures(kept, rows, refused, outcome, failed);
 
             return .{
@@ -187,6 +197,7 @@ pub fn Of(comptime Domain: type) type {
             ctx: *Ctx,
             granted: *const Grant,
             rows: []const Match,
+            name: []const u8,
             to: []const u8,
         ) Error!Refusals {
             std.debug.assert(rows.len > 0 and rows.len <= part_max);
@@ -195,7 +206,7 @@ pub fn Of(comptime Domain: type) type {
             const refused = ctx.arena.alloc(?[]const u8, rows.len) catch return error.OutOfMemory;
 
             for (rows, refused) |row, *reason| {
-                reason.* = try refusal_of(ctx, granted, row, to);
+                reason.* = try refusal_of(ctx, granted, row, name, to);
             }
 
             return refused;
@@ -205,6 +216,7 @@ pub fn Of(comptime Domain: type) type {
             ctx: *Ctx,
             granted: *const Grant,
             row: Match,
+            name: []const u8,
             to: []const u8,
         ) Error!?[]const u8 {
             std.debug.assert(row.id.len > 0);
@@ -221,13 +233,26 @@ pub fn Of(comptime Domain: type) type {
                 return "You may not change it";
             }
 
-            if (!registry.Statuses.allows(row.status, to)) {
-                return "Not a move its status allows";
-            }
-
             const type_row = try definitions.find(ctx, row.type_id) orelse {
                 return "Its type is gone";
             };
+
+            const target = type_row.def.flow.named(name, row.status);
+
+            if (target == null or !std.mem.eql(u8, target.?.to, to)) {
+                return "Not a transition its status allows";
+            }
+
+            if (!lifecycle.passes(ctx, target.?.authorize)) {
+                return "You may not make this transition";
+            }
+
+            const flow = type_row.def.flow;
+            const publishing = lifecycle.requests.needs_publish(flow, row.status, to);
+
+            if (publishing and !lifecycle.requests.may_publish(ctx, type_row.def.handle)) {
+                return "Needs someone who may publish";
+            }
 
             check_status(type_row.def, to, granted) catch {
                 return "Its type does not take that status";
@@ -237,7 +262,7 @@ pub fn Of(comptime Domain: type) type {
                 return "You may not make this move";
             }
 
-            if (registry.Statuses.is_live(to)) {
+            if (type_row.def.flow.is_live(to)) {
                 return try live_refusal(ctx, row, type_row.def);
             }
 
@@ -272,18 +297,13 @@ pub fn Of(comptime Domain: type) type {
         }
 
         /// The rows not refused moved by one statement; pending changes going live applied
-        /// first, each on its own; the moves' notices handed on together; the `after` hooks
+        /// first, each on its own; the moves' events handed on together; the `after` hooks
         /// over the moved, and a part whose hook refuses one moved again without it.
-        fn write_part(
-            ctx: *Ctx,
-            rows: []const Match,
-            to: []const u8,
-            refused: Refusals,
-            hooks: ?Hooks,
-        ) Error!void {
+        fn write_part(ctx: *Ctx, rows: []const Match, part: Part, refused: Refusals) Error!void {
             std.debug.assert(rows.len == refused.len);
             std.debug.assert(rows.len > 0);
 
+            const to = part.to;
             var attempts: u32 = 0;
 
             while (attempts <= part_max) : (attempts += 1) {
@@ -294,8 +314,8 @@ pub fn Of(comptime Domain: type) type {
 
                 try write_once(ctx, rows, to, refused);
 
-                if (hooks) |given| {
-                    try given.after(ctx, try ids_of(ctx.arena, rows), to, refused);
+                if (part.hooks) |given| {
+                    try given.after(ctx, try ids_of(ctx.arena, rows), part.name, to, refused);
                 }
 
                 if (count_null(refused) == before) {
@@ -320,23 +340,26 @@ pub fn Of(comptime Domain: type) type {
 
             var moving: std.ArrayList([]const u8) = .empty;
             var applied: std.ArrayList([]const u8) = .empty;
-            var notices: std.ArrayList(sdk.Event.Notice) = .empty;
-            const going_live = registry.Statuses.is_live(to);
+            var events: std.ArrayList(sdk.Event.Emitted) = .empty;
 
             for (rows, refused) |row, reason| {
                 if (reason != null) {
                     continue;
                 }
 
+                // A row not refused has its type: `refusal_of` read it.
+                const type_row = try definitions.find(ctx, row.type_id) orelse unreachable;
+                const flow = type_row.def.flow;
+
                 moving.append(ctx.arena, row.id) catch return error.OutOfMemory;
 
-                if (going_live and row.changed) {
+                if (flow.is_live(to) and row.changed) {
                     if (try lifecycle.apply_pending(ctx, record_of(row))) {
                         applied.append(ctx.arena, row.id) catch return error.OutOfMemory;
                     }
                 }
 
-                try add_notices(ctx, &notices, row, to);
+                try add_event(ctx, &events, type_row.def, row, to);
             }
 
             if (moving.items.len == 0) {
@@ -354,27 +377,34 @@ pub fn Of(comptime Domain: type) type {
 
             std.debug.assert(moved == moving.items.len);
 
-            try registry.SDK.notices.hand_many(ctx, notices.items);
+            try registry.SDK.events.hand_many(ctx, events.items);
         }
 
-        fn add_notices(
+        /// The record's own transition event (`post.transitioned`), as a move of its own
+        /// raises it: each record's fact in a write over many.
+        fn add_event(
             ctx: *Ctx,
-            notices: *std.ArrayList(sdk.Event.Notice),
+            events: *std.ArrayList(sdk.Event.Emitted),
+            def: store.definitions.Def,
             row: Match,
             to: []const u8,
         ) Error!void {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(ctx.parent != null);
 
-            var buffer: [lifecycle.transition_notices_max][]const u8 = undefined;
+            const payload: model.flow.Transitioned = .{
+                .record = row.id,
+                .transition = def.flow.name_between(row.status, to),
+                .from = row.status,
+                .to = to,
+            };
 
-            for (lifecycle.transition_notices(row.status, to, &buffer)) |name| {
-                notices.append(ctx.arena, .{
-                    .operation_id = ctx.parent.?,
-                    .name = name,
-                    .subject = row.id,
-                }) catch return error.OutOfMemory;
-            }
+            lifecycle.mark_live_change(ctx, def.flow, row.status, to);
+            events.append(ctx.arena, .{
+                .operation_id = ctx.parent.?,
+                .name = try model.flow.any_name(ctx.arena, def.handle),
+                .subject = try sdk.stringify(ctx.arena, payload),
+            }) catch return error.OutOfMemory;
         }
 
         fn note_failures(

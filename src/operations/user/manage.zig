@@ -61,7 +61,7 @@ pub const Update = struct {
             return error.Invalid;
         };
 
-        if (!user_operations.valid_roles(in.roles)) {
+        if (!try user_operations.valid_roles(ctx, in.roles)) {
             return error.Invalid;
         }
 
@@ -90,8 +90,6 @@ pub const Update = struct {
 
             try user_operations.fields.write(ctx, found.user.id, defs, text);
         }
-
-        ctx.notice("auth.user_updated", found.user.id);
 
         return .{
             .user_id = found.user.id,
@@ -183,8 +181,6 @@ pub const Delete = struct {
         const deleted = try store.users.delete(ctx.db, found.user.id);
 
         std.debug.assert(deleted);
-
-        ctx.notice("auth.user_deleted", found.user.id);
 
         return .{
             .user_id = found.user.id,

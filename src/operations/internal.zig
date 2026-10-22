@@ -19,6 +19,8 @@ const records = store.internal_records;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "internal",
+    .label = "Plugin records",
+    .area = .background,
     .summary = "A plugin's internal records: what it keeps for itself, never content",
     .details =
     \\Carts, reservations, stock movements, logs: records a plugin keeps and nobody edits,
@@ -85,13 +87,13 @@ pub const Create = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const target = try scope_of(ctx, in.plugin, in.app, in.kind);
+        const target = try scope_of(ctx, in.plugin, in.app, in.kind, true);
         const given = try object_of(ctx, in.document);
         const scope = target.scope;
         const id = try records.insert(ctx.db, ctx.io, ctx.arena, scope, in.document, ctx.now_ms);
 
         try index(ctx, target.collection, id, given);
-        try changed(ctx, "internal.created", scope, id);
+        try changed(ctx, Created, scope, id);
 
         return .{
             .id = id,
@@ -127,7 +129,7 @@ pub const Get = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const target = try scope_of(ctx, in.plugin, in.app, in.kind);
+        const target = try scope_of(ctx, in.plugin, in.app, in.kind, false);
         const row = try records.get(ctx.db, ctx.arena, target.scope, in.id) orelse {
             return error.NotFound;
         };
@@ -176,7 +178,7 @@ pub const Save = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const target = try scope_of(ctx, in.plugin, in.app, in.kind);
+        const target = try scope_of(ctx, in.plugin, in.app, in.kind, true);
 
         if (target.collection.append_only) {
             return error.Invalid;
@@ -205,7 +207,7 @@ pub const Save = struct {
         const version = try records.update(ctx.db, target.scope, in.id, text, expected, ctx.now_ms);
 
         try index(ctx, target.collection, in.id, merged);
-        try changed(ctx, "internal.saved", target.scope, in.id);
+        try changed(ctx, Saved, target.scope, in.id);
 
         return .{
             .version = version,
@@ -248,7 +250,7 @@ pub const FindOne = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const target = try scope_of(ctx, in.plugin, in.app, in.kind);
+        const target = try scope_of(ctx, in.plugin, in.app, in.kind, false);
         const match = try match_of(target.collection, in.field, in.value);
         const rows = try records.list(ctx.db, ctx.arena, target.scope, match, 2, 0);
 
@@ -311,7 +313,7 @@ pub const Find = struct {
             return error.Invalid;
         }
 
-        const target = try scope_of(ctx, in.plugin, in.app, in.kind);
+        const target = try scope_of(ctx, in.plugin, in.app, in.kind, false);
         const match = if (in.field) |field|
             try match_of(target.collection, field, in.value.?)
         else
@@ -361,7 +363,7 @@ pub const Delete = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const target = try scope_of(ctx, in.plugin, in.app, in.kind);
+        const target = try scope_of(ctx, in.plugin, in.app, in.kind, true);
 
         if (target.collection.append_only) {
             return error.Invalid;
@@ -371,7 +373,7 @@ pub const Delete = struct {
 
         const deleted = try records.delete(ctx.db, target.scope, in.id);
 
-        try changed(ctx, "internal.deleted", target.scope, in.id);
+        try changed(ctx, Deleted, target.scope, in.id);
 
         return .{
             .deleted = deleted,
@@ -388,20 +390,51 @@ const Target = struct {
 /// running, the ones named. Not found when the plugin declares no such collection.
 /// What a write changed, for whoever listens (the activity log names it as a unit):
 /// `internal.saved` with `<plugin>/<kind>/<id>`.
-fn changed(ctx: *Ctx, name: []const u8, scope: Scope, id: []const u8) Error!void {
-    std.debug.assert(name.len > 0);
+fn changed(ctx: *Ctx, comptime Event: type, scope: Scope, id: []const u8) Error!void {
     std.debug.assert(id.len > 0);
 
-    const subject = std.fmt.allocPrint(ctx.arena, "{s}/{s}/{s}", .{
+    const unit = std.fmt.allocPrint(ctx.arena, "{s}/{s}/{s}", .{
         scope.plugin,
         scope.kind,
         id,
     }) catch return error.OutOfMemory;
 
-    ctx.notice(name, subject);
+    ctx.emit(Event, .{
+        .record = unit,
+    });
 }
 
-fn scope_of(ctx: *Ctx, plugin: ?[]const u8, app: ?[]const u8, kind: []const u8) Error!Target {
+/// What core's internal-record events carry.
+pub const Changed = struct {
+    /// The internal record: `<plugin>/<kind>/<id>`
+    record: []const u8,
+};
+
+/// An internal record was made.
+pub const Created = event_define(.{
+    .name = "internal.created",
+    .payload = Changed,
+});
+/// An internal record was saved.
+pub const Saved = event_define(.{
+    .name = "internal.saved",
+    .payload = Changed,
+});
+/// An internal record was deleted.
+pub const Deleted = event_define(.{
+    .name = "internal.deleted",
+    .payload = Changed,
+});
+
+const event_define = @import("../sdk/plugin/hook_define.zig").event;
+
+fn scope_of(
+    ctx: *Ctx,
+    plugin: ?[]const u8,
+    app: ?[]const u8,
+    kind: []const u8,
+    writes: bool,
+) Error!Target {
     std.debug.assert(ctx.now_ms >= 0);
 
     if (kind.len == 0 or kind.len > model.internal_record.kind_len_max) {
@@ -411,12 +444,18 @@ fn scope_of(ctx: *Ctx, plugin: ?[]const u8, app: ?[]const u8, kind: []const u8) 
     const running = ctx.plugin.len > 0;
 
     if (running and (plugin != null or app != null)) {
-        if (plugin == null or !std.mem.eql(u8, plugin.?, ctx.plugin) or app != null) {
+        const other = plugin != null and !std.mem.eql(u8, plugin.?, ctx.plugin);
+
+        if (plugin == null or app != null) {
+            return error.Denied;
+        }
+
+        if (other and !try reaches_other(ctx, plugin.?, kind, writes)) {
             return error.Denied;
         }
     }
 
-    const owner = if (running) ctx.plugin else plugin orelse return error.Invalid;
+    const owner = if (running) plugin orelse ctx.plugin else plugin orelse return error.Invalid;
 
     if (owner.len == 0) {
         return error.Invalid;
@@ -435,6 +474,33 @@ fn scope_of(ctx: *Ctx, plugin: ?[]const u8, app: ?[]const u8, kind: []const u8) 
         .scope = scope,
         .collection = collection,
     };
+}
+
+/// Whether the plugin running reaches another plugin's collection: reading through
+/// `records.read` with `.internal`, or a `records.read` or `records.write` naming it
+/// (`<plugin>.<kind>`); writing only through a `records.write` naming it.
+fn reaches_other(ctx: *Ctx, owner: []const u8, kind: []const u8, writes: bool) Error!bool {
+    std.debug.assert(owner.len > 0);
+    std.debug.assert(kind.len > 0);
+
+    const access = switch (ctx.caller) {
+        .plugin => |caller| caller.access,
+        else => registry.SDK.compiled_access(ctx.plugin),
+    } orelse return false;
+    const name = std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{ owner, kind }) catch {
+        return error.OutOfMemory;
+    };
+    const write = access.held_of("records.write");
+    const named_write = if (write) |held| model.permission.contains(held.records, name) else false;
+
+    if (writes) {
+        return named_write;
+    }
+
+    const read = access.held_of("records.read") orelse return named_write;
+    const wide = read.records.len == 0 and read.internal;
+
+    return named_write or wide or model.permission.contains(read.records, name);
 }
 
 fn object_of(ctx: *Ctx, text: []const u8) Error!Value {

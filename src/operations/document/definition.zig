@@ -32,6 +32,14 @@ pub const Summary = struct {
     fields: u32,
     /// The app it lives in; empty for a Global type.
     app: []const u8 = "",
+    /// The menu items its list sits under, the first that exists.
+    menu_parents: []const []const u8 = &.{},
+    /// `.menu = .none`: left out of the menu; its pages still open.
+    menu_hidden: bool = false,
+    /// Its default view: where its list starts.
+    view: content_type.View = .{},
+    /// An icon of the set; empty for none.
+    icon: []const u8 = "",
 };
 /// Which page of definitions a list answers.
 pub const Window = struct {
@@ -63,6 +71,10 @@ fn summary_of(arena: std.mem.Allocator, brief: anytype) Error!Summary {
         .editor = try arena.dupe(u8, brief.editor),
         .fields = @intCast(brief.fields_len),
         .app = try arena.dupe(u8, brief.app),
+        .menu_parents = brief.menu.parents,
+        .menu_hidden = brief.menu.hidden,
+        .view = brief.view,
+        .icon = try arena.dupe(u8, brief.icon),
     };
 }
 
@@ -75,6 +87,7 @@ pub const Updated = struct {
 /// What a delete did: whether it went, how many documents went with it, and its trash entry.
 pub const Deleted = struct {
     deleted: bool,
+    handle: []const u8,
     removed: u32,
     trash: []const u8 = "",
 };
@@ -90,7 +103,7 @@ pub fn Of(comptime Domain: type) type {
         const values = Domain.values;
         const document = Domain.document;
         const copy_problems = document_module.copy_problems;
-        const notice = Domain.config.definition_namespace;
+        const namespace = Domain.config.definition_namespace;
 
         /// The definition as every reader wants it: with what the domain adds.
         pub fn find(ctx: *Ctx, handle_or_id: []const u8) Error!?Row {
@@ -141,8 +154,44 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(ctx.now_ms >= 0);
 
             const row = try find_raw(ctx, handle_or_id) orelse return null;
+            var expanded = try Domain.config.expand_def(ctx, row);
+            const added = @import("../status.zig").added_statuses(ctx);
+            const handle = expanded.def.handle;
 
-            return try Domain.config.expand_def(ctx, row);
+            const flow = expanded.def.flow;
+
+            expanded.def.flow = try model.flow.with_added(ctx.arena, handle, flow, added);
+            try resolve_aliases(ctx, &expanded.def.flow);
+
+            return expanded;
+        }
+
+        /// A type's statuses standing in for another plugin's (`.alias`) given that one's
+        /// meaning, when the site knows it.
+        fn resolve_aliases(ctx: *Ctx, flow: *model.flow.Flow) Error!void {
+            std.debug.assert(flow.statuses.len <= model.status.statuses_max);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            for (flow.statuses) |own| {
+                if (own.alias.len > 0) {
+                    break;
+                }
+            } else return;
+
+            const known = try @import("../status.zig").known(ctx);
+            const statuses = ctx.arena.dupe(model.status.Status, flow.statuses) catch {
+                return error.OutOfMemory;
+            };
+
+            for (statuses) |*own| {
+                const resolved = @import("../status.zig").find_in(known, own.id) orelse continue;
+
+                own.label = resolved.label;
+                own.color = resolved.color;
+                own.live = resolved.live;
+            }
+
+            flow.statuses = statuses;
         }
 
         /// The definition as stored.
@@ -184,7 +233,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(granted.allows());
             std.debug.assert(brief.handle.len > 0);
 
-            if (granted.record_filter.flags.public_types_only and !brief.public) {
+            if (granted.public_only_on(brief.handle) and !brief.public) {
                 return false;
             }
 
@@ -229,8 +278,6 @@ pub fn Of(comptime Domain: type) type {
 
             const def = try parse_and_validate(ctx, definition);
             const id = try definitions.insert(ctx.db, ctx.arena, def, ctx.now_ms);
-
-            ctx.notice(notice ++ ".created", def.handle);
 
             return .{
                 .id = id,
@@ -294,7 +341,6 @@ pub fn Of(comptime Domain: type) type {
             const updated = try definitions.update(ctx.db, ctx.arena, row.id, def, ctx.now_ms);
 
             std.debug.assert(updated);
-            ctx.notice(notice ++ ".updated", def.handle);
 
             return .{
                 .id = row.id,
@@ -397,10 +443,10 @@ pub fn Of(comptime Domain: type) type {
             const trash_id = try keep(ctx, row.id, row.def.name, held);
 
             const deleted = try definitions.delete(ctx.db, row.id);
-            ctx.notice(notice ++ ".deleted", row.def.handle);
 
             return .{
                 .deleted = deleted,
+                .handle = row.def.handle,
                 .removed = held,
                 .trash = trash_id,
             };
@@ -413,7 +459,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(id.len > 0);
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
-            const types = comptime std.mem.eql(u8, notice, "content_type");
+            const types = comptime std.mem.eql(u8, namespace, "content_type");
             const what = if (types) "Content type" else "Taxonomy";
             const holds = if (types) "records" else "terms";
             const label = std.fmt.allocPrint(ctx.arena, "{s} {s}, and its {d} {s}", .{
@@ -424,7 +470,7 @@ pub fn Of(comptime Domain: type) type {
             }) catch return error.OutOfMemory;
 
             return trash.keep(ctx, .{
-                .kind = notice,
+                .kind = namespace,
                 .key = id,
                 .label = label,
                 .roots = try roots_of(ctx, id),
@@ -476,12 +522,11 @@ pub fn Of(comptime Domain: type) type {
         }
 
         /// Deletes a definition and all it holds, its copy kept by the caller already.
-        pub fn drop_kept(ctx: *Ctx, id: []const u8, handle: []const u8) Error!void {
+        pub fn drop_kept(ctx: *Ctx, id: []const u8) Error!void {
             std.debug.assert(id.len > 0);
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
             _ = try definitions.delete(ctx.db, id);
-            ctx.notice(notice ++ ".deleted", handle);
         }
 
         pub fn validate(ctx: *Ctx, definition: []const u8) Error!Report {
@@ -733,11 +778,11 @@ pub fn Of(comptime Domain: type) type {
         }
 
         fn check_statuses(def: Def, problems: *model.field.Problems) void {
-            std.debug.assert(registry.Statuses.all.len > 0);
+            std.debug.assert(def.handle.len > 0);
             std.debug.assert(def.statuses.len <= content_type.statuses_max);
 
             for (def.statuses) |id| {
-                if (registry.Statuses.find(id) == null) {
+                if (def.flow.find(id) == null) {
                     problems.add("statuses", "unknown status");
                 }
             }

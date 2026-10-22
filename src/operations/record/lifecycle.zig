@@ -14,27 +14,35 @@ const example_id = "a1b2c3d4e5f60718293a4b5c";
 
 pub const Transition = struct {
     pub const name = "record.transition";
-    pub const description = "Move a record to another status (publish, unpublish, archive, ...)";
+    pub const description = "Move a record by a transition of its type's flow: publish, " ++
+        "archive, ...";
     pub const details =
-        \\The move must be a registered transition (see `status list`) and the type
-        \\must accept the target status. Moving into a live status applies pending
-        \\edits first, like `record publish`; moving out of one keeps them parked.
-        \\Bumps `version`; `expected_version` works as in save.
+        \\Names the transition, never the status: `publish`, `archive`, a type's own
+        \\(`submit`), `trash` and `restore`. Refused unless the record is in one of the
+        \\transition's `from` statuses and you pass the transition's own `authorize`.
+        \\Moving into a live status applies pending edits first, like `record publish`;
+        \\moving out of one keeps them parked. Bumps `version`; `expected_version` works as
+        \\in save. Without the right to publish (`record publish`), a transition into or out
+        \\of a live status, `destroy`, and `publish` of a live record's changes are asked
+        \\for instead: `pending`, the record as it was, the request kept on it until someone
+        \\who may runs it or `record decline_request` drops it.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         id: []const u8,
-        to: []const u8,
+        transition: []const u8,
         expected_version: ?i64 = null,
     };
     pub const Out = struct {
         status: []const u8,
         changed: bool,
         version: i64,
+        /// The transition waits for a person: the caller may only draft.
+        pending: bool = false,
     };
     pub const example: In = .{
         .id = record_operations.example_draft_id,
-        .to = "published",
+        .transition = "publish",
     };
     pub const example_out: Out = .{
         .status = "published",
@@ -43,7 +51,7 @@ pub const Transition = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The record id",
-        .to = "The target status id",
+        .transition = "The transition's name, `publish`",
         .expected_version = "The `version` you read; refuse if it changed",
     };
 
@@ -54,7 +62,10 @@ pub const Transition = struct {
             return error.Invalid;
         }
 
-        return moved_out(try lifecycle.transition(ctx, granted, in.id, in.to, in.expected_version));
+        const expected = in.expected_version;
+        const moved = try lifecycle.transition(ctx, granted, in.id, in.transition, expected);
+
+        return moved_out(moved);
     }
 };
 
@@ -66,6 +77,7 @@ fn moved_out(moved: @import("../document/lifecycle.zig").Moved) Transition.Out {
         .status = moved.status,
         .changed = moved.changed,
         .version = moved.version,
+        .pending = moved.pending,
     };
 }
 
@@ -75,8 +87,8 @@ pub const Publish = struct {
     pub const details =
         \\From a draft: the document goes live (`draft -> published`). From a live
         \\record with pending edits: the pending copy becomes the live document, the
-        \\old one is kept as a revision snapshot, `changed` clears. Either way one
-        \\`record.published` notice. Refused when there is nothing to publish.
+        \\old one is kept as a revision snapshot, `changed` clears. From a draft the move
+        \\also raises the type's transition event. Refused when there is nothing to publish.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -141,7 +153,7 @@ pub const DiscardChanges = struct {
 
 pub const Delete = struct {
     pub const name = "record.delete";
-    pub const description = "Move a record to `deleted` (reversible: transition back to draft)";
+    pub const description = "Move a record to the trash (restorable: the `restore` transition)";
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         id: []const u8,
@@ -158,7 +170,7 @@ pub const Delete = struct {
         .id = example_id,
     };
     pub const example_out: Out = .{
-        .status = "deleted",
+        .status = "trashed",
         .changed = false,
         .version = 2,
         .type = "post",
@@ -275,7 +287,7 @@ test "pending edits: save on a live record parks, publish applies, discard drops
 
     const unpublished = try SDK.dispatch(&editor, Transition, .{
         .id = created.id,
-        .to = "draft",
+        .transition = "unpublish",
     });
     try std.testing.expect(unpublished.changed);
     const still_parked = try SDK.dispatch(&editor, record_operations.Save, .{
@@ -334,14 +346,14 @@ test "pending edits: save on a live record parks, publish applies, discard drops
     const deleted = try SDK.dispatch(&editor, Delete, .{
         .id = created.id,
     });
-    try std.testing.expectEqualStrings("deleted", deleted.status);
+    try std.testing.expectEqualStrings("trashed", deleted.status);
     const gone_for_anon = SDK.dispatch(&anon, record_operations.Get, .{
         .id = created.id,
     });
     try std.testing.expectError(error.NotFound, gone_for_anon);
     const restored = try SDK.dispatch(&editor, Transition, .{
         .id = created.id,
-        .to = "draft",
+        .transition = "restore",
     });
     try std.testing.expectEqualStrings("draft", restored.status);
     try std.testing.expectError(error.Denied, SDK.dispatch(&editor, Purge, .{
@@ -392,7 +404,7 @@ test "SDK rejects oversized ids and invalid statuses without leaving a transacti
                 Transition,
                 .{
                     .id = example_id,
-                    .to = status,
+                    .transition = status,
                 },
             ),
         );
@@ -400,14 +412,14 @@ test "SDK rejects oversized ids and invalid statuses without leaving a transacti
     }
 }
 
-/// Notices kept on the call's trail, as the activity log would see them.
-fn hear(ctx: *Ctx, notice: sdk.Event.Notice) void {
-    std.debug.assert(notice.name.len > 0);
+/// Events kept on the call's trail, as the activity log would see them.
+fn hear(ctx: *Ctx, emitted: sdk.Event.Emitted, _: bool) void {
+    std.debug.assert(emitted.name.len > 0);
     std.debug.assert(ctx.trail != null);
 
-    ctx.trail.?.noticed(.{
-        .name = notice.name,
-        .subject = notice.subject,
+    ctx.trail.?.emitted(.{
+        .name = emitted.name,
+        .subject = emitted.subject,
     });
 }
 
@@ -415,8 +427,8 @@ fn heard(trail: *const sdk.trail.Trail, name: []const u8) bool {
     std.debug.assert(name.len > 0);
     std.debug.assert(trail.root != 0);
 
-    for (trail.notices.items) |notice| {
-        if (std.mem.eql(u8, notice.name, name)) {
+    for (trail.events.items) |emitted| {
+        if (std.mem.eql(u8, emitted.name, name)) {
             return true;
         }
     }
@@ -472,8 +484,10 @@ test "a document whose rows were replaced from outside lands as a person's move 
     system.notify = hear;
     defer system.notify = null;
 
-    // The live title replaced: a revision of the old one, saved and published.
+    // The live title replaced: a revision of the old one, what visitors see changed, no move.
     {
+        system.publishes = false;
+
         var transaction = try system.db.transaction();
         defer transaction.rollback();
 
@@ -490,15 +504,15 @@ test "a document whose rows were replaced from outside lands as a person's move 
             8,
         );
 
-        try std.testing.expect(heard(&trail, "record.saved"));
-        try std.testing.expect(heard(&trail, "record.published"));
-        try std.testing.expect(!heard(&trail, "record.transitioned"));
+        try std.testing.expect(system.publishes);
+        try std.testing.expect(!heard(&trail, "post.transitioned"));
         try std.testing.expectEqual(@as(usize, 1), revisions.len);
     }
 
-    // Taken back to a draft: the move's own notices.
+    // Taken back to a draft: the type's transition event, as the move would raise it.
     {
-        trail.notices.clearRetainingCapacity();
+        trail.events.clearRetainingCapacity();
+        system.publishes = false;
 
         var transaction = try system.db.transaction();
         defer transaction.rollback();
@@ -508,8 +522,8 @@ test "a document whose rows were replaced from outside lands as a person's move 
         _ = try store.records.set_status(system.db, created.id, "draft", null, 1, null, false);
         try lifecycle.landed(&system, created.id, before);
 
-        try std.testing.expect(heard(&trail, "record.transitioned"));
-        try std.testing.expect(heard(&trail, "record.unpublished"));
+        try std.testing.expect(heard(&trail, "post.transitioned"));
+        try std.testing.expect(system.publishes);
     }
 
     // A slug another live document holds is refused.

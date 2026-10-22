@@ -9,6 +9,8 @@ const Error = sdk.Error;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "update",
+    .label = "Updates",
+    .area = .system,
     .summary = "Updating this site's Publr to a newer release, and stepping back",
     .details =
     \\Administrators only, on a running server. An update downloads the release for this

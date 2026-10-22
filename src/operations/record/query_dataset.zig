@@ -26,6 +26,8 @@ const page_size: u32 = 20;
 
 pub const Type = struct {
     handle: []const u8,
+    /// Its records read live only, whatever the rest of the query reads.
+    live_only: bool = false,
 };
 
 pub const Source = struct {
@@ -40,10 +42,14 @@ pub const Source = struct {
     /// The statuses read: each live one (perspective `published`), or, when null, what a list
     /// shows by default (every listed status the grant allows).
     live: ?[]const []const u8,
+    /// The live statuses a type read live only (`Type.live_only`) keeps to.
+    live_statuses: []const []const u8 = &.{},
     /// Fields the grant hides, left out of every document.
     mask: []const []const u8,
     /// Only this user's records, when the query's grant reaches no others.
     owner: ?[]const u8 = null,
+    /// Records in the trash too; every other read leaves them out.
+    trashed: bool = false,
     read: u32 = 0,
 
     const vtable: groq.Dataset.VTable = .{
@@ -114,6 +120,19 @@ pub const Source = struct {
         return documents.items;
     }
 
+    /// The statuses a type's records are read in: the live ones when the query or the type
+    /// reads live only; null for what a list shows.
+    fn statuses_of(source: *const Source, readable: Type) ?[]const []const u8 {
+        std.debug.assert(readable.handle.len > 0);
+        std.debug.assert(source.live_statuses.len <= 64);
+
+        if (source.live) |statuses| {
+            return statuses;
+        }
+
+        return if (readable.live_only) source.live_statuses else null;
+    }
+
     fn read_type(
         source: *Source,
         arena: std.mem.Allocator,
@@ -130,7 +149,7 @@ pub const Source = struct {
         else
             null;
 
-        if (source.live) |statuses| {
+        if (source.statuses_of(read.type)) |statuses| {
             for (statuses) |status| {
                 const clause = try std.fmt.allocPrint(arena, "status:is:{s}", .{status});
                 const clauses = try clauses_of(arena, clause, own);
@@ -150,6 +169,15 @@ pub const Source = struct {
             .value = filter_value,
             .clauses = clauses,
         }, documents);
+
+        if (source.trashed) {
+            const in_trash = try clauses_of(arena, "status:is:trashed", own);
+
+            try source.read_pages(arena, read, .{
+                .value = filter_value,
+                .clauses = in_trash,
+            }, documents);
+        }
     }
 
     /// A type's records a page at a time, each page in the request's scratch: its documents
@@ -294,7 +322,8 @@ pub const Source = struct {
             };
         }
 
-        const statuses = source.live orelse return restricted(source, arena, id, .{
+        const read_in = source.statuses_of(readable);
+        const statuses = read_in orelse return restricted(source, arena, id, .{
             .unreadable = "owner",
         });
         var live = false;

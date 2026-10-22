@@ -236,7 +236,7 @@ fn board(ctx: *Ctx, app: []const u8) Error![]const Card {
     const app_clause = std.fmt.allocPrint(arena, "app:is:{s}", .{app}) catch {
         return error.OutOfMemory;
     };
-    const filters = [_][]const u8{ "status:not:deleted", app_clause };
+    const filters = [_][]const u8{ "status:not:trashed", app_clause };
     const listed = try registry.SDK.dispatch(ctx, record.List, .{
         .type = design.moodboard_handle,
         .filters = &filters,

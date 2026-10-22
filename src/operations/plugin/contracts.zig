@@ -1,7 +1,7 @@
-//! The contracts between installed plugins, checked whenever one changes: enabling a
-//! plugin checks what it uses; updating one checks it and every enabled plugin that needs
-//! it. A required contract that does not fit refuses the change; an optional one leaves
-//! the hook inert (see `plugin get`).
+//! The remotes between plugins, checked whenever one changes: enabling a plugin checks what
+//! it uses; updating one checks it and every enabled plugin that uses it. A required remote
+//! that does not fit refuses the change; an optional one is off (its calls answer
+//! `Unavailable`, its hooks don't run) until it fits; `plugin get` says which and why.
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
@@ -15,9 +15,15 @@ const Error = sdk.Error;
 const Manifest = model.sandboxed_plugin.Manifest;
 const fit = model.plugin_contracts;
 
-/// What is there now: every compiled-in plugin and every enabled installed one, with
-/// `replacing` standing in for the installed plugin of its name (an update about to land).
-pub fn providers(ctx: *Ctx, replacing: ?*const Manifest) Error![]const fit.Provider {
+pub const ProvidersOptions = struct {
+    /// An update about to land: it stands in for the installed plugin of its name.
+    replacing: ?*const Manifest = null,
+};
+
+/// What is there now: every compiled-in plugin and every enabled installed one.
+pub fn providers(ctx: *Ctx, options: ProvidersOptions) Error![]const fit.Provider {
+    const replacing = options.replacing;
+
     std.debug.assert(ctx.now_ms >= 0);
     var list: std.ArrayList(fit.Provider) = .empty;
     const natives = registry.native_providers(ctx.arena) catch return error.OutOfMemory;
@@ -41,7 +47,7 @@ pub fn providers(ctx: *Ctx, replacing: ?*const Manifest) Error![]const fit.Provi
     return list.items;
 }
 
-/// Refused, naming the contract, when one the plugin needs does not fit what is there.
+/// Refused, in plain words, when a remote the plugin needs does not fit what is there.
 pub fn check_user(ctx: *Ctx, manifest: *const Manifest, there: []const fit.Provider) Error!void {
     std.debug.assert(manifest.name.len > 0);
     std.debug.assert(ctx.now_ms >= 0);
@@ -53,7 +59,7 @@ pub fn check_user(ctx: *Ctx, manifest: *const Manifest, there: []const fit.Provi
         if (finding.required) {
             var buffer: [256]u8 = undefined;
             const why = fit.describe(finding, &buffer);
-            const message = std.fmt.allocPrint(ctx.arena, "{s} needs {s}", .{
+            const message = std.fmt.allocPrint(ctx.arena, "{s} can't be enabled: {s}", .{
                 manifest.name,
                 why,
             }) catch return error.OutOfMemory;
@@ -72,7 +78,9 @@ pub fn check_user(ctx: *Ctx, manifest: *const Manifest, there: []const fit.Provi
 pub fn check_update(ctx: *Ctx, replacing: *const Manifest) Error!void {
     std.debug.assert(replacing.name.len > 0);
 
-    const there = try providers(ctx, replacing);
+    const there = try providers(ctx, .{
+        .replacing = replacing,
+    });
 
     try check_user(ctx, replacing, there);
 
@@ -83,29 +91,137 @@ pub fn check_update(ctx: *Ctx, replacing: *const Manifest) Error!void {
     }
 }
 
-/// Each contract of the plugin that does not fit what is there, in words: what `plugin get`
-/// shows.
-pub fn findings(ctx: *Ctx, manifest: *const Manifest) Error![]const []const u8 {
+/// A remote switched off, and why, in plain words.
+pub const Off = struct {
+    name: []const u8,
+    why: []const u8,
+};
+
+/// Where the plugin's remotes stand now: what keeps it from being enabled, and which are off.
+pub const Standing = struct {
+    blocked: []const []const u8,
+    off: []const Off,
+};
+
+/// The plugin's remotes that do not fit what is there: what `plugin get` shows.
+pub fn standing(ctx: *Ctx, manifest: *const Manifest) Error!Standing {
     std.debug.assert(manifest.name.len > 0);
 
-    const there = try providers(ctx, null);
+    const there = try providers(ctx, .{});
     var found: [fit.findings_max]fit.Finding = undefined;
     const count = fit.check(user_of(manifest), there, &found);
-    const lines = ctx.arena.alloc([]const u8, count) catch return error.OutOfMemory;
+    var blocked: std.ArrayList([]const u8) = .empty;
+    var off: std.ArrayList(Off) = .empty;
 
-    for (found[0..count], lines) |finding, *line| {
-        var buffer: [256]u8 = undefined;
-        const text = fit.describe(finding, &buffer);
-        const kept = ctx.arena.dupe(u8, text) catch return error.OutOfMemory;
+    for (found[0..count]) |finding| {
+        const why = try words_of(ctx, finding);
 
-        line.* = if (finding.required) kept else std.fmt.allocPrint(
-            ctx.arena,
-            "{s} (optional: its hook is off)",
-            .{kept},
-        ) catch return error.OutOfMemory;
+        if (finding.required) {
+            blocked.append(ctx.arena, why) catch return error.OutOfMemory;
+        } else {
+            off.append(ctx.arena, .{
+                .name = finding.name,
+                .why = why,
+            }) catch return error.OutOfMemory;
+        }
     }
 
-    return lines;
+    return .{
+        .blocked = blocked.items,
+        .off = off.items,
+    };
+}
+
+/// The built-in plugins' remotes that are off now, each named `plugin: remote`, and why:
+/// what the Built-in tab shows. A built-in plugin always runs, so whatever does not fit is
+/// off, whether it needs it or only works with it.
+pub fn native_off(ctx: *Ctx) Error![]const Off {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const there = try providers(ctx, .{});
+    const users = registry.native_users();
+    var found: [fit.findings_max]fit.Finding = undefined;
+    var off: std.ArrayList(Off) = .empty;
+
+    std.debug.assert(users.len <= 64);
+
+    for (users) |user| {
+        const count = fit.check(user, there, &found);
+
+        for (found[0..count]) |finding| {
+            const named = std.fmt.allocPrint(ctx.arena, "{s}: {s}", .{
+                user.plugin,
+                finding.name,
+            }) catch return error.OutOfMemory;
+
+            off.append(ctx.arena, .{
+                .name = named,
+                .why = try words_of(ctx, finding),
+            }) catch return error.OutOfMemory;
+        }
+    }
+
+    return off.items;
+}
+
+/// What applying an update of `replacing` would do to the other enabled plugins: the ones
+/// that need it as it is (they stop the update), and the remotes it would switch off.
+pub const Effects = struct {
+    stops: []const []const u8,
+    switches_off: []const []const u8,
+};
+
+pub fn update_effects(ctx: *Ctx, replacing: *const Manifest) Error!Effects {
+    std.debug.assert(replacing.name.len > 0);
+
+    const now = try providers(ctx, .{});
+    const after = try providers(ctx, .{
+        .replacing = replacing,
+    });
+    var stops: std.ArrayList([]const u8) = .empty;
+    var switches_off: std.ArrayList([]const u8) = .empty;
+    var found: [fit.findings_max]fit.Finding = undefined;
+
+    var users: std.ArrayList(fit.User) = .empty;
+
+    users.appendSlice(ctx.arena, registry.native_users()) catch return error.OutOfMemory;
+
+    for (try installed(ctx)) |*manifest| {
+        if (!std.mem.eql(u8, manifest.name, replacing.name)) {
+            users.append(ctx.arena, user_of(manifest)) catch return error.OutOfMemory;
+        }
+    }
+
+    for (users.items) |user| {
+        const count = fit.check(user, after, &found);
+
+        for (found[0..count]) |finding| {
+            if (!fit.remote_on(user, now, finding.name)) {
+                continue;
+            }
+
+            const why = try words_of(ctx, finding);
+            const line = std.fmt.allocPrint(ctx.arena, "{s}: {s}", .{ user.plugin, why }) catch
+                return error.OutOfMemory;
+            const list = if (finding.required) &stops else &switches_off;
+
+            list.append(ctx.arena, line) catch return error.OutOfMemory;
+        }
+    }
+
+    return .{
+        .stops = stops.items,
+        .switches_off = switches_off.items,
+    };
+}
+
+fn words_of(ctx: *Ctx, finding: fit.Finding) Error![]const u8 {
+    var buffer: [256]u8 = undefined;
+    const text = fit.describe(finding, &buffer);
+
+    std.debug.assert(finding.name.len > 0);
+
+    return ctx.arena.dupe(u8, text) catch error.OutOfMemory;
 }
 
 pub fn user_of(manifest: *const Manifest) fit.User {
@@ -162,7 +278,7 @@ fn test_manifest(
         .depends_on = depends,
         .compatible_with = works,
         .remotes = &.{.{
-            .operation = "app.inventory.reserve",
+            .name = "app.inventory.reserve",
             .input = comptime contract.describe(Sends),
             .output = comptime contract.describe(struct {
                 held: bool,

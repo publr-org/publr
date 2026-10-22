@@ -45,7 +45,7 @@ pub const Query = struct {
         \\the fields the grant hides. A query naming a type out of reach is refused as
         \\`Denied`; a reference to a record the caller may not read is `null`, listed in
         \\`problems`. References are record ids: `product == ^._id` compares them, `->`
-        \\follows them.
+        \\follows them. Records in the trash are left out unless `trashed` asks for them.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -53,6 +53,8 @@ pub const Query = struct {
         /// `$name` values, a JSON object.
         params: []const u8 = "{}",
         perspective: Perspective = .all,
+        /// Records in the trash too.
+        trashed: bool = false,
     };
     pub const Perspective = enum { published, all };
     pub const Out = struct {
@@ -73,6 +75,7 @@ pub const Query = struct {
         .query = "The GROQ query",
         .params = "Its `$name` values, as a JSON object",
         .perspective = "`published` (live records) or `all` (every status the grant allows)",
+        .trashed = "Read records in the trash too",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .result = "What the query answers: a list, one record, a value, or null",
@@ -89,17 +92,19 @@ pub const Query = struct {
         const arena = ctx.arena;
         const params = try params_of(arena, in.params);
         var source = try source_of(ctx, granted, in.perspective);
+
+        source.trashed = in.trashed and source.live == null;
         var problem: groq.Problem = .{};
         const now: groq.values.Datetime = .{
             .seconds = @divFloor(ctx.now_ms, 1000),
             .nanoseconds = @intCast(@mod(ctx.now_ms, 1000) * 1_000_000),
         };
-        const answered = groq.execute(arena, in.query, source.dataset(), .{
+        const answered = groq.execute(arena, in.query, source.dataset(), &problem, .{
             .params = params,
             .now = now,
             .strings_are_references = true,
             .work_steps = work_budget(ctx),
-        }, &problem) catch |err| return refused(ctx, err, problem, source.refused_type);
+        }) catch |err| return refused(ctx, err, problem, source.refused_type);
         const text = groq.values.to_json(arena, answered.value) catch return error.OutOfMemory;
 
         if (text.len > answer_bytes_max) {
@@ -250,15 +255,17 @@ fn source_of(
                 .shared = brief.shared,
                 .fields = &.{},
             });
-            const in_reach = granted.allows_type(brief.id) and
+            const in_reach = granted.allows_type(brief.handle) and
                 granted.allows_owner(brief.owner) and
                 granted.allows_placement(brief.app, shared);
-            const visible = !public_only or brief.public;
+            const visible = !public_only or brief.public or !(visitor or
+                granted.public_only_on(brief.handle));
             const handle = try arena.dupe(u8, brief.handle);
 
             if (in_reach and visible and kind_readable(ctx, brief.kind, brief.public)) {
                 readable.append(arena, .{
                     .handle = handle,
+                    .live_only = granted.live_only_on(brief.handle, brief.public),
                 }) catch return error.OutOfMemory;
             } else {
                 out_of_reach.append(arena, handle) catch return error.OutOfMemory;
@@ -279,14 +286,17 @@ fn source_of(
         key_id_len = @intCast(last.id.len);
     }
 
-    const live_only = visitor or perspective == .published or filter.flags.live_only;
+    // Each type by its own grant: one read live only leaves the others' drafts readable.
+    const live_only = visitor or perspective == .published;
+    const live = try live_statuses(ctx, granted);
 
     return .{
         .ctx = ctx,
         .granted = granted,
         .types = readable.items,
         .out_of_reach = out_of_reach.items,
-        .live = if (live_only) try live_statuses(arena, granted) else null,
+        .live = if (live_only) live else null,
+        .live_statuses = live,
         .mask = granted.field_mask,
         .owner = if (filter.flags.own_only) try own_user(ctx) else null,
     };
@@ -312,14 +322,15 @@ fn kind_readable(ctx: *const Ctx, kind: model.content_type.Kind, public: bool) b
     };
 }
 
-fn live_statuses(arena: std.mem.Allocator, granted: *const Grant) Error![]const []const u8 {
-    std.debug.assert(registry.Statuses.all.len > 0);
+fn live_statuses(ctx: *Ctx, granted: *const Grant) Error![]const []const u8 {
+    std.debug.assert(granted.allows());
 
+    const known = try @import("../status.zig").known(ctx);
     var list: std.ArrayList([]const u8) = .empty;
 
-    for (registry.Statuses.all) |status| {
+    for (known) |status| {
         if (status.live and granted.allows_status(status.id)) {
-            list.append(arena, status.id) catch return error.OutOfMemory;
+            list.append(ctx.arena, status.id) catch return error.OutOfMemory;
         }
     }
 

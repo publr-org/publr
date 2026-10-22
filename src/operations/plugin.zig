@@ -11,6 +11,8 @@ const views = @import("plugin/detail.zig");
 const sources = @import("plugin/sources.zig");
 const scaffold = @import("plugin/scaffold.zig");
 const data = @import("plugin/data.zig");
+const grants = @import("plugin/grants.zig");
+const native = @import("plugin/native.zig");
 const registry = @import("../server/registry.zig");
 
 const Ctx = sdk.Ctx;
@@ -19,6 +21,8 @@ const Error = sdk.Error;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "plugin",
+    .label = "Plugins",
+    .area = .system,
     .summary = "Installed plugins and apps: add, enable, grant, update, roll back, remove",
     .details =
     \\A plugin is a plugin (or an app) added at runtime from a `.wasm` file, without a
@@ -32,10 +36,11 @@ pub const namespace: sdk.operation.Namespace = .{
     ,
 };
 
-pub const ContentAccess = state.ContentAccess;
+pub const Choice = grants.Choice;
 pub const Request = state.Request;
 pub const Summary = views.Summary;
 pub const Detail = views.Detail;
+pub const contracts = @import("plugin/contracts.zig");
 pub const Added = lifecycle.Added;
 
 const detail_of = views.detail_of;
@@ -256,14 +261,15 @@ pub const Enable = struct {
         \\running and not among them: the refusal names it and the command that starts them
         \\together. Refused too when a content type one declares belongs to someone else.
         \\Their content types are created; each is granted what it asks for at the low and
-        \\medium tiers (what it held before, if disabled, stays). `content_access` applies
-        \\to each: `public` (the default), `all`, or `specific` with `types`.
+        \\medium tiers (what it held before, if disabled, stays). `grants` then sets what a
+        \\person chose on the review: each key on (granted, whatever its tier) or off
+        \\(denied), each flag it asked for on or off, and `http.fetch`'s `domains` as the
+        \\person left them. Invalid for a flag not asked for.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         names: []const []const u8,
-        content_access: state.Scope = .public,
-        types: []const []const u8 = &.{},
+        grants: []const Choice = &.{},
     };
     pub const Out = struct {
         plugins: []const Detail,
@@ -273,8 +279,8 @@ pub const Enable = struct {
             .items_min = 1,
             .items_max = dependents.together_max,
         },
-        .types = .{
-            .items_max = 64,
+        .grants = .{
+            .items_max = grants.choices_max,
         },
     };
     pub const example: In = .{
@@ -285,8 +291,8 @@ pub const Enable = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .names = "The plugins' names, what they depend on among them",
-        .content_access = "`public`, `all` or `specific`",
-        .types = "With `specific`: the content types, by handle",
+        .grants = "With one plugin: each request as `{ key, on, drafts, private, internal, " ++
+            "publish, domains }`, a flag left out staying as asked",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .plugins = "Each plugin as it is after",
@@ -298,16 +304,15 @@ pub const Enable = struct {
 
         try dependents.refuse_missing_parents(ctx, in.names);
 
-        const access: ContentAccess = .{
-            .scope = in.content_access,
-            .types = in.types,
-        };
+        if (in.grants.len > 0 and in.names.len != 1) {
+            return error.Invalid;
+        }
+
         const shown = ctx.arena.alloc(Detail, in.names.len) catch return error.OutOfMemory;
 
         for (in.names, shown) |plugin_name, *detail| {
-            const enabled = try lifecycle.enable(ctx, plugin_name, access);
+            const enabled = try lifecycle.enable(ctx, plugin_name, in.grants);
 
-            ctx.notice("plugin.enabled", plugin_name);
             detail.* = try detail_of(ctx, enabled);
         }
 
@@ -325,8 +330,6 @@ fn ByName(
     comptime operation_kind: sdk.operation.Kind,
     comptime documented: Detail,
     comptime act: fn (*Ctx, []const u8) Error!state.Decoded,
-    /// What it raises when it changed the plugin; null for a read.
-    comptime notice: ?[]const u8,
 ) type {
     return struct {
         pub const name = operation_name;
@@ -351,10 +354,6 @@ fn ByName(
 
             const acted = try act(ctx, in.name);
 
-            if (notice) |notice_name| {
-                ctx.notice(notice_name, in.name);
-            }
-
             return detail_of(ctx, acted);
         }
     };
@@ -363,14 +362,14 @@ fn ByName(
 pub const Get = ByName(
     "plugin.get",
     "Read a plugin: every request and where it stands, its versions",
-    "Each request (a permission, a hook, a raised limit) with the plugin's reason, its " ++
-        "tier, and whether it is granted, pending, denied, or unavailable (nothing installed " ++
-        "provides it); for a disabled plugin, as enabling it would leave it. With a " ++
+    "Each request (a permission, a hook, a raised limit, an added status) with the " ++
+        "plugin's reason, its tier, and whether it is granted, pending, denied, or " ++
+        "unavailable (nothing installed provides it); for a disabled plugin, as enabling " ++
+        "it would leave it. With a " ++
         "next version waiting, its version and requests; with a previous one, its version.",
     .read,
     views.example_detail,
-    state.load,
-    null,
+    native.load,
 );
 
 pub const Disable = struct {
@@ -419,7 +418,6 @@ pub const Disable = struct {
         for (in.names, shown) |plugin_name, *detail| {
             const disabled = try lifecycle.disable(ctx, plugin_name);
 
-            ctx.notice("plugin.disabled", plugin_name);
             detail.* = try detail_of(ctx, disabled);
         }
 
@@ -437,7 +435,6 @@ pub const Update = ByName(
     .write,
     views.example_updated,
     versions.update,
-    "plugin.updated",
 );
 
 pub const CancelUpdate = ByName(
@@ -447,7 +444,6 @@ pub const CancelUpdate = ByName(
     .write,
     views.example_cancelled,
     versions.cancel_update,
-    "plugin.update_cancelled",
 );
 
 pub const Rollback = ByName(
@@ -458,7 +454,6 @@ pub const Rollback = ByName(
     .write,
     views.example_rolled_back,
     versions.rollback,
-    "plugin.rolled_back",
 );
 
 /// Grant, revoke or deny one request: the same shape, a different change.
@@ -466,15 +461,16 @@ fn Decision(
     comptime operation_name: []const u8,
     comptime text: []const u8,
     comptime change: lifecycle.Change,
-    comptime notice: []const u8,
 ) type {
     return struct {
         pub const name = operation_name;
         pub const description = text;
         pub const details =
             \\One request at a time, by its key as `plugin get` lists it: a permission
-            \\(`content.write`), a hook (`after:record.save`) or a raised limit
-            \\(`limit.cpu_ms`). It takes effect on the plugin's next call.
+            \\(`records.write`), a hook (`after:record.save`), a raised limit
+            \\(`limit.cpu_ms`) or an added status (`status:inventory.awaiting_stock`). It takes
+            \\effect on the plugin's next call; a status's records leave by the plugin's own
+            \\transition out of it before it is revoked or denied, refused if one may not.
         ;
         pub const kind: sdk.operation.Kind = .write;
         pub const In = struct {
@@ -498,8 +494,6 @@ fn Decision(
 
             const decided = try lifecycle.decide(ctx, in.name, in.key, change);
 
-            ctx.notice(notice, in.name);
-
             return detail_of(ctx, decided);
         }
     };
@@ -509,72 +503,77 @@ pub const GrantRequest = Decision(
     "plugin.grant",
     "Grant one request a plugin makes",
     .grant,
-    "plugin.granted",
 );
 pub const Revoke = Decision(
     "plugin.revoke",
     "Take back one thing granted to a plugin",
     .revoke,
-    "plugin.revoked",
 );
 pub const Deny = Decision(
     "plugin.deny",
     "Refuse one request a plugin makes",
     .deny,
-    "plugin.denied",
 );
 
-pub const SetContentAccess = struct {
-    pub const name = "plugin.set_content_access";
-    pub const description = "Choose which content types a plugin's content permissions reach";
+pub const SetGrant = struct {
+    pub const name = "plugin.set_grant";
+    pub const description = "Switch a plugin's permission, or one of its flags, on or off";
     pub const details =
-        \\`public` (every public type), `all` (every type, public and private, including
-        \\ones added later) or `specific` with `types`. Its own types it always reaches.
+        \\One request by its key, as `plugin get` lists it: `on` grants it (whatever its
+        \\tier) or denies it, left out leaves it as it is; each flag it asked for (`drafts`,
+        \\`private`, `internal`, `publish`) is switched on or off, one left out stays as it
+        \\is. Never more than it asked for: a flag it did not ask for is invalid. `domains`
+        \\replaces the list `http.fetch` may reach: each exact (`api.example.com`), a
+        \\wildcard (`*.example.com`) or `*` (any public address). It takes effect on the
+        \\plugin's next call; the code sees it in its answers (`.pending`, denied, nothing
+        \\found, a request refused).
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         name: []const u8,
-        scope: state.Scope,
-        types: []const []const u8 = &.{},
+        key: []const u8,
+        on: ?bool = null,
+        drafts: ?bool = null,
+        private: ?bool = null,
+        internal: ?bool = null,
+        publish: ?bool = null,
+        domains: ?[]const []const u8 = null,
     };
     pub const Out = Detail;
     pub const example: In = .{
         .name = "greeter",
-        .scope = .specific,
-        .types = &.{"post"},
+        .key = "users.names",
+        .on = true,
     };
-    pub const example_out: Out = specific: {
-        var chosen = views.example_detail;
-
-        chosen.content_access = .{
-            .scope = .specific,
-            .types = &.{"post"},
-        };
-
-        break :specific chosen;
-    };
+    pub const example_out: Out = views.example_detail;
     pub const field_docs: sdk.operation.Docs(In) = .{
         .name = "The plugin's name",
-        .scope = "`public`, `all` or `specific`",
-        .types = "With `specific`: the content types, by handle",
+        .key = "The request's key",
+        .on = "Granted, or denied; left out, as it is",
+        .drafts = "With `records.read` or `terms.read`: drafts, pending changes, history",
+        .private = "With a read: content types marked Private",
+        .internal = "With `records.read`: other plugins' internal records",
+        .publish = "With `records.write` or `terms.write`: put things live",
+        .domains = "With `http.fetch`: where it may send, replacing the list; at most 32",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        if (in.types.len > 64) {
-            return error.Invalid;
-        }
-
         var decoded = try state.load(ctx, in.name);
 
-        decoded.content_access = .{
-            .scope = in.scope,
-            .types = in.types,
-        };
+        try grants.apply(ctx.arena, &decoded, .{
+            .key = in.key,
+            .on = in.on,
+            .drafts = in.drafts,
+            .private = in.private,
+            .internal = in.internal,
+            .publish = in.publish,
+            .domains = in.domains,
+        });
+        try @import("plugin/statuses.zig").leave(ctx, in.name, &decoded);
         try state.save(ctx, decoded);
-        ctx.notice("plugin.content_access_set", in.name);
 
         return detail_of(ctx, decoded);
     }
@@ -586,9 +585,8 @@ pub const Remove = struct {
     pub const details =
         \\Its operations and hooks stop at once; it waits in the trash with its grants and
         \\versions, and `trash restore` brings it back as it was. Its data stays, except the
-        \\pieces chosen with `plugin choose_removal`: those go into the same trash entry,
-        \\after the plugin's `uninstall` write runs, told which. Refused, like
-        \\`plugin disable`, while an enabled plugin depends on it.
+        \\pieces chosen with `plugin choose_removal`: those go into the same trash entry.
+        \\Refused, like `plugin disable`, while an enabled plugin depends on it.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -598,6 +596,8 @@ pub const Remove = struct {
         removed: []const u8,
         /// Its trash entry: `trash restore --id` brings it back.
         trash: []const u8 = "",
+        /// The content types chosen to go with it, by handle.
+        types_removed: []const []const u8 = &.{},
     };
     pub const example: In = .{
         .name = "greeter",
@@ -647,25 +647,28 @@ pub const Remove = struct {
             .roots = roots.items,
         });
 
-        if (going.len > 0) {
-            try uninstall(ctx, decoded, going);
-            try data.drop(ctx, in.name, going);
-        }
+        const types_removed: []const []const u8 = if (going.len > 0)
+            try data.drop(ctx, in.name, going)
+        else
+            &.{};
+
+        try sdk.stored_roles.withdraw(ctx, in.name, decoded.manifest.roles);
 
         try lifecycle.remove(ctx, in.name);
-        ctx.notice("plugin.removed", in.name);
 
         return .{
             .removed = in.name,
             .trash = trash_id,
+            .types_removed = types_removed,
         };
     }
 };
 
 pub const operations = [_]type{
-    List,         Get,          Upload, Add,  Enable,           Disable, Update, Rollback,
-    CancelUpdate, GrantRequest, Revoke, Deny, SetContentAccess, Remove,  Data,   ChooseRemoval,
-} ++ sources.operations ++ scaffold.operations;
+    List,         Get,          Upload, Add,  Enable,   Disable, Update, Rollback,
+    CancelUpdate, GrantRequest, Revoke, Deny, SetGrant, Remove,  Data,   ChooseRemoval,
+} ++ sources.operations ++ scaffold.operations ++ @import("plugin/market.zig").operations ++
+    @import("plugin/log.zig").operations;
 
 pub const Piece = data.Piece;
 
@@ -717,7 +720,7 @@ pub const Data = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(in.name.len <= 64 << 10);
 
-        const decoded = try state.load(ctx, in.name);
+        const decoded = try native.load(ctx, in.name);
 
         return .{
             .pieces = try data.pieces_of(ctx, decoded),
@@ -759,58 +762,9 @@ pub const ChooseRemoval = struct {
         const decoded = try state.load(ctx, in.name);
 
         try data.choose(ctx, decoded, in.remove);
-        ctx.notice("plugin.removal_chosen", in.name);
 
         return .{
             .pieces = try data.pieces_of(ctx, decoded),
         };
     }
-};
-
-/// The plugin's own `uninstall` write, told which pieces go, while it still runs: what it
-/// keeps that core does not know is its. A failure stops the removal.
-fn uninstall(ctx: *Ctx, decoded: state.Decoded, going: []const Piece) Error!void {
-    std.debug.assert(going.len > 0);
-
-    const operation = decoded.manifest.uninstall;
-
-    if (operation.len == 0 or !decoded.row.enabled) {
-        return;
-    }
-
-    // Installed plugins run in the server: without it, the step cannot run.
-    if (ctx.sandboxed_plugins == null) {
-        return ctx.fail(uninstall_offline);
-    }
-
-    const keys = ctx.arena.alloc([]const u8, going.len) catch return error.OutOfMemory;
-
-    for (going, keys) |piece, *one| {
-        one.* = piece.key;
-    }
-
-    const input = std.json.Stringify.valueAlloc(ctx.arena, .{
-        .remove = keys,
-    }, .{}) catch {
-        return error.OutOfMemory;
-    };
-
-    _ = registry.SDK.call_json(ctx, operation, input) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        else => return ctx.fail(uninstall_failed),
-    };
-}
-
-const uninstall_offline: sdk.operation.Failure = .{
-    .name = "UninstallNeedsServer",
-    .status = 409,
-    .message = "The plugin's uninstall step runs in the server: start `publr serve` and " ++
-        "remove it again",
-};
-
-const uninstall_failed: sdk.operation.Failure = .{
-    .name = "UninstallFailed",
-    .status = 409,
-    .message = "The plugin's uninstall step failed, so nothing was removed: keep its data " ++
-        "(untick it on the plugin's page), or fix the plugin and try again",
 };

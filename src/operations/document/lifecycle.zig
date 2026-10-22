@@ -5,6 +5,8 @@ const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
+const operation_define = @import("../../sdk/plugin/operation_define.zig");
+const flow_model = model.flow;
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -15,6 +17,8 @@ pub const Moved = struct {
     status: []const u8,
     changed: bool,
     version: i64,
+    /// Not made: it waits for a person (a destroy asked by code, an agent or a device).
+    pending: bool = false,
 };
 
 pub fn Of(comptime Domain: type) type {
@@ -25,7 +29,8 @@ pub fn Of(comptime Domain: type) type {
         const document = Domain.document;
         const load = Domain.access.load;
         const check_status = Domain.access.check_status;
-        const notice_name = Domain.notice_name;
+
+        pub const requests = @import("requests.zig").Of(Domain);
 
         /// Make the pending copy the live document (if there is one) and drop the mark.
         pub fn apply_pending(ctx: *Ctx, row: Record) Error!bool {
@@ -39,7 +44,7 @@ pub fn Of(comptime Domain: type) type {
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
 
             for (type_row.def.fields) |field| {
-                if (field.unique or model.field.is_slug(field.kind)) {
+                if (field.validation.unique or model.field.is_slug(field.kind)) {
                     try refuse_taken(ctx, row, field, values.pending);
                 }
             }
@@ -52,8 +57,6 @@ pub fn Of(comptime Domain: type) type {
                 // `changed` also represents an intentionally empty pending document.
                 try values.clear(ctx.db, row.id, values.live);
             }
-
-            ctx.notice(notice_name("saved"), row.id);
 
             return true;
         }
@@ -126,7 +129,8 @@ pub fn Of(comptime Domain: type) type {
 
         /// After the rows were replaced, everything a person making the same move gets: the
         /// checks of going live (slugs and unique values free, targets live), the revision of
-        /// the live document replaced, and the notices. A refused check fails the write.
+        /// the live document replaced, and the move's transition event. A refused check fails
+        /// the write.
         /// Called once every document of the write is in place, so targets written in the
         /// same write count.
         pub fn landed(ctx: *Ctx, id: []const u8, before: ?Before) Error!void {
@@ -134,16 +138,10 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
             const found = try documents.get(ctx.db, ctx.arena, id);
-            const row = found orelse {
-                if (before != null) {
-                    ctx.notice(notice_name("purged"), id);
-                }
-
-                return;
-            };
+            const row = found orelse return;
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
             const def = type_row.def;
-            const live = registry.Statuses.is_live(row.status);
+            const live = def.flow.is_live(row.status);
 
             try rewrite_copies(ctx, row, def);
 
@@ -152,12 +150,7 @@ pub fn Of(comptime Domain: type) type {
             }
 
             const was = before orelse {
-                ctx.notice(notice_name("created"), row.id);
-
-                if (live) {
-                    ctx.notice(notice_name("published"), row.id);
-                }
-
+                ctx.publishes = ctx.publishes or live;
                 return;
             };
 
@@ -183,11 +176,11 @@ pub fn Of(comptime Domain: type) type {
         }
 
         fn check_live(ctx: *Ctx, row: Record, def: store.definitions.Def) Error!void {
-            std.debug.assert(registry.Statuses.is_live(row.status));
+            std.debug.assert(def.flow.is_live(row.status));
             std.debug.assert(def.fields.len <= model.field.fields_max);
 
             for (def.fields) |field| {
-                if (field.unique or model.field.is_slug(field.kind)) {
+                if (field.validation.unique or model.field.is_slug(field.kind)) {
                     try refuse_taken(ctx, row, field, values.live);
                 }
             }
@@ -195,12 +188,12 @@ pub fn Of(comptime Domain: type) type {
             try check_references(ctx, row, values.live);
         }
 
-        /// The revision of the live document replaced, and the notices of the move.
+        /// The revision of the live document replaced, and the transition event of the move.
         fn announce(ctx: *Ctx, row: Record, def: store.definitions.Def, was: Before) Error!void {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(was.status.len > 0);
 
-            const live = registry.Statuses.is_live(row.status);
+            const live = def.flow.is_live(row.status);
             const now = try live_text(ctx, row, def);
             const replaced = if (was.live) |old|
                 now == null or !std.mem.eql(u8, old, now.?)
@@ -214,13 +207,15 @@ pub fn Of(comptime Domain: type) type {
                 _ = try store.snapshots.take(ctx.db, row.id, kind, ctx.now_ms, actor, was.live.?);
             }
 
-            ctx.notice(notice_name("saved"), row.id);
-
-            if (!std.mem.eql(u8, was.status, row.status)) {
-                notify_transition(ctx, row.id, was.status, row.status);
-            } else if (live and replaced) {
-                ctx.notice(notice_name("published"), row.id);
+            if (std.mem.eql(u8, was.status, row.status)) {
+                ctx.publishes = ctx.publishes or (live and replaced);
+                return;
             }
+
+            const heard = try transition_heard(ctx, def, row.id, was.status, row.status);
+
+            mark_live_change(ctx, def.flow, was.status, row.status);
+            ctx.emit_heard(heard.name, heard.payload);
         }
 
         fn live_text(ctx: *Ctx, row: Record, def: store.definitions.Def) Error!?[]const u8 {
@@ -235,78 +230,158 @@ pub fn Of(comptime Domain: type) type {
             return std.json.Stringify.valueAlloc(ctx.arena, live, .{}) catch error.OutOfMemory;
         }
 
-        /// The outcome notices of a status move: `transitioned`, and the move's own names.
-        fn notify_transition(ctx: *Ctx, id: []const u8, from: []const u8, to: []const u8) void {
-            std.debug.assert(id.len > 0);
-            std.debug.assert(!std.mem.eql(u8, from, to) or from.len > 0);
-
-            var buffer: [transition_notices_max][]const u8 = undefined;
-
-            for (transition_notices(from, to, &buffer)) |name| {
-                ctx.notice(name, id);
-            }
-        }
-
-        pub const transition_notices_max: u32 = 3;
-
-        pub fn transition_notices(
+        /// A move that puts the document live or takes it off changes what visitors see: a
+        /// caller who may only draft is refused it at commit (`check_drafts`).
+        pub fn mark_live_change(
+            ctx: *Ctx,
+            flow: model.flow.Flow,
             from: []const u8,
             to: []const u8,
-            buffer: *[transition_notices_max][]const u8,
-        ) []const []const u8 {
+        ) void {
             std.debug.assert(to.len > 0);
-            std.debug.assert(!std.mem.eql(u8, from, to) or from.len > 0);
+            std.debug.assert(!std.mem.eql(u8, from, to));
 
-            const from_live = registry.Statuses.is_live(from);
-            const to_live = registry.Statuses.is_live(to);
-            var count: u32 = 0;
-
-            buffer[count] = notice_name("transitioned");
-            count += 1;
-
-            if (to_live and !from_live) {
-                buffer[count] = notice_name("published");
-                count += 1;
-            } else if (from_live and !to_live) {
-                buffer[count] = notice_name("unpublished");
-                count += 1;
+            if (flow.is_live(from) != flow.is_live(to)) {
+                ctx.publishes = true;
             }
-
-            if (std.mem.eql(u8, to, "archived")) {
-                buffer[count] = notice_name("archived");
-                count += 1;
-            } else if (std.mem.eql(u8, to, "deleted")) {
-                buffer[count] = notice_name("deleted");
-                count += 1;
-            } else if (std.mem.eql(u8, from, "archived") or std.mem.eql(u8, from, "deleted")) {
-                buffer[count] = notice_name("restored");
-                count += 1;
-            }
-
-            return buffer[0..count];
         }
 
+        /// Moves a record by the transition `name` of its type's flow: refused unless the
+        /// record is in one of the transition's `from` statuses and the caller passes the
+        /// transition's own `authorize` (administrators always do).
         pub fn transition(
             ctx: *Ctx,
             granted: *const Grant,
             id: []const u8,
-            to: []const u8,
+            name: []const u8,
             expected: ?i64,
         ) Error!Moved {
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
-            if (to.len == 0 or to.len > model.status.id_len_max) {
+            if (name.len == 0 or name.len > model.status.id_len_max) {
                 return error.Invalid;
             }
 
             const row = try load(ctx, id, granted) orelse return error.NotFound;
+            const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
+            const flow = type_row.def.flow;
+
+            if (!flow_model.reserved(name) and !flow.lists(name)) {
+                return error.Invalid;
+            }
+
+            if (std.mem.eql(u8, name, "publish") and flow.is_live(row.status)) {
+                return publish_changes(ctx, granted, row, expected);
+            }
+
+            const target = flow.named(name, row.status) orelse {
+                return ctx.fail(.{
+                    .name = "NotFrom",
+                    .status = 409,
+                    .message = "the record is not where this transition starts",
+                });
+            };
+
+            if (!passes(ctx, target.authorize)) {
+                return error.Denied;
+            }
+
+            if (std.mem.eql(u8, name, "destroy")) {
+                return if (may_destroy(ctx))
+                    destroy(ctx, granted, row)
+                else
+                    requests.ask(ctx, row, name);
+            }
+
+            const to = if (std.mem.eql(u8, name, "restore"))
+                flow.restored_to(try documents.trashed_from(ctx.db, ctx.arena, row.id))
+            else
+                target.to;
+
+            const publishing = requests.needs_publish(flow, row.status, to);
+
+            if (publishing and !requests.may_publish(ctx, row.type)) {
+                return requests.ask(ctx, row, name);
+            }
 
             return move(ctx, row, to, expected, granted, .apply_pending);
         }
 
-        /// Whether `row` may end in status `to`: its own status again, or a registered move
-        /// the type accepts and the grant allows. Refused before anything is written.
+        /// `publish` named on a live record: its pending changes go live, or wait for
+        /// someone who may publish.
+        fn publish_changes(
+            ctx: *Ctx,
+            granted: *const Grant,
+            row: Record,
+            expected: ?i64,
+        ) Error!Moved {
+            std.debug.assert(row.id.len > 0);
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+
+            if (!row.changed) {
+                return error.Invalid;
+            }
+
+            if (!requests.may_publish(ctx, row.type)) {
+                return requests.ask(ctx, row, "publish");
+            }
+
+            return publish(ctx, granted, row.id, expected);
+        }
+
+        /// A trashed record gone for good, asked by a person who may destroy.
+        fn destroy(ctx: *Ctx, granted: *const Grant, row: Record) Error!Moved {
+            std.debug.assert(std.mem.eql(u8, row.status, flow_model.trashed));
+            std.debug.assert(row.version >= 1);
+
+            const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
+            const heard = try transition_heard(ctx, type_row.def, row.id, row.status, "destroyed");
+
+            const named = heard.named.len > 0;
+
+            try registry.SDK.transition_hooks(ctx, .before, heard.name, heard.payload);
+
+            if (named) {
+                try registry.SDK.transition_hooks(ctx, .before, heard.named, heard.payload);
+            }
+
+            _ = try purge(ctx, granted, row.id);
+            try registry.SDK.transition_hooks(ctx, .after, heard.name, heard.payload);
+            ctx.emit_heard(heard.name, heard.payload);
+
+            if (named) {
+                try registry.SDK.transition_hooks(ctx, .after, heard.named, heard.payload);
+                ctx.emit_heard(heard.named, heard.payload);
+            }
+
+            return .{
+                .status = "destroyed",
+                .changed = false,
+                .version = row.version,
+            };
+        }
+
+        /// A person who is an administrator, or Publr itself: plugin code, an agent's device
+        /// and a token never erase; they leave the record in the trash.
+        fn may_destroy(ctx: *const Ctx) bool {
+            std.debug.assert(ctx.now_ms >= 0);
+
+            return switch (ctx.caller) {
+                .system => true,
+                .user => |user| for (user.roles) |held| {
+                    if (std.mem.eql(u8, held, model.role.admin)) {
+                        break true;
+                    }
+                } else false,
+                else => false,
+            };
+        }
+
+        /// Whether `row` may end in status `to`: its own status again, or a transition the
+        /// type's flow lists, whose `authorize` the caller passes, and the grant allows.
+        /// Refused before anything is written, whichever operation moves it.
         pub fn check_move(
+            ctx: *Ctx,
             row: Record,
             def: store.definitions.Def,
             to: []const u8,
@@ -317,8 +392,18 @@ pub fn Of(comptime Domain: type) type {
 
             const staying = std.mem.eql(u8, row.status, to);
 
-            if (!staying and !registry.Statuses.allows(row.status, to)) {
+            if (!staying and !def.flow.allows(row.status, to)) {
                 return error.Invalid;
+            }
+
+            if (!staying) {
+                try check_authorized(ctx, def.flow, row.status, to);
+            }
+
+            const publishing = requests.needs_publish(def.flow, row.status, to);
+
+            if (publishing and !requests.may_publish(ctx, def.handle)) {
+                return error.Denied;
             }
 
             try check_status(def, to, granted);
@@ -326,6 +411,34 @@ pub fn Of(comptime Domain: type) type {
             if (!granted.allows_transition(row.status, to)) {
                 return error.Denied;
             }
+        }
+
+        /// A flow's transition from `from` to `to` that says who may make it: the caller
+        /// passes its answer (administrators always do).
+        pub fn check_authorized(
+            ctx: *const Ctx,
+            flow: model.flow.Flow,
+            from: []const u8,
+            to: []const u8,
+        ) Error!void {
+            std.debug.assert(from.len > 0);
+            std.debug.assert(to.len > 0);
+
+            const listed = flow.transition_between(from, to) orelse return;
+
+            if (!passes(ctx, listed.authorize)) {
+                return error.Denied;
+            }
+        }
+
+        /// Whether the caller passes a transition's `authorize`; none: whoever may write.
+        pub fn passes(ctx: *const Ctx, authorize: ?model.flow.Who) bool {
+            std.debug.assert(ctx.now_ms >= 0);
+
+            const who = authorize orelse return true;
+            const through_app = ctx.app_plugins != null;
+
+            return operation_define.admits(who.answered(), ctx.caller, through_app);
         }
 
         /// Moves a record that was just saved straight into its live document: its pending
@@ -358,17 +471,27 @@ pub fn Of(comptime Domain: type) type {
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
             const applying = pending == .apply_pending and row.changed;
 
-            try check_move(row, type_row.def, to, granted);
+            try check_move(ctx, row, type_row.def, to, granted);
 
             if (std.mem.eql(u8, row.status, to)) {
                 return error.Invalid;
             }
 
-            if (registry.Statuses.is_live(to)) {
+            const flow = type_row.def.flow;
+
+            if (flow.is_live(to)) {
                 try check_references(ctx, row, if (applying) values.pending else values.live);
             }
 
-            const applied = if (registry.Statuses.is_live(to) and applying)
+            const heard = try transition_heard(ctx, type_row.def, row.id, row.status, to);
+
+            try registry.SDK.transition_hooks(ctx, .before, heard.name, heard.payload);
+
+            if (heard.named.len > 0) {
+                try registry.SDK.transition_hooks(ctx, .before, heard.named, heard.payload);
+            }
+
+            const applied = if (flow.is_live(to) and applying)
                 try apply_pending(ctx, row)
             else
                 false;
@@ -384,12 +507,64 @@ pub fn Of(comptime Domain: type) type {
                 changed,
             );
 
-            notify_transition(ctx, row.id, row.status, to);
+            mark_live_change(ctx, flow, row.status, to);
+            try registry.SDK.transition_hooks(ctx, .after, heard.name, heard.payload);
+            ctx.emit_heard(heard.name, heard.payload);
+
+            if (heard.named.len > 0) {
+                try registry.SDK.transition_hooks(ctx, .after, heard.named, heard.payload);
+                ctx.emit_heard(heard.named, heard.payload);
+            }
 
             return .{
                 .status = to,
                 .changed = changed,
                 .version = version,
+            };
+        }
+
+        const Heard = struct {
+            name: []const u8,
+            /// The transition's own hook point, `<plugin>.<type>_<transition>`; empty for a
+            /// type no plugin declares, or a move no transition names.
+            named: []const u8,
+            payload: model.flow.Transitioned,
+        };
+
+        /// What hooks on every transition of the record's type hear, and the name they
+        /// hook (`model.flow.any_name`).
+        fn transition_heard(
+            ctx: *Ctx,
+            def: store.definitions.Def,
+            id: []const u8,
+            from: []const u8,
+            to: []const u8,
+        ) Error!Heard {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(to.len > 0);
+
+            const name = try model.flow.any_name(ctx.arena, def.handle);
+            const by = if (std.mem.eql(u8, to, "destroyed"))
+                "destroy"
+            else
+                def.flow.name_between(from, to);
+            const plugin_type = std.mem.indexOfScalar(u8, def.handle, '.') != null;
+            const named = if (plugin_type and by.len > 0)
+                std.fmt.allocPrint(ctx.arena, "{s}_{s}", .{ def.handle, by }) catch {
+                    return error.OutOfMemory;
+                }
+            else
+                "";
+
+            return .{
+                .name = name,
+                .named = named,
+                .payload = .{
+                    .record = id,
+                    .transition = by,
+                    .from = from,
+                    .to = to,
+                },
             };
         }
 
@@ -406,8 +581,9 @@ pub fn Of(comptime Domain: type) type {
             }
 
             const row = try load(ctx, id, granted) orelse return error.NotFound;
+            const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
 
-            if (!registry.Statuses.is_live(row.status)) {
+            if (!type_row.def.flow.is_live(row.status)) {
                 return move(ctx, row, "published", expected, granted, .apply_pending);
             }
 
@@ -421,11 +597,12 @@ pub fn Of(comptime Domain: type) type {
 
             try check_references(ctx, row, values.pending);
             _ = try apply_pending(ctx, row);
+            _ = try documents.clear_request(ctx.db, row.id);
 
             const actor = ctx.caller.user_id();
             const version = try documents.save(ctx.db, row.id, actor, expected, ctx.now_ms, false);
 
-            ctx.notice(notice_name("published"), row.id);
+            ctx.publishes = true;
 
             return .{
                 .status = row.status,
@@ -448,11 +625,12 @@ pub fn Of(comptime Domain: type) type {
             }
 
             try values.clear(ctx.db, row.id, values.pending);
+            _ = try documents.clear_request(ctx.db, row.id);
 
             const actor = ctx.caller.user_id();
             const version = try documents.save(ctx.db, row.id, actor, expected, ctx.now_ms, false);
 
-            ctx.notice(notice_name("changes_discarded"), row.id);
+            std.debug.assert(version > row.version);
 
             return version;
         }
@@ -471,7 +649,7 @@ pub fn Of(comptime Domain: type) type {
 
             const row = try load(ctx, id, granted) orelse return error.NotFound;
 
-            return move(ctx, row, "deleted", expected, granted, .apply_pending);
+            return move(ctx, row, "trashed", expected, granted, .apply_pending);
         }
 
         pub fn purge(ctx: *Ctx, granted: *const Grant, id: []const u8) Error!bool {
@@ -489,7 +667,7 @@ pub fn Of(comptime Domain: type) type {
 
             const purged = try documents.delete(ctx.db, row.id);
 
-            ctx.notice(notice_name("purged"), row.id);
+            std.debug.assert(purged or row.version >= 1);
 
             return purged;
         }

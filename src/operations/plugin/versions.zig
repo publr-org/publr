@@ -124,10 +124,18 @@ fn take_over(
     }
 
     decoded.granted = try carried(ctx.arena, asked, old.granted, old.denied, approve_all);
+    decoded.grants = try sandboxed_plugin.grants_after(
+        ctx.arena,
+        old.grants,
+        &old.manifest,
+        &manifest,
+        approve_all,
+    );
     decoded.manifest = manifest;
     decoded.row.version = manifest.version;
     decoded.row.hash = hash;
     decoded.row.manifest = text;
+    try @import("statuses.zig").leave(ctx, old.row.name, &decoded);
 
     return decoded;
 }

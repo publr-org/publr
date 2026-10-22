@@ -72,7 +72,6 @@ pub const Build = struct {
         }
 
         try check_files(ctx, in);
-        ctx.notice("plugin.published", in.name);
 
         if (ctx.caller.scope() == .drafts) {
             return ctx.fail(sdk.operation.drafts_only);

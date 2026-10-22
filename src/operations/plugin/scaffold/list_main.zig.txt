@@ -1,134 +1,181 @@
-//! __Title__: entries people add and remove, on a page of its own in the admin.
+//! Entries people add and remove, on a page of its own.
+//!
+//! List the entries with `__name__ list`, add one with `__name__ add`, remove one with
+//! `__name__ remove`. The page in the admin shows them all.
 const std = @import("std");
 const publr = @import("publr");
 
-const sdk = publr.sdk;
-const PluginCtx = publr.plugin.PluginCtx;
-const record = publr.operations.record;
-const entries = publr.records.of(struct { title: []const u8 }, "__name___entry");
-
-pub const manifest: publr.plugin.Manifest = .{
+const manifest: publr.Manifest = .{
     .name = "__name__",
     .version = "0.1.0",
-    .summary = "Entries people add and remove, on a page of its own",
 };
 
-pub const namespaces = [_]sdk.operation.Namespace{.{
-    .name = "__name__",
-    .summary = "__Title__'s entries",
-    .details = "List the entries with `__name__ list`, add one with `__name__ add`, remove one with `__name__ remove`.",
-}};
+/// __Title__ entry
+///
+/// One entry people add on the plugin's page.
+pub const Entry = struct {
+    /// Title
+    title: []const u8,
+};
 
-pub const content_types = [_]publr.plugin.ContentTypeDef{.{
-    .handle = "__name___entry",
-    .name = "__Title__ entry",
-    .title_field = "title",
-    .fields = &.{.{ .name = "title", .label = "Title", .kind = "string", .required = true }},
-}};
+pub const Entries = publr.record.define(Entry, .{
+    .name = "__name__.entry",
+    // Checked on every write, whoever writes.
+    .fields = .{
+        .title = .{
+            .validation = .{
+                .min_len = 1,
+                .max_len = 160,
+            },
+        },
+    },
+});
 
-pub const operations = [_]type{ List, Add, Remove, Page };
+const every_entry = publr.query.prepare(
+    \\*[_type == "__name__.entry"][0...200]{ "id": _id, title }
+, .{});
 
-pub const pages = [_]publr.plugin.Page{.{
-    .path = "entries",
-    .label = "__Title__",
-    .icon = "list-unordered",
-    .operation = Page,
-}};
+pub const Listed = struct {
+    /// The entry's id
+    id: []const u8,
+    /// Its title
+    title: []const u8,
+};
 
-pub const Entry = struct { id: []const u8, title: []const u8 };
+pub const ListIn = struct {};
 
-pub const List = struct {
-    pub const name = "__name__.list";
-    pub const description = "Every entry, newest last";
-    pub const details = "Administrators, and callers granted `__name__.list`. Changes nothing.";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = struct { entries: []const Entry };
-    pub const example: In = .{};
-    pub const example_out: Out = .{ .entries = &.{.{ .id = "0a1b2c3d4e5f60718293a4b5", .title = "First" }} };
+pub const ListOut = struct {
+    /// Every entry, newest last
+    entries: []const Listed,
+};
 
-    pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
+/// Every entry, newest last.
+///
+/// Administrators, and callers granted `__name__.list`. Changes nothing.
+///
+/// Example:
+///   in: {}
+///   out: { "entries": [{ "id": "0a1b2c3d4e5f60718293a4b5", "title": "First" }] }
+pub const List = publr.operation.define(ListIn, ListOut, .{
+    .name = "list",
+    .kind = .read,
+    .run = list,
+});
 
-        const found = try entries.find(ctx, .{}, .{ .limit = 200 });
-        const listed = ctx.arena().alloc(Entry, found.len) catch return error.OutOfMemory;
+fn list(ctx: *publr.Ctx, _: ListIn) publr.Error!ListOut {
+    std.debug.assert(ctx.now().ms >= 0);
 
-        for (found, listed) |item, *entry| {
-            entry.* = .{ .id = item.id, .title = item.value.title };
-        }
+    return .{
+        .entries = try every_entry.execute(ctx, []const Listed, .{}),
+    };
+}
 
-        return .{ .entries = listed };
+pub const AddIn = struct {
+    /// The entry's title
+    title: []const u8,
+};
+
+pub const AddOut = struct {
+    /// The new entry's id
+    id: []const u8,
+};
+
+/// Adds an entry.
+///
+/// Administrators, and callers granted `__name__.add`.
+///
+/// Example:
+///   in: { "title": "First" }
+///   out: { "id": "0a1b2c3d4e5f60718293a4b5" }
+pub const Add = publr.operation.define(AddIn, AddOut, .{
+    .name = "add",
+    .kind = .write,
+    .run = add,
+});
+
+fn add(ctx: *publr.Ctx, in: AddIn) publr.Error!AddOut {
+    std.debug.assert(in.title.len <= 1 << 16);
+
+    return .{
+        .id = try Entries.create(ctx, .{ .title = in.title }),
+    };
+}
+
+pub const RemoveIn = struct {
+    /// The entry to remove
+    id: []const u8,
+};
+
+pub const RemoveOut = struct {
+    /// Whether it was removed
+    removed: bool,
+};
+
+/// Removes an entry.
+///
+/// Administrators, and callers granted `__name__.remove`. Fails as not found for an id
+/// that is not an entry.
+///
+/// Example:
+///   in: { "id": "0a1b2c3d4e5f60718293a4b5" }
+///   out: { "removed": true }
+pub const Remove = publr.operation.define(RemoveIn, RemoveOut, .{
+    .name = "remove",
+    .kind = .write,
+    .run = remove,
+});
+
+fn remove(ctx: *publr.Ctx, in: RemoveIn) publr.Error!RemoveOut {
+    std.debug.assert(in.id.len > 0);
+
+    _ = try Entries.get(ctx, in.id);
+    _ = try ctx.call(publr.operations.record.Delete, .{ .id = in.id });
+
+    return .{
+        .removed = true,
+    };
+}
+
+pub const PageIn = struct {
+    /// The address's query string
+    query: []const u8 = "",
+    /// The path the project is served under
+    base: []const u8 = "",
+};
+
+pub const PageOut = struct {
+    /// The page, drawn
+    html: []const u8,
+};
+
+/// Draws the plugin's page in the admin.
+///
+/// Administrators, and callers granted `__name__.page`. Changes nothing.
+///
+/// Example:
+///   in: {}
+///   out: { "html": "<!doctype html>" }
+pub const Page = publr.operation.define(PageIn, PageOut, .{
+    .name = "page",
+    .kind = .read,
+    .run = page,
+});
+
+fn page(ctx: *publr.Ctx, in: PageIn) publr.Error!PageOut {
+    std.debug.assert(in.query.len <= 4096);
+
+    const listed = try list(ctx, .{});
+
+    // Compiled in, the admin's layouts draw it; installed, until views reach the frame.
+    if (comptime @import("builtin").os.tag != .freestanding) {
+        return .{ .html = try drawn(ctx, in.base, listed.entries) };
     }
-};
 
-pub const Add = struct {
-    pub const name = "__name__.add";
-    pub const description = "Add an entry";
-    pub const details = "Administrators, and callers granted `__name__.add`. Fails as invalid when the title is not 1 to 160 characters.";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { title: []const u8 };
-    pub const Out = struct { id: []const u8 };
-    pub const example: In = .{ .title = "First" };
-    pub const example_out: Out = .{ .id = "0a1b2c3d4e5f60718293a4b5" };
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        if (in.title.len == 0 or in.title.len > 160) {
-            return error.Invalid;
-        }
-
-        return .{ .id = try entries.create(ctx, .{ .title = in.title }, .{}) };
-    }
-};
-
-pub const Remove = struct {
-    pub const name = "__name__.remove";
-    pub const description = "Remove an entry";
-    pub const details = "Administrators, and callers granted `__name__.remove`. Fails as not found for an id that is not an entry.";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct { id: []const u8 };
-    pub const Out = struct { removed: bool };
-    pub const example: In = .{ .id = "0a1b2c3d4e5f60718293a4b5" };
-    pub const example_out: Out = .{ .removed = true };
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now_ms() >= 0);
-
-        _ = try entries.get(ctx, in.id);
-        _ = try ctx.call(record.Delete, .{ .id = in.id });
-
-        return .{ .removed = true };
-    }
-};
-
-/// The page the plugin shows in the admin, in the plugin frame.
-pub const Page = struct {
-    pub const name = "__name__.page";
-    pub const description = "Draws the plugin's page in the admin";
-    pub const details = "Administrators, and callers granted `__name__.page`. Changes nothing.";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct { query: []const u8 = "", base: []const u8 = "" };
-    pub const Out = struct { html: []const u8 };
-    pub const example: In = .{};
-    pub const example_out: Out = .{ .html = "<!doctype html>…" };
-
-    pub fn run(ctx: *PluginCtx, in: In, grant: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(in.query.len <= 4096);
-
-        const listed = try List.run(ctx, .{}, grant);
-
-        // Compiled in, the admin's layouts draw it; installed, until the sandbox gets them.
-        if (comptime @import("builtin").os.tag != .freestanding) {
-            return .{ .html = try drawn(ctx, in.base, listed.entries) };
-        }
-
-        return .{ .html = "<p>This page needs the plugin compiled in for now.</p>" };
-    }
-};
+    return .{ .html = "<p>This page needs the plugin compiled in for now.</p>" };
+}
 
 /// The page, drawn by the admin's layouts: each entry as the list shows it.
-fn drawn(ctx: *PluginCtx, base: []const u8, listed: []const Entry) sdk.Error![]const u8 {
+fn drawn(ctx: *publr.Ctx, base: []const u8, listed: []const Listed) publr.Error![]const u8 {
     const View = publr.admin.views.__Name__Page;
     const Item = std.meta.Child(@FieldType(View.Props, "items"));
     const arena = ctx.arena();
@@ -142,3 +189,16 @@ fn drawn(ctx: *PluginCtx, base: []const u8, listed: []const Entry) sdk.Error![]c
 
     return publr.admin.render.document(arena, request, View, .{ .items = items }) catch error.OutOfMemory;
 }
+
+const entries: publr.plugin.Page = .{
+    .path = "entries",
+    .label = "__Title__",
+    .icon = "list-unordered",
+    .operation = Page,
+};
+
+pub const plugin = publr.plugin.define(manifest, .{
+    .records = &.{Entries},
+    .operations = &.{ List, Add, Remove, Page },
+    .pages = &.{entries},
+});

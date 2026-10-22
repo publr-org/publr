@@ -5,7 +5,9 @@
 
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const publr_auth = @import("../sdk/auth_events.zig");
 const store = @import("../store.zig");
+const signing = @import("signed.zig");
 const token_model = @import("../model/sign_on_token.zig");
 
 const Ctx = sdk.Ctx;
@@ -20,6 +22,8 @@ pub const audience_len_max: u32 = 64;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "sign_on",
+    .label = "Trusted sign-in",
+    .area = .people,
     .summary = "Signing in through a trusted issuer, such as a Publr Cloud dashboard",
     .details =
     \\An administrator names the issuer once (`sign_on configure`): its address, its
@@ -174,11 +178,12 @@ pub const Redeem = struct {
 
         const user = try vouched_user(ctx, in.token);
 
+        try signing.before(ctx, user, "link");
         _ = try store.sessions.cleanup(ctx.db, ctx.now_ms);
 
         const created = try store.sessions.create(ctx.db, ctx.io, ctx.arena, user.id, ctx.now_ms);
 
-        ctx.notice("auth.sign_on_succeeded", user.id);
+        try signing.after(ctx, user, "link");
 
         return .{
             .token = try ctx.arena.dupe(u8, created.token_text()),
@@ -196,7 +201,9 @@ pub fn vouched_user(ctx: *Ctx, token: []const u8) Error!store.users.User {
     const claims = try trusted_claims(ctx, token);
 
     if (!try store.sign_on_tokens.claim(ctx.db, claims.jti, claims.exp)) {
-        ctx.notice("auth.sign_on_replayed", claims.sub);
+        ctx.keep(publr_auth.SignOnReplayed, .{
+            .email = claims.sub,
+        });
 
         return error.Conflict;
     }
@@ -233,7 +240,10 @@ fn trusted_claims(ctx: *Ctx, token: []const u8) Error!token_model.Claims {
     const claims = token_model.verify(ctx.arena, token, public_key) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => {
-            ctx.notice("auth.sign_on_failed", "signature");
+            ctx.keep(publr_auth.SignOnFailed, .{
+                .email = "",
+                .why = "signature",
+            });
 
             return error.BadCredentials;
         },
@@ -243,7 +253,10 @@ fn trusted_claims(ctx: *Ctx, token: []const u8) Error!token_model.Claims {
     const valid_jti = claims.jti.len > 0 and claims.jti.len <= store.sign_on_tokens.id_len_max;
 
     if (!std.mem.eql(u8, claims.aud, audience) or !in_time or !valid_jti) {
-        ctx.notice("auth.sign_on_failed", claims.sub);
+        ctx.keep(publr_auth.SignOnFailed, .{
+            .email = claims.sub,
+            .why = "expired",
+        });
 
         return error.BadCredentials;
     }

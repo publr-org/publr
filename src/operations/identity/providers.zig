@@ -3,6 +3,7 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
+const secret = @import("../secret.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -21,8 +22,9 @@ pub const Providers = struct {
     pub const description = "The sign-in providers this site offers";
     pub const details =
         \\Anyone may call it: a login page asks it which buttons to show. A provider is
-        \\offered when its plugin is compiled in and its credentials are in the environment;
-        \\one without them is left out, not broken. Nothing is written.
+        \\offered when its plugin is compiled in, its client id is in the environment and every
+        \\secret its plugin declares is set; one without them is left out, not broken.
+        \\Nothing is written.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
@@ -47,22 +49,20 @@ pub const Providers = struct {
         std.debug.assert(ctx.now_ms >= 0);
 
         return .{
-            .providers = try offered(ctx.arena, registry.sign_in_providers),
+            .providers = try offered(ctx, registry.sign_in_providers),
         };
     }
 };
 
 /// The providers that are available now, as a login page lists them.
-pub fn offered(
-    arena: std.mem.Allocator,
-    providers: []const sdk.provider.SignInProvider,
-) Error![]const Offered {
+pub fn offered(ctx: *Ctx, providers: []const sdk.provider.SignInProvider) Error![]const Offered {
     std.debug.assert(providers.len <= sdk.provider.providers_max);
 
+    const arena = ctx.arena;
     var list: std.ArrayList(Offered) = .empty;
 
-    for (providers) |provider| {
-        if (!provider.available()) {
+    for (providers) |*provider| {
+        if (!try available(ctx, provider)) {
             continue;
         }
 
@@ -83,15 +83,37 @@ pub fn offered(
     return list.items;
 }
 
-test "only providers with their credentials are offered" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
+/// Its client id is there (`available`) and every secret its plugin declares is set.
+pub fn available(ctx: *Ctx, provider: *const sdk.provider.SignInProvider) Error!bool {
+    std.debug.assert(provider.name.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
 
+    if (!provider.available()) {
+        return false;
+    }
+
+    const access = registry.SDK.compiled_access(provider.plugin) orelse return true;
+
+    for (access.secrets) |declared| {
+        if (!try secret.is_set(ctx, declared.name)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+test "only providers with their credentials are offered" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.system);
     const declared = [_]sdk.provider.SignInProvider{
         sdk.provider.testing.trusting,
         sdk.provider.testing.missing,
     };
-    const list = try offered(arena_state.allocator(), &declared);
+    const list = try offered(&ctx, &declared);
 
     try std.testing.expectEqual(@as(usize, 1), list.len);
     try std.testing.expectEqualStrings("trusting", list[0].name);

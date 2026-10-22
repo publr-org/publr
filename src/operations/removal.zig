@@ -18,6 +18,8 @@ const lists = store.removals;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "removal",
+    .label = "Removal lists",
+    .area = .content,
     .summary = "Removal lists: what an agent asked to remove, for a person to confirm",
     .details =
     \\A device (an agent) never removes anything for good. When it runs a removal (purging a

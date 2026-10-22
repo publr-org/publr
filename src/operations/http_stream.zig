@@ -7,6 +7,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const sdk = @import("../sdk.zig");
 const http = @import("http.zig");
+const guards = @import("http_guard.zig");
+const request_log = @import("http_log.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -97,19 +99,20 @@ pub const Stream = struct {
             return error.Unavailable;
         }
 
-        const plugin = switch (ctx.caller) {
-            .plugin => |plugin| plugin,
-            else => return error.Denied,
-        };
+        const fetcher = http.fetcher_of(ctx) orelse return error.Denied;
         const Method = std.http.Method;
         const method = std.meta.stringToEnum(Method, in.method) orelse return error.Invalid;
-        const host = http.host_of(in.url) orelse return error.Invalid;
+        const uri = std.Uri.parse(in.url) catch return error.Invalid;
 
         if (in.headers.len > http.headers_max or in.body.len > http.body_bytes_max) {
             return error.Invalid;
         }
 
-        if (!http.allowed(ctx, plugin.name, host)) {
+        const guard = http.guard_of(ctx, fetcher);
+
+        if (guards.refusal_of_name(guard, uri)) |refusal| {
+            request_log.refused(ctx, fetcher.name, in.method, uri, refusal);
+
             return ctx.fail(http.not_allowed);
         }
 
@@ -117,7 +120,11 @@ pub const Stream = struct {
         const streams: *Streams = @ptrCast(@alignCast(held));
         const slot = free_slot(streams) orelse return error.Conflict;
 
-        const open = try opened(ctx, method, try http.Filling.of(ctx, plugin, in));
+        const filling = try http.Filling.of(ctx, fetcher.access, in);
+        const open = try opened(ctx, method, filling, guard, .{
+            .plugin = fetcher.name,
+            .uri = uri,
+        });
 
         if (open.response.head.status != .ok) {
             defer open.close();
@@ -224,10 +231,25 @@ fn free_slot(streams: *const Streams) ?u32 {
     return null;
 }
 
+/// Who sends a request, and its address as written (secrets unfilled), for the log.
+const Shown = struct {
+    plugin: []const u8,
+    uri: std.Uri,
+};
+
 /// The request sent and the response's head read, in memory of its own that outlives this
 /// call.
-fn opened(ctx: *Ctx, method: std.http.Method, filling: http.Filling) Error!*Open {
+fn opened(
+    ctx: *Ctx,
+    method: std.http.Method,
+    filling: http.Filling,
+    guard: guards.Guard,
+    shown: Shown,
+) Error!*Open {
     std.debug.assert(filling.url.len > 0);
+    std.debug.assert(shown.plugin.len > 0);
+
+    const plugin = shown.plugin;
 
     const open = std.heap.page_allocator.create(Open) catch return error.OutOfMemory;
 
@@ -238,27 +260,47 @@ fn opened(ctx: *Ctx, method: std.http.Method, filling: http.Filling) Error!*Open
         .io = ctx.io,
     };
 
-    sent(ctx, open, method) catch |err| {
-        std.log.warn("http.stream {s}: {t}", .{ ctx.plugin, err });
+    var checked: guards.Checked = .{};
+
+    sent(open, method, guard, &checked) catch |err| {
+        std.log.warn("http.stream {s}: {t}", .{ plugin, err });
         open.client.deinit();
         open.arena_state.deinit();
         std.heap.page_allocator.destroy(open);
 
+        if (checked.refusal) |refusal| {
+            request_log.refused(ctx, plugin, @tagName(method), shown.uri, refusal);
+
+            return ctx.fail(http.not_allowed);
+        }
+
         return ctx.fail(http.unreachable_failure);
     };
+
+    const line = std.fmt.allocPrint(ctx.arena, "{s} {s}{s} {d} (streamed)", .{
+        @tagName(method),
+        guards.host_text(shown.uri),
+        guards.path_text(shown.uri),
+        @intFromEnum(open.response.head.status),
+    }) catch return error.OutOfMemory;
+
+    request_log.line(ctx, plugin, line);
 
     open.reader = open.response.reader(&open.transfer);
 
     return open;
 }
 
-fn sent(ctx: *Ctx, open: *Open, method: std.http.Method) !void {
+/// Sent through the guard: a redirect comes back as it is, never followed.
+fn sent(open: *Open, method: std.http.Method, guard: guards.Guard, checked: *guards.Checked) !void {
     std.debug.assert(open.filling.url.len > 0);
-    _ = ctx;
+    std.debug.assert(checked.refusal == null);
 
     const uri = try std.Uri.parse(open.filling.url);
+    const connection = try guards.connect(&open.client, guard, uri, checked);
 
     open.request = try open.client.request(method, uri, .{
+        .connection = connection,
         .redirect_behavior = .unhandled,
         // Read as it arrives, a piece at a time: never compressed.
         .headers = .{

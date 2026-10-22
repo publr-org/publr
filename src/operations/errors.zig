@@ -12,12 +12,15 @@ const Error = sdk.Error;
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "errors",
+    .label = "Error log",
+    .area = .system,
     .summary = "What was refused or failed: every such call, kept forever",
     .details =
     \\One entry per top-level call refused (denied, invalid input, a dependency) or
     \\failed, reads included: who, when, the operation, its input with secrets masked,
-    \\the error, its message, and the inner operation it came from. Never changed or
-    \\removed.
+    \\the error, its message, the inner operation it came from, and what plugins logged
+    \\in it. A call that answered but whose plugin logged an `.err` line is here too, as
+    \\error `Logged`. Never changed or removed.
     ,
 };
 
@@ -32,6 +35,8 @@ pub const Item = struct {
     @"error": []const u8,
     message: []const u8,
     failed_in: []const u8,
+    /// What plugins logged during the call, in order.
+    lines: []const activity.Line = &.{},
 };
 
 pub const List = struct {
@@ -101,6 +106,7 @@ pub const List = struct {
             .before = in.before,
         }, in.limit);
         const items = ctx.arena.alloc(Item, rows.len) catch return error.OutOfMemory;
+        const logged = try activity.lines_of(ctx, .@"error", rows);
 
         for (rows, items) |row, *item| {
             item.* = .{
@@ -114,6 +120,7 @@ pub const List = struct {
                 .@"error" = row.@"error",
                 .message = row.message,
                 .failed_in = row.failed_in,
+                .lines = try activity.lines_for(ctx, logged, .@"error", row.id),
             };
         }
 
