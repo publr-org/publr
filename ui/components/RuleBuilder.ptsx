@@ -33,7 +33,8 @@ const refresh = (root: HTMLElement) => {
   root.querySelector<HTMLElement>("[data-empty]")!.hidden = rows.length > 0;
   root.querySelector<HTMLButtonElement>('[name="rules-group"]')!.disabled = groups.length >= 8;
 };
-const valuePicker = (field: HTMLSelectElement) => {
+// `keep` holds on to a stored value the subject no longer offers; a switched subject starts empty.
+const valuePicker = (field: HTMLSelectElement, keep: boolean) => {
   const row = field.closest("[data-rule]");
   const previous = row?.querySelector<HTMLInputElement | HTMLSelectElement>('[name$=".value"]');
   if (!previous) return;
@@ -43,24 +44,24 @@ const valuePicker = (field: HTMLSelectElement) => {
     const template = field.closest("[data-prefix]")?.querySelector<HTMLTemplateElement>("template");
     const input = template?.content.querySelector<HTMLInputElement>('input[name$=".value"]')?.cloneNode(true) as HTMLInputElement;
     if (!input) return;
-    input.name = previous.name; input.value = previous.value;
+    input.name = previous.name; input.value = keep ? previous.value : "";
     previous.replaceWith(input);
     return;
   }
   const select = field.cloneNode(false) as HTMLSelectElement;
   select.name = previous.name; select.setAttribute("aria-label", Publr.t("Value"));
   for (const choice of choices) select.add(new Option(choice.label, choice.value));
-  if (previous.value && !choices.some((choice) => choice.value === previous.value))
-    select.add(new Option(previous.value, previous.value));
-  if (previous.value) select.value = previous.value;
+  const held = choices.some((choice) => choice.value === previous.value);
+  if (keep && previous.value && !held) select.add(new Option(previous.value, previous.value));
+  if (keep || held) select.value = previous.value;
   previous.replaceWith(select);
 };
 export const root_ref = Publr.ref<HTMLElement>((root) => {
-  for (const field of root.querySelectorAll<HTMLSelectElement>('select[name$=".field"]')) valuePicker(field);
+  for (const field of root.querySelectorAll<HTMLSelectElement>('select[name$=".field"]')) valuePicker(field, true);
 });
 export const changed = (event: Event) => {
   const input = event.target as HTMLInputElement;
-  if (input.name?.endsWith(".field")) valuePicker(input as unknown as HTMLSelectElement);
+  if (input.name?.endsWith(".field")) valuePicker(input as unknown as HTMLSelectElement, false);
   if (!input.name?.endsWith(".operator")) return;
   const row = input.closest("[data-rule]");
   const value = row?.querySelector<HTMLInputElement>('[name$=".value"]');
@@ -87,7 +88,7 @@ export const action = (event: MouseEvent) => {
     else root.querySelector("[data-rows]")!.append(clone);
   }
   refresh(root);
-  for (const field of root.querySelectorAll<HTMLSelectElement>('select[name$=".field"]')) valuePicker(field);
+  for (const field of root.querySelectorAll<HTMLSelectElement>('select[name$=".field"]')) valuePicker(field, true);
   root.closest("form")?.dispatchEvent(new Event("input", { bubbles: true }));
 };
 export function RuleBuilder({ prefix, rows, subjects, location = false }: RuleBuilderProps) {
