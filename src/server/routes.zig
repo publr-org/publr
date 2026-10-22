@@ -73,6 +73,7 @@ pub fn register(router: *http.Router) void {
         router.post(remote.route, &remote.handle);
         router.get(agent_script.route, &agent_script.handle);
         router.post(update.restart_route, &update.handle_restart);
+        router.get(next_due_route, &next_due);
         plugin_operator_commands.register(router);
     }
 
@@ -86,7 +87,7 @@ pub fn register(router: *http.Router) void {
     const operator_routes: u32 = if (builtin.os.tag == .wasi)
         0
     else
-        5 + plugin_operator_commands.routes_count;
+        6 + plugin_operator_commands.routes_count;
     const fixed = 9 + operator_routes + provider_routes.routes_count +
         webhook_routes.routes_count + native_plugin_routes.routes_count -
         native_plugin_routes.streams_count;
@@ -154,20 +155,37 @@ fn health(request: *Request, response: *Response, ctx: *Context) Error!void {
         return;
     };
 
-    // When queued work is next due: a host that stops idle sites starts this one then.
+    try response.json(.ok, .{
+        .version = out.version,
+        .echo = out.echo,
+        .caller = out.caller,
+    });
+}
+
+pub const next_due_route = "/_publr/next_due";
+
+/// `GET /_publr/next_due`, behind the operator key: when queued work is next due (ms), null
+/// when nothing waits. A host that stops idle sites starts this one then.
+fn next_due(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(ctx.user_data != null);
+    std.debug.assert(request.method() == .get or request.method() == .head);
+
+    const project = Project.of(ctx);
+
+    if (!operator.authorized(request, project)) {
+        return response.text(.forbidden, "Forbidden");
+    }
+
     const store = @import("../store.zig");
     const jobs = store.job_queue.next_due(project.connection) catch null;
     const transitions = store.scheduled_transitions.next_due(project.connection) catch null;
-    const next_due = if (jobs != null and transitions != null)
+    const due = if (jobs != null and transitions != null)
         @min(jobs.?, transitions.?)
     else
         jobs orelse transitions;
 
     try response.json(.ok, .{
-        .version = out.version,
-        .echo = out.echo,
-        .caller = out.caller,
-        .next_due = next_due,
+        .next_due = due,
     });
 }
 

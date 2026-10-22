@@ -11,7 +11,8 @@
 //! keeps a state, takes `--sampler-in <folder>` off a command, notes the port `serve` got,
 //! and answers the operator's `ping`: what only a compiled-in plugin does, left out of its
 //! sandboxed build.
-//! Notes, a log the notes' events leave, and a greeting open to anyone.
+//! Notes, a log the notes' events leave, and a greeting open to anyone. A note's reminder
+//! time queues a job, and another server may ping it through a webhook.
 const publr = @import("publr");
 
 const Native = @import("native.zig");
@@ -38,6 +39,9 @@ const Reference = @import("operations/reference.zig");
 
 const WriteNote = @import("jobs/write_note.zig");
 const Tick = @import("jobs/tick.zig");
+const Remind = @import("jobs/remind.zig");
+
+const Ping = @import("webhooks/ping.zig");
 
 const Shout = @import("hooks/shout.zig");
 const Announce = @import("hooks/announce.zig");
@@ -94,7 +98,7 @@ const row_actions = [_]publr.plugin.RowAction{.{
 const Secrets = struct {
     /// Sampler key
     ///
-    /// Any text; nothing is sent with it.
+    /// Any text; what the sampler's ping webhook receives carries it.
     SAMPLER_KEY: publr.Secret,
 };
 
@@ -126,7 +130,8 @@ const added_statuses = .{.{
 }};
 
 const records = [_]type{ Notes.record, Logs.record, Tallies.record, Reviews.record };
-const jobs = [_]type{ WriteNote.job, Tick.job };
+const jobs = [_]type{ WriteNote.job, Tick.job, Remind.job };
+const webhooks = [_]type{Ping.webhook};
 
 const operations = [_]type{
     Hello.operation,
@@ -172,6 +177,7 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
     publr.plugin.define(manifest, .{
         .records = &records,
         .jobs = &jobs,
+        .webhooks = &webhooks,
         .register_fields = field_groups,
         .operations = operations,
         .hooks = hooks,
@@ -195,6 +201,7 @@ else
     publr.plugin.define(manifest, .{
         .records = &records,
         .jobs = &jobs,
+        .webhooks = &webhooks,
         .register_fields = field_groups,
         .operations = operations,
         .hooks = hooks,

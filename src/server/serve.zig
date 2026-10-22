@@ -1200,7 +1200,17 @@ test "an app whose build fails answers 503 until a publish lets it build" {
     try std.testing.expect(cms.header("Location") != null);
     const health = try flow.call("GET /api/health HTTP/1.1\r\nHost: h\r\n\r\n", "");
     try std.testing.expectEqual(.ok, health.status);
-    try std.testing.expect(std.mem.indexOf(u8, health.body, "\"next_due\":") != null);
+    // When queued work is next due goes only to the operator key's holder.
+    try std.testing.expect(std.mem.indexOf(u8, health.body, "next_due") == null);
+    const anonymous = try flow.call("GET /_publr/next_due HTTP/1.1\r\nHost: h\r\n\r\n", "");
+    try std.testing.expectEqual(.forbidden, anonymous.status);
+    const key = "k" ** operator.key_len;
+    flow.project.operator_key = key;
+    const keyed = "GET /_publr/next_due HTTP/1.1\r\nHost: h\r\nX-Publr-Operator: " ++ key ++
+        "\r\n\r\n";
+    const due = try flow.call(keyed, "");
+    try std.testing.expectEqual(.ok, due.status);
+    try std.testing.expect(std.mem.indexOf(u8, due.body, "\"next_due\":") != null);
     _ = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "homepage",
         .document = "{\"hero\":\"Recovered homepage\"}",

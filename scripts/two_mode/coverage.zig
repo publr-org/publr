@@ -232,6 +232,10 @@ const exercised = [_]Part{
         .name = "about",
         .where = "sampler's about, on its plugin page",
     },
+    .{
+        .name = "webhooks",
+        .where = "sampler's ping, delivered to it installed in scenarios_queued.zig",
+    },
 };
 
 /// What only the sandbox has: a compiled-in plugin runs unlimited, its grants as asked.

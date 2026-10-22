@@ -337,6 +337,7 @@ test {
     _ = @import("sandboxed_plugins/scenarios_errors.zig");
     _ = @import("sandboxed_plugins/scenarios_reads.zig");
     _ = @import("sandboxed_plugins/scenarios_domains.zig");
+    _ = @import("sandboxed_plugins/scenarios_queued.zig");
     _ = files_module;
     _ = interface;
 }

@@ -6,6 +6,8 @@ const publr = @import("publr");
 pub const SampleNote = struct {
     /// Note
     note: []const u8,
+    /// Remind me at
+    remind_at: ?publr.Time = null,
 };
 
 pub const record = publr.record.define(SampleNote, .{
