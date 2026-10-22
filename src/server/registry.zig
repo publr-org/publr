@@ -275,6 +275,8 @@ pub const registry: sdk.Registry = .{
 pub const SDK = sdk.SDK(registry);
 
 pub const Kinds = kind_registry.Registry(&kind_registry.core ++ native_plugins.merged_field_kinds);
+/// The location rules compiled-in plugins bring (`loyalty.tier`).
+pub const location_rules = native_plugins.merged_location_rules;
 
 pub const Filters = filter_registry.Registry(
     &filter_registry.core ++ native_plugins.merged_filters,

@@ -17,6 +17,8 @@ const runtime = @import("plugin/sandboxed.zig");
 const db = @import("../lib/db.zig");
 
 pub const PluginCtx = plugin_context.PluginCtx;
+const field_group_model = @import("../model/field_group.zig");
+const location_rule_define = @import("plugin/location_rule_define.zig");
 pub const types = plugin_types;
 /// One registration: `pub const plugin = publr.plugin.define(manifest, options)`.
 pub const define = plugin_define.define;
@@ -835,6 +837,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var schemas: []const [:0]const u8 = &.{};
         var migrations: []const db.migration.Migration = &.{};
         var field_kinds: []const kinds.Kind = &.{};
+        var location_rules: []const field_group_model.PluginRule = &.{};
         var content_types: []const DeclaredType = &.{};
         var custom_fields: []const DeclaredType = &.{};
         var filters: []const filter_module.Definition = &.{};
@@ -892,6 +895,7 @@ pub fn Merged(comptime plugins: anytype) type {
             }
 
             field_kinds = field_kinds ++ field_kinds_of(Plugin);
+            location_rules = location_rules ++ location_rule_define.rules_of(Plugin);
             const own_routes = route.routes_of(Plugin, owned_of(Plugin));
 
             routes = routes ++ own_routes;
@@ -1128,6 +1132,7 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_schemas = schemas;
             pub const merged_migrations = migrations;
             pub const merged_field_kinds = field_kinds;
+            pub const merged_location_rules = location_rules;
             pub const merged_content_types = content_types;
             pub const merged_custom_fields = custom_fields;
             pub const merged_filters = filters;

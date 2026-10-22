@@ -1,7 +1,8 @@
 //! `publr.fields.get(ctx, Fields, user)` and `publr.fields.save(ctx, Fields, user, values)`:
 //! a plugin's own `.register_fields` group on an account, read and written as its typed
 //! struct. The group is the plugin's own data, so no grant is asked; a save changes the
-//! group's fields only, every other group's values stay.
+//! group's fields only, every other group's values stay. Neither asks where the group is
+//! placed: a plugin's location rule may read its own group to decide.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const json = @import("../../lib/json.zig");
@@ -9,121 +10,155 @@ const PluginCtx = @import("context.zig").PluginCtx;
 const user_operations = @import("../../operations/user.zig");
 const user_fields = @import("../../operations/user/fields.zig");
 const field_model = @import("../../model/field.zig");
+const registry = @import("../../server/registry.zig");
+const custom_fields = @import("../../operations/custom_fields.zig");
 
 const Error = sdk.Error;
 const Value = std.json.Value;
 
-/// The group's values on the account; null when the group's location doesn't reach it.
-pub fn get(ctx: *PluginCtx, comptime Fields: type, user: []const u8) Error!?Fields {
+/// The group's values on the account, wherever its location places it: a plugin's location
+/// rule may read its own group to decide.
+pub fn get(ctx: *PluginCtx, comptime Fields: type, user: []const u8) Error!Fields {
     std.debug.assert(user.len > 0);
 
-    const held = try Held(Fields).read(ctx.inner, user) orelse return null;
-    const values = held.document.object.get(held.handle) orelse Value{
+    const inner = ctx.inner;
+    var as_core = AsCore.of(inner);
+    defer as_core.done();
+
+    const found = try user_operations.find_user(inner, user) orelse return error.NotFound;
+    const own = try own_group(inner, Fields, as_core.plugin);
+    const document = try user_fields.read(inner, found.user.id, &.{own});
+    const values = document.object.get(own.name) orelse Value{
         .object = .empty,
     };
 
-    return std.json.parseFromValueLeaky(Fields, ctx.inner.arena, values, .{
+    return std.json.parseFromValueLeaky(Fields, inner.arena, values, .{
         .ignore_unknown_fields = true,
     }) catch error.Invalid;
 }
 
-/// Writes the group's fields on the account, checked as every write is; `NotFound` when the
-/// group's location doesn't reach it.
+/// Writes the group's fields on the account, checked as every write is.
 pub fn save(ctx: *PluginCtx, comptime Fields: type, user: []const u8, values: Fields) Error!void {
     std.debug.assert(user.len > 0);
 
     const inner = ctx.inner;
-    var held = try Held(Fields).read(inner, user) orelse return error.NotFound;
+    var as_core = AsCore.of(inner);
+    defer as_core.done();
+
+    const found = try user_operations.find_user(inner, user) orelse return error.NotFound;
+    const own = try own_group(inner, Fields, as_core.plugin);
+    const placed = try user_fields.definition(inner, found.user.id, found.user.roles);
+    const defs = if (placed_has(placed, own.name))
+        placed
+    else
+        std.mem.concat(inner.arena, field_model.Def, &.{ placed, &.{own} }) catch {
+            return error.OutOfMemory;
+        };
+    var document = try user_fields.read(inner, found.user.id, defs);
     const text = std.json.Stringify.valueAlloc(inner.arena, values, .{}) catch {
         return error.OutOfMemory;
     };
     const group = json.parse(Value, inner.arena, text, .{}) catch return error.Invalid;
 
-    held.document.object.put(inner.arena, held.handle, group) catch return error.OutOfMemory;
+    document.object.put(inner.arena, own.name, group) catch return error.OutOfMemory;
 
-    const document = std.json.Stringify.valueAlloc(inner.arena, held.document, .{}) catch {
+    const written = std.json.Stringify.valueAlloc(inner.arena, document, .{}) catch {
         return error.OutOfMemory;
     };
 
-    try user_fields.write(inner, held.user_id, held.defs, document);
+    try user_fields.write(inner, found.user.id, defs, written);
 }
 
-fn Held(comptime Fields: type) type {
-    return struct {
-        user_id: []const u8,
-        defs: []const field_model.Def,
-        document: Value,
-        handle: []const u8,
+/// Reading as core reads: the plugin's own group needs no grant of the plugin's.
+const AsCore = struct {
+    inner: *sdk.Ctx,
+    caller: sdk.Caller,
+    plugin: []const u8,
 
-        /// The account's fields as the system reads them (the plugin's own group needs no
-        /// grant), and which group is the plugin's `Fields`.
-        fn read(inner: *sdk.Ctx, user: []const u8) Error!?@This() {
-            std.debug.assert(inner.plugin.len > 0);
+    fn of(inner: *sdk.Ctx) AsCore {
+        std.debug.assert(inner.plugin.len > 0);
 
-            const caller = inner.caller;
-            const plugin = inner.plugin;
+        const kept: AsCore = .{
+            .inner = inner,
+            .caller = inner.caller,
+            .plugin = inner.plugin,
+        };
 
-            // Read as core reads: the plugin's own grants don't come into it.
-            inner.caller = .system;
-            inner.plugin = "";
-            defer inner.caller = caller;
-            defer inner.plugin = plugin;
+        inner.caller = .system;
+        inner.plugin = "";
 
-            const found = try user_operations.find_user(inner, user) orelse return error.NotFound;
-            const defs = try user_fields.definition(inner, found.user.roles);
-            const handle = handle_of(defs, plugin) orelse return null;
-            const document = try user_fields.read(inner, found.user.id, defs);
+        return kept;
+    }
 
-            std.debug.assert(document == .object);
+    fn done(as_core: *const AsCore) void {
+        std.debug.assert(as_core.plugin.len > 0);
 
+        as_core.inner.caller = as_core.caller;
+        as_core.inner.plugin = as_core.plugin;
+    }
+};
+
+/// The plugin's group (`<plugin>`, then `<plugin>_1`, ...) whose fields are `Fields`', as
+/// the account's fields list it.
+fn own_group(inner: *sdk.Ctx, comptime Fields: type, plugin: []const u8) Error!field_model.Def {
+    std.debug.assert(plugin.len > 0);
+
+    for (0..field_model.fields_max) |index| {
+        const handle = if (index == 0)
+            plugin
+        else
+            try std.fmt.allocPrint(inner.arena, "{s}_{d}", .{ plugin, index });
+        const got = registry.SDK.dispatch(inner, custom_fields.Get, .{
+            .group = handle,
+        }) catch |err| switch (err) {
+            error.NotFound => return error.NotFound,
+            else => return err,
+        };
+
+        if (same_fields(Fields, got.definition.fields)) {
             return .{
-                .user_id = found.user.id,
-                .defs = defs,
-                .document = document,
-                .handle = handle,
+                .name = got.definition.handle,
+                .label = got.definition.name,
+                .kind = "group",
+                .fields = got.definition.fields,
             };
         }
+    }
 
-        /// The plugin's group (`<plugin>` or `<plugin>_<n>`) whose fields are `Fields`'.
-        fn handle_of(defs: []const field_model.Def, plugin: []const u8) ?[]const u8 {
-            std.debug.assert(plugin.len > 0);
+    return error.NotFound;
+}
 
-            for (defs) |def| {
-                const own = std.mem.eql(u8, def.name, plugin) or
-                    (std.mem.startsWith(u8, def.name, plugin) and
-                        def.name.len > plugin.len and def.name[plugin.len] == '_');
+fn placed_has(defs: []const field_model.Def, handle: []const u8) bool {
+    std.debug.assert(handle.len > 0);
 
-                if (own and same_fields(def.fields)) {
-                    return def.name;
-                }
-            }
-
-            return null;
-        }
-
-        fn same_fields(defs: []const field_model.Def) bool {
-            const names = comptime std.meta.fieldNames(Fields);
-
-            std.debug.assert(defs.len <= field_model.fields_max);
-
-            if (defs.len != names.len) {
-                return false;
-            }
-
-            inline for (names, 0..) |name, index| {
-                if (!std.mem.eql(u8, defs[index].name, name)) {
-                    return false;
-                }
-            }
-
+    for (defs) |def| {
+        if (std.mem.eql(u8, def.name, handle)) {
             return true;
         }
-    };
+    }
+
+    return false;
+}
+
+fn same_fields(comptime Fields: type, defs: []const field_model.Def) bool {
+    const names = comptime std.meta.fieldNames(Fields);
+
+    std.debug.assert(defs.len <= field_model.fields_max);
+
+    if (defs.len != names.len) {
+        return false;
+    }
+
+    inline for (names, 0..) |name, index| {
+        if (!std.mem.eql(u8, defs[index].name, name)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 test "a plugin's own group read and written by field, other groups kept" {
-    const custom_fields = @import("../../operations/custom_fields.zig");
-    const registry = @import("../../server/registry.zig");
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -157,15 +192,15 @@ test "a plugin's own group read and written by field, other groups kept" {
         .inner = &inner,
     };
 
-    try std.testing.expectEqual(@as(?i64, null), (try get(&ctx, Points, admin_id)).?.points);
+    try std.testing.expectEqual(@as(?i64, null), (try get(&ctx, Points, admin_id)).points);
     var transaction = try inner.db.transaction();
     try save(&ctx, Points, admin_id, .{
         .points = 120,
     });
     try transaction.commit();
-    try std.testing.expectEqual(@as(?i64, 120), (try get(&ctx, Points, admin_id)).?.points);
+    try std.testing.expectEqual(@as(?i64, 120), (try get(&ctx, Points, admin_id)).points);
     try std.testing.expectEqualStrings("loyalty", inner.plugin);
 
     inner.plugin = "elsewhere";
-    try std.testing.expect(try get(&ctx, Points, admin_id) == null);
+    try std.testing.expectError(error.NotFound, get(&ctx, Points, admin_id));
 }

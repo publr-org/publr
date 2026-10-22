@@ -46,13 +46,16 @@ export type HealthProps = {
   problem: string;
   /** Translations not picked yet where plugins disagree: the second tab's count. */
   translations_open?: number;
+  /** Field groups placed by a location rule no plugin brings any more (its plugin removed):
+   * the rule never matches, so the group shows nowhere through it. */
+  unplaced?: Array<{ group: string; href: string; rule: string }>;
 };
 
 /** Site Health: what is quietly wrong in the project, each case decided on its own. Broken
  * references first: records pointing at a record in the trash, gone for good, or of a type
  * no longer shared with their app. Every action posts the one form: a row's button names
  * its case (`one`), the band's buttons the ticked ones (`case`). */
-export function Health({ cases, kept, show_kept, next_href, notice, problem, translations_open = 0 }: HealthProps) {
+export function Health({ cases, kept, show_kept, next_href, notice, problem, translations_open = 0, unplaced = [] }: HealthProps) {
   return (
     <IndexPage
       tabs={
@@ -66,8 +69,14 @@ export function Health({ cases, kept, show_kept, next_href, notice, problem, tra
       title={Publr.t("Site Health")}
       description={Publr.t("What is quietly wrong in the project, so it never spreads unseen. Decide each case: fix it, take it out, or keep it as it is.")}
       notice={
-        (problem !== "" || notice !== "" || kept > 0) && (
+        (problem !== "" || notice !== "" || kept > 0 || unplaced.length > 0) && (
         <div class="flex flex-col gap-3">
+          {unplaced.map((item) => (
+            <Callout tone="warning" title={Publr.t("A location rule no plugin brings")}>
+              <Link href={item.href}>{item.group}</Link>{" "}
+              {Publr.t("is placed by {rule}, which no plugin brings any more: it shows nowhere through it.", { rule: item.rule })}
+            </Callout>
+          ))}
           {problem !== "" && (
             <Callout tone="error" title={Publr.t("Not done")}>
               {problem}

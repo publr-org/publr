@@ -20,9 +20,9 @@ const Problem = model.field.Problem;
 pub const document_bytes_max: u32 = 64 << 10;
 
 /// The fields of an account holding these roles: one group per custom field group that
-/// applies to any of them, named by its handle, labelled by its name, in the order the
-/// groups list.
-pub fn definition(ctx: *Ctx, roles: []const []const u8) Error![]const Def {
+/// applies to it (by any of its roles, or a rule naming the account, `user_id` when it has
+/// one), named by its handle, labelled by its name, in the order the groups list.
+pub fn definition(ctx: *Ctx, user_id: []const u8, roles: []const []const u8) Error![]const Def {
     std.debug.assert(ctx.caller != .anonymous);
     std.debug.assert(model.field.fields_max > 0);
 
@@ -37,7 +37,7 @@ pub fn definition(ctx: *Ctx, roles: []const []const u8) Error![]const Def {
         const got = try registry.SDK.dispatch(ctx, custom_fields.Get, .{
             .group = item.handle,
         });
-        const applies = applies_to_any(got.definition.group, roles);
+        const applies = applies_to_any(ctx, got.definition.group, user_id, roles);
 
         if (!applies or got.definition.fields.len == 0) {
             continue;
@@ -54,7 +54,12 @@ pub fn definition(ctx: *Ctx, roles: []const []const u8) Error![]const Def {
     return groups.items;
 }
 
-fn applies_to_any(group: model.field_group.Options, roles: []const []const u8) bool {
+fn applies_to_any(
+    ctx: *Ctx,
+    group: model.field_group.Options,
+    user_id: []const u8,
+    roles: []const []const u8,
+) bool {
     std.debug.assert(roles.len <= model.role.user_roles_max);
     std.debug.assert(model.role.user_roles_max > 0);
 
@@ -62,6 +67,9 @@ fn applies_to_any(group: model.field_group.Options, roles: []const []const u8) b
         const context: model.field_group.Context = .{
             .destination = .user,
             .role = name,
+            .id = user_id,
+            .reader = ctx,
+            .rules = registry.location_rules,
         };
 
         if (model.field_group.applies(group, context)) {
@@ -196,7 +204,7 @@ pub const Get = struct {
         std.debug.assert(in.user.len <= 64 << 10);
 
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
-        const defs = try definition(ctx, found.user.roles);
+        const defs = try definition(ctx, found.user.id, found.user.roles);
         const document = try read(ctx, found.user.id, defs);
         const text = std.json.Stringify.valueAlloc(ctx.arena, document, .{}) catch {
             return error.OutOfMemory;
@@ -245,7 +253,7 @@ pub const Validate = struct {
         std.debug.assert(in.document.len <= 64 << 10);
 
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
-        const defs = try definition(ctx, found.user.roles);
+        const defs = try definition(ctx, found.user.id, found.user.roles);
         const checked = try check(ctx, defs, in.document);
 
         return .{

@@ -38,6 +38,7 @@ const Later = @import("operations/later.zig");
 const Measure = @import("operations/measure.zig");
 const Reference = @import("operations/reference.zig");
 const Motto = @import("operations/motto.zig");
+const HasMotto = @import("rules/has_motto.zig");
 
 const WriteNote = @import("jobs/write_note.zig");
 const Tick = @import("jobs/tick.zig");
@@ -179,6 +180,7 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
     publr.plugin.define(manifest, .{
         .records = &native_records,
         .field_kinds = &.{Place.kind},
+        .register_location_rules = .{HasMotto.location_rule},
         .jobs = &jobs,
         .register_fields = field_groups,
         .operations = native_operations,

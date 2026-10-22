@@ -98,10 +98,11 @@ const summary_len_max: u32 = 200;
 
 /// What `define` takes.
 const options_known = [_][]const u8{
-    "records",         "operations", "hooks",           "events",  "permissions",
-    "secrets",         "depends_on", "compatible_with", "remotes", "field_kinds",
-    "register_fields", "roles",      "translations",    "limits",  "pages",
-    "panels",          "jobs",       "menu",            "icons",   "register_statuses",
+    "records",                 "operations", "hooks",           "events",  "permissions",
+    "secrets",                 "depends_on", "compatible_with", "remotes", "field_kinds",
+    "register_fields",         "roles",      "translations",    "limits",  "pages",
+    "panels",                  "jobs",       "menu",            "icons",   "register_statuses",
+    "register_location_rules",
 };
 
 /// What only a built-in plugin takes, until `.extend` holds them: the server's own seams.
@@ -139,7 +140,6 @@ const options_later = [_][2][]const u8{
     .{ "register_columns", "columns on lists the plugin does not own" },
     .{ "register_components", "slots on the site" },
     .{ "register_providers", "contracts and providers" },
-    .{ "register_location_rules", "location rules of the plugin's own" },
     .{ "taxonomies", "taxonomies declared by plugins" },
     .{ "webhooks", "incoming webhooks" },
 };

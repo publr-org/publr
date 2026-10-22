@@ -171,9 +171,14 @@ fn subjects_of(session: *admin.Session) ![]const admin.views.RuleBuilder.Subject
             },
         },
     };
-    const subjects = try session.arena.alloc(admin.views.RuleBuilder.SubjectsItem, defs.len);
+    const all = try std.mem.concat(session.arena, model.field.Def, &.{
+        &defs,
+        &.{try users_subject(session)},
+        try plugin_subjects(session),
+    });
+    const subjects = try session.arena.alloc(admin.views.RuleBuilder.SubjectsItem, all.len);
 
-    for (defs, 0..) |def, index| {
+    for (all, 0..) |def, index| {
         subjects[index] = .{
             .value = def.name,
             .label = def.label,
@@ -185,4 +190,56 @@ fn subjects_of(session: *admin.Session) ![]const admin.views.RuleBuilder.Subject
     }
 
     return subjects;
+}
+
+/// Core's rule for specific accounts: each by its email.
+fn users_subject(session: *admin.Session) !model.field.Def {
+    std.debug.assert(session.signed_in());
+
+    const user_operations = @import("../../operations/user.zig");
+    const listed = registry.SDK.dispatch(&session.ctx, user_operations.List, .{
+        .limit = 200,
+    });
+    const users = if (listed) |found| found.users else |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => &.{},
+    };
+    const ids = try session.arena.alloc([]const u8, users.len);
+    const emails = try session.arena.alloc([]const u8, users.len);
+
+    for (users, 0..) |user, index| {
+        ids[index] = user.id;
+        emails[index] = user.email;
+    }
+
+    return .{
+        .name = "user",
+        .label = try session.translated("User", .{}),
+        .kind = "select",
+        .options = .{
+            .choices = ids,
+            .labels = emails,
+        },
+    };
+}
+
+/// Each compiled-in plugin's rule, with the values it offers.
+fn plugin_subjects(session: *admin.Session) ![]const model.field.Def {
+    std.debug.assert(session.signed_in());
+
+    const offered = registry.location_rules;
+    const defs = try session.arena.alloc(model.field.Def, offered.len);
+
+    for (offered, 0..) |rule, index| {
+        defs[index] = .{
+            .name = rule.id,
+            .label = rule.label,
+            .kind = "select",
+            .options = .{
+                .choices = rule.values(&session.ctx),
+            },
+        };
+    }
+
+    return defs;
 }

@@ -379,8 +379,10 @@ fn valid_location(ctx: *const sdk.Ctx, groups: model.field.conditions.Set) sdk.E
                 try sdk.stored_roles.exists(ctx, rule.value)
             else if (std.mem.eql(u8, rule.field, "media_type"))
                 model.field.options.valid_media_type(rule.value)
+            else if (std.mem.eql(u8, rule.field, "user"))
+                try store.users.find_by_id(ctx.db, ctx.arena, rule.value) != null
             else
-                false;
+                model.field_group.find_rule(registry.location_rules, rule.field) != null;
             if (!accepted) return false;
         }
     }

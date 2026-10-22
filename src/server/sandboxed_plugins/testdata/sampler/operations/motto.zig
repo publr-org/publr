@@ -32,7 +32,7 @@ fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
         .motto = in.motto,
     });
 
-    const kept = try publr.fields.get(ctx, Profile.Fields, in.user) orelse return error.NotFound;
+    const kept = try publr.fields.get(ctx, Profile.Fields, in.user);
 
     return .{
         .motto = kept.motto,
