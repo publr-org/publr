@@ -250,6 +250,28 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
 
                 return if (moved.pending) .pending else .done;
             }
+
+            /// `transition` at a moment, made then as the person behind the call, with the
+            /// rights they hold then: `Posts.record.transition_at(ctx, post, .publish, at)`.
+            /// One per record; a new one replaces it. Refused without a person behind it.
+            pub fn transition_at(
+                any_ctx: anytype,
+                held: Held,
+                comptime named: @TypeOf(.enum_literal),
+                at: words.Time,
+            ) sdk.Error!void {
+                const ctx = queue.base_of(any_ctx);
+
+                comptime record_flow.check_named(options, @tagName(named));
+                comptime std.debug.assert(!internal);
+                std.debug.assert(held.id.len > 0);
+
+                _ = try ctx.call(record_operations.TransitionAt, .{
+                    .id = held.id,
+                    .transition = @tagName(named),
+                    .at = at.ms,
+                });
+            }
         };
     }
 }

@@ -1,6 +1,7 @@
 import { PanelTab } from "@publr/ui/PanelTab.ptsx";
 import { Heading } from "@publr/ui/Heading.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
 import { ChoiceButton } from "@publr/ui/ChoiceButton.ptsx";
 import { RecordSingle } from "./RecordEditor/RecordSingle.ptsx";
 import { RecordActions } from "./RecordEditor/RecordActions.ptsx";
@@ -746,6 +747,13 @@ export type RecordEditorProps = {
   request_transition?: string;
   request_may_approve?: boolean;
   request_decline_label?: string;
+  /** Whether the person may schedule a transition (`record.transition_at`). */
+  may_schedule?: boolean;
+  /** The scheduled transition, "Publish on 2026-11-05 09:00 UTC"; empty when none. */
+  scheduled_label?: string;
+  scheduled_transition?: string;
+  /** When it is scheduled, as a `datetime-local` input holds it, UTC. */
+  scheduled_at?: string;
 };
 
 export function RecordEditor({
@@ -787,6 +795,10 @@ export function RecordEditor({
   request_transition = "",
   request_may_approve = false,
   request_decline_label = "",
+  may_schedule = false,
+  scheduled_label = "",
+  scheduled_transition = "",
+  scheduled_at = "",
 }: RecordEditorProps) {
   state.id = id;
   state.values_max = values_max;
@@ -850,7 +862,35 @@ export function RecordEditor({
           </div>
         }
         notice={
-          request_by !== "" ? (
+          request_by !== "" || scheduled_label !== "" ? (
+            <div class="flex flex-col gap-3">
+            {scheduled_label !== "" && (
+              <div class="flex flex-col gap-3" data-part="scheduled">
+                <Callout tone="info" title={scheduled_label}>
+                  {Publr.t("Made then as the person who scheduled it, with the rights they hold then.")}
+                </Callout>
+                {may_schedule && (
+                  <div class="flex flex-wrap items-center gap-2">
+                    <form method="post" action={action_route} class="flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="csrf" value={csrf} />
+                      <input type="hidden" name="expected_version" value={state.version} />
+                      <input type="hidden" name="do" value="schedule" />
+                      <input type="hidden" name="transition" value={scheduled_transition} />
+                      <Input name="at" type="datetime-local" size="sm" value={scheduled_at} label={Publr.t("When, UTC")} />
+                      <Button type="submit" size="sm" hierarchy="secondary">{Publr.t("Change")}</Button>
+                    </form>
+                    <form method="post" action={action_route}>
+                      <input type="hidden" name="csrf" value={csrf} />
+                      <input type="hidden" name="expected_version" value={state.version} />
+                      <input type="hidden" name="do" value="unschedule" />
+                      <input type="hidden" name="transition" value={scheduled_transition} />
+                      <Button type="submit" size="sm" hierarchy="tertiary">{Publr.t("Cancel")}</Button>
+                    </form>
+                  </div>
+                )}
+              </div>
+            )}
+            {request_by !== "" && (
             <div class="flex flex-col gap-3" data-part="request">
               <Callout
                 tone="info"
@@ -879,6 +919,8 @@ export function RecordEditor({
                 )}
               </div>
             </div>
+            )}
+            </div>
           ) : undefined
         }
         problems={problems}
@@ -896,6 +938,7 @@ export function RecordEditor({
             aside={aside}
             impact={impact}
             stacked={stacked}
+            may_schedule={may_schedule && scheduled_label === ""}
           />
         }
       >

@@ -11,6 +11,7 @@ const admin = @import("../admin.zig");
 const fields = @import("fields.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
+const model_time = @import("../../lib/time.zig");
 const editor_site = @import("editor_site.zig");
 const design_hand = @import("design.zig").hand;
 const types = @import("../../operations/content_type.zig");
@@ -41,7 +42,11 @@ pub const Loaded = struct {
     row: Record,
     slot: []const u8,
     document: []const u8,
+    /// The transition scheduled for it (`record.transition_at`).
+    scheduled: ?Scheduled = null,
 };
+
+pub const Scheduled = @import("../../operations/document/crud.zig").Scheduled;
 
 /// What the editor is about: the definition, and the document when there is one.
 pub const Shape = struct {
@@ -281,6 +286,23 @@ pub fn Editor(comptime domain: Domain) type {
                         .id = id,
                     }) catch |err| return admin.fail(session, err, location);
                 }
+            } else if (std.mem.eql(u8, verb, "schedule") or std.mem.eql(u8, verb, "unschedule")) {
+                if (comptime !@hasDecl(operations, "TransitionAt")) {
+                    return admin.fail(session, error.Invalid, location);
+                } else {
+                    const at = if (std.mem.eql(u8, verb, "schedule"))
+                        model_time.parse_datetime_local(form.text("at") orelse "") orelse {
+                            return admin.fail(session, error.Invalid, location);
+                        }
+                    else
+                        null;
+
+                    _ = registry.SDK.dispatch(&session.ctx, operations.TransitionAt, .{
+                        .id = id,
+                        .transition = form.text("transition") orelse "",
+                        .at = at,
+                    }) catch |err| return admin.fail(session, err, location);
+                }
             } else if (std.mem.eql(u8, verb, "discard")) {
                 _ = registry.SDK.dispatch(&session.ctx, operations.DiscardChanges, .{
                     .id = id,
@@ -413,6 +435,10 @@ pub fn Editor(comptime domain: Domain) type {
                     .row = row,
                     .slot = full.slot,
                     .document = full.document,
+                    .scheduled = if (@hasField(@TypeOf(full), "scheduled"))
+                        full.scheduled
+                    else
+                        null,
                 },
             };
         }
@@ -952,6 +978,7 @@ pub fn Editor(comptime domain: Domain) type {
                 const may = may_of(session, row);
                 const actions = try actions_of(session, def.flow, row, may);
                 const requested = try requested_of(session, def.flow, row, may);
+                const scheduled = try scheduled_of(session, def.flow, row, full.scheduled);
                 const versions_href = if (domain.versions)
                     try print(arena, "{s}/{s}/revisions", .{ back, row.id })
                 else
@@ -1007,6 +1034,13 @@ pub fn Editor(comptime domain: Domain) type {
                     .request_transition = requested.transition,
                     .request_may_approve = requested.may_approve,
                     .request_decline_label = requested.decline_label,
+                    .may_schedule = if (comptime @hasDecl(operations, "TransitionAt"))
+                        registry.SDK.may(&session.ctx, operations.TransitionAt)
+                    else
+                        false,
+                    .scheduled_label = scheduled.label,
+                    .scheduled_transition = scheduled.transition,
+                    .scheduled_at = scheduled.at,
                 });
             }
 
@@ -1149,6 +1183,49 @@ pub const Requested = struct {
 
 /// The bar over a document someone asked a transition for: who, what, and what the person
 /// looking may do about it.
+const Schedule = struct {
+    /// "Publish on 2026-11-05 09:00 UTC"; empty when none is scheduled.
+    label: []const u8 = "",
+    transition: []const u8 = "",
+    /// When, as a `datetime-local` input holds it, UTC.
+    at: []const u8 = "",
+};
+
+/// The transition scheduled for the record, as its banner says it.
+fn scheduled_of(
+    session: *Session,
+    flow: model.flow.Flow,
+    row: Record,
+    scheduled: ?Scheduled,
+) Error!Schedule {
+    std.debug.assert(row.id.len > 0);
+    std.debug.assert(session.signed_in());
+
+    const kept = scheduled orelse return .{};
+    const label = if (flow.named(kept.transition, row.status)) |target|
+        try session.declared(target.label)
+    else
+        kept.transition;
+    const when = model_time.datetime_text(session.arena, kept.at) catch "";
+
+    return .{
+        .label = try session.translated("{transition} on {when} UTC", .{
+            .values = &.{
+                .{
+                    .name = "transition",
+                    .value = label,
+                },
+                .{
+                    .name = "when",
+                    .value = when,
+                },
+            },
+        }),
+        .transition = kept.transition,
+        .at = model_time.datetime_local_text(session.arena, kept.at) catch "",
+    };
+}
+
 pub fn requested_of(
     session: *Session,
     flow: model.flow.Flow,

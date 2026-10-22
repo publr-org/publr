@@ -31,7 +31,7 @@ pub fn up(connection: *db.Db) db.Error!void {
     try connection.exec(
         \\CREATE TABLE IF NOT EXISTS scheduled_transitions (
         \\    record_id TEXT PRIMARY KEY,
-        \\    to_status TEXT NOT NULL,
+        \\    transition TEXT NOT NULL,
         \\    due_at INTEGER NOT NULL,
         \\    scheduled_by TEXT NOT NULL,
         \\    scheduled_at INTEGER NOT NULL

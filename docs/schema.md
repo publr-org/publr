@@ -990,11 +990,21 @@ each pass makes.
 
 ## `scheduled_transitions`
 
-A status transition someone scheduled for a record: `record_id` (one per record), the status it goes to
-(`to_status`), when (`due_at`), who scheduled it (`scheduled_by`, an account id, empty for
-the system) and when they did (`scheduled_at`). The server's worker makes the transition once
-`due_at` has come, as that person with their rights then, and removes the row. Indexed on
-`due_at`.
+A transition someone scheduled for a record (`record.transition_at`): `record_id` (one per
+record), the transition's name (`transition`), when (`due_at`), who scheduled it
+(`scheduled_by`, an account id) and when they did (`scheduled_at`). The server's worker makes
+the transition once `due_at` has come, as that person with their rights then, and removes the
+row. Indexed on `due_at`.
+
+## `webhook_deliveries`
+
+What other servers sent to plugins' webhooks (`/_webhooks/<plugin>.<name>`): the plugin and
+webhook (`plugin`, `name`), the sender's own id for it (`delivery_id`, empty when the webhook
+names none; a verified one is kept once, a repeat dropped), when it came (`received_at`), the
+address it came from (`sender`), whether its signature held (`verified`), the body and headers
+as they came (empty when refused), and how it ended (`result`: `waiting`, `ran`, `failed`,
+`refused`, `unreadable`), with why (`problem`) and what its queued run logged (`lines`).
+Indexed by plugin, and by plugin, name and delivery id.
 
 ## Coming with later gates
 

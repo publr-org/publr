@@ -217,6 +217,7 @@ pub const list_max = records.list_max;
 pub const Problem = crud_module.Problem;
 pub const Record = records.Record;
 pub const Transition = lifecycle.Transition;
+pub const TransitionAt = lifecycle.TransitionAt;
 pub const Publish = lifecycle.Publish;
 pub const DiscardChanges = lifecycle.DiscardChanges;
 pub const Delete = lifecycle.Delete;
@@ -349,6 +350,14 @@ pub const Get = struct {
             got.document = one[0];
         } else {
             got.document = try virtual_edit.with_members(ctx, granted, got.record, got.document);
+
+            if (try store.scheduled_transitions.get(ctx.db, ctx.arena, got.record.id)) |kept| {
+                got.scheduled = .{
+                    .transition = kept.transition,
+                    .at = kept.due_at,
+                    .by = kept.scheduled_by,
+                };
+            }
         }
 
         got.document = try remote_view.view(ctx, granted, got.record.type, got.document);
@@ -681,9 +690,9 @@ test {
 }
 
 pub const operations = [_]type{
-    Create,    Get,    Save,           Transition,     Publish,  List,
-    Referrers, Delete, DiscardChanges, Purge,          Validate, Shown,
-    Query,     Reach,  TransitionMany, DeclineRequest,
+    Create,    Get,    Save,           Transition,     Publish,      List,
+    Referrers, Delete, DiscardChanges, Purge,          Validate,     Shown,
+    Query,     Reach,  TransitionMany, DeclineRequest, TransitionAt,
 };
 
 const SDK = registry.SDK;

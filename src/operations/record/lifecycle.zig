@@ -69,6 +69,79 @@ pub const Transition = struct {
     }
 };
 
+pub const TransitionAt = struct {
+    pub const name = "record.transition_at";
+    pub const description = "Schedule a transition of a record for a moment: publish on " ++
+        "5 Nov at 9:00";
+    pub const details =
+        \\A person schedules it; at that moment the server makes it as them, with the rights
+        \\they hold then, as `record transition` would. A record has one scheduled at most:
+        \\a new one replaces it, and no `at` cancels it. Never early; about a minute late at
+        \\most. The record shows it until it is made.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const In = struct {
+        id: []const u8,
+        transition: []const u8,
+        /// When, in ms; null cancels what is scheduled.
+        at: ?i64 = null,
+    };
+    pub const Out = struct {
+        /// Whether a transition stays scheduled.
+        scheduled: bool,
+    };
+    pub const example: In = .{
+        .id = record_operations.example_draft_id,
+        .transition = "publish",
+        .at = 1_792_405_800_000,
+    };
+    pub const example_out: Out = .{
+        .scheduled = true,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .id = "The record id",
+        .transition = "The transition's name, `publish`",
+        .at = "When, in ms since 1970; leave it out to cancel",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        if (in.id.len == 0 or in.id.len > 64 or in.transition.len == 0) {
+            return error.Invalid;
+        }
+
+        // Scheduled by a person, made as them: nobody else's rights are kept for later.
+        const person = ctx.caller.user_id() orelse return error.Denied;
+
+        // Only a record the person reaches.
+        _ = try registry.SDK.call(ctx, record_operations.Get, .{
+            .id = in.id,
+        });
+
+        const at = in.at orelse {
+            _ = try store.scheduled_transitions.remove(ctx.db, in.id);
+
+            return .{
+                .scheduled = false,
+            };
+        };
+
+        try store.scheduled_transitions.put(ctx.db, .{
+            .record_id = in.id,
+            .transition = in.transition,
+            .due_at = @max(at, ctx.now_ms),
+            .scheduled_by = person,
+            .scheduled_at = ctx.now_ms,
+        });
+
+        return .{
+            .scheduled = true,
+        };
+    }
+};
+
 fn moved_out(moved: @import("../document/lifecycle.zig").Moved) Transition.Out {
     std.debug.assert(moved.status.len > 0);
     std.debug.assert(moved.version >= 1);
