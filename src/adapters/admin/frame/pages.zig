@@ -24,6 +24,9 @@ pub const Page = struct {
     read: []const u8 = "",
     save: []const u8 = "",
     multiline: []const []const u8 = &.{},
+    /// The form's read offering items to add to its lists, and its read previewing a save.
+    suggest: []const u8 = "",
+    preview: []const u8 = "",
     /// Left out of the menu (`.menu = .none`); still opened at its address.
     hidden: bool = false,
     /// A tabbed page, drawn by the admin around the pages naming it in `parent`.
@@ -216,6 +219,8 @@ pub fn all(session: *const Session) admin.Error![]const Page {
                 .read = page.read,
                 .save = page.save,
                 .multiline = page.multiline,
+                .suggest = page.suggest,
+                .preview = page.preview,
                 .hidden = page.hidden,
                 .tabs = page.tabs,
                 .parent = page.parent,
@@ -248,6 +253,8 @@ fn native(comptime owned: @import("../../../sdk/plugin.zig").OwnedPage) Page {
             .read = if (page.form) |form| form.read.name else "",
             .save = if (page.form) |form| form.save.name else "",
             .multiline = if (page.form) |form| form.multiline else &.{},
+            .suggest = if (page.form) |form| name_of(form.suggest) else "",
+            .preview = if (page.form) |form| name_of(form.preview) else "",
             .hidden = page.menu != null,
             .tabs = page.tabs,
             .parent = page.parent,
@@ -255,6 +262,10 @@ fn native(comptime owned: @import("../../../sdk/plugin.zig").OwnedPage) Page {
             .action_href = if (page.action) |action| action.href else "",
         };
     }
+}
+
+fn name_of(comptime Operation: ?type) []const u8 {
+    return if (Operation) |Named| Named.name else "";
 }
 
 /// The page at `path` of `plugin`, when the viewer may open it.
@@ -341,6 +352,12 @@ fn sound(manifest: Manifest, page: ManifestPage) bool {
         return own_kind(manifest, page.operation) == .read and page.save.len == 0;
     }
 
+    for ([_][]const u8{ page.suggest, page.preview }) |name| {
+        if (name.len > 0 and own_kind(manifest, name) != .read) {
+            return false;
+        }
+    }
+
     return own_kind(manifest, page.read) == .read and own_kind(manifest, page.save) == .write;
 }
 
@@ -384,6 +401,44 @@ test "an installed plugin's page drawn by another's operation is not sound" {
     try std.testing.expect(sound(own, page));
     try std.testing.expect(!sound(own, borrowed));
     try std.testing.expect(!sound(own, bad_path));
+}
+
+test "an installed plugin's form offers and previews only through reads of its own" {
+    const own: Manifest = .{
+        .name = "notes",
+        .version = "0.1.0",
+        .summary = "Notes",
+        .operations = &.{
+            .{
+                .name = "notes.get",
+                .kind = .read,
+                .description = "Reads",
+            },
+            .{
+                .name = "notes.save",
+                .kind = .write,
+                .description = "Saves",
+            },
+        },
+    };
+    const form: ManifestPage = .{
+        .path = "settings",
+        .label = "Notes",
+        .icon = "file",
+        .read = "notes.get",
+        .save = "notes.save",
+        .suggest = "notes.get",
+        .preview = "notes.get",
+    };
+    var borrowed = form;
+    var writing = form;
+
+    borrowed.suggest = "user.list";
+    writing.preview = "notes.save";
+
+    try std.testing.expect(sound(own, form));
+    try std.testing.expect(!sound(own, borrowed));
+    try std.testing.expect(!sound(own, writing));
 }
 
 test "a tab shows in the first tabbed page of its parents that exists, else System settings" {

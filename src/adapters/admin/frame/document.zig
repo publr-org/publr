@@ -13,8 +13,8 @@ pub const policy = "sandbox allow-scripts allow-popups allow-popups-to-escape-sa
 
 /// What the frame asks of the admin, by `postMessage` to its parent: run one of the
 /// plugin's operations (`publr.call`), go to another of its pages or an address in the
-/// admin (`publr.navigate`, or a link clicked), and its height, so the frame grows with what it shows. A link to another
-/// site opens in a new tab.
+/// admin (`publr.navigate`, or a link clicked), and its height, so the frame grows with
+/// what it shows. A link to another site opens in a new tab.
 pub const bridge = @embedFile("bridge.js");
 
 /// The frame's document: a whole page the plugin drew with the admin's layouts gets the

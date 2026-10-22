@@ -1,9 +1,11 @@
 import { Publr } from "publr-jsx";
-import { call, Refused } from "publr/operations";
+import { call, Refused, send } from "publr/operations";
 import { EditorAsideSection } from "./EditorAsideSection.ptsx";
 import { FormBody } from "./FormBody.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { FieldRow } from "@publr/ui/FieldRow.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
 import { StatusStrip } from "@publr/ui/StatusStrip.ptsx";
 import { Switch } from "@publr/ui/Switch.ptsx";
@@ -20,9 +22,10 @@ export type OperationFormProps = {
   title: string;
   /** The operation a save calls with every field's value: `site_info.save`. */
   operation: string;
-  /** The fields in order. `kind`: string (a line), text (lines), number, boolean, or rows:
-   * a list of items, one row each, a column per `columns` (`kind` string, number, boolean),
-   * its values in `rows`. */
+  /** The fields in order. `kind`: string (a line), text (lines), number, boolean, choice
+   * (one of `choices`), or rows: a list of items, one row each, in order, a column per
+   * `columns` (`kind` string, number, boolean, choice, or shown: the read's, never sent),
+   * its values in `rows`; `suggestions` are items to add from a list. */
   fields: Array<{
     name: string;
     label: string;
@@ -30,9 +33,17 @@ export type OperationFormProps = {
     required: boolean;
     help: string;
     value: string;
-    columns: Array<{ name: string; label: string; kind: string }>;
-    rows: Array<{ index: number; cells: Array<{ at: number; kind: string; label: string; value: string }> }>;
+    choices: Array<{ value: string; label: string }>;
+    columns: Array<{ name: string; label: string; kind: string; choices: Array<{ value: string; label: string }> }>;
+    rows: Array<{
+      index: number;
+      cells: Array<{ at: number; kind: string; label: string; value: string; choices: Array<{ value: string; label: string }> }>;
+    }>;
+    suggestions: Array<{ at: number; label: string; values: string[] }>;
   }>;
+  /** A read taking the save's input and answering as the form's read does: the shown
+   * columns follow what is typed. Empty for none. */
+  preview?: string;
   /** Under the save button: what saving does. */
   note?: string;
   /** A header in place of the title band: a tabbed page's title and tabs. */
@@ -41,8 +52,11 @@ export type OperationFormProps = {
 
 type Field = OperationFormProps["fields"][number];
 
+type Row = Field["rows"][number];
+
 export const state = Publr.reactive({
   save: "",
+  preview: "",
   fields: [] as Field[],
   status: Publr.t("All changes saved"),
   busy: false,
@@ -67,68 +81,125 @@ Publr.effect(() => {
         : Publr.t("All changes saved");
 });
 
+/** A list's rows in their new order, numbered again. */
+const renumbered = (rows: Row[]): Row[] => rows.map((row, index) => ({ ...row, index }));
+
+/** A new row of `field`: `values` by column, else empty (a choice its first). */
+const fresh = (field: Field, values: string[]): Row => ({
+  index: field.rows.length,
+  cells: field.columns.map((column, at) => ({
+    at, kind: column.kind, label: column.label, choices: column.choices,
+    value: values[at] ?? (column.kind === "choice" ? (column.choices[0]?.value ?? "") : ""),
+  })),
+});
+
+const changed = (name: string, rows: (field: Field) => Row[]) => {
+  state.fields = state.fields.map((field) => (field.name !== name ? field : { ...field, rows: rows(field) }));
+  previewed();
+};
+
 export const typed = (event: Event) => {
   const input = event.target as HTMLInputElement;
   const value = input.type === "checkbox" ? (input.checked ? "true" : "false") : input.value;
+  const picked = /^pick:(.+)$/.exec(input.name ?? "");
+  if (picked) {
+    if (event.type !== "change" || value === "") return;
+    input.value = "";
+    changed(picked[1], (field) => [...field.rows, fresh(field, field.suggestions[Number(value)]?.values ?? [])]);
+    return;
+  }
   const cell = /^(.+)\[(\d+)\]\[(\d+)\]$/.exec(input.name ?? "");
   if (cell) {
     const row = Number(cell[2]);
     const at = Number(cell[3]);
-    state.fields = state.fields.map((field) =>
-      field.name !== cell[1] ? field : {
-        ...field,
-        rows: field.rows.map((one) =>
-          one.index !== row ? one : { ...one, cells: one.cells.map((it) => (it.at === at ? { ...it, value } : it)) }),
-      });
+    changed(cell[1], (field) => field.rows.map((one) =>
+      one.index !== row ? one : { ...one, cells: one.cells.map((it) => (it.at === at ? { ...it, value } : it)) }));
     return;
   }
   state.fields = state.fields.map((field) => (field.name === input.name ? { ...field, value } : field));
 };
 
 /** Add (`name="row-add"`, the list's name as its value) puts an empty row at the end;
- * Remove (`name="row-remove"`, `<list>:<row>`) takes one out. */
+ * Remove, Up and Down (`row-remove`, `row-up`, `row-down`, `<list>:<row>`) take one out or
+ * move it. */
 export const clicked = (event: MouseEvent) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[name]");
-  if (!button || (button.name !== "row-add" && button.name !== "row-remove")) return;
+  if (!button || !button.name.startsWith("row-")) return;
   event.preventDefault();
   const [name, at] = button.value.split(":");
   const row = Number(at);
-  state.fields = state.fields.map((field) =>
-    field.name !== name ? field : {
-      ...field,
-      rows: button.name === "row-add"
-        ? [...field.rows, {
-          index: field.rows.length,
-          cells: field.columns.map((column, place) => ({ at: place, kind: column.kind, label: column.label, value: "" })),
-        }]
-        : field.rows.filter((one) => one.index !== row).map((one, index) => ({ ...one, index })),
-    });
+  const moved = (rows: Row[], by: number): Row[] => {
+    const to = row + by;
+    if (to < 0 || to >= rows.length) return rows;
+    const order = [...rows];
+    [order[row], order[to]] = [order[to], order[row]];
+    return renumbered(order);
+  };
+  if (button.name === "row-add") changed(name, (field) => [...field.rows, fresh(field, [])]);
+  if (button.name === "row-remove") changed(name, (field) => renumbered(field.rows.filter((one) => one.index !== row)));
+  if (button.name === "row-up") changed(name, (field) => moved(field.rows, -1));
+  if (button.name === "row-down") changed(name, (field) => moved(field.rows, 1));
 };
 
 /** A value as the operation takes it: numbers and switches typed. */
 const typedValue = (kind: string, text: string): unknown =>
   kind === "number" ? Number(text) : kind === "boolean" ? text === "true" : text;
 
-/** Every field's value as the operation takes it, a list's rows as items. */
-export const save = () => {
-  const input: Record<string, unknown> = {};
+/** Every field's value as the operation takes it, a list's rows as items without the
+ * columns it only shows. */
+const input = (): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
   for (const field of state.fields) {
-    input[field.name] = field.kind === "rows"
-      ? field.rows.map((row) =>
-        Object.fromEntries(field.columns.map((column, at) => [column.name, typedValue(column.kind, row.cells[at].value)])))
+    out[field.name] = field.kind === "rows"
+      ? field.rows.map((row) => Object.fromEntries(field.columns.flatMap((column, at) =>
+        column.kind === "shown" ? [] : [[column.name, typedValue(column.kind, row.cells[at].value)]])))
       : typedValue(field.kind, field.value);
   }
-  saveForm(input);
+  return out;
+};
+
+export const save = () => {
+  saveForm(input());
+};
+
+let asked = 0;
+let waiting: ReturnType<typeof setTimeout> | undefined = undefined;
+
+/** The preview read, a moment after the last change: what it answers for each row fills the
+ * row's shown columns. An answer overtaken by a later change is dropped. */
+const previewed = () => {
+  if (state.preview === "") return;
+  clearTimeout(waiting);
+  waiting = setTimeout(() => {
+    const mine = ++asked;
+    send(state.preview, input()).then((answer) => {
+      if (mine !== asked) return;
+      const answered = answer as Record<string, Array<Record<string, unknown>>>;
+      state.fields = state.fields.map((field) => field.kind !== "rows" ? field : {
+        ...field,
+        rows: field.rows.map((row) => ({
+          ...row,
+          cells: row.cells.map((cell) => cell.kind !== "shown" ? cell : {
+            ...cell,
+            value: String(answered[field.name]?.[row.index]?.[field.columns[cell.at].name] ?? ""),
+          }),
+        })),
+      });
+    }).catch(() => {});
+  }, 200);
 };
 
 /** A plugin's form by declaration: its fields drawn with the admin's controls, saved
  * through one operation, the status line and the save as on every editor. */
-export function OperationForm({ title, operation, fields, note = "", header }: OperationFormProps) {
+export function OperationForm({ title, operation, fields, preview = "", note = "", header }: OperationFormProps) {
   state.save = operation;
+  state.preview = preview;
   state.fields = fields;
   state.status = Publr.t("All changes saved");
   state.busy = false;
   state.problems = {};
+  // A list of rows needs the room: the save goes under the form, as on a list page.
+  const wide = fields.some((field) => field.kind === "rows");
 
   return (
     <div class="flex grow flex-col" data-part="operation-form" onInput={typed} onChange={typed} onClick={clicked}>
@@ -137,10 +208,12 @@ export function OperationForm({ title, operation, fields, note = "", header }: O
         header={header}
         meta={<StatusStrip status={Publr.t("Saved")} tone="success" note={state.status} />}
         aside={
-          <EditorAsideSection>
-            <Button classes="w-full" disabled={state.busy} onClick={save}>{Publr.t("Save")}</Button>
-            {note !== "" && <Text as="p" variant="body-xs" tone="muted">{note}</Text>}
-          </EditorAsideSection>
+          !wide && (
+            <EditorAsideSection>
+              <Button classes="w-full" disabled={state.busy} onClick={save}>{Publr.t("Save")}</Button>
+              {note !== "" && <Text as="p" variant="body-xs" tone="muted">{note}</Text>}
+            </EditorAsideSection>
+          )
         }
       >
         <div class="flex flex-col gap-7">
@@ -155,6 +228,13 @@ export function OperationForm({ title, operation, fields, note = "", header }: O
               {field.kind === "number" && (
                 <Input id={`field-${field.name}`} name={field.name} value={field.value} type="number" required={field.required} />
               )}
+              {field.kind === "choice" && (
+                <NativeSelect id={`field-${field.name}`} name={field.name} required={field.required}>
+                  {field.choices.map((choice) => (
+                    <option value={choice.value} selected={choice.value === field.value}>{choice.label}</option>
+                  ))}
+                </NativeSelect>
+              )}
               {field.kind === "rows" && (
                 <div class="flex flex-col gap-3" data-part="operation-form-rows">
                   <div class="overflow-x-auto">
@@ -162,7 +242,7 @@ export function OperationForm({ title, operation, fields, note = "", header }: O
                       <TableHeader>
                         <TableRow>
                           {field.columns.map((column) => <TableHead>{column.label}</TableHead>)}
-                          <TableHead><span class="sr-only">{Publr.t("Remove")}</span></TableHead>
+                          <TableHead><span class="sr-only">{Publr.t("Order and remove")}</span></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -170,26 +250,57 @@ export function OperationForm({ title, operation, fields, note = "", header }: O
                           <TableRow key={row.index}>
                             {row.cells.map((cell) => (
                               <TableCell>
-                                {cell.kind === "boolean" ? (
+                                {cell.kind === "boolean" && (
                                   <Switch name={`${field.name}[${row.index}][${cell.at}]`} checked={cell.value === "true"}
                                     aria-label={cell.label} />
-                                ) : (
+                                )}
+                                {cell.kind === "choice" && (
+                                  <NativeSelect name={`${field.name}[${row.index}][${cell.at}]`} label={cell.label} size="sm"
+                                    classes="min-w-24">
+                                    {cell.choices.map((choice) => (
+                                      <option value={choice.value} selected={choice.value === cell.value}>{choice.label}</option>
+                                    ))}
+                                  </NativeSelect>
+                                )}
+                                {cell.kind === "shown" && (
+                                  <Text as="span" variant="body-md" classes="whitespace-nowrap">{cell.value}</Text>
+                                )}
+                                {(cell.kind === "string" || cell.kind === "number") && (
                                   <Input name={`${field.name}[${row.index}][${cell.at}]`} value={cell.value} size="sm"
-                                    type={cell.kind === "number" ? "number" : "text"} aria-label={cell.label} />
+                                    type={cell.kind === "number" ? "number" : "text"} aria-label={cell.label} classes="min-w-20" />
                                 )}
                               </TableCell>
                             ))}
                             <TableCell>
-                              <Button type="button" name="row-remove" value={`${field.name}:${row.index}`} hierarchy="tertiary" size="sm">
-                                {Publr.t("Remove")}
-                              </Button>
+                              <div class="flex items-center justify-end gap-1">
+                                <Button type="button" name="row-up" value={`${field.name}:${row.index}`} hierarchy="tertiary"
+                                  size="xs" label={Publr.t("Move up")} title={Publr.t("Move up")} disabled={row.index === 0}>
+                                  <Icon name="arrow-up" size="sm" />
+                                </Button>
+                                <Button type="button" name="row-down" value={`${field.name}:${row.index}`} hierarchy="tertiary"
+                                  size="xs" label={Publr.t("Move down")} title={Publr.t("Move down")}
+                                  disabled={row.index === field.rows.length - 1}>
+                                  <Icon name="arrow-down" size="sm" />
+                                </Button>
+                                <Button type="button" name="row-remove" value={`${field.name}:${row.index}`} hierarchy="tertiary" size="sm">
+                                  {Publr.t("Remove")}
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   </div>
-                  <div>
+                  <div class="flex flex-wrap items-center gap-3">
+                    {field.suggestions.length > 0 && (
+                      <NativeSelect name={`pick:${field.name}`} label={Publr.t("Add from the list")} size="sm" classes="w-64">
+                        <option value="">{Publr.t("Add from the list…")}</option>
+                        {field.suggestions.map((suggestion) => (
+                          <option value={`${suggestion.at}`}>{suggestion.label}</option>
+                        ))}
+                      </NativeSelect>
+                    )}
                     <Button type="button" name="row-add" value={field.name} hierarchy="secondary" size="sm">
                       {Publr.t("Add")}
                     </Button>
@@ -198,6 +309,12 @@ export function OperationForm({ title, operation, fields, note = "", header }: O
               )}
             </FieldRow>
           ))}
+          {wide && (
+            <div class="flex flex-wrap items-center gap-3">
+              <Button disabled={state.busy} onClick={save}>{Publr.t("Save")}</Button>
+              {note !== "" && <Text as="p" variant="body-xs" tone="muted">{note}</Text>}
+            </div>
+          )}
         </div>
       </FormBody>
     </div>

@@ -906,7 +906,9 @@ pub fn Merged(comptime plugins: anytype) type {
                 const used: []const type = if (page.tabs)
                     &.{}
                 else if (page.form) |form|
-                    &.{ form.read, form.save }
+                    &[_]type{ form.read, form.save } ++
+                        (if (form.suggest) |Suggest| &[_]type{Suggest} else &[_]type{}) ++
+                        (if (form.preview) |Preview| &[_]type{Preview} else &[_]type{})
                 else
                     &.{page.operation.?};
 

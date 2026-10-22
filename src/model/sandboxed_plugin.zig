@@ -239,6 +239,9 @@ pub const Page = struct {
     read: []const u8 = "",
     save: []const u8 = "",
     multiline: []const []const u8 = &.{},
+    /// A form's read offering items to add to its lists, and its read previewing a save.
+    suggest: []const u8 = "",
+    preview: []const u8 = "",
     /// `.menu = .none`: left out of the menu, still opened at its address.
     hidden: bool = false,
     /// A tabbed page, filled by other pages naming it in `parent`.

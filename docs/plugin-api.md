@@ -879,7 +879,11 @@ const settings: publr.plugin.Page = .{
 ```
 
 `Read` is a read with no input answering the values; `Save` is a write taking every
-field. Each field's `///` is its help. Pages, their top bar counts, panels, row actions and
+field. Each field's `///` is its help; an enum is a dropdown; a list of plain items is a
+table whose rows are added, removed and reordered, and its columns only `Read` answers are
+shown. `.suggest` (a read, no input, answering items by list) offers items to add;
+`.preview` (a read taking `Save`'s input, answering as `Read`) keeps the shown columns in
+step as people type. Pages, their top bar counts, panels, row actions and
 Settings pages may name operations made with `publr.operation.define`.
 
 A page that says `.tabs = true` is a tabbed page the admin draws; a page naming it in

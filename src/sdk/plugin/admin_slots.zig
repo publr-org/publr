@@ -188,6 +188,12 @@ pub const Form = struct {
     save: type,
     /// Fields drawn as several lines rather than one.
     multiline: []const []const u8 = &.{},
+    /// A read of the plugin's own, no input, answering items people often add to the
+    /// form's lists, by list (`.{ .languages = ... }`): each list offers them to pick.
+    suggest: ?type = null,
+    /// A read of the plugin's own taking `save`'s input and answering as `read` does: a
+    /// list's columns `save` does not take (an example) follow what people type.
+    preview: ?type = null,
 };
 
 pub const SettingsPage = struct {
@@ -370,6 +376,19 @@ fn assert_form(comptime plugin: []const u8, comptime form: Form) void {
 
         if (form.save.kind != .write) {
             @compileError(label ++ form.save.name ++ " is a write");
+        }
+
+        if (form.suggest) |Suggest| {
+            if (Suggest.kind != .read or @typeInfo(Suggest.In).@"struct".fields.len != 0) {
+                @compileError(label ++ Suggest.name ++ " is a read with no input");
+            }
+        }
+
+        if (form.preview) |Preview| {
+            if (Preview.kind != .read or Preview.In != form.save.In) {
+                @compileError(label ++ Preview.name ++ " is a read taking " ++
+                    form.save.name ++ "'s input");
+            }
         }
     }
 }

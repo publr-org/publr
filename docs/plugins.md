@@ -701,9 +701,13 @@ permission.
 A page can also be a declaration, with no views of the plugin's: `.form = .{ .read =
 Read, .save = Save, .multiline = &.{"description"} }` instead of `.operation`. The admin
 draws it as one of its own pages (no frame: nothing of the plugin's is drawn), a field for
-each field of `Save`'s input (strings, numbers, switches; `multiline` ones as several
-lines; each field's `///` as its help), filled from what `Read` answers; Save calls
-`Save` as the person looking. It works the same for an installed plugin, which draws
+each field of `Save`'s input (strings, numbers, switches, a dropdown for an enum;
+`multiline` ones as several lines; each field's `///` as its help), filled from what
+`Read` answers; Save calls `Save` as the person looking. A list of plain items is a table,
+a row each, added, removed and moved up or down; a column `Read` answers and `Save` does
+not take (an example) is shown, not edited. `.suggest = Common`, a read answering items by
+list, offers them to add from a dropdown; `.preview = Preview`, a read taking `Save`'s
+input and answering as `Read`, keeps the shown columns in step as people type. It works the same for an installed plugin, which draws
 nothing else in the admin yet.
 
 A page with `.tabs = true` is a tabbed page: the admin draws its title and a tab bar, and
