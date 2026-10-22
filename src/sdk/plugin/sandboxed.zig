@@ -14,12 +14,8 @@ const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 const catalog = @import("../../model/permission.zig");
 const context = @import("context.zig");
 
-/// A permission a plugin asks for, by the key the administrator sees (`content.write`), and
-/// the plugin's own sentence on why it needs it.
-pub const Permission = sandboxed_plugin.Ask;
 /// More than the defaults, asked for with a reason; each raised limit waits for approval.
 pub const Limits = sandboxed_plugin.Limits;
-/// Which content the plugin recommends it be given; the administrator decides.
 /// One thing the host can run in a plugin's module: an operation or a hook.
 pub const Entry = struct {
     stage: Stage,
@@ -219,13 +215,13 @@ pub fn assert_sandboxable(comptime Plugin: type) void {
     }
 }
 
-pub fn permissions_of(comptime Plugin: type) []const Permission {
+pub fn permissions_of(comptime Plugin: type) []const sandboxed_plugin.Ask {
     comptime {
         if (!plugin_define.has(Plugin, "permissions")) {
             return &.{};
         }
 
-        const list: []const Permission = plugin_define.get(Plugin, "permissions");
+        const list: []const sandboxed_plugin.Ask = plugin_define.get(Plugin, "permissions");
 
         std.debug.assert(list.len <= permissions_max);
 

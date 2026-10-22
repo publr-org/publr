@@ -6,7 +6,7 @@ const apps_options = @import("apps_options");
 const engine = @import("../../template.zig");
 const model_app = @import("../../model/app.zig");
 const middleware = @import("middleware.zig");
-const registry = @import("../../server/registry.zig");
+const model_role = @import("../../model/role.zig");
 const ui_render = @import("../../ui/render.zig");
 
 pub const apps_max: u32 = apps_options.apps_max;
@@ -151,9 +151,8 @@ fn validate(comptime specs: []const Spec) void {
             }
 
             for (spec.roles) |name| {
-                if (registry.Roles.get(name) == null) {
-                    @compileError(label ++ "`.roles` names " ++ name ++ ", a role neither " ++
-                        "core nor a native plugin declares");
+                if (!model_role.valid_name(name)) {
+                    @compileError(label ++ "`.roles` names " ++ name ++ ", not a role's name");
                 }
             }
 

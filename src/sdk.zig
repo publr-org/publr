@@ -82,8 +82,6 @@ pub const Registry = struct {
     schemas: []const [:0]const u8 = &.{},
     /// The chain a database is migrated along: core's, then each compiled-in plugin's.
     migrations: []const db.migration.Migration = &.{},
-    /// What a signed-in account's roles grant: the core's, with the plugins' merged in.
-    roles: []const role.Role = &role.core,
     /// Runs as the system once the schema is applied: declared content types and the like.
     bootstrap: ?*const fn (*Ctx) Error!void = null,
     /// Where top-level calls are logged, done or refused; none keeps no log.
@@ -104,7 +102,6 @@ pub fn SDK(comptime registry: Registry) type {
         pub const namespaces = registry.namespaces;
         pub const schemas = registry.schemas;
         pub const migrations = registry.migrations;
-        pub const roles = registry.roles;
 
         pub fn apply_schemas(connection: *db.Db) db.Error!void {
             std.debug.assert(connection.transaction_depth <= 1);
@@ -550,7 +547,7 @@ pub fn SDK(comptime registry: Registry) type {
             return authorize_request(ctx, .{
                 .operation_name = Operation.name,
                 .kind = Operation.kind,
-                .resource = operation.resource_of(in),
+                .type_id = operation.type_of(in),
                 .open = @hasDecl(Operation, "open") and Operation.open,
             });
         }
@@ -631,8 +628,8 @@ pub fn SDK(comptime registry: Registry) type {
 
             var named = request;
 
-            if (owns_type(ctx.plugin, request.resource.type_id)) {
-                named.own_types = try ctx.arena.dupe([]const u8, &.{request.resource.type_id.?});
+            if (owns_type(ctx.plugin, request.type_id)) {
+                named.own_types = try ctx.arena.dupe([]const u8, &.{request.type_id.?});
             }
 
             if (ctx.caller != .plugin and ctx.plugin_code) {
@@ -709,7 +706,7 @@ pub fn SDK(comptime registry: Registry) type {
 
             const names = ctx.caller.roles() orelse switch (ctx.caller) {
                 .plugin => |plugin| plugin.roles orelse return &.{},
-                .anonymous, .user, .token, .machine, .system => return &.{},
+                .anonymous, .user, .token, .system => return &.{},
             };
 
             std.debug.assert(names.len <= role.user_roles_max);
@@ -761,7 +758,6 @@ pub fn SDK(comptime registry: Registry) type {
             const request: authorize.Request = .{
                 .operation_name = Operation.name,
                 .kind = Operation.kind,
-                .resource = .{},
                 .open = @hasDecl(Operation, "open") and Operation.open,
             };
             const held = held_roles(ctx) catch return false;
@@ -787,7 +783,6 @@ pub fn SDK(comptime registry: Registry) type {
             const request: authorize.Request = .{
                 .operation_name = found.name,
                 .kind = found.kind,
-                .resource = .{},
                 .open = found.open,
             };
             const held = held_roles(ctx) catch return false;
@@ -808,9 +803,7 @@ pub fn SDK(comptime registry: Registry) type {
                     const request: authorize.Request = .{
                         .operation_name = Operation.name,
                         .kind = Operation.kind,
-                        .resource = .{
-                            .type_id = handle,
-                        },
+                        .type_id = handle,
                         .plugin_access = if (asked_by_plugin) compiled_access(ctx.plugin) else null,
                     };
 
@@ -842,7 +835,7 @@ pub fn SDK(comptime registry: Registry) type {
                 const app_only = comptime operation.is_app(Operation.name);
                 const open = @hasDecl(Operation, "open") and Operation.open;
 
-                if (!app_only and !open and !authorize.is_open_operation(Operation.name)) {
+                if (!app_only and !open) {
                     if (granted_by_role(ctx, Operation.name)) {
                         return true;
                     }
@@ -863,7 +856,7 @@ pub fn SDK(comptime registry: Registry) type {
             return stored_roles.allows(ctx, held, name);
         }
 
-        /// A caller that is not an account (the system, a plugin, a machine token) may use
+        /// A caller that is not an account (the system, a plugin) may use
         /// the admin when it is the system; a device answers by its account's roles.
         fn may_any(ctx: *const Ctx) bool {
             std.debug.assert(ctx.caller != .user);
@@ -871,7 +864,7 @@ pub fn SDK(comptime registry: Registry) type {
 
             return switch (ctx.caller) {
                 .system => true,
-                .anonymous, .user, .token, .machine, .plugin => false,
+                .anonymous, .user, .token, .plugin => false,
             };
         }
 
@@ -1920,10 +1913,6 @@ fn validate_registry(comptime registry: Registry) void {
             @compileError("too many policies");
         }
 
-        if (role.problem(registry.roles)) |message| {
-            @compileError("roles: " ++ message);
-        }
-
         for (registry.namespaces) |namespace| {
             const documented = namespace.name.len > 0 and namespace.summary.len > 0 and
                 namespace.details.len > 0;
@@ -2417,13 +2406,6 @@ const ListRecords = struct {
 
 const RolesSDK = SDK(.{
     .operations = &.{ testing.Record, Subscribe, ListRecords },
-    .roles = &(role.core ++ [_]role.Role{
-        .{
-            .name = "subscriber",
-            .label = "Subscriber",
-            .grants = &.{"app.news.*"},
-        },
-    }),
 });
 
 test "roles: an account calls what its roles grant; one granted only apps never gets in" {
@@ -2433,7 +2415,11 @@ test "roles: an account calls what its roles grant; one granted only apps never 
 
     var system = harness.ctx(.system);
 
-    try stored_roles.apply(&system, "news", RolesSDK.roles[role.core.len..]);
+    try stored_roles.apply(&system, "news", &.{.{
+        .name = "subscriber",
+        .label = "Subscriber",
+        .grants = &.{"app.news.*"},
+    }});
 
     var subscriber = harness.ctx(.{
         .user = .{

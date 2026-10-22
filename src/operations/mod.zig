@@ -24,6 +24,7 @@ pub const namespace: sdk.operation.Namespace = .{
 
 pub const Apply = struct {
     pub const name = "mod.apply";
+    pub const open = true;
     pub const description = "Pass values through every modifier of a name";
     pub const details =
         \\`values` is a JSON array; each modifier taking `name` changes them in turn, and the

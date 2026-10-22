@@ -36,13 +36,10 @@ pub fn call(comptime SDK: type, ctx: *Ctx, name: []const u8, input: []const u8) 
     return dispatch(SDK, ctx, sandboxed, found, input);
 }
 
-/// The resource an operation is about, read from its input by the same convention built-in
-/// operations follow: `type`, `id`, and `to` or `status`.
+/// The content type an operation is about, read from its input by the same convention
+/// built-in operations follow: `type`.
 const ResourceFields = struct {
     type: ?[]const u8 = null,
-    id: ?[]const u8 = null,
-    to: ?[]const u8 = null,
-    status: ?[]const u8 = null,
 };
 
 fn dispatch(
@@ -174,11 +171,7 @@ fn admit(
     _ = try SDK.authorize_request(ctx, .{
         .operation_name = found.name,
         .kind = found.kind,
-        .resource = .{
-            .type_id = fields.type,
-            .record_id = fields.id,
-            .to_status = fields.to orelse fields.status,
-        },
+        .type_id = fields.type,
         .open = found.open,
     });
 }

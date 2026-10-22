@@ -137,7 +137,6 @@ fn invoke_shaped(
     ctx.caller = .{
         .plugin = .{
             .name = loaded.name(),
-            .capabilities = &.{},
             .on_behalf_of = saved.user_id(),
             .access = access,
             .roles = saved.roles() orelse if (saved == .plugin) saved.plugin.roles else null,

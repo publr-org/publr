@@ -165,7 +165,11 @@ test "installed, a plugin's operations run in the sandbox through the one dispat
     try std.testing.expectEqual(2, try scenario.total(admin, greet, "{\"note\":\"again\"}"));
     try std.testing.expectEqual(2, try scenario.total(admin, "greeter.count", "{}"));
 
-    // Its own role reaches its operations; no role, no call; nobody signed in, nothing.
+    // A role an administrator granted its operations reaches them; no role, no call; nobody
+    // signed in, nothing.
+    const granting = scenario.ctx(.system);
+
+    try @import("../../store.zig").role_grants.add(granting.db, "editor", &.{"greeter.*"});
     try std.testing.expectEqual(3, try scenario.total(editor, greet, "{\"note\":\"ed\"}"));
     try std.testing.expectError(error.Denied, scenario.call(nobody, greet, "{\"note\":\"no\"}"));
     try std.testing.expectError(error.Denied, scenario.call(.anonymous, "greeter.count", "{}"));
@@ -543,7 +547,7 @@ test "a grant's flags: without .publish a plugin's write waits, with it it goes 
     );
 }
 
-test "installing twice conflicts; removing unloads, keeps records, takes editors' grants" {
+test "installing twice conflicts; removing unloads and keeps records" {
     var scenario: Scenario = undefined;
     try scenario.init();
     defer scenario.deinit();
@@ -553,10 +557,6 @@ test "installing twice conflicts; removing unloads, keeps records, takes editors
     try std.testing.expectError(error.Conflict, scenario.install());
 
     var system = scenario.ctx(.system);
-    const editors = [_][]const u8{"editor"};
-
-    try std.testing.expect(sdk.stored_roles.allows(&system, &editors, greet));
-
     const listed = try registry.SDK.dispatch(&system, plugin_operations.List, .{});
 
     const built_in = registry.native_plugins.all.len;
@@ -572,7 +572,6 @@ test "installing twice conflicts; removing unloads, keeps records, takes editors
     });
 
     try std.testing.expectError(error.NotFound, scenario.call(admin, greet, "{\"note\":\"x\"}"));
-    try std.testing.expect(!sdk.stored_roles.allows(&system, &editors, greet));
 
     var reading = scenario.ctx(.system);
     const records = @import("../../operations/record.zig");

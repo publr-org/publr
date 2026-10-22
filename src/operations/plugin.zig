@@ -652,8 +652,6 @@ pub const Remove = struct {
         else
             &.{};
 
-        try sdk.stored_roles.withdraw(ctx, in.name, decoded.manifest.roles);
-
         try lifecycle.remove(ctx, in.name);
 
         return .{

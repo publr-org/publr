@@ -14,6 +14,7 @@ pub const session_id_len = store.sessions.id_len;
 
 pub const SignIn = struct {
     pub const name = "user.sign_in";
+    pub const open = true;
     /// Never written to the logs.
     pub const secret = .{"password"};
     pub const description = "Sign in with email and password; returns a session token";
@@ -125,6 +126,7 @@ pub const SignIn = struct {
 
 pub const SignOut = struct {
     pub const name = "user.sign_out";
+    pub const open = true;
     /// Never written to the logs.
     pub const secret = .{"token"};
     pub const description = "Sign out: revoke a session token";

@@ -37,7 +37,7 @@ pub fn find(ctx: *Ctx, name: []const u8) Error!?state.Decoded {
 fn decoded_of(ctx: *Ctx, manifest: model.sandboxed_plugin.Manifest) Error!state.Decoded {
     std.debug.assert(manifest.name.len > 0);
 
-    const asked = model.sandboxed_plugin.requests(&permission.core, &manifest, ctx.arena) catch {
+    const asked = model.sandboxed_plugin.requests(&manifest, ctx.arena) catch {
         return error.Invalid;
     };
     const granted = try ctx.arena.alloc([]const u8, asked.len);

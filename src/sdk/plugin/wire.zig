@@ -81,19 +81,10 @@ pub const Caller = struct {
     granted: bool = false,
 };
 
-/// What the guest reads before its entry's own input: when it runs and for whom.
-pub fn Envelope(comptime In: type) type {
-    return struct {
-        now_ms: i64,
-        on_behalf_of: ?[]const u8 = null,
-        visitor: []const u8 = "",
-        caller: Caller = .{},
-        in: In,
-    };
-}
-
-/// What a queued job reads: its input, and whether this is its last attempt.
-pub fn JobEnvelope(comptime In: type) type {
+/// What the guest reads around its entry's own input: when it runs and for whom, whether a
+/// queued job runs its last attempt, and the operation's answer an `after` hook reads. `Out`
+/// is `struct {}` for every entry but an `after` hook.
+pub fn Envelope(comptime In: type, comptime Out: type) type {
     return struct {
         now_ms: i64,
         on_behalf_of: ?[]const u8 = null,
@@ -101,18 +92,7 @@ pub fn JobEnvelope(comptime In: type) type {
         caller: Caller = .{},
         last: bool = false,
         in: In,
-    };
-}
-
-/// What an `after` hook reads: the operation's input and output.
-pub fn AfterEnvelope(comptime In: type, comptime Out: type) type {
-    return struct {
-        now_ms: i64,
-        on_behalf_of: ?[]const u8 = null,
-        visitor: []const u8 = "",
-        caller: Caller = .{},
-        in: In,
-        out: Out,
+        out: ?Out = null,
     };
 }
 

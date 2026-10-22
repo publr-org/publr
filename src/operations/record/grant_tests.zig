@@ -53,12 +53,11 @@ fn seeded(harness: *sdk.testing.Harness, seed: *const fn (*sdk.Ctx) anyerror!voi
 }
 
 fn plugin_caller(access: *const Access) sdk.Caller {
-    std.debug.assert(access.granted.len > 0);
+    std.debug.assert(access.held.len > 0);
 
     return .{
         .plugin = .{
             .name = "prices",
-            .capabilities = &.{},
             .access = access,
         },
     };
@@ -92,7 +91,6 @@ test "records.read: a list or query over several types reads each by its own gra
         .records = &.{"note"},
     } };
     const access: Access = .{
-        .granted = &.{ "records.read", "records.write" },
         .held = &held,
         .own_types = &.{},
     };
@@ -162,7 +160,6 @@ test "records.read .drafts reads drafts of every type it reaches; without it non
         .drafts = true,
     }};
     const access: Access = .{
-        .granted = &.{"records.read"},
         .held = &held,
         .own_types = &.{},
     };
@@ -235,7 +232,6 @@ test "terms.read: public taxonomies' live terms; .private and .drafts open more;
         .key = "terms.read",
     }};
     const access: Access = .{
-        .granted = &.{"terms.read"},
         .held = &held,
         .own_types = &.{},
     };
@@ -293,7 +289,6 @@ test "terms.write reads the taxonomies it writes, drafts too, beside a visitor's
         .taxonomies = &.{"desk"},
     } };
     const access: Access = .{
-        .granted = &.{ "terms.read", "terms.write" },
         .held = &held,
         .own_types = &.{},
     };

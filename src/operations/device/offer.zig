@@ -20,12 +20,14 @@ pub const Offer = struct {
     /// Its example runs as a signed-in account (`--as`).
     pub const example_signed_in = true;
     pub const name = "device.offer";
+    /// Anyone signed in offers their own sign-in: the token holds their roles, no more.
+    pub const open = true;
     pub const description = "Offer this account's sign-in to a computer, as a one-time code";
     pub const details =
-        \\Signed-in people only (not a device). Makes a device request already approved for
-        \\the caller's account under `scope`, and answers its code: whoever holds it takes
-        \\the token once with `device claim --device_code <code>`, within ten minutes. Treat
-        \\the code like a password until it is used or lapses.
+        \\Any signed-in person (not a device), for their own account. Makes a device request
+        \\already approved for the caller's account under `scope`, and answers its code: whoever
+        \\holds it takes the token once with `device claim --device_code <code>`, within ten
+        \\minutes. Treat the code like a password until it is used or lapses.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {

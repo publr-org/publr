@@ -97,7 +97,6 @@ pub const SandboxApi = struct {
         } else .{
             .plugin = .{
                 .name = self.name,
-                .capabilities = &.{},
                 .on_behalf_of = self.on_behalf_of,
             },
         };
@@ -150,7 +149,7 @@ pub const SandboxApi = struct {
     pub fn grant(self: *const SandboxApi, comptime key: []const u8) permission_define.Grant {
         std.debug.assert(self.name.len > 0);
 
-        comptime std.debug.assert(permission.find(&permission.core, key) != null);
+        comptime std.debug.assert(permission.find(key) != null);
 
         var granted = permission_define.Grant.from_bits(publr_granted(key.ptr, key.len) & 0x1f);
 
@@ -575,7 +574,7 @@ pub fn Exports(comptime Plugin: type) type {
             result: *wire.Result,
             arena: std.mem.Allocator,
         ) Error!void {
-            const Shape = wire.Envelope(Operation.In);
+            const Shape = wire.Envelope(Operation.In, struct {});
             const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
@@ -595,7 +594,8 @@ pub fn Exports(comptime Plugin: type) type {
             arena: std.mem.Allocator,
         ) Error!void {
             const In = contract.HookIn(Middleware);
-            const envelope = json.parse(wire.Envelope(In), arena, input, parse_options) catch {
+            const Shape = wire.Envelope(In, struct {});
+            const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
             var ctx = context(arena, envelope);
@@ -611,14 +611,15 @@ pub fn Exports(comptime Plugin: type) type {
             arena: std.mem.Allocator,
         ) Error!void {
             const In = contract.HookIn(Middleware);
-            const Shape = wire.AfterEnvelope(In, contract.HookOut(Middleware));
+            const Shape = wire.Envelope(In, contract.HookOut(Middleware));
             const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
             var ctx = context(arena, envelope);
             var in = envelope.in;
+            const out = envelope.out orelse return error.Invalid;
 
-            try Middleware.run(&ctx, &in, &envelope.out);
+            try Middleware.run(&ctx, &in, &out);
         }
 
         fn run_event(
@@ -627,7 +628,7 @@ pub fn Exports(comptime Plugin: type) type {
             arena: std.mem.Allocator,
         ) Error!void {
             // The event's payload, or the operation's answer, read into the hook's type.
-            const Shape = wire.Envelope(Middleware.Payload);
+            const Shape = wire.Envelope(Middleware.Payload, struct {});
             const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
@@ -642,7 +643,8 @@ pub fn Exports(comptime Plugin: type) type {
             comptime std.debug.assert(job_define.is_job(Job));
 
             const In = if (Job.Input == void) struct {} else Job.Input;
-            const envelope = json.parse(wire.JobEnvelope(In), arena, input, parse_options) catch {
+            const Shape = wire.Envelope(In, struct {});
+            const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
             var base = context(arena, envelope);

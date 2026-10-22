@@ -93,7 +93,7 @@ pub const Manifest = struct {
     limits: Limits = .{},
     content_types: []const content_type.Def = &.{},
     custom_fields: []const content_type.Def = &.{},
-    roles: []const role.Role = &.{},
+    roles: []const role.Declared = &.{},
     /// The statuses it adds to other plugins' flows (`.register_statuses`), each a request.
     statuses: []const flow.Added = &.{},
     internal_records: []const internal_record.Collection = &.{},
@@ -378,22 +378,20 @@ pub const Request = struct {
 /// permissions, then hooks, then raised limits. `hook_keys` holds the keys
 /// written for hooks (`after:record.save`), which the requests point into.
 pub fn requests(
-    catalog: []const permission.Permission,
     manifest: *const Manifest,
     arena: std.mem.Allocator,
 ) error{ OutOfMemory, Invalid }![]const Request {
-    std.debug.assert(catalog.len > 0);
     std.debug.assert(manifest.name.len > 0);
 
     var list: std.ArrayList(Request) = .empty;
 
     for (manifest.permissions) |ask| {
-        const found = permission.find(catalog, ask.key);
+        const found = permission.find(ask.key);
         const asked = ask.held();
         const tier = if (found) |entry|
             permission.tier_of_held(entry, &asked)
         else
-            permission.tier_of(catalog, ask.key);
+            permission.tier_of(ask.key);
 
         try list.append(arena, .{
             .key = ask.key,
@@ -592,7 +590,7 @@ pub fn granted_on_install(
 
 /// The permissions a plugin holds now: each one asked for and granted, with its flags as an
 /// administrator left them (never more than asked; as asked when never stored) and the
-/// types it names as asked.
+/// types it names as asked; a call to another plugin by its key alone.
 pub fn held_now(
     arena: std.mem.Allocator,
     asks: []const Ask,
@@ -605,15 +603,17 @@ pub fn held_now(
     var held: std.ArrayList(permission.Held) = .empty;
 
     for (asks) |*ask| {
-        if (permission.find(&permission.core, ask.key) == null) {
-            continue;
-        }
-
         if (!permission.contains(granted, ask.key)) {
             continue;
         }
 
-        try held.append(arena, as_set(ask.held(), stored));
+        if (permission.find(ask.key) == null) {
+            try held.append(arena, .{
+                .key = ask.key,
+            });
+        } else {
+            try held.append(arena, as_set(ask.held(), stored));
+        }
     }
 
     return held.items;
@@ -692,7 +692,7 @@ pub fn grants_after(
     for (stored, out) |held, *kept| {
         kept.* = held;
 
-        const entry = permission.find(&permission.core, held.key) orelse continue;
+        const entry = permission.find(held.key) orelse continue;
 
         if (entry.narrowing != .domains) {
             continue;
@@ -805,31 +805,6 @@ pub fn valid_name(name: []const u8) bool {
     return true;
 }
 
-/// Why an installed plugin's roles cannot be installed, or null: a role from a plugin only
-/// ever grants the plugin's own operations.
-pub fn role_problem(name: []const u8, roles: []const role.Role) ?[]const u8 {
-    std.debug.assert(name.len > 0);
-    std.debug.assert(roles.len <= role.roles_max);
-
-    for (roles) |declared| {
-        for (declared.grants) |grant| {
-            const wildcard = std.mem.endsWith(u8, grant, ".*");
-            const namespace = if (wildcard) grant[0 .. grant.len - 2] else grant;
-            const own = std.mem.eql(u8, namespace, name) or
-                std.mem.startsWith(u8, namespace, name) and namespace.len > name.len and
-                    namespace[name.len] == '.';
-            const own_app = std.mem.startsWith(u8, namespace, "app.") and
-                std.mem.eql(u8, namespace[4..], name);
-
-            if (!own and !own_app) {
-                return "a role from an installed plugin grants only the plugin's own operations";
-            }
-        }
-    }
-
-    return null;
-}
-
 const test_manifest: Manifest = .{
     .name = "greeter",
     .version = "0.1.0",
@@ -866,7 +841,7 @@ test "requests carry tiers; install grants low and medium that are available" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const list = try requests(&permission.core, &test_manifest, arena);
+    const list = try requests(&test_manifest, arena);
     const granted = try granted_on_install(list, arena);
 
     try std.testing.expectEqual(@as(usize, 5), list.len);
@@ -915,30 +890,10 @@ test "limits count once granted; revoking one drops back to the default" {
     try std.testing.expectEqual(limits_default.memory_mib, raised.memory_mib);
 }
 
-test "names and roles: own namespace only" {
+test "names" {
     try std.testing.expect(valid_name("greeter"));
     try std.testing.expect(!valid_name("Greeter"));
     try std.testing.expect(!valid_name("9lives"));
-
-    const own = [_]role.Role{.{
-        .name = "editor",
-        .label = "E",
-        .grants = &.{ "greeter.*", "app.greeter.*" },
-    }};
-    const core = [_]role.Role{.{
-        .name = "editor",
-        .label = "E",
-        .grants = &.{"record.*"},
-    }};
-    const sneaky = [_]role.Role{.{
-        .name = "editor",
-        .label = "E",
-        .grants = &.{"greeters.*"},
-    }};
-
-    try std.testing.expect(role_problem("greeter", &own) == null);
-    try std.testing.expect(role_problem("greeter", &core) != null);
-    try std.testing.expect(role_problem("greeter", &sneaky) != null);
 }
 
 test "held now: granted keys only, flags never above what was asked, as asked when unset" {

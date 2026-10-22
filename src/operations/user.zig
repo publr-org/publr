@@ -205,6 +205,7 @@ pub const PasswordLink = struct {
 
 pub const SetPassword = struct {
     pub const name = "user.set_password";
+    pub const open = true;
     /// Never written to the logs.
     pub const secret = .{ "token", "password" };
     pub const description = "Redeem a set-password link: sets the password, activates the " ++

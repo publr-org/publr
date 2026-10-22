@@ -45,17 +45,7 @@ pub const View = struct {
     }
 
     pub fn has_role(view: View, name: []const u8) bool {
-        std.debug.assert(name.len > 0);
-
-        const held = view.raw.roles() orelse return false;
-
-        for (held) |role_name| {
-            if (std.mem.eql(u8, role_name, name)) {
-                return true;
-            }
-        }
-
-        return false;
+        return view.raw.holds(name);
     }
 
     pub fn granted(view: View) bool {
@@ -88,7 +78,6 @@ pub fn from_of(caller: Caller, through_app: bool, job: []const u8) From {
         .anonymous => .app,
         .user => .admin,
         .token => .command_line,
-        .machine => .api,
         .plugin => |plugin| .{
             .plugin = plugin.name,
         },
@@ -146,7 +135,6 @@ test "where a call came from" {
     const checkout: Caller = .{
         .plugin = .{
             .name = "checkout",
-            .capabilities = &.{},
         },
     };
 

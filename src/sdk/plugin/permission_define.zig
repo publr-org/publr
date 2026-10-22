@@ -20,7 +20,7 @@ pub fn asks_of(comptime Plugin: type) []const Ask {
 
         if (@hasField(Options, "permissions")) {
             for (Plugin.options.permissions) |request| {
-                asks = asks ++ asks_for(Plugin.manifest.name, request);
+                asks = asks ++ .{asks_for(Plugin.manifest.name, request)};
             }
         }
 
@@ -34,7 +34,7 @@ pub fn asks_of(comptime Plugin: type) []const Ask {
     }
 }
 
-fn asks_for(comptime plugin: []const u8, comptime request: anytype) []const Ask {
+fn asks_for(comptime plugin: []const u8, comptime request: anytype) Ask {
     comptime {
         const Request = @TypeOf(request);
 
@@ -45,11 +45,10 @@ fn asks_for(comptime plugin: []const u8, comptime request: anytype) []const Ask 
         }
 
         // Calling another plugin's operation (`call:inventory.reserve`) is asked for as it is.
-        const entry = permission.find(&permission.core, request.key) orelse
-            return &[_]Ask{.{
-                .key = request.key,
-                .reason = request.reason,
-            }};
+        const entry = permission.find(request.key) orelse return .{
+            .key = request.key,
+            .reason = request.reason,
+        };
         var ask: Ask = .{
             .key = request.key,
             .reason = request.reason,
@@ -75,7 +74,7 @@ fn asks_for(comptime plugin: []const u8, comptime request: anytype) []const Ask 
 
         const done = ask;
 
-        return &[_]Ask{done};
+        return done;
     }
 }
 
@@ -93,7 +92,7 @@ fn problem(comptime request: anytype) ?[]const u8 {
         }
 
         const call = std.mem.startsWith(u8, key, "call:");
-        const entry = permission.find(&permission.core, key);
+        const entry = permission.find(key);
 
         if (!call and entry == null) {
             return "no permission `" ++ key ++ "`";
@@ -105,7 +104,7 @@ fn problem(comptime request: anytype) ?[]const u8 {
                 option,
             );
 
-            if (!taken and set(request, option)) {
+            if (!taken) {
                 return "permission " ++ key ++ " takes no `." ++ option ++ "`";
             }
         }
@@ -141,30 +140,6 @@ fn domains_problem(comptime domains: []const []const u8) ?[]const u8 {
         return null;
     }
 }
-
-/// Whether a request says something with `option`: an option no key takes always does; a
-/// flag when true, a list when it names something (a typed request carries every option).
-fn set(comptime request: anytype, comptime option: []const u8) bool {
-    comptime {
-        std.debug.assert(option.len > 0);
-
-        if (!listed(&options_known, option)) {
-            return true;
-        }
-
-        const value = @field(request, option);
-
-        return switch (@typeInfo(@TypeOf(value))) {
-            .bool => value,
-            else => value.len > 0,
-        };
-    }
-}
-
-const options_known = [_][]const u8{
-    "key",    "reason",  "records",  "taxonomies", "domains",
-    "drafts", "private", "internal", "publish",
-};
 
 /// Whether the key `entry` takes the option `option`: its narrowing, its flags, and the
 /// key and reason every request has.
@@ -209,7 +184,7 @@ pub const Grant = struct {
     /// Read from what the plugin holds for the key; null when it holds nothing.
     pub fn of(comptime key: []const u8, held: ?permission.Held) Grant {
         comptime {
-            if (permission.find(&permission.core, key) == null) {
+            if (permission.find(key) == null) {
                 @compileError("no permission `" ++ key ++ "`");
             }
         }
@@ -332,10 +307,11 @@ test "a request is checked against its key: known keys, the options each takes, 
         std.debug.assert(problem(.{
             .key = "media.write",
         }) != null);
-        std.debug.assert(problem(Ask{
+        std.debug.assert(problem(.{
             .key = "users.names",
-            .reason = "A typed request carries every option, unset",
-        }) == null);
+            .drafts = false,
+            .reason = "An option the key does not take, even unset",
+        }) != null);
     }
 
     const asked = comptime asks_for("shop", .{
@@ -345,9 +321,8 @@ test "a request is checked against its key: known keys, the options each takes, 
         .reason = "Reads posts",
     });
 
-    try std.testing.expectEqual(@as(usize, 1), asked.len);
-    try std.testing.expect(asked[0].drafts and !asked[0].private);
-    try std.testing.expectEqualStrings("post", asked[0].records[0]);
+    try std.testing.expect(asked.drafts and !asked.private);
+    try std.testing.expectEqualStrings("post", asked.records[0]);
 }
 
 test "a grant crosses the sandbox as bits and back" {

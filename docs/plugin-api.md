@@ -830,15 +830,15 @@ rules, any group matching), named after the plugin.
 ```zig
 // in define:
 .roles = &.{.{
-    // An existing role gains these grants; a new name is a new role.
-    .name = "editor",
-    .label = "Editor",
-    // Operations, or a namespace ending in `.*`.
-    .grants = &.{"notes.*"},
+    // A new name is a new role; the name of one there already changes nothing.
+    .name = "moderator",
+    .label = "Moderator",
 }},
 ```
 
-Installed, a role grants only the plugin's own operations.
+A role grants nothing by itself: an operation names who may call it
+(`.authorize = publr.authorize.user_has_role(&.{"moderator"})`), and administrators grant
+the rest in the roles editor.
 
 ## Admin entries
 

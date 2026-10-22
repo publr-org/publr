@@ -67,7 +67,7 @@ pub const Salutations = publr.record.define(Salutation, .{
     },
 });
 
-const permissions = [_]publr.plugin.Permission{
+const permissions = .{
     .{
         .key = "users.names",
         .reason = "Greets the people on the site by name",
@@ -77,7 +77,6 @@ const permissions = [_]publr.plugin.Permission{
 const roles = [_]publr.plugin.Role{.{
     .name = "editor",
     .label = "Editor",
-    .grants = &.{"greeter.*"},
 }};
 
 const operations = [_]type{ Greet, Count, People, Recall, Wave, Hail };
@@ -86,7 +85,7 @@ const operations = [_]type{ Greet, Count, People, Recall, Wave, Hail };
 pub const Recall = struct {
     pub const name = "greeter.recall";
     pub const description = "The title of a post, read by core before greeter runs";
-    pub const details = "Editors and administrators may call it. An unknown post is not found.";
+    pub const details = "Administrators and granted roles call it. An unknown post is not found.";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         post: publr.records.Ref(struct {
@@ -177,7 +176,7 @@ pub const Greet = struct {
     pub const secret = .{"note"};
     pub const description = "Record a greeting and count them";
     pub const details =
-        \\Editors and administrators may call it. The greeting is a record of the plugin's
+        \\Administrators and granted roles call it. The greeting is a record of the plugin's
         \\type `greeter.salutation`; the answer is the total so far. A greeting to `nobody` is not
         \\found: there is no one to greet.
     ;

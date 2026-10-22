@@ -217,7 +217,7 @@ fn shown_requests(arena: std.mem.Allocator, decoded: state.Decoded) Error![]cons
 
     if (!decoded.row.enabled) {
         const manifest = &decoded.manifest;
-        const asked = model.sandboxed_plugin.requests(&permission.core, manifest, arena) catch {
+        const asked = model.sandboxed_plugin.requests(manifest, arena) catch {
             return error.Invalid;
         };
 
@@ -288,7 +288,7 @@ fn next_of(ctx: *Ctx, decoded: state.Decoded) Error!?Detail.Next {
 
     const text = decoded.row.next_manifest orelse return null;
     const next = try state.parse_manifest(ctx.arena, text);
-    const asked = model.sandboxed_plugin.requests(&permission.core, &next, ctx.arena) catch {
+    const asked = model.sandboxed_plugin.requests(&next, ctx.arena) catch {
         return error.Invalid;
     };
     const granted = try versions.carried(ctx.arena, asked, decoded.granted, decoded.denied, true);
@@ -307,7 +307,7 @@ fn next_of(ctx: *Ctx, decoded: state.Decoded) Error!?Detail.Next {
     );
 
     for (requests) |*request| {
-        if (permission.find(&permission.core, request.key)) |entry| {
+        if (permission.find(request.key)) |entry| {
             if (entry.narrowing == .domains) {
                 request.new_domains = try sandboxed_plugin.added_domains(
                     ctx.arena,
