@@ -365,7 +365,8 @@ pub fn validate(comptime Operation: type) void {
 }
 
 /// What an operation is about, read from its input by convention: `type` names the
-/// content type, `id` the record, `to` (or `status`) the target status.
+/// content type, `id` the record, `to` (or `status`) the target status. Only text fields
+/// count: a numeric `id` is the plugin's own, not a record's.
 pub fn resource_of(in: anytype) Resource {
     const In = @TypeOf(in);
 
@@ -374,22 +375,34 @@ pub fn resource_of(in: anytype) Resource {
     var resource: Resource = .{};
 
     if (@hasField(In, "type")) {
-        resource.type_id = in.type;
+        resource.type_id = text_of(in.type);
     }
 
     if (@hasField(In, "id")) {
-        resource.record_id = in.id;
+        resource.record_id = text_of(in.id);
     }
 
     if (@hasField(In, "to")) {
-        resource.to_status = in.to;
+        resource.to_status = text_of(in.to);
     } else if (@hasField(In, "status")) {
-        resource.to_status = in.status;
+        resource.to_status = text_of(in.status);
     }
 
     std.debug.assert(resource.fields.len == 0);
 
     return resource;
+}
+
+fn text_of(value: anytype) ?[]const u8 {
+    const Value = @TypeOf(value);
+
+    comptime std.debug.assert(@typeInfo(Value) != .@"fn");
+
+    if (comptime Value == []const u8 or Value == ?[]const u8) {
+        return value;
+    }
+
+    return null;
 }
 
 /// `namespace.verb`, or `app.<feature>.verb` for what apps call: the grants a role gives
@@ -529,6 +542,28 @@ test "namespace and verb split" {
     try std.testing.expect(is_app("app.newsletter.subscribe"));
     try std.testing.expect(!is_app("newsletter.list"));
     comptime assert_name("app.newsletter.subscribe");
+}
+
+test "the resource is read from text fields only: a numeric id is the plugin's own" {
+    const Numbered = struct {
+        id: u32,
+        type: []const u8,
+    };
+    const numbered = resource_of(Numbered{
+        .id = 7,
+        .type = "post",
+    });
+
+    try std.testing.expect(numbered.record_id == null);
+    try std.testing.expectEqualStrings("post", numbered.type_id.?);
+
+    const Named = struct {
+        id: ?[]const u8,
+    };
+
+    try std.testing.expectEqualStrings("r1", resource_of(Named{
+        .id = "r1",
+    }).record_id.?);
 }
 
 test "serialisable types are accepted, pointers to single items rejected at comptime" {
