@@ -77,6 +77,33 @@ pub fn holders(connection: *db.Db, name: []const u8) db.Error!u32 {
     return @intCast(select.read_int());
 }
 
+/// The oldest account holding the role `name`, by id; null when none does.
+pub fn first_holder(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    name: []const u8,
+) db.Error!?[]const u8 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var select = try connection.prepare("SELECT users.id FROM user_roles " ++
+        "JOIN users ON users.id = user_roles.user_id WHERE user_roles.role = ?1 " ++
+        "ORDER BY users.created_at, users.id LIMIT 1");
+    defer select.finalize();
+
+    try select.bind_text(1, name);
+
+    if (!try select.step()) {
+        return null;
+    }
+
+    const row = try select.read(struct {
+        id: []const u8,
+    }, arena);
+
+    return row.id;
+}
+
 /// Takes the role `name` from every account holding it.
 pub fn forget_role(connection: *db.Db, name: []const u8) db.Error!void {
     std.debug.assert(name.len > 0);
@@ -129,6 +156,8 @@ test "roles are set whole, read in order, counted per role, and go with their ac
     try std.testing.expectEqualStrings("admin", held[0]);
     try std.testing.expectEqualStrings("editor", held[1]);
     try std.testing.expectEqual(@as(u32, 1), try holders(connection, "admin"));
+    try std.testing.expectEqualStrings("u1", (try first_holder(connection, arena, "admin")).?);
+    try std.testing.expect(try first_holder(connection, arena, "moderator") == null);
 
     try set(connection, "u1", &.{"editor"});
     try std.testing.expectEqual(@as(u32, 0), try holders(connection, "admin"));

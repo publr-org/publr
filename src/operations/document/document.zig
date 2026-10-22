@@ -406,7 +406,7 @@ pub fn Of(comptime Domain: type) type {
                 row.id,
                 store.snapshots.revision,
                 ctx.now_ms,
-                ctx.caller.user_id(),
+                ctx.author(),
                 text,
             );
         }

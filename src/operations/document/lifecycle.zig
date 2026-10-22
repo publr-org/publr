@@ -201,7 +201,7 @@ pub fn Of(comptime Domain: type) type {
                 now != null;
 
             if (replaced and was.live != null) {
-                const actor = ctx.caller.user_id();
+                const actor = ctx.author();
                 const kind = store.snapshots.revision;
 
                 _ = try store.snapshots.take(ctx.db, row.id, kind, ctx.now_ms, actor, was.live.?);
@@ -496,7 +496,7 @@ pub fn Of(comptime Domain: type) type {
             else
                 false;
             const changed = row.changed and !applied;
-            const actor = ctx.caller.user_id();
+            const actor = ctx.author();
             const version = try documents.set_status(
                 ctx.db,
                 row.id,
@@ -599,7 +599,7 @@ pub fn Of(comptime Domain: type) type {
             _ = try apply_pending(ctx, row);
             _ = try documents.clear_request(ctx.db, row.id);
 
-            const actor = ctx.caller.user_id();
+            const actor = ctx.author();
             const version = try documents.save(ctx.db, row.id, actor, expected, ctx.now_ms, false);
 
             ctx.publishes = true;
@@ -627,7 +627,7 @@ pub fn Of(comptime Domain: type) type {
             try values.clear(ctx.db, row.id, values.pending);
             _ = try documents.clear_request(ctx.db, row.id);
 
-            const actor = ctx.caller.user_id();
+            const actor = ctx.author();
             const version = try documents.save(ctx.db, row.id, actor, expected, ctx.now_ms, false);
 
             std.debug.assert(version > row.version);

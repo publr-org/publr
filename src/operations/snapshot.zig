@@ -190,7 +190,7 @@ pub const Take = struct {
             row.id,
             in.kind,
             ctx.now_ms,
-            ctx.caller.user_id(),
+            ctx.author(),
             text,
         );
 

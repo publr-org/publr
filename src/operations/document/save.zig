@@ -62,7 +62,7 @@ pub fn Of(comptime Domain: type) type {
             const base = if (row.changed) values.pending else values.live;
             var parsed = try merged(ctx, row, type_row.def, base, given);
             const slug = try checked(ctx, row, type_row.def, &parsed, live);
-            const actor = ctx.caller.user_id();
+            const actor = ctx.author();
             const slot = if (park) values.pending else values.live;
 
             if (!park) {
@@ -155,7 +155,7 @@ pub fn Of(comptime Domain: type) type {
             const live = def.flow.is_live(row.status);
             var parsed = try merged(ctx, row, def, values.live, given);
             const slug = try checked(ctx, row, def, &parsed, live);
-            const actor = ctx.caller.user_id();
+            const actor = ctx.author();
             const changed = row.changed;
             var version = try documents.save(ctx.db, row.id, actor, expected, ctx.now_ms, changed);
 

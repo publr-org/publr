@@ -211,6 +211,9 @@ pub const Ctx = struct {
     problems: []const @import("operation.zig").Problem = &.{},
     publish_policy: ?*const fn (*Ctx, OperationPolicy) anyerror!void = null,
     caller: Caller,
+    /// The account the local operator stands for (`--as-admin`, the oldest administrator):
+    /// what they write is theirs. Empty otherwise.
+    operator: []const u8 = "",
     /// Reads made to render a page for a visitor: live records only and never a write,
     /// whoever the caller is, so a signed-in visitor never sees a draft on the site.
     delivery: bool = false,
@@ -454,6 +457,15 @@ pub const Ctx = struct {
 
     /// Ends the operation with a failure its plugin declares: `return ctx.fail(unverified);`.
     /// The write is rolled back like any other error's.
+    /// Whose a write is: the account calling, or the one the local operator stands for.
+    pub fn author(ctx: *const Ctx) ?[]const u8 {
+        if (ctx.caller.user_id()) |id| {
+            return id;
+        }
+
+        return if (ctx.operator.len > 0) ctx.operator else null;
+    }
+
     pub fn fail(ctx: *Ctx, failure: @import("operation.zig").Failure) error{Failed} {
         std.debug.assert(failure.name.len > 0);
         std.debug.assert(failure.status >= 400 and failure.status <= 599);
