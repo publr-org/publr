@@ -74,11 +74,29 @@ pub const Failure = struct {
     message: []const u8,
 };
 
+/// A hook on an operation: a plugin's `before` or `after` on the call, or `on` its event.
+pub const Hook = struct {
+    plugin: []const u8,
+    /// before, after or on.
+    stage: []const u8,
+    /// Why, in the plugin's words.
+    reason: []const u8 = "",
+    /// Its last failed `on` run still kept to run again; empty when none is.
+    last_failure: []const u8 = "",
+};
+
 pub const Detailed = struct {
     operation: Described,
     details: []const u8 = "",
     destructive: bool = false,
     failures: []const Failure = &.{},
+    /// What its `.validate` checks, in the plugin's words; empty for none.
+    validate: []const u8 = "",
+    /// Who may call it, as its code says it.
+    who_may_call: []const u8 = "",
+    hooks: []const Hook = &.{},
+    /// Where an app's pages call it (`/_actions/app.<name>`); empty when they cannot.
+    app_address: []const u8 = "",
 };
 
 /// One operation as its code declares it, before overrides.
@@ -87,6 +105,8 @@ const Declared = struct {
     details: []const u8 = "",
     destructive: bool = false,
     failures: []const Failure = &.{},
+    validate: []const u8 = "",
+    who_may_call: []const u8 = "",
 };
 
 pub const List = struct {
@@ -176,8 +196,10 @@ pub const Get = struct {
     pub const description = "Everything an operation says of itself, and this site's overrides";
     pub const details =
         \\Administrators only. Its words and kind, the plugin that brings it, how it fails,
-        \\whether it destroys what cannot be had back, who may call it and its limit, as
-        \\declared, overridden and in effect. Fails as not found for a name no operation has.
+        \\whether it destroys what cannot be had back, what it checks, who may call it and its
+        \\limit, as declared, overridden and in effect, the hooks on it with each one's last
+        \\failure, and where an app's pages call it. Fails as not found for a name no
+        \\operation has.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -199,6 +221,12 @@ pub const Get = struct {
         .details = "Who may call it, what it changes, how it fails, in its words",
         .destructive = "Whether it destroys what cannot be had back",
         .failures = "How it can refuse: name, HTTP status, meaning",
+        .validate = "What its `.validate` checks, in its plugin's words; empty for none",
+        .who_may_call = "Who may call it, as its code says it",
+        .hooks = "Each hook on it: plugin, stage (before, after, on), reason and " ++
+            "last_failure (its last failed run kept to run again)",
+        .app_address = "Where an app's pages call it; empty when only callers with " ++
+            "credentials may",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -206,15 +234,82 @@ pub const Get = struct {
         std.debug.assert(in.name.len <= 4096);
 
         const found = try declared_named(ctx, in.name) orelse return error.NotFound;
+        const named = found.described.name;
 
         return .{
             .operation = try in_effect(ctx, found.described),
             .details = found.details,
             .destructive = found.destructive,
             .failures = found.failures,
+            .validate = found.validate,
+            .who_may_call = found.who_may_call,
+            .hooks = try hooks_on(ctx, named),
+            .app_address = if (found.described.untrusted_callers)
+                try std.fmt.allocPrint(ctx.arena, "/_actions/app.{s}", .{named})
+            else
+                "",
         };
     }
 };
+
+/// The hooks on the operation `name` and on its event, compiled in and installed.
+fn hooks_on(ctx: *Ctx, name: []const u8) Error![]const Hook {
+    std.debug.assert(name.len > 0);
+    const declared = registry.registry;
+
+    std.debug.assert(declared.middleware.len == declared.middleware_owners.len);
+
+    var found: std.ArrayList(Hook) = .empty;
+
+    inline for (declared.middleware, declared.middleware_owners) |Middleware, owner| {
+        const stage = comptime Middleware.stage;
+        const target: []const u8 = comptime switch (stage) {
+            .before, .after => Middleware.operation,
+            .on => if (@hasDecl(Middleware, "event")) Middleware.event else "",
+            .pre, .modify => "",
+        };
+
+        if (target.len > 0 and std.mem.eql(u8, target, name)) {
+            try found.append(ctx.arena, .{
+                .plugin = owner,
+                .stage = @tagName(stage),
+                .reason = if (@hasDecl(Middleware, "reason")) Middleware.reason else "",
+            });
+        }
+    }
+
+    for (installed(ctx)) |manifest| {
+        for (manifest.hooks) |hook| {
+            if (hook.stage == .modify or !std.mem.eql(u8, hook.target, name)) {
+                continue;
+            }
+
+            try found.append(ctx.arena, .{
+                .plugin = manifest.name,
+                .stage = if (hook.stage == .event) "on" else @tagName(hook.stage),
+                .reason = hook.reason,
+            });
+        }
+    }
+
+    for (found.items) |*hook| {
+        if (std.mem.eql(u8, hook.stage, "on")) {
+            hook.last_failure = try last_failure(ctx, hook.plugin, name);
+        }
+    }
+
+    return found.items;
+}
+
+/// The problem of a plugin's latest failed `on` run on the event `name` still kept.
+fn last_failure(ctx: *Ctx, plugin: []const u8, name: []const u8) Error![]const u8 {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(name.len > 0);
+
+    const run_name = try @import("../sdk/hook_runs.zig").name_of(ctx.arena, name, 0);
+
+    return store.job_queue.last_problem(ctx.db, ctx.arena, plugin, run_name);
+}
 
 pub const Authorize = struct {
     pub const name = "operation.authorize";
@@ -439,6 +534,8 @@ fn declared_native(comptime Operation: type, comptime index: u32) Declared {
         .details = if (@hasDecl(Operation, "details")) Operation.details else "",
         .destructive = comptime sdk.operation.destroys(Operation),
         .failures = failures,
+        .validate = if (@hasDecl(Operation, "checked")) Operation.checked else "",
+        .who_may_call = if (@hasDecl(Operation, "who_may_call")) Operation.who_may_call else "",
     };
 }
 
@@ -483,6 +580,8 @@ fn declared_installed(plugin: []const u8, found: model.sandboxed_plugin.Operatio
             },
         },
         .details = found.details,
+        .validate = found.checked,
+        .who_may_call = found.who_may_call,
     };
 }
 
