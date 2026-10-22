@@ -64,7 +64,7 @@ fn empty_text(page: *const list.Page) Error![]const u8 {
 
 /// What the selection's actions need: how many records match past the page, the
 /// conditions that match them, and the transitions they may make: the list's type's flow,
-/// core's for a list of several, and the trash.
+/// core's for a list of several, and the trash; in the trash, restore and destroy.
 pub fn fill_selection(
     props: *Props,
     page: *const list.Page,
@@ -78,23 +78,36 @@ pub fn fill_selection(
     var transitions: std.ArrayList(Transition) = .empty;
     const flow = try flow_of(page, list_in.type);
 
-    for (flow.listed()) |transition| {
-        if (named_already(transitions.items, transition.name)) {
-            continue;
+    if (in_trash(list_in.filters)) {
+        try transitions.append(arena, .{
+            .name = "restore",
+            .label = try page.session.translated("Restore", .{}),
+            .status = try status_label(page, flow.initial().id),
+        });
+        try transitions.append(arena, .{
+            .name = "destroy",
+            .label = try page.session.translated("Destroy for good", .{}),
+            .status = "",
+        });
+    } else {
+        for (flow.listed()) |transition| {
+            if (named_already(transitions.items, transition.name)) {
+                continue;
+            }
+
+            try transitions.append(arena, .{
+                .name = transition.name,
+                .label = try page.session.declared(transition.label),
+                .status = try status_label(page, transition.to),
+            });
         }
 
         try transitions.append(arena, .{
-            .name = transition.name,
-            .label = try page.session.declared(transition.label),
-            .status = try status_label(page, transition.to),
+            .name = "trash",
+            .label = try page.session.translated("Delete", .{}),
+            .status = try status_label(page, model.flow.trashed),
         });
     }
-
-    try transitions.append(arena, .{
-        .name = "trash",
-        .label = try page.session.translated("Delete", .{}),
-        .status = try status_label(page, model.flow.trashed),
-    });
 
     props.total = @floatFromInt(total);
     props.transitions = transitions.items;
@@ -234,6 +247,19 @@ fn flow_of(page: *const list.Page, handle: ?[]const u8) Error!model.flow.Flow {
     std.debug.assert(type_row.def.handle.len > 0);
 
     return type_row.def.flow;
+}
+
+/// The list keeps only records in the trash: they leave it by restore or destroy.
+fn in_trash(clauses: []const []const u8) bool {
+    std.debug.assert(clauses.len <= 1 << 10);
+
+    for (clauses) |clause| {
+        if (std.mem.eql(u8, clause, "status:is:" ++ model.flow.trashed)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn named_already(transitions: []const Transition, name: []const u8) bool {

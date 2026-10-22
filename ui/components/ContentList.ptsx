@@ -117,6 +117,8 @@ export const state = Publr.reactive({
   conditions: { type: "", types: [], filters: [], search: "" } as Conditions,
   transitions: [] as ContentListProps["transitions"],
   transitioning: false,
+  /** Destroy for good was asked for once: the bar asks to confirm it. */
+  destroy_armed: false,
   note: "",
   /** The table's selection, as its `datatableselectionchange` reports it. */
   selected_ids: [] as string[],
@@ -187,22 +189,42 @@ export const transitionSelected = async (event: Event) => {
   try {
     state.note = Publr.t("Changing status…");
     const done = await transition_selection(name);
-    state.note =
-      done.not_moved === 0
-        ? Publr.tn("{count} changed to {status}", "{count} changed to {status}", done.moved, { status: label })
-        : Publr.tn("{count} changed to {status}, {failed} could not change: {why}", "{count} changed to {status}, {failed} could not change: {why}", done.moved, {
-            status: label,
-            failed: done.not_moved,
-            why: done.failed[0]?.why ?? "",
-          });
+    const why = done.failed[0]?.why ?? "";
+    if (name === "destroy") {
+      state.note =
+        done.not_moved === 0
+          ? Publr.tn("{count} destroyed for good", "{count} destroyed for good", done.moved)
+          : Publr.tn("{count} destroyed for good, {failed} not: {why}", "{count} destroyed for good, {failed} not: {why}", done.moved, {
+              failed: done.not_moved,
+              why,
+            });
+    } else {
+      state.note =
+        done.not_moved === 0
+          ? Publr.tn("{count} changed to {status}", "{count} changed to {status}", done.moved, { status: label })
+          : Publr.tn("{count} changed to {status}, {failed} could not change: {why}", "{count} changed to {status}, {failed} could not change: {why}", done.moved, {
+              status: label,
+              failed: done.not_moved,
+              why,
+            });
+    }
   } catch (error) {
     state.note = Publr.t("Not done: {reason}", { reason: (error as Error).message });
   } finally {
     state.transitioning = false;
+    state.destroy_armed = false;
   }
   button.dispatchEvent(new CustomEvent("datatablereload", { bubbles: true }));
   clearTimeout(note_timer);
   note_timer = setTimeout(() => (state.note = ""), 5000);
+};
+
+export const armDestroy = () => {
+  state.destroy_armed = true;
+};
+
+export const cancelDestroy = () => {
+  state.destroy_armed = false;
 };
 
 Publr.effect(() => {
@@ -310,7 +332,7 @@ export function ContentList({
           <BulkActions>
             {state.transitions.map((transition) => (
               <span key={transition.name} class="contents">
-                {transition.name !== "trash" && (
+                {transition.name !== "trash" && transition.name !== "destroy" && (
                   <BulkActionsItem value={transition.name} onClick={transitionSelected} disabled={state.transitioning}>
                     {transition.label}
                   </BulkActionsItem>
@@ -323,6 +345,21 @@ export function ContentList({
                 <Icon name="trash" size="xs" />
                 {Publr.t("Delete")}
               </BulkActionsItem>
+            )}
+            {state.transitions.some((transition) => transition.name === "destroy") && !state.destroy_armed && (
+              <BulkActionsItem variant="destructive" onClick={armDestroy} disabled={state.transitioning}>
+                <Icon name="trash" size="xs" />
+                {Publr.t("Destroy for good")}
+              </BulkActionsItem>
+            )}
+            {state.destroy_armed && (
+              <span class="contents">
+                <BulkActionsItem variant="destructive" value="destroy" onClick={transitionSelected} disabled={state.transitioning}>
+                  <Icon name="trash" size="xs" />
+                  {Publr.t("Yes, destroy: it can never be restored")}
+                </BulkActionsItem>
+                <BulkActionsItem onClick={cancelDestroy}>{Publr.t("Cancel")}</BulkActionsItem>
+              </span>
             )}
             <BulkActionsClear />
           </BulkActions>
