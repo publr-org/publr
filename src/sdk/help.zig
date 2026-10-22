@@ -48,15 +48,17 @@ pub fn command(comptime Operation: type, out: *std.Io.Writer) Error!void {
 
 /// The failures the operation declares beyond the core's errors, as REST names them.
 fn print_failures(comptime Operation: type, out: *std.Io.Writer) Error!void {
-    comptime std.debug.assert(Operation.name.len > 0);
+    const failures = comptime @import("plugin/words.zig").failures_of(Operation);
 
-    if (!@hasDecl(Operation, "failures") or Operation.failures.len == 0) {
+    comptime std.debug.assert(failures.len <= operation.problems_max);
+
+    if (failures.len == 0) {
         return;
     }
 
     out.writeAll("\nFails with:\n") catch return error.WriteFailed;
 
-    for (Operation.failures) |failure| {
+    for (failures) |failure| {
         out.print("\n  {s} ({d})  {s}\n", .{
             failure.name,
             failure.status,

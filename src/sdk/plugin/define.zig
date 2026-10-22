@@ -105,7 +105,7 @@ const options_known = [_][]const u8{
 /// What only a built-in plugin takes, until `.extend` holds them: the server's own seams.
 /// `middleware` takes only the two no hook says: every operation before it runs (`.pre`) and
 /// every event inside the write (`.on` without an `event`).
-const options_built_in = [_][]const u8{
+pub const options_built_in = [_][]const u8{
     "middleware",
     "policies",
     "variants",
@@ -146,7 +146,7 @@ fn check_options(comptime plugin: []const u8, comptime Options: type) void {
     }
 }
 
-fn listed_in(comptime names: []const []const u8, comptime name: []const u8) bool {
+pub fn listed_in(comptime names: []const []const u8, comptime name: []const u8) bool {
     comptime {
         std.debug.assert(name.len > 0);
 

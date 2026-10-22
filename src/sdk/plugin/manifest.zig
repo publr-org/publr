@@ -413,8 +413,61 @@ fn operation_types(comptime Plugin: type) []const type {
     }
 }
 
-test "the test plugin's manifest names its operation, fields and content type" {
-    const Greeter = @import("../plugin.zig").testing.Greeter;
+test "a plugin's manifest names its operation, fields, hook and record" {
+    const sdk = @import("../../sdk.zig");
+    const PluginCtx = @import("context.zig").PluginCtx;
+    const hook_define = @import("hook_define.zig");
+    const Greeting = struct {
+        note: []const u8,
+    };
+    const In = struct {
+        who: []const u8,
+        times: u32 = 1,
+    };
+    const Out = struct {
+        text: []const u8,
+    };
+    const Docs = plugin_define.Words(.{
+        .{ "main", "Test plugin: greets, and keeps the greetings as records" },
+        .{ "operation:greet", "Greet someone\n\nExample:\n  in: { \"who\": \"world\" }\n" ++
+            "  out: { \"text\": \"hello, world\" }" },
+        .{ @typeName(In) ++ ".who", "Whom to greet" },
+        .{ @typeName(In) ++ ".times", "How many times" },
+        .{ @typeName(Out) ++ ".text", "The greeting" },
+        .{ @typeName(Greeting), "Greeting" },
+        .{ @typeName(Greeting) ++ ".note", "Note" },
+        .{ "hook:0", "Says when someone was greeted" },
+    });
+    const Greet = @import("operation_define.zig").define(In, Out, .{
+        .name = "greet",
+        .kind = .write,
+        .run = struct {
+            fn run(_: *PluginCtx, in: In) sdk.Error!Out {
+                return .{
+                    .text = in.who,
+                };
+            }
+        }.run,
+    });
+    const Module = struct {
+        pub const plugin = plugin_define.define(.{
+            .name = "greeter",
+            .version = "0.1.0",
+        }, .{
+            .records = &.{@import("record_define.zig").define(Greeting, .{
+                .name = "greeter.greeting",
+            })},
+            .permissions = &.{.{
+                .key = "records.write",
+                .reason = "Keeps every greeting as a record",
+            }},
+            .operations = &.{Greet},
+            .hooks = &.{hook_define.after(Greet, struct {
+                fn run(_: *PluginCtx, _: *In, _: *const Out) sdk.Error!void {}
+            }.run)},
+        });
+    };
+    const Greeter = plugin_define.Bind(Module, Docs);
     const manifest = comptime of(Greeter);
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -432,6 +485,6 @@ test "the test plugin's manifest names its operation, fields and content type" {
     try std.testing.expectEqual(Field.Shape.string, manifest.operations[0].fields[0].shape);
     try std.testing.expect(manifest.operations[0].fields[0].required);
     try std.testing.expect(std.mem.indexOf(u8, text, "\"records.write\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, text, "\"greeting\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "\"greeter.greeting\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "Usage: publr greeter") != null);
 }

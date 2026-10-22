@@ -4,6 +4,7 @@
 //! but the target and the trash. Turned into the flow the type keeps as data, its own statuses
 //! stored under the plugin's name.
 const std = @import("std");
+const listed_in = @import("define.zig").listed_in;
 const content_type = @import("../../model/content_type.zig");
 const flow_model = @import("../../model/flow.zig");
 const status_module = @import("../../model/status.zig");
@@ -119,7 +120,7 @@ pub fn TransitionHooks(comptime options: anytype) type {
         std.debug.assert(handle.len > 0);
 
         for (steps) |step| {
-            if (!listed(names, step.name)) {
+            if (!listed_in(names, step.name)) {
                 names = names ++ [_][]const u8{step.name};
             }
         }
@@ -183,7 +184,7 @@ pub fn status_id(comptime handle: []const u8, comptime value: []const u8) []cons
     comptime {
         std.debug.assert(value.len > 0);
 
-        if (listed(&core_status_ids, value)) {
+        if (listed_in(&core_status_ids, value)) {
             return value;
         }
 
@@ -343,7 +344,7 @@ pub fn alias_of(comptime options: anytype, comptime value: []const u8) []const u
         const aliases = options.status.alias;
 
         for (std.meta.fieldNames(@TypeOf(aliases))) |own| {
-            if (!@hasField(Status, own) or listed(&core_status_ids, own)) {
+            if (!@hasField(Status, own) or listed_in(&core_status_ids, own)) {
                 @compileError("record " ++ options.name ++ ": `.alias` names one of its own " ++
                     "statuses, not `" ++ own ++ "`");
             }
@@ -455,7 +456,7 @@ fn added_id(
             return plugin ++ "." ++ name;
         }
 
-        if (listed(&core_status_ids, name)) {
+        if (listed_in(&core_status_ids, name)) {
             return name;
         }
 
@@ -502,20 +503,6 @@ pub fn check_named(comptime options: anytype, comptime name: []const u8) void {
 
         @compileError("record " ++ options.name ++ ": its flow has no transition `" ++
             name ++ "`");
-    }
-}
-
-pub fn listed(comptime names: []const []const u8, comptime name: []const u8) bool {
-    comptime {
-        std.debug.assert(name.len > 0);
-
-        for (names) |candidate| {
-            if (std.mem.eql(u8, candidate, name)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
 

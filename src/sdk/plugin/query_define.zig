@@ -5,6 +5,7 @@
 //! fails the build.
 const queue = @import("queue.zig");
 const std = @import("std");
+const listed_in = @import("define.zig").listed_in;
 const sdk = @import("../../sdk.zig");
 const record = @import("../../operations/record.zig");
 
@@ -96,7 +97,7 @@ pub fn param_names(comptime text: []const u8) []const []const u8 {
 
             const name = text[start..end];
 
-            if (name.len > 0 and !contains(names, name)) {
+            if (name.len > 0 and !listed_in(names, name)) {
                 names = names ++ [_][]const u8{name};
             }
 
@@ -122,29 +123,17 @@ fn check_params(
         const fields = std.meta.fieldNames(Params);
 
         for (names) |name| {
-            if (!contains(fields, name)) {
+            if (!listed_in(fields, name)) {
                 @compileError("query uses `$" ++ name ++ "`, which the parameters lack");
             }
         }
 
         for (fields) |field| {
-            if (!contains(names, field)) {
+            if (!listed_in(names, field)) {
                 @compileError("query never uses `$" ++ field ++ "`");
             }
         }
     }
-}
-
-fn contains(comptime list: []const []const u8, comptime name: []const u8) bool {
-    std.debug.assert(name.len > 0);
-
-    for (list) |candidate| {
-        if (std.mem.eql(u8, candidate, name)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 test "a query's parameters, outside its strings" {

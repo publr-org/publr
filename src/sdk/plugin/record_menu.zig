@@ -4,6 +4,7 @@
 //! fails the build. Filters and order are where the list starts; people change them. Whether a
 //! field filters or orders at all is the field's (`.fields.x = .{ .sortable = true }`).
 const std = @import("std");
+const listed_in = @import("define.zig").listed_in;
 const content_type = @import("../../model/content_type.zig");
 const field_model = @import("../../model/field.zig");
 const field_filter = @import("../../model/field_filter.zig");
@@ -136,7 +137,7 @@ fn names_of(
             const field = @tagName(literal);
             const own = @hasField(Definition.Doc, field) and !layout_override(Definition, field);
 
-            if (!own and !listed(&core_columns, field)) {
+            if (!own and !listed_in(&core_columns, field)) {
                 @compileError("record " ++ name ++ ": `.data_view." ++ option ++ "` names `" ++
                     field ++ "`, not a field that holds a value");
             }
@@ -353,25 +354,11 @@ fn order_of(
 
         std.debug.assert(name.len > 0);
 
-        if (!listed(&view_model.core_orders, field) and !sortable(fields, field)) {
+        if (!listed_in(&view_model.core_orders, field) and !sortable(fields, field)) {
             @compileError("record " ++ name ++ ": a list does not order by `" ++ field ++ "`");
         }
 
         return (if (descending) "-" else "") ++ field;
-    }
-}
-
-fn listed(comptime names: []const []const u8, comptime name: []const u8) bool {
-    comptime {
-        std.debug.assert(name.len > 0);
-
-        for (names) |candidate| {
-            if (std.mem.eql(u8, candidate, name)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
 

@@ -68,11 +68,7 @@ pub const Grouped = struct {
     area: []const u8,
 };
 
-pub const Failure = struct {
-    name: []const u8,
-    status: u16,
-    message: []const u8,
-};
+pub const Failure = sdk.operation.Failure;
 
 pub const Detailed = struct {
     operation: Described,
@@ -419,7 +415,7 @@ fn declared_native(comptime Operation: type, comptime index: u32) Declared {
         Operation.limit.?.per_minute
     else
         0;
-    const failures = comptime if (@hasDecl(Operation, "failures")) failures_of(Operation) else &.{};
+    const failures = comptime @import("../sdk/plugin/words.zig").failures_of(Operation);
 
     return .{
         .described = .{
@@ -440,26 +436,6 @@ fn declared_native(comptime Operation: type, comptime index: u32) Declared {
         .destructive = comptime sdk.operation.destroys(Operation),
         .failures = failures,
     };
-}
-
-fn failures_of(comptime Operation: type) []const Failure {
-    comptime {
-        std.debug.assert(Operation.name.len > 0);
-
-        var list: []const Failure = &.{};
-
-        for (Operation.failures) |failure| {
-            list = list ++ [_]Failure{.{
-                .name = failure.name,
-                .status = failure.status,
-                .message = failure.message,
-            }};
-        }
-
-        const done = list;
-
-        return done;
-    }
 }
 
 fn declared_installed(plugin: []const u8, found: model.sandboxed_plugin.Operation) Declared {
