@@ -220,58 +220,12 @@ pub fn has(comptime Plugin: type, comptime name: []const u8) bool {
 pub fn get(comptime Plugin: type, comptime name: []const u8) Got(Plugin, name) {
     std.debug.assert(comptime has(Plugin, name));
 
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "operations")) {
-        return comptime described_operations(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "content_types")) {
-        return comptime declared_content_types(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "internal_records")) {
-        return comptime declared_collections(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "middleware")) {
-        return comptime declared_hooks(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "namespaces")) {
-        return comptime declared_namespaces(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "pages")) {
-        return comptime declared_pages(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "panels")) {
-        const listed = as_slice(Panel, Plugin.options.panels);
-
-        return comptime admin_described.each(Plugin, Panel, listed);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "row_actions")) {
-        const listed = as_slice(RowAction, Plugin.options.row_actions);
-
-        return comptime admin_described.each(Plugin, RowAction, listed);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "settings_pages")) {
-        const listed = as_slice(SettingsPage, Plugin.options.settings_pages);
-
-        return comptime admin_described.each(Plugin, SettingsPage, listed);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "field_kinds")) {
-        return comptime declared_kinds(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "custom_fields")) {
-        return comptime declared_field_groups(Plugin);
-    }
-
-    if (comptime bound(Plugin) and std.mem.eql(u8, name, "permissions")) {
-        return comptime @import("permission_define.zig").asks_of(Plugin);
+    if (comptime bound(Plugin)) {
+        inline for (resolvers) |entry| {
+            if (comptime std.mem.eql(u8, entry[0], name)) {
+                return comptime entry[2](Plugin);
+            }
+        }
     }
 
     const value = if (comptime bound(Plugin))
@@ -284,6 +238,51 @@ pub fn get(comptime Plugin: type, comptime name: []const u8) Got(Plugin, name) {
         .@"struct" => |shape| if (shape.is_tuple) &value else value,
         else => value,
     };
+}
+
+/// The options a bound plugin's readers take in their core shape, each `.{ name, Item, of }`:
+/// operations and pages given their words, hooks with their records', and so on.
+const resolvers = .{
+    .{ "operations", type, described_operations },
+    .{ "content_types", ContentTypeDef, declared_content_types },
+    .{ "internal_records", Collection, declared_collections },
+    .{ "middleware", type, declared_hooks },
+    .{ "namespaces", Namespace, declared_namespaces },
+    .{ "pages", Page, declared_pages },
+    .{ "panels", Panel, described_panels },
+    .{ "row_actions", RowAction, described_row_actions },
+    .{ "settings_pages", SettingsPage, described_settings_pages },
+    .{ "field_kinds", Kind, declared_kinds },
+    .{ "custom_fields", ContentTypeDef, declared_field_groups },
+    .{ "permissions", @import("../../model/sandboxed_plugin.zig").Ask, asks_of },
+};
+
+fn described_panels(comptime Plugin: type) []const Panel {
+    std.debug.assert(Plugin.manifest.name.len > 0);
+
+    return admin_described.each(Plugin, Panel, as_slice(Panel, Plugin.options.panels));
+}
+
+fn described_row_actions(comptime Plugin: type) []const RowAction {
+    std.debug.assert(Plugin.manifest.name.len > 0);
+
+    const listed = as_slice(RowAction, Plugin.options.row_actions);
+
+    return admin_described.each(Plugin, RowAction, listed);
+}
+
+fn described_settings_pages(comptime Plugin: type) []const SettingsPage {
+    std.debug.assert(Plugin.manifest.name.len > 0);
+
+    const listed = as_slice(SettingsPage, Plugin.options.settings_pages);
+
+    return admin_described.each(Plugin, SettingsPage, listed);
+}
+
+fn asks_of(comptime Plugin: type) []const @import("../../model/sandboxed_plugin.zig").Ask {
+    std.debug.assert(Plugin.manifest.name.len > 0);
+
+    return @import("permission_define.zig").asks_of(Plugin);
 }
 
 /// A bound plugin's operations: each `publr.operation.define` given its words and its
@@ -524,52 +523,12 @@ const ContentTypeDef = @import("../../model/content_type.zig").Def;
 const Collection = @import("../../model/internal_record.zig").Collection;
 
 pub fn Got(comptime Plugin: type, comptime name: []const u8) type {
-    if (bound(Plugin) and std.mem.eql(u8, name, "operations")) {
-        return []const type;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "content_types")) {
-        return []const ContentTypeDef;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "internal_records")) {
-        return []const Collection;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "middleware")) {
-        return []const type;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "permissions")) {
-        return []const @import("../../model/sandboxed_plugin.zig").Ask;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "field_kinds")) {
-        return []const Kind;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "pages")) {
-        return []const Page;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "panels")) {
-        return []const Panel;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "row_actions")) {
-        return []const RowAction;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "settings_pages")) {
-        return []const SettingsPage;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "namespaces")) {
-        return []const Namespace;
-    }
-
-    if (bound(Plugin) and std.mem.eql(u8, name, "custom_fields")) {
-        return []const ContentTypeDef;
+    if (bound(Plugin)) {
+        inline for (resolvers) |entry| {
+            if (std.mem.eql(u8, entry[0], name)) {
+                return []const entry[1];
+            }
+        }
     }
 
     const Value = if (bound(Plugin))
