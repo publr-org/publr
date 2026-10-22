@@ -13,6 +13,15 @@ pub const indexed_max: u32 = 8;
 pub const collections_max: u32 = 32;
 pub const document_bytes_max: u32 = 64 << 10;
 
+/// How long a record is kept: `after_days` past its creation or its last change. Core clears
+/// what has expired as new records of the collection are written, with no trash step.
+pub const Expires = struct {
+    after_days: u32,
+    from: From = .updated,
+
+    pub const From = enum { created, updated };
+};
+
 pub const Collection = struct {
     /// The collection's name, the plugin's own: `movement`, `cart`.
     kind: []const u8,
@@ -21,6 +30,8 @@ pub const Collection = struct {
     indexed: []const []const u8 = &.{},
     /// Written once, never changed or deleted: a ledger.
     append_only: bool = false,
+    /// Records meant to vanish (visitor carts, one-time codes); null for kept ones.
+    expires: ?Expires = null,
     /// Kept for the whole project, the same whichever app the call comes through: stock
     /// two shops sell from. Otherwise each app's records are its own: a visitor's cart.
     shared: bool = false,

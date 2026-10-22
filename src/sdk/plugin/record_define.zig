@@ -47,6 +47,7 @@ const Option = enum {
     menu,
     data_view,
     append_only,
+    expires,
 };
 
 const record_flow = @import("record_flow.zig");
@@ -93,6 +94,12 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
 
         const internal = @hasField(Options, "internal") and options.internal;
         const stored = if (internal) own_part(options.name) else options.name;
+
+        if (@hasField(Options, "expires") and !internal) {
+            @compileError("record " ++ options.name ++ ": `.expires` is for internal records " ++
+                "(`.internal = true`); content goes to the trash");
+        }
+
         const Typed = if (internal)
             internal_typed.of(Document, stored)
         else
@@ -180,6 +187,38 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
                 std.debug.assert(id.len <= 64 << 10);
 
                 return Typed.get(any_ctx, id);
+            }
+
+            /// Several records by id; one the caller cannot read, or in the trash, is left
+            /// out, so the answer may be shorter and is in no promised order.
+            pub fn many(any_ctx: anytype, ids: []const []const u8) sdk.Error![]const Held {
+                const ctx = queue.base_of(any_ctx);
+                var found: std.ArrayList(Held) = .empty;
+
+                std.debug.assert(ids.len <= record_operations.list_max);
+
+                if (comptime internal) {
+                    for (ids) |id| {
+                        const item = Typed.get(ctx, id) catch |err| switch (err) {
+                            error.NotFound, error.Denied => continue,
+                            else => return err,
+                        };
+
+                        try found.append(ctx.arena(), item);
+                    }
+
+                    return found.items;
+                }
+
+                for (try Typed.many(ctx, ids)) |item| {
+                    const held = held_of(item);
+
+                    if (!std.mem.eql(u8, @tagName(held.status), "trashed")) {
+                        try found.append(ctx.arena(), held);
+                    }
+                }
+
+                return found.items;
             }
 
             /// The one record whose unique `field` holds `value`, or null.
@@ -462,11 +501,27 @@ pub fn collection_of(comptime Definition: type) internal_record.Collection {
             .kind = Definition.stored_name,
             .indexed = indexed_of(options),
             .append_only = @hasField(Options, "append_only") and options.append_only,
+            .expires = if (@hasField(Options, "expires")) expires_of(options.expires) else null,
             .shared = scope == .project,
             .fields = @import("remote_fields.zig").declared_of(
                 Definition.type_name,
                 Definition.Doc,
             ),
+        };
+    }
+}
+
+/// `.expires = .{ .after_days = 30, .from = .updated }` as written; `.from` is `.updated`
+/// when left out.
+fn expires_of(comptime given: anytype) internal_record.Expires {
+    comptime {
+        if (given.after_days == 0) {
+            @compileError("`.expires.after_days` is 1 or more");
+        }
+
+        return .{
+            .after_days = given.after_days,
+            .from = if (@hasField(@TypeOf(given), "from")) given.from else .updated,
         };
     }
 }
