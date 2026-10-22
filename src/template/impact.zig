@@ -379,7 +379,7 @@ fn load_test(sources: []const template_module.Source) !*Program {
         .arena = arena_state.allocator(),
     };
 
-    return template_module.load(testing.allocator, sources, .{}, &diagnostic) catch |err| {
+    return template_module.load(testing.allocator, sources, &diagnostic, .{}) catch |err| {
         std.debug.print("load failed: {s}\n", .{diagnostic.message});
 
         return err;

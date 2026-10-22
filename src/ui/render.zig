@@ -78,7 +78,9 @@ pub fn all(arena: std.mem.Allocator, nodes: []const Node) Error!Node {
             request: ?*const anyopaque,
         ) anyerror!void {
             for (capture.nodes) |node| {
-                try node.render_with(writer, inner, request);
+                try node.render(writer, inner, .{
+                    .request = request,
+                });
             }
         }
     };
@@ -129,7 +131,9 @@ pub fn to_html(arena: std.mem.Allocator, node: Node) Error![]const u8 {
     const request = engine_request(runner);
     var out: std.Io.Writer.Allocating = .init(arena);
 
-    node.render_with(&out.writer, arena, &request) catch return error.OutOfMemory;
+    node.render(&out.writer, arena, .{
+        .request = &request,
+    }) catch return error.OutOfMemory;
 
     return out.written();
 }

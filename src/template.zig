@@ -144,8 +144,8 @@ pub const Diagnostic = struct {
 pub fn load(
     gpa: std.mem.Allocator,
     sources: []const Source,
-    options: Options,
     diagnostic: *Diagnostic,
+    options: Options,
 ) LoadError!*Program {
     if (options.pjsx.len > templates_max) {
         return error.TooManyTemplates;
@@ -725,7 +725,7 @@ fn load_test(sources: []const Source, options: Options) !*Program {
         .arena = testing.allocator,
     };
 
-    return load(testing.allocator, sources, options, &diagnostic) catch |err| {
+    return load(testing.allocator, sources, &diagnostic, options) catch |err| {
         defer testing.allocator.free(diagnostic.message);
         std.debug.print("load failed: {s}\n", .{diagnostic.message});
 
@@ -741,7 +741,7 @@ fn refuse(sources: []const Source, options: Options) ![]const u8 {
         .arena = testing.allocator,
     };
 
-    if (load(testing.allocator, sources, options, &diagnostic)) |program| {
+    if (load(testing.allocator, sources, &diagnostic, options)) |program| {
         destroy(program);
 
         return error.TestUnexpectedResult;
@@ -2600,18 +2600,18 @@ test "the limits refuse an app that is too big, naming what" {
     @memset(long, 'x');
 
     const long_sources = [_]Source{source("content/index.publr", long)};
-    const too_long = load(testing.allocator, &long_sources, .{}, &diagnostic);
+    const too_long = load(testing.allocator, &long_sources, &diagnostic, .{});
     try testing.expectError(error.SourceTooLong, too_long);
     const named = "content/index.publr is longer than a template may be";
     try testing.expectEqualStrings(named, diagnostic.message);
     testing.allocator.free(diagnostic.message);
 
     const many = [_]Source{index_page} ** (templates_max + 1);
-    const too_many = load(testing.allocator, &many, .{}, &diagnostic);
+    const too_many = load(testing.allocator, &many, &diagnostic, .{});
     try testing.expectError(error.TooManyTemplates, too_many);
 
     const layout_only = [_]Source{source("layouts/base.publr", "")};
-    const none = load(testing.allocator, &layout_only, .{}, &diagnostic);
+    const none = load(testing.allocator, &layout_only, &diagnostic, .{});
     try testing.expectError(error.NoPages, none);
 
     // One element more than the limit allows.
@@ -2795,8 +2795,8 @@ test "invalid app paths and error-only apps fail loading gracefully" {
             load(
                 testing.allocator,
                 &sources,
-                .{},
                 &diagnostic,
+                .{},
             ),
         );
     }
@@ -2805,7 +2805,7 @@ test "invalid app paths and error-only apps fail loading gracefully" {
         .rel = "content/404.publr",
         .source = "<p>Missing</p>",
     }};
-    try testing.expectError(error.NoPages, load(testing.allocator, &only_error, .{}, &diagnostic));
+    try testing.expectError(error.NoPages, load(testing.allocator, &only_error, &diagnostic, .{}));
 }
 
 test "deep expressions and empty request names fail at app compilation" {
@@ -2841,8 +2841,8 @@ fn check_load_allocation_failure(gpa: std.mem.Allocator) !void {
             .rel = "content/index.publr",
             .source = "<p>Hi</p>",
         }},
-        .{},
         &diagnostic,
+        .{},
     );
     defer gpa.destroy(loaded);
     defer loaded.deinit();

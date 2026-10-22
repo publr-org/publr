@@ -34,35 +34,31 @@ pub const admin: jit.Book = .{
     .covers = &data.covers,
 };
 
-/// The merged class list, owned by `arena`, with the admin's book.
-pub fn merge_classes(arena: std.mem.Allocator, parts: []const []const u8) ![]const u8 {
-    return merge_classes_in(arena, null, parts);
-}
+pub const Options = struct {
+    /// A `jit.Book`; null is the admin's.
+    book: ?*const anyopaque = null,
+};
 
-/// The merged class list, owned by `arena`, with `book` (a `jit.Book`; null is the admin's).
-pub fn merge_classes_in(
+/// The merged class list, owned by `arena`.
+pub fn merge_classes(
     arena: std.mem.Allocator,
-    book: ?*const anyopaque,
     parts: []const []const u8,
+    options: Options,
 ) ![]const u8 {
     std.debug.assert(parts.len <= jit.book.classes_max);
 
-    return jit.book.text(book_of(book), arena, parts);
+    return jit.book.text(book_of(options.book), arena, parts);
 }
 
 /// The merged class list written into an attribute value the caller has opened, escaped.
-pub fn write_classes(writer: *std.Io.Writer, parts: []const []const u8) !void {
-    try write_classes_in(writer, null, parts);
-}
-
-pub fn write_classes_in(
+pub fn write_classes(
     writer: *std.Io.Writer,
-    book: ?*const anyopaque,
     parts: []const []const u8,
+    options: Options,
 ) !void {
     std.debug.assert(parts.len <= jit.book.classes_max);
 
-    try jit.book.write(book_of(book), writer, parts);
+    try jit.book.write(book_of(options.book), writer, parts);
 }
 
 fn book_of(book: ?*const anyopaque) *const jit.Book {
@@ -75,7 +71,7 @@ fn book_of(book: ?*const anyopaque) *const jit.Book {
 
 /// `classes` as the admin writes them, sorted: what a merge is compared with.
 fn names_of(arena: std.mem.Allocator, classes: []const u8) ![]const u8 {
-    return sorted(arena, try merge_classes(arena, &.{classes}));
+    return sorted(arena, try merge_classes(arena, &.{classes}, .{}));
 }
 
 fn sorted(arena: std.mem.Allocator, written: []const u8) ![]const u8 {
@@ -98,7 +94,7 @@ fn sorted(arena: std.mem.Allocator, written: []const u8) ![]const u8 {
 test "a later conflicting utility wins the merge" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const written = try merge_classes(arena.allocator(), &.{ "max-w-md px-4", "max-w-xl" });
+    const written = try merge_classes(arena.allocator(), &.{ "max-w-md px-4", "max-w-xl" }, .{});
 
     try std.testing.expectEqualStrings(
         try names_of(arena.allocator(), "max-w-xl px-4"),
@@ -109,7 +105,7 @@ test "a later conflicting utility wins the merge" {
 test "design-system scale tokens resolve as font-size utilities" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const written = try merge_classes(arena.allocator(), &.{ "text-body-sm", "text-xs" });
+    const written = try merge_classes(arena.allocator(), &.{ "text-body-sm", "text-xs" }, .{});
     const body = try names_of(arena.allocator(), "text-body-sm");
     var tokens = std.mem.tokenizeScalar(u8, try names_of(arena.allocator(), "text-xs"), ' ');
 
@@ -125,7 +121,7 @@ test "a class the book does not hold is written as it is" {
     var buffer: [256]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
 
-    try write_classes(&writer, &.{ "drawer-enter", "flex" });
+    try write_classes(&writer, &.{ "drawer-enter", "flex" }, .{});
 
     try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "drawer-enter") != null);
     try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "flex") == null);
@@ -134,7 +130,7 @@ test "a class the book does not hold is written as it is" {
 test "a merge allocates only its answer" {
     var buffer: [256]u8 = undefined;
     var fixed: std.heap.FixedBufferAllocator = .init(&buffer);
-    const merged = try merge_classes(fixed.allocator(), &.{ "flex px-2", "px-6" });
+    const merged = try merge_classes(fixed.allocator(), &.{ "flex px-2", "px-6" }, .{});
 
     try std.testing.expectEqual(merged.len, fixed.end_index);
 }
