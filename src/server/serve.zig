@@ -212,7 +212,6 @@ fn helpers_of(init: std.process.Init, db_path: [:0]const u8, auto_update: bool) 
             .io = init.io,
             .db_path = db_path,
             .managed = is_managed(init),
-            .source = update.fetch.Source.of(init.environ_map),
             .auto = auto_update,
         },
     };
