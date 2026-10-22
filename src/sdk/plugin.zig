@@ -1237,6 +1237,9 @@ pub const testing = struct {
             pub const field_docs: sdk.operation.Docs(In) = .{
                 .who = "Whom to greet",
             };
+            pub const deprecated: sdk.operation.Deprecated = .{
+                .since = "0.1.0",
+            };
 
             pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
                 std.debug.assert(in.who.len > 0);

@@ -97,6 +97,12 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 .input = sdk_operation.input_shape(Declared),
                 .output = shapes.describe(Declared.Out),
                 .secret = @import("../trail.zig").secret_of(Declared),
+                .checked = if (@hasDecl(Declared, "checked")) Declared.checked else "",
+                .who_may_call = if (@hasDecl(Declared, "who_may_call"))
+                    Declared.who_may_call
+                else
+                    "",
+                .deprecated = sdk_operation.deprecation_text(Declared),
             }};
         }
 
@@ -435,4 +441,9 @@ test "the test plugin's manifest names its operation, fields and content type" {
     try std.testing.expect(std.mem.indexOf(u8, text, "\"records.write\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "\"greeting\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "Usage: publr greeter") != null);
+    // An installed plugin's callers are told it is on its way out, as a compiled-in one's.
+    try std.testing.expectEqualStrings(
+        "greeter.greet is deprecated since 0.1.0",
+        manifest.operations[0].deprecated,
+    );
 }

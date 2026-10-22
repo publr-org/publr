@@ -625,7 +625,11 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(request.operation_name.len > 0);
             std.debug.assert(registry.policies.len <= authorize.policies_max);
 
-            if (ctx.reads_only and request.kind == .write) {
+            // What only reads (a modifier, a display or `before` hook) never writes, and never
+            // reaches outside either.
+            const outside = std.mem.startsWith(u8, request.operation_name, "http.");
+
+            if (ctx.reads_only and (request.kind == .write or outside)) {
                 return error.Denied;
             }
 
@@ -992,7 +996,7 @@ pub fn SDK(comptime registry: Registry) type {
             try check_rules(ctx, Operation, in);
 
             if (comptime operation.deprecation(Operation) != null) {
-                note_deprecated(ctx, Operation);
+                note_deprecated(ctx, comptime operation.deprecation_text(Operation));
             }
 
             var input = in;
@@ -1154,9 +1158,7 @@ pub fn SDK(comptime registry: Registry) type {
 
         /// A caller used an operation on its way out: logged with who it was, so whoever
         /// runs the site finds the plugin, app or script to change before a major removes it.
-        fn note_deprecated(ctx: *const Ctx, comptime Operation: type) void {
-            const text = comptime operation.deprecation_text(Operation);
-
+        pub fn note_deprecated(ctx: *const Ctx, text: []const u8) void {
             std.debug.assert(text.len > 0);
 
             if (builtin.is_test) {

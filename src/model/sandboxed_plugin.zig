@@ -139,6 +139,13 @@ pub const Operation = struct {
     output: []const contract.Node = &.{},
     /// Input fields never written to the logs.
     secret: []const []const u8 = &.{},
+    /// What its `.validate` checks, in its words; empty for none.
+    checked: []const u8 = "",
+    /// Who may call it, as its code says it.
+    who_may_call: []const u8 = "",
+    /// What every caller is told when it is on its way out: since when, and what to call
+    /// instead. Empty for an operation that is not.
+    deprecated: []const u8 = "",
 };
 
 /// Another plugin's operation, record or event as this plugin uses it.

@@ -395,6 +395,11 @@ pub fn CLI(comptime SDK: type) type {
                     namespace, verb, problem.text(), namespace, verb,
                 });
             };
+
+            if (found.deprecated.len > 0) {
+                std.debug.print("publr: {s}\n", .{found.deprecated});
+            }
+
             const result = SDK.call_json(ctx, found.name, input) catch |err| {
                 return refused(invocation, ctx, found.name, err);
             };
