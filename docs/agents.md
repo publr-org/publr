@@ -196,10 +196,15 @@ pub const plugin = publr.plugin.define(manifest, .{
   times and references kept as plain numbers or text, JSON in text, and an untrusted
   write taking facts the server owns. A `Why:` line in the field's `///` passes one when
   the rule does not fit.
+- **Queued work.** What may wait, or reaches another server, is a job:
+  `publr.job.define(In, .{ .name, .run })` in `.jobs`, queued with `ctx.enqueue(Job, in)` and
+  run after the call by the worker, tried again when it fails. A schedule is
+  `publr.job.define_recurring(.{ .name, .run, .every = .day, .at = .{ .hour = 3 } })`. What
+  another server sends comes in through `publr.webhook.define` in `.webhooks`.
 - **Not built yet.** `define` has no `register_taxonomies`, `register_columns`,
-  `register_components`, `register_providers`, `register_location_rules`, `taxonomies` or
-  `webhooks` option and fails the build on one. There is no queued work, no schedule, no email and no outside search engine
-  for plugins yet. When a feature needs one, tell the person what is missing.
+  `register_components`, `register_providers`, `register_location_rules` or `taxonomies`
+  option and fails the build on one. There is no email and no outside search engine for
+  plugins yet. When a feature needs one, tell the person what is missing.
 
 ## How to build well
 
