@@ -134,19 +134,10 @@ fn reaches(
 }
 
 test "compiled-in requirements are checked when the binary is built" {
-    const Base = struct {
-        pub const manifest = .{
-            .name = "base",
-            .version = "0.2.3",
-        };
-    };
-    const Dependent = struct {
-        pub const manifest = .{
-            .name = "dependent",
-            .version = "0.1.0",
-        };
-        pub const depends_on = [_][]const u8{"base@^0.2"};
-    };
+    const Base = test_plugin("base", "0.2.3", .{});
+    const Dependent = test_plugin("dependent", "0.1.0", .{
+        .depends_on = .{"base@^0.2"},
+    });
 
     comptime check(.{ Base, Dependent });
     try std.testing.expectEqual(@as(usize, 1), comptime of(Dependent).len);
@@ -154,16 +145,26 @@ test "compiled-in requirements are checked when the binary is built" {
 }
 
 test "an installed plugin's manifest carries its depends_on" {
-    const Child = struct {
-        pub const manifest = .{
-            .name = "child",
-            .version = "1.0.0",
-            .summary = "Test child",
-        };
-        pub const depends_on = .{"parent@^1.0"};
-    };
+    const Child = test_plugin("child", "1.0.0", .{
+        .depends_on = .{"parent@^1.0"},
+    });
     const manifest = comptime @import("manifest.zig").of(Child);
 
     try std.testing.expectEqualStrings("parent@^1.0", (comptime of(Child))[0]);
     try std.testing.expectEqualStrings("parent@^1.0", manifest.depends_on[0]);
+}
+
+fn test_plugin(
+    comptime name: []const u8,
+    comptime version: []const u8,
+    comptime options: anytype,
+) type {
+    return plugin_define.Bind(struct {
+        pub const plugin = plugin_define.define(.{
+            .name = name,
+            .version = version,
+        }, options);
+    }, plugin_define.Words(.{
+        .{ "main", "Test plugin" },
+    }));
 }

@@ -208,7 +208,7 @@ fn about_of(session: *const Session, name: []const u8) Error!?admin.render.Node 
     std.debug.assert(name.len > 0);
 
     inline for (registry.native_plugins.all) |Plugin| {
-        if (@hasDecl(Plugin, "settings_text") and std.mem.eql(u8, Plugin.manifest.name, name)) {
+        if (std.mem.eql(u8, Plugin.manifest.name, name)) {
             return cleaned_of(session, Plugin.settings_text);
         }
     }

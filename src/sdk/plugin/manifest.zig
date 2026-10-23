@@ -57,7 +57,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .top_bar = items_of(Plugin),
             .row_actions = row_actions_of(Plugin),
             // The rest of `main.zig`'s `//!`, past its first line: shown on its page.
-            .about = if (@hasDecl(Plugin, "settings_text")) Plugin.settings_text else "",
+            .about = Plugin.settings_text,
             .left_out = runtime.left_out(Plugin),
         };
     }

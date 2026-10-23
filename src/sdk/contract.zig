@@ -116,15 +116,10 @@ pub fn is_contract(comptime Type: type) bool {
 /// `In` and `Out`. A mismatch fails the build.
 pub fn registered_of(comptime Plugin: type) []const Registered {
     comptime {
-        const plugin_define = @import("plugin/define.zig");
         const plugin = Plugin.manifest.name;
         var list: []const Registered = &.{};
 
         std.debug.assert(plugin.len > 0);
-
-        if (!plugin_define.bound(Plugin)) {
-            return list;
-        }
 
         if (!@hasField(@TypeOf(Plugin.options), "register_providers")) {
             return list;

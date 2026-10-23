@@ -151,17 +151,11 @@ pub const AdminBrand = struct {
     mark: []const u8 = "",
 };
 
-pub const Manifest = plugin_define.Described;
-
 pub fn validate(comptime Plugin: type) void {
     comptime {
         const label = @typeName(Plugin);
 
-        if (!@hasDecl(Plugin, "manifest")) {
-            @compileError("plugin " ++ label ++ ": missing `pub const manifest: Manifest`");
-        }
-
-        const manifest: Manifest = Plugin.manifest;
+        const manifest = Plugin.manifest;
         assert_name(manifest.name, label);
 
         for (operations_of(Plugin)) |Operation| {
@@ -834,11 +828,8 @@ pub fn Merged(comptime plugins: anytype) type {
 
             menu = menu ++ @import("plugin/menu_define.zig").entries_of(Plugin);
 
-            if (plugin_define.bound(Plugin)) {
-                const record_flow = @import("plugin/record_flow.zig");
-
-                registered_statuses = registered_statuses ++ record_flow.registered_of(Plugin);
-            }
+            registered_statuses = registered_statuses ++
+                @import("plugin/record_flow.zig").registered_of(Plugin);
             icons = icons ++ @import("plugin/menu_define.zig").icons_of(Plugin);
 
             if (plugin_define.has(Plugin, "sign_in_at")) {
@@ -1062,57 +1053,62 @@ pub fn Merged(comptime plugins: anytype) type {
 }
 
 pub const testing = struct {
-    pub const Hello = struct {
-        pub const manifest: Manifest = .{
+    pub const Hello = plugin_define.Bind(hello, plugin_define.Words(.{
+        .{ "main", "Test plugin: records greetings as records of its own type\n\n" ++
+            "A test namespace with one operation." },
+        .{ @typeName(hello.Greeting), "Greeting\n\nA greeting." },
+        .{ @typeName(hello.Greeting) ++ ".note", "Note" },
+        .{ @typeName([]const u8), "Mood\n\nHow the greeter felt" },
+    }));
+
+    const hello = struct {
+        const record_define = @import("plugin/record_define.zig");
+        const field_kind_define = @import("plugin/field_kind_define.zig");
+        const host_module = @import("plugin/host.zig");
+
+        pub const plugin = plugin_define.define(.{
             .name = "hello",
             .version = "0.1.0",
-            .summary = "Test plugin: records greetings as records of its own type",
+        }, .{
+            .records = .{Greetings},
+            .field_kinds = .{Mood},
+            .operations = .{Record},
+            .hooks = .{Counted},
+            .roles = roles,
+            .extend = extend,
+        });
+
+        pub const Greeting = struct {
+            note: []const u8,
         };
-        pub const content_types = [_]ContentTypeDef{.{
-            .handle = "greeting",
-            .name = "Greeting",
-            .title_field = "note",
-            .fields = &.{.{
-                .validation = .{
-                    .required = true,
-                },
-                .name = "note",
-                .label = "Note",
-                .kind = "string",
-            }},
-        }};
-        pub const field_kinds = [_]kinds.Kind{.{
-            .id = "hello.mood",
-            .label = "Mood",
-            .description = "How the greeter felt",
+        const Greetings = record_define.define(Greeting, .{
+            .name = "hello.greeting",
+            .title_field = .note,
+        });
+        const Mood = field_kind_define.kind([]const u8, .{
+            .name = "mood",
             .icon = "user",
-            .storage = .text,
-            .convert_from = &.{"string"},
-        }};
-        pub const namespaces = [_]sdk.operation.Namespace{.{
-            .name = "hello",
-            .summary = "Greetings",
-            .details = "A test namespace with one operation.",
-        }};
-        pub const operations = [_]type{Record};
-        pub const middleware = [_]type{Counted};
-        pub const policies = [_]sdk.Policy{&no_shouting};
-        pub const routes = [_]Route{
-            .{
+        });
+
+        fn extend(host: *host_module.Host) sdk.Error!void {
+            std.debug.assert(host.routes.len == 0);
+
+            try host.policy(&no_shouting);
+            try host.route(.{
                 .path = "/api/hello/greeting",
                 .handler = &greeting,
-            },
-            .{
+            });
+            try host.route(.{
                 .method = .post,
                 .path = "/api/hello/greeting",
                 .handler = &greeting,
-            },
-            .{
+            });
+            try host.route(.{
                 .method = .post,
                 .path = "/api/hello/upload",
                 .stream = &counted_upload,
-            },
-        };
+            });
+        }
 
         /// An upload taken a piece at a time, answered with how many bytes came.
         const counted_upload: route.Stream = .{
@@ -1182,7 +1178,7 @@ pub const testing = struct {
                 .caller = @tagName(found.caller),
             });
         }
-        pub const roles = [_]Role{
+        const roles = [_]Role{
             .{
                 .name = "editor",
                 .label = "Editor",
@@ -1224,12 +1220,12 @@ pub const testing = struct {
                 );
 
                 _ = try ctx.call(record.Create, .{
-                    .type = "greeting",
+                    .type = "hello.greeting",
                     .document = document,
                 });
 
                 const all = try ctx.call(record.List, .{
-                    .type = "greeting",
+                    .type = "hello.greeting",
                     .limit = 200,
                 });
 
@@ -1296,10 +1292,10 @@ test "the test plugin passes the contract and merges into a registry" {
             .roles = &.{"editor"},
         },
     });
-    const first = try TestSDK.dispatch(&ctx, testing.Hello.Record, .{
+    const first = try TestSDK.dispatch(&ctx, testing.Hello.source.Record, .{
         .note = "hi",
     });
-    const second = try TestSDK.dispatch(&ctx, testing.Hello.Record, .{
+    const second = try TestSDK.dispatch(&ctx, testing.Hello.source.Record, .{
         .note = "again",
     });
 
@@ -1319,9 +1315,11 @@ test "the test plugin passes the contract and merges into a registry" {
             .roles = &.{},
         },
     });
-    try std.testing.expect(TestSDK.may(&greeter, testing.Hello.Record));
-    try std.testing.expect(!TestSDK.may(&nobody, testing.Hello.Record));
-    try std.testing.expectError(error.Denied, TestSDK.dispatch(&nobody, testing.Hello.Record, .{
+    try std.testing.expect(TestSDK.may(&greeter, testing.Hello.source.Record));
+    try std.testing.expect(!TestSDK.may(&nobody, testing.Hello.source.Record));
+    const Record = testing.Hello.source.Record;
+
+    try std.testing.expectError(error.Denied, TestSDK.dispatch(&nobody, Record, .{
         .note = "no",
     }));
     try std.testing.expect(TestSDK.namespace_of("hello") != null);
@@ -1345,18 +1343,23 @@ test {
 
 /// A plugin that emits its own event: an `after` hook keeps it inside the write and refuses
 /// "nobody"; an `on` hook hears it from the queue.
-const Teller = struct {
-    pub const manifest: Manifest = .{
+const Teller = plugin_define.Bind(teller, plugin_define.Words(.{
+    .{ "main", "Test plugin: tells and hears" },
+}));
+
+const teller = struct {
+    pub const plugin = plugin_define.define(.{
         .name = "teller",
         .version = "0.1.0",
-        .summary = "Test plugin: tells and hears",
-    };
-    pub const operations = [_]type{Tell};
-    pub const middleware = [_]type{
-        hook_define.Described(hook_define.after(Told, kept), "teller", null),
-        hook_define.Described(hook_define.on(Told, heard), "teller", null),
-        hook_define.Described(hook_define.on(Tell, answered), "teller", null),
-    };
+    }, .{
+        .operations = .{Tell},
+        .events = .{Told},
+        .hooks = .{
+            hook_define.after(Told, kept),
+            hook_define.on(Told, heard),
+            hook_define.on(Tell, answered),
+        },
+    });
 
     pub const Told = hook_define.event(.{
         .name = "told",
@@ -1447,7 +1450,7 @@ test "a plugin's event: after hooks in the write, on hooks from the queue, a ref
     var ctx = harness.ctx(.system);
     try ctx.db.exec("CREATE TABLE told (what TEXT NOT NULL, who TEXT NOT NULL)");
 
-    _ = try TestSDK.dispatch(&ctx, Teller.Tell, .{
+    _ = try TestSDK.dispatch(&ctx, teller.Tell, .{
         .who = "ada",
     });
 
@@ -1456,7 +1459,7 @@ test "a plugin's event: after hooks in the write, on hooks from the queue, a ref
     try std.testing.expectEqual(@as(u32, 2), try sdk.testing.count(&ctx, "job_queue"));
 
     // Refused by the `after` hook: the write and its events are gone.
-    try std.testing.expectError(error.Conflict, TestSDK.dispatch(&ctx, Teller.Tell, .{
+    try std.testing.expectError(error.Conflict, TestSDK.dispatch(&ctx, teller.Tell, .{
         .who = "nobody",
     }));
     try std.testing.expectEqual(@as(u32, 1), try sdk.testing.count(&ctx, "told"));
@@ -1491,18 +1494,13 @@ test "a plugin's event: after hooks in the write, on hooks from the queue, a ref
 }
 
 test "a remote operation that fits the compiled-in one it names; the manifest carries both" {
-    const Provider = struct {
-        pub const manifest: Manifest = .{
+    const Provider = plugin_define.Bind(struct {
+        pub const plugin = plugin_define.define(.{
             .name = "provider",
             .version = "1.2.0",
-            .summary = "Provides an operation",
-        };
-        pub const namespaces = [_]sdk.operation.Namespace{.{
-            .name = "provider",
-            .summary = "Its operations",
-            .details = "One operation.",
-        }};
-        pub const operations = [_]type{Adjust};
+        }, .{
+            .operations = .{Adjust},
+        });
         pub const Adjust = struct {
             pub const name = "provider.adjust";
             pub const description = "Adjust a count";
@@ -1532,15 +1530,17 @@ test "a remote operation that fits the compiled-in one it names; the manifest ca
                 };
             }
         };
-    };
-    const User = struct {
-        pub const manifest: Manifest = .{
+    }, plugin_define.Words(.{
+        .{ "main", "Provides an operation\n\nOne operation." },
+    }));
+    const User = plugin_define.Bind(struct {
+        pub const plugin = plugin_define.define(.{
             .name = "user_side",
             .version = "0.1.0",
-            .summary = "Uses the provider",
-        };
-        pub const compatible_with = .{"provider@^1.0"};
-        pub const remotes = [_]type{Adjust};
+        }, .{
+            .compatible_with = .{"provider@^1.0"},
+            .remotes = .{Adjust},
+        });
         pub const Adjust = @import("plugin/hook_define.zig").remote.operation(
             "provider.adjust",
             struct {
@@ -1551,7 +1551,9 @@ test "a remote operation that fits the compiled-in one it names; the manifest ca
                 total: i64,
             },
         );
-    };
+    }, plugin_define.Words(.{
+        .{ "main", "Uses the provider" },
+    }));
     const Bundle = Merged(.{ Provider, User });
 
     try std.testing.expectEqual(@as(usize, 1), Bundle.merged_operations.len);

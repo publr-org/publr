@@ -242,51 +242,49 @@ pub fn is_off(off: []const Off, plugin: []const u8, name: []const u8) bool {
 }
 
 test "a plugin's remotes and its events, as its manifest carries them and the build checks" {
-    const Provider = struct {
-        pub const manifest: @import("../plugin.zig").Manifest = .{
-            .name = "provider",
-            .version = "1.0.0",
-            .summary = "Provides a record and an event",
-        };
-        pub const content_types = [_]@import("../../model/content_type.zig").Def{.{
-            .handle = "provider.variant",
-            .name = "Variant",
-            .fields = &.{
-                .{
-                    .name = "sku",
-                    .label = "SKU",
-                    .kind = "string",
-                },
-                .{
-                    .name = "stock",
-                    .label = "Stock",
-                    .kind = "integer",
-                },
-            },
-        }};
-        pub const events = [_]type{Restocked};
+    const Stocked = struct {
+        sku: []const u8,
+        stock: i64,
+    };
+    const Provider = test_plugin(struct {
         pub const Restocked = hook_define.event(.{
             .name = "restocked",
             .payload = struct {
                 sku: []const u8,
             },
         });
-    };
-    const User = struct {
-        pub const manifest: @import("../plugin.zig").Manifest = .{
-            .name = "user_side",
-            .version = "0.1.0",
-            .summary = "Uses the provider",
-        };
-        pub const compatible_with = .{"provider@^1"};
-        pub const remotes = [_]type{ Variant, Heard };
+        pub const plugin = plugin_define.define(.{
+            .name = "provider",
+            .version = "1.0.0",
+        }, .{
+            .records = .{@import("record_define.zig").define(Stocked, .{
+                .name = "provider.variant",
+            })},
+            .events = .{Restocked},
+        });
+    }, .{
+        .{ "main", "Provides a record and an event" },
+        .{ @typeName(Stocked), "Variant\n\nA test variant." },
+        .{ @typeName(Stocked) ++ ".sku", "SKU" },
+        .{ @typeName(Stocked) ++ ".stock", "Stock" },
+    });
+    const User = test_plugin(struct {
         pub const Variant = hook_define.remote.record("provider.variant", struct {
             sku: []const u8,
         });
         pub const Heard = hook_define.remote.event("provider.restocked", struct {
             sku: []const u8,
         });
-    };
+        pub const plugin = plugin_define.define(.{
+            .name = "user_side",
+            .version = "0.1.0",
+        }, .{
+            .compatible_with = .{"provider@^1"},
+            .remotes = .{ Variant, Heard },
+        });
+    }, .{
+        .{ "main", "Uses the provider" },
+    });
     const uses = comptime uses_of(User);
     const events = comptime events_of(Provider);
     const records = comptime records_of(Provider);
@@ -298,22 +296,15 @@ test "a plugin's remotes and its events, as its manifest carries them and the bu
     try std.testing.expectEqualStrings("provider.restocked", events[0].name);
     try std.testing.expectEqualStrings("integer", records[0].fields[1].kind);
 
-    const variant_misfit = comptime misfit_compiled(User.Variant, Provider, "provider");
-    const heard_misfit = comptime misfit_compiled(User.Heard, Provider, "provider");
+    const variant_misfit = comptime misfit_compiled(User.source.Variant, Provider, "provider");
+    const heard_misfit = comptime misfit_compiled(User.source.Heard, Provider, "provider");
 
     try std.testing.expectEqual(null, variant_misfit);
     try std.testing.expectEqual(null, heard_misfit);
 }
 
 /// A compiled-in pair for the test below: `keeper` counts, `watcher` only works with it.
-const Keeper = struct {
-    pub const manifest: @import("../plugin.zig").Manifest = .{
-        .name = "keeper",
-        .version = "0.2.0",
-        .summary = "Test plugin: counts",
-    };
-    pub const operations = [_]type{Count};
-
+const Keeper = test_plugin(struct {
     pub const Count = struct {
         pub const name = "keeper.count";
         pub const description = "Count a shelf";
@@ -343,25 +334,23 @@ const Keeper = struct {
             };
         }
     };
-};
+    pub const plugin = plugin_define.define(.{
+        .name = "keeper",
+        .version = "0.2.0",
+    }, .{
+        .operations = .{Count},
+    });
+}, .{
+    .{ "main", "Test plugin: counts" },
+});
 
-const Watcher = struct {
-    pub const manifest: @import("../plugin.zig").Manifest = .{
-        .name = "watcher",
-        .version = "0.1.0",
-        .summary = "Test plugin: watches the keeper's counts",
-    };
-    pub const compatible_with = .{"keeper"};
+const Watcher = test_plugin(struct {
     // Keeper 0.2.0 counts by aisle, not by shelf: this remote no longer fits.
     pub const Counted = hook_define.remote.operation("keeper.count", struct {
         shelf: []const u8,
     }, struct {
         count: u32,
     });
-    pub const remotes = [_]type{Counted};
-    pub const middleware = [_]type{
-        hook_define.Described(hook_define.after(Counted, noted), "watcher", null),
-    };
 
     // Reads the remote's `shelf`, which keeper's real input lacks: compiled in, this would
     // not type-check, so the build must leave the hook out.
@@ -374,7 +363,22 @@ const Watcher = struct {
 
         return error.Conflict;
     }
-};
+
+    pub const plugin = plugin_define.define(.{
+        .name = "watcher",
+        .version = "0.1.0",
+    }, .{
+        .compatible_with = .{"keeper"},
+        .remotes = .{Counted},
+        .hooks = .{hook_define.after(Counted, noted)},
+    });
+}, .{
+    .{ "main", "Test plugin: watches the keeper's counts" },
+});
+
+fn test_plugin(comptime Module: type, comptime words: anytype) type {
+    return plugin_define.Bind(Module, plugin_define.Words(words));
+}
 
 test "compiled-in plugins that don't fit: it builds, the remote is off, its hook left out" {
     const sdk = @import("../../sdk.zig");
@@ -400,7 +404,7 @@ test "compiled-in plugins that don't fit: it builds, the remote is off, its hook
     defer harness.deinit();
 
     var ctx = harness.ctx(.system);
-    const counted = try TestSDK.dispatch(&ctx, Keeper.Count, .{
+    const counted = try TestSDK.dispatch(&ctx, Keeper.source.Count, .{
         .aisle = 3,
     });
 
@@ -408,7 +412,7 @@ test "compiled-in plugins that don't fit: it builds, the remote is off, its hook
 }
 
 test "a remote that fits its compiled-in plugin is on, its hook kept" {
-    const hooks = comptime kept_hooks(Watcher, &Watcher.middleware, &.{});
+    const hooks = comptime kept_hooks(Watcher, plugin_define.get(Watcher, "middleware"), &.{});
 
     try std.testing.expectEqual(@as(usize, 1), hooks.len);
     try std.testing.expect(comptime misfit_compiled(

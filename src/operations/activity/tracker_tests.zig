@@ -2,7 +2,8 @@
 //! once each, kept outside the write; a refusal raises nothing.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const plugin = @import("../../sdk/plugin.zig");
+const plugin_module = @import("../../sdk/plugin.zig");
+const plugin_define = @import("../../sdk/plugin/define.zig");
 const hook_define = @import("../../sdk/plugin/hook_define.zig");
 const error_events = @import("../../sdk/error_events.zig");
 const activity = @import("../activity.zig");
@@ -13,15 +14,13 @@ const QueueCtx = @import("../../sdk/plugin/queue.zig").Queue(PluginCtx);
 
 /// Breaks on purpose, and records every error it hears of, as an error tracker would.
 const Tracker = struct {
-    pub const manifest: plugin.Manifest = .{
+    pub const plugin = plugin_define.define(.{
         .name = "tracker",
         .version = "0.1.0",
-        .summary = "Test plugin: tracks errors",
-    };
-    pub const operations = [_]type{Break};
-    pub const middleware = [_]type{
-        hook_define.Described(hook_define.on(error_events.Failed, track), "tracker", null),
-    };
+    }, .{
+        .operations = .{Break},
+        .hooks = .{hook_define.on(error_events.Failed, track)},
+    });
 
     pub const Break = struct {
         pub const name = "tracker.break";
@@ -78,7 +77,9 @@ const Tracker = struct {
 };
 
 test "errors raise publr.errors.Failed for a compiled-in tracker; refusals raise nothing" {
-    const Bundle = plugin.Merged(.{Tracker});
+    const Bundle = plugin_module.Merged(.{plugin_define.Bind(Tracker, plugin_define.Words(.{
+        .{ "main", "Test plugin: tracks errors" },
+    }))});
     const TestSDK = sdk.SDK(.{
         .operations = Bundle.merged_operations,
         .middleware = Bundle.merged_middleware,

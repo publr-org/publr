@@ -160,59 +160,50 @@ pub fn listed_in(comptime names: []const []const u8, comptime name: []const u8) 
     }
 }
 
-/// Whether the plugin has the option `name`: a field of `define`'s options, or a declaration of
-/// a plugin still written part by part.
+/// Whether the plugin has the option `name`: a field of `define`'s options, or what one of
+/// them gives (`.records` content types, `.hooks` middleware, `.extend`'s seams).
 pub fn has(comptime Plugin: type, comptime name: []const u8) bool {
     std.debug.assert(name.len > 0);
 
-    if (comptime bound(Plugin)) {
-        if (comptime host_define.seam(name)) {
-            if (comptime !extends(Plugin)) {
-                return false;
-            }
-
-            return comptime Plugin.host.has(name);
+    if (comptime host_define.seam(name)) {
+        if (comptime !extends(Plugin)) {
+            return false;
         }
 
-        const Options = @TypeOf(Plugin.options);
-        const listed_kind = std.mem.eql(u8, name, "content_types") or
-            std.mem.eql(u8, name, "internal_records");
-        const from_records = @hasField(Options, "records") and listed_kind;
-        const hook_lists = @hasField(Options, "hooks") or @hasField(Options, "records") or
-            comptime host_hooks(Plugin).len > 0;
-        const from_hooks = hook_lists and std.mem.eql(u8, name, "middleware");
-        const from_groups = @hasField(Options, "register_fields") and
-            std.mem.eql(u8, name, "custom_fields");
-
-        const from_words = std.mem.eql(u8, name, "namespaces");
-
-        return @hasField(Options, name) or from_records or from_hooks or from_groups or
-            from_words;
+        return comptime Plugin.host.has(name);
     }
 
-    return @hasDecl(Plugin, name);
+    const Options = @TypeOf(Plugin.options);
+    const listed_kind = std.mem.eql(u8, name, "content_types") or
+        std.mem.eql(u8, name, "internal_records");
+    const from_records = @hasField(Options, "records") and listed_kind;
+    const hook_lists = @hasField(Options, "hooks") or @hasField(Options, "records") or
+        comptime host_hooks(Plugin).len > 0;
+    const from_hooks = hook_lists and std.mem.eql(u8, name, "middleware");
+    const from_groups = @hasField(Options, "register_fields") and
+        std.mem.eql(u8, name, "custom_fields");
+
+    const from_words = std.mem.eql(u8, name, "namespaces");
+
+    return @hasField(Options, name) or from_records or from_hooks or from_groups or
+        from_words;
 }
 
 /// The option `name`; a list comes back as a slice either way.
 pub fn get(comptime Plugin: type, comptime name: []const u8) Got(Plugin, name) {
     std.debug.assert(comptime has(Plugin, name));
 
-    if (comptime bound(Plugin) and host_define.seam(name)) {
+    if (comptime host_define.seam(name)) {
         return comptime Plugin.host.get(name);
     }
 
-    if (comptime bound(Plugin)) {
-        inline for (resolvers) |entry| {
-            if (comptime std.mem.eql(u8, entry[0], name)) {
-                return comptime entry[2](Plugin);
-            }
+    inline for (resolvers) |entry| {
+        if (comptime std.mem.eql(u8, entry[0], name)) {
+            return comptime entry[2](Plugin);
         }
     }
 
-    const value = if (comptime bound(Plugin))
-        @field(Plugin.options, name)
-    else
-        @field(Plugin, name);
+    const value = @field(Plugin.options, name);
 
     return switch (@typeInfo(@TypeOf(value))) {
         .array => &value,
@@ -488,8 +479,6 @@ const host_define = @import("host.zig");
 
 /// Whether a bound plugin has `.extend`.
 fn extends(comptime Plugin: type) bool {
-    comptime std.debug.assert(bound(Plugin));
-
     if (!@hasDecl(Plugin, "host")) {
         return false;
     }
@@ -527,32 +516,23 @@ const ContentTypeDef = @import("../../model/content_type.zig").Def;
 const Collection = @import("../../model/internal_record.zig").Collection;
 
 pub fn Got(comptime Plugin: type, comptime name: []const u8) type {
-    if (bound(Plugin) and host_define.seam(name)) {
+    if (host_define.seam(name)) {
         return host_define.Host.Got(Plugin.host, name);
     }
 
-    if (bound(Plugin)) {
-        inline for (resolvers) |entry| {
-            if (std.mem.eql(u8, entry[0], name)) {
-                return []const entry[1];
-            }
+    inline for (resolvers) |entry| {
+        if (std.mem.eql(u8, entry[0], name)) {
+            return []const entry[1];
         }
     }
 
-    const Value = if (bound(Plugin))
-        @TypeOf(@field(Plugin.options, name))
-    else
-        @TypeOf(@field(Plugin, name));
+    const Value = @TypeOf(@field(Plugin.options, name));
 
     return switch (@typeInfo(Value)) {
         .array => |array| []const array.child,
         .@"struct" => |shape| if (shape.is_tuple) *const Value else Value,
         else => Value,
     };
-}
-
-pub fn bound(comptime Plugin: type) bool {
-    return @hasDecl(Plugin, "options") and @hasDecl(Plugin, "source");
 }
 
 /// The doc comment kept under `key` (`main`, `operations.answer.In.page`); null when there is

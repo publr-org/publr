@@ -229,13 +229,13 @@ test "entries number operations first, then hooks, and read a hook's shapes from
 
         pub fn run(
             _: *@import("context.zig").PluginCtx,
-            _: *Plugin.Record.In,
-            _: *const Plugin.Record.Out,
+            _: *Plugin.source.Record.In,
+            _: *const Plugin.source.Record.Out,
         ) sdk_operation.Error!void {}
     };
 
-    try std.testing.expect(HookIn(Hook) == Plugin.Record.In);
-    try std.testing.expect(HookOut(Hook) == Plugin.Record.Out);
+    try std.testing.expect(HookIn(Hook) == Plugin.source.Record.In);
+    try std.testing.expect(HookOut(Hook) == Plugin.source.Record.Out);
     try std.testing.expectEqual(0, comptime permissions_of(Plugin).len);
 }
 
@@ -325,15 +325,19 @@ fn asks_for(comptime Plugin: type, comptime key: []const u8) bool {
 }
 
 test "what the sandbox cannot run is left out and named, never refused" {
-    const Plugin = struct {
-        pub const manifest = .{
+    const Plugin = plugin_define.Bind(struct {
+        fn extend(_: *@import("host.zig").Host) sdk_operation.Error!void {}
+
+        pub const plugin = plugin_define.define(.{
             .name = "tables",
             .version = "0.1.0",
-            .summary = "Own tables",
-        };
-        pub const extend = {};
-        pub const settings_tabs = [_]type{};
-    };
+        }, .{
+            .extend = extend,
+            .settings_tabs = [_]type{},
+        });
+    }, plugin_define.Words(.{
+        .{ "main", "Own tables" },
+    }));
     const list = comptime left_out(Plugin);
 
     try std.testing.expectEqual(@as(usize, 2), list.len);

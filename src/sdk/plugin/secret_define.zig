@@ -11,7 +11,7 @@ pub const Declared = secrets.Declared;
 /// Each secret the plugin declares, with its label and help from its `///`.
 pub fn declared_of(comptime Plugin: type) []const Declared {
     comptime {
-        if (!plugin_define.bound(Plugin) or !plugin_define.has(Plugin, "secrets")) {
+        if (!plugin_define.has(Plugin, "secrets")) {
             return &.{};
         }
 
