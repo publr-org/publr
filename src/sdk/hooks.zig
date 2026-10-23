@@ -2,7 +2,7 @@ const std = @import("std");
 const Ctx = @import("context.zig").Ctx;
 const operation = @import("operation.zig");
 
-pub const middleware_max: u32 = 256;
+pub const hooks_max: u32 = 256;
 
 const Error = operation.Error;
 

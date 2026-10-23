@@ -17,7 +17,7 @@ pub const operation = @import("sdk/operation.zig");
 pub const grant = @import("sdk/grant.zig");
 pub const authorize = @import("sdk/authorize.zig");
 pub const stored_roles = @import("sdk/roles.zig");
-pub const middleware = @import("sdk/middleware.zig");
+pub const hooks = @import("sdk/hooks.zig");
 pub const mods = @import("sdk/mods.zig");
 pub const delivery = @import("sdk/delivery.zig");
 pub const provider = @import("sdk/provider.zig");
@@ -34,7 +34,7 @@ pub const Ctx = context.Ctx;
 pub const Error = operation.Error;
 pub const Grant = grant.Grant;
 pub const Policy = authorize.Policy;
-pub const Event = middleware.Event;
+pub const Event = hooks.Event;
 /// An app loaded from the folder, as the server started or the folder changed: core's own
 /// event, emitted outside any operation.
 pub const AppsLoaded = @import("sdk/plugin/hook_define.zig").event(.{
@@ -71,11 +71,11 @@ pub const Registry = struct {
     operations: []const type,
     namespaces: []const operation.Namespace = &.{},
     policies: []const Policy = &.{},
-    middleware: []const type = &.{},
-    /// The plugin each operation and middleware belongs to, by position; empty for the
+    hooks: []const type = &.{},
+    /// The plugin each operation and hook belongs to, by position; empty for the
     /// core's. Left empty, nothing belongs to a plugin.
     operation_owners: []const []const u8 = &.{},
-    middleware_owners: []const []const u8 = &.{},
+    hook_owners: []const []const u8 = &.{},
     /// The jobs compiled-in plugins declare (`publr.job.define`), and the plugin of each.
     jobs: []const type = &.{},
     job_owners: []const []const u8 = &.{},
@@ -724,7 +724,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(name.len > 0);
             std.debug.assert(ctx.parent != null);
 
-            inline for (registry.middleware) |Middleware| {
+            inline for (registry.hooks) |Middleware| {
                 if (Middleware.stage == .pre) {
                     try invoke_hook(ctx, Middleware, .{ name, kind });
                 }
@@ -993,8 +993,8 @@ pub fn SDK(comptime registry: Registry) type {
 
             var input = in;
 
-            inline for (registry.middleware) |Middleware| {
-                const applies = comptime middleware.applies(Middleware, Operation);
+            inline for (registry.hooks) |Middleware| {
+                const applies = comptime hooks.applies(Middleware, Operation);
 
                 if (applies and Middleware.stage == .before) {
                     try invoke_hook(ctx, Middleware, .{&input});
@@ -1016,8 +1016,8 @@ pub fn SDK(comptime registry: Registry) type {
 
             const out = try invoke_run(ctx, Operation, input, granted);
 
-            inline for (registry.middleware) |Middleware| {
-                const applies = comptime middleware.applies(Middleware, Operation);
+            inline for (registry.hooks) |Middleware| {
+                const applies = comptime hooks.applies(Middleware, Operation);
 
                 if (applies and Middleware.stage == .after) {
                     try invoke_hook(ctx, Middleware, .{ &input, &out });
@@ -1170,8 +1170,8 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(args.len <= 2);
 
             const running = ctx.plugin;
-            const owners = registry.middleware_owners;
-            const owner = comptime owner_of(registry.middleware, owners, Middleware);
+            const owners = registry.hook_owners;
+            const owner = comptime owner_of(registry.hooks, owners, Middleware);
 
             if (hook_off(ctx, owner, Middleware)) {
                 return;
@@ -1205,7 +1205,7 @@ pub fn SDK(comptime registry: Registry) type {
         /// refusal is logged and it goes on.
         pub fn event_hooks(
             ctx: *Ctx,
-            comptime stage: middleware.Stage,
+            comptime stage: hooks.Stage,
             comptime Emitted: type,
             payload: Emitted.Payload,
             spared: bool,
@@ -1235,7 +1235,7 @@ pub fn SDK(comptime registry: Registry) type {
         /// refuses the event when it is `refusable`; otherwise it is logged and the rest go on.
         pub fn hooks_on(
             ctx: *Ctx,
-            comptime stage: middleware.Stage,
+            comptime stage: hooks.Stage,
             name: []const u8,
             payload: []const u8,
             refusable: bool,
@@ -1243,7 +1243,7 @@ pub fn SDK(comptime registry: Registry) type {
             comptime std.debug.assert(stage == .before or stage == .after);
             std.debug.assert(name.len > 0);
 
-            inline for (registry.middleware) |Middleware| {
+            inline for (registry.hooks) |Middleware| {
                 const listening = comptime Middleware.stage == stage and
                     @hasDecl(Middleware, "event") and @hasDecl(Middleware, "Payload");
 
@@ -1272,7 +1272,7 @@ pub fn SDK(comptime registry: Registry) type {
 
         fn typed_hook(
             ctx: *Ctx,
-            comptime stage: middleware.Stage,
+            comptime stage: hooks.Stage,
             comptime Middleware: type,
             payload: []const u8,
         ) Error!void {
@@ -1359,7 +1359,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(name.len > 0);
             std.debug.assert(name.len <= mods.name_len_max);
 
-            inline for (registry.middleware) |Middleware| {
+            inline for (registry.hooks) |Middleware| {
                 if (comptime Middleware.stage == .modify) {
                     if (mods.matches(Middleware.pattern, name)) {
                         return true;
@@ -1387,7 +1387,7 @@ pub fn SDK(comptime registry: Registry) type {
             var reading = ctx.*;
             reading.reads_only = true;
 
-            inline for (registry.middleware) |Middleware| {
+            inline for (registry.hooks) |Middleware| {
                 if (comptime Middleware.stage == .modify) {
                     if (mods.matches(Middleware.pattern, name)) {
                         try modify_native(&reading, Middleware, batch);
@@ -1404,8 +1404,8 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.reads_only);
             std.debug.assert(Middleware.stage == .modify);
 
-            const owners = registry.middleware_owners;
-            const owner = comptime owner_of(registry.middleware, owners, Middleware);
+            const owners = registry.hook_owners;
+            const owner = comptime owner_of(registry.hooks, owners, Middleware);
             const before_modifier = ctx.arena.dupe(std.json.Value, batch.items) catch {
                 return error.OutOfMemory;
             };
@@ -1461,12 +1461,12 @@ pub fn SDK(comptime registry: Registry) type {
 
             var out: std.ArrayList(mods.Modifier) = .empty;
 
-            inline for (registry.middleware) |Middleware| {
+            inline for (registry.hooks) |Middleware| {
                 if (comptime Middleware.stage == .modify) {
-                    const owners = registry.middleware_owners;
+                    const owners = registry.hook_owners;
 
                     out.append(ctx.arena, .{
-                        .plugin = comptime owner_of(registry.middleware, owners, Middleware),
+                        .plugin = comptime owner_of(registry.hooks, owners, Middleware),
                         .name = Middleware.pattern,
                         .reason = if (@hasDecl(Middleware, "reason")) Middleware.reason else "",
                     }) catch return error.OutOfMemory;
@@ -1573,7 +1573,7 @@ pub fn SDK(comptime registry: Registry) type {
         /// with its answer inside its write (`queue_answer`).
         pub fn emit(ctx: *Ctx, event: Event) void {
             std.debug.assert(ctx.next_operation_id > 1);
-            std.debug.assert(registry.middleware.len <= middleware.middleware_max);
+            std.debug.assert(registry.hooks.len <= hooks.hooks_max);
 
             std.debug.assert(event != .emitted);
 
@@ -1585,7 +1585,7 @@ pub fn SDK(comptime registry: Registry) type {
                 sandboxed.event(ctx, event);
             }
 
-            inline for (registry.middleware) |Middleware| {
+            inline for (registry.hooks) |Middleware| {
                 const ends = comptime Middleware.stage == .on and !events.queued(Middleware);
 
                 if (ends) {
@@ -1632,8 +1632,8 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.now_ms >= 0);
 
             const running = ctx.plugin;
-            const owners = registry.middleware_owners;
-            const owner = comptime owner_of(registry.middleware, owners, Middleware);
+            const owners = registry.hook_owners;
+            const owner = comptime owner_of(registry.hooks, owners, Middleware);
 
             if (hook_off(ctx, owner, Middleware)) {
                 return "";
@@ -1799,24 +1799,24 @@ fn validate_registry(comptime registry: Registry) void {
             registry.operations.len * registry.operations.len);
 
         const owned_operations = registry.operation_owners.len;
-        const owned_middleware = registry.middleware_owners.len;
+        const owned_hooks = registry.hook_owners.len;
 
         if (owned_operations > 0 and owned_operations != registry.operations.len) {
             @compileError("operation_owners names one owner per operation");
         }
 
-        if (owned_middleware > 0 and owned_middleware != registry.middleware.len) {
-            @compileError("middleware_owners names one owner per middleware");
+        if (owned_hooks > 0 and owned_hooks != registry.hooks.len) {
+            @compileError("hook_owners names one owner per hook");
         }
 
         if (registry.operations.len > operations_max) {
             @compileError("too many operations");
         }
 
-        const too_many_middlewares = registry.middleware.len > middleware.middleware_max;
+        const too_many_hooks = registry.hooks.len > hooks.hooks_max;
 
-        if (too_many_middlewares) {
-            @compileError("too many middlewares");
+        if (too_many_hooks) {
+            @compileError("too many hooks");
         }
 
         if (registry.policies.len > authorize.policies_max) {
@@ -1847,8 +1847,8 @@ fn validate_registry(comptime registry: Registry) void {
             }
         }
 
-        for (registry.middleware) |Middleware| {
-            middleware.validate(Middleware);
+        for (registry.hooks) |Middleware| {
+            hooks.validate(Middleware);
             // A hook on an event (`auth.signed_in`) is named for it, not for an operation.
             const targets_operation = (Middleware.stage == .before or
                 Middleware.stage == .after) and !@hasDecl(Middleware, "event");
@@ -2064,7 +2064,7 @@ pub const testing = struct {
     };
 
     pub const Shout = struct {
-        pub const stage: middleware.Stage = .before;
+        pub const stage: hooks.Stage = .before;
         pub const operation = "hello.record";
 
         pub fn run(ctx: *Ctx, in: *Record.In) Error!void {
@@ -2076,7 +2076,7 @@ pub const testing = struct {
     pub var gate_closed: bool = false;
 
     pub const Gate = struct {
-        pub const stage: middleware.Stage = .pre;
+        pub const stage: hooks.Stage = .pre;
 
         pub fn run(ctx: *Ctx, operation_name: []const u8, kind: operation.Kind) Error!void {
             std.debug.assert(operation_name.len > 0);
@@ -2092,7 +2092,7 @@ pub const testing = struct {
 
     /// An `on` hook on `hello.record`: hears its answer from the queue, after the commit.
     pub const Journal = struct {
-        pub const stage: middleware.Stage = .on;
+        pub const stage: hooks.Stage = .on;
         pub const event = "hello.record";
         pub const Payload = Record.Out;
 
@@ -2124,7 +2124,7 @@ pub const testing = struct {
 
 const TestSDK = SDK(.{
     .operations = &.{testing.Record},
-    .middleware = &.{ testing.Gate, testing.Shout, testing.Journal },
+    .hooks = &.{ testing.Gate, testing.Shout, testing.Journal },
 });
 
 test "pre middleware runs before authorization; a refused call emits nothing" {
@@ -2380,7 +2380,7 @@ test {
 
 test "a failing after hook rolls back the operation body and earlier hooks" {
     const After = struct {
-        pub const stage: middleware.Stage = .after;
+        pub const stage: hooks.Stage = .after;
         pub const operation = testing.Record.name;
         pub fn run(ctx: *Ctx, _: *testing.Record.In, _: *const testing.Record.Out) Error!void {
             try ctx.db.exec("INSERT INTO notes (note) VALUES ('hook')");
@@ -2389,7 +2389,7 @@ test "a failing after hook rolls back the operation body and earlier hooks" {
     };
     const Checked = SDK(.{
         .operations = &.{testing.Record},
-        .middleware = &.{After},
+        .hooks = &.{After},
     });
     var harness: testing.Harness = undefined;
     try harness.init();
@@ -2494,7 +2494,7 @@ test "ctx.plugin: an operation's plugin, a hook's own, kept by a core call" {
         }
     };
     const Watch = struct {
-        pub const stage: middleware.Stage = .before;
+        pub const stage: hooks.Stage = .before;
         pub const operation = "alpha.act";
 
         pub fn run(ctx: *Ctx, _: *Act.In) Error!void {
@@ -2503,9 +2503,9 @@ test "ctx.plugin: an operation's plugin, a hook's own, kept by a core call" {
     };
     const Checked = SDK(.{
         .operations = &.{Act},
-        .middleware = &.{Watch},
+        .hooks = &.{Watch},
         .operation_owners = &.{"alpha"},
-        .middleware_owners = &.{"beta"},
+        .hook_owners = &.{"beta"},
     });
     var harness: testing.Harness = undefined;
     try harness.init();

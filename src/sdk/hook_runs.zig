@@ -105,7 +105,7 @@ const Probe = struct {
     }
 
     const Flaky = struct {
-        pub const stage: sdk.middleware.Stage = .on;
+        pub const stage: sdk.hooks.Stage = .on;
         pub const event = "hello.record";
         pub const Payload = Out;
 
@@ -123,7 +123,7 @@ const Probe = struct {
     };
 
     const Steady = struct {
-        pub const stage: sdk.middleware.Stage = .on;
+        pub const stage: sdk.hooks.Stage = .on;
         pub const event = "hello.record";
         pub const Payload = Out;
 
@@ -135,7 +135,7 @@ const Probe = struct {
     };
 
     const Broken = struct {
-        pub const stage: sdk.middleware.Stage = .on;
+        pub const stage: sdk.hooks.Stage = .on;
         pub const event = "hello.record";
         pub const Payload = Out;
 
@@ -183,8 +183,8 @@ const Probe = struct {
 
 const ProbeSDK = sdk.SDK(.{
     .operations = &.{sdk.testing.Record},
-    .middleware = &.{ Probe.Flaky, Probe.Steady, Probe.Broken },
-    .middleware_owners = &.{ "probe", "probe", "other" },
+    .hooks = &.{ Probe.Flaky, Probe.Steady, Probe.Broken },
+    .hook_owners = &.{ "probe", "probe", "other" },
     .log = .{
         .activity = Probe.activity,
         .failure = Probe.failure,

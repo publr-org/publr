@@ -39,7 +39,7 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
                 .emitted = emitted,
             };
 
-            inline for (registry.middleware, 0..) |Middleware, index| {
+            inline for (registry.hooks, 0..) |Middleware, index| {
                 const listens = comptime queued(Middleware);
 
                 if (listens and sdk.hears(Middleware, event)) {
@@ -94,9 +94,9 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
         /// Whether an `on` hook, compiled in or installed, names the event.
         pub fn heard_outside(ctx: *const Ctx, name: []const u8) bool {
             std.debug.assert(name.len > 0);
-            std.debug.assert(registry.middleware.len <= sdk.middleware.middleware_max);
+            std.debug.assert(registry.hooks.len <= sdk.hooks.hooks_max);
 
-            inline for (registry.middleware) |Middleware| {
+            inline for (registry.hooks) |Middleware| {
                 const listens = comptime queued(Middleware);
 
                 if (listens and std.mem.eql(u8, Middleware.event, name)) {
@@ -150,7 +150,7 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
                 .emitted = emitted,
             };
 
-            inline for (registry.middleware, 0..) |Middleware, index| {
+            inline for (registry.hooks, 0..) |Middleware, index| {
                 const listens = comptime queued(Middleware);
                 const owner = comptime owner_at(index);
 
@@ -228,9 +228,9 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
         /// The plugin a compiled-in hook belongs to; `core` for core's own.
         fn owner_at(comptime index: u32) []const u8 {
             comptime {
-                const owners = registry.middleware_owners;
+                const owners = registry.hook_owners;
 
-                std.debug.assert(index < registry.middleware.len);
+                std.debug.assert(index < registry.hooks.len);
 
                 if (owners.len == 0 or owners[index].len == 0) {
                     return "core";
@@ -243,12 +243,12 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
         /// Which of its plugin's hooks on the event the one at `index` is: how many of the
         /// same plugin's come before it.
         fn ordinal_of(comptime index: u32, event: Event) u32 {
-            comptime std.debug.assert(index < registry.middleware.len);
+            comptime std.debug.assert(index < registry.hooks.len);
             std.debug.assert(event == .emitted);
 
             var ordinal: u32 = 0;
 
-            inline for (registry.middleware[0..index], 0..) |Earlier, earlier_index| {
+            inline for (registry.hooks[0..index], 0..) |Earlier, earlier_index| {
                 const listens = comptime queued(Earlier);
                 const same = comptime std.mem.eql(u8, owner_at(earlier_index), owner_at(index));
 

@@ -502,7 +502,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/caller.zig` | 174 | `Caller` union (anonymous, user with its roles, system, token, machine, plugin) |
 | `sdk/grant.zig` | 267 | `Grant`: allow/deny, type and status filters, transitions, row filter |
 | `sdk/authorize.zig` | 318 | The core policy (anonymous reads live+public, a user what its roles grant); runs plugin policies |
-| `sdk/middleware.zig` | 89 | Hook stages (`pre`, `before`, `after`, `on`) and event shapes |
+| `sdk/hooks.zig` | 89 | Hook stages (`pre`, `before`, `after`, `on`) and event shapes |
 | `sdk/plugin.zig` | 647 | What a plugin module may export; `Merged(plugins)`; compile-time validation |
 | `sdk/plugin/sandboxed.zig` | 320 | What a plugin declares to run in the sandbox (permissions, limits), its entries, what may not be sandboxed |
 | `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |

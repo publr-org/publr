@@ -44,7 +44,7 @@ pub const hooks = [_]type{
 
 fn Before(comptime Operation: type, comptime raised: anytype) type {
     return struct {
-        pub const stage: sdk.middleware.Stage = .before;
+        pub const stage: sdk.hooks.Stage = .before;
         pub const operation = Operation.name;
 
         pub fn run(ctx: *Ctx, in: *Operation.In) Error!void {
@@ -64,7 +64,7 @@ fn Before(comptime Operation: type, comptime raised: anytype) type {
 
 fn After(comptime Operation: type, comptime raised: anytype) type {
     return struct {
-        pub const stage: sdk.middleware.Stage = .after;
+        pub const stage: sdk.hooks.Stage = .after;
         pub const operation = Operation.name;
 
         pub fn run(ctx: *Ctx, in: *Operation.In, out: *const Operation.Out) Error!void {

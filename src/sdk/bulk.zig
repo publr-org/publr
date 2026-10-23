@@ -18,10 +18,10 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
         /// Whether any hook is on `Operation`: with none, a bulk write runs no hook at all.
         pub fn hooked(ctx: *const Ctx, comptime Operation: type) bool {
             std.debug.assert(Operation.name.len > 0);
-            std.debug.assert(registry.middleware.len <= sdk.middleware.middleware_max);
+            std.debug.assert(registry.hooks.len <= sdk.hooks.hooks_max);
 
-            inline for (registry.middleware) |Middleware| {
-                const applies = comptime sdk.middleware.applies(Middleware, Operation);
+            inline for (registry.hooks) |Middleware| {
+                const applies = comptime sdk.hooks.applies(Middleware, Operation);
 
                 if (applies) {
                     return true;
@@ -45,8 +45,8 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(inputs.len == refused.len);
             std.debug.assert(ctx.parent != null);
 
-            inline for (registry.middleware) |Middleware| {
-                const applies = comptime sdk.middleware.applies(Middleware, Operation) and
+            inline for (registry.hooks) |Middleware| {
+                const applies = comptime sdk.hooks.applies(Middleware, Operation) and
                     Middleware.stage == .before;
 
                 if (applies) {
@@ -116,8 +116,8 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(inputs.len == outputs.len);
             std.debug.assert(inputs.len == refused.len);
 
-            inline for (registry.middleware) |Middleware| {
-                const applies = comptime sdk.middleware.applies(Middleware, Operation) and
+            inline for (registry.hooks) |Middleware| {
+                const applies = comptime sdk.hooks.applies(Middleware, Operation) and
                     Middleware.stage == .after;
 
                 if (applies) {

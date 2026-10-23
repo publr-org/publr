@@ -253,11 +253,11 @@ fn hooks_on(ctx: *Ctx, name: []const u8) Error![]const Hook {
     std.debug.assert(name.len > 0);
     const declared = registry.registry;
 
-    std.debug.assert(declared.middleware.len == declared.middleware_owners.len);
+    std.debug.assert(declared.hooks.len == declared.hook_owners.len);
 
     var found: std.ArrayList(Hook) = .empty;
 
-    inline for (declared.middleware, declared.middleware_owners) |Middleware, owner| {
+    inline for (declared.hooks, declared.hook_owners) |Middleware, owner| {
         const stage = comptime Middleware.stage;
         const target: []const u8 = comptime switch (stage) {
             .before, .after => Middleware.operation,

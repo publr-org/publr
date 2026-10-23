@@ -4,7 +4,7 @@
 const std = @import("std");
 const plugin_define = @import("define.zig");
 const sdk_operation = @import("../operation.zig");
-const middleware = @import("../middleware.zig");
+const hooks = @import("../hooks.zig");
 
 pub const permissions_max: u32 = 64;
 pub const reason_len_max: u32 = 200;
@@ -223,7 +223,7 @@ pub fn permissions_of(comptime Plugin: type) []const sandboxed_plugin.Ask {
 test "entries number operations first, then hooks, and read a hook's shapes from its run" {
     const Plugin = @import("../plugin.zig").testing.Hello;
     const Hook = struct {
-        pub const stage: middleware.Stage = .after;
+        pub const stage: hooks.Stage = .after;
         pub const operation = "hello.record";
         pub const reason = "Counts greetings";
 

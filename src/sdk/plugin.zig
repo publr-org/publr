@@ -168,7 +168,7 @@ pub fn validate(comptime Plugin: type) void {
         }
 
         for (middleware_of(Plugin)) |Middleware| {
-            sdk.middleware.validate(Middleware);
+            sdk.hooks.validate(Middleware);
         }
 
         const internal_record = @import("../model/internal_record.zig");
@@ -580,7 +580,7 @@ pub fn middleware_of(comptime Plugin: type) []const type {
 
         const list: []const type = plugin_define.get(Plugin, "middleware");
 
-        std.debug.assert(list.len <= sdk.middleware.middleware_max);
+        std.debug.assert(list.len <= sdk.hooks.hooks_max);
 
         return list;
     }
@@ -677,7 +677,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var policies: []const sdk.Policy = &.{};
         var middleware: []const type = &.{};
         var operation_owners: []const []const u8 = &.{};
-        var middleware_owners: []const []const u8 = &.{};
+        var hook_owners: []const []const u8 = &.{};
         var jobs: []const type = &.{};
         var job_owners: []const []const u8 = &.{};
         var webhooks: []const type = &.{};
@@ -727,7 +727,7 @@ pub fn Merged(comptime plugins: anytype) type {
             const hooks = remote_contract.kept_hooks(Plugin, middleware_of(Plugin), remotes_off);
 
             middleware = middleware ++ hooks;
-            middleware_owners = middleware_owners ++ owners(Plugin, hooks.len);
+            hook_owners = hook_owners ++ owners(Plugin, hooks.len);
             // A webhook's delivery runs as one of its plugin's jobs.
             jobs = jobs ++ jobs_of(Plugin) ++ webhooks_of(Plugin);
             job_owners = job_owners ++ owners(Plugin, jobs_of(Plugin).len) ++
@@ -963,9 +963,9 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_operations = operations;
             pub const merged_namespaces = namespaces;
             pub const merged_policies = policies;
-            pub const merged_middleware = middleware;
+            pub const merged_hooks = middleware;
             pub const merged_operation_owners = operation_owners;
-            pub const merged_middleware_owners = middleware_owners;
+            pub const merged_hook_owners = hook_owners;
             /// The remotes another compiled-in plugin switches off, and why.
             pub const merged_remotes_off = remotes_off;
             pub const merged_jobs = jobs;
@@ -1208,7 +1208,7 @@ pub const testing = struct {
         };
 
         pub const Counted = struct {
-            pub const stage: sdk.middleware.Stage = .after;
+            pub const stage: sdk.hooks.Stage = .after;
             pub const operation = "hello.record";
 
             pub fn run(ctx: *PluginCtx, in: *Record.In, out: *const Record.Out) sdk.Error!void {
@@ -1241,7 +1241,7 @@ test "the test plugin passes the contract and merges into a registry" {
         .operations = Bundle.merged_operations,
         .namespaces = Bundle.merged_namespaces,
         .policies = Bundle.merged_policies,
-        .middleware = Bundle.merged_middleware,
+        .hooks = Bundle.merged_hooks,
         .schemas = Bundle.merged_schemas,
     });
 
@@ -1403,9 +1403,9 @@ test "a plugin's event: after hooks in the write, on hooks from the queue, a ref
     const Bundle = Merged(.{Teller});
     const TestSDK = sdk.SDK(.{
         .operations = Bundle.merged_operations,
-        .middleware = Bundle.merged_middleware,
+        .hooks = Bundle.merged_hooks,
         .operation_owners = Bundle.merged_operation_owners,
-        .middleware_owners = Bundle.merged_middleware_owners,
+        .hook_owners = Bundle.merged_hook_owners,
     });
 
     var harness: sdk.testing.Harness = undefined;

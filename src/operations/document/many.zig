@@ -325,7 +325,7 @@ pub fn Of(comptime Domain: type) type {
         /// its own runs them: one a hook refuses is refused, the rest go on.
         fn hooks_on_each(
             ctx: *Ctx,
-            comptime stage: sdk.middleware.Stage,
+            comptime stage: sdk.hooks.Stage,
             heard: []const ?lifecycle.Heard,
             refused: Refusals,
         ) Error!void {
@@ -344,7 +344,7 @@ pub fn Of(comptime Domain: type) type {
 
         fn hooks_on_one(
             ctx: *Ctx,
-            comptime stage: sdk.middleware.Stage,
+            comptime stage: sdk.hooks.Stage,
             heard: lifecycle.Heard,
         ) Error!void {
             std.debug.assert(heard.name.len > 0);

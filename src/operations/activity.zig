@@ -449,7 +449,7 @@ const Units = struct {
 
 /// The units the call's writes changed, kept on its trail where each write started: each
 /// write's `publr.after` hook, run as core's.
-pub const middleware = core_hooks(&changed_units.hooks(every_kind, keep_unit));
+pub const hooks = core_hooks(&changed_units.hooks(every_kind, keep_unit));
 
 const every_kind = std.enums.values(changed_units.Kind);
 
