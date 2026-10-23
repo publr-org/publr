@@ -354,6 +354,7 @@ pub fn enqueue_at(ctx: *Ctx, name: []const u8, input: anytype, due_at_ms: i64) E
         .input = text,
         .due_at_ms = due_at_ms,
         .now_ms = ctx.now_ms,
+        .language = ctx.language_queued(),
     });
 }
 

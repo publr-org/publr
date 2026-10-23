@@ -75,6 +75,7 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
                 .input = emitted.subject,
                 .due_at_ms = ctx.now_ms,
                 .now_ms = ctx.now_ms,
+                .language = ctx.language_queued(),
             };
 
             if (emitted.subject.len <= job_queue.input_bytes_max) {

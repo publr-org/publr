@@ -10,6 +10,7 @@ const hook_runs = @import("hook_runs.zig");
 const plugin_context = @import("plugin/context.zig");
 const store_settings = @import("../store/settings.zig");
 const zone = @import("../lib/zone.zig");
+const language = @import("../operations/user/language.zig");
 
 const Ctx = sdk.Ctx;
 const PluginCtx = plugin_context.HostApi;
@@ -104,6 +105,10 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(max > 0 and max <= job_queue.take_max);
 
             const claimed = try job_queue.claim(ctx.db, ctx.arena, ctx.now_ms, claim_ms, max);
+            const site = language.site_speaks(ctx) catch |err| blk: {
+                std.log.warn("jobs: the site's language not read: {t}", .{err});
+                break :blk "";
+            };
 
             for (claimed) |job| {
                 _ = ctx.allocate_operation_id();
@@ -112,6 +117,14 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
                 ctx.job = std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{ job.plugin, job.name }) catch
                     return error.OutOfMemory;
                 defer ctx.job = "";
+
+                // Its `ctx.t` speaks the language it was queued with, else the site's.
+                const before = ctx.language;
+
+                ctx.language = .{
+                    .locale = if (job.language.len > 0) job.language else site,
+                };
+                defer ctx.language = before;
 
                 // What the run logs is kept as its own, whatever it calls inside.
                 var lines: sdk.trail.Lines = .{
@@ -316,6 +329,7 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
                 .moment = moment,
                 .offset_ms = due.offset_ms,
                 .now_ms = ctx.now_ms,
+                .language = ctx.language_queued(),
             });
         }
 

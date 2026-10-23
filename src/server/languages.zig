@@ -378,3 +378,93 @@ test "a language's files merged into one catalogue, the first file winning" {
     try std.testing.expectEqualStrings("Kosz", list[0].catalog.lookup("", "Trash", null).?);
     try std.testing.expectEqualStrings("Speichern", list[1].catalog.lookup("", "Save", null).?);
 }
+
+test "queued work speaks the language it was queued in: a job about a Polish record, in Polish" {
+    const sdk = @import("../sdk.zig");
+    const job_define = @import("../sdk/plugin/job_define.zig");
+    const HostApi = @import("../sdk/plugin/context.zig").HostApi;
+    const QueueCtx = @import("../sdk/plugin/queue.zig").Queue(HostApi);
+    const Probe = struct {
+        const In = struct {
+            title: []const u8,
+        };
+
+        var said: [64]u8 = undefined;
+        var said_len: usize = 0;
+
+        fn run(ctx: *QueueCtx, in: In) sdk.Error!void {
+            std.debug.assert(in.title.len > 0);
+
+            const text = ctx.t("{title} is ready", .{
+                .title = in.title,
+            });
+
+            @memcpy(said[0..text.len], text);
+            said_len = text.len;
+        }
+    };
+    const Announce = job_define.define(Probe.In, .{
+        .name = "announce",
+        .run = Probe.run,
+    });
+    const Runner = sdk.SDK(.{
+        .operations = &.{},
+        .jobs = &.{Announce},
+        .job_owners = &.{"probe"},
+    }).jobs;
+
+    // The compiled-in plugin's own words in Polish.
+    const files = [_]OwnedTranslation{.{
+        .plugin = "probe",
+        .translation = .{
+            .locale = "pl",
+            .label = "Polski",
+            .po = "msgid \"{title} is ready\"\nmsgstr \"Gotowe: {title}\"\n",
+        },
+    }};
+    var languages: Languages = .{
+        .gpa = std.testing.allocator,
+        .arena = .init(std.testing.allocator),
+        .list = &.{},
+    };
+    defer languages.arena.deinit();
+    languages.list = try build(languages.arena.allocator(), &files, &.{});
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    // A visitor's request on the Polish page queues it; nobody signed in.
+    var request = harness.ctx(.anonymous);
+
+    request.variant = "pl";
+    request.plugin = "probe";
+
+    var asking: HostApi = .{
+        .inner = &request,
+    };
+
+    try asking.enqueue(Announce, .{
+        .title = "Zamówienie",
+    });
+
+    // The worker runs it later, as the system, knowing nothing of the request.
+    var worker = harness.ctx(.system);
+
+    worker.translations = languages.view();
+
+    try std.testing.expectEqual(1, try Runner.drain(&worker, 8));
+    try std.testing.expectEqualStrings("Gotowe: Zamówienie", Probe.said[0..Probe.said_len]);
+
+    // Queued with no language, it speaks the site's: English here.
+    var english = harness.ctx(.system);
+
+    english.plugin = "probe";
+    asking.inner = &english;
+
+    try asking.enqueue(Announce, .{
+        .title = "Order",
+    });
+    try std.testing.expectEqual(1, try Runner.drain(&worker, 8));
+    try std.testing.expectEqualStrings("Order is ready", Probe.said[0..Probe.said_len]);
+}

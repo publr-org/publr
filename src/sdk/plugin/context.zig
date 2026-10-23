@@ -122,6 +122,7 @@ pub const HostApi = struct {
             .input = input,
             .due_at_ms = @max(at.ms, self.inner.now_ms),
             .now_ms = self.inner.now_ms,
+            .language = self.inner.language_queued(),
         });
     }
 

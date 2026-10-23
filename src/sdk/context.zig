@@ -293,7 +293,8 @@ pub const Ctx = struct {
     /// outside a job.
     job: []const u8 = "",
     /// The language the admin speaks to the caller, for a page a plugin draws: its
-    /// catalogue for the render and its script for the browser. Empty outside the admin.
+    /// catalogue for the render and its script for the browser. In queued work, its locale
+    /// alone: the one the work was queued with, else the site's. Empty elsewhere.
     language: Language = .{},
     db: *db.Db,
     io: std.Io,
@@ -382,6 +383,15 @@ pub const Ctx = struct {
         const view = ctx.translations orelse return filled(ctx.arena, message);
 
         return view.say(view.context, ctx.arena, locale, message);
+    }
+
+    /// The language queued work this call queues speaks: the record's as the call reads it
+    /// (`variant`), else the person's (`language`), carried in the job's row.
+    pub fn language_queued(ctx: *const Ctx) []const u8 {
+        std.debug.assert(ctx.variant.len <= 64);
+        std.debug.assert(ctx.language.locale.len <= 64);
+
+        return if (ctx.variant.len > 0) ctx.variant else ctx.language.locale;
     }
 
     pub fn init(

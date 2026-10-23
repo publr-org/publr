@@ -142,6 +142,11 @@ const added_columns = [_]Added{
         .column = "pending",
         .definition = "INTEGER NOT NULL DEFAULT 0",
     },
+    .{
+        .table = "job_queue",
+        .column = "language",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
 };
 
 fn add_columns(connection: *db.Db) db.Error!void {

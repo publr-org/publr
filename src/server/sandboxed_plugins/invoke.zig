@@ -468,6 +468,7 @@ fn publr_enqueue(env: *wasm.Env, ptr: u32, len: u32) callconv(.c) u32 {
         .input = input,
         .due_at_ms = @max(asked.due_ms, ctx.now_ms),
         .now_ms = ctx.now_ms,
+        .language = ctx.language_queued(),
     }) catch return wire.code_of(error.Unavailable);
 
     return wire.ok;
