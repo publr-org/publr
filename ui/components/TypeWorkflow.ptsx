@@ -61,7 +61,7 @@ export const state = Publr.reactive({
   new_label: "",
   new_from: "",
   new_to: "",
-  new_who: anyone,
+  new_who: "signed_in",
 });
 
 /** The site's roles, as `role.list` answers them: who may be given a transition. */
