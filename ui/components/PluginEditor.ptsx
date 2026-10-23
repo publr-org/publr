@@ -1,0 +1,86 @@
+import { Publr } from "publr-jsx";
+import { answer, reply } from "./PluginFrame.ptsx";
+
+/** Each editor's height as its frame reports it, by the frame's address. */
+export const state = Publr.reactive({
+  heights: {} as Record<string, number>,
+});
+
+/** A message from one of the form's editor frames, answered once, for the frame it came
+ * from: the form may carry editors of several plugins, each knowing only its own. */
+const answered: WeakSet<MessageEvent> = new WeakSet();
+
+const frames = (): HTMLIFrameElement[] => Array.from(document.querySelectorAll("iframe[data-plugin-editor]"));
+
+export const editor_message = (event: MessageEvent) => {
+  const message = event.data;
+  if (answered.has(event) || !message || message.publr !== 1) return;
+  const frame = frames().find((each) => each.contentWindow === event.source);
+  if (!frame) return;
+  answered.add(event);
+  const plugin = frame.dataset.plugin ?? "";
+  const csrf = document.querySelector('meta[name="publr-csrf"]')?.getAttribute("content") ?? "";
+  if (message.kind === "hello") reply(frame, { kind: "ready" });
+  if (message.kind === "height") {
+    const height = Math.min(Math.max(Number(message.height) || 0, 0), 4000);
+    state.heights = { ...state.heights, [frame.dataset.key ?? ""]: height };
+  }
+  // The value the editor hands over goes where the form reads it, as JSON; a struct is
+  // kept as its JSON text.
+  if (message.kind === "change") {
+    const input = frame.previousElementSibling;
+    if (!(input instanceof HTMLInputElement)) return;
+    const value = message.value;
+    const kept = value !== null && typeof value === "object" ? JSON.stringify(value) : value;
+    input.value = kept === null || kept === undefined ? "" : JSON.stringify(kept);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  // Only the plugin's own operations, as the person looking.
+  if (message.kind === "call") {
+    const operation = String(message.operation);
+    const own = operation.startsWith(`${plugin}.`) ? [operation] : [];
+    answer(frame, Number(message.id), operation, message.input, own, csrf);
+  }
+};
+
+/** Tells each editor what a refused save found wrong with its field. */
+export function tell_problems(problems: Array<{ field: string; message: string }>) {
+  for (const frame of frames()) {
+    const name = frame.dataset.name ?? "";
+    const own = problems
+      .filter((problem) => problem.field === name || problem.field.startsWith(`${name}.`))
+      .map((problem) => problem.message);
+    reply(frame, { kind: "problems", problems: own });
+  }
+}
+
+export type PluginEditorProps = {
+  /** The form field name the value is saved under. */
+  name: string;
+  /** The value the form holds, as JSON; empty for none. */
+  value: string;
+  /** The editor's document: `/admin/plugin/<plugin>/kinds/<kind>/frame?value=…`. */
+  src: string;
+};
+
+/** A plugin kind's editor on the edit form: the plugin frame, sized to what it shows, and
+ * the form's value it changes. */
+export function PluginEditor({ name, value, src }: PluginEditorProps) {
+  return (
+    <div class="flex flex-col">
+      <input type="hidden" name={name} value={value} />
+      <iframe
+        src={src}
+        title={name}
+        sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+        class="block w-full border-0"
+        style={`height:${state.heights[src] || 96}px`}
+        data-plugin-editor=""
+        data-key={src}
+        data-name={name}
+        data-plugin={src.split("/")[3] ?? ""}
+        onWindowMessage={editor_message}
+      ></iframe>
+    </div>
+  );
+}

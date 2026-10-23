@@ -1,0 +1,118 @@
+import { Publr } from "publr-jsx";
+import { send } from "publr/operations";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { PeopleColumns } from "./PeopleColumns.ptsx";
+
+/** The plugins' columns this person hides, by field. */
+export const state = Publr.reactive({
+  hidden: [] as string[],
+});
+
+/** Shows or hides the column the item names, and keeps the choice for this person. */
+export const toggle_column = (event: Event) => {
+  const field = (event.currentTarget as HTMLElement).dataset.field ?? "";
+  state.hidden = state.hidden.includes(field)
+    ? state.hidden.filter((each) => each !== field)
+    : [...state.hidden, field];
+  send("user.set_columns", { hidden: state.hidden });
+};
+
+export type PeopleTableProps = {
+  users: Array<{
+    href: string;
+    name: string;
+    email: string;
+    roles: string;
+    active: boolean;
+    me: boolean;
+    cells?: Array<{ text: string }>;
+  }>;
+  columns: Array<{ field: string; label: string; kind: string; sort_href: string; sorted: string }>;
+  hidden: string[];
+};
+
+/** People's table: core's columns, then the plugins' this person shows, picked from
+ * Columns above it. */
+export function PeopleTable({ users, columns, hidden }: PeopleTableProps) {
+  state.hidden = hidden;
+  return (
+    <div class="flex flex-col gap-2">
+      {columns.length > 0 && <PeopleColumns columns={columns} />}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("Name")}</TableHead>
+            <TableHead>{Publr.t("Email")}</TableHead>
+            <TableHead>{Publr.t("Roles")}</TableHead>
+            <TableHead>{Publr.t("Status")}</TableHead>
+            {columns.map((column) => !state.hidden.includes(column.field) && (
+              <TableHead align={column.kind === "number" || column.kind === "money" ? "right" : "left"}>
+                {column.sort_href === "" ? column.label : (
+                  <Link href={column.sort_href} variant="body-sm" tone="default">
+                    {column.label}{column.sorted === "ascending" ? " ↑" : column.sorted === "descending" ? " ↓" : ""}
+                  </Link>
+                )}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {users.map((user) => (
+            <TableRow>
+              <TableCell>
+                <Link href={user.href} variant="body-sm" tone="default">
+                  {user.name}
+                </Link>
+                {user.me && (
+                  <Text as="span" variant="body-sm" tone="muted">
+                    {" "}
+                    {Publr.t("(you)")}
+                  </Text>
+                )}
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {user.email}
+                </Text>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {user.roles}
+                </Text>
+              </TableCell>
+              <TableCell>
+                {user.active ? (
+                  <Status tone="success">{Publr.t("Active")}</Status>
+                ) : (
+                  <Status tone="warning">{Publr.t("Invited")}</Status>
+                )}
+              </TableCell>
+              {(user.cells ?? []).map((cell, index) => !state.hidden.includes(columns[index].field) && (
+                <TableCell align={columns[index].kind === "number" || columns[index].kind === "money" ? "right" : "left"}
+                  numeric={columns[index].kind === "number" || columns[index].kind === "money" || columns[index].kind === "date"}>
+                  {cell.text === "" ? (
+                    <Text as="span" variant="body-sm" tone="muted">—</Text>
+                  ) : columns[index].kind === "status" ? (
+                    <Status tone="neutral">{cell.text}</Status>
+                  ) : columns[index].kind === "link" ? (
+                    <Link href={cell.text} variant="body-sm" tone="default">{cell.text}</Link>
+                  ) : (
+                    <Text as="span" variant="body-sm" tone="muted">{cell.text}</Text>
+                  )}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}

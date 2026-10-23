@@ -381,6 +381,7 @@ fn after(
     name: []const u8,
     input: []const u8,
     output: []const u8,
+    extended: ?sdk.Extended,
 ) sdk.Error!void {
     const host = host_of(context);
     const format = "{{\"in\":{s},\"out\":{s}}}";
@@ -391,8 +392,26 @@ fn after(
     for (targets_of(host, .after, name)) |target| {
         const loaded = &host.loaded.items[target.sandboxed_plugin];
         var access = try access_of(loaded, ctx);
+        const answered = try invoke_after(loaded, ctx, &access, target.entry, both);
+        const rows = extended orelse continue;
 
-        _ = try invoke_after(loaded, ctx, &access, target.entry, both);
+        if (answered.len == 0) {
+            continue;
+        }
+
+        // What the hook added to the rows, kept only under its own plugin's name.
+        const plugin = loaded.name();
+        const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, answered, .{}) catch {
+            return error.Invalid;
+        };
+
+        const open = rows.open orelse continue;
+        const running = open.plugin;
+
+        open.plugin = &plugin;
+        defer open.plugin = running;
+
+        try rows.merge(value);
     }
 }
 

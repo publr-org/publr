@@ -24,6 +24,7 @@ pub fn register(router: anytype) void {
     router.get(prefix ++ "/:plugin/:page", &show);
     router.get(prefix ++ "/:plugin/:page/frame", &frame);
     router.get(prefix ++ "/:plugin/panels/:operation/frame", &panel_frame);
+    router.get(prefix ++ "/:plugin/kinds/:kind/frame", &editor_frame);
 }
 
 pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -142,6 +143,43 @@ pub fn panel_frame(request: *Request, response: *Response, ctx: *Context) Error!
     try serve_frame(&session, panel.operation, asked, .panel);
 }
 
+/// A field kind's editor, `?value=<json>&placeholder=<text>`: the plugin's view drawn with
+/// the value the form holds and the field's options in its `ctx`.
+pub fn editor_frame(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .get or request.method() == .head);
+    std.debug.assert(ctx.user_data != null);
+
+    var session = try admin.require(request, response, ctx) orelse return;
+    const plugin = request.param("plugin") orelse "";
+    const name = request.param("kind") orelse "";
+    const id = try std.fmt.allocPrint(session.arena, "{s}.{s}", .{ plugin, name });
+    const kind = registry.Kinds.find_kind(id) orelse return response.text(.not_found, "Not Found");
+    const draw = kind.editor orelse return response.text(.not_found, "Not Found");
+    const text = admin.query_param(&session, "value") orelse "";
+    const parsed = std.json.parseFromSliceLeaky(std.json.Value, session.arena, text, .{}) catch
+        std.json.Value.null;
+    // A struct kind's value is kept as its JSON text: the editor is told the struct.
+    const value = if (parsed == .string)
+        std.json.parseFromSliceLeaky(std.json.Value, session.arena, parsed.string, .{}) catch
+            parsed
+    else
+        parsed;
+    const base = session.project.admin_path();
+
+    look(&session, "");
+    session.ctx.view.editor = .{
+        .value = value,
+        .options = .{
+            .placeholder = admin.query_param(&session, "placeholder") orelse "",
+        },
+    };
+
+    const html = draw(&session.ctx, base) orelse
+        "<p class=\"p-8\">This editor could not be drawn.</p>";
+
+    try send(&session, base, html);
+}
+
 /// The frame's read is told who is looking and the page, for its view's `ctx`.
 fn look(session: *Session, path: []const u8) void {
     std.debug.assert(session.signed_in());
@@ -170,7 +208,6 @@ fn serve_frame(
     std.debug.assert(operation.len > 0);
     std.debug.assert(session.signed_in());
 
-    const response = session.response;
     const base = session.project.admin_path();
     const html = drawn(session, operation, asked, shown == .panel) catch |err| blk: {
         const text = if (err == error.Failed and session.ctx.failure != null)
@@ -185,6 +222,16 @@ fn serve_frame(
             try escaped(session.arena, text),
         });
     };
+
+    try send(session, base, html);
+}
+
+/// `html` as the frame's document, under the policy that sandboxes it whatever opens it.
+fn send(session: *Session, base: []const u8, html: []const u8) Error!void {
+    std.debug.assert(base.len == 0 or base[0] == '/');
+    std.debug.assert(html.len > 0);
+
+    const response = session.response;
     var out: std.Io.Writer.Allocating = .init(session.arena);
 
     document.write(&out.writer, base, html, session.ctx.view) catch return error.OutOfMemory;

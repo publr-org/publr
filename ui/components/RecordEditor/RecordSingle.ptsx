@@ -25,6 +25,7 @@ export type RecordSingleProps = {
     card_tone: string;
     card_href: string;
     formats: string;
+    src: string;
     remove: string;
     up: string;
     down: string;
@@ -91,6 +92,7 @@ export function RecordSingle({
               card_tone={item.card_tone}
               card_href={item.card_href}
               formats={item.formats}
+              src={item.src}
               remove={item.remove}
               up={item.up}
               down={item.down}

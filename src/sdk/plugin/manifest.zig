@@ -55,12 +55,36 @@ pub fn of(comptime Plugin: type) Manifest {
             .menu = @import("menu_define.zig").entries_of(Plugin),
             .icons = @import("menu_define.zig").icons_of(Plugin),
             .panels = panels_of(Plugin),
+            .columns = columns_of(Plugin),
             .top_bar = items_of(Plugin),
             .row_actions = row_actions_of(Plugin),
             // The rest of `main.zig`'s `//!`, past its first line: shown on its page.
             .about = if (@hasDecl(Plugin, "settings_text")) Plugin.settings_text else "",
             .left_out = runtime.left_out(Plugin),
         };
+    }
+}
+
+/// Its columns on lists it doesn't own, as the host draws them.
+fn columns_of(comptime Plugin: type) []const sandboxed_plugin.Column {
+    comptime {
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        var list: []const sandboxed_plugin.Column = &.{};
+
+        for (@import("column_define.zig").columns_of(Plugin)) |column| {
+            list = list ++ &[_]sandboxed_plugin.Column{.{
+                .list = column.list,
+                .field = column.field,
+                .label = column.label,
+                .kind = column.kind,
+                .stored = column.stored,
+            }};
+        }
+
+        const done = list;
+
+        return done;
     }
 }
 

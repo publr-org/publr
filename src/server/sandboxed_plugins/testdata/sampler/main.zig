@@ -43,6 +43,7 @@ const Motto = @import("operations/motto.zig");
 const HasMotto = @import("rules/has_motto.zig");
 const NoteCount = @import("hooks/note_count.zig");
 const Characters = @import("hooks/characters.zig");
+const Letters = @import("hooks/letters.zig");
 
 const WriteNote = @import("jobs/write_note.zig");
 const Tick = @import("jobs/tick.zig");
@@ -166,16 +167,15 @@ const hooks = .{
     publr.on(Noted.event, LogNote.run),
     publr.modify("sampler.sample_note.title", NoteTitle.run),
     publr.modify("sampler.*", Double.run),
-};
-/// Compiled in, the count of notes beside each person in People.
-const native_hooks = hooks ++ .{
     publr.after(publr.operations.user.List, NoteCount.run),
     publr.after(publr.operations.record.List, Characters.run),
+    publr.after(publr.operations.media.List, Letters.run),
 };
 
 /// Two columns on People: the motto the sampler stores on each account, sortable, and how
 /// many notes each person kept, worked out by `NoteCount`; one on greeter's lists, each
-/// salutation's length, from `Characters`.
+/// salutation's length, from `Characters`; one in the media library, each title's letters,
+/// from `Letters`.
 const columns = .{
     .{
         .list = "users",
@@ -193,6 +193,12 @@ const columns = .{
         .list = "greeter.*",
         .field = "sampler.characters",
         .label = "Characters",
+        .kind = .number,
+    },
+    .{
+        .list = "media",
+        .field = "sampler.letters",
+        .label = "Letters",
         .kind = .number,
     },
 };
@@ -224,7 +230,7 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
         .webhooks = &webhooks,
         .register_fields = field_groups,
         .operations = native_operations,
-        .hooks = native_hooks,
+        .hooks = hooks,
         .events = &.{Noted.event},
         .secrets = Secrets,
         .permissions = permissions,
@@ -243,6 +249,7 @@ else
         .jobs = &jobs,
         .webhooks = &webhooks,
         .register_fields = field_groups,
+        .register_columns = columns,
         .operations = operations,
         .hooks = hooks,
         .events = &.{Noted.event},

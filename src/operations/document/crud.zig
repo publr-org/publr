@@ -137,7 +137,7 @@ pub fn Of(comptime Domain: type) type {
 
             const id = try documents.insert(ctx.db, ctx.io, ctx.arena, .{
                 .type_id = row.id,
-                .created_by = ctx.caller.user_id(),
+                .created_by = ctx.author(),
                 .status = status,
                 .app = app,
             }, ctx.now_ms);

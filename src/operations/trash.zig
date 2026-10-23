@@ -93,7 +93,7 @@ pub fn keep(ctx: *Ctx, kept: Kept) Error![]const u8 {
         .kind = kept.kind,
         .key = kept.key,
         .label = model.ai.clipped(kept.label, model.removal.label_len_max),
-        .removed_by = ctx.caller.user_id() orelse "",
+        .removed_by = ctx.author() orelse "",
         .device_id = device_id,
         .conversation_id = conversation orelse "",
         .keep_until = keep_until,

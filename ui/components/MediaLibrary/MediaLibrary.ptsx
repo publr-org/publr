@@ -117,6 +117,8 @@ export const state = Publr.reactive({
   add_filters: [] as MediaAddFilter[],
   years: [] as MediaOption[],
   months: [] as MediaOption[],
+  /** Columns plugins add to the library, ended to each file's facts. */
+  columns: [] as Array<{ field: string; label: string }>,
   /** The bar's filters on the file itself: empty while not in the bar, `any` at Any. */
   kind: "",
   size_filter: "",
@@ -304,6 +306,7 @@ type Listed = {
   folders: Array<{ id: string; name: string; parent: string | null; depth: number; count: number }>;
   tags: Array<{ id: string; name: string; count: number }>;
   periods: MediaPeriod[];
+  extended?: Record<string, Record<string, unknown>>;
 };
 
 type Listed_item = Listed["items"][number];
@@ -314,6 +317,13 @@ const facts_of = (item: Listed_item): string => {
   const dimensions = item.width ? ` · ${item.width} × ${item.height}` : "";
   return `${extension_of(item)}${dimensions} · ${size_text(item.size)}`;
 };
+
+/** What plugins' columns say about a file, after its facts: ` · Uses 3`. */
+const added_of = (listed: Listed, id: string): string =>
+  state.columns
+    .filter((column) => listed.extended?.[id]?.[column.field] != null)
+    .map((column) => ` · ${column.label} ${String(listed.extended?.[id]?.[column.field])}`)
+    .join("");
 
 const shaped = (listed: Listed) => {
   state.items = listed.items.map((item) => {
@@ -328,7 +338,7 @@ const shaped = (listed: Listed) => {
       src: `/media/${item.key}`,
       kind: extension,
       icon: item.family === "video" ? "video" : item.family === "audio" ? "audio" : "file",
-      facts: item.pending ? Publr.t("Downloading…") : facts_of(item),
+      facts: item.pending ? Publr.t("Downloading…") : facts_of(item) + added_of(listed, item.id),
       missing: item.missing,
       selected: false,
     };
@@ -811,6 +821,8 @@ export type MediaLibraryProps = {
   periods?: Array<{ year: number; month: number; count: number }>;
   years?: Array<{ value: string; label: string; selected: boolean }>;
   months?: Array<{ value: string; label: string; selected: boolean }>;
+  /** Columns plugins add to the library: each file's facts end with its value. */
+  columns?: Array<{ field: string; label: string }>;
   /** Filters in place (the default); false makes the explorer's links go to their pages. */
   live?: boolean;
   /** How large the tiles are until this browser's own choice is read. */
@@ -862,6 +874,7 @@ export function MediaLibrary({
   periods = [],
   years = [],
   months = [],
+  columns = [],
   live = true,
   size = "md",
   children,
@@ -888,6 +901,7 @@ export function MediaLibrary({
   state.visibility = visibility;
   state.years = years;
   state.months = months;
+  state.columns = columns;
   state.items = items;
   state.total = total;
   state.all = all;

@@ -38,4 +38,5 @@ pub const kind = publr.field.kind(Place, .{
     .icon = "pin",
     .validate = validate,
     .text = text,
+    .editor = publr.views.all.SamplerPlaceEditor,
 });

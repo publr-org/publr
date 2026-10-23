@@ -111,6 +111,7 @@ pub const Manifest = struct {
     menu: []const MenuEntry = &.{},
     icons: []const PluginIcon = &.{},
     panels: []const Panel = &.{},
+    columns: []const Column = &.{},
     top_bar: []const Item = &.{},
     row_actions: []const RowAction = &.{},
     /// What the plugin says about itself on its page in the admin: its `main.zig`'s `//!`
@@ -292,6 +293,22 @@ pub const Panel = struct {
     label: []const u8,
     operation: []const u8,
 };
+
+/// A column on a list the plugin doesn't own (`.register_columns`): the field is its own,
+/// stored on the type or added to each row by an `after` hook on the list's read.
+pub const Column = struct {
+    /// A type's list (`orders.order`), `users`, `media`, or a pattern (`orders.*`).
+    list: []const u8,
+    /// The row's field, under the plugin's name: `loyalty.points`.
+    field: []const u8,
+    label: []const u8,
+    kind: ColumnKind,
+    /// A field the plugin stores on the type: read with the list, and the list sorts on it.
+    stored: bool = false,
+};
+
+/// How a column's cells are drawn.
+pub const ColumnKind = enum { number, money, date, text, status, link };
 
 /// An icon a plugin brings, named `<plugin>.<name>`: a 24×24 drawing, sanitized as any SVG
 /// before a page shows it.

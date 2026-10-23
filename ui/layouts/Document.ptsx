@@ -14,6 +14,16 @@ export type ViewCtx = {
   navigate: (path: string) => void;
 };
 
+/** What a field kind's editor is given: a view's `ctx`, what a refused save found wrong with
+ * the value, the field's options, and `change(value)`, which hands a new value to the form.
+ * The value is the kind's own, so the editor names it: `EditorCtx & { value: Place | null }`
+ * (null on a new record). */
+export type EditorCtx = ViewCtx & {
+  problems: string[];
+  options: { placeholder: string };
+  change: (value: unknown) => void;
+};
+
 export type DocumentProps = {
   /** The window's title, before " · Publr". */
   title: string;

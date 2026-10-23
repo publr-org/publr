@@ -1365,7 +1365,7 @@ pub fn SDK(comptime registry: Registry) type {
             const ran: Error!void = if (stage == .before)
                 discard(sandboxed.before(ctx, name, payload))
             else
-                sandboxed.after(ctx, name, payload, "{}");
+                sandboxed.after(ctx, name, payload, "{}", null);
 
             try settle_refusal(ran, refusable, name);
         }
@@ -1450,8 +1450,12 @@ pub fn SDK(comptime registry: Registry) type {
 
             const input = try stringify(ctx.arena, in);
             const output = try stringify(ctx.arena, out);
+            const extended = if (comptime @hasField(Operation.Out, "extended"))
+                out.extended
+            else
+                null;
 
-            try sandboxed.after(ctx, Operation.name, input, output);
+            try sandboxed.after(ctx, Operation.name, input, output, extended);
         }
 
         /// Whether any modifier, compiled in or installed, takes values applied as `name`.

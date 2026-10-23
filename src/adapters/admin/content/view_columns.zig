@@ -84,11 +84,12 @@ fn fields_of(
         return &.{};
     };
     var fields: std.ArrayList(Field) = .empty;
+    const all_columns = try registry.all_columns(&session.ctx);
 
     std.debug.assert(columns.len <= model.content_type.view_columns_max);
 
     for (columns) |column| {
-        if (plugin_column(handle, column)) |added| {
+        if (plugin_column(all_columns, handle, column)) |added| {
             try fields.append(session.arena, added);
         }
 
@@ -109,10 +110,14 @@ fn fields_of(
 }
 
 /// A column a plugin adds to the type's list, as a field drawn by its kind's cell.
-fn plugin_column(handle: []const u8, name: []const u8) ?Field {
+fn plugin_column(
+    all_columns: []const registry.Column,
+    handle: []const u8,
+    name: []const u8,
+) ?Field {
     std.debug.assert(handle.len > 0);
 
-    for (registry.columns) |column| {
+    for (all_columns) |column| {
         if (column.on(handle) and std.mem.eql(u8, column.field, name)) {
             return .{
                 .name = column.field,

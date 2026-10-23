@@ -2,6 +2,7 @@
 //! bring and the hooks they hold. The SDK knows nothing of the sandbox behind it; the server
 //! hands a `Plugins` to every context it makes, and a context without one has none.
 const std = @import("std");
+const Extended = @import("extended.zig").Extended;
 const Ctx = @import("context.zig").Ctx;
 const operation = @import("operation.zig");
 const middleware = @import("middleware.zig");
@@ -102,12 +103,14 @@ pub const SandboxedPlugins = struct {
             name: []const u8,
             input: []const u8,
         ) Error![]const u8,
+        /// `extended` takes the fields each hook adds to a list read's rows.
         after: *const fn (
             context: *anyopaque,
             ctx: *Ctx,
             name: []const u8,
             input: []const u8,
             output: []const u8,
+            extended: ?Extended,
         ) Error!void,
         event: *const fn (context: *anyopaque, ctx: *Ctx, event: middleware.Event) void,
         /// Runs operation `name` as the installed plugin `plugin`, on behalf of whoever calls:
@@ -287,11 +290,12 @@ pub const SandboxedPlugins = struct {
         name: []const u8,
         input: []const u8,
         output: []const u8,
+        extended: ?Extended,
     ) Error!void {
         std.debug.assert(name.len > 0);
         std.debug.assert(ctx.parent != null);
 
-        return sandboxed.vtable.after(sandboxed.context, ctx, name, input, output);
+        return sandboxed.vtable.after(sandboxed.context, ctx, name, input, output, extended);
     }
 
     pub fn job(

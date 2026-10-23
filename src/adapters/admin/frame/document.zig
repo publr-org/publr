@@ -24,7 +24,9 @@ fn write_bridge(writer: *std.Io.Writer, view: View) std.Io.Writer.Error!void {
     var json: [view_json_max]u8 = undefined;
     var fixed: std.Io.Writer = .fixed(&json);
 
-    std.json.Stringify.value(view, .{}, &fixed) catch {
+    std.json.Stringify.value(view, .{
+        .emit_null_optional_fields = false,
+    }, &fixed) catch {
         fixed = .fixed(&json);
         fixed.writeAll("{\"person\":{},\"page\":{}}") catch unreachable;
     };

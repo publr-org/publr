@@ -71,6 +71,8 @@ export type MediaProps = {
   periods: Array<{ year: number; month: number; count: number }>;
   years: Array<{ value: string; label: string; selected: boolean }>;
   months: Array<{ value: string; label: string; selected: boolean }>;
+  /** Columns plugins add to the library: each file's facts end with its value. */
+  columns?: Array<{ field: string; label: string }>;
 };
 
 /** The media library: the explorer and its filters on the left, the files as a wall of
@@ -106,6 +108,7 @@ export function Media({
   periods,
   years,
   months,
+  columns = [],
 }: MediaProps) {
   return (
     <ListDetailPage title={Publr.t("Media")}>
@@ -146,6 +149,7 @@ export function Media({
         periods={periods}
         years={years}
         months={months}
+        columns={columns}
         live={true}
       />
     </ListDetailPage>

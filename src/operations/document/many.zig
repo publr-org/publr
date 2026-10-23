@@ -361,7 +361,7 @@ pub fn Of(comptime Domain: type) type {
                 try sdk.stringify(ctx.arena, applied.items),
                 to,
                 ctx.now_ms,
-                ctx.caller.user_id(),
+                ctx.author(),
             );
 
             std.debug.assert(moved == moving.items.len);

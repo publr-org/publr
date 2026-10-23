@@ -2,6 +2,7 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const db = @import("../lib/db.zig");
 const report = @import("../lib/report.zig");
+const model_role = @import("../model/role.zig");
 
 pub const args_max: u32 = 128;
 pub const value_len_max: u32 = 64 << 10;
@@ -217,6 +218,13 @@ pub fn CLI(comptime SDK: type) type {
                     .now_ms = invocation.options.now_ms,
                 },
             );
+
+            if (caller == .system) {
+                const holder = @import("../store/user_roles.zig").first_holder;
+                const admin = model_role.admin;
+
+                ctx.operator = try holder(invocation.db, invocation.arena, admin) orelse "";
+            }
 
             ctx.sandboxed_plugins = invocation.options.sandboxed_plugins;
             ctx.plugin_states = invocation.options.plugin_states;

@@ -308,6 +308,7 @@ fn source_of(
         .live = if (live_only) live else null,
         .live_statuses = live,
         .owner = if (filter.flags.own_only) try own_user(ctx) else null,
+        .users = @import("query_dataset/users.zig").reach_of(ctx),
     };
 }
 

@@ -456,7 +456,7 @@ fn stored_columns(ctx: *Ctx, users: []const Summary) Error!sdk.Extended {
         return error.OutOfMemory;
     };
 
-    for (registry.columns) |column| {
+    for (try registry.all_columns(ctx)) |column| {
         if (!column.stored or !column.on("users")) {
             continue;
         }
@@ -704,6 +704,7 @@ pub const Validate = fields.Validate;
 
 pub const language = @import("user/language.zig");
 pub const variant = @import("user/variant.zig");
+pub const columns = @import("user/columns.zig");
 
 pub const operations = [_]type{
     Create,
@@ -719,6 +720,8 @@ pub const operations = [_]type{
     language.SetLanguage,
     variant.Variant,
     variant.SetVariant,
+    columns.Columns,
+    columns.SetColumns,
 };
 
 pub fn summary_of(user: store.users.User) Summary {

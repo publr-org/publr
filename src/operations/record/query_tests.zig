@@ -474,3 +474,50 @@ test "query: a reference into a Private type stands in place, saying its type an
         \\[{"by":"Costs"}]
     , seen.result.text);
 }
+
+test "query: accounts are user documents, names for users.names, emails too for users.read" {
+    var library: Library = .{};
+    try library.init();
+    defer library.deinit();
+
+    const users = @import("../../store/users.zig");
+
+    const connection = &library.harness.fixture.connection;
+    const arena = library.harness.fixed.allocator();
+
+    _ = try users.insert(connection, std.testing.io, arena, .{
+        .email = "kim@example.com",
+        .display_name = "Kim",
+        .password_hash = null,
+        .roles = &.{"editor"},
+        .now_ms = 0,
+    });
+
+    var admin = library.as_admin();
+    const accounts = "*[_type == \"user\"]{ name, email }";
+    const read = try SDK.dispatch(&admin, Query, .{
+        .query = accounts,
+    });
+
+    try std.testing.expectEqualStrings(
+        \\[{"name":"Kim","email":"kim@example.com"}]
+    , read.result.text);
+
+    var editor = library.harness.ctx(.{
+        .user = .{
+            .id = "u_ed",
+            .roles = &.{"editor"},
+        },
+    });
+    const named = try SDK.dispatch(&editor, Query, .{
+        .query = accounts,
+    });
+
+    try std.testing.expectEqualStrings("[{\"name\":\"Kim\",\"email\":null}]", named.result.text);
+
+    var visitor = library.harness.ctx(.anonymous);
+
+    try std.testing.expectError(error.Denied, SDK.dispatch(&visitor, Query, .{
+        .query = accounts,
+    }));
+}

@@ -24,6 +24,11 @@
       waiting.splice(0).forEach(post);
       return;
     }
+    // A field kind's editor: what a refused save found wrong with its value.
+    if (answer.kind === "problems") {
+      if (window.publr.refused) window.publr.refused(Array.isArray(answer.problems) ? answer.problems : []);
+      return;
+    }
     const caller = pending.get(answer.id);
     if (!caller) return;
     pending.delete(answer.id);
@@ -34,6 +39,10 @@
   window.publr = {
     person: frame.person,
     page: frame.page,
+    // A field kind's editor: its value, problems and options (`ctx.value` and the rest).
+    editor: frame.editor ?? undefined,
+    // Hands the editor's value to the form it sits in.
+    change(value) { send({ kind: "change", value: value ?? null }); },
     // One of the plugin's own operations, run by the admin as the person looking.
     send(operation, input) {
       const id = next++;
