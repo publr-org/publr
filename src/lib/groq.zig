@@ -19,6 +19,49 @@ pub const values = groq.values;
 pub const evaluation = groq.evaluation;
 pub const datetimes = groq.datetimes;
 
+/// Why a prepared query is refused, read before any parameter has a value: its syntax and
+/// the rules GROQ checks before a query runs (functions known, `asc` inside `order()`);
+/// null when it reads. Which fields a type has, GROQ cannot tell from the text.
+pub fn problem_of(arena: std.mem.Allocator, text: []const u8) error{OutOfMemory}!?[]const u8 {
+    std.debug.assert(text.len > 0);
+
+    var problem: Problem = .{};
+    const query = groq.parse(arena, text, &problem) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Invalid => return try std.fmt.allocPrint(arena, "{s} (at {d})", .{
+            problem.message,
+            problem.at,
+        }),
+    };
+    var params: groq.values.ObjectBuilder = .{};
+
+    for (query.nodes) |node| {
+        if (node == .param) {
+            try params.put(arena, node.param, .null);
+        }
+    }
+
+    groq.validate(arena, &query, params.object(), &problem) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Invalid => return problem.message,
+    };
+
+    return null;
+}
+
+test "a prepared query's problem, read without its parameters" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const fine = "*[_type == $type][$from...$to]{ title }";
+
+    try std.testing.expect(try problem_of(arena, fine) == null);
+    try std.testing.expect(try problem_of(arena, "*[_type == ") != null);
+    try std.testing.expect(try problem_of(arena, "count(1, 2)") != null);
+    try std.testing.expect(try problem_of(arena, "nope(1)") != null);
+}
+
 /// A query parsed once and kept for the life of the process: `publr.query.prepare`'s, bound
 /// to each call's parameters by `run`.
 pub const Prepared = struct {

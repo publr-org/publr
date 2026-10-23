@@ -62,6 +62,7 @@ pub fn of(comptime Plugin: type) Manifest {
             // The rest of `main.zig`'s `//!`, past its first line: shown on its page.
             .about = Plugin.settings_text,
             .left_out = runtime.left_out(Plugin),
+            .queries = @import("prepared_queries.zig").of(docs_of(Plugin)),
         };
     }
 }

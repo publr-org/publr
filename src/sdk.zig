@@ -2609,6 +2609,10 @@ test {
     _ = @import("sdk/plugin/checks.zig");
     _ = @import("sdk/plugin/secret_define.zig");
     _ = @import("sdk/plugin/written_secrets.zig");
+    _ = @import("sdk/plugin/prepared_queries.zig");
+    _ = @import("lib/groq.zig");
+    _ = @import("server/plugin_build/check.zig");
+    _ = @import("operations/plugin/lifecycle.zig");
     _ = @import("sdk/contract.zig");
     _ = @import("sdk/messaging.zig");
     _ = limits_module;
