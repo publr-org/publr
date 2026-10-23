@@ -30,7 +30,7 @@ pub fn reported(dir: []const u8, problems: []const doc_reader.Placed) void {
         const where = .{ dir, placed.path, placed.problem.line, placed.problem.message };
 
         if (placed.problem.warning) {
-            report.err("{s}/{s}:{d}: warning: {s}", where);
+            report.warn_reason("", "{s}/{s}:{d}: warning: {s}", where);
         } else {
             report.err("{s}/{s}:{d}: {s}", where);
         }

@@ -480,6 +480,10 @@ pub fn Pages(comptime domain: Domain) type {
                 .visual = model.editor.is_visual(def.editor),
                 .rich_fields = try type_editor.choices(arena, def),
                 .delete_action = delete_action,
+                .workflow_type = if (!is_new and !domain.is_taxonomy and def.kind == .record)
+                    def.handle
+                else
+                    "",
             }, .{});
         }
 

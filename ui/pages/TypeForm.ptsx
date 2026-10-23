@@ -3,12 +3,14 @@ import { FormPage } from "../layouts/FormPage.ptsx";
 import { ConfirmAction } from "../components/ConfirmAction.ptsx";
 import { EditorAsideSection } from "../components/EditorAsideSection.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
+import { Heading } from "@publr/ui/Heading.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
 import { TypeHead } from "../components/TypeHead.ptsx";
 import { TypeNames } from "../components/TypeNames.ptsx";
 import { TypeEditor } from "../components/TypeEditor.ptsx";
 import { TypePlacement } from "../components/TypePlacement.ptsx";
+import { TypeWorkflow } from "../components/TypeWorkflow.ptsx";
 
 export type TypeFormProps = {
   title: string;
@@ -85,6 +87,9 @@ export type TypeFormProps = {
   rich_fields: Array<{ value: string; label: string; selected: boolean }>;
   /** The delete form's action; absent for a new type. */
   delete_action?: string;
+  /** The type whose Workflow section is drawn: an existing record type's handle, plugins'
+   * too; empty for none. */
+  workflow_type: string;
 };
 
 /** A content type's head: what it is called, what kind it is, who may read it. A new
@@ -141,6 +146,7 @@ export function TypeForm({
   visual,
   rich_fields,
   delete_action,
+  workflow_type,
 }: TypeFormProps) {
   return (
     <FormPage
@@ -239,6 +245,12 @@ export function TypeForm({
             <TypeEditor visual={visual} is_new={is_new} rich_fields={rich_fields} />
           )}
         </form>
+      )}
+      {workflow_type !== "" && (
+        <section class="flex flex-col gap-2" data-part="workflow">
+          <Heading level={2} size="md">{Publr.t("Workflow")}</Heading>
+          <TypeWorkflow type={workflow_type} />
+        </section>
       )}
     </FormPage>
   );
