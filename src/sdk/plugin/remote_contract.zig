@@ -302,35 +302,20 @@ test "a plugin's remotes and its events, as its manifest carries them and the bu
 
 /// A compiled-in pair for the test below: `keeper` counts, `watcher` only works with it.
 const Keeper = test_plugin(struct {
-    pub const Count = struct {
-        pub const name = "keeper.count";
-        pub const description = "Count a shelf";
-        pub const kind: @import("../../sdk.zig").operation.Kind = .write;
-        pub const In = struct {
-            aisle: u32,
-        };
-        pub const Out = struct {
-            count: u32,
-        };
-        pub const example: In = .{
-            .aisle = 3,
-        };
-        pub const example_out: Out = .{
-            .count = 1,
-        };
+    pub const Count = @import("operation_define.zig").define(CountIn, CountOut, .{
+        .name = "count",
+        .kind = .write,
+        .run = count,
+    });
 
-        pub fn run(
-            _: *@import("context.zig").PluginCtx,
-            in: In,
-            _: *const @import("../../sdk.zig").Grant,
-        ) @import("../../sdk.zig").Error!Out {
-            std.debug.assert(in.aisle > 0);
+    fn count(_: *@import("context.zig").PluginCtx, in: CountIn) error{}!CountOut {
+        std.debug.assert(in.aisle > 0);
 
-            return .{
-                .count = in.aisle,
-            };
-        }
-    };
+        return .{
+            .count = in.aisle,
+        };
+    }
+
     pub const plugin = plugin_define.define(.{
         .name = "keeper",
         .version = "0.2.0",
@@ -339,7 +324,21 @@ const Keeper = test_plugin(struct {
     });
 }, .{
     .{ "main", "Test plugin: counts" },
+    .{
+        "operation:count",
+        "Count a shelf\n\nExample:\n  in: { \"aisle\": 3 }\n  out: { \"count\": 1 }",
+    },
+    .{ @typeName(CountIn) ++ ".aisle", "The aisle" },
+    .{ @typeName(CountOut) ++ ".count", "How many" },
 });
+
+const CountIn = struct {
+    aisle: u32,
+};
+
+const CountOut = struct {
+    count: u32,
+};
 
 const Watcher = test_plugin(struct {
     // Keeper 0.2.0 counts by aisle, not by shelf: this remote no longer fits.

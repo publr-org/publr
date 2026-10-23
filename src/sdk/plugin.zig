@@ -4,6 +4,7 @@ const permission_model = @import("../model/permission.zig");
 const job_define = @import("plugin/job_define.zig");
 const webhook_define = @import("plugin/webhook_define.zig");
 const hook_define = @import("plugin/hook_define.zig");
+const operation_define = @import("plugin/operation_define.zig");
 const remote_contract = @import("plugin/remote_contract.zig");
 const sdk = @import("../sdk.zig");
 const plugin_context = @import("plugin/context.zig");
@@ -907,6 +908,12 @@ pub const testing = struct {
         .{ @typeName(hello.Greeting), "Greeting\n\nA greeting." },
         .{ @typeName(hello.Greeting) ++ ".note", "Note" },
         .{ @typeName([]const u8), "Mood\n\nHow the greeter felt" },
+        .{
+            "operation:record",
+            "Record a greeting\n\nExample:\n  in: { \"note\": \"hi\" }\n  out: { \"rows\": 1 }",
+        },
+        .{ @typeName(hello.RecordIn) ++ ".note", "What the greeting says" },
+        .{ @typeName(hello.RecordOut) ++ ".rows", "How many greetings there are now" },
     }));
 
     const hello = struct {
@@ -1037,24 +1044,20 @@ pub const testing = struct {
             },
         };
 
-        pub const Record = struct {
-            pub const name = "hello.record";
-            pub const description = "Record a greeting";
-            pub const kind: sdk.operation.Kind = .write;
-            pub const In = struct {
-                note: []const u8,
-            };
-            pub const Out = struct {
-                rows: u32,
-            };
-            pub const example: In = .{
-                .note = "hi",
-            };
-            pub const example_out: Out = .{
-                .rows = 1,
-            };
+        pub const RecordIn = struct {
+            note: []const u8,
+        };
+        pub const RecordOut = struct {
+            rows: u32,
+        };
+        pub const Record = operation_define.define(RecordIn, RecordOut, .{
+            .name = "record",
+            .kind = .write,
+            .run = record_greeting,
+        });
 
-            pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
+        const record_greeting = struct {
+            fn run(ctx: *PluginCtx, in: RecordIn) sdk.Error!RecordOut {
                 std.debug.assert(in.note.len > 0);
                 std.debug.assert(ctx.now().ms >= 0);
 
@@ -1081,7 +1084,7 @@ pub const testing = struct {
                     .rows = @intCast(all.records.len),
                 };
             }
-        };
+        }.run;
 
         fn counted(ctx: *PluginCtx, in: *Record.In, out: *const Record.Out) sdk.Error!void {
             std.debug.assert(in.note.len > 0);
@@ -1188,6 +1191,12 @@ test {
 /// "nobody"; an `on` hook hears it from the queue.
 const Teller = plugin_define.Bind(teller, plugin_define.Words(.{
     .{ "main", "Test plugin: tells and hears" },
+    .{
+        "operation:tell",
+        "Tell someone\n\nExample:\n  in: { \"who\": \"ada\" }\n  out: { \"told\": \"ada\" }",
+    },
+    .{ @typeName(teller.TellIn) ++ ".who", "Whom to tell" },
+    .{ @typeName(teller.TellOut) ++ ".told", "Whom it told" },
 }));
 
 const teller = struct {
@@ -1211,35 +1220,29 @@ const teller = struct {
         },
     });
 
-    pub const Tell = struct {
-        pub const name = "teller.tell";
-        pub const description = "Tell someone";
-        pub const kind: sdk.operation.Kind = .write;
-        pub const In = struct {
-            who: []const u8,
-        };
-        pub const Out = struct {
-            told: []const u8,
-        };
-        pub const example: In = .{
-            .who = "ada",
-        };
-        pub const example_out: Out = .{
-            .told = "ada",
-        };
-
-        pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-            std.debug.assert(in.who.len > 0);
-
-            ctx.emit(Told, .{
-                .who = in.who,
-            });
-
-            return .{
-                .told = in.who,
-            };
-        }
+    pub const TellIn = struct {
+        who: []const u8,
     };
+    pub const TellOut = struct {
+        told: []const u8,
+    };
+    pub const Tell = operation_define.define(TellIn, TellOut, .{
+        .name = "tell",
+        .kind = .write,
+        .run = tell,
+    });
+
+    fn tell(ctx: *PluginCtx, in: TellIn) sdk.Error!TellOut {
+        std.debug.assert(in.who.len > 0);
+
+        ctx.emit(Told, .{
+            .who = in.who,
+        });
+
+        return .{
+            .told = in.who,
+        };
+    }
 
     fn kept(ctx: *PluginCtx, told: Told.Payload) sdk.Error!void {
         std.debug.assert(ctx.inner.db.transaction_depth >= 1);
@@ -1336,6 +1339,17 @@ test "a plugin's event: after hooks in the write, on hooks from the queue, a ref
     try std.testing.expect(!try select.step());
 }
 
+const AdjustIn = struct {
+    sku: []const u8,
+    delta: i64,
+    note: ?[]const u8 = null,
+};
+
+const AdjustOut = struct {
+    total: i64,
+    sku: []const u8,
+};
+
 test "a remote operation that fits the compiled-in one it names; the manifest carries both" {
     const Provider = plugin_define.Bind(struct {
         pub const plugin = plugin_define.define(.{
@@ -1344,37 +1358,30 @@ test "a remote operation that fits the compiled-in one it names; the manifest ca
         }, .{
             .operations = .{Adjust},
         });
-        pub const Adjust = struct {
-            pub const name = "provider.adjust";
-            pub const description = "Adjust a count";
-            pub const kind: sdk.operation.Kind = .write;
-            pub const In = struct {
-                sku: []const u8,
-                delta: i64,
-                note: ?[]const u8 = null,
-            };
-            pub const Out = struct {
-                total: i64,
-                sku: []const u8,
-            };
-            pub const example: In = .{
-                .sku = "a",
-                .delta = 1,
-            };
-            pub const example_out: Out = .{
-                .total = 1,
-                .sku = "a",
-            };
+        pub const Adjust = operation_define.define(AdjustIn, AdjustOut, .{
+            .name = "adjust",
+            .kind = .write,
+            .run = adjust,
+        });
 
-            pub fn run(_: *sdk.Ctx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-                return .{
-                    .total = in.delta,
-                    .sku = in.sku,
-                };
-            }
-        };
+        fn adjust(_: *PluginCtx, in: AdjustIn) sdk.Error!AdjustOut {
+            return .{
+                .total = in.delta,
+                .sku = in.sku,
+            };
+        }
     }, plugin_define.Words(.{
         .{ "main", "Provides an operation\n\nOne operation." },
+        .{
+            "operation:adjust",
+            "Adjust a count\n\nExample:\n  in: { \"sku\": \"a\", \"delta\": 1 }\n" ++
+                "  out: { \"total\": 1, \"sku\": \"a\" }",
+        },
+        .{ @typeName(AdjustIn) ++ ".sku", "The thing counted" },
+        .{ @typeName(AdjustIn) ++ ".delta", "By how much" },
+        .{ @typeName(AdjustIn) ++ ".note", "Why" },
+        .{ @typeName(AdjustOut) ++ ".total", "The count now" },
+        .{ @typeName(AdjustOut) ++ ".sku", "The thing counted" },
     }));
     const User = plugin_define.Bind(struct {
         pub const plugin = plugin_define.define(.{

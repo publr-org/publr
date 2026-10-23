@@ -22,46 +22,39 @@ const Tracker = struct {
         .hooks = .{hook_define.on(error_events.Failed, track)},
     });
 
-    pub const Break = struct {
-        pub const name = "tracker.break";
-        pub const description = "Break in the way asked";
-        pub const kind: sdk.operation.Kind = .write;
-        pub const In = struct {
-            /// `line`, `refuse` or `crash`
-            how: []const u8,
-        };
-        pub const Out = struct {
-            how: []const u8,
-        };
-        pub const example: In = .{
-            .how = "line",
-        };
-        pub const example_out: Out = .{
-            .how = "line",
-        };
-
-        pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-            std.debug.assert(in.how.len > 0);
-
-            if (std.mem.eql(u8, in.how, "refuse")) {
-                return ctx.inner.fail(.{
-                    .name = "Nope",
-                    .status = 409,
-                    .message = "Not today",
-                });
-            }
-
-            if (std.mem.eql(u8, in.how, "crash")) {
-                return error.Unavailable;
-            }
-
-            ctx.log(.err, "The disk is full", .{});
-
-            return .{
-                .how = in.how,
-            };
-        }
+    pub const BreakIn = struct {
+        how: []const u8,
     };
+    pub const BreakOut = struct {
+        how: []const u8,
+    };
+    pub const Break = @import("../../sdk/plugin/operation_define.zig").define(BreakIn, BreakOut, .{
+        .name = "break",
+        .kind = .write,
+        .run = break_as_asked,
+    });
+
+    fn break_as_asked(ctx: *PluginCtx, in: BreakIn) sdk.Error!BreakOut {
+        std.debug.assert(in.how.len > 0);
+
+        if (std.mem.eql(u8, in.how, "refuse")) {
+            return ctx.inner.fail(.{
+                .name = "Nope",
+                .status = 409,
+                .message = "Not today",
+            });
+        }
+
+        if (std.mem.eql(u8, in.how, "crash")) {
+            return error.Unavailable;
+        }
+
+        ctx.log(.err, "The disk is full", .{});
+
+        return .{
+            .how = in.how,
+        };
+    }
 
     fn track(ctx: *QueueCtx, failed: error_events.Failed.Payload) sdk.Error!void {
         std.debug.assert(ctx.base.inner.db.transaction_depth == 0);
@@ -79,6 +72,13 @@ const Tracker = struct {
 test "errors raise publr.errors.Failed for a compiled-in tracker; refusals raise nothing" {
     const Bundle = plugin_module.Merged(.{plugin_define.Bind(Tracker, plugin_define.Words(.{
         .{ "main", "Test plugin: tracks errors" },
+        .{
+            "operation:break",
+            "Break in the way asked\n\nExample:\n  in: { \"how\": \"line\" }\n" ++
+                "  out: { \"how\": \"line\" }",
+        },
+        .{ @typeName(Tracker.BreakIn) ++ ".how", "`line`, `refuse` or `crash`" },
+        .{ @typeName(Tracker.BreakOut) ++ ".how", "How it broke" },
     }))});
     const TestSDK = sdk.SDK(.{
         .operations = Bundle.merged_operations,
