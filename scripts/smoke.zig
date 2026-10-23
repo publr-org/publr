@@ -149,6 +149,43 @@ pub fn expect_contains(
     }
 }
 
+/// `create` (`--as <admin> record|term create ...`) answering `needle`, then published by
+/// its id: status changes only by transition.
+fn expect_published(
+    init: std.process.Init,
+    binary: []const u8,
+    work_dir: []const u8,
+    create: []const []const u8,
+    needle: []const u8,
+) !void {
+    std.debug.assert(create.len > 3);
+    std.debug.assert(needle.len > 0);
+
+    const result = try run_publr(init, binary, work_dir, create);
+    const key = "\"id\": \"";
+    const found = std.mem.indexOf(u8, result.stdout, key);
+
+    if (std.mem.indexOf(u8, result.stdout, needle) == null or found == null) {
+        std.debug.print("smoke: {s}: missing {s} in {s}{s}\n", .{
+            create[2],
+            needle,
+            result.stdout,
+            result.stderr,
+        });
+        return error.SmokeFailed;
+    }
+
+    const at = found.? + key.len;
+    const end = std.mem.indexOfScalarPos(u8, result.stdout, at, '"') orelse {
+        return error.SmokeFailed;
+    };
+    const publish = [_][]const u8{
+        create[0], create[1], create[2], "publish", "--id", result.stdout[at..end],
+    };
+
+    try expect_contains(init, binary, work_dir, &publish, "\"status\": \"published\"");
+}
+
 fn expect_auth(init: std.process.Init, binary: []const u8, work_dir: []const u8) !void {
     std.debug.assert(binary.len > 0);
     std.debug.assert(work_dir.len > 0);
@@ -256,12 +293,12 @@ fn expect_taxonomies(
         "--as", admin, "taxonomy", "create", "--definition", taxonomy,
     };
     const create_root = [_][]const u8{
-        "--as",   admin,        "term",                      "create",   "--taxonomy",
-        "topics", "--document", "{\"name\":\"Technology\"}", "--status", "published",
+        "--as",   admin,        "term",                      "create", "--taxonomy",
+        "topics", "--document", "{\"name\":\"Technology\"}",
     };
 
     try expect_contains(init, binary, work_dir, &create_taxonomy, "\"handle\": \"topics\"");
-    try expect_contains(init, binary, work_dir, &create_root, "\"slug\": \"technology\"");
+    try expect_published(init, binary, work_dir, &create_root, "\"slug\": \"technology\"");
 
     const tree = [_][]const u8{ "term", "tree", "--taxonomy", "topics" };
     const listed_taxonomies = [_][]const u8{ "--as", admin, "taxonomy", "list" };
@@ -324,8 +361,8 @@ fn expect_build(
     std.debug.assert(admin.len > 0);
 
     const publish = [_][]const u8{
-        "--as", admin,        "record",                     "create",   "--type",
-        "post", "--document", "{\"title\":\"Hello site\"}", "--status", "published",
+        "--as", admin,        "record",                     "create", "--type",
+        "post", "--document", "{\"title\":\"Hello site\"}",
     };
     const build = [_][]const u8{"build"};
     const files = [_][]const u8{
@@ -340,7 +377,7 @@ fn expect_build(
         "output/docs/guide/index.html",
     };
 
-    try expect_contains(init, binary, work_dir, &publish, "\"slug\": \"hello-site\"");
+    try expect_published(init, binary, work_dir, &publish, "\"slug\": \"hello-site\"");
 
     const result = try run_publr(init, binary, work_dir, &build);
 
