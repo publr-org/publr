@@ -447,11 +447,27 @@ const Units = struct {
     }
 };
 
-/// The units the call's writes changed, kept on its trail where each write started; a
-/// transition over many records, each record its transition event names.
-pub const middleware = changed_units.hooks(std.enums.values(changed_units.Kind), keep_unit) ++
-    [_]type{changed_units.Transitions(keep_unit)};
+/// The units the call's writes changed, kept on its trail where each write started: each
+/// write's `publr.after` hook, run as core's.
+pub const middleware = core_hooks(&changed_units.hooks(every_kind, keep_unit));
 
+const every_kind = std.enums.values(changed_units.Kind);
+
+fn core_hooks(comptime defined: []const type) [defined.len]type {
+    comptime {
+        var list: [defined.len]type = undefined;
+
+        std.debug.assert(defined.len > 0);
+
+        for (defined, &list) |Defined, *hook| {
+            hook.* = hook_define.Described(Defined, "core", null);
+        }
+
+        return list;
+    }
+}
+
+const hook_define = @import("../sdk/plugin/hook_define.zig");
 const changed_units = sdk.changed_units;
 
 fn keep_unit(ctx: *Ctx, operation: []const u8, unit: changed_units.Unit) void {

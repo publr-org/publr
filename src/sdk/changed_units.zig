@@ -1,8 +1,7 @@
 //! What core's writes change, as units read from each one's input and answer. Core's readers
 //! (the activity log, a plugin recording deployments) hook these operations `after`, the way
-//! any plugin hooks an operation, and hear each unit; nothing is raised under a second name.
-//! A transition over many records names each one in its typed transition event
-//! (`Transitions`).
+//! any plugin hooks an operation (`publr.after`), and hear each unit; nothing is raised under
+//! a second name. A transition over many records runs `record.transition`'s hooks for each.
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const content_types = @import("../operations/content_type.zig");
@@ -23,7 +22,7 @@ const identity_manage = @import("../operations/identity/manage.zig");
 const project_put = @import("../operations/project/put.zig");
 const records = @import("../operations/record.zig");
 const terms = @import("../operations/term.zig");
-const flow = @import("../model/flow.zig");
+const hook_define = @import("plugin/hook_define.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -65,8 +64,8 @@ pub const Keep = fn (ctx: *Ctx, operation: []const u8, unit: Unit) void;
 
 pub const Units = std.ArrayList(Unit);
 
-/// One `after` hook for each write that may change a unit of `kinds`: it hands `keep` each
-/// of those the write changed, in its order.
+/// One `publr.after` hook for each write that may change a unit of `kinds`: it hands `keep`
+/// each of those the write changed, in its order.
 pub fn hooks(comptime kinds: []const Kind, comptime keep: Keep) [writes_of(kinds).len]type {
     comptime {
         // Picking the writes and one hook for each, a few steps per write and kind.
@@ -126,13 +125,8 @@ pub fn listed(kinds: []const Kind, kind: Kind) bool {
 fn Hook(comptime Write: type, comptime kinds: []const Kind, comptime keep: Keep) type {
     const Operation = Write.Operation;
 
-    return struct {
-        pub const stage: sdk.middleware.Stage = .after;
-        pub const operation = Operation.name;
-        /// A transition over many: each record from its transition event (`Transitions`).
-        pub const by_events = true;
-
-        pub fn run(ctx: *Ctx, in: *Operation.In, out: *const Operation.Out) Error!void {
+    return hook_define.after(Operation, struct {
+        fn run(ctx: *Ctx, in: *Operation.In, out: *const Operation.Out) Error!void {
             std.debug.assert(ctx.parent != null);
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
@@ -142,11 +136,11 @@ fn Hook(comptime Write: type, comptime kinds: []const Kind, comptime keep: Keep)
 
             for (units.items) |unit| {
                 if (listed(kinds, unit.kind)) {
-                    keep(ctx, operation, unit);
+                    keep(ctx, Operation.name, unit);
                 }
             }
         }
-    };
+    }.run);
 }
 
 fn add(ctx: *Ctx, units: *Units, kind: Kind, key: []const u8) Error!void {
@@ -242,7 +236,7 @@ const writes = [_]type{
 };
 
 /// A record's or a term's own writes, by the id given or made; a save only when it changed
-/// something. A move over many is not here: each record is in its transition event.
+/// something.
 fn documents(comptime namespace: type, comptime kind: Kind) [7]type {
     comptime std.debug.assert(kind == .record or kind == .term);
 
@@ -419,93 +413,6 @@ const ProjectPut = struct {
     }
 };
 
-/// What a transition event says: the record or term as a unit, and its transition.
-pub const Transition = struct {
-    unit: Unit,
-    transition: flow.Transitioned,
-};
-
-/// An intrinsic listener, inside the write, handing `keep` the record or term each
-/// transition event transitioned.
-pub fn Transitions(comptime keep: Keep) type {
-    return struct {
-        pub const stage: sdk.middleware.Stage = .on;
-        pub const intrinsic = true;
-
-        pub fn run(ctx: *Ctx, event: sdk.Event) void {
-            std.debug.assert(ctx.now_ms >= 0);
-
-            const emitted = switch (event) {
-                .emitted => |found| found,
-                else => return,
-            };
-            const found = transitioned(ctx, emitted) catch |err| {
-                std.log.warn("changed units: {s} not read: {t}", .{ emitted.name, err });
-                return;
-            };
-            const done = found orelse return;
-
-            keep(ctx, emitted.name, done.unit);
-        }
-    };
-}
-
-/// The record or term a transition event transitioned: a type's handle names a record, a
-/// taxonomy's a term. Null for any other event.
-pub fn transitioned(ctx: *Ctx, emitted: sdk.Event.Emitted) Error!?Transition {
-    std.debug.assert(emitted.name.len > 0);
-    std.debug.assert(ctx.now_ms >= 0);
-
-    const handle = handle_of(emitted.name) orelse return null;
-    const payload = std.json.parseFromSliceLeaky(flow.Transitioned, ctx.arena, emitted.subject, .{
-        .ignore_unknown_fields = true,
-    }) catch return null;
-
-    if (payload.record.len == 0) {
-        return null;
-    }
-
-    const kind: Kind = if (try records.domain.definition.find(ctx, handle) != null)
-        .record
-    else if (try terms.domain.definition.find(ctx, handle) != null)
-        .term
-    else
-        return null;
-
-    return .{
-        .unit = .{
-            .kind = kind,
-            .key = payload.record,
-        },
-        .transition = payload,
-    };
-}
-
-/// `post` of `post.transitioned`, `shop.product` of `shop.product_transitioned`.
-fn handle_of(name: []const u8) ?[]const u8 {
-    std.debug.assert(name.len > 0);
-
-    const plain = ".transitioned";
-
-    if (std.mem.endsWith(u8, name, flow.any_suffix)) {
-        const handle = name[0 .. name.len - flow.any_suffix.len];
-
-        if (std.mem.indexOfScalar(u8, handle, '.') != null) {
-            return handle;
-        }
-    }
-
-    if (std.mem.endsWith(u8, name, plain)) {
-        const handle = name[0 .. name.len - plain.len];
-
-        if (handle.len > 0 and std.mem.indexOfScalar(u8, handle, '.') == null) {
-            return handle;
-        }
-    }
-
-    return null;
-}
-
 test "a reader hooks only the writes that may change its kinds" {
     const views_hooked = comptime writes_of(&.{.view}).len;
     const users_hooked = comptime writes_of(&.{.user}).len;
@@ -528,12 +435,4 @@ fn keep_nothing(ctx: *Ctx, operation: []const u8, unit: Unit) void {
     std.debug.assert(operation.len > 0);
     std.debug.assert(unit.key.len > 0);
     std.debug.assert(ctx.now_ms >= 0);
-}
-
-test "a transition event names its type's handle; other events none" {
-    try std.testing.expectEqualStrings("post", handle_of("post.transitioned").?);
-    try std.testing.expectEqualStrings("shop.product", handle_of("shop.product_transitioned").?);
-    try std.testing.expectEqual(@as(?[]const u8, null), handle_of("record.save"));
-    try std.testing.expectEqual(@as(?[]const u8, null), handle_of("a.b.transitioned"));
-    try std.testing.expectEqual(@as(?[]const u8, null), handle_of("post_transitioned"));
 }

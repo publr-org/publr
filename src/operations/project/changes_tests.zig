@@ -1,5 +1,5 @@
-//! Which writes to records raise keys in the site-changes index: heard `after` the record
-//! operations and from the records' transition events, a move over many included.
+//! Which writes to records raise keys in the site-changes index: heard around the record
+//! operations, a move over many included.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const deps = @import("../../lib/deps.zig");
@@ -74,15 +74,26 @@ test "site changes: live writes and moves raise, pending edits and drafts do not
 
     try std.testing.expect(published.revision > created.revision);
 
-    // Both trashed at once: the draft too, as the trash always raises.
+    // Taken out of live, many at once: raised as it leaves, from where it was.
+    _ = try SDK.dispatch(&system, record.TransitionMany, .{
+        .transition = "unpublish",
+        .ids = &.{live.id},
+    });
+
+    const unpublished = try raised(&system, published.revision);
+    const draft_key = try std.fmt.allocPrint(system.arena, "record:{s}", .{draft.id});
+    const live_key = try std.fmt.allocPrint(system.arena, "record:{s}", .{live.id});
+
+    try std.testing.expect(contains(unpublished.keys, live_key));
+    try std.testing.expect(!contains(unpublished.keys, draft_key));
+
+    // Both trashed at once: the drafts too, as the trash always raises.
     _ = try SDK.dispatch(&system, record.TransitionMany, .{
         .transition = "trash",
         .ids = &.{ draft.id, live.id },
     });
 
-    const trashed = try raised(&system, published.revision);
-    const draft_key = try std.fmt.allocPrint(system.arena, "record:{s}", .{draft.id});
-    const live_key = try std.fmt.allocPrint(system.arena, "record:{s}", .{live.id});
+    const trashed = try raised(&system, unpublished.revision);
 
     try std.testing.expectEqual(@as(usize, 4), trashed.keys.len);
     try std.testing.expect(contains(trashed.keys, draft_key));

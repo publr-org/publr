@@ -1491,8 +1491,8 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// An event emitted outside any operation: what the server itself did (the apps
-        /// loaded from the folder, `AppsLoaded`). `on` hooks hear it from the queue as any
-        /// other.
+        /// loaded from the folder, `AppsLoaded`). `after` hooks hear it now, with nothing to
+        /// refuse (a failure is logged); `on` hooks from the queue as any other.
         pub fn announce(ctx: *Ctx, comptime Emitted: type, payload: Emitted.Payload) void {
             comptime std.debug.assert(Emitted.full_name.len > 0);
             std.debug.assert(ctx.parent == null);
@@ -1502,6 +1502,9 @@ pub fn SDK(comptime registry: Registry) type {
                 return;
             };
 
+            hooks_on(ctx, .after, Emitted.full_name, subject, false) catch |err| {
+                std.log.warn("events: hooks on {s} failed: {t}", .{ Emitted.full_name, err });
+            };
             emit_event(ctx, .{
                 .operation_id = ctx.allocate_operation_id(),
                 .name = Emitted.full_name,
@@ -1527,9 +1530,10 @@ pub fn SDK(comptime registry: Registry) type {
             }
         }
 
-        /// An event a write raised, one or one of many (`events.hand_many`): kept on the
-        /// trail.
-        pub fn follow_event(ctx: *Ctx, emitted: Event.Emitted) void {
+        /// An event emitted inside a call: kept on the trail, its `after` hooks run now when
+        /// `after` (a refusal fails the write before it commits), then queued for the `on`
+        /// hooks (`events.zig`).
+        pub fn emit_event(ctx: *Ctx, emitted: Event.Emitted, after: bool) void {
             std.debug.assert(emitted.name.len > 0);
             std.debug.assert(emitted.operation_id != 0);
 
@@ -1538,16 +1542,6 @@ pub fn SDK(comptime registry: Registry) type {
                     .emitted = emitted,
                 });
             }
-        }
-
-        /// An event emitted inside a call: kept on the trail, its `after` hooks run now when
-        /// `after` (a refusal fails the write before it commits), then handed to the
-        /// intrinsic listeners and queued for the `on` hooks (`events.zig`).
-        pub fn emit_event(ctx: *Ctx, emitted: Event.Emitted, after: bool) void {
-            std.debug.assert(emitted.name.len > 0);
-            std.debug.assert(emitted.operation_id != 0);
-
-            follow_event(ctx, emitted);
 
             if (after) {
                 hooks_on(ctx, .after, emitted.name, emitted.subject, true) catch |err| {
@@ -1555,7 +1549,9 @@ pub fn SDK(comptime registry: Registry) type {
                 };
             }
 
-            events.hand(ctx, emitted);
+            if (events.heard_outside(ctx, emitted.name)) {
+                events.queue(ctx, emitted);
+            }
         }
 
         /// A write about to commit for a `drafts` device: refused when it changed what
@@ -1570,10 +1566,11 @@ pub fn SDK(comptime registry: Registry) type {
             }
         }
 
-        /// An operation's end, kept on the trail and heard by core's intrinsic listeners (a
-        /// deployment closing); an installed plugin's change reloads the plugins. An event goes
-        /// on to its hooks (`emit_event`). No `on` hook hears an operation's end here: its own
-        /// event is queued with its answer inside its write (`queue_answer`).
+        /// An operation's end, kept on the trail and heard by the hooks naming no event that
+        /// `.extend` gives (`host.middleware`: a deployment closing once the write committed);
+        /// an installed plugin's change reloads the plugins. An event goes on to its hooks
+        /// (`emit_event`). No `on` hook hears an operation's end here: its own event is queued
+        /// with its answer inside its write (`queue_answer`).
         pub fn emit(ctx: *Ctx, event: Event) void {
             std.debug.assert(ctx.next_operation_id > 1);
             std.debug.assert(registry.middleware.len <= middleware.middleware_max);
@@ -1589,9 +1586,9 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             inline for (registry.middleware) |Middleware| {
-                const listens = comptime Middleware.stage == .on and events.intrinsic(Middleware);
+                const ends = comptime Middleware.stage == .on and !events.queued(Middleware);
 
-                if (listens and hears(Middleware, event)) {
+                if (ends) {
                     _ = run_listener(ctx, Middleware, event);
                 }
             }
@@ -1713,8 +1710,8 @@ pub fn SDK(comptime registry: Registry) type {
             return "";
         }
 
-        /// The events' way to the `on` hooks, and the intrinsic operation hooks a bulk
-        /// write runs over many inputs at once.
+        /// The events' way to the `on` hooks, and an operation's hooks a bulk write runs over
+        /// many inputs at once.
         pub const events = @import("sdk/events.zig").Events(@This(), registry);
         pub const bulk = @import("sdk/bulk.zig").Bulk(@This(), registry);
         /// The queued jobs, run between requests.
@@ -1724,15 +1721,10 @@ pub fn SDK(comptime registry: Registry) type {
 
 const json_module = @import("lib/json.zig");
 
-/// Whether an event hook sees this event: every one, or only the one it names (`event`),
-/// by the operation's name or the event's, as an installed plugin's hook does.
+/// Whether an `on` hook hears this event: the one it names (`event`), by the operation's
+/// name or the event's, as an installed plugin's hook does.
 pub fn hears(comptime Middleware: type, event: Event) bool {
-    std.debug.assert(Middleware.stage == .on);
-
-    if (!@hasDecl(Middleware, "event")) {
-        return true;
-    }
-
+    comptime std.debug.assert(Middleware.stage == .on);
     comptime std.debug.assert(Middleware.event.len > 0);
 
     const name = switch (event) {

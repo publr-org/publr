@@ -370,8 +370,9 @@ fn declared_hooks(comptime Plugin: type) []const type {
         if (@hasField(Options, "hooks")) {
             for (Plugin.options.hooks, 0..) |Hook, position| {
                 if (!hook_define.is_hook(Hook)) {
-                    list = list ++ [_]type{Hook};
-                    continue;
+                    @compileError("plugin " ++ Plugin.manifest.name ++ ": `.hooks` takes " ++
+                        "`publr.before`, `publr.after`, `publr.on` and `publr.modify`: " ++
+                        @typeName(Hook));
                 }
 
                 const key = std.fmt.comptimePrint("hook:{d}", .{position});
