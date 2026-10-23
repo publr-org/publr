@@ -217,9 +217,9 @@ const icons = .{
     },
 };
 
-/// What only a compiled-in plugin carries (routes, Settings pages, operator commands, a state,
-/// process hooks) takes the host's own modules, which the sandbox lacks: its sandboxed build
-/// registers the rest.
+/// What only a compiled-in plugin carries (routes, operator commands, a state, process hooks)
+/// takes the host's own modules, which the sandbox lacks: its sandboxed build registers the
+/// rest.
 pub const plugin = if (publr.plugin.guest.mode == .native)
     publr.plugin.define(manifest, .{
         .records = &native_records,
@@ -240,7 +240,6 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
         .pages = pages,
         .panels = panels,
         .row_actions = row_actions,
-        .settings_pages = Native.settings_pages,
         .extend = Native.extend,
     })
 else

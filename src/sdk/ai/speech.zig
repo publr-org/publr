@@ -1,13 +1,10 @@
-//! Speech to text, as a provider plugin offers it: `<plugin>.transcribe`, a recording in,
-//! its words out. A provider that offers it says `speech` in its description; core's
+//! Speech to text, as a provider plugin offers it: its `transcribe`, a recording in, its
+//! words out. A provider that offers it says `speech` in its description; core's
 //! `ai.transcribe` asks the one chosen, else the first connected one that hears.
 
 const std = @import("std");
 const operation = @import("../operation.zig");
-const Grant = @import("../grant.zig").Grant;
 const PluginCtx = @import("../plugin/context.zig").PluginCtx;
-
-const transcribe_verb = "transcribe";
 
 /// A recording, at most two minutes of the browser's compressed speech.
 pub const audio_bytes_max: u32 = 768 << 10;
@@ -53,57 +50,26 @@ pub const Speech = struct {
     }
 };
 
-/// `<plugin>.transcribe`: a recording's words. `hear` sends it to the provider's model.
-pub fn Transcribe(
-    comptime plugin: []const u8,
+/// What a provider's `transcribe` answers: the recording checked, `hear` sending it to the
+/// provider's model, its words trimmed.
+pub fn transcribed(
+    ctx: *PluginCtx,
+    speech: Speech,
     comptime hear: fn (ctx: *PluginCtx, speech: Speech) operation.Error![]const u8,
-) type {
-    return struct {
-        pub const name = plugin ++ "." ++ transcribe_verb;
-        pub const description = "The words said in a recording";
-        pub const details =
-            \\`audio` is the recording, base64 (up to 768 KiB of audio: WebM, Ogg, MP4, WAV or
-            \\MP3, `format` saying which); the answer is what was said, as written text.
-            \\Nothing is kept. The local operator's alone: core's `ai.transcribe` calls it.
-        ;
-        pub const kind: operation.Kind = .read;
-        pub const operator_only = true;
-        pub const failures = @import("../ai.zig").provider_failures;
-        pub const In = Speech;
-        pub const Out = struct {
-            text: []const u8,
-        };
-        pub const example: In = .{
-            .audio = "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYEC",
-            .format = "audio/webm",
-        };
-        pub const example_out: Out = .{
-            .text = "Add a contact page.",
-        };
-        pub const field_docs: operation.Docs(In) = .{
-            .audio = "The recording, base64",
-            .format = "Its media type: audio/webm, audio/ogg, audio/mp4, audio/wav or audio/mpeg",
-        };
+) operation.Error![]const u8 {
+    std.debug.assert(text_len_max > 0);
 
-        pub fn run(ctx: *PluginCtx, in: In, granted: *const Grant) operation.Error!Out {
-            std.debug.assert(granted.allows());
-            std.debug.assert(text_len_max > 0);
+    if (!speech.valid()) {
+        return error.Invalid;
+    }
 
-            if (!in.valid()) {
-                return error.Invalid;
-            }
+    const text = std.mem.trim(u8, try hear(ctx, speech), " \t\r\n");
 
-            const text = std.mem.trim(u8, try hear(ctx, in), " \t\r\n");
+    if (text.len > text_len_max) {
+        return error.Invalid;
+    }
 
-            if (text.len > text_len_max) {
-                return error.Invalid;
-            }
-
-            return .{
-                .text = text,
-            };
-        }
-    };
+    return text;
 }
 
 test "a recording names its file by its type, and is checked for size" {

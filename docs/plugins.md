@@ -245,11 +245,12 @@ request is refused in words: "Supplier API key isn't set" (`SecretMissing`).
 ### Model providers
 
 A plugin becomes a model provider by registering a provider of core's `ai.model` contract
-(`publr.ai.contract`, through `.register_providers`) with two operations built by `publr.ai`:
-`publr.ai.Describe("<name>", .{...})` (its label, models, default model, and its key: the
-secret it is kept under, where it is made, what to do there, how it starts) and
-`publr.ai.Complete("<name>", complete)`, where `complete` turns a `publr.ai.Request` into a
-`publr.ai.Response` by calling its API through `http.fetch`. Core lists every provider of
+(`publr.ai.contract`, through `.register_providers`) with two operations of its own, made
+with `publr.operation.define` as any: `describe_provider`, answering who it is (its label,
+models, default model, and its key: the secret it is kept under, where it is made, what to
+do there, how it starts), and `complete`, whose run hands its `request` to
+`publr.ai.completed(ctx, in.request, complete)`, where `complete` turns a
+`publr.ai.Request` into a `publr.ai.Response` by calling its API through `http.fetch`. Core lists every provider of
 the contract that is on under Settings › AI, and has a conversation's agent
 call the one chosen, in the agent's own process. Publr's official providers are published at
 `https://plugins.publr.app` (a `catalog.json` and the built modules it lists;
@@ -266,8 +267,9 @@ and `http.read` and passes the words on with `publr.ai.Progress` (`ai.progress`,
 permission of its own) as they come; `publr.ai.Events` splits the stream into its
 `data:` lines.
 
-A provider that turns speech into text says `.speech = true` in its description and adds
-`publr.ai.Transcribe("<name>", transcribe)` as its `transcribe` part: a recording (`publr.ai.Speech`: base64 audio,
+A provider that turns speech into text says `.speech = true` in its description and adds a
+`transcribe` operation as its `transcribe` part, answering
+`publr.ai.transcribed(ctx, recording, transcribe)`: a recording (base64 audio,
 up to 768 KiB, and its media type, `audio/webm`, `audio/ogg`, `audio/mp4`, `audio/wav` or
 `audio/mpeg`) in, its words out. Core's [`ai transcribe`](cli/ai.md) calls it. A file goes
 to an API as a form upload: `http.fetch`'s `form`, whose file parts are base64, is written
@@ -794,7 +796,7 @@ every plugin under `plugins/` that is not compiled in with the same command into
 never a reason to refuse it: `.extend` and all it registers (it needs
 the host), an operation or hook that takes the host's context (`*sdk.Ctx`) rather than
 `*publr.Ctx`, and, until the sandbox runs them, policies, pre hooks, field kinds,
-statuses, transitions, filters, delivery gates, routes, settings pages, `State`, operator
+statuses, transitions, filters, delivery gates, routes, `State`, operator
 commands and the other process hooks. The build names each (`publr plugin
 build` prints them; the manifest's `left_out` keeps them, and `plugin get` shows them;
 the admin's plugin page does not yet).
@@ -957,11 +959,6 @@ export function GuestbookEntries({ entries }: GuestbookEntriesProps) {
 The route's handler renders it with `publr.admin.screen(&session, .ok, View, props, .{})`,
 the view's own data only, after `publr.admin.require` for the signed-in session.
 
-- A settings page (`.settings_pages`, each a `publr.plugin.SettingsPage`): a
-  label, an icon and the path of one of its own `get` routes, listed in the Settings
-  sidebar for whoever may call the operation it names, and lit on that path and every
-  path under it. A page that belongs under another's entry says so with
-  `publr.admin.screen(&session, .ok, View, props, .{ .settings_path = "/admin/<other>" })`.
 - A segment joined to the app picker (`host.app_picker_segment`, a `fn (session: *const
   publr.admin.Session, attached: bool, apps: ?publr.admin.render.Node)
   publr.admin.Error!?publr.admin.render.Node`): drawn after the picker as one control where

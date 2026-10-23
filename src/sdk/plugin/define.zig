@@ -125,7 +125,6 @@ const options_known = [_][]const u8{
 /// What only a built-in plugin takes outside `.extend`, until each finds its place.
 pub const options_built_in = [_][]const u8{
     "row_actions",
-    "settings_pages",
 };
 
 fn check_options(comptime plugin: []const u8, comptime Options: type) void {
@@ -232,7 +231,6 @@ const resolvers = .{
     .{ "pages", Page, declared_pages },
     .{ "panels", Panel, described_panels },
     .{ "row_actions", RowAction, described_row_actions },
-    .{ "settings_pages", SettingsPage, described_settings_pages },
     .{ "field_kinds", Kind, declared_kinds },
     .{ "custom_fields", ContentTypeDef, declared_field_groups },
     .{ "permissions", @import("../../model/sandboxed_plugin.zig").Ask, asks_of },
@@ -252,14 +250,6 @@ fn described_row_actions(comptime Plugin: type) []const RowAction {
     return admin_described.each(Plugin, RowAction, listed);
 }
 
-fn described_settings_pages(comptime Plugin: type) []const SettingsPage {
-    std.debug.assert(Plugin.manifest.name.len > 0);
-
-    const listed = as_slice(SettingsPage, Plugin.options.settings_pages);
-
-    return admin_described.each(Plugin, SettingsPage, listed);
-}
-
 fn asks_of(comptime Plugin: type) []const @import("../../model/sandboxed_plugin.zig").Ask {
     std.debug.assert(Plugin.manifest.name.len > 0);
 
@@ -267,7 +257,7 @@ fn asks_of(comptime Plugin: type) []const @import("../../model/sandboxed_plugin.
 }
 
 /// A bound plugin's operations: each `publr.operation.define` given its words and its
-/// plugin's name; anything else as it is.
+/// plugin's name.
 fn described_operations(comptime Plugin: type) []const type {
     comptime {
         const operation_define = @import("operation_define.zig");
@@ -278,10 +268,12 @@ fn described_operations(comptime Plugin: type) []const type {
         var described: [listed.len]type = undefined;
 
         for (listed, &described) |Listed, *slot| {
-            slot.* = if (operation_define.is_definition(Listed))
-                operation_define.Described(Listed, Plugin.manifest.name, Plugin.docs)
-            else
-                Listed;
+            if (!operation_define.is_definition(Listed)) {
+                @compileError("plugin " ++ Plugin.manifest.name ++ ": `.operations` lists " ++
+                    @typeName(Listed) ++ "; make it with `publr.operation.define`");
+            }
+
+            slot.* = operation_define.Described(Listed, Plugin.manifest.name, Plugin.docs);
         }
 
         const done = described;
@@ -499,7 +491,6 @@ const Namespace = @import("../operation.zig").Namespace;
 const Page = @import("admin_slots.zig").Page;
 const Panel = @import("admin_slots.zig").Panel;
 const RowAction = @import("admin_slots.zig").RowAction;
-const SettingsPage = @import("admin_slots.zig").SettingsPage;
 const admin_described = @import("admin_described.zig");
 const host_define = @import("host.zig");
 

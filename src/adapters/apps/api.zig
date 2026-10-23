@@ -426,7 +426,7 @@ test "untrusted callers: an installed operation says so itself; the rest never a
     const installed = anyone.sandboxed_plugins.?;
     try std.testing.expect(installed.find("greeter.hail").?.untrusted_callers.?);
     try std.testing.expect(installed.find("greeter.wave").?.untrusted_callers.?);
-    try std.testing.expect(installed.find("greeter.count").?.untrusted_callers == null);
+    try std.testing.expect(!installed.find("greeter.count").?.untrusted_callers.?);
 
     // Called as the visitor a page elsewhere names.
     const hailed = try registry.SDK.call_json(&anyone, "greeter.hail", "{}");

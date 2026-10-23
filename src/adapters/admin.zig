@@ -640,15 +640,15 @@ pub const RowLink = struct {
     href: []const u8,
 };
 
-/// The actions compiled-in plugins put on the rows of `slot`, for a row named `name` of
-/// `kind`: those whose operation the viewer may call, `{name}` in their paths filled in.
+/// The actions plugins put on the rows of `slot`, for a row named `name` of `kind`, as the
+/// person `ctx` is: those whose operation they may call, `{name}` in their paths filled in.
 pub fn row_actions(
-    session: *const Session,
+    ctx: *const sdk.Ctx,
     comptime slot: []const u8,
     kind: []const u8,
     name: []const u8,
-) Error![]const RowLink {
-    std.debug.assert(session.signed_in());
+) error{OutOfMemory}![]const RowLink {
+    std.debug.assert(ctx.caller != .anonymous);
     std.debug.assert(name.len > 0);
 
     var links: std.ArrayList(RowLink) = .empty;
@@ -657,17 +657,17 @@ pub fn row_actions(
         const here = comptime std.mem.eql(u8, action.slot, slot);
         const fits = action.kind.len == 0 or std.mem.eql(u8, action.kind, kind);
 
-        if (here and fits and registry.SDK.may(&session.ctx, action.operation)) {
-            const href = try std.mem.replaceOwned(u8, session.arena, action.path, "{name}", name);
+        if (here and fits and registry.SDK.may(ctx, action.operation)) {
+            const href = try std.mem.replaceOwned(u8, ctx.arena, action.path, "{name}", name);
 
-            try links.append(session.arena, .{
+            try links.append(ctx.arena, .{
                 .label = action.label,
                 .href = href,
             });
         }
     }
 
-    const sandboxed = session.ctx.sandboxed_plugins orelse return links.items;
+    const sandboxed = ctx.sandboxed_plugins orelse return links.items;
 
     // An installed plugin's actions lead only into the admin, through its own operations.
     for (sandboxed.manifests()) |manifest| {
@@ -682,11 +682,11 @@ pub fn row_actions(
                 continue;
             }
 
-            if (registry.SDK.may_named(&session.ctx, action.operation)) {
+            if (registry.SDK.may_named(ctx, action.operation)) {
                 const path = action.path;
-                const href = try std.mem.replaceOwned(u8, session.arena, path, "{name}", name);
+                const href = try std.mem.replaceOwned(u8, ctx.arena, path, "{name}", name);
 
-                try links.append(session.arena, .{
+                try links.append(ctx.arena, .{
                     .label = action.label,
                     .href = href,
                 });

@@ -1,14 +1,12 @@
-//! Model providers: core's `ai.model` contract. A plugin makes its operations with
-//! `Describe` (who it is, its models, how its key is made) and `Complete` (a request in, a
-//! response out, both as `publr_ai`'s JSON), optionally `Transcribe` and `Read`, and
-//! registers them as a provider. Core lists the providers under Settings › AI and has a
+//! Model providers: core's `ai.model` contract. A plugin writes its own operations for the
+//! parts, `describe` (who it is, its models, how its key is made) and `complete` (a request
+//! in, a response out, both as `publr_ai`'s JSON), optionally `transcribe` and `read_page`,
+//! and registers them as a provider; `completed`, `read_page` and `transcribed` do the
+//! common work of each. Core lists the providers under Settings › AI and has a
 //! conversation's agent call the one chosen. A provider calls its model through
 //! `http.fetch`, its key written `{secret:NAME}`, so it never holds the key.
 //!
 //! ```zig
-//! const Describe = publr.ai.Describe("example_ai", .{ .id = "example_ai", ... });
-//! const Complete = publr.ai.Complete("example_ai", complete);
-//!
 //! .operations = &.{ Describe, Complete },
 //! .register_providers = .{.{
 //!     .contract = publr.ai.contract,
@@ -31,6 +29,8 @@ pub const Request = lib_ai.Request;
 pub const Response = lib_ai.Response;
 pub const Stop = lib_ai.Stop;
 pub const Description = lib_ai.Description;
+pub const Model = lib_ai.Model;
+pub const Key = lib_ai.Key;
 pub const request_of = lib_ai.request_of;
 pub const response_json = lib_ai.response_json;
 
@@ -53,71 +53,43 @@ pub fn error_message(arena: std.mem.Allocator, body: []const u8) []const u8 {
     return if (parsed.@"error".message.len > 0) parsed.@"error".message else start;
 }
 
-const describe_verb = "describe_provider";
 pub const Speech = speech.Speech;
-pub const Transcribe = speech.Transcribe;
-const read_verb = "read_page";
+pub const transcribed = speech.transcribed;
 
 /// What a page reads as, at most: the model reads it, not a person.
 pub const page_text_len_max: u32 = 48 << 10;
 
-/// `<plugin>.read_page`: a web page a conversation's agent was asked to look at, read
-/// through `http.fetch` (so only where the plugin may send requests: an AI provider asks
-/// for any address, `*`) and turned into text. A plain GET: no secret is ever filled in.
-pub fn Read(comptime plugin: []const u8) type {
-    return struct {
-        pub const name = plugin ++ "." ++ read_verb;
-        pub const description = "Read a web page as text, for a conversation's agent";
-        pub const details =
-            \\A plain GET of `url` (https), its scripts, styles and markup left out, each link
-            \\kept as its text with its address; up to 48 KiB. The local operator's alone: a
-            \\conversation's agent calls it.
-        ;
-        pub const kind: operation.Kind = .read;
-        pub const operator_only = true;
-        pub const In = struct {
-            url: []const u8,
-        };
-        pub const Out = struct {
-            status: u16,
-            text: []const u8,
-        };
-        pub const example: In = .{
-            .url = "https://example.com/",
-        };
-        pub const example_out: Out = .{
-            .status = 200,
-            .text = "Example Domain ...",
-        };
-        pub const field_docs: operation.Docs(In) = .{
-            .url = "The page's address, https",
-        };
+/// What a provider's `read_page` answers: a web page a conversation's agent was asked to look
+/// at, read through `http.fetch` (so only where the plugin may send requests: an AI provider
+/// asks for any address, `*`) and turned into text, up to 48 KiB. A plain GET: no secret is
+/// ever filled in.
+pub fn read_page(ctx: *PluginCtx, url: []const u8) operation.Error!Page {
+    std.debug.assert(url.len > 0);
 
-        pub fn run(ctx: *PluginCtx, in: In, granted: *const Grant) operation.Error!Out {
-            std.debug.assert(granted.allows());
-            std.debug.assert(in.url.len > 0);
+    if (std.mem.indexOf(u8, url, "{secret:") != null) {
+        return error.Invalid;
+    }
 
-            if (std.mem.indexOf(u8, in.url, "{secret:") != null) {
-                return error.Invalid;
-            }
+    const Fetch = @import("../operations/http.zig").Fetch;
+    const answer = try ctx.call(Fetch, .{
+        .url = url,
+        .headers = &.{.{
+            .name = "User-Agent",
+            .value = "Publr (reading a page)",
+        }},
+    });
+    const text = text_of_html(ctx.arena(), answer.body) catch return error.OutOfMemory;
 
-            const Fetch = @import("../operations/http.zig").Fetch;
-            const answer = try ctx.call(Fetch, .{
-                .url = in.url,
-                .headers = &.{.{
-                    .name = "User-Agent",
-                    .value = "Publr (reading a page)",
-                }},
-            });
-            const text = text_of_html(ctx.arena(), answer.body) catch return error.OutOfMemory;
-
-            return .{
-                .status = answer.status,
-                .text = text,
-            };
-        }
+    return .{
+        .status = answer.status,
+        .text = text,
     };
 }
+
+pub const Page = struct {
+    status: u16,
+    text: []const u8,
+};
 
 pub const Progress = struct {
     pub const name = "ai.progress";
@@ -331,7 +303,6 @@ fn attribute(tag: []const u8, name: []const u8) []const u8 {
 
     return rest[2..end];
 }
-const complete_verb = "complete";
 
 /// The `ai.model` contract: `describe` and `complete` required, `transcribe` and
 /// `read_page` optional.
@@ -355,43 +326,10 @@ pub const contract = @import("contract.zig").define(.{
             pub const In = struct {
                 url: []const u8,
             };
-            pub const Out = struct {
-                status: u16,
-                text: []const u8,
-            };
+            pub const Out = Page;
         },
     },
 });
-
-/// `<plugin>.describe_provider`: who the provider is, what models it offers, how its key is
-/// made. Anyone may read it; it holds nothing secret.
-pub fn Describe(comptime plugin: []const u8, comptime about: Description) type {
-    comptime std.debug.assert(about.id.len > 0);
-
-    return struct {
-        pub const name = plugin ++ "." ++ describe_verb;
-        pub const description = "What " ++ about.label ++ " offers as a model provider";
-        pub const details =
-            \\Its models, the one used when none is chosen, and how its key is made and kept.
-            \\Core reads it to list the provider under Settings > AI.
-        ;
-        pub const kind: operation.Kind = .read;
-        pub const open = true;
-        pub const In = struct {};
-        pub const Out = Description;
-        pub const example: In = .{};
-        pub const example_out: Out = about;
-
-        pub fn run(ctx: *PluginCtx, in: In, granted: *const Grant) operation.Error!Out {
-            std.debug.assert(granted.allows());
-            std.debug.assert(ctx.now().ms >= 0);
-
-            _ = in;
-
-            return about;
-        }
-    };
-}
 
 /// The JSON `complete` takes and answers.
 pub const Completion = struct {
@@ -403,70 +341,20 @@ pub const Completion = struct {
     };
 };
 
-/// How a provider refuses `complete` and `transcribe`: core's agent tells them apart
-/// (`server/agent/plugin_provider.zig`). A provider plugin fails with these names alone.
-pub const provider_failures = [_]operation.Failure{
-    .{
-        .name = "KeyRejected",
-        .status = 409,
-        .message = "The provider refused its key",
-    },
-    .{
-        .name = "Limited",
-        .status = 409,
-        .message = "The provider's limit for the key is reached for now",
-    },
-    .{
-        .name = "Unavailable",
-        .status = 409,
-        .message = "The provider did not answer, or its answer broke off",
-    },
-};
-
-/// `<plugin>.complete`: one call to the model. `answer` gets the request parsed and turns
-/// the model's reply into a response.
-pub fn Complete(
-    comptime plugin: []const u8,
+/// What a provider's `complete` answers: `request` parsed, `answer` turning it into the
+/// model's reply, the reply as JSON.
+pub fn completed(
+    ctx: *PluginCtx,
+    request: []const u8,
     comptime answer: fn (ctx: *PluginCtx, request: Request) operation.Error!Response,
-) type {
-    return struct {
-        pub const name = plugin ++ "." ++ complete_verb;
-        pub const description = "One call to the model: a request in, a response out";
-        pub const details =
-            \\`request` and `response` are JSON in publr_ai's shape: messages of text, tool
-            \\calls and tool results; the model's parts, why it stopped and what it cost. The
-            \\local operator's alone: a conversation's agent calls it.
-        ;
-        pub const kind: operation.Kind = .read;
-        pub const operator_only = true;
-        pub const failures = provider_failures;
-        pub const In = Completion.In;
-        pub const Out = Completion.Out;
-        pub const example: In = .{
-            .request = "{\"messages\":[{\"role\":\"user\",\"parts\":" ++
-                "[{\"kind\":\"text\",\"text\":\"Hi\"}]}]}",
-        };
-        pub const example_out: Out = .{
-            .response = "{\"parts\":[{\"kind\":\"text\",\"text\":\"Hello\"}],\"stop\":\"end\"}",
-        };
-        pub const field_docs: operation.Docs(In) = .{
-            .request = "The request, as JSON",
-        };
+) operation.Error![]const u8 {
+    std.debug.assert(request.len > 0);
 
-        pub fn run(ctx: *PluginCtx, in: In, granted: *const Grant) operation.Error!Out {
-            std.debug.assert(granted.allows());
-            std.debug.assert(in.request.len > 0);
+    const arena = ctx.arena();
+    const parsed = request_of(arena, request) catch return error.Invalid;
+    const response = try answer(ctx, parsed);
 
-            const arena = ctx.arena();
-            const request = request_of(arena, in.request) catch return error.Invalid;
-            const response = try answer(ctx, request);
-            const text = response_json(arena, response) catch return error.OutOfMemory;
-
-            return .{
-                .response = text,
-            };
-        }
-    };
+    return response_json(arena, response) catch error.OutOfMemory;
 }
 
 test "a page reads as its text and links, without scripts" {

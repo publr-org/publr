@@ -1,10 +1,9 @@
-//! What only a compiled-in sampler carries: a route, a Settings page, operator commands, a
-//! state and process hooks. Each takes the host's own modules, which the sandbox lacks.
+//! What only a compiled-in sampler carries: a route, operator commands, a state and process
+//! hooks. Each takes the host's own modules, which the sandbox lacks.
 const std = @import("std");
 const publr = @import("publr");
 
 const Sampler = @import("main.zig");
-const Logs = @import("operations/logs.zig");
 
 /// What the sampler adds past the plugin API.
 pub fn extend(host: *publr.Host) publr.Error!void {
@@ -26,13 +25,6 @@ pub fn extend(host: *publr.Host) publr.Error!void {
 const routes = [_]publr.plugin.Route{.{
     .path = "/admin/sampler",
     .handler = &settings,
-}};
-
-pub const settings_pages = [_]publr.plugin.SettingsPage{.{
-    .label = "Sampler",
-    .icon = "stack",
-    .path = "/admin/sampler",
-    .operation = Logs.operation,
 }};
 
 /// What the sampler keeps while the process runs.

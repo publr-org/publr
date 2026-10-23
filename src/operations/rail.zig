@@ -256,8 +256,8 @@ fn listed(list: []const pins.Pin, pin: pins.Pin) bool {
     return false;
 }
 
-/// Whether the page is one: a core page, a settings section, or one of the plugin's pages,
-/// settings pages or sections.
+/// Whether the page is one: a core page, a settings section, or one of the plugin's pages or
+/// sections.
 fn exists(ctx: *Ctx, plugin: []const u8, page: []const u8) Error!bool {
     std.debug.assert(page.len > 0);
 
@@ -281,12 +281,6 @@ fn native_has(plugin: []const u8, page: []const u8) bool {
     const section = admin_pages.section_handle(page);
 
     inline for (registry.pages) |owned| {
-        if (std.mem.eql(u8, owned.plugin, plugin) and std.mem.eql(u8, owned.page.path, page)) {
-            return true;
-        }
-    }
-
-    inline for (registry.settings_pages) |owned| {
         if (std.mem.eql(u8, owned.plugin, plugin) and std.mem.eql(u8, owned.page.path, page)) {
             return true;
         }

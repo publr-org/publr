@@ -70,44 +70,53 @@ fn keep(ctx: *sdk.Ctx, name: []const u8, subject: []const u8) !void {
     try insert.exec();
 }
 
-pub const Seen = struct {
-    pub const name = "recorder.seen";
-    pub const description = "The structure changes heard";
-    pub const details = "Administrators only.";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = struct {
-        lines: []const []const u8,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .lines = &.{"content_type.create post"},
-    };
+pub const SeenIn = struct {};
 
-    pub fn run(ctx: *sdk.Ctx, _: In, granted: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(granted.allows());
-
-        var select = try ctx.db.prepare("SELECT line FROM recorder_lines ORDER BY id LIMIT ?1");
-        defer select.finalize();
-
-        try select.bind_int(1, lines_max);
-
-        var lines: std.ArrayList([]const u8) = .empty;
-
-        while (try select.step()) {
-            std.debug.assert(lines.items.len < lines_max);
-            const row = try select.read(struct {
-                line: []const u8,
-            }, ctx.arena);
-
-            lines.append(ctx.arena, row.line) catch return error.OutOfMemory;
-        }
-
-        return .{
-            .lines = lines.items,
-        };
-    }
+pub const SeenOut = struct {
+    /// Each change heard, oldest first
+    lines: []const []const u8,
 };
+
+/// The structure changes heard
+///
+/// Administrators only. Its lines are in its own table, which only the host reaches: in the
+/// sandbox it answers Unavailable.
+///
+/// Example:
+///   in: {}
+///   out: { "lines": ["content_type.create post"] }
+pub const Seen = publr.operation.define(SeenIn, SeenOut, .{
+    .name = "seen",
+    .kind = .read,
+    .run = seen,
+});
+
+fn seen(plugin_ctx: *publr.Ctx, _: SeenIn) publr.Error!SeenOut {
+    if (comptime publr.plugin.guest.mode == .sandboxed) {
+        return error.Unavailable;
+    }
+
+    const ctx = plugin_ctx.inner;
+    var select = try ctx.db.prepare("SELECT line FROM recorder_lines ORDER BY id LIMIT ?1");
+    defer select.finalize();
+
+    try select.bind_int(1, lines_max);
+
+    var lines: std.ArrayList([]const u8) = .empty;
+
+    while (try select.step()) {
+        std.debug.assert(lines.items.len < lines_max);
+        const row = try select.read(struct {
+            line: []const u8,
+        }, ctx.arena);
+
+        lines.append(ctx.arena, row.line) catch return error.OutOfMemory;
+    }
+
+    return .{
+        .lines = lines.items,
+    };
+}
 
 pub const plugin = publr.plugin.define(manifest, .{
     .operations = operations,

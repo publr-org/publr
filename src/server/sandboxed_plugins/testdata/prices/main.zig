@@ -7,8 +7,6 @@
 const std = @import("std");
 const publr = @import("publr");
 
-const sdk = publr.sdk;
-const PluginCtx = publr.plugin.PluginCtx;
 const record = publr.operations.record;
 
 const manifest: publr.Manifest = .{
@@ -18,58 +16,60 @@ const manifest: publr.Manifest = .{
 
 const operations = [_]type{ Post, Withdraw };
 
-pub const Post = struct {
-    pub const name = "prices.post";
-    pub const description = "Post a price as a note, and put it live";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        title: []const u8,
-    };
-    pub const Out = struct {
-        id: []const u8,
-        status: []const u8,
-        /// Waiting for someone who may publish.
-        pending: bool,
-        /// Whether the plugin may put it live itself.
-        publish: bool,
-    };
-    pub const example: In = .{
-        .title = "Apples 2.40",
-    };
-    pub const example_out: Out = .{
-        .id = "0190a1b2c3d40001a1b2c3d4",
-        .status = "published",
-        .pending = false,
-        .publish = true,
-    };
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now().ms >= 0);
-
-        if (in.title.len == 0 or in.title.len > 200) {
-            return error.Invalid;
-        }
-
-        const document = std.json.Stringify.valueAlloc(ctx.arena(), .{
-            .title = in.title,
-        }, .{}) catch return error.OutOfMemory;
-        const created = try ctx.call(record.Create, .{
-            .type = "note",
-            .document = document,
-        });
-        const moved = try ctx.call(record.Transition, .{
-            .id = created.id,
-            .transition = "publish",
-        });
-
-        return .{
-            .id = created.id,
-            .status = moved.status,
-            .pending = moved.pending,
-            .publish = ctx.grant("records.write").publish,
-        };
-    }
+pub const PostIn = struct {
+    /// The price, as the note's title
+    title: []const u8,
 };
+
+pub const PostOut = struct {
+    /// The note's id
+    id: []const u8,
+    /// Its status now
+    status: []const u8,
+    /// Waiting for someone who may publish.
+    pending: bool,
+    /// Whether the plugin may put it live itself.
+    publish: bool,
+};
+
+/// Post a price as a note, and put it live
+///
+/// Example:
+///   in: { "title": "Apples 2.40" }
+///   out: { "id": "0190a1b2c3d40001a1b2c3d4", "status": "published", "pending": false,
+///          "publish": true }
+pub const Post = publr.operation.define(PostIn, PostOut, .{
+    .name = "post",
+    .kind = .write,
+    .run = post,
+});
+
+fn post(ctx: *publr.Ctx, in: PostIn) publr.Error!PostOut {
+    std.debug.assert(ctx.now().ms >= 0);
+
+    if (in.title.len == 0 or in.title.len > 200) {
+        return error.Invalid;
+    }
+
+    const document = std.json.Stringify.valueAlloc(ctx.arena(), .{
+        .title = in.title,
+    }, .{}) catch return error.OutOfMemory;
+    const created = try ctx.call(record.Create, .{
+        .type = "note",
+        .document = document,
+    });
+    const moved = try ctx.call(record.Transition, .{
+        .id = created.id,
+        .transition = "publish",
+    });
+
+    return .{
+        .id = created.id,
+        .status = moved.status,
+        .pending = moved.pending,
+        .publish = ctx.grant("records.write").publish,
+    };
+}
 
 pub const WithdrawIn = struct {
     /// The note, by id

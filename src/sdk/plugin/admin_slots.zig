@@ -1,14 +1,11 @@
 //! Where a plugin shows in the admin. Any plugin: its own pages, shown in the plugin frame
 //! and listed in the Settings sidebar or as tabs of a tabbed page, sections, panels, an item
-//! in the top bar, and actions on the rows of another plugin's page. Compiled in only, for
-//! now: settings pages, listed in the Settings sidebar. A settings page is one of the
-//! plugin's own routes; the top bar item is a function the admin calls for every signed-in
-//! page; a row action is data the page's owner reads.
+//! in the top bar, and actions on the rows of another plugin's page. The top bar item is a
+//! function the admin calls for every signed-in page; a row action is data the page's owner
+//! reads.
 const std = @import("std");
 const plugin_define = @import("define.zig");
-const route = @import("route.zig");
 
-pub const settings_pages_max: u32 = 8;
 pub const row_actions_max: u32 = 8;
 pub const pages_max: u32 = 8;
 pub const page_path_len_max: u32 = 48;
@@ -194,16 +191,6 @@ pub const Form = struct {
     /// A read of the plugin's own taking `save`'s input and answering as `read` does: a
     /// list's columns `save` does not take (an example) follow what people type.
     preview: ?type = null,
-};
-
-pub const SettingsPage = struct {
-    label: []const u8,
-    /// An icon of the set; a name the plugin's views do not use goes in its `ui/icons.txt`.
-    icon: []const u8,
-    /// One of the plugin's own `get` routes.
-    path: []const u8,
-    /// Listed for whoever may call this operation.
-    operation: type,
 };
 
 /// An item in the menu on each row of a page a plugin owns: the page names its slot and
@@ -420,53 +407,4 @@ test "a page path is lowercase letters, digits and dashes" {
     try std.testing.expect(!is_page_path("Notes"));
     try std.testing.expect(!is_page_path("a/b"));
     try std.testing.expect(!is_page_path("a?b"));
-}
-
-/// The settings pages a plugin declares, each one of its own `get` routes.
-pub fn settings_pages_of(
-    comptime Plugin: type,
-    comptime routes: []const route.Declared,
-) []const SettingsPage {
-    comptime {
-        const name = Plugin.manifest.name;
-
-        std.debug.assert(name.len > 0);
-
-        if (!plugin_define.has(Plugin, "settings_pages")) {
-            return &.{};
-        }
-
-        const pages: []const SettingsPage = plugin_define.get(Plugin, "settings_pages");
-
-        if (pages.len == 0 or pages.len > settings_pages_max) {
-            @compileError("plugin " ++ name ++ ": `settings_pages` holds 1 to 8 pages");
-        }
-
-        for (pages) |page| {
-            if (page.label.len == 0 or page.icon.len == 0) {
-                @compileError("plugin " ++ name ++ ": a settings page needs a label and an icon");
-            }
-
-            if (!declares_get(routes, page.path)) {
-                @compileError("plugin " ++ name ++ ": settings page " ++ page.path ++
-                    " is not one of its `get` routes");
-            }
-        }
-
-        return pages;
-    }
-}
-
-fn declares_get(comptime routes: []const route.Declared, comptime path: []const u8) bool {
-    comptime {
-        std.debug.assert(path.len > 0);
-
-        for (routes) |declared| {
-            if (declared.route.method == .get and std.mem.eql(u8, declared.route.path, path)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }
