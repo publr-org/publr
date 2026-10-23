@@ -5,6 +5,10 @@ const admin = "admin@example.com";
 const editor = "editor@example.com";
 const password = "two mode password";
 const points = "[{\"across\":1,\"down\":2}]";
+const mottoed = "{\"handle\":\"mottoed\",\"name\":\"Mottoed\",\"kind\":\"component\"," ++
+    "\"title_field\":\"\",\"group\":{\"location\":[{\"rules\":[{\"field\":\"destination\"," ++
+    "\"value\":\"user\"},{\"field\":\"sampler.has_motto\",\"value\":\"yes\"}]}]}," ++
+    "\"fields\":[{\"name\":\"since\",\"label\":\"Since\",\"kind\":\"string\"}]}";
 
 /// The same in both modes before any step: the first admin and an editor.
 pub const setup = [_][]const []const u8{
@@ -98,6 +102,13 @@ pub const steps = [_][]const []const u8{
     &.{ "--as", admin, "role", "list" },
     &.{ "--as", admin, "secret", "list" },
     &.{ "--as", admin, "content_type", "get", "--handle", "greeter.salutation" },
+    // Its own field group written, and a group its location rule places on accounts with a
+    // motto: the rule runs where the plugin runs.
+    &.{ "--as", admin, "sampler", "motto", "--user", admin, "--motto", "Keep notes" },
+    &.{ "--as", admin, "custom_fields", "create", "--group", "mottoed", "--definition", mottoed },
+    &.{ "--as", admin, "user", "get", "--user", admin },
+    &.{ "--as", admin, "user", "get", "--user", editor },
+    &.{ "--as", admin, "user", "list" },
     &.{ "greeter", "--help" },
     &.{ "sampler", "--help" },
 };
