@@ -89,6 +89,9 @@ pub const Manifest = struct {
     /// Its location rules (`.register_location_rules`); each one's `values` and `matches`
     /// entries follow the jobs', in this order.
     location_rules: []const LocationRule = &.{},
+    /// Its field kinds (`.field_kinds`); each one's `validate` and `text` entries follow the
+    /// rules', in this order.
+    field_kinds: []const FieldKind = &.{},
     permissions: []const Ask = &.{},
     /// The secrets it declares (`.secrets`): not permissions, filled in by an administrator.
     secrets: []const Secret = &.{},
@@ -272,6 +275,21 @@ pub const Panel = struct {
 
 /// A column on a list the plugin doesn't own (`.register_columns`): the field is its own,
 /// stored on the type or added to each row by an `after` hook on the list's read.
+/// A field kind of the plugin's own, named under it (`sampler.place`): what core keeps of it,
+/// and whether it runs a `.validate` and a `.text` in the sandbox.
+pub const FieldKind = struct {
+    name: []const u8,
+    label: []const u8,
+    description: []const u8,
+    icon: []const u8,
+    storage: kinds.Storage,
+    control: kinds.Control,
+    validates: bool,
+    texts: bool,
+};
+
+const kinds = @import("kinds.zig");
+
 /// A location rule of the plugin's own, named under it when placed (`sampler.has_motto`).
 pub const LocationRule = struct {
     name: []const u8,

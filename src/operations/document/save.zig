@@ -185,7 +185,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(parsed == .object);
 
             try values.write(
-                registry.Kinds.all,
+                registry.kinds(ctx),
                 ctx,
                 ctx.db,
                 row.id,

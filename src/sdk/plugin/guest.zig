@@ -557,7 +557,50 @@ pub fn Exports(comptime Plugin: type) type {
                 .job => run_job(item.declaration, input, arena),
                 .rule_values => run_rule_values(item.declaration, input, result, arena),
                 .rule_matches => run_rule_matches(item.declaration, input, result, arena),
+                .kind_validate => run_kind_validate(item.declaration, input, result, arena),
+                .kind_text => run_kind_text(item.declaration, input, result, arena),
             };
+        }
+
+        /// A field kind's `.validate` over one stored value: the problems it finds.
+        fn run_kind_validate(
+            comptime Definition: type,
+            input: []const u8,
+            result: *wire.Result,
+            arena: std.mem.Allocator,
+        ) Error!void {
+            const field_kind = @import("field_kind_define.zig");
+            const Shape = wire.Envelope(field_kind.Stored);
+            const envelope = json.parse(Shape, arena, input, parse_options) catch {
+                return error.Invalid;
+            };
+
+            try reply(field_kind.problems_of(Definition, arena, envelope.in.value), result);
+        }
+
+        /// How a field kind's value reads, by its `.text`.
+        fn run_kind_text(
+            comptime Definition: type,
+            input: []const u8,
+            result: *wire.Result,
+            arena: std.mem.Allocator,
+        ) Error!void {
+            const field_kind = @import("field_kind_define.zig");
+
+            if (comptime !@hasField(@TypeOf(Definition.given), "text")) {
+                return error.NotFound;
+            }
+
+            const Shape = wire.Envelope(field_kind.Stored);
+            const envelope = json.parse(Shape, arena, input, parse_options) catch {
+                return error.Invalid;
+            };
+            var ctx = context(arena, envelope);
+            const parsed = field_kind.decoded(Definition.Shape, arena, envelope.in.value) catch {
+                return error.Invalid;
+            };
+
+            try reply(try Definition.given.text(&ctx, parsed), result);
         }
 
         /// A location rule's dropdown values.

@@ -88,7 +88,7 @@ pub fn Of(comptime Domain: type) type {
 
                 const rows = grouped.get(record.id) orelse &.{};
                 const parsed = try model.document.assemble(
-                    registry.Kinds.all,
+                    registry.kinds(ctx),
                     ctx.arena,
                     cached_def.fields,
                     rows,

@@ -12,6 +12,7 @@ const plugin_define = @import("define.zig");
 const operation_define = @import("operation_define.zig");
 const sdk = @import("../../sdk.zig");
 const plugin_context = @import("context.zig");
+const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 
 const option_names = [_][]const u8{ "name", "validate", "text", "editor", "icon" };
 
@@ -140,7 +141,7 @@ fn Checked(comptime Definition: type) type {
 }
 
 /// A stored value read back into `Value`: a struct is kept as its JSON text.
-fn decoded(comptime Value: type, arena: std.mem.Allocator, value: std.json.Value) !Value {
+pub fn decoded(comptime Value: type, arena: std.mem.Allocator, value: std.json.Value) !Value {
     const options: std.json.ParseOptions = .{
         .ignore_unknown_fields = true,
     };
@@ -157,8 +158,11 @@ fn decoded(comptime Value: type, arena: std.mem.Allocator, value: std.json.Value
 /// The plugin's `.text` over a stored value read back into `Value`.
 fn Texted(comptime Definition: type) type {
     return struct {
-        fn text(ctx: *anyopaque, value: std.json.Value) ?[]const u8 {
+        fn text(ctx: *anyopaque, id: []const u8, value: std.json.Value) ?[]const u8 {
             const inner: *sdk.Ctx = @ptrCast(@alignCast(ctx));
+
+            std.debug.assert(id.len > 0);
+
             const parsed = decoded(Definition.Shape, inner.arena, value);
             var wrapped: plugin_context.PluginCtx = .{
                 .inner = inner,
@@ -187,6 +191,148 @@ fn Edited(comptime Definition: type) type {
                 null;
         }
     };
+}
+
+/// The plugin's kinds made with `publr.field.kind`, as it lists them in `.field_kinds`.
+pub fn definitions_of(comptime Plugin: type) []const type {
+    comptime {
+        var list: []const type = &.{};
+
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        const declared = @hasDecl(Plugin, "options") and
+            @hasField(@TypeOf(Plugin.options), "field_kinds");
+
+        if (!declared) {
+            return list;
+        }
+
+        for (Plugin.options.field_kinds) |Listed| {
+            if (@TypeOf(Listed) == type and is_definition(Listed)) {
+                list = list ++ &[_]type{Listed};
+            }
+        }
+
+        const done = list;
+
+        return done;
+    }
+}
+
+/// The kind as an installed plugin's manifest carries it.
+pub fn manifested(comptime Definition: type, comptime Docs: type) sandboxed_plugin.FieldKind {
+    comptime {
+        const Value = Definition.Shape;
+        const options = Definition.given;
+
+        _ = plugin_define.words(Docs, @typeName(Value)) orelse @compileError("field kind " ++
+            Definition.verb ++ ": " ++ @typeName(Value) ++ " needs a `///` comment: its " ++
+            "name, then what it holds");
+
+        return .{
+            .name = Definition.verb,
+            .label = std.mem.trimEnd(u8, plugin_define.first(Docs, @typeName(Value)).?, "."),
+            .description = plugin_define.rest(Docs, @typeName(Value)).?,
+            .icon = if (@hasField(@TypeOf(options), "icon")) options.icon else "box",
+            .storage = storage_of(Definition.verb, Value),
+            .control = control_of(Value),
+            .validates = @hasField(@TypeOf(options), "validate"),
+            .texts = @hasField(@TypeOf(options), "text"),
+        };
+    }
+}
+
+/// What an installed kind's `validate` and `text` are handed: the stored value.
+pub const Stored = struct {
+    value: std.json.Value,
+};
+
+/// The plugin's `.validate` over a stored value read back into `Value`: each problem's
+/// message, or one when it is no value of the kind.
+pub fn problems_of(
+    comptime Definition: type,
+    arena: std.mem.Allocator,
+    value: std.json.Value,
+) []const []const u8 {
+    const parsed = decoded(Definition.Shape, arena, value) catch {
+        return &.{"not a value of this kind"};
+    };
+    var found: operation_define.Problems(Wrapped(Definition.Shape)) = .{};
+
+    if (comptime @hasField(@TypeOf(Definition.given), "validate")) {
+        Definition.given.validate(parsed, &found);
+    }
+
+    const messages = arena.alloc([]const u8, found.slice().len) catch {
+        return &.{"not checked: out of memory"};
+    };
+
+    for (found.slice(), messages) |problem, *message| {
+        message.* = problem.message;
+    }
+
+    return messages;
+}
+
+/// An installed plugin's kind as core keeps it, named under the plugin: its `.validate` and
+/// `.text` run in the sandbox by its id, with the context of the write or read.
+pub fn installed(id: []const u8, declared: sandboxed_plugin.FieldKind) kinds.Kind {
+    std.debug.assert(std.mem.indexOfScalar(u8, id, '.') != null);
+
+    return .{
+        .id = id,
+        .label = declared.label,
+        .description = declared.description,
+        .icon = declared.icon,
+        .storage = declared.storage,
+        .control = declared.control,
+        .check = if (declared.validates) &installed_check else null,
+        .text = if (declared.texts) &installed_text else null,
+        .searchable_allowed = declared.texts,
+    };
+}
+
+fn installed_check(
+    def: field_model.Def,
+    value: std.json.Value,
+    path: []const u8,
+    problems: *field_model.Problems,
+) void {
+    std.debug.assert(path.len > 0);
+
+    const reader = problems.reader orelse return problems.add(path, "can't be checked here");
+    const ctx: *sdk.Ctx = @ptrCast(@alignCast(reader));
+    const sandboxed = ctx.sandboxed_plugins orelse return problems.add(path, "can't be checked");
+    const input = sdk.stringify(ctx.arena, Stored{
+        .value = value,
+    }) catch return problems.add(path, "can't be checked");
+    const answered = sandboxed.extra(ctx, .kind_validate, def.kind, input) catch {
+        return problems.add(path, "can't be checked: its plugin did not answer");
+    };
+    const messages = std.json.parseFromSliceLeaky([]const []const u8, ctx.arena, answered, .{
+        .allocate = .alloc_always,
+    }) catch return problems.add(path, "can't be checked: its plugin did not answer");
+
+    for (messages) |message| {
+        if (message.len > 0) {
+            problems.add(path, message);
+        }
+    }
+}
+
+fn installed_text(ctx: *anyopaque, id: []const u8, value: std.json.Value) ?[]const u8 {
+    const inner: *sdk.Ctx = @ptrCast(@alignCast(ctx));
+    const sandboxed = inner.sandboxed_plugins orelse return null;
+    const input = sdk.stringify(inner.arena, Stored{
+        .value = value,
+    }) catch return null;
+    const answered = sandboxed.extra(inner, .kind_text, id, input) catch return null;
+
+    std.debug.assert(id.len > 0);
+
+    return std.json.parseFromSliceLeaky([]const u8, inner.arena, answered, .{
+        .allocate = .alloc_always,
+    }) catch null;
 }
 
 /// A struct value's own fields name its problems; any other value is one problem, `value`.
@@ -251,8 +397,8 @@ test "a field kind from its value's struct and words" {
         .string = "{\"lat\":52.5,\"lng\":21}",
     };
 
-    try std.testing.expectEqualStrings("52.5, 21", declared.text.?(&ctx, stored).?);
-    try std.testing.expect(declared.text.?(&ctx, .{
+    try std.testing.expectEqualStrings("52.5, 21", declared.text.?(&ctx, declared.id, stored).?);
+    try std.testing.expect(declared.text.?(&ctx, declared.id, .{
         .string = "not a place",
     }) == null);
 }

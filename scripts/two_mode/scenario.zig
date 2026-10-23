@@ -10,6 +10,12 @@ const mottoed = "{\"handle\":\"mottoed\",\"name\":\"Mottoed\",\"kind\":\"compone
     "\"value\":\"user\"},{\"field\":\"sampler.has_motto\",\"value\":\"yes\"}]}]}," ++
     "\"fields\":[{\"name\":\"since\",\"label\":\"Since\",\"kind\":\"string\"}]}";
 
+/// A place is kept as its JSON text.
+const visit = "{\"note\":\"Lunch\",\"place\":" ++
+    "\"{\\\"name\\\":\\\"Warsaw\\\",\\\"lat\\\":52.23,\\\"lng\\\":21.01}\"}";
+const lost = "{\"note\":\"Lost\",\"place\":" ++
+    "\"{\\\"name\\\":\\\"Nowhere\\\",\\\"lat\\\":95,\\\"lng\\\":0}\"}";
+
 /// The same in both modes before any step: the first admin and an editor.
 pub const setup = [_][]const []const u8{
     &.{ "init", "--email", admin, "--display_name", "Admin", "--password", password },
@@ -109,6 +115,10 @@ pub const steps = [_][]const []const u8{
     &.{ "--as", admin, "user", "get", "--user", admin },
     &.{ "--as", admin, "user", "get", "--user", editor },
     &.{ "--as", admin, "user", "list" },
+    // A type whose field is the sampler's own kind: its `.validate` runs where the plugin runs.
+    &.{ "--as", admin, "record", "create", "--type", "sampler.sample_visit", "--document", visit },
+    &.{ "--as", admin, "record", "create", "--type", "sampler.sample_visit", "--document", lost },
+    &.{ "--as", admin, "record", "list", "--type", "sampler.sample_visit" },
     &.{ "greeter", "--help" },
     &.{ "sampler", "--help" },
 };

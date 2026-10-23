@@ -132,9 +132,8 @@ const added_statuses = .{.{
     },
 }};
 
-const records = [_]type{ Notes.record, Logs.record, Tallies.record, Reviews.record };
-/// Compiled in, a type whose field is of the sampler's own kind.
-const native_records = records ++ [_]type{Visits.record};
+/// Its types, one whose field is of the sampler's own kind.
+const records = [_]type{ Notes.record, Logs.record, Tallies.record, Reviews.record, Visits.record };
 const jobs = [_]type{ WriteNote.job, Tick.job };
 
 const operations = [_]type{
@@ -214,7 +213,7 @@ const icons = .{
 /// registers the rest.
 pub const plugin = if (publr.plugin.guest.mode == .native)
     publr.plugin.define(manifest, .{
-        .records = &native_records,
+        .records = &records,
         .field_kinds = &.{Place.kind},
         .register_location_rules = .{HasMotto.location_rule},
         .register_columns = columns,
@@ -241,6 +240,7 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
 else
     publr.plugin.define(manifest, .{
         .records = &records,
+        .field_kinds = &.{Place.kind},
         .register_location_rules = .{HasMotto.location_rule},
         .jobs = &jobs,
         .register_fields = field_groups,

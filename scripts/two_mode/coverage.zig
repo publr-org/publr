@@ -81,6 +81,10 @@ const exercised = [_]Part{
         .where = "sampler's Motto and Notes on People, filled by its after hook",
     },
     .{
+        .name = "field_kinds",
+        .where = "sampler's place on sample visits, a refused latitude",
+    },
+    .{
         .name = "location_rules",
         .where = "sampler's has_motto, placing a group on an account with a motto",
     },

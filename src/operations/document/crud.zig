@@ -134,7 +134,7 @@ pub fn Of(comptime Domain: type) type {
                 .app = app,
             }, ctx.now_ms);
 
-            const known = registry.Kinds.all;
+            const known = registry.kinds(ctx);
 
             try values.write(known, ctx, ctx.db, id, values.live, row.id, def.fields, parsed);
             ctx.publishes = ctx.publishes or row.def.flow.is_live(status);
@@ -505,13 +505,14 @@ pub fn Of(comptime Domain: type) type {
                 .requested = constraints.requested,
                 .search = in.search,
                 .filters = try field_conditions.filters_of(
+                    ctx,
                     ctx.arena,
                     span.single,
-                    try slug_or_filter(ctx.arena, span, in),
+                    try slug_or_filter(ctx, span, in),
                     in.filters,
                     ctx.now_ms,
                 ),
-                .sort = try field_conditions.sort_of(span.single, in.sort),
+                .sort = try field_conditions.sort_of(ctx, span.single, in.sort),
                 .created_by = created_by_of(ctx, granted, constraints.created_by),
                 .updated_by = author_of(constraints.updated_by),
                 .created_after_ms = constraints.created_after_ms,
@@ -634,12 +635,14 @@ pub fn Of(comptime Domain: type) type {
         /// `slug` is a filter on the definition's slug field; it cannot be combined with
         /// another, and neither it nor a field filter has a meaning across definitions.
         fn slug_or_filter(
-            arena: std.mem.Allocator,
+            ctx: *const Ctx,
             span: access_module.Span,
             in: ListInput,
         ) Error!?store.documents.Filter {
             std.debug.assert(span.briefs.len > 0);
             std.debug.assert(in.limit > 0);
+
+            const arena = ctx.arena;
 
             const def = span.single orelse {
                 if (in.slug != null or in.filter_field != null) {
@@ -668,7 +671,7 @@ pub fn Of(comptime Domain: type) type {
             }
 
             const slug = in.slug orelse {
-                return document.filter_of(def, in.filter_field, in.filter_value);
+                return document.filter_of(ctx, def, in.filter_field, in.filter_value);
             };
 
             if (slug.len == 0 or in.filter_field != null) {
@@ -732,7 +735,9 @@ pub fn Of(comptime Domain: type) type {
                 return error.NotFound;
             }
 
-            var problems: model.field.Problems = .{};
+            var problems: model.field.Problems = .{
+                .reader = ctx,
+            };
             const copy_problems = document_module.copy_problems;
             const parsed = @import("../../lib/json.zig").parse(Value, ctx.arena, text, .{}) catch {
                 problems.add("", "document is not valid JSON");
@@ -742,7 +747,7 @@ pub fn Of(comptime Domain: type) type {
                     .problems = try copy_problems(ctx, &problems),
                 };
             };
-            const known = registry.Kinds.all;
+            const known = registry.kinds(ctx);
 
             const active = model.field_group.applies(row.def.group, .{
                 .destination = if (comptime std.mem.eql(

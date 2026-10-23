@@ -41,8 +41,10 @@ pub fn Of(comptime Domain: type) type {
             ) catch {
                 return error.Invalid;
             };
-            var problems: model.field.Problems = .{};
-            const known = registry.Kinds.all;
+            var problems: model.field.Problems = .{
+                .reader = ctx,
+            };
+            const known = registry.kinds(ctx);
 
             if (parsed == .object) {
                 try model.normalize.apply(known, def.fields, ctx.arena, &parsed.object);
@@ -92,7 +94,7 @@ pub fn Of(comptime Domain: type) type {
 
             const rows = try values.read(ctx.db, ctx.arena, record_id, slot);
 
-            return try document_rules.assemble(registry.Kinds.all, ctx.arena, def.fields, rows);
+            return try document_rules.assemble(registry.kinds(ctx), ctx.arena, def.fields, rows);
         }
 
         /// A value of a unique field is held by no other document of the definition:
@@ -191,7 +193,7 @@ pub fn Of(comptime Domain: type) type {
                 .fields = def.fields,
             };
 
-            _ = model.document.each_row(registry.Kinds.all, def.fields, document, .{
+            _ = model.document.each_row(registry.kinds(ctx), def.fields, document, .{
                 .context = &checking,
                 .row = Checking.row,
             }) catch |err| {
@@ -412,6 +414,7 @@ pub fn Of(comptime Domain: type) type {
         }
 
         pub fn filter_of(
+            ctx: *const Ctx,
             def: Def,
             field_name: ?[]const u8,
             value: ?[]const u8,
@@ -422,7 +425,7 @@ pub fn Of(comptime Domain: type) type {
             const name = field_name orelse return null;
             const text = value orelse return error.Invalid;
             const found = document_rules.find_path(def.fields, name) orelse return error.Invalid;
-            const kind = model.kinds.lookup(registry.Kinds.all, found.kind);
+            const kind = model.kinds.lookup(registry.kinds(ctx), found.kind);
 
             return switch (model.kinds.column_of(kind.storage)) {
                 .text => .{

@@ -275,6 +275,59 @@ pub const registry: sdk.Registry = .{
 pub const SDK = sdk.SDK(registry);
 
 pub const Kinds = kind_registry.Registry(&kind_registry.core ++ native_plugins.merged_field_kinds);
+
+/// The kinds the project knows: the build's, then its installed plugins' (`with_kinds`),
+/// as the context carries them.
+pub fn kinds(ctx: *const sdk.Ctx) []const kind_registry.Kind {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    if (ctx.kinds) |known| {
+        return known;
+    }
+
+    const sandboxed = ctx.sandboxed_plugins orelse return Kinds.all;
+
+    return sandboxed.kinds() orelse Kinds.all;
+}
+
+pub fn find_kind(ctx: *const sdk.Ctx, id: []const u8) ?kind_registry.Kind {
+    return kind_registry.find(kinds(ctx), id);
+}
+
+/// The kinds `known` and those `manifests` bring, each under its plugin's name: one already
+/// known, or past the most a project holds, is left out and logged.
+pub fn with_kinds(
+    arena: std.mem.Allocator,
+    known: []const kind_registry.Kind,
+    manifests: []const model_sandboxed_plugin.Manifest,
+) error{OutOfMemory}![]const kind_registry.Kind {
+    std.debug.assert(known.len > 0);
+
+    var list: std.ArrayList(kind_registry.Kind) = .empty;
+
+    try list.appendSlice(arena, known);
+
+    for (manifests) |manifest| {
+        for (manifest.field_kinds) |declared| {
+            const id = try std.fmt.allocPrint(arena, "{s}.{s}", .{ manifest.name, declared.name });
+            const fits = id.len <= kind_registry.id_len_max and
+                list.items.len < kind_registry.kinds_max and
+                kind_registry.find(list.items, id) == null;
+
+            if (!fits) {
+                std.log.warn("plugins: the field kind {s} is left out", .{id});
+                continue;
+            }
+
+            try list.append(arena, field_kind_define.installed(id, declared));
+        }
+    }
+
+    return if (list.items.len == known.len) known else list.items;
+}
+
+const model_sandboxed_plugin = @import("../model/sandboxed_plugin.zig");
+const field_kind_define = @import("../sdk/plugin/field_kind_define.zig");
 /// The location rules compiled-in plugins bring (`loyalty.tier`).
 pub const location_rules = native_plugins.merged_location_rules;
 

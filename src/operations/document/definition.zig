@@ -304,7 +304,7 @@ pub fn Of(comptime Domain: type) type {
                 try parse_addition(ctx, row.def, definition)
             else
                 try parse_and_validate(ctx, definition);
-            const known = registry.Kinds.all;
+            const known = registry.kinds(ctx);
             const plan = try evolution.plan(known, ctx.arena, row.def.fields, def.fields);
 
             if (!plan.allowed) {
@@ -546,7 +546,7 @@ pub fn Of(comptime Domain: type) type {
                 };
             };
 
-            content_type.validate_def(registry.Kinds.all, def, &problems);
+            content_type.validate_def(registry.kinds(ctx), def, &problems);
 
             if (!problems.is_empty()) {
                 return .{
@@ -598,7 +598,7 @@ pub fn Of(comptime Domain: type) type {
 
                         _ = try document.unique_slug(ctx, type_id, new, doc, title, own, false);
 
-                        const known = registry.Kinds.all;
+                        const known = registry.kinds(ctx);
 
                         const fields = new.fields;
 
@@ -673,7 +673,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(record_id.len > 0);
             std.debug.assert(slot.len > 0);
 
-            const known = registry.Kinds.all;
+            const known = registry.kinds(ctx);
             const rows = try values.read(ctx.db, ctx.arena, record_id, slot);
             const parsed = try model.document.assemble(known, ctx.arena, old.fields, rows);
             const converted = evolution.convert_document(
@@ -704,7 +704,7 @@ pub fn Of(comptime Domain: type) type {
             const def = try Domain.config.prepare_def(ctx, given);
             var problems: model.field.Problems = .{};
 
-            content_type.validate_def(registry.Kinds.all, def, &problems);
+            content_type.validate_def(registry.kinds(ctx), def, &problems);
 
             if (!problems.is_empty()) {
                 return error.Invalid;
@@ -771,7 +771,7 @@ pub fn Of(comptime Domain: type) type {
 
             var problems: model.field.Problems = .{};
 
-            content_type.validate_def(registry.Kinds.all, def, &problems);
+            content_type.validate_def(registry.kinds(ctx), def, &problems);
 
             if (!problems.is_empty()) {
                 return error.Invalid;

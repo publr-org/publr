@@ -4,8 +4,7 @@ const Place = @import("../kinds/place.zig");
 
 /// Sample visit
 ///
-/// A place the sampler went to, shown on the site by the place's own words. Compiled in
-/// only: an installed plugin brings no field kinds yet.
+/// A place the sampler went to, shown on the site by the place's own words.
 pub const SampleVisit = struct {
     /// Note
     note: []const u8,

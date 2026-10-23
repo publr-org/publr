@@ -45,6 +45,8 @@ pub const Host = struct {
     index_arena: std.heap.ArenaAllocator,
     /// The build's added statuses with every granted one plugins add, while any is granted.
     statuses: ?[]const model.flow.Added = null,
+    /// The build's field kinds with the loaded plugins', while any brings one.
+    kinds: ?[]const model.kinds.Kind = null,
     /// Every loaded plugin's manifest, in load order: what help lists.
     manifests: []const model.sandboxed_plugin.Manifest = &.{},
     /// Every remote switched off, compiled-in plugins' and loaded ones': its plugin is not
@@ -69,6 +71,7 @@ pub const Host = struct {
         host.operations = .empty;
         host.index_arena = std.heap.ArenaAllocator.init(gpa);
         host.statuses = null;
+        host.kinds = null;
         host.manifests = &.{};
         host.interface = .{
             .context = host,
@@ -164,6 +167,7 @@ pub const Host = struct {
         host.hooks = .empty;
         host.operations = .empty;
         host.statuses = null;
+        host.kinds = null;
         host.manifests = &.{};
         host.off = &.{};
 
@@ -232,6 +236,10 @@ pub const Host = struct {
 
         host.manifests = manifests;
         host.off = try off_of(arena, manifests, there);
+
+        const known = try registry.with_kinds(arena, registry.Kinds.all, manifests);
+
+        host.kinds = if (known.len == registry.Kinds.all.len) null else known;
     }
 
     /// Whether `plugin`'s remote `name` is off.

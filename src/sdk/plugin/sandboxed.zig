@@ -34,6 +34,8 @@ pub const Entry = struct {
         job,
         rule_values,
         rule_matches,
+        kind_validate,
+        kind_text,
     };
 };
 
@@ -91,9 +93,22 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
             };
         }
 
+        for (@import("field_kind_define.zig").definitions_of(Plugin)) |Definition| {
+            entries = entries ++ &[_]Entry{
+                .{
+                    .stage = .kind_validate,
+                    .declaration = Definition,
+                },
+                .{
+                    .stage = .kind_text,
+                    .declaration = Definition,
+                },
+            };
+        }
+
         if (entries.len > entries_max) {
             @compileError("plugin " ++ Plugin.manifest.name ++ ": too many operations, hooks, " ++
-                "jobs and rules");
+                "jobs, rules and kinds");
         }
 
         return entries;
@@ -154,7 +169,6 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
         };
         const later = [_][]const u8{
             "policies",
-            "field_kinds",
             "delivery_gates",
             "filters",
             "routes",

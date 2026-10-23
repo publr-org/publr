@@ -159,7 +159,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
 
                     // A plugin's kind is found by what its `.text` says.
                     const text = if (row_flat.text != null and writing.reader != null)
-                        row_flat.text.?(writing.reader.?, .{
+                        row_flat.text.?(writing.reader.?, row_flat.kind, .{
                             .string = row_flat.value.text,
                         }) orelse row_flat.value.text
                     else

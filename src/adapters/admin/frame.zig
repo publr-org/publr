@@ -130,7 +130,9 @@ pub fn editor_frame(request: *Request, response: *Response, ctx: *Context) Error
     const plugin = request.param("plugin") orelse "";
     const name = request.param("kind") orelse "";
     const id = try std.fmt.allocPrint(session.arena, "{s}.{s}", .{ plugin, name });
-    const kind = registry.Kinds.find_kind(id) orelse return response.text(.not_found, "Not Found");
+    const kind = registry.find_kind(&session.ctx, id) orelse {
+        return response.text(.not_found, "Not Found");
+    };
     const draw = kind.editor orelse return response.text(.not_found, "Not Found");
     const text = admin.query_param(&session, "value") orelse "";
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, session.arena, text, .{}) catch

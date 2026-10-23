@@ -202,7 +202,7 @@ pub fn rows_of(context: Context, fields: []const Def, document: ?Value) Error![]
 
         // A taxonomy's own terms field is drawn in the aside (RecordTerms), not among the
         // rows; a terms field authored on the type is a control like any other.
-        if (kind_of(def).has.taxonomy and def.locked) {
+        if (kind_of(context, def).has.taxonomy and def.locked) {
             continue;
         }
 
@@ -271,7 +271,7 @@ fn asked_open(open: []const []const u8, name: []const u8) bool {
 
 fn row_shell(context: Context, def: Def) Error!Row {
     std.debug.assert(def.name.len > 0);
-    const kind = kind_of(def);
+    const kind = kind_of(context, def);
     return .{
         .name = def.name,
         .conditions = try std.json.Stringify.valueAlloc(context.arena, def.conditions, .{}),
@@ -327,7 +327,7 @@ fn row_of(context: Context, def: Def, current: ?Value) Error!Row {
     std.debug.assert(def.name.len > 0);
     std.debug.assert(def.label.len > 0);
 
-    const kind = kind_of(def);
+    const kind = kind_of(context, def);
     var row = try row_shell(context, def);
     const fixed = std.mem.eql(u8, def.name, context.fixed) and !def.many;
 
@@ -416,7 +416,7 @@ fn fill_group_row(context: Context, row: *Row, def: Def, current: ?Value) Error!
 
 /// A media field's row: its files as tiles, and what its rules let people add.
 fn fill_media_row(context: Context, row: *Row, def: Def, current: ?Value) Error!void {
-    std.debug.assert(kind_of(def).has.media);
+    std.debug.assert(kind_of(context, def).has.media);
     std.debug.assert(def.name.len > 0);
 
     const families = def.validation.media.types;
@@ -921,7 +921,7 @@ fn nested_of(
     // A repeater or group inside a group is a list there too: edited as JSON.
     const nested = !model.field.is_leaf(def.kind);
 
-    if (nested or def.many or kind_of(def).control == .json) {
+    if (nested or def.many or kind_of(context, def).control == .json) {
         return .{
             .name = name,
             .label = def.label,
@@ -935,7 +935,7 @@ fn nested_of(
         };
     }
 
-    const kind = kind_of(def);
+    const kind = kind_of(context, def);
     var instance = try instance_of(context, def, kind, name, path, current, false);
 
     if (kind.has.media) {
@@ -1648,11 +1648,10 @@ fn array_items(current: ?Value) []const Value {
     return if (value == .array) value.array.items else &.{};
 }
 
-fn kind_of(def: Def) Kind {
+fn kind_of(context: Context, def: Def) Kind {
     std.debug.assert(def.name.len > 0);
-    std.debug.assert(registry.Kinds.all.len > 0);
 
-    return model.kinds.lookup(registry.Kinds.all, def.kind);
+    return model.kinds.lookup(registry.kinds(&context.session.ctx), def.kind);
 }
 
 /// Groups, repeaters and lists have shapes of their own; a kind without a control or an
