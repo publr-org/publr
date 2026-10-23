@@ -98,10 +98,9 @@ fn create(ctx: *Ctx, wanted: []const u8) Error![]const u8 {
         .name = wanted,
     }, .{}) catch
         return error.OutOfMemory;
-    const created = try registry.SDK.dispatch(ctx, term.Create, .{
+    const created = try term.published(ctx, .{
         .taxonomy = model.media.tags_handle,
         .document = document,
-        .status = "published",
     });
 
     std.debug.assert(created.id.len > 0);

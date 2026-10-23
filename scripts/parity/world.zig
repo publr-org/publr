@@ -253,7 +253,10 @@ fn fill_media(ctx: *Ctx) Error!void {
         .type = "media",
         .document = "{\"title\":\"Harbour at dawn\",\"alt\":\"Fishing boats\"," ++
             "\"credit\":\"Ada\",\"focal_y\":40}",
-        .status = "published",
+    });
+
+    _ = try SDK.dispatch(ctx, records.Publish, .{
+        .id = created.id,
     });
 
     try store.records.rename(ctx.db, created.id, item.id);
@@ -270,10 +273,9 @@ fn fill_media(ctx: *Ctx) Error!void {
         .created_at = ctx.now_ms,
     });
 
-    const folder = try SDK.dispatch(ctx, terms.Create, .{
+    const folder = try terms.published(ctx, .{
         .taxonomy = "media_folders",
         .document = "{\"name\":\"Photos\"}",
-        .status = "published",
     });
 
     try store.terms.rename(ctx.db, folder.id, media.serve.example_folder_id);

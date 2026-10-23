@@ -578,6 +578,7 @@ fn declared_installed(plugin: []const u8, found: model.sandboxed_plugin.Operatio
             .description = found.description,
             .untrusted_callers = found.untrusted_callers orelse false,
             .public_api = found.public_api,
+            .destructive = found.destructive,
             .authorize = declared_who(found.answer, custom),
             .limit = .{
                 .declared = found.limit,

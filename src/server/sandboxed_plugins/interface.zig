@@ -165,6 +165,7 @@ fn find(context: *anyopaque, name: []const u8) ?sdk.sandboxed_plugins.Operation 
         .open = declared.open,
         .untrusted_callers = declared.untrusted_callers,
         .limit = declared.limit,
+        .destructive = declared.destructive,
         .answer = declared.answer,
         .fields = declared.fields,
         .help = declared.help,

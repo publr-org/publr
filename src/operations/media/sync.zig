@@ -327,10 +327,9 @@ const Folders = struct {
             .name = wanted,
         }, .{}) catch
             return error.OutOfMemory;
-        const created = try registry.SDK.dispatch(ctx, term.Create, .{
+        const created = try term.published(ctx, .{
             .taxonomy = media.folders_handle,
             .document = document,
-            .status = "published",
             .parent = parent,
         });
 

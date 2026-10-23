@@ -109,6 +109,7 @@ pub fn SDK(comptime registry: Registry) type {
         pub const namespaces = registry.namespaces;
         pub const schemas = registry.schemas;
         pub const migrations = registry.migrations;
+        pub const removal = registry.removal;
 
         pub fn apply_schemas(connection: *db.Db) db.Error!void {
             std.debug.assert(connection.transaction_depth <= 1);

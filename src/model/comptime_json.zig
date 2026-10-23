@@ -42,6 +42,15 @@ const Reader = struct {
             };
         }
 
+        // A reference written as its id, as callers send it.
+        if (comptime @typeInfo(Target) == .@"struct" and @hasDecl(Target, "reference")) {
+            if (reader.at < reader.text.len and reader.text[reader.at] == '"') {
+                return .{
+                    .id = reader.string(),
+                };
+            }
+        }
+
         return switch (@typeInfo(Target)) {
             .bool => reader.boolean(),
             .int => reader.number(Target),
@@ -345,4 +354,22 @@ test "an example read into plain data" {
     try std.testing.expectEqual(null, value.note);
     try std.testing.expectEqual(2, value.tags.len);
     try std.testing.expect(value.inner.ok);
+}
+
+test "a reference in an example is its id, as callers send it" {
+    const Ref = struct {
+        id: []const u8,
+        type: []const u8 = "",
+
+        pub const reference = true;
+    };
+    const value = comptime parse(struct {
+        item: Ref,
+        other: Ref,
+    },
+        \\{ "item": "a1b2", "other": { "id": "c3d4", "type": "post" } }
+    );
+
+    try std.testing.expectEqualStrings("a1b2", value.item.id);
+    try std.testing.expectEqualStrings("post", value.other.type);
 }

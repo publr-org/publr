@@ -618,6 +618,81 @@ test "a grant's flags: without .publish a plugin's write waits, with it it goes 
     );
 }
 
+test "an installed plugin destroys from its .destructive operation, for an administrator" {
+    var scenario: Scenario = undefined;
+    try scenario.init();
+    defer scenario.deinit();
+
+    try scenario.temporary.dir.writeFile(std.testing.io, .{
+        .sub_path = "prices.wasm",
+        .data = prices_bytes,
+    });
+
+    var system = scenario.ctx(.system);
+
+    _ = try registry.SDK.dispatch(&system, @import("../../operations/content_type.zig").Create, .{
+        .definition = "{\"handle\":\"note\",\"name\":\"Note\",\"public\":true," ++
+            "\"fields\":[{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"}]}",
+    });
+
+    const path = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        scenario.path,
+        "greeter.wasm",
+        "prices.wasm",
+    );
+    defer std.testing.allocator.free(path);
+
+    const added = try scenario.add(path);
+    var enabling = scenario.ctx(.system);
+
+    _ = try registry.SDK.dispatch(&enabling, plugin_operations.Enable, .{
+        .names = &.{added.name},
+        .grants = &.{
+            .{
+                .key = "records.write",
+                .on = true,
+                .publish = true,
+            },
+            .{
+                .key = "records.destroy",
+                .on = true,
+            },
+        },
+    });
+
+    const Posted = struct {
+        id: []const u8,
+    };
+    const Withdrawn = struct {
+        status: []const u8,
+    };
+    const arena = scenario.harness.fixed.allocator();
+    const posted = try std.json.parseFromSliceLeaky(Posted, arena, try scenario.call(
+        admin,
+        "prices.post",
+        "{\"title\":\"Apples\"}",
+    ), .{
+        .ignore_unknown_fields = true,
+    });
+    const asked = try std.fmt.allocPrint(arena, "{{\"id\":\"{s}\"}}", .{posted.id});
+    const withdrawn = try std.json.parseFromSliceLeaky(Withdrawn, arena, try scenario.call(
+        admin,
+        "prices.withdraw",
+        asked,
+    ), .{});
+
+    try std.testing.expectEqualStrings("destroyed", withdrawn.status);
+
+    var reading = scenario.ctx(.system);
+    const records = @import("../../operations/record.zig");
+
+    try std.testing.expectError(error.NotFound, registry.SDK.dispatch(&reading, records.Get, .{
+        .id = posted.id,
+    }));
+}
+
 test "installing twice conflicts; removing unloads and keeps records" {
     var scenario: Scenario = undefined;
     try scenario.init();

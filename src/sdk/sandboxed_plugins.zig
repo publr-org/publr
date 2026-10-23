@@ -31,6 +31,8 @@ pub const Operation = struct {
     answer: ?@import("../model/caller_answer.zig").Answer = null,
     /// Its own rate limit, calls a minute per caller; 0 for none.
     limit: u32 = 0,
+    /// It destroys what cannot be had back (`.destructive`).
+    destructive: bool = false,
     /// Its input's fields, for an adapter that reads flags or a form into JSON.
     fields: []const @import("../model/sandboxed_plugin.zig").Field = &.{},
     /// Its `--help`, as the build rendered it.

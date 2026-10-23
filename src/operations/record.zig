@@ -1600,21 +1600,18 @@ test "terms fields: a type opts into a taxonomy, records file under terms, ances
         \\"options":{"taxonomy":"topics"}}]}
         ,
     });
-    const tech = try SDK.dispatch(&admin, term_operations.Create, .{
+    const tech = try term_operations.published(&admin, .{
         .taxonomy = "topics",
         .document = "{\"name\":\"Technology\"}",
-        .status = "published",
     });
-    const engineering = try SDK.dispatch(&admin, term_operations.Create, .{
+    const engineering = try term_operations.published(&admin, .{
         .taxonomy = "topics",
         .document = "{\"name\":\"Engineering\"}",
-        .status = "published",
         .parent = tech.id,
     });
-    const art = try SDK.dispatch(&admin, term_operations.Create, .{
+    const art = try term_operations.published(&admin, .{
         .taxonomy = "topics",
         .document = "{\"name\":\"Art\"}",
-        .status = "published",
     });
 
     const filed = try std.fmt.allocPrint(
@@ -1723,10 +1720,9 @@ test "a taxonomy applying to a type gives it an implicit terms field; detaching 
     try std.testing.expect(last.locked and last.many);
     try std.testing.expectEqualStrings("topics", last.options.taxonomy);
 
-    const tech = try SDK.dispatch(&admin, term_operations.Create, .{
+    const tech = try term_operations.published(&admin, .{
         .taxonomy = "topics",
         .document = "{\"name\":\"Technology\"}",
-        .status = "published",
     });
     const filed = try std.fmt.allocPrint(
         harness.fixed.allocator(),

@@ -133,6 +133,9 @@ pub const Operation = struct {
     answer: ?@import("caller_answer.zig").Answer = null,
     /// Its own rate limit (`.limit`), calls a minute per caller; 0 for none.
     limit: u32 = 0,
+    /// It destroys what cannot be had back (`.destructive`): only then may the core
+    /// operations it calls destroy, and a device never runs it.
+    destructive: bool = false,
     fields: []const Field = &.{},
     /// Its `--help`, rendered by the build as a compiled-in operation's is.
     help: []const u8 = "",

@@ -140,6 +140,13 @@ fn admit(
     try SDK.run_pre_hooks(ctx, found.name, found.kind);
     try SDK.check_fence(ctx, plugin_names.plugin_of(found.name));
 
+    // As a compiled-in `.destructive` operation: a device's call goes on its removal list.
+    if (found.destructive and ctx.caller == .token and !ctx.kept) {
+        const put_on_list = SDK.removal orelse return ctx.fail(operation.needs_person);
+
+        return put_on_list(ctx, found.name, input);
+    }
+
     const answered = try SDK.admit_answer(ctx, found.name, .{
         .untrusted_callers = found.untrusted_callers,
         .answer = found.answer,
@@ -234,6 +241,12 @@ fn run_pipeline(
     else
         input;
     const resolved = try resolve_references(SDK, ctx, found.input, changed);
+    const was_destructive = ctx.destructive;
+
+    // The core operations its calls may destroy only for a `.destructive` one.
+    ctx.destructive = found.destructive;
+    defer ctx.destructive = was_destructive;
+
     const output = try sandboxed.run(ctx, found, resolved);
 
     if (sandboxed.hooked(.after, found.name)) {

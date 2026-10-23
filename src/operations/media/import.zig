@@ -189,10 +189,9 @@ pub fn folder_of(ctx: *Ctx, given: ?[]const u8) Error!?[]const u8 {
     const document = std.json.Stringify.valueAlloc(ctx.arena, .{
         .name = wanted,
     }, .{}) catch return error.OutOfMemory;
-    const made = try registry.SDK.dispatch(ctx, term.Create, .{
+    const made = try term.published(ctx, .{
         .taxonomy = "media_folders",
         .document = document,
-        .status = "published",
     });
 
     std.debug.assert(made.id.len > 0);
