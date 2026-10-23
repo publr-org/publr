@@ -73,6 +73,8 @@ export type MediaProps = {
   months: Array<{ value: string; label: string; selected: boolean }>;
   /** Columns plugins add to the library: each file's facts end with its value. */
   columns?: Array<{ field: string; label: string }>;
+  /** The columns this person hides, by field (`user.columns` on `media`). */
+  hidden?: string[];
 };
 
 /** The media library: the explorer and its filters on the left, the files as a wall of
@@ -109,6 +111,7 @@ export function Media({
   years,
   months,
   columns = [],
+  hidden = [],
 }: MediaProps) {
   return (
     <ListDetailPage title={Publr.t("Media")}>
@@ -150,6 +153,7 @@ export function Media({
         years={years}
         months={months}
         columns={columns}
+        hidden={hidden}
         live={true}
       />
     </ListDetailPage>

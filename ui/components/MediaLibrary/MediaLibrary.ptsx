@@ -119,6 +119,8 @@ export const state = Publr.reactive({
   months: [] as MediaOption[],
   /** Columns plugins add to the library, ended to each file's facts. */
   columns: [] as Array<{ field: string; label: string }>,
+  /** The columns this person hides, by field. */
+  hidden: [] as string[],
   /** The bar's filters on the file itself: empty while not in the bar, `any` at Any. */
   kind: "",
   size_filter: "",
@@ -318,10 +320,10 @@ const facts_of = (item: Listed_item): string => {
   return `${extension_of(item)}${dimensions} · ${size_text(item.size)}`;
 };
 
-/** What plugins' columns say about a file, after its facts: ` · Uses 3`. */
+/** What the plugins' columns this person shows say about a file, after its facts: ` · Uses 3`. */
 const added_of = (listed: Listed, id: string): string =>
   state.columns
-    .filter((column) => listed.extended?.[id]?.[column.field] != null)
+    .filter((column) => !state.hidden.includes(column.field) && listed.extended?.[id]?.[column.field] != null)
     .map((column) => ` · ${column.label} ${String(listed.extended?.[id]?.[column.field])}`)
     .join("");
 
@@ -726,6 +728,17 @@ export const view_ref = Publr.ref<HTMLElement>(() => {
   }
 });
 
+/** Shows or hides the column the item names on each file, and keeps the choice for this
+ * person. */
+export const toggle_column = (event: Event) => {
+  const field = (event.currentTarget as HTMLElement).dataset.field ?? "";
+  state.hidden = state.hidden.includes(field)
+    ? state.hidden.filter((each) => each !== field)
+    : [...state.hidden, field];
+  send("user.set_columns", { list: "media", hidden: state.hidden });
+  load();
+};
+
 export const toggle_details = () => {
   state.details = !state.details;
   remember_view();
@@ -816,6 +829,8 @@ export type MediaLibraryProps = {
   months?: Array<{ value: string; label: string; selected: boolean }>;
   /** Columns plugins add to the library: each file's facts end with its value. */
   columns?: Array<{ field: string; label: string }>;
+  /** The columns this person hides, by field. */
+  hidden?: string[];
   /** Filters in place (the default); false makes the explorer's links go to their pages. */
   live?: boolean;
   /** How large the tiles are until this browser's own choice is read. */
@@ -868,6 +883,7 @@ export function MediaLibrary({
   years = [],
   months = [],
   columns = [],
+  hidden = [],
   live = true,
   size = "md",
   children,
@@ -895,6 +911,7 @@ export function MediaLibrary({
   state.years = years;
   state.months = months;
   state.columns = columns;
+  state.hidden = hidden;
   state.items = items;
   state.total = total;
   state.all = all;

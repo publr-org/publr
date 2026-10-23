@@ -42,6 +42,12 @@ pub fn library(
     next.page = filter.page + 1;
     previous.page = filter.page -| 1;
 
+    const columns = try columns_of(&session);
+    const Hidden = @import("../../operations/user/columns.zig").Columns;
+    const hidden = registry.SDK.dispatch(&session.ctx, Hidden, .{
+        .list = .media,
+    }) catch |err| return admin.fail(&session, err, "/admin");
+
     try admin.screen(&session, .ok, views.Media, .{
         .folder = filter.folder,
         .tags = filter.tags,
@@ -59,8 +65,14 @@ pub fn library(
         .kind = filter.kind,
         .size_filter = filter.size,
         .visibility = filter.visibility,
-        .items = try items_of(arena, listed.items, try columns_of(&session), listed.extended),
-        .columns = try columns_of(&session),
+        .items = try items_of(
+            arena,
+            listed.items,
+            try shown_of(arena, columns, hidden.hidden),
+            listed.extended,
+        ),
+        .columns = columns,
+        .hidden = hidden.hidden,
         .total = @floatFromInt(listed.total),
         .all = @floatFromInt(listed.all),
         .unsorted = @floatFromInt(listed.unsorted),
@@ -602,7 +614,30 @@ fn columns_of(session: *const admin.Session) admin.Error![]const views.Media.Col
     return columns.items;
 }
 
-/// Each file as a tile: its facts end with what plugins' columns say about it.
+/// The columns the person shows: every one but those they hide.
+fn shown_of(
+    arena: std.mem.Allocator,
+    columns: []const views.Media.ColumnsItem,
+    hidden: []const []const u8,
+) admin.Error![]const views.Media.ColumnsItem {
+    var shown: std.ArrayList(views.Media.ColumnsItem) = .empty;
+
+    std.debug.assert(hidden.len <= 1 << 10);
+
+    outer: for (columns) |column| {
+        for (hidden) |field| {
+            if (std.mem.eql(u8, field, column.field)) {
+                continue :outer;
+            }
+        }
+
+        try shown.append(arena, column);
+    }
+
+    return shown.items;
+}
+
+/// Each file as a tile: its facts end with what the plugins' columns it shows say about it.
 fn items_of(
     arena: std.mem.Allocator,
     items: []const media.Item,
