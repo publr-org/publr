@@ -171,6 +171,16 @@ pub fn Of(comptime Domain: type) type {
                     expanded.def.flow,
                     changes,
                 );
+
+                // A type that lists the statuses it takes takes the site's own too.
+                if (expanded.def.statuses.len > 0) {
+                    for (changes.statuses) |own| {
+                        expanded.def.statuses = try std.mem.concat(ctx.arena, []const u8, &.{
+                            expanded.def.statuses,
+                            &.{own.id},
+                        });
+                    }
+                }
             }
 
             try resolve_aliases(ctx, &expanded.def.flow);
