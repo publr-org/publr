@@ -10,7 +10,7 @@ export const state = Publr.reactive({
   help_count: "",
 });
 
-const help_max = 255;
+const help_max = 280;
 
 export const onHelp = (event: Event) => {
   state.help = (event.target as HTMLInputElement).value;
@@ -32,7 +32,7 @@ export function HelpText({ help, help_count }: HelpTextProps) {
     <div>
       <Field>
         <FieldLabel htmlFor="help">{Publr.t("Help text")}</FieldLabel>
-        <Input id="help" name="help" value={state.help} maxLength={255} onInput={onHelp} />
+        <Input id="help" name="help" value={state.help} maxLength={280} onInput={onHelp} />
         <div class="flex items-baseline justify-between gap-4">
           <FieldDescription>{Publr.t("This help text will show up below the field")}</FieldDescription>
           <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">

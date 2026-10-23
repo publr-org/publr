@@ -30,7 +30,7 @@ for composing terms with other fields; a taxonomy attaches itself to types
 through its own `applies_to`, see [taxonomy](taxonomy.md)), `group`,
 `repeater`, plus any a plugin declares, named `<plugin>.<kind>`; an unknown
 kind is refused. A field can be `searchable` (full-text), `many` (a list of
-values of its kind: any kind but slug and group), carry a `help` line (up to 255
+values of its kind: any kind but slug and group), carry a `help` line (up to 280
 characters, shown under its control) and a `default` (the text its control
 posts, `1` for a boolean, a `datetime-local` or `YYYY-MM-DD` text or `now` for
 a date; put into a new record wherever the field is left out; not for slug,
