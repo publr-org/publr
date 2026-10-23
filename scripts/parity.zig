@@ -68,8 +68,8 @@ pub fn main(init: std.process.Init) !u8 {
 /// none; installing from the marketplace needs the plugins' built modules, which the fixture
 /// catalog does not carry; overriding who may call needs a plugin's operation made with
 /// `publr.operation.define`, which the fixture compiles in none of; and the seeded project's
-/// plugins queue no jobs for `job list` to show nor fail one for `job run_again`, and
-/// declare no webhooks for `webhook list` and `webhook run_again`; `project put` answers
+/// plugins queue no jobs for `job list` to show nor fail one for `job run_again`, repeat
+/// none for `job schedule` to move, and declare no webhooks for `webhook list` and `webhook run_again`; `project put` answers
 /// only a plugin's call; asking the marketplace answers a new id each time, and `job answer`
 /// reads only an id someone was given.
 const skips = [_][]const u8{
@@ -105,6 +105,7 @@ const skips = [_][]const u8{
     "operation.authorize",
     "job.list",
     "job.run_again",
+    "job.schedule",
     "webhook.list",
     "webhook.run_again",
     "project.put",
