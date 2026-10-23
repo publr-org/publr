@@ -548,7 +548,7 @@ pub fn SDK(comptime registry: Registry) type {
                 .operation_name = Operation.name,
                 .kind = Operation.kind,
                 .type_id = operation.type_of(in),
-                .open = @hasDecl(Operation, "open") and Operation.open,
+                .open = comptime answered(Operation),
             });
         }
 
@@ -566,8 +566,17 @@ pub fn SDK(comptime registry: Registry) type {
             return admit_answer(ctx, Operation.name, .{
                 .untrusted_callers = Operation.untrusted_callers,
                 .answer = Operation.answer,
-                .open = Operation.open,
+                .open = comptime answered(Operation),
             });
+        }
+
+        /// Whether `.authorize` decides who calls, past the roles: `open` (anyone), or a
+        /// ready answer, which `admit_answer` has already checked.
+        fn answered(comptime Operation: type) bool {
+            const open = @hasDecl(Operation, "open") and Operation.open;
+            const answer = @hasDecl(Operation, "answer") and Operation.answer != null;
+
+            return open or answer;
         }
 
         /// The same for any operation, compiled in or installed. Through an app's address an
