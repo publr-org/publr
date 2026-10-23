@@ -140,6 +140,14 @@ pub fn speaks(ctx: *Ctx) Error![]const u8 {
     return if (chosen.len > 0) chosen else stored(ctx, site_key, all);
 }
 
+/// The site's language, where nobody is asked (queued work queued with none): empty for
+/// English.
+pub fn site_speaks(ctx: *Ctx) Error![]const u8 {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    return stored(ctx, site_key, try choices(ctx.arena));
+}
+
 /// What a key holds, while a plugin still brings the language; empty otherwise.
 fn stored(ctx: *Ctx, key: []const u8, all: []const Choice) Error![]const u8 {
     std.debug.assert(key.len > 0);

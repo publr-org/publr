@@ -8,7 +8,6 @@ const operation = @import("operation.zig");
 const hooks = @import("hooks.zig");
 
 pub const Error = operation.Error;
-const Role = @import("../model/role.zig").Role;
 const Added = @import("../model/flow.zig").Added;
 const Kind = @import("../model/kinds.zig").Kind;
 

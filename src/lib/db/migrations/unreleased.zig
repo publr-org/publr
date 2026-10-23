@@ -20,7 +20,8 @@ pub fn up(connection: *db.Db) db.Error!void {
         \\    claimed_until INTEGER NOT NULL DEFAULT 0,
         \\    state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'failed')),
         \\    problem TEXT NOT NULL DEFAULT '',
-        \\    queued_at INTEGER NOT NULL
+        \\    queued_at INTEGER NOT NULL,
+        \\    language TEXT NOT NULL DEFAULT ''
         \\) STRICT
     );
     try connection.exec(

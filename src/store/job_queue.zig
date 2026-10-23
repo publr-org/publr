@@ -22,6 +22,8 @@ pub const Claimed = struct {
     name: []const u8,
     input: []const u8,
     attempts: i64,
+    /// What its `ctx.t` speaks (`Queued.language`).
+    language: []const u8,
 };
 
 pub const Queued = struct {
@@ -30,6 +32,9 @@ pub const Queued = struct {
     input: []const u8,
     due_at_ms: i64,
     now_ms: i64,
+    /// The language its `ctx.t` speaks: the record's or the person's in the call that queued
+    /// it (`Ctx.language_queued`); empty, the site's.
+    language: []const u8 = "",
 };
 
 pub fn push(connection: *db.Db, job: Queued) db.Error!void {
@@ -37,8 +42,8 @@ pub fn push(connection: *db.Db, job: Queued) db.Error!void {
     std.debug.assert(job.input.len > 0 and job.input.len <= input_bytes_max);
 
     var insert = try connection.prepare(
-        "INSERT INTO job_queue (plugin, name, input, due_at, queued_at) " ++
-            "VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO job_queue (plugin, name, input, due_at, queued_at, language) " ++
+            "VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     );
     defer insert.finalize();
 
@@ -47,6 +52,7 @@ pub fn push(connection: *db.Db, job: Queued) db.Error!void {
     try insert.bind_text(3, job.input);
     try insert.bind_int(4, job.due_at_ms);
     try insert.bind_int(5, job.now_ms);
+    try insert.bind_text(6, job.language);
     try insert.exec();
 }
 
@@ -87,7 +93,7 @@ pub fn claim(
     var update = try connection.prepare(
         "UPDATE job_queue SET claimed_until = ?1 + ?2 WHERE id IN (SELECT id FROM job_queue " ++
             "WHERE state = 'waiting' AND due_at <= ?1 AND claimed_until <= ?1 " ++
-            "ORDER BY due_at, id LIMIT ?3) RETURNING id, plugin, name, input, attempts",
+            "ORDER BY due_at, id LIMIT ?3) RETURNING id, plugin, name, input, attempts, language",
     );
     defer update.finalize();
 
@@ -246,6 +252,8 @@ pub const Follow = struct {
     moment: ?i64,
     offset_ms: i64,
     now_ms: i64,
+    /// The record's language in the write that moved the field (`Queued.language`).
+    language: []const u8 = "",
 };
 
 /// A record's field moved (or was set first): its job queued for the new moment, at once when
@@ -318,6 +326,7 @@ pub fn follow(connection: *db.Db, arena: std.mem.Allocator, due: Follow) Error!v
         .input = input,
         .due_at_ms = @max(moment + due.offset_ms, due.now_ms),
         .now_ms = due.now_ms,
+        .language = due.language,
     });
 }
 
