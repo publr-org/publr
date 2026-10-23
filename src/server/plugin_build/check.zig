@@ -1,6 +1,7 @@
 //! `publr plugin check --dir <folder>`: the plugin checks over a plugin's source, each
-//! problem with its file and line; exits 1 when there is any. What Publr Cloud's install gate
-//! runs, and what `plugin build` runs first, through the same reading of the plugin.
+//! problem with its file and line; exits 1 for an error, never for a warning. What the
+//! install gate runs over the source a module carries, and what `plugin build` runs first,
+//! through the same reading of the plugin.
 const std = @import("std");
 const doc_reader = @import("../../sdk/plugin/doc_reader.zig");
 const report = @import("../../lib/report.zig");
@@ -20,7 +21,7 @@ pub fn run(init: std.process.Init, args: []const []const u8) !u8 {
 
     reported(args[1], problems);
 
-    return if (problems.len == 0) 0 else 1;
+    return if (doc_reader.failing(problems)) 1 else 0;
 }
 
 /// What the checks found over the source, and each prepared query that does not read.
@@ -48,14 +49,18 @@ pub fn problems_of(arena: std.mem.Allocator, read: doc_reader.Source) ![]const d
     return problems.items;
 }
 
-/// Each problem printed where it is.
+/// Each problem printed where it is; a warning says so and stops nothing.
 pub fn reported(dir: []const u8, problems: []const doc_reader.Placed) void {
     std.debug.assert(dir.len > 0);
 
     for (problems) |placed| {
         const where = .{ dir, placed.path, placed.problem.line, placed.problem.message };
 
-        report.err("{s}/{s}:{d}: {s}", where);
+        if (placed.problem.warning) {
+            report.warn_reason("", "{s}/{s}:{d}: warning: {s}", where);
+        } else {
+            report.err("{s}/{s}:{d}: {s}", where);
+        }
     }
 }
 

@@ -72,7 +72,12 @@ pub fn known(ctx: *Ctx) Error![]const status.Status {
     std.debug.assert(ctx.now_ms >= 0);
     std.debug.assert(status.core_statuses.len > 0);
 
-    const own = try store.content_types.own_statuses(ctx.db, ctx.arena);
+    const stored = try store.content_types.own_statuses(ctx.db, ctx.arena);
+    // The statuses a site added to a type's flow (`flow add_status`) are a type's own too.
+    const own = std.mem.concat(ctx.arena, status.Status, &.{
+        stored,
+        try @import("flow.zig").site_statuses(ctx),
+    }) catch return error.OutOfMemory;
     const added = added_statuses(ctx);
     const core_len = status.core_statuses.len;
     const all = ctx.arena.alloc(status.Status, core_len + own.len + added.len) catch {

@@ -65,6 +65,8 @@ export type PluginProps = {
   blocked: Array<{ code: string; text: string }>;
   /** Each remote of a plugin it works with that is off, and why. */
   off: Array<{ code: string; text: string }>;
+  /** What the plugin checks warned of, each where it is and why: never a stop. */
+  warnings: Array<{ code: string; text: string }>;
 };
 
 /** One plugin: whether it runs, its versions (an update waiting, the previous one to roll
@@ -96,6 +98,7 @@ export function Plugin({
   missing,
   blocked,
   off,
+  warnings,
 }: PluginProps) {
   return (
     <IndexPage
@@ -176,6 +179,11 @@ export function Plugin({
           {off.length > 0 && (
             <Callout tone="warning" title={Publr.t("Switched off")} items={off}>
               {Publr.t("These parts answer as unavailable and their hooks don't run until the other plugin fits. The rest works.")}
+            </Callout>
+          )}
+          {warnings.length > 0 && (
+            <Callout tone="warning" title={Publr.t("Plugin check warnings")} items={warnings}>
+              {Publr.t("Worth a look; the plugin builds and runs as it is.")}
             </Callout>
           )}
           {missing !== "" && (

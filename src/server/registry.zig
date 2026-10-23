@@ -19,6 +19,7 @@ const removal = @import("../operations/removal.zig");
 const trash = @import("../operations/trash.zig");
 const identity = @import("../operations/identity.zig");
 const status = @import("../operations/status.zig");
+const flow_operations = @import("../operations/flow.zig");
 const job = @import("../operations/job.zig");
 const webhook = @import("../operations/webhook.zig");
 const role = @import("../operations/role.zig");
@@ -71,7 +72,7 @@ pub const remotes_off = native_plugins.merged_remotes_off;
 const core_operations = heartbeat.operations ++ project.operations ++ custom_fields.operations ++
     user.operations ++
     sign_in.operations ++ sign_on.operations ++ device.operations ++ identity.operations ++
-    status.operations ++ job.operations ++ webhook.operations ++
+    status.operations ++ flow_operations.operations ++ job.operations ++ webhook.operations ++
     role.operations ++
     content_type.operations ++
     record.operations ++ taxonomy.operations ++ term.operations ++ media.operations ++
@@ -91,6 +92,7 @@ const core_namespaces = [_]sdk.operation.Namespace{
     device.namespace,
     identity.namespace,
     status.namespace,
+    flow_operations.namespace,
     job.namespace,
     webhook.namespace,
     operation_operations.namespace,
