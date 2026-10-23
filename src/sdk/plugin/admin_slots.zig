@@ -61,68 +61,8 @@ pub const TopBar = struct {
     count: ?type = null,
 };
 
-/// An entry a plugin adds to the top bar: data only, the
-/// admin's own components draw it, so it looks like the admin's and cannot pass for
-/// anything else. The same in both modes.
-pub const Item = struct {
-    label: []const u8,
-    /// An icon of the set; a name the admin does not carry shows the plugin icon.
-    icon: []const u8,
-    /// One of the plugin's own pages, by its `path`.
-    page: []const u8,
-    /// Shown to whoever may call it.
-    operation: type,
-    /// A read of the plugin's own with no input, answering `count`: shown beside the label.
-    count: ?type = null,
-};
-
+/// Pages in the top bar, at most.
 pub const items_max: u32 = 4;
-
-/// The plugin's top bar entries: its pages that say `.top_bar`, checked.
-pub fn items_of(comptime Plugin: type) []const Item {
-    comptime {
-        const name = Plugin.manifest.name;
-        var items: []const Item = &.{};
-
-        std.debug.assert(name.len > 0);
-
-        if (!plugin_define.has(Plugin, "pages")) {
-            return &.{};
-        }
-
-        for (plugin_define.get(Plugin, "pages")) |page| {
-            const shown = page.top_bar orelse continue;
-
-            if (page.tabs) {
-                @compileError("plugin " ++ name ++ ": tabbed page " ++ page.path ++
-                    " is not in the top bar; its tabs may be");
-            }
-
-            if (shown.count) |Count| {
-                if (Count.kind != .read or !@hasField(Count.Out, "count")) {
-                    @compileError("plugin " ++ name ++ ": page " ++ page.path ++
-                        " counts with a read answering `count`");
-                }
-            }
-
-            items = items ++ &[_]Item{.{
-                .label = page.label,
-                .icon = page.icon,
-                .page = page.path,
-                .operation = page.gate(),
-                .count = shown.count,
-            }};
-        }
-
-        if (items.len > items_max) {
-            @compileError("plugin " ++ name ++ ": at most 4 pages are in the top bar");
-        }
-
-        const done = items;
-
-        return done;
-    }
-}
 
 /// A box a plugin adds to a content type's edit form, any plugin's type or the core's: its
 /// read draws it in the plugin frame, told only which record it is on (`In.record`, an id)
@@ -332,6 +272,7 @@ pub fn pages_of(comptime Plugin: type) []const Page {
         }
 
         const pages: []const Page = plugin_define.get(Plugin, "pages");
+        var in_top_bar: u32 = 0;
 
         if (pages.len == 0 or pages.len > pages_max) {
             @compileError("plugin " ++ name ++ ": `pages` holds 1 to 8 pages");
@@ -351,6 +292,11 @@ pub fn pages_of(comptime Plugin: type) []const Page {
                 if (std.mem.eql(u8, page.path, other.path)) {
                     @compileError("plugin " ++ name ++ ": two pages at " ++ page.path);
                 }
+            }
+
+            if (page.top_bar) |shown| {
+                in_top_bar += 1;
+                assert_top_bar(name, page, shown);
             }
 
             if (page.tabs) {
@@ -374,7 +320,29 @@ pub fn pages_of(comptime Plugin: type) []const Page {
             }
         }
 
+        if (in_top_bar > items_max) {
+            @compileError("plugin " ++ name ++ ": at most 4 pages are in the top bar");
+        }
+
         return pages;
+    }
+}
+
+/// A page in the top bar: never a tabbed one (its tabs may be), counted by a read answering
+/// `count`.
+fn assert_top_bar(comptime name: []const u8, comptime page: Page, comptime shown: TopBar) void {
+    comptime {
+        if (page.tabs) {
+            @compileError("plugin " ++ name ++ ": tabbed page " ++ page.path ++
+                " is not in the top bar; its tabs may be");
+        }
+
+        if (shown.count) |Count| {
+            if (Count.kind != .read or !@hasField(Count.Out, "count")) {
+                @compileError("plugin " ++ name ++ ": page " ++ page.path ++
+                    " counts with a read answering `count`");
+            }
+        }
     }
 }
 

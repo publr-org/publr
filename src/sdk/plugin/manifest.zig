@@ -54,7 +54,6 @@ pub fn of(comptime Plugin: type) Manifest {
             .menu = @import("menu_define.zig").entries_of(Plugin),
             .icons = @import("menu_define.zig").icons_of(Plugin),
             .panels = panels_of(Plugin),
-            .top_bar = items_of(Plugin),
             .row_actions = row_actions_of(Plugin),
             // The rest of `main.zig`'s `//!`, past its first line: shown on its page.
             .about = if (@hasDecl(Plugin, "settings_text")) Plugin.settings_text else "",
@@ -135,6 +134,7 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .save = form.save.name,
                     .hidden = page.menu != null,
                     .parent = page.parent,
+                    .top_bar = top_bar_of(page),
                 }};
             } else if (takes(page.operation.?.run)) {
                 list = list ++ &[_]sandboxed_plugin.Page{.{
@@ -143,6 +143,7 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .icon = page.icon,
                     .operation = page.operation.?.name,
                     .hidden = page.menu != null,
+                    .top_bar = top_bar_of(page),
                 }};
             }
         }
@@ -151,32 +152,19 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
     }
 }
 
-/// The plugin's top bar entries whose operations run in the sandbox.
-fn items_of(comptime Plugin: type) []const sandboxed_plugin.Item {
+/// A page's place in the top bar, its count named; none when its count takes the host's
+/// context.
+fn top_bar_of(comptime page: @import("admin_slots.zig").Page) ?sandboxed_plugin.TopBar {
     comptime {
-        const declared = @import("admin_slots.zig").items_of(Plugin);
+        std.debug.assert(page.path.len > 0);
+
+        const shown = page.top_bar orelse return null;
+        const Count = shown.count orelse return .{};
         const takes = @import("context.zig").takes_plugin_ctx;
-        var items: []const sandboxed_plugin.Item = &.{};
 
-        std.debug.assert(declared.len <= @import("admin_slots.zig").items_max);
-
-        for (declared) |item| {
-            const counted = if (item.count) |Count| takes(Count.run) else true;
-
-            if (!takes(item.operation.run) or !counted) {
-                continue;
-            }
-
-            items = items ++ &[_]sandboxed_plugin.Item{.{
-                .label = item.label,
-                .icon = item.icon,
-                .page = item.page,
-                .operation = item.operation.name,
-                .count = if (item.count) |Count| Count.name else "",
-            }};
-        }
-
-        return items;
+        return if (takes(Count.run)) .{
+            .count = Count.name,
+        } else null;
     }
 }
 

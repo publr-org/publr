@@ -103,7 +103,6 @@ pub const SettingsPage = admin_slots.SettingsPage;
 pub const SettingsTab = admin_slots.SettingsTab;
 pub const RowAction = admin_slots.RowAction;
 pub const Page = admin_slots.Page;
-pub const Item = admin_slots.Item;
 pub const Panel = admin_slots.Panel;
 
 /// A panel and the plugin it is of.
@@ -122,11 +121,6 @@ pub const OwnedSettingsPage = struct {
 pub const OwnedSettingsTab = struct {
     plugin: []const u8,
     tab: SettingsTab,
-};
-
-pub const OwnedItem = struct {
-    plugin: []const u8,
-    item: Item,
 };
 
 /// A page and the plugin it is of.
@@ -546,29 +540,6 @@ fn declared_in(comptime list: []const []const u8, comptime name: []const u8) ?[]
     }
 }
 
-/// A plugin's entries in `list`, each checked to name its own operations.
-fn owned_items(comptime Plugin: type) []const OwnedItem {
-    comptime {
-        var owned: []const OwnedItem = &.{};
-
-        for (admin_slots.items_of(Plugin)) |item| {
-            const counted = if (item.count) |Count| owns_operation(Plugin, Count) else true;
-
-            if (!owns_operation(Plugin, item.operation) or !counted) {
-                @compileError("plugin " ++ Plugin.manifest.name ++ ": entry " ++ item.label ++
-                    " names an operation not its own");
-            }
-
-            owned = owned ++ &[_]OwnedItem{.{
-                .plugin = Plugin.manifest.name,
-                .item = item,
-            }};
-        }
-
-        return owned;
-    }
-}
-
 /// Whether `Operation` is one the plugin declares.
 pub fn owns_operation(comptime Plugin: type, comptime Operation: type) bool {
     comptime {
@@ -725,7 +696,6 @@ pub fn Merged(comptime plugins: anytype) type {
         var settings_pages: []const OwnedSettingsPage = &.{};
         var row_actions: []const RowAction = &.{};
         var pages: []const OwnedPage = &.{};
-        var top_bar: []const OwnedItem = &.{};
         var menu: []const @import("../model/sandboxed_plugin.zig").MenuEntry = &.{};
         var icons: []const @import("../model/sandboxed_plugin.zig").PluginIcon = &.{};
         var panels: []const OwnedPanel = &.{};
@@ -804,8 +774,10 @@ pub fn Merged(comptime plugins: anytype) type {
                     &.{ form.read, form.save }
                 else
                     &.{page.operation.?};
+                const shown: admin_slots.TopBar = page.top_bar orelse .{};
+                const counted: []const type = if (shown.count) |Count| &.{Count} else &.{};
 
-                for (used) |Operation| {
+                for (used ++ counted) |Operation| {
                     if (!owns_operation(Plugin, Operation)) {
                         @compileError("plugin " ++ Plugin.manifest.name ++ ": page " ++
                             page.path ++ " uses " ++ Operation.name ++ ", not one of its own");
@@ -817,8 +789,6 @@ pub fn Merged(comptime plugins: anytype) type {
                     .page = page,
                 }};
             }
-
-            top_bar = top_bar ++ owned_items(Plugin);
 
             for (admin_slots.panels_of(Plugin)) |panel| {
                 if (!owns_operation(Plugin, panel.operation)) {
@@ -1023,7 +993,6 @@ pub fn Merged(comptime plugins: anytype) type {
             /// Every plugin's own pages, in name order.
             pub const merged_pages = pages;
             /// Every plugin's top bar entries, in name order.
-            pub const merged_top_bar = top_bar;
             /// Every plugin's menu items, in name order.
             pub const merged_menu = menu;
             /// Every plugin's own icons, in name order.

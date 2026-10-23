@@ -1,8 +1,6 @@
-//! The entries plugins add to the top bar:
-//! compiled-in plugins' from the build, installed ones' from their manifests, each shown
-//! to whoever may call its operation and leading only to one of the plugin's pages. An
-//! installed plugin's entry naming an operation not its own
-//! is never shown.
+//! The entries plugins add to the top bar: their pages that say `.top_bar`, compiled-in
+//! plugins' from the build, installed ones' from their manifests, each shown to whoever may
+//! see the page. An installed plugin's page naming an operation not its own is never shown.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
@@ -28,14 +26,17 @@ pub fn of(session: *const Session) admin.Error![]const Entry {
 
     var entries: std.ArrayList(Entry) = .empty;
 
-    inline for (registry.top_bar) |owned| {
-        if (registry.SDK.may(&session.ctx, owned.item.operation)) {
+    inline for (registry.pages) |owned| {
+        const page = owned.page;
+        const shown = comptime page.top_bar != null;
+
+        if (shown and registry.SDK.may(&session.ctx, comptime page.gate())) {
             try entries.append(session.arena, .{
                 .plugin = owned.plugin,
-                .label = owned.item.label,
-                .icon = owned.item.icon,
-                .href = try href_of(session, owned.plugin, owned.item.page),
-                .count = if (owned.item.count) |Count| Count.name else "",
+                .label = page.label,
+                .icon = page.icon,
+                .href = try href_of(session, owned.plugin, page.path),
+                .count = if (comptime page.top_bar.?.count) |Count| Count.name else "",
             });
         }
     }
@@ -43,20 +44,21 @@ pub fn of(session: *const Session) admin.Error![]const Entry {
     const sandboxed = session.ctx.sandboxed_plugins orelse return entries.items;
 
     for (sandboxed.manifests()) |manifest| {
-        const declared = manifest.top_bar;
-
-        for (declared) |item| {
+        for (manifest.pages) |page| {
             if (entries.items.len == entries_max) {
                 break;
             }
 
-            if (sound(manifest, item) and registry.SDK.may_named(&session.ctx, item.operation)) {
+            const shown = page.top_bar orelse continue;
+            const gate = gate_of(page);
+
+            if (sound(manifest, page) and registry.SDK.may_named(&session.ctx, gate)) {
                 try entries.append(session.arena, .{
                     .plugin = manifest.name,
-                    .label = item.label,
-                    .icon = item.icon,
-                    .href = try href_of(session, manifest.name, item.page),
-                    .count = item.count,
+                    .label = page.label,
+                    .icon = page.icon,
+                    .href = try href_of(session, manifest.name, page.path),
+                    .count = shown.count,
                 });
             }
         }
@@ -98,26 +100,21 @@ fn href_of(
     return std.fmt.allocPrint(session.arena, "{s}/{s}/{s}", .{ frame.prefix, plugin, page });
 }
 
-/// An installed plugin's entry: a label, its own operations, and a page of its own.
-fn sound(manifest: model.Manifest, item: model.Item) bool {
-    std.debug.assert(manifest.name.len > 0);
-
-    const leads = item.page.len > 0 and has_page(manifest, item.page);
-    const counted = item.count.len == 0 or own_kind(manifest, item.count) == .read;
-
-    return item.label.len > 0 and leads and counted and own_kind(manifest, item.operation) != null;
+/// What decides who sees an installed plugin's page: the drawing read, or the form's.
+fn gate_of(page: model.Page) []const u8 {
+    return if (page.operation.len > 0) page.operation else page.read;
 }
 
-fn has_page(manifest: model.Manifest, path: []const u8) bool {
-    std.debug.assert(path.len > 0);
+/// An installed plugin's page in the top bar: a label, its own operations, not tabbed.
+fn sound(manifest: model.Manifest, page: model.Page) bool {
+    std.debug.assert(manifest.name.len > 0);
 
-    for (manifest.pages) |page| {
-        if (std.mem.eql(u8, page.path, path)) {
-            return true;
-        }
-    }
+    const shown = page.top_bar orelse return false;
+    const counted = shown.count.len == 0 or own_kind(manifest, shown.count) == .read;
+    const gate = gate_of(page);
+    const own = gate.len > 0 and own_kind(manifest, gate) != null;
 
-    return false;
+    return page.label.len > 0 and !page.tabs and counted and own;
 }
 
 fn own_kind(manifest: model.Manifest, name: []const u8) ?model.Kind {
@@ -132,7 +129,16 @@ fn own_kind(manifest: model.Manifest, name: []const u8) ?model.Kind {
     return null;
 }
 
-test "an installed plugin's entry leads into the admin through its own operations" {
+test "an installed plugin's page is in the top bar through its own operations" {
+    const good: model.Page = .{
+        .path = "entries",
+        .label = "Notes",
+        .icon = "file",
+        .operation = "notes.list",
+        .top_bar = .{
+            .count = "notes.count",
+        },
+    };
     const manifest: model.Manifest = .{
         .name = "notes",
         .version = "0.1.0",
@@ -149,27 +155,15 @@ test "an installed plugin's entry leads into the admin through its own operation
                 .description = "Count",
             },
         },
-        .pages = &.{.{
-            .path = "entries",
-            .label = "Notes",
-            .icon = "file",
-            .operation = "notes.list",
-        }},
-    };
-    const good: model.Item = .{
-        .label = "Notes",
-        .icon = "file",
-        .page = "entries",
-        .operation = "notes.list",
-        .count = "notes.count",
+        .pages = &.{good},
     };
     var foreign = good;
-    var no_page = good;
+    var not_shown = good;
 
     foreign.operation = "user.list";
-    no_page.page = "missing";
+    not_shown.top_bar = null;
 
     try std.testing.expect(sound(manifest, good));
     try std.testing.expect(!sound(manifest, foreign));
-    try std.testing.expect(!sound(manifest, no_page));
+    try std.testing.expect(!sound(manifest, not_shown));
 }

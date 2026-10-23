@@ -327,7 +327,6 @@ pub const settings_pages = native_plugins.merged_settings_pages;
 pub const settings_tabs = native_plugins.merged_settings_tabs;
 pub const row_actions = native_plugins.merged_row_actions;
 pub const pages = native_plugins.merged_pages;
-pub const top_bar = native_plugins.merged_top_bar;
 pub const menu = native_plugins.merged_menu;
 pub const icons = native_plugins.merged_icons;
 pub const panels = native_plugins.merged_panels;

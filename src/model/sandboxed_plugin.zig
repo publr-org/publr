@@ -108,7 +108,6 @@ pub const Manifest = struct {
     menu: []const MenuEntry = &.{},
     icons: []const PluginIcon = &.{},
     panels: []const Panel = &.{},
-    top_bar: []const Item = &.{},
     row_actions: []const RowAction = &.{},
     /// What the plugin says about itself on its page in the admin: its `main.zig`'s `//!`
     /// past the first line, shown through the admin's sanitizer in a box the admin draws.
@@ -251,15 +250,13 @@ pub const Page = struct {
     tabs: bool = false,
     /// The tabbed pages this form is a tab of, the first that exists (`products.settings`).
     parent: []const []const u8 = &.{},
+    /// Also in the top bar, for whoever may see the page.
+    top_bar: ?TopBar = null,
 };
 
-/// An entry in the top bar: to one of the plugin's pages or an admin
-/// address, shown to whoever may call `operation`, `count` (a read) beside the label.
-pub const Item = struct {
-    label: []const u8,
-    icon: []const u8,
-    page: []const u8,
-    operation: []const u8,
+/// A page's place in the top bar: `count`, a read of the plugin's own answering `count`,
+/// shown beside the label; empty for none.
+pub const TopBar = struct {
     count: []const u8 = "",
 };
 
