@@ -269,6 +269,18 @@ const exercised = [_]Part{
 /// What only the sandbox has: a compiled-in plugin runs unlimited, its grants as asked.
 const sandbox_only = [_]Part{
     .{
+        .name = "example",
+        .where = "an installed operation's `Example:` as JSON, run by its plugin build",
+    },
+    .{
+        .name = "example_out",
+        .where = "the same example's answer",
+    },
+    .{
+        .name = "words",
+        .where = "an installed form's enum values in words; compiled in they come from `///`",
+    },
+    .{
         .name = "format",
         .where = "the module's own format number",
     },
