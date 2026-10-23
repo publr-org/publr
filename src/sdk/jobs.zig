@@ -5,8 +5,11 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const job_queue = @import("../store/job_queue.zig");
 const job_define = @import("plugin/job_define.zig");
+const webhook_define = @import("plugin/webhook_define.zig");
 const hook_runs = @import("hook_runs.zig");
 const plugin_context = @import("plugin/context.zig");
+const store_settings = @import("../store/settings.zig");
+const zone = @import("../lib/zone.zig");
 
 const Ctx = sdk.Ctx;
 const PluginCtx = plugin_context.HostApi;
@@ -37,6 +40,58 @@ fn every_of(declared: sdk.sandboxed_plugins.Job) ?job_define.Every {
     }
 
     return null;
+}
+
+/// The administrator's time and pause for a repeating job, kept under `schedule_key`.
+pub const Schedule = struct {
+    hour: u8,
+    minute: u8,
+    paused: bool = false,
+};
+
+/// Where a repeating job's `Schedule` is kept among the site's settings.
+pub fn schedule_key(
+    arena: std.mem.Allocator,
+    plugin: []const u8,
+    name: []const u8,
+) error{OutOfMemory}![]const u8 {
+    std.debug.assert(plugin.len > 0 and name.len > 0);
+    std.debug.assert(plugin.len + name.len < 1024);
+
+    return std.fmt.allocPrint(arena, "job_schedule:{s}.{s}", .{ plugin, name });
+}
+
+/// The setting that names the site's time zone (`Europe/Warsaw`); UTC without it.
+pub const zone_key = "time_zone";
+
+/// The rule of the site's time zone.
+pub fn zone_rule(ctx: *Ctx) job_queue.Error![]const u8 {
+    std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(zone_key.len > 0);
+
+    const name = try store_settings.get(ctx.db, ctx.arena, zone_key) orelse return "UTC0";
+
+    return zone.rule_of(name) orelse "UTC0";
+}
+
+/// The first moment after `now_ms` a job repeating `every`, `at` runs, `at` read on the
+/// clock of the zone with `rule`.
+pub fn next_in_zone(every: job_define.Every, at: job_define.At, now_ms: i64, rule: []const u8) i64 {
+    std.debug.assert(now_ms >= 0);
+    std.debug.assert(rule.len > 0);
+
+    var local = job_define.next_after(every, at, now_ms + zone.offset_ms(rule, now_ms));
+    var utc = zone.utc_of(rule, local);
+
+    // A clock turned back can put the next moment before now: the one after it, then.
+    while (utc <= now_ms) {
+        local = job_define.next_after(every, at, local);
+        utc = zone.utc_of(rule, local);
+    }
+
+    std.debug.assert(utc > now_ms);
+
+    return utc;
 }
 
 pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
@@ -91,68 +146,177 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
             return @intCast(claimed.len);
         }
 
-        /// Each repeating job with nothing waiting, queued at its next moment: after it ran,
-        /// failed for good, or on a fresh database. Answers how many were queued.
+        /// Each repeating job with nothing waiting and not paused, queued at its next moment:
+        /// after it ran, failed for good, or on a fresh database. Answers how many were
+        /// queued.
         pub fn repeat(ctx: *Ctx) job_queue.Error!u32 {
             std.debug.assert(ctx.db.transaction_depth == 0);
             std.debug.assert(ctx.now_ms >= 0);
 
+            const rule = try zone_rule(ctx);
             var queued: u32 = 0;
 
-            if (ctx.sandboxed_plugins) |sandboxed| {
-                queued += try repeat_installed(ctx, sandboxed);
-            }
-
-            inline for (registry.jobs, registry.job_owners) |Job, owner| {
-                if (comptime Job.every) |every| {
-                    if (!try job_queue.waiting_for(ctx.db, owner, Job.verb)) {
-                        try job_queue.push(ctx.db, .{
-                            .plugin = owner,
-                            .name = Job.verb,
-                            .input = "{}",
-                            .due_at_ms = job_define.next_after(every, Job.at, ctx.now_ms),
-                            .now_ms = ctx.now_ms,
-                        });
-                        queued += 1;
-                    }
+            for (try repeating(ctx)) |job| {
+                if (job.paused or try job_queue.waiting_for(ctx.db, job.plugin, job.name)) {
+                    continue;
                 }
+
+                try queue_next(ctx, job, rule);
+                queued += 1;
             }
 
             return queued;
         }
 
-        fn repeat_installed(
-            ctx: *Ctx,
-            sandboxed: *const sdk.sandboxed_plugins.SandboxedPlugins,
-        ) job_queue.Error!u32 {
-            std.debug.assert(ctx.db.transaction_depth == 0);
+        /// The repeating jobs' waiting runs queued again for their times now: after the
+        /// administrator changed one (`plugin`, `name`), or the site's time zone (all).
+        pub fn reschedule(ctx: *Ctx, plugin: ?[]const u8, name: []const u8) job_queue.Error!void {
             std.debug.assert(ctx.now_ms >= 0);
+            std.debug.assert(plugin == null or name.len > 0);
 
-            var queued: u32 = 0;
+            const rule = try zone_rule(ctx);
 
-            for (sandboxed.manifests()) |manifest| {
-                for (manifest.jobs) |declared| {
-                    const every = every_of(declared) orelse continue;
-
-                    if (try job_queue.waiting_for(ctx.db, manifest.name, declared.name)) {
+            for (try repeating(ctx)) |job| {
+                if (plugin) |only| {
+                    if (!std.mem.eql(u8, only, job.plugin) or !std.mem.eql(u8, name, job.name)) {
                         continue;
                     }
+                }
 
-                    try job_queue.push(ctx.db, .{
-                        .plugin = manifest.name,
-                        .name = declared.name,
-                        .input = "{}",
-                        .due_at_ms = job_define.next_after(every, .{
-                            .hour = declared.hour,
-                            .minute = declared.minute,
-                        }, ctx.now_ms),
-                        .now_ms = ctx.now_ms,
-                    });
-                    queued += 1;
+                try job_queue.forget_waiting(ctx.db, job.plugin, job.name, ctx.now_ms);
+
+                if (!job.paused) {
+                    try queue_next(ctx, job, rule);
+                }
+            }
+        }
+
+        /// A repeating job as declared, with the administrator's time and pause over it.
+        pub const Repeating = struct {
+            plugin: []const u8,
+            name: []const u8,
+            every: job_define.Every,
+            at: job_define.At,
+            paused: bool = false,
+        };
+
+        /// Every repeating job, compiled in and installed, as the administrator set it.
+        pub fn repeating(ctx: *Ctx) job_queue.Error![]const Repeating {
+            std.debug.assert(ctx.now_ms >= 0);
+            std.debug.assert(registry.jobs.len == registry.job_owners.len);
+
+            var list: std.ArrayList(Repeating) = .empty;
+
+            inline for (registry.jobs, registry.job_owners) |Job, owner| {
+                if (comptime Job.every) |every| {
+                    try list.append(ctx.arena, try chosen(ctx, .{
+                        .plugin = owner,
+                        .name = Job.verb,
+                        .every = every,
+                        .at = Job.at,
+                    }));
                 }
             }
 
-            return queued;
+            if (ctx.sandboxed_plugins) |sandboxed| {
+                for (sandboxed.manifests()) |manifest| {
+                    for (manifest.jobs) |declared| {
+                        try list.append(ctx.arena, try chosen(ctx, .{
+                            .plugin = manifest.name,
+                            .name = declared.name,
+                            .every = every_of(declared) orelse continue,
+                            .at = .{
+                                .hour = declared.hour,
+                                .minute = declared.minute,
+                            },
+                        }));
+                    }
+                }
+            }
+
+            return list.items;
+        }
+
+        fn chosen(ctx: *Ctx, declared: Repeating) job_queue.Error!Repeating {
+            std.debug.assert(declared.plugin.len > 0 and declared.name.len > 0);
+            std.debug.assert(declared.at.hour < 24 and declared.at.minute < 60);
+
+            const key = try schedule_key(ctx.arena, declared.plugin, declared.name);
+            const text = try store_settings.get(ctx.db, ctx.arena, key) orelse return declared;
+            const set = std.json.parseFromSliceLeaky(Schedule, ctx.arena, text, .{
+                .ignore_unknown_fields = true,
+            }) catch return declared;
+            var made = declared;
+
+            if (set.hour < 24 and set.minute < 60) {
+                made.at = .{
+                    .hour = set.hour,
+                    .minute = set.minute,
+                };
+            }
+
+            made.paused = set.paused;
+
+            return made;
+        }
+
+        fn queue_next(ctx: *Ctx, job: Repeating, rule: []const u8) job_queue.Error!void {
+            std.debug.assert(!job.paused);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            try job_queue.push(ctx.db, .{
+                .plugin = job.plugin,
+                .name = job.name,
+                .input = "{}",
+                .due_at_ms = next_in_zone(job.every, job.at, ctx.now_ms, rule),
+                .now_ms = ctx.now_ms,
+            });
+        }
+
+        /// A record just written: each `.due` job following one of its type's fields queued
+        /// for the field's moment, when that moved (`job_queue.follow`).
+        pub fn follow(ctx: *Ctx, record: []const u8) job_queue.Error!void {
+            std.debug.assert(ctx.now_ms >= 0);
+            std.debug.assert(record.len > 0);
+
+            inline for (registry.jobs, registry.job_owners) |Job, owner| {
+                if (comptime Job.due_on) |due| {
+                    try follow_one(ctx, owner, Job.verb, due, record);
+                }
+            }
+
+            const sandboxed = ctx.sandboxed_plugins orelse return;
+
+            for (sandboxed.manifests()) |manifest| {
+                for (manifest.jobs) |declared| {
+                    const due = declared.due orelse continue;
+
+                    try follow_one(ctx, manifest.name, declared.name, due, record);
+                }
+            }
+        }
+
+        fn follow_one(
+            ctx: *Ctx,
+            plugin: []const u8,
+            name: []const u8,
+            due: job_define.Due,
+            record: []const u8,
+        ) job_queue.Error!void {
+            std.debug.assert(plugin.len > 0 and name.len > 0);
+            std.debug.assert(due.field.len > 0);
+
+            const moment = try job_queue.moment_of(ctx.db, record, due.type, due.field) orelse
+                return;
+
+            try job_queue.follow(ctx.db, ctx.arena, .{
+                .plugin = plugin,
+                .name = name,
+                .record = record,
+                .moment = moment,
+                .offset_ms = due.offset_ms,
+                .now_ms = ctx.now_ms,
+            });
         }
 
         /// The job's own words for why it failed; empty when it ran.
@@ -206,17 +370,72 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(job.input.len > 0);
 
             const last = job.attempts + 1 >= job_define.attempts_max;
+            const delivery = webhook_delivery(ctx, job) catch |err| return @errorName(err);
+            const input = if (delivery) |kept| kept.input else job.input;
 
             ctx.failure = null;
 
-            sandboxed.job(ctx, job.plugin, job.name, job.input, last) catch |err| {
+            sandboxed.job(ctx, job.plugin, job.name, input, last) catch |err| {
                 const said = if (ctx.failure) |failure| failure.message else "";
                 const problem = if (said.len > 0) said else @errorName(err);
+
+                if (delivery) |kept| {
+                    const result = if (last) "failed" else "waiting";
+
+                    webhook_define.settled(ctx, kept.id, result, problem) catch |unsettled| {
+                        std.log.warn("webhook delivery {d} not settled: {t}", .{
+                            kept.id,
+                            unsettled,
+                        });
+                    };
+                }
 
                 return if (err == error.Conflict) conflicted(ctx, problem) else problem;
             };
 
+            if (delivery) |kept| {
+                webhook_define.settled(ctx, kept.id, "ran", "") catch |err| return @errorName(err);
+            }
+
             return "";
+        }
+
+        const Delivery = struct {
+            id: i64,
+            input: []const u8,
+        };
+
+        /// An installed plugin's webhook run (`webhook_<name>`): its delivery handed over
+        /// whole, as its sandbox has no store to read it from. Null for any other job.
+        fn webhook_delivery(ctx: *Ctx, job: job_queue.Claimed) !?Delivery {
+            std.debug.assert(job.name.len > 0);
+            std.debug.assert(job.input.len > 0);
+
+            if (!std.mem.startsWith(u8, job.name, "webhook_")) {
+                return null;
+            }
+
+            const queued = try std.json.parseFromSliceLeaky(
+                webhook_define.Queued,
+                ctx.arena,
+                job.input,
+                .{
+                    .ignore_unknown_fields = true,
+                },
+            );
+            const deliveries = @import("../store/webhook_deliveries.zig");
+            const kept = try deliveries.get(ctx.db, ctx.arena, queued.delivery) orelse {
+                return error.NotFound;
+            };
+
+            return .{
+                .id = queued.delivery,
+                .input = try std.json.Stringify.valueAlloc(ctx.arena, webhook_define.Queued{
+                    .delivery = queued.delivery,
+                    .body = kept.body,
+                    .headers = kept.headers,
+                }, .{}),
+            };
         }
 
         fn run_as(
@@ -232,12 +451,48 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
                 return run_input(ctx, Job, owner, job.attempts, {});
             }
 
+            if (comptime Job.due_on != null) {
+                return run_due(ctx, Job, owner, job);
+            }
+
             const input = std.json.parseFromSliceLeaky(Job.Input, ctx.arena, job.input, .{
                 .ignore_unknown_fields = true,
                 .allocate = .alloc_always,
             }) catch return "its input no longer reads as the job's";
 
             return run_input(ctx, Job, owner, job.attempts, input);
+        }
+
+        /// A `.due` job, given its record as it is now; a record gone or in the trash runs
+        /// nothing.
+        fn run_due(
+            ctx: *Ctx,
+            comptime Job: type,
+            comptime owner: []const u8,
+            job: job_queue.Claimed,
+        ) []const u8 {
+            comptime std.debug.assert(Job.due_on != null);
+            std.debug.assert(job.input.len > 0);
+
+            const due = std.json.parseFromSliceLeaky(job_define.DueInput, ctx.arena, job.input, .{
+                .ignore_unknown_fields = true,
+            }) catch return "its input no longer reads as the job's";
+            const running = ctx.plugin;
+            const was_code = ctx.plugin_code;
+
+            ctx.plugin = owner;
+            ctx.plugin_code = true;
+            defer ctx.plugin = running;
+            defer ctx.plugin_code = was_code;
+
+            var wrapped: PluginCtx = .{
+                .inner = ctx,
+            };
+            const held = Job.Record.get(&wrapped, due.record, .{}) catch |err| {
+                return if (err == error.NotFound) "" else @errorName(err);
+            };
+
+            return run_input(ctx, Job, owner, job.attempts, held);
         }
 
         fn run_input(
@@ -580,4 +835,151 @@ test "queued work applies a mod and calls an operation by name, as a request's c
 
     try std.testing.expectEqualStrings("Hello", try queued.mod("probe.greeting", greeting));
     try std.testing.expectError(error.NotFound, queued.call_json("probe.nothing", "{}"));
+}
+
+test "a .due job runs once per moment of its record's field, moved by edits, given the record" {
+    const registry = @import("../server/registry.zig");
+    const model = @import("../model.zig");
+    const record_define = @import("plugin/record_define.zig");
+    const words = @import("plugin/words.zig");
+    const records = @import("../operations/record.zig");
+    const types = @import("../operations/content_type.zig");
+    const Event = struct {
+        title: []const u8,
+        starts_at: ?words.Time = null,
+    };
+    const Docs = @import("plugin/define.zig").Words(.{
+        .{ @typeName(Event), "Event" },
+        .{ @typeName(Event) ++ ".title", "Title" },
+        .{ @typeName(Event) ++ ".starts_at", "Starts" },
+    });
+    const Events = record_define.define(Event, .{
+        .name = "probe.event",
+    });
+    const Probe = struct {
+        var heard: []const u8 = "";
+
+        fn run(ctx: *QueueCtx, event: Events.Held) sdk.Error!void {
+            std.debug.assert(event.id.len > 0);
+
+            heard = try ctx.base.inner.arena.dupe(u8, event.value.title);
+        }
+    };
+    const Remind = job_define.define(Events, .{
+        .name = "remind",
+        .run = Probe.run,
+        .due = .{
+            .field = .starts_at,
+            .before = .{
+                .hours = 1,
+            },
+        },
+    });
+    const Runner = sdk.SDK(.{
+        .operations = &.{},
+        .jobs = &.{Remind},
+        .job_owners = &.{"probe"},
+    }).jobs;
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.system);
+    const hour_ms: i64 = 60 * 60 * 1000;
+    const start = ctx.now_ms;
+
+    try registry.SDK.bootstrap(&ctx);
+    const declared = comptime record_define.content_type_of(Events, Docs);
+
+    _ = try registry.SDK.dispatch(&ctx, types.Create, .{
+        .definition = try model.content_type.encode(ctx.arena, declared),
+    });
+
+    const launch = "{{\"title\":\"Launch\",\"starts_at\":{d}}}";
+    const document = try std.fmt.allocPrint(ctx.arena, launch, .{start + 3 * hour_ms});
+    const created = try registry.SDK.dispatch(&ctx, records.Create, .{
+        .type = "probe.event",
+        .document = document,
+    });
+
+    try Runner.follow(&ctx, created.id);
+    try std.testing.expectEqual(start + 2 * hour_ms, (try job_queue.next_due(ctx.db)).?);
+
+    // Another field's edit leaves the job as it was.
+    _ = try registry.SDK.dispatch(&ctx, records.Save, .{
+        .id = created.id,
+        .document = "{\"title\":\"Launch day\"}",
+    });
+    try Runner.follow(&ctx, created.id);
+    try std.testing.expectEqual(1, (try job_queue.list(ctx.db, ctx.arena, 8)).len);
+
+    // Moved into the past: queued at once, in place of the old moment's.
+    const sooner = try std.fmt.allocPrint(ctx.arena, "{{\"starts_at\":{d}}}", .{
+        start + 30 * 60 * 1000,
+    });
+
+    _ = try registry.SDK.dispatch(&ctx, records.Save, .{
+        .id = created.id,
+        .document = sooner,
+    });
+    try Runner.follow(&ctx, created.id);
+    try std.testing.expectEqual(1, (try job_queue.list(ctx.db, ctx.arena, 8)).len);
+    try std.testing.expectEqual(start, (try job_queue.next_due(ctx.db)).?);
+    try std.testing.expectEqual(1, try Runner.drain(&ctx, 8));
+    try std.testing.expectEqualStrings("Launch day", Probe.heard);
+
+    // The value it ran for queues nothing again.
+    try Runner.follow(&ctx, created.id);
+    try std.testing.expectEqual(null, try job_queue.next_due(ctx.db));
+}
+
+test "a repeating job runs at its time on the site's clock; moved or paused by the administrator" {
+    const Tidy = struct {
+        fn run(ctx: *QueueCtx) sdk.Error!void {
+            std.debug.assert(ctx.base.inner.now_ms >= 0);
+        }
+    };
+    const Nightly = job_define.define_recurring(.{
+        .name = "tidy",
+        .run = Tidy.run,
+        .every = .day,
+        .at = .{
+            .hour = 3,
+        },
+    });
+    const Runner = sdk.SDK(.{
+        .operations = &.{},
+        .jobs = &.{Nightly},
+        .job_owners = &.{"probe"},
+    }).jobs;
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.system);
+    const hour_ms: i64 = 60 * 60 * 1000;
+
+    // 2026-07-15 12:00 UTC; 03:00 in Warsaw (summer) is 01:00 UTC.
+    ctx.now_ms = 1_784_116_800_000;
+    try store_settings.set(ctx.db, zone_key, "Europe/Warsaw", ctx.now_ms);
+    try std.testing.expectEqual(1, try Runner.repeat(&ctx));
+    try std.testing.expectEqual(ctx.now_ms + 13 * hour_ms, (try job_queue.next_due(ctx.db)).?);
+
+    // Moved to 05:30: its waiting run follows.
+    const key = try schedule_key(ctx.arena, "probe", "tidy");
+
+    try store_settings.set(ctx.db, key, "{\"hour\":5,\"minute\":30}", ctx.now_ms);
+    try Runner.reschedule(&ctx, "probe", "tidy");
+    try std.testing.expectEqual(
+        ctx.now_ms + 15 * hour_ms + 30 * 60 * 1000,
+        (try job_queue.next_due(ctx.db)).?,
+    );
+
+    // Paused: nothing waits, and nothing is queued again.
+    try store_settings.set(ctx.db, key, "{\"hour\":5,\"minute\":30,\"paused\":true}", ctx.now_ms);
+    try Runner.reschedule(&ctx, "probe", "tidy");
+    try std.testing.expectEqual(null, try job_queue.next_due(ctx.db));
+    try std.testing.expectEqual(0, try Runner.repeat(&ctx));
 }

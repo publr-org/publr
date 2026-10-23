@@ -363,7 +363,8 @@ pub const never = [_][]const u8{
     "user.language",      "user.set_language",  "project.set_admin_language", "user.variant",
     "user.set_variant",   "ai.transcribe",      "view.default",               "view.save_default",
     "mod.list",           "view.reset_default", "role.get",                   "role.create",
-    "role.update",        "role.reset",         "role.remove",
+    "role.update",        "role.reset",         "project.set_time_zone",      "job.schedule",
+    "role.remove",
 };
 
 /// The core permission `key` stands for, or null when it names none.

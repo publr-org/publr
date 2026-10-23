@@ -39,7 +39,39 @@ pub fn Receive(comptime webhooks: []const type, comptime owners: []const []const
 
             inline for (webhooks, owners) |Webhook, owner| {
                 if (std.mem.eql(u8, address, owner ++ "." ++ Webhook.name)) {
-                    return take(Webhook, owner, request, response, ctx);
+                    return take(.{
+                        .owner = owner,
+                        .webhook = .{
+                            .name = Webhook.name,
+                            .secret = Webhook.secret,
+                            .signature = Webhook.signature,
+                            .body = Webhook.body,
+                            .delivery_id = Webhook.delivery_id,
+                        },
+                        .readable = Readable(Webhook).check,
+                    }, request, response, ctx);
+                }
+            }
+
+            // An installed plugin's: its sandbox reads the body as its event when it runs.
+            const sandboxed = Project.of(ctx).sandboxed_plugins orelse {
+                return response.text(.not_found, "No such webhook");
+            };
+
+            for (sandboxed.manifests()) |manifest| {
+                for (manifest.webhooks) |webhook| {
+                    const same = std.mem.startsWith(u8, address, manifest.name) and
+                        address.len == manifest.name.len + 1 + webhook.name.len and
+                        address[manifest.name.len] == '.' and
+                        std.mem.endsWith(u8, address, webhook.name);
+
+                    if (same) {
+                        return take(.{
+                            .owner = manifest.name,
+                            .webhook = webhook,
+                            .readable = webhook_define.readable,
+                        }, request, response, ctx);
+                    }
                 }
             }
 
@@ -48,16 +80,34 @@ pub fn Receive(comptime webhooks: []const type, comptime owners: []const []const
     };
 }
 
-fn take(
-    comptime Webhook: type,
-    comptime owner: []const u8,
-    request: *Request,
-    response: *Response,
-    ctx: *Context,
-) anyerror!void {
-    std.debug.assert(owner.len > 0);
+/// A compiled-in webhook's body checked as its event reads it.
+fn Readable(comptime Webhook: type) type {
+    return struct {
+        fn check(body: webhook_define.Body, arena: std.mem.Allocator, bytes: []const u8) bool {
+            std.debug.assert(body == Webhook.body);
+
+            _ = webhook_define.read(Webhook.Payload, Webhook.body, arena, bytes, "") catch {
+                return false;
+            };
+
+            return true;
+        }
+    };
+}
+
+/// The webhook a delivery is for, wherever it is declared.
+const Target = struct {
+    owner: []const u8,
+    webhook: webhook_define.wire.Webhook,
+    readable: *const fn (webhook_define.Body, std.mem.Allocator, []const u8) bool,
+};
+
+fn take(target: Target, request: *Request, response: *Response, ctx: *Context) anyerror!void {
+    std.debug.assert(target.owner.len > 0);
     std.debug.assert(ctx.user_data != null);
 
+    const webhook = target.webhook;
+    const owner = target.owner;
     const body = request.body;
 
     if (body.len > webhook_define.body_bytes_max) {
@@ -68,10 +118,10 @@ fn take(
     const project = Project.of(ctx);
     var system = identity.context(project, arena, .system);
     const headers = try headers_of(arena, request);
-    const key = secret.value_of(&system, Webhook.secret) catch null;
+    const key = secret.value_of(&system, webhook.secret) catch null;
     var delivery: store.webhook_deliveries.Received = .{
         .plugin = owner,
-        .name = Webhook.name,
+        .name = webhook.name,
         .delivery_id = "",
         .received_at = system.now_ms,
         .sender = sdk.limits.address_of(arena, request.peer(), request.header("x-forwarded-for")),
@@ -82,7 +132,7 @@ fn take(
     };
 
     const signed = webhook_define.verified(
-        Webhook.signature,
+        webhook.signature,
         key orelse "",
         body,
         headers,
@@ -92,7 +142,7 @@ fn take(
     if (!signed) {
         std.log.warn("webhook {s}.{s}: refused, its signature did not verify", .{
             owner,
-            Webhook.name,
+            webhook.name,
         });
         _ = try store.webhook_deliveries.add(system.db, delivery);
 
@@ -103,21 +153,27 @@ fn take(
     delivery.body = body;
     delivery.headers = headers;
 
-    _ = webhook_define.read(Webhook.Payload, Webhook.body, arena, body, headers) catch {
-        std.log.warn("webhook {s}.{s}: its body does not read", .{ owner, Webhook.name });
+    if (!target.readable(webhook.body, arena, body)) {
+        std.log.warn("webhook {s}.{s}: its body does not read", .{ owner, webhook.name });
         delivery.result = "unreadable";
         _ = try store.webhook_deliveries.add(system.db, delivery);
 
         return response.text(.bad_request, "The body does not read");
-    };
+    }
 
-    delivery.delivery_id = webhook_define.delivery_id_of(Webhook, arena, body, headers);
+    delivery.delivery_id = webhook_define.delivery_id_of(
+        webhook.delivery_id,
+        webhook.body,
+        arena,
+        body,
+        headers,
+    );
 
     if (delivery.delivery_id.len > 0) {
         const repeat = try store.webhook_deliveries.seen(
             system.db,
             owner,
-            Webhook.name,
+            webhook.name,
             delivery.delivery_id,
         );
 
@@ -127,7 +183,7 @@ fn take(
     }
 
     delivery.result = "waiting";
-    try keep(&system, Webhook, owner, delivery);
+    try keep(&system, owner, webhook.name, delivery);
 
     return response.text(.ok, "Received");
 }
@@ -135,8 +191,8 @@ fn take(
 /// The delivery kept and its run queued, together.
 fn keep(
     system: *sdk.Ctx,
-    comptime Webhook: type,
-    comptime owner: []const u8,
+    owner: []const u8,
+    name: []const u8,
     delivery: store.webhook_deliveries.Received,
 ) store.webhook_deliveries.Error!void {
     std.debug.assert(delivery.verified);
@@ -149,7 +205,7 @@ fn keep(
 
     try store.job_queue.push(system.db, .{
         .plugin = owner,
-        .name = Webhook.verb,
+        .name = try std.fmt.allocPrint(system.arena, "webhook_{s}", .{name}),
         .input = try std.fmt.allocPrint(system.arena, "{{\"delivery\":{d}}}", .{id}),
         .due_at_ms = system.now_ms,
         .now_ms = system.now_ms,

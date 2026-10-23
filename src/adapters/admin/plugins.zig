@@ -284,7 +284,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .pieces = pieces.items,
         .removes = try removes_of(&session, pieces.items),
         .log_href = try std.fmt.allocPrint(arena, "{s}/log", .{base}),
-        .webhooks_href = if (webhooks_tab.has_webhooks(detail.name))
+        .webhooks_href = if (webhooks_tab.has_webhooks(&session, detail.name))
             try std.fmt.allocPrint(arena, "{s}/webhooks", .{base})
         else
             "",

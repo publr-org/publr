@@ -86,6 +86,23 @@ pub fn made(connection: *db.Db, transition: Transition) db.Error!void {
     try delete.exec();
 }
 
+/// When the next scheduled transition is due; null when none is.
+pub fn next_due(connection: *db.Db) db.Error!?i64 {
+    std.debug.assert(connection.transaction_depth <= 8);
+    std.debug.assert(take_max > 0);
+
+    var select = try connection.prepare(
+        "SELECT due_at FROM scheduled_transitions ORDER BY due_at LIMIT 1",
+    );
+    defer select.finalize();
+
+    if (!try select.step()) {
+        return null;
+    }
+
+    return select.read_int();
+}
+
 /// The transitions due by `now_ms`, soonest first, up to `max`.
 pub fn due(
     connection: *db.Db,

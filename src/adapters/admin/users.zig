@@ -573,7 +573,7 @@ test "users under settings: invite by link, rename, reissue, delete; the rail si
     try std.testing.expectEqualStrings("/admin/settings/system", door.header("Location").?);
     const system_page = try flow.call("GET", "/admin/settings/system", "");
     try std.testing.expectEqual(.ok, system_page.status);
-    try std.testing.expect(std.mem.indexOf(u8, system_page.body, "Nothing to configure") != null);
+    try std.testing.expect(std.mem.indexOf(u8, system_page.body, "Europe/Warsaw") != null);
     const users_link = "href=\"" ++ back ++ "\"";
     try std.testing.expect(std.mem.indexOf(u8, system_page.body, users_link) != null);
 

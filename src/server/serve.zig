@@ -1200,6 +1200,7 @@ test "an app whose build fails answers 503 until a publish lets it build" {
     try std.testing.expect(cms.header("Location") != null);
     const health = try flow.call("GET /api/health HTTP/1.1\r\nHost: h\r\n\r\n", "");
     try std.testing.expectEqual(.ok, health.status);
+    try std.testing.expect(std.mem.indexOf(u8, health.body, "\"next_due\":") != null);
     const recovered = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "homepage",
         .document = "{\"hero\":\"Recovered homepage\"}",

@@ -3,6 +3,7 @@ import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { Code } from "@publr/ui/Code.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
 import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
@@ -34,20 +35,36 @@ export type QueueProps = {
     /** Run again, for a failed one. */
     run_action: string;
   }>;
+  /** The jobs that run again and again, with the time each runs at. */
+  repeating: Array<{
+    plugin: string;
+    name: string;
+    /** `day`, `hour`, or `minutes`. */
+    every: string;
+    /** With `every` `minutes`: how many. */
+    minutes: number;
+    /** `HH:MM` on the site's clock; with `every` `hour` only the minutes count. */
+    time: string;
+    /** The minute of the hour, for `every` `hour`. */
+    minute: number;
+    paused: boolean;
+  }>;
+  /** The site's time zone, the clock repeating work runs by. */
+  time_zone: string;
   notice: string;
   problem: string;
 };
 
 /** The work plugins queued that waits to run, and what failed for good with why, each
  * with Run again. Reached from the menu beside System settings' tabs. */
-export function Queue({ jobs, notice, problem }: QueueProps) {
+export function Queue({ jobs, repeating, time_zone, notice, problem }: QueueProps) {
   return (
     <IndexPage
       title={Publr.t("Queued work")}
       parents={[{ label: Publr.t("System settings"), href: "/admin/settings/system" }]}
       description={Publr.t("Work plugins run between requests. A run that fails tries again later, up to eight times; after the last it waits here until you run it again.")}
       notice={
-        (problem !== "" || notice !== "") && (
+        (problem !== "" || notice !== "" || repeating.length > 0) && (
           <div class="flex flex-col gap-3">
             {problem !== "" && (
               <Callout tone="error" title={Publr.t("Not done")}>
@@ -55,6 +72,63 @@ export function Queue({ jobs, notice, problem }: QueueProps) {
               </Callout>
             )}
             {notice !== "" && <Callout title={notice} />}
+            {repeating.length > 0 && (
+              <div class="flex flex-col gap-2" data-part="repeating">
+                <Text variant="body-sm" tone="muted">
+                  {Publr.t("Repeating work runs by the site's clock, {zone}. Change the time zone in System settings.", { zone: time_zone })}
+                </Text>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{Publr.t("Repeating job")}</TableHead>
+                      <TableHead>{Publr.t("Runs")}</TableHead>
+                      <TableHead> </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {repeating.map((job) => (
+                      <TableRow>
+                        <TableCell>
+                          <Code>{`${job.plugin}.${job.name}`}</Code>
+                        </TableCell>
+                        <TableCell classes="whitespace-nowrap">
+                          {job.paused ? (
+                            <Status tone="warning">{Publr.t("Paused")}</Status>
+                          ) : job.every === "day" ? (
+                            <Text variant="body-sm">{Publr.t("Every day at {time}", { time: job.time })}</Text>
+                          ) : job.every === "hour" ? (
+                            <Text variant="body-sm">{Publr.t("Every hour at minute {minute}", { minute: job.minute })}</Text>
+                          ) : (
+                            <Text variant="body-sm">{Publr.tn("Every minute", "Every {count} minutes", job.minutes)}</Text>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <form method="post" action="/admin/settings/system/queue/repeat" class="flex items-center justify-end gap-2">
+                            <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                            <input type="hidden" name="plugin" value={job.plugin} />
+                            <input type="hidden" name="name" value={job.name} />
+                            {job.every === "day" && (
+                              <Input type="time" name="time" value={job.time} size="sm" classes="w-28" label={Publr.t("Time")} />
+                            )}
+                            {job.every === "hour" && (
+                              <Input type="number" name="minute" value={`${job.minute}`} min="0" max="59" size="sm" classes="w-20" label={Publr.t("Minute")} />
+                            )}
+                            {job.every !== "minutes" && (
+                              <Button hierarchy="secondary" size="sm" type="submit" name="act" value="save">
+                                {Publr.t("Save")}
+                              </Button>
+                            )}
+                            <Button hierarchy="tertiary" size="sm" type="submit" name="act" value={job.paused ? "resume" : "pause"}>
+                              {job.paused ? Publr.t("Resume") : Publr.t("Pause")}
+                            </Button>
+                          </form>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
         )
       }

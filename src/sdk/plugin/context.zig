@@ -103,6 +103,11 @@ pub const HostApi = struct {
         comptime std.debug.assert(job_define.is_job(Job));
         std.debug.assert(self.inner.plugin.len > 0);
 
+        if (comptime Job.due_on != null) {
+            @compileError("job " ++ Job.verb ++ " runs when its record's field says: " ++
+                "`.due` jobs are not queued by code");
+        }
+
         const memory = self.inner.arena;
         const input = std.json.Stringify.valueAlloc(memory, in, .{}) catch return error.OutOfMemory;
 

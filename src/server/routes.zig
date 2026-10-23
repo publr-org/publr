@@ -154,7 +154,21 @@ fn health(request: *Request, response: *Response, ctx: *Context) Error!void {
         return;
     };
 
-    try response.json(.ok, out);
+    // When queued work is next due: a host that stops idle sites starts this one then.
+    const store = @import("../store.zig");
+    const jobs = store.job_queue.next_due(project.connection) catch null;
+    const transitions = store.scheduled_transitions.next_due(project.connection) catch null;
+    const next_due = if (jobs != null and transitions != null)
+        @min(jobs.?, transitions.?)
+    else
+        jobs orelse transitions;
+
+    try response.json(.ok, .{
+        .version = out.version,
+        .echo = out.echo,
+        .caller = out.caller,
+        .next_due = next_due,
+    });
 }
 
 /// For tests: an offline app with every route, driven with raw request text.

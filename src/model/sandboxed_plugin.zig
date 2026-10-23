@@ -86,6 +86,9 @@ pub const Manifest = struct {
     hooks: []const Hook = &.{},
     /// Its queued jobs; each one's entry follows the hooks', in this order.
     jobs: []const Job = &.{},
+    /// What other servers send it (`.webhooks`): each one's delivery runs as its job
+    /// `webhook_<name>`.
+    webhooks: []const Webhook = &.{},
     permissions: []const Ask = &.{},
     /// The secrets it declares (`.secrets`): not permissions, filled in by an administrator.
     secrets: []const Secret = &.{},
@@ -345,6 +348,57 @@ pub const Job = struct {
     minutes: u32 = 0,
     hour: u8 = 0,
     minute: u8 = 0,
+    /// The record's datetime field it follows (`.due`); null for one queued or repeating.
+    due: ?Due = null,
+};
+
+/// A plugin's webhook, at `/_webhooks/<plugin>.<name>`.
+pub const Webhook = struct {
+    name: []const u8,
+    /// The secret it is signed with, by name.
+    secret: []const u8,
+    signature: Signature,
+    body: Body = .json,
+    delivery_id: ?DeliveryId = null,
+};
+
+/// How a webhook's sender signs.
+pub const Signature = union(enum) {
+    /// An HMAC-SHA256 of the body in a header (`X-Hub-Signature-256: sha256=<hex>`).
+    hmac: struct {
+        header: []const u8,
+        prefix: []const u8 = "",
+        encoding: Encoding = .hex,
+    },
+    /// The timestamped HMAC payment providers send: `t=<seconds>,v1=<hex>` over
+    /// `<seconds>.<body>`, refused when the time is over five minutes off.
+    timestamped: struct {
+        header: []const u8,
+    },
+    /// The secret itself, in a header.
+    token: struct {
+        header: []const u8,
+    },
+};
+
+pub const Encoding = enum { hex, base64 };
+
+/// How a webhook's body is read: JSON, a form, or the bytes as they came.
+pub const Body = enum { json, form, raw };
+
+/// Where a delivery's own id is, so a repeat is dropped: a header, or a top-level field.
+pub const DeliveryId = union(enum) {
+    header: []const u8,
+    field: []const u8,
+};
+
+/// A record's datetime field a job follows: it runs once per value, `offset_ms` from it.
+pub const Due = struct {
+    /// The record's type, by its full name.
+    type: []const u8,
+    field: []const u8,
+    /// Negative for `.before`.
+    offset_ms: i64,
 };
 
 /// A hook a plugin asks for; its entry is the number of operations plus its position here.

@@ -93,6 +93,24 @@ pub const List = struct {
             }
         }
 
+        if (ctx.sandboxed_plugins) |sandboxed| {
+            for (sandboxed.manifests()) |manifest| {
+                if (!std.mem.eql(u8, manifest.name, in.plugin)) {
+                    continue;
+                }
+
+                for (manifest.webhooks) |declared| {
+                    try webhooks.append(ctx.arena, .{
+                        .name = declared.name,
+                        .path = try std.fmt.allocPrint(ctx.arena, "/_webhooks/{s}.{s}", .{
+                            in.plugin,
+                            declared.name,
+                        }),
+                    });
+                }
+            }
+        }
+
         return .{
             .webhooks = webhooks.items,
             .deliveries = try store.webhook_deliveries.list(ctx.db, ctx.arena, in.plugin, 100),

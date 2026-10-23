@@ -6,6 +6,8 @@ pub const one_way = false;
 pub fn up(connection: *db.Db) db.Error!void {
     std.debug.assert(connection.transaction_depth >= 1);
 
+    try add_job_due(connection);
+
     // The jobs plugins queue, run once their time comes.
     try connection.exec(
         \\CREATE TABLE IF NOT EXISTS job_queue (
@@ -79,4 +81,19 @@ pub fn up(connection: *db.Db) db.Error!void {
     if (!try db.schema.has_column(connection, "rail_pins", "hidden")) {
         try connection.exec("ALTER TABLE rail_pins ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
     }
+}
+
+/// The moment each `.due` job last queued for a record's datetime field.
+fn add_job_due(connection: *db.Db) db.Error!void {
+    std.debug.assert(connection.transaction_depth >= 1);
+
+    try connection.exec(
+        \\CREATE TABLE IF NOT EXISTS job_due (
+        \\    plugin TEXT NOT NULL,
+        \\    name TEXT NOT NULL,
+        \\    record TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+        \\    moment INTEGER NOT NULL,
+        \\    PRIMARY KEY (plugin, name, record)
+        \\) STRICT
+    );
 }
