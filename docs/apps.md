@@ -394,7 +394,7 @@ and a render reads each record once however many fields point at it.
 
 A money field is written with `money(product.data.price)`: the amount in the site's
 default currency, with the symbol, format and separators the site set for it
-(`project set_currencies`), `£1,234.56` or `1 234,56 €`. A second argument names
+(`money.currencies`), `£1,234.56` or `1 234,56 €`. A second argument names
 another of the site's currencies. A page that writes money depends on the
 currencies, so changing them rebuilds it.
 

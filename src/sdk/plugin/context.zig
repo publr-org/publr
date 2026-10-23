@@ -235,8 +235,8 @@ pub const HostApi = struct {
         return registry.SDK.call(self.inner, comptime registry.SDK.bound(Operation), in);
     }
 
-    /// Which refusal the last `ctx.call` came back with as `error.Failed`, by its `Fails:`
-    /// name (`NotEnoughStock`); empty when it came back without one.
+    /// Which refusal the last `ctx.call` came back with as `error.Failed`, or the plugin's
+    /// own `fail` named, by its `Fails:` name (`NotEnoughStock`); empty when there was none.
     pub fn failure(self: *const PluginCtx) []const u8 {
         std.debug.assert(self.inner.now_ms >= 0);
 

@@ -8,7 +8,6 @@ const store = @import("../store.zig");
 pub const changes = @import("project/changes.zig");
 pub const impact = @import("project/impact.zig");
 pub const move_app = @import("project/move_app.zig");
-pub const currencies = @import("project/currencies.zig");
 pub const Put = @import("project/put.zig").Put;
 
 const Ctx = sdk.Ctx;
@@ -182,8 +181,6 @@ pub const operations = [_]type{
     Status,
     impact.Impact,
     move_app.MoveApp,
-    currencies.Currencies,
-    currencies.SetCurrencies,
     @import("user/language.zig").SetSiteLanguage,
     Put,
 };

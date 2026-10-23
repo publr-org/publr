@@ -568,16 +568,26 @@ fn owned_items(comptime Plugin: type) []const OwnedItem {
 
 /// Whether `Operation` is one the plugin declares.
 pub fn owns_operation(comptime Plugin: type, comptime Operation: type) bool {
+    comptime std.debug.assert(Plugin.manifest.name.len > 0);
+
+    return own_operation(Plugin, Operation) != null;
+}
+
+/// The operation the core runs for `Operation`, one the plugin declares (its
+/// `publr.operation.define`, given its words); null when it declares none such.
+pub fn own_operation(comptime Plugin: type, comptime Operation: type) ?type {
     comptime {
-        std.debug.assert(Operation.name.len > 0);
+        std.debug.assert(Plugin.manifest.name.len > 0);
 
         for (operations_of(Plugin)) |Declared| {
-            if (Declared == Operation) {
-                return true;
+            const defined = @hasDecl(Declared, "definition") and Declared.definition == Operation;
+
+            if (Declared == Operation or defined) {
+                return Declared;
             }
         }
 
-        return false;
+        return null;
     }
 }
 
@@ -859,12 +869,12 @@ pub fn Merged(comptime plugins: anytype) type {
                     @compileError("two plugins declare `variants`; one dimension at a time");
                 }
 
-                if (!owns_operation(Plugin, declared.list)) {
+                var resolved = declared;
+
+                resolved.list = own_operation(Plugin, declared.list) orelse
                     @compileError("plugin " ++ Plugin.manifest.name ++
                         ": `variants.list` is one of its own operations");
-                }
-
-                dimension = declared;
+                dimension = resolved;
             }
 
             if (plugin_define.has(Plugin, "hosted")) {

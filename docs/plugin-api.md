@@ -589,8 +589,8 @@ try ctx.enqueue_at(Show, .{ .greeting = .{ .id = id } }, ctx.now().add_minutes(1
 - The input is kept as JSON, up to 64 KiB: send references, and read the record when the job
   runs, as it is then.
 - A run that fails runs again: a minute later, then two, four, up to a day, eight runs in
-  all. After the last, `.on_failure` (`fn (*publr.QueueCtx, In, problem: []const u8) void`)
-  hears why, and the job is kept as failed. Each failed try is a line on the plugin's Log
+  all. After the last, `.on_failure` (`fn (*publr.QueueCtx, In, publr.Error) void`)
+  hears the error the run ended with (`ctx.failure()` names a declared refusal), and the job is kept as failed. Each failed try is a line on the plugin's Log
   ("The job <name> failed (try 1 of 8): …"), the last "… failed for good after 8 tries: …". A run lost to a crash runs again five minutes
   later, so a job is safe to run twice.
 - A run that ends in `Conflict` (what it changes was changed meanwhile) is not run again:

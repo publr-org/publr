@@ -11,7 +11,7 @@ pub const pattern = @import("field/pattern.zig");
 
 pub const name_len_max: u32 = 64;
 pub const label_len_max: u32 = 128;
-pub const help_len_max: u32 = 255;
+pub const help_len_max: u32 = 280;
 /// Fields at one level of a type: the build's limit (`limits.zig`).
 pub const fields_max: u32 = @import("limits.zig").type_fields_max;
 /// What a type past it is told: the limit, and what to do.
@@ -373,7 +373,7 @@ fn validate_kind_rules(
     }
 
     if (def.help.len > help_len_max) {
-        problems.add(def.name, "help text must be up to 255 characters");
+        problems.add(def.name, "help text must be up to 280 characters");
     }
 
     validate_default(kind, def, problems);

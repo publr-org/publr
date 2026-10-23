@@ -24,6 +24,16 @@ pub const Apply = struct {
     };
 };
 
+/// What a modifier's plugin calls (core's `mod.changed`) when the data its answer follows
+/// changed: what was built with the values applied under `name` is built again.
+pub const Changed = struct {
+    pub const name = "mod.changed";
+    pub const In = struct {
+        name: []const u8,
+    };
+    pub const Out = struct {};
+};
+
 /// A modifier as administrators see it: whose it is, the name it takes, why.
 pub const Modifier = struct {
     plugin: []const u8,

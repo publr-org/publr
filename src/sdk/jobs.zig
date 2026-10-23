@@ -548,9 +548,9 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
 
                 if (last and comptime @TypeOf(Job.on_failure) != @TypeOf(null)) {
                     if (comptime Job.Input == void) {
-                        Job.on_failure(&queued, problem);
+                        Job.on_failure(&queued, err);
                     } else {
-                        Job.on_failure(&queued, input, problem);
+                        Job.on_failure(&queued, input, err);
                     }
                 }
 
@@ -638,7 +638,7 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
     };
 }
 
-test "a failing job runs again later, then is kept as failed and its on_failure hears why" {
+test "a failing job runs again later, then is kept as failed and its on_failure hears the error" {
     const Probe = struct {
         const In = struct {
             word: []const u8,
@@ -654,10 +654,11 @@ test "a failing job runs again later, then is kept as failed and its on_failure 
             });
         }
 
-        fn gave_up(ctx: *QueueCtx, in: In, problem: []const u8) void {
+        fn gave_up(ctx: *QueueCtx, in: In, err: sdk.Error) void {
             std.debug.assert(in.word.len > 0);
 
-            ctx.base.inner.dependency_failure = std.mem.eql(u8, problem, "the other side is busy");
+            ctx.base.inner.dependency_failure = err == error.Failed and
+                std.mem.eql(u8, ctx.failure(), "Busy");
         }
     };
     const Failing = job_define.define(Probe.In, .{

@@ -349,8 +349,8 @@ pub const SandboxApi = struct {
         return self.arena_allocator.dupe(u8, output) catch error.OutOfMemory;
     }
 
-    /// Which refusal the last `call` came back with as `error.Failed`, by its `Fails:` name
-    /// (`NotEnoughStock`); empty when it came back without one.
+    /// Which refusal the last `call` came back with as `error.Failed`, or the plugin's own
+    /// `fail` named, by its `Fails:` name (`NotEnoughStock`); empty when there was none.
     pub fn failure(self: *const SandboxApi) []const u8 {
         std.debug.assert(self.name.len > 0);
 
@@ -392,6 +392,7 @@ pub const SandboxApi = struct {
         const status = words.status_of(self.failures, tag);
 
         publr_refuse(tag.ptr, @intCast(tag.len), message.ptr, @intCast(message.len), status);
+        self.last_failure = tag;
 
         return error.Failed;
     }
@@ -706,9 +707,9 @@ pub fn Exports(comptime Plugin: type) type {
 
                 if (envelope.last and comptime @TypeOf(Job.on_failure) != @TypeOf(null)) {
                     if (comptime Job.Input == void) {
-                        Job.on_failure(&ctx, @errorName(err));
+                        Job.on_failure(&ctx, err);
                     } else {
-                        Job.on_failure(&ctx, in, @errorName(err));
+                        Job.on_failure(&ctx, in, err);
                     }
                 }
 

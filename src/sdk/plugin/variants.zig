@@ -61,7 +61,9 @@ pub fn of(comptime Plugin: type) ?Dimension {
             @compileError("plugin " ++ name ++ ": `variants` needs a label and help");
         }
 
-        if (List.kind != .read or !@hasField(List.Out, "variants")) {
+        const kind = if (@hasDecl(List, "given")) List.given.kind else List.kind;
+
+        if (kind != .read or !@hasField(List.Out, "variants")) {
             @compileError("plugin " ++ name ++ ": `variants.list` is a read answering `variants`");
         }
 

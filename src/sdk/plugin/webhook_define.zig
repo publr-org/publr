@@ -134,20 +134,23 @@ pub fn define(comptime Event: type, comptime options: anytype) type {
         }
 
         /// Its last try failed: the delivery is kept as failed, with why.
-        pub fn on_failure(ctx: anytype, in: Queued, problem: []const u8) void {
-            std.debug.assert(problem.len > 0);
-
+        pub fn on_failure(ctx: anytype, in: Queued, err: Error) void {
             const base = queue.base_of(ctx);
 
             if (comptime !@hasField(std.meta.Child(@TypeOf(base)), "inner")) {
                 return;
             }
 
-            settled(base.inner, in.delivery, "failed", problem) catch |err| {
+            const inner = base.inner;
+            const problem = if (inner.failure) |failure| failure.message else @errorName(err);
+
+            std.debug.assert(problem.len > 0);
+
+            settled(inner, in.delivery, "failed", problem) catch |failed| {
                 std.log.warn("webhook {s}: delivery {d} not marked failed: {t}", .{
                     options.name,
                     in.delivery,
-                    err,
+                    failed,
                 });
             };
         }

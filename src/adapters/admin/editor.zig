@@ -1970,10 +1970,7 @@ test {
 fn currencies_of(session: *Session) Error![]const model.money.Entry {
     std.debug.assert(session.signed_in());
 
-    const Currencies = @import("../../operations/project/currencies.zig").Currencies;
-    const listed = registry.SDK.dispatch(&session.ctx, Currencies, .{}) catch return &.{};
-
-    return listed.currencies;
+    return @import("../../sdk/site_currencies.zig").of(&session.ctx) catch &.{};
 }
 
 pub fn user_options(

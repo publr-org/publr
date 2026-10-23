@@ -59,7 +59,6 @@ pub const Put = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const untrusted_callers = false;
     pub const answer: ?operation_define.Answer = .plugin_calls;
-    pub const open = true;
     pub const In = struct {
         units: []const Unit = &.{},
     };

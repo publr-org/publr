@@ -1,11 +1,10 @@
 //! `Publr.build.money(price)` and `money(price, "EUR")`: an amount written the way the site
-//! says its currency is written (`project set_currencies`). A page that writes one depends
-//! on the currencies, and is rebuilt when they change.
+//! says its currency is written (`money.currencies`). A page that writes one depends on the
+//! currencies, and is rebuilt when they change.
 
 const std = @import("std");
 const model = @import("../../model.zig");
-const registry = @import("../../server/registry.zig");
-const currencies = @import("../../operations/project/currencies.zig");
+const currencies = @import("../../sdk/site_currencies.zig");
 const Context = @import("context.zig").Context;
 
 /// The currency an amount is read in: the one named if the site lists it, else the
@@ -40,7 +39,6 @@ fn listed_of(ctx: *const Context) ![]const model.money.Entry {
     }
 
     var sdk_ctx = ctx.sdk_context();
-    const listed = try registry.SDK.dispatch(&sdk_ctx, currencies.Currencies, .{});
 
-    return listed.currencies;
+    return currencies.of(&sdk_ctx);
 }

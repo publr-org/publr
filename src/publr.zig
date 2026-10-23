@@ -65,6 +65,10 @@ pub const modify = @import("sdk/plugin/hook_define.zig").modify;
 /// A record's title as core applies it, `<type>.title`: `.id`, the record's fields typed
 /// (`.record`), and the `.title` to change.
 pub const Title = @import("sdk/plugin/modify_define.zig").Title;
+/// What a plugin calls when the data its modifier of a name answers from changed:
+/// `ctx.call(publr.mod_changed, .{ .name = "money.currencies" })` builds again the pages
+/// made with those values.
+pub const mod_changed = @import("sdk/mods.zig").Changed;
 /// People signing in, up and out, hooked by type: `publr.after(publr.auth.SignedIn, run)`;
 /// sign-ins refused (`SignInFailed`, `SignOnFailed` …), heard with `publr.on` only.
 pub const auth = @import("sdk/auth_events.zig");

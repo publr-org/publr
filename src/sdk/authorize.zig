@@ -322,7 +322,7 @@ test "a compiled-in plugin's code is held to its grants, queued work included" {
 
     // What no permission names stays as the build made it.
     _ = try authorize(&queued, .{
-        .operation_name = "project.set_currencies",
+        .operation_name = "rail.pin",
         .kind = .write,
         .plugin_access = &access,
     }, &.{}, &role.core);

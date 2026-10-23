@@ -578,7 +578,9 @@ pub fn SDK(comptime registry: Registry) type {
             const answered = try admit_answer(ctx, Operation.name, .{
                 .untrusted_callers = if (defined) Operation.untrusted_callers else null,
                 .answer = if (defined) Operation.answer else null,
-                .open = @hasDecl(Operation, "open") and Operation.open,
+                // A ready answer decides past the roles, as `open` does.
+                .open = (@hasDecl(Operation, "open") and Operation.open) or
+                    (defined and Operation.answer != null),
             });
 
             return authorize_request(ctx, .{

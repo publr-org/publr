@@ -533,7 +533,7 @@ fn declared_native(comptime Operation: type, comptime index: u32) Declared {
         Operation.answer
     else
         null;
-    const custom = defined and Operation.open and answer == null;
+    const custom = defined and @hasDecl(Operation, "open") and Operation.open and answer == null;
     const limit = comptime if (@hasDecl(Operation, "limit") and Operation.limit != null)
         Operation.limit.?.per_minute
     else

@@ -1,8 +1,9 @@
 //! `publr.job.define(In, .{ .name, .run, .on_failure })`: work a plugin's code queues with
 //! `ctx.enqueue(Job, in)`, run later by the server's worker, as the plugin, never in the
 //! caller's request. A run that fails is tried again later; after the last attempt
-//! `on_failure` hears why, and the job is kept as failed. A job with `.due` is queued by a
-//! record instead: when its datetime field's moment comes.
+//! `on_failure` hears the `publr.Error` it ended with (`ctx.failure()` names a declared
+//! refusal), and the job is kept as failed. A job with `.due` is queued by a record
+//! instead: when its datetime field's moment comes.
 const std = @import("std");
 const words = @import("words.zig");
 
