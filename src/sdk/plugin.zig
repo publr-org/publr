@@ -940,7 +940,7 @@ pub const testing = struct {
             .records = .{Greetings},
             .field_kinds = .{Mood},
             .operations = .{Record},
-            .hooks = .{Counted},
+            .hooks = .{hook_define.after(Record, counted)},
             .roles = roles,
             .extend = extend,
         });
@@ -1102,18 +1102,13 @@ pub const testing = struct {
             }
         };
 
-        pub const Counted = struct {
-            pub const stage: sdk.hooks.Stage = .after;
-            pub const operation = "hello.record";
-
-            pub fn run(ctx: *PluginCtx, in: *Record.In, out: *const Record.Out) sdk.Error!void {
-                std.debug.assert(in.note.len > 0);
-                std.debug.assert(out.rows > 0);
-                ctx.emit(Recorded, .{
-                    .note = in.note,
-                });
-            }
-        };
+        fn counted(ctx: *PluginCtx, in: *Record.In, out: *const Record.Out) sdk.Error!void {
+            std.debug.assert(in.note.len > 0);
+            std.debug.assert(out.rows > 0);
+            ctx.emit(Recorded, .{
+                .note = in.note,
+            });
+        }
 
         pub const Recorded = hook_define.event(.{
             .name = "recorded",
