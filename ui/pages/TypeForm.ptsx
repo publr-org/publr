@@ -65,6 +65,7 @@ export type TypeFormProps = {
   apps: Array<{ value: string; label: string; selected: boolean }>;
   share_all: boolean;
   shares: Array<{ value: string; label: string; checked: boolean }>;
+  roles: Array<{ value: string; label: string; checked: boolean }>;
   untranslated_label?: string;
   keep_label?: string;
   keep_help?: string;
@@ -128,6 +129,7 @@ export function TypeForm({
   apps,
   share_all,
   shares,
+  roles,
   plural_name = "",
   noun_languages = [],
   untranslated_label = "",
@@ -223,6 +225,7 @@ export function TypeForm({
             apps={apps}
             share_all={share_all}
             shares={shares}
+            roles={roles}
             show_access={!is_component}
             is_public={is_public}
             untranslated_label={is_record ? untranslated_label : ""}

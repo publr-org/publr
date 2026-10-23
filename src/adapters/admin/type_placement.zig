@@ -5,6 +5,7 @@ const admin = @import("../admin.zig");
 const model = @import("../../model.zig");
 const app_scope = @import("app_scope.zig");
 const values_of = @import("type_fields/settings.zig").values_of;
+const registry = @import("../../server/registry.zig");
 
 const Error = admin.Error;
 const Form = admin.Form;
@@ -13,6 +14,7 @@ const Def = model.content_type.Def;
 const Shared = model.content_type.Shared;
 const AppItem = admin.views.TypeForm.AppsItem;
 const ShareItem = admin.views.TypeForm.SharesItem;
+const RoleItem = admin.views.TypeForm.RolesItem;
 
 pub const Props = struct {
     has_apps: bool,
@@ -21,6 +23,8 @@ pub const Props = struct {
     apps: []const AppItem,
     share_all: bool,
     shares: []const ShareItem,
+    /// The site's roles, those the type keeps to ticked.
+    roles: []const RoleItem,
 };
 
 /// A new type lives in the app the admin is narrowed to, else it is Global.
@@ -35,7 +39,7 @@ pub fn new_def(session: *const Session, def: Def) Def {
     return placed;
 }
 
-pub fn props_of(session: *const Session, def: Def) Error!Props {
+pub fn props_of(session: *Session, def: Def) Error!Props {
     std.debug.assert(session.project.apps.len <= 1024);
     std.debug.assert(def.app.len <= 64);
 
@@ -69,10 +73,33 @@ pub fn props_of(session: *const Session, def: Def) Error!Props {
         .apps = apps,
         .share_all = shared.all,
         .shares = shares.items,
+        .roles = try roles_of(session, def),
     };
 }
 
-/// The post over `base`: the app it lives in, who it is shared with, Public or Private.
+fn roles_of(session: *Session, def: Def) Error![]const RoleItem {
+    std.debug.assert(def.roles.len <= model.role.roles_max);
+
+    const role_operations = @import("../../operations/role.zig");
+    // Someone who may not list the roles sees none to tick; the type keeps its own.
+    const found = registry.SDK.dispatch(&session.ctx, role_operations.List, .{}) catch {
+        return &.{};
+    };
+    var items: std.ArrayList(RoleItem) = .empty;
+
+    for (found.roles) |each| {
+        try items.append(session.arena, .{
+            .value = each.name,
+            .label = try session.declared(each.label),
+            .checked = listed(def.roles, each.name),
+        });
+    }
+
+    return items.items;
+}
+
+/// The post over `base`: the app it lives in, who it is shared with, Public or Private
+/// and a Private one's roles.
 /// A form without the app questions (a project with no apps) keeps where it lives.
 pub fn read(arena: std.mem.Allocator, form: *const Form, base: Def) Error!Def {
     std.debug.assert(form.len <= admin.form_pairs_max);
@@ -82,6 +109,7 @@ pub fn read(arena: std.mem.Allocator, form: *const Form, base: Def) Error!Def {
 
     if (form.get("access")) |access| {
         def.public = std.mem.eql(u8, access, "public");
+        def.roles = if (def.public) &.{} else try values_of(arena, form, "roles");
     }
 
     if (form.get("untranslated")) |chosen| {
@@ -120,6 +148,7 @@ pub fn read(arena: std.mem.Allocator, form: *const Form, base: Def) Error!Def {
 
 fn listed(names: []const []const u8, name: []const u8) bool {
     std.debug.assert(names.len <= model.content_type.shared_apps_max);
+    std.debug.assert(names.len <= model.role.roles_max);
     std.debug.assert(name.len > 0);
 
     for (names) |candidate| {

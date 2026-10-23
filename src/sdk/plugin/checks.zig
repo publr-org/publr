@@ -44,7 +44,18 @@ pub fn check(
 
     var tree = try Ast.parse(arena, text, .zig);
 
+    // The rest reads the tree: a file that does not parse says so, and nothing else.
     if (tree.errors.len > 0) {
+        const first = tree.errors[0];
+        var message: std.Io.Writer.Allocating = .init(arena);
+
+        try message.writer.writeAll("does not parse: ");
+        try tree.renderError(first, &message.writer);
+        try out.append(arena, .{
+            .line = line_of(&tree, first.token),
+            .message = message.written(),
+        });
+
         return;
     }
 
@@ -246,6 +257,8 @@ pub const Failures = struct {
     used: std.ArrayList(Mention) = .empty,
     /// Names of `sdk.operation.Failure` values: used, not checked against a list.
     defined: std.ArrayList(Mention) = .empty,
+    /// A file did not parse (`check` reports it): no `Fails:` line is called unused.
+    unparsed: bool = false,
 
     pub const Mention = struct {
         path: []const u8,
@@ -340,7 +353,9 @@ pub const Failures = struct {
 
         var tree = try Ast.parse(arena, text, .zig);
 
+        // Its `ctx.fail` calls are unknown: the plugin's `Fails:` lines go unchecked.
         if (tree.errors.len > 0) {
+            failures.unparsed = true;
             return;
         }
 
@@ -405,6 +420,10 @@ pub const Failures = struct {
                     },
                 });
             }
+        }
+
+        if (failures.unparsed) {
+            return out.items;
         }
 
         for (failures.listed.items) |listed_one| {
@@ -637,4 +656,29 @@ test "a ctx.fail name and its Fails: line agree both ways" {
     try std.testing.expectEqual(3, unused.len);
     try std.testing.expectEqual(6, unused[1].problem.line);
     try std.testing.expectEqual(7, unused[2].problem.line);
+}
+
+test "a file that does not parse says so, and its Fails: lines are not called unused" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const broken =
+        \\//! Fails:
+        \\//!     - NotEnoughStock (409): fewer left than asked
+        \\
+        \\fn run(ctx: *publr.Ctx) publr.Error!void {
+        \\    return ctx.fail(.NotEnoughStock, "No.", .{})
+        \\}
+        \\
+    ;
+    var problems: std.ArrayList(Problem) = .empty;
+    var failures: Failures = .{};
+
+    try check(arena, "reserve.zig", broken, &problems);
+    try failures.read(arena, "reserve.zig", broken);
+
+    try std.testing.expectEqual(1, problems.items.len);
+    try std.testing.expectEqual(5, problems.items[0].line);
+    try std.testing.expect(std.mem.startsWith(u8, problems.items[0].message, "does not parse: "));
+    try std.testing.expectEqual(0, (try failures.problems(arena)).len);
 }

@@ -91,6 +91,9 @@ pub const Def = struct {
     /// Public: any visitor of an app the type reaches reads its live records. Private:
     /// only callers that are signed in, whose roles allow it.
     public: bool = false,
+    /// Private: the roles that reach it, administrators always; empty: every role whose
+    /// grants reach records. A shop's orders are its administrators', not every editor's.
+    roles: []const []const u8 = &.{},
     /// The app the type lives in (`app.zon`'s `.name`); empty for a Global type.
     app: []const u8 = "",
     /// The other apps that reach it; null for the default of where it lives.
@@ -231,6 +234,17 @@ fn validate_placement(def: Def, problems: *field.Problems) void {
 
     if (def.app.len > 0 and !app_name(def.app)) {
         problems.add("app", "app must be an app's name, [a-z][a-z0-9_]*");
+    }
+
+    const role_model = @import("role.zig");
+
+    if (def.roles.len > role_model.roles_max) {
+        problems.add("roles", "at most 64 roles");
+    } else for (def.roles) |name| {
+        if (!role_model.valid_name(name)) {
+            problems.add("roles", "roles by their names, [a-z][a-z0-9_]*");
+            break;
+        }
     }
 
     const shared = def.shared orelse return;

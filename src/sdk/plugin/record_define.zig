@@ -1,5 +1,5 @@
-//! `publr.record.define(Document, .{ .name, .internal, .fields, .title_field, .public, .url,
-//! .indexed, .scope })`: a plugin's record type from its document struct. Content types and
+//! `publr.record.define(Document, .{ .name, .internal, .fields, .title_field, .public, .roles,
+//! .url, .indexed, .scope })`: a plugin's record type from its document struct. Content types and
 //! internal records are one list (`.records`); the type says which it is. Its words are its
 //! doc comments: the struct's `///` is the type's name and description, each field's its
 //! label and help.
@@ -87,9 +87,13 @@ pub const AnyRef = struct {
         return writer.write(self.id);
     }
 
-    /// The record `id` names, read as the caller may, as an input's is.
+    /// The record `id` names, read as the caller may.
     fn read(ctx: *PluginCtx, id: []const u8) sdk.Error!AnyRef {
-        std.debug.assert(id.len > 0);
+        std.debug.assert(ctx.now().ms >= 0);
+
+        if (id.len == 0 or id.len > 128) {
+            return error.Invalid;
+        }
 
         const reach = try ctx.call(record_operations.Reach, .{
             .id = id,
@@ -122,8 +126,9 @@ pub const AnyRef = struct {
         };
     }
 
-    /// Every `AnyRef` among `value`'s fields, and in its lists of them, read.
-    fn read_all(ctx: *PluginCtx, value: anytype) sdk.Error!void {
+    /// Every `AnyRef` among `value`'s fields, and in its lists of them, read: an operation's
+    /// input before `run`, and a record holding one when it is read back.
+    pub fn read_all(ctx: *PluginCtx, value: anytype) sdk.Error!void {
         std.debug.assert(ctx.now().ms >= 0);
 
         inline for (std.meta.fields(@TypeOf(value.*))) |field| {
@@ -162,6 +167,7 @@ const Option = enum {
     data_view,
     append_only,
     expires,
+    roles,
 };
 
 const record_flow = @import("record_flow.zig");
@@ -762,6 +768,7 @@ pub fn content_type_of(comptime Definition: type, comptime Docs: type) content_t
             .name = label,
             .description = plugin_define.rest(Docs, @typeName(Document)).?,
             .public = @hasField(Options, "public") and options.public,
+            .roles = if (@hasField(Options, "roles")) options.roles else &.{},
             .url = if (@hasField(Options, "url")) options.url else "",
             .editor = if (@hasField(Options, "editor")) options.editor else "form",
             .plural_name = if (@hasField(Options, "plural_name")) options.plural_name else "",

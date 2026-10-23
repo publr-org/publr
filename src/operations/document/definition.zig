@@ -227,13 +227,18 @@ pub fn Of(comptime Domain: type) type {
             }));
         }
 
-        /// A type in the grant's reach: public when only public ones are, one of its types,
-        /// no plugin's outside its plugins, and living in or shared with the app read for.
+        /// A type in the grant's reach: public when only public ones are, a Private one's
+        /// roles held, one of its types, no plugin's outside its plugins, and living in or
+        /// shared with the app read for.
         pub fn visible_type(granted: *const Grant, brief: Brief) bool {
             std.debug.assert(granted.allows());
             std.debug.assert(brief.handle.len > 0);
 
             if (granted.public_only_on(brief.handle) and !brief.public) {
+                return false;
+            }
+
+            if (!brief.public and !granted.reaches_roles(brief.roles)) {
                 return false;
             }
 
@@ -266,6 +271,7 @@ pub fn Of(comptime Domain: type) type {
                 .fields_len = @intCast(row.def.fields.len),
                 .app = row.def.app,
                 .shared = row.def.shared,
+                .roles = row.def.roles,
             };
         }
 

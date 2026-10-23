@@ -75,7 +75,14 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
         return error.OutOfMemory;
     };
 
-    for (known) |status| {
+    const own = try own_statuses(session, current.filters);
+
+    for (known, 0..) |status, index| {
+        // Core's come first; a plugin's belong to its types: listed only on one of them.
+        if (index >= model.status.core_statuses.len and !named_in(own, status.id)) {
+            continue;
+        }
+
         const clauses = [_]Clause{.{
             .key = "status",
             .operator = "is",
@@ -147,6 +154,38 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
         .back = address,
         .admin = session.ctx.caller.holds("admin"),
     });
+}
+
+/// The statuses of the one type a list shows, its own and those other plugins add; none
+/// for a list of several types.
+fn own_statuses(session: *Session, shown: Filters) Error![]const model.status.Status {
+    std.debug.assert(session.signed_in());
+
+    if (shown.types.len != 1) {
+        return &.{};
+    }
+
+    const definition = @import("../../operations/record.zig").domain.definition;
+    // A type that cannot be read now lists core's statuses alone.
+    const found = definition.find(&session.ctx, shown.types[0]) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return &.{},
+    };
+    const type_row = found orelse return &.{};
+
+    return type_row.def.flow.statuses;
+}
+
+fn named_in(statuses: []const model.status.Status, id: []const u8) bool {
+    std.debug.assert(id.len > 0);
+
+    for (statuses) |status| {
+        if (std.mem.eql(u8, status.id, id)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// The record types by where they live, each group under its name: the app the admin is

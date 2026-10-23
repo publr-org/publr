@@ -64,7 +64,8 @@ fn empty_text(page: *const list.Page) Error![]const u8 {
 
 /// What the selection's actions need: how many records match past the page, the
 /// conditions that match them, and the transitions they may make: the list's type's flow,
-/// core's for a list of several, and the trash; in the trash, restore and destroy.
+/// core's for a list of several, and the trash; in the trash, restore (each back to the
+/// status it had) and destroy.
 pub fn fill_selection(
     props: *Props,
     page: *const list.Page,
@@ -82,7 +83,7 @@ pub fn fill_selection(
         try transitions.append(arena, .{
             .name = "restore",
             .label = try page.session.translated("Restore", .{}),
-            .status = try status_label(page, flow.initial().id),
+            .status = "",
         });
         try transitions.append(arena, .{
             .name = "destroy",

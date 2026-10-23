@@ -36,6 +36,8 @@ pub const Brief = struct {
     /// Where the type lives (empty: Global) and who it is shared with.
     app: []const u8 = "",
     shared: ?content_type.Shared = null,
+    /// Private: the roles that reach it besides administrators; empty: every role.
+    roles: []const []const u8 = &.{},
     menu: content_type.Menu = .{},
     view: content_type.View = .{},
     icon: []const u8 = "",
@@ -233,6 +235,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             "json_extract(definition, '$.owner'), json_extract(definition, '$.editor'), " ++
             "coalesce(json_extract(definition, '$.app'), ''), " ++
             "coalesce(json_extract(definition, '$.shared'), ''), " ++
+            "coalesce(json_extract(definition, '$.roles'), ''), " ++
             "coalesce(json_extract(definition, '$.menu'), ''), " ++
             "coalesce(json_extract(definition, '$.view'), ''), " ++
             "coalesce(json_extract(definition, '$.icon'), ''), " ++
@@ -251,6 +254,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             editor: []const u8,
             app: []const u8,
             shared: []const u8,
+            roles: []const u8,
             menu: []const u8,
             view: []const u8,
             icon: []const u8,
@@ -411,6 +415,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                 .fields_len = @intCast(columns.fields_len),
                 .app = columns.app,
                 .shared = try shared_of(arena, columns.shared),
+                .roles = try roles_of(arena, columns.roles),
                 .menu = try part_of(content_type.Menu, arena, columns.menu),
                 .view = try part_of(content_type.View, arena, columns.view),
                 .icon = columns.icon,
@@ -430,6 +435,25 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                 .ignore_unknown_fields = true,
             };
             return std.json.parseFromSliceLeaky(Part, arena, text, options) catch |err| {
+                return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
+            };
+        }
+
+        /// The `roles` of a definition's JSON: absent reads as none.
+        fn roles_of(arena: std.mem.Allocator, text: []const u8) Error![]const []const u8 {
+            std.debug.assert(text.len <= content_type.definition_bytes_max);
+
+            if (text.len == 0) {
+                return &.{};
+            }
+
+            const options: std.json.ParseOptions = .{
+                .allocate = .alloc_always,
+            };
+
+            const Roles = []const []const u8;
+
+            return std.json.parseFromSliceLeaky(Roles, arena, text, options) catch |err| {
                 return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
             };
         }

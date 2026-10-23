@@ -198,6 +198,14 @@ export const transitionSelected = async (event: Event) => {
               failed: done.not_moved,
               why,
             });
+    } else if (name === "restore") {
+      state.note =
+        done.not_moved === 0
+          ? Publr.tn("{count} restored", "{count} restored", done.moved)
+          : Publr.tn("{count} restored, {failed} not: {why}", "{count} restored, {failed} not: {why}", done.moved, {
+              failed: done.not_moved,
+              why,
+            });
     } else {
       state.note =
         done.not_moved === 0

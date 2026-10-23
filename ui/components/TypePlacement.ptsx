@@ -9,8 +9,13 @@ import { Text } from "@publr/ui/Text.ptsx";
 
 export const state = Publr.reactive({
   share_listed: false,
+  private: false,
   app: "",
 });
+
+export const onAccess = (event: Event) => {
+  state.private = (event.target as HTMLInputElement).value === "private";
+};
 
 export const onApp = (event: Event) => {
   state.app = (event.target as HTMLSelectElement).value;
@@ -38,6 +43,8 @@ export type TypePlacementProps = {
   /** Who reads it is asked: not for a component, which has no records. */
   show_access: boolean;
   is_public: boolean;
+  /** The site's roles: a Private type keeps to the ticked ones. */
+  roles?: Array<{ value: string; label: string; checked: boolean }>;
   /** The site has more than one language: what a record not translated into one does
    * there, in the words of the plugin that adds languages. */
   untranslated_label?: string;
@@ -49,8 +56,9 @@ export type TypePlacementProps = {
 };
 
 /** Where a type lives, which other apps reach it, and who may read it. Posted as `app`
- * (empty for Global), `share` (`all` or `listed`), `shared` per ticked app and `access`
- * (`public` or `private`). Any of it may change at any time; no record moves. */
+ * (empty for Global), `share` (`all` or `listed`), `shared` per ticked app, `access`
+ * (`public` or `private`) and `roles` per ticked role. Any of it may change at any time;
+ * no record moves. */
 export function TypePlacement({
   noun,
   has_apps,
@@ -61,6 +69,7 @@ export function TypePlacement({
   shares,
   show_access,
   is_public,
+  roles = [],
   untranslated_label = "",
   keep_label = "",
   keep_help = "",
@@ -69,6 +78,7 @@ export function TypePlacement({
   falls_back = true,
 }: TypePlacementProps) {
   state.share_listed = !share_all;
+  state.private = !is_public;
   state.app = home;
 
   return (
@@ -146,6 +156,7 @@ export function TypePlacement({
               checked={is_public}
               title={Publr.t("Public")}
               description={Publr.t("Any visitor reads what is published.")}
+              onChange={onAccess}
             />
             <ChoiceCard
               name="access"
@@ -153,8 +164,27 @@ export function TypePlacement({
               checked={!is_public}
               title={Publr.t("Private")}
               description={Publr.t("Only people signed in, as their roles allow.")}
+              onChange={onAccess}
             />
           </div>
+          {roles.length > 0 && (
+            <div class="hidden" hidden={!state.private}>
+              <div class="space-y-2 pt-4" data-part="type-roles">
+                {roles.map((role) => (
+                  <CheckboxField
+                    id={`role-${role.value}`}
+                    name="roles"
+                    value={role.value}
+                    checked={role.checked}
+                    label={role.label}
+                  />
+                ))}
+              </div>
+              <FieldDescription>
+                {Publr.t("Only the roles ticked, and administrators always. With none ticked, every role that works on content.")}
+              </FieldDescription>
+            </div>
+          )}
         </fieldset>
       )}
       {untranslated_label !== "" && (

@@ -94,7 +94,16 @@ fn role_grant(roles: []const Role, held: []const []const u8, request: Request) G
     }
 
     if (role.permit(roles, held, request.operation_name)) {
-        return Grant.allow_all;
+        const admin = for (held) |name| {
+            if (std.mem.eql(u8, name, role.admin)) {
+                break true;
+            }
+        } else false;
+
+        // A Private type with a role list reaches its roles; administrators every type.
+        return .{
+            .roles = if (admin) null else held,
+        };
     }
 
     return anonymous_grant(request);
