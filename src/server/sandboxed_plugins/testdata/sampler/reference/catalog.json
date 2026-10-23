@@ -1111,7 +1111,7 @@
       "Open Content, then Sample note under Sample notes.",
       "Open Note: HELLO."
     ],
-    "look_for": "A Sampler box beside the form: Note <id>, one of <n>.",
+    "look_for": "A Sampler box beside the form: Note <id>, one of <n>, looked at by you, from its view's ctx. Compiled in, Add a note writes through ctx.call and the count is read again through ctx.query; installed, its browser code is not there yet.",
     "options": [],
     "tour": [
       {

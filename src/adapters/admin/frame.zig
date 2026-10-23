@@ -7,7 +7,6 @@ const pages = @import("frame/pages.zig");
 const panels = @import("frame/panels.zig");
 const records = @import("../../operations/record.zig");
 const document = @import("frame/document.zig");
-const identity_module = @import("../rest/identity.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -25,84 +24,6 @@ pub fn register(router: anytype) void {
     router.get(prefix ++ "/:plugin/:page", &show);
     router.get(prefix ++ "/:plugin/:page/frame", &frame);
     router.get(prefix ++ "/:plugin/panels/:operation/frame", &panel_frame);
-    router.post(prefix ++ "/:plugin/query", &read_query);
-}
-
-/// A GROQ read the plugin's frame asks for, `{ "query", "params" }` in, the result out: run
-/// as the installed plugin for the viewer, so it reads no more than both may; a compiled-in
-/// plugin is trusted, as its pages are, and reads as the viewer. Only a plugin with a page
-/// the viewer may open asks.
-pub fn read_query(request: *Request, response: *Response, ctx: *Context) Error!void {
-    std.debug.assert(request.method() == .post);
-    std.debug.assert(ctx.user_data != null);
-
-    var session = try admin.require(request, response, ctx) orelse return;
-
-    if (!try identity_module.guard(request, response, session.project, &session.identity)) {
-        return;
-    }
-
-    const plugin = request.param("plugin") orelse return response.text(.not_found, "Not Found");
-
-    if (!try shows_pages(&session, plugin) and !panels.any_of(&session, plugin)) {
-        return response.json(.not_found, .{
-            .@"error" = "no_such_plugin",
-        });
-    }
-
-    const asked = std.json.parseFromSliceLeaky(Asked, session.arena, request.body, .{
-        .ignore_unknown_fields = true,
-        .allocate = .alloc_always,
-    }) catch return response.json(.bad_request, .{
-        .@"error" = "invalid_input",
-    });
-    const params = try std.json.Stringify.valueAlloc(session.arena, asked.params, .{});
-    const input = try std.json.Stringify.valueAlloc(session.arena, .{
-        .query = asked.query,
-        .params = params,
-        .perspective = "all",
-    }, .{});
-    const output = read_as(&session, plugin, input) catch |err| {
-        return response.json(.unprocessable_content, .{
-            .@"error" = @errorName(err),
-        });
-    };
-
-    try response.set_body(.ok, "application/json", output);
-}
-
-const Asked = struct {
-    query: []const u8,
-    params: std.json.Value = .null,
-};
-
-fn read_as(session: *Session, plugin: []const u8, input: []const u8) ![]const u8 {
-    std.debug.assert(plugin.len > 0);
-    std.debug.assert(input.len > 0);
-
-    if (session.ctx.sandboxed_plugins) |sandboxed| {
-        return sandboxed.call_as(&session.ctx, plugin, "record.query", input) catch |err| {
-            if (err != error.NotFound) {
-                return err;
-            }
-
-            return registry.SDK.call_json(&session.ctx, "record.query", input);
-        };
-    }
-
-    return registry.SDK.call_json(&session.ctx, "record.query", input);
-}
-
-fn shows_pages(session: *const Session, plugin: []const u8) Error!bool {
-    std.debug.assert(plugin.len > 0);
-
-    for (try pages.all(session)) |page| {
-        if (std.mem.eql(u8, page.plugin, plugin)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -162,6 +83,7 @@ pub fn frame(request: *Request, response: *Response, ctx: *Context) Error!void {
         .base = session.project.admin_path(),
     };
 
+    look(&session, page.path);
     try serve_frame(&session, page.operation, asked, .page);
 }
 
@@ -193,7 +115,24 @@ pub fn panel_frame(request: *Request, response: *Response, ctx: *Context) Error!
         .base = session.project.admin_path(),
     };
 
+    look(&session, "");
     try serve_frame(&session, panel.operation, asked, .panel);
+}
+
+/// The frame's read is told who is looking and the page, for its view's `ctx`.
+fn look(session: *Session, path: []const u8) void {
+    std.debug.assert(session.signed_in());
+
+    session.ctx.view = .{
+        .person = .{
+            .name = session.identity.display_name,
+            .email = session.identity.email,
+        },
+        .page = .{
+            .path = path,
+            .query = session.request.query(),
+        },
+    };
 }
 
 /// The frame's document, drawn by `operation` from `asked`; a failure is told inside the
@@ -225,7 +164,7 @@ fn serve_frame(
     };
     var out: std.Io.Writer.Allocating = .init(session.arena);
 
-    document.write(&out.writer, base, html) catch return error.OutOfMemory;
+    document.write(&out.writer, base, html, session.ctx.view) catch return error.OutOfMemory;
     try response.set_header("Content-Security-Policy", document.policy);
     try response.set_header("Cache-Control", "no-store");
     try response.set_header("Referrer-Policy", "no-referrer");

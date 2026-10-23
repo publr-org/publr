@@ -1,5 +1,5 @@
 // The SDK reference's Try it: a Run button calls one of the sampler's operations as the
-// person looking (publr.call, through the admin) and shows its answer, then the lines the
+// person looking (publr.send, through the admin) and shows its answer, then the lines the
 // sampler's code logged while it ran, its queued hooks and jobs included as they land; Show
 // me asks the admin to walk its own pages (publr.tour). What each button does is the page's
 // data, #sampler-data.
@@ -42,7 +42,7 @@
     show(`sampler-answer-${key}`, `${asked.operation} ${JSON.stringify(asked.input)}\n…`);
     let answered;
     try {
-      answered = JSON.stringify(await window.publr.call(asked.operation, asked.input), null, 2);
+      answered = JSON.stringify(await window.publr.send(asked.operation, asked.input), null, 2);
     } catch (error) {
       answered = `Refused: ${error.message}`;
     }

@@ -4,6 +4,7 @@
 //! into the admin, nothing fetched from anywhere, framed only by the admin.
 const std = @import("std");
 const class_merge = @import("class_merge");
+const View = @import("../../../sdk/context.zig").View;
 
 pub const policy = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox; " ++
     "default-src 'none'; " ++
@@ -12,21 +13,51 @@ pub const policy = "sandbox allow-scripts allow-popups allow-popups-to-escape-sa
     "base-uri 'none'; frame-ancestors 'self'";
 
 /// What the frame asks of the admin, by `postMessage` to its parent: run one of the
-/// plugin's operations (`publr.call`), go to another of its pages (`publr.navigate`, or a
+/// plugin's operations (`publr.send`), go to another of its pages (`publr.navigate`, or a
 /// link clicked), and its height, so the frame grows with what it shows. A link to another
-/// site opens in a new tab.
+/// site opens in a new tab. Called with who is looking and the page.
 pub const bridge = @embedFile("bridge.js");
+
+/// The bridge called with `view`, as a script's text: `</` written so it cannot close it.
+fn write_bridge(writer: *std.Io.Writer, view: View) std.Io.Writer.Error!void {
+    var json: [view_json_max]u8 = undefined;
+    var fixed: std.Io.Writer = .fixed(&json);
+
+    std.json.Stringify.value(view, .{}, &fixed) catch {
+        fixed = .fixed(&json);
+        fixed.writeAll("{\"person\":{},\"page\":{}}") catch unreachable;
+    };
+    try writer.print("<script>{s}(", .{bridge[0 .. bridge.len - 1]});
+
+    var rest = fixed.buffered();
+
+    while (std.mem.indexOf(u8, rest, "</")) |at| {
+        try writer.writeAll(rest[0..at]);
+        try writer.writeAll("<\\/");
+        rest = rest[at + 2 ..];
+    }
+
+    try writer.writeAll(rest);
+    try writer.writeAll(");</script>");
+}
+
+const view_json_max = 8192;
 
 /// The frame's document: a whole page the plugin drew with the admin's layouts gets the
 /// bridge first in its head; anything else is put in a document linking the stylesheet
 /// under `base`.
-pub fn write(writer: *std.Io.Writer, base: []const u8, html: []const u8) std.Io.Writer.Error!void {
+pub fn write(
+    writer: *std.Io.Writer,
+    base: []const u8,
+    html: []const u8,
+    view: View,
+) std.Io.Writer.Error!void {
     std.debug.assert(base.len == 0 or base[0] == '/');
     std.debug.assert(std.mem.indexOfAny(u8, base, "\"<>&'") == null);
 
     if (head_end(html)) |at| {
         try write_named(writer, html[0..at]);
-        try writer.print("<script>{s}</script>", .{bridge});
+        try write_bridge(writer, view);
         try write_named(writer, html[at..]);
 
         return;
@@ -38,10 +69,11 @@ pub fn write(writer: *std.Io.Writer, base: []const u8, html: []const u8) std.Io.
         "\"><head>" ++
             "<meta charset=\"utf-8\">" ++
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" ++
-            "<link rel=\"stylesheet\" href=\"{s}/admin/styles.css\">" ++
-            "<script>{s}</script></head><body class=\"",
-        .{ base, bridge },
+            "<link rel=\"stylesheet\" href=\"{s}/admin/styles.css\">",
+        .{base},
     );
+    try write_bridge(writer, view);
+    try writer.writeAll("</head><body class=\"");
     try write_own(writer, "bg-background text-foreground antialiased");
     try writer.writeAll("\">");
     try write_named(writer, html);
@@ -170,7 +202,7 @@ test "a whole page gets the bridge first in its head" {
     var buffer: [8192]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
 
-    try write(&writer, "", "<!doctype html>\n<html><head><title>T</title></head></html>");
+    try write(&writer, "", "<!doctype html>\n<html><head><title>T</title></head></html>", .{});
 
     const text = writer.buffered();
 
@@ -184,14 +216,39 @@ test "the frame's document links the stylesheet under the base and carries the b
     var buffer: [8192]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
 
-    try write(&writer, "/env/staging", "<p>Hello</p>");
+    try write(&writer, "/env/staging", "<p>Hello</p>", .{});
 
     const text = writer.buffered();
 
     try std.testing.expect(std.mem.indexOf(u8, text, "/env/staging/admin/styles.css") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "window.publr") != null);
-    try std.testing.expect(std.mem.endsWith(u8, bridge, "})();\n"));
+    try std.testing.expect(std.mem.endsWith(u8, bridge, "})\n"));
     try std.testing.expect(std.mem.endsWith(u8, text, "<p>Hello</p></body></html>"));
+}
+
+test "the bridge is told who is looking and the page, and they cannot close its script" {
+    var buffer: [8192]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+
+    try write(&writer, "", "<p>Hi</p>", .{
+        .person = .{
+            .name = "Ann</script><b>",
+            .email = "ann@example.com",
+        },
+        .page = .{
+            .path = "log",
+            .query = "week=2",
+        },
+    });
+
+    const text = writer.buffered();
+
+    const person = "})({\"person\":{\"name\":\"Ann<\\/script><b>\"";
+    const page = "\"page\":{\"path\":\"log\",\"query\":\"week=2\"}});</script>";
+
+    try std.testing.expect(std.mem.indexOf(u8, text, person) != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, page) != null);
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, text, "</script>"));
 }
 
 test "a plugin's classes are written by the stylesheet's names" {
@@ -201,7 +258,7 @@ test "a plugin's classes are written by the stylesheet's names" {
     var flex: std.Io.Writer = .fixed(&names);
 
     try class_merge.admin.write_class(&flex, "flex");
-    try write(&writer, "", "<div class=\"flex hand-made\">x</div>");
+    try write(&writer, "", "<div class=\"flex hand-made\">x</div>", .{});
 
     var expected: [64]u8 = undefined;
     const written = try std.fmt.bufPrint(

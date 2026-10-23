@@ -2,6 +2,18 @@ import { Publr } from "publr-jsx";
 import { Navigation } from "../components/Navigation.ptsx";
 import { IconSprite } from "../components/IconSprite.ptsx";
 
+/** What a plugin's view is given with its props: who is looking and the page, on the server
+ * and in the browser; in the browser also its reads and writes, each one of the plugin's own
+ * operations run as the person looking. A read is read again after any write. */
+export type ViewCtx = {
+  person: { name: string; email: string };
+  /** The page's path among the plugin's pages (empty for a panel), and its query string. */
+  page: { path: string; query: string };
+  query: (name: string, input?: () => unknown, options?: { initial?: unknown; seeded?: boolean }) => { value: any };
+  call: (name: string) => (input: unknown) => Promise<any>;
+  navigate: (path: string) => void;
+};
+
 export type DocumentProps = {
   /** The window's title, before " · Publr". */
   title: string;

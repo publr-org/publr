@@ -690,10 +690,11 @@ opened on its own.
 Inside, anything goes: any markup, any script, any library. The admin's design system
 is the easy default. The frame reaches the admin only through the bridge:
 
-- `publr.call("guestbook.sign", input)` runs one of the plugin's own operations as the
-  viewer, through the usual checks, and resolves with its output. Anything else is
-  refused.
-- `publr.navigate("log?week=2")`, and every link clicked, goes to another of the
+- A view's `ctx` (given with its props) has `ctx.person` and `ctx.page`, and in the
+  browser `ctx.query("guestbook.entries", () => input)`, a read read again after any
+  write, and `ctx.call("guestbook.sign")`, a write: each one of the plugin's own
+  operations run as the viewer, through the usual checks. Anything else is refused.
+- `ctx.navigate("log?week=2")`, and every link clicked, goes to another of the
   plugin's pages (`?week=2` alone stays on this one). A link to another site opens in a
   new tab.
 - The frame grows with what it shows.

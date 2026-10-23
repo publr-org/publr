@@ -864,7 +864,8 @@ const entries: publr.plugin.Page = .{
 ```
 
 The answered `html` runs in a sandboxed `<iframe>` with the admin's stylesheet and a
-bridge: `publr.call("<own operation>", input)` and `publr.navigate("<own page>?q=1")`. No
+bridge: the view's `ctx.query("<own read>")`, `ctx.call("<own write>")` and
+`ctx.navigate("<own page>?q=1")`. No
 network, no session. Compiled in, a page can render the admin's own layouts with
 `publr.admin.render.document(arena, publr.admin.chrome.in_plugin_frame(ctx, in.base),
 View, props)`, in the person's language.
