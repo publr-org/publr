@@ -38,6 +38,8 @@ type TransitionRow = {
   changed: boolean;
   off: boolean;
   can_turn_off: boolean;
+  /** What its Turn on or Turn off button sends: `<name>|on` or `<name>|off`. */
+  switch_value: string;
   removable: boolean;
   reset_label: string;
   choices: Choice[];
@@ -53,8 +55,6 @@ export const state = Publr.reactive({
   note: "",
   statuses: [] as StatusRow[],
   transitions: [] as TransitionRow[],
-  /** Where Add transition may start and end: every status but the trash. */
-  places: [] as Choice[],
   /** Who may, as Add transition offers it. */
   who_choices: [] as Choice[],
   new_status: "",
@@ -111,11 +111,11 @@ const settle = (flow: { statuses: FlowStatus[]; transitions: FlowTransition[] })
     changed: transition.changed,
     off: transition.off,
     can_turn_off: transition.source !== "site" && !core_trash.includes(transition.name),
+    switch_value: `${transition.name}|${transition.off ? "on" : "off"}`,
     removable: transition.source === "site",
     reset_label: transition.source === "plugin" ? Publr.t("Reset to plugin's") : Publr.t("Reset to default"),
     choices: choices_of(transition.who, transition.name),
   }));
-  state.places = flow.statuses.map((status) => ({ value: status.id, label: status.label, selected: false }));
   state.who_choices = choices_of(anyone, "").map((choice) => ({ ...choice, value: choice.value.slice(1) }));
   if (state.new_from === "" && flow.statuses.length > 0) state.new_from = flow.statuses[0].id;
   if (state.new_to === "" && flow.statuses.length > 1) state.new_to = flow.statuses[1].id;
@@ -176,12 +176,10 @@ export const on_reset = (event: Event) => {
   void change("flow.authorize", { transition: value_of(event), default: true });
 };
 
-export const on_turn_off = (event: Event) => {
-  void change("flow.turn_off", { transition: value_of(event) });
-};
-
-export const on_turn_on = (event: Event) => {
-  void change("flow.turn_on", { transition: value_of(event) });
+/** Off or back on: the button's value is `<transition>|<on>`. */
+export const on_set_on = (event: Event) => {
+  const [transition, on] = value_of(event).split("|");
+  void change("flow.set_on", { transition, on: on === "on" });
 };
 
 export const on_remove = (event: Event) => {
@@ -192,8 +190,10 @@ export const on_remove_status = (event: Event) => {
   void change("flow.remove_status", { status: value_of(event) });
 };
 
-export const on_status_label = (event: Event) => {
-  state.new_status = (event.currentTarget as HTMLInputElement).value;
+/** What the add forms hold, each control named for its field in the state. */
+export const on_field = (event: Event) => {
+  const control = event.currentTarget as HTMLInputElement | HTMLSelectElement;
+  (state as Record<string, unknown>)[control.name] = control.value;
 };
 
 export const on_add_status = () => {
@@ -201,22 +201,6 @@ export const on_add_status = () => {
   void change("flow.add_status", { label: state.new_status.trim() }).then(() => {
     if (state.note === "") state.new_status = "";
   });
-};
-
-export const on_new_label = (event: Event) => {
-  state.new_label = (event.currentTarget as HTMLInputElement).value;
-};
-
-export const on_new_from = (event: Event) => {
-  state.new_from = value_of(event);
-};
-
-export const on_new_to = (event: Event) => {
-  state.new_to = value_of(event);
-};
-
-export const on_new_who = (event: Event) => {
-  state.new_who = value_of(event);
 };
 
 export const on_add = () => {
@@ -244,24 +228,32 @@ export function TypeWorkflow({ type }: TypeWorkflowProps) {
   return (
     <div class="flex flex-col" data-part="type-workflow">
       <IndexSection title={Publr.t("Statuses")} description={Publr.t("The plugin's statuses are locked; the site's own can be removed.")}>
-        <div class="flex flex-col gap-3 px-5 py-4">
-          <div class="flex flex-wrap gap-2">
+        <Table>
+          <TableBody>
             {state.statuses.map((status) => (
-              <span key={status.id} class="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5" data-status={status.id}>
-                <Text as="span" variant="body-sm">{status.label}</Text>
-                <Text as="span" variant="body-sm" tone="muted">{status.source_label}</Text>
-                {status.removable && (
-                  <Button size="sm" hierarchy="tertiary" value={status.id} onClick={on_remove_status}>
-                    {Publr.t("Remove")}
-                  </Button>
-                )}
-              </span>
+              <TableRow key={status.id}>
+                <TableCell>
+                  <span data-status={status.id}>
+                    <Text as="span" variant="body-sm">{status.label}</Text>
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <Status tone={status.removable ? "info" : "neutral"}>{status.source_label}</Status>
+                </TableCell>
+                <TableCell>
+                  {status.removable && (
+                    <Button size="sm" hierarchy="tertiary" value={status.id} onClick={on_remove_status}>
+                      {Publr.t("Remove")}
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
             ))}
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <Input size="sm" label={Publr.t("New status")} placeholder={Publr.t("New status")} value={state.new_status} onInput={on_status_label} classes="max-w-60" />
-            <Button size="sm" hierarchy="secondary" onClick={on_add_status}>{Publr.t("Add status")}</Button>
-          </div>
+          </TableBody>
+        </Table>
+        <div class="flex flex-wrap items-center gap-2 px-5 py-4">
+          <Input size="sm" label={Publr.t("New status")} placeholder={Publr.t("New status")} value={state.new_status} name="new_status" onInput={on_field} classes="max-w-60" />
+          <Button size="sm" hierarchy="secondary" onClick={on_add_status}>{Publr.t("Add status")}</Button>
         </div>
       </IndexSection>
       <IndexSection title={Publr.t("Transitions")} description={Publr.t("Administrators may always make them. A transition turned off is refused to people; the plugin's own code still makes it.")}>
@@ -306,10 +298,10 @@ export function TypeWorkflow({ type }: TypeWorkflowProps) {
                 </TableCell>
                 <TableCell>
                   {transition.off && (
-                    <Button size="sm" hierarchy="secondary" value={transition.name} onClick={on_turn_on}>{Publr.t("Turn on")}</Button>
+                    <Button size="sm" hierarchy="secondary" value={transition.switch_value} onClick={on_set_on}>{Publr.t("Turn on")}</Button>
                   )}
                   {!transition.off && transition.can_turn_off && (
-                    <Button size="sm" hierarchy="tertiary" value={transition.name} onClick={on_turn_off}>{Publr.t("Turn off")}</Button>
+                    <Button size="sm" hierarchy="tertiary" value={transition.switch_value} onClick={on_set_on}>{Publr.t("Turn off")}</Button>
                   )}
                   {transition.removable && (
                     <Button size="sm" hierarchy="tertiary" value={transition.name} onClick={on_remove}>{Publr.t("Remove")}</Button>
@@ -320,18 +312,18 @@ export function TypeWorkflow({ type }: TypeWorkflowProps) {
           </TableBody>
         </Table>
         <div class="flex flex-wrap items-end gap-2 px-5 py-4" data-part="add-transition">
-          <Input size="sm" label={Publr.t("Transition label")} placeholder={Publr.t("Label")} value={state.new_label} onInput={on_new_label} classes="max-w-48" />
-          <NativeSelect size="sm" label={Publr.t("From")} onChange={on_new_from} classes="max-w-44">
-            {state.places.map((place) => (
-              <option value={place.value} selected={place.value === state.new_from}>{place.label}</option>
+          <Input size="sm" label={Publr.t("Transition label")} placeholder={Publr.t("Label")} value={state.new_label} name="new_label" onInput={on_field} classes="max-w-48" />
+          <NativeSelect size="sm" label={Publr.t("From")} name="new_from" onChange={on_field} classes="max-w-44">
+            {state.statuses.map((status) => (
+              <option value={status.id} selected={status.id === state.new_from}>{status.label}</option>
             ))}
           </NativeSelect>
-          <NativeSelect size="sm" label={Publr.t("To")} onChange={on_new_to} classes="max-w-44">
-            {state.places.map((place) => (
-              <option value={place.value} selected={place.value === state.new_to}>{place.label}</option>
+          <NativeSelect size="sm" label={Publr.t("To")} name="new_to" onChange={on_field} classes="max-w-44">
+            {state.statuses.map((status) => (
+              <option value={status.id} selected={status.id === state.new_to}>{status.label}</option>
             ))}
           </NativeSelect>
-          <NativeSelect size="sm" label={Publr.t("Who may")} onChange={on_new_who} classes="max-w-48">
+          <NativeSelect size="sm" label={Publr.t("Who may")} name="new_who" onChange={on_field} classes="max-w-48">
             {state.who_choices.map((choice) => (
               <option value={choice.value} selected={choice.value === state.new_who}>{choice.label}</option>
             ))}

@@ -8,7 +8,7 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
-const override = model.operation_override;
+const definitions = @import("record.zig").domain.definition;
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -106,7 +106,7 @@ pub const Get = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        return shown(ctx, in.type);
+        return shown(ctx, (try find(ctx, in.type)).def.handle);
     }
 };
 
@@ -147,21 +147,20 @@ pub const Authorize = struct {
 
         const given = @as(u32, @intFromBool(in.user_has_role.len > 0)) +
             @intFromBool(in.user_is_signed_in) + @intFromBool(in.default);
+        const def = (try find(ctx, in.type)).def;
+        var changes = try changes_of(ctx, def.handle);
 
-        if (given != 1) {
+        if (given != 1 or in.transition.len == 0 or in.transition.len > 64) {
             return error.Invalid;
         }
 
-        const def = try type_of(ctx, in.type);
-        var changes = try changes_of(ctx, def.handle);
-
-        if (!reserved_or_listed(def.flow, in.transition)) {
+        if (!flow.reserved(in.transition) and !def.flow.lists(in.transition)) {
             return error.NotFound;
         }
 
-        const who: ?flow.Who = if (in.default) null else try who_of(ctx, in);
-        var kept: std.ArrayList(flow.Changed) = .empty;
+        const who: ?flow.Who = if (in.default) null else try who_of(ctx, in.user_has_role);
         const transitions = try ctx.arena.dupe(flow.Transition, changes.transitions);
+        var kept: std.ArrayList(flow.Changed) = .empty;
 
         // The site's own transition is changed in place: there is no code's to go back to.
         for (transitions) |*own| {
@@ -228,51 +227,44 @@ pub const Add = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const def = try type_of(ctx, in.type);
+        const def = (try find(ctx, in.type)).def;
         var changes = try changes_of(ctx, def.handle);
-        const transition_name = try slug_of(ctx.arena, in.label, model.status.id_len_max);
+        const transition_name = try name_of(ctx.arena, in.label, model.status.id_len_max);
+        const room = changes.transitions.len < model.status.transitions_max;
 
-        if (in.label.len > 64 or in.from.len == 0 or in.from.len > model.status.statuses_max) {
+        if (in.label.len > 64 or in.from.len == 0 or in.from.len > 16 or !room) {
             return error.Invalid;
         }
 
         if (flow.reserved(transition_name) or def.flow.lists(transition_name)) {
-            return ctx.fail(.{
-                .name = "Taken",
-                .status = 409,
-                .message = "the flow has a transition of that name",
-            });
+            return taken(ctx);
         }
 
-        if (!usable(def.flow, in.to)) {
-            return error.Invalid;
-        }
-
-        for (in.from) |leaving| {
-            if (!usable(def.flow, leaving) or std.mem.eql(u8, leaving, in.to)) {
+        // Between statuses the type has, never the trash: `trash` and `restore` do that.
+        for (try std.mem.concat(ctx.arena, []const u8, &.{ in.from, &.{in.to} })) |id| {
+            if (def.flow.find(id) == null or std.mem.eql(u8, id, flow.trashed)) {
                 return error.Invalid;
             }
         }
 
-        const added: flow.Transition = .{
-            .name = transition_name,
-            .from = in.from,
-            .to = in.to,
-            .label = in.label,
-            .authorize = if (in.user_has_role.len == 0) null else try who_of(ctx, .{
-                .type = in.type,
-                .transition = transition_name,
-                .user_has_role = in.user_has_role,
-            }),
-        };
-
-        if (changes.transitions.len == model.status.transitions_max) {
-            return error.Invalid;
+        for (in.from) |id| {
+            if (std.mem.eql(u8, id, in.to)) {
+                return error.Invalid;
+            }
         }
 
         changes.transitions = try std.mem.concat(ctx.arena, flow.Transition, &.{
             changes.transitions,
-            &.{added},
+            &.{.{
+                .name = transition_name,
+                .from = in.from,
+                .to = in.to,
+                .label = in.label,
+                .authorize = if (in.user_has_role.len == 0)
+                    null
+                else
+                    try who_of(ctx, in.user_has_role),
+            }},
         });
 
         return save(ctx, def.handle, changes);
@@ -284,7 +276,7 @@ pub const Remove = struct {
     pub const description = "Remove a transition this site added";
     pub const details =
         \\Administrators only. Only the site's own: the code's transitions are turned off
-        \\(`flow turn_off`), never removed. Records stay where they are.
+        \\(`flow set_on`), never removed. Records stay where they are.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -305,7 +297,7 @@ pub const Remove = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const def = try type_of(ctx, in.type);
+        const def = (try find(ctx, in.type)).def;
         var changes = try changes_of(ctx, def.handle);
         var kept: std.ArrayList(flow.Transition) = .empty;
 
@@ -325,51 +317,63 @@ pub const Remove = struct {
     }
 };
 
-pub const TurnOff = struct {
-    pub const name = "flow.turn_off";
-    pub const description = "Turn off one of the code's transitions for people";
+pub const SetOn = struct {
+    pub const name = "flow.set_on";
+    pub const description = "Turn one of the code's transitions off for people, or back on";
     pub const details =
-        \\Administrators only. People can't make it any more, administrators included; the
-        \\plugin's own code still can, so the plugin keeps working. `flow turn_on` brings it
-        \\back. Core's `trash`, `restore` and `destroy` are never turned off.
+        \\Administrators only. Off, people can't make it any more, administrators included;
+        \\the plugin's own code still can, so the plugin keeps working. Core's `trash`,
+        \\`restore` and `destroy` are never turned off, and the site's own are removed instead.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         type: []const u8,
         transition: []const u8,
+        on: bool,
     };
     pub const Out = Flow;
     pub const example: In = .{
         .type = "post",
         .transition = "archive",
+        .on = false,
     };
     pub const example_out: Out = example_flow;
     pub const field_docs: sdk.operation.Docs(In) = .{
         .type = type_doc,
         .transition = name_doc,
+        .on = "On, as its code says; off, refused to people",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        return turned(ctx, in.type, in.transition, true);
-    }
-};
+        const def = (try find(ctx, in.type)).def;
+        var changes = try changes_of(ctx, def.handle);
+        var kept: std.ArrayList([]const u8) = .empty;
 
-pub const TurnOn = struct {
-    pub const name = "flow.turn_on";
-    pub const description = "Turn one of the code's transitions back on";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = TurnOff.In;
-    pub const Out = Flow;
-    pub const example: In = TurnOff.example;
-    pub const example_out: Out = example_flow;
-    pub const field_docs: sdk.operation.Docs(In) = TurnOff.field_docs;
+        if (flow.reserved(in.transition) or !def.flow.lists(in.transition)) {
+            return error.NotFound;
+        }
 
-    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
-        std.debug.assert(granted.allows());
+        for (changes.transitions) |own| {
+            if (std.mem.eql(u8, own.name, in.transition)) {
+                return error.Invalid;
+            }
+        }
 
-        return turned(ctx, in.type, in.transition, false);
+        for (changes.off) |off| {
+            if (!std.mem.eql(u8, off, in.transition)) {
+                try kept.append(ctx.arena, off);
+            }
+        }
+
+        if (!in.on) {
+            try kept.append(ctx.arena, in.transition);
+        }
+
+        changes.off = kept.items;
+
+        return save(ctx, def.handle, changes);
     }
 };
 
@@ -400,27 +404,23 @@ pub const AddStatus = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const def = try type_of(ctx, in.type);
+        const def = (try find(ctx, in.type)).def;
         var changes = try changes_of(ctx, def.handle);
         const room = model.status.id_len_max -| (def.handle.len + 1);
+        const full = def.flow.statuses.len + model.status.core_statuses.len >=
+            model.status.statuses_max;
 
-        if (in.label.len > 64 or room < 3) {
+        if (in.label.len > 64 or room < 3 or full) {
             return error.Invalid;
         }
 
-        const slug = try slug_of(ctx.arena, in.label, @intCast(room));
-        const id = try std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{ def.handle, slug });
+        const id = try std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{
+            def.handle,
+            try name_of(ctx.arena, in.label, room),
+        });
 
         if (def.flow.find(id) != null) {
-            return ctx.fail(.{
-                .name = "Taken",
-                .status = 409,
-                .message = "the flow has a status of that name",
-            });
-        }
-
-        if (def.flow.statuses.len + model.status.core_statuses.len >= model.status.statuses_max) {
-            return error.Invalid;
+            return taken(ctx);
         }
 
         changes.statuses = try std.mem.concat(ctx.arena, model.status.Status, &.{
@@ -462,7 +462,7 @@ pub const RemoveStatus = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const type_row = try row_of(ctx, in.type);
+        const type_row = try find(ctx, in.type);
         const def = type_row.def;
         var changes = try changes_of(ctx, def.handle);
         var kept: std.ArrayList(model.status.Status) = .empty;
@@ -477,13 +477,23 @@ pub const RemoveStatus = struct {
             return if (def.flow.find(in.status) != null) locked(ctx) else error.NotFound;
         }
 
-        for (def.flow.listed()) |transition| {
-            if (leads(transition, in.status)) {
+        // Only the site's own transitions can reach the site's own status.
+        for (changes.transitions) |transition| {
+            const leaves = for (transition.from) |from| {
+                if (std.mem.eql(u8, from, in.status)) break true;
+            } else false;
+
+            if (leaves or std.mem.eql(u8, transition.to, in.status)) {
                 return in_use(ctx, "a transition leads into or out of it");
             }
         }
 
-        if (try store.records.count_in_status(ctx.db, type_row.id, in.status) > 0) {
+        const held = try store.records.count(ctx.db, ctx.arena, .{
+            .type_ids = &.{type_row.id},
+            .statuses = &.{in.status},
+        });
+
+        if (held > 0) {
             return in_use(ctx, "records are in it");
         }
 
@@ -498,18 +508,22 @@ pub const operations = [_]type{
     Authorize,
     Add,
     Remove,
-    TurnOff,
-    TurnOn,
+    SetOn,
     AddStatus,
     RemoveStatus,
 };
 
-/// The setting a type's changes are kept under.
 fn key_of(arena: std.mem.Allocator, handle: []const u8) Error![]const u8 {
-    std.debug.assert(handle.len > 0);
-    std.debug.assert(handle.len <= 64);
+    std.debug.assert(handle.len > 0 and handle.len <= 64);
 
     return std.fmt.allocPrint(arena, "flow.{s}", .{handle}) catch error.OutOfMemory;
+}
+
+fn parsed(arena: std.mem.Allocator, text: []const u8) flow.Changes {
+    return std.json.parseFromSliceLeaky(flow.Changes, arena, text, .{
+        .allocate = .alloc_always,
+        .ignore_unknown_fields = true,
+    }) catch .{};
 }
 
 /// What the site changed of the flow of the type `handle`; none when it changed nothing.
@@ -520,30 +534,20 @@ pub fn changes_of(ctx: *Ctx, handle: []const u8) Error!flow.Changes {
         return .{};
     }
 
-    const text = try store.settings.get(ctx.db, ctx.arena, try key_of(ctx.arena, handle)) orelse {
-        return .{};
-    };
+    const key = try key_of(ctx.arena, handle);
+    const text = try store.settings.get(ctx.db, ctx.arena, key) orelse return .{};
 
-    return std.json.parseFromSliceLeaky(flow.Changes, ctx.arena, text, .{
-        .allocate = .alloc_always,
-        .ignore_unknown_fields = true,
-    }) catch .{};
+    return parsed(ctx.arena, text);
 }
 
 /// Every status a site added to any type's flow.
 pub fn site_statuses(ctx: *Ctx) Error![]const model.status.Status {
     std.debug.assert(ctx.now_ms >= 0);
 
-    const texts = try store.settings.values_under(ctx.db, ctx.arena, "flow.");
     var found: std.ArrayList(model.status.Status) = .empty;
 
-    for (texts) |text| {
-        const changes = std.json.parseFromSliceLeaky(flow.Changes, ctx.arena, text, .{
-            .allocate = .alloc_always,
-            .ignore_unknown_fields = true,
-        }) catch continue;
-
-        try found.appendSlice(ctx.arena, changes.statuses);
+    for (try store.settings.values_under(ctx.db, ctx.arena, "flow.")) |text| {
+        try found.appendSlice(ctx.arena, parsed(ctx.arena, text).statuses);
     }
 
     return found.items;
@@ -553,18 +557,15 @@ fn save(ctx: *Ctx, handle: []const u8, changes: flow.Changes) Error!Flow {
     std.debug.assert(handle.len > 0);
 
     const key = try key_of(ctx.arena, handle);
+    const text = std.json.Stringify.valueAlloc(ctx.arena, changes, .{}) catch {
+        return error.OutOfMemory;
+    };
 
     if (changes.empty()) {
         try store.settings.delete(ctx.db, key);
+    } else if (text.len > store.settings.value_len_max) {
+        return error.Invalid;
     } else {
-        const text = std.json.Stringify.valueAlloc(ctx.arena, changes, .{}) catch {
-            return error.OutOfMemory;
-        };
-
-        if (text.len > store.settings.value_len_max) {
-            return error.Invalid;
-        }
-
         try store.settings.set(ctx.db, key, text, ctx.now_ms);
     }
 
@@ -573,50 +574,13 @@ fn save(ctx: *Ctx, handle: []const u8, changes: flow.Changes) Error!Flow {
     return shown(ctx, handle);
 }
 
-fn turned(ctx: *Ctx, type_name: []const u8, transition: []const u8, off: bool) Error!Flow {
-    std.debug.assert(transition.len > 0);
-
-    const def = try type_of(ctx, type_name);
-    var changes = try changes_of(ctx, def.handle);
-
-    if (flow.reserved(transition) or !def.flow.lists(transition)) {
-        return error.NotFound;
-    }
-
-    for (changes.transitions) |own| {
-        if (std.mem.eql(u8, own.name, transition)) {
-            return error.Invalid;
-        }
-    }
-
-    var kept: std.ArrayList([]const u8) = .empty;
-
-    for (changes.off) |name| {
-        if (!std.mem.eql(u8, name, transition)) {
-            try kept.append(ctx.arena, name);
-        }
-    }
-
-    if (off) {
-        try kept.append(ctx.arena, transition);
-    }
-
-    changes.off = kept.items;
-
-    return save(ctx, def.handle, changes);
-}
-
-fn row_of(ctx: *Ctx, handle: []const u8) Error!store.content_types.Row {
+/// The type as read, the site's changes laid over its flow.
+fn find(ctx: *Ctx, handle: []const u8) Error!store.content_types.Row {
     if (handle.len == 0 or handle.len > 64) {
         return error.Invalid;
     }
 
-    return try @import("record.zig").domain.definition.find(ctx, handle) orelse error.NotFound;
-}
-
-/// The type as read, the site's changes laid over its flow.
-fn type_of(ctx: *Ctx, handle: []const u8) Error!model.content_type.Def {
-    return (try row_of(ctx, handle)).def;
+    return try definitions.find(ctx, handle) orelse error.NotFound;
 }
 
 /// The type's flow as its page shows it: core's statuses, its code's, the site's; every
@@ -624,43 +588,37 @@ fn type_of(ctx: *Ctx, handle: []const u8) Error!model.content_type.Def {
 fn shown(ctx: *Ctx, handle: []const u8) Error!Flow {
     std.debug.assert(handle.len > 0);
 
-    const def = try type_of(ctx, handle);
-    const changes = try changes_of(ctx, def.handle);
+    const def = (try find(ctx, handle)).def;
+    const changes = try changes_of(ctx, handle);
+    // The code's own flow, as stored; without one, core's.
+    const stored = try definitions.find_raw(ctx, handle) orelse return error.NotFound;
+    const code: []const u8 = if (def.owner.len > 0 and stored.def.flow.own()) "plugin" else "core";
+    const site = flow.Flow{
+        .statuses = changes.statuses,
+        .transitions = changes.transitions,
+    };
     var statuses: std.ArrayList(Status) = .empty;
     var transitions: std.ArrayList(Transition) = .empty;
-    const own_code = def.owner.len > 0 and !core_listed(def.flow, changes);
 
-    for (model.status.core_statuses) |core| {
-        if (!std.mem.eql(u8, core.id, flow.trashed)) {
-            try statuses.append(ctx.arena, .{
-                .id = core.id,
-                .label = core.label,
-                .live = core.live,
-                .source = "core",
-            });
+    const all = try std.mem.concat(ctx.arena, model.status.Status, &.{
+        &model.status.core_statuses,
+        def.flow.statuses,
+    });
+
+    for (all) |one| {
+        const core = model.status.Core.find(one.id) != null;
+        const source = if (core) "core" else if (site.find(one.id) != null) "site" else "plugin";
+
+        if (std.mem.eql(u8, one.id, flow.trashed)) {
+            continue;
         }
-    }
 
-    for (def.flow.statuses) |own| {
         try statuses.append(ctx.arena, .{
-            .id = own.id,
-            .label = own.label,
-            .live = own.live,
-            .source = if (status_listed(changes.statuses, own.id)) "site" else "plugin",
+            .id = one.id,
+            .label = one.label,
+            .live = one.live,
+            .source = source,
         });
-    }
-
-    for (def.flow.listed()) |listed| {
-        const site = transition_listed(changes.transitions, listed.name);
-        const code_source: []const u8 = if (own_code) "plugin" else "core";
-
-        try transitions.append(ctx.arena, try row(ctx, def.flow, .{
-            .name = listed.name,
-            .label = listed.label,
-            .from = listed.from,
-            .to = listed.to,
-            .authorize = listed.authorize,
-        }, if (site) "site" else code_source));
     }
 
     const trash = [_]flow.Transition{
@@ -684,8 +642,29 @@ fn shown(ctx: *Ctx, handle: []const u8) Error!Flow {
         },
     };
 
-    for (trash) |core| {
-        try transitions.append(ctx.arena, try row(ctx, def.flow, core, "core"));
+    for (try std.mem.concat(ctx.arena, flow.Transition, &.{ def.flow.listed(), &trash })) |listed| {
+        const marked = def.flow.changed(.{
+            .name = listed.name,
+            .to = listed.to,
+            .label = listed.label,
+            .authorize = listed.authorize,
+        });
+        const own = site.transitions.len > 0 and site.lists(listed.name);
+
+        const reserved = flow.reserved(listed.name);
+        const declared = try who_text(ctx.arena, listed.authorize);
+
+        try transitions.append(ctx.arena, .{
+            .name = listed.name,
+            .label = listed.label,
+            .from = listed.from,
+            .to = listed.to,
+            .who = if (marked.people) |people| try who_text(ctx.arena, people) else declared,
+            .declared = declared,
+            .changed = marked.people != null,
+            .source = if (own) "site" else if (reserved) "core" else code,
+            .off = marked.off,
+        });
     }
 
     return .{
@@ -694,55 +673,29 @@ fn shown(ctx: *Ctx, handle: []const u8) Error!Flow {
     };
 }
 
-fn row(
-    ctx: *Ctx,
-    type_flow: model.flow.Flow,
-    listed: flow.Transition,
-    source: []const u8,
-) Error!Transition {
-    std.debug.assert(listed.name.len > 0);
-
-    const marked = type_flow.changed(.{
-        .name = listed.name,
-        .to = listed.to,
-        .label = listed.label,
-        .authorize = listed.authorize,
-    });
-    const declared = try who_text(ctx.arena, listed.authorize);
-
-    return .{
-        .name = listed.name,
-        .label = listed.label,
-        .from = listed.from,
-        .to = listed.to,
-        .who = if (marked.people) |people| try who_text(ctx.arena, people) else declared,
-        .declared = declared,
-        .changed = marked.people != null,
-        .source = source,
-        .off = marked.off,
-    };
-}
-
 fn who_text(arena: std.mem.Allocator, who: ?flow.Who) Error![]const u8 {
+    std.debug.assert(who == null or who.?.roles.len <= model.operation_override.roles_max);
+
     const given = who orelse return "";
 
-    return override.answer_text(arena, given.answered());
+    return model.operation_override.answer_text(arena, given.answered());
 }
 
-fn who_of(ctx: *Ctx, in: Authorize.In) Error!flow.Who {
-    std.debug.assert(in.transition.len > 0);
+/// Who may, from the roles given: anyone holding one of them; none, whoever may edit.
+fn who_of(ctx: *Ctx, roles: []const []const u8) Error!flow.Who {
+    std.debug.assert(ctx.now_ms >= 0);
 
-    if (in.user_is_signed_in) {
+    if (roles.len == 0) {
         return .{
             .answer = .signed_in,
         };
     }
 
-    if (in.user_has_role.len == 0 or in.user_has_role.len > override.roles_max) {
+    if (roles.len > model.operation_override.roles_max) {
         return error.Invalid;
     }
 
-    for (in.user_has_role) |role_name| {
+    for (roles) |role_name| {
         if (!model.role.valid_name(role_name)) {
             return error.Invalid;
         }
@@ -750,84 +703,33 @@ fn who_of(ctx: *Ctx, in: Authorize.In) Error!flow.Who {
 
     return .{
         .answer = .roles,
-        .roles = try ctx.arena.dupe([]const u8, in.user_has_role),
+        .roles = try ctx.arena.dupe([]const u8, roles),
     };
 }
 
-fn reserved_or_listed(type_flow: model.flow.Flow, name: []const u8) bool {
-    if (name.len == 0 or name.len > model.status.id_len_max) {
-        return false;
+/// `label` as a name: `send_back`, at most `len_max` long.
+fn name_of(arena: std.mem.Allocator, label: []const u8, len_max: u64) Error![]const u8 {
+    std.debug.assert(len_max > 0);
+
+    const slug = @import("../lib/text.zig").slugify(arena, label) catch return error.Invalid;
+    const name = std.mem.trim(u8, slug[0..@min(slug.len, len_max)], "-");
+    const kept = try arena.dupe(u8, name);
+
+    std.mem.replaceScalar(u8, kept, '-', '_');
+
+    if (kept.len == 0 or !std.ascii.isLower(kept[0])) {
+        return error.Invalid;
     }
 
-    return flow.reserved(name) or type_flow.lists(name);
+    return kept;
 }
 
-/// A status a site's transition may leave or reach: one the type has, never the trash.
-fn usable(type_flow: model.flow.Flow, id: []const u8) bool {
-    if (id.len == 0 or id.len > model.status.id_len_max) {
-        return false;
-    }
-
-    return !std.mem.eql(u8, id, flow.trashed) and type_flow.find(id) != null;
-}
-
-fn leads(transition: flow.Transition, id: []const u8) bool {
-    std.debug.assert(id.len > 0);
-
-    if (std.mem.eql(u8, transition.to, id)) {
-        return true;
-    }
-
-    for (transition.from) |leaving| {
-        if (std.mem.eql(u8, leaving, id)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/// Whether the code's transitions are core's: a type whose code gives it no flow.
-fn core_listed(type_flow: model.flow.Flow, changes: flow.Changes) bool {
-    std.debug.assert(changes.transitions.len <= flow.transitions_max);
-
-    const listed = type_flow.listed();
-
-    if (listed.len != flow.core_transitions.len + changes.transitions.len) {
-        return false;
-    }
-
-    for (flow.core_transitions, listed[0..flow.core_transitions.len]) |core, one| {
-        if (!std.mem.eql(u8, core.name, one.name)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-fn status_listed(statuses: []const model.status.Status, id: []const u8) bool {
-    std.debug.assert(id.len > 0);
-
-    for (statuses) |one| {
-        if (std.mem.eql(u8, one.id, id)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-fn transition_listed(transitions: []const flow.Transition, name: []const u8) bool {
-    std.debug.assert(name.len > 0);
-
-    for (transitions) |one| {
-        if (std.mem.eql(u8, one.name, name)) {
-            return true;
-        }
-    }
-
-    return false;
+fn taken(ctx: *Ctx) error{Failed} {
+    return ctx.fail(.{
+        .name = "Taken",
+        .status = 409,
+        .message = "the flow has one of that name",
+    });
 }
 
 fn locked(ctx: *Ctx) error{Failed} {
@@ -846,35 +748,6 @@ fn in_use(ctx: *Ctx, why: []const u8) error{Failed} {
         .status = 409,
         .message = why,
     });
-}
-
-/// `label` as a name: lower-case letters, digits and `_`, at most `len_max` long.
-fn slug_of(arena: std.mem.Allocator, label: []const u8, len_max: u32) Error![]const u8 {
-    std.debug.assert(len_max > 0);
-
-    var out: std.ArrayList(u8) = .empty;
-
-    for (label) |byte| {
-        if (out.items.len == len_max) {
-            break;
-        }
-
-        const lower = std.ascii.toLower(byte);
-
-        if (std.ascii.isAlphanumeric(lower)) {
-            try out.append(arena, lower);
-        } else if (out.items.len > 0 and out.items[out.items.len - 1] != '_') {
-            try out.append(arena, '_');
-        }
-    }
-
-    const trimmed = std.mem.trim(u8, out.items, "_");
-
-    if (trimmed.len == 0 or !std.ascii.isLower(trimmed[0])) {
-        return error.Invalid;
-    }
-
-    return trimmed;
 }
 
 const testing_types = @import("content_type.zig");
@@ -1074,14 +947,14 @@ test "a site's own status and transition are used on records and removed" {
         .status = "guestbook.entry.on_hold",
     }));
 
-    const taken = SDK.dispatch(&admin, Add, .{
+    const named_again = SDK.dispatch(&admin, Add, .{
         .type = "guestbook.entry",
         .label = "Submit",
         .from = &.{"draft"},
         .to = "published",
     });
 
-    try std.testing.expectError(error.Failed, taken);
+    try std.testing.expectError(error.Failed, named_again);
 
     // The code's transition is never removed.
     try std.testing.expectError(error.Failed, SDK.dispatch(&admin, Remove, .{
@@ -1107,9 +980,10 @@ test "a code's transition turned off is refused to people; plugin code still mak
     var admin = site.person("admin");
     var editor = site.person("editor");
     const id = try site.created();
-    const off = try SDK.dispatch(&admin, TurnOff, .{
+    const off = try SDK.dispatch(&admin, SetOn, .{
         .type = "guestbook.entry",
         .transition = "submit",
+        .on = false,
     });
 
     try std.testing.expect(transition_named(off, "submit").?.off);
@@ -1124,14 +998,16 @@ test "a code's transition turned off is refused to people; plugin code still mak
 
     try std.testing.expectEqualStrings("guestbook.in_review", by_plugin);
 
-    try std.testing.expectError(error.NotFound, SDK.dispatch(&admin, TurnOff, .{
+    try std.testing.expectError(error.NotFound, SDK.dispatch(&admin, SetOn, .{
         .type = "guestbook.entry",
         .transition = "trash",
+        .on = false,
     }));
 
-    const on = try SDK.dispatch(&admin, TurnOn, .{
+    const on = try SDK.dispatch(&admin, SetOn, .{
         .type = "guestbook.entry",
         .transition = "submit",
+        .on = true,
     });
 
     try std.testing.expect(!transition_named(on, "submit").?.off);
