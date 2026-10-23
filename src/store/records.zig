@@ -44,6 +44,7 @@ pub fn rename(connection: *db.Db, from: []const u8, to: []const u8) Error!void {
     try @import("record_terms.zig").rename(connection, from, to);
 }
 pub const count_by_type = Store.count_by_type;
+pub const count_in_status = Store.count_in_status;
 pub const list = Store.list;
 pub const count = Store.count;
 pub const gather = Store.gather;

@@ -161,6 +161,18 @@ pub fn Of(comptime Domain: type) type {
             const flow = expanded.def.flow;
 
             expanded.def.flow = try model.flow.with_added(ctx.arena, handle, flow, added);
+
+            // What the site changed of a type's flow, laid over it (`flow` operations).
+            if (comptime std.mem.eql(u8, Domain.config.noun, "record")) {
+                const changes = try @import("../flow.zig").changes_of(ctx, handle);
+
+                expanded.def.flow = try model.flow.with_changes(
+                    ctx.arena,
+                    expanded.def.flow,
+                    changes,
+                );
+            }
+
             try resolve_aliases(ctx, &expanded.def.flow);
 
             return expanded;
@@ -306,10 +318,23 @@ pub fn Of(comptime Domain: type) type {
             }
 
             const row = try find_raw(ctx, handle_or_id) orelse return error.NotFound;
-            const def = if (row.def.system and ctx.caller != .system)
+            var def = if (row.def.system and ctx.caller != .system)
                 try parse_addition(ctx, row.def, definition)
             else
                 try parse_and_validate(ctx, definition);
+
+            // The flow as read back unchanged keeps the stored one: what other plugins and
+            // the site's changes lay over it is never copied in.
+            if (try find(ctx, handle_or_id)) |read| {
+                const options: std.json.Stringify.Options = .{};
+                const posted = std.json.Stringify.valueAlloc(ctx.arena, def.flow, options);
+                const shown = std.json.Stringify.valueAlloc(ctx.arena, read.def.flow, options);
+
+                if (std.mem.eql(u8, posted catch "", shown catch "-")) {
+                    def.flow = row.def.flow;
+                }
+            }
+
             const known = registry.kinds(ctx);
             const plan = try evolution.plan(known, ctx.arena, row.def.fields, def.fields);
 

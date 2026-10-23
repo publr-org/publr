@@ -379,6 +379,27 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             }
         }
 
+        pub fn count_in_status(
+            connection: *db.Db,
+            type_id: []const u8,
+            status: []const u8,
+        ) Error!u32 {
+            std.debug.assert(type_id.len > 0);
+            std.debug.assert(status.len > 0);
+
+            var select = try connection.prepare(
+                "SELECT count(*) FROM " ++ table ++ " WHERE type_id = ?1 AND status = ?2",
+            );
+            defer select.finalize();
+
+            try select.bind_text(1, type_id);
+            try select.bind_text(2, status);
+
+            std.debug.assert(try select.step());
+
+            return @intCast(select.read_int());
+        }
+
         pub fn count_by_type(connection: *db.Db, type_id: []const u8) Error!u32 {
             std.debug.assert(type_id.len > 0);
             std.debug.assert(connection.transaction_depth <= 8);
