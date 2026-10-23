@@ -324,7 +324,7 @@ fn message_of(err: sdk.Error) []const u8 {
         error.BadCredentials => "Sign in again: these credentials are not accepted.",
         error.Throttled => "Too many calls. Wait a moment and try again.",
         error.Unavailable => "A service this needs is not answering. Try again later.",
-        error.Denied, error.Vetoed => "You may not do this.",
+        error.Denied => "You may not do this.",
         error.Invalid => "Some of what was sent is not right.",
         error.NotFound => "Nothing was found.",
         error.Conflict => "This changed meanwhile. Load it again and retry.",
