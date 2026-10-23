@@ -66,6 +66,8 @@ pub const Staged = struct {
     hash: []const u8,
     /// The manifest as the module carries it, JSON.
     manifest: []const u8,
+    /// The plugin's source the module carries, JSON (`publr.source`); empty for none.
+    source: []const u8 = "",
 };
 
 pub const SandboxedPlugins = struct {

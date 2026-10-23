@@ -63,7 +63,8 @@ fn fail_on(dir: []const u8, problems: []const doc_reader.Placed) void {
     std.debug.assert(dir.len > 0);
     std.debug.assert(problems.len <= 1 << 16);
 
-    if (problems.len == 0) {
+    // Warnings are shown on the plugin's page; only errors stop the build.
+    if (!doc_reader.failing(problems)) {
         return;
     }
 
@@ -73,5 +74,5 @@ fn fail_on(dir: []const u8, problems: []const doc_reader.Placed) void {
         std.log.err("{s}/{s}:{d}: {s}", where);
     }
 
-    diagnostic.fail("{s}: {d} plugin check problem(s)", .{ dir, problems.len });
+    diagnostic.fail("{s}: plugin check problem(s)", .{dir});
 }

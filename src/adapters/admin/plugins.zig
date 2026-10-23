@@ -296,6 +296,11 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
             "",
         .blocked = try lines_of(views.Plugin.BlockedItem, arena, detail.blocked),
         .off = try off_of(arena, detail.off),
+        .warnings = try lines_of(
+            views.Plugin.WarningsItem,
+            arena,
+            detail.warnings[0..@min(detail.warnings.len, 64)],
+        ),
     }, .{});
 }
 

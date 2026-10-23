@@ -119,10 +119,14 @@ fn stage(
     const bytes = host.files.read_any(host.gpa, path, anywhere) catch return error.NotFound;
     defer host.gpa.free(bytes);
 
-    const section_name = @import("../../sdk/plugin/manifest.zig").section_name;
-    const manifest = (wasm.section.find(bytes, section_name) catch {
+    const plugin_manifest = @import("../../sdk/plugin/manifest.zig");
+    const manifest = (wasm.section.find(bytes, plugin_manifest.section_name) catch {
         return error.Invalid;
     }) orelse return error.Invalid;
+
+    const source = (wasm.section.find(bytes, plugin_manifest.source_section_name) catch {
+        return error.Invalid;
+    }) orelse "";
 
     try check_loads(host, bytes);
 
@@ -133,6 +137,7 @@ fn stage(
     return .{
         .hash = arena.dupe(u8, &hash) catch return error.OutOfMemory,
         .manifest = arena.dupe(u8, manifest) catch return error.OutOfMemory,
+        .source = arena.dupe(u8, source) catch return error.OutOfMemory,
     };
 }
 

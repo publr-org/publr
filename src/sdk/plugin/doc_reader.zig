@@ -73,11 +73,42 @@ pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
 
     const words = try generated(arena, entries.items);
     const secrets = try written_secrets.source(arena, written.items);
+    var warned: std.ArrayList(u8) = .empty;
+
+    // The warnings ride along to the plugin's page: its manifest reads them from here.
+    try warned.appendSlice(arena, "\npub const warnings = [_][]const u8{\n");
+
+    for (problems.items) |placed| {
+        if (placed.problem.warning) {
+            const line = try std.fmt.allocPrint(arena, "{s}:{d}: {s}", .{
+                placed.path,
+                placed.problem.line,
+                placed.problem.message,
+            });
+
+            try warned.print(arena, "    \"{f}\",\n", .{std.zig.fmtString(line)});
+        }
+    }
+
+    try warned.appendSlice(arena, "};\n");
 
     return .{
-        .source = try std.mem.concat(arena, u8, &.{ words, secrets }),
+        .source = try std.mem.concat(arena, u8, &.{ words, secrets, warned.items }),
         .problems = problems.items,
     };
+}
+
+/// Whether any problem is an error: warnings never stop a build or an install.
+pub fn failing(problems: []const Placed) bool {
+    std.debug.assert(problems.len <= 1 << 16);
+
+    for (problems) |placed| {
+        if (!placed.problem.warning) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// `operations/answer.zig` as Zig names it: `operations.answer`.

@@ -52,6 +52,8 @@ pub const Detail = struct {
     previous: ?[]const u8 = null,
     /// What the plugin brings that its sandboxed build left out, each with why.
     left_out: []const []const u8 = &.{},
+    /// What the plugin checks warned of, each `file:line: why`: never a stop.
+    warnings: []const []const u8 = &.{},
     /// Why it can't be enabled: each remote it needs (`depends_on`) that does not fit what
     /// is there now, in plain words.
     blocked: []const []const u8 = &.{},
@@ -251,6 +253,7 @@ pub fn detail_of(ctx: *Ctx, decoded: state.Decoded) Error!Detail {
         .update = try next_of(ctx, decoded),
         .previous = decoded.row.previous_version,
         .left_out = manifest.left_out,
+        .warnings = manifest.warnings,
         .blocked = remotes.blocked,
         .off = remotes.off,
         .secrets = try secrets_of(ctx, manifest),

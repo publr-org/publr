@@ -3,14 +3,17 @@
 //! numbers or text, JSON kept in text, an untrusted write taking facts the server owns, an
 //! import reaching outside the plugin's folder, a `ctx.fail` name its `Fails:` does not list
 //! and a `Fails:` line no `ctx.fail` uses. A `Why:` line in the field's own `///` passes
-//! a name check and shows to whoever reviews the plugin. One implementation for
-//! `plugin build`, Publr's `zig build`, and the install gate.
+//! a name check and shows to whoever reviews the plugin. A warning (a content type nothing
+//! lists: bookkeeping kept as content) is shown and never stops anything. One implementation
+//! for `plugin build`, Publr's `zig build`, and the install gate.
 const std = @import("std");
 const Ast = std.zig.Ast;
 
 pub const Problem = struct {
     line: u32,
     message: []const u8,
+    /// Shown on the plugin's page and in `plugin check`; never stops a build or an install.
+    warning: bool = false,
 };
 
 pub const problems_max: u32 = 256;
@@ -29,6 +32,8 @@ const reference_message = "`{s}` keeps a reference as text: make it a `Ref`, or 
 const json_message = "`{s}` keeps JSON in text: make it a struct field, or say `Why:`";
 const fact_message = "`{s}`: an untrusted write takes facts the server owns; send a " ++
     "reference and look it up, or say `Why:`";
+const bookkeeping_message = "`{s}` is content nothing lists (no menu entry, no " ++
+    "public URL): bookkeeping is an internal record (`.internal = true`), or say `Why:`";
 const import_message = "`{s}` reaches outside the plugin's folder: name the gap instead of " ++
     "sharing code";
 
@@ -73,6 +78,55 @@ pub fn check(
         if (tag == .builtin_call_two or tag == .builtin_call_two_comma) {
             try check_import(arena, &tree, node, path, out);
         }
+    }
+
+    try check_bookkeeping(arena, &tree, out);
+}
+
+/// Each content type left out of the menu without a public URL that is not a settings
+/// record: what only operations write is bookkeeping, an internal record. A `Why:` on its
+/// declaration passes it.
+fn check_bookkeeping(
+    arena: std.mem.Allocator,
+    tree: *const Ast,
+    out: *std.ArrayList(Problem),
+) !void {
+    std.debug.assert(tree.errors.len == 0);
+
+    for (0..tree.nodes.len) |index| {
+        const node: Ast.Node.Index = @enumFromInt(index);
+        const declaration = tree.fullVarDecl(node) orelse continue;
+        const init = declaration.ast.init_node.unwrap() orelse continue;
+        var buffer: [1]Ast.Node.Index = undefined;
+        const call = tree.fullCall(&buffer, init) orelse continue;
+
+        if (!std.mem.endsWith(u8, node_text(tree, call.ast.fn_expr), "record.define") or
+            call.ast.params.len != 2)
+        {
+            continue;
+        }
+
+        const options = node_text(tree, call.ast.params[1]);
+        const unlisted = std.mem.indexOf(u8, options, ".menu = .none") != null;
+        const kept_apart = std.mem.indexOf(u8, options, ".internal = true") != null or
+            std.mem.indexOf(u8, options, ".kind = .settings") != null or
+            std.mem.indexOf(u8, options, ".url =") != null;
+
+        if (!unlisted or kept_apart or has_reason(tree, node)) {
+            continue;
+        }
+
+        if (out.items.len == problems_max) {
+            return;
+        }
+
+        const name = tree.tokenSlice(declaration.ast.mut_token + 1);
+
+        try out.append(arena, .{
+            .line = line_of(tree, declaration.ast.mut_token),
+            .message = try std.fmt.allocPrint(arena, bookkeeping_message, .{name}),
+            .warning = true,
+        });
     }
 }
 
@@ -681,4 +735,43 @@ test "a file that does not parse says so, and its Fails: lines are not called un
     try std.testing.expectEqual(5, problems.items[0].line);
     try std.testing.expect(std.mem.startsWith(u8, problems.items[0].message, "does not parse: "));
     try std.testing.expectEqual(0, (try failures.problems(arena)).len);
+}
+
+test "content nothing lists is a warning; internal, settings, a URL or a Why: pass" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const source =
+        \\pub const Attempts = publr.record.define(Attempt, .{
+        \\    .name = "checkout.attempt",
+        \\    .menu = .none,
+        \\});
+        \\
+        \\pub const Kept = publr.record.define(Attempt, .{
+        \\    .name = "checkout.kept",
+        \\    .internal = true,
+        \\    .menu = .none,
+        \\});
+        \\
+        \\pub const Settings = publr.record.define(Options, .{
+        \\    .name = "checkout.settings",
+        \\    .kind = .settings,
+        \\    .menu = .none,
+        \\});
+        \\
+        \\/// Why: edited on the plugin's own page.
+        \\pub const Notes = publr.record.define(Note, .{
+        \\    .name = "checkout.note",
+        \\    .menu = .none,
+        \\});
+        \\
+    ;
+    var problems: std.ArrayList(Problem) = .empty;
+
+    try check(arena, "main.zig", source, &problems);
+
+    try std.testing.expectEqual(1, problems.items.len);
+    try std.testing.expect(problems.items[0].warning);
+    try std.testing.expectEqual(1, problems.items[0].line);
+    try std.testing.expect(std.mem.startsWith(u8, problems.items[0].message, "`Attempts`"));
 }

@@ -45,11 +45,84 @@ pub fn stage(ctx: *Ctx, file: []const u8, anywhere: bool) Error!Checked {
     const manifest = try state.parse_manifest(ctx.arena, staged.manifest);
 
     try check(ctx, &manifest);
+    try check_source(ctx, staged.source);
 
     return .{
         .staged = staged,
         .manifest = manifest,
     };
+}
+
+/// The install gate: the plugin checks `plugin build` runs, over the source the module
+/// carries; an error refuses the module, naming each check that failed, a warning never
+/// does. Where Publr Cloud runs the site, a module without its source is refused: there is
+/// nothing to check.
+fn check_source(ctx: *Ctx, source: []const u8) Error!void {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const doc_reader = @import("../../sdk/plugin/doc_reader.zig");
+    const Carried = struct {
+        path: []const u8,
+        text: []const u8,
+    };
+
+    if (source.len == 0) {
+        return if (!registry.hosted) {} else ctx.fail(.{
+            .name = "SourceMissing",
+            .status = 422,
+            .message = "the module carries no source to check: build it with " ++
+                "`publr plugin build`",
+        });
+    }
+
+    const carried = std.json.parseFromSliceLeaky([]const Carried, ctx.arena, source, .{
+        .allocate = .alloc_always,
+    }) catch return error.Invalid;
+
+    if (carried.len > doc_reader.files_max) {
+        return error.Invalid;
+    }
+
+    const files = try ctx.arena.alloc(doc_reader.File, carried.len);
+
+    for (carried, files) |one, *file| {
+        if (one.path.len == 0 or !std.mem.endsWith(u8, one.path, ".zig")) {
+            return error.Invalid;
+        }
+
+        file.* = .{
+            .path = one.path,
+            .text = try ctx.arena.dupeZ(u8, one.text),
+        };
+    }
+
+    const read = doc_reader.source_of(ctx.arena, files) catch |err| {
+        return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
+    };
+
+    if (!doc_reader.failing(read.problems)) {
+        return;
+    }
+
+    var message: std.ArrayList(u8) = .empty;
+
+    try message.appendSlice(ctx.arena, "the plugin checks failed:");
+
+    for (read.problems) |placed| {
+        if (!placed.problem.warning) {
+            try message.print(ctx.arena, " {s}:{d}: {s};", .{
+                placed.path,
+                placed.problem.line,
+                placed.problem.message,
+            });
+        }
+    }
+
+    return ctx.fail(.{
+        .name = "ChecksFailed",
+        .status = 422,
+        .message = message.items[0 .. message.items.len - 1],
+    });
 }
 
 /// What a manifest must hold to be installed at all, whatever an administrator grants.
