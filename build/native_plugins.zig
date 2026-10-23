@@ -260,7 +260,39 @@ pub fn add_tests(builder: *std.Build, library: *std.Build.Module, test_step: *st
         });
 
         test_step.dependOn(&builder.addRunArtifact(tests).step);
+        test_step.dependOn(&builder.addRunArtifact(examples_test(builder, library, name)).step);
     }
+}
+
+/// Every `Example:` of the plugin's operations, run against an empty site with it.
+fn examples_test(
+    builder: *std.Build,
+    library: *std.Build.Module,
+    name: []const u8,
+) *std.Build.Step.Compile {
+    std.debug.assert(name.len > 0);
+
+    const files = builder.addWriteFiles();
+    const root = files.add("examples.zig", builder.fmt(
+        \\const publr = @import("publr");
+        \\
+        \\test "every example of {s} runs against an empty site with it" {{
+        \\    try publr.sdk.testing.examples(publr.registry, "{s}");
+        \\}}
+        \\
+    , .{ name, name }));
+    const module = builder.createModule(.{
+        .root_source_file = root,
+        .target = library.resolved_target,
+        .optimize = library.optimize,
+    });
+
+    module.addImport("publr", library);
+
+    return builder.addTest(.{
+        .name = builder.fmt("examples-{s}", .{name}),
+        .root_module = module,
+    });
 }
 
 pub fn discover(

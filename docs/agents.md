@@ -149,12 +149,15 @@ pub const plugin = publr.plugin.define(manifest, .{
   credentials: an app's pages at `<mount>/_actions/app.<plugin>.<verb>` (an island posts
   JSON with `Publr-Request: 1`, a form posts its fields), and any script anywhere. Its
   input is untrusted: key data to the caller, answer with nothing of other people's.
-  Through that address an administrator is a signed-in person like any other.
+  Through that address an administrator is a signed-in person like any other. An
+  operation without it is reachable there too, by someone signed in its `.authorize` lets
+  in.
   `ctx.caller().visitor` is the visitor's stable id, signed in or not: key carts and the
   like on it. Never set cookies of your own.
 - **Check in `.validate`.** `problems.add(.field, "reason")` for each problem; every one is
   told at once and the call is refused before `run`, answered 422 as
-  `{ "error": "Invalid", "problems": [ { "field", "message" } ] }`. A record checks its own
+  `{ "error": "Invalid", "message", "problems": [ { "field", "message" } ] }`: every
+  refusal takes that shape. A record checks its own
   data; check only what belongs to the call.
 - **Rules live on the record.** A field's limits go in its `.validation` in
   `record.define`'s `.fields` (`.note = .{ .validation = .{ .max_len = 280 } }`), never in

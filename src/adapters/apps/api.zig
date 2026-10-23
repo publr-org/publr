@@ -1,8 +1,11 @@
-//! `<mount>/_actions/app.<plugin>.<verb>`: an app's pages call an operation its plugin made
-//! for untrusted callers (`.untrusted_callers`), as the visitor, with the app's own `ctx.app`
-//! and `.plugins` fence. An island posts JSON (with `Publr-Request: 1`); a plain `<form>`
-//! posts its fields and is sent back with a 303 to its `redirect` field, or to the page it
-//! came from. Nothing else is reached here: core features are exposed on their own.
+//! `<mount>/_actions/app.<plugin>.<verb>`: an app's pages call any operation a plugin made
+//! with `publr.operation.define`, as the visitor, with the app's own `ctx.app` and
+//! `.plugins` fence. Credentials and `.authorize` decide who gets through: without
+//! `.untrusted_callers` only a signed-in person it lets in, an administrator being just a
+//! signed-in person here. Only `.untrusted_callers` operations answer other sites' pages,
+//! without cookies. An island posts JSON (with `Publr-Request: 1`); a plain `<form>` posts
+//! its fields and is sent back with a 303 to its `redirect` field, or to the page it came
+//! from. Core's own operations are exposed on their own.
 
 const std = @import("std");
 const http = @import("../../lib/http.zig");
@@ -41,18 +44,24 @@ pub fn call(
 
     std.debug.assert(std.mem.startsWith(u8, target.path, actions_prefix));
 
-    const name = action_of(project, target.path[actions_prefix.len..]);
+    const action = action_of(project, target.path[actions_prefix.len..]);
+    const name = if (action) |found| found.name else null;
 
-    // Every operation here is for untrusted callers: another site's page asks first
-    // (OPTIONS) and calls without cookies, as an anonymous visitor.
+    // Another site's page asks first (OPTIONS) and calls without cookies, as an anonymous
+    // visitor: only an operation for untrusted callers says yes.
     if (request.method() == .options) {
-        return if (name == null) not_found(response) else preflight(response, true);
+        const found = action orelse return not_found(response);
+
+        return preflight(response, found.untrusted);
     }
 
     if (request.method() != .post) {
-        return response.json(.method_not_allowed, .{
-            .@"error" = "use POST",
-        });
+        return rest_auth.refuse(
+            response,
+            .method_not_allowed,
+            "MethodNotAllowed",
+            "Use POST: this operation changes something.",
+        );
     }
 
     // The administrator's frame posts from an opaque origin, as a visitor (`framed.zig`).
@@ -61,9 +70,12 @@ pub fn call(
     const as_form = std.mem.startsWith(u8, content_type, "application/x-www-form-urlencoded");
 
     if (!as_form and !std.mem.eql(u8, request.header(request_header) orelse "", "1")) {
-        return response.json(.forbidden, .{
-            .@"error" = "publr_request_header_missing",
-        });
+        return rest_auth.refuse(
+            response,
+            .forbidden,
+            "Forbidden",
+            "Send the Publr-Request: 1 header.",
+        );
     }
 
     const found = name orelse return not_found(response);
@@ -71,9 +83,12 @@ pub fn call(
     try response.set_header("Access-Control-Allow-Origin", "*");
 
     if (request.body.len > body_bytes_max) {
-        return response.json(.payload_too_large, .{
-            .@"error" = "too_large",
-        });
+        return rest_auth.refuse(
+            response,
+            .payload_too_large,
+            "TooBig",
+            "This is too big.",
+        );
     }
 
     const app = target.app;
@@ -94,9 +109,12 @@ pub fn call(
         visitor.of_header(request);
 
     if (!same and as_form) {
-        return response.json(.unsupported_media_type, .{
-            .@"error" = "use JSON",
-        });
+        return rest_auth.refuse(
+            response,
+            .unsupported_media_type,
+            "UnsupportedMediaType",
+            "Send JSON from another site.",
+        );
     }
 
     if (!as_form) {
@@ -116,14 +134,22 @@ pub fn call(
 fn not_found(response: *Response) anyerror!void {
     std.debug.assert(actions_prefix.len > 0);
 
-    return response.json(.not_found, .{
-        .@"error" = "not_found",
-    });
+    return rest_auth.refuse(
+        response,
+        .not_found,
+        "NotFound",
+        "No operation has this name here.",
+    );
 }
 
-/// `app.cart.add`: the operation `cart.add` when cart makes it for untrusted callers; null
-/// for anything else.
-fn action_of(project: *const Project, rest: []const u8) ?[]const u8 {
+const Action = struct {
+    name: []const u8,
+    untrusted: bool,
+};
+
+/// `app.cart.add`: the operation `cart.add` when cart makes it with `publr.operation.define`;
+/// null for anything else.
+fn action_of(project: *const Project, rest: []const u8) ?Action {
     std.debug.assert(rest.len <= 4096);
     std.debug.assert(actions_prefix.len > 0);
 
@@ -139,29 +165,38 @@ fn action_of(project: *const Project, rest: []const u8) ?[]const u8 {
     }
 
     inline for (registry.SDK.operations) |Operation| {
-        const untrusted = comptime @hasDecl(Operation, "untrusted_callers") and
-            Operation.untrusted_callers;
+        const defined = comptime @hasDecl(Operation, "untrusted_callers");
 
-        if (untrusted and std.mem.eql(u8, Operation.name, own)) {
-            return own;
+        if (defined and std.mem.eql(u8, Operation.name, own)) {
+            return .{
+                .name = own,
+                .untrusted = Operation.untrusted_callers,
+            };
         }
     }
 
     const installed = project.sandboxed_plugins orelse return null;
     const found = installed.find(own) orelse return null;
+    const untrusted = found.untrusted_callers orelse return null;
 
-    return if (found.untrusted_callers orelse false) own else null;
+    return .{
+        .name = own,
+        .untrusted = untrusted,
+    };
 }
 
 /// The answer to another site's page asking whether it may call: yes, without cookies,
-/// for a public operation only.
+/// for an operation for untrusted callers only.
 fn preflight(response: *Response, public: bool) anyerror!void {
     std.debug.assert(request_header.len > 0);
 
     if (!public) {
-        return response.json(.forbidden, .{
-            .@"error" = "cross_origin",
-        });
+        return rest_auth.refuse(
+            response,
+            .forbidden,
+            "Forbidden",
+            "Only operations for untrusted callers answer other sites.",
+        );
     }
 
     try response.set_header("Access-Control-Allow-Origin", "*");
@@ -205,9 +240,12 @@ fn form_call(
 
     const arena = sdk_ctx.arena;
     const form = Form.parse(arena, request.body) orelse {
-        return response.json(.bad_request, .{
-            .@"error" = "invalid_form",
-        });
+        return rest_auth.refuse(
+            response,
+            .bad_request,
+            "Invalid",
+            "The form could not be read.",
+        );
     };
     const back = back_of(&form, request, target);
     const input = try input_of(sdk_ctx, name, &form) orelse {
@@ -246,9 +284,7 @@ fn input_of(sdk_ctx: *sdk.Ctx, name: []const u8, form: *const Form) !?[]const u8
     var problem: cli.Problem = .{};
 
     inline for (registry.SDK.operations) |Operation| {
-        const callable = comptime @hasDecl(Operation, "untrusted_callers");
-
-        if (callable) {
+        if (comptime @hasDecl(Operation, "untrusted_callers")) {
             if (std.mem.eql(u8, Operation.name, name)) {
                 const in = cli.parse_in(Operation.In, arena, args.items, &problem, .{}) catch {
                     return null;

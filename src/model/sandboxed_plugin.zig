@@ -124,6 +124,8 @@ pub const Operation = struct {
     description: []const u8,
     details: []const u8 = "",
     open: bool = false,
+    /// Listed in the published API reference (`.public_api`).
+    public_api: bool = false,
     /// Made with `publr.operation.define`: whether callers without credentials may call it.
     /// Null for an operation declared part by part.
     untrusted_callers: ?bool = null,
@@ -134,6 +136,9 @@ pub const Operation = struct {
     fields: []const Field = &.{},
     /// Its `--help`, rendered by the build as a compiled-in operation's is.
     help: []const u8 = "",
+    /// Its `Example:` as JSON, `in:` and `out:`: what the plugin's build runs.
+    example: []const u8 = "",
+    example_out: []const u8 = "",
     /// The shapes it takes and answers: its published contract.
     input: []const contract.Node = &.{},
     output: []const contract.Node = &.{},

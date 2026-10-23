@@ -5,6 +5,7 @@ const auth_http = @import("rest/auth.zig");
 const identity_module = @import("rest/identity.zig");
 const http = @import("../lib/http.zig");
 const Project = @import("../server/project.zig").Project;
+const language = @import("../operations/user/language.zig");
 
 const Error = http.Error;
 const Request = http.Request;
@@ -46,9 +47,12 @@ fn call(request: *Request, response: *Response, ctx: *Context) Error!void {
     inline for (registry.SDK.operations) |Operation| {
         if (std.mem.eql(u8, Operation.name, name)) {
             if (is_read and Operation.kind != .read) {
-                return response.json(.method_not_allowed, .{
-                    .@"error" = "use POST",
-                });
+                return auth_http.refuse(
+                    response,
+                    .method_not_allowed,
+                    "MethodNotAllowed",
+                    "Use POST: this operation changes something.",
+                );
             }
 
             return invoke(request, response, ctx, identity.caller, Operation, is_read);
@@ -75,17 +79,27 @@ fn invoke_runtime(
     const found = sandboxed.find(name) orelse return not_found(response);
 
     if (is_read and found.kind != .read) {
-        return response.json(.method_not_allowed, .{
-            .@"error" = "use POST",
-        });
+        return auth_http.refuse(
+            response,
+            .method_not_allowed,
+            "MethodNotAllowed",
+            "Use POST: this operation changes something.",
+        );
     }
 
     const input = runtime_input(request, ctx.arena, found, is_read) orelse {
-        return response.json(.bad_request, .{
-            .@"error" = "invalid_input",
-        });
+        return auth_http.refuse(
+            response,
+            .bad_request,
+            "Invalid",
+            "The input does not fit the operation.",
+        );
     };
     var sdk_ctx = identity_module.request_context(project, request, ctx.arena, caller);
+
+    sdk_ctx.over_api = true;
+    sdk_ctx.language.locale = language.speaks(&sdk_ctx) catch "";
+
     const output = registry.SDK.call_json(&sdk_ctx, name, input) catch |err| {
         return auth_http.respond_error(response, err, &sdk_ctx);
     };
@@ -134,11 +148,17 @@ fn invoke(
     else
         parse_body(Operation.In, ctx.arena, request.body);
     const in = parsed orelse {
-        return response.json(.bad_request, .{
-            .@"error" = "invalid_input",
-        });
+        return auth_http.refuse(
+            response,
+            .bad_request,
+            "Invalid",
+            "The input does not fit the operation.",
+        );
     };
     var sdk_ctx = identity_module.request_context(Project.of(ctx), request, ctx.arena, caller);
+
+    sdk_ctx.over_api = true;
+    sdk_ctx.language.locale = language.speaks(&sdk_ctx) catch "";
 
     // RFC 9745: the caller's client can tell, and the link names what replaces it.
     if (comptime sdk.operation.deprecation(Operation) != null) {
@@ -224,9 +244,12 @@ fn not_found(response: *Response) Error!void {
     std.debug.assert(response.headers_len <= 32);
     std.debug.assert(response.body.len == 0);
 
-    return response.json(.not_found, .{
-        .@"error" = "unknown_operation",
-    });
+    return auth_http.refuse(
+        response,
+        .not_found,
+        "NotFound",
+        "No operation has this name.",
+    );
 }
 
 const routes = @import("../server/routes.zig");

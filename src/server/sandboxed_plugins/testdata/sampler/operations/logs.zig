@@ -2,7 +2,7 @@
 //!
 //! Example:
 //!   in: {}
-//!   out: { "lines": ["noted HELLO"] }
+//!   out: { "lines": [] }
 const publr = @import("publr");
 const std = @import("std");
 

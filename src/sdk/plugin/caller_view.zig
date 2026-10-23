@@ -9,7 +9,7 @@ pub const From = union(enum) {
     admin,
     /// The CLI or an agent, with a device token.
     command_line,
-    /// A machine key over the API.
+    /// REST (`/api/<plugin>.<verb>`): a device token or a machine key.
     api,
     /// A site's pages, through an app's address.
     app,
@@ -64,9 +64,10 @@ pub const View = struct {
     }
 };
 
-/// Where a call came from, from what the core knows of it. `job` is the queued job running
-/// (`<plugin>.<name>`), empty outside one: Publr calling for it is that plugin calling.
-pub fn from_of(caller: Caller, through_app: bool, job: []const u8) From {
+/// Where a call came from, from what the core knows of it. `over_api`: the request came to
+/// REST. `job` is the queued job running (`<plugin>.<name>`), empty outside one: Publr
+/// calling for it is that plugin calling.
+pub fn from_of(caller: Caller, through_app: bool, over_api: bool, job: []const u8) From {
     std.debug.assert(@intFromEnum(caller) <= @intFromEnum(Caller.plugin));
     std.debug.assert(job.len == 0 or std.mem.indexOfScalar(u8, job, '.') != null);
 
@@ -77,7 +78,7 @@ pub fn from_of(caller: Caller, through_app: bool, job: []const u8) From {
     const from: From = switch (caller) {
         .anonymous => .app,
         .user => .admin,
-        .token => .command_line,
+        .token => if (over_api) .api else .command_line,
         .plugin => |plugin| .{
             .plugin = plugin.name,
         },
@@ -127,10 +128,10 @@ test "where a call came from" {
         },
     };
 
-    try std.testing.expect(from_of(ada, false, "") == .admin);
-    try std.testing.expect(from_of(ada, true, "") == .app);
-    try std.testing.expectEqualStrings("publr", from_of(.system, true, "").plugin);
-    try std.testing.expectEqualStrings("shop", from_of(.system, false, "shop.sync").plugin);
+    try std.testing.expect(from_of(ada, false, false, "") == .admin);
+    try std.testing.expect(from_of(ada, true, false, "") == .app);
+    try std.testing.expectEqualStrings("publr", from_of(.system, true, false, "").plugin);
+    try std.testing.expectEqualStrings("shop", from_of(.system, false, false, "shop.sync").plugin);
 
     const checkout: Caller = .{
         .plugin = .{
@@ -138,7 +139,18 @@ test "where a call came from" {
         },
     };
 
-    try std.testing.expectEqualStrings("checkout", from_of(checkout, true, "").plugin);
+    try std.testing.expectEqualStrings("checkout", from_of(checkout, true, false, "").plugin);
+
+    const device: Caller = .{
+        .token = .{
+            .id = "d_1",
+            .user_id = "ada",
+            .scope = .write,
+        },
+    };
+
+    try std.testing.expect(from_of(device, false, false, "") == .command_line);
+    try std.testing.expect(from_of(device, false, true, "") == .api);
     try std.testing.expectEqualStrings("cart", joined(.plugin, "cart").plugin);
     try std.testing.expect(joined(kind_of(.api), plugin_of(.api)) == .api);
 

@@ -102,6 +102,7 @@ pub fn handle(
             .agents = project.agents,
             .live = project.live,
             .updater = project.updater,
+            .translations = if (project.languages) |languages| languages.view() else null,
             .device = identity.caller,
             .production = envelope.production,
             .failed = &failed,

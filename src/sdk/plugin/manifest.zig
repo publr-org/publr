@@ -76,6 +76,12 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 .description = Declared.description,
                 .details = if (@hasDecl(Declared, "details")) Declared.details else "",
                 .open = @hasDecl(Declared, "open") and Declared.open,
+                .public_api = @hasDecl(Declared, "public_api") and Declared.public_api,
+                .example = if (@hasDecl(Declared, "example_json")) Declared.example_json else "",
+                .example_out = if (@hasDecl(Declared, "example_out_json"))
+                    Declared.example_out_json
+                else
+                    "",
                 .untrusted_callers = if (@hasDecl(Declared, "untrusted_callers"))
                     Declared.untrusted_callers
                 else

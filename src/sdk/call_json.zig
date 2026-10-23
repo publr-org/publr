@@ -140,13 +140,11 @@ fn admit(
     try SDK.run_pre_hooks(ctx, found.name, found.kind);
     try SDK.check_fence(ctx, plugin_names.plugin_of(found.name));
 
-    if (found.untrusted_callers) |untrusted| {
-        try SDK.admit_answer(ctx, found.name, .{
-            .untrusted_callers = untrusted,
-            .answer = found.answer,
-            .open = found.open,
-        });
-    }
+    const answered = try SDK.admit_answer(ctx, found.name, .{
+        .untrusted_callers = found.untrusted_callers,
+        .answer = found.answer,
+        .open = found.open,
+    });
 
     const fields = json.parse(ResourceFields, ctx.arena, input, .{
         .ignore_unknown_fields = true,
@@ -157,7 +155,7 @@ fn admit(
         .operation_name = found.name,
         .kind = found.kind,
         .type_id = fields.type,
-        .open = found.open,
+        .open = answered,
     });
 }
 

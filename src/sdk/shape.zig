@@ -62,6 +62,43 @@ fn same_pointer(
     }
 }
 
+/// `same`, for answers known only as JSON (an installed plugin's): every documented field
+/// present, null where it is null, lists empty or not together, flags equal. Text, numbers
+/// and list elements are not compared.
+pub fn same_json(documented: std.json.Value, actual: std.json.Value) Error!void {
+    std.debug.assert(@intFromEnum(documented) <= @intFromEnum(std.json.Value.object));
+
+    switch (documented) {
+        .object => |fields| {
+            if (actual != .object) {
+                return Error.ShapeMismatch;
+            }
+
+            var each = fields.iterator();
+
+            while (each.next()) |field| {
+                const found = actual.object.get(field.key_ptr.*) orelse {
+                    return if (field.value_ptr.* == .null) {} else Error.ShapeMismatch;
+                };
+
+                try same_json(field.value_ptr.*, found);
+            }
+        },
+        .null => if (actual != .null) return Error.ShapeMismatch,
+        .array => |items| {
+            if (actual != .array or (items.items.len == 0) != (actual.array.items.len == 0)) {
+                return Error.ShapeMismatch;
+            }
+        },
+        .bool => |flag| {
+            if (actual != .bool or actual.bool != flag) {
+                return Error.ShapeMismatch;
+            }
+        },
+        else => if (actual == .null) return Error.ShapeMismatch,
+    }
+}
+
 test "matching shapes pass, differing optionals and flags fail" {
     const Out = struct {
         id: []const u8,
@@ -146,4 +183,23 @@ test "a documented list is a sample: only emptiness is promised" {
             .title = "",
         },
     ));
+}
+
+test "JSON answers compared by shape" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const arena = arena_state.allocator();
+    const documented = try std.json.parseFromSliceLeaky(std.json.Value, arena,
+        \\{ "id": "a", "live": true, "note": null, "tags": ["x"] }
+    , .{});
+    const same_shape = try std.json.parseFromSliceLeaky(std.json.Value, arena,
+        \\{ "id": "zz", "live": true, "tags": ["y", "z"], "more": 1 }
+    , .{});
+    const other_flag = try std.json.parseFromSliceLeaky(std.json.Value, arena,
+        \\{ "id": "zz", "live": false, "note": null, "tags": ["y"] }
+    , .{});
+
+    try same_json(documented, same_shape);
+    try std.testing.expectError(Error.ShapeMismatch, same_json(documented, other_flag));
 }

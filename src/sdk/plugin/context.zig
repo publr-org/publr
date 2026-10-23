@@ -45,7 +45,7 @@ pub const HostApi = struct {
             granted_by_role(self.inner, self.inner.within);
 
         return .{
-            .from = caller_view.from_of(raw, through_app, self.inner.job),
+            .from = caller_view.from_of(raw, through_app, self.inner.over_api, self.inner.job),
             .visitor = self.inner.visitor,
             .referer = self.inner.referer,
             .raw = raw,

@@ -403,6 +403,28 @@ test "namespace and verb split" {
     comptime assert_name("newsletter.subscribe");
 }
 
+test "the resource is read from text fields only: a numeric id is the plugin's own" {
+    const Numbered = struct {
+        id: u32,
+        type: []const u8,
+    };
+    const numbered = resource_of(Numbered{
+        .id = 7,
+        .type = "post",
+    });
+
+    try std.testing.expect(numbered.record_id == null);
+    try std.testing.expectEqualStrings("post", numbered.type_id.?);
+
+    const Named = struct {
+        id: ?[]const u8,
+    };
+
+    try std.testing.expectEqualStrings("r1", resource_of(Named{
+        .id = "r1",
+    }).record_id.?);
+}
+
 test "serialisable types are accepted, pointers to single items rejected at comptime" {
     const Good = struct {
         id: []const u8,

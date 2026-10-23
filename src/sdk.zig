@@ -415,10 +415,11 @@ pub fn SDK(comptime registry: Registry) type {
             }
         }
 
-        /// What an operation made with `publr.operation.define` says of its callers.
+        /// What an operation says of its callers: one made with `publr.operation.define` its
+        /// `.untrusted_callers` and ready answer; any other (null) only whether it is open.
         pub const Declared = struct {
-            untrusted_callers: bool,
-            answer: ?plugin_operations.Answer,
+            untrusted_callers: ?bool,
+            answer: ?plugin_operations.Answer = null,
             open: bool,
         };
 
@@ -542,58 +543,71 @@ pub fn SDK(comptime registry: Registry) type {
                 }
             }
 
-            try admit_declared(ctx, Operation);
+            const defined = comptime @hasDecl(Operation, "untrusted_callers");
+            const answered = try admit_answer(ctx, Operation.name, .{
+                .untrusted_callers = if (defined) Operation.untrusted_callers else null,
+                .answer = if (defined) Operation.answer else null,
+                .open = @hasDecl(Operation, "open") and Operation.open,
+            });
 
             return authorize_request(ctx, .{
                 .operation_name = Operation.name,
                 .kind = Operation.kind,
                 .type_id = operation.type_of(in),
-                .open = @hasDecl(Operation, "open") and Operation.open,
+                .open = answered,
             });
         }
 
-        /// What an operation made with `publr.operation.define` says of its callers: without
-        /// `.untrusted_callers` nobody calls it without credentials, and a ready answer to
-        /// `.authorize` is checked here, by the host, before anything runs.
-        fn admit_declared(ctx: *const Ctx, comptime Operation: type) Error!void {
-            std.debug.assert(ctx.now_ms >= 0);
-            comptime std.debug.assert(Operation.name.len > 0);
-
-            if (comptime !@hasDecl(Operation, "untrusted_callers")) {
-                return;
-            }
-
-            return admit_answer(ctx, Operation.name, .{
-                .untrusted_callers = Operation.untrusted_callers,
-                .answer = Operation.answer,
-                .open = Operation.open,
-            });
-        }
-
-        /// The same for any operation, compiled in or installed. Through an app's address an
-        /// operation with no `.authorize` is never reached: there, administrators are
-        /// signed-in people like any other, and the default answer is theirs.
-        pub fn admit_answer(ctx: *const Ctx, name: []const u8, declared: Declared) Error!void {
+        /// Who may call, checked by the host before anything runs, for any operation,
+        /// compiled in or installed. The site's answer (`operation authorize`) stands in for
+        /// the code's; a ready answer decides, and the policies then only narrow it (true).
+        /// Without one the default stands: administrators and the roles granted it. Through
+        /// an app's address administrators are signed-in people like any other, so there the
+        /// default is only the roles granted it. Without `.untrusted_callers`, nobody calls an
+        /// operation made with `publr.operation.define` without credentials.
+        pub fn admit_answer(ctx: *const Ctx, name: []const u8, declared: Declared) Error!bool {
             std.debug.assert(ctx.now_ms >= 0);
             std.debug.assert(declared.answer == null or declared.open);
 
             const through_app = ctx.app_plugins != null;
+            const defined = declared.untrusted_callers != null;
 
-            if (!declared.untrusted_callers and !ctx.caller.is_authenticated()) {
+            if (defined and !declared.untrusted_callers.? and !ctx.caller.is_authenticated()) {
                 return error.Denied;
             }
 
-            if (through_app and !declared.open) {
-                return error.Denied;
-            }
+            const ready = try answer_override(ctx, name) orelse declared.answer orelse {
+                if (defined and through_app and !declared.open and !granted_in_app(ctx, name)) {
+                    return error.Denied;
+                }
 
-            // A site's answer stands in for the code's (`operation authorize`).
-            const overridden = try answer_override(ctx, name);
-            const ready = overridden orelse declared.answer orelse return;
+                return declared.open;
+            };
 
             if (!plugin_operations.admits(ready, ctx.caller, through_app)) {
                 return error.Denied;
             }
+
+            return true;
+        }
+
+        /// Whether a role the caller holds, other than administrator, was granted `name`.
+        fn granted_in_app(ctx: *const Ctx, name: []const u8) bool {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.app_plugins != null);
+
+            const held = ctx.caller.roles() orelse return false;
+            var others: [role.user_roles_max][]const u8 = undefined;
+            var count: u32 = 0;
+
+            for (held) |held_name| {
+                if (!std.mem.eql(u8, held_name, role.admin) and count < others.len) {
+                    others[count] = held_name;
+                    count += 1;
+                }
+            }
+
+            return stored_roles.allows(ctx, others[0..count], name);
         }
 
         /// A call made for an app reaches only the plugins the app lists (`.plugins` in its
@@ -1961,6 +1975,10 @@ fn find_name(comptime registry: Registry, comptime name: []const u8) ?type {
 
 pub const testing = struct {
     const cli = @import("adapters/cli.zig");
+    /// A documented answer and a real one compared as documentation can promise.
+    pub const shape = @import("sdk/shape.zig");
+    /// Every `Example:` of a plugin's operations, run against an empty site with it.
+    pub const examples = @import("sdk/examples.zig").check;
     const auth_params_test = @import("lib/auth.zig").password.params_test;
 
     pub const harness_arena_bytes: u32 = 4 << 20;

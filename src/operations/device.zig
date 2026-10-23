@@ -37,8 +37,8 @@ pub const namespace: sdk.operation.Namespace = .{
     ,
 };
 
-pub const operations = [_]type{ Start, @import("device/offer.zig").Offer } ++
-    collect.operations ++ people.operations;
+pub const Offer = @import("device/offer.zig").Offer;
+pub const operations = [_]type{ Start, Offer } ++ collect.operations ++ people.operations;
 
 pub const example_device_code = "9f2c" ** 16;
 
