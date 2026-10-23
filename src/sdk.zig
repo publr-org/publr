@@ -97,6 +97,9 @@ pub const Registry = struct {
     /// its removal list for its person, answered as a failure that says where. Without it,
     /// the removal is refused.
     removal: ?*const fn (ctx: *Ctx, operation: []const u8, input: []const u8) Error = null,
+    /// Core's own queued work (`publr`'s jobs): runs the job by name, answering why it
+    /// failed, empty when it ran.
+    core_job: ?*const fn (ctx: *Ctx, name: []const u8, input: []const u8) []const u8 = null,
 };
 
 pub const schemas_max: u32 = 64;

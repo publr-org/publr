@@ -160,6 +160,12 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(job.id > 0);
             std.debug.assert(job.plugin.len > 0);
 
+            if (std.mem.eql(u8, job.plugin, job_queue.core)) {
+                const run = registry.core_job orelse return gone;
+
+                return run(ctx, job.name, job.input);
+            }
+
             inline for (registry.jobs, registry.job_owners) |Job, owner| {
                 const same = std.mem.eql(u8, job.plugin, owner) and
                     std.mem.eql(u8, job.name, Job.verb);

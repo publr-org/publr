@@ -33,16 +33,22 @@ pub const namespace: sdk.operation.Namespace = .{
     ,
 };
 
-/// The media type of the pictures pasted into a conversation, made or brought up to date
-/// whenever a database opens.
+/// The media types of the pictures pasted into a conversation and of what a person says to
+/// be written down, made or brought up to date whenever a database opens.
 pub fn bootstrap(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.caller == .system);
     std.debug.assert(ctx.db.transaction_depth == 0);
 
-    try @import("../sdk/plugin/types.zig").apply(ctx, &.{.{
-        .owner = model.content_type.core_owner,
-        .def = ai.picture_type_def,
-    }});
+    try @import("../sdk/plugin/types.zig").apply(ctx, &.{
+        .{
+            .owner = model.content_type.core_owner,
+            .def = ai.picture_type_def,
+        },
+        .{
+            .owner = model.content_type.core_owner,
+            .def = ai.recording_type_def,
+        },
+    });
 }
 
 pub const operations = [_]type{ Ask, Reply, Get, List, Stop } ++ turn.operations ++

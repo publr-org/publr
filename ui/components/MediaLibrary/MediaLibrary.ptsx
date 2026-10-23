@@ -296,7 +296,7 @@ const filter_from = (address: string) => {
 
 type Listed = {
   items: Array<{ id: string; title: string; filename: string; family: string; size: number;
-    width: number | null; height: number | null; key: string; missing: boolean }>;
+    width: number | null; height: number | null; key: string; missing: boolean; pending: boolean }>;
   total: number;
   all: number;
   unsorted: number;
@@ -323,12 +323,12 @@ const shaped = (listed: Listed) => {
       title: item.title,
       href: file_href(item.id),
       thumb: item.family === "image" ? `/media/${item.key}?w=480&h=480&fit=cover` : "",
-      image: item.family === "image" && !item.missing,
-      video: item.family === "video" && !item.missing,
+      image: item.family === "image" && !item.missing && !item.pending,
+      video: item.family === "video" && !item.missing && !item.pending,
       src: `/media/${item.key}`,
       kind: extension,
       icon: item.family === "video" ? "video" : item.family === "audio" ? "audio" : "file",
-      facts: facts_of(item),
+      facts: item.pending ? Publr.t("Downloading…") : facts_of(item),
       missing: item.missing,
       selected: false,
     };

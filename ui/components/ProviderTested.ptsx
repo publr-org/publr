@@ -1,0 +1,29 @@
+import { Publr } from "publr-jsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { asked_in, landed, Waiting } from "./QueuedWork.ptsx";
+
+/** A provider's test, sent in the background: said while it runs, its answer once it lands. */
+export const state = Publr.reactive({ id: "", tone: "info" as "info" | "error", title: "" });
+
+Publr.effect(() => {
+  const asked = asked_in("tested");
+  if (asked === "") return;
+  state.id = asked;
+  void landed(asked).then((found) => {
+    const reply = found.answer?.reply ?? found.problem ?? "";
+    const ok = found.state === "done" && found.answer?.ok === true;
+    state.tone = ok ? "info" : "error";
+    state.title = ok
+      ? Publr.t("It works. The model answered “{reply}”.", { reply })
+      : Publr.t("The test call failed: {reply}", { reply });
+  });
+});
+
+export function ProviderTested() {
+  return (
+    <div data-part="provider-tested">
+      {state.id !== "" && state.title === "" && <Waiting title={Publr.t("Testing the provider…")} />}
+      {state.title !== "" && <Callout tone={state.tone} title={state.title} />}
+    </div>
+  );
+}

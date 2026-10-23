@@ -38,10 +38,13 @@ person asked needs, and answers them best first, leaving out those installed:
 
 ```sh
 publr plugin find --request "A shop with tea in several sizes, and orders I can manage"
+publr job answer --id <asked>            # again until it is no longer `waiting`
 publr plugin install --name checkout     # with what it requires: products, cart
+publr job answer --id <asked>            # `done` once they run
 ```
 
-Each answer says what the plugin gives and what it requires. Install the ones that fit;
+Both ask another server, so both answer at once with an id (`asked`) and do the work in
+the background; `job answer` reads what landed. Each answer says what the plugin gives and what it requires. Install the ones that fit;
 their content types, admin sections and operations are then yours to use. Build only what
 none of them gives: the pages that show them, the fields and taxonomies a site adds, a
 plugin of your own for behaviour nobody offers. High permissions a plugin asks for wait for

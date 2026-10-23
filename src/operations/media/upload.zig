@@ -220,6 +220,66 @@ pub fn add(
     });
 }
 
+/// A library file whose bytes come later (`fill`): its record and row made now, Pending
+/// (no bytes, no hash), so it can be referenced at once. What `media.import` makes before
+/// its download runs as queued work.
+pub fn reserved(ctx: *Ctx, filename: []const u8, folder: ?[]const u8) Error!library.Item {
+    std.debug.assert(media.valid_filename(filename));
+    std.debug.assert(ctx.db.transaction_depth >= 1);
+
+    const kind = media.kind_of(filename).?;
+    var random_hex: [ids.len]u8 = undefined;
+    var key_buffer: [files_module.key_len_max]u8 = undefined;
+    const random = ids.random(ctx.io, &random_hex)[0..media.random_len];
+    const key = try ctx.arena.dupe(
+        u8,
+        media.key_of(&key_buffer, media.type_handle, ctx.now_ms, filename, random),
+    );
+    const created = try registry.SDK.dispatch(ctx, record.Create, .{
+        .type = media.type_handle,
+        .document = try document_of(ctx, filename, folder),
+        .status = "published",
+    });
+    const row: store.media.Row = .{
+        .record = created.id,
+        .filename = filename,
+        .mime_type = kind.mime_type,
+        .size = 0,
+        .width = null,
+        .height = null,
+        .storage_key = key,
+        .hash = "",
+        .private = false,
+        .created_at = ctx.now_ms,
+    };
+
+    try store.media.insert(ctx.db, row);
+
+    return library.item_of(row, title_of(filename));
+}
+
+/// A Pending file's bytes, checked as an upload's are, kept under its key, and its facts
+/// filled in: no longer Pending.
+pub fn fill(ctx: *Ctx, pending: store.media.Row, bytes: []const u8) Error!void {
+    std.debug.assert(pending.hash.len == 0);
+    std.debug.assert(bytes.len <= files_module.bytes_max);
+
+    const kept = try checked(ctx, pending.filename, bytes);
+    const files = try library.files_of(ctx);
+
+    files.write(.files, pending.storage_key, kept) catch |err| return library.fail(err);
+
+    const size = image.size_of(kept);
+    const hash = hash_of(kept);
+
+    try store.media.filled(ctx.db, pending.record, .{
+        .size = @intCast(kept.len),
+        .width = if (size) |known| known.width else null,
+        .height = if (size) |known| known.height else null,
+        .hash = &hash,
+    });
+}
+
 /// The bytes the library keeps of a file: what its extension says they are, an SVG
 /// cleaned of scripts.
 pub fn checked(ctx: *Ctx, filename: []const u8, bytes: []const u8) Error![]const u8 {

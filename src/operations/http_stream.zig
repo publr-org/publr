@@ -64,7 +64,7 @@ const NativeOpen = struct {
 const no_streams: sdk.operation.Failure = .{
     .name = "NoStreams",
     .status = 409,
-    .message = "A response is read piece by piece only where an agent runs a turn",
+    .message = "A response is read piece by piece only where queued work holds it open",
 };
 
 pub const Stream = struct {
@@ -75,7 +75,8 @@ pub const Stream = struct {
         \\As `http.fetch`, under the same grant and domains, but answers once the response's
         \\head is in: its status and a `handle` that `http.read` reads the body through, a
         \\piece at a time, as it comes (a model's reply as it is written). A status other
-        \\than 200 answers with the body at once and no handle. Only in an agent's process.
+        \\than 200 answers with the body at once and no handle. Queued work only, as
+        \\`http.fetch` is: an agent's turn, or a job that holds open responses.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = http.Fetch.In;
@@ -100,6 +101,12 @@ pub const Stream = struct {
         }
 
         const fetcher = http.fetcher_of(ctx) orelse return error.Denied;
+
+        // Nothing a request waits on reaches another server.
+        if (ctx.job.len == 0) {
+            return ctx.fail(http.not_queued);
+        }
+
         const Method = std.http.Method;
         const method = std.meta.stringToEnum(Method, in.method) orelse return error.Invalid;
         const uri = std.Uri.parse(in.url) catch return error.Invalid;

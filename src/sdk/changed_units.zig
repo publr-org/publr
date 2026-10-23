@@ -10,8 +10,6 @@ const taxonomies = @import("../operations/taxonomy.zig");
 const custom_fields = @import("../operations/custom_fields.zig");
 const plugins = @import("../operations/plugin.zig");
 const plugin_sources = @import("../operations/plugin/sources.zig");
-const plugin_market = @import("../operations/plugin/market.zig");
-const ai_setup = @import("../operations/ai/setup.zig");
 const views = @import("../operations/view.zig");
 const view_defaults = @import("../operations/view_default.zig");
 const snapshots = @import("../operations/snapshot.zig");
@@ -221,8 +219,6 @@ const writes = [_]type{
     Field(plugins.ChooseRemoval, .plugin, .in, "name"),
     PluginRemove,
     Field(plugin_sources.Build, .plugin, .in, "name"),
-    Field(plugin_market.Install, .plugin, .out, "names"),
-    Field(ai_setup.SetUp, .plugin, .out, "names"),
     Field(views.Create, .view, .out, "id"),
     Field(views.Update, .view, .in, "id"),
     Field(views.Delete, .view, .in, "id"),
@@ -516,7 +512,7 @@ test "a reader hooks only the writes that may change its kinds" {
 
     try std.testing.expectEqual(@as(u32, 5), views_hooked);
     try std.testing.expectEqual(@as(u32, 6), users_hooked);
-    try std.testing.expect(plugins_hooked >= 17);
+    try std.testing.expect(plugins_hooked >= 15);
     // Create, save, publish, discard, transition, delete, purge, decline; a snapshot
     // restored; `project.put`.
     try std.testing.expectEqual(@as(u32, 10), records_hooked);

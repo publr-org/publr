@@ -6,6 +6,8 @@ const http = @import("../http.zig");
 const library = @import("library.zig");
 const upload = @import("upload.zig");
 const registry = @import("../../server/registry.zig");
+const store = @import("../../store.zig");
+const jobs = @import("../job.zig");
 const term = @import("../term.zig");
 
 const Ctx = sdk.Ctx;
@@ -14,8 +16,7 @@ const Error = sdk.Error;
 const media = model.media;
 
 pub const url_len_max: u32 = 2048;
-/// Addresses one `import_many` takes: the server answers one request at a time, and a
-/// batch holds it for every download in it.
+/// Addresses one `import_many` takes.
 pub const many_max: u32 = 20;
 
 pub const operations = [_]type{ Import, ImportMany };
@@ -24,10 +25,12 @@ pub const Import = struct {
     pub const name = "media.import";
     pub const description = "Add a file from the web to the media library";
     pub const details =
-        \\Downloads `url` (https or http, on a public address: never this machine or its
-        \\network) and adds it as an upload is: its bytes must be what its extension says,
-        \\up to 32 MiB, named after the address's last part unless `filename` says. How a
-        \\site's own images come over when building something like it.
+        \\Adds the file at once, Pending: its id and address can be used straight away, and
+        \\its bytes follow in the background, downloaded from `url` (https or http, on a
+        \\public address: never this machine or its network) and checked as an upload is:
+        \\what its extension says, up to 32 MiB. Named after the address's last part unless
+        \\`filename` says. One that cannot be downloaded is marked missing. How a site's own
+        \\images come over when building something like it.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -62,29 +65,81 @@ pub const Import = struct {
             return ctx.fail(unnamed);
         }
 
-        const allocator = library.file_allocator;
-        const downloaded = try http.download(ctx, allocator, in.url, files_module.bytes_max);
-        defer allocator.free(downloaded.buffer);
-
-        if (downloaded.status != 200) {
-            return ctx.fail(not_a_file);
+        if (!public_url(in.url)) {
+            return ctx.fail(http.not_public);
         }
 
-        const folder = try folder_of(ctx, in.folder);
+        const pending = try upload.reserved(ctx, filename, try folder_of(ctx, in.folder));
 
-        const files = try library.files_of(ctx);
+        try jobs.enqueue(ctx, "media_import", Importing{
+            .record = pending.id,
+            .url = in.url,
+        });
 
-        return upload.add(ctx, files, media.type_def, filename, downloaded.bytes, folder);
+        return pending;
     }
 };
+
+/// An address the server may download from: https or http, on a public host.
+fn public_url(url: []const u8) bool {
+    std.debug.assert(url.len <= url_len_max);
+
+    const uri = std.Uri.parse(url) catch return false;
+    const host = switch (uri.host orelse return false) {
+        .raw, .percent_encoded => |text| text,
+    };
+    const web = std.mem.eql(u8, uri.scheme, "https") or std.mem.eql(u8, uri.scheme, "http");
+
+    return web and http.public_host(host);
+}
+
+pub const Importing = struct {
+    /// The Pending file's record.
+    record: []const u8,
+    url: []const u8,
+};
+
+/// The `media_import` job: a Pending file's bytes downloaded and filled in; one that cannot
+/// be is marked missing, and tried again later as a failed job is.
+pub fn import_job(ctx: *Ctx, in: Importing) Error!void {
+    std.debug.assert(ctx.job.len > 0);
+    std.debug.assert(in.url.len > 0);
+
+    const pending = try store.media.get(ctx.db, ctx.arena, in.record) orelse return;
+
+    if (pending.hash.len > 0) {
+        return;
+    }
+
+    filled(ctx, pending, in.url) catch |err| {
+        try store.media.set_missing(ctx.db, in.record, true);
+
+        return err;
+    };
+}
+
+fn filled(ctx: *Ctx, pending: store.media.Row, url: []const u8) Error!void {
+    std.debug.assert(pending.hash.len == 0);
+
+    const allocator = library.file_allocator;
+    const downloaded = try http.download(ctx, allocator, url, files_module.bytes_max);
+    defer allocator.free(downloaded.buffer);
+
+    if (downloaded.status != 200) {
+        return ctx.fail(not_a_file);
+    }
+
+    try upload.fill(ctx, pending, downloaded.bytes);
+}
 
 pub const ImportMany = struct {
     pub const name = "media.import_many";
     pub const description = "Add several files from the web to the media library at once";
     pub const details =
         \\Each of `urls` (up to 20) as `media import` takes one, in one call: what a site's
-        \\images need instead of a call each. A file that cannot be added is listed in
-        \\`failed` with why; the rest are added all the same.
+        \\images need instead of a call each, each added Pending, its bytes following in the
+        \\background. An address that cannot be taken is listed in `failed` with why; the
+        \\rest are added all the same.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
