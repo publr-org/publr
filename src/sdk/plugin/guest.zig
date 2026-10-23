@@ -579,7 +579,7 @@ pub fn Exports(comptime Plugin: type) type {
             arena: std.mem.Allocator,
         ) Error!void {
             const field_kind = @import("field_kind_define.zig");
-            const Shape = wire.Envelope(field_kind.Stored);
+            const Shape = wire.Envelope(field_kind.Stored, struct {});
             const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
@@ -600,7 +600,7 @@ pub fn Exports(comptime Plugin: type) type {
                 return error.NotFound;
             }
 
-            const Shape = wire.Envelope(field_kind.Stored);
+            const Shape = wire.Envelope(field_kind.Stored, struct {});
             const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
@@ -619,7 +619,7 @@ pub fn Exports(comptime Plugin: type) type {
             result: *wire.Result,
             arena: std.mem.Allocator,
         ) Error!void {
-            const Shape = wire.Envelope(struct {});
+            const Shape = wire.Envelope(struct {}, struct {});
             const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
@@ -636,7 +636,8 @@ pub fn Exports(comptime Plugin: type) type {
             arena: std.mem.Allocator,
         ) Error!void {
             const Asked = @import("location_rule_define.zig").Asked;
-            const envelope = json.parse(wire.Envelope(Asked), arena, input, parse_options) catch {
+            const Shape = wire.Envelope(Asked, struct {});
+            const envelope = json.parse(Shape, arena, input, parse_options) catch {
                 return error.Invalid;
             };
             var ctx = context(arena, envelope);
