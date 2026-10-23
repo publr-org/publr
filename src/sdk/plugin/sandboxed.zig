@@ -25,7 +25,16 @@ pub const Entry = struct {
     stage: Stage,
     declaration: type,
 
-    pub const Stage = enum { operation, before, after, event, modify, job };
+    pub const Stage = enum {
+        operation,
+        before,
+        after,
+        event,
+        modify,
+        job,
+        rule_values,
+        rule_matches,
+    };
 };
 
 /// Every operation, then every hook, in declaration order, that runs in the sandbox: the
@@ -65,9 +74,26 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
             }};
         }
 
+        for (@import("location_rule_define.zig").given_of(Plugin)) |given| {
+            const Rule = struct {
+                pub const rule = given;
+            };
+
+            entries = entries ++ &[_]Entry{
+                .{
+                    .stage = .rule_values,
+                    .declaration = Rule,
+                },
+                .{
+                    .stage = .rule_matches,
+                    .declaration = Rule,
+                },
+            };
+        }
+
         if (entries.len > entries_max) {
-            @compileError("plugin " ++ Plugin.manifest.name ++ ": too many operations, hooks " ++
-                "and jobs");
+            @compileError("plugin " ++ Plugin.manifest.name ++ ": too many operations, hooks, " ++
+                "jobs and rules");
         }
 
         return entries;

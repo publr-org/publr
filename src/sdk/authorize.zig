@@ -75,9 +75,9 @@ pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) opera
         };
     }
 
-    // A plugin's code reaches its own internal records whoever it runs for: the operations
-    // scope every call to `ctx.plugin`, so nothing else is reachable this way.
-    if (ctx.plugin.len > 0 and std.mem.startsWith(u8, request.operation_name, "internal.")) {
+    // A plugin's code reaches its own internal records and field groups whoever it runs
+    // for: the operations scope every call to `ctx.plugin`, so nothing else is reachable.
+    if (ctx.plugin.len > 0 and own_data(request.operation_name)) {
         return Grant.allow_all;
     }
 
@@ -92,6 +92,14 @@ pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) opera
             scoped_grant(ctx, request),
         .system => Grant.allow_all,
     };
+}
+
+fn own_data(operation_name: []const u8) bool {
+    std.debug.assert(operation_name.len > 0);
+
+    return std.mem.startsWith(u8, operation_name, "internal.") or
+        std.mem.eql(u8, operation_name, "custom_fields.values") or
+        std.mem.eql(u8, operation_name, "custom_fields.save_values");
 }
 
 /// Everything one of the account's roles grants, and the doors open to everyone. Short of

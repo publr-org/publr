@@ -86,6 +86,9 @@ pub const Manifest = struct {
     hooks: []const Hook = &.{},
     /// Its queued jobs; each one's entry follows the hooks', in this order.
     jobs: []const Job = &.{},
+    /// Its location rules (`.register_location_rules`); each one's `values` and `matches`
+    /// entries follow the jobs', in this order.
+    location_rules: []const LocationRule = &.{},
     permissions: []const Ask = &.{},
     /// The secrets it declares (`.secrets`): not permissions, filled in by an administrator.
     secrets: []const Secret = &.{},
@@ -269,6 +272,12 @@ pub const Panel = struct {
 
 /// A column on a list the plugin doesn't own (`.register_columns`): the field is its own,
 /// stored on the type or added to each row by an `after` hook on the list's read.
+/// A location rule of the plugin's own, named under it when placed (`sampler.has_motto`).
+pub const LocationRule = struct {
+    name: []const u8,
+    label: []const u8,
+};
+
 pub const Column = struct {
     /// A type's list (`orders.order`), `users`, `media`, or a pattern (`orders.*`).
     list: []const u8,

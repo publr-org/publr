@@ -150,9 +150,8 @@ const operations = [_]type{
     Later.operation,
     Measure.operation,
     Reference.operation,
+    Motto.operation,
 };
-/// Compiled in, a write to the sampler's own field group on users.
-const native_operations = operations ++ [_]type{Motto.operation};
 
 const hooks = .{
     publr.before(Note.operation, Shout.run),
@@ -221,7 +220,7 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
         .register_columns = columns,
         .jobs = &jobs,
         .register_fields = field_groups,
-        .operations = native_operations,
+        .operations = operations,
         .hooks = hooks,
         .events = &.{Noted.event},
         .secrets = Secrets,
@@ -242,6 +241,7 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
 else
     publr.plugin.define(manifest, .{
         .records = &records,
+        .register_location_rules = .{HasMotto.location_rule},
         .jobs = &jobs,
         .register_fields = field_groups,
         .register_columns = columns,

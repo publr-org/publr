@@ -16,6 +16,10 @@ pub const depth_max: u32 = 8;
 
 pub const Stage = enum { before, after, event, modify };
 
+/// What an installed plugin brings that core runs by name past its jobs: a location rule's
+/// `values` and `matches`.
+pub const Part = enum { rule_values, rule_matches };
+
 pub const Manifest = @import("../model/sandboxed_plugin.zig").Manifest;
 const sandboxed_plugin = @import("../model/sandboxed_plugin.zig");
 pub const Job = sandboxed_plugin.Job;
@@ -143,6 +147,15 @@ pub const SandboxedPlugins = struct {
             name: []const u8,
             subject: []const u8,
         ) Error!void,
+        /// Runs `part` of what an installed plugin brings, by its name under the plugin
+        /// (`sampler.has_motto`), as the plugin: its answer, JSON.
+        extra: *const fn (
+            context: *anyopaque,
+            ctx: *Ctx,
+            part: Part,
+            name: []const u8,
+            input: []const u8,
+        ) Error![]const u8,
         /// Runs an installed plugin's queued job; `last`: its final attempt.
         job: *const fn (
             context: *anyopaque,
@@ -308,6 +321,26 @@ pub const SandboxedPlugins = struct {
         std.debug.assert(name.len > 0);
 
         return sandboxed.vtable.job(sandboxed.context, ctx, plugin, name, input, last);
+    }
+
+    pub fn extra(
+        sandboxed: *const SandboxedPlugins,
+        ctx: *Ctx,
+        part: Part,
+        name: []const u8,
+        input: []const u8,
+    ) Error![]const u8 {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(input.len > 0);
+
+        if (ctx.plugin_depth >= depth_max) {
+            return error.Unavailable;
+        }
+
+        ctx.plugin_depth += 1;
+        defer ctx.plugin_depth -= 1;
+
+        return sandboxed.vtable.extra(sandboxed.context, ctx, part, name, input);
     }
 
     /// The job `plugin` declares as `name`; null when no installed plugin does.

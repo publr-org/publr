@@ -32,6 +32,7 @@ pub const vtable: sdk.sandboxed_plugins.SandboxedPlugins.VTable = .{
     .modify = &modify,
     .call_as = &call_as,
     .job = &job,
+    .extra = &extra,
 };
 
 fn host_of(context: *anyopaque) *Host {
@@ -256,6 +257,38 @@ fn job(
     var access = try access_of(loaded, ctx);
 
     _ = try invoke_module.invoke_spread(loaded, ctx, &access, @intCast(entry), both);
+}
+
+/// Runs `part` of installed plugin `name`'s plugin (`sampler.has_motto`): its entries
+/// follow the jobs', each rule's `values` then `matches`.
+fn extra(
+    context: *anyopaque,
+    ctx: *sdk.Ctx,
+    part: sdk.sandboxed_plugins.Part,
+    name: []const u8,
+    input: []const u8,
+) sdk.Error![]const u8 {
+    const host = host_of(context);
+    const dot = std.mem.indexOfScalar(u8, name, '.') orelse return error.NotFound;
+    const loaded = host.find_loaded(name[0..dot]) orelse return error.NotFound;
+    const manifest = loaded.manifest;
+    const own = name[dot + 1 ..];
+    const first = manifest.operations.len + manifest.hooks.len + manifest.jobs.len;
+
+    std.debug.assert(input.len > 0);
+
+    for (manifest.location_rules, 0..) |declared, index| {
+        if (!std.mem.eql(u8, declared.name, own)) {
+            continue;
+        }
+
+        const entry = first + index * 2 + @intFromBool(part == .rule_matches);
+        var access = try access_of(loaded, ctx);
+
+        return invoke_module.invoke(loaded, ctx, &access, @intCast(entry), input);
+    }
+
+    return error.NotFound;
 }
 
 fn hooked(context: *anyopaque, hook_stage: sdk.sandboxed_plugins.Stage, name: []const u8) bool {

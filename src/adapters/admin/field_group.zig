@@ -223,11 +223,11 @@ fn users_subject(session: *admin.Session) !model.field.Def {
     };
 }
 
-/// Each compiled-in plugin's rule, with the values it offers.
+/// Each plugin's rule, with the values it offers.
 fn plugin_subjects(session: *admin.Session) ![]const model.field.Def {
     std.debug.assert(session.signed_in());
 
-    const offered = registry.location_rules;
+    const offered = try registry.all_location_rules(&session.ctx);
     const defs = try session.arena.alloc(model.field.Def, offered.len);
 
     for (offered, 0..) |rule, index| {
@@ -236,7 +236,7 @@ fn plugin_subjects(session: *admin.Session) ![]const model.field.Def {
             .label = rule.label,
             .kind = "select",
             .options = .{
-                .choices = rule.values(&session.ctx),
+                .choices = rule.values(&session.ctx, rule.id),
             },
         };
     }

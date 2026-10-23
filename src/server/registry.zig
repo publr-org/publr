@@ -277,6 +277,30 @@ pub const SDK = sdk.SDK(registry);
 pub const Kinds = kind_registry.Registry(&kind_registry.core ++ native_plugins.merged_field_kinds);
 /// The location rules compiled-in plugins bring (`loyalty.tier`).
 pub const location_rules = native_plugins.merged_location_rules;
+
+/// Every plugin's location rules: compiled-in plugins', then the installed ones' from their
+/// manifests, run in the sandbox.
+pub fn all_location_rules(ctx: *const sdk.Ctx) error{OutOfMemory}![]const PluginRule {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const sandboxed = ctx.sandboxed_plugins orelse return location_rules;
+    var list: std.ArrayList(PluginRule) = .empty;
+
+    try list.appendSlice(ctx.arena, location_rules);
+
+    for (sandboxed.manifests()) |manifest| {
+        for (manifest.location_rules) |rule| {
+            const id = try std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{ manifest.name, rule.name });
+
+            try list.append(ctx.arena, location_rule_define.installed(id, rule.label));
+        }
+    }
+
+    return list.items;
+}
+
+const PluginRule = @import("../model/field_group.zig").PluginRule;
+const location_rule_define = @import("../sdk/plugin/location_rule_define.zig");
 /// The columns compiled-in plugins add to lists they don't own.
 pub const columns = native_plugins.merged_columns;
 

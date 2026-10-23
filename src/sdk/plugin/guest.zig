@@ -555,7 +555,41 @@ pub fn Exports(comptime Plugin: type) type {
                 .after => run_after(item.declaration, input, result, arena),
                 .event => run_event(item.declaration, input, arena),
                 .job => run_job(item.declaration, input, arena),
+                .rule_values => run_rule_values(item.declaration, input, result, arena),
+                .rule_matches => run_rule_matches(item.declaration, input, result, arena),
             };
+        }
+
+        /// A location rule's dropdown values.
+        fn run_rule_values(
+            comptime Rule: type,
+            input: []const u8,
+            result: *wire.Result,
+            arena: std.mem.Allocator,
+        ) Error!void {
+            const Shape = wire.Envelope(struct {});
+            const envelope = json.parse(Shape, arena, input, parse_options) catch {
+                return error.Invalid;
+            };
+            var ctx = context(arena, envelope);
+
+            try reply(try Rule.rule.values(&ctx), result);
+        }
+
+        /// Whether a location rule matches the account or file being edited.
+        fn run_rule_matches(
+            comptime Rule: type,
+            input: []const u8,
+            result: *wire.Result,
+            arena: std.mem.Allocator,
+        ) Error!void {
+            const Asked = @import("location_rule_define.zig").Asked;
+            const envelope = json.parse(wire.Envelope(Asked), arena, input, parse_options) catch {
+                return error.Invalid;
+            };
+            var ctx = context(arena, envelope);
+
+            try reply(try Rule.rule.matches(&ctx, envelope.in.target, envelope.in.rule), result);
         }
 
         fn context(arena: std.mem.Allocator, envelope: anytype) SandboxApi {

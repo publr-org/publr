@@ -36,6 +36,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .operations = operations_of(Plugin),
             .hooks = hooks_of(Plugin),
             .jobs = jobs_of(Plugin),
+            .location_rules = location_rules_of(Plugin),
             .permissions = runtime.permissions_of(Plugin),
             .secrets = @import("secret_define.zig").declared_of(Plugin),
             .depends_on = @import("depends_on.zig").of(Plugin),
@@ -62,6 +63,26 @@ pub fn of(comptime Plugin: type) Manifest {
             .about = if (@hasDecl(Plugin, "settings_text")) Plugin.settings_text else "",
             .left_out = runtime.left_out(Plugin),
         };
+    }
+}
+
+/// Its location rules, by name and label: the host runs their `values` and `matches`.
+fn location_rules_of(comptime Plugin: type) []const sandboxed_plugin.LocationRule {
+    comptime {
+        var list: []const sandboxed_plugin.LocationRule = &.{};
+
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        for (@import("location_rule_define.zig").given_of(Plugin)) |given| {
+            list = list ++ &[_]sandboxed_plugin.LocationRule{.{
+                .name = given.name,
+                .label = given.label,
+            }};
+        }
+
+        const done = list;
+
+        return done;
     }
 }
 
@@ -255,7 +276,7 @@ fn hooks_of(comptime Plugin: type) []const Hook {
         for (runtime.runtime_entries(Plugin)) |entry| {
             const Declared = entry.declaration;
             const stage: Hook.Stage = switch (entry.stage) {
-                .operation, .job => continue,
+                .operation, .job, .rule_values, .rule_matches => continue,
                 .before => .before,
                 .after => .after,
                 .event => .event,

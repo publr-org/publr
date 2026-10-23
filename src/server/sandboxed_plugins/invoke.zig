@@ -125,7 +125,7 @@ fn invoke_shaped(
 ) sdk.Error![]const u8 {
     std.debug.assert(input.len > 0);
     std.debug.assert(entry < loaded.manifest.operations.len + loaded.manifest.hooks.len +
-        loaded.manifest.jobs.len);
+        loaded.manifest.jobs.len + loaded.manifest.location_rules.len * 2);
 
     const envelope = try envelope_of(ctx, input, shape);
     const saved = ctx.caller;

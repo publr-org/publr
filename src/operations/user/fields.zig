@@ -37,7 +37,7 @@ pub fn definition(ctx: *Ctx, user_id: []const u8, roles: []const []const u8) Err
         const got = try registry.SDK.dispatch(ctx, custom_fields.Get, .{
             .group = item.handle,
         });
-        const applies = applies_to_any(ctx, got.definition.group, user_id, roles);
+        const applies = try applies_to_any(ctx, got.definition.group, user_id, roles);
 
         if (!applies or got.definition.fields.len == 0) {
             continue;
@@ -59,9 +59,11 @@ fn applies_to_any(
     group: model.field_group.Options,
     user_id: []const u8,
     roles: []const []const u8,
-) bool {
+) Error!bool {
     std.debug.assert(roles.len <= model.role.user_roles_max);
     std.debug.assert(model.role.user_roles_max > 0);
+
+    const rules = try registry.all_location_rules(ctx);
 
     for (roles) |name| {
         const context: model.field_group.Context = .{
@@ -69,7 +71,7 @@ fn applies_to_any(
             .role = name,
             .id = user_id,
             .reader = ctx,
-            .rules = registry.location_rules,
+            .rules = rules,
         };
 
         if (model.field_group.applies(group, context)) {
