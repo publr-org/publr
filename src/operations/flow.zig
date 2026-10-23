@@ -211,14 +211,14 @@ pub const Add = struct {
     pub const Out = Flow;
     pub const example: In = .{
         .type = "post",
-        .label = "Send back",
-        .from = &.{"published"},
+        .label = "Return",
+        .from = &.{"archived"},
         .to = "draft",
     };
     pub const example_out: Out = example_flow;
     pub const field_docs: sdk.operation.Docs(In) = .{
         .type = type_doc,
-        .label = "Its button, and its name made from it (`send_back`)",
+        .label = "Its button, and its name made from it (`Send back` is `send_back`)",
         .from = "The statuses it leaves",
         .to = "The status it reaches",
         .user_has_role = roles_doc,
@@ -285,7 +285,7 @@ pub const Remove = struct {
     };
     pub const Out = Flow;
     pub const example: In = .{
-        .type = "post",
+        .type = "page",
         .transition = "send_back",
     };
     pub const example_out: Out = example_flow;
@@ -393,7 +393,7 @@ pub const AddStatus = struct {
     pub const Out = Flow;
     pub const example: In = .{
         .type = "post",
-        .label = "In review",
+        .label = "On hold",
     };
     pub const example_out: Out = example_flow;
     pub const field_docs: sdk.operation.Docs(In) = .{
@@ -450,8 +450,8 @@ pub const RemoveStatus = struct {
     };
     pub const Out = Flow;
     pub const example: In = .{
-        .type = "post",
-        .status = "post.in_review",
+        .type = "page",
+        .status = "page.in_review",
     };
     pub const example_out: Out = example_flow;
     pub const field_docs: sdk.operation.Docs(In) = .{

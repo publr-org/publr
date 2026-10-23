@@ -312,6 +312,14 @@ const sandbox_only = [_]Part{
         .name = "left_out",
         .where = "what its sandboxed build could not carry",
     },
+    .{
+        .name = "warnings",
+        .where = "what the plugin checks warned of at its build: words for its page, not behaviour",
+    },
+    .{
+        .name = "queries",
+        .where = "its prepared GROQ texts, parsed when an installed plugin is added or starts",
+    },
 };
 
 const stages_exercised = [_]Hook.Stage{ .before, .after, .event, .modify };
