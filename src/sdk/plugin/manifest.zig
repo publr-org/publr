@@ -131,7 +131,10 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .tabs = true,
                 }};
             } else if (page.form) |form| {
-                if (!takes(form.read.run) or !takes(form.save.run)) {
+                const suggests = if (form.suggest) |Suggest| takes(Suggest.run) else true;
+                const previews = if (form.preview) |Preview| takes(Preview.run) else true;
+
+                if (!takes(form.read.run) or !takes(form.save.run) or !suggests or !previews) {
                     continue;
                 }
 
@@ -141,8 +144,12 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .icon = page.icon,
                     .read = form.read.name,
                     .save = form.save.name,
+                    .suggest = if (form.suggest) |Suggest| Suggest.name else "",
+                    .preview = if (form.preview) |Preview| Preview.name else "",
                     .hidden = page.menu != null,
                     .parent = page.parent,
+                    .action_label = if (page.action) |action| action.label else "",
+                    .action_href = if (page.action) |action| action.href else "",
                 }};
             } else if (takes(page.operation.?.run)) {
                 list = list ++ &[_]sandboxed_plugin.Page{.{
@@ -151,6 +158,9 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .icon = page.icon,
                     .operation = page.operation.?.name,
                     .hidden = page.menu != null,
+                    .parent = page.parent,
+                    .action_label = if (page.action) |action| action.label else "",
+                    .action_href = if (page.action) |action| action.href else "",
                 }};
             }
         }

@@ -256,12 +256,18 @@ pub const Page = struct {
     operation: []const u8 = "",
     read: []const u8 = "",
     save: []const u8 = "",
+    /// A form's read offering items to add to its lists, and its read previewing a save.
+    suggest: []const u8 = "",
+    preview: []const u8 = "",
     /// `.menu = .none`: left out of the menu, still opened at its address.
     hidden: bool = false,
     /// A tabbed page, filled by other pages naming it in `parent`.
     tabs: bool = false,
-    /// The tabbed pages this form is a tab of, the first that exists (`products.settings`).
+    /// The tabbed pages this page is a tab of, the first that exists (`products.settings`).
     parent: []const []const u8 = &.{},
+    /// A tab's primary action in its tabbed page's header: its label and admin address.
+    action_label: []const u8 = "",
+    action_href: []const u8 = "",
 };
 
 /// An entry in the top bar: to one of the plugin's pages or an admin

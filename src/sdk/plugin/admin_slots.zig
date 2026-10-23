@@ -1,9 +1,9 @@
 //! Where a plugin shows in the admin. Any plugin: its own pages, shown in the plugin frame
 //! and listed in the Settings sidebar or as tabs of a tabbed page, sections, panels, an item
 //! in the top bar, and actions on the rows of another plugin's page. Compiled in only, for
-//! now: settings pages, listed in the Settings sidebar, and tabs of Users. A settings page
-//! is one of the plugin's own routes; the top bar item is a function the admin calls for
-//! every signed-in page; a row action is data the page's owner reads.
+//! now: settings pages, listed in the Settings sidebar. A settings page is one of the
+//! plugin's own routes; the top bar item is a function the admin calls for every signed-in
+//! page; a row action is data the page's owner reads.
 const std = @import("std");
 const plugin_define = @import("define.zig");
 const route = @import("route.zig");
@@ -40,9 +40,13 @@ pub const Page = struct {
     /// A tabbed page: the admin draws it, its title over a tab bar and the open tab, and
     /// other plugins' pages fill it by naming it in `.parent`. No operation or form.
     tabs: bool = false,
-    /// A tab of the first tabbed page named here that exists (`"products.settings"`, or
-    /// System settings, `"core.system"`), else of System settings. A tab is a `.form`.
+    /// A tab of the first tabbed page named here that exists (`"products.settings"`, System
+    /// settings `"core.system"`, Users `"core.users"`), else of System settings. A tab is a
+    /// `.form`, or drawn by its `operation` in the frame under the tabbed page's tab bar.
     parent: []const []const u8 = &.{},
+    /// A tab's primary action, in its tabbed page's header while it is open: `.{ .label =
+    /// "Add role", .href = "/admin/roles/add" }`, an address in the admin.
+    action: ?Action = null,
 
     /// The operation that decides who sees the page: the drawing read, or the form's.
     pub fn gate(comptime page: Page) type {
@@ -54,8 +58,15 @@ pub const Page = struct {
     }
 };
 
+pub const Action = struct {
+    label: []const u8,
+    href: []const u8,
+};
+
 /// System settings, the tabbed page every Publr has: a tab's parent when none named exists.
 pub const system_page = "core.system";
+/// Users, the other tabbed page of core's: its own Users tab first.
+pub const users_page = "core.users";
 
 pub const TopBar = struct {
     count: ?type = null,
@@ -174,6 +185,12 @@ pub const Form = struct {
     read: type,
     /// A write of the plugin's own taking every field.
     save: type,
+    /// A read of the plugin's own, no input, answering items people often add to the
+    /// form's lists, by list (`.{ .languages = ... }`): each list offers them to pick.
+    suggest: ?type = null,
+    /// A read of the plugin's own taking `save`'s input and answering as `read` does: a
+    /// list's columns `save` does not take (an example) follow what people type.
+    preview: ?type = null,
 };
 
 pub const SettingsPage = struct {
@@ -185,97 +202,6 @@ pub const SettingsPage = struct {
     /// Listed for whoever may call this operation.
     operation: type,
 };
-
-/// A section a plugin adds to a tab of Users (`/admin/settings/users/<tab>`). Plugins naming
-/// the same tab share it, their sections in plugin order. Compiled in only:
-/// `view.draw(session)` draws the section with the admin's own components, and the plugin's
-/// routes take what it posts.
-pub const SettingsTab = struct {
-    /// Lowercase letters and dashes: `roles`.
-    tab: []const u8,
-    /// The tab's name: `Roles`. Plugins sharing a tab give the same one.
-    tab_label: []const u8,
-    /// A struct with `pub fn draw(session: *publr.admin.Session) publr.admin.Error!Node`.
-    view: type,
-    /// Shown to whoever may call this operation.
-    operation: type,
-    /// The page's primary action while the tab is open (`Add role`), a path in the admin;
-    /// empty for none.
-    action_label: []const u8 = "",
-    action_href: []const u8 = "",
-};
-
-pub const settings_tabs_max: u32 = 4;
-/// What Users' own addresses take after `/admin/settings/users/`.
-pub const own_users_paths = [_][]const u8{ "users", "new", "create" };
-
-/// The settings tab sections a plugin declares, checked.
-pub fn settings_tabs_of(comptime Plugin: type) []const SettingsTab {
-    comptime {
-        const name = Plugin.manifest.name;
-
-        std.debug.assert(name.len > 0);
-
-        if (!plugin_define.has(Plugin, "settings_tabs")) {
-            return &.{};
-        }
-
-        const tabs: []const SettingsTab = plugin_define.get(Plugin, "settings_tabs");
-
-        if (tabs.len == 0 or tabs.len > settings_tabs_max) {
-            @compileError("plugin " ++ name ++ ": `settings_tabs` holds 1 to 4 sections");
-        }
-
-        for (tabs) |tab| {
-            if (!valid_tab(tab.tab) or tab.tab_label.len == 0) {
-                @compileError("plugin " ++ name ++ ": a settings tab is named in lowercase " ++
-                    "letters and dashes, and has a label");
-            }
-
-            if (taken_by_users(tab.tab)) {
-                @compileError("plugin " ++ name ++ ": tab " ++ tab.tab ++ " is a Users path");
-            }
-
-            if (!@hasDecl(tab.view, "draw")) {
-                @compileError("plugin " ++ name ++ ": a settings tab's view has `draw`");
-            }
-        }
-
-        return tabs;
-    }
-}
-
-fn valid_tab(comptime tab: []const u8) bool {
-    comptime {
-        std.debug.assert(page_path_len_max > 0);
-
-        if (tab.len == 0 or tab.len > page_path_len_max) {
-            return false;
-        }
-
-        for (tab) |char| {
-            if (!std.ascii.isLower(char) and char != '-') {
-                return false;
-            }
-        }
-
-        return true;
-    }
-}
-
-fn taken_by_users(comptime tab: []const u8) bool {
-    comptime {
-        std.debug.assert(tab.len > 0);
-
-        for (own_users_paths) |own| {
-            if (std.mem.eql(u8, own, tab)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-}
 
 /// An item in the menu on each row of a page a plugin owns: the page names its slot and
 /// what `kind` and `{name}` mean for its rows, so a plugin building on another adds to its
@@ -365,6 +291,9 @@ pub fn pages_of(comptime Plugin: type) []const Page {
 
             if (page.parent.len > 0) {
                 assert_tab(name, page);
+            } else if (page.action != null) {
+                @compileError("plugin " ++ name ++ ": page " ++ page.path ++
+                    " has an action only as a tab: its own view draws its actions");
             }
 
             if (page.operation) |Operation| {
@@ -412,13 +341,15 @@ fn assert_tabbed(comptime plugin: []const u8, comptime page: Page) void {
     }
 }
 
-/// A tab is a form, under pages named `<plugin>.<path>` or `core.system`.
+/// A tab names pages `<plugin>.<path>` (`core.system`); its action goes to an admin address.
 fn assert_tab(comptime plugin: []const u8, comptime page: Page) void {
     comptime {
         const label = "plugin " ++ plugin ++ ": page " ++ page.path;
 
-        if (page.form == null) {
-            @compileError(label ++ " is a tab, so a `form`");
+        if (page.action) |action| {
+            if (action.label.len == 0 or !std.mem.startsWith(u8, action.href, "/admin/")) {
+                @compileError(label ++ ": its action has a label and goes to /admin/…");
+            }
         }
 
         for (page.parent) |named| {
@@ -442,6 +373,19 @@ fn assert_form(comptime plugin: []const u8, comptime form: Form) void {
 
         if (form.save.kind != .write) {
             @compileError(label ++ form.save.name ++ " is a write");
+        }
+
+        if (form.suggest) |Suggest| {
+            if (Suggest.kind != .read or @typeInfo(Suggest.In).@"struct".fields.len != 0) {
+                @compileError(label ++ Suggest.name ++ " is a read with no input");
+            }
+        }
+
+        if (form.preview) |Preview| {
+            if (Preview.kind != .read or Preview.In != form.save.In) {
+                @compileError(label ++ Preview.name ++ " is a read taking " ++
+                    form.save.name ++ "'s input");
+            }
         }
     }
 }

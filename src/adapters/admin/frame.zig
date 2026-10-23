@@ -51,19 +51,42 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         query,
     });
 
-    const options: admin.chrome.Options = .{
-        .settings_path = request.path(),
+    const title = try session.declared(page.label);
+    const operations = try pages.operations_of(&session, page.plugin);
+    const all_pages = try pages.all(&session);
+    const parent = pages.parent_of(all_pages, page) orelse {
+        return admin.screen(&session, .ok, admin.views.PluginPage, .{
+            .title = title,
+            .src = src,
+            .plugin = page.plugin,
+            .page = page.path,
+            .csrf = session.csrf_token(),
+            .operations = operations,
+        }, .{
+            .settings_path = request.path(),
+        });
     };
+    // A tab: its tabbed page's header and tab bar over the frame, its entry lit in the menu.
+    const header = try pages.header_of(Tab, &session, all_pages, page, parent);
 
-    try admin.screen(&session, .ok, admin.views.PluginPage, .{
-        .title = try session.declared(page.label),
+    try admin.screen(&session, .ok, admin.views.PluginTabPage, .{
+        .title = title,
         .src = src,
         .plugin = page.plugin,
         .page = page.path,
         .csrf = session.csrf_token(),
-        .operations = try pages.operations_of(&session, page.plugin),
-    }, options);
+        .operations = operations,
+        .parent = header.title,
+        .description = header.description,
+        .tabs = header.tabs,
+        .action_label = page.action_label,
+        .action_href = page.action_href,
+    }, .{
+        .settings_path = header.address,
+    });
 }
+
+const Tab = admin.views.PluginTabPage.TabsItem;
 
 /// The frame's document. The plugin's read takes the address's query string; a failure is
 /// told inside the frame, which keeps the admin around it.

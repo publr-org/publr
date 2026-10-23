@@ -11,10 +11,16 @@ export const state = Publr.reactive({
 });
 
 /** Another page of the plugin's, or this one with another query: `notes`, `?week=2`,
- * `notes?week=2`. Nothing else leaves the frame as an address. */
+ * `notes?week=2`; or an address in the admin, `/admin/roles/add`. Nothing else leaves the
+ * frame as an address. */
 const page_address = /^([a-z0-9-]{1,48})?(\?[^#]*)?$/;
+const admin_address = /^\/admin\/[^\s#]*$/;
 
 export function go(to: string, plugin: string, current: string) {
+  if (admin_address.test(to)) {
+    window.location.href = Publr.url(to);
+    return;
+  }
   const match = page_address.exec(to);
   if (to === "" || !match) return;
   const page = match[1] ?? current;

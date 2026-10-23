@@ -328,11 +328,11 @@ test "what the sandbox cannot run is left out and named, never refused" {
             .summary = "Own tables",
         };
         pub const extend = {};
-        pub const settings_tabs = [_]type{};
+        pub const settings_pages = [_]type{};
     };
     const list = comptime left_out(Plugin);
 
     try std.testing.expectEqual(@as(usize, 2), list.len);
     try std.testing.expectEqualStrings("`extend`: needs a native plugin", list[0]);
-    try std.testing.expectEqualStrings("`settings_tabs`: built-in only", list[1]);
+    try std.testing.expectEqualStrings("`settings_pages`: built-in only", list[1]);
 }

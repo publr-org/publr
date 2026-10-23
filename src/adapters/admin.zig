@@ -192,7 +192,6 @@ pub fn query_param(session: *const Session, name: []const u8) ?[]const u8 {
 
 pub const render = @import("../ui/render.zig");
 pub const drawn = @import("../ui/drawn.zig");
-/// The tabs plugins add to System settings.
 pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
@@ -201,7 +200,7 @@ pub const routes_count: u32 = 165 + preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     @import("admin/queue.zig").routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
-    design_pages.routes_count + @import("admin/settings_tabs.zig").tabs.len;
+    design_pages.routes_count;
 const client_files = @import("../ui/client_files.zig");
 
 const styles_css = @embedFile("styles_css");
@@ -230,7 +229,6 @@ pub fn register(router: *http.Router) void {
     router.get("/admin/settings/system/activity", &activity_pages.show_activity);
     router.get("/admin/settings/system/errors", &activity_pages.show_errors);
 
-    @import("admin/settings_tabs.zig").register(router);
     router.get("/admin/settings/users", &user_pages.list);
     router.get("/admin/settings/users/new", &user_pages.new_page);
     router.post("/admin/settings/users/create", &user_pages.create);

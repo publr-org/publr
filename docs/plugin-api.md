@@ -69,7 +69,7 @@ A missing one fails the build and says where it goes.
 | `pages`, `panels`, `menu`, `icons` | see [Admin entries](#admin-entries) | both |
 | `translations` | `&.{ .{ .locale, .label, .po } }` | both |
 | `extend` | `fn (host: *publr.Host) publr.Error!void`, see [Built-in only](#built-in-only) | built-in |
-| `row_actions`, `settings_pages`, `settings_tabs`, `migrations`, `filters`, `agents_tab` | see [Built-in only](#built-in-only) | built-in |
+| `row_actions`, `settings_pages` | see [Built-in only](#built-in-only) | built-in |
 
 Any other option is a build error.
 
@@ -888,8 +888,17 @@ const settings: publr.plugin.Page = .{
 ```
 
 `Read` is a read with no input answering the values; `Save` is a write taking every
-field. Each field's `///` is its help. Pages, their top bar counts, panels, row actions and
+field. Each field's `///` is its help; an enum is a dropdown; a list of plain items is a
+table whose rows are added, removed and reordered, and its columns only `Read` answers are
+shown. `.suggest` (a read, no input, answering items by list) offers items to add;
+`.preview` (a read taking `Save`'s input, answering as `Read`) keeps the shown columns in
+step as people type. Pages, their top bar counts, panels, row actions and
 Settings pages may name operations made with `publr.operation.define`.
+
+A page that says `.tabs = true` is a tabbed page the admin draws; a page naming it in
+`.parent` (`&.{ "products.settings", "core.system" }`, the first that exists, else System
+settings; Users is `core.users`) is one of its tabs: a form, or drawn by its operation in
+the frame under the tab bar, with `.action = .{ .label, .href }` in the header.
 
 A page that also says `.top_bar = .{ .count = Count }` is in the top bar too, for whoever may
 see it; `Count` is a read with no input answering `count: i64`, shown beside its label.

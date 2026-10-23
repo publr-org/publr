@@ -5,7 +5,7 @@ const registry = @import("../../server/registry.zig");
 const user_operations = @import("../../operations/user.zig");
 const role_operations = @import("../../operations/role.zig");
 const settings_nav = @import("settings_nav.zig");
-const settings_tabs = @import("settings_tabs.zig");
+const frame_pages = @import("frame/pages.zig");
 const fields = @import("fields.zig");
 const editor = @import("editor.zig");
 const model = @import("../../model.zig");
@@ -85,40 +85,18 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     }, .{});
 }
 
-/// A plugin's tab of Users: its sections under Users' header and tabs.
-pub fn render_plugin_tab(
-    session: *Session,
-    tab: []const u8,
-    sections: admin.render.Node,
-    action: settings_tabs.Action,
-) Error!void {
-    std.debug.assert(tab.len > 0);
-    std.debug.assert(session.signed_in());
-
-    try admin.screen(session, .ok, views.Users, .{
-        .users = &.{},
-        .range = "",
-        .previous_href = "",
-        .next_href = "",
-        .tab = tab,
-        .plugin_tabs = try plugin_tabs_of(session),
-        .sections = sections,
-        .action_label = action.label,
-        .action_href = action.href,
-    }, .{});
-}
-
+/// The pages plugins add as tabs of Users, after its own.
 fn plugin_tabs_of(session: *Session) Error![]const views.Users.Plugin_tabsItem {
     std.debug.assert(session.signed_in());
 
-    const found = try settings_tabs.links(session);
+    const all = try frame_pages.all(session);
+    const found = try frame_pages.tabs_of(session.arena, all, frame_pages.users);
     const items = try session.arena.alloc(views.Users.Plugin_tabsItem, found.len);
 
-    for (found, items) |link, *item| {
+    for (found, items) |page, *item| {
         item.* = .{
-            .tab = link.tab,
-            .label = link.label,
-            .href = link.href,
+            .label = try session.declared(page.label),
+            .href = try page.href(session.arena),
         };
     }
 

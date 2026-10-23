@@ -125,7 +125,6 @@ const options_known = [_][]const u8{
 pub const options_built_in = [_][]const u8{
     "row_actions",
     "settings_pages",
-    "settings_tabs",
 };
 
 fn check_options(comptime plugin: []const u8, comptime Options: type) void {

@@ -7,6 +7,7 @@ const registry = @import("../../../server/registry.zig");
 const pages = @import("pages.zig");
 const model = @import("../../../model/sandboxed_plugin.zig");
 const manifest_module = @import("../../../sdk/plugin/manifest.zig");
+const contract = @import("../../../model/contract.zig");
 
 const Session = admin.Session;
 const Error = admin.Error;
@@ -31,11 +32,12 @@ pub fn show(session: *Session, page: pages.Page) Error!void {
         .title = page.label,
         .operation = page.save,
         .fields = fields,
+        .preview = page.preview,
     }, options);
 }
 
 /// A tab of a tabbed page: that page's title and tab bar over the form, its entry lit in
-/// the menu. System settings' own General leads its tabs.
+/// the menu.
 fn show_tab(
     session: *Session,
     all: []const pages.Page,
@@ -45,57 +47,20 @@ fn show_tab(
     std.debug.assert(parent.len > 0);
 
     const fields = try fields_of(session, page, PageField) orelse return;
-    const system = std.mem.eql(u8, parent, pages.system);
-    const tabs = try pages.tabs_of(session.arena, all, parent);
-    var links: std.ArrayList(Tab) = .empty;
-    var title: []const u8 = undefined;
-    var description: []const u8 = "";
-    var address: []const u8 = undefined;
-
-    if (system) {
-        const settings = @import("../settings.zig");
-
-        title = try session.translated("System settings", .{});
-        description = try session.translated(
-            "How this Publr runs, and the conventions the site follows.",
-            .{},
-        );
-        address = settings.page_path;
-        try links.append(session.arena, .{
-            .label = try session.translated("General", .{}),
-            .href = settings.page_path,
-            .active = false,
-        });
-    } else {
-        var buffer: [128]u8 = undefined;
-        const tabbed = for (all) |one| {
-            if (one.tabs and std.mem.eql(u8, one.named(&buffer), parent)) {
-                break one;
-            }
-        } else unreachable;
-
-        title = try session.declared(tabbed.label);
-        address = try tabbed.href(session.arena);
-    }
-
-    for (tabs) |tab| {
-        try links.append(session.arena, .{
-            .label = try session.declared(tab.label),
-            .href = try tab.href(session.arena),
-            .active = std.mem.eql(u8, tab.plugin, page.plugin) and
-                std.mem.eql(u8, tab.path, page.path),
-        });
-    }
+    const header = try pages.header_of(Tab, session, all, page, parent);
 
     try admin.screen(session, .ok, admin.views.PluginFormPage, .{
         .title = try session.declared(page.label),
         .operation = page.save,
         .fields = fields,
-        .parent = title,
-        .description = description,
-        .tabs = links.items,
+        .preview = page.preview,
+        .parent = header.title,
+        .description = header.description,
+        .tabs = header.tabs,
+        .action_label = page.action_label,
+        .action_href = page.action_href,
     }, .{
-        .settings_path = address,
+        .settings_path = header.address,
     });
 }
 
@@ -107,21 +72,39 @@ pub fn fields_of(session: *Session, page: pages.Page, comptime Item: type) Error
     std.debug.assert(page.declared());
 
     const described = try described_of(session, page);
-    const read = registry.SDK.call_json(&session.ctx, page.read, "{}") catch |err| {
+    const values = try answered(session, page.read) orelse return null;
+    const suggested: std.json.Value = if (page.suggest.len == 0)
+        .null
+    else
+        try answered(session, page.suggest) orelse return null;
+
+    return try items_of(Item, session.arena, described, values, suggested);
+}
+
+/// What the read `operation` answers, parsed; null once a failure is shown.
+fn answered(session: *Session, operation: []const u8) Error!?std.json.Value {
+    std.debug.assert(operation.len > 0);
+
+    const read = registry.SDK.call_json(&session.ctx, operation, "{}") catch |err| {
         try admin.fail(session, err, "/admin/settings");
         return null;
     };
-    const values = std.json.parseFromSliceLeaky(std.json.Value, session.arena, read, .{}) catch {
+
+    return std.json.parseFromSliceLeaky(std.json.Value, session.arena, read, .{}) catch {
         try admin.fail(session, error.Invalid, "/admin/settings");
         return null;
     };
-
-    return try items_of(Item, session.arena, described, values);
 }
 
-/// The save operation's input as its plugin describes it: from the build for a compiled-in
-/// plugin, from the manifest for an installed one.
-fn described_of(session: *const Session, page: pages.Page) Error![]const model.Field {
+/// The save operation's input, and the shape the read answers in.
+const Described = struct {
+    fields: []const model.Field,
+    output: []const contract.Node = &.{},
+};
+
+/// The form as its plugin describes it: from the build for a compiled-in plugin, from the
+/// manifest for an installed one.
+fn described_of(session: *const Session, page: pages.Page) Error!Described {
     std.debug.assert(page.save.len > 0);
 
     inline for (registry.pages) |owned| {
@@ -130,12 +113,20 @@ fn described_of(session: *const Session, page: pages.Page) Error![]const model.F
                 std.mem.eql(u8, owned.page.path, page.path);
 
             if (same) {
-                return comptime manifest_module.fields_of(declared.save);
+                return .{
+                    .fields = comptime manifest_module.fields_of(declared.save),
+                    .output = comptime contract.describe(declared.read.Out),
+                };
             }
         }
     }
 
-    const sandboxed = session.ctx.sandboxed_plugins orelse return &.{};
+    const sandboxed = session.ctx.sandboxed_plugins orelse return .{
+        .fields = &.{},
+    };
+    var described: Described = .{
+        .fields = &.{},
+    };
 
     for (sandboxed.manifests()) |manifest| {
         if (!std.mem.eql(u8, manifest.name, page.plugin)) {
@@ -144,27 +135,36 @@ fn described_of(session: *const Session, page: pages.Page) Error![]const model.F
 
         for (manifest.operations) |operation| {
             if (std.mem.eql(u8, operation.name, page.save)) {
-                return operation.fields;
+                described.fields = operation.fields;
+            }
+
+            if (std.mem.eql(u8, operation.name, page.read)) {
+                described.output = operation.output;
             }
         }
     }
 
-    return &.{};
+    return described;
 }
 
 fn items_of(
     comptime Item: type,
     arena: std.mem.Allocator,
-    described: []const model.Field,
+    described: Described,
     values: std.json.Value,
+    suggested: std.json.Value,
 ) Error![]const Item {
-    std.debug.assert(described.len <= 256);
+    std.debug.assert(described.fields.len <= 256);
 
     var items: std.ArrayList(Item) = .empty;
 
-    for (described) |field| {
+    for (described.fields) |field| {
         const kind = kind_of(field) orelse continue;
         const rows = std.mem.eql(u8, kind, "rows");
+        const columns: []const model.Field = if (rows)
+            try columns_of(arena, field, described.output)
+        else
+            &.{};
 
         try items.append(arena, .{
             .name = field.name,
@@ -172,9 +172,11 @@ fn items_of(
             .kind = kind,
             .required = field.required,
             .help = field.doc,
-            .value = if (rows) "" else try text_of(arena, field, values),
-            .columns = if (rows) try columns_of(Item, arena, field.fields) else &.{},
-            .rows = if (rows) try rows_of(Item, arena, field, values) else &.{},
+            .value = if (rows) "" else try text_of(arena, field.name, values),
+            .choices = try choices_of(Each(Item, "choices"), arena, field.values),
+            .columns = try view_columns_of(Item, arena, field, columns),
+            .rows = try rows_of(Item, arena, field.name, columns, values),
+            .suggestions = try suggestions_of(Item, arena, field.name, columns, suggested),
         });
     }
 
@@ -188,7 +190,7 @@ fn kind_of(field: model.Field) ?[]const u8 {
     return switch (field.shape) {
         .boolean => "boolean",
         .integer, .number => "number",
-        .string => "string",
+        .string => if (field.values.len > 0) "choice" else "string",
         .json => if (field.fields.len > 0) "rows" else null,
         .strings => null,
     };
@@ -198,60 +200,141 @@ fn Each(comptime Item: type, comptime field: []const u8) type {
     return @typeInfo(@FieldType(Item, field)).pointer.child;
 }
 
+/// A list's columns: each field of its items `save` takes, then each the read answers that
+/// `save` does not take (`example`), shown as written: these have no shape of their own.
 fn columns_of(
-    comptime Item: type,
     arena: std.mem.Allocator,
-    fields: []const model.Field,
-) Error![]const Each(Item, "columns") {
-    std.debug.assert(fields.len <= 64);
+    field: model.Field,
+    output: []const contract.Node,
+) Error![]const model.Field {
+    std.debug.assert(field.fields.len > 0);
+    std.debug.assert(output.len <= contract.nodes_max);
 
-    const Column = Each(Item, "columns");
-    const columns = try arena.alloc(Column, fields.len);
+    var columns: std.ArrayList(model.Field) = .empty;
 
-    for (fields, columns) |field, *column| {
-        column.* = .{
-            .name = field.name,
-            .label = try label_of(arena, field.name),
-            .kind = kind_of(field) orelse "string",
+    try columns.appendSlice(arena, field.fields);
+
+    const list = child_of(output, 0, field.name) orelse return columns.items;
+    const item = child_of(output, list, "[]") orelse return columns.items;
+
+    for (output, 0..) |node, index| {
+        if (node.parent != item or index == 0) {
+            continue;
+        }
+
+        const taken = for (field.fields) |own| {
+            if (std.mem.eql(u8, own.name, node.name)) {
+                break true;
+            }
+        } else false;
+        const plain = node.kind == .string or node.kind == .integer or node.kind == .number;
+
+        if (!taken and plain) {
+            try columns.append(arena, .{
+                .name = node.name,
+                .shape = .json,
+                .required = false,
+            });
+        }
+    }
+
+    return columns.items;
+}
+
+/// The node named `name` inside the node at `parent`.
+fn child_of(nodes: []const contract.Node, parent: i32, name: []const u8) ?i32 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(nodes.len <= contract.nodes_max);
+
+    for (nodes, 0..) |node, index| {
+        if (node.parent == parent and index > 0 and std.mem.eql(u8, node.name, name)) {
+            return @intCast(index);
+        }
+    }
+
+    return null;
+}
+
+/// A column the read answers and `save` does not take: shown, never sent.
+fn shown(column: model.Field) bool {
+    return column.shape == .json;
+}
+
+fn cell_kind(column: model.Field) []const u8 {
+    std.debug.assert(column.name.len > 0);
+
+    return if (shown(column)) "shown" else kind_of(column) orelse "string";
+}
+
+/// An enumeration's values, each with its name as people read it.
+fn choices_of(
+    comptime Choice: type,
+    arena: std.mem.Allocator,
+    values: []const []const u8,
+) Error![]const Choice {
+    std.debug.assert(values.len <= contract.values_max);
+
+    const choices = try arena.alloc(Choice, values.len);
+
+    for (values, choices) |value, *choice| {
+        choice.* = .{
+            .value = value,
+            .label = try label_of(arena, value),
         };
     }
 
-    return columns;
+    return choices;
 }
 
-/// Each item the read answered for the list `field`, a cell per item field.
-fn rows_of(
+fn view_columns_of(
     comptime Item: type,
     arena: std.mem.Allocator,
     field: model.Field,
+    columns: []const model.Field,
+) Error![]const Each(Item, "columns") {
+    std.debug.assert(columns.len <= 64);
+    std.debug.assert(field.name.len > 0);
+
+    const Column = Each(Item, "columns");
+    const listed = try arena.alloc(Column, columns.len);
+
+    for (columns, listed) |column, *drawn| {
+        drawn.* = .{
+            .name = column.name,
+            .label = try label_of(arena, column.name),
+            .kind = cell_kind(column),
+            .choices = try choices_of(Each(Column, "choices"), arena, column.values),
+        };
+    }
+
+    return listed;
+}
+
+/// Each item the read answered for the list `name`, a cell per column.
+fn rows_of(
+    comptime Item: type,
+    arena: std.mem.Allocator,
+    name: []const u8,
+    columns: []const model.Field,
     values: std.json.Value,
 ) Error![]const Each(Item, "rows") {
-    std.debug.assert(field.fields.len > 0);
+    std.debug.assert(name.len > 0);
 
     const Row = Each(Item, "rows");
+    const Cell = Each(Row, "cells");
+    const present = list_in(values, name);
+    const rows = try arena.alloc(Row, present.len);
 
-    if (values != .object) {
-        return &.{};
-    }
+    for (present, rows, 0..) |item, *row, index| {
+        const cells = try arena.alloc(Cell, columns.len);
 
-    const present = values.object.get(field.name) orelse return &.{};
-
-    if (present != .array) {
-        return &.{};
-    }
-
-    const rows = try arena.alloc(Row, present.array.items.len);
-    const Cell = @typeInfo(@FieldType(Row, "cells")).pointer.child;
-
-    for (present.array.items, rows, 0..) |item, *row, index| {
-        const cells = try arena.alloc(Cell, field.fields.len);
-
-        for (field.fields, cells, 0..) |column, *cell, at| {
+        for (columns, cells, 0..) |column, *cell, at| {
             cell.* = .{
                 .at = @floatFromInt(at),
-                .kind = kind_of(column) orelse "string",
+                .kind = cell_kind(column),
                 .label = try label_of(arena, column.name),
-                .value = try text_of(arena, column, item),
+                .value = try text_of(arena, column.name, item),
+                .choices = try choices_of(Each(Cell, "choices"), arena, column.values),
             };
         }
 
@@ -262,6 +345,53 @@ fn rows_of(
     }
 
     return rows;
+}
+
+/// The items the suggest read offers for the list `name`, each named by its `label` (else
+/// its first column) and its values by column.
+fn suggestions_of(
+    comptime Item: type,
+    arena: std.mem.Allocator,
+    name: []const u8,
+    columns: []const model.Field,
+    suggested: std.json.Value,
+) Error![]const Each(Item, "suggestions") {
+    std.debug.assert(name.len > 0);
+
+    const Suggestion = Each(Item, "suggestions");
+    const offered = list_in(suggested, name);
+    const suggestions = try arena.alloc(Suggestion, offered.len);
+
+    for (offered, suggestions, 0..) |item, *suggestion, at| {
+        const texts = try arena.alloc([]const u8, columns.len);
+
+        for (columns, texts) |column, *text| {
+            text.* = try text_of(arena, column.name, item);
+        }
+
+        const label = try text_of(arena, "label", item);
+
+        suggestion.* = .{
+            .at = @floatFromInt(at),
+            .label = if (label.len > 0 or texts.len == 0) label else texts[0],
+            .values = texts,
+        };
+    }
+
+    return suggestions;
+}
+
+/// The list `name` in what a read answered; none when it answered no list.
+fn list_in(values: std.json.Value, name: []const u8) []const std.json.Value {
+    std.debug.assert(name.len > 0);
+
+    if (values != .object) {
+        return &.{};
+    }
+
+    const present = values.object.get(name) orelse return &.{};
+
+    return if (present == .array) present.array.items else &.{};
 }
 
 /// `site_title` as `Site title`.
@@ -276,15 +406,15 @@ fn label_of(arena: std.mem.Allocator, name: []const u8) Error![]const u8 {
     return label;
 }
 
-/// What the read answered for `field`, as the form shows it; empty when it answered none.
-fn text_of(arena: std.mem.Allocator, field: model.Field, values: std.json.Value) Error![]const u8 {
-    std.debug.assert(field.name.len > 0);
+/// What the read answered for `name`, as the form shows it; empty when it answered none.
+fn text_of(arena: std.mem.Allocator, name: []const u8, values: std.json.Value) Error![]const u8 {
+    std.debug.assert(name.len > 0);
 
     if (values != .object) {
         return "";
     }
 
-    const present = values.object.get(field.name) orelse return "";
+    const present = values.object.get(name) orelse return "";
 
     return switch (present) {
         .string => |text| text,
@@ -325,7 +455,9 @@ test "a declared form's fields: kinds, labels and values from what the read answ
     const values = try std.json.parseFromSliceLeaky(std.json.Value, arena,
         \\{"site_title":"Acme","description":"Anvils","visits":3}
     , .{});
-    const items = try items_of(PageField, arena, &described, values);
+    const items = try items_of(PageField, arena, .{
+        .fields = &described,
+    }, values, .null);
 
     try std.testing.expectEqual(@as(usize, 3), items.len);
     try std.testing.expectEqualStrings("Site title", items[0].label);
@@ -358,7 +490,9 @@ test "a list of plain items is drawn as rows, a cell per item field" {
     const values = try std.json.parseFromSliceLeaky(std.json.Value, arena,
         \\{"languages":[{"code":"en","main":true},{"code":"pl"}]}
     , .{});
-    const items = try items_of(PageField, arena, &described, values);
+    const items = try items_of(PageField, arena, .{
+        .fields = &described,
+    }, values, .null);
 
     try std.testing.expectEqualStrings("rows", items[0].kind);
     try std.testing.expectEqual(@as(usize, 2), items[0].columns.len);
@@ -367,4 +501,54 @@ test "a list of plain items is drawn as rows, a cell per item field" {
     try std.testing.expectEqualStrings("true", items[0].rows[0].cells[1].value);
     try std.testing.expectEqualStrings("pl", items[0].rows[1].cells[0].value);
     try std.testing.expectEqualStrings("", items[0].rows[1].cells[1].value);
+}
+
+test "a list's columns: a choice per enumeration, the read's own fields shown, items offered" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const Answered = struct {
+        currencies: []const struct {
+            code: []const u8,
+            decimal: enum { period, comma },
+            example: []const u8,
+        },
+    };
+    const described = [_]model.Field{.{
+        .name = "currencies",
+        .shape = .json,
+        .required = true,
+        .fields = &.{
+            .{
+                .name = "code",
+                .shape = .string,
+                .required = true,
+            },
+            .{
+                .name = "decimal",
+                .shape = .string,
+                .required = false,
+                .values = &.{ "period", "comma" },
+            },
+        },
+    }};
+    const values = try std.json.parseFromSliceLeaky(std.json.Value, arena,
+        \\{"currencies":[{"code":"GBP","decimal":"period","example":"£1,234.56"}]}
+    , .{});
+    const suggested = try std.json.parseFromSliceLeaky(std.json.Value, arena,
+        \\{"currencies":[{"code":"PLN","decimal":"comma"}]}
+    , .{});
+    const items = try items_of(PageField, arena, .{
+        .fields = &described,
+        .output = comptime contract.describe(Answered),
+    }, values, suggested);
+    const columns = items[0].columns;
+
+    try std.testing.expectEqual(@as(usize, 3), columns.len);
+    try std.testing.expectEqualStrings("choice", columns[1].kind);
+    try std.testing.expectEqualStrings("Comma", columns[1].choices[1].label);
+    try std.testing.expectEqualStrings("shown", columns[2].kind);
+    try std.testing.expectEqualStrings("£1,234.56", items[0].rows[0].cells[2].value);
+    try std.testing.expectEqualStrings("PLN", items[0].suggestions[0].label);
+    try std.testing.expectEqualStrings("comma", items[0].suggestions[0].values[1]);
 }

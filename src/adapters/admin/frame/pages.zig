@@ -22,12 +22,19 @@ pub const Page = struct {
     /// A form by declaration: the read that fills it, the write that saves it.
     read: []const u8 = "",
     save: []const u8 = "",
+    /// The form's read offering items to add to its lists, and its read previewing a save.
+    suggest: []const u8 = "",
+    preview: []const u8 = "",
     /// Left out of the menu (`.menu = .none`); still opened at its address.
     hidden: bool = false,
     /// A tabbed page, drawn by the admin around the pages naming it in `parent`.
     tabs: bool = false,
-    /// A form that is a tab of the first of these tabbed pages that exists.
+    /// A tab of the first of these tabbed pages that exists: a form, or drawn by its
+    /// `operation` under the tabbed page's tab bar.
     parent: []const []const u8 = &.{},
+    /// A tab's primary action in its tabbed page's header; empty for none.
+    action_label: []const u8 = "",
+    action_href: []const u8 = "",
 
     pub fn declared(page: Page) bool {
         std.debug.assert(page.path.len > 0);
@@ -59,6 +66,7 @@ pub const Page = struct {
 
 const prefix = "/admin/plugin";
 pub const system = admin_slots.system_page;
+pub const users = admin_slots.users_page;
 
 /// The tabbed page `tab` shows in, as `<plugin>.<path>`: the first of its `parent` that is a
 /// tabbed page in `list`, else System settings. Null for a page that is not a tab.
@@ -72,8 +80,8 @@ pub fn parent_of(list: []const Page, tab: Page) ?[]const u8 {
     var buffer: [128]u8 = undefined;
 
     for (tab.parent) |wanted| {
-        if (std.mem.eql(u8, wanted, system)) {
-            return system;
+        if (std.mem.eql(u8, wanted, system) or std.mem.eql(u8, wanted, users)) {
+            return wanted;
         }
 
         for (list) |page| {
@@ -107,6 +115,77 @@ pub fn tabs_of(
     return found.toOwnedSlice(arena);
 }
 
+/// What a tab shows over itself: its tabbed page's title, description and address, and the
+/// tab bar, `page` lit. Core's own tabbed pages lead with their own tab.
+pub fn Header(comptime Tab: type) type {
+    return struct {
+        title: []const u8,
+        description: []const u8 = "",
+        address: []const u8,
+        tabs: []const Tab,
+    };
+}
+
+pub fn header_of(
+    comptime Tab: type,
+    session: *Session,
+    list: []const Page,
+    page: Page,
+    parent: []const u8,
+) admin.Error!Header(Tab) {
+    std.debug.assert(parent.len > 0);
+    std.debug.assert(session.signed_in());
+
+    var links: std.ArrayList(Tab) = .empty;
+    var header: Header(Tab) = undefined;
+
+    if (std.mem.eql(u8, parent, system) or std.mem.eql(u8, parent, users)) {
+        const own = std.mem.eql(u8, parent, system);
+        const address = if (own) "/admin/settings/system" else "/admin/settings/users";
+
+        header = .{
+            .title = try session.translated(if (own) "System settings" else "Users", .{}),
+            .description = try session.translated(if (own)
+                "How this Publr runs, and the conventions the site follows."
+            else
+                "Who may sign in, and what they may do.", .{}),
+            .address = address,
+            .tabs = &.{},
+        };
+        try links.append(session.arena, .{
+            .label = try session.translated(if (own) "General" else "Users", .{}),
+            .href = address,
+            .active = false,
+        });
+    } else {
+        var buffer: [128]u8 = undefined;
+        const tabbed = for (list) |one| {
+            if (one.tabs and std.mem.eql(u8, one.named(&buffer), parent)) {
+                break one;
+            }
+        } else unreachable;
+
+        header = .{
+            .title = try session.declared(tabbed.label),
+            .address = try tabbed.href(session.arena),
+            .tabs = &.{},
+        };
+    }
+
+    for (try tabs_of(session.arena, list, parent)) |tab| {
+        try links.append(session.arena, .{
+            .label = try session.declared(tab.label),
+            .href = try tab.href(session.arena),
+            .active = std.mem.eql(u8, tab.plugin, page.plugin) and
+                std.mem.eql(u8, tab.path, page.path),
+        });
+    }
+
+    header.tabs = links.items;
+
+    return header;
+}
+
 /// Every page the viewer may open, compiled-in plugins' first, in name order. A tabbed page
 /// is always there, so tabs find it; it shows while one of its tabs does.
 pub fn all(session: *const Session) admin.Error![]const Page {
@@ -137,9 +216,13 @@ pub fn all(session: *const Session) admin.Error![]const Page {
                 .operation = page.operation,
                 .read = page.read,
                 .save = page.save,
+                .suggest = page.suggest,
+                .preview = page.preview,
                 .hidden = page.hidden,
                 .tabs = page.tabs,
                 .parent = page.parent,
+                .action_label = page.action_label,
+                .action_href = page.action_href,
             };
             const may = page.tabs or registry.SDK.may_named(&session.ctx, shown.gate());
 
@@ -166,11 +249,19 @@ fn native(comptime owned: @import("../../../sdk/plugin.zig").OwnedPage) Page {
             .operation = if (page.operation) |Operation| Operation.name else "",
             .read = if (page.form) |form| form.read.name else "",
             .save = if (page.form) |form| form.save.name else "",
+            .suggest = if (page.form) |form| name_of(form.suggest) else "",
+            .preview = if (page.form) |form| name_of(form.preview) else "",
             .hidden = page.menu != null,
             .tabs = page.tabs,
             .parent = page.parent,
+            .action_label = if (page.action) |action| action.label else "",
+            .action_href = if (page.action) |action| action.href else "",
         };
     }
+}
+
+fn name_of(comptime Operation: ?type) []const u8 {
+    return if (Operation) |Named| Named.name else "";
 }
 
 /// The page at `path` of `plugin`, when the viewer may open it.
@@ -232,7 +323,8 @@ fn manifests_of(session: *const Session) []const Manifest {
 }
 
 /// A manifest's page is a page path drawn by one of the plugin's own reads, or a form
-/// filled by one of its reads and saved by one of its writes.
+/// filled by one of its reads and saved by one of its writes; only a tab has an action, to
+/// an admin address.
 fn sound(manifest: Manifest, page: ManifestPage) bool {
     std.debug.assert(manifest.name.len > 0);
 
@@ -244,12 +336,22 @@ fn sound(manifest: Manifest, page: ManifestPage) bool {
         return page.operation.len == 0 and page.read.len == 0 and page.parent.len == 0;
     }
 
-    if (page.parent.len > 0 and page.save.len == 0) {
-        return false;
+    if (page.action_label.len > 0 or page.action_href.len > 0) {
+        const to_admin = std.mem.startsWith(u8, page.action_href, "/admin/");
+
+        if (page.parent.len == 0 or page.action_label.len == 0 or !to_admin) {
+            return false;
+        }
     }
 
     if (page.operation.len > 0) {
         return own_kind(manifest, page.operation) == .read and page.save.len == 0;
+    }
+
+    for ([_][]const u8{ page.suggest, page.preview }) |name| {
+        if (name.len > 0 and own_kind(manifest, name) != .read) {
+            return false;
+        }
     }
 
     return own_kind(manifest, page.read) == .read and own_kind(manifest, page.save) == .write;
@@ -297,6 +399,44 @@ test "an installed plugin's page drawn by another's operation is not sound" {
     try std.testing.expect(!sound(own, bad_path));
 }
 
+test "an installed plugin's form offers and previews only through reads of its own" {
+    const own: Manifest = .{
+        .name = "notes",
+        .version = "0.1.0",
+        .summary = "Notes",
+        .operations = &.{
+            .{
+                .name = "notes.get",
+                .kind = .read,
+                .description = "Reads",
+            },
+            .{
+                .name = "notes.save",
+                .kind = .write,
+                .description = "Saves",
+            },
+        },
+    };
+    const form: ManifestPage = .{
+        .path = "settings",
+        .label = "Notes",
+        .icon = "file",
+        .read = "notes.get",
+        .save = "notes.save",
+        .suggest = "notes.get",
+        .preview = "notes.get",
+    };
+    var borrowed = form;
+    var writing = form;
+
+    borrowed.suggest = "user.list";
+    writing.preview = "notes.save";
+
+    try std.testing.expect(sound(own, form));
+    try std.testing.expect(!sound(own, borrowed));
+    try std.testing.expect(!sound(own, writing));
+}
+
 test "a tab shows in the first tabbed page of its parents that exists, else System settings" {
     const shop: Page = .{
         .plugin = "products",
@@ -334,6 +474,11 @@ test "a tab shows in the first tabbed page of its parents that exists, else Syst
     try std.testing.expectEqualStrings(system, parent_of(&.{ shop, lost }, lost).?);
     try std.testing.expect(parent_of(&.{notes}, notes) == null);
 
+    var roles = notes;
+
+    roles.parent = &.{"core.users"};
+    try std.testing.expectEqualStrings(users, parent_of(&.{roles}, roles).?);
+
     const all_pages = [_]Page{ shop, currencies, notes };
     const tabs = try tabs_of(std.testing.allocator, &all_pages, "products.settings");
     defer std.testing.allocator.free(tabs);
@@ -342,7 +487,7 @@ test "a tab shows in the first tabbed page of its parents that exists, else Syst
     try std.testing.expectEqualStrings("currencies", tabs[0].plugin);
 }
 
-test "a tabbed page in a manifest draws nothing itself; a tab is a form" {
+test "a tabbed page in a manifest draws nothing itself; a tab is a form or a drawn page" {
     const own: Manifest = .{
         .name = "shop",
         .version = "0.1.0",
@@ -374,10 +519,23 @@ test "a tabbed page in a manifest draws nothing itself; a tab is a form" {
         .parent = &.{"shop.settings"},
     };
     var drawing = tabbed;
+    var acting = drawn_tab;
+    var leaving = drawn_tab;
+    var untabbed = drawn_tab;
 
     drawing.operation = "shop.page";
+    acting.action_label = "Add";
+    acting.action_href = "/admin/plugin/shop/add";
+    leaving.action_label = "Add";
+    leaving.action_href = "https://example.com/add";
+    untabbed.parent = &.{};
+    untabbed.action_label = "Add";
+    untabbed.action_href = "/admin/plugin/shop/add";
 
     try std.testing.expect(sound(own, tabbed));
     try std.testing.expect(!sound(own, drawing));
-    try std.testing.expect(!sound(own, drawn_tab));
+    try std.testing.expect(sound(own, drawn_tab));
+    try std.testing.expect(sound(own, acting));
+    try std.testing.expect(!sound(own, leaving));
+    try std.testing.expect(!sound(own, untabbed));
 }

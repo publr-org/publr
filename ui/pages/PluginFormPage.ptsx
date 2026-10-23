@@ -2,6 +2,7 @@ import { Publr } from "publr-jsx";
 import { FormPage } from "../layouts/FormPage.ptsx";
 import { IndexHeader } from "../components/IndexHeader.ptsx";
 import { OperationForm } from "../components/OperationForm.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
 import { TabNav } from "@publr/ui/TabNav.ptsx";
 import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
 
@@ -16,20 +17,31 @@ export type PluginFormPageProps = {
     required: boolean;
     help: string;
     value: string;
-    columns: Array<{ name: string; label: string; kind: string }>;
-    rows: Array<{ index: number; cells: Array<{ at: number; kind: string; label: string; value: string }> }>;
+    choices: Array<{ value: string; label: string }>;
+    columns: Array<{ name: string; label: string; kind: string; choices: Array<{ value: string; label: string }> }>;
+    rows: Array<{
+      index: number;
+      cells: Array<{ at: number; kind: string; label: string; value: string; choices: Array<{ value: string; label: string }> }>;
+    }>;
+    suggestions: Array<{ at: number; label: string; values: string[] }>;
   }>;
+  /** The read previewing a save; empty for none. */
+  preview?: string;
   /** A tab of a tabbed page: that page's title and description over its tabs, this one
    * active. */
   parent?: string;
   description?: string;
   tabs?: Array<{ label: string; href: string; active: boolean }>;
+  /** The tab's primary action, in the tabbed page's header. */
+  action_label?: string;
+  action_href?: string;
 };
 
 /** A plugin's page by declaration, drawn by the admin itself: no markup of the plugin's,
  * so it needs no frame, and an installed plugin has it as a compiled-in one does. A tab of
  * a tabbed page is drawn in that page, its title and tabs over the form. */
-export function PluginFormPage({ title, operation, fields, parent = "", description = "", tabs = [] }: PluginFormPageProps) {
+export function PluginFormPage({ title, operation, fields, preview = "", parent = "", description = "", tabs = [],
+  action_label = "", action_href = "" }: PluginFormPageProps) {
   return (
     <FormPage
       title={tabs.length > 0 ? parent : title}
@@ -38,10 +50,12 @@ export function PluginFormPage({ title, operation, fields, parent = "", descript
           title={title}
           operation={operation}
           fields={fields}
+          preview={preview}
           header={
             tabs.length > 0 && (
               <div data-part="tabbed-page-header">
-                <IndexHeader title={parent} description={description} />
+                <IndexHeader title={parent} description={description}
+                  actions={action_label !== "" && <Button href={action_href}>{action_label}</Button>} />
                 <div class="flex items-center gap-4 border-t border-border px-5 py-2">
                   <TabNav label={parent}>
                     {tabs.map((tab) => (
