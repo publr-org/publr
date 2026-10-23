@@ -450,6 +450,14 @@ fn declared_pages(comptime Plugin: type) []const Page {
             if (page.form) |form| {
                 made.form.?.read = admin_described.described(Plugin, form.read);
                 made.form.?.save = admin_described.described(Plugin, form.save);
+
+                if (form.suggest) |Suggest| {
+                    made.form.?.suggest = admin_described.described(Plugin, Suggest);
+                }
+
+                if (form.preview) |Preview| {
+                    made.form.?.preview = admin_described.described(Plugin, Preview);
+                }
             }
 
             if (page.top_bar) |shown| {
