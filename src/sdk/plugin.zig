@@ -876,7 +876,8 @@ pub fn Merged(comptime plugins: anytype) type {
                     @compileError("two plugins declare `work_start`; one at a time");
                 }
 
-                work_start = plugin_define.get(Plugin, "work_start").name;
+                work_start = Plugin.manifest.name ++ "." ++
+                    plugin_define.get(Plugin, "work_start").verb;
             }
 
             operator_commands = operator_commands ++ route.operator_commands_of(Plugin);

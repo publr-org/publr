@@ -174,7 +174,7 @@ pub const Request = struct {
         comptime Operation: type,
         in: Operation.In,
     ) sdk.Error!Operation.Out {
-        std.debug.assert(Operation.name.len > 0);
+        comptime std.debug.assert(registry.SDK.bound(Operation).name.len > 0);
 
         var ctx = identity_module.request_context(
             request.project,

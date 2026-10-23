@@ -223,7 +223,14 @@ pub fn native_providers(
     @setEvalBranchQuota(1000 + plugins.len * 64 + sdk.operations_max * 8);
 
     inline for (plugins, list) |Plugin, *provider| {
-        const operations = comptime contract.operations_of(Plugin);
+        const operations = comptime operations: {
+            const options = std.meta.fields(@TypeOf(Plugin.options)).len;
+
+            // Each of its options' names against the option and seam names, a byte at a time.
+            @setEvalBranchQuota(1000 + options * 64 * 64);
+
+            break :operations contract.operations_of(Plugin);
+        };
         const provided = try arena.alloc(plugin_contracts.Provided, operations.len);
 
         inline for (operations, 0..) |Operation, index| {

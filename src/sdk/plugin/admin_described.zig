@@ -1,16 +1,17 @@
 //! The admin parts that name an operation by type (a page's top bar count, panels, row
-//! actions, Settings pages): a `publr.operation.define` named there is given its words and its
-//! plugin's name, as in `.operations`, so either shape works wherever an operation is named.
+//! actions, Settings pages): the `publr.operation.define` named there is given its words and
+//! its plugin's name, as in `.operations`.
 const std = @import("std");
 const operation_define = @import("operation_define.zig");
 
-/// `Operation` as the core runs it: described when it is a definition, as it is otherwise.
+/// `Operation` as the core runs it: the definition with its words.
 pub fn described(comptime Plugin: type, comptime Operation: type) type {
     comptime {
         std.debug.assert(Plugin.manifest.name.len > 0);
 
         if (!operation_define.is_definition(Operation)) {
-            return Operation;
+            @compileError("plugin " ++ Plugin.manifest.name ++ ": an admin part names an " ++
+                "operation made with `publr.operation.define`");
         }
 
         return operation_define.Described(Operation, Plugin.manifest.name, Plugin.docs);
@@ -38,7 +39,7 @@ pub fn each(comptime Plugin: type, comptime Item: type, comptime list: []const I
     }
 }
 
-test "a definition named by an admin part is described; a struct operation stays" {
+test "a definition named by an admin part is described" {
     const Words = @import("define.zig").Words(.{
         .{ "operation:tick", "Does nothing\n\nExample:\n  in: {}\n  out: {}" },
     });
@@ -58,11 +59,7 @@ test "a definition named by an admin part is described; a struct operation stays
         };
         pub const docs = Words;
     };
-    const Legacy = struct {
-        pub const name = "sampler.legacy";
-    };
 
     try std.testing.expectEqualStrings("sampler.tick", described(Plugin, Tick).name);
     try std.testing.expectEqual(.read, described(Plugin, Tick).kind);
-    try std.testing.expectEqual(Legacy, described(Plugin, Legacy));
 }
