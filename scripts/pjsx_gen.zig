@@ -818,19 +818,12 @@ fn callable_file(set: *Set) ![]const u8 {
     return out.written();
 }
 
-/// The helpers islands import from plain modules (`upload_picture` from `PictureTray`),
-/// once each, ahead of the stores that use them.
 /// The helpers stores import from other modules: each module's in a scope of its own, so
 /// its private names never meet another's (`const stack` in two of them), answering the
 /// names the stores import, under the names they import them as.
 fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
     std.debug.assert(set.modules.items.len > 0);
 
-    const Named = struct {
-        stem: []const u8,
-        imported: []const u8,
-        local: []const u8,
-    };
     var named: std.ArrayList(Named) = .empty;
 
     for (set.modules.items) |module| {
@@ -885,9 +878,23 @@ fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
         }
     }
 
+    try write_scopes(set, named.items, out);
+}
+
+/// A helper a store imports: from which module, by its name there and its name here.
+const Named = struct {
+    stem: []const u8,
+    imported: []const u8,
+    local: []const u8,
+};
+
+/// Each module's helpers in a scope of their own, the imported ones let out.
+fn write_scopes(set: *Set, named: []const Named, out: *std.Io.Writer) !void {
+    std.debug.assert(set.modules.items.len > 0);
+
     var stems: std.ArrayList([]const u8) = .empty;
 
-    for (named.items) |first| {
+    for (named) |first| {
         if (contains(stems.items, first.stem)) {
             continue;
         }
@@ -895,7 +902,7 @@ fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
         try stems.append(set.arena, first.stem);
         try out.print("\n// {s}\nconst {{", .{first.stem});
 
-        for (named.items) |one| {
+        for (named) |one| {
             if (std.mem.eql(u8, one.stem, first.stem)) {
                 try out.print(" {s}: {s},", .{ one.imported, one.local });
             }
@@ -911,7 +918,7 @@ fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
 
         try out.writeAll("return {");
 
-        for (named.items) |one| {
+        for (named) |one| {
             if (std.mem.eql(u8, one.stem, first.stem)) {
                 try out.print(" {s},", .{one.imported});
             }
