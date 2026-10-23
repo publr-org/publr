@@ -247,8 +247,17 @@ pub const Field = struct {
     words: []const []const u8 = &.{},
     /// A list of items' fields, each plain (`json`, a list of `{ code, label }`).
     fields: []const Field = &.{},
+    /// An item field's value when a new item is added (`{symbol}{amount}`), as text.
+    default: []const u8 = "",
 
     pub const Shape = enum { string, integer, number, boolean, strings, json };
+};
+
+/// A column a declared form's list leaves empty in the row an `only_one` column picks (the
+/// main language's address), and what its field says there instead (`The site's own`).
+pub const Blank = struct {
+    column: []const u8,
+    says: []const u8,
 };
 
 /// A page of the plugin's own: drawn by its read `operation` in the plugin frame, or, by
@@ -262,6 +271,8 @@ pub const Page = struct {
     save: []const u8 = "",
     /// A list's boolean columns true in one row only.
     only_one: []const []const u8 = &.{},
+    /// Columns the row an `only_one` column picks leaves empty.
+    blank_in_one: []const Blank = &.{},
     /// A form's read offering items to add to its lists, and its read previewing a save.
     suggest: []const u8 = "",
     preview: []const u8 = "",

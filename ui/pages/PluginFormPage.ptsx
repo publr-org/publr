@@ -18,7 +18,14 @@ export type PluginFormPageProps = {
     help: string;
     value: string;
     choices: Array<{ value: string; label: string }>;
-    columns: Array<{ name: string; label: string; kind: string; choices: Array<{ value: string; label: string }> }>;
+    columns: Array<{
+      name: string;
+      label: string;
+      kind: string;
+      choices: Array<{ value: string; label: string }>;
+      initial: string;
+      blank: string;
+    }>;
     rows: Array<{
       cells: Array<{ kind: string; label: string; value: string; choices: Array<{ value: string; label: string }> }>;
     }>;

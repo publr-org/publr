@@ -8,6 +8,8 @@ const std = @import("std");
 const plugin_define = @import("define.zig");
 const route = @import("route.zig");
 
+pub const Blank = @import("../../model/sandboxed_plugin.zig").Blank;
+
 pub const settings_pages_max: u32 = 8;
 pub const row_actions_max: u32 = 8;
 pub const pages_max: u32 = 8;
@@ -188,6 +190,9 @@ pub const Form = struct {
     /// A list's boolean columns true in one row only, drawn as a choice between the rows:
     /// the main language.
     only_one: []const []const u8 = &.{},
+    /// Columns the row an `only_one` column picks leaves empty, each disabled there and
+    /// saying what it is instead: `&.{.{ .column = "address", .says = "The site's own" }}`.
+    blank_in_one: []const Blank = &.{},
     /// A read of the plugin's own, no input, answering items people often add to the
     /// form's lists, by list (`.{ .languages = ... }`): each list offers them to pick.
     suggest: ?type = null,

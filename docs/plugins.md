@@ -727,8 +727,11 @@ value named by its `///`; each field's `///` as its help), filled from what `Rea
 answers; Save calls `Save` as the person looking. A list of plain items is a table, a row
 each, added, removed and moved up or down; a column `Read` answers and `Save` does not
 take (an example) is shown, not edited; a boolean column named in `.only_one` is true in
-one row only, a radio (the main language). `.suggest = Common`, a read answering items by
-list, offers them to add from a dropdown; `.preview = Preview`, a read taking `Save`'s
+one row only, a radio (the main language), and a column in
+`.blank_in_one = &.{.{ .column = "address", .says = "The site's own" }}` is left empty and
+disabled in that row, saying so; a new row starts from each item field's default.
+`.suggest = Common`, a read answering items by list, offers them to add from a dropdown,
+each named by its `name`; `.preview = Preview`, a read taking `Save`'s
 input and answering as `Read`, keeps the shown columns in step as people type. It works the same for an installed plugin, which draws
 nothing else in the admin yet.
 

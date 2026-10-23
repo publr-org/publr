@@ -26,8 +26,9 @@ export type OperationFormProps = {
   /** The fields in order. `kind`: string (a line), text (lines), number, boolean, choice
    * (one of `choices`), or rows: a list of items, one row each, in order, a column per
    * `columns` (`kind` string, number, boolean, one: true in one row only, choice, or
-   * shown: the read's, never sent), its values in `rows`; `suggestions` are items to add
-   * from a list. */
+   * shown: the read's, never sent; `initial` its value in a new row; `blank`, when not
+   * empty, what it says, disabled, in the row a `one` column picks), its values in `rows`;
+   * `suggestions` are items to add from a list. */
   fields: Array<{
     name: string;
     label: string;
@@ -36,7 +37,14 @@ export type OperationFormProps = {
     help: string;
     value: string;
     choices: Array<{ value: string; label: string }>;
-    columns: Array<{ name: string; label: string; kind: string; choices: Array<{ value: string; label: string }> }>;
+    columns: Array<{
+      name: string;
+      label: string;
+      kind: string;
+      choices: Array<{ value: string; label: string }>;
+      initial: string;
+      blank: string;
+    }>;
     rows: Array<{
       cells: Array<{ kind: string; label: string; value: string; choices: Array<{ value: string; label: string }> }>;
     }>;
@@ -82,13 +90,15 @@ Publr.effect(() => {
         : Publr.t("All changes saved");
 });
 
-/** A new row of `field`: `values` by column, else empty (a choice its first). */
+/** A new row of `field`: `values` by column, else each column's initial value. */
 const fresh = (field: Field, values: string[]): Row => ({
   cells: field.columns.map((column, at) => ({
-    kind: column.kind, label: column.label, choices: column.choices,
-    value: values[at] ?? (column.kind === "choice" ? (column.choices[0]?.value ?? "") : ""),
+    kind: column.kind, label: column.label, choices: column.choices, value: values[at] ?? column.initial,
   })),
 });
+
+/** Whether `row` is the one a `one` column picks: its blank columns say what they are. */
+const picked = (row: Row) => row.cells.some((cell) => cell.kind === "one" && cell.value === "true");
 
 /** A column true in one row only stays true in one: the first row's, once its own is gone. */
 const kept = (rows: Row[]): Row[] =>
@@ -222,6 +232,7 @@ export function OperationForm({ title, operation, fields, preview = "", note = "
       <FormBody
         title={title}
         header={header}
+        wide={wide}
         meta={<StatusStrip status={Publr.t("Saved")} tone="success" note={state.status} />}
         aside={
           !wide && (
@@ -278,18 +289,22 @@ export function OperationForm({ title, operation, fields, preview = "", note = "
                                 )}
                                 {cell.kind === "choice" && (
                                   <NativeSelect name={`${field.name}[${place}][${at}]`} label={cell.label} size="sm"
-                                    classes="min-w-24">
+                                    classes="min-w-20">
                                     {cell.choices.map((choice) => (
                                       <option value={choice.value} selected={choice.value === cell.value}>{choice.label}</option>
                                     ))}
                                   </NativeSelect>
                                 )}
                                 {cell.kind === "shown" && (
-                                  <Text as="span" variant="body-md" classes="whitespace-nowrap">{cell.value}</Text>
+                                  <Text as="span" variant="body-md">{cell.value}</Text>
                                 )}
                                 {(cell.kind === "string" || cell.kind === "number") && (
-                                  <Input name={`${field.name}[${place}][${at}]`} value={cell.value} size="sm"
-                                    type={cell.kind === "number" ? "number" : "text"} aria-label={cell.label} classes="min-w-20" />
+                                  <Input name={`${field.name}[${place}][${at}]`} size="sm"
+                                    value={field.columns[at].blank !== "" && picked(row) ? "" : cell.value}
+                                    placeholder={field.columns[at].blank !== "" && picked(row) ? field.columns[at].blank : ""}
+                                    disabled={field.columns[at].blank !== "" && picked(row)}
+                                    type={cell.kind === "number" ? "number" : "text"} aria-label={cell.label}
+                                    classes={field.columns[at].initial.length > 8 ? "min-w-44" : "min-w-14"} />
                                 )}
                               </TableCell>
                             ))}

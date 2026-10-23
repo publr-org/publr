@@ -38,6 +38,8 @@ export type FormBodyProps = {
   stacked?: boolean;
   /** Centred in the sheet: a record, edited in focus. Everything else sits at the gutter. */
   focus?: boolean;
+  /** The column at the page's width: a form whose lists of rows need the room. */
+  wide?: boolean;
 };
 
 /** The body of a page about one thing: the title band, an optional facts band, then the
@@ -57,6 +59,7 @@ export function FormBody({
   danger,
   side,
   focus = false,
+  wide = false,
   in_drawer = false,
   bare = false,
   stacked = false,
@@ -75,7 +78,7 @@ export function FormBody({
             {meta}
           </div>
         )}
-        <div class={["flex w-full max-w-4xl flex-col gap-6", stacked ? "px-4" : "px-5", focus ? "mx-auto" : "", meta ? "pt-6" : ""]}>
+        <div class={["flex w-full flex-col gap-6", wide ? "" : "max-w-4xl", stacked ? "px-4" : "px-5", focus ? "mx-auto" : "", meta ? "pt-6" : ""]}>
           {problems.length > 0 && (
             <Callout
               tone="error"
