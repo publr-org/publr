@@ -254,7 +254,7 @@ pub const PeopleOut = struct {
 ///
 /// Example:
 ///   in: {}
-///   out: { "greetings": ["hello, Admin"] }
+///   out: { "greetings": [] }
 pub const People = publr.operation.define(PeopleIn, PeopleOut, .{
     .name = "people",
     .kind = .read,
