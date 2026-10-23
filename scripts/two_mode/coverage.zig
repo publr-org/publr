@@ -73,6 +73,10 @@ const exercised = [_]Part{
         .where = "postcard's messaging provider",
     },
     .{
+        .name = "public_api",
+        .where = "greeter's operation listed in the API reference",
+    },
+    .{
         .name = "columns",
         .where = "sampler's columns on People and the media list",
     },
