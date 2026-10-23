@@ -4,6 +4,7 @@
 const std = @import("std");
 const doc_reader = @import("../../sdk/plugin/doc_reader.zig");
 const report = @import("../../lib/report.zig");
+const groq = @import("../../lib/groq.zig");
 
 pub fn run(init: std.process.Init, args: []const []const u8) !u8 {
     std.debug.assert(args.len < 1 << 16);
@@ -15,10 +16,36 @@ pub fn run(init: std.process.Init, args: []const []const u8) !u8 {
 
     const arena = init.arena.allocator();
     const read = try doc_reader.source_of(arena, try files_in(init, args[1]));
+    const problems = try problems_of(arena, read);
 
-    reported(args[1], read.problems);
+    reported(args[1], problems);
 
-    return if (read.problems.len == 0) 0 else 1;
+    return if (problems.len == 0) 0 else 1;
+}
+
+/// What the checks found over the source, and each prepared query that does not read.
+pub fn problems_of(arena: std.mem.Allocator, read: doc_reader.Source) ![]const doc_reader.Placed {
+    std.debug.assert(read.source.len > 0);
+
+    var problems: std.ArrayList(doc_reader.Placed) = .empty;
+
+    try problems.appendSlice(arena, read.problems);
+
+    for (read.queries) |query| {
+        const problem = try groq.problem_of(arena, query.text) orelse continue;
+
+        try problems.append(arena, .{
+            .path = query.path,
+            .problem = .{
+                .line = query.line,
+                .message = try std.fmt.allocPrint(arena, "the query does not read: {s}", .{
+                    problem,
+                }),
+            },
+        });
+    }
+
+    return problems.items;
 }
 
 /// Each problem printed where it is.
@@ -32,7 +59,7 @@ pub fn reported(dir: []const u8, problems: []const doc_reader.Placed) void {
     }
 }
 
-/// Every Zig file under `dir`, read.
+/// Every Zig and GROQ file under `dir`, read.
 pub fn files_in(init: std.process.Init, dir: []const u8) ![]const doc_reader.File {
     std.debug.assert(dir.len > 0);
 
@@ -48,7 +75,7 @@ pub fn files_in(init: std.process.Init, dir: []const u8) ![]const doc_reader.Fil
     var files: std.ArrayList(doc_reader.File) = .empty;
 
     while (try walker.next(init.io)) |entry| {
-        if (entry.kind != .file or !std.mem.endsWith(u8, entry.path, ".zig")) {
+        if (entry.kind != .file or !doc_reader.read_file(entry.path)) {
             continue;
         }
 
@@ -70,4 +97,31 @@ pub fn files_in(init: std.process.Init, dir: []const u8) ![]const doc_reader.Fil
     }
 
     return files.items;
+}
+
+test "plugin check: a prepared query that does not read, where it is" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const files = [_]doc_reader.File{
+        .{
+            .path = "main.zig",
+            .text =
+            \\//! Shelf
+            \\const counted = publr.query.prepare(@embedFile("queries/bad.groq"), .{});
+            ,
+        },
+        .{
+            .path = "queries/bad.groq",
+            .text = "*[_type == ",
+        },
+    };
+    const problems = try problems_of(arena, try doc_reader.source_of(arena, &files));
+
+    try std.testing.expectEqual(@as(usize, 1), problems.len);
+    try std.testing.expectEqualStrings("main.zig", problems[0].path);
+    try std.testing.expectEqual(@as(u32, 2), problems[0].problem.line);
+    const message = problems[0].problem.message;
+
+    try std.testing.expect(std.mem.startsWith(u8, message, "the query does not read: "));
 }

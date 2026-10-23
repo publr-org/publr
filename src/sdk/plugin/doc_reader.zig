@@ -37,7 +37,16 @@ pub const Placed = @import("checks.zig").Failures.Placed;
 pub const Source = struct {
     source: []const u8,
     problems: []const Placed,
+    /// The GROQ texts it prepares, for the checks that parse them.
+    queries: []const prepared_queries.Query,
 };
+
+const prepared_queries = @import("prepared_queries.zig");
+
+/// Whether a file is read: Zig, and the GROQ files a query embeds.
+pub fn read_file(path: []const u8) bool {
+    return std.mem.endsWith(u8, path, ".zig") or std.mem.endsWith(u8, path, ".groq");
+}
 
 /// Every doc comment in a plugin's files and the secrets its strings write, as the Zig source
 /// of its docs module, with every plugin check's problem beside its file: the one reading
@@ -52,8 +61,16 @@ pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
     var written: std.ArrayList([]const u8) = .empty;
     var problems: std.ArrayList(Placed) = .empty;
     var failures: checks.Failures = .{};
+    var queries: std.ArrayList(prepared_queries.Query) = .empty;
+    var missing: std.ArrayList(prepared_queries.Missing) = .empty;
 
     for (files) |file| {
+        if (!std.mem.endsWith(u8, file.path, ".zig")) {
+            continue;
+        }
+
+        try prepared_queries.read(arena, file, files, &queries, &missing);
+
         var found: std.ArrayList(checks.Problem) = .empty;
 
         try read(arena, try file_key(arena, file.path), file.text, &entries);
@@ -71,12 +88,25 @@ pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
 
     try problems.appendSlice(arena, try failures.problems(arena));
 
+    for (missing.items) |each| {
+        try problems.append(arena, .{
+            .path = each.path,
+            .problem = .{
+                .line = each.line,
+                .message = try std.fmt.allocPrint(arena, "the query embeds `{s}`, which " ++
+                    "is not in the plugin's folder", .{each.embedded}),
+            },
+        });
+    }
+
     const words = try generated(arena, entries.items);
     const secrets = try written_secrets.source(arena, written.items);
+    const prepared = try prepared_queries.source(arena, queries.items);
 
     return .{
-        .source = try std.mem.concat(arena, u8, &.{ words, secrets }),
+        .source = try std.mem.concat(arena, u8, &.{ words, secrets, prepared }),
         .problems = problems.items,
+        .queries = queries.items,
     };
 }
 

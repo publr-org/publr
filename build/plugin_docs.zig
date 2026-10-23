@@ -26,12 +26,12 @@ pub fn source_of(builder: *std.Build, dir: []const u8) []const u8 {
     const walk_failed = "{s}: walking the plugin failed";
 
     while (walker.next(io) catch diagnostic.fail(walk_failed, .{dir})) |entry| {
-        if (entry.kind != .file or !std.mem.endsWith(u8, entry.path, ".zig")) {
+        if (entry.kind != .file or !doc_reader.read_file(entry.path)) {
             continue;
         }
 
         if (files.items.len == files_max) {
-            diagnostic.fail("{s}: more than {d} Zig files", .{ dir, files_max });
+            diagnostic.fail("{s}: more than {d} Zig and GROQ files", .{ dir, files_max });
         }
 
         const text = root.readFileAllocOptions(

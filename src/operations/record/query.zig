@@ -102,13 +102,19 @@ pub const Query = struct {
             .seconds = @divFloor(ctx.now_ms, 1000),
             .nanoseconds = @intCast(@mod(ctx.now_ms, 1000) * 1_000_000),
         };
-        const answered = groq.execute(arena, in.query, source.dataset(), &problem, .{
+        const options: groq.Options = .{
             .params = params,
             .now = now,
             .strings_are_references = true,
             .work_steps = work_budget(ctx),
-        }) catch |err| return refused(ctx, err, problem, source.refused_type);
-        const text = groq.values.to_json(arena, answered.value) catch return error.OutOfMemory;
+        };
+        // A prepared query comes parsed; any other is parsed here.
+        const answered = if (kept_of(ctx, in.query)) |prepared|
+            groq.run(arena, &prepared.query, source.dataset(), &problem, options)
+        else
+            groq.execute(arena, in.query, source.dataset(), &problem, options);
+        const answer = answered catch |err| return refused(ctx, err, problem, source.refused_type);
+        const text = groq.values.to_json(arena, answer.value) catch return error.OutOfMemory;
 
         if (text.len > answer_bytes_max) {
             return ctx.fail(.{
@@ -118,7 +124,7 @@ pub const Query = struct {
             });
         }
 
-        const problems = try problems_of(arena, answered.problems);
+        const problems = try problems_of(arena, answer.problems);
 
         return .{
             .result = .{
@@ -128,6 +134,17 @@ pub const Query = struct {
         };
     }
 };
+
+/// The parse `publr.query.prepare` kept for this very text, if it handed one over.
+fn kept_of(ctx: *const Ctx, text: []const u8) ?*const groq.Prepared {
+    std.debug.assert(text.len > 0);
+
+    const prepared = ctx.prepared orelse return null;
+
+    std.debug.assert(prepared.text.len > 0);
+
+    return if (std.mem.eql(u8, prepared.text, text)) prepared else null;
+}
 
 fn params_of(arena: std.mem.Allocator, text: []const u8) Error!groq.values.Object {
     std.debug.assert(text.len <= 64 << 10);

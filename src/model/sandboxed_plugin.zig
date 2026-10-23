@@ -124,6 +124,15 @@ pub const Manifest = struct {
     about: []const u8 = "",
     /// What the plugin brings that its sandboxed build left out, each with why.
     left_out: []const []const u8 = &.{},
+    /// The GROQ texts it prepares, parsed when it is installed.
+    queries: []const Query = &.{},
+};
+
+/// A GROQ text the plugin prepares, and where.
+pub const Query = struct {
+    path: []const u8,
+    line: u32,
+    text: []const u8,
 };
 
 /// An operation a plugin brings; its entry in the module is its position here.

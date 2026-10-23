@@ -292,6 +292,9 @@ pub const Ctx = struct {
     /// The queued job running (`<plugin>.<name>`): the author of what it changes. Empty
     /// outside a job.
     job: []const u8 = "",
+    /// The parsed query `publr.query.prepare` keeps, handed to the `record.query` call it
+    /// makes with the same text, which then runs it without parsing again.
+    prepared: ?*const @import("../lib/groq.zig").Prepared = null,
     /// The language the admin speaks to the caller, for a page a plugin draws: its
     /// catalogue for the render and its script for the browser. In queued work, its locale
     /// alone: the one the work was queued with, else the site's. Empty elsewhere.

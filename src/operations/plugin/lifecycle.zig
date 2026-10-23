@@ -19,6 +19,7 @@ const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 const sandboxed_plugin = model.sandboxed_plugin;
 const statuses = @import("statuses.zig");
+const groq = @import("../../lib/groq.zig");
 
 pub fn sandboxed(ctx: *Ctx) Error!*const sdk.sandboxed_plugins.SandboxedPlugins {
     std.debug.assert(ctx.now_ms >= 0);
@@ -99,7 +100,37 @@ fn check(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!void {
         }
     }
 
-    std.debug.assert(ctx.now_ms >= 0);
+    try queries_read(ctx, name, manifest.queries);
+}
+
+/// Each GROQ text a plugin prepares parses: one that does not refuses the plugin, named
+/// with the query and the problem. Compiled-in plugins' are read the same way at boot.
+pub fn queries_read(
+    ctx: *Ctx,
+    plugin_name: []const u8,
+    queries: []const sandboxed_plugin.Query,
+) Error!void {
+    std.debug.assert(plugin_name.len > 0);
+
+    for (queries) |query| {
+        if (query.text.len == 0) {
+            continue;
+        }
+
+        const problem = try groq.problem_of(ctx.arena, query.text) orelse continue;
+
+        return ctx.fail(.{
+            .name = "InvalidQuery",
+            .status = 422,
+            .message = std.fmt.allocPrint(ctx.arena, "plugin {s}: the query at {s}:{d} " ++
+                "does not read: {s}", .{
+                plugin_name,
+                query.path,
+                query.line,
+                problem,
+            }) catch return error.OutOfMemory,
+        });
+    }
 }
 
 /// Whether the manifest asks for a `before` hook on an event that already happened when it
@@ -463,4 +494,30 @@ test "a before hook on signing out is refused at install; on signing in it is ta
     try std.testing.expect(hook_refused(.after, "errors.failed"));
     try std.testing.expect(hook_refused(.before, "auth.sign_in_failed"));
     try std.testing.expect(!hook_refused(.event, "errors.failed"));
+}
+
+test "a prepared query that does not read refuses its plugin, named with the query and why" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    const fine = [_]sandboxed_plugin.Query{.{
+        .path = "operations/count.zig",
+        .line = 3,
+        .text = "count(*[_type == $type][$from...$to])",
+    }};
+    const broken = fine ++ [_]sandboxed_plugin.Query{.{
+        .path = "queries/notes.zig",
+        .line = 12,
+        .text = "*[_type == \"note\"",
+    }};
+
+    try queries_read(&system, "shelf", &fine);
+    try std.testing.expectError(error.Failed, queries_read(&system, "shelf", &broken));
+    try std.testing.expect(std.mem.startsWith(
+        u8,
+        system.failure.?.message,
+        "plugin shelf: the query at queries/notes.zig:12 does not read: ",
+    ));
 }

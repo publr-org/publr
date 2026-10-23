@@ -249,6 +249,53 @@ test "an installed plugin's hook on every transition of its type refuses one in 
     });
 
     try std.testing.expectError(error.Denied, archived);
+
+    const archived_many = try registry.SDK.dispatch(&people, records.TransitionMany, .{
+        .transition = "archive",
+        .ids = &.{listed.records[0].id},
+    });
+
+    try std.testing.expectEqual(@as(u32, 0), archived_many.moved);
+    try std.testing.expectEqual(@as(u32, 1), archived_many.not_moved);
+
+    // An `after` hook on a transition takes a move back once written, alone or many at once:
+    // the one it refuses stays where it was, the others go on.
+    _ = try scenario.call(admin, greet, "{\"note\":\"not yet\"}");
+    _ = try scenario.call(admin, greet, "{\"note\":\"now\"}");
+
+    const three = try registry.SDK.dispatch(&people, records.List, .{
+        .type = "greeter.salutation",
+        .order = .title_asc,
+    });
+
+    try std.testing.expectEqual(@as(usize, 3), three.records.len);
+
+    const not_yet = three.records[1];
+    const now = three.records[2];
+
+    try std.testing.expectEqualStrings("not yet", not_yet.title);
+    try std.testing.expectEqualStrings("draft", not_yet.status);
+
+    const alone = registry.SDK.dispatch(&people, records.Transition, .{
+        .id = not_yet.id,
+        .transition = "publish",
+    });
+
+    try std.testing.expectError(error.Denied, alone);
+
+    const published = try registry.SDK.dispatch(&people, records.TransitionMany, .{
+        .transition = "publish",
+        .ids = &.{ not_yet.id, now.id },
+    });
+
+    try std.testing.expectEqual(@as(u32, 1), published.moved);
+    try std.testing.expectEqualStrings(not_yet.id, published.failed[0].id);
+
+    const held_back = try registry.SDK.dispatch(&people, records.Get, .{
+        .id = not_yet.id,
+    });
+
+    try std.testing.expectEqualStrings("draft", held_back.record.status);
 }
 
 test "an installed plugin's status joins another's flow; its records leave when it goes" {

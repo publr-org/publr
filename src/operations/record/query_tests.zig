@@ -4,6 +4,7 @@ const model = @import("../../model.zig");
 const registry = @import("../../server/registry.zig");
 const record = @import("../record.zig");
 const types = @import("../content_type.zig");
+const groq = @import("../../lib/groq.zig");
 
 const SDK = registry.SDK;
 const Query = record.Query;
@@ -247,6 +248,48 @@ test "query: a visitor reads live public records, a draft reference is null with
     const seen = try perspective;
 
     try std.testing.expect(!contains(seen.result.text, "Unseen"));
+}
+
+test "query: a prepared query runs as kept, its brackets bound to each call's parameters" {
+    var library: Library = .{};
+    try library.init();
+    defer library.deinit();
+
+    const text = "*[_type == \"book\"] | order(views desc) [$from...$to] { title }";
+    const prepared = groq.Prepared.parse(text).?;
+    defer prepared.free();
+
+    var visitor = library.harness.ctx(.anonymous);
+
+    visitor.prepared = prepared;
+
+    const first = try SDK.dispatch(&visitor, Query, .{
+        .query = text,
+        .params = "{\"from\":0,\"to\":1}",
+    });
+    const second = try SDK.dispatch(&visitor, Query, .{
+        .query = text,
+        .params = "{\"from\":1,\"to\":3}",
+    });
+
+    try std.testing.expectEqualStrings("[{\"title\":\"Second\"}]", first.result.text);
+    try std.testing.expectEqualStrings(
+        \\[{"title":"First"},{"title":"Orphan"}]
+    , second.result.text);
+
+    // The kept parse is what runs: one kept for this text answers as it was parsed.
+    const other = groq.Prepared.parse("count(*[_type == \"book\"])").?;
+    defer other.free();
+
+    other.text = text;
+    visitor.prepared = other;
+
+    const counted = try SDK.dispatch(&visitor, Query, .{
+        .query = text,
+        .params = "{\"from\":0,\"to\":1}",
+    });
+
+    try std.testing.expectEqualStrings("3", counted.result.text);
 }
 
 test "query: an editor reads drafts too, unless asking for published records only" {

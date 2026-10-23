@@ -60,8 +60,10 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         try check.files_in(init, request.dir),
     );
 
-    if (read.problems.len > 0) {
-        check.reported(request.dir, read.problems);
+    const problems = try check.problems_of(init.arena.allocator(), read);
+
+    if (problems.len > 0) {
+        check.reported(request.dir, problems);
         return 1;
     }
 
