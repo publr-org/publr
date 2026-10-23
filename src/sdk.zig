@@ -11,6 +11,7 @@ const plugin_operations = @import("sdk/plugin/operation_define.zig");
 const builtin = @import("builtin");
 const contract = @import("model/contract.zig");
 const AnyRef = @import("sdk/plugin/record_define.zig").AnyRef;
+const HostApi = @import("sdk/plugin/context.zig").HostApi;
 pub const trail = @import("sdk/trail.zig");
 pub const db = @import("lib/db.zig");
 
@@ -1066,21 +1067,21 @@ pub fn SDK(comptime registry: Registry) type {
         ) Error!void {
             std.debug.assert(ctx.parent != null);
 
+            // A reference to any record is read as a record holding one reads it back.
+            var host: HostApi = .{
+                .inner = ctx,
+            };
+
+            try AnyRef.read_all(&host, input);
+
             inline for (std.meta.fields(Operation.In)) |field| {
                 const Field = field.type;
 
-                if (comptime Field == AnyRef) {
-                    @field(input, field.name) = try load_any(ctx, @field(input, field.name).id);
-                } else if (comptime is_reference_list(Field) and std.meta.Elem(Field) == AnyRef) {
-                    const list = @field(input, field.name);
-                    const loaded = ctx.arena.alloc(AnyRef, list.len) catch return error.OutOfMemory;
+                if (comptime Field == AnyRef or Field == []const AnyRef) {
+                    continue;
+                }
 
-                    for (list, loaded) |item, *target| {
-                        target.* = try load_any(ctx, item.id);
-                    }
-
-                    @field(input, field.name) = loaded;
-                } else if (comptime is_reference(Field)) {
+                if (comptime is_reference(Field)) {
                     const id = @field(input, field.name).id;
 
                     @field(input, field.name).value = try load_reference(ctx, Field, id);
@@ -1097,49 +1098,6 @@ pub fn SDK(comptime registry: Registry) type {
                     @field(input, field.name) = loaded;
                 }
             }
-        }
-
-        /// A reference to any record, read as the caller may: its type always, its fields when
-        /// the caller may read it, `missing` when it is gone.
-        fn load_any(ctx: *Ctx, id: []const u8) Error!AnyRef {
-            const Reach = comptime find_name(registry, "record.reach") orelse
-                @compileError("an operation taking a reference needs record.reach");
-            const Get = comptime find_name(registry, "record.get") orelse
-                @compileError("an operation taking a reference needs record.get");
-
-            if (id.len == 0 or id.len > 128) {
-                return error.Invalid;
-            }
-
-            const reach = try dispatch(ctx, Reach, .{
-                .id = id,
-            });
-            const reason = reach.reason orelse {
-                // Not published yet, for a caller who reads live records only: its type alone.
-                const got = dispatch(ctx, Get, .{
-                    .id = id,
-                }) catch |err| switch (err) {
-                    error.NotFound => return .{
-                        .id = id,
-                        .type = reach.type,
-                    },
-                    else => return err,
-                };
-
-                return .{
-                    .id = id,
-                    .type = got.record.type,
-                    .value = json_module.parse(std.json.Value, ctx.arena, got.document, .{
-                        .allocate = .alloc_always,
-                    }) catch return error.Invalid,
-                };
-            };
-
-            return .{
-                .id = id,
-                .type = reach.type,
-                .missing = reason == .deleted,
-            };
         }
 
         fn load_reference(
