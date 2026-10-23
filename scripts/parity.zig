@@ -70,7 +70,7 @@ pub fn main(init: std.process.Init) !u8 {
 /// `publr.operation.define`, which the fixture compiles in none of; and the seeded project's
 /// plugins queue no jobs for `job list` to show nor fail one for `job run_again`, repeat
 /// none for `job schedule` to move, and declare no webhooks for `webhook list` and
-/// `webhook run_again`; `project put` answers only a plugin's call; asking the marketplace
+/// `webhook run_again`; `project put` and `mod changed` answer only a plugin's call; asking the marketplace
 /// answers a new id each time, and `job answer` reads only an id someone was given; a
 /// plugin's field group values read and written are the sampler's own group, which the
 /// seeded project has none of.
@@ -115,6 +115,7 @@ const skips = [_][]const u8{
     "job.answer",
     "custom_fields.values",
     "custom_fields.save_values",
+    "mod.changed",
 };
 
 fn skipped(comptime name: []const u8) bool {
