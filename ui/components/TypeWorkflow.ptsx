@@ -61,7 +61,7 @@ export const state = Publr.reactive({
   new_label: "",
   new_from: "",
   new_to: "",
-  new_who: "signed_in",
+  new_who: anyone,
 });
 
 /** The site's roles, as `role.list` answers them: who may be given a transition. */
@@ -288,7 +288,7 @@ export function TypeWorkflow({ type }: TypeWorkflowProps) {
                 </TableCell>
                 <TableCell>
                   <div class="flex flex-col gap-1">
-                    <NativeSelect size="sm" label={Publr.t("Who may")} onChange={on_who} disabled={transition.off}>
+                    <NativeSelect size="sm" label={Publr.t("Who may")} onChange={on_who} disabled={transition.off} classes="min-w-52">
                       {transition.choices.map((choice) => (
                         <option value={choice.value} selected={choice.selected}>{choice.label}</option>
                       ))}
