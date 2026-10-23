@@ -2,7 +2,7 @@ const std = @import("std");
 const db = @import("../lib/db.zig");
 const Caller = @import("caller.zig").Caller;
 const AuthState = @import("../lib/auth.zig").State;
-const Emitted = @import("middleware.zig").Event.Emitted;
+const Emitted = @import("hooks.zig").Event.Emitted;
 const Scratch = @import("scratch.zig").Scratch;
 const DefinitionCache = @import("definition_cache.zig").DefinitionCache;
 

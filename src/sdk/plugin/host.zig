@@ -198,12 +198,13 @@ pub const Host = struct {
     }
 
     /// What no hook says: a hook on every operation before it runs (`.pre`), or on every
-    /// event inside the write (`.on` naming no `event`).
+    /// operation's end, nested ones too, in the process that ran it (`.on` naming no
+    /// `event`: a deployment closes once the write committed).
     pub fn middleware(host: *Host, comptime Middleware: type) Error!void {
         const every_operation = Middleware.stage == .pre;
-        const every_event = Middleware.stage == .on and !@hasDecl(Middleware, "event");
+        const every_end = Middleware.stage == .on and !@hasDecl(Middleware, "event");
 
-        if (!every_operation and !every_event) {
+        if (!every_operation and !every_end) {
             @compileError("`" ++ @typeName(Middleware) ++ "` belongs in `.hooks`: " ++
                 "`publr.before`, `publr.after`, `publr.on` or `publr.modify`");
         }

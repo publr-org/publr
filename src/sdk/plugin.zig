@@ -103,7 +103,6 @@ pub const Variant = variants.Variant;
 pub const SettingsPage = admin_slots.SettingsPage;
 pub const RowAction = admin_slots.RowAction;
 pub const Page = admin_slots.Page;
-pub const Item = admin_slots.Item;
 pub const Panel = admin_slots.Panel;
 
 /// A panel and the plugin it is of.
@@ -112,16 +111,10 @@ pub const OwnedPanel = struct {
     panel: Panel,
 };
 
-/// An entry and the plugin it is of.
 /// A settings page and the plugin whose it is: pinned to the rail as that pair.
 pub const OwnedSettingsPage = struct {
     plugin: []const u8,
     page: SettingsPage,
-};
-
-pub const OwnedItem = struct {
-    plugin: []const u8,
-    item: Item,
 };
 
 /// A page and the plugin it is of.
@@ -165,7 +158,7 @@ pub fn validate(comptime Plugin: type) void {
         }
 
         for (plugin_define.get(Plugin, "middleware")) |Middleware| {
-            sdk.middleware.validate(Middleware);
+            sdk.hooks.validate(Middleware);
         }
 
         const internal_record = @import("../model/internal_record.zig");
@@ -448,29 +441,6 @@ fn declared_in(comptime list: []const []const u8, comptime name: []const u8) ?[]
     }
 }
 
-/// A plugin's entries in `list`, each checked to name its own operations.
-fn owned_items(comptime Plugin: type) []const OwnedItem {
-    comptime {
-        var owned: []const OwnedItem = &.{};
-
-        for (admin_slots.items_of(Plugin)) |item| {
-            const counted = if (item.count) |Count| owns_operation(Plugin, Count) else true;
-
-            if (!owns_operation(Plugin, item.operation) or !counted) {
-                @compileError("plugin " ++ Plugin.manifest.name ++ ": entry " ++ item.label ++
-                    " names an operation not its own");
-            }
-
-            owned = owned ++ &[_]OwnedItem{.{
-                .plugin = Plugin.manifest.name,
-                .item = item,
-            }};
-        }
-
-        return owned;
-    }
-}
-
 /// Whether `Operation` is one the plugin declares.
 pub fn owns_operation(comptime Plugin: type, comptime Operation: type) bool {
     comptime std.debug.assert(Plugin.manifest.name.len > 0);
@@ -602,7 +572,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var policies: []const sdk.Policy = &.{};
         var middleware: []const type = &.{};
         var operation_owners: []const []const u8 = &.{};
-        var middleware_owners: []const []const u8 = &.{};
+        var hook_owners: []const []const u8 = &.{};
         var jobs: []const type = &.{};
         var job_owners: []const []const u8 = &.{};
         var webhooks: []const type = &.{};
@@ -622,7 +592,6 @@ pub fn Merged(comptime plugins: anytype) type {
         var settings_pages: []const OwnedSettingsPage = &.{};
         var row_actions: []const RowAction = &.{};
         var pages: []const OwnedPage = &.{};
-        var top_bar: []const OwnedItem = &.{};
         var menu: []const @import("../model/sandboxed_plugin.zig").MenuEntry = &.{};
         var icons: []const @import("../model/sandboxed_plugin.zig").PluginIcon = &.{};
         var panels: []const OwnedPanel = &.{};
@@ -656,7 +625,7 @@ pub fn Merged(comptime plugins: anytype) type {
             const hooks = remote_contract.kept_hooks(Plugin, listed_hooks, remotes_off);
 
             middleware = middleware ++ hooks;
-            middleware_owners = middleware_owners ++ owners(Plugin, hooks.len);
+            hook_owners = hook_owners ++ owners(Plugin, hooks.len);
             // A webhook's delivery runs as one of its plugin's jobs.
             jobs = jobs ++ jobs_of(Plugin) ++ webhooks_of(Plugin);
             job_owners = job_owners ++ owners(Plugin, jobs_of(Plugin).len) ++
@@ -697,8 +666,10 @@ pub fn Merged(comptime plugins: anytype) type {
                         (if (form.preview) |Preview| &[_]type{Preview} else &[_]type{})
                 else
                     &.{page.operation.?};
+                const shown: admin_slots.TopBar = page.top_bar orelse .{};
+                const counted: []const type = if (shown.count) |Count| &.{Count} else &.{};
 
-                for (used) |Operation| {
+                for (used ++ counted) |Operation| {
                     if (!owns_operation(Plugin, Operation)) {
                         @compileError("plugin " ++ Plugin.manifest.name ++ ": page " ++
                             page.path ++ " uses " ++ Operation.name ++ ", not one of its own");
@@ -711,8 +682,6 @@ pub fn Merged(comptime plugins: anytype) type {
                     .docs = @import("plugin/manifest.zig").docs_of(Plugin),
                 }};
             }
-
-            top_bar = top_bar ++ owned_items(Plugin);
 
             for (admin_slots.panels_of(Plugin)) |panel| {
                 if (!owns_operation(Plugin, panel.operation)) {
@@ -885,9 +854,9 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_operations = operations;
             pub const merged_namespaces = namespaces;
             pub const merged_policies = policies;
-            pub const merged_middleware = middleware;
+            pub const merged_hooks = middleware;
             pub const merged_operation_owners = operation_owners;
-            pub const merged_middleware_owners = middleware_owners;
+            pub const merged_hook_owners = hook_owners;
             /// The remotes another compiled-in plugin switches off, and why.
             pub const merged_remotes_off = remotes_off;
             pub const merged_jobs = jobs;
@@ -914,7 +883,6 @@ pub fn Merged(comptime plugins: anytype) type {
             /// Every plugin's own pages, in name order.
             pub const merged_pages = pages;
             /// Every plugin's top bar entries, in name order.
-            pub const merged_top_bar = top_bar;
             /// Every plugin's menu items, in name order.
             pub const merged_menu = menu;
             /// Every plugin's own icons, in name order.
@@ -1135,7 +1103,7 @@ pub const testing = struct {
         };
 
         pub const Counted = struct {
-            pub const stage: sdk.middleware.Stage = .after;
+            pub const stage: sdk.hooks.Stage = .after;
             pub const operation = "hello.record";
 
             pub fn run(ctx: *PluginCtx, in: *Record.In, out: *const Record.Out) sdk.Error!void {
@@ -1168,7 +1136,7 @@ test "the test plugin passes the contract and merges into a registry" {
         .operations = Bundle.merged_operations,
         .namespaces = Bundle.merged_namespaces,
         .policies = Bundle.merged_policies,
-        .middleware = Bundle.merged_middleware,
+        .hooks = Bundle.merged_hooks,
         .schemas = Bundle.merged_schemas,
     });
 
@@ -1337,9 +1305,9 @@ test "a plugin's event: after hooks in the write, on hooks from the queue, a ref
     const Bundle = Merged(.{Teller});
     const TestSDK = sdk.SDK(.{
         .operations = Bundle.merged_operations,
-        .middleware = Bundle.merged_middleware,
+        .hooks = Bundle.merged_hooks,
         .operation_owners = Bundle.merged_operation_owners,
-        .middleware_owners = Bundle.merged_middleware_owners,
+        .hook_owners = Bundle.merged_hook_owners,
     });
 
     var harness: sdk.testing.Harness = undefined;

@@ -82,9 +82,9 @@ test "errors raise publr.errors.Failed for a compiled-in tracker; refusals raise
     }))});
     const TestSDK = sdk.SDK(.{
         .operations = Bundle.merged_operations,
-        .middleware = Bundle.merged_middleware,
+        .hooks = Bundle.merged_hooks,
         .operation_owners = Bundle.merged_operation_owners,
-        .middleware_owners = Bundle.merged_middleware_owners,
+        .hook_owners = Bundle.merged_hook_owners,
         .log = activity.log,
     });
 

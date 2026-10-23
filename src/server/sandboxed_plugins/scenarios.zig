@@ -221,12 +221,20 @@ test "an installed plugin's hook on every transition of its type refuses one in 
 
     try std.testing.expectError(error.Denied, kept);
 
-    const let_go = try registry.SDK.dispatch(&people, records.Transition, .{
-        .id = listed.records[1].id,
+    // Many at once: the hook hears each record as a move of its own, refusing the one.
+    const both = try registry.SDK.dispatch(&people, records.TransitionMany, .{
         .transition = "trash",
+        .ids = &.{ listed.records[0].id, listed.records[1].id },
     });
 
-    try std.testing.expectEqualStrings("trashed", let_go.status);
+    try std.testing.expectEqual(@as(u32, 1), both.moved);
+    try std.testing.expectEqualStrings(listed.records[0].id, both.failed[0].id);
+
+    const let_go = try registry.SDK.dispatch(&people, records.Get, .{
+        .id = listed.records[1].id,
+    });
+
+    try std.testing.expectEqualStrings("trashed", let_go.record.status);
 
     const still = try registry.SDK.dispatch(&people, records.Get, .{
         .id = listed.records[0].id,
@@ -827,8 +835,11 @@ test "only administrators manage plugins; only the local operator adds from a pa
 test "every core operation is in the catalog, granted to all, own-records, or never" {
     const permission = model.permission;
     const admin_only = [_][]const u8{ "plugin", "custom_fields" };
+    const operations = registry.SDK.operations;
 
-    inline for (registry.SDK.operations) |Operation| {
+    @setEvalBranchQuota(1000 + operations.len * sdk.operation.split_branches);
+
+    inline for (operations) |Operation| {
         const name = Operation.name;
         const namespace = comptime sdk.operation.namespace(name);
         var listed = permission.contains(&permission.always, name) or
@@ -843,7 +854,7 @@ test "every core operation is in the catalog, granted to all, own-records, or ne
             listed = listed or std.mem.eql(u8, namespace, reserved);
         }
 
-        const plugin_owned = comptime !is_core(namespace);
+        const plugin_owned = !is_core(namespace);
 
         if (!listed and !plugin_owned) {
             std.debug.print("{s} is in no permission table\n", .{name});

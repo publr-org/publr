@@ -32,7 +32,7 @@ fn Checks(comptime Definition: type) type {
 
     return struct {
         pub const OnCreate = struct {
-            pub const stage: sdk.middleware.Stage = .after;
+            pub const stage: sdk.hooks.Stage = .after;
             pub const operation = Operations.Create.name;
             pub const reason = reason_words;
 
@@ -52,7 +52,7 @@ fn Checks(comptime Definition: type) type {
         };
 
         pub const OnSave = struct {
-            pub const stage: sdk.middleware.Stage = .after;
+            pub const stage: sdk.hooks.Stage = .after;
             pub const operation = Operations.Save.name;
             pub const reason = reason_words;
 

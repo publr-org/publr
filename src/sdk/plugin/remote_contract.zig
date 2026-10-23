@@ -382,9 +382,9 @@ test "compiled-in plugins that don't fit: it builds, the remote is off, its hook
     const Bundle = @import("../plugin.zig").Merged(.{ Keeper, Watcher });
     const TestSDK = sdk.SDK(.{
         .operations = Bundle.merged_operations,
-        .middleware = Bundle.merged_middleware,
+        .hooks = Bundle.merged_hooks,
         .operation_owners = Bundle.merged_operation_owners,
-        .middleware_owners = Bundle.merged_middleware_owners,
+        .hook_owners = Bundle.merged_hook_owners,
     });
     const off = Bundle.merged_remotes_off;
 
@@ -392,7 +392,7 @@ test "compiled-in plugins that don't fit: it builds, the remote is off, its hook
     try std.testing.expectEqualStrings("watcher", off[0].plugin);
     try std.testing.expectEqualStrings("keeper.count", off[0].name);
     try std.testing.expect(std.mem.startsWith(u8, off[0].why, "keeper 0.2.0: keeper.count"));
-    try std.testing.expectEqual(@as(usize, 0), Bundle.merged_middleware.len);
+    try std.testing.expectEqual(@as(usize, 0), Bundle.merged_hooks.len);
     try std.testing.expect(is_off(off, "watcher", "keeper.count"));
     try std.testing.expect(!is_off(off, "keeper", "keeper.count"));
 

@@ -1,10 +1,7 @@
-//! An event's way to its hooks. An intrinsic listener (`pub const intrinsic = true`, core's
-//! own `.on` middleware) is part of the write: it hears the event inside the write's
-//! transaction, so what it keeps commits or rolls back with the write, and a write over many
-//! records hands it all of them at once when it has a set form (`run_many`). Every `on` hook,
-//! compiled in or installed, hears it from the queue: a job per hook (`job_queue`), queued in
-//! the write's transaction and run once the write has committed, by the worker beside the
-//! server, retried as any job.
+//! An event's way to its `on` hooks. Every `on` hook, compiled in or installed, hears it
+//! from the queue: a job per hook (`job_queue`), queued in the write's transaction and run
+//! once the write has committed, by the worker beside the server, retried as any job. What
+//! must happen inside the write is an `after` hook on the event or on the operation.
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const job_queue = @import("../store/job_queue.zig");
@@ -16,93 +13,9 @@ const Emitted = Event.Emitted;
 
 pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
     return struct {
-        /// Whether a compiled-in listener is part of the write that emits an event.
-        pub fn intrinsic(comptime Middleware: type) bool {
-            comptime std.debug.assert(Middleware.stage == .on);
-
-            return @hasDecl(Middleware, "intrinsic") and Middleware.intrinsic;
-        }
-
-        /// One event: the intrinsic listeners now, the `on` hooks from the queue.
-        pub fn hand(ctx: *Ctx, emitted: Emitted) void {
-            std.debug.assert(emitted.name.len > 0);
-            std.debug.assert(emitted.operation_id != 0);
-
-            const event: Event = .{
-                .emitted = emitted,
-            };
-
-            inline for (registry.middleware) |Middleware| {
-                const listens = comptime Middleware.stage == .on and intrinsic(Middleware);
-
-                if (listens and sdk.hears(Middleware, event)) {
-                    _ = SDK.run_listener(ctx, Middleware, event);
-                }
-            }
-
-            if (heard_outside(ctx, emitted.name)) {
-                queue(ctx, emitted);
-            }
-        }
-
-        /// Many events of one write: an intrinsic listener with a set form hears them in one
-        /// call, the others one by one; each is queued for the `on` hooks.
-        pub fn hand_many(ctx: *Ctx, many: []const Emitted) sdk.Error!void {
-            std.debug.assert(ctx.db.transaction_depth >= 1);
-            std.debug.assert(many.len > 0);
-
-            for (many) |emitted| {
-                SDK.follow_event(ctx, emitted);
-            }
-
-            inline for (registry.middleware) |Middleware| {
-                const listens = comptime Middleware.stage == .on and intrinsic(Middleware);
-
-                if (listens) {
-                    try hand_to(ctx, Middleware, many);
-                }
-            }
-
-            for (many) |emitted| {
-                if (heard_outside(ctx, emitted.name)) {
-                    queue(ctx, emitted);
-                }
-            }
-        }
-
-        fn hand_to(ctx: *Ctx, comptime Middleware: type, many: []const Emitted) sdk.Error!void {
-            comptime std.debug.assert(intrinsic(Middleware));
-            std.debug.assert(many.len > 0);
-
-            if (comptime !@hasDecl(Middleware, "run_many")) {
-                for (many) |emitted| {
-                    const event: Event = .{
-                        .emitted = emitted,
-                    };
-
-                    if (sdk.hears(Middleware, event)) {
-                        _ = SDK.run_listener(ctx, Middleware, event);
-                    }
-                }
-
-                return;
-            }
-
-            var heard: std.ArrayList(Emitted) = .empty;
-
-            for (many) |emitted| {
-                const event: Event = .{
-                    .emitted = emitted,
-                };
-
-                if (sdk.hears(Middleware, event)) {
-                    heard.append(ctx.arena, emitted) catch return error.OutOfMemory;
-                }
-            }
-
-            if (heard.items.len > 0) {
-                Middleware.run_many(ctx, heard.items);
-            }
+        /// Whether a compiled-in hook is an `on` hook on an event, heard from the queue.
+        pub fn queued(comptime Middleware: type) bool {
+            return Middleware.stage == .on and @hasDecl(Middleware, "event");
         }
 
         /// Kept for the `on` hooks, in the write's transaction: one job per hook that hears
@@ -126,8 +39,8 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
                 .emitted = emitted,
             };
 
-            inline for (registry.middleware, 0..) |Middleware, index| {
-                const listens = comptime Middleware.stage == .on and !intrinsic(Middleware);
+            inline for (registry.hooks, 0..) |Middleware, index| {
+                const listens = comptime queued(Middleware);
 
                 if (listens and sdk.hears(Middleware, event)) {
                     const ordinal = ordinal_of(index, event);
@@ -181,10 +94,10 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
         /// Whether an `on` hook, compiled in or installed, names the event.
         pub fn heard_outside(ctx: *const Ctx, name: []const u8) bool {
             std.debug.assert(name.len > 0);
-            std.debug.assert(registry.middleware.len <= sdk.middleware.middleware_max);
+            std.debug.assert(registry.hooks.len <= sdk.hooks.hooks_max);
 
-            inline for (registry.middleware) |Middleware| {
-                const listens = comptime Middleware.stage == .on and !intrinsic(Middleware);
+            inline for (registry.hooks) |Middleware| {
+                const listens = comptime queued(Middleware);
 
                 if (listens and std.mem.eql(u8, Middleware.event, name)) {
                     return true;
@@ -237,8 +150,8 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
                 .emitted = emitted,
             };
 
-            inline for (registry.middleware, 0..) |Middleware, index| {
-                const listens = comptime Middleware.stage == .on and !intrinsic(Middleware);
+            inline for (registry.hooks, 0..) |Middleware, index| {
+                const listens = comptime queued(Middleware);
                 const owner = comptime owner_at(index);
 
                 if (listens and std.mem.eql(u8, owner, plugin) and sdk.hears(Middleware, event)) {
@@ -315,9 +228,9 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
         /// The plugin a compiled-in hook belongs to; `core` for core's own.
         fn owner_at(comptime index: u32) []const u8 {
             comptime {
-                const owners = registry.middleware_owners;
+                const owners = registry.hook_owners;
 
-                std.debug.assert(index < registry.middleware.len);
+                std.debug.assert(index < registry.hooks.len);
 
                 if (owners.len == 0 or owners[index].len == 0) {
                     return "core";
@@ -330,13 +243,13 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
         /// Which of its plugin's hooks on the event the one at `index` is: how many of the
         /// same plugin's come before it.
         fn ordinal_of(comptime index: u32, event: Event) u32 {
-            comptime std.debug.assert(index < registry.middleware.len);
+            comptime std.debug.assert(index < registry.hooks.len);
             std.debug.assert(event == .emitted);
 
             var ordinal: u32 = 0;
 
-            inline for (registry.middleware[0..index], 0..) |Earlier, earlier_index| {
-                const listens = comptime Earlier.stage == .on and !intrinsic(Earlier);
+            inline for (registry.hooks[0..index], 0..) |Earlier, earlier_index| {
+                const listens = comptime queued(Earlier);
                 const same = comptime std.mem.eql(u8, owner_at(earlier_index), owner_at(index));
 
                 if (listens and same and sdk.hears(Earlier, event)) {

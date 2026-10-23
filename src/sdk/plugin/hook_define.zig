@@ -7,7 +7,7 @@
 const queue = @import("queue.zig");
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const middleware = @import("../middleware.zig");
+const hooks = @import("../hooks.zig");
 const PluginCtx = @import("context.zig").PluginCtx;
 const record_typed = @import("../../operations/record/typed.zig");
 const record_define = @import("record_define.zig");
@@ -15,7 +15,7 @@ const modify_define = @import("modify_define.zig");
 const mods = @import("../mods.zig");
 const error_events = @import("../error_events.zig");
 
-const Stage = middleware.Stage;
+const Stage = hooks.Stage;
 
 /// `publr.before(Operation, run)`: changes or refuses the operation's input, inside its write.
 /// Operations only: an event already happened (a sign-in or a transition, which may still be

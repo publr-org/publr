@@ -300,12 +300,12 @@ pub const registry: sdk.Registry = .{
     .operations = &core_operations ++ native_plugins.merged_operations,
     .namespaces = &core_namespaces ++ native_plugins.merged_namespaces,
     .policies = native_plugins.merged_policies,
-    .middleware = &project.middleware ++ messaging.middleware ++
-        native_plugins.merged_middleware,
+    .hooks = &project.hooks ++ messaging.hooks ++
+        native_plugins.merged_hooks,
     .operation_owners = &core_owners(core_operations.len) ++
         native_plugins.merged_operation_owners,
-    .middleware_owners = &core_owners(project.middleware.len + messaging.middleware.len) ++
-        native_plugins.merged_middleware_owners,
+    .hook_owners = &core_owners(project.hooks.len + messaging.hooks.len) ++
+        native_plugins.merged_hook_owners,
     .jobs = native_plugins.merged_jobs,
     .job_owners = native_plugins.merged_job_owners,
     .type_owners = &type_owners(native_plugins.merged_content_types),
@@ -452,7 +452,6 @@ pub const plugin_routes = native_plugins.merged_routes;
 pub const settings_pages = native_plugins.merged_settings_pages;
 pub const row_actions = native_plugins.merged_row_actions;
 pub const pages = native_plugins.merged_pages;
-pub const top_bar = native_plugins.merged_top_bar;
 pub const menu = native_plugins.merged_menu;
 pub const icons = native_plugins.merged_icons;
 pub const panels = native_plugins.merged_panels;

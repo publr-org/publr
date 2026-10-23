@@ -31,7 +31,7 @@ const lines_table =
 /// The writes that change the structure, each kept as `operation key` after it ran.
 const changed_units = sdk.changed_units;
 const structure = [_]changed_units.Kind{ .content_type, .taxonomy, .field_group, .plugin };
-const hooks = changed_units.hooks(&structure, changed) ++ [_]type{Loaded};
+const hooks = changed_units.hooks(&structure, changed) ++ [_]type{publr.on(sdk.AppsLoaded, loaded)};
 
 fn changed(ctx: *sdk.Ctx, operation: []const u8, unit: changed_units.Unit) void {
     std.debug.assert(operation.len > 0);
@@ -42,21 +42,14 @@ fn changed(ctx: *sdk.Ctx, operation: []const u8, unit: changed_units.Unit) void 
     };
 }
 
-/// The apps loaded from the folder: the server's own event, not a write.
-pub const Loaded = struct {
-    pub const stage: sdk.middleware.Stage = .on;
-    pub const event = sdk.AppsLoaded.full_name;
-    pub const Payload = sdk.AppsLoaded.Payload;
-    pub const reason = "Keeps the apps loaded";
+/// Keeps the apps loaded from the folder: the server's own event, not a write.
+fn loaded(ctx: *publr.QueueCtx, apps: sdk.AppsLoaded.Payload) publr.Error!void {
+    const name = sdk.AppsLoaded.full_name;
 
-    pub fn run(ctx: *sdk.Ctx, loaded: Payload) void {
-        std.debug.assert(ctx.now_ms >= 0);
-
-        keep(ctx, event, loaded.app) catch |err| {
-            std.log.warn("recorder: {s} not kept: {t}", .{ event, err });
-        };
-    }
-};
+    keep(ctx.base.inner, name, apps.app) catch |err| {
+        std.log.warn("recorder: {s} not kept: {t}", .{ name, err });
+    };
+}
 
 fn keep(ctx: *sdk.Ctx, name: []const u8, subject: []const u8) !void {
     std.debug.assert(name.len > 0);

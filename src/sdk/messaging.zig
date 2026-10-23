@@ -110,7 +110,7 @@ pub const Push = event(.{
 
 /// Core's `on` hooks on the message events: each message handed to its provider from the
 /// queue.
-pub const middleware = [_]type{
+pub const hooks = [_]type{
     Deliver(Email, "email"),
     Deliver(Sms, "sms"),
     Deliver(Push, "push"),
@@ -118,7 +118,7 @@ pub const middleware = [_]type{
 
 fn Deliver(comptime Event: type, comptime channel: []const u8) type {
     return struct {
-        pub const stage: sdk.middleware.Stage = .on;
+        pub const stage: sdk.hooks.Stage = .on;
         pub const event = Event.full_name;
         pub const Payload = Event.Payload;
 

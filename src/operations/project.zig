@@ -184,8 +184,7 @@ pub const operations = [_]type{
     @import("user/language.zig").SetSiteLanguage,
     Put,
 };
-pub const middleware = [_]type{changes.RecordChanged} ++ changes.hooks ++
-    @import("activity.zig").middleware;
+pub const hooks = changes.hooks ++ @import("activity.zig").hooks;
 
 const TestSDK = sdk.SDK(.{
     .operations = &operations,

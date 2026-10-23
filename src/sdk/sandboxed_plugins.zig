@@ -5,7 +5,7 @@ const std = @import("std");
 const Extended = @import("extended.zig").Extended;
 const Ctx = @import("context.zig").Ctx;
 const operation = @import("operation.zig");
-const middleware = @import("middleware.zig");
+const hooks = @import("hooks.zig");
 
 pub const Error = operation.Error;
 const Role = @import("../model/role.zig").Role;
@@ -119,7 +119,7 @@ pub const SandboxedPlugins = struct {
             output: []const u8,
             extended: ?Extended,
         ) Error!void,
-        event: *const fn (context: *anyopaque, ctx: *Ctx, event: middleware.Event) void,
+        event: *const fn (context: *anyopaque, ctx: *Ctx, event: hooks.Event) void,
         /// Runs operation `name` as the installed plugin `plugin`, on behalf of whoever calls:
         /// each check gets the narrower of the plugin's grants and their roles. What a plugin's
         /// frame asks of the admin beyond its own operations (a GROQ read).
@@ -404,7 +404,7 @@ pub const SandboxedPlugins = struct {
         return sandboxed.vtable.on(sandboxed.context, ctx, hook, name, subject);
     }
 
-    pub fn event(sandboxed: *const SandboxedPlugins, ctx: *Ctx, happened: middleware.Event) void {
+    pub fn event(sandboxed: *const SandboxedPlugins, ctx: *Ctx, happened: hooks.Event) void {
         std.debug.assert(ctx.next_operation_id > 1);
         std.debug.assert(ctx.now_ms >= 0);
 

@@ -1,8 +1,9 @@
 //! Many documents moved to one status at once: every one a list's conditions keep. They are
 //! read a part at a time, each checked as a move of its own is (a registered move, a status
-//! the type takes, the grant), the caller's intrinsic hooks run over the part, and the part
-//! is moved by one statement and handed to the event hooks together. A document that may
-//! not move is reported and the rest go on. Pending changes going live are applied one by
+//! the type takes, the grant), the caller's hooks and the hooks on each one's transition
+//! events run over the part as a move of its own runs them, and the part is moved by one
+//! statement. A document that may not move, or that a hook refuses, is reported and the
+//! rest go on. Pending changes going live are applied one by
 //! one: each keeps its old live copy as a revision.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
@@ -15,7 +16,8 @@ const Grant = sdk.Grant;
 const Error = sdk.Error;
 const Match = store.documents.Match;
 const Record = store.documents.Record;
-const Refusals = @import("../../sdk/bulk.zig").Refusals;
+const bulk = @import("../../sdk/bulk.zig");
+const Refusals = bulk.Refusals;
 
 /// Documents read and moved at a time: what one part's working memory holds.
 pub const part_max: u32 = 100;
@@ -36,7 +38,7 @@ pub const Outcome = struct {
     failed: []const Failed = &.{},
 };
 
-/// What the caller's intrinsic hooks make of each document about to move, and of each
+/// What the caller's hooks make of each document about to move, and of each
 /// moved: a refusal by position, for the ones not refused yet.
 pub const Hooks = struct {
     before: *const Hook,
@@ -183,7 +185,10 @@ pub fn Of(comptime Domain: type) type {
                 try given.before(ctx, try ids_of(ctx.arena, rows), part.name, part.to, refused);
             }
 
-            try write_part(ctx, rows, part, refused);
+            const heard = try heard_of(ctx, rows, part.to, refused);
+
+            try hooks_on_each(ctx, .before, heard, refused);
+            try write_part(ctx, rows, heard, part, refused);
             try note_failures(kept, rows, refused, outcome, failed);
 
             return .{
@@ -285,10 +290,82 @@ pub fn Of(comptime Domain: type) type {
             return null;
         }
 
+        /// Each row's transition events (`post.transitioned`, and a plugin type's named one,
+        /// `shop.order_ship`), as a move of its own raises them; null for one refused.
+        fn heard_of(
+            ctx: *Ctx,
+            rows: []const Match,
+            to: []const u8,
+            refused: Refusals,
+        ) Error![]const ?lifecycle.Heard {
+            std.debug.assert(rows.len == refused.len);
+            std.debug.assert(to.len > 0);
+
+            const heard = ctx.arena.alloc(?lifecycle.Heard, rows.len) catch {
+                return error.OutOfMemory;
+            };
+
+            for (rows, refused, heard) |row, reason, *each| {
+                each.* = null;
+
+                if (reason == null) {
+                    // A row not refused has its type: `refusal_of` read it.
+                    const type_row = try definitions.find(ctx, row.type_id) orelse unreachable;
+
+                    const def = type_row.def;
+
+                    each.* = try lifecycle.transition_heard(ctx, def, row.id, row.status, to);
+                }
+            }
+
+            return heard;
+        }
+
+        /// The `before` or `after` hooks on each record's transition events, as a move of
+        /// its own runs them: one a hook refuses is refused, the rest go on.
+        fn hooks_on_each(
+            ctx: *Ctx,
+            comptime stage: sdk.hooks.Stage,
+            heard: []const ?lifecycle.Heard,
+            refused: Refusals,
+        ) Error!void {
+            std.debug.assert(heard.len == refused.len);
+
+            for (heard, refused) |found, *reason| {
+                const one = found orelse continue;
+
+                if (reason.* == null) {
+                    hooks_on_one(ctx, stage, one) catch |err| {
+                        reason.* = try bulk.reason_of(ctx, err);
+                    };
+                }
+            }
+        }
+
+        fn hooks_on_one(
+            ctx: *Ctx,
+            comptime stage: sdk.hooks.Stage,
+            heard: lifecycle.Heard,
+        ) Error!void {
+            std.debug.assert(heard.name.len > 0);
+
+            try registry.SDK.hooks_on(ctx, stage, heard.name, heard.payload, true);
+
+            if (heard.named.len > 0) {
+                try registry.SDK.hooks_on(ctx, stage, heard.named, heard.payload, true);
+            }
+        }
+
         /// The rows not refused moved by one statement; pending changes going live applied
-        /// first, each on its own; the moves' events handed on together; the `after` hooks
-        /// over the moved, and a part whose hook refuses one moved again without it.
-        fn write_part(ctx: *Ctx, rows: []const Match, part: Part, refused: Refusals) Error!void {
+        /// first, each on its own; the `after` hooks over the moved, and a part whose hook
+        /// refuses one moved again without it; then each move's events.
+        fn write_part(
+            ctx: *Ctx,
+            rows: []const Match,
+            heard: []const ?lifecycle.Heard,
+            part: Part,
+            refused: Refusals,
+        ) Error!void {
             std.debug.assert(rows.len == refused.len);
             std.debug.assert(rows.len > 0);
 
@@ -302,12 +379,14 @@ pub fn Of(comptime Domain: type) type {
                 const before = count_null(refused);
 
                 try write_once(ctx, rows, to, refused);
+                try hooks_on_each(ctx, .after, heard, refused);
 
                 if (part.hooks) |given| {
                     try given.after(ctx, try ids_of(ctx.arena, rows), part.name, to, refused);
                 }
 
                 if (count_null(refused) == before) {
+                    emit_each(ctx, heard, refused);
                     try savepoint.commit();
                     return;
                 }
@@ -329,7 +408,6 @@ pub fn Of(comptime Domain: type) type {
 
             var moving: std.ArrayList([]const u8) = .empty;
             var applied: std.ArrayList([]const u8) = .empty;
-            var events: std.ArrayList(sdk.Event.Emitted) = .empty;
 
             for (rows, refused) |row, reason| {
                 if (reason != null) {
@@ -348,7 +426,7 @@ pub fn Of(comptime Domain: type) type {
                     }
                 }
 
-                try add_event(ctx, &events, type_row.def, row, to);
+                lifecycle.mark_live_change(ctx, flow, row.status, to);
             }
 
             if (moving.items.len == 0) {
@@ -365,39 +443,23 @@ pub fn Of(comptime Domain: type) type {
             );
 
             std.debug.assert(moved == moving.items.len);
-
-            try registry.SDK.events.hand_many(ctx, events.items);
         }
 
-        /// The record's own transition events (`post.transitioned`, and a plugin type's
-        /// named one, `shop.order_ship`), as a move of its own raises them: each record's
-        /// facts in a write over many.
-        fn add_event(
-            ctx: *Ctx,
-            events: *std.ArrayList(sdk.Event.Emitted),
-            def: store.definitions.Def,
-            row: Match,
-            to: []const u8,
-        ) Error!void {
-            std.debug.assert(row.id.len > 0);
+        /// Each moved record's transition events, for the `on` hooks.
+        fn emit_each(ctx: *Ctx, heard: []const ?lifecycle.Heard, refused: Refusals) void {
+            std.debug.assert(heard.len == refused.len);
             std.debug.assert(ctx.parent != null);
 
-            const heard = try lifecycle.transition_heard(ctx, def, row.id, row.status, to);
-            const subject = heard.payload;
+            for (heard, refused) |found, reason| {
+                const one = found orelse continue;
 
-            lifecycle.mark_live_change(ctx, def.flow, row.status, to);
-            events.append(ctx.arena, .{
-                .operation_id = ctx.parent.?,
-                .name = heard.name,
-                .subject = subject,
-            }) catch return error.OutOfMemory;
+                if (reason == null) {
+                    ctx.emit_json(one.name, one.payload, false);
 
-            if (heard.named.len > 0) {
-                events.append(ctx.arena, .{
-                    .operation_id = ctx.parent.?,
-                    .name = heard.named,
-                    .subject = subject,
-                }) catch return error.OutOfMemory;
+                    if (one.named.len > 0) {
+                        ctx.emit_json(one.named, one.payload, false);
+                    }
+                }
             }
         }
 

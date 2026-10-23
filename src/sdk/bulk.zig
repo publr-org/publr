@@ -1,4 +1,4 @@
-//! An operation's intrinsic hooks (`before` and `after`, compiled in or installed) run over
+//! An operation's hooks (`before` and `after`, compiled in or installed) run over
 //! many inputs at once, as a write over many records runs them: each input is still heard
 //! on its own, so a hook refuses one input and the rest go on, but the write itself is done
 //! once for all of them.
@@ -15,14 +15,13 @@ pub const changed_by_hook = "A hook changes this move; make it on its own";
 
 pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
     return struct {
-        /// Whether any intrinsic hook is on `Operation`: with none, a bulk write runs no
-        /// hook at all.
+        /// Whether any hook is on `Operation`: with none, a bulk write runs no hook at all.
         pub fn hooked(ctx: *const Ctx, comptime Operation: type) bool {
             std.debug.assert(Operation.name.len > 0);
-            std.debug.assert(registry.middleware.len <= sdk.middleware.middleware_max);
+            std.debug.assert(registry.hooks.len <= sdk.hooks.hooks_max);
 
-            inline for (registry.middleware) |Middleware| {
-                const applies = comptime in_bulk(Middleware, Operation);
+            inline for (registry.hooks) |Middleware| {
+                const applies = comptime sdk.hooks.applies(Middleware, Operation);
 
                 if (applies) {
                     return true;
@@ -46,8 +45,8 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(inputs.len == refused.len);
             std.debug.assert(ctx.parent != null);
 
-            inline for (registry.middleware) |Middleware| {
-                const applies = comptime in_bulk(Middleware, Operation) and
+            inline for (registry.hooks) |Middleware| {
+                const applies = comptime sdk.hooks.applies(Middleware, Operation) and
                     Middleware.stage == .before;
 
                 if (applies) {
@@ -117,8 +116,8 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(inputs.len == outputs.len);
             std.debug.assert(inputs.len == refused.len);
 
-            inline for (registry.middleware) |Middleware| {
-                const applies = comptime in_bulk(Middleware, Operation) and
+            inline for (registry.hooks) |Middleware| {
+                const applies = comptime sdk.hooks.applies(Middleware, Operation) and
                     Middleware.stage == .after;
 
                 if (applies) {
@@ -152,20 +151,9 @@ pub fn Bulk(comptime SDK: type, comptime registry: sdk.Registry) type {
     };
 }
 
-/// Whether a hook on `Operation` runs over a bulk write's inputs. Core's readers of what
-/// changed (`changed_units`, the site-changes index) hear a move over many from each
-/// record's transition event instead (`pub const by_events = true`).
-fn in_bulk(comptime Middleware: type, comptime Operation: type) bool {
-    comptime {
-        const reader = @hasDecl(Middleware, "by_events") and Middleware.by_events;
-
-        return sdk.middleware.applies(Middleware, Operation) and !reader;
-    }
-}
-
 /// A hook's refusal in words: its own message, else the error's name. Running out of
 /// memory is never a refusal: the whole write fails.
-fn reason_of(ctx: *Ctx, err: Error) Error![]const u8 {
+pub fn reason_of(ctx: *Ctx, err: Error) Error![]const u8 {
     std.debug.assert(@errorName(err).len > 0);
 
     if (err == error.OutOfMemory) {

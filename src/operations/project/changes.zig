@@ -1,11 +1,11 @@
 //! What a write did to records that changes what visitors see becomes changed keys in the
 //! dependency index, so the built site (`adapters/site`) rebuilds exactly the pages and
-//! fragments that read the record or its type. Heard as any plugin hears it: `after` the
-//! record operations that write a document, from their input and answer, and from the
-//! records' typed transition events, one per record even in a move over many. The built
-//! site holds live documents only: an edit kept as pending changes, or written into a
-//! record no visitor sees, rebuilds nothing (a preview renders those on request). Raised
-//! inside the operation's transaction: a rolled-back write raises nothing.
+//! fragments that read the record or its type. Heard as any plugin hears it: around the
+//! record operations that write a document, from their input and answer; every move goes
+//! through `record.transition` or `record.delete`, and a move over many runs their hooks
+//! per record. The built site holds live documents only: an edit kept as pending changes,
+//! or written into a record no visitor sees, rebuilds nothing (a preview renders those on
+//! request). Raised inside the operation's transaction: a rolled-back write raises nothing.
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
@@ -17,40 +17,10 @@ const project_put = @import("put.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
-const Event = sdk.Event;
-const Transitioned = @import("../../model/flow.zig").Transitioned;
 
 /// The key every listing render records, raised when a change cannot be pinned to a type.
 pub const all_records_key = "records";
 pub const key_len_max: u32 = 128;
-
-/// A record's move: heard inside the write, one by one or a move over many at once.
-pub const RecordChanged = struct {
-    pub const stage: sdk.middleware.Stage = .on;
-    /// Part of the write: a page the write changed and the index never heard of would stay
-    /// stale, so a key not raised fails the write.
-    pub const intrinsic = true;
-
-    pub fn run(ctx: *Ctx, event: Event) void {
-        std.debug.assert(ctx.now_ms >= 0);
-        std.debug.assert(all_records_key.len > 0);
-
-        const emitted = switch (event) {
-            .emitted => |found| found,
-            else => return,
-        };
-
-        raise_many(ctx, &.{emitted}) catch |err| failed(ctx, err);
-    }
-
-    /// A write over many records: every key they raise, raised at once.
-    pub fn run_many(ctx: *Ctx, events: []const Event.Emitted) void {
-        std.debug.assert(events.len > 0);
-        std.debug.assert(ctx.db.transaction_depth >= 1);
-
-        raise_many(ctx, events) catch |err| failed(ctx, err);
-    }
-};
 
 fn failed(ctx: *Ctx, err: anyerror) void {
     std.debug.assert(@errorName(err).len > 0);
@@ -59,23 +29,43 @@ fn failed(ctx: *Ctx, err: anyerror) void {
     std.log.debug("site changes: not raised: {s}", .{@errorName(err)});
 }
 
-/// The `after` hooks on the record operations that write a document; a move is heard by its
-/// transition event.
+/// The hooks on the record operations that write a document. A move is heard on both
+/// sides: `before`, what visitors saw where it was; `after`, where it is now.
 pub const hooks = [_]type{
     After(record_operations.Create, created),
     After(record_operations.Save, saved),
     After(record_operations.Publish, published),
-    After(record_operations.Transition, published_by_name),
+    Before(record_operations.Transition, leaving),
+    After(record_operations.Transition, moved),
+    After(record_operations.Delete, trashed),
     After(record_operations.Purge, purged),
     After(project_put.Put, put),
 };
 
+fn Before(comptime Operation: type, comptime raised: anytype) type {
+    return struct {
+        pub const stage: sdk.hooks.Stage = .before;
+        pub const operation = Operation.name;
+
+        pub fn run(ctx: *Ctx, in: *Operation.In) Error!void {
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+            std.debug.assert(ctx.parent != null);
+
+            raised(ctx, in) catch |err| {
+                if (err == error.OutOfMemory) {
+                    return error.OutOfMemory;
+                }
+
+                failed(ctx, err);
+            };
+        }
+    };
+}
+
 fn After(comptime Operation: type, comptime raised: anytype) type {
     return struct {
-        pub const stage: sdk.middleware.Stage = .after;
+        pub const stage: sdk.hooks.Stage = .after;
         pub const operation = Operation.name;
-        /// A move over many: each record from its transition event (`RecordChanged`).
-        pub const by_events = true;
 
         pub fn run(ctx: *Ctx, in: *Operation.In, out: *const Operation.Out) Error!void {
             std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -129,17 +119,45 @@ fn published(
     }
 }
 
-/// `publish` named on a live record applies its pending changes: no move, no transition.
-fn published_by_name(
+/// About to move out of where visitors see it: live, or kept in the archive or the trash.
+fn leaving(ctx: *Ctx, in: *const record_operations.Transition.In) !void {
+    std.debug.assert(in.id.len > 0);
+
+    const record = try records.get(ctx.db, ctx.arena, in.id) orelse return;
+
+    if (kept(record.status) or try statuses.is_live(ctx, record.status)) {
+        try raise(ctx, in.id, true);
+    }
+}
+
+/// Moved: live now, into the archive or the trash, or gone for good; `publish` named on a
+/// live record applied its pending changes. A move asked for waits: nothing changed.
+fn moved(
     ctx: *Ctx,
     in: *const record_operations.Transition.In,
     out: *const record_operations.Transition.Out,
 ) !void {
     std.debug.assert(in.id.len > 0);
 
-    if (std.mem.eql(u8, in.transition, "publish") and !out.pending) {
-        try raise(ctx, in.id, false);
+    if (!out.pending) {
+        try raise(ctx, in.id, kept(out.status) or std.mem.eql(u8, out.status, "destroyed"));
     }
+}
+
+/// Into the trash, from wherever it was.
+fn trashed(
+    ctx: *Ctx,
+    in: *const record_operations.Delete.In,
+    _: *const record_operations.Delete.Out,
+) !void {
+    std.debug.assert(in.id.len > 0);
+
+    try raise(ctx, in.id, true);
+}
+
+/// The statuses whose records visitors may still reach: archived pages, the trash.
+fn kept(status: []const u8) bool {
+    return std.mem.eql(u8, status, "archived") or std.mem.eql(u8, status, "trashed");
 }
 
 fn purged(
@@ -152,7 +170,7 @@ fn purged(
     try raise(ctx, in.id, true);
 }
 
-/// Each record put as another copy keeps it: added or replaced while live, or removed.
+/// Each record put as another copy keeps it, whatever its status was or is.
 fn put(ctx: *Ctx, _: *const project_put.Put.In, out: *const project_put.Put.Out) !void {
     std.debug.assert(out.put.len <= project_put.units_max);
 
@@ -160,120 +178,9 @@ fn put(ctx: *Ctx, _: *const project_put.Put.In, out: *const project_put.Put.Out)
         const record = std.mem.eql(u8, done.kind, "record");
 
         if (record and !std.mem.eql(u8, done.outcome, "unchanged")) {
-            try raise(ctx, done.id, std.mem.eql(u8, done.outcome, "removed"));
+            try raise(ctx, done.id, true);
         }
     }
-}
-
-fn raise_many(ctx: *Ctx, events: []const Event.Emitted) !void {
-    std.debug.assert(events.len > 0);
-    std.debug.assert(key_len_max > 0);
-
-    var moves: std.ArrayList(Transitioned) = .empty;
-    var subjects: std.ArrayList([]const u8) = .empty;
-
-    for (events) |emitted| {
-        const found = try sdk.changed_units.transitioned(ctx, emitted) orelse continue;
-
-        if (found.unit.kind == .record) {
-            try moves.append(ctx.arena, found.transition);
-            try subjects.append(ctx.arena, found.transition.record);
-        }
-    }
-
-    if (moves.items.len == 0) {
-        return;
-    }
-
-    const ids_json = try std.json.Stringify.valueAlloc(ctx.arena, subjects.items, .{});
-    const found = try records.briefs(ctx.db, ctx.arena, ids_json);
-    var keys: std.ArrayList([]const u8) = .empty;
-    var seen: std.StringHashMapUnmanaged(void) = .empty;
-
-    for (moves.items) |move| {
-        const brief = brief_of(found, move.record);
-        const live_now = if (brief) |record| try statuses.is_live(ctx, record.status) else false;
-
-        if (!live_now and !try touches(ctx, move)) {
-            continue;
-        }
-
-        var record_buffer: [key_len_max]u8 = undefined;
-        var type_buffer: [key_len_max]u8 = undefined;
-
-        try add_key(ctx, &keys, &seen, try record_key(&record_buffer, move.record));
-        try add_key(ctx, &keys, &seen, all_records_key);
-
-        if (brief) |record| {
-            try add_key(ctx, &keys, &seen, try type_key(&type_buffer, record.type));
-        }
-    }
-
-    if (keys.items.len == 0) {
-        return;
-    }
-
-    var index: deps.Index = .{
-        .db = ctx.db,
-        .options = .{
-            .quiet_ms = deps.quiet_ms,
-        },
-    };
-
-    try index.invalidate(keys.items, ctx.now_ms);
-}
-
-/// Whether a move changes what visitors see, wherever the record is now: out of live, and
-/// into, out of or within the archive and the trash, and gone for good.
-fn touches(ctx: *Ctx, move: Transitioned) !bool {
-    std.debug.assert(move.to.len > 0);
-    std.debug.assert(move.record.len > 0);
-
-    const kept = [_][]const u8{ "archived", "trashed" };
-
-    for (kept) |status| {
-        if (std.mem.eql(u8, move.from, status) or std.mem.eql(u8, move.to, status)) {
-            return true;
-        }
-    }
-
-    if (std.mem.eql(u8, move.to, "destroyed")) {
-        return true;
-    }
-
-    return move.from.len > 0 and try statuses.is_live(ctx, move.from);
-}
-
-fn brief_of(found: []const records.Brief, id: []const u8) ?records.Brief {
-    std.debug.assert(id.len > 0);
-    std.debug.assert(found.len <= 1 << 20);
-
-    for (found) |brief| {
-        if (std.mem.eql(u8, brief.id, id)) {
-            return brief;
-        }
-    }
-
-    return null;
-}
-
-fn add_key(
-    ctx: *Ctx,
-    keys: *std.ArrayList([]const u8),
-    seen: *std.StringHashMapUnmanaged(void),
-    key: []const u8,
-) !void {
-    std.debug.assert(key.len > 0);
-    std.debug.assert(keys.items.len == seen.count());
-
-    if (seen.contains(key)) {
-        return;
-    }
-
-    const kept = try ctx.arena.dupe(u8, key);
-
-    try keys.append(ctx.arena, kept);
-    try seen.put(ctx.arena, kept, {});
 }
 
 /// `record:<id>` and `type:<handle>` for a record that still exists; `records` for one
