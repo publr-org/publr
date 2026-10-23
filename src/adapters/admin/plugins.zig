@@ -3,6 +3,7 @@
 //! where each permission and each of its flags is switched on or off and a version rolled
 //! back. A built-in plugin has the same page, read only.
 const std = @import("std");
+const plugin_define = @import("../../sdk/plugin/define.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const plugin_operations = @import("../../operations/plugin.zig");
@@ -163,17 +164,17 @@ fn brings_of(comptime Plugin: type) []const u8 {
         };
         const counts = [_]Count{
             .{
-                .count = contract.operations_of(Plugin).len,
+                .count = plugin_define.get(Plugin, "operations").len,
                 .one = "operation",
                 .many = "operations",
             },
             .{
-                .count = contract.content_types_of(Plugin).len,
+                .count = plugin_define.get(Plugin, "content_types").len,
                 .one = "content type",
                 .many = "content types",
             },
             .{
-                .count = contract.middleware_of(Plugin).len,
+                .count = plugin_define.get(Plugin, "middleware").len,
                 .one = "hook",
                 .many = "hooks",
             },

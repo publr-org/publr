@@ -189,9 +189,16 @@ pub fn has(comptime Plugin: type, comptime name: []const u8) bool {
         from_words;
 }
 
-/// The option `name`; a list comes back as a slice either way.
+/// The option `name`; a list comes back as a slice either way, empty when the plugin has
+/// none of it.
 pub fn get(comptime Plugin: type, comptime name: []const u8) Got(Plugin, name) {
-    std.debug.assert(comptime has(Plugin, name));
+    if (comptime !has(Plugin, name)) {
+        if (comptime !list_option(name)) {
+            @compileError("plugin " ++ Plugin.manifest.name ++ " has no `" ++ name ++ "`");
+        }
+
+        return &.{};
+    }
 
     if (comptime host_define.seam(name)) {
         return comptime Plugin.host.get(name);
@@ -212,6 +219,19 @@ pub fn get(comptime Plugin: type, comptime name: []const u8) Got(Plugin, name) {
     };
 }
 
+/// Whether `name` is a list read the same way whether or not a plugin gives it.
+fn list_option(comptime name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    inline for (resolvers) |entry| {
+        if (comptime std.mem.eql(u8, entry[0], name)) {
+            return true;
+        }
+    }
+
+    return host_define.listed(name);
+}
+
 /// The options a bound plugin's readers take in their core shape, each `.{ name, Item, of }`:
 /// operations and pages given their words, hooks with their records', and so on.
 const resolvers = .{
@@ -227,7 +247,21 @@ const resolvers = .{
     .{ "field_kinds", Kind, declared_kinds },
     .{ "custom_fields", ContentTypeDef, declared_field_groups },
     .{ "permissions", @import("../../model/sandboxed_plugin.zig").Ask, asks_of },
+    .{ "compatible_with", []const u8, compatible_with_of },
+    .{ "depends_on", []const u8, depends_on_of },
 };
+
+fn compatible_with_of(comptime Plugin: type) []const []const u8 {
+    std.debug.assert(Plugin.manifest.name.len > 0);
+
+    return as_slice([]const u8, Plugin.options.compatible_with);
+}
+
+fn depends_on_of(comptime Plugin: type) []const []const u8 {
+    std.debug.assert(Plugin.manifest.name.len > 0);
+
+    return as_slice([]const u8, Plugin.options.depends_on);
+}
 
 fn described_panels(comptime Plugin: type) []const Panel {
     std.debug.assert(Plugin.manifest.name.len > 0);
@@ -504,11 +538,11 @@ fn as_slice(comptime Item: type, comptime value: anytype) []const Item {
     comptime {
         std.debug.assert(value.len <= 4096);
 
-        if (@typeInfo(@TypeOf(value)) == .array) {
-            return &value;
-        }
-
-        return value;
+        return switch (@typeInfo(@TypeOf(value))) {
+            .array => &value,
+            .@"struct" => &value,
+            else => value,
+        };
     }
 }
 
@@ -516,6 +550,10 @@ const ContentTypeDef = @import("../../model/content_type.zig").Def;
 const Collection = @import("../../model/internal_record.zig").Collection;
 
 pub fn Got(comptime Plugin: type, comptime name: []const u8) type {
+    if (host_define.listed(name)) {
+        return @FieldType(host_define.Host, name);
+    }
+
     if (host_define.seam(name)) {
         return host_define.Host.Got(Plugin.host, name);
     }

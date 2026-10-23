@@ -5,6 +5,7 @@
 //! `compatible_with` is never held back by it.
 
 const std = @import("std");
+const plugin_define = @import("../../sdk/plugin/define.zig");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
@@ -305,7 +306,7 @@ fn running_of(ctx: *Ctx) Error![]const Running {
     inline for (registry.native_plugins.all) |Plugin| {
         running.append(ctx.arena, .{
             .name = Plugin.manifest.name,
-            .depends_on = comptime depends_on.of(Plugin),
+            .depends_on = comptime plugin_define.get(Plugin, "depends_on"),
             .built_in = true,
         }) catch return error.OutOfMemory;
     }

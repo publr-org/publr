@@ -5,6 +5,7 @@
 //! checks each against the part's shapes. The owner never names providers: it lists the
 //! enabled ones, in the administrator's order, with `publr.providers(ctx, Contract, .{})`.
 const std = @import("std");
+const plugin_define = @import("plugin/define.zig");
 const sdk = @import("../sdk.zig");
 const shapes = @import("../model/contract.zig");
 const store = @import("../store.zig");
@@ -210,7 +211,7 @@ fn own_operation(comptime Plugin: type, comptime Given: type) ?type {
     comptime {
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        for (@import("plugin.zig").operations_of(Plugin)) |Declared| {
+        for (plugin_define.get(Plugin, "operations")) |Declared| {
             const defined = @hasDecl(Declared, "definition") and Declared.definition == Given;
 
             if (Declared == Given or defined) {

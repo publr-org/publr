@@ -62,12 +62,10 @@ pub fn uses_of(comptime Plugin: type) []const Used {
 /// The plugin as a user of others.
 pub fn user_of(comptime Plugin: type) plugin_contracts.User {
     comptime {
-        const contract = @import("../plugin.zig");
-
         return .{
             .plugin = Plugin.manifest.name,
-            .depends_on = versions.of(Plugin),
-            .compatible_with = contract.compatible_with_of(Plugin),
+            .depends_on = plugin_define.get(Plugin, "depends_on"),
+            .compatible_with = plugin_define.get(Plugin, "compatible_with"),
             .remotes = uses_of(Plugin),
         };
     }
@@ -106,12 +104,11 @@ pub fn events_of(comptime Plugin: type) []const ProvidedEvent {
 /// The plugin's record types, content and internal, with each field's kind.
 pub fn records_of(comptime Plugin: type) []const ProvidedRecord {
     comptime {
-        const contract = @import("../plugin.zig");
         var list: []const ProvidedRecord = &.{};
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        for (contract.content_types_of(Plugin)) |def| {
+        for (plugin_define.get(Plugin, "content_types")) |def| {
             var fields: []const ProvidedField = &.{};
 
             for (def.fields) |field| {
@@ -128,7 +125,7 @@ pub fn records_of(comptime Plugin: type) []const ProvidedRecord {
             }};
         }
 
-        for (contract.internal_records_of(Plugin)) |collection| {
+        for (plugin_define.get(Plugin, "internal_records")) |collection| {
             list = list ++ &[_]ProvidedRecord{.{
                 .name = Plugin.manifest.name ++ "." ++ collection.kind,
                 .fields = collection.fields,
@@ -162,7 +159,7 @@ pub fn misfit_compiled(
 
         std.debug.assert(declared.len > 0);
 
-        for (@import("../plugin.zig").operations_of(Provider)) |Operation| {
+        for (plugin_define.get(Provider, "operations")) |Operation| {
             if (std.mem.eql(u8, Operation.name, used.name)) {
                 operations = operations ++ &[_]plugin_contracts.Provided{.{
                     .name = Operation.name,

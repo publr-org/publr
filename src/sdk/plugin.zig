@@ -158,7 +158,7 @@ pub fn validate(comptime Plugin: type) void {
         const manifest = Plugin.manifest;
         assert_name(manifest.name, label);
 
-        for (operations_of(Plugin)) |Operation| {
+        for (plugin_define.get(Plugin, "operations")) |Operation| {
             sdk.operation.validate(Operation);
 
             if (!@import("plugin_access.zig").own(manifest.name, Operation.name)) {
@@ -167,13 +167,13 @@ pub fn validate(comptime Plugin: type) void {
             }
         }
 
-        for (middleware_of(Plugin)) |Middleware| {
+        for (plugin_define.get(Plugin, "middleware")) |Middleware| {
             sdk.middleware.validate(Middleware);
         }
 
         const internal_record = @import("../model/internal_record.zig");
 
-        if (internal_record.problem(internal_records_of(Plugin))) |message| {
+        if (internal_record.problem(plugin_define.get(Plugin, "internal_records"))) |message| {
             @compileError("plugin " ++ manifest.name ++ ": " ++ message);
         }
 
@@ -181,7 +181,7 @@ pub fn validate(comptime Plugin: type) void {
 
         const known: []const kinds.Kind = &kinds.core ++ field_kinds_of(Plugin);
 
-        for (content_types_of(Plugin)) |def| {
+        for (plugin_define.get(Plugin, "content_types")) |def| {
             var problems: field.Problems = .{};
             content_type.validate_def(known, def, &problems);
 
@@ -261,7 +261,7 @@ pub fn grants_of(comptime Plugin: type) sdk.PluginGrants {
             held = held ++ &[_]permission_model.Held{ask.held()};
         }
 
-        for (content_types_of(Plugin)) |def| {
+        for (plugin_define.get(Plugin, "content_types")) |def| {
             own = own ++ &[_][]const u8{def.handle};
         }
 
@@ -273,28 +273,12 @@ pub fn grants_of(comptime Plugin: type) sdk.PluginGrants {
             .access = .{
                 .held = done_held,
                 .own_types = done_own,
-                .depends_on = depends_on.of(Plugin),
-                .compatible_with = compatible_with_of(Plugin),
+                .depends_on = plugin_define.get(Plugin, "depends_on"),
+                .compatible_with = plugin_define.get(Plugin, "compatible_with"),
                 .secrets = @import("plugin/secret_define.zig").declared_of(Plugin),
                 .remotes = @import("plugin/remote_contract.zig").uses_of(Plugin),
             },
         };
-    }
-}
-
-pub fn content_types_of(comptime Plugin: type) []const ContentTypeDef {
-    comptime {
-        std.debug.assert(@hasDecl(Plugin, "manifest"));
-
-        if (!plugin_define.has(Plugin, "content_types")) {
-            return &.{};
-        }
-
-        const list: []const ContentTypeDef = plugin_define.get(Plugin, "content_types");
-
-        std.debug.assert(list.len <= content_types_max);
-
-        return list;
     }
 }
 
@@ -341,31 +325,6 @@ pub fn remote_name(comptime Used: type) []const u8 {
     }
 }
 
-/// The plugins it works with when present, without needing them: `name` or `name@range`.
-pub fn compatible_with_of(comptime Plugin: type) []const []const u8 {
-    comptime {
-        std.debug.assert(@hasDecl(Plugin, "manifest"));
-
-        if (!plugin_define.has(Plugin, "compatible_with")) {
-            return &.{};
-        }
-
-        return plugin_define.get(Plugin, "compatible_with");
-    }
-}
-
-pub fn internal_records_of(comptime Plugin: type) []const InternalCollection {
-    comptime {
-        std.debug.assert(@hasDecl(Plugin, "manifest"));
-
-        if (!plugin_define.has(Plugin, "internal_records")) {
-            return &.{};
-        }
-
-        return plugin_define.get(Plugin, "internal_records");
-    }
-}
-
 pub fn custom_fields_of(comptime Plugin: type) []const ContentTypeDef {
     comptime {
         std.debug.assert(@hasDecl(Plugin, "manifest"));
@@ -408,38 +367,6 @@ pub fn assert_name(comptime name: []const u8, comptime label: []const u8) void {
     }
 }
 
-pub fn operations_of(comptime Plugin: type) []const type {
-    comptime {
-        std.debug.assert(@hasDecl(Plugin, "manifest"));
-
-        if (!plugin_define.has(Plugin, "operations")) {
-            return &.{};
-        }
-
-        const list: []const type = plugin_define.get(Plugin, "operations");
-
-        std.debug.assert(list.len <= sdk.operations_max);
-
-        return list;
-    }
-}
-
-pub fn namespaces_of(comptime Plugin: type) []const sdk.operation.Namespace {
-    comptime {
-        std.debug.assert(@hasDecl(Plugin, "manifest"));
-
-        if (!plugin_define.has(Plugin, "namespaces")) {
-            return &.{};
-        }
-
-        const list: []const sdk.operation.Namespace = plugin_define.get(Plugin, "namespaces");
-
-        std.debug.assert(list.len <= plugins_max);
-
-        return list;
-    }
-}
-
 /// The roles a plugin declares: a new name is a new role, granting nothing until its
 /// operations or an administrator say; the name of one there already changes nothing.
 pub fn roles_of(comptime Plugin: type) []const Role {
@@ -465,22 +392,6 @@ pub fn roles_of(comptime Plugin: type) []const Role {
     }
 }
 
-pub fn policies_of(comptime Plugin: type) []const sdk.Policy {
-    comptime {
-        std.debug.assert(@hasDecl(Plugin, "manifest"));
-
-        if (!plugin_define.has(Plugin, "policies")) {
-            return &.{};
-        }
-
-        const list: []const sdk.Policy = plugin_define.get(Plugin, "policies");
-
-        std.debug.assert(list.len <= sdk.authorize.policies_max);
-
-        return list;
-    }
-}
-
 /// Every remote a plugin declares names a plugin it depends on or works with. When that
 /// plugin is compiled in too: one it needs must fit, or the build fails; one it only works
 /// with that does not fit (or is outside the range) is off, and why.
@@ -494,8 +405,8 @@ fn check_remotes(comptime plugins: anytype) []const remote_contract.Off {
                 const target = sdk.plugin_of(name);
                 const label = "plugin " ++ Plugin.manifest.name ++ ": " ++ name ++ " ";
 
-                const required = declared_in(depends_on.of(Plugin), target);
-                const optional = declared_in(compatible_with_of(Plugin), target);
+                const required = declared_in(plugin_define.get(Plugin, "depends_on"), target);
+                const optional = declared_in(plugin_define.get(Plugin, "compatible_with"), target);
                 const named = if (required != null) required else optional;
                 const declared = named orelse @compileError(label ++ "belongs to " ++ target ++
                     ", named in neither `depends_on` nor `compatible_with`");
@@ -568,7 +479,7 @@ pub fn owns_operation(comptime Plugin: type, comptime Operation: type) bool {
     comptime {
         std.debug.assert(Operation.name.len > 0);
 
-        for (operations_of(Plugin)) |Declared| {
+        for (plugin_define.get(Plugin, "operations")) |Declared| {
             if (Declared == Operation) {
                 return true;
             }
@@ -590,22 +501,6 @@ fn owners(comptime Plugin: type, comptime count: u32) []const []const u8 {
         }
 
         return names;
-    }
-}
-
-pub fn middleware_of(comptime Plugin: type) []const type {
-    comptime {
-        std.debug.assert(@hasDecl(Plugin, "manifest"));
-
-        if (!plugin_define.has(Plugin, "middleware")) {
-            return &.{};
-        }
-
-        const list: []const type = plugin_define.get(Plugin, "middleware");
-
-        std.debug.assert(list.len <= sdk.middleware.middleware_max);
-
-        return list;
     }
 }
 
@@ -681,7 +576,7 @@ fn owned_of(comptime Plugin: type) []const []const u8 {
     comptime {
         var owned: []const []const u8 = &.{Plugin.manifest.name};
 
-        for (namespaces_of(Plugin)) |namespace| {
+        for (plugin_define.get(Plugin, "namespaces")) |namespace| {
             owned = owned ++ &[_][]const u8{namespace.name};
         }
 
@@ -744,11 +639,14 @@ pub fn Merged(comptime plugins: anytype) type {
 
         for (plugins) |Plugin| {
             validate(Plugin);
-            operations = operations ++ operations_of(Plugin);
-            operation_owners = operation_owners ++ owners(Plugin, operations_of(Plugin).len);
-            namespaces = namespaces ++ namespaces_of(Plugin);
-            policies = policies ++ policies_of(Plugin);
-            const hooks = remote_contract.kept_hooks(Plugin, middleware_of(Plugin), remotes_off);
+            const own = plugin_define.get(Plugin, "operations");
+
+            operations = operations ++ own;
+            operation_owners = operation_owners ++ owners(Plugin, own.len);
+            namespaces = namespaces ++ plugin_define.get(Plugin, "namespaces");
+            policies = policies ++ plugin_define.get(Plugin, "policies");
+            const listed_hooks = plugin_define.get(Plugin, "middleware");
+            const hooks = remote_contract.kept_hooks(Plugin, listed_hooks, remotes_off);
 
             middleware = middleware ++ hooks;
             middleware_owners = middleware_owners ++ owners(Plugin, hooks.len);
@@ -760,7 +658,7 @@ pub fn Merged(comptime plugins: anytype) type {
             webhook_owners = webhook_owners ++ owners(Plugin, webhooks_of(Plugin).len);
             plugin_grants = plugin_grants ++ &[_]sdk.PluginGrants{grants_of(Plugin)};
 
-            for (internal_records_of(Plugin)) |collection| {
+            for (plugin_define.get(Plugin, "internal_records")) |collection| {
                 internal_collections = internal_collections ++ &[_]OwnedCollection{.{
                     .owner = Plugin.manifest.name,
                     .collection = collection,
@@ -888,7 +786,7 @@ pub fn Merged(comptime plugins: anytype) type {
             if (plugin_define.has(Plugin, "serving")) {
                 serving = serving ++ &[_]type{Plugin};
             }
-            for (content_types_of(Plugin)) |def| {
+            for (plugin_define.get(Plugin, "content_types")) |def| {
                 content_types = content_types ++ &[_]DeclaredType{.{
                     .owner = Plugin.manifest.name,
                     .def = def,

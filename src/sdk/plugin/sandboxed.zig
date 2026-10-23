@@ -32,7 +32,7 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
         const contract = @import("../plugin.zig");
         var entries: []const Entry = &.{};
 
-        for (contract.operations_of(Plugin)) |Operation| {
+        for (plugin_define.get(Plugin, "operations")) |Operation| {
             if (!context.takes_plugin_ctx(Operation.run)) {
                 continue;
             }
@@ -43,7 +43,7 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
             }};
         }
 
-        for (contract.middleware_of(Plugin)) |Middleware| {
+        for (plugin_define.get(Plugin, "middleware")) |Middleware| {
             if (hook_left_out(Middleware) != null) {
                 continue;
             }
@@ -115,7 +115,6 @@ fn hook_left_out(comptime Middleware: type) ?[]const u8 {
 /// `Unavailable`; hooks left out never run.
 pub fn left_out(comptime Plugin: type) []const []const u8 {
     comptime {
-        const contract = @import("../plugin.zig");
         // `.middleware` holds hooks and `.row_actions` travel in the manifest.
         const carried = [_][]const u8{ "middleware", "row_actions" };
         var list: []const []const u8 = &.{};
@@ -139,14 +138,14 @@ pub fn left_out(comptime Plugin: type) []const []const u8 {
             list = list ++ &[_][]const u8{"`field_kinds`: not in the sandbox yet"};
         }
 
-        for (contract.operations_of(Plugin)) |Operation| {
+        for (plugin_define.get(Plugin, "operations")) |Operation| {
             if (!context.takes_plugin_ctx(Operation.run)) {
                 list = list ++ &[_][]const u8{"operation " ++ Operation.name ++
                     ": it takes the host's context"};
             }
         }
 
-        for (contract.middleware_of(Plugin)) |Middleware| {
+        for (plugin_define.get(Plugin, "middleware")) |Middleware| {
             if (hook_left_out(Middleware)) |why| {
                 list = list ++ &[_][]const u8{"hook on " ++ hook_target(Middleware) ++ ": " ++ why};
             }
@@ -275,8 +274,8 @@ pub fn check_call(comptime operation_name: []const u8) void {
         if (catalog.called_operation(call_key) != null and asks_for(Plugin, call_key)) {
             const depends_on = @import("depends_on.zig");
 
-            const optional = @import("../plugin.zig").compatible_with_of(Plugin);
-            const declared = depends_on.of(Plugin) ++ optional;
+            const optional = plugin_define.get(Plugin, "compatible_with");
+            const declared = plugin_define.get(Plugin, "depends_on") ++ optional;
 
             if (depends_on.names_owner(declared, operation_name)) {
                 return;
