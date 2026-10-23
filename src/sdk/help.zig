@@ -270,6 +270,8 @@ fn is_null(value: anytype) bool {
 
     return switch (@typeInfo(Value)) {
         .optional => value == null,
+        // An empty list is typed by leaving the flag out.
+        .pointer => |pointer| pointer.size == .slice and pointer.child != u8 and value.len == 0,
         else => false,
     };
 }

@@ -67,15 +67,13 @@ pub const SetColumns = struct {
     /// Open, but about the account asking: its example names one.
     pub const example_signed_in = true;
     pub const In = struct {
-        hidden: []const []const u8,
+        hidden: []const []const u8 = &.{},
         for_everyone: bool = false,
     };
     pub const Out = struct {
         hidden: []const []const u8,
     };
-    pub const example: In = .{
-        .hidden = &.{},
-    };
+    pub const example: In = .{};
     pub const example_out: Out = .{
         .hidden = &.{},
     };
