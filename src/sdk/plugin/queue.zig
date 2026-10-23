@@ -105,6 +105,12 @@ pub fn Queue(comptime Base: type) type {
             return self.base.fail(name, text, values);
         }
 
+        /// The declared refusal (`Fails:` name) the last call or the job's own `fail`
+        /// ended with; empty when none: what `.on_failure` reads beside the error.
+        pub fn failure(self: *const Self) []const u8 {
+            return self.base.failure();
+        }
+
         pub fn log(
             self: *Self,
             comptime level: words.Level,

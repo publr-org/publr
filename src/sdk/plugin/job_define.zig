@@ -1,7 +1,8 @@
 //! `publr.job.define(In, .{ .name, .run, .on_failure })`: work a plugin's code queues with
 //! `ctx.enqueue(Job, in)`, run later by the server's worker, as the plugin, never in the
 //! caller's request. A run that fails is tried again later; after the last attempt
-//! `on_failure` hears why, and the job is kept as failed.
+//! `on_failure` hears the `publr.Error` it ended with (`ctx.failure()` names a declared
+//! refusal), and the job is kept as failed.
 const std = @import("std");
 
 /// The runs a job gets before it is kept as failed.
