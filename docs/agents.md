@@ -207,9 +207,8 @@ pub const plugin = publr.plugin.define(manifest, .{
   run after the call by the worker, tried again when it fails. A schedule is
   `publr.job.define_recurring(.{ .name, .run, .every = .day, .at = .{ .hour = 3 } })`. What
   another server sends comes in through `publr.webhook.define` in `.webhooks`.
-- **Not built yet.** `define` has no `register_taxonomies`, `register_columns`,
-  `register_components`, `register_providers`, `register_location_rules` or `taxonomies`
-  option and fails the build on one. There is no email and no outside search engine for
+- **Not built yet.** `define` has no `register_taxonomies`, `register_components` or
+  `taxonomies` option and fails the build on one. There is no outside search engine for
   plugins yet. When a feature needs one, tell the person what is missing.
 
 ## How to build well
@@ -491,7 +490,7 @@ The keys: `records.read` (`.records`; `.drafts`, `.private`, `.internal`), `reco
 anything the project stores exactly as another copy of it keeps it, ids kept), `terms.read` (`.taxonomies`; the
 read flags), `terms.write` (`.taxonomies`; `.publish`), `schema.read`, `schema.write`,
 `users.names`, `users.read`, `users.write`, `site.read`, `settings.write`, `http.fetch`
-(`.domains`), `media.read` (`.private`), `media.write`, `email.send`, and
+(`.domains`), `media.read` (`.private`), `media.write`, `messaging.send`, and
 `call:<plugin>.<verb>` for another plugin's operation. Reading starts at what a visitor
 sees; name the types you need in `.records` rather than asking for every one. Without
 `.publish` a write makes drafts and asks for transitions to live (`.pending`). A domain is

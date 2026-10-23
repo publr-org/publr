@@ -1,0 +1,136 @@
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { IndexSection } from "../components/IndexSection.ptsx";
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Code } from "@publr/ui/Code.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Switch } from "@publr/ui/Switch.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type ProvidersProps = {
+  contracts: Array<{
+    /** The contract's name: `messaging`, `ai.model`. */
+    name: string;
+    label: string;
+    /** What it is for; empty for a contract core says nothing of. */
+    description: string;
+    /** What happens with no provider, said instead of the list. */
+    empty: string;
+    /** Where its form posts. */
+    action: string;
+    /** In the order they are tried. */
+    providers: Array<{
+      name: string;
+      /** The plugin that registered it. */
+      plugin: string;
+      /** Its parts, joined. */
+      parts: string;
+      on: boolean;
+      first: boolean;
+      last: boolean;
+      /** Its plugin's page, where its settings and secrets are. */
+      settings_href: string;
+    }>;
+  }>;
+  /** What the last post did, or why it was refused; empty for nothing. */
+  notice: string;
+  problem: string;
+};
+
+/** Every contract's providers, in the order the owner tries them: each switched on or off,
+ * moved up or down, and a link to its plugin's settings. */
+export function Providers({ contracts, notice, problem }: ProvidersProps) {
+  return (
+    <IndexPage
+      title={Publr.t("Providers")}
+      description={Publr.t("Plugins that do one job for the site, such as sending its email. The first one switched on is used.")}
+      notice={
+        (problem !== "" || notice !== "") && (
+          <div class="flex flex-col gap-3">
+            {problem !== "" && (
+              <Callout tone="error" title={Publr.t("Not saved")}>
+                {problem}
+              </Callout>
+            )}
+            {notice !== "" && <Callout title={notice} />}
+          </div>
+        )
+      }
+    >
+      {contracts.map((contract) => (
+        <IndexSection
+          title={contract.label}
+          description={contract.description}
+          empty={contract.providers.length === 0 ? contract.empty : ""}
+        >
+          {contract.providers.length > 0 && (
+            <form method="post" action={contract.action} data-contract={contract.name}>
+              <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{Publr.t("On")}</TableHead>
+                    <TableHead>{Publr.t("Provider")}</TableHead>
+                    <TableHead>{Publr.t("Parts")}</TableHead>
+                    <TableHead>{Publr.t("Order")}</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {contract.providers.map((provider) => (
+                    <TableRow>
+                      <TableCell>
+                        <input type="hidden" name="provider" value={provider.name} />
+                        <Switch name="on" value={provider.name} checked={provider.on} />
+                      </TableCell>
+                      <TableCell>
+                        <Code>{provider.name}</Code>{" "}
+                        <Text as="span" variant="body-sm" tone="muted">
+                          {Publr.t("from {plugin}", { plugin: provider.plugin })}
+                        </Text>
+                      </TableCell>
+                      <TableCell>
+                        <Text as="span" variant="body-sm" tone="muted">
+                          {provider.parts}
+                        </Text>
+                      </TableCell>
+                      <TableCell>
+                        <div class="flex items-center gap-2">
+                          {!provider.first && (
+                            <Button hierarchy="tertiary" size="sm" type="submit" name="move" value={`up:${provider.name}`}>
+                              {Publr.t("Move up")}
+                            </Button>
+                          )}
+                          {!provider.last && (
+                            <Button hierarchy="tertiary" size="sm" type="submit" name="move" value={`down:${provider.name}`}>
+                              {Publr.t("Move down")}
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Link href={provider.settings_href}>{Publr.t("Settings")}</Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div class="flex justify-end px-5 py-4">
+                <Button hierarchy="secondary" size="md" type="submit">
+                  {Publr.t("Save")}
+                </Button>
+              </div>
+            </form>
+          )}
+        </IndexSection>
+      ))}
+    </IndexPage>
+  );
+}

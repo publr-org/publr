@@ -274,6 +274,7 @@ fn sees(session: *const Session, who: model.admin_pages.Who) bool {
     return switch (who) {
         .everyone => true,
         .secrets => registry.SDK.may(&session.ctx, secret.Set),
+        .providers => registry.SDK.may(&session.ctx, @import("../../operations/provider.zig").Set),
         .structure => registry.SDK.may(&session.ctx, types.Create),
         .update => registry.SDK.may(&session.ctx, update.Status),
     };

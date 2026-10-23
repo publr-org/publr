@@ -10,6 +10,7 @@ const caller_view = @import("caller_view.zig");
 const role = @import("../../model/role.zig");
 const job_define = @import("job_define.zig");
 const job_queue = @import("../../store/job_queue.zig");
+const permission_model = @import("../../model/permission.zig");
 
 pub const Caller = sdk.Caller;
 pub const Error = sdk.Error;
@@ -331,6 +332,15 @@ pub const HostApi = struct {
         const text = std.json.Stringify.valueAlloc(self.inner.arena, payload, .{}) catch
             return self.refuse_emit();
 
+        // A message (`publr.messaging.Email`) needs `messaging.send`; a refused one fails the
+        // write.
+        if (permission_model.key_for_event(name)) |key| {
+            if (held_in(asks_of_running(self.inner.plugin), key) == null) {
+                self.inner.event_refusal = self.inner.event_refusal orelse error.Denied;
+                return;
+            }
+        }
+
         self.inner.emit_json(name, text, true);
     }
 
@@ -417,7 +427,7 @@ pub fn takes_plugin_ctx(comptime function: anytype) bool {
 }
 
 /// The grant among `asks` for `key`, as asked; null when it asks for none.
-pub fn held_in(asks: []const Ask, key: []const u8) ?@import("../../model/permission.zig").Held {
+pub fn held_in(asks: []const Ask, key: []const u8) ?permission_model.Held {
     std.debug.assert(key.len > 0);
     std.debug.assert(asks.len <= permission_define.asks_max);
 

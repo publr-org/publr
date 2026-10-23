@@ -159,7 +159,7 @@ got, and `ctx.grant("records.write")` tells it whether the key is on and with wh
 | `http.fetch` | `.domains` | | high |
 | `media.read` | | `.private` | low; high with private files |
 | `media.write` | | | medium |
-| `email.send` | | | medium |
+| `messaging.send` | | | medium |
 
 What each opens:
 
@@ -184,6 +184,8 @@ What each opens:
   keeps it, ids and history kept; records and terms land as the same change made by a
   person would. Rows only, never files.
 - Queued work (jobs, `on` hooks) runs with the plugin's own grant, `.publish` included.
+- `messaging.send` lets a plugin emit message events (`publr.messaging.Email`, `Sms`,
+  `Push`) beside its own; without it a message is not sent and the write fails.
 
 A `call:<plugin>.<verb>` key, for another plugin's operation, and `ai.progress` pass as
 they are. Any other key, or an option its key does not take (`.domains` on
@@ -271,6 +273,21 @@ up to 768 KiB, and its media type, `audio/webm`, `audio/ogg`, `audio/mp4`, `audi
 to an API as a form upload: `http.fetch`'s `form`, whose file parts are base64, is written
 as `multipart/form-data` by core, so a plugin never encodes one.
 
+### Messages
+
+Publr sends nothing on its own. A plugin sends a message by emitting one of core's message
+events, which needs `messaging.send`: `ctx.emit(publr.messaging.Email, .{ .to, .subject,
+.text, .html })`, `publr.messaging.Sms` or `publr.messaging.Push`. From the queue, once the
+write committed, core hands it to the first provider of its `messaging` contract
+(`publr.messaging.contract`) that is switched on and covers the channel. With no provider
+nothing is sent and nothing fails. A provider registers `channels` (the channels it covers)
+and `send` (one `publr.messaging.Message`), and `attachments` when it sends files; its
+`send` runs from the queue, so it may call out.
+
+Settings › Providers lists every contract's providers, compiled in or installed, in the
+order they are tried: an administrator switches each on or off, moves it up or down, and
+opens its plugin's settings from there (`provider.list`, `provider.set`).
+
 ### Limits
 
 Every call into a plugin runs within limits: 100 ms of CPU (counted in instructions),
@@ -314,8 +331,8 @@ pub const plugin = publr.plugin.define(manifest, .{
   looks inside a file for a name.
 - **Decided but not built.** `define` refuses these options and names the gate that brings
   them: `register_taxonomies`, `register_columns`,
-  `register_components`, `register_providers`, `register_location_rules`, `taxonomies`,
-  `jobs`, `webhooks`. Queued work, schedules, email, outside search engines and field
+  `register_components`, `register_location_rules`, `taxonomies`,
+  `jobs`, `webhooks`. Queued work, schedules, outside search engines and field
   editors in the plugin frame come with later gates too.
 
 ### Operations
