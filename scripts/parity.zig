@@ -71,7 +71,9 @@ pub fn main(init: std.process.Init) !u8 {
 /// plugins queue no jobs for `job list` to show nor fail one for `job run_again`, repeat
 /// none for `job schedule` to move, and declare no webhooks for `webhook list` and
 /// `webhook run_again`; `project put` answers only a plugin's call; asking the marketplace
-/// answers a new id each time, and `job answer` reads only an id someone was given.
+/// answers a new id each time, and `job answer` reads only an id someone was given; a
+/// plugin's field group values read and written are the sampler's own group, which the
+/// seeded project has none of.
 const skips = [_][]const u8{
     "ai.ask",
     "ai.reply",
@@ -111,6 +113,8 @@ const skips = [_][]const u8{
     "project.put",
     "plugin.find",
     "job.answer",
+    "custom_fields.values",
+    "custom_fields.save_values",
 };
 
 fn skipped(comptime name: []const u8) bool {
