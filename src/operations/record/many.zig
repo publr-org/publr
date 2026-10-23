@@ -30,8 +30,9 @@ pub const TransitionMany = struct {
         \\`not_moved`) while the rest go on. Pending edits of records going live are applied,
         \\as `record publish` does.
         \\Hooks on `record transition` run for each record; event hooks hear each record's
-        \\events as if it had moved on its own. `destroy` runs `record transition` on each
-        \\record in the trash, one at a time; the others are not moved.
+        \\events as if it had moved on its own. `restore` and `destroy` run `record
+        \\transition` on each record in the trash, one at a time, so each goes back to the
+        \\status it had, as on its own; the others are not moved.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -85,8 +86,9 @@ pub const TransitionMany = struct {
             return error.Invalid;
         }
 
-        const destroying = std.mem.eql(u8, in.transition, "destroy");
-        const to = if (destroying) model.flow.trashed else try target_of(ctx, in);
+        const one_by_one = std.mem.eql(u8, in.transition, "destroy") or
+            std.mem.eql(u8, in.transition, "restore");
+        const to = if (one_by_one) model.flow.trashed else try target_of(ctx, in);
 
         const input: crud_module.ListInput = .{
             .definition = if (named) null else in.type,
@@ -94,7 +96,7 @@ pub const TransitionMany = struct {
             .filters = if (named) &.{} else in.filters,
             .search = if (named) null else in.search,
             .ids = in.ids,
-            .exclude_statuses = if (destroying) &.{} else &.{to},
+            .exclude_statuses = if (one_by_one) &.{} else &.{to},
             .limit = store.records.list_max,
         };
         const domain = record_operations.domain;
@@ -104,8 +106,8 @@ pub const TransitionMany = struct {
             .failed = &.{},
         };
 
-        if (destroying) {
-            return destroy_each(ctx, query);
+        if (one_by_one) {
+            return each_in_trash(ctx, query, in.transition);
         }
 
         const hooks: ?many_module.Hooks = if (registry.SDK.bulk.hooked(ctx, Transition)) .{
@@ -121,12 +123,19 @@ pub const TransitionMany = struct {
         };
     }
 
-    /// Each record the query keeps destroyed on its own, its hooks and all; one not in the
-    /// trash, or whose destroy waits for a person, is not moved.
-    fn destroy_each(ctx: *Ctx, query: store.documents.Query) Error!Out {
+    /// Each record the query keeps restored or destroyed on its own, its hooks and all; one
+    /// not in the trash, or whose destroy waits for a person, is not moved.
+    fn each_in_trash(
+        ctx: *Ctx,
+        query: store.documents.Query,
+        transition_name: []const u8,
+    ) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
+        std.debug.assert(transition_name.len > 0);
 
-        // Read whole before any is destroyed: a hook's own bulk move gathers again.
+        const destroying = std.mem.eql(u8, transition_name, "destroy");
+
+        // Read whole before any is moved: a hook's own bulk move gathers again.
         _ = try store.records.gather(ctx.db, ctx.arena, query);
 
         var rows: std.ArrayList(store.records.Match) = .empty;
@@ -156,7 +165,7 @@ pub const TransitionMany = struct {
         for (rows.items) |row| {
             const moved = registry.SDK.dispatch(ctx, Transition, .{
                 .id = row.id,
-                .transition = "destroy",
+                .transition = transition_name,
             }) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 else => blk: {
@@ -165,7 +174,13 @@ pub const TransitionMany = struct {
                 },
             };
 
-            if (moved != null and std.mem.eql(u8, moved.?.status, "destroyed")) {
+            const status = if (moved) |out_of| out_of.status else model.flow.trashed;
+            const gone = if (destroying)
+                std.mem.eql(u8, status, "destroyed")
+            else
+                !std.mem.eql(u8, status, model.flow.trashed);
+
+            if (gone) {
                 out.moved += 1;
                 continue;
             }
@@ -206,10 +221,7 @@ pub const TransitionMany = struct {
                 continue;
             };
             const flow = type_row.def.flow;
-            const to = if (std.mem.eql(u8, in.transition, "restore"))
-                flow.initial().id
-            else
-                target_in(flow, in.transition) orelse continue;
+            const to = target_in(flow, in.transition) orelse continue;
 
             if (found != null and !std.mem.eql(u8, found.?, to)) {
                 return error.Invalid;
