@@ -41,6 +41,8 @@ pub const Page = struct {
     /// view; what Clear changes goes back to.
     resting: Filters = .{},
     default_columns: []const []const u8 = &.{},
+    /// Fields plugins added to the listed records (`.register_columns`).
+    extended: @import("../../../sdk/extended.zig").Extended = .{},
 
     /// The columns shown: the view's, or the ones a view saying none shows.
     pub fn columns(page: *const Page) []const []const u8 {
@@ -132,10 +134,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .statuses = statuses.known(&session.ctx) catch |err| return admin.fail(&session, err, back),
         .offer = offer,
         .resting = resting,
-        .default_columns = if (typed) |found|
-            view_offer.start(arena, found).columns orelse &view_offer.across_default_columns
-        else
-            &view_offer.across_default_columns,
+        .default_columns = default_columns_of(arena, typed),
     };
     var list_in = try filters.list_in(arena, effective);
     list_in.variant = @import("../variant.zig").chosen(&session);
@@ -145,6 +144,9 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         return admin.fail(&session, err, back);
     };
     var props = try base_props(&page, shown.listed.total);
+
+    page.extended = shown.listed.extended;
+
     try fill_header(&props, &page);
     try pills.fill(&props, &page);
     try table.fill(&props, &page, shown.listed.records);
@@ -176,6 +178,15 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             },
         },
     );
+}
+
+/// The columns a view saying none shows: the type's start, or core's across types.
+fn default_columns_of(arena: std.mem.Allocator, typed: ?view_offer.Offer) []const []const u8 {
+    std.debug.assert(view_offer.across_default_columns.len > 0);
+
+    const found = typed orelse return &view_offer.across_default_columns;
+
+    return view_offer.start(arena, found).columns orelse &view_offer.across_default_columns;
 }
 
 /// One page of the records, the address's `page` (from 1). Past the last one (its records

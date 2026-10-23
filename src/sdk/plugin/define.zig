@@ -119,6 +119,7 @@ const options_known = [_][]const u8{
     "icons",                   "register_statuses",
     "extend",                  "webhooks",
     "register_location_rules", "register_providers",
+    "register_columns",
 };
 
 /// What only a built-in plugin takes outside `.extend`, until each finds its place.

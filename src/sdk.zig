@@ -27,6 +27,7 @@ pub const plugin_access = @import("sdk/plugin_access.zig");
 pub const call_json = @import("sdk/call_json.zig");
 pub const help = @import("sdk/help.zig");
 pub const changed_units = @import("sdk/changed_units.zig");
+pub const Extended = @import("sdk/extended.zig").Extended;
 pub const scratch = @import("sdk/scratch.zig");
 pub const definition_cache = @import("sdk/definition_cache.zig");
 
@@ -1033,23 +1034,44 @@ pub fn SDK(comptime registry: Registry) type {
             ctx.trail_start = if (ctx.trail) |open| open.mark() else 0;
             defer ctx.trail_start = started;
 
-            const out = try invoke_run(ctx, Operation, input, granted);
+            var out = try invoke_run(ctx, Operation, input, granted);
+            const extends = comptime @hasField(Operation.Out, "extended");
+
+            if (extends) {
+                out.extended = try out.extended.bound(ctx.arena, &ctx.plugin);
+            }
 
             inline for (registry.middleware) |Middleware| {
                 const applies = comptime middleware.applies(Middleware, Operation);
 
                 if (applies and Middleware.stage == .after) {
-                    try invoke_hook(ctx, Middleware, .{ &input, &out });
+                    const ran = invoke_hook(ctx, Middleware, .{ &input, &out });
+
+                    if (extends) extended_or_none(Operation, ran) else try ran;
                 }
             }
 
             if (ctx.sandboxed_plugins) |sandboxed| {
                 if (sandboxed.hooked(.after, Operation.name)) {
-                    try runtime_after(ctx, sandboxed, Operation, input, out);
+                    const ran = runtime_after(ctx, sandboxed, Operation, input, out);
+
+                    if (extends) extended_or_none(Operation, ran) else try ran;
                 }
             }
 
             return out;
+        }
+
+        /// A hook extending a list read that fails leaves its fields out: the list still loads.
+        fn extended_or_none(comptime Operation: type, ran: Error!void) void {
+            comptime std.debug.assert(@hasField(Operation.Out, "extended"));
+
+            ran catch |err| {
+                std.log.warn("a hook extending {s} failed ({t}); its fields stay empty", .{
+                    Operation.name,
+                    err,
+                });
+            };
         }
 
         /// Every reference in the input read now, as the caller may see it: an operation

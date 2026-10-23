@@ -235,7 +235,11 @@ pub const Default = struct {
             .layer = @tagName(resolved.layer),
             .everyone = everyone != null,
             .title_field = row.def.title_field,
-            .columns = try columns_of(ctx, row.def, resolved.columns),
+            .columns = try plugin_columns(ctx, row.def.handle, try columns_of(
+                ctx,
+                row.def,
+                resolved.columns,
+            )),
             .filterable = try filterable_of(ctx, resolved.filterable),
             .orderable = try columns_of(ctx, row.def, resolved.orderable),
         };
@@ -378,6 +382,26 @@ const core_labels = [_][2][]const u8{
     .{ "updated", "Updated" },
     .{ "created", "Created" },
 };
+
+/// The columns plugins add to the type's list (`.register_columns`), after the type's own.
+fn plugin_columns(ctx: *Ctx, handle: []const u8, own: []const Named) Error![]const Named {
+    std.debug.assert(handle.len > 0);
+
+    var columns: std.ArrayList(Named) = .empty;
+
+    columns.appendSlice(ctx.arena, own) catch return error.OutOfMemory;
+
+    for (registry.columns) |column| {
+        if (column.on(handle)) {
+            columns.append(ctx.arena, .{
+                .name = column.field,
+                .label = column.label,
+            }) catch return error.OutOfMemory;
+        }
+    }
+
+    return columns.items;
+}
 
 /// Names with their labels: a field's own, or core's column's.
 fn columns_of(

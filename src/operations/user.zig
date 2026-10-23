@@ -4,6 +4,7 @@ const auth = @import("../lib/auth.zig");
 const store = @import("../store.zig");
 const role = @import("../model/role.zig");
 const registry = @import("../server/registry.zig");
+const model = @import("../model.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -353,15 +354,32 @@ pub const List = struct {
         query: []const u8 = "",
         limit: u32 = 50,
         offset: u32 = 0,
+        sort: []const u8 = "",
     };
     pub const Out = struct {
         users: []const Summary,
         total: u32 = 0,
+        extended: sdk.Extended = .{},
+
+        /// A field of the hooking plugin's own on an account:
+        /// `out.extend(user, "loyalty.points", 120)`.
+        pub fn extend(
+            out: *const Out,
+            user: Summary,
+            field: []const u8,
+            value: anytype,
+        ) Error!void {
+            std.debug.assert(user.id.len > 0);
+
+            return out.extended.put(user.id, field, value);
+        }
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .query = "Only the accounts whose name or email holds this; every one when empty",
         .limit = "How many at most; 50 when omitted, up to 200",
         .offset = "How many to pass over first: the next page's start",
+        .sort = "A field stored on the accounts (`loyalty.points`), `-loyalty.points` " ++
+            "descending; oldest first when empty",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -387,13 +405,22 @@ pub const List = struct {
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .users = "A page of accounts, oldest first; `created_at` is Unix milliseconds",
         .total = "How many accounts the query matches in all",
+        .extended = "Fields plugins add to each account, by its id: " ++
+            "`{\"<id>\": {\"loyalty.points\": 120}}`",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.caller != .anonymous);
         std.debug.assert(store.users.list_max > 0);
 
-        const window = try window_of(in.query, in.limit, in.offset);
+        var window = try window_of(in.query, in.limit, in.offset);
+
+        if (in.sort.len > model.field.path_len_max) {
+            return error.Invalid;
+        }
+
+        window.sort = in.sort;
+
         const rows = try store.users.page(ctx.db, ctx.arena, window);
         const users = try ctx.arena.alloc(Summary, rows.len);
 
@@ -404,9 +431,56 @@ pub const List = struct {
         return .{
             .users = users,
             .total = try store.users.count_matching(ctx.db, window.query),
+            .extended = try stored_columns(ctx, users),
         };
     }
 };
+
+/// The fields plugins store on accounts that their columns show, read for the page at once.
+fn stored_columns(ctx: *Ctx, users: []const Summary) Error!sdk.Extended {
+    const extended = try sdk.Extended.start(ctx.arena, &ctx.plugin);
+
+    std.debug.assert(users.len <= store.users.list_max);
+
+    if (users.len == 0) {
+        return extended;
+    }
+
+    const ids = try ctx.arena.alloc([]const u8, users.len);
+
+    for (users, ids) |user, *id| {
+        id.* = user.id;
+    }
+
+    const list = std.json.Stringify.valueAlloc(ctx.arena, ids, .{}) catch {
+        return error.OutOfMemory;
+    };
+
+    for (registry.columns) |column| {
+        if (!column.stored or !column.on("users")) {
+            continue;
+        }
+
+        const found = try store.user_values.field_values(ctx.db, ctx.arena, column.field, list);
+
+        for (found) |each| {
+            try extended.set(each.record, column.field, switch (each.value) {
+                .integer => |number| .{
+                    .integer = number,
+                },
+                .real => |number| .{
+                    .float = number,
+                },
+                .text => |text| .{
+                    .string = text,
+                },
+                .blob, .null => continue,
+            });
+        }
+    }
+
+    return extended;
+}
 
 pub const CreatedUser = struct {
     user_id: []const u8,

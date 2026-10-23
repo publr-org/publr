@@ -126,7 +126,9 @@ fn children_of(comptime Type: type) []const Child {
                     .name = "[]",
                     .required = true,
                 }},
-            .@"struct" => |info| if (@hasDecl(Type, "reference")) &.{} else fields: {
+            // A reference, or an object whose keys come with the data (`json_object`).
+            .@"struct" => |info| if (@hasDecl(Type, "reference") or
+                @hasDecl(Type, "json_object")) &.{} else fields: {
                 var children: [info.fields.len]Child = undefined;
 
                 for (info.fields, &children) |field, *child| {

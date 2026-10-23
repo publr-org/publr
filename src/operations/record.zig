@@ -479,6 +479,20 @@ pub const List = struct {
         documents: []const []const u8 = &.{},
         /// With `count`: how many records the conditions keep, every page together.
         total: u32 = 0,
+        extended: sdk.Extended = .{},
+
+        /// A field of the hooking plugin's own on a record: `out.extend(record,
+        /// "loyalty.points", 120)`.
+        pub fn extend(
+            out: *const Out,
+            record: Record,
+            field: []const u8,
+            value: anytype,
+        ) Error!void {
+            std.debug.assert(record.id.len > 0);
+
+            return out.extended.put(record.id, field, value);
+        }
     };
     pub const example: In = .{
         .type = "post",

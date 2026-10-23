@@ -356,8 +356,13 @@ pub fn assert_serialisable(comptime Type: type, comptime depth: u32) void {
                 assert_serialisable(pointer.child, depth + 1);
             },
             .array => |array| assert_serialisable(array.child, depth + 1),
-            // A reference is written as its id, whatever its record holds.
-            .@"struct" => |structure| if (!@hasDecl(Type, "reference")) {
+            .@"struct" => |structure| {
+                // A reference is written as its id, whatever its record holds; an object
+                // whose keys come with the data writes its own JSON.
+                if (@hasDecl(Type, "reference") or @hasDecl(Type, "json_object")) {
+                    return;
+                }
+
                 if (structure.fields.len > fields_max) {
                     @compileError("too many fields: " ++ @typeName(Type));
                 }

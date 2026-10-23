@@ -9,6 +9,8 @@ const frame_pages = @import("frame/pages.zig");
 const fields = @import("fields.zig");
 const editor = @import("editor.zig");
 const model = @import("../../model.zig");
+const Extended = @import("../../sdk/extended.zig").Extended;
+const view_columns = @import("content/view_columns.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -45,9 +47,11 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     var session = try admin.require(request, response, ctx) orelse return;
     const offset = admin.pager.offset_of(&session);
+    const sort = sort_of(&session);
     const listed = registry.SDK.dispatch(&session.ctx, user_operations.List, .{
         .offset = offset,
         .limit = page_size,
+        .sort = sort,
     }) catch |err| {
         return admin.fail(&session, err, "/admin/settings");
     };
@@ -55,6 +59,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     const rows = try arena.alloc(views.Users.UsersItem, listed.users.len);
     const me = session.ctx.caller.user_id() orelse "";
     const roles = try roles_in(&session);
+    const columns = try columns_of(arena, sort);
 
     for (listed.users, rows) |user, *row| {
         row.* = .{
@@ -64,12 +69,17 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             .roles = try labels_of(arena, roles, user.roles),
             .active = user.active,
             .me = std.mem.eql(u8, user.id, me),
+            .cells = try cells_of(arena, listed.extended, user.id),
         };
     }
 
+    const path = if (sort.len == 0)
+        back
+    else
+        try std.fmt.allocPrint(arena, "{s}?sort={s}", .{ back, sort });
     const pages = try admin.pager.links(
         arena,
-        back,
+        path,
         offset,
         @intCast(rows.len),
         listed.total,
@@ -78,11 +88,90 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     try admin.screen(&session, .ok, views.Users, .{
         .users = rows,
+        .columns = columns,
         .range = pages.range,
         .previous_href = pages.previous_href,
         .next_href = pages.next_href,
         .plugin_tabs = try plugin_tabs_of(&session),
     }, .{});
+}
+
+/// The column the list is sorted on (`?sort=loyalty.points`, `-` descending): only a field
+/// a plugin stores on accounts; anything else leaves it oldest first.
+fn sort_of(session: *const Session) []const u8 {
+    std.debug.assert(session.signed_in());
+
+    const asked = admin.query_param(session, "sort") orelse return "";
+    const field = if (std.mem.startsWith(u8, asked, "-")) asked[1..] else asked;
+
+    for (registry.columns) |column| {
+        if (column.stored and column.on("users") and std.mem.eql(u8, column.field, field)) {
+            return asked;
+        }
+    }
+
+    return "";
+}
+
+/// Plugins' columns on People, after core's, each sorting the list when its field is stored.
+fn columns_of(arena: std.mem.Allocator, sort: []const u8) Error![]const views.Users.ColumnsItem {
+    var columns: std.ArrayList(views.Users.ColumnsItem) = .empty;
+
+    std.debug.assert(sort.len <= model.field.path_len_max + 1);
+
+    for (registry.columns) |column| {
+        if (!column.on("users")) {
+            continue;
+        }
+
+        const ascending = std.mem.eql(u8, sort, column.field);
+        const descending = sort.len > 1 and std.mem.eql(u8, sort[1..], column.field);
+
+        try columns.append(arena, .{
+            .label = column.label,
+            .kind = @tagName(column.kind),
+            .sort_href = if (!column.stored)
+                ""
+            else
+                try std.fmt.allocPrint(arena, "{s}?sort={s}{s}", .{
+                    back,
+                    if (ascending) "-" else "",
+                    column.field,
+                }),
+            .sorted = if (ascending) "ascending" else if (descending) "descending" else "",
+        });
+    }
+
+    return columns.items;
+}
+
+/// One account's value in each plugin column, as text drawn by the column's kind; empty
+/// where nothing extended the row.
+fn cells_of(
+    arena: std.mem.Allocator,
+    extended: Extended,
+    id: []const u8,
+) Error![]const views.Users.CellsItem {
+    var cells: std.ArrayList(views.Users.CellsItem) = .empty;
+
+    for (registry.columns) |column| {
+        if (!column.on("users")) {
+            continue;
+        }
+
+        const kind = switch (column.kind) {
+            .number => "number",
+            .money => "money",
+            .date => "datetime",
+            .text, .status, .link => "string",
+        };
+
+        try cells.append(arena, .{
+            .text = try view_columns.text_of(arena, kind, extended.get(id, column.field)),
+        });
+    }
+
+    return cells.items;
 }
 
 /// The pages plugins add as tabs of Users, after its own.

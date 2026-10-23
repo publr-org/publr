@@ -41,6 +41,8 @@ const Measure = @import("operations/measure.zig");
 const Reference = @import("operations/reference.zig");
 const Motto = @import("operations/motto.zig");
 const HasMotto = @import("rules/has_motto.zig");
+const NoteCount = @import("hooks/note_count.zig");
+const Characters = @import("hooks/characters.zig");
 
 const WriteNote = @import("jobs/write_note.zig");
 const Tick = @import("jobs/tick.zig");
@@ -165,6 +167,35 @@ const hooks = .{
     publr.modify("sampler.sample_note.title", NoteTitle.run),
     publr.modify("sampler.*", Double.run),
 };
+/// Compiled in, the count of notes beside each person in People.
+const native_hooks = hooks ++ .{
+    publr.after(publr.operations.user.List, NoteCount.run),
+    publr.after(publr.operations.record.List, Characters.run),
+};
+
+/// Two columns on People: the motto the sampler stores on each account, sortable, and how
+/// many notes each person kept, worked out by `NoteCount`; one on greeter's lists, each
+/// salutation's length, from `Characters`.
+const columns = .{
+    .{
+        .list = "users",
+        .field = "sampler.motto",
+        .label = "Motto",
+        .kind = .text,
+    },
+    .{
+        .list = "users",
+        .field = "sampler.notes",
+        .label = "Notes",
+        .kind = .number,
+    },
+    .{
+        .list = "greeter.*",
+        .field = "sampler.characters",
+        .label = "Characters",
+        .kind = .number,
+    },
+};
 
 const field_groups = .{
     .{
@@ -188,11 +219,12 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
         .records = &native_records,
         .field_kinds = &.{Place.kind},
         .register_location_rules = .{HasMotto.location_rule},
+        .register_columns = columns,
         .jobs = &jobs,
         .webhooks = &webhooks,
         .register_fields = field_groups,
         .operations = native_operations,
-        .hooks = hooks,
+        .hooks = native_hooks,
         .events = &.{Noted.event},
         .secrets = Secrets,
         .permissions = permissions,

@@ -20,6 +20,40 @@ pub const delete_field = Store.delete_field;
 /// The one type every user's document is written under; the groups are its top fields.
 pub const type_id = "user";
 
+pub const Found = struct {
+    record: []const u8,
+    value: db.Any,
+};
+
+/// One field's live value (a list's first) on each of these accounts that has it, in one
+/// read: `ids` is a JSON list of their ids.
+pub fn field_values(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    field: []const u8,
+    ids: []const u8,
+) db.Error![]Found {
+    std.debug.assert(field.len > 0);
+    std.debug.assert(ids.len > 0);
+
+    var select = try connection.prepare(
+        "SELECT record, value FROM user_values WHERE slot = 'live' AND field = ?1 " ++
+            "AND ordinal = 0 AND record IN (SELECT value FROM json_each(?2))",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, field);
+    try select.bind_text(2, ids);
+
+    var found: std.ArrayList(Found) = .empty;
+
+    while (try select.step()) {
+        found.append(arena, try select.read(Found, arena)) catch return error.OutOfMemory;
+    }
+
+    return found.items;
+}
+
 test "user values live under the user, apart from record and term values" {
     var fixture: db.testing.Fixture = undefined;
     try fixture.init();

@@ -25,7 +25,12 @@ export type UsersProps = {
     active: boolean;
     /** The signed-in user's own row. */
     me: boolean;
+    /** The account's value in each plugin column, in `columns`' order; empty shows "—". */
+    cells?: Array<{ text: string }>;
   }>;
+  /** Columns plugins add (`.register_columns`): `kind` is number, money, date, text, status
+   * or link; a column of a stored field sorts the list through `sort_href`. */
+  columns?: Array<{ label: string; kind: string; sort_href: string; sorted: string }>;
   /** "51–100 of 230" when there is more than one page; empty otherwise. */
   range: string;
   /** The pages before and after this one; empty at either end. */
@@ -40,6 +45,7 @@ export type UsersProps = {
  * whoever looks. */
 export function Users({
   users,
+  columns = [],
   range,
   previous_href,
   next_href,
@@ -73,6 +79,15 @@ export function Users({
             <TableHead>{Publr.t("Email")}</TableHead>
             <TableHead>{Publr.t("Roles")}</TableHead>
             <TableHead>{Publr.t("Status")}</TableHead>
+            {columns.map((column) => (
+              <TableHead align={column.kind === "number" || column.kind === "money" ? "right" : "left"}>
+                {column.sort_href === "" ? column.label : (
+                  <Link href={column.sort_href} variant="body-sm" tone="default">
+                    {column.label}{column.sorted === "ascending" ? " ↑" : column.sorted === "descending" ? " ↓" : ""}
+                  </Link>
+                )}
+              </TableHead>
+            ))}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -106,6 +121,20 @@ export function Users({
                   <Status tone="warning">{Publr.t("Invited")}</Status>
                 )}
               </TableCell>
+              {(user.cells ?? []).map((cell, index) => (
+                <TableCell align={columns[index].kind === "number" || columns[index].kind === "money" ? "right" : "left"}
+                  numeric={columns[index].kind === "number" || columns[index].kind === "money" || columns[index].kind === "date"}>
+                  {cell.text === "" ? (
+                    <Text as="span" variant="body-sm" tone="muted">—</Text>
+                  ) : columns[index].kind === "status" ? (
+                    <Status tone="neutral">{cell.text}</Status>
+                  ) : columns[index].kind === "link" ? (
+                    <Link href={cell.text} variant="body-sm" tone="default">{cell.text}</Link>
+                  ) : (
+                    <Text as="span" variant="body-sm" tone="muted">{cell.text}</Text>
+                  )}
+                </TableCell>
+              ))}
             </TableRow>
           ))}
         </TableBody>
