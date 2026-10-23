@@ -53,7 +53,9 @@ test "term values live apart from record values" {
     const text = "{\"name\":\"Zig\",\"slug\":\"zig\"}";
     const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{});
 
-    try write(&kinds.core, connection, id, live, taxonomy_id, taxonomy.test_topics.fields, parsed);
+    const fields = taxonomy.test_topics.fields;
+
+    try write(&kinds.core, null, connection, id, live, taxonomy_id, fields, parsed);
 
     try std.testing.expectEqual(@as(usize, 2), (try read(connection, arena, id, live)).len);
     const by_slug = try find_by_text(connection, arena, taxonomy_id, "slug", "zig", "");

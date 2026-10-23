@@ -107,10 +107,8 @@ fn heard(ctx: *Ctx, plugin: []const u8, speech: sdk_ai.Speech) Error![]const u8 
     std.debug.assert(speech.audio.len > 0);
 
     const SDK = @import("../../server/registry.zig").SDK;
-    const operation = try std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{
-        plugin,
-        sdk_ai.transcribe_verb,
-    });
+    const found = try providers.registered(ctx, plugin) orelse return error.NotFound;
+    const operation = found.operation_of("transcribe") orelse return error.NotFound;
     const input = std.json.Stringify.valueAlloc(ctx.arena, speech, .{}) catch {
         return error.OutOfMemory;
     };

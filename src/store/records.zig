@@ -97,7 +97,9 @@ fn seed_record_by(
     const values = @import("values.zig");
     const fields = model_content_type.test_post.fields;
 
-    try values.write(&kinds.core, &fixture.connection, id, values.live, type_id, fields, document);
+    const connection = &fixture.connection;
+
+    try values.write(&kinds.core, null, connection, id, values.live, type_id, fields, document);
 
     return id;
 }
@@ -512,7 +514,7 @@ test "list: every operator on a field, over one type or several; ordered by a fi
     const values = @import("values.zig");
     const fields = model_content_type.test_post.fields;
 
-    try values.write(&kinds.core, connection, unread, values.live, type_id, fields, document);
+    try values.write(&kinds.core, null, connection, unread, values.live, type_id, fields, document);
 
     const by_views = try list(connection, arena, .{
         .type_ids = &.{type_id},

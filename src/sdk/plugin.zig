@@ -17,6 +17,8 @@ const runtime = @import("plugin/sandboxed.zig");
 const db = @import("../lib/db.zig");
 
 pub const PluginCtx = plugin_context.PluginCtx;
+const field_group_model = @import("../model/field_group.zig");
+const location_rule_define = @import("plugin/location_rule_define.zig");
 pub const types = plugin_types;
 /// One registration: `pub const plugin = publr.plugin.define(manifest, options)`.
 pub const define = plugin_define.define;
@@ -99,7 +101,6 @@ pub const Variants = variants.Dimension;
 pub const Variant = variants.Variant;
 pub const SettingsPage = admin_slots.SettingsPage;
 pub const SettingsTab = admin_slots.SettingsTab;
-pub const SettingsTabPage = admin_slots.SettingsTabPage;
 pub const RowAction = admin_slots.RowAction;
 pub const Page = admin_slots.Page;
 pub const Item = admin_slots.Item;
@@ -714,10 +715,12 @@ pub fn Merged(comptime plugins: anytype) type {
         var internal_collections: []const OwnedCollection = &.{};
         var schemas: []const [:0]const u8 = &.{};
         var field_kinds: []const kinds.Kind = &.{};
+        var location_rules: []const field_group_model.PluginRule = &.{};
         var content_types: []const DeclaredType = &.{};
         var custom_fields: []const DeclaredType = &.{};
         var delivery_gates: []const sdk.delivery.Gate = &.{};
         var sign_in_providers: []const SignInProvider = &.{};
+        var providers: []const @import("../model/provider.zig").Registered = &.{};
         var routes: []const route.Declared = &.{};
         var settings_pages: []const OwnedSettingsPage = &.{};
         var row_actions: []const RowAction = &.{};
@@ -771,6 +774,7 @@ pub fn Merged(comptime plugins: anytype) type {
             }
 
             field_kinds = field_kinds ++ field_kinds_of(Plugin);
+            location_rules = location_rules ++ location_rule_define.rules_of(Plugin);
             const own_routes = route.routes_of(Plugin, owned_of(Plugin));
 
             routes = routes ++ own_routes;
@@ -794,10 +798,12 @@ pub fn Merged(comptime plugins: anytype) type {
             }
 
             for (admin_slots.pages_of(Plugin)) |page| {
-                const used = if (page.form) |form| [_]type{ form.read, form.save } else [_]type{
-                    page.operation.?,
-                    page.operation.?,
-                };
+                const used: []const type = if (page.tabs)
+                    &.{}
+                else if (page.form) |form|
+                    &.{ form.read, form.save }
+                else
+                    &.{page.operation.?};
 
                 for (used) |Operation| {
                     if (!owns_operation(Plugin, Operation)) {
@@ -914,6 +920,8 @@ pub fn Merged(comptime plugins: anytype) type {
                     @as([]const sdk.delivery.Gate, plugin_define.get(Plugin, "delivery_gates"));
             }
 
+            providers = providers ++ @import("contract.zig").registered_of(Plugin);
+
             if (plugin_define.has(Plugin, "sign_in_provider")) {
                 var declared: SignInProvider = plugin_define.get(Plugin, "sign_in_provider");
 
@@ -936,6 +944,18 @@ pub fn Merged(comptime plugins: anytype) type {
             for (sign_in_providers[index + 1 ..]) |other| {
                 if (std.mem.eql(u8, declared.name, other.name)) {
                     @compileError("two plugins declare the sign-in provider " ++ declared.name);
+                }
+            }
+        }
+
+        for (providers, 0..) |declared, index| {
+            for (providers[index + 1 ..]) |other| {
+                const same = std.mem.eql(u8, declared.contract, other.contract) and
+                    std.mem.eql(u8, declared.name, other.name);
+
+                if (same) {
+                    @compileError("two providers of " ++ declared.contract ++ " are named " ++
+                        declared.name);
                 }
             }
         }
@@ -988,13 +1008,16 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_internal_collections = internal_collections;
             pub const merged_schemas = schemas;
             pub const merged_field_kinds = field_kinds;
+            pub const merged_location_rules = location_rules;
             pub const merged_content_types = content_types;
             pub const merged_custom_fields = custom_fields;
             pub const merged_delivery_gates = delivery_gates;
             pub const merged_sign_in_providers = sign_in_providers;
+            /// Every provider the plugins register into a contract, in plugin order.
+            pub const merged_providers = providers;
             pub const merged_routes = routes;
             pub const merged_settings_pages = settings_pages;
-            /// Every plugin's sections of System settings tabs, in name order.
+            /// Every plugin's sections of Users tabs, in name order.
             pub const merged_settings_tabs = settings_tabs;
             /// Every plugin's actions on other pages' rows, in name order.
             pub const merged_row_actions = row_actions;

@@ -186,6 +186,7 @@ pub fn Of(comptime Domain: type) type {
 
             try values.write(
                 registry.Kinds.all,
+                ctx,
                 ctx.db,
                 row.id,
                 slot,

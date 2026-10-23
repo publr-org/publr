@@ -102,6 +102,8 @@ pub const Manifest = struct {
     /// The events it declares (`.events`), by full name, with their payloads' shapes.
     events: []const Event = &.{},
     compatible_with: []const []const u8 = &.{},
+    /// The providers it registers into contracts.
+    providers: []const @import("provider.zig").Registered = &.{},
     pages: []const Page = &.{},
     menu: []const MenuEntry = &.{},
     icons: []const PluginIcon = &.{},
@@ -228,6 +230,8 @@ pub const Field = struct {
     label: []const u8 = "",
     /// The names a value may be, when it is one of a set.
     values: []const []const u8 = &.{},
+    /// A list of items' fields, each plain (`json`, a list of `{ code, label }`).
+    fields: []const Field = &.{},
 
     pub const Shape = enum { string, integer, number, boolean, strings, json };
 };
@@ -243,6 +247,10 @@ pub const Page = struct {
     save: []const u8 = "",
     /// `.menu = .none`: left out of the menu, still opened at its address.
     hidden: bool = false,
+    /// A tabbed page, filled by other pages naming it in `parent`.
+    tabs: bool = false,
+    /// The tabbed pages this form is a tab of, the first that exists (`products.settings`).
+    parent: []const []const u8 = &.{},
 };
 
 /// An entry in the top bar: to one of the plugin's pages or an admin

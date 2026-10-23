@@ -111,7 +111,7 @@ pub fn render_plugin_tab(
 fn plugin_tabs_of(session: *Session) Error![]const views.Users.Plugin_tabsItem {
     std.debug.assert(session.signed_in());
 
-    const found = try settings_tabs.links(session, .users);
+    const found = try settings_tabs.links(session);
     const items = try session.arena.alloc(views.Users.Plugin_tabsItem, found.len);
 
     for (found, items) |link, *item| {

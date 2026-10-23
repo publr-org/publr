@@ -46,6 +46,8 @@ const design_operations = @import("../operations/design.zig");
 const health = @import("../operations/health.zig");
 const operation_operations = @import("../operations/operation.zig");
 const mod_operations = @import("../operations/mod.zig");
+const provider_operations = @import("../operations/provider.zig");
+const messaging = @import("../sdk/messaging.zig");
 
 /// The compiled-in plugins, each bound to its doc comments.
 pub const bound_plugins = bound: {
@@ -77,7 +79,8 @@ const core_operations = heartbeat.operations ++ project.operations ++ custom_fie
     activity.operations ++ errors.operations ++ apps.operations ++ ai.operations ++
     secret.operations ++ http_operations.operations ++ update.operations ++
     removal.operations ++ trash.operations ++ design_operations.operations ++
-    health.operations ++ operation_operations.operations ++ mod_operations.operations;
+    health.operations ++ operation_operations.operations ++ mod_operations.operations ++
+    provider_operations.operations;
 const core_namespaces = [_]sdk.operation.Namespace{
     heartbeat.namespace,
     project.namespace,
@@ -113,6 +116,7 @@ const core_namespaces = [_]sdk.operation.Namespace{
     trash.namespace,
     design_operations.namespace,
     health.namespace,
+    provider_operations.namespace,
 };
 
 /// The names no plugin may take: every core namespace, `app` (what an app's users call is
@@ -131,6 +135,9 @@ const core_namespace_names = names: {
 };
 
 comptime {
+    // Each name against each plugin's, a byte at a time.
+    @setEvalBranchQuota(1000 + bound_plugins.len * reserved_names.len * contract.name_len_max);
+
     for (bound_plugins) |Plugin| {
         for (reserved_names) |reserved| {
             if (std.mem.eql(u8, Plugin.manifest.name, reserved)) {
@@ -212,6 +219,9 @@ pub fn native_providers(
 
     std.debug.assert(plugins.len <= 64);
 
+    // Unrolled: a few branches a plugin, and a few an operation.
+    @setEvalBranchQuota(1000 + plugins.len * 64 + sdk.operations_max * 8);
+
     inline for (plugins, list) |Plugin, *provider| {
         const operations = comptime operations: {
             const options = std.meta.fields(@TypeOf(Plugin.options)).len;
@@ -287,10 +297,11 @@ pub const registry: sdk.Registry = .{
     .operations = &core_operations ++ native_plugins.merged_operations,
     .namespaces = &core_namespaces ++ native_plugins.merged_namespaces,
     .policies = native_plugins.merged_policies,
-    .middleware = &project.middleware ++ native_plugins.merged_middleware,
+    .middleware = &project.middleware ++ messaging.middleware ++
+        native_plugins.merged_middleware,
     .operation_owners = &core_owners(core_operations.len) ++
         native_plugins.merged_operation_owners,
-    .middleware_owners = &core_owners(project.middleware.len) ++
+    .middleware_owners = &core_owners(project.middleware.len + messaging.middleware.len) ++
         native_plugins.merged_middleware_owners,
     .jobs = native_plugins.merged_jobs,
     .job_owners = native_plugins.merged_job_owners,
@@ -306,6 +317,8 @@ pub const registry: sdk.Registry = .{
 pub const SDK = sdk.SDK(registry);
 
 pub const Kinds = kind_registry.Registry(&kind_registry.core ++ native_plugins.merged_field_kinds);
+/// The location rules compiled-in plugins bring (`loyalty.tier`).
+pub const location_rules = native_plugins.merged_location_rules;
 
 pub const Filters = filter_registry.Registry(&filter_registry.core);
 
@@ -314,6 +327,8 @@ pub const webhooks = native_plugins.merged_webhooks;
 pub const webhook_owners = native_plugins.merged_webhook_owners;
 /// The sign-in providers the native plugins declare, offered or not.
 pub const sign_in_providers = native_plugins.merged_sign_in_providers;
+/// The providers the native plugins register into contracts.
+pub const providers = native_plugins.merged_providers;
 pub const plugin_routes = native_plugins.merged_routes;
 pub const settings_pages = native_plugins.merged_settings_pages;
 pub const settings_tabs = native_plugins.merged_settings_tabs;

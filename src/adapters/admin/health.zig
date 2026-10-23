@@ -94,7 +94,49 @@ fn screen(session: *Session, notice: []const u8, problem: []const u8) Error!void
         .next_href = next_href,
         .notice = notice,
         .problem = problem,
+        .unplaced = try unplaced_of(session),
     }, .{});
+}
+
+/// The field groups a location rule places that no compiled-in plugin brings any more.
+fn unplaced_of(session: *Session) Error![]const views.Health.UnplacedItem {
+    std.debug.assert(session.signed_in());
+
+    const custom_fields = @import("../../operations/custom_fields.zig");
+    const arena = session.arena;
+    var found: std.ArrayList(views.Health.UnplacedItem) = .empty;
+    const listed = registry.SDK.dispatch(&session.ctx, custom_fields.List, .{}) catch {
+        return found.items;
+    };
+
+    for (listed.groups) |item| {
+        const got = registry.SDK.dispatch(&session.ctx, custom_fields.Get, .{
+            .group = item.handle,
+        }) catch continue;
+
+        for (got.definition.group.location) |group| {
+            for (group.rules) |rule| {
+                const plugin_rule = std.mem.indexOfScalar(u8, rule.field, '.') != null;
+
+                if (!plugin_rule or model.field_group.find_rule(
+                    registry.location_rules,
+                    rule.field,
+                ) != null) {
+                    continue;
+                }
+
+                try found.append(arena, .{
+                    .group = item.name,
+                    .href = try std.fmt.allocPrint(arena, "/admin/custom-fields/{s}", .{
+                        item.handle,
+                    }),
+                    .rule = rule.field,
+                });
+            }
+        }
+    }
+
+    return found.items;
 }
 
 fn item_of(session: *Session, case: health.Case) Error!Item {

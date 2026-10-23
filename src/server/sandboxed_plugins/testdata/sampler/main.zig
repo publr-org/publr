@@ -20,10 +20,13 @@ const Notes = @import("records/notes.zig");
 const Logs = @import("records/logs.zig");
 const Tallies = @import("records/tallies.zig");
 const Reviews = @import("records/reviews.zig");
+const Visits = @import("records/visits.zig");
 const Profile = @import("records/profile.zig");
 const Noted = @import("events/noted.zig");
+const Place = @import("kinds/place.zig");
 
 const Hello = @import("operations/hello.zig");
+const Hi = @import("operations/hi.zig");
 const Echo = @import("operations/echo.zig");
 const Note = @import("operations/note.zig");
 const ReadLogs = @import("operations/logs.zig");
@@ -35,6 +38,8 @@ const Submit = @import("operations/submit.zig");
 const Later = @import("operations/later.zig");
 const Measure = @import("operations/measure.zig");
 const Reference = @import("operations/reference.zig");
+const Motto = @import("operations/motto.zig");
+const HasMotto = @import("rules/has_motto.zig");
 
 const WriteNote = @import("jobs/write_note.zig");
 const Tick = @import("jobs/tick.zig");
@@ -126,6 +131,8 @@ const added_statuses = .{.{
 }};
 
 const records = [_]type{ Notes.record, Logs.record, Tallies.record, Reviews.record };
+/// Compiled in, a type whose field is of the sampler's own kind.
+const native_records = records ++ [_]type{Visits.record};
 const jobs = [_]type{ WriteNote.job, Tick.job };
 
 const operations = [_]type{
@@ -141,7 +148,10 @@ const operations = [_]type{
     Later.operation,
     Measure.operation,
     Reference.operation,
+    Hi.operation,
 };
+/// Compiled in, a write to the sampler's own field group on users.
+const native_operations = operations ++ [_]type{Motto.operation};
 
 const hooks = .{
     publr.before(Note.operation, Shout.run),
@@ -170,10 +180,12 @@ const icons = .{
 /// registers the rest.
 pub const plugin = if (publr.plugin.guest.mode == .native)
     publr.plugin.define(manifest, .{
-        .records = &records,
+        .records = &native_records,
+        .field_kinds = &.{Place.kind},
+        .register_location_rules = .{HasMotto.location_rule},
         .jobs = &jobs,
         .register_fields = field_groups,
-        .operations = operations,
+        .operations = native_operations,
         .hooks = hooks,
         .events = &.{Noted.event},
         .secrets = Secrets,

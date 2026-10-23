@@ -531,6 +531,9 @@ test "secrets: every operation with a field the net catches declares it" {
     var missing: std.ArrayList([]const u8) = .empty;
     defer missing.deinit(std.testing.allocator);
 
+    // Each operation's fields, unrolled: a few branches a field.
+    @setEvalBranchQuota(registry.SDK.operations.len * 32);
+
     inline for (registry.SDK.operations) |Operation| {
         const declared = comptime sdk.trail.secret_of(Operation);
 

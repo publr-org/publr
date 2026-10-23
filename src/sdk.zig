@@ -1015,7 +1015,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.parent != null);
 
             if (comptime operation.deprecation(Operation) != null) {
-                note_deprecated(ctx, comptime operation.deprecation_text(Operation));
+                note_deprecated(ctx, comptime operation.deprecation_text(Operation), ctx.plugin);
             }
 
             var input = in;
@@ -1159,20 +1159,22 @@ pub fn SDK(comptime registry: Registry) type {
 
         /// A caller used an operation on its way out: logged with who it was, so whoever
         /// runs the site finds the plugin, app or script to change before a major removes it.
-        pub fn note_deprecated(ctx: *const Ctx, text: []const u8) void {
+        /// `plugin` is the operation's own, empty for core's: the same line compiled in and
+        /// installed.
+        pub fn note_deprecated(ctx: *const Ctx, text: []const u8, plugin: []const u8) void {
             std.debug.assert(text.len > 0);
 
             if (builtin.is_test) {
                 return;
             }
 
-            const plugin_word = if (ctx.plugin.len > 0) ", plugin " else "";
+            const plugin_word = if (plugin.len > 0) ", plugin " else "";
 
             std.log.warn("{s} (called by {s}{s}{s})", .{
                 text,
                 ctx.caller.label(),
                 plugin_word,
-                ctx.plugin,
+                plugin,
             });
         }
 
@@ -2409,6 +2411,8 @@ test {
     _ = @import("sdk/plugin/checks.zig");
     _ = @import("sdk/plugin/secret_define.zig");
     _ = @import("sdk/plugin/written_secrets.zig");
+    _ = @import("sdk/contract.zig");
+    _ = @import("sdk/messaging.zig");
     _ = limits_module;
 }
 

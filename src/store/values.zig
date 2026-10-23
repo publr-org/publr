@@ -44,6 +44,7 @@ const taxonomy = @import("../model/taxonomy.zig");
 /// The values, and, for every `terms` field, the assignments in `record_terms`.
 pub fn write(
     known: []const kinds.Kind,
+    reader: ?*anyopaque,
     connection: *db.Db,
     record_id: []const u8,
     slot: []const u8,
@@ -54,7 +55,7 @@ pub fn write(
     std.debug.assert(record_id.len > 0);
     std.debug.assert(slot.len > 0);
 
-    try Store.write(known, connection, record_id, slot, type_id, fields, value);
+    try Store.write(known, reader, connection, record_id, slot, type_id, fields, value);
 
     var assigning = taxonomy.terms_fields(fields);
 
@@ -250,7 +251,7 @@ test "write then assemble round-trips every kind, groups, repeaters and many ref
     ;
     const parsed = try std.json.parseFromSliceLeaky(Value, arena, text, .{});
 
-    try write(&kinds.core, connection, "e1", live, type_id, &test_fields, parsed);
+    try write(&kinds.core, null, connection, "e1", live, type_id, &test_fields, parsed);
 
     const rows = try read(connection, arena, "e1", live);
     try std.testing.expectEqual(@as(usize, 13), rows.len);
@@ -306,14 +307,14 @@ test "a second write replaces everything; delete_field removes a field's rows in
         "{\"title\":\"A\",\"tags\":[\"t1\",\"t2\",\"t3\"]}",
         .{},
     );
-    try write(&kinds.core, connection, "e1", live, type_id, &test_fields, first);
+    try write(&kinds.core, null, connection, "e1", live, type_id, &test_fields, first);
     const second = try std.json.parseFromSliceLeaky(
         Value,
         arena,
         "{\"title\":\"B\",\"tags\":[\"t9\"],\"faq\":[{\"question\":\"q\"}]}",
         .{},
     );
-    try write(&kinds.core, connection, "e1", live, type_id, &test_fields, second);
+    try write(&kinds.core, null, connection, "e1", live, type_id, &test_fields, second);
 
     const rows = try read(connection, arena, "e1", live);
     try std.testing.expectEqual(@as(usize, 3), rows.len);
@@ -336,9 +337,9 @@ test "slots: a pending copy is invisible to lookups until promoted to live" {
     const type_id = try seed_record(&fixture, arena, "e1");
 
     const first = try std.json.parseFromSliceLeaky(Value, arena, "{\"title\":\"Live\"}", .{});
-    try write(&kinds.core, connection, "e1", live, type_id, &test_fields, first);
+    try write(&kinds.core, null, connection, "e1", live, type_id, &test_fields, first);
     const second = try std.json.parseFromSliceLeaky(Value, arena, "{\"title\":\"Edited\"}", .{});
-    try write(&kinds.core, connection, "e1", pending, type_id, &test_fields, second);
+    try write(&kinds.core, null, connection, "e1", pending, type_id, &test_fields, second);
 
     try std.testing.expect(try has_slot(connection, "e1", pending));
     const live_title = (try read_text(connection, arena, "e1", live, "title")).?;

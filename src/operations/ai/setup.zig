@@ -223,8 +223,6 @@ pub const Test = struct {
             return error.Invalid;
         }
 
-        _ = try providers.find(ctx, in.provider) orelse return error.NotFound;
-
         const asked = [_]lib_ai.Message{.{
             .role = .user,
             .parts = &.{lib_ai.Part.of_text("Reply with the single word OK.")},
@@ -237,10 +235,9 @@ pub const Test = struct {
         const input = std.json.Stringify.valueAlloc(ctx.arena, sdk_ai.Completion.In{
             .request = request,
         }, .{}) catch return error.OutOfMemory;
-        const operation = std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{
-            in.provider,
-            sdk_ai.complete_verb,
-        }) catch return error.OutOfMemory;
+        const provider = try providers.registered(ctx, in.provider) orelse
+            return error.NotFound;
+        const operation = provider.operation_of("complete").?;
         const SDK = @import("../../server/registry.zig").SDK;
         const output = SDK.call_json(ctx, operation, input) catch |err| {
             const failure = if (ctx.failure) |found| found.message else @errorName(err);

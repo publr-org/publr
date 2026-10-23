@@ -1,5 +1,5 @@
-//! The model providers installed: every plugin that registers one (`publr.ai.Describe` and
-//! `publr.ai.Complete`), whether compiled in or installed. Which one conversations use, and
+//! The model providers: every provider of core's `ai.model` contract that is on, compiled
+//! in or installed, in the administrator's order. Which one conversations use, and
 //! with which model, is a setting an administrator chooses under Settings › AI.
 
 const std = @import("std");
@@ -9,6 +9,7 @@ const environment = @import("../../lib/environment.zig");
 const lib_ai = @import("../../lib/ai.zig");
 const sdk_ai = @import("../../sdk/ai.zig");
 const secret = @import("../secret.zig");
+const contract = @import("../../sdk/contract.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -24,7 +25,7 @@ pub const scripted = "scripted";
 const listed_max: u32 = 32;
 
 pub const Listed = struct {
-    /// The plugin that provides it: what a conversation names as its provider.
+    /// The provider's name: what a conversation names as its provider.
     plugin: []const u8,
     description: lib_ai.Description,
     /// Whether its key is set, in the environment or kept; true for one with no key.
@@ -237,64 +238,51 @@ fn in_use(ctx: *Ctx, chosen: []const u8) Error![]Listed {
     return listed;
 }
 
-/// Every provider registered: the compiled-in plugins' and the installed ones'.
+/// Every provider of `ai.model` that is on, in order.
 fn installed(ctx: *Ctx, chosen: []const u8) Error![]Listed {
     std.debug.assert(listed_max > 0);
 
-    const SDK = @import("../../server/registry.zig").SDK;
     var found: std.ArrayList(Listed) = .empty;
 
-    inline for (SDK.operations) |Operation| {
-        if (comptime std.mem.endsWith(u8, Operation.name, "." ++ sdk_ai.describe_verb)) {
-            // `continue` cannot leave an inline loop from a runtime branch.
-            if (SDK.dispatch(ctx, Operation, .{})) |description| {
-                try add(ctx, &found, Operation.name, description, chosen);
-            } else |err| {
-                std.log.warn("{s}: {t}", .{ Operation.name, err });
-            }
-        }
-    }
+    for (try contract.providers(ctx, sdk_ai.contract, .{})) |provider| {
+        const description = provider.call(ctx, .describe, .{}) catch |err| {
+            std.log.warn("{s}: {t}", .{ provider.name(), err });
+            continue;
+        };
 
-    const sandboxed = ctx.sandboxed_plugins orelse return found.items;
-
-    for (sandboxed.manifests()) |manifest| {
-        for (manifest.operations) |operation| {
-            if (!std.mem.endsWith(u8, operation.name, "." ++ sdk_ai.describe_verb)) {
-                continue;
-            }
-
-            const answer = SDK.call_json(ctx, operation.name, "{}") catch |err| {
-                std.log.warn("{s}: {t}", .{ operation.name, err });
-                continue;
-            };
-            const Shape = lib_ai.Description;
-            const description = std.json.parseFromSliceLeaky(Shape, ctx.arena, answer, .{
-                .ignore_unknown_fields = true,
-                .allocate = .alloc_always,
-            }) catch continue;
-
-            try add(ctx, &found, operation.name, description, chosen);
-        }
+        try add(ctx, &found, provider.name(), description, chosen);
     }
 
     return found.items;
 }
 
+/// The `ai.model` provider named `name` that is on, when there is one: its parts are the
+/// operations core calls.
+pub fn registered(ctx: *Ctx, name: []const u8) Error!?contract.Registered {
+    std.debug.assert(name.len > 0);
+
+    for (try contract.enabled(ctx, sdk_ai.contract.contract_name, &.{})) |provider| {
+        if (std.mem.eql(u8, provider.name, name)) {
+            return provider;
+        }
+    }
+
+    return null;
+}
+
 fn add(
     ctx: *Ctx,
     found: *std.ArrayList(Listed),
-    operation_name: []const u8,
+    plugin: []const u8,
     description: lib_ai.Description,
     chosen: []const u8,
 ) Error!void {
-    std.debug.assert(operation_name.len > 0);
+    std.debug.assert(plugin.len > 0);
 
     if (found.items.len >= listed_max or !description.valid()) {
         return;
     }
 
-    const dot = std.mem.indexOfScalar(u8, operation_name, '.') orelse return;
-    const plugin = operation_name[0..dot];
     const key_set = if (description.key) |key|
         secrets_valid(key.secret) and try secret.value_of(ctx, key.secret) != null
     else

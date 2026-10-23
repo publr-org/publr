@@ -424,7 +424,7 @@ const Answerers = struct {
         answerers.plugin = .{
             .application = application,
             .io = answerers.init.io,
-            .operation = try std.fmt.allocPrint(answerers.arena, "{s}.complete", .{name}),
+            .name = try answerers.arena.dupe(u8, name),
         };
 
         return answerers.plugin.provider();

@@ -82,6 +82,16 @@ pub const remote = @import("sdk/plugin/hook_define.zig").remote;
 /// A secret a plugin declares in its `.secrets` struct: it never holds the value.
 pub const Secret = struct {};
 /// A field kind a plugin brings: `publr.field.kind(Value, .{ .name, .validate })`.
+/// A plugin's own `.register_fields` group on an account, as its struct:
+/// `publr.fields.get(ctx, Profile.Fields, user)`, `publr.fields.save(ctx, Profile.Fields,
+/// user, values)`. Compiled-in plugins only, for now.
+pub const fields = @import("sdk/plugin/fields_api.zig");
+/// What a `.register_location_rules` entry's `matches` is given: the account or file being
+/// edited, and the rule, compared with `rule.compare(value)`.
+pub const location = struct {
+    pub const Target = @import("sdk/plugin/location_rule_define.zig").Target;
+    pub const Rule = @import("sdk/plugin/location_rule_define.zig").Rule;
+};
 pub const field = struct {
     pub const kind = @import("sdk/plugin/field_kind_define.zig").kind;
 };
@@ -129,6 +139,17 @@ pub const authorize = struct {
 /// A plugin's page from its own PTSX view, the same HTML either way it runs:
 /// `publr.views.render(ctx, in.base, publr.views.all.SamplerLog, props)`.
 pub const views = @import("sdk/plugin/views.zig");
+/// A named set of operations providers implement: `publr.contract.define(.{ .name,
+/// .operations, .optional, .component })`.
+pub const contract = struct {
+    pub const define = @import("sdk/contract.zig").define;
+};
+/// The enabled providers of a contract, in the administrator's order:
+/// `publr.providers(ctx, Contract, .{ .can = &.{.refund} })`.
+pub const providers = @import("sdk/contract.zig").providers;
+/// Messages Publr hands to providers: `ctx.emit(publr.messaging.Email, .{ .to, .subject,
+/// .text })`, and the `messaging` contract providers register into.
+pub const messaging = @import("sdk/messaging.zig");
 /// Model providers: the contract, and the two operations a provider plugin registers with.
 pub const ai = @import("sdk/ai.zig");
 pub const routes = @import("server/routes.zig");
