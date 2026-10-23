@@ -1,5 +1,5 @@
 //! The pages a person may pin to their rail, as the sidebars list them and the rail draws
-//! the pinned ones: the admin's own under Settings, plugins' settings pages and pages, the
+//! the pinned ones: the admin's own under Settings, plugins' pages, the
 //! settings sections, and plugins' sections in Content. Each named as `rail.pin` takes it,
 //! shown only to whoever may see it.
 const std = @import("std");
@@ -50,19 +50,6 @@ pub fn settings(session: *const Session) Error![]Destination {
                 .icon = page.icon,
                 .href = href,
                 .group = page.group,
-            });
-        }
-    }
-
-    inline for (registry.settings_pages) |owned| {
-        if (registry.SDK.may(&session.ctx, owned.page.operation)) {
-            try listed.append(arena, .{
-                .plugin = owned.plugin,
-                .page = owned.page.path,
-                .label = owned.page.label,
-                .icon = owned.page.icon,
-                .href = owned.page.path,
-                .group = .plugins,
             });
         }
     }

@@ -100,7 +100,6 @@ pub const Word = struct {
 };
 pub const Variants = variants.Dimension;
 pub const Variant = variants.Variant;
-pub const SettingsPage = admin_slots.SettingsPage;
 pub const RowAction = admin_slots.RowAction;
 pub const Page = admin_slots.Page;
 pub const Panel = admin_slots.Panel;
@@ -109,12 +108,6 @@ pub const Panel = admin_slots.Panel;
 pub const OwnedPanel = struct {
     plugin: []const u8,
     panel: Panel,
-};
-
-/// A settings page and the plugin whose it is: pinned to the rail as that pair.
-pub const OwnedSettingsPage = struct {
-    plugin: []const u8,
-    page: SettingsPage,
 };
 
 /// A page and the plugin it is of.
@@ -589,7 +582,6 @@ pub fn Merged(comptime plugins: anytype) type {
         var sign_in_providers: []const SignInProvider = &.{};
         var providers: []const @import("../model/provider.zig").Registered = &.{};
         var routes: []const route.Declared = &.{};
-        var settings_pages: []const OwnedSettingsPage = &.{};
         var row_actions: []const RowAction = &.{};
         var pages: []const OwnedPage = &.{};
         var menu: []const @import("../model/sandboxed_plugin.zig").MenuEntry = &.{};
@@ -644,17 +636,7 @@ pub fn Merged(comptime plugins: anytype) type {
             field_kinds = field_kinds ++ field_kinds_of(Plugin);
             location_rules = location_rules ++ location_rule_define.rules_of(Plugin);
             columns = columns ++ column_define.columns_of(Plugin);
-            const own_routes = route.routes_of(Plugin, owned_of(Plugin));
-
-            routes = routes ++ own_routes;
-            for (admin_slots.settings_pages_of(Plugin, own_routes)) |page| {
-                const owned: OwnedSettingsPage = .{
-                    .plugin = Plugin.manifest.name,
-                    .page = page,
-                };
-
-                settings_pages = settings_pages ++ &[_]OwnedSettingsPage{owned};
-            }
+            routes = routes ++ route.routes_of(Plugin, owned_of(Plugin));
             row_actions = row_actions ++ admin_slots.row_actions_of(Plugin);
 
             for (admin_slots.pages_of(Plugin)) |page| {
@@ -877,7 +859,6 @@ pub fn Merged(comptime plugins: anytype) type {
             /// Every provider the plugins register into a contract, in plugin order.
             pub const merged_providers = providers;
             pub const merged_routes = routes;
-            pub const merged_settings_pages = settings_pages;
             /// Every plugin's actions on other pages' rows, in name order.
             pub const merged_row_actions = row_actions;
             /// Every plugin's own pages, in name order.

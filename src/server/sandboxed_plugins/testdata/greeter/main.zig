@@ -8,8 +8,6 @@
 const std = @import("std");
 const publr = @import("publr");
 
-const sdk = publr.sdk;
-const PluginCtx = publr.plugin.PluginCtx;
 const record = publr.operations.record;
 
 const manifest: publr.Manifest = .{
@@ -84,41 +82,39 @@ const roles = [_]publr.plugin.Role{.{
 
 const operations = [_]type{ Greet, Count, People, Recall, Wave, Hail };
 
-/// Takes a reference: the caller names a salutation, the sandbox hands greeter the stored one.
-pub const Recall = struct {
-    pub const name = "greeter.recall";
-    pub const description = "The note of a salutation, read by core before greeter runs";
-    pub const details =
-        "Administrators and granted roles call it. An unknown salutation is not found.";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        salutation: Salutations.Ref,
-    };
-    pub const Out = struct {
-        note: []const u8,
-    };
-    pub const example: In = .{
-        .salutation = .{
-            .id = "a1b2c3d4e5f60718293a4b5c",
-        },
-    };
-    pub const example_out: Out = .{
-        .note = "Hello, world",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .salutation = "The salutation, by id",
-    };
-
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now().ms >= 0);
-
-        const salutation = in.salutation.value orelse return error.Invalid;
-
-        return .{
-            .note = salutation.note,
-        };
-    }
+pub const RecallIn = struct {
+    /// The salutation, by id
+    salutation: Salutations.Ref,
 };
+
+pub const RecallOut = struct {
+    /// Its note
+    note: []const u8,
+};
+
+/// The note of a salutation, read by core before greeter runs
+///
+/// Takes a reference: the caller names a salutation, the sandbox hands greeter the stored one.
+/// Administrators and granted roles call it. An unknown salutation is not found.
+///
+/// Example:
+///   in: { "salutation": "a1b2c3d4e5f60718293a4b5c" }
+///   out: { "note": "Hello, world" }
+pub const Recall = publr.operation.define(RecallIn, RecallOut, .{
+    .name = "recall",
+    .kind = .read,
+    .run = recall,
+});
+
+fn recall(ctx: *publr.Ctx, in: RecallIn) publr.Error!RecallOut {
+    std.debug.assert(ctx.now().ms >= 0);
+
+    const salutation = in.salutation.value orelse return error.Invalid;
+
+    return .{
+        .note = salutation.note,
+    };
+}
 
 pub const WaveIn = struct {};
 
@@ -168,129 +164,124 @@ fn wave(ctx: *publr.Ctx, _: WaveIn) publr.Error!WaveOut {
     };
 }
 
-pub const Greet = struct {
-    pub const name = "greeter.greet";
-    /// Kept out of the logs, so the sandbox carries a plugin's own secrets.
-    pub const secret = .{"note"};
-    pub const description = "Record a greeting and count them";
-    pub const details =
-        \\Administrators and granted roles call it. The greeting is a record of the plugin's
-        \\type `greeter.salutation`; the answer is the total so far. A greeting to `nobody` is not
-        \\found: there is no one to greet.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        note: []const u8,
+pub const GreetIn = struct {
+    /// The greeting
+    note: []const u8,
+};
+
+pub const GreetOut = struct {
+    /// How many greetings exist now
+    ///
+    /// Why: a count, not money
+    total: u32,
+};
+
+/// Record a greeting and count them
+///
+/// Administrators and granted roles call it. The greeting is a record of the plugin's
+/// type `greeter.salutation`; the answer is the total so far. A greeting to `nobody` is not
+/// found: there is no one to greet. The note is kept out of the logs, so the sandbox carries a
+/// plugin's own secrets.
+///
+/// Example:
+///   in: { "note": "hello from the sandbox" }
+///   out: { "total": 1 }
+pub const Greet = publr.operation.define(GreetIn, GreetOut, .{
+    .name = "greet",
+    .kind = .write,
+    .secret = .{.note},
+    .run = greet,
+});
+
+fn greet(ctx: *publr.Ctx, in: GreetIn) publr.Error!GreetOut {
+    std.debug.assert(ctx.now().ms >= 0);
+
+    if (in.note.len == 0 or in.note.len > 200) {
+        return error.Invalid;
+    }
+
+    if (std.mem.eql(u8, in.note, "nobody")) {
+        ctx.log(.err, "Nobody to greet", .{});
+        return error.NotFound;
+    }
+
+    ctx.log(.info, "Greeted with {s}", .{in.note});
+
+    const note = .{
+        .note = in.note,
     };
-    pub const Out = struct {
-        /// Why: a count, not money
-        total: u32,
-    };
-    pub const example: In = .{
-        .note = "hello from the sandbox",
-    };
-    pub const example_out: Out = .{
-        .total = 1,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .note = "The greeting",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .total = "How many greetings exist now",
+    const document = std.json.Stringify.valueAlloc(ctx.arena(), note, .{}) catch {
+        return error.OutOfMemory;
     };
 
-    pub fn run(ctx: *PluginCtx, in: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now().ms >= 0);
+    _ = try ctx.call(record.Create, .{
+        .type = "greeter.salutation",
+        .document = document,
+    });
 
-        if (in.note.len == 0 or in.note.len > 200) {
-            return error.Invalid;
-        }
+    return count(ctx);
+}
 
-        if (std.mem.eql(u8, in.note, "nobody")) {
-            ctx.log(.err, "Nobody to greet", .{});
-            return error.NotFound;
-        }
+pub const CountIn = struct {};
 
-        ctx.log(.info, "Greeted with {s}", .{in.note});
+/// Count the greetings
+///
+/// Example:
+///   in: {}
+///   out: { "total": 1 }
+pub const Count = publr.operation.define(CountIn, GreetOut, .{
+    .name = "count",
+    .kind = .read,
+    .run = count_all,
+});
 
-        const note = .{
-            .note = in.note,
-        };
-        const document = std.json.Stringify.valueAlloc(ctx.arena(), note, .{}) catch {
+fn count_all(ctx: *publr.Ctx, _: CountIn) publr.Error!GreetOut {
+    std.debug.assert(ctx.now().ms >= 0);
+
+    return count(ctx);
+}
+
+pub const PeopleIn = struct {};
+
+pub const PeopleOut = struct {
+    /// One greeting per person
+    greetings: []const []const u8,
+};
+
+/// Greet everyone on the site by name
+///
+/// Needs `users.names`: without it, denied.
+///
+/// Example:
+///   in: {}
+///   out: { "greetings": [] }
+pub const People = publr.operation.define(PeopleIn, PeopleOut, .{
+    .name = "people",
+    .kind = .read,
+    .run = people_of,
+});
+
+fn people_of(ctx: *publr.Ctx, _: PeopleIn) publr.Error!PeopleOut {
+    std.debug.assert(ctx.now().ms >= 0);
+
+    const people = try ctx.call(publr.operations.user.Options, .{});
+    const count_of_people = people.users.len;
+    const greetings = ctx.arena().alloc([]const u8, count_of_people) catch {
+        return error.OutOfMemory;
+    };
+
+    for (people.users, greetings) |person, *greeting| {
+        greeting.* = std.fmt.allocPrint(ctx.arena(), "hello, {s}", .{person.label}) catch {
             return error.OutOfMemory;
         };
-
-        _ = try ctx.call(record.Create, .{
-            .type = "greeter.salutation",
-            .document = document,
-        });
-
-        return count(ctx);
     }
-};
 
-pub const Count = struct {
-    pub const name = "greeter.count";
-    pub const description = "Count the greetings";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = Greet.Out;
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .total = 1,
+    return .{
+        .greetings = greetings,
     };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .total = "How many greetings exist",
-    };
+}
 
-    pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now().ms >= 0);
-
-        return count(ctx);
-    }
-};
-
-pub const People = struct {
-    pub const name = "greeter.people";
-    pub const description = "Greet everyone on the site by name";
-    pub const details =
-        \\Needs `users.names`: without it, denied.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = struct {
-        greetings: []const []const u8,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .greetings = &.{"hello, Admin"},
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .greetings = "One greeting per person",
-    };
-
-    pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now().ms >= 0);
-
-        const people = try ctx.call(publr.operations.user.Options, .{});
-        const count_of_people = people.users.len;
-        const greetings = ctx.arena().alloc([]const u8, count_of_people) catch {
-            return error.OutOfMemory;
-        };
-
-        for (people.users, greetings) |person, *greeting| {
-            greeting.* = std.fmt.allocPrint(ctx.arena(), "hello, {s}", .{person.label}) catch {
-                return error.OutOfMemory;
-            };
-        }
-
-        return .{
-            .greetings = greetings,
-        };
-    }
-};
-
-fn count(ctx: *PluginCtx) sdk.Error!Greet.Out {
+fn count(ctx: *publr.Ctx) publr.Error!GreetOut {
     const all = try ctx.call(record.List, .{
         .type = "greeter.salutation",
         .limit = 200,
@@ -311,7 +302,7 @@ pub const Greeted = publr.event.define(.{
 });
 
 /// Tells other plugins when someone was greeted
-fn announce(ctx: *PluginCtx, in: *Greet.In, out: *const Greet.Out) sdk.Error!void {
+fn announce(ctx: *publr.Ctx, in: *GreetIn, out: *const GreetOut) publr.Error!void {
     std.debug.assert(out.total > 0);
     std.debug.assert(in.note.len > 0);
 
@@ -321,7 +312,7 @@ fn announce(ctx: *PluginCtx, in: *Greet.In, out: *const Greet.Out) sdk.Error!voi
 }
 
 /// Notes how many greetings there are, once a greeting is kept
-fn tally(ctx: *publr.QueueCtx, out: Greet.Out) publr.Error!void {
+fn tally(ctx: *publr.QueueCtx, out: GreetOut) publr.Error!void {
     std.debug.assert(out.total > 0);
 
     ctx.log(.info, "{d} greetings in all", .{out.total});

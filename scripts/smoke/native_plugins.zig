@@ -1,5 +1,5 @@
-//! A compiled-in plugin in the admin: its settings page answered at its own route in the
-//! admin's chrome, listed in the Settings sidebar, and its item in the top bar of every
+//! A compiled-in plugin in the admin: its settings page, a page of its own drawn by its read,
+//! listed in the Settings sidebar, and its item in the top bar of every
 //! signed-in page; its own page in the plugin frame, whose document is sandboxed; its
 //! state, hooks and operator command; and every structure change
 //! heard by a plugin listening for them. `binary` is Publr with the fixture plugins
@@ -9,6 +9,9 @@ const smoke = @import("../smoke.zig");
 
 const email = "native@example.com";
 const password = "native smoke pass";
+
+/// Settings › Sampler: a page of the plugin's own, drawn by its read in the frame.
+const settings = "/admin/plugin/sampler/settings";
 
 pub fn expect_native_admin(
     init: std.process.Init,
@@ -44,10 +47,9 @@ pub fn expect_native_admin(
     const page = try logged_page(init, port, cookie);
     const system = try smoke.http_get_cookie(init, port, "/admin/settings/system", cookie);
 
-    try expect_in("/admin/sampler", page, "<title>Sampler · Publr</title>");
-    try expect_in("/admin/sampler", page, "noted KEPT");
-    try expect_in("/admin/sampler", page, "served on port 8092");
-    try expect_in("/admin/settings/system", system, "href=\"/admin/sampler\"");
+    try expect_in(settings, page, "noted KEPT");
+    try expect_in(settings, page, "served on port 8092");
+    try expect_in("/admin/settings/system", system, "href=\"" ++ settings ++ "\"");
     try expect_in("/admin/settings/system", system, "href=\"/admin/plugin/sampler/log\"");
     // Its pages are the person's to pin to their rail, not the plugin's to put there.
     try expect_in("/admin/settings/system", system, "aria-label=\"Pin to the rail\"");
@@ -68,7 +70,7 @@ fn logged_page(init: std.process.Init, port: u16, cookie: []const u8) ![]const u
     var attempts: u32 = 0;
 
     while (attempts < 50) : (attempts += 1) {
-        const page = try smoke.http_get_cookie(init, port, "/admin/sampler", cookie);
+        const page = try smoke.http_get_cookie(init, port, settings ++ "/frame", cookie);
 
         if (std.mem.indexOf(u8, page, "noted KEPT") != null) {
             return page;
@@ -77,7 +79,7 @@ fn logged_page(init: std.process.Init, port: u16, cookie: []const u8) ![]const u
         try std.Io.sleep(init.io, .fromMilliseconds(200), .awake);
     }
 
-    return smoke.http_get_cookie(init, port, "/admin/sampler", cookie);
+    return smoke.http_get_cookie(init, port, settings ++ "/frame", cookie);
 }
 
 /// The sampler's own page: the chrome with the plugin frame, listed in Settings; the

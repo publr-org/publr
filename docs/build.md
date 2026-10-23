@@ -110,7 +110,7 @@ published post, `build` into a folder per app, and `serve` answering the home pa
 the post's page, a fragment, the stylesheet, a page of the app under `/docs` and the app
 on a subdomain. Then the plain binary, with no apps, answers `/` with the admin. Last,
 the binary with the test plugins compiled in (the two-mode check's) serves the admin on
-port 8092: `sampler`'s settings page at its own route, its entry in the Settings sidebar
+port 8092: `sampler`'s page at its own route, its page's entry in the Settings sidebar
 and its item in the top bar, the page reading the port from the plugin's state; its
 operator command refused without the key and answered with it; and `--sampler-in`, its
 CLI pre-command hook, running a command in another folder; then a content type, a

@@ -6,9 +6,6 @@
 const std = @import("std");
 const publr = @import("publr");
 
-const sdk = publr.sdk;
-const PluginCtx = publr.plugin.PluginCtx;
-
 const manifest: publr.Manifest = .{
     .name = "greeter",
     .version = "0.2.0",
@@ -47,34 +44,38 @@ const permissions = .{
 
 const operations = [_]type{Count};
 
-pub const Count = struct {
-    pub const name = "greeter.count";
-    pub const description = "Count the greetings";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = struct {
-        /// Why: a count, not money
-        total: u32,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .total = 1,
-    };
+pub const CountIn = struct {};
 
-    pub fn run(ctx: *PluginCtx, _: In, _: *const sdk.Grant) sdk.Error!Out {
-        std.debug.assert(ctx.now().ms >= 0);
-
-        const record = publr.operations.record;
-        const all = try ctx.call(record.List, .{
-            .type = "greeter.salutation",
-            .limit = 200,
-        });
-
-        return .{
-            .total = @intCast(all.records.len),
-        };
-    }
+pub const CountOut = struct {
+    /// How many greetings exist
+    ///
+    /// Why: a count, not money
+    total: u32,
 };
+
+/// Count the greetings
+///
+/// Example:
+///   in: {}
+///   out: { "total": 1 }
+pub const Count = publr.operation.define(CountIn, CountOut, .{
+    .name = "count",
+    .kind = .read,
+    .run = count,
+});
+
+fn count(ctx: *publr.Ctx, _: CountIn) publr.Error!CountOut {
+    std.debug.assert(ctx.now().ms >= 0);
+
+    const all = try ctx.call(publr.operations.record.List, .{
+        .type = "greeter.salutation",
+        .limit = 200,
+    });
+
+    return .{
+        .total = @intCast(all.records.len),
+    };
+}
 
 pub const plugin = publr.plugin.define(manifest, .{
     .records = &.{Salutations},

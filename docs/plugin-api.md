@@ -69,7 +69,7 @@ A missing one fails the build and says where it goes.
 | `pages`, `panels`, `menu`, `icons` | see [Admin entries](#admin-entries) | both |
 | `translations` | `&.{ .{ .locale, .label, .po } }` | both |
 | `extend` | `fn (host: *publr.Host) publr.Error!void`, see [Built-in only](#built-in-only) | built-in |
-| `row_actions`, `settings_pages` | see [Built-in only](#built-in-only) | built-in |
+| `row_actions` | see [Built-in only](#built-in-only) | built-in |
 
 Any other option is a build error.
 
@@ -1093,8 +1093,7 @@ handler }`, answered at `POST /_publr/<plugin>/<name>` with the operator key onl
 ?publr.admin.render.Node) publr.admin.Error!?publr.admin.render.Node`), `host.sign_in_at`
 (`fn (*const publr.admin.Session) anyerror!?[]const u8`), `host.admin_brand`,
 `host.variants` (one dimension per site), `host.work_start` (the operation `publr work
-start` calls). Still options of `define`: `.settings_pages` (each `{ label, icon, path,
-operation }`), `.settings_tabs`, `.row_actions`.
+start` calls). Still an option of `define`: `.row_actions`.
 
 ### The server
 
@@ -1107,10 +1106,11 @@ access to the host and runs only built-in.
 
 ## Model providers
 
-A plugin becomes a model provider by listing operations built by `publr.ai` in
-`.operations` (`publr.ai.Describe("<name>", .{...})`, `publr.ai.Complete("<name>",
-complete)`, and `publr.ai.Transcribe("<name>", transcribe)` when it turns speech into
-text) and registering them into core's `ai.model` contract with `.register_providers`:
+A plugin becomes a model provider by writing its operations for the parts of core's
+`ai.model` contract (`describe_provider`, `complete`, and `transcribe` when it turns speech
+into text, `read_page` when it reads pages; `publr.ai.completed`, `publr.ai.transcribed`
+and `publr.ai.read_page` do their common work) and registering them with
+`.register_providers`:
 `.{ .contract = publr.ai.contract, .name, .operations = .{ .describe, .complete } }`. See
 [Plugins](plugins.md#model-providers).
 

@@ -508,7 +508,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |
 | `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `PluginCtx` proxied to the host as JSON, the exports generated for a plugin, its manifest among them |
 | `sdk/plugin/route.zig` | 211 | What a compiled-in plugin's routes and operator commands may be: under prefixes it owns, at most 16 and 8 |
-| `sdk/plugin/admin_slots.zig` | 66 | A compiled-in plugin in the admin: settings pages listed in the sidebar, a top bar item |
+| `sdk/plugin/admin_slots.zig` | 66 | A plugin in the admin: its pages, panels, a top bar item, row actions |
 | `sdk/plugin/state.zig` | 71 | A compiled-in plugin's `State` and the process it is made from |
 | `sdk/structure.zig` | 34 | Which events change a project's structure |
 | `sdk/scratch.zig` | 109 | A request's scratch: working memory for a loop's items, given back after each |

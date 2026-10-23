@@ -140,33 +140,21 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 .name = Declared.name,
                 .kind = if (Declared.kind == .read) .read else .write,
                 .description = Declared.description,
-                .details = if (@hasDecl(Declared, "details")) Declared.details else "",
-                .open = @hasDecl(Declared, "open") and Declared.open,
-                .public_api = @hasDecl(Declared, "public_api") and Declared.public_api,
-                .example = if (@hasDecl(Declared, "example_json")) Declared.example_json else "",
-                .example_out = if (@hasDecl(Declared, "example_out_json"))
-                    Declared.example_out_json
-                else
-                    "",
-                .untrusted_callers = if (@hasDecl(Declared, "untrusted_callers"))
-                    Declared.untrusted_callers
-                else
-                    null,
-                .answer = if (@hasDecl(Declared, "answer")) Declared.answer else null,
-                .limit = if (@hasDecl(Declared, "limit") and Declared.limit != null)
-                    Declared.limit.?.per_minute
-                else
-                    0,
+                .details = Declared.details,
+                .open = Declared.open,
+                .public_api = Declared.public_api,
+                .example = Declared.example_json,
+                .example_out = Declared.example_out_json,
+                .untrusted_callers = Declared.untrusted_callers,
+                .answer = Declared.answer,
+                .limit = if (Declared.limit) |limit| limit.per_minute else 0,
                 .destructive = sdk_operation.destroys(Declared),
                 .fields = fields_of(Declared, docs_of(Plugin)),
                 .input = shapes.describe(Declared.In),
                 .output = shapes.describe(Declared.Out),
                 .secret = @import("../trail.zig").secret_of(Declared),
-                .checked = if (@hasDecl(Declared, "checked")) Declared.checked else "",
-                .who_may_call = if (@hasDecl(Declared, "who_may_call"))
-                    Declared.who_may_call
-                else
-                    "",
+                .checked = Declared.checked,
+                .who_may_call = Declared.who_may_call,
                 .deprecated = sdk_operation.deprecation_text(Declared),
             }};
         }
