@@ -73,6 +73,10 @@ const exercised = [_]Part{
         .where = "postcard's messaging provider",
     },
     .{
+        .name = "columns",
+        .where = "sampler's columns on People and the media list",
+    },
+    .{
         .name = "kind",
         .where = "reads and writes",
     },
