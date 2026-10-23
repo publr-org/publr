@@ -380,18 +380,18 @@ fn assert_decl(comptime Operation: type, comptime decl: []const u8, comptime Typ
     }
 }
 
+/// The comptime branches `namespace` or `verb` takes at most: a caller splitting every
+/// operation's name raises its quota by this for each.
+pub const split_branches: u32 = name_len_max + 8;
+
 /// Everything before the verb: `record` of `record.create`.
 pub fn namespace(name: []const u8) []const u8 {
-    @setEvalBranchQuota(100_000);
-
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse unreachable;
     std.debug.assert(dot > 0);
     return name[0..dot];
 }
 
 pub fn verb(name: []const u8) []const u8 {
-    @setEvalBranchQuota(100_000);
-
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse unreachable;
     std.debug.assert(dot + 1 < name.len);
     return name[dot + 1 ..];
