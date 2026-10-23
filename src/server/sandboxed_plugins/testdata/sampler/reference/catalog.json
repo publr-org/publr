@@ -998,6 +998,21 @@
           "Run publr --as-admin job list."
         ],
         "look_for": "sampler tick waiting, due at the next 03:00 UTC."
+      },
+      {
+        "name": ".due, a record's datetime field",
+        "summary": "Work that follows a content record's datetime field: queued by every write to the record, run before or after the field's moment, given the record as it is then.",
+        "code": [
+          {
+            "file": "jobs/remind.zig",
+            "decl": "job"
+          }
+        ],
+        "see": [
+          "Open Content, then Sample note, and set a note's Remind me at to an hour from now.",
+          "Run publr --as-admin job list."
+        ],
+        "look_for": "sampler remind waiting, due half an hour before the note's reminder time."
       }
     ],
     "runs": [
@@ -1016,6 +1031,29 @@
         "say": "The review the job wrote."
       }
     ]
+  },
+  {
+    "id": "webhook-define",
+    "group": "Queued work",
+    "name": "publr.webhook.define(Event, options)",
+    "summary": "What another server sends to /_webhooks/<plugin>.<name>: the signature checked with a declared secret, 200 answered at once, run as queued work with the body as Event; a repeat dropped.",
+    "code": [
+      {
+        "file": "webhooks/ping.zig",
+        "decl": "run"
+      },
+      {
+        "file": "webhooks/ping.zig",
+        "decl": "webhook"
+      }
+    ],
+    "see": [
+      "Set SAMPLER_KEY under Settings, then Secrets.",
+      "Send POST /_webhooks/sampler.ping with X-Sampler-Key set to it and the body {\"id\":\"1\",\"text\":\"Hello\"}.",
+      "Open Plugins, then sampler, then Webhooks."
+    ],
+    "look_for": "The delivery, verified and ran, with the line webhook ping: Hello.",
+    "options": []
   },
   {
     "id": "page",

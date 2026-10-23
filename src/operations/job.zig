@@ -314,9 +314,14 @@ pub const core = store.job_queue.core;
 
 /// How long an answer is kept after it was asked for.
 const answer_keep_ms: i64 = 24 * 60 * 60 * 1000;
-const answer_prefix = "job.answer.";
+/// Where answers are kept: core's own internal records, one per id asked.
+const answers: store.internal_records.Scope = .{
+    .plugin = core,
+    .app = "",
+    .kind = "job_answer",
+};
 
-/// An answer as kept, under `job.answer.<id>`.
+/// An answer as kept, the record's id the id asked.
 const Kept = struct {
     /// The user who asked; empty for the system.
     by: []const u8 = "",
@@ -364,7 +369,7 @@ pub fn ask(ctx: *Ctx, name: []const u8, input: anytype) Error![]const u8 {
 
     given.asked = asked;
 
-    try store.settings.delete_before(ctx.db, answer_prefix, ctx.now_ms - answer_keep_ms);
+    try store.internal_records.delete_before(ctx.db, answers, ctx.now_ms - answer_keep_ms);
     try keep(ctx, asked, .{
         .by = ctx.caller.user_id() orelse "",
         .state = "waiting",
@@ -424,14 +429,11 @@ fn keep(ctx: *Ctx, asked: []const u8, kept: Kept) Error!void {
     std.debug.assert(asked.len == id.len);
     std.debug.assert(kept.state.len > 0);
 
-    const key = std.fmt.allocPrint(ctx.arena, answer_prefix ++ "{s}", .{asked}) catch {
-        return error.OutOfMemory;
-    };
     const text = std.json.Stringify.valueAlloc(ctx.arena, kept, .{
         .emit_null_optional_fields = false,
     }) catch return error.OutOfMemory;
 
-    if (text.len > store.settings.value_len_max) {
+    if (text.len > @import("../model.zig").internal_record.document_bytes_max) {
         return keep(ctx, asked, .{
             .by = kept.by,
             .state = "failed",
@@ -439,18 +441,24 @@ fn keep(ctx: *Ctx, asked: []const u8, kept: Kept) Error!void {
         });
     }
 
-    try store.settings.set(ctx.db, key, text, ctx.now_ms);
+    if (try store.internal_records.get(ctx.db, ctx.arena, answers, asked) == null) {
+        return store.internal_records.insert_as(ctx.db, answers, asked, text, ctx.now_ms);
+    }
+
+    _ = try store.internal_records.update(ctx.db, answers, asked, text, null, ctx.now_ms);
 }
 
 fn kept_of(ctx: *Ctx, asked: []const u8) Error!?Kept {
     std.debug.assert(asked.len == id.len);
 
-    const key = std.fmt.allocPrint(ctx.arena, answer_prefix ++ "{s}", .{asked}) catch {
-        return error.OutOfMemory;
-    };
-    const text = try store.settings.get(ctx.db, ctx.arena, key) orelse return null;
+    const row = try store.internal_records.get(ctx.db, ctx.arena, answers, asked) orelse
+        return null;
 
-    return std.json.parseFromSliceLeaky(Kept, ctx.arena, text, .{
+    if (row.created_at < ctx.now_ms - answer_keep_ms) {
+        return null;
+    }
+
+    return std.json.parseFromSliceLeaky(Kept, ctx.arena, row.document, .{
         .ignore_unknown_fields = true,
         .allocate = .alloc_always,
     }) catch null;
@@ -490,7 +498,7 @@ pub fn run_core(ctx: *Ctx, name: []const u8, input: []const u8) []const u8 {
     return "no such job in this Publr";
 }
 
-test "work someone waits on: waiting until its job answers it, read only by who asked" {
+test "work waited on: waiting until its job answers, read only by who asked, kept a day" {
     const SDK = @import("../server/registry.zig").SDK;
     const users = @import("user.zig");
     const setup = @import("ai/setup.zig");
@@ -555,4 +563,14 @@ test "work someone waits on: waiting until its job answers it, read only by who 
 
     try std.testing.expectEqualStrings("done", done.state);
     try std.testing.expectEqualStrings("{\"ok\":true,\"reply\":\"OK\"}", done.answer.?.text);
+
+    // Bookkeeping, as core's own internal record, kept a day.
+    const kept = try store.internal_records.get(ada.db, ada.arena, answers, asked);
+
+    try std.testing.expect(kept != null);
+
+    ada.now_ms += answer_keep_ms + 1;
+    try std.testing.expectError(error.NotFound, SDK.dispatch(&ada, Answer, .{
+        .id = asked,
+    }));
 }

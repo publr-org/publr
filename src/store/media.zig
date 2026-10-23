@@ -21,10 +21,12 @@ pub const Row = struct {
     unreviewed: bool = false,
     /// Its file is no longer in the folder.
     missing: bool = false,
+    /// Its bytes are on their way (`media.import`); `filled` once they came.
+    pending: bool = false,
 };
 
 const columns = "record, filename, mime_type, size, width, height, storage_key, hash, " ++
-    "private, created_at, unreviewed, missing";
+    "private, created_at, unreviewed, missing, pending";
 
 pub fn insert(connection: *db.Db, row: Row) db.Error!void {
     std.debug.assert(row.record.len > 0 and row.storage_key.len > 0);
@@ -32,7 +34,7 @@ pub fn insert(connection: *db.Db, row: Row) db.Error!void {
 
     var statement = try connection.prepare(
         "INSERT INTO media (" ++ columns ++ ") VALUES " ++
-            "(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
     );
     defer statement.finalize();
 
@@ -48,6 +50,7 @@ pub fn insert(connection: *db.Db, row: Row) db.Error!void {
     try statement.bind_int(10, row.created_at);
     try statement.bind_int(11, @intFromBool(row.unreviewed));
     try statement.bind_int(12, @intFromBool(row.missing));
+    try statement.bind_int(13, @intFromBool(row.pending));
     try statement.exec();
 }
 
@@ -177,7 +180,8 @@ pub fn filled(connection: *db.Db, record: []const u8, facts: Facts) db.Error!voi
     std.debug.assert(facts.size > 0 and facts.hash.len > 0);
 
     var update = try connection.prepare(
-        "UPDATE media SET size = ?2, width = ?3, height = ?4, hash = ?5, missing = 0 " ++
+        "UPDATE media SET size = ?2, width = ?3, height = ?4, hash = ?5, missing = 0, " ++
+            "pending = 0 " ++
             "WHERE record = ?1",
     );
     defer update.finalize();
@@ -349,4 +353,44 @@ test "media rows: insert, read by record, key and hash, flip privacy, gone with 
     try std.testing.expect(!(try get(connection, arena, "m1")).?.unreviewed);
     try connection.exec("DELETE FROM records WHERE id = 'm1'");
     try std.testing.expect((try get(connection, arena, "m1")) == null);
+}
+
+test "a Pending file stays pending until its facts are filled in" {
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const connection = &fixture.connection;
+
+    try list.seed_record(connection, "m1");
+    try insert(connection, .{
+        .record = "m1",
+        .filename = "cat.jpg",
+        .mime_type = "image/jpeg",
+        .size = 0,
+        .width = null,
+        .height = null,
+        .storage_key = "2026/10/cat-abc123.jpg",
+        .hash = "",
+        .private = false,
+        .created_at = 1,
+        .pending = true,
+    });
+
+    try std.testing.expect((try get(connection, arena, "m1")).?.pending);
+
+    try filled(connection, "m1", .{
+        .size = 4,
+        .width = 2,
+        .height = 1,
+        .hash = "a" ** 64,
+    });
+
+    const came = (try get(connection, arena, "m1")).?;
+
+    try std.testing.expect(!came.pending);
+    try std.testing.expectEqual(@as(i64, 4), came.size);
 }

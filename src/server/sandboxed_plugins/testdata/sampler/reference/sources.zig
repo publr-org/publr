@@ -32,6 +32,10 @@ pub const files = [_]File{
         .text = @embedFile("../hooks/shout.zig"),
     },
     .{
+        .path = "jobs/remind.zig",
+        .text = @embedFile("../jobs/remind.zig"),
+    },
+    .{
         .path = "jobs/tick.zig",
         .text = @embedFile("../jobs/tick.zig"),
     },
@@ -98,6 +102,10 @@ pub const files = [_]File{
     .{
         .path = "records/tallies.zig",
         .text = @embedFile("../records/tallies.zig"),
+    },
+    .{
+        .path = "webhooks/ping.zig",
+        .text = @embedFile("../webhooks/ping.zig"),
     },
 };
 

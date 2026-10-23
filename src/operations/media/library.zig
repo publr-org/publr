@@ -213,7 +213,7 @@ pub fn item_of(row: anytype, title: []const u8) Item {
         .created_at = row.created_at,
         .unreviewed = row.unreviewed,
         .missing = row.missing,
-        .pending = row.hash.len == 0 and !row.missing,
+        .pending = row.pending and !row.missing,
     };
 }
 

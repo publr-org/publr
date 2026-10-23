@@ -295,12 +295,11 @@ pub const Item = struct {
     width: ?i64,
     height: ?i64,
     storage_key: []const u8,
-    /// Empty while the file is Pending: its bytes on their way.
-    hash: []const u8,
     private: bool,
     created_at: i64,
     unreviewed: bool,
     missing: bool,
+    pending: bool,
     title: []const u8,
 };
 
@@ -321,7 +320,7 @@ pub fn items(
     const sql = try std.fmt.allocPrint(
         arena,
         "SELECT m.record, m.filename, m.mime_type, m.size, m.width, m.height, " ++
-            "m.storage_key, m.hash, m.private, m.created_at, m.unreviewed, m.missing, " ++
+            "m.storage_key, m.private, m.created_at, m.unreviewed, m.missing, m.pending, " ++
             "COALESCE((" ++ title_value ++
             "), m.filename){s}{s} ORDER BY m.created_at DESC, m.record DESC LIMIT {d} OFFSET {d}",
         .{ from, where.sql.items, limit, offset },

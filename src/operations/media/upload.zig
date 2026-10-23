@@ -221,7 +221,7 @@ pub fn add(
 }
 
 /// A library file whose bytes come later (`fill`): its record and row made now, Pending
-/// (no bytes, no hash), so it can be referenced at once. What `media.import` makes before
+/// (no bytes yet), so it can be referenced at once. What `media.import` makes before
 /// its download runs as queued work.
 pub fn reserved(ctx: *Ctx, filename: []const u8, folder: ?[]const u8) Error!library.Item {
     std.debug.assert(media.valid_filename(filename));
@@ -255,6 +255,7 @@ pub fn reserved(ctx: *Ctx, filename: []const u8, folder: ?[]const u8) Error!libr
         .hash = "",
         .private = false,
         .created_at = ctx.now_ms,
+        .pending = true,
     };
 
     try store.media.insert(ctx.db, row);
@@ -265,7 +266,7 @@ pub fn reserved(ctx: *Ctx, filename: []const u8, folder: ?[]const u8) Error!libr
 /// A Pending file's bytes, checked as an upload's are, kept under its key, and its facts
 /// filled in: no longer Pending.
 pub fn fill(ctx: *Ctx, pending: store.media.Row, bytes: []const u8) Error!void {
-    std.debug.assert(pending.hash.len == 0);
+    std.debug.assert(pending.pending);
     std.debug.assert(bytes.len <= files_module.bytes_max);
 
     const kept = try checked(ctx, pending.filename, bytes);
