@@ -1,15 +1,19 @@
-//! Model providers: core's `ai.model` contract. A plugin makes its operations with
-//! `Describe` (who it is, its models, how its key is made) and `Complete` (a request in, a
-//! response out, both as `publr_ai`'s JSON), optionally `Transcribe` and `Read`, and
-//! registers them as a provider. Core lists the providers under Settings › AI and has a
-//! conversation's agent call the one chosen. A provider calls its model through
-//! `http.fetch`, its key written `{secret:NAME}`, so it never holds the key.
+//! Model providers: core's `ai.model` contract. A plugin writes its operations with
+//! `publr.operation.define`, their `run` made here: `describe` (who it is, its models, how
+//! its key is made), `complete` (a request in, a response out, both as `publr_ai`'s JSON),
+//! optionally `transcribe` and `read_page`, and registers them as a provider. Core lists the
+//! providers under Settings › AI and has a conversation's agent call the one chosen. A
+//! provider calls its model through `http.fetch`, its key written `{secret:NAME}`, so it
+//! never holds the key; while it reads a reply as a stream it passes the words on with
+//! `ai.progress`, which only the provider being asked reaches.
 //!
 //! ```zig
-//! const Describe = publr.ai.Describe("example_ai", .{ .id = "example_ai", ... });
-//! const Complete = publr.ai.Complete("example_ai", complete);
+//! const Complete = publr.operation.define(ai.Completion.In, ai.Completion.Out, .{
+//!     .name = "complete",
+//!     .kind = .read,
+//!     .run = ai.complete(answer),
+//! });
 //!
-//! .operations = &.{ Describe, Complete },
 //! .register_providers = .{.{
 //!     .contract = publr.ai.contract,
 //!     .name = "example_ai",
@@ -53,80 +57,68 @@ pub fn error_message(arena: std.mem.Allocator, body: []const u8) []const u8 {
     return if (parsed.@"error".message.len > 0) parsed.@"error".message else start;
 }
 
-const describe_verb = "describe_provider";
 pub const Speech = speech.Speech;
-pub const Transcribe = speech.Transcribe;
-const read_verb = "read_page";
+pub const transcribe = speech.transcribe;
+pub const Transcribed = speech.Transcribed;
 
 /// What a page reads as, at most: the model reads it, not a person.
 pub const page_text_len_max: u32 = 48 << 10;
 
-/// `<plugin>.read_page`: a web page a conversation's agent was asked to look at, read
-/// through `http.fetch` (so only where the plugin may send requests: an AI provider asks
-/// for any address, `*`) and turned into text. A plain GET: no secret is ever filled in.
-pub fn Read(comptime plugin: []const u8) type {
-    return struct {
-        pub const name = plugin ++ "." ++ read_verb;
-        pub const description = "Read a web page as text, for a conversation's agent";
-        pub const details =
-            \\A plain GET of `url` (https), its scripts, styles and markup left out, each link
-            \\kept as its text with its address; up to 48 KiB. The local operator's alone: a
-            \\conversation's agent calls it.
-        ;
-        pub const kind: operation.Kind = .read;
-        pub const operator_only = true;
-        pub const In = struct {
-            url: []const u8,
-        };
-        pub const Out = struct {
-            status: u16,
-            text: []const u8,
-        };
-        pub const example: In = .{
-            .url = "https://example.com/",
-        };
-        pub const example_out: Out = .{
-            .status = 200,
-            .text = "Example Domain ...",
-        };
-        pub const field_docs: operation.Docs(In) = .{
+/// What `read_page` takes and answers.
+pub const Page = struct {
+    pub const In = struct {
+        url: []const u8,
+
+        pub const field_docs = .{
             .url = "The page's address, https",
         };
+    };
+    pub const Out = struct {
+        status: u16,
+        text: []const u8,
 
-        pub fn run(ctx: *PluginCtx, in: In, granted: *const Grant) operation.Error!Out {
-            std.debug.assert(granted.allows());
-            std.debug.assert(in.url.len > 0);
+        pub const field_docs = .{
+            .status = "The page's HTTP status",
+            .text = "The page as text, up to 48 KiB",
+        };
+    };
+};
 
-            if (std.mem.indexOf(u8, in.url, "{secret:") != null) {
-                return error.Invalid;
-            }
+/// `read_page`'s run: a web page a conversation's agent was asked to look at, read through
+/// `http.fetch` (so only where the plugin may send requests: an AI provider asks for any
+/// address, `*`) and turned into text. A plain GET: no secret is ever filled in.
+pub fn read_page(ctx: *PluginCtx, in: Page.In) operation.Error!Page.Out {
+    std.debug.assert(in.url.len > 0);
+    std.debug.assert(page_text_len_max > 0);
 
-            const Fetch = @import("../operations/http.zig").Fetch;
-            const answer = try ctx.call(Fetch, .{
-                .url = in.url,
-                .headers = &.{.{
-                    .name = "User-Agent",
-                    .value = "Publr (reading a page)",
-                }},
-            });
-            const text = text_of_html(ctx.arena(), answer.body) catch return error.OutOfMemory;
+    if (std.mem.indexOf(u8, in.url, "{secret:") != null) {
+        return error.Invalid;
+    }
 
-            return .{
-                .status = answer.status,
-                .text = text,
-            };
-        }
+    const Fetch = @import("../operations/http.zig").Fetch;
+    const answer = try ctx.call(Fetch, .{
+        .url = in.url,
+        .headers = &.{.{
+            .name = "User-Agent",
+            .value = "Publr (reading a page)",
+        }},
+    });
+    const text = text_of_html(ctx.arena(), answer.body) catch return error.OutOfMemory;
+
+    return .{
+        .status = answer.status,
+        .text = text,
     };
 }
 
 pub const Progress = struct {
     pub const name = "ai.progress";
-    pub const plugins_only = true;
     pub const description = "Pass on a model's words as it writes them";
     pub const details =
         \\What a provider plugin calls while it reads a reply as a stream: `words` are the
-        \\ones written since its last call. The person watching sees them at once. Plugins
-        \\granted `ai.progress` only; nothing happens where no turn listens.
+        \\ones written since its last call. The person watching sees them at once. Part of
+        \\the `ai.model` contract: only a provider answering `complete` reaches it, and
+        \\nothing happens where no turn listens.
     ;
     pub const kind: operation.Kind = .read;
     pub const In = struct {
@@ -331,7 +323,6 @@ fn attribute(tag: []const u8, name: []const u8) []const u8 {
 
     return rest[2..end];
 }
-const complete_verb = "complete";
 
 /// The `ai.model` contract: `describe` and `complete` required, `transcribe` and
 /// `read_page` optional.
@@ -339,7 +330,7 @@ pub const contract = @import("contract.zig").define(.{
     .name = "ai.model",
     .operations = .{
         .describe = struct {
-            pub const In = struct {};
+            pub const In = Nothing;
             pub const Out = Description;
         },
         .complete = Completion,
@@ -347,115 +338,62 @@ pub const contract = @import("contract.zig").define(.{
     .optional = .{
         .transcribe = struct {
             pub const In = Speech;
-            pub const Out = struct {
-                text: []const u8,
-            };
+            pub const Out = speech.Transcribed;
         },
-        .read_page = struct {
-            pub const In = struct {
-                url: []const u8,
-            };
-            pub const Out = struct {
-                status: u16,
-                text: []const u8,
-            };
-        },
+        .read_page = Page,
     },
 });
 
-/// `<plugin>.describe_provider`: who the provider is, what models it offers, how its key is
-/// made. Anyone may read it; it holds nothing secret.
-pub fn Describe(comptime plugin: []const u8, comptime about: Description) type {
+/// What `describe` takes: nothing.
+pub const Nothing = struct {
+    pub const field_docs = .{};
+};
+
+/// `describe`'s run: who the provider is, what models it offers, how its key is made. It
+/// holds nothing secret.
+pub fn describe(comptime about: Description) fn (*PluginCtx, Nothing) operation.Error!Description {
     comptime std.debug.assert(about.id.len > 0);
 
     return struct {
-        pub const name = plugin ++ "." ++ describe_verb;
-        pub const description = "What " ++ about.label ++ " offers as a model provider";
-        pub const details =
-            \\Its models, the one used when none is chosen, and how its key is made and kept.
-            \\Core reads it to list the provider under Settings > AI.
-        ;
-        pub const kind: operation.Kind = .read;
-        pub const open = true;
-        pub const In = struct {};
-        pub const Out = Description;
-        pub const example: In = .{};
-        pub const example_out: Out = about;
-
-        pub fn run(ctx: *PluginCtx, in: In, granted: *const Grant) operation.Error!Out {
-            std.debug.assert(granted.allows());
+        fn run(ctx: *PluginCtx, in: Nothing) operation.Error!Description {
             std.debug.assert(ctx.now().ms >= 0);
+            std.debug.assert(@sizeOf(Nothing) == 0);
 
             _ = in;
 
             return about;
         }
-    };
+    }.run;
 }
 
 /// The JSON `complete` takes and answers.
 pub const Completion = struct {
     pub const In = struct {
         request: []const u8,
+
+        pub const field_docs = .{
+            .request = "The request, as JSON",
+        };
     };
     pub const Out = struct {
         response: []const u8,
+
+        pub const field_docs = .{
+            .response = "The model's response, as JSON",
+        };
     };
 };
 
-/// How a provider refuses `complete` and `transcribe`: core's agent tells them apart
-/// (`server/agent/plugin_provider.zig`). A provider plugin fails with these names alone.
-pub const provider_failures = [_]operation.Failure{
-    .{
-        .name = "KeyRejected",
-        .status = 409,
-        .message = "The provider refused its key",
-    },
-    .{
-        .name = "Limited",
-        .status = 409,
-        .message = "The provider's limit for the key is reached for now",
-    },
-    .{
-        .name = "Unavailable",
-        .status = 409,
-        .message = "The provider did not answer, or its answer broke off",
-    },
-};
-
-/// `<plugin>.complete`: one call to the model. `answer` gets the request parsed and turns
-/// the model's reply into a response.
-pub fn Complete(
-    comptime plugin: []const u8,
+/// `complete`'s run: one call to the model. `answer` gets the request parsed and turns the
+/// model's reply into a response. A provider refuses with `KeyRejected`, `Limited` or
+/// `Unavailable` alone, which core's agent tells apart (`server/agent/plugin_provider.zig`).
+pub fn complete(
     comptime answer: fn (ctx: *PluginCtx, request: Request) operation.Error!Response,
-) type {
+) fn (*PluginCtx, Completion.In) operation.Error!Completion.Out {
     return struct {
-        pub const name = plugin ++ "." ++ complete_verb;
-        pub const description = "One call to the model: a request in, a response out";
-        pub const details =
-            \\`request` and `response` are JSON in publr_ai's shape: messages of text, tool
-            \\calls and tool results; the model's parts, why it stopped and what it cost. The
-            \\local operator's alone: a conversation's agent calls it.
-        ;
-        pub const kind: operation.Kind = .read;
-        pub const operator_only = true;
-        pub const failures = provider_failures;
-        pub const In = Completion.In;
-        pub const Out = Completion.Out;
-        pub const example: In = .{
-            .request = "{\"messages\":[{\"role\":\"user\",\"parts\":" ++
-                "[{\"kind\":\"text\",\"text\":\"Hi\"}]}]}",
-        };
-        pub const example_out: Out = .{
-            .response = "{\"parts\":[{\"kind\":\"text\",\"text\":\"Hello\"}],\"stop\":\"end\"}",
-        };
-        pub const field_docs: operation.Docs(In) = .{
-            .request = "The request, as JSON",
-        };
-
-        pub fn run(ctx: *PluginCtx, in: In, granted: *const Grant) operation.Error!Out {
-            std.debug.assert(granted.allows());
+        fn run(ctx: *PluginCtx, in: Completion.In) operation.Error!Completion.Out {
             std.debug.assert(in.request.len > 0);
+            std.debug.assert(ctx.now().ms >= 0);
 
             const arena = ctx.arena();
             const request = request_of(arena, in.request) catch return error.Invalid;
@@ -466,7 +404,7 @@ pub fn Complete(
                 .response = text,
             };
         }
-    };
+    }.run;
 }
 
 test "a page reads as its text and links, without scripts" {

@@ -106,7 +106,7 @@ pub const always = [_][]const u8{
     "heartbeat.check",   "project.status", "status.list",
     "internal.create",   "internal.get",   "internal.save",
     "internal.find_one", "internal.find",  "internal.delete",
-    "mod.changed",       "mod.apply",
+    "mod.changed",       "mod.apply",      "ai.progress",
 };
 
 /// The record operations a plugin reaches on its own content types without asking.
@@ -337,12 +337,6 @@ pub const core = [_]Permission{
         .key = "email.send",
         .sentence = "Send emails",
         .tier = .medium,
-    },
-    .{
-        .key = "ai.progress",
-        .sentence = "Show the words a model writes as it writes them",
-        .tier = .low,
-        .operations = &.{"ai.progress"},
     },
 };
 

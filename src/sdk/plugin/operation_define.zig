@@ -362,6 +362,12 @@ fn field_words(
         var docs: sdk.operation.Docs(Shape) = .{};
 
         for (std.meta.fields(Shape)) |field| {
+            // A shape the SDK hands over (`publr.ai.Completion.In`) carries its own words.
+            if (@hasDecl(Shape, "field_docs")) {
+                @field(docs, field.name) = @field(Shape.field_docs, field.name);
+                continue;
+            }
+
             const key = @typeName(Shape) ++ "." ++ field.name;
             const text = plugin_define.words(Docs, key) orelse
                 @compileError("operation " ++ full_name ++ ": field `" ++ field.name ++
