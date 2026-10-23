@@ -93,7 +93,7 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 else
                     0,
                 .destructive = sdk_operation.destroys(Declared),
-                .fields = fields_of(Declared),
+                .fields = fields_of(Declared, docs_of(Plugin)),
                 .input = shapes.describe(Declared.In),
                 .output = shapes.describe(Declared.Out),
                 .secret = @import("../trail.zig").secret_of(Declared),
@@ -144,6 +144,7 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .icon = page.icon,
                     .read = form.read.name,
                     .save = form.save.name,
+                    .only_one = form.only_one,
                     .suggest = if (form.suggest) |Suggest| Suggest.name else "",
                     .preview = if (form.preview) |Preview| Preview.name else "",
                     .hidden = page.menu != null,
@@ -337,7 +338,8 @@ fn namespaces_of(comptime Plugin: type) []const sandboxed_plugin.Namespace {
     }
 }
 
-pub fn fields_of(comptime Declared: type) []const Field {
+/// `Docs`: the plugin's words, where a value of a set finds its own (`///` on it).
+pub fn fields_of(comptime Declared: type, comptime Docs: type) []const Field {
     comptime {
         std.debug.assert(Declared.name.len > 0);
 
@@ -351,7 +353,8 @@ pub fn fields_of(comptime Declared: type) []const Field {
                 .doc = sdk_operation.field_doc(Declared, "field_docs", field.name),
                 .label = help.type_label(field.type),
                 .values = values_of(field.type),
-                .fields = item_fields_of(field.type),
+                .words = words_of(field.type, Docs),
+                .fields = item_fields_of(field.type, Docs),
             }};
         }
 
@@ -360,7 +363,7 @@ pub fn fields_of(comptime Declared: type) []const Field {
 }
 
 /// A list of structs' item fields, when each is plain; none for anything else.
-fn item_fields_of(comptime Type: type) []const Field {
+fn item_fields_of(comptime Type: type, comptime Docs: type) []const Field {
     comptime {
         std.debug.assert(@typeInfo(Type) != .@"fn");
 
@@ -391,6 +394,7 @@ fn item_fields_of(comptime Type: type) []const Field {
                 .required = field.defaultValue() == null,
                 .label = help.type_label(field.type),
                 .values = values_of(field.type),
+                .words = words_of(field.type, Docs),
             }};
         }
 
@@ -427,16 +431,7 @@ fn values_of(comptime Type: type) []const []const u8 {
     comptime {
         std.debug.assert(@typeInfo(Type) != .@"fn");
 
-        const Named = switch (@typeInfo(Type)) {
-            .optional => |optional| optional.child,
-            .pointer => |pointer| if (pointer.child == u8) return &.{} else pointer.child,
-            else => Type,
-        };
-
-        if (@typeInfo(Named) != .@"enum") {
-            return &.{};
-        }
-
+        const Named = enum_of(Type) orelse return &.{};
         var names: []const []const u8 = &.{};
 
         for (std.meta.fieldNames(Named)) |name| {
@@ -444,6 +439,49 @@ fn values_of(comptime Type: type) []const []const u8 {
         }
 
         return names;
+    }
+}
+
+/// The plugin's words; none for one bound without them (a test's).
+pub fn docs_of(comptime Plugin: type) type {
+    comptime {
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        return if (@hasDecl(Plugin, "docs")) Plugin.docs else plugin_define.Words(.{});
+    }
+}
+
+/// Each value's words, the first line of the `///` on it; none when no value has any.
+fn words_of(comptime Type: type, comptime Docs: type) []const []const u8 {
+    comptime {
+        std.debug.assert(@typeInfo(Type) != .@"fn");
+
+        const Named = enum_of(Type) orelse return &.{};
+        var words: []const []const u8 = &.{};
+        var any = false;
+
+        for (std.meta.fieldNames(Named)) |name| {
+            const said = Docs.first(@typeName(Named) ++ "." ++ name) orelse "";
+
+            any = any or said.len > 0;
+            words = words ++ &[_][]const u8{said};
+        }
+
+        return if (any) words else &.{};
+    }
+}
+
+fn enum_of(comptime Type: type) ?type {
+    comptime {
+        std.debug.assert(@typeInfo(Type) != .@"fn");
+
+        const Named = switch (@typeInfo(Type)) {
+            .optional => |optional| optional.child,
+            .pointer => |pointer| if (pointer.child == u8) return null else pointer.child,
+            else => Type,
+        };
+
+        return if (@typeInfo(Named) == .@"enum") Named else null;
     }
 }
 

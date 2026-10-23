@@ -22,6 +22,7 @@ pub const Page = struct {
     /// A form by declaration: the read that fills it, the write that saves it.
     read: []const u8 = "",
     save: []const u8 = "",
+    only_one: []const []const u8 = &.{},
     /// The form's read offering items to add to its lists, and its read previewing a save.
     suggest: []const u8 = "",
     preview: []const u8 = "",
@@ -216,6 +217,7 @@ pub fn all(session: *const Session) admin.Error![]const Page {
                 .operation = page.operation,
                 .read = page.read,
                 .save = page.save,
+                .only_one = page.only_one,
                 .suggest = page.suggest,
                 .preview = page.preview,
                 .hidden = page.hidden,
@@ -249,6 +251,7 @@ fn native(comptime owned: @import("../../../sdk/plugin.zig").OwnedPage) Page {
             .operation = if (page.operation) |Operation| Operation.name else "",
             .read = if (page.form) |form| form.read.name else "",
             .save = if (page.form) |form| form.save.name else "",
+            .only_one = if (page.form) |form| form.only_one else &.{},
             .suggest = if (page.form) |form| name_of(form.suggest) else "",
             .preview = if (page.form) |form| name_of(form.preview) else "",
             .hidden = page.menu != null,

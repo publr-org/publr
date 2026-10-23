@@ -818,14 +818,20 @@ fn callable_file(set: *Set) ![]const u8 {
     return out.written();
 }
 
-/// The helpers islands import from other modules (`upload_picture` from `PictureTray`),
-/// once each, ahead of the stores that use them. A stateful module's are kept in a scope of
-/// their own, only those imported let out, so its other names meet no one else's.
+/// The helpers islands import from plain modules (`upload_picture` from `PictureTray`),
+/// once each, ahead of the stores that use them.
+/// The helpers stores import from other modules: each module's in a scope of its own, so
+/// its private names never meet another's (`const stack` in two of them), answering the
+/// names the stores import, under the names they import them as.
 fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
     std.debug.assert(set.modules.items.len > 0);
 
-    var stems: std.ArrayList([]const u8) = .empty;
-    var wanted: std.ArrayList(std.ArrayList([]const u8)) = .empty;
+    const Named = struct {
+        stem: []const u8,
+        imported: []const u8,
+        local: []const u8,
+    };
+    var named: std.ArrayList(Named) = .empty;
 
     for (set.modules.items) |module| {
         if (module.component.store_registration == null) {
@@ -833,79 +839,95 @@ fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
         }
 
         for (module.component.imports) |import| {
-            if (is_runtime(import.source) or !imports_helper(import)) {
+            if (is_runtime(import.source)) {
                 continue;
             }
 
             const stem = stem_of(import.source);
+            const shared = shared_of(set, stem) orelse continue;
 
             try refuse_store_bound(set, module, stem, import.names);
-
-            const at = for (stems.items, 0..) |known, index| {
-                if (std.mem.eql(u8, known, stem)) break index;
-            } else blk: {
-                try stems.append(set.arena, stem);
-                try wanted.append(set.arena, .empty);
-                break :blk stems.items.len - 1;
-            };
 
             const code = module.component.store_registration.?.code;
 
             // Only what the store runs: a helper passed on as an action is a name, not code.
             for (import.names) |name| {
-                const helper = !name.type_only and name.imported.len > 0 and
-                    !std.ascii.isUpper(name.imported[0]) and names_word(code, name.local);
+                const helper = !name.type_only and helper_in(shared, name.imported) and
+                    names_word(code, name.local);
 
-                if (helper and !contains(wanted.items[at].items, name.imported)) {
-                    try wanted.items[at].append(set.arena, name.imported);
+                if (!helper) {
+                    continue;
+                }
+
+                const seen = for (named.items) |known| {
+                    if (std.mem.eql(u8, known.local, name.local)) {
+                        const same = std.mem.eql(u8, known.stem, stem) and
+                            std.mem.eql(u8, known.imported, name.imported);
+
+                        if (same) {
+                            break true;
+                        }
+
+                        std.debug.print("pjsx_gen: two stores import {s} from different " ++
+                            "modules\n", .{name.local});
+                        return error.Failed;
+                    }
+                } else false;
+
+                if (!seen) {
+                    try named.append(set.arena, .{
+                        .stem = stem,
+                        .imported = name.imported,
+                        .local = name.local,
+                    });
                 }
             }
         }
     }
 
-    for (stems.items, wanted.items) |stem, names| {
-        if (names.items.len == 0) {
+    var stems: std.ArrayList([]const u8) = .empty;
+
+    for (named.items) |first| {
+        if (contains(stems.items, first.stem)) {
             continue;
         }
 
-        const module = module_of(set, stem) orelse continue;
-        const code = module.component.shared_code orelse continue;
-        const plain = module.component.reactive == null and module.component.family == null;
+        try stems.append(set.arena, first.stem);
+        try out.print("\n// {s}\nconst {{", .{first.stem});
 
-        if (plain) {
-            try out.print("\n// {s}\n{s}\n", .{ stem, code });
-            continue;
-        }
-
-        var shared: std.ArrayList([]const u8) = .empty;
-
-        for (names.items) |name| {
-            for (module.component.declarations) |declaration| {
-                if (!declaration.store_bound and std.mem.eql(u8, declaration.name, name)) {
-                    try shared.append(set.arena, name);
-                }
+        for (named.items) |one| {
+            if (std.mem.eql(u8, one.stem, first.stem)) {
+                try out.print(" {s}: {s},", .{ one.imported, one.local });
             }
         }
 
-        if (shared.items.len == 0) {
-            continue;
+        try out.writeAll(" } = (() => {\n");
+
+        for (shared_of(set, first.stem).?.component.declarations) |declaration| {
+            if (!declaration.store_bound and !std.ascii.isUpper(declaration.name[0])) {
+                try out.print("{s}\n", .{declaration.code});
+            }
         }
 
-        const list = try std.mem.join(set.arena, ", ", shared.items);
+        try out.writeAll("return {");
 
-        try out.print("\n// {s}\nconst {{ {s} }} = (() => {{\n{s}\nreturn {{ {s} }};\n}})();\n", .{
-            stem, list, code, list,
-        });
+        for (named.items) |one| {
+            if (std.mem.eql(u8, one.stem, first.stem)) {
+                try out.print(" {s},", .{one.imported});
+            }
+        }
+
+        try out.writeAll(" };\n})();\n");
     }
 }
 
-/// Whether an import names a helper rather than only components: a lowercase value name.
-fn imports_helper(import: anytype) bool {
-    std.debug.assert(import.names.len <= 256);
+/// Whether `module` shares a helper named `name`: one bound to no store.
+fn helper_in(module: *const Module, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
 
-    for (import.names) |name| {
-        if (!name.type_only and name.imported.len > 0 and !std.ascii.isUpper(name.imported[0])) {
-            return true;
+    for (module.component.declarations) |declaration| {
+        if (std.mem.eql(u8, declaration.name, name)) {
+            return !declaration.store_bound and !std.ascii.isUpper(name[0]);
         }
     }
 
@@ -966,7 +988,7 @@ fn is_name_char(char: u8) bool {
     return std.ascii.isAlphanumeric(char) or char == '_' or char == '$';
 }
 
-fn module_of(set: *const Set, stem: []const u8) ?*const Module {
+fn shared_of(set: *const Set, stem: []const u8) ?*const Module {
     std.debug.assert(stem.len > 0);
 
     for (set.modules.items) |module| {

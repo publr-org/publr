@@ -7,6 +7,7 @@ import { FieldRow } from "@publr/ui/FieldRow.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
+import { Radio } from "@publr/ui/Radio.ptsx";
 import { StatusStrip } from "@publr/ui/StatusStrip.ptsx";
 import { Switch } from "@publr/ui/Switch.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
@@ -24,8 +25,9 @@ export type OperationFormProps = {
   operation: string;
   /** The fields in order. `kind`: string (a line), text (lines), number, boolean, choice
    * (one of `choices`), or rows: a list of items, one row each, in order, a column per
-   * `columns` (`kind` string, number, boolean, choice, or shown: the read's, never sent),
-   * its values in `rows`; `suggestions` are items to add from a list. */
+   * `columns` (`kind` string, number, boolean, one: true in one row only, choice, or
+   * shown: the read's, never sent), its values in `rows`; `suggestions` are items to add
+   * from a list. */
   fields: Array<{
     name: string;
     label: string;
@@ -36,10 +38,9 @@ export type OperationFormProps = {
     choices: Array<{ value: string; label: string }>;
     columns: Array<{ name: string; label: string; kind: string; choices: Array<{ value: string; label: string }> }>;
     rows: Array<{
-      index: number;
-      cells: Array<{ at: number; kind: string; label: string; value: string; choices: Array<{ value: string; label: string }> }>;
+      cells: Array<{ kind: string; label: string; value: string; choices: Array<{ value: string; label: string }> }>;
     }>;
-    suggestions: Array<{ at: number; label: string; values: string[] }>;
+    suggestions: Array<{ label: string; values: string[] }>;
   }>;
   /** A read taking the save's input and answering as the form's read does: the shown
    * columns follow what is typed. Empty for none. */
@@ -81,20 +82,25 @@ Publr.effect(() => {
         : Publr.t("All changes saved");
 });
 
-/** A list's rows in their new order, numbered again. */
-const renumbered = (rows: Row[]): Row[] => rows.map((row, index) => ({ ...row, index }));
-
 /** A new row of `field`: `values` by column, else empty (a choice its first). */
 const fresh = (field: Field, values: string[]): Row => ({
-  index: field.rows.length,
   cells: field.columns.map((column, at) => ({
-    at, kind: column.kind, label: column.label, choices: column.choices,
+    kind: column.kind, label: column.label, choices: column.choices,
     value: values[at] ?? (column.kind === "choice" ? (column.choices[0]?.value ?? "") : ""),
   })),
 });
 
+/** A column true in one row only stays true in one: the first row's, once its own is gone. */
+const kept = (rows: Row[]): Row[] =>
+  rows.map((row, index) => ({
+    ...row,
+    cells: row.cells.map((cell, at) => cell.kind !== "one" || rows.some((one) => one.cells[at].value === "true")
+      ? cell
+      : { ...cell, value: index === 0 ? "true" : "false" }),
+  }));
+
 const changed = (name: string, rows: (field: Field) => Row[]) => {
-  state.fields = state.fields.map((field) => (field.name !== name ? field : { ...field, rows: rows(field) }));
+  state.fields = state.fields.map((field) => (field.name !== name ? field : { ...field, rows: kept(rows(field)) }));
   previewed();
 };
 
@@ -108,12 +114,22 @@ export const typed = (event: Event) => {
     changed(picked[1], (field) => [...field.rows, fresh(field, field.suggestions[Number(value)]?.values ?? [])]);
     return;
   }
+  // `one:<list>:<column>`, the row as its value: that row's is the one true.
+  const only = /^one:(.+):(\d+)$/.exec(input.name ?? "");
+  if (only) {
+    const at = Number(only[2]);
+    changed(only[1], (field) => field.rows.map((one, row) => ({
+      ...one,
+      cells: one.cells.map((it, column) => (column === at ? { ...it, value: `${row}` === value ? "true" : "false" } : it)),
+    })));
+    return;
+  }
   const cell = /^(.+)\[(\d+)\]\[(\d+)\]$/.exec(input.name ?? "");
   if (cell) {
     const row = Number(cell[2]);
     const at = Number(cell[3]);
-    changed(cell[1], (field) => field.rows.map((one) =>
-      one.index !== row ? one : { ...one, cells: one.cells.map((it) => (it.at === at ? { ...it, value } : it)) }));
+    changed(cell[1], (field) => field.rows.map((one, index) =>
+      index !== row ? one : { ...one, cells: one.cells.map((it, column) => (column === at ? { ...it, value } : it)) }));
     return;
   }
   state.fields = state.fields.map((field) => (field.name === input.name ? { ...field, value } : field));
@@ -133,10 +149,10 @@ export const clicked = (event: MouseEvent) => {
     if (to < 0 || to >= rows.length) return rows;
     const order = [...rows];
     [order[row], order[to]] = [order[to], order[row]];
-    return renumbered(order);
+    return order;
   };
   if (button.name === "row-add") changed(name, (field) => [...field.rows, fresh(field, [])]);
-  if (button.name === "row-remove") changed(name, (field) => renumbered(field.rows.filter((one) => one.index !== row)));
+  if (button.name === "row-remove") changed(name, (field) => field.rows.filter((_, index) => index !== row));
   if (button.name === "row-up") changed(name, (field) => moved(field.rows, -1));
   if (button.name === "row-down") changed(name, (field) => moved(field.rows, 1));
 };
@@ -152,7 +168,7 @@ const input = (): Record<string, unknown> => {
   for (const field of state.fields) {
     out[field.name] = field.kind === "rows"
       ? field.rows.map((row) => Object.fromEntries(field.columns.flatMap((column, at) =>
-        column.kind === "shown" ? [] : [[column.name, typedValue(column.kind, row.cells[at].value)]])))
+        column.kind === "shown" ? [] : [[column.name, typedValue(column.kind === "one" ? "boolean" : column.kind, row.cells[at].value)]])))
       : typedValue(field.kind, field.value);
   }
   return out;
@@ -163,7 +179,7 @@ export const save = () => {
 };
 
 let asked = 0;
-let waiting: ReturnType<typeof setTimeout> | undefined = undefined;
+let waiting: ReturnType<typeof setTimeout>;
 
 /** The preview read, a moment after the last change: what it answers for each row fills the
  * row's shown columns. An answer overtaken by a later change is dropped. */
@@ -177,11 +193,11 @@ const previewed = () => {
       const answered = answer as Record<string, Array<Record<string, unknown>>>;
       state.fields = state.fields.map((field) => field.kind !== "rows" ? field : {
         ...field,
-        rows: field.rows.map((row) => ({
+        rows: field.rows.map((row, index) => ({
           ...row,
-          cells: row.cells.map((cell) => cell.kind !== "shown" ? cell : {
+          cells: row.cells.map((cell, at) => cell.kind !== "shown" ? cell : {
             ...cell,
-            value: String(answered[field.name]?.[row.index]?.[field.columns[cell.at].name] ?? ""),
+            value: String(answered[field.name]?.[index]?.[field.columns[at].name] ?? ""),
           }),
         })),
       });
@@ -246,16 +262,22 @@ export function OperationForm({ title, operation, fields, preview = "", note = "
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {field.rows.map((row) => (
-                          <TableRow key={row.index}>
-                            {row.cells.map((cell) => (
+                        {field.rows.map((row, place) => (
+                          <TableRow>
+                            {row.cells.map((cell, at) => (
                               <TableCell>
+                                {cell.kind === "one" && (
+                                  <label class="inline-flex">
+                                    <span class="sr-only">{cell.label}</span>
+                                    <Radio name={`one:${field.name}:${at}`} value={`${place}`} checked={cell.value === "true"} />
+                                  </label>
+                                )}
                                 {cell.kind === "boolean" && (
-                                  <Switch name={`${field.name}[${row.index}][${cell.at}]`} checked={cell.value === "true"}
+                                  <Switch name={`${field.name}[${place}][${at}]`} checked={cell.value === "true"}
                                     aria-label={cell.label} />
                                 )}
                                 {cell.kind === "choice" && (
-                                  <NativeSelect name={`${field.name}[${row.index}][${cell.at}]`} label={cell.label} size="sm"
+                                  <NativeSelect name={`${field.name}[${place}][${at}]`} label={cell.label} size="sm"
                                     classes="min-w-24">
                                     {cell.choices.map((choice) => (
                                       <option value={choice.value} selected={choice.value === cell.value}>{choice.label}</option>
@@ -266,23 +288,23 @@ export function OperationForm({ title, operation, fields, preview = "", note = "
                                   <Text as="span" variant="body-md" classes="whitespace-nowrap">{cell.value}</Text>
                                 )}
                                 {(cell.kind === "string" || cell.kind === "number") && (
-                                  <Input name={`${field.name}[${row.index}][${cell.at}]`} value={cell.value} size="sm"
+                                  <Input name={`${field.name}[${place}][${at}]`} value={cell.value} size="sm"
                                     type={cell.kind === "number" ? "number" : "text"} aria-label={cell.label} classes="min-w-20" />
                                 )}
                               </TableCell>
                             ))}
                             <TableCell>
                               <div class="flex items-center justify-end gap-1">
-                                <Button type="button" name="row-up" value={`${field.name}:${row.index}`} hierarchy="tertiary"
-                                  size="xs" label={Publr.t("Move up")} title={Publr.t("Move up")} disabled={row.index === 0}>
+                                <Button type="button" name="row-up" value={`${field.name}:${place}`} hierarchy="tertiary"
+                                  size="xs" label={Publr.t("Move up")} title={Publr.t("Move up")} disabled={place === 0}>
                                   <Icon name="arrow-up" size="sm" />
                                 </Button>
-                                <Button type="button" name="row-down" value={`${field.name}:${row.index}`} hierarchy="tertiary"
+                                <Button type="button" name="row-down" value={`${field.name}:${place}`} hierarchy="tertiary"
                                   size="xs" label={Publr.t("Move down")} title={Publr.t("Move down")}
-                                  disabled={row.index === field.rows.length - 1}>
+                                  disabled={place === field.rows.length - 1}>
                                   <Icon name="arrow-down" size="sm" />
                                 </Button>
-                                <Button type="button" name="row-remove" value={`${field.name}:${row.index}`} hierarchy="tertiary" size="sm">
+                                <Button type="button" name="row-remove" value={`${field.name}:${place}`} hierarchy="tertiary" size="sm">
                                   {Publr.t("Remove")}
                                 </Button>
                               </div>
@@ -296,8 +318,8 @@ export function OperationForm({ title, operation, fields, preview = "", note = "
                     {field.suggestions.length > 0 && (
                       <NativeSelect name={`pick:${field.name}`} label={Publr.t("Add from the list")} size="sm" classes="w-64">
                         <option value="">{Publr.t("Add from the list…")}</option>
-                        {field.suggestions.map((suggestion) => (
-                          <option value={`${suggestion.at}`}>{suggestion.label}</option>
+                        {field.suggestions.map((suggestion, at) => (
+                          <option value={`${at}`}>{suggestion.label}</option>
                         ))}
                       </NativeSelect>
                     )}

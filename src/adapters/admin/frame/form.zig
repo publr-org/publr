@@ -78,7 +78,9 @@ pub fn fields_of(session: *Session, page: pages.Page, comptime Item: type) Error
     else
         try answered(session, page.suggest) orelse return null;
 
-    return try items_of(Item, session.arena, described, values, suggested);
+    return try items_of(Item, session.arena, described, values, suggested, .{
+        .only_one = page.only_one,
+    });
 }
 
 /// What the read `operation` answers, parsed; null once a failure is shown.
@@ -114,7 +116,7 @@ fn described_of(session: *const Session, page: pages.Page) Error!Described {
 
             if (same) {
                 return .{
-                    .fields = comptime manifest_module.fields_of(declared.save),
+                    .fields = comptime manifest_module.fields_of(declared.save, owned.docs),
                     .output = comptime contract.describe(declared.read.Out),
                 };
             }
@@ -147,12 +149,18 @@ fn described_of(session: *const Session, page: pages.Page) Error!Described {
     return described;
 }
 
+/// How the page draws some fields: by name, a list's boolean columns true in one row only.
+const Drawn = struct {
+    only_one: []const []const u8 = &.{},
+};
+
 fn items_of(
     comptime Item: type,
     arena: std.mem.Allocator,
     described: Described,
     values: std.json.Value,
     suggested: std.json.Value,
+    drawn: Drawn,
 ) Error![]const Item {
     std.debug.assert(described.fields.len <= 256);
 
@@ -173,9 +181,9 @@ fn items_of(
             .required = field.required,
             .help = field.doc,
             .value = if (rows) "" else try text_of(arena, field.name, values),
-            .choices = try choices_of(Each(Item, "choices"), arena, field.values),
-            .columns = try view_columns_of(Item, arena, field, columns),
-            .rows = try rows_of(Item, arena, field.name, columns, values),
+            .choices = try choices_of(Each(Item, "choices"), arena, field),
+            .columns = try view_columns_of(Item, arena, field, columns, drawn.only_one),
+            .rows = try rows_of(Item, arena, field.name, columns, values, drawn.only_one),
             .suggestions = try suggestions_of(Item, arena, field.name, columns, suggested),
         });
     }
@@ -260,26 +268,39 @@ fn shown(column: model.Field) bool {
     return column.shape == .json;
 }
 
-fn cell_kind(column: model.Field) []const u8 {
+/// `one`: a boolean column true in one row only, a choice between the rows.
+fn cell_kind(column: model.Field, only_one: []const []const u8) []const u8 {
     std.debug.assert(column.name.len > 0);
+
+    if (column.shape == .boolean) {
+        for (only_one) |name| {
+            if (std.mem.eql(u8, name, column.name)) {
+                return "one";
+            }
+        }
+    }
 
     return if (shown(column)) "shown" else kind_of(column) orelse "string";
 }
 
-/// An enumeration's values, each with its name as people read it.
+/// An enumeration's values, each in its own words (`1,000`), else its name as people
+/// read it.
 fn choices_of(
     comptime Choice: type,
     arena: std.mem.Allocator,
-    values: []const []const u8,
+    field: model.Field,
 ) Error![]const Choice {
-    std.debug.assert(values.len <= contract.values_max);
+    std.debug.assert(field.values.len <= contract.values_max);
+    std.debug.assert(field.words.len == 0 or field.words.len == field.values.len);
 
-    const choices = try arena.alloc(Choice, values.len);
+    const choices = try arena.alloc(Choice, field.values.len);
 
-    for (values, choices) |value, *choice| {
+    for (field.values, choices, 0..) |value, *choice, at| {
+        const words = if (at < field.words.len) field.words[at] else "";
+
         choice.* = .{
             .value = value,
-            .label = try label_of(arena, value),
+            .label = if (words.len > 0) words else try label_of(arena, value),
         };
     }
 
@@ -291,6 +312,7 @@ fn view_columns_of(
     arena: std.mem.Allocator,
     field: model.Field,
     columns: []const model.Field,
+    only_one: []const []const u8,
 ) Error![]const Each(Item, "columns") {
     std.debug.assert(columns.len <= 64);
     std.debug.assert(field.name.len > 0);
@@ -302,8 +324,8 @@ fn view_columns_of(
         drawn.* = .{
             .name = column.name,
             .label = try label_of(arena, column.name),
-            .kind = cell_kind(column),
-            .choices = try choices_of(Each(Column, "choices"), arena, column.values),
+            .kind = cell_kind(column, only_one),
+            .choices = try choices_of(Each(Column, "choices"), arena, column),
         };
     }
 
@@ -317,6 +339,7 @@ fn rows_of(
     name: []const u8,
     columns: []const model.Field,
     values: std.json.Value,
+    only_one: []const []const u8,
 ) Error![]const Each(Item, "rows") {
     std.debug.assert(name.len > 0);
 
@@ -325,21 +348,19 @@ fn rows_of(
     const present = list_in(values, name);
     const rows = try arena.alloc(Row, present.len);
 
-    for (present, rows, 0..) |item, *row, index| {
+    for (present, rows) |item, *row| {
         const cells = try arena.alloc(Cell, columns.len);
 
-        for (columns, cells, 0..) |column, *cell, at| {
+        for (columns, cells) |column, *cell| {
             cell.* = .{
-                .at = @floatFromInt(at),
-                .kind = cell_kind(column),
+                .kind = cell_kind(column, only_one),
                 .label = try label_of(arena, column.name),
                 .value = try text_of(arena, column.name, item),
-                .choices = try choices_of(Each(Cell, "choices"), arena, column.values),
+                .choices = try choices_of(Each(Cell, "choices"), arena, column),
             };
         }
 
         row.* = .{
-            .index = @floatFromInt(index),
             .cells = cells,
         };
     }
@@ -362,7 +383,7 @@ fn suggestions_of(
     const offered = list_in(suggested, name);
     const suggestions = try arena.alloc(Suggestion, offered.len);
 
-    for (offered, suggestions, 0..) |item, *suggestion, at| {
+    for (offered, suggestions) |item, *suggestion| {
         const texts = try arena.alloc([]const u8, columns.len);
 
         for (columns, texts) |column, *text| {
@@ -372,7 +393,6 @@ fn suggestions_of(
         const label = try text_of(arena, "label", item);
 
         suggestion.* = .{
-            .at = @floatFromInt(at),
             .label = if (label.len > 0 or texts.len == 0) label else texts[0],
             .values = texts,
         };
@@ -457,7 +477,7 @@ test "a declared form's fields: kinds, labels and values from what the read answ
     , .{});
     const items = try items_of(PageField, arena, .{
         .fields = &described,
-    }, values, .null);
+    }, values, .null, .{});
 
     try std.testing.expectEqual(@as(usize, 3), items.len);
     try std.testing.expectEqualStrings("Site title", items[0].label);
@@ -492,11 +512,18 @@ test "a list of plain items is drawn as rows, a cell per item field" {
     , .{});
     const items = try items_of(PageField, arena, .{
         .fields = &described,
-    }, values, .null);
+    }, values, .null, .{});
+    const one = try items_of(PageField, arena, .{
+        .fields = &described,
+    }, values, .null, .{
+        .only_one = &.{"main"},
+    });
 
     try std.testing.expectEqualStrings("rows", items[0].kind);
     try std.testing.expectEqual(@as(usize, 2), items[0].columns.len);
     try std.testing.expectEqualStrings("boolean", items[0].columns[1].kind);
+    try std.testing.expectEqualStrings("one", one[0].columns[1].kind);
+    try std.testing.expectEqualStrings("one", one[0].rows[1].cells[1].kind);
     try std.testing.expectEqual(@as(usize, 2), items[0].rows.len);
     try std.testing.expectEqualStrings("true", items[0].rows[0].cells[1].value);
     try std.testing.expectEqualStrings("pl", items[0].rows[1].cells[0].value);
@@ -529,6 +556,7 @@ test "a list's columns: a choice per enumeration, the read's own fields shown, i
                 .shape = .string,
                 .required = false,
                 .values = &.{ "period", "comma" },
+                .words = &.{ "1.50", "" },
             },
         },
     }};
@@ -541,11 +569,12 @@ test "a list's columns: a choice per enumeration, the read's own fields shown, i
     const items = try items_of(PageField, arena, .{
         .fields = &described,
         .output = comptime contract.describe(Answered),
-    }, values, suggested);
+    }, values, suggested, .{});
     const columns = items[0].columns;
 
     try std.testing.expectEqual(@as(usize, 3), columns.len);
     try std.testing.expectEqualStrings("choice", columns[1].kind);
+    try std.testing.expectEqualStrings("1.50", columns[1].choices[0].label);
     try std.testing.expectEqualStrings("Comma", columns[1].choices[1].label);
     try std.testing.expectEqualStrings("shown", columns[2].kind);
     try std.testing.expectEqualStrings("£1,234.56", items[0].rows[0].cells[2].value);
