@@ -103,10 +103,10 @@ pub fn tier_of_held(entry: *const Permission, held: *const Held) Tier {
 
 /// Granted to every plugin without asking: harmless, and needed to run at all.
 pub const always = [_][]const u8{
-    "heartbeat.check",    "project.status", "status.list",
-    "internal.create",    "internal.get",   "internal.save",
-    "internal.find_one",  "internal.find",  "internal.delete",
-    "project.currencies", "mod.apply",
+    "heartbeat.check",   "project.status", "status.list",
+    "internal.create",   "internal.get",   "internal.save",
+    "internal.find_one", "internal.find",  "internal.delete",
+    "mod.changed",       "mod.apply",
 };
 
 /// The record operations a plugin reaches on its own content types without asking.
@@ -351,19 +351,19 @@ pub const core = [_]Permission{
 /// types handed to another, the project's secrets, a person's conversations with a model.
 /// No grant reaches them.
 pub const never = [_][]const u8{
-    "user.sign_in",       "user.sign_out",      "user.set_password",          "user.password_link",
-    "sign_on.configure",  "sign_on.status",     "sign_on.redeem",             "identity.sign_in",
-    "identity.configure", "identity.status",    "identity.link",              "identity.unlink",
-    "identity.list",      "identity.providers", "project.init",               "role.list",
-    "view.list",          "view.get",           "view.create",                "view.update",
-    "view.delete",        "project.move_app",   "project.set_currencies",     "activity.list",
-    "errors.list",        "secret.list",        "secret.set",                 "secret.remove",
-    "ai.ask",             "ai.conversation",    "ai.conversations",           "ai.stop",
-    "ai.begin",           "ai.step",            "ai.finish",                  "ai.draft",
-    "user.language",      "user.set_language",  "project.set_admin_language", "user.variant",
-    "user.set_variant",   "ai.transcribe",      "view.default",               "view.save_default",
-    "mod.list",           "view.reset_default", "role.get",                   "role.create",
-    "role.update",        "role.reset",         "role.remove",
+    "user.sign_in",       "user.sign_out",              "user.set_password", "user.password_link",
+    "sign_on.configure",  "sign_on.status",             "sign_on.redeem",    "identity.sign_in",
+    "identity.configure", "identity.status",            "identity.link",     "identity.unlink",
+    "identity.list",      "identity.providers",         "project.init",      "role.list",
+    "view.list",          "view.get",                   "view.create",       "view.update",
+    "view.delete",        "project.move_app",           "activity.list",     "errors.list",
+    "secret.list",        "secret.set",                 "secret.remove",     "ai.ask",
+    "ai.conversation",    "ai.conversations",           "ai.stop",           "ai.begin",
+    "ai.step",            "ai.finish",                  "ai.draft",          "user.language",
+    "user.set_language",  "project.set_admin_language", "user.variant",      "user.set_variant",
+    "ai.transcribe",      "view.default",               "view.save_default", "mod.list",
+    "view.reset_default", "role.get",                   "role.create",       "role.update",
+    "role.reset",         "role.remove",
 };
 
 /// The core permission `key` stands for, or null when it names none.

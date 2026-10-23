@@ -2,7 +2,7 @@
 //! filters, and keeping the old live copy as a revision.
 
 const std = @import("std");
-const currencies = @import("../project/currencies.zig");
+const currencies = @import("../../sdk/site_currencies.zig");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const registry = @import("../../server/registry.zig");

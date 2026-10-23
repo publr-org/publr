@@ -37,10 +37,10 @@ tables never learn about a kind.
 A **money** field holds an amount per currency, each in minor units of an ISO 4217
 currency: `{ "GBP": 850, "EUR": 990 }` is £8.50 and €9.90. Each amount is its own integer
 value at `price.GBP`, so lists filter and sort by `price.GBP` like any field. The site's
-currencies (`project set_currencies`, the default first) are the only ones a money field
-takes; until they are set, any ISO 4217 code is taken. They are set in the admin under
-Settings, System settings, Currencies, or with `project set_currencies`. The site says how
-each is written:
+currencies (the default first) are the only ones a money field takes; until a plugin names
+them, any ISO 4217 code is taken. A plugin names them through the mod `money.currencies`:
+the `currencies` plugin keeps them under Shop settings (System settings without the shop),
+or `currencies save`. The site says how each is written:
 a symbol, a format such as `{symbol}{amount}` or `{amount} {code}`, the decimal separator
 (`.` or `,`) and the thousands one (`,`, `.`, `'`, a space or none). The number of decimals is the currency's own (JPY none, KWD three).
 The admin shows one input per currency, and templates write an amount with

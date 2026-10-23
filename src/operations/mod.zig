@@ -8,6 +8,7 @@ const Error = sdk.Error;
 const mods = sdk.mods;
 const sdk_http = @import("http.zig");
 const overrides = @import("operation.zig");
+const deps = @import("../lib/deps.zig");
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "mod",
@@ -86,6 +87,69 @@ pub const Apply = struct {
     }
 };
 
+pub const Changed = struct {
+    pub const name = "mod.changed";
+    pub const description = "Build again what was built with a name's values";
+    pub const details =
+        \\What a plugin calls when the data its modifier of `name` answers from changed
+        \\(the site's currencies, say): pages built with the values applied under `name`
+        \\are built again. Only a plugin modifying `name`; anyone else is refused.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const open = true;
+    pub const In = mods.Changed.In;
+    pub const Out = mods.Changed.Out;
+    pub const example: In = .{
+        .name = "money.currencies",
+    };
+    pub const example_out: Out = .{};
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .name = "The name the plugin modifies: dotted parts of a-z, 0-9 and _",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+
+        if (!mods.valid(in.name, false)) {
+            return error.Invalid;
+        }
+
+        if (ctx.plugin.len == 0 or !try modifies(ctx, ctx.plugin, in.name)) {
+            return error.Denied;
+        }
+
+        const key = std.fmt.allocPrint(ctx.arena, "mod:{s}", .{in.name}) catch {
+            return error.OutOfMemory;
+        };
+        var index: deps.Index = .{
+            .db = ctx.db,
+            .options = .{
+                .quiet_ms = deps.quiet_ms,
+            },
+        };
+
+        index.invalidate(&.{key}, ctx.now_ms) catch {
+            ctx.dependency_failure = true;
+        };
+
+        return .{};
+    }
+};
+
+/// Whether `plugin` has a modifier taking `name`.
+fn modifies(ctx: *Ctx, plugin: []const u8, name: []const u8) Error!bool {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(name.len > 0);
+
+    for (try registry.SDK.modifiers(ctx)) |modifier| {
+        if (std.mem.eql(u8, modifier.plugin, plugin) and mods.matches(modifier.name, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub const List = struct {
     pub const name = "mod.list";
     pub const description = "List every modifier: whose it is, the name it takes, why";
@@ -129,7 +193,7 @@ pub const List = struct {
     }
 };
 
-pub const operations = [_]type{ Apply, List };
+pub const operations = [_]type{ Apply, Changed, List };
 
 const SDK = registry.SDK;
 
@@ -154,6 +218,23 @@ test "applied under a name with no modifier, values come back as they went; bad 
         .values = "{}",
     }));
     _ = try SDK.dispatch(&system, List, .{});
+}
+
+test "anyone but a plugin modifying a name is refused saying its values changed" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+
+    try std.testing.expectError(error.Denied, SDK.dispatch(&system, Changed, .{
+        .name = "greeter.salutation.title",
+    }));
+
+    system.plugin = "greeter";
+    try std.testing.expectError(error.Denied, SDK.dispatch(&system, Changed, .{
+        .name = "money.currencies",
+    }));
 }
 
 test "a visitor's call applies values too: modifiers only read, with their own grants" {
