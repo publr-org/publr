@@ -55,25 +55,23 @@ pub fn main(init: std.process.Init) !u8 {
     return 0;
 }
 
-/// The operations whose examples cannot run here. Asking a model starts an agent beside a
-/// server, which the examples run without (smoke asks one of a running server); a fetch
-/// goes out to the network, and only a plugin may send one; an import downloads; choosing,
-/// testing and setting up a provider, and turning speech into text, need a provider
-/// plugin, which the seeded project does not have; an update needs a running server and the
-/// network; a stream needs an agent; a removal list is made by a device; a trash entry by a
-/// removal; a browser call is asked by an agent and answered by a workspace page; a health
-/// case kept or unlinked needs a
-/// broken reference, which the seeded project has none of; choosing between translations,
-/// or listing what one leaves untranslated, needs plugins translating the admin, and it has
-/// none; installing from the marketplace needs the plugins' built modules, which the fixture
-/// catalog does not carry; overriding who may call needs a plugin's operation made with
-/// `publr.operation.define`, which the fixture compiles in none of; and the seeded project's
-/// plugins queue no jobs for `job list` to show nor fail one for `job run_again`, repeat
-/// none for `job schedule` to move, and declare no webhooks for `webhook list` and
-/// `webhook run_again`; `project put` and `mod changed` answer only a plugin's call; asking the marketplace
-/// answers a new id each time, and `job answer` reads only an id someone was given; a
-/// plugin's field group values read and written are the sampler's own group, which the
-/// seeded project has none of.
+/// The operations whose examples cannot run here. Asking a model starts an agent beside a server,
+/// which the examples run without (smoke asks one of a running server); a fetch goes out to the
+/// network, and only a plugin may send one; an import downloads; choosing, testing and setting up a
+/// provider, and turning speech into text, need a provider plugin, which the seeded project does
+/// not have; an update needs a running server and the network; a stream needs an agent; a removal
+/// list is made by a device; a trash entry by a removal; a browser call is asked by an agent and
+/// answered by a workspace page; a health case kept or unlinked needs a broken reference, which the
+/// seeded project has none of; choosing between translations, or listing what one leaves
+/// untranslated, needs plugins translating the admin, and it has none; installing from the
+/// marketplace needs the plugins' built modules, which the fixture catalog does not carry;
+/// overriding who may call needs a plugin's operation made with `publr.operation.define`, which the
+/// fixture compiles in none of; and the seeded project's plugins queue no jobs for `job list` to
+/// show nor fail one for `job run_again`, repeat none for `job schedule` to move, and declare no
+/// webhooks for `webhook list` and `webhook run_again`; `project put` and `mod changed` answer only
+/// a plugin's call; asking the marketplace answers a new id each time, and `job answer` reads only
+/// an id someone was given; a plugin's field group values read and written are the sampler's own
+/// group, which the seeded project has none of.
 const skips = [_][]const u8{
     "ai.ask",
     "ai.reply",
