@@ -131,6 +131,16 @@ pub fn speaks(ctx: *Ctx) Error![]const u8 {
     std.debug.assert(ctx.now_ms >= 0);
 
     const user = ctx.caller.user_id() orelse return "";
+
+    return person_speaks(ctx, user);
+}
+
+/// The language the account `user` reads: their own choice, else the site's; empty for
+/// English (`ctx.locale(person)`).
+pub fn person_speaks(ctx: *Ctx, user: []const u8) Error![]const u8 {
+    std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(user.len > 0);
+
     const all = try choices(ctx.arena);
     const key = std.mem.concat(ctx.arena, u8, &.{ person_prefix, user }) catch {
         return error.OutOfMemory;

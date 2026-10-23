@@ -468,3 +468,103 @@ test "queued work speaks the language it was queued in: a job about a Polish rec
     try std.testing.expectEqual(1, try Runner.drain(&worker, 8));
     try std.testing.expectEqualStrings("Order is ready", Probe.said[0..Probe.said_len]);
 }
+
+test "queued work tells each in their own words: the admin in English, the visitor in Polish" {
+    const sdk = @import("../sdk.zig");
+    const job_define = @import("../sdk/plugin/job_define.zig");
+    const HostApi = @import("../sdk/plugin/context.zig").HostApi;
+    const QueueCtx = @import("../sdk/plugin/queue.zig").Queue(HostApi);
+    const Probe = struct {
+        const In = struct {
+            title: []const u8,
+            admin: []const u8,
+        };
+
+        var said: [3][64]u8 = undefined;
+        var said_len: [3]u32 = @splat(0);
+
+        fn keep(slot: u32, text: []const u8) void {
+            std.debug.assert(slot < said.len);
+            std.debug.assert(text.len <= said[slot].len);
+
+            @memcpy(said[slot][0..text.len], text);
+            said_len[slot] = @intCast(text.len);
+        }
+
+        fn run(ctx: *QueueCtx, in: In) sdk.Error!void {
+            std.debug.assert(in.title.len > 0);
+            std.debug.assert(in.admin.len > 0);
+
+            const values = .{
+                .title = in.title,
+            };
+
+            keep(0, ctx.t("{title} is ready", values));
+            keep(1, ctx.locale(in.admin).t("{title} is ready", values));
+            // A guest with no account: the language the work was queued in.
+            keep(2, ctx.locale("").t("{title} is ready", values));
+        }
+
+        fn kept(slot: u32) []const u8 {
+            std.debug.assert(slot < said.len);
+
+            return said[slot][0..said_len[slot]];
+        }
+    };
+    const Tell = job_define.define(Probe.In, .{
+        .name = "tell",
+        .run = Probe.run,
+    });
+    const Runner = sdk.SDK(.{
+        .operations = &.{},
+        .jobs = &.{Tell},
+        .job_owners = &.{"probe"},
+    }).jobs;
+
+    const files = [_]OwnedTranslation{.{
+        .plugin = "probe",
+        .translation = .{
+            .locale = "pl",
+            .label = "Polski",
+            .po = "msgid \"{title} is ready\"\nmsgstr \"Gotowe: {title}\"\n",
+        },
+    }};
+    var languages: Languages = .{
+        .gpa = std.testing.allocator,
+        .arena = .init(std.testing.allocator),
+        .list = &.{},
+    };
+    defer languages.arena.deinit();
+    languages.list = try build(languages.arena.allocator(), &files, &.{});
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var request = harness.ctx(.anonymous);
+
+    // The administrator chose English for themselves.
+    try @import("../store.zig").settings.set(request.db, "admin_language:u_admin", "en", 1);
+
+    // A visitor's request on the Polish page queues it.
+    request.variant = "pl";
+    request.plugin = "probe";
+
+    var asking: HostApi = .{
+        .inner = &request,
+    };
+
+    try asking.enqueue(Tell, .{
+        .title = "Zamówienie",
+        .admin = "u_admin",
+    });
+
+    var worker = harness.ctx(.system);
+
+    worker.translations = languages.view();
+
+    try std.testing.expectEqual(1, try Runner.drain(&worker, 8));
+    try std.testing.expectEqualStrings("Gotowe: Zamówienie", Probe.kept(0));
+    try std.testing.expectEqualStrings("Zamówienie is ready", Probe.kept(1));
+    try std.testing.expectEqualStrings("Gotowe: Zamówienie", Probe.kept(2));
+}

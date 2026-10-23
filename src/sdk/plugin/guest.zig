@@ -249,6 +249,37 @@ pub const SandboxApi = struct {
         return words.filled(self.arena_allocator, many, values) catch many;
     }
 
+    /// Text for one person, in their own language (`ctx.locale(person)`): the source text
+    /// until installed plugins' catalogues reach the host, as `t` and `tn`.
+    pub fn locale(self: *const SandboxApi, person: []const u8) Locale {
+        std.debug.assert(self.name.len > 0);
+        std.debug.assert(self.now_at_ms >= 0);
+        _ = person;
+
+        return .{
+            .api = self,
+        };
+    }
+
+    /// `ctx.locale(person)`: `t` and `tn` in one person's language.
+    pub const Locale = struct {
+        api: *const SandboxApi,
+
+        pub fn t(self: Locale, comptime text: []const u8, values: anytype) []const u8 {
+            return self.api.t(text, values);
+        }
+
+        pub fn tn(
+            self: Locale,
+            comptime one: []const u8,
+            comptime many: []const u8,
+            count: u64,
+            values: anytype,
+        ) []const u8 {
+            return self.api.tn(one, many, count, values);
+        }
+    };
+
     pub fn arena(self: *const SandboxApi) std.mem.Allocator {
         std.debug.assert(self.now_at_ms >= 0);
         std.debug.assert(self.name.len > 0);

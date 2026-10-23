@@ -11,6 +11,7 @@ const role = @import("../../model/role.zig");
 const job_define = @import("job_define.zig");
 const job_queue = @import("../../store/job_queue.zig");
 const permission_model = @import("../../model/permission.zig");
+const language = @import("../../operations/user/language.zig");
 
 pub const Caller = sdk.Caller;
 pub const Error = sdk.Error;
@@ -178,8 +179,77 @@ pub const HostApi = struct {
         return self.said(one, many, count, values);
     }
 
+    /// Text for one person, in their own language, else the site's: a message composed in
+    /// its recipient's words, `const localize = ctx.locale(person); localize.t(…)`. `person`
+    /// is the account's id; empty (a guest with no account) keeps the call's language.
+    pub fn locale(self: *const PluginCtx, person: []const u8) Locale {
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        if (person.len == 0) {
+            return .{
+                .ctx = self,
+                .locale = self.speaks(),
+            };
+        }
+
+        const chosen = language.person_speaks(self.inner, person) catch |err| blk: {
+            std.log.warn("ctx.locale: {s}'s language not read: {t}", .{ person, err });
+            break :blk self.speaks();
+        };
+
+        return .{
+            .ctx = self,
+            .locale = chosen,
+        };
+    }
+
+    /// `ctx.locale(person)`: `t` and `tn` in one person's language.
+    pub const Locale = struct {
+        ctx: *const PluginCtx,
+        locale: []const u8,
+
+        pub fn t(self: Locale, comptime text: []const u8, values: anytype) []const u8 {
+            comptime std.debug.assert(text.len > 0);
+
+            return self.ctx.said_in(self.locale, text, "", null, values);
+        }
+
+        pub fn tn(
+            self: Locale,
+            comptime one: []const u8,
+            comptime many: []const u8,
+            count: u64,
+            values: anytype,
+        ) []const u8 {
+            comptime std.debug.assert(one.len > 0 and many.len > 0);
+
+            return self.ctx.said_in(self.locale, one, many, count, values);
+        }
+    };
+
+    /// The language the call speaks: the person's, else the variant read.
+    fn speaks(self: *const PluginCtx) []const u8 {
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        return if (self.inner.language.locale.len > 0)
+            self.inner.language.locale
+        else
+            self.inner.variant;
+    }
+
     fn said(
         self: *const PluginCtx,
+        comptime text: []const u8,
+        comptime plural: []const u8,
+        count: ?u64,
+        values: anytype,
+    ) []const u8 {
+        return self.said_in(self.speaks(), text, plural, count, values);
+    }
+
+    fn said_in(
+        self: *const PluginCtx,
+        locale_code: []const u8,
         comptime text: []const u8,
         comptime plural: []const u8,
         count: ?u64,
@@ -198,12 +268,7 @@ pub const HostApi = struct {
             };
         }
 
-        const locale = if (self.inner.language.locale.len > 0)
-            self.inner.language.locale
-        else
-            self.inner.variant;
-
-        return self.inner.say(locale, .{
+        return self.inner.say(locale_code, .{
             .id = text,
             .plural = plural,
             .count = if (count) |number| @floatFromInt(number) else null,
