@@ -96,7 +96,9 @@ test "remotes: absent is unavailable, fitting works, an update switches off what
     const created = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "shelf.item",
         .document = "{\"title\":\"Tea\",\"sku\":\"A-1\",\"note\":\"not for stocktake\"}",
-        .status = "published",
+    });
+    _ = try registry.SDK.dispatch(&system, records.Publish, .{
+        .id = created.id,
     });
 
     try std.testing.expect(std.mem.indexOf(u8, try scenario.call(admin, take, "{}"), "1") != null);

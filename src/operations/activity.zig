@@ -575,12 +575,16 @@ test "logs: a write and what it set off, secrets masked, failures apart, never c
     const created = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "note",
         .document = "{\"title\":\"One\"}",
-        .status = "published",
+    });
+    _ = try registry.SDK.dispatch(&system, records.Publish, .{
+        .id = created.id,
     });
     _ = try registry.SDK.dispatch(&system, records.Save, .{
         .id = created.id,
         .document = "{\"title\":\"Two\"}",
-        .status = "published",
+    });
+    _ = try registry.SDK.dispatch(&system, records.Publish, .{
+        .id = created.id,
     });
     _ = try registry.SDK.dispatch(&system, snapshots.Restore, .{
         .id = created.id,

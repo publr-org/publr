@@ -1,5 +1,5 @@
-//! Settings › Trash: what was removed, restorable until it goes for good; Restore, Remove
-//! for good, Empty trash.
+//! Settings › Trash: what was removed and the records in the trash, restorable until it goes
+//! for good; Restore, Remove for good, Empty trash.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
@@ -59,39 +59,29 @@ fn screen(session: *admin.Session, notice: []const u8, problem: []const u8) Erro
         return admin.fail(session, err, "/admin");
     };
     const arena = session.arena;
-    const rows = try arena.alloc(views.Trash.EntriesItem, listed.entries.len);
+    const rows = try arena.alloc(views.Trash.EntriesItem, listed.entries.len + listed.records.len);
 
-    for (listed.entries, rows) |entry, *row| {
-        const at = time.datetime_text(arena, entry.removed_at) catch "";
-        const until = time.datetime_text(arena, entry.keep_until) catch "";
-        const when: []const admin.Placeholder = &.{.{
-            .name = "when",
-            .value = at,
-        }};
-        const removed = if (entry.conversation_id.len > 0)
-            try session.translated("By an agent, {when}", .{
-                .values = when,
-            })
-        else
-            try session.translated("By a person, {when}", .{
-                .values = when,
-            });
+    for (rows[0..listed.entries.len], listed.entries) |*row, entry| {
+        row.* = try row_of(session, entry, entry.label);
+    }
 
-        row.* = .{
-            .label = entry.label,
-            .removed = removed,
-            .until = until[0 .. std.mem.indexOfScalar(u8, until, ' ') orelse until.len],
-            .restore_action = try std.fmt.allocPrint(arena, "{s}/{s}/restore", .{ back, entry.id }),
-            .remove_action = try std.fmt.allocPrint(arena, "{s}/{s}/remove", .{ back, entry.id }),
-        };
+    for (rows[listed.entries.len..], listed.records) |*row, record| {
+        const label = try session.translated("Record “{title}”", .{
+            .values = &.{.{
+                .name = "title",
+                .value = record.label,
+            }},
+        });
+
+        row.* = try row_of(session, record, label);
     }
 
     const pages = try admin.pager.links(
         arena,
         back,
         offset,
-        @intCast(rows.len),
-        listed.total,
+        @intCast(@max(listed.entries.len, listed.records.len)),
+        @max(listed.total, listed.records_total),
         page_size,
     );
 
@@ -104,6 +94,39 @@ fn screen(session: *admin.Session, notice: []const u8, problem: []const u8) Erro
         .notice = notice,
         .problem = problem,
     }, .{});
+}
+
+fn row_of(
+    session: *admin.Session,
+    entry: trash.Shown,
+    label: []const u8,
+) Error!views.Trash.EntriesItem {
+    std.debug.assert(entry.id.len > 0);
+    std.debug.assert(session.signed_in());
+
+    const arena = session.arena;
+    const at = time.datetime_text(arena, entry.removed_at) catch "";
+    const until = time.datetime_text(arena, entry.keep_until) catch "";
+    const when: []const admin.Placeholder = &.{.{
+        .name = "when",
+        .value = at,
+    }};
+    const removed = if (entry.conversation_id.len > 0)
+        try session.translated("By an agent, {when}", .{
+            .values = when,
+        })
+    else
+        try session.translated("By a person, {when}", .{
+            .values = when,
+        });
+
+    return .{
+        .label = label,
+        .removed = removed,
+        .until = until[0 .. std.mem.indexOfScalar(u8, until, ' ') orelse until.len],
+        .restore_action = try std.fmt.allocPrint(arena, "{s}/{s}/restore", .{ back, entry.id }),
+        .remove_action = try std.fmt.allocPrint(arena, "{s}/{s}/remove", .{ back, entry.id }),
+    };
 }
 
 pub fn restore(request: *Request, response: *Response, ctx: *Context) Error!void {

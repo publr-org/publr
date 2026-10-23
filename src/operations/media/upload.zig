@@ -263,8 +263,12 @@ pub fn added(ctx: *Ctx, kept: Kept) Error!library.Item {
     const created = try registry.SDK.dispatch(ctx, record.Create, .{
         .type = kept.type,
         .document = try document_of(ctx, kept.filename, kept.folder),
-        .status = "published",
     });
+
+    _ = try registry.SDK.dispatch(ctx, record.Publish, .{
+        .id = created.id,
+    });
+
     const row: store.media.Row = .{
         .record = created.id,
         .filename = kept.filename,

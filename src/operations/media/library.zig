@@ -240,8 +240,8 @@ pub fn written_of(ctx: *Ctx, id: []const u8) Error!Written {
     return parsed;
 }
 
-/// Writes the fields given straight into the live file: the library's records are never
-/// drafts. Someone changing a file has looked at it: it leaves the unreviewed ones.
+/// Writes the fields given and publishes them: the library's records are never drafts.
+/// Someone changing a file has looked at it: it leaves the unreviewed ones.
 pub fn save(ctx: *Ctx, id: []const u8, document: anytype) Error!void {
     std.debug.assert(id.len > 0);
     std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -250,11 +250,17 @@ pub fn save(ctx: *Ctx, id: []const u8, document: anytype) Error!void {
         .emit_null_optional_fields = false,
     }) catch return error.OutOfMemory;
 
-    _ = try registry.SDK.dispatch(ctx, record.Save, .{
+    const saved = try registry.SDK.dispatch(ctx, record.Save, .{
         .id = id,
         .document = text,
-        .status = "published",
     });
+
+    if (saved.changed) {
+        _ = try registry.SDK.dispatch(ctx, record.Publish, .{
+            .id = id,
+        });
+    }
+
     try store.media.reviewed(ctx.db, &.{id});
 }
 
@@ -264,7 +270,6 @@ pub fn save(ctx: *Ctx, id: []const u8, document: anytype) Error!void {
 /// `.private`.
 pub fn public_only(granted: *const sdk.Grant) bool {
     std.debug.assert(granted.allows());
-    std.debug.assert(granted.field_mask.len <= sdk.grant.list_len_max);
 
     return granted.record_filter.flags.public_types_only;
 }

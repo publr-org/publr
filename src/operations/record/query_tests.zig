@@ -190,8 +190,13 @@ fn create(
     const made = try SDK.dispatch(ctx, record.Create, .{
         .type = type_handle,
         .document = document,
-        .status = status,
     });
+
+    if (!std.mem.eql(u8, status, "draft")) {
+        _ = try SDK.dispatch(ctx, record.Publish, .{
+            .id = made.id,
+        });
+    }
 
     return made.id;
 }
@@ -257,6 +262,13 @@ test "query: an editor reads drafts too, unless asking for published records onl
 
     try std.testing.expect(!contains(published.result.text, "Unseen"));
 
+    // A record's status is a field queries filter and project on.
+    const drafts = try ask(&admin, "*[_type == \"book\" && status == \"draft\"]{ title, status }");
+
+    try std.testing.expectEqualStrings(
+        \\[{"title":"Unseen","status":"draft"}]
+    , drafts.result.text);
+
     const everything = try SDK.dispatch(&admin, Query, .{
         .query = "*[_type == \"book\"]{ title, \"by\": author->name }",
     });
@@ -266,31 +278,10 @@ test "query: an editor reads drafts too, unless asking for published records onl
     try std.testing.expectEqual(@as(usize, 0), everything.problems.len);
 }
 
-test "query: a hidden field is as if the type had none; own records are the caller's alone" {
+test "query: own records are the caller's alone" {
     var library: Library = .{};
     try library.init();
     defer library.deinit();
-
-    var admin = library.as_admin();
-
-    admin.parent = admin.allocate_operation_id();
-
-    const masked: sdk.Grant = .{
-        .field_mask = &.{"views"},
-    };
-    const spread = try Query.run(&admin, .{
-        .query = "*[_type == \"book\"][0]{ ... }",
-    }, &masked);
-
-    try std.testing.expect(!contains(spread.result.text, "views"));
-    try std.testing.expect(contains(spread.result.text, "title"));
-    // Filtering on a hidden field is as on a field the type does not have: nothing matches,
-    // so the hidden value can never decide what comes back.
-    const by_hidden = try Query.run(&admin, .{
-        .query = "*[_type == \"book\" && views > 15]{ title }",
-    }, &masked);
-
-    try std.testing.expectEqualStrings("[]", by_hidden.result.text);
 
     var bob = library.harness.ctx(.{
         .user = .{

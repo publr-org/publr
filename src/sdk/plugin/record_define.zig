@@ -18,15 +18,73 @@ const remote_fields = @import("remote_fields.zig");
 
 pub const Scope = enum { project, app };
 
-/// A reference to a record of any type: what it points at, and whether it is gone. A
-/// field narrows the types with `.options = .{ .to = &.{"products.variant"} }`.
+/// A reference to a record of any type, stored and sent as its id. A field narrows the
+/// types with `.options = .{ .to = &.{"products.variant"} }`. As an operation's input core
+/// reads it before `run`: `type` its type, `value` the record when the caller may read that
+/// type (else null), `missing` when the record is gone.
 pub const AnyRef = struct {
-    type: []const u8,
     id: []const u8,
+    type: []const u8 = "",
+    /// The record's fields as JSON, when the caller may read it.
+    value: ?std.json.Value = null,
     /// The record it pointed at is gone; the reference stays, marked so.
     missing: bool = false,
 
     pub const reference = true;
+
+    const Resolved = struct {
+        id: []const u8,
+        type: []const u8 = "",
+        value: ?std.json.Value = null,
+        missing: bool = false,
+    };
+
+    /// An id, as callers send and records keep it, or the object core hands on.
+    pub fn jsonParse(
+        allocator: std.mem.Allocator,
+        source: anytype,
+        options: std.json.ParseOptions,
+    ) std.json.ParseError(@TypeOf(source.*))!AnyRef {
+        const value = try std.json.innerParse(std.json.Value, allocator, source, options);
+
+        return jsonParseFromValue(allocator, value, options) catch error.UnexpectedToken;
+    }
+
+    pub fn jsonParseFromValue(
+        allocator: std.mem.Allocator,
+        source: std.json.Value,
+        options: std.json.ParseOptions,
+    ) std.json.ParseFromValueError!AnyRef {
+        if (source == .string) {
+            if (source.string.len == 0) {
+                return error.UnexpectedToken;
+            }
+
+            return .{
+                .id = source.string,
+            };
+        }
+
+        const resolved = try std.json.innerParseFromValue(Resolved, allocator, source, options);
+
+        if (resolved.id.len == 0) {
+            return error.UnexpectedToken;
+        }
+
+        return .{
+            .id = resolved.id,
+            .type = resolved.type,
+            .value = resolved.value,
+            .missing = resolved.missing,
+        };
+    }
+
+    /// The id alone, whatever was read: a reference keeps and sends only that.
+    pub fn jsonStringify(self: AnyRef, writer: anytype) !void {
+        std.debug.assert(self.id.len > 0);
+
+        return writer.write(self.id);
+    }
 };
 
 // Options by name: the compiler finds a name among an enum's tags without reading them.
@@ -43,7 +101,6 @@ const Option = enum {
     status,
     editor,
     plural_name,
-    app,
     kind,
     menu,
     data_view,
@@ -100,8 +157,7 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
                 "(`.internal = true`); content goes to the trash");
         }
 
-        const start = if (internal) "" else record_flow.start_status(options);
-        const Kept = Store(Document, stored, internal, start);
+        const Kept = Store(Document, stored, internal);
 
         check_named_fields(Document, options);
 
@@ -277,12 +333,11 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
 /// native and an installed plugin take the same path and checks: content through `record.*`
 /// (`name` its type), internal records through `internal.*` (`name` its collection). Reads
 /// ignore fields `Document` does not name; a save writes only the fields it is given. Content
-/// starts in `start`.
+/// starts in its flow's start.
 pub fn Store(
     comptime Document: type,
     comptime name: []const u8,
     comptime internal: bool,
-    comptime start: []const u8,
 ) type {
     comptime std.debug.assert(@typeInfo(Document) == .@"struct");
     comptime std.debug.assert(name.len > 0);
@@ -437,7 +492,6 @@ pub fn Store(
                 (try ctx.call(record_operations.Create, .{
                     .type = name,
                     .document = document,
-                    .status = start,
                 })).id;
 
             std.debug.assert(id.len > 0);
@@ -651,7 +705,6 @@ pub fn content_type_of(comptime Definition: type, comptime Docs: type) content_t
             .editor = if (@hasField(Options, "editor")) options.editor else "form",
             .plural_name = if (@hasField(Options, "plural_name")) options.plural_name else "",
             .icon = record_menu.icon_of(Definition) orelse "",
-            .app = if (@hasField(Options, "app")) options.app else "",
             .kind = if (@hasField(Options, "kind")) options.kind else .record,
             .system = true,
             .title_field = title_field_of(Document, options),

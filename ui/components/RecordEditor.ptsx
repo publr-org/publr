@@ -52,8 +52,8 @@ export type RecordAction = {
 };
 
 export const state = Publr.reactive({
-  /** "Purge for good" was chosen: the confirm under the actions waits for a second word. */
-  purge_armed: false,
+  /** "Destroy for good" was chosen: the confirm under the actions waits for a second word. */
+  destroy_armed: false,
   /** The record's type handle: what an opened item's fields are looked up in. */
   type: "",
   /** Past the fold, what the browser drew after the page: the fields of items and groups
@@ -559,13 +559,13 @@ export const onSubmit = async (event: Event) => {
   if (!(form instanceof HTMLFormElement) || event.defaultPrevented) return;
   event.preventDefault();
   if (state.submitting) return;
-  // Purging is for good: the menu only arms it; the confirm under the actions does it.
-  const purges = form.querySelector('input[name="do"][value="purge"]') !== null;
-  if (purges && form.dataset.confirmed !== "true") {
-    state.purge_armed = true;
+  // Destroying is for good: the menu only arms it; the confirm under the actions does it.
+  const destroys = form.querySelector('input[name="transition"][value="destroy"]') !== null;
+  if (destroys && form.dataset.confirmed !== "true") {
+    state.destroy_armed = true;
     return;
   }
-  state.purge_armed = false;
+  state.destroy_armed = false;
   const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
   const memo = focused();
   if (!await flush() || disposed) return;
@@ -580,8 +580,8 @@ export const onSubmit = async (event: Event) => {
   );
 };
 
-export const cancel_purge = () => {
-  state.purge_armed = false;
+export const cancel_destroy = () => {
+  state.destroy_armed = false;
 };
 
 const submit = mutation(async (

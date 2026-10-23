@@ -34,11 +34,16 @@ pub fn seed_posts_and_notes(system: *sdk.Ctx) !void {
                 .{ std.ascii.toUpper(handle[0]), handle[1..], status },
             );
 
-            _ = try SDK.dispatch(system, record.Create, .{
+            const created = try SDK.dispatch(system, record.Create, .{
                 .type = handle,
                 .document = document,
-                .status = status,
             });
+
+            if (std.mem.eql(u8, status, "published")) {
+                _ = try SDK.dispatch(system, record.Publish, .{
+                    .id = created.id,
+                });
+            }
         }
     }
 }

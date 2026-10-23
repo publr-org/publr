@@ -356,7 +356,8 @@ pub fn assert_serialisable(comptime Type: type, comptime depth: u32) void {
                 assert_serialisable(pointer.child, depth + 1);
             },
             .array => |array| assert_serialisable(array.child, depth + 1),
-            .@"struct" => |structure| {
+            // A reference is written as its id, whatever its record holds.
+            .@"struct" => |structure| if (!@hasDecl(Type, "reference")) {
                 if (structure.fields.len > fields_max) {
                     @compileError("too many fields: " ++ @typeName(Type));
                 }

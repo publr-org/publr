@@ -317,55 +317,6 @@ test "a save writes only the fields it is given" {
     try std.testing.expectError(error.Invalid, not_an_object);
 }
 
-test "a save with the live status writes live and pending, and publishes nothing else" {
-    var harness: sdk.testing.Harness = undefined;
-    try harness.init();
-    defer harness.deinit();
-
-    var system = harness.ctx(.system);
-    try SDK.bootstrap(&system);
-    try records.fixture.post_type(&system);
-
-    var anon = harness.ctx(.anonymous);
-    const id = try published_post(&system, "{\"title\":\"One\",\"body\":\"first\",\"views\":1}");
-
-    const parked = try SDK.dispatch(&system, records.Save, .{
-        .id = id,
-        .document = "{\"title\":\"Draft title\"}",
-    });
-    try std.testing.expect(parked.changed);
-
-    const live = try SDK.dispatch(&system, records.Save, .{
-        .id = id,
-        .document = "{\"views\":9}",
-        .status = "published",
-    });
-    try std.testing.expect(live.changed);
-
-    const public_view = try SDK.dispatch(&anon, records.Get, .{
-        .id = id,
-    });
-    try std.testing.expectEqualStrings("One", public_view.record.title);
-    try std.testing.expect(std.mem.indexOf(u8, public_view.document, "\"views\":9") != null);
-
-    const editing = try SDK.dispatch(&system, records.Get, .{
-        .id = id,
-        .purpose = .edit,
-    });
-    try std.testing.expectEqualStrings("Draft title", editing.record.title);
-    try std.testing.expect(std.mem.indexOf(u8, editing.document, "\"views\":9") != null);
-
-    _ = try SDK.dispatch(&system, records.Publish, .{
-        .id = id,
-    });
-
-    const after = try SDK.dispatch(&anon, records.Get, .{
-        .id = id,
-    });
-    try std.testing.expectEqualStrings("Draft title", after.record.title);
-    try std.testing.expect(std.mem.indexOf(u8, after.document, "\"views\":9") != null);
-}
-
 test "an edit taken back leaves the record unchanged" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
@@ -401,56 +352,4 @@ test "an edit taken back leaves the record unchanged" {
         .document = "{\"title\":\"Test\"}",
     });
     try std.testing.expect(!again.changed);
-}
-
-test "a save with another status moves along a registered transition only" {
-    var harness: sdk.testing.Harness = undefined;
-    try harness.init();
-    defer harness.deinit();
-
-    var system = harness.ctx(.system);
-    try SDK.bootstrap(&system);
-    try records.fixture.post_type(&system);
-
-    var anon = harness.ctx(.anonymous);
-    const created = try SDK.dispatch(&system, records.Create, .{
-        .type = "post",
-        .document = "{\"title\":\"One\"}",
-    });
-    const stale = SDK.dispatch(&system, records.Save, .{
-        .id = created.id,
-        .document = "{\"title\":\"Two\"}",
-        .expected_version = 99,
-        .status = "published",
-    });
-    try std.testing.expectError(error.Conflict, stale);
-
-    _ = try SDK.dispatch(&system, records.Save, .{
-        .id = created.id,
-        .document = "{\"title\":\"Two\"}",
-        .status = "published",
-    });
-    const shown = try SDK.dispatch(&anon, records.Get, .{
-        .id = created.id,
-    });
-    try std.testing.expectEqualStrings("Two", shown.record.title);
-    try std.testing.expectEqualStrings("published", shown.record.status);
-
-    _ = try SDK.dispatch(&system, records.Transition, .{
-        .id = created.id,
-        .transition = "archive",
-    });
-    const unregistered = SDK.dispatch(&system, records.Save, .{
-        .id = created.id,
-        .document = "{\"title\":\"Three\"}",
-        .status = "published",
-    });
-    try std.testing.expectError(error.Invalid, unregistered);
-
-    const unknown = SDK.dispatch(&system, records.Save, .{
-        .id = created.id,
-        .document = "{\"title\":\"Three\"}",
-        .status = "nope",
-    });
-    try std.testing.expectError(error.Invalid, unknown);
 }

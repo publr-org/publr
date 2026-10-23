@@ -298,7 +298,7 @@ pub const remote = struct {
                 @compileError("a remote record is named `<plugin>.<type>`");
             }
 
-            const Typed = record_define.Store(Fields, name, false, "");
+            const Typed = record_define.Store(Fields, name, false);
 
             return struct {
                 pub const remote_record = name;

@@ -306,7 +306,6 @@ fn source_of(
         .out_of_reach = out_of_reach.items,
         .live = if (live_only) live else null,
         .live_statuses = live,
-        .mask = granted.field_mask,
         .owner = if (filter.flags.own_only) try own_user(ctx) else null,
     };
 }

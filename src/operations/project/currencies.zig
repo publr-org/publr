@@ -308,13 +308,17 @@ test "money: amounts per currency, only the site's, found and sorted by one" {
     const cheap = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "product",
         .document = "{\"title\":\"Cheap\",\"price\":{\"GBP\":850,\"JPY\":1500}}",
-        .status = "published",
     });
-    _ = try registry.SDK.dispatch(&system, records.Create, .{
+    const dear = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "product",
         .document = "{\"title\":\"Dear\",\"price\":{\"GBP\":2400}}",
-        .status = "published",
     });
+
+    for ([_][]const u8{ cheap.id, dear.id }) |id| {
+        _ = try registry.SDK.dispatch(&system, records.Publish, .{
+            .id = id,
+        });
+    }
 
     const got = try registry.SDK.dispatch(&system, records.Get, .{
         .id = cheap.id,

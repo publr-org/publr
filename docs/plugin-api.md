@@ -247,7 +247,10 @@ pub const Notes = publr.record.define(Note, .{
 
 Fields come from the struct. Kinds follow the Zig types: `[]const u8` text, an integer
 `integer`, a float `number`, `bool` `boolean`, `publr.Time` `datetime`, an enum `select`,
-a handle's `Ref` or `publr.record.AnyRef` `reference`, a slice of them many. A field with
+a handle's `Ref` or `publr.record.AnyRef` `reference` (both kept and sent as the id
+alone), a slice of them many. As an operation's input, an `AnyRef` is read before `run`:
+its `type`, its `value` (the record's JSON) when the caller may read it, `missing` when it
+is gone. A field with
 no default is required. `.fields.<name>` overrides `kind`, `searchable`, `filterable`
 (lists offer it in Filter; on by default), `sortable` (lists order by it; by default
 numbers, money, dates and times do), `help`, `validation` and `options`; with a `kind`
@@ -405,8 +408,8 @@ const found = try recent.execute(ctx, []const Found, .{ .since = since });
 
 GROQ, run as the caller with their access applied, trashed records left out. `$names` are
 bound from the struct `execute` is given; a `$name` it lacks, or a field the query never
-names, fails the build. `.{ .trashed = true }` includes records in the trash;
-`.{ .perspective = .published }` reads live records only, as a visitor does. A plugin's
+names, fails the build. `.{ .trashed = true }` includes records in the trash. A content
+record's `status` is a field like any other (`status == "published"`). A plugin's
 code reads its own internal records the same way (`_type == "cart.line"`, in the request's
 app), and another plugin's only through a `records.read` naming them (or `.internal`).
 

@@ -7,7 +7,6 @@ import { Callout } from "@publr/ui/Callout.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
 import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
-import { Link } from "@publr/ui/Link.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
 import { Table } from "@publr/ui/Table.ptsx";
 import { TableBody } from "@publr/ui/TableBody.ptsx";
@@ -36,9 +35,9 @@ export type TrashProps = {
   problem: string;
 };
 
-/** What was removed, restorable until it goes for good: content types, taxonomies, field
- * groups, plugins, media, users, secrets, app files. Records and terms keep their own trash
- * in the content list. */
+/** What was removed, restorable until it goes for good: records, content types, taxonomies,
+ * field groups, plugins, media, users, secrets, app files. Terms keep their own trash in
+ * their taxonomy's list. */
 export function Trash({ entries, keep_days, range, previous_href, next_href, notice, problem }: TrashProps) {
   return (
     <IndexPage
@@ -66,10 +65,6 @@ export function Trash({ entries, keep_days, range, previous_href, next_href, not
               {Publr.t("Save")}
             </Button>
           </form>
-          <Text as="p" variant="body-sm" tone="muted">
-            {Publr.t("Deleted records and terms wait in their own lists:")}{" "}
-            <Link href="/admin/content?status=is:trashed">{Publr.t("records in the trash")}</Link>.
-          </Text>
         </div>
       }
       actions={
@@ -88,7 +83,7 @@ export function Trash({ entries, keep_days, range, previous_href, next_href, not
           <Empty>
             <EmptyTitle>{Publr.t("The trash is empty")}</EmptyTitle>
             <EmptyDescription>
-              {Publr.t("Whatever you or an agent remove waits here: a content type, a plugin, a file, a user, a secret.")}
+              {Publr.t("Whatever you or an agent remove waits here: a record, a content type, a plugin, a file, a user, a secret.")}
             </EmptyDescription>
           </Empty>
         )

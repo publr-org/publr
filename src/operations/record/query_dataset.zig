@@ -55,8 +55,6 @@ pub const Source = struct {
     live: ?[]const []const u8,
     /// The live statuses a type read live only (`Type.live_only`) keeps to.
     live_statuses: []const []const u8 = &.{},
-    /// Fields the grant hides, left out of every document.
-    mask: []const []const u8,
     /// Only this user's records, when the query's grant reaches no others.
     owner: ?[]const u8 = null,
     /// Records in the trash too; every other read leaves them out.
@@ -301,7 +299,8 @@ pub const Source = struct {
                 .type = record.type,
                 .created_at = record.created_at,
                 .updated_at = record.updated_at,
-            }, text, source.mask);
+                .status = record.status,
+            }, text);
             const kept = if (read.keep) |keep| try keep.of(document) else true;
 
             if (kept) {
@@ -415,7 +414,7 @@ pub const Source = struct {
             .type = read.handle,
             .created_at = item.created_at,
             .updated_at = item.updated_at,
-        }, item.document, source.mask);
+        }, item.document);
         const kept = if (read.keep) |wanted| try wanted.of(document) else true;
 
         if (kept) {

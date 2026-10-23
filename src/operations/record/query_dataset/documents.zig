@@ -20,14 +20,17 @@ pub const Columns = struct {
     type: []const u8,
     created_at: i64,
     updated_at: i64,
+    /// The record's status as stored (`published`, `checkout.placed`); an internal record
+    /// has none.
+    status: ?[]const u8 = null,
 };
 
-/// A record as a query sees it: its columns as `_` attributes, then its fields as stored.
+/// A record as a query sees it: its columns as `_` attributes, its `status`, then its fields
+/// as stored.
 pub fn document_of(
     arena: std.mem.Allocator,
     record: Columns,
     text: []const u8,
-    mask: []const []const u8,
 ) groq.DatasetError!Value {
     var builder: groq.values.ObjectBuilder = .{};
     var buffer: [40]u8 = undefined;
@@ -51,6 +54,12 @@ pub fn document_of(
         })),
     });
 
+    if (record.status) |status| {
+        try builder.put(arena, "status", .{
+            .string = status,
+        });
+    }
+
     const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch |err| {
         return if (err == error.OutOfMemory) error.OutOfMemory else error.DatasetFailed;
     };
@@ -58,29 +67,11 @@ pub fn document_of(
 
     if (converted == .object) {
         for (converted.object.keys, converted.object.values) |key, held| {
-            if (!hidden(mask, key)) {
-                try builder.put(arena, key, held);
-            }
+            try builder.put(arena, key, held);
         }
     }
 
     return .{
         .object = builder.object(),
     };
-}
-
-/// Whether the grant hides a field: named itself, or a field inside it (`seo.title` hides
-/// `seo`, the safe way round).
-fn hidden(mask: []const []const u8, key: []const u8) bool {
-    std.debug.assert(key.len > 0);
-
-    for (mask) |path| {
-        const top = path[0 .. std.mem.indexOfScalar(u8, path, '.') orelse path.len];
-
-        if (std.mem.eql(u8, top, key)) {
-            return true;
-        }
-    }
-
-    return false;
 }

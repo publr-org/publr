@@ -94,12 +94,6 @@ test "a transition's authorize holds on every path that moves a record" {
         .id = created.id,
     });
     try std.testing.expectError(error.Denied, by_publish);
-    const by_save = SDK.dispatch(&editor, record.Save, .{
-        .id = created.id,
-        .document = "{\"title\":\"Lovely\"}",
-        .status = "published",
-    });
-    try std.testing.expectError(error.Denied, by_save);
     const in_bulk = try SDK.dispatch(&editor, record.TransitionMany, .{
         .transition = "publish",
         .ids = &.{created.id},

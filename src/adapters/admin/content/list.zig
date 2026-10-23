@@ -99,9 +99,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     const listed_types = registry.SDK.dispatch(&session.ctx, types.List, .{
         .limit = @import("../../../sdk/operation.zig").page_limit_max,
-    }) catch |err| {
-        return admin.fail(&session, err, "/admin");
-    };
+    }) catch |err| return admin.fail(&session, err, "/admin");
     const view_id = admin.query_param(&session, "view");
     const saved = try saved_of(&session, view_id) orelse if (view_id != null) return else null;
     const base: Filters = if (saved) |found|
@@ -131,9 +129,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .effective = effective,
         .changed = !(try filters.same(arena, effective, resting)),
         .types = listed_types.types,
-        .statuses = statuses.known(&session.ctx) catch |err| {
-            return admin.fail(&session, err, back);
-        },
+        .statuses = statuses.known(&session.ctx) catch |err| return admin.fail(&session, err, back),
         .offer = offer,
         .resting = resting,
         .default_columns = if (typed) |found|

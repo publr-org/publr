@@ -842,11 +842,12 @@ test "references in an installed plugin: the relay reads the record before it ru
     defer project.deinit();
 
     var system = project.ctx(.system);
-    const created = try SDK.dispatch(&system, @import("record.zig").Create, .{
-        .type = "greeter.salutation",
-        .document = "{\"note\":\"From the sandbox\"}",
-        .status = "published",
-    });
+    const fixture = @import("record/fixture.zig");
+    const created = try fixture.published(
+        &system,
+        "greeter.salutation",
+        "{\"note\":\"From the sandbox\"}",
+    );
     const asked = try std.fmt.allocPrint(system.arena, "{{\"salutation\":\"{s}\"}}", .{
         created.id,
     });

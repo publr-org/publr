@@ -8,6 +8,7 @@ pub const limits = limits_module;
 const plugin_operations = @import("sdk/plugin/operation_define.zig");
 const builtin = @import("builtin");
 const contract = @import("model/contract.zig");
+const AnyRef = @import("sdk/plugin/record_define.zig").AnyRef;
 pub const trail = @import("sdk/trail.zig");
 pub const db = @import("lib/db.zig");
 
@@ -1059,7 +1060,18 @@ pub fn SDK(comptime registry: Registry) type {
             inline for (std.meta.fields(Operation.In)) |field| {
                 const Field = field.type;
 
-                if (comptime is_reference(Field)) {
+                if (comptime Field == AnyRef) {
+                    @field(input, field.name) = try load_any(ctx, @field(input, field.name).id);
+                } else if (comptime is_reference_list(Field) and std.meta.Elem(Field) == AnyRef) {
+                    const list = @field(input, field.name);
+                    const loaded = ctx.arena.alloc(AnyRef, list.len) catch return error.OutOfMemory;
+
+                    for (list, loaded) |item, *target| {
+                        target.* = try load_any(ctx, item.id);
+                    }
+
+                    @field(input, field.name) = loaded;
+                } else if (comptime is_reference(Field)) {
                     const id = @field(input, field.name).id;
 
                     @field(input, field.name).value = try load_reference(ctx, Field, id);
@@ -1076,6 +1088,49 @@ pub fn SDK(comptime registry: Registry) type {
                     @field(input, field.name) = loaded;
                 }
             }
+        }
+
+        /// A reference to any record, read as the caller may: its type always, its fields when
+        /// the caller may read it, `missing` when it is gone.
+        fn load_any(ctx: *Ctx, id: []const u8) Error!AnyRef {
+            const Reach = comptime find_name(registry, "record.reach") orelse
+                @compileError("an operation taking a reference needs record.reach");
+            const Get = comptime find_name(registry, "record.get") orelse
+                @compileError("an operation taking a reference needs record.get");
+
+            if (id.len == 0 or id.len > 128) {
+                return error.Invalid;
+            }
+
+            const reach = try dispatch(ctx, Reach, .{
+                .id = id,
+            });
+            const reason = reach.reason orelse {
+                // Not published yet, for a caller who reads live records only: its type alone.
+                const got = dispatch(ctx, Get, .{
+                    .id = id,
+                }) catch |err| switch (err) {
+                    error.NotFound => return .{
+                        .id = id,
+                        .type = reach.type,
+                    },
+                    else => return err,
+                };
+
+                return .{
+                    .id = id,
+                    .type = got.record.type,
+                    .value = json_module.parse(std.json.Value, ctx.arena, got.document, .{
+                        .allocate = .alloc_always,
+                    }) catch return error.Invalid,
+                };
+            };
+
+            return .{
+                .id = id,
+                .type = reach.type,
+                .missing = reason == .deleted,
+            };
         }
 
         fn load_reference(
@@ -1117,6 +1172,11 @@ pub fn SDK(comptime registry: Registry) type {
                 var wrapped: PluginCtx = .{
                     .inner = ctx,
                 };
+                const was_destructive = ctx.destructive;
+
+                // The core operations a plugin's calls may destroy only for a `.destructive` one.
+                ctx.destructive = comptime operation.destroys(Operation);
+                defer ctx.destructive = was_destructive;
 
                 return Operation.run(&wrapped, in, granted) catch |err| as_outcome(ctx.db, err);
             }

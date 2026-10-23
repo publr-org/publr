@@ -49,7 +49,9 @@ test "site changes: live writes and moves raise, pending edits and drafts do not
     const live = try SDK.dispatch(&system, record.Create, .{
         .type = "note",
         .document = "{\"title\":\"Live\"}",
-        .status = "published",
+    });
+    _ = try SDK.dispatch(&system, record.Publish, .{
+        .id = live.id,
     });
     const created = try raised(&system, start);
 
