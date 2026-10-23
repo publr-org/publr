@@ -106,10 +106,11 @@ pub fn tier_of_held(entry: *const Permission, held: *const Held) Tier {
 
 /// Granted to every plugin without asking: harmless, and needed to run at all.
 pub const always = [_][]const u8{
-    "heartbeat.check",   "project.status", "status.list",
-    "internal.create",   "internal.get",   "internal.save",
-    "internal.find_one", "internal.find",  "internal.delete",
-    "mod.changed",       "mod.apply",      "ai.progress",
+    "heartbeat.check",      "project.status",            "status.list",
+    "internal.create",      "internal.get",              "internal.save",
+    "internal.find_one",    "internal.find",             "internal.delete",
+    "mod.changed",          "mod.apply",                 "ai.progress",
+    "custom_fields.values", "custom_fields.save_values",
 };
 
 /// The record operations a plugin reaches on its own content types without asking.

@@ -19,6 +19,7 @@ pub const vtable: sdk.sandboxed_plugins.SandboxedPlugins.VTable = .{
     .consume = &consume,
     .stage = &stage,
     .statuses = &statuses_of,
+    .kinds = &kinds_of,
     .remote_off = &remote_off,
     .find = &find,
     .manifests = &manifests,
@@ -32,6 +33,7 @@ pub const vtable: sdk.sandboxed_plugins.SandboxedPlugins.VTable = .{
     .modify = &modify,
     .call_as = &call_as,
     .job = &job,
+    .extra = &extra,
 };
 
 fn host_of(context: *anyopaque) *Host {
@@ -44,6 +46,14 @@ fn statuses_of(context: *anyopaque) ?[]const model.flow.Added {
     std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
 
     return host.statuses;
+}
+
+fn kinds_of(context: *anyopaque) ?[]const model.kinds.Kind {
+    const host = host_of(context);
+
+    std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
+
+    return host.kinds;
 }
 
 fn remote_off(context: *anyopaque, plugin: []const u8, name: []const u8) bool {
@@ -256,6 +266,57 @@ fn job(
     var access = try access_of(loaded, ctx);
 
     _ = try invoke_module.invoke_spread(loaded, ctx, &access, @intCast(entry), both);
+}
+
+/// Runs `part` of installed plugin `name`'s plugin (`sampler.has_motto`): its entries
+/// follow the jobs', each rule's `values` then `matches`, then each kind's `validate` then
+/// `text`.
+fn extra(
+    context: *anyopaque,
+    ctx: *sdk.Ctx,
+    part: sdk.sandboxed_plugins.Part,
+    name: []const u8,
+    input: []const u8,
+) sdk.Error![]const u8 {
+    const host = host_of(context);
+    const dot = std.mem.indexOfScalar(u8, name, '.') orelse return error.NotFound;
+    const loaded = host.find_loaded(name[0..dot]) orelse return error.NotFound;
+    const manifest = loaded.manifest;
+    const own = name[dot + 1 ..];
+    const first = manifest.operations.len + manifest.hooks.len + manifest.jobs.len;
+
+    std.debug.assert(input.len > 0);
+
+    const rule = part == .rule_values or part == .rule_matches;
+    const second = part == .rule_matches or part == .kind_text;
+    const kinds_first = first + manifest.location_rules.len * 2;
+
+    for (manifest.location_rules, 0..) |declared, index| {
+        if (rule and std.mem.eql(u8, declared.name, own)) {
+            const entry = first + index * 2 + @intFromBool(second);
+
+            return run_entry(loaded, ctx, @intCast(entry), input);
+        }
+    }
+
+    for (manifest.field_kinds, 0..) |declared, index| {
+        if (!rule and std.mem.eql(u8, declared.name, own)) {
+            const entry = kinds_first + index * 2 + @intFromBool(second);
+
+            return run_entry(loaded, ctx, @intCast(entry), input);
+        }
+    }
+
+    return error.NotFound;
+}
+
+fn run_entry(loaded: *Loaded, ctx: *sdk.Ctx, entry: u32, input: []const u8) sdk.Error![]const u8 {
+    std.debug.assert(entry < 1 << 16);
+    std.debug.assert(input.len > 0);
+
+    var access = try access_of(loaded, ctx);
+
+    return invoke_module.invoke(loaded, ctx, &access, entry, input);
 }
 
 fn hooked(context: *anyopaque, hook_stage: sdk.sandboxed_plugins.Stage, name: []const u8) bool {

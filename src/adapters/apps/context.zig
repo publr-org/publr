@@ -174,12 +174,18 @@ const model_field = @import("../../model/field.zig");
 const model_kinds = @import("../../model/kinds.zig");
 const content_type = @import("../../operations/content_type.zig");
 
-/// Whether any kind this build knows reads through a plugin's `.text`.
-const kinds_with_text = for (registry.Kinds.all) |kind| {
-    if (kind.text != null) {
-        break true;
+/// Whether any kind the project knows reads through a plugin's `.text`.
+fn kinds_with_text(known: []const model_kinds.Kind) bool {
+    std.debug.assert(known.len > 0);
+
+    for (known) |kind| {
+        if (kind.text != null) {
+            return true;
+        }
     }
-} else false;
+
+    return false;
+}
 
 pub const Params = struct {
     slug: ?[]const u8 = null,
@@ -239,9 +245,13 @@ pub const Context = struct {
 
             const value = data.document.object.get(key) orelse return null;
 
-            if (kinds_with_text and data.owner != null) {
-                if (data.owner.?.kind_text(data.type, key, value)) |text| {
-                    return text;
+            if (data.owner) |owner| {
+                const project = owner.sdk_context();
+
+                if (kinds_with_text(registry.kinds(&project))) {
+                    if (owner.kind_text(data.type, key, value)) |text| {
+                        return text;
+                    }
                 }
             }
 
@@ -887,9 +897,9 @@ pub const Context = struct {
 
         for (fields) |field| {
             if (std.mem.eql(u8, field.name, key)) {
-                const text = model_kinds.lookup(registry.Kinds.all, field.kind).text;
+                const text = model_kinds.lookup(registry.kinds(&sdk_ctx), field.kind).text;
 
-                return (text orelse return null)(&sdk_ctx, value);
+                return (text orelse return null)(&sdk_ctx, field.kind, value);
             }
         }
 

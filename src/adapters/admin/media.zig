@@ -42,6 +42,12 @@ pub fn library(
     next.page = filter.page + 1;
     previous.page = filter.page -| 1;
 
+    const columns = try columns_of(&session);
+    const Hidden = @import("../../operations/user/columns.zig").Columns;
+    const hidden = registry.SDK.dispatch(&session.ctx, Hidden, .{
+        .list = .media,
+    }) catch |err| return admin.fail(&session, err, "/admin");
+
     try admin.screen(&session, .ok, views.Media, .{
         .folder = filter.folder,
         .tags = filter.tags,
@@ -63,10 +69,11 @@ pub fn library(
             arena,
             listed.items,
             try session.translated("Downloading…", .{}),
-            try columns_of(&session),
+            try shown_of(arena, columns, hidden.hidden),
             listed.extended,
         ),
-        .columns = try columns_of(&session),
+        .columns = columns,
+        .hidden = hidden.hidden,
         .total = @floatFromInt(listed.total),
         .all = @floatFromInt(listed.all),
         .unsorted = @floatFromInt(listed.unsorted),
@@ -608,9 +615,32 @@ fn columns_of(session: *const admin.Session) admin.Error![]const views.Media.Col
     return columns.items;
 }
 
-/// The files as tiles, their facts ending with what plugins' columns say about each; a
-/// Pending one (`media.import`, its bytes on their way) says `downloading` and shows no
-/// picture yet.
+/// The columns the person shows: every one but those they hide.
+fn shown_of(
+    arena: std.mem.Allocator,
+    columns: []const views.Media.ColumnsItem,
+    hidden: []const []const u8,
+) admin.Error![]const views.Media.ColumnsItem {
+    var shown: std.ArrayList(views.Media.ColumnsItem) = .empty;
+
+    std.debug.assert(hidden.len <= 1 << 10);
+
+    outer: for (columns) |column| {
+        for (hidden) |field| {
+            if (std.mem.eql(u8, field, column.field)) {
+                continue :outer;
+            }
+        }
+
+        try shown.append(arena, column);
+    }
+
+    return shown.items;
+}
+
+/// The files as tiles, their facts ending with what the plugins' columns the person shows
+/// say about each; a Pending one (`media.import`, its bytes on their way) says
+/// `downloading` and shows no picture yet.
 fn items_of(
     arena: std.mem.Allocator,
     items: []const media.Item,

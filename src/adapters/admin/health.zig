@@ -119,7 +119,7 @@ fn unplaced_of(session: *Session) Error![]const views.Health.UnplacedItem {
                 const plugin_rule = std.mem.indexOfScalar(u8, rule.field, '.') != null;
 
                 if (!plugin_rule or model.field_group.find_rule(
-                    registry.location_rules,
+                    try registry.all_location_rules(&session.ctx),
                     rule.field,
                 ) != null) {
                     continue;

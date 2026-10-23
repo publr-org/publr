@@ -66,7 +66,8 @@ pub const Target = struct {
 pub const PluginRule = struct {
     id: []const u8,
     label: []const u8,
-    values: *const fn (ctx: *anyopaque) []const []const u8,
+    /// `id` is the rule's own, for an installed plugin's rules run by name.
+    values: *const fn (ctx: *anyopaque, id: []const u8) []const []const u8,
     matches: *const fn (ctx: *anyopaque, target: Target, rule: conditions.Rule) bool,
 };
 
@@ -238,7 +239,7 @@ test "location groups combine AND and OR and absent context never matches exclus
 
 test "a plugin's rule decides by its matches; a rule no plugin brings never matches" {
     const Gold = struct {
-        fn values(_: *anyopaque) []const []const u8 {
+        fn values(_: *anyopaque, _: []const u8) []const []const u8 {
             return &.{ "silver", "gold" };
         }
 

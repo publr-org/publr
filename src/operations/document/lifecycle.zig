@@ -83,7 +83,7 @@ pub fn Of(comptime Domain: type) type {
 
             const type_id = row.type_id;
             const name = field.name;
-            const kind = registry.Kinds.find_kind(field.kind) orelse return;
+            const kind = registry.find_kind(ctx, field.kind) orelse return;
             const holder = if (kind.storage == .int) blk: {
                 const id = row.id;
                 const parked = try values.read_integer(ctx.db, ctx.arena, id, slot, name) orelse {
@@ -169,7 +169,7 @@ pub fn Of(comptime Domain: type) type {
                 }
 
                 const copy = try document.document_of(ctx, row.id, slot, def);
-                const kinds = registry.Kinds.all;
+                const kinds = registry.kinds(ctx);
 
                 try values.write(kinds, ctx, ctx.db, row.id, slot, row.type_id, def.fields, copy);
             }

@@ -146,9 +146,8 @@ const added_statuses = .{.{
     },
 }};
 
-const records = [_]type{ Notes.record, Logs.record, Tallies.record, Reviews.record };
-/// Compiled in, a type whose field is of the sampler's own kind.
-const native_records = records ++ [_]type{Visits.record};
+/// Its types, one whose field is of the sampler's own kind.
+const records = [_]type{ Notes.record, Logs.record, Tallies.record, Reviews.record, Visits.record };
 const jobs = [_]type{ WriteNote.job, Tick.job, Remind.job };
 const webhooks = [_]type{Ping.webhook};
 
@@ -166,9 +165,10 @@ const operations = [_]type{
     Measure.operation,
     Reference.operation,
     Hi.operation,
+    Motto.operation,
 };
-/// Compiled in, a write to the sampler's own field group on users.
-const native_operations = operations ++ [_]type{ Motto.operation, Settings.operation };
+/// Compiled in, Settings › Sampler drawn by its read.
+const native_operations = operations ++ [_]type{Settings.operation};
 
 const hooks = .{
     publr.before(Note.operation, Shout.run),
@@ -231,7 +231,7 @@ const icons = .{
 /// sandboxed build registers the rest.
 pub const plugin = if (publr.plugin.guest.mode == .native)
     publr.plugin.define(manifest, .{
-        .records = &native_records,
+        .records = &records,
         .field_kinds = &.{Place.kind},
         .register_location_rules = .{HasMotto.location_rule},
         .register_columns = columns,
@@ -254,6 +254,8 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
 else
     publr.plugin.define(manifest, .{
         .records = &records,
+        .field_kinds = &.{Place.kind},
+        .register_location_rules = .{HasMotto.location_rule},
         .jobs = &jobs,
         .webhooks = &webhooks,
         .register_fields = field_groups,

@@ -74,6 +74,9 @@ pub const Problems = struct {
     paths: [problems_max][path_len_max]u8 = undefined,
     len: u32 = 0,
     overflowed: bool = false,
+    /// The caller's `*sdk.Ctx` while a write is checked: an installed plugin's kind checks
+    /// its values in the sandbox with it. Without it those checks can't run, and say so.
+    reader: ?*anyopaque = null,
 
     pub fn add(problems: *Problems, path: []const u8, message: []const u8) void {
         std.debug.assert(message.len > 0);

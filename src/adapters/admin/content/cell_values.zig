@@ -275,8 +275,8 @@ fn text_of(page: *const Page, kind: []const u8, value: Value) Error![]const u8 {
     const arena = session.arena;
 
     // A plugin's kind reads as its `.text` says.
-    if (model.kinds.lookup(registry.Kinds.all, kind).text) |text| {
-        return excerpt(arena, text(&session.ctx, value) orelse "");
+    if (model.kinds.lookup(registry.kinds(&session.ctx), kind).text) |text| {
+        return excerpt(arena, text(&session.ctx, kind, value) orelse "");
     }
 
     if (model.field.is_repeater(kind) and value == .array) {

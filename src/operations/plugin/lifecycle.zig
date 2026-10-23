@@ -214,6 +214,12 @@ pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!
     ctx.caller = .system;
     defer ctx.caller = saved;
 
+    // Its own kinds are known while its types are made; they load with it once it commits.
+    const kept = ctx.kinds;
+
+    ctx.kinds = try registry.with_kinds(ctx.arena, registry.kinds(ctx), &.{manifest.*});
+    defer ctx.kinds = kept;
+
     for (manifest.content_types) |def| {
         try plugin_types.apply_one(ctx, .{
             .owner = manifest.name,

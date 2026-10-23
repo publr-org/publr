@@ -10,11 +10,16 @@ const middleware = @import("middleware.zig");
 pub const Error = operation.Error;
 const Role = @import("../model/role.zig").Role;
 const Added = @import("../model/flow.zig").Added;
+const Kind = @import("../model/kinds.zig").Kind;
 
 /// How deep calls may nest through plugins: a plugin's operation calling another's.
 pub const depth_max: u32 = 8;
 
 pub const Stage = enum { before, after, event, modify };
+
+/// What an installed plugin brings that core runs by name past its jobs: a location rule's
+/// `values` and `matches`, a field kind's `validate` and `text`.
+pub const Part = enum { rule_values, rule_matches, kind_validate, kind_text };
 
 pub const Manifest = @import("../model/sandboxed_plugin.zig").Manifest;
 const sandboxed_plugin = @import("../model/sandboxed_plugin.zig");
@@ -93,6 +98,8 @@ pub const SandboxedPlugins = struct {
         ) Error![]const u8,
         /// The build's added statuses with the ones plugins are granted; null when none are.
         statuses: *const fn (context: *anyopaque) ?[]const Added,
+        /// The build's field kinds with the loaded plugins'; null when they bring none.
+        kinds: *const fn (context: *anyopaque) ?[]const Kind,
         /// Whether `plugin`'s remote `name` is off: its plugin is not there, or it does not
         /// fit what that plugin is now.
         remote_off: *const fn (context: *anyopaque, plugin: []const u8, name: []const u8) bool,
@@ -145,6 +152,15 @@ pub const SandboxedPlugins = struct {
             name: []const u8,
             subject: []const u8,
         ) Error!void,
+        /// Runs `part` of what an installed plugin brings, by its name under the plugin
+        /// (`sampler.has_motto`), as the plugin: its answer, JSON.
+        extra: *const fn (
+            context: *anyopaque,
+            ctx: *Ctx,
+            part: Part,
+            name: []const u8,
+            input: []const u8,
+        ) Error![]const u8,
         /// Runs an installed plugin's queued job; `last`: its final attempt.
         job: *const fn (
             context: *anyopaque,
@@ -230,6 +246,14 @@ pub const SandboxedPlugins = struct {
         return sandboxed.vtable.remote_off(sandboxed.context, plugin, name);
     }
 
+    pub fn kinds(sandboxed: *const SandboxedPlugins) ?[]const Kind {
+        const known = sandboxed.vtable.kinds(sandboxed.context) orelse return null;
+
+        std.debug.assert(known.len > 0);
+
+        return known;
+    }
+
     pub fn statuses(sandboxed: *const SandboxedPlugins) ?[]const Added {
         const found = sandboxed.vtable.statuses(sandboxed.context);
 
@@ -310,6 +334,26 @@ pub const SandboxedPlugins = struct {
         std.debug.assert(name.len > 0);
 
         return sandboxed.vtable.job(sandboxed.context, ctx, plugin, name, input, last);
+    }
+
+    pub fn extra(
+        sandboxed: *const SandboxedPlugins,
+        ctx: *Ctx,
+        part: Part,
+        name: []const u8,
+        input: []const u8,
+    ) Error![]const u8 {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(input.len > 0);
+
+        if (ctx.plugin_depth >= depth_max) {
+            return error.Unavailable;
+        }
+
+        ctx.plugin_depth += 1;
+        defer ctx.plugin_depth -= 1;
+
+        return sandboxed.vtable.extra(sandboxed.context, ctx, part, name, input);
     }
 
     /// The job `plugin` declares as `name`; null when no installed plugin does.

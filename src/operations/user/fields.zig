@@ -37,7 +37,7 @@ pub fn definition(ctx: *Ctx, user_id: []const u8, roles: []const []const u8) Err
         const got = try registry.SDK.dispatch(ctx, custom_fields.Get, .{
             .group = item.handle,
         });
-        const applies = applies_to_any(ctx, got.definition.group, user_id, roles);
+        const applies = try applies_to_any(ctx, got.definition.group, user_id, roles);
 
         if (!applies or got.definition.fields.len == 0) {
             continue;
@@ -59,9 +59,11 @@ fn applies_to_any(
     group: model.field_group.Options,
     user_id: []const u8,
     roles: []const []const u8,
-) bool {
+) Error!bool {
     std.debug.assert(roles.len <= model.role.user_roles_max);
     std.debug.assert(model.role.user_roles_max > 0);
+
+    const rules = try registry.all_location_rules(ctx);
 
     for (roles) |name| {
         const context: model.field_group.Context = .{
@@ -69,7 +71,7 @@ fn applies_to_any(
             .role = name,
             .id = user_id,
             .reader = ctx,
-            .rules = registry.location_rules,
+            .rules = rules,
         };
 
         if (model.field_group.applies(group, context)) {
@@ -87,7 +89,7 @@ pub fn read(ctx: *Ctx, user_id: []const u8, defs: []const Def) Error!Value {
 
     const rows = try store.user_values.read(ctx.db, ctx.arena, user_id, store.user_values.live);
 
-    return model.document.assemble(registry.Kinds.all, ctx.arena, defs, rows) catch |err| {
+    return model.document.assemble(registry.kinds(ctx), ctx.arena, defs, rows) catch |err| {
         return switch (err) {
             error.OutOfMemory => error.OutOfMemory,
             else => error.Invalid,
@@ -106,7 +108,9 @@ pub fn check(ctx: *Ctx, defs: []const Def, text: []const u8) Error!Checked {
     std.debug.assert(defs.len <= model.field.fields_max);
     std.debug.assert(ctx.now_ms >= 0);
 
-    var problems: model.field.Problems = .{};
+    var problems: model.field.Problems = .{
+        .reader = ctx,
+    };
 
     if (text.len > document_bytes_max) {
         problems.add("", "document is too large");
@@ -126,7 +130,7 @@ pub fn check(ctx: *Ctx, defs: []const Def, text: []const u8) Error!Checked {
         };
     };
 
-    model.validate.validate_document(registry.Kinds.all, defs, parsed, ctx.now_ms, &problems);
+    model.validate.validate_document(registry.kinds(ctx), defs, parsed, ctx.now_ms, &problems);
 
     const copied = try document_module.copy_problems(ctx, &problems);
 
@@ -147,7 +151,7 @@ pub fn write(ctx: *Ctx, user_id: []const u8, defs: []const Def, text: []const u8
 
     try store.user_values.clear(ctx.db, user_id, live);
     try store.user_values.write(
-        registry.Kinds.all,
+        registry.kinds(ctx),
         ctx,
         ctx.db,
         user_id,

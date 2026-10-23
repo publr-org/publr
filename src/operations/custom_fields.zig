@@ -39,7 +39,18 @@ pub const namespace: sdk.operation.Namespace = .{
     .details = "Administrators define the additional fields shared by every user or media item. " ++
         "These schemas do not create content types or settings documents.",
 };
-pub const operations = [_]type{ List, Get, Update, Validate, Create, Delete };
+pub const operations = [_]type{
+    List,
+    Get,
+    Update,
+    Validate,
+    Create,
+    Delete,
+    values.Values,
+    values.SaveValues,
+};
+
+const values = @import("custom_fields/values.zig");
 const example_definition =
     \\{"handle":"user","name":"User fields","kind":"component","title_field":"",
     \\ "fields":[{"name":"biography","label":"Biography","kind":"text"}]}
@@ -382,7 +393,8 @@ fn valid_location(ctx: *const sdk.Ctx, groups: model.field.conditions.Set) sdk.E
             else if (std.mem.eql(u8, rule.field, "user"))
                 try store.users.find_by_id(ctx.db, ctx.arena, rule.value) != null
             else
-                model.field_group.find_rule(registry.location_rules, rule.field) != null;
+                model.field_group.find_rule(try registry.all_location_rules(ctx), rule.field) !=
+                    null;
             if (!accepted) return false;
         }
     }

@@ -4,6 +4,7 @@
 const std = @import("std");
 const model = @import("../../model.zig");
 const registry = @import("../../server/registry.zig");
+const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 
 const Def = store.definitions.Def;
@@ -21,6 +22,7 @@ pub fn is_field(clause: []const u8) bool {
 /// The clauses on fields, as the store's filters, after `first` (a slug or a field match
 /// asked for on its own). A clause on a field needs the list to cover one definition.
 pub fn filters_of(
+    ctx: *const sdk.Ctx,
     arena: std.mem.Allocator,
     def: ?Def,
     first: ?Filter,
@@ -45,7 +47,7 @@ pub fn filters_of(
         const clause = model.filter.parse_clause(text) orelse return error.Invalid;
         const name = field_filter.field_of(clause.key) orelse return error.Invalid;
         const found = model.document.find_path(single.fields, name) orelse return error.Invalid;
-        const kind = model.kinds.lookup(registry.Kinds.all, found.kind);
+        const kind = model.kinds.lookup(registry.kinds(ctx), found.kind);
         const condition = field_filter.condition_of(
             name,
             kind,
@@ -87,7 +89,7 @@ fn filter_of(condition: field_filter.Condition) Filter {
 }
 
 /// `total` or `-total`: the list ordered by a field of its one definition whose kind orders.
-pub fn sort_of(def: ?Def, given: ?[]const u8) Error!?store.documents.Sort {
+pub fn sort_of(ctx: *const sdk.Ctx, def: ?Def, given: ?[]const u8) Error!?store.documents.Sort {
     const text = given orelse return null;
     const descending = std.mem.startsWith(u8, text, "-");
     const name = if (descending) text[1..] else text;
@@ -100,7 +102,7 @@ pub fn sort_of(def: ?Def, given: ?[]const u8) Error!?store.documents.Sort {
 
     const single = def orelse return error.Invalid;
     const found = model.document.find_path(single.fields, name) orelse return error.Invalid;
-    const kind = model.kinds.lookup(registry.Kinds.all, found.kind);
+    const kind = model.kinds.lookup(registry.kinds(ctx), found.kind);
 
     if (found.many or !field_filter.sortable(field_filter.family_of(kind))) {
         return error.Invalid;

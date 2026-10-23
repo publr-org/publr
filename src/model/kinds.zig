@@ -43,8 +43,9 @@ pub const Has = struct {
 pub const Check = checks.Check;
 
 /// How a value of a plugin's kind reads in list cells, search and on the site; `ctx` is the
-/// caller's `*sdk.Ctx` (the model can't name it), null when the value isn't one of the kind.
-pub const Text = *const fn (ctx: *anyopaque, value: std.json.Value) ?[]const u8;
+/// caller's `*sdk.Ctx` (the model can't name it), `id` the kind's own (an installed plugin's
+/// kind runs by it), null when the value isn't one of the kind.
+pub const Text = *const fn (ctx: *anyopaque, id: []const u8, value: std.json.Value) ?[]const u8;
 
 /// A plugin kind's editor, drawn whole for the plugin frame under `base`: `ctx` is the
 /// caller's `*sdk.Ctx`, whose view says the value, its problems and the field's options.

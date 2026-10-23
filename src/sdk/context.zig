@@ -364,6 +364,9 @@ pub const Ctx = struct {
     /// The definitions this request has read (`definition_cache.zig`), where a server keeps
     /// them; shared by every context made for the request.
     definitions: ?*DefinitionCache = null,
+    /// The field kinds while an installed plugin's own types are made, before it loads: the
+    /// project's and its own. Null reads the project's (`registry.kinds`).
+    kinds: ?[]const @import("../model/kinds.zig").Kind = null,
 
     /// `message` in `locale` for people outside the admin (an email, a plugin's own page):
     /// the source text where no plugin translates it. Outside a server, which builds the

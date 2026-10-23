@@ -1,8 +1,7 @@
 //! Give an account the sampler's motto.
 //!
 //! Writes the Motto of the account's Sampler profile, the sampler's own field group on
-//! users, and answers it as read back. Administrators may call it. Compiled in only: an
-//! installed plugin can't reach its field group yet.
+//! users, and answers it as read back. Administrators may call it.
 //!
 //! Example:
 //!   in: { "user": "admin@example.com", "motto": "Keep notes" }

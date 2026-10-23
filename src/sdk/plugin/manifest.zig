@@ -35,6 +35,8 @@ pub fn of(comptime Plugin: type) Manifest {
             .hooks = hooks_of(Plugin),
             .jobs = jobs_of(Plugin),
             .webhooks = webhooks_of(Plugin),
+            .location_rules = location_rules_of(Plugin),
+            .field_kinds = field_kinds_of(Plugin),
             .permissions = runtime.permissions_of(Plugin),
             .secrets = @import("secret_define.zig").declared_of(Plugin),
             .depends_on = plugin_define.get(Plugin, "depends_on"),
@@ -62,6 +64,46 @@ pub fn of(comptime Plugin: type) Manifest {
             .about = Plugin.settings_text,
             .left_out = runtime.left_out(Plugin),
         };
+    }
+}
+
+/// Its field kinds made with `publr.field.kind`: the host runs their `validate` and `text`.
+fn field_kinds_of(comptime Plugin: type) []const sandboxed_plugin.FieldKind {
+    comptime {
+        const field_kind_define = @import("field_kind_define.zig");
+        var list: []const sandboxed_plugin.FieldKind = &.{};
+
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        for (field_kind_define.definitions_of(Plugin)) |Definition| {
+            list = list ++ &[_]sandboxed_plugin.FieldKind{
+                field_kind_define.manifested(Definition, Plugin.docs),
+            };
+        }
+
+        const done = list;
+
+        return done;
+    }
+}
+
+/// Its location rules, by name and label: the host runs their `values` and `matches`.
+fn location_rules_of(comptime Plugin: type) []const sandboxed_plugin.LocationRule {
+    comptime {
+        var list: []const sandboxed_plugin.LocationRule = &.{};
+
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        for (@import("location_rule_define.zig").given_of(Plugin)) |given| {
+            list = list ++ &[_]sandboxed_plugin.LocationRule{.{
+                .name = given.name,
+                .label = given.label,
+            }};
+        }
+
+        const done = list;
+
+        return done;
     }
 }
 
@@ -272,6 +314,7 @@ fn hooks_of(comptime Plugin: type) []const Hook {
             const Declared = entry.declaration;
             const stage: Hook.Stage = switch (entry.stage) {
                 .operation, .job => continue,
+                .rule_values, .rule_matches, .kind_validate, .kind_text => continue,
                 .before => .before,
                 .after => .after,
                 .event => .event,
