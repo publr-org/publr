@@ -276,6 +276,11 @@ pub const Host = struct {
     }
 };
 
+/// Whether `name` is a list `.extend` registers.
+pub fn listed(comptime name: []const u8) bool {
+    return @hasField(Lists, name);
+}
+
 /// Whether the server reads `name` from `.extend`.
 pub fn seam(comptime name: []const u8) bool {
     return @hasField(Given, name) or @hasField(Lists, name) or

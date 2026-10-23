@@ -1,12 +1,12 @@
 //! Calling an operation by its name with JSON in and out: a built-in operation is parsed
-//! and dispatched as any other; one an installed plugin brings goes through the same steps
-//! (pre hooks, authorization, the transaction, hooks, events) with its body in the sandbox.
+//! and dispatched as any other; one an installed plugin brings runs through the same
+//! pipeline (`SDK.pipeline`) with its body in the sandbox.
 const std = @import("std");
 const Ctx = @import("context.zig").Ctx;
 const operation = @import("operation.zig");
 const sandboxed_plugins = @import("sandboxed_plugins.zig");
 const json = @import("../lib/json.zig");
-const Event = @import("middleware.zig").Event;
+const Grant = @import("grant.zig").Grant;
 const contract = @import("../model/contract.zig");
 const plugin_names = @import("../model/plugin_contracts.zig");
 const Value = std.json.Value;
@@ -33,7 +33,20 @@ pub fn call(comptime SDK: type, ctx: *Ctx, name: []const u8, input: []const u8) 
     const sandboxed = ctx.sandboxed_plugins orelse return error.NotFound;
     const found = sandboxed.find(name) orelse return error.NotFound;
 
-    return dispatch(SDK, ctx, sandboxed, found, input);
+    std.debug.assert(input.len > 0);
+
+    if (ctx.plugin_depth == sandboxed_plugins.depth_max) {
+        return error.Invalid;
+    }
+
+    ctx.plugin_depth += 1;
+    defer ctx.plugin_depth -= 1;
+
+    return SDK.pipeline(ctx, Installed(SDK), .{
+        .sandboxed = sandboxed,
+        .found = found,
+        .input = input,
+    });
 }
 
 /// The content type an operation is about, read from its input by the same convention
@@ -42,218 +55,113 @@ const ResourceFields = struct {
     type: ?[]const u8 = null,
 };
 
-fn dispatch(
-    comptime SDK: type,
-    ctx: *Ctx,
-    sandboxed: *const sandboxed_plugins.SandboxedPlugins,
-    found: sandboxed_plugins.Operation,
-    input: []const u8,
-) Error![]const u8 {
-    std.debug.assert(found.name.len > 0);
-    std.debug.assert(input.len > 0);
+/// An installed operation as `SDK.pipeline` runs it: JSON in and out, its body in the
+/// sandbox.
+fn Installed(comptime SDK: type) type {
+    return struct {
+        sandboxed: *const sandboxed_plugins.SandboxedPlugins,
+        found: sandboxed_plugins.Operation,
+        input: []const u8,
 
-    if (ctx.plugin_depth == sandboxed_plugins.depth_max) {
-        return error.Invalid;
-    }
+        const Self = @This();
+        pub const Out = []const u8;
 
-    const operation_id = ctx.allocate_operation_id();
-    const parent = ctx.parent;
-    const notify = ctx.notify;
-
-    const within = ctx.within;
-    var trail_state: @import("trail.zig").Trail = .{
-        .root = operation_id,
-        .arena = ctx.arena,
-    };
-    const opened = SDK.trail_open(ctx, &trail_state);
-
-    defer SDK.trail_close(ctx, opened);
-    ctx.publishes = ctx.publishes and parent != null;
-    ctx.parent = operation_id;
-    ctx.notify = &SDK.emit_event;
-    ctx.plugin_depth += 1;
-    defer ctx.parent = parent;
-    defer ctx.notify = notify;
-    defer ctx.within = within;
-    defer ctx.plugin_depth -= 1;
-
-    admit(SDK, ctx, found, input, parent == null) catch |err| {
-        SDK.emit(ctx, .{
-            .failed = .{
-                .operation_name = found.name,
-                .operation_id = operation_id,
-            },
-        });
-        SDK.log_failure(ctx, found.name, input, found.secret, err);
-
-        if (parent == null) {
-            SDK.flush_kept(ctx);
+        pub fn name(self: Self) []const u8 {
+            return self.found.name;
         }
 
-        return err;
-    };
-
-    ctx.within = found.name;
-
-    const result = run(SDK, ctx, sandboxed, found, input);
-
-    if (result) |_| {
-        SDK.emit(ctx, .{
-            .completed = .{
-                .operation_name = found.name,
-                .operation_id = operation_id,
-            },
-        });
-        SDK.log_lines(ctx, found.name);
-    } else |err| {
-        SDK.emit(ctx, .{
-            .failed = .{
-                .operation_name = found.name,
-                .operation_id = operation_id,
-            },
-        });
-        SDK.log_failure(ctx, found.name, input, found.secret, err);
-    }
-
-    if (parent == null) {
-        SDK.flush_kept(ctx);
-    }
-
-    return result;
-}
-
-/// A top-level call is counted against the rate limits first.
-fn admit(
-    comptime SDK: type,
-    ctx: *Ctx,
-    found: sandboxed_plugins.Operation,
-    input: []const u8,
-    top: bool,
-) Error!void {
-    std.debug.assert(found.name.len > 0);
-    std.debug.assert(ctx.parent != null);
-
-    if (top) {
-        try SDK.check_limits(ctx, found.name, if (found.limit > 0) found.limit else null);
-    }
-
-    try SDK.run_pre_hooks(ctx, found.name, found.kind);
-    try SDK.check_fence(ctx, plugin_names.plugin_of(found.name));
-
-    // As a compiled-in `.destructive` operation: a device's call goes on its removal list.
-    if (found.destructive and ctx.caller == .token and !ctx.kept) {
-        const put_on_list = SDK.removal orelse return ctx.fail(operation.needs_person);
-
-        return put_on_list(ctx, found.name, input);
-    }
-
-    const answered = try SDK.admit_answer(ctx, found.name, .{
-        .untrusted_callers = found.untrusted_callers,
-        .answer = found.answer,
-        .open = found.open,
-    });
-
-    const fields = json.parse(ResourceFields, ctx.arena, input, .{
-        .ignore_unknown_fields = true,
-        .allocate = .alloc_always,
-    }) catch return error.Invalid;
-
-    _ = try SDK.authorize_request(ctx, .{
-        .operation_name = found.name,
-        .kind = found.kind,
-        .type_id = fields.type,
-        .open = answered,
-    });
-}
-
-fn run(
-    comptime SDK: type,
-    ctx: *Ctx,
-    sandboxed: *const sandboxed_plugins.SandboxedPlugins,
-    found: sandboxed_plugins.Operation,
-    input: []const u8,
-) Error![]const u8 {
-    std.debug.assert(ctx.parent != null);
-    std.debug.assert(input.len > 0);
-
-    // As `SDK.run`: the operation's event queued with its answer on success, inside the
-    // write; hooks inside the write's transaction, nested writes as savepoints.
-    const previous_refusal = ctx.event_refusal;
-
-    ctx.event_refusal = null;
-    defer ctx.event_refusal = previous_refusal;
-
-    if (found.kind == .read) {
-        const answer = try run_pipeline(SDK, ctx, sandboxed, found, input);
-
-        if (ctx.event_refusal) |refused| {
-            return refused;
+        pub fn kind(self: Self) operation.Kind {
+            return self.found.kind;
         }
 
-        try SDK.queue_answer_json(ctx, found.name, answer);
+        pub fn owner(self: Self) []const u8 {
+            return plugin_names.plugin_of(self.found.name);
+        }
 
-        return answer;
-    }
+        pub fn secret(self: Self) []const []const u8 {
+            return self.found.secret;
+        }
 
-    const previous_failure = ctx.dependency_failure;
+        pub fn input_text(self: Self, _: *Ctx) []const u8 {
+            return self.input;
+        }
 
-    ctx.dependency_failure = false;
-    defer ctx.dependency_failure = previous_failure;
+        /// A top-level call is counted against the rate limits first.
+        pub fn admit(self: Self, ctx: *Ctx, top: bool) Error!Grant {
+            const found = self.found;
 
-    var transaction = try ctx.db.transaction();
-    errdefer transaction.rollback();
+            std.debug.assert(ctx.parent != null);
 
-    const output = try run_pipeline(SDK, ctx, sandboxed, found, input);
+            if (top) {
+                try SDK.check_limits(ctx, found.name, if (found.limit > 0) found.limit else null);
+            }
 
-    if (ctx.event_refusal) |refused| {
-        return refused;
-    }
+            try SDK.run_pre_hooks(ctx, found.name, found.kind);
+            try SDK.check_fence(ctx, plugin_names.plugin_of(found.name));
 
-    try SDK.queue_answer_json(ctx, found.name, output);
+            // As a compiled-in `.destructive` operation: a device's call goes on its removal
+            // list.
+            if (found.destructive and ctx.caller == .token and !ctx.kept) {
+                const put_on_list = SDK.removal orelse return ctx.fail(operation.needs_person);
 
-    if (ctx.dependency_failure) {
-        return error.InvalidationFailed;
-    }
+                return put_on_list(ctx, found.name, self.input);
+            }
 
-    try SDK.check_drafts(ctx);
-    try SDK.log_activity(ctx, found.name, input, found.secret);
-    try transaction.commit();
+            const answered = try SDK.admit_answer(ctx, found.name, .{
+                .untrusted_callers = found.untrusted_callers,
+                .answer = found.answer,
+                .open = found.open,
+            });
 
-    return output;
-}
+            const fields = json.parse(ResourceFields, ctx.arena, self.input, .{
+                .ignore_unknown_fields = true,
+                .allocate = .alloc_always,
+            }) catch return error.Invalid;
 
-fn run_pipeline(
-    comptime SDK: type,
-    ctx: *Ctx,
-    sandboxed: *const sandboxed_plugins.SandboxedPlugins,
-    found: sandboxed_plugins.Operation,
-    input: []const u8,
-) Error![]const u8 {
-    std.debug.assert(ctx.parent != null);
-    std.debug.assert(found.name.len > 0);
+            return SDK.authorize_request(ctx, .{
+                .operation_name = found.name,
+                .kind = found.kind,
+                .type_id = fields.type,
+                .open = answered,
+            });
+        }
 
-    if (found.deprecated.len > 0) {
-        SDK.note_deprecated(ctx, found.deprecated, operation.namespace(found.name));
-    }
+        pub fn run(self: Self, ctx: *Ctx, _: *const Grant) Error![]const u8 {
+            const found = self.found;
+            const sandboxed = self.sandboxed;
 
-    const changed = if (sandboxed.hooked(.before, found.name))
-        try sandboxed.before(ctx, found.name, input)
-    else
-        input;
-    const resolved = try resolve_references(SDK, ctx, found.input, changed);
-    const was_destructive = ctx.destructive;
+            std.debug.assert(ctx.parent != null);
 
-    // The core operations its calls may destroy only for a `.destructive` one.
-    ctx.destructive = found.destructive;
-    defer ctx.destructive = was_destructive;
+            if (found.deprecated.len > 0) {
+                SDK.note_deprecated(ctx, found.deprecated, operation.namespace(found.name));
+            }
 
-    const output = try sandboxed.run(ctx, found, resolved);
+            const changed = if (sandboxed.hooked(.before, found.name))
+                try sandboxed.before(ctx, found.name, self.input)
+            else
+                self.input;
+            const resolved = try resolve_references(SDK, ctx, found.input, changed);
+            const was_destructive = ctx.destructive;
 
-    if (sandboxed.hooked(.after, found.name)) {
-        try sandboxed.after(ctx, found.name, changed, output, null);
-    }
+            // The core operations its calls may destroy only for a `.destructive` one.
+            ctx.destructive = found.destructive;
+            defer ctx.destructive = was_destructive;
 
-    return output;
+            const output = try sandboxed.run(ctx, found, resolved);
+
+            if (sandboxed.hooked(.after, found.name)) {
+                try sandboxed.after(ctx, found.name, changed, output, null);
+            }
+
+            return output;
+        }
+
+        pub fn queue(self: Self, ctx: *Ctx, out: []const u8) Error!void {
+            return SDK.queue_answer_json(ctx, self.found.name, out);
+        }
+
+        pub fn committed(_: Self, _: *Ctx, _: []const u8) Error!void {}
+    };
 }
 
 test "an unknown name without plugins is not found" {

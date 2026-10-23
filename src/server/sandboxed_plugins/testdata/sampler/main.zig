@@ -40,6 +40,7 @@ const Later = @import("operations/later.zig");
 const Measure = @import("operations/measure.zig");
 const Reference = @import("operations/reference.zig");
 const Motto = @import("operations/motto.zig");
+const Settings = @import("operations/settings.zig");
 const HasMotto = @import("rules/has_motto.zig");
 const NoteCount = @import("hooks/note_count.zig");
 const Characters = @import("hooks/characters.zig");
@@ -86,6 +87,14 @@ const pages = [_]publr.plugin.Page{
         .operation = Reference.operation,
     },
 };
+
+/// Settings › Sampler, compiled in only: the log and the port `serve` got.
+const native_pages = [_]publr.plugin.Page{.{
+    .path = "settings",
+    .label = "Sampler",
+    .icon = "stack",
+    .operation = Settings.operation,
+}} ++ pages;
 
 /// A box on each sample note's form, drawn in the plugin frame.
 const panels = [_]publr.plugin.Panel{.{
@@ -159,7 +168,7 @@ const operations = [_]type{
     Hi.operation,
 };
 /// Compiled in, a write to the sampler's own field group on users.
-const native_operations = operations ++ [_]type{Motto.operation};
+const native_operations = operations ++ [_]type{ Motto.operation, Settings.operation };
 
 const hooks = .{
     publr.before(Note.operation, Shout.run),
@@ -217,9 +226,9 @@ const icons = .{
     },
 };
 
-/// What only a compiled-in plugin carries (routes, Settings pages, operator commands, a state,
-/// process hooks) takes the host's own modules, which the sandbox lacks: its sandboxed build
-/// registers the rest.
+/// What only a compiled-in plugin carries (routes, operator commands, a state, process hooks,
+/// the page reading that state) takes the host's own modules, which the sandbox lacks: its
+/// sandboxed build registers the rest.
 pub const plugin = if (publr.plugin.guest.mode == .native)
     publr.plugin.define(manifest, .{
         .records = &native_records,
@@ -237,10 +246,9 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
         .register_statuses = added_statuses,
         .menu = &.{notes_menu},
         .icons = icons,
-        .pages = pages,
+        .pages = native_pages,
         .panels = panels,
         .row_actions = row_actions,
-        .settings_pages = Native.settings_pages,
         .extend = Native.extend,
     })
 else

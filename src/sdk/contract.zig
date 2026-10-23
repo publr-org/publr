@@ -5,6 +5,7 @@
 //! checks each against the part's shapes. The owner never names providers: it lists the
 //! enabled ones, in the administrator's order, with `publr.providers(ctx, Contract, .{})`.
 const std = @import("std");
+const plugin_define = @import("plugin/define.zig");
 const sdk = @import("../sdk.zig");
 const shapes = @import("../model/contract.zig");
 const store = @import("../store.zig");
@@ -116,15 +117,10 @@ pub fn is_contract(comptime Type: type) bool {
 /// `In` and `Out`. A mismatch fails the build.
 pub fn registered_of(comptime Plugin: type) []const Registered {
     comptime {
-        const plugin_define = @import("plugin/define.zig");
         const plugin = Plugin.manifest.name;
         var list: []const Registered = &.{};
 
         std.debug.assert(plugin.len > 0);
-
-        if (!plugin_define.bound(Plugin)) {
-            return list;
-        }
 
         if (!@hasField(@TypeOf(Plugin.options), "register_providers")) {
             return list;
@@ -215,7 +211,7 @@ fn own_operation(comptime Plugin: type, comptime Given: type) ?type {
     comptime {
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        for (@import("plugin.zig").operations_of(Plugin)) |Declared| {
+        for (plugin_define.get(Plugin, "operations")) |Declared| {
             const defined = @hasDecl(Declared, "definition") and Declared.definition == Given;
 
             if (Declared == Given or defined) {

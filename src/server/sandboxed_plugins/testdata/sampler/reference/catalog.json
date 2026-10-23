@@ -82,8 +82,8 @@
         "look_for": "Open the log, offered to whoever may read the logs."
       },
       {
-        "name": ".routes, .settings_pages (compiled in only)",
-        "summary": "Routes of the plugin's own and a Settings page listing them: compiled in only, left out of the installed build.",
+        "name": ".routes (compiled in only)",
+        "summary": "A route of the plugin's own: compiled in only, left out of the installed build.",
         "code": [
           {
             "file": "native.zig",
@@ -91,14 +91,13 @@
           },
           {
             "file": "native.zig",
-            "decl": "settings_pages"
+            "decl": "port"
           }
         ],
         "see": [
-          "On the sampler site, open Settings.",
-          "Under Plugins, open Sampler."
+          "On the sampler site, signed in, open /api/sampler/port."
         ],
-        "look_for": "The log and the port serve noted, drawn by the plugin's own route."
+        "look_for": "The port serve noted, answered by the plugin's own route."
       },
       {
         "name": ".State, .serving, .before_command, .operator_commands (compiled in only)",

@@ -1,10 +1,9 @@
-//! What only a compiled-in sampler carries: a route, a Settings page, operator commands, a
-//! state and process hooks. Each takes the host's own modules, which the sandbox lacks.
+//! What only a compiled-in sampler carries: a route, operator commands, a state and process
+//! hooks. Each takes the host's own modules, which the sandbox lacks.
 const std = @import("std");
 const publr = @import("publr");
 
 const Sampler = @import("main.zig");
-const Logs = @import("operations/logs.zig");
 
 /// What the sampler adds past the plugin API.
 pub fn extend(host: *publr.Host) publr.Error!void {
@@ -24,15 +23,8 @@ pub fn extend(host: *publr.Host) publr.Error!void {
 }
 
 const routes = [_]publr.plugin.Route{.{
-    .path = "/admin/sampler",
-    .handler = &settings,
-}};
-
-pub const settings_pages = [_]publr.plugin.SettingsPage{.{
-    .label = "Sampler",
-    .icon = "stack",
-    .path = "/admin/sampler",
-    .operation = Logs.operation,
+    .path = "/api/sampler/port",
+    .handler = &port,
 }};
 
 /// What the sampler keeps while the process runs.
@@ -107,18 +99,8 @@ fn ping(
     );
 }
 
-/// The log's operation as the core runs it.
-fn Registered(comptime name: []const u8) type {
-    const SDK = publr.registry.SDK;
-
-    // Each operation's name compared once, a byte at a time.
-    @setEvalBranchQuota(SDK.operations.len * publr.sdk.operation.name_len_max * 2);
-
-    return SDK.find(name).?;
-}
-
-/// Settings › Sampler: the log, in the admin's own chrome.
-fn settings(
+/// `GET /api/sampler/port`: the port `serve` noted, for a signed-in administrator.
+fn port(
     request: *publr.http.Request,
     response: *publr.http.Response,
     ctx: *publr.http.Context,
@@ -126,15 +108,8 @@ fn settings(
     std.debug.assert(request.path().len > 0);
 
     var session = try publr.admin.require(request, response, ctx) orelse return;
-    const LogsRun = Registered("sampler.logs");
-    const logged = publr.registry.SDK.dispatch(&session.ctx, LogsRun, .{}) catch |err| {
-        return publr.admin.fail(&session, err, "/admin/settings");
-    };
 
-    try publr.admin.screen(&session, .ok, publr.admin.views.SamplerSettings, .{
-        .lines = logged.lines,
-        .port = try std.fmt.allocPrint(session.arena, "{d}", .{
-            publr.plugin_states.of(&session.ctx, Sampler).port,
-        }),
-    }, .{});
+    try response.json(.ok, .{
+        .port = publr.plugin_states.of(&session.ctx, Sampler).port,
+    });
 }

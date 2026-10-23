@@ -109,6 +109,8 @@ pub fn SDK(comptime registry: Registry) type {
     comptime validate_registry(registry);
 
     return struct {
+        const SDKSelf = @This();
+
         pub const operations = registry.operations;
         pub const namespaces = registry.namespaces;
         pub const schemas = registry.schemas;
@@ -180,6 +182,21 @@ pub fn SDK(comptime registry: Registry) type {
             }
             std.debug.assert(@sizeOf(Operation.In) <= in_bytes_max);
 
+            return pipeline(ctx, Compiled(Operation), .{
+                .in = in,
+            });
+        }
+
+        /// The one way every operation runs, compiled in (`Compiled`) or installed
+        /// (`sdk/call_json.zig`): its id and trail, admission, its plugin's code marked
+        /// running, the read or the write, its events and log entries. `Body` says what
+        /// differs: its name, kind, owner, secret fields and input text, how it is admitted,
+        /// what runs inside, how its answer is queued and what follows a kept write.
+        pub fn pipeline(ctx: *Ctx, comptime Body: type, body: Body) Error!Body.Out {
+            const name = body.name();
+
+            std.debug.assert(name.len > 0);
+
             const operation_id = ctx.allocate_operation_id();
             const parent = ctx.parent;
             const notify = ctx.notify;
@@ -196,16 +213,14 @@ pub fn SDK(comptime registry: Registry) type {
             defer ctx.notify = notify;
             defer trail_close(ctx, opened);
 
-            const granted = admit_counted(ctx, Operation, in, parent == null) catch |err| {
+            const granted = body.admit(ctx, parent == null) catch |err| {
                 emit(ctx, .{
                     .failed = .{
-                        .operation_name = Operation.name,
+                        .operation_name = name,
                         .operation_id = operation_id,
                     },
                 });
-                const secret = comptime trail.secret_of(Operation);
-
-                log_failure(ctx, Operation.name, input_text(ctx, in), secret, err);
+                log_failure(ctx, name, body.input_text(ctx), body.secret(), err);
 
                 if (parent == null) {
                     flush_kept(ctx);
@@ -216,10 +231,9 @@ pub fn SDK(comptime registry: Registry) type {
 
             const within = ctx.within;
             const running = ctx.plugin;
-            const owners = registry.operation_owners;
-            const owner = comptime owner_of(registry.operations, owners, Operation);
+            const owner = body.owner();
 
-            ctx.within = Operation.name;
+            ctx.within = name;
             defer ctx.within = within;
 
             if (owner.len > 0) {
@@ -236,26 +250,24 @@ pub fn SDK(comptime registry: Registry) type {
             defer ctx.plugin_code = was_code;
             defer ctx.plugin_called = was_called;
 
-            const result = run(ctx, Operation, in, &granted);
+            const result = run(ctx, Body, body, &granted);
 
             if (result) |_| {
                 emit(ctx, .{
                     .completed = .{
-                        .operation_name = Operation.name,
+                        .operation_name = name,
                         .operation_id = operation_id,
                     },
                 });
-                log_lines(ctx, Operation.name);
+                log_lines(ctx, name);
             } else |err| {
                 emit(ctx, .{
                     .failed = .{
-                        .operation_name = Operation.name,
+                        .operation_name = name,
                         .operation_id = operation_id,
                     },
                 });
-                const secret = comptime trail.secret_of(Operation);
-
-                log_failure(ctx, Operation.name, input_text(ctx, in), secret, err);
+                log_failure(ctx, name, body.input_text(ctx), body.secret(), err);
             }
 
             if (parent == null) {
@@ -263,6 +275,58 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             return result;
+        }
+
+        /// A compiled-in operation as the pipeline runs it: typed input and answer.
+        fn Compiled(comptime Operation: type) type {
+            return struct {
+                in: Operation.In,
+
+                const Self = @This();
+                pub const Out = Operation.Out;
+
+                pub fn name(_: Self) []const u8 {
+                    return Operation.name;
+                }
+
+                pub fn kind(_: Self) operation.Kind {
+                    return Operation.kind;
+                }
+
+                pub fn owner(_: Self) []const u8 {
+                    const owners = registry.operation_owners;
+
+                    return comptime owner_of(registry.operations, owners, Operation);
+                }
+
+                pub fn secret(_: Self) []const []const u8 {
+                    return comptime trail.secret_of(Operation);
+                }
+
+                pub fn input_text(self: Self, ctx: *Ctx) []const u8 {
+                    return SDKSelf.input_text(ctx, self.in);
+                }
+
+                pub fn admit(self: Self, ctx: *Ctx, top: bool) Error!Grant {
+                    return admit_counted(ctx, Operation, self.in, top);
+                }
+
+                pub fn run(self: Self, ctx: *Ctx, granted: *const Grant) Error!Out {
+                    return run_pipeline(ctx, Operation, self.in, granted);
+                }
+
+                pub fn queue(_: Self, ctx: *Ctx, out: Out) Error!void {
+                    return queue_answer(ctx, Operation.name, out);
+                }
+
+                /// What a write does outside the database once it is kept, when no other
+                /// write encloses it.
+                pub fn committed(self: Self, ctx: *Ctx, out: Out) Error!void {
+                    if (comptime @hasDecl(Operation, "committed")) {
+                        try Operation.committed(ctx, self.in, out);
+                    }
+                }
+            };
         }
 
         /// A top-level call carries a trail while the registry keeps a log; inner calls add
@@ -791,6 +855,15 @@ pub fn SDK(comptime registry: Registry) type {
         pub fn call(ctx: *Ctx, comptime Call: type, in: Call.In) Error!Call.Out {
             comptime std.debug.assert(Call.name.len > 0);
 
+            // Compiled in: dispatched as it is, its input and answer copied across when
+            // what the plugin publishes is a copy of the operation's own types.
+            if (comptime find(Call.name)) |Operation| {
+                const given = try convert(Operation.In, ctx.arena, in);
+                const out = try dispatch(ctx, Operation, given);
+
+                return convert(Call.Out, ctx.arena, out);
+            }
+
             const input = try stringify(ctx.arena, in);
             const output = try @import("sdk/call_json.zig").call(@This(), ctx, Call.name, input);
 
@@ -937,15 +1010,29 @@ pub fn SDK(comptime registry: Registry) type {
 
         fn run(
             ctx: *Ctx,
-            comptime Operation: type,
-            in: Operation.In,
+            comptime Body: type,
+            body: Body,
             granted: *const Grant,
-        ) Error!Operation.Out {
+        ) Error!Body.Out {
             std.debug.assert(granted.allows());
             std.debug.assert(ctx.parent != null);
 
-            if (Operation.kind == .read) {
-                return run_read(ctx, Operation, in, granted);
+            const previous_refusal = ctx.event_refusal;
+
+            ctx.event_refusal = null;
+            defer ctx.event_refusal = previous_refusal;
+
+            // A read: no write of its own, its event queued in the enclosing write, if any.
+            if (body.kind() == .read) {
+                const answer = try run_body(ctx, Body, body, granted);
+
+                if (ctx.event_refusal) |refused| {
+                    return refused;
+                }
+
+                try body.queue(ctx, answer);
+
+                return answer;
             }
 
             // A write may change a definition: what this request read of them is read again.
@@ -960,21 +1047,16 @@ pub fn SDK(comptime registry: Registry) type {
             ctx.dependency_failure = false;
             defer ctx.dependency_failure = previous_failure;
 
-            const previous_refusal = ctx.event_refusal;
-
-            ctx.event_refusal = null;
-            defer ctx.event_refusal = previous_refusal;
-
             var transaction = try ctx.db.transaction();
             errdefer transaction.rollback();
 
-            const out = try run_pipeline(ctx, Operation, in, granted);
+            const out = try run_body(ctx, Body, body, granted);
 
             if (ctx.event_refusal) |refused| {
                 return refused;
             }
 
-            try queue_answer(ctx, Operation.name, out);
+            try body.queue(ctx, out);
 
             if (ctx.dependency_failure) {
                 return error.InvalidationFailed;
@@ -983,48 +1065,32 @@ pub fn SDK(comptime registry: Registry) type {
             try check_drafts(ctx);
 
             if (registry.log != null and at_top(ctx)) {
-                const secret = comptime trail.secret_of(Operation);
-
-                try log_activity(ctx, Operation.name, input_text(ctx, in), secret);
+                try log_activity(ctx, body.name(), body.input_text(ctx), body.secret());
             }
 
             try transaction.commit();
             std.debug.assert(ctx.db.transaction_depth == transaction.depth - 1);
 
-            // What a write does outside the database once it is kept (`committed`), when no
-            // other write encloses it.
-            if (comptime @hasDecl(Operation, "committed")) {
-                if (ctx.db.transaction_depth == 0) {
-                    try Operation.committed(ctx, in, out);
-                }
+            if (ctx.db.transaction_depth == 0) {
+                try body.committed(ctx, out);
             }
 
             return out;
         }
 
-        /// A read: no write of its own, its event queued in the enclosing write, if any.
-        fn run_read(
+        /// What runs inside, marked on the trail where it starts.
+        fn run_body(
             ctx: *Ctx,
-            comptime Operation: type,
-            in: Operation.In,
+            comptime Body: type,
+            body: Body,
             granted: *const Grant,
-        ) Error!Operation.Out {
-            comptime std.debug.assert(Operation.kind == .read);
+        ) Error!Body.Out {
+            const started = ctx.trail_start;
 
-            const previous_refusal = ctx.event_refusal;
+            ctx.trail_start = if (ctx.trail) |open| open.mark() else 0;
+            defer ctx.trail_start = started;
 
-            ctx.event_refusal = null;
-            defer ctx.event_refusal = previous_refusal;
-
-            const out = try run_pipeline(ctx, Operation, in, granted);
-
-            if (ctx.event_refusal) |refused| {
-                return refused;
-            }
-
-            try queue_answer(ctx, Operation.name, out);
-
-            return out;
+            return body.run(ctx, granted);
         }
 
         fn run_pipeline(
@@ -1057,11 +1123,6 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             try resolve_references(ctx, Operation, &input);
-
-            const started = ctx.trail_start;
-
-            ctx.trail_start = if (ctx.trail) |open| open.mark() else 0;
-            defer ctx.trail_start = started;
 
             var out = try invoke_run(ctx, Operation, input, granted);
             const extends = comptime @hasField(Operation.Out, "extended");
@@ -1875,6 +1936,83 @@ pub fn hears(comptime Middleware: type, event: Event) bool {
     };
 
     return std.mem.eql(u8, name, Middleware.event);
+}
+
+/// `from` as `To` when both describe one shape (an operation's own types and the copy its
+/// plugin publishes): fields by name, a missing one from its default, enums and unions by
+/// tag name; what `To` leaves out is dropped, as a JSON answer's unknown fields are.
+fn convert(comptime To: type, arena: std.mem.Allocator, from: anytype) Error!To {
+    const From = @TypeOf(from);
+
+    if (From == To) {
+        return from;
+    }
+
+    switch (@typeInfo(To)) {
+        .optional => |optional| {
+            if (@typeInfo(From) == .optional) {
+                const present = from orelse return null;
+
+                return try convert(optional.child, arena, present);
+            }
+
+            return try convert(optional.child, arena, from);
+        },
+        .pointer => |pointer| {
+            comptime std.debug.assert(pointer.size == .slice);
+
+            if (@typeInfo(From) == .optional) {
+                return convert(To, arena, from orelse return error.Invalid);
+            }
+
+            if (comptime std.meta.Elem(From) == pointer.child) {
+                return from;
+            }
+
+            const items = arena.alloc(pointer.child, from.len) catch return error.OutOfMemory;
+
+            for (from, items) |item, *target| {
+                target.* = try convert(pointer.child, arena, item);
+            }
+
+            return items;
+        },
+        .@"struct" => |shape| {
+            if (@typeInfo(From) == .optional) {
+                return convert(To, arena, from orelse return error.Invalid);
+            }
+
+            var to: To = undefined;
+
+            inline for (shape.fields) |field| {
+                if (comptime @hasField(From, field.name)) {
+                    const value = @field(from, field.name);
+
+                    @field(to, field.name) = try convert(field.type, arena, value);
+                } else if (comptime field.defaultValue()) |default| {
+                    @field(to, field.name) = default;
+                } else {
+                    @compileError(@typeName(From) ++ " has no `" ++ field.name ++ "`");
+                }
+            }
+
+            return to;
+        },
+        .@"enum" => return std.meta.stringToEnum(To, @tagName(from)) orelse error.Invalid,
+        .@"union" => switch (from) {
+            inline else => |value, tag| {
+                if (comptime !@hasField(To, @tagName(tag))) {
+                    return error.Invalid;
+                }
+
+                const Field = @FieldType(To, @tagName(tag));
+
+                return @unionInit(To, @tagName(tag), try convert(Field, arena, value));
+            },
+        },
+        .int => return std.math.cast(To, from) orelse error.Invalid,
+        else => @compileError("no copy of " ++ @typeName(From) ++ " as " ++ @typeName(To)),
+    }
 }
 
 pub fn stringify(arena: std.mem.Allocator, value: anytype) Error![]const u8 {

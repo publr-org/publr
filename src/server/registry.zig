@@ -229,7 +229,7 @@ pub fn native_providers(
             // Each of its options' names against the option and seam names, a byte at a time.
             @setEvalBranchQuota(1000 + options * 64 * 64);
 
-            break :operations contract.operations_of(Plugin);
+            break :operations plugin_define.get(Plugin, "operations");
         };
         const provided = try arena.alloc(plugin_contracts.Provided, operations.len);
 

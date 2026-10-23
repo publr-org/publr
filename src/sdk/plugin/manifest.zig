@@ -37,19 +37,19 @@ pub fn of(comptime Plugin: type) Manifest {
             .webhooks = webhooks_of(Plugin),
             .permissions = runtime.permissions_of(Plugin),
             .secrets = @import("secret_define.zig").declared_of(Plugin),
-            .depends_on = @import("depends_on.zig").of(Plugin),
+            .depends_on = plugin_define.get(Plugin, "depends_on"),
             .limits = if (plugin_define.has(Plugin, "limits"))
                 plugin_define.get(Plugin, "limits")
             else
                 .{},
-            .content_types = contract.content_types_of(Plugin),
+            .content_types = plugin_define.get(Plugin, "content_types"),
             .custom_fields = contract.custom_fields_of(Plugin),
             .roles = contract.roles_of(Plugin),
             .statuses = @import("record_flow.zig").registered_of(Plugin),
-            .internal_records = contract.internal_records_of(Plugin),
+            .internal_records = plugin_define.get(Plugin, "internal_records"),
             .remotes = @import("remote_contract.zig").uses_of(Plugin),
             .events = @import("remote_contract.zig").events_of(Plugin),
-            .compatible_with = contract.compatible_with_of(Plugin),
+            .compatible_with = plugin_define.get(Plugin, "compatible_with"),
             .providers = @import("../contract.zig").registered_of(Plugin),
             .pages = pages_of(Plugin),
             .menu = @import("menu_define.zig").entries_of(Plugin),
@@ -59,7 +59,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .top_bar = items_of(Plugin),
             .row_actions = row_actions_of(Plugin),
             // The rest of `main.zig`'s `//!`, past its first line: shown on its page.
-            .about = if (@hasDecl(Plugin, "settings_text")) Plugin.settings_text else "",
+            .about = Plugin.settings_text,
             .left_out = runtime.left_out(Plugin),
         };
     }
@@ -350,7 +350,7 @@ fn namespaces_of(comptime Plugin: type) []const sandboxed_plugin.Namespace {
 
         var list: []const sandboxed_plugin.Namespace = &.{};
 
-        for (@import("../plugin.zig").namespaces_of(Plugin)) |namespace| {
+        for (plugin_define.get(Plugin, "namespaces")) |namespace| {
             list = list ++ &[_]sandboxed_plugin.Namespace{.{
                 .name = namespace.name,
                 .summary = namespace.summary,

@@ -457,18 +457,21 @@ test "http.fetch is refused outside queued work, whatever the plugin is granted"
 
 test "a compiled-in plugin is held to its http.fetch domains, as an installed one is" {
     const plugin_module = @import("../sdk/plugin.zig");
-    const Courier = struct {
-        pub const manifest: plugin_module.Manifest = .{
+    const plugin_define = @import("../sdk/plugin/define.zig");
+    const Courier = plugin_define.Bind(struct {
+        pub const plugin = plugin_define.define(.{
             .name = "courier",
             .version = "0.1.0",
-            .summary = "Test plugin: sends",
-        };
-        pub const permissions = [_]model.sandboxed_plugin.Ask{.{
-            .key = "http.fetch",
-            .domains = &.{ "api.supplier.com", "localhost" },
-            .reason = "Sends prices",
-        }};
-    };
+        }, .{
+            .permissions = .{.{
+                .key = "http.fetch",
+                .domains = &[_][]const u8{ "api.supplier.com", "localhost" },
+                .reason = "Sends prices",
+            }},
+        });
+    }, plugin_define.Words(.{
+        .{ "main", "Test plugin: sends" },
+    }));
     const grants = comptime plugin_module.grants_of(Courier);
     var ctx: Ctx = undefined;
 
