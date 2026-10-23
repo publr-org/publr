@@ -55,8 +55,7 @@ pub fn stage(ctx: *Ctx, file: []const u8, anywhere: bool) Error!Checked {
 
 /// The install gate: the plugin checks `plugin build` runs, over the source the module
 /// carries; an error refuses the module, naming each check that failed, a warning never
-/// does. Where Publr Cloud runs the site, a module without its source is refused: there is
-/// nothing to check.
+/// does. A module without its source is refused: there is nothing to check.
 fn check_source(ctx: *Ctx, source: []const u8) Error!void {
     std.debug.assert(ctx.now_ms >= 0);
 
@@ -67,7 +66,7 @@ fn check_source(ctx: *Ctx, source: []const u8) Error!void {
     };
 
     if (source.len == 0) {
-        return if (!registry.hosted) {} else ctx.fail(.{
+        return ctx.fail(.{
             .name = "SourceMissing",
             .status = 422,
             .message = "the module carries no source to check: build it with " ++
