@@ -94,6 +94,13 @@ pub fn Queue(comptime Base: type) type {
             return self.base.tn(one, many, count, values);
         }
 
+        pub fn locale(
+            self: *const Self,
+            person: []const u8,
+        ) @TypeOf(Base.locale(@as(*const Base, undefined), "")) {
+            return self.base.locale(person);
+        }
+
         pub fn emit(self: *Self, comptime Event: type, payload: Event.Payload) void {
             self.base.emit(Event, payload);
         }
