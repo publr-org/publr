@@ -157,6 +157,11 @@ pub fn built_in(request: *Request, response: *Response, ctx: *Context) Error!voi
 fn brings_of(comptime Plugin: type) []const u8 {
     comptime {
         const contract = @import("../../sdk/plugin.zig");
+        const options = std.meta.fields(@TypeOf(Plugin.options)).len;
+
+        // Each of its options' names against the option and seam names, a byte at a time.
+        @setEvalBranchQuota(1000 + options * 64 * 64);
+
         const Count = struct {
             count: u32,
             one: []const u8,

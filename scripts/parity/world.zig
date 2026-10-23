@@ -72,14 +72,6 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     try fill_conversations(ctx, admin_id);
     _ = try SDK.dispatch(ctx, publr.operations.secret.Set, publr.operations.secret.Set.example);
     try fill_apps(ctx, dir);
-    _ = try SDK.dispatch(ctx, projects.currencies.SetCurrencies, .{
-        .currencies = &.{ .{
-            .code = "GBP",
-            .symbol = "£",
-        }, .{
-            .code = "EUR",
-        } },
-    });
 
     const custom = publr.operations.custom_fields;
     _ = try SDK.dispatch(ctx, custom.Update, .{

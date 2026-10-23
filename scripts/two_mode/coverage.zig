@@ -293,6 +293,10 @@ const sandbox_only = [_]Part{
         .where = "an installed form's enum values in words; compiled in they come from `///`",
     },
     .{
+        .name = "default",
+        .where = "an installed form's new row; compiled in it comes from the field's default",
+    },
+    .{
         .name = "format",
         .where = "the module's own format number",
     },
