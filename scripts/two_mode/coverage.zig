@@ -73,6 +73,10 @@ const exercised = [_]Part{
         .where = "postcard's messaging provider",
     },
     .{
+        .name = "destructive",
+        .where = "prices' withdraw, destroying as an administrator",
+    },
+    .{
         .name = "public_api",
         .where = "greeter's operation listed in the API reference",
     },
