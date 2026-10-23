@@ -261,6 +261,9 @@ pub fn native_users() []const plugin_contracts.User {
     return comptime users: {
         var list: []const plugin_contracts.User = &.{};
 
+        // Each plugin's `remotes` looked up against the option and seam names, a byte at a time.
+        @setEvalBranchQuota(1000 + bound_plugins.len * 64 * 64);
+
         for (bound_plugins) |Plugin| {
             const using = remote_contract.user_of(Plugin);
 
