@@ -18,6 +18,11 @@ pub fn same(documented: anytype, actual: @TypeOf(documented)) Error!void {
 
     switch (@typeInfo(Value)) {
         .@"struct" => |info| {
+            // An object whose keys come with the data (`extended`) promises no shape.
+            if (comptime @hasDecl(Value, "json_object")) {
+                return;
+            }
+
             inline for (info.fields) |field| {
                 try same(@field(documented, field.name), @field(actual, field.name));
             }
