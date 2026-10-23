@@ -464,6 +464,7 @@ pub fn Pages(comptime domain: Domain) type {
                 .apps = placement.apps,
                 .share_all = placement.share_all,
                 .shares = placement.shares,
+                .roles = placement.roles,
                 .plural_name = def.plural_name,
                 .noun_languages = try type_names.languages_of(
                     views.TypeForm.Noun_languagesItem,

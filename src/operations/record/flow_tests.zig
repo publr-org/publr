@@ -186,6 +186,22 @@ test "the trash: restore goes back where the record was, destroy is a person's, 
     });
     try std.testing.expectEqualStrings("draft", unpublished.status);
 
+    // Many at once by the same rule: each back to the status it had.
+    _ = try SDK.dispatch(&editor, record.Transition, .{
+        .id = archived.id,
+        .transition = "trash",
+    });
+    const restored = try SDK.dispatch(&editor, record.TransitionMany, .{
+        .transition = "restore",
+        .ids = &.{ archived.id, live.id },
+    });
+    try std.testing.expectEqual(@as(u32, 1), restored.moved);
+    try std.testing.expectEqual(@as(u32, 1), restored.not_moved);
+    const read_back = try SDK.dispatch(&editor, record.Get, .{
+        .id = archived.id,
+    });
+    try std.testing.expectEqualStrings("archived", read_back.record.status);
+
     // Destroy leaves only the trash, and only for a person who may: anyone else waits.
     const not_trashed = SDK.dispatch(&admin, record.Transition, .{
         .id = live.id,
@@ -312,4 +328,59 @@ test "a status standing in for another plugin's takes its meaning and is found b
     });
 
     try std.testing.expectEqual(@as(usize, 1), asked.records.len);
+}
+
+test "a Private type with roles ticked: those roles and administrators reach it, no other" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try SDK.bootstrap(&system);
+
+    var ledger = order_type;
+    ledger.handle = "orders.ledger";
+    ledger.roles = &.{"editor"};
+
+    _ = try SDK.dispatch(&system, types.Create, .{
+        .definition = try model.content_type.encode(system.arena, ledger),
+    });
+
+    const made = try SDK.dispatch(&system, record.Create, .{
+        .type = "orders.ledger",
+        .document = "{\"title\":\"#1001\"}",
+    });
+    var contributor = harness.ctx(.{
+        .user = .{
+            .id = "u_contributor",
+            .roles = &.{"contributor"},
+        },
+    });
+
+    try std.testing.expectError(error.NotFound, SDK.dispatch(&contributor, record.Get, .{
+        .id = made.id,
+    }));
+    try std.testing.expectError(error.NotFound, SDK.dispatch(&contributor, record.List, .{
+        .type = "orders.ledger",
+    }));
+
+    const listed = try SDK.dispatch(&contributor, types.List, .{});
+
+    for (listed.types) |summary| {
+        try std.testing.expect(!std.mem.eql(u8, summary.handle, "orders.ledger"));
+    }
+
+    for ([_][]const u8{ "editor", "admin" }) |role_name| {
+        var reader = harness.ctx(.{
+            .user = .{
+                .id = "u_reader",
+                .roles = &.{role_name},
+            },
+        });
+        const got = try SDK.dispatch(&reader, record.Get, .{
+            .id = made.id,
+        });
+
+        try std.testing.expectEqualStrings(made.id, got.record.id);
+    }
 }

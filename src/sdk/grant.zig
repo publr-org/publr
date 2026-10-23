@@ -51,6 +51,9 @@ pub const Grant = struct {
     /// reach. Null: every type, wherever it lives (the admin across apps, the CLI).
     app: ?[]const u8 = null,
     record_filter: RecordFilter = .{},
+    /// The roles of the account calling, an administrator's excepted: a Private type with a
+    /// role list is in reach only when one is held. Null: every type, whatever its roles.
+    roles: ?[]const []const u8 = null,
     /// With `public_types_only`: the types reached whatever their kind (named in a plugin's
     /// grant, or its own).
     any_kind_types: []const []const u8 = &.{},
@@ -75,6 +78,25 @@ pub const Grant = struct {
     pub fn allows_type(grant: *const Grant, type_id: []const u8) bool {
         const list = grant.types orelse return true;
         return contains(list, type_id);
+    }
+
+    /// Whether a Private type that `type_roles` reach (empty: every role) is in reach.
+    pub fn reaches_roles(grant: *const Grant, type_roles: []const []const u8) bool {
+        std.debug.assert(type_roles.len <= list_len_max);
+
+        const held = grant.roles orelse return true;
+
+        if (type_roles.len == 0) {
+            return true;
+        }
+
+        for (held) |name| {
+            if (contains(type_roles, name)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// Whether a type owned by `owner` (empty or core's: the project's own) is in reach.
@@ -137,6 +159,7 @@ pub const Grant = struct {
             .types = try intersect_lists(left.types, right.types, arena),
             .plugins = try intersect_lists(left.plugins, right.plugins, arena),
             .app = left.app orelse right.app,
+            .roles = left.roles orelse right.roles,
             .record_filter = RecordFilter.merge(left.record_filter, right.record_filter),
             .any_kind_types = try exempt(
                 left.record_filter.flags.public_types_only,
