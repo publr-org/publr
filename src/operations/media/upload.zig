@@ -238,8 +238,12 @@ pub fn reserved(ctx: *Ctx, filename: []const u8, folder: ?[]const u8) Error!libr
     const created = try registry.SDK.dispatch(ctx, record.Create, .{
         .type = media.type_handle,
         .document = try document_of(ctx, filename, folder),
-        .status = "published",
     });
+
+    _ = try registry.SDK.dispatch(ctx, record.Publish, .{
+        .id = created.id,
+    });
+
     const row: store.media.Row = .{
         .record = created.id,
         .filename = filename,
