@@ -140,6 +140,7 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .save = form.save.name,
                     .multiline = form.multiline,
                     .only_one = form.only_one,
+                    .blank_in_one = form.blank_in_one,
                     .suggest = if (form.suggest) |Suggest| Suggest.name else "",
                     .preview = if (form.preview) |Preview| Preview.name else "",
                     .hidden = page.menu != null,
@@ -370,6 +371,7 @@ fn item_fields_of(comptime Type: type, comptime Docs: type) []const Field {
                 .label = help.type_label(field.type),
                 .values = values_of(field.type),
                 .words = words_of(field.type, Docs),
+                .default = default_text(field),
             }};
         }
 
@@ -427,6 +429,24 @@ pub fn docs_of(comptime Plugin: type) type {
         std.debug.assert(Plugin.manifest.name.len > 0);
 
         return if (@hasDecl(Plugin, "docs")) Plugin.docs else plugin_define.Words(.{});
+    }
+}
+
+/// A field's default as a form writes it (`{symbol}{amount}`, `period`, `true`); empty for
+/// none or one of another shape.
+fn default_text(comptime field: std.builtin.Type.StructField) []const u8 {
+    comptime {
+        std.debug.assert(field.name.len > 0);
+
+        const value = field.defaultValue() orelse return "";
+
+        return switch (@typeInfo(field.type)) {
+            .bool => if (value) "true" else "false",
+            .@"enum" => @tagName(value),
+            .int, .float => std.fmt.comptimePrint("{d}", .{value}),
+            .pointer => if (field.type == []const u8) value else "",
+            else => "",
+        };
     }
 }
 
