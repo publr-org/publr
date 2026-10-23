@@ -57,6 +57,22 @@ const exercised = [_]Part{
         .where = "greeter's grants to editor",
     },
     .{
+        .name = "checked",
+        .where = "sampler hello's and wave's `.validate` words",
+    },
+    .{
+        .name = "who_may_call",
+        .where = "sampler wave's `.authorize`, hello's untrusted callers",
+    },
+    .{
+        .name = "deprecated",
+        .where = "sampler hi",
+    },
+    .{
+        .name = "providers",
+        .where = "postcard's messaging provider",
+    },
+    .{
         .name = "kind",
         .where = "reads and writes",
     },

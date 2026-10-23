@@ -50,6 +50,8 @@ pub const List = struct {
     pub const untrusted_callers = false;
     pub const answer: ?operation_define.Answer = .plugin_calls;
     pub const open = true;
+    /// Plugins and administrators: the example is an administrator's.
+    pub const example_signed_in = true;
     pub const In = struct {
         contract: []const u8,
         can: []const []const u8 = &.{},

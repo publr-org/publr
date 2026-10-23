@@ -34,6 +34,8 @@ pub const steps = [_][]const []const u8{
     // sampler: an open operation, every field shape, a before hook, an event hook.
     &.{ "sampler", "hello", "--who", "stranger" },
     &.{ "--as", editor, "sampler", "hello" },
+    // A deprecated operation: every caller told, the same both ways.
+    &.{ "sampler", "hi", "--who", "stranger" },
     // A `define` operation untrusted callers reach, its ready answer letting in the signed in.
     &.{ "sampler", "wave", "--who", "stranger" },
     &.{ "--as", editor, "sampler", "wave", "--who", "Ada" },
@@ -98,6 +100,6 @@ pub const steps = [_][]const []const u8{
     &.{ "--as", admin, "role", "list" },
     &.{ "--as", admin, "secret", "list" },
     &.{ "--as", admin, "content_type", "get", "--handle", "greeter.salutation" },
+    // A plugin's command list: greeter's; the sampler's also lists `motto`, compiled in only.
     &.{ "greeter", "--help" },
-    &.{ "sampler", "--help" },
 };

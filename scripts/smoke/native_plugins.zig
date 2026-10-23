@@ -41,7 +41,7 @@ pub fn expect_native_admin(
 
     const port = try smoke.read_port(init, child.stderr.?);
     const cookie = try sign_in(init, port);
-    const page = try smoke.http_get_cookie(init, port, "/admin/sampler", cookie);
+    const page = try logged_page(init, port, cookie);
     const system = try smoke.http_get_cookie(init, port, "/admin/settings/system", cookie);
 
     try expect_in("/admin/sampler", page, "<title>Sampler · Publr</title>");
@@ -57,6 +57,27 @@ pub fn expect_native_admin(
     try expect_ping(init, port, dir);
     try expect_moved(init, binary, work_dir);
     try expect_structure(init, binary, dir, module);
+}
+
+/// The sampler's page once the worker `serve` started has run the note's queued `on` hook,
+/// which writes the log line the page shows.
+fn logged_page(init: std.process.Init, port: u16, cookie: []const u8) ![]const u8 {
+    std.debug.assert(port > 0);
+    std.debug.assert(cookie.len > 0);
+
+    var attempts: u32 = 0;
+
+    while (attempts < 50) : (attempts += 1) {
+        const page = try smoke.http_get_cookie(init, port, "/admin/sampler", cookie);
+
+        if (std.mem.indexOf(u8, page, "noted KEPT") != null) {
+            return page;
+        }
+
+        try std.Io.sleep(init.io, .fromMilliseconds(200), .awake);
+    }
+
+    return smoke.http_get_cookie(init, port, "/admin/sampler", cookie);
 }
 
 /// The sampler's own page: the chrome with the plugin frame, listed in Settings; the

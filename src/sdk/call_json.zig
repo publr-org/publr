@@ -228,7 +228,7 @@ fn run_pipeline(
     std.debug.assert(found.name.len > 0);
 
     if (found.deprecated.len > 0) {
-        SDK.note_deprecated(ctx, found.deprecated);
+        SDK.note_deprecated(ctx, found.deprecated, operation.namespace(found.name));
     }
 
     const changed = if (sandboxed.hooked(.before, found.name))

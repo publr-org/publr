@@ -26,6 +26,7 @@ const Noted = @import("events/noted.zig");
 const Place = @import("kinds/place.zig");
 
 const Hello = @import("operations/hello.zig");
+const Hi = @import("operations/hi.zig");
 const Echo = @import("operations/echo.zig");
 const Note = @import("operations/note.zig");
 const ReadLogs = @import("operations/logs.zig");
@@ -147,6 +148,7 @@ const operations = [_]type{
     Later.operation,
     Measure.operation,
     Reference.operation,
+    Hi.operation,
 };
 /// Compiled in, a write to the sampler's own field group on users.
 const native_operations = operations ++ [_]type{Motto.operation};
