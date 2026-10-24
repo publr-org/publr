@@ -39,6 +39,14 @@ pub const Progress = struct {
     said: *const fn (context: *anyopaque, words: []const u8) void,
 };
 
+/// What a page for the built site read while it was drawn (`adapters/apps/context.zig`'s
+/// `Deps`): every key a read on the way names, whoever's code made it, so a write to any of
+/// them rebuilds the page.
+pub const Reads = struct {
+    context: *anyopaque,
+    read: *const fn (context: *anyopaque, key: []const u8) void,
+};
+
 /// Told when a conversation changes (a step, the words so far, its end), so the pages
 /// watching it hear at once: `serve`'s open workspaces.
 pub const Live = struct {
@@ -324,6 +332,10 @@ pub const Ctx = struct {
     plugin_states: ?*anyopaque = null,
     /// How deep calls nest through installed plugins, bounded by `plugins.depth_max`.
     plugin_depth: u32 = 0,
+    /// Where a page drawn for the built site writes down what it reads; null outside one.
+    /// Every read core makes on its way (a record, a listing, a query, an internal record)
+    /// names its key there, plugins' reads included.
+    reads: ?Reads = null,
     /// Set while a modifier or a `before` hook on a sign-in runs: it may read what it is
     /// granted, never write.
     reads_only: bool = false,
@@ -386,6 +398,16 @@ pub const Ctx = struct {
         const view = ctx.translations orelse return filled(ctx.arena, message);
 
         return view.say(view.context, ctx.arena, locale, message);
+    }
+
+    /// A read names what it read (`record:<id>`, `type:<handle>`, `internal:<plugin>/<kind>`)
+    /// when a page for the built site is being drawn: the page depends on it.
+    pub fn depends_on(ctx: *const Ctx, key: []const u8) void {
+        std.debug.assert(key.len > 0);
+
+        const reads = ctx.reads orelse return;
+
+        reads.read(reads.context, key);
     }
 
     /// The language queued work this call queues speaks: the record's as the call reads it

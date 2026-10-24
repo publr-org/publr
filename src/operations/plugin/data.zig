@@ -9,6 +9,7 @@ const store = @import("../../store.zig");
 const state = @import("state.zig");
 const record = @import("../record.zig");
 const role_rows = @import("../role/rows.zig");
+const changes = @import("../project/changes.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -209,7 +210,16 @@ pub fn drop(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]const 
                 try definition.drop_kept(ctx, row.id);
                 types.append(ctx.arena, handle) catch return error.OutOfMemory;
             },
-            .internal => try store.internal_records.delete_collection(ctx.db, plugin, handle),
+            .internal => {
+                try store.internal_records.delete_collection(ctx.db, plugin, handle);
+                changes.internal_changed(ctx, plugin, handle, null) catch |err| {
+                    if (err == error.OutOfMemory) {
+                        return error.OutOfMemory;
+                    }
+
+                    ctx.dependency_failure = true;
+                };
+            },
             .fields => try store.field_groups.delete(ctx.db, .custom_fields, handle),
             .role => {
                 if (try store.user_roles.sole_holders(ctx.db, handle) > 0) {

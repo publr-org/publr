@@ -7,6 +7,7 @@ const store = @import("../../store.zig");
 const operation_define = @import("../../sdk/plugin/operation_define.zig");
 const record_operations = @import("../record.zig");
 const term_operations = @import("../term.zig");
+const changes = @import("changes.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -155,6 +156,8 @@ const Before = union(enum) {
     none,
     record: ?records.Before,
     term: ?terms.Before,
+    /// The collection the record was in, when it was there.
+    internal: ?store.internal_records.Owner,
 };
 
 fn landing(ctx: *Ctx, kind: stored_rows.Kind, id: []const u8) Error!Before {
@@ -168,11 +171,15 @@ fn landing(ctx: *Ctx, kind: stored_rows.Kind, id: []const u8) Error!Before {
         .term => .{
             .term = try terms.landing(ctx, id),
         },
+        .internal => .{
+            .internal = try store.internal_records.owner_of(ctx.db, ctx.arena, id),
+        },
         else => .none,
     };
 }
 
-/// What follows a unit written: records and terms land as a person's change.
+/// What follows a unit written: records and terms land as a person's change; an internal
+/// record raises its keys where it was and where it is, as any write to one does.
 fn landed(ctx: *Ctx, id: []const u8, before: Before) Error!void {
     std.debug.assert(id.len > 0);
     std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -180,6 +187,21 @@ fn landed(ctx: *Ctx, id: []const u8, before: Before) Error!void {
     switch (before) {
         .record => |was| return records.landed(ctx, id, was),
         .term => |was| return terms.landed(ctx, id, was),
+        .internal => |was| {
+            const now = try store.internal_records.owner_of(ctx.db, ctx.arena, id);
+
+            for ([_]?store.internal_records.Owner{ was, now }) |each| {
+                const collection = each orelse continue;
+
+                changes.internal_changed(ctx, collection.plugin, collection.kind, id) catch |err| {
+                    if (err == error.OutOfMemory) {
+                        return error.OutOfMemory;
+                    }
+
+                    ctx.dependency_failure = true;
+                };
+            }
+        },
         .none => {},
     }
 }

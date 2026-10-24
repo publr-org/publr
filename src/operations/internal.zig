@@ -8,6 +8,7 @@ const sdk = @import("../sdk.zig");
 const registry = @import("../server/registry.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
+const changes = @import("project/changes.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -96,7 +97,12 @@ pub const Create = struct {
         if (target.collection.expires) |expires| {
             const cutoff = ctx.now_ms - @as(i64, expires.after_days) * std.time.ms_per_day;
 
-            _ = try records.delete_expired(ctx.db, scope.plugin, scope.kind, expires.from, cutoff);
+            const from = expires.from;
+            const gone = try records.delete_expired(ctx.db, scope.plugin, scope.kind, from, cutoff);
+
+            if (gone > 0) {
+                raised(ctx, scope, null);
+            }
         }
 
         try index(ctx, target.collection, id, given);
@@ -137,6 +143,9 @@ pub const Get = struct {
         std.debug.assert(granted.allows());
 
         const target = try scope_of(ctx, in.plugin, in.app, in.kind, false);
+
+        try drawn(ctx, target, in.id);
+
         const row = try records.get(ctx.db, ctx.arena, target.scope, in.id) orelse {
             return error.NotFound;
         };
@@ -258,6 +267,9 @@ pub const FindOne = struct {
         std.debug.assert(granted.allows());
 
         const target = try scope_of(ctx, in.plugin, in.app, in.kind, false);
+
+        try drawn(ctx, target, null);
+
         const match = try match_of(target.collection, in.field, in.value);
         const rows = try records.list(ctx.db, ctx.arena, target.scope, match, 2, 0);
 
@@ -322,6 +334,9 @@ pub const Find = struct {
         }
 
         const target = try scope_of(ctx, in.plugin, in.app, in.kind, false);
+
+        try drawn(ctx, target, null);
+
         const match = if (in.field) |field|
             try match_of(target.collection, field, in.value.?)
         else
@@ -410,6 +425,45 @@ fn changed(ctx: *Ctx, comptime Event: type, scope: Scope, id: []const u8) Error!
     ctx.emit(Event, .{
         .record = unit,
     });
+    raised(ctx, scope, id);
+}
+
+/// The keys of what a write changed, in its transaction; one that cannot be raised fails
+/// the write, as a record's does.
+fn raised(ctx: *Ctx, scope: Scope, id: ?[]const u8) void {
+    std.debug.assert(scope.plugin.len > 0);
+    std.debug.assert(scope.kind.len > 0);
+
+    changes.internal_changed(ctx, scope.plugin, scope.kind, id) catch |err| {
+        std.log.debug("internal records: not raised: {s}", .{@errorName(err)});
+        ctx.dependency_failure = true;
+    };
+}
+
+/// What a page being drawn for the built site read: the record (`id`) and whatever takes
+/// every record of its collection away, or the collection it looked records up in.
+fn drawn(ctx: *Ctx, target: Target, id: ?[]const u8) Error!void {
+    std.debug.assert(target.scope.plugin.len > 0);
+    std.debug.assert(target.scope.kind.len > 0);
+
+    if (ctx.reads == null) {
+        return;
+    }
+
+    var buffer: [changes.key_len_max]u8 = undefined;
+    const scope = target.scope;
+    const ids: []const ?[]const u8 = if (id) |record_id|
+        &.{ record_id, changes.internal_every }
+    else
+        &.{null};
+
+    for (ids) |which| {
+        const key = changes.internal_key(&buffer, scope.plugin, scope.kind, which) catch {
+            return error.Invalid;
+        };
+
+        ctx.depends_on(key);
+    }
 }
 
 /// What core's internal-record events carry.
@@ -857,4 +911,96 @@ test "references in an installed plugin: the relay reads the record before it ru
 
     const unknown = SDK.call_json(&system, "greeter.recall", "{\"salutation\":\"nope\"}");
     try std.testing.expectError(error.NotFound, unknown);
+}
+
+const Named = sdk.testing.reads.Named;
+
+fn raised_since(ctx: *Ctx, after: u64) !@import("../lib/deps.zig").Index.Changes {
+    std.debug.assert(ctx.db.transaction_depth == 0);
+
+    const deps = @import("../lib/deps.zig");
+    var changes_index: deps.Index = .{
+        .db = ctx.db,
+        .options = .{
+            .quiet_ms = deps.quiet_ms,
+        },
+    };
+
+    return changes_index.changes_since(ctx.arena, after);
+}
+
+fn has_key(keys: []const []const u8, key: []const u8) bool {
+    std.debug.assert(key.len > 0);
+
+    for (keys) |each| {
+        if (std.mem.eql(u8, each, key)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+test "internal records: a write raises its keys, and a page's read names them" {
+    var project: Project = undefined;
+    try project.init();
+    defer project.deinit();
+
+    var greeter = project.ctx(.anonymous);
+    greeter.plugin = "greeter";
+
+    const start = (try raised_since(&greeter, 0)).revision;
+    const made = try SDK.dispatch(&greeter, Create, .{
+        .kind = "visit",
+        .document = "{\"name\":\"Ada\"}",
+    });
+    const record_key = try std.fmt.allocPrint(greeter.arena, "internal:greeter/visit/{s}", .{
+        made.id,
+    });
+    const created = try raised_since(&greeter, start);
+
+    try std.testing.expect(has_key(created.keys, record_key));
+    try std.testing.expect(has_key(created.keys, "internal:greeter/visit"));
+
+    _ = try SDK.dispatch(&greeter, Save, .{
+        .kind = "visit",
+        .id = made.id,
+        .document = "{\"count\":2}",
+    });
+    try std.testing.expect((try raised_since(&greeter, created.revision)).revision >
+        created.revision);
+
+    // Drawing a page: the record read names itself and whatever takes the collection away;
+    // a lookup names the collection.
+    var named: Named = .{};
+    var drawing = greeter;
+    drawing.reads = named.reads();
+
+    _ = try SDK.dispatch(&drawing, Get, .{
+        .kind = "visit",
+        .id = made.id,
+    });
+    _ = try SDK.dispatch(&drawing, Find, .{
+        .kind = "visit",
+    });
+
+    try std.testing.expect(named.has(record_key));
+    try std.testing.expect(named.has("internal:greeter/visit/*"));
+    try std.testing.expect(named.has("internal:greeter/visit"));
+
+    // Outside a drawing nothing is named.
+    const before = named.count;
+    _ = try SDK.dispatch(&greeter, Get, .{
+        .kind = "visit",
+        .id = made.id,
+    });
+    try std.testing.expectEqual(before, named.count);
+
+    const saved = (try raised_since(&greeter, 0)).revision;
+
+    _ = try SDK.dispatch(&greeter, Delete, .{
+        .kind = "visit",
+        .id = made.id,
+    });
+    try std.testing.expect(has_key((try raised_since(&greeter, saved)).keys, record_key));
 }

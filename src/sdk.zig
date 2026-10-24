@@ -34,6 +34,7 @@ pub const definition_cache = @import("sdk/definition_cache.zig");
 
 pub const Caller = caller.Caller;
 pub const Ctx = context.Ctx;
+pub const Reads = context.Reads;
 pub const Error = operation.Error;
 pub const Grant = grant.Grant;
 pub const Policy = authorize.Policy;
@@ -2189,6 +2190,8 @@ pub const testing = struct {
     pub const shape = @import("sdk/shape.zig");
     /// Every `Example:` of a plugin's operations, run against an empty site with it.
     pub const examples = @import("sdk/examples.zig").check;
+    /// What a page's reads named, for tests reading as a page would.
+    pub const reads = @import("sdk/reads_testing.zig");
     const auth_params_test = @import("lib/auth.zig").password.params_test;
 
     pub const harness_arena_bytes: u32 = 4 << 20;

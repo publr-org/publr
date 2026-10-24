@@ -12,6 +12,7 @@ const lifecycle = @import("record/lifecycle.zig");
 const virtual = @import("record/virtual.zig");
 const virtual_edit = @import("record/virtual/edit.zig");
 const remote_view = @import("record/remote_view.zig");
+const changes = @import("project/changes.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -337,6 +338,12 @@ pub const Get = struct {
             return error.Invalid;
         }
 
+        if (ctx.reads != null and in.id.len <= store.records.id_len) {
+            var buffer: [changes.key_len_max]u8 = undefined;
+
+            ctx.depends_on(changes.record_key(&buffer, in.id) catch return error.Invalid);
+        }
+
         var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
 
         if (try domain.variants.code_of(ctx, in.variant)) |code| {
@@ -537,6 +544,8 @@ pub const List = struct {
 
         std.debug.assert(granted.allows());
 
+        try changes.listed(ctx, .records, in.type, in.types);
+
         const code = try domain.variants.code_of(ctx, in.variant);
         const input: crud_module.ListInput = .{
             .definition = in.type,
@@ -694,6 +703,7 @@ pub const Validate = struct {
 
 pub const Shown = @import("record/shown.zig").Shown(List, example_id);
 pub const Query = @import("record/query.zig").Query;
+
 pub const Reach = @import("record/reach.zig").Reach;
 
 test {

@@ -10,6 +10,7 @@ const store = @import("../../store.zig");
 const access = @import("../document/access.zig");
 const query_dataset = @import("query_dataset.zig");
 const internal_operations = @import("../internal.zig");
+const changes = @import("../project/changes.zig");
 
 const groq = @import("../../lib/groq.zig");
 const Ctx = sdk.Ctx;
@@ -91,6 +92,9 @@ pub const Query = struct {
         if (in.query.len == 0 or in.query.len > 16 << 10 or in.params.len > 64 << 10) {
             return error.Invalid;
         }
+
+        // A query can reach any record: a page drawn for the built site depends on them all.
+        ctx.depends_on(changes.all_records_key);
 
         const arena = ctx.arena;
         const params = try params_of(arena, in.params);
@@ -353,6 +357,13 @@ fn internal_of(
             (own or try internal_operations.reaches_other(ctx, each.owner, collection.kind, false));
 
         if (reached) {
+            var buffer: [changes.key_len_max]u8 = undefined;
+            const key = changes.internal_key(&buffer, each.owner, collection.kind, null) catch {
+                return error.Invalid;
+            };
+
+            // A page drawn for the built site that queries depends on what it may reach.
+            ctx.depends_on(key);
             readable.append(arena, .{
                 .handle = handle,
                 .owner = each.owner,
