@@ -41,6 +41,8 @@ pub const Brief = struct {
     menu: content_type.Menu = .{},
     view: content_type.View = .{},
     icon: []const u8 = "",
+    /// A taxonomy that never reaches the site.
+    internal: bool = false,
 };
 
 pub fn Store(comptime tables: tables_module.Tables) type {
@@ -201,35 +203,6 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             return rows.items;
         }
 
-        /// The definitions whose `applies_to` names `handle` (a taxonomy applying to a type),
-        /// by name, at most `limit_count`.
-        pub fn applying_to(
-            connection: *db.Db,
-            arena: std.mem.Allocator,
-            handle: []const u8,
-            limit_count: u32,
-        ) Error![]Row {
-            std.debug.assert(handle.len > 0 and handle.len <= 128);
-            std.debug.assert(limit_count > 0 and limit_count <= list_max);
-
-            var select = try connection.prepare("SELECT " ++ select_columns ++ " WHERE EXISTS " ++
-                "(SELECT 1 FROM json_each(" ++ table ++ ".definition, '$.applies_to') " ++
-                "WHERE value = ?1) ORDER BY name, id LIMIT ?2");
-            defer select.finalize();
-
-            try select.bind_text(1, handle);
-            try select.bind_int(2, limit_count);
-
-            var rows: std.ArrayList(Row) = .empty;
-
-            while (try read_row(connection, &select, arena)) |row| {
-                std.debug.assert(rows.items.len < limit_count);
-                try rows.append(arena, row);
-            }
-
-            return rows.items;
-        }
-
         const brief_columns = "id, handle, name, json_extract(definition, '$.kind'), " ++
             "json_extract(definition, '$.public'), json_extract(definition, '$.system'), " ++
             "json_extract(definition, '$.owner'), json_extract(definition, '$.editor'), " ++
@@ -239,6 +212,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             "coalesce(json_extract(definition, '$.menu'), ''), " ++
             "coalesce(json_extract(definition, '$.view'), ''), " ++
             "coalesce(json_extract(definition, '$.icon'), ''), " ++
+            "coalesce(json_extract(definition, '$.internal'), 0), " ++
             "(SELECT json_array_length(field_groups.definition, '$.fields') " ++
             "FROM field_groups WHERE scope = '" ++ table ++ "' AND owner = " ++ table ++
             ".id) FROM " ++ table;
@@ -258,6 +232,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             menu: []const u8,
             view: []const u8,
             icon: []const u8,
+            internal: bool,
             fields_len: i64,
         };
 
@@ -419,6 +394,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
                 .menu = try part_of(content_type.Menu, arena, columns.menu),
                 .view = try part_of(content_type.View, arena, columns.view),
                 .icon = columns.icon,
+                .internal = columns.internal,
             };
         }
 

@@ -39,6 +39,12 @@ pub const record = struct {
     /// What a hook on `X.any_transition` hears: `.{ .record, .transition, .from, .to }`.
     pub const Transitioned = @import("model/flow.zig").Transitioned;
 };
+/// `publr.taxonomy.define(Term, .{ .name, .public, .hierarchical, .single, .internal, .fields })`,
+/// and what `.register_taxonomies` takes: `.{ .taxonomy, .to }`.
+pub const taxonomy = struct {
+    pub const define = @import("sdk/plugin/taxonomy_define.zig").define;
+    pub const Registration = @import("sdk/plugin/taxonomy_define.zig").Registration;
+};
 /// GROQ queries with `$names` bound from a struct: `publr.query.prepare(text, .{})`.
 pub const query = struct {
     pub const prepare = @import("sdk/plugin/query_define.zig").prepare;

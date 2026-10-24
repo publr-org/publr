@@ -202,7 +202,7 @@ pub fn rows_of(context: Context, fields: []const Def, document: ?Value) Error![]
 
         // A taxonomy's own terms field is drawn in the aside (RecordTerms), not among the
         // rows; a terms field authored on the type is a control like any other.
-        if (kind_of(context, def).has.taxonomy and def.locked) {
+        if (kind_of(context, def).has.taxonomy and model.taxonomy.is_implicit(def)) {
             continue;
         }
 

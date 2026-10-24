@@ -23,6 +23,7 @@ pub const record = publr.record.define(SampleNote, .{
     .menu = .{
         .parent = &.{"sampler.notes"},
     },
+    .taxonomies = &.{ "sampler.shelf", "sampler.flag" },
     .data_view = .{
         .columns = &.{.note},
     },

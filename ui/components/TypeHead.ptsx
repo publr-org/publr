@@ -23,12 +23,7 @@ export const state = Publr.reactive({
   name_count: "",
   handle_count: "",
   description_count: "",
-  show_all_types: false,
 });
-
-export const toggleAllTypes = () => {
-  state.show_all_types = !state.show_all_types;
-};
 
 const name_max = 50;
 const handle_max = 64;
@@ -106,9 +101,8 @@ export type TypeHeadProps = {
   is_taxonomy: boolean;
   hierarchical: boolean;
   single: boolean;
-  applies_routed: Array<{ value: string; label: string; selected: boolean }>;
-  applies_other: Array<{ value: string; label: string; selected: boolean }>;
-  show_all_types: boolean;
+  /** A taxonomy that never reaches the site. */
+  internal: boolean;
 };
 
 /** The kind, the name, the handle and the description of a content type, kept in step
@@ -136,11 +130,8 @@ export function TypeHead({
   is_taxonomy,
   hierarchical,
   single,
-  applies_routed,
-  applies_other,
-  show_all_types,
+  internal,
 }: TypeHeadProps) {
-  state.show_all_types = show_all_types;
   state.is_record = is_record;
   state.name = name;
   state.handle = handle;
@@ -288,64 +279,15 @@ export function TypeHead({
         </Field>
       )}
       {is_taxonomy && (
-        <fieldset class="m-0 min-w-0 border-0 p-0">
-          <div class="mb-3 flex items-center justify-between gap-4">
-            <legend class="p-0">
-              <Text as="span" variant="body-sm" tone="default">
-                {Publr.t("Assign taxonomy to content types")}
-              </Text>
-            </legend>
-            <div class="flex items-center gap-2.5">
-              <Switch id="show_all_types" checked={state.show_all_types} onChange={toggleAllTypes} />
-              <FieldLabel htmlFor="show_all_types">{Publr.t("Show all types")}</FieldLabel>
-            </div>
+        <Field>
+          <div class="flex items-center gap-2.5">
+            <Switch id="internal" name="internal" value="1" checked={internal} />
+            <FieldLabel htmlFor="internal">{Publr.t("Staff only")}</FieldLabel>
           </div>
-          <div class="flex flex-col gap-3" data-part="applies-to">
-            <Text as="span" variant="body-xs" tone="muted">
-              {Publr.t("Content types")}
-            </Text>
-            {applies_routed.map((entry) => (
-              <CheckboxField
-                id={`applies-${entry.value}`}
-                name="applies_to"
-                value={entry.value}
-                checked={entry.selected}
-                label={entry.label}
-              />
-            ))}
-            {applies_routed.length === 0 && (
-              <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("No content type has an address on the site yet.")}
-              </Text>
-            )}
-          </div>
-          <div class="hidden" hidden={!state.show_all_types}>
-            <div class="mt-5 flex flex-col gap-3" data-part="applies-to-other">
-              <Text as="span" variant="body-xs" tone="muted">
-                {Publr.t("Other content types")}
-              </Text>
-              {applies_other.map((entry) => (
-                <CheckboxField
-                  id={`applies-${entry.value}`}
-                  name="applies_to"
-                  value={entry.value}
-                  checked={entry.selected}
-                  label={entry.label}
-                />
-              ))}
-              {applies_other.length === 0 && (
-                <Text as="p" variant="body-sm" tone="muted">
-                  {Publr.t("Every content type has an address on the site.")}
-                </Text>
-              )}
-            </div>
-          </div>
-          <div class="mt-2">
-            <FieldDescription>
-              {Publr.t("Records of the ticked types select terms of this taxonomy in the editor's sidebar. Types whose records have pages of their own on the site are the usual ones to classify; anything can be.")}
-            </FieldDescription>
-          </div>
-        </fieldset>
+          <FieldDescription>
+            {Publr.t("Never on the site: no term pages, nothing in templates or in a visitor's queries. For labels such as order tags or “Needs legal review”.")}
+          </FieldDescription>
+        </Field>
       )}
       {!is_taxonomy && (
       <div class="hidden" hidden={!state.is_record}>

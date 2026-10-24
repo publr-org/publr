@@ -197,7 +197,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 166 + preview_pages.routes_count +
+pub const routes_count: u32 = 167 + preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     @import("admin/queue.zig").routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
@@ -340,6 +340,7 @@ fn register_settings_pages(router: *http.Router) void {
 fn register_schemas(router: *http.Router) void {
     std.debug.assert(router.routes_len < 200);
     register_definition(router, "/admin/types", types_pages);
+    router.post("/admin/types/:handle/taxonomies", &types_pages.taxonomies);
     register_definition(router, taxonomy_pages.back, taxonomy_pages.Pages);
     register_definition(router, "/admin/structure/settings", @import("admin/setting_types.zig"));
     register_definition(router, "/admin/components", @import("admin/components.zig"));
@@ -1387,7 +1388,7 @@ test "admin over http: setup, login, types and content through plain forms" {
 
     const taxonomy_body = try std.fmt.allocPrint(
         arena,
-        "csrf={s}&name=Topics&handle=topics&description=&hierarchical=1&public=1&applies_to=post",
+        "csrf={s}&name=Topics&handle=topics&description=&hierarchical=1&public=1",
         .{csrf_token},
     );
     const taxonomies = "/admin/structure/taxonomies";
@@ -1419,6 +1420,24 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expect(std.mem.indexOf(u8, terms_page.body, ">Technology</a>") != null);
     try std.testing.expect(std.mem.indexOf(u8, terms_page.body, ">Engineering</a>") != null);
     try std.testing.expect(has_class(terms_page.body, "pl-4"));
+    // Ticked on the type's settings: a picker in the editor's sidebar, "Used by" on the
+    // taxonomy's.
+    const tick_body = try std.fmt.allocPrint(arena, "csrf={s}&taxonomy=topics", .{csrf_token});
+    const ticked = try flow.call("POST", "/admin/types/post/taxonomies", tick_body);
+    try std.testing.expectEqualStrings("/admin/types/post/settings", ticked.header("Location").?);
+    const type_settings = (try flow.call("GET", "/admin/types/post/settings", "")).body;
+    try std.testing.expect(std.mem.indexOf(u8, type_settings, "id=\"taxonomy-topics\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, type_settings, "value=\"topics\" checked") != null);
+    const settings = (try flow.call("GET", taxonomies ++ "/topics/settings", "")).body;
+    try std.testing.expect(std.mem.indexOf(u8, settings, "data-part=\"used-by\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, settings, "/admin/types/post/settings") != null);
+    const sidebar_post = (try flow.call("GET", "/admin/content/new?type=post", "")).body;
+    const terms_part = "data-part=\"record-terms\"";
+    try std.testing.expect(std.mem.indexOf(u8, sidebar_post, terms_part) != null);
+    try std.testing.expect(std.mem.indexOf(u8, sidebar_post, "data-part=\"term-tree\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sidebar_post, "Engineering") != null);
+
+    // A `terms` field of the form takes the taxonomy out of the sidebar.
     const topics_field = try std.fmt.allocPrint(
         arena,
         "csrf={s}&kind=terms&parent=&name=themes&label=Themes&many=1&taxonomy=topics&next=finish",
@@ -1428,18 +1447,9 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expectEqualStrings("/admin/types/post", topics_added.header("Location").?);
     const with_topics = try flow.call("GET", "/admin/types/post", "");
     try std.testing.expect(std.mem.indexOf(u8, with_topics.body, "Terms (many) of topics") != null);
-    const terms_summary = "Terms (many) of topics";
-    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, with_topics.body, terms_summary));
     const new_post = try flow.call("GET", "/admin/content/new?type=post", "");
-    const terms_part = "data-part=\"record-terms\"";
-    try std.testing.expect(std.mem.indexOf(u8, new_post.body, terms_part) != null);
-    try std.testing.expect(std.mem.indexOf(u8, new_post.body, "data-part=\"term-tree\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, new_post.body, "Engineering") != null);
-    try std.testing.expect(std.mem.indexOf(u8, new_post.body, "form=\"record\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, new_post.body, terms_part) == null);
     try std.testing.expect(std.mem.indexOf(u8, new_post.body, "id=\"field-themes-") != null);
-    const settings = try flow.call("GET", "/admin/structure/taxonomies/topics/settings", "");
-    try std.testing.expect(std.mem.indexOf(u8, settings.body, "id=\"applies-post\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, settings.body, "value=\"post\" checked") != null);
 
     const logout_body = try std.fmt.allocPrint(arena, "csrf={s}", .{csrf_token});
     _ = try flow.call("POST", "/admin/logout", logout_body);

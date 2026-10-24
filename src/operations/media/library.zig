@@ -62,13 +62,13 @@ pub fn bootstrap(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.caller == .system);
     std.debug.assert(ctx.db.transaction_depth == 0);
 
+    try ensure_taxonomy(ctx, media.folders_handle, media.folders_definition);
+    try ensure_taxonomy(ctx, media.tags_handle, media.tags_definition);
+
     try plugin_types.apply(ctx, &.{.{
         .owner = model.content_type.core_owner,
         .def = media.type_def,
     }});
-
-    try ensure_taxonomy(ctx, media.folders_handle, media.folders_definition);
-    try ensure_taxonomy(ctx, media.tags_handle, media.tags_definition);
 }
 
 /// The library's taxonomy of this handle, made from its definition when it is missing.

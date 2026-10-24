@@ -8,6 +8,14 @@ const kinds = @import("kinds.zig");
 
 pub const Def = content_type.Def;
 
+/// A plugin's taxonomy on other plugins' types (`.register_taxonomies`), by name or pattern.
+pub const Registration = struct {
+    /// The taxonomy, whole: `shipping.region`, or core's `tags`.
+    taxonomy: []const u8,
+    /// One type (`events.event`), every type of a plugin (`products.*`), or every type (`*`).
+    to: []const []const u8,
+};
+
 /// What a taxonomy definition may not be, on top of what every definition must be.
 pub fn validate_def(def: Def, problems: *field.Problems) void {
     std.debug.assert(problems.len <= field.problems_max);
@@ -25,8 +33,8 @@ pub fn validate_def(def: Def, problems: *field.Problems) void {
         problems.add("url", "term archives are not routed yet");
     }
 
-    if (def.applies_to.len > applies_max) {
-        problems.add("applies_to", "too many content types");
+    if (def.taxonomies.len > 0) {
+        problems.add("taxonomies", "a taxonomy never names types; a type lists its taxonomies");
     }
 
     for (def.fields) |candidate| {
@@ -203,14 +211,14 @@ test "a terms field names a taxonomy, may sit anywhere, and takes no choices" {
     try std.testing.expectEqual(@as(u32, 2), bad.len);
 }
 
-/// The implicit field a taxonomy gives every type it applies to: locked, named after the
-/// taxonomy, one term or many as the taxonomy says.
-pub fn implicit_field(def: Def) field.Def {
+/// The implicit field a taxonomy gives every type it is on: locked, named after it
+/// (`blog.topic` as `blog_topic`, field names have no dot), one term or many as it says.
+pub fn implicit_field(arena: std.mem.Allocator, def: Def) error{OutOfMemory}!field.Def {
     std.debug.assert(def.handle.len > 0);
     std.debug.assert(def.name.len > 0);
 
     return .{
-        .name = def.handle,
+        .name = try field_name_of(arena, def.handle),
         .label = def.name,
         .kind = "terms",
         .many = !def.single,
@@ -222,33 +230,62 @@ pub fn implicit_field(def: Def) field.Def {
     };
 }
 
-/// Whether a taxonomy applies to a content type.
-pub fn applies(def: Def, handle: []const u8) bool {
-    std.debug.assert(def.applies_to.len <= applies_max);
-    std.debug.assert(handle.len > 0);
+/// The name a taxonomy's terms come back under on a record: its handle, the plugin's dot
+/// an underscore.
+pub fn field_name_of(arena: std.mem.Allocator, handle: []const u8) error{OutOfMemory}![]const u8 {
+    std.debug.assert(handle.len > 0 and handle.len <= content_type.handle_len_max);
 
-    for (def.applies_to) |candidate| {
-        if (std.mem.eql(u8, candidate, handle)) {
-            return true;
+    const dot = std.mem.indexOfScalar(u8, handle, '.') orelse return handle;
+    const name = try arena.dupe(u8, handle);
+
+    name[dot] = '_';
+
+    return name;
+}
+
+/// Whether a field is the implicit one of the taxonomy it names.
+pub fn is_implicit(candidate: field.Def) bool {
+    std.debug.assert(candidate.name.len > 0);
+
+    if (!candidate.locked or !std.mem.eql(u8, candidate.kind, "terms")) {
+        return false;
+    }
+
+    const handle = candidate.options.taxonomy;
+
+    if (handle.len != candidate.name.len) {
+        return false;
+    }
+
+    for (handle, candidate.name) |wanted, got| {
+        if (wanted != got and !(wanted == '.' and got == '_')) {
+            return false;
         }
     }
 
-    return false;
+    return true;
 }
 
-pub const applies_max: u32 = 256;
-
 test "the implicit field of a taxonomy is locked, named after it, many unless single" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
     var topics = test_topics;
-    topics.applies_to = &.{"post"};
-    const implicit = implicit_field(topics);
+    const implicit = try implicit_field(arena, topics);
     try std.testing.expectEqualStrings("topics", implicit.name);
     try std.testing.expectEqualStrings("Topics", implicit.label);
     try std.testing.expect(implicit.locked and implicit.many);
     try std.testing.expectEqualStrings("topics", implicit.options.taxonomy);
-    try std.testing.expect(applies(topics, "post"));
-    try std.testing.expect(!applies(topics, "page"));
+    try std.testing.expect(is_implicit(implicit));
 
     topics.single = true;
-    try std.testing.expect(!implicit_field(topics).many);
+    try std.testing.expect(!(try implicit_field(arena, topics)).many);
+
+    topics.handle = "blog.topic";
+    const named = try implicit_field(arena, topics);
+    try std.testing.expectEqualStrings("blog_topic", named.name);
+    try std.testing.expectEqualStrings("blog.topic", named.options.taxonomy);
+    try std.testing.expect(is_implicit(named));
+    try std.testing.expectEqualStrings("blog.topic", topics.handle);
 }

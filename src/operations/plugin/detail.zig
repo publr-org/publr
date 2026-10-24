@@ -253,11 +253,30 @@ pub fn detail_of(ctx: *Ctx, decoded: state.Decoded) Error!Detail {
         .update = try next_of(ctx, decoded),
         .previous = decoded.row.previous_version,
         .left_out = manifest.left_out,
-        .warnings = manifest.warnings,
+        .warnings = try warnings_of(ctx, manifest),
         .blocked = remotes.blocked,
         .off = remotes.off,
         .secrets = try secrets_of(ctx, manifest),
     };
+}
+
+/// What its checks warned of, then each type its taxonomies wait for although the type's
+/// plugin is here.
+fn warnings_of(
+    ctx: *Ctx,
+    manifest: *const model.sandboxed_plugin.Manifest,
+) Error![]const []const u8 {
+    std.debug.assert(manifest.name.len > 0);
+    std.debug.assert(manifest.warnings.len <= 1 << 16);
+
+    const waiting = try @import("../taxonomy/on_type.zig").missing_types(ctx, manifest.name);
+
+    if (waiting.len == 0) {
+        return manifest.warnings;
+    }
+
+    return std.mem.concat(ctx.arena, []const u8, &.{ manifest.warnings, waiting }) catch
+        error.OutOfMemory;
 }
 
 /// The secrets `manifest` declares, each with whether it is set and who else uses it.

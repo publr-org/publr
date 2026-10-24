@@ -442,6 +442,54 @@ pub fn all_columns(ctx: *const sdk.Ctx) error{OutOfMemory}![]const Column {
 
 pub const Column = @import("../sdk/plugin/column_define.zig").Column;
 
+/// Every plugin's taxonomies on other plugins' types: compiled-in plugins', then the
+/// installed ones' from their manifests.
+pub fn taxonomy_registrations(ctx: *const sdk.Ctx) error{OutOfMemory}![]const TaxonomyRegistered {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const compiled = native_plugins.merged_taxonomy_registrations;
+    const sandboxed = ctx.sandboxed_plugins orelse return compiled;
+    var list: std.ArrayList(TaxonomyRegistered) = .empty;
+
+    try list.appendSlice(ctx.arena, compiled);
+
+    for (sandboxed.manifests()) |manifest| {
+        for (manifest.register_taxonomies) |entry| {
+            try list.append(ctx.arena, .{
+                .plugin = manifest.name,
+                .taxonomy = entry.taxonomy,
+                .to = entry.to,
+            });
+        }
+    }
+
+    return list.items;
+}
+
+pub const TaxonomyRegistered = @import("../sdk/plugin/taxonomy_define.zig").Registered;
+
+/// Whether the plugin `name` runs here: compiled in, or installed and enabled.
+pub fn plugin_present(ctx: *const sdk.Ctx, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    inline for (native_plugins.all) |Plugin| {
+        if (std.mem.eql(u8, Plugin.manifest.name, name)) {
+            return true;
+        }
+    }
+
+    const sandboxed = ctx.sandboxed_plugins orelse return false;
+
+    for (sandboxed.manifests()) |manifest| {
+        if (std.mem.eql(u8, manifest.name, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub const Filters = filter_registry.Registry(&filter_registry.core);
 
 /// The webhooks the native plugins declare, and the plugin of each.

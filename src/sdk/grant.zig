@@ -15,7 +15,10 @@ pub const RecordFilter = struct {
         own_only: bool = false,
         live_only: bool = false,
         public_types_only: bool = false,
-        _padding: u5 = 0,
+        /// Internal taxonomies are out of reach unless named (a wide read without
+        /// `.internal`).
+        named_internal_only: bool = false,
+        _padding: u4 = 0,
     };
 
     /// Whether a record made by `owner_id` is in reach: any, unless `own_only` keeps the
@@ -132,6 +135,16 @@ pub const Grant = struct {
 
         return grant.record_filter.flags.public_types_only and
             !contains(grant.any_kind_types, handle);
+    }
+
+    /// Whether the internal taxonomy `handle` is in reach: always, but for a wide read
+    /// without `.internal`, which reaches it only by naming it.
+    pub fn internal_on(grant: *const Grant, handle: []const u8) bool {
+        std.debug.assert(handle.len > 0);
+        std.debug.assert(grant.any_kind_types.len <= list_len_max);
+
+        return !grant.record_filter.flags.named_internal_only or
+            contains(grant.any_kind_types, handle);
     }
 
     /// Whether only live records of the type `handle` (public or not) are in reach.

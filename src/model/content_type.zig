@@ -53,6 +53,89 @@ pub const View = struct {
     order: ?[]const u8 = null,
 };
 
+/// One taxonomy on a content type's list: ticked by an administrator, declared by the type's
+/// plugin (`locked`, there while the plugin declares it), or another plugin's registration
+/// an administrator took off (`removed`: hidden, its assignments kept for when it comes back).
+pub const Classified = struct {
+    taxonomy: []const u8,
+    locked: bool = false,
+    removed: bool = false,
+};
+
+/// A type's taxonomies after an edit: the locked ones as `kept` holds them, then the rest
+/// as `given` says (an administrator's ticks and the registrations taken off).
+pub fn with_locked(
+    arena: std.mem.Allocator,
+    kept: []const Classified,
+    given: []const Classified,
+) error{OutOfMemory}![]const Classified {
+    std.debug.assert(kept.len <= taxonomies_max);
+
+    var list: std.ArrayList(Classified) = .empty;
+
+    for (kept) |classified| {
+        if (classified.locked) {
+            try list.append(arena, classified);
+        }
+    }
+
+    const locked = list.items.len;
+
+    for (given) |classified| {
+        const declared = for (list.items[0..locked]) |held| {
+            if (std.mem.eql(u8, held.taxonomy, classified.taxonomy)) {
+                break true;
+            }
+        } else false;
+
+        if (!classified.locked and !declared) {
+            try list.append(arena, classified);
+        }
+    }
+
+    return list.items;
+}
+
+test "an edit keeps the declared taxonomies and takes the rest as given" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const kept = [_]Classified{
+        .{
+            .taxonomy = "blog.topic",
+            .locked = true,
+        },
+        .{
+            .taxonomy = "tags",
+        },
+    };
+    const given = [_]Classified{
+        .{
+            .taxonomy = "blog.topic",
+        },
+        .{
+            .taxonomy = "regions",
+        },
+        .{
+            .taxonomy = "shipping.region",
+            .removed = true,
+        },
+        .{
+            .taxonomy = "sneaky",
+            .locked = true,
+        },
+    };
+    const got = try with_locked(arena_state.allocator(), &kept, &given);
+
+    try std.testing.expectEqual(@as(usize, 3), got.len);
+    try std.testing.expect(got[0].locked);
+    try std.testing.expectEqualStrings("regions", got[1].taxonomy);
+    try std.testing.expect(got[2].removed);
+}
+
+/// How many taxonomies one type's list holds.
+pub const taxonomies_max: u32 = 64;
+
 pub const menu_parents_max: u32 = 8;
 pub const view_columns_max: u32 = @import("view.zig").columns_max;
 
@@ -111,11 +194,15 @@ pub const Def = struct {
     flow: flow.Flow = .{},
     /// A taxonomy whose terms may have a parent term; meaningless on a content type.
     hierarchical: bool = false,
-    /// The content types a taxonomy classifies, by handle: each gets an implicit `terms`
-    /// field named after the taxonomy. Meaningless on a content type.
-    applies_to: []const []const u8 = &.{},
+    /// The taxonomies a content type is classified by, each an implicit `terms` field named
+    /// after it; another plugin's registration adds more where it matches. Meaningless on a
+    /// taxonomy, which never names types.
+    taxonomies: []const Classified = &.{},
     /// A taxonomy whose records take one term, not several.
     single: bool = false,
+    /// A taxonomy that never reaches the site: staff-only labels, order tags. Admin only; on
+    /// a type only by its name, never by a pattern. Meaningless on a content type.
+    internal: bool = false,
     /// A record not written in a variant (a language) still shows there, in its main values;
     /// false leaves it out of that variant: not listed, its address there not found.
     variant_fallback: bool = true,
@@ -205,6 +292,7 @@ pub fn validate_def(known: []const kinds.Kind, def: Def, problems: *field.Proble
     }
 
     validate_placement(def, problems);
+    validate_taxonomies(def, problems);
 
     if (def.url.len > 0 and def.kind != .record) {
         problems.add("url", "only a record type can be accessible via URL");
@@ -222,6 +310,31 @@ pub fn validate_def(known: []const kinds.Kind, def: Def, problems: *field.Proble
     if (title_field_of(def)) |title| {
         if (!kinds.lookup(known, title.kind).title_allowed) {
             problems.add("title_field", "title_field must be a field whose kind allows titles");
+        }
+    }
+}
+
+/// A type's taxonomies by their handles, each once.
+fn validate_taxonomies(def: Def, problems: *field.Problems) void {
+    std.debug.assert(problems.len <= field.problems_max);
+    std.debug.assert(taxonomies_max > 0);
+
+    if (def.taxonomies.len > taxonomies_max) {
+        problems.add("taxonomies", "at most 64 taxonomies");
+        return;
+    }
+
+    for (def.taxonomies, 0..) |classified, index| {
+        if (!valid_handle(classified.taxonomy)) {
+            problems.add("taxonomies", "taxonomies by their handles");
+            return;
+        }
+
+        for (def.taxonomies[0..index]) |earlier| {
+            if (std.mem.eql(u8, earlier.taxonomy, classified.taxonomy)) {
+                problems.add("taxonomies", "a taxonomy is listed twice");
+                return;
+            }
         }
     }
 }

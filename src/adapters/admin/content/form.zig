@@ -139,7 +139,7 @@ fn terms_of(session: *Session, def: Def, document: ?Value) Error!?admin.render.N
     var assigned: std.ArrayList(model.field.Def) = .empty;
 
     for (def.fields) |field| {
-        if (field.locked and std.mem.eql(u8, field.kind, "terms")) {
+        if (model.taxonomy.is_implicit(field)) {
             assigned.append(session.arena, field) catch return error.OutOfMemory;
         }
     }

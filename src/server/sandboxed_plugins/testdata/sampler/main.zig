@@ -25,6 +25,8 @@ const Visits = @import("records/visits.zig");
 const Profile = @import("records/profile.zig");
 const Noted = @import("events/noted.zig");
 const Place = @import("kinds/place.zig");
+const Shelves = @import("taxonomies/shelves.zig");
+const Flags = @import("taxonomies/flags.zig");
 
 const Hello = @import("operations/hello.zig");
 const Hi = @import("operations/hi.zig");
@@ -149,6 +151,13 @@ const added_statuses = .{.{
 /// Its types, one whose field is of the sampler's own kind.
 const records = [_]type{ Notes.record, Logs.record, Tallies.record, Reviews.record, Visits.record };
 const jobs = [_]type{ WriteNote.job, Tick.job, Remind.job };
+const taxonomies = [_]type{ Shelves.taxonomy, Flags.taxonomy };
+
+/// Shelves on every one of greeter's types, when greeter is there.
+const shelved = .{.{
+    .taxonomy = "sampler.shelf",
+    .to = &.{"greeter.*"},
+}};
 const webhooks = [_]type{Ping.webhook};
 
 const operations = [_]type{
@@ -232,6 +241,8 @@ const icons = .{
 pub const plugin = if (publr.plugin.guest.mode == .native)
     publr.plugin.define(manifest, .{
         .records = &records,
+        .taxonomies = &taxonomies,
+        .register_taxonomies = shelved,
         .field_kinds = &.{Place.kind},
         .register_location_rules = .{HasMotto.location_rule},
         .register_columns = columns,
@@ -254,6 +265,8 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
 else
     publr.plugin.define(manifest, .{
         .records = &records,
+        .taxonomies = &taxonomies,
+        .register_taxonomies = shelved,
         .field_kinds = &.{Place.kind},
         .register_location_rules = .{HasMotto.location_rule},
         .jobs = &jobs,

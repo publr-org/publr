@@ -49,6 +49,14 @@ const exercised = [_]Part{
         .where = "greeter.salutation, sampler.sample_note, sampler.sample_log",
     },
     .{
+        .name = "taxonomies",
+        .where = "sampler.shelf and sampler.flag, on sampler.sample_note",
+    },
+    .{
+        .name = "register_taxonomies",
+        .where = "sampler's shelves on greeter.*",
+    },
+    .{
         .name = "custom_fields",
         .where = "sampler's field group on users",
     },

@@ -5,8 +5,10 @@ any number of records; `settings` exactly one; `component` none, its fields are
 for other types to reuse), `url` (`posts`: where its records live on the site;
 a type with a url needs a slug field), whether the type is public, where it lives (`app`, an
 app's `.name`, empty for Global), who it is shared with (`shared`: `{ "all": true }` or
-`{ "apps": ["www"] }`; left out, every app for a Global type and none for an app's), and a
-list of fields, which may be empty. Records take their title from `title_field` (default
+`{ "apps": ["www"] }`; left out, every app for a Global type and none for an app's), the
+taxonomies it is filed under (`taxonomies`: `[{ "taxonomy": "topics" }]`; a plugin's
+registration taken off is kept as `"removed": true`), and a list of fields, which may be
+empty. Records take their title from `title_field` (default
 `title`) when a field of that name exists. Definitions are JSON (`publr
 content_type create --help` spells out every key and field kind). Signed-in
 users may read types; changing them needs an admin. Anonymous callers never see type definitions, only the live records
@@ -26,8 +28,9 @@ of public types. Back to the
 Field kinds: `string`, `text`, `richtext`, `slug`, `email`, `url`, `boolean`,
 `integer`, `number`, `datetime`, `select`, `media`, `reference`, `terms`
 (the terms of one taxonomy, `"options":{"taxonomy":"topics"}`, a form control
-for composing terms with other fields; a taxonomy attaches itself to types
-through its own `applies_to`, see [taxonomy](taxonomy.md)), `group`,
+for composing terms with other fields; the taxonomy it names leaves the
+sidebar, and a type lists the rest in `taxonomies`, see
+[taxonomy](taxonomy.md)), `group`,
 `repeater`, plus any a plugin declares, named `<plugin>.<kind>`; an unknown
 kind is refused. A field can be `searchable` (full-text), `many` (a list of
 values of its kind: any kind but slug and group), carry a `help` line (up to 280

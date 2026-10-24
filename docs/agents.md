@@ -207,9 +207,15 @@ pub const plugin = publr.plugin.define(manifest, .{
   run after the call by the worker, tried again when it fails. A schedule is
   `publr.job.define_recurring(.{ .name, .run, .every = .day, .at = .{ .hour = 3 } })`. What
   another server sends comes in through `publr.webhook.define` in `.webhooks`.
-- **Not built yet.** `define` has no `register_taxonomies`, `register_components` or
-  `taxonomies` option and fails the build on one. There is no outside search engine for
-  plugins yet. When a feature needs one, tell the person what is missing.
+- **Taxonomies.** `publr.taxonomy.define(Term, .{ .name, .public, .hierarchical, .single,
+  .internal, .fields })` in `.taxonomies`, stored as `<plugin>.<name>`. A type lists its
+  taxonomies (`.taxonomies = &.{ "blog.topic", "tags" }` on the record); another plugin's
+  types get one by `.register_taxonomies = .{ .{ .taxonomy, .to = &.{"products.*"} } }`. A
+  taxonomy never names types. Terms come back under the name with the dot an underscore
+  (`blog_topic`).
+- **Not built yet.** `define` has no `register_components` option and fails the build on
+  one. There is no outside search engine for plugins yet. When a feature needs one, tell the
+  person what is missing.
 
 ## How to build well
 

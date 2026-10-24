@@ -168,6 +168,7 @@ const Option = enum {
     append_only,
     expires,
     roles,
+    taxonomies,
 };
 
 const record_flow = @import("record_flow.zig");
@@ -213,6 +214,11 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
 
         const internal = @hasField(Options, "internal") and options.internal;
         const stored = if (internal) own_part(options.name) else options.name;
+
+        if (@hasField(Options, "taxonomies") and internal) {
+            @compileError("record " ++ options.name ++ ": `.taxonomies` is for content; an " ++
+                "internal record is bookkeeping, filed by its own fields");
+        }
 
         if (@hasField(Options, "expires") and !internal) {
             @compileError("record " ++ options.name ++ ": `.expires` is for internal records " ++
@@ -781,7 +787,48 @@ pub fn content_type_of(comptime Definition: type, comptime Docs: type) content_t
             .flow = flow_of(Definition, Docs),
             .menu = record_menu.menu_of(Definition),
             .view = record_menu.view_of(Definition, record_flow.status_id, fields),
+            .taxonomies = taxonomies_of(Definition),
         };
+    }
+}
+
+/// `.taxonomies = &.{ "blog.topic", "tags" }`: the type's own taxonomies by handle, there
+/// while the plugin declares them.
+fn taxonomies_of(comptime Definition: type) []const content_type.Classified {
+    comptime {
+        const options = Definition.given;
+        var list: []const content_type.Classified = &.{};
+
+        if (!@hasField(@TypeOf(options), "taxonomies")) {
+            return list;
+        }
+
+        if (options.taxonomies.len > content_type.taxonomies_max) {
+            @compileError("record " ++ Definition.type_name ++ ": at most 64 taxonomies");
+        }
+
+        for (options.taxonomies) |handle| {
+            if (!content_type.valid_handle(handle)) {
+                @compileError("record " ++ Definition.type_name ++ ": `.taxonomies` names " ++
+                    "taxonomies by handle, `blog.topic` or `tags`: " ++ handle);
+            }
+
+            for (list) |earlier| {
+                if (std.mem.eql(u8, earlier.taxonomy, handle)) {
+                    @compileError("record " ++ Definition.type_name ++ ": `.taxonomies` " ++
+                        "names " ++ handle ++ " twice");
+                }
+            }
+
+            list = list ++ [_]content_type.Classified{.{
+                .taxonomy = handle,
+                .locked = true,
+            }};
+        }
+
+        const done = list;
+
+        return done;
     }
 }
 
@@ -903,7 +950,7 @@ fn expires_of(comptime given: anytype) internal_record.Expires {
     }
 }
 
-fn field_of(
+pub fn field_of(
     comptime Definition: type,
     comptime Docs: type,
     comptime field: std.builtin.Type.StructField,
@@ -1167,7 +1214,7 @@ fn check_named_fields(comptime Document: type, comptime options: anytype) void {
 
 /// Every key of `given.fields` names a field of `Owner`: a misspelt override fails the build
 /// instead of being left unread.
-fn overrides_named(
+pub fn overrides_named(
     comptime Owner: type,
     comptime record: []const u8,
     comptime given: anytype,
@@ -1252,7 +1299,7 @@ fn title_of(comptime Document: type) []const u8 {
 }
 
 /// A name as the admin shows it: a first line without its full stop.
-fn label_of(comptime first: []const u8) []const u8 {
+pub fn label_of(comptime first: []const u8) []const u8 {
     std.debug.assert(first.len < 4096);
 
     return if (first.len > 0 and first[first.len - 1] == '.') first[0 .. first.len - 1] else first;
