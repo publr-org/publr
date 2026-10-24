@@ -303,6 +303,35 @@ pub fn delete_collection(connection: *db.Db, plugin: []const u8, kind: []const u
     try statement.exec();
 }
 
+/// Whose collection a record is in, whatever its app; null when there is no such record.
+pub fn owner_of(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    id: []const u8,
+) Error!?Owner {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(id.len <= 256);
+
+    var select = try connection.prepare(
+        "SELECT plugin, kind FROM internal_records WHERE id = ?1",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, id);
+
+    if (!try select.step()) {
+        return null;
+    }
+
+    return try select.read(Owner, arena);
+}
+
+/// The plugin and the collection a record is kept in.
+pub const Owner = struct {
+    plugin: []const u8,
+    kind: []const u8,
+};
+
 /// The ids of one of a plugin's collections, across apps, as a JSON array.
 pub fn ids_of_collection(
     connection: *db.Db,

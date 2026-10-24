@@ -19,6 +19,7 @@ const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 const sandboxed_plugin = model.sandboxed_plugin;
 const statuses = @import("statuses.zig");
+const groq = @import("../../lib/groq.zig");
 
 pub fn sandboxed(ctx: *Ctx) Error!*const sdk.sandboxed_plugins.SandboxedPlugins {
     std.debug.assert(ctx.now_ms >= 0);
@@ -45,11 +46,83 @@ pub fn stage(ctx: *Ctx, file: []const u8, anywhere: bool) Error!Checked {
     const manifest = try state.parse_manifest(ctx.arena, staged.manifest);
 
     try check(ctx, &manifest);
+    try check_source(ctx, staged.source);
 
     return .{
         .staged = staged,
         .manifest = manifest,
     };
+}
+
+/// The install gate: the plugin checks `plugin build` runs, over the source the module
+/// carries; an error refuses the module, naming each check that failed, a warning never
+/// does. A module without its source is refused: there is nothing to check.
+fn check_source(ctx: *Ctx, source: []const u8) Error!void {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const doc_reader = @import("../../sdk/plugin/doc_reader.zig");
+    const Carried = struct {
+        path: []const u8,
+        text: []const u8,
+    };
+
+    if (source.len == 0) {
+        return ctx.fail(.{
+            .name = "SourceMissing",
+            .status = 422,
+            .message = "the module carries no source to check: build it with " ++
+                "`publr plugin build`",
+        });
+    }
+
+    const carried = std.json.parseFromSliceLeaky([]const Carried, ctx.arena, source, .{
+        .allocate = .alloc_always,
+    }) catch return error.Invalid;
+
+    if (carried.len > doc_reader.files_max) {
+        return error.Invalid;
+    }
+
+    const files = try ctx.arena.alloc(doc_reader.File, carried.len);
+
+    for (carried, files) |one, *file| {
+        if (one.path.len == 0 or !doc_reader.read_file(one.path)) {
+            return error.Invalid;
+        }
+
+        file.* = .{
+            .path = one.path,
+            .text = try ctx.arena.dupeZ(u8, one.text),
+        };
+    }
+
+    const read = doc_reader.source_of(ctx.arena, files) catch |err| {
+        return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
+    };
+
+    if (!doc_reader.failing(read.problems)) {
+        return;
+    }
+
+    var message: std.ArrayList(u8) = .empty;
+
+    try message.appendSlice(ctx.arena, "the plugin checks failed:");
+
+    for (read.problems) |placed| {
+        if (!placed.problem.warning) {
+            try message.print(ctx.arena, " {s}:{d}: {s};", .{
+                placed.path,
+                placed.problem.line,
+                placed.problem.message,
+            });
+        }
+    }
+
+    return ctx.fail(.{
+        .name = "ChecksFailed",
+        .status = 422,
+        .message = message.items[0 .. message.items.len - 1],
+    });
 }
 
 /// What a manifest must hold to be installed at all, whatever an administrator grants.
@@ -99,7 +172,37 @@ fn check(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!void {
         }
     }
 
-    std.debug.assert(ctx.now_ms >= 0);
+    try queries_read(ctx, name, manifest.queries);
+}
+
+/// Each GROQ text a plugin prepares parses: one that does not refuses the plugin, named
+/// with the query and the problem. Compiled-in plugins' are read the same way at boot.
+pub fn queries_read(
+    ctx: *Ctx,
+    plugin_name: []const u8,
+    queries: []const sandboxed_plugin.Query,
+) Error!void {
+    std.debug.assert(plugin_name.len > 0);
+
+    for (queries) |query| {
+        if (query.text.len == 0) {
+            continue;
+        }
+
+        const problem = try groq.problem_of(ctx.arena, query.text) orelse continue;
+
+        return ctx.fail(.{
+            .name = "InvalidQuery",
+            .status = 422,
+            .message = std.fmt.allocPrint(ctx.arena, "plugin {s}: the query at {s}:{d} " ++
+                "does not read: {s}", .{
+                plugin_name,
+                query.path,
+                query.line,
+                problem,
+            }) catch return error.OutOfMemory,
+        });
+    }
 }
 
 /// Whether the manifest asks for a `before` hook on an event that already happened when it
@@ -463,4 +566,30 @@ test "a before hook on signing out is refused at install; on signing in it is ta
     try std.testing.expect(hook_refused(.after, "errors.failed"));
     try std.testing.expect(hook_refused(.before, "auth.sign_in_failed"));
     try std.testing.expect(!hook_refused(.event, "errors.failed"));
+}
+
+test "a prepared query that does not read refuses its plugin, named with the query and why" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    const fine = [_]sandboxed_plugin.Query{.{
+        .path = "operations/count.zig",
+        .line = 3,
+        .text = "count(*[_type == $type][$from...$to])",
+    }};
+    const broken = fine ++ [_]sandboxed_plugin.Query{.{
+        .path = "queries/notes.zig",
+        .line = 12,
+        .text = "*[_type == \"note\"",
+    }};
+
+    try queries_read(&system, "shelf", &fine);
+    try std.testing.expectError(error.Failed, queries_read(&system, "shelf", &broken));
+    try std.testing.expect(std.mem.startsWith(
+        u8,
+        system.failure.?.message,
+        "plugin shelf: the query at queries/notes.zig:12 does not read: ",
+    ));
 }

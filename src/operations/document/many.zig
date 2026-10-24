@@ -241,7 +241,7 @@ pub fn Of(comptime Domain: type) type {
                 return "Not a transition its status allows";
             }
 
-            if (!lifecycle.passes(ctx, target.?.authorize)) {
+            if (!lifecycle.admits(ctx, target.?)) {
                 return "You may not make this transition";
             }
 

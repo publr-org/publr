@@ -26,12 +26,12 @@ pub fn source_of(builder: *std.Build, dir: []const u8) []const u8 {
     const walk_failed = "{s}: walking the plugin failed";
 
     while (walker.next(io) catch diagnostic.fail(walk_failed, .{dir})) |entry| {
-        if (entry.kind != .file or !std.mem.endsWith(u8, entry.path, ".zig")) {
+        if (entry.kind != .file or !doc_reader.read_file(entry.path)) {
             continue;
         }
 
         if (files.items.len == files_max) {
-            diagnostic.fail("{s}: more than {d} Zig files", .{ dir, files_max });
+            diagnostic.fail("{s}: more than {d} Zig and GROQ files", .{ dir, files_max });
         }
 
         const text = root.readFileAllocOptions(
@@ -63,7 +63,8 @@ fn fail_on(dir: []const u8, problems: []const doc_reader.Placed) void {
     std.debug.assert(dir.len > 0);
     std.debug.assert(problems.len <= 1 << 16);
 
-    if (problems.len == 0) {
+    // Warnings are shown on the plugin's page; only errors stop the build.
+    if (!doc_reader.failing(problems)) {
         return;
     }
 
@@ -73,5 +74,5 @@ fn fail_on(dir: []const u8, problems: []const doc_reader.Placed) void {
         std.log.err("{s}/{s}:{d}: {s}", where);
     }
 
-    diagnostic.fail("{s}: {d} plugin check problem(s)", .{ dir, problems.len });
+    diagnostic.fail("{s}: plugin check problem(s)", .{dir});
 }

@@ -282,7 +282,7 @@ pub fn Of(comptime Domain: type) type {
                 });
             };
 
-            if (!passes(ctx, target.authorize)) {
+            if (!admits(ctx, target)) {
                 return error.Denied;
             }
 
@@ -455,9 +455,21 @@ pub fn Of(comptime Domain: type) type {
 
             const listed = flow.transition_between(from, to) orelse return;
 
-            if (!passes(ctx, listed.authorize)) {
+            if (!admits(ctx, flow.named(listed.name, from).?)) {
                 return error.Denied;
             }
+        }
+
+        /// Whether the caller may make `target`: plugin code by what the code says, people by
+        /// what the site changed too (who may), and never one the site turned off.
+        pub fn admits(ctx: *const Ctx, target: model.flow.Target) bool {
+            std.debug.assert(target.name.len > 0);
+
+            if (from_plugin(ctx)) {
+                return passes(ctx, target.authorize);
+            }
+
+            return !target.off and passes(ctx, target.people orelse target.authorize);
         }
 
         /// Whether the caller passes a transition's `authorize`; none: whoever may write.

@@ -226,7 +226,67 @@ pub const Target = struct {
     to: []const u8,
     label: []const u8,
     authorize: ?Who = null,
+    /// Who may, changed on this site: for people, in place of `authorize`.
+    people: ?Who = null,
+    /// Turned off on this site: people can't make it; plugin code still can.
+    off: bool = false,
 };
+
+/// What a site changes of a type's flow, kept beside it and laid over it as it is read,
+/// never a copy of it: "Reset to plugin's" drops a change. Who may on any transition (core's
+/// `trash`, `restore` and `destroy` too), the code's transitions turned off, and the site's
+/// own transitions and statuses.
+pub const Changes = struct {
+    who: []const Changed = &.{},
+    off: []const []const u8 = &.{},
+    transitions: []const Transition = &.{},
+    statuses: []const status.Status = &.{},
+
+    pub fn empty(changes: Changes) bool {
+        std.debug.assert(changes.transitions.len <= transitions_max);
+
+        return changes.who.len == 0 and changes.off.len == 0 and
+            changes.transitions.len == 0 and changes.statuses.len == 0;
+    }
+};
+
+/// Who may make the transition `name`, as a site changed it.
+pub const Changed = struct {
+    name: []const u8,
+    who: Who,
+};
+
+/// `flow` with a site's changes laid over it: its own statuses and transitions after the
+/// code's (core's listed when the type has none of its own), who may and what is off as
+/// lookups by name.
+pub fn with_changes(
+    arena: std.mem.Allocator,
+    flow: Flow,
+    changes: Changes,
+) error{OutOfMemory}!Flow {
+    std.debug.assert(changes.statuses.len <= status.statuses_max);
+    std.debug.assert(changes.transitions.len <= transitions_max);
+
+    var changed = flow;
+
+    changed.who = changes.who;
+    changed.off = changes.off;
+
+    if (changes.statuses.len == 0 and changes.transitions.len == 0) {
+        return changed;
+    }
+
+    changed.statuses = try std.mem.concat(arena, status.Status, &.{
+        flow.statuses,
+        changes.statuses,
+    });
+    changed.transitions = try std.mem.concat(arena, Transition, &.{
+        flow.listed(),
+        changes.transitions,
+    });
+
+    return changed;
+}
 
 pub fn reserved(name: []const u8) bool {
     std.debug.assert(name.len > 0);
@@ -247,6 +307,32 @@ pub const Flow = struct {
     transitions: []const Transition = &.{},
     /// Where every record of the type begins; empty: core's `draft`.
     start: []const u8 = "",
+    /// Who may, as the site changed it (`Changes`); read as the type is, never stored in it.
+    who: []const Changed = &.{},
+    /// The transitions the site turned off.
+    off: []const []const u8 = &.{},
+
+    /// `target` with what the site changed of it: who may for people, and whether it is off.
+    pub fn changed(flow: Flow, target: Target) Target {
+        std.debug.assert(target.name.len > 0);
+        std.debug.assert(flow.who.len <= transitions_max);
+
+        var marked = target;
+
+        for (flow.who) |change| {
+            if (std.mem.eql(u8, change.name, target.name)) {
+                marked.people = change.who;
+            }
+        }
+
+        for (flow.off) |name| {
+            if (std.mem.eql(u8, name, target.name)) {
+                marked.off = true;
+            }
+        }
+
+        return marked;
+    }
 
     /// Whether the type has a flow of its own, rather than core's.
     pub fn own(flow: Flow) bool {
@@ -343,27 +429,27 @@ pub const Flow = struct {
         const in_trash = std.mem.eql(u8, from, trashed);
 
         if (std.mem.eql(u8, name, "trash")) {
-            return if (in_trash) null else .{
+            return if (in_trash) null else flow.changed(.{
                 .name = "trash",
                 .to = trashed,
                 .label = "Delete",
-            };
+            });
         }
 
         if (std.mem.eql(u8, name, "restore")) {
-            return if (!in_trash) null else .{
+            return if (!in_trash) null else flow.changed(.{
                 .name = "restore",
                 .to = flow.initial().id,
                 .label = "Restore",
-            };
+            });
         }
 
         if (std.mem.eql(u8, name, "destroy")) {
-            return if (!in_trash) null else .{
+            return if (!in_trash) null else flow.changed(.{
                 .name = "destroy",
                 .to = trashed,
                 .label = "Destroy",
-            };
+            });
         }
 
         for (flow.listed()) |transition| {
@@ -373,12 +459,12 @@ pub const Flow = struct {
 
             for (transition.from) |leaving| {
                 if (std.mem.eql(u8, leaving, from)) {
-                    return .{
+                    return flow.changed(.{
                         .name = transition.name,
                         .to = transition.to,
                         .label = transition.label,
                         .authorize = transition.authorize,
-                    };
+                    });
                 }
             }
         }
@@ -386,7 +472,8 @@ pub const Flow = struct {
         return null;
     }
 
-    /// The transitions out of `from`, in the order listed, core's trash transition last.
+    /// The transitions out of `from` people may make, in the order listed, core's trash
+    /// transition last; the ones the site turned off are left out.
     pub fn out_of(flow: Flow, from: []const u8, buffer: []Target) []const Target {
         std.debug.assert(from.len > 0);
         std.debug.assert(buffer.len > transitions_max);
@@ -396,13 +483,13 @@ pub const Flow = struct {
         for (flow.listed()) |transition| {
             for (transition.from) |leaving| {
                 if (std.mem.eql(u8, leaving, from)) {
-                    buffer[count] = .{
+                    buffer[count] = flow.changed(.{
                         .name = transition.name,
                         .to = transition.to,
                         .label = transition.label,
                         .authorize = transition.authorize,
-                    };
-                    count += 1;
+                    });
+                    count += @intFromBool(!buffer[count].off);
                     break;
                 }
             }

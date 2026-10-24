@@ -2,8 +2,14 @@
 //! `recent.execute(ctx, []const Post, .{ .category = "engineering" })`: GROQ, never a query
 //! language of our own. Parameters are the query's `$names`, bound from a struct and never
 //! written into the text; a `$name` the struct lacks, or a field the query never names,
-//! fails the build.
+//! fails the build. Compiled in, the query is parsed on its first run and kept.
+//!
+//! The rest of the build check (syntax, field names, `$name` types against their use) can't
+//! run at comptime: `lib/groq`'s parser allocates, and an allocator's calls run only at
+//! run time.
 const queue = @import("queue.zig");
+const groq = @import("../../lib/groq.zig");
+const guest = @import("guest.zig");
 const std = @import("std");
 const listed_in = @import("define.zig").listed_in;
 const sdk = @import("../../sdk.zig");
@@ -23,6 +29,29 @@ pub fn prepare(comptime text: []const u8, comptime options: Options) type {
         const names = param_names(text);
 
         return struct {
+            /// The query as parsed on its first run; null until then.
+            var kept: std.atomic.Value(?*const groq.Prepared) = .init(null);
+
+            /// The parsed query, parsed now if this is its first run; null when it does not
+            /// parse, so `record.query` reports why.
+            fn parsed() ?*const groq.Prepared {
+                comptime std.debug.assert(text.len > 0);
+
+                if (kept.load(.acquire)) |held| {
+                    return held;
+                }
+
+                const made = groq.Prepared.parse(text) orelse return null;
+
+                // Two first runs at once: one parse is kept, the other freed.
+                if (kept.cmpxchgStrong(null, made, .acq_rel, .acquire)) |other| {
+                    made.free();
+                    return other;
+                }
+
+                return made;
+            }
+
             /// Runs the query as the caller, its answer read into `Result`.
             pub fn execute(
                 any_ctx: anytype,
@@ -42,6 +71,11 @@ pub fn prepare(comptime text: []const u8, comptime options: Options) type {
                     std.json.Stringify.valueAlloc(arena, params, .{}) catch {
                         return error.OutOfMemory;
                     };
+
+                if (comptime guest.mode == .native) {
+                    ctx.inner.prepared = parsed();
+                }
+
                 const answer = try ctx.call(record.Query, .{
                     .query = text,
                     .params = bound,

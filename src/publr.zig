@@ -180,6 +180,7 @@ pub const operations = struct {
     pub const sign_on = @import("operations/sign_on.zig");
     pub const identity = @import("operations/identity.zig");
     pub const status = @import("operations/status.zig");
+    pub const flow = @import("operations/flow.zig");
     pub const role = @import("operations/role.zig");
     pub const operation = @import("operations/operation.zig");
     pub const content_type = @import("operations/content_type.zig");

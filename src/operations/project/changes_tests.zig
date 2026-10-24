@@ -6,6 +6,7 @@ const deps = @import("../../lib/deps.zig");
 const registry = @import("../../server/registry.zig");
 const content_type = @import("../content_type.zig");
 const record = @import("../record.zig");
+const term = @import("../term.zig");
 
 const SDK = registry.SDK;
 
@@ -112,4 +113,93 @@ fn contains(keys: []const []const u8, key: []const u8) bool {
     }
 
     return false;
+}
+
+test "site changes: a page's reads name the record, the type and every record" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try SDK.bootstrap(&system);
+
+    _ = try SDK.dispatch(&system, content_type.Create, .{
+        .definition = note_definition,
+    });
+
+    const made = try SDK.dispatch(&system, record.Create, .{
+        .type = "note",
+        .document = "{\"title\":\"Read\"}",
+    });
+    var named: sdk.testing.reads.Named = .{};
+    var drawing = system;
+    drawing.reads = named.reads();
+
+    _ = try SDK.dispatch(&drawing, record.Get, .{
+        .id = made.id,
+    });
+    _ = try SDK.dispatch(&drawing, record.List, .{
+        .type = "note",
+    });
+    _ = try SDK.dispatch(&drawing, record.Query, .{
+        .query = "*[_type == \"note\"]",
+    });
+
+    const record_key = try std.fmt.allocPrint(system.arena, "record:{s}", .{made.id});
+
+    try std.testing.expect(named.has(record_key));
+    try std.testing.expect(named.has("type:note"));
+    try std.testing.expect(named.has("records"));
+}
+
+test "site changes: live terms raise, pending edits do not; a page's term reads name them" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+    try term.seed_topics(&harness);
+
+    var system = harness.ctx(.system);
+    const made = try SDK.dispatch(&system, term.Create, .{
+        .taxonomy = "topics",
+        .document = "{\"name\":\"Draft\"}",
+    });
+    const start = (try raised(&system, 0)).revision;
+
+    _ = try SDK.dispatch(&system, term.Publish, .{
+        .id = made.id,
+    });
+
+    const live = try raised(&system, start);
+    const term_key = try std.fmt.allocPrint(system.arena, "term:{s}", .{made.id});
+
+    try std.testing.expect(contains(live.keys, term_key));
+    try std.testing.expect(contains(live.keys, "taxonomy:topics"));
+    try std.testing.expect(contains(live.keys, "terms"));
+
+    // An edit parked on the live term changes nothing visitors see; applying it does.
+    _ = try SDK.dispatch(&system, term.Save, .{
+        .id = made.id,
+        .document = "{\"name\":\"Live, edited\"}",
+    });
+    try std.testing.expectEqual(live.revision, (try raised(&system, start)).revision);
+
+    _ = try SDK.dispatch(&system, term.Publish, .{
+        .id = made.id,
+    });
+    try std.testing.expect((try raised(&system, live.revision)).revision > live.revision);
+
+    var named: sdk.testing.reads.Named = .{};
+    var drawing = system;
+    drawing.reads = named.reads();
+
+    _ = try SDK.dispatch(&drawing, term.Get, .{
+        .id = made.id,
+    });
+    _ = try SDK.dispatch(&drawing, term.Tree, .{
+        .taxonomy = "topics",
+    });
+
+    try std.testing.expect(named.has(term_key));
+    try std.testing.expect(named.has("taxonomy:topics"));
+    try std.testing.expect(named.has("terms"));
 }

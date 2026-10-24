@@ -1,0 +1,341 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { IndexSection } from "./IndexSection.ptsx";
+
+/** A status as `flow.get` answers it. */
+type FlowStatus = { id: string; label: string; live: boolean; source: string };
+/** A transition as `flow.get` answers it. */
+type FlowTransition = {
+  name: string;
+  label: string;
+  from: string[];
+  to: string;
+  who: string;
+  declared: string;
+  changed: boolean;
+  source: string;
+  off: boolean;
+};
+type Choice = { value: string; label: string; selected: boolean };
+/** A status as the list draws it. */
+type StatusRow = { id: string; label: string; source_label: string; removable: boolean };
+/** A transition as the table draws it: every word worked out before it is drawn. */
+type TransitionRow = {
+  name: string;
+  label: string;
+  route: string;
+  source_label: string;
+  changed: boolean;
+  off: boolean;
+  can_turn_off: boolean;
+  /** What its Turn on or Turn off button sends: `<name>|on` or `<name>|off`. */
+  switch_value: string;
+  removable: boolean;
+  reset_label: string;
+  choices: Choice[];
+};
+
+const anyone = "signed_in";
+const core_trash = ["trash", "restore", "destroy"];
+
+export const state = Publr.reactive({
+  type: "",
+  csrf: "",
+  loaded: false,
+  note: "",
+  statuses: [] as StatusRow[],
+  transitions: [] as TransitionRow[],
+  /** Who may, as Add transition offers it. */
+  who_choices: [] as Choice[],
+  new_status: "",
+  new_label: "",
+  new_from: "",
+  new_to: "",
+  new_who: anyone,
+});
+
+/** The site's roles, as `role.list` answers them: who may be given a transition. */
+let roles: Array<{ name: string; label: string }> = [];
+/** Each status's label by its id, for the routes. */
+let labels: Record<string, string> = {};
+
+const source_label = (source: string): string =>
+  source === "site" ? Publr.t("This site") : source === "plugin" ? Publr.t("Plugin") : Publr.t("Core");
+
+/** Who may, as the select offers it: whoever may edit, or one of the roles. */
+const choices_of = (who: string, name: string): Choice[] => {
+  const held = who === "" || who === anyone ? anyone : who;
+  return [
+    { value: `${name}|${anyone}`, label: Publr.t("Anyone who may edit"), selected: held === anyone },
+    ...roles.map((role) => ({
+      value: `${name}|roles:${role.name}`,
+      label: role.label,
+      selected: held === `roles:${role.name}`,
+    })),
+    ...(held.startsWith("roles:") && !roles.some((role) => held === `roles:${role.name}`)
+      ? [{ value: `${name}|${held}`, label: held.slice("roles:".length), selected: true }]
+      : []),
+  ];
+};
+
+const route_of = (transition: FlowTransition): string => {
+  const from = transition.from.length === 0 ? Publr.t("Anywhere") : transition.from.map((id) => labels[id] ?? id).join(", ");
+  const to = transition.to === "" ? (transition.name === "destroy" ? Publr.t("Gone for good") : Publr.t("Where it was")) : labels[transition.to] ?? transition.to;
+  return `${from} → ${to}`;
+};
+
+const settle = (flow: { statuses: FlowStatus[]; transitions: FlowTransition[] }) => {
+  labels = { trashed: Publr.t("In the trash") };
+  for (const status of flow.statuses) labels[status.id] = status.label;
+  state.statuses = flow.statuses.map((status) => ({
+    id: status.id,
+    label: status.label,
+    source_label: source_label(status.source),
+    removable: status.source === "site",
+  }));
+  state.transitions = flow.transitions.map((transition) => ({
+    name: transition.name,
+    label: transition.label,
+    route: route_of(transition),
+    source_label: source_label(transition.source),
+    changed: transition.changed,
+    off: transition.off,
+    can_turn_off: transition.source !== "site" && !core_trash.includes(transition.name),
+    switch_value: `${transition.name}|${transition.off ? "on" : "off"}`,
+    removable: transition.source === "site",
+    reset_label: transition.source === "plugin" ? Publr.t("Reset to plugin's") : Publr.t("Reset to default"),
+    choices: choices_of(transition.who, transition.name),
+  }));
+  state.who_choices = choices_of(anyone, "").map((choice) => ({ ...choice, value: choice.value.slice(1) }));
+  if (state.new_from === "" && flow.statuses.length > 0) state.new_from = flow.statuses[0].id;
+  if (state.new_to === "" && flow.statuses.length > 1) state.new_to = flow.statuses[1].id;
+  state.loaded = true;
+};
+
+const call = async (operation: string, body?: Record<string, unknown>) => {
+  const read = body === undefined;
+  const query = read ? `?type=${encodeURIComponent(state.type)}` : "";
+  const response = await fetch(Publr.url(`/api/${operation}${query}`), {
+    method: read ? "GET" : "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", Accept: "application/json", "X-Csrf-Token": state.csrf },
+    body: read ? undefined : JSON.stringify({ type: state.type, ...body }),
+  });
+  const answer = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(answer.message ?? answer.error ?? `${response.status}`);
+  return answer;
+};
+
+/** Runs a change and draws the flow it answers; a refusal is said under the table. */
+const change = async (operation: string, body: Record<string, unknown>) => {
+  state.note = "";
+  try {
+    settle(await call(operation, body));
+  } catch (error) {
+    state.note = Publr.t("Not changed: {reason}", { reason: (error as Error).message });
+  }
+};
+
+const load = async () => {
+  try {
+    const response = await fetch(Publr.url("/api/role.list"), { credentials: "same-origin", headers: { Accept: "application/json" } });
+    const listed = response.ok ? await response.json() : { roles: [] };
+    roles = (listed.roles ?? []).filter((role: { name: string }) => role.name !== "admin");
+    settle(await call("flow.get"));
+  } catch (error) {
+    state.note = Publr.t("The workflow could not be read: {reason}", { reason: (error as Error).message });
+  }
+};
+
+Publr.effect(() => {
+  if (state.type === "" || state.loaded) return;
+  void load();
+});
+
+const value_of = (event: Event): string => (event.currentTarget as HTMLButtonElement | HTMLSelectElement).value;
+
+const who_body = (who: string): Record<string, unknown> =>
+  who.startsWith("roles:") ? { user_has_role: who.slice("roles:".length).split(",") } : { user_is_signed_in: true };
+
+export const on_who = (event: Event) => {
+  const [transition, who] = value_of(event).split("|");
+  void change("flow.authorize", { transition, ...who_body(who) });
+};
+
+export const on_reset = (event: Event) => {
+  void change("flow.authorize", { transition: value_of(event), default: true });
+};
+
+/** Off or back on: the button's value is `<transition>|<on>`. */
+export const on_set_on = (event: Event) => {
+  const [transition, on] = value_of(event).split("|");
+  void change("flow.set_on", { transition, on: on === "on" });
+};
+
+export const on_remove = (event: Event) => {
+  void change("flow.remove", { transition: value_of(event) });
+};
+
+export const on_remove_status = (event: Event) => {
+  void change("flow.remove_status", { status: value_of(event) });
+};
+
+/** What the add forms hold, each control named for its field in the state. */
+export const on_field = (event: Event) => {
+  const control = event.currentTarget as HTMLInputElement | HTMLSelectElement;
+  (state as Record<string, unknown>)[control.name] = control.value;
+};
+
+export const on_add_status = () => {
+  if (state.new_status.trim() === "") return;
+  void change("flow.add_status", { label: state.new_status.trim() }).then(() => {
+    if (state.note === "") state.new_status = "";
+  });
+};
+
+export const on_add = () => {
+  if (state.new_label.trim() === "") return;
+  const who = state.new_who.startsWith("roles:") ? { user_has_role: [state.new_who.slice("roles:".length)] } : {};
+  void change("flow.add", { label: state.new_label.trim(), from: [state.new_from], to: state.new_to, ...who }).then(() => {
+    if (state.note === "") state.new_label = "";
+  });
+};
+
+export type TypeWorkflowProps = {
+  /** The type's handle: its flow is read after the page loads. */
+  type: string;
+};
+
+/** A type's workflow: its statuses (the code's locked, the site's own removable, Add status)
+ * and its transitions, each with who may make it (changed on this site, with a reset back to
+ * the code's), where it comes from, and turning the code's off and on; Add transition adds
+ * one of the site's own. Read after the page loads and drawn again from each change's
+ * answer. */
+export function TypeWorkflow({ type }: TypeWorkflowProps) {
+  state.type = type;
+  state.csrf = Publr.request.session.csrf;
+
+  return (
+    <div class="flex flex-col" data-part="type-workflow">
+      <IndexSection title={Publr.t("Statuses")} description={Publr.t("The plugin's statuses are locked; the site's own can be removed.")}>
+        <Table>
+          <TableBody>
+            {state.statuses.map((status) => (
+              <TableRow key={status.id}>
+                <TableCell>
+                  <span data-status={status.id}>
+                    <Text as="span" variant="body-sm">{status.label}</Text>
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <Status tone={status.removable ? "info" : "neutral"}>{status.source_label}</Status>
+                </TableCell>
+                <TableCell>
+                  {status.removable && (
+                    <Button size="sm" hierarchy="tertiary" value={status.id} onClick={on_remove_status}>
+                      {Publr.t("Remove")}
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <div class="flex flex-wrap items-center gap-2 px-5 py-4">
+          <Input size="sm" label={Publr.t("New status")} placeholder={Publr.t("New status")} value={state.new_status} name="new_status" onInput={on_field} classes="max-w-60" />
+          <Button size="sm" hierarchy="secondary" onClick={on_add_status}>{Publr.t("Add status")}</Button>
+        </div>
+      </IndexSection>
+      <IndexSection title={Publr.t("Transitions")} description={Publr.t("Administrators may always make them. A transition turned off is refused to people; the plugin's own code still makes it.")}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{Publr.t("Name")}</TableHead>
+              <TableHead>{Publr.t("From → To")}</TableHead>
+              <TableHead>{Publr.t("Who may")}</TableHead>
+              <TableHead>{Publr.t("Source")}</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {state.transitions.map((transition) => (
+              <TableRow key={transition.name}>
+                <TableCell>
+                  <span class={transition.off ? "opacity-50" : ""} data-transition={transition.name}>
+                    <Text as="span" variant="body-sm">{transition.label}</Text>
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <Text as="span" variant="body-sm" tone="muted">{transition.route}</Text>
+                </TableCell>
+                <TableCell>
+                  <div class="flex flex-col gap-1">
+                    <NativeSelect size="sm" label={Publr.t("Who may")} onChange={on_who} disabled={transition.off} classes="min-w-52">
+                      {transition.choices.map((choice) => (
+                        <option value={choice.value} selected={choice.selected}>{choice.label}</option>
+                      ))}
+                    </NativeSelect>
+                    {transition.changed && (
+                      <div class="flex items-center gap-2">
+                        <Text as="span" variant="body-sm" tone="muted">{Publr.t("Changed on this site")}</Text>
+                        <Button size="sm" hierarchy="link" value={transition.name} onClick={on_reset}>{transition.reset_label}</Button>
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Status tone={transition.removable ? "info" : "neutral"}>{transition.source_label}</Status>
+                </TableCell>
+                <TableCell>
+                  {transition.off && (
+                    <Button size="sm" hierarchy="secondary" value={transition.switch_value} onClick={on_set_on}>{Publr.t("Turn on")}</Button>
+                  )}
+                  {!transition.off && transition.can_turn_off && (
+                    <Button size="sm" hierarchy="tertiary" value={transition.switch_value} onClick={on_set_on}>{Publr.t("Turn off")}</Button>
+                  )}
+                  {transition.removable && (
+                    <Button size="sm" hierarchy="tertiary" value={transition.name} onClick={on_remove}>{Publr.t("Remove")}</Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <div class="flex flex-wrap items-end gap-2 px-5 py-4" data-part="add-transition">
+          <Input size="sm" label={Publr.t("Transition label")} placeholder={Publr.t("Label")} value={state.new_label} name="new_label" onInput={on_field} classes="max-w-48" />
+          <NativeSelect size="sm" label={Publr.t("From")} name="new_from" onChange={on_field} classes="max-w-44">
+            {state.statuses.map((status) => (
+              <option value={status.id} selected={status.id === state.new_from}>{status.label}</option>
+            ))}
+          </NativeSelect>
+          <NativeSelect size="sm" label={Publr.t("To")} name="new_to" onChange={on_field} classes="max-w-44">
+            {state.statuses.map((status) => (
+              <option value={status.id} selected={status.id === state.new_to}>{status.label}</option>
+            ))}
+          </NativeSelect>
+          <NativeSelect size="sm" label={Publr.t("Who may")} name="new_who" onChange={on_field} classes="max-w-48">
+            {state.who_choices.map((choice) => (
+              <option value={choice.value} selected={choice.value === state.new_who}>{choice.label}</option>
+            ))}
+          </NativeSelect>
+          <Button size="sm" hierarchy="secondary" onClick={on_add}>{Publr.t("Add transition")}</Button>
+        </div>
+        {state.note !== "" && (
+          <div class="px-5 pb-4">
+            <Text variant="body-sm" tone="muted">{state.note}</Text>
+          </div>
+        )}
+      </IndexSection>
+    </div>
+  );
+}

@@ -10,6 +10,7 @@ const store = @import("../../store.zig");
 const access = @import("../document/access.zig");
 const query_dataset = @import("query_dataset.zig");
 const internal_operations = @import("../internal.zig");
+const changes = @import("../project/changes.zig");
 
 const groq = @import("../../lib/groq.zig");
 const Ctx = sdk.Ctx;
@@ -92,6 +93,9 @@ pub const Query = struct {
             return error.Invalid;
         }
 
+        // A query can reach any record: a page drawn for the built site depends on them all.
+        ctx.depends_on(changes.all_records_key);
+
         const arena = ctx.arena;
         const params = try params_of(arena, in.params);
         var source = try source_of(ctx, granted, in.perspective);
@@ -102,13 +106,19 @@ pub const Query = struct {
             .seconds = @divFloor(ctx.now_ms, 1000),
             .nanoseconds = @intCast(@mod(ctx.now_ms, 1000) * 1_000_000),
         };
-        const answered = groq.execute(arena, in.query, source.dataset(), &problem, .{
+        const options: groq.Options = .{
             .params = params,
             .now = now,
             .strings_are_references = true,
             .work_steps = work_budget(ctx),
-        }) catch |err| return refused(ctx, err, problem, source.refused_type);
-        const text = groq.values.to_json(arena, answered.value) catch return error.OutOfMemory;
+        };
+        // A prepared query comes parsed; any other is parsed here.
+        const answered = if (kept_of(ctx, in.query)) |prepared|
+            groq.run(arena, &prepared.query, source.dataset(), &problem, options)
+        else
+            groq.execute(arena, in.query, source.dataset(), &problem, options);
+        const answer = answered catch |err| return refused(ctx, err, problem, source.refused_type);
+        const text = groq.values.to_json(arena, answer.value) catch return error.OutOfMemory;
 
         if (text.len > answer_bytes_max) {
             return ctx.fail(.{
@@ -118,7 +128,7 @@ pub const Query = struct {
             });
         }
 
-        const problems = try problems_of(arena, answered.problems);
+        const problems = try problems_of(arena, answer.problems);
 
         return .{
             .result = .{
@@ -128,6 +138,17 @@ pub const Query = struct {
         };
     }
 };
+
+/// The parse `publr.query.prepare` kept for this very text, if it handed one over.
+fn kept_of(ctx: *const Ctx, text: []const u8) ?*const groq.Prepared {
+    std.debug.assert(text.len > 0);
+
+    const prepared = ctx.prepared orelse return null;
+
+    std.debug.assert(prepared.text.len > 0);
+
+    return if (std.mem.eql(u8, prepared.text, text)) prepared else null;
+}
 
 fn params_of(arena: std.mem.Allocator, text: []const u8) Error!groq.values.Object {
     std.debug.assert(text.len <= 64 << 10);
@@ -336,6 +357,13 @@ fn internal_of(
             (own or try internal_operations.reaches_other(ctx, each.owner, collection.kind, false));
 
         if (reached) {
+            var buffer: [changes.key_len_max]u8 = undefined;
+            const key = changes.internal_key(&buffer, each.owner, collection.kind, null) catch {
+                return error.Invalid;
+            };
+
+            // A page drawn for the built site that queries depends on what it may reach.
+            ctx.depends_on(key);
             readable.append(arena, .{
                 .handle = handle,
                 .owner = each.owner,

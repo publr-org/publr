@@ -6,6 +6,7 @@ const store = @import("../store.zig");
 const document_domain = @import("document.zig");
 const crud_module = @import("document/crud.zig");
 const lifecycle = @import("term/lifecycle.zig");
+const changes = @import("project/changes.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -312,6 +313,12 @@ pub const Get = struct {
             return error.Invalid;
         }
 
+        if (ctx.reads != null and in.id.len <= store.records.id_len) {
+            var buffer: [changes.key_len_max]u8 = undefined;
+
+            ctx.depends_on(changes.term_key(&buffer, in.id) catch return error.Invalid);
+        }
+
         var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
 
         if (try domain.variants.code_of(ctx, in.variant)) |code| {
@@ -454,6 +461,8 @@ pub const List = struct {
 
         std.debug.assert(granted.allows());
 
+        try changes.listed(ctx, .terms, in.taxonomy, in.taxonomies);
+
         const listed = try crud.list(ctx, granted, .{
             .definition = in.taxonomy,
             .definitions = in.taxonomies,
@@ -547,6 +556,8 @@ pub const Tree = struct {
         if (in.taxonomy.len > 64 << 10) {
             return error.Invalid;
         }
+
+        try changes.listed(ctx, .terms, in.taxonomy, &.{});
 
         if (in.limit == 0 or in.limit > sdk.operation.page_limit_max) {
             return error.Invalid;

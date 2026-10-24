@@ -192,7 +192,7 @@ pub fn flush(project: *const Project, now_ms: i64) void {
     while (batches < batches_per_flush_max) : (batches += 1) {
         const batch = (index.take(arena, now_ms) catch return) orelse return;
 
-        _ = rebuild_batch(project, arena, batch) catch |err| {
+        const counts = rebuild_batch(project, arena, batch) catch |err| {
             report.err_reason(reason_of(project), "apps: rebuild refused: {s}", .{
                 @errorName(err),
             });
@@ -200,7 +200,10 @@ pub fn flush(project: *const Project, now_ms: i64) void {
             return;
         };
 
-        write_sitemaps(project);
+        // A change no built page read (an internal record nothing shows) writes nothing.
+        if (counts.written > 0 or counts.removed > 0) {
+            write_sitemaps(project);
+        }
     }
 }
 

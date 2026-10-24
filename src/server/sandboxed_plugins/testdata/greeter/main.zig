@@ -371,6 +371,18 @@ fn keep_out_of_archive(ctx: *publr.Ctx, moved: publr.record.Transitioned) publr.
     }
 }
 
+/// Takes back the publishing of a salutation saying "not yet", once it is written
+fn not_yet(ctx: *publr.Ctx, moved: publr.record.Transitioned) publr.Error!void {
+    std.debug.assert(std.mem.eql(u8, moved.transition, "publish"));
+    std.debug.assert(std.mem.eql(u8, moved.to, "published"));
+
+    const held = try Salutations.get(ctx, moved.record, .{});
+
+    if (std.mem.eql(u8, held.value.note, "not yet")) {
+        return error.Denied;
+    }
+}
+
 /// Keeps a salutation saying "keep" out of the trash; every other transition goes on
 fn keep_kept(ctx: *publr.Ctx, moved: publr.record.Transitioned) publr.Error!void {
     std.debug.assert(moved.record.len > 0);
@@ -488,6 +500,7 @@ pub const plugin = publr.plugin.define(manifest, .{
         publr.after(publr.auth.SignedOut, note_sign_out),
         publr.before(Salutations.any_transition, keep_kept),
         publr.before(Salutations.transitions.archive, keep_out_of_archive),
+        publr.after(Salutations.transitions.publish, not_yet),
         publr.modify("greeter.salutation.title", shown),
         publr.modify("greeter.*", add_one),
     },

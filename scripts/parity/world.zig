@@ -474,6 +474,20 @@ fn fill_types(ctx: *Ctx) Error!void {
     _ = try SDK.dispatch(ctx, content_types.Create, .{
         .definition = page_definition,
     });
+
+    // The page's own status and transition the `flow` examples remove.
+    const flow = publr.operations.flow;
+
+    _ = try SDK.dispatch(ctx, flow.AddStatus, .{
+        .type = "page",
+        .label = "In review",
+    });
+    _ = try SDK.dispatch(ctx, flow.Add, .{
+        .type = "page",
+        .label = "Send back",
+        .from = &.{"published"},
+        .to = "draft",
+    });
 }
 
 fn fill_records(ctx: *Ctx) Error!void {

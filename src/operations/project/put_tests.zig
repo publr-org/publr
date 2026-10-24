@@ -11,6 +11,7 @@ const role = @import("../role.zig");
 const user = @import("../user.zig");
 const snapshot = @import("../snapshot.zig");
 const Put = @import("put.zig").Put;
+const deps = @import("../../lib/deps.zig");
 
 const SDK = registry.SDK;
 const stored_rows = store.stored_rows;
@@ -50,6 +51,44 @@ fn round_trip(ctx: *sdk.Ctx, kind: stored_rows.Kind, id: []const u8) !void {
     try std.testing.expectEqualStrings("added", try put_one(ctx, kind, id, kept));
     try std.testing.expectEqualStrings(kept, try rows_of(ctx, kind, id));
     try std.testing.expectEqualStrings("unchanged", try put_one(ctx, kind, id, kept));
+}
+
+fn index_revision(ctx: *sdk.Ctx) !u64 {
+    std.debug.assert(ctx.db.transaction_depth == 0);
+
+    var index: deps.Index = .{
+        .db = ctx.db,
+        .options = .{
+            .quiet_ms = deps.quiet_ms,
+        },
+    };
+
+    return index.revision();
+}
+
+fn changes_since(ctx: *sdk.Ctx, after: u64) ![]const []const u8 {
+    std.debug.assert(ctx.db.transaction_depth == 0);
+
+    var index: deps.Index = .{
+        .db = ctx.db,
+        .options = .{
+            .quiet_ms = deps.quiet_ms,
+        },
+    };
+
+    return (try index.changes_since(ctx.arena, after)).keys;
+}
+
+fn has(keys: []const []const u8, key: []const u8) bool {
+    std.debug.assert(key.len > 0);
+
+    for (keys) |each| {
+        if (std.mem.eql(u8, each, key)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn title_of(ctx: *sdk.Ctx, id: []const u8) ![]const u8 {
@@ -194,7 +233,15 @@ test "project.put puts every kind with its id: removed, back, and unchanged when
         \\ "previous_manifest":null,"installed_at":1,"updated_at":2,"remove_data":"[]"}]}
     ;
 
+    const before_internal = try index_revision(&admin);
+
     try std.testing.expectEqualStrings("added", try put_one(&admin, .internal, "i1", internal));
+
+    // A page that showed what is worked out from it rebuilds.
+    const raised = try changes_since(&admin, before_internal);
+
+    try std.testing.expect(has(raised, "internal:shelf/bin/i1"));
+    try std.testing.expect(has(raised, "internal:shelf/bin"));
     try round_trip(&admin, .internal, "i1");
     try std.testing.expectEqualStrings("added", try put_one(&admin, .plugin, "shelf", plugin));
     try round_trip(&admin, .plugin, "shelf");

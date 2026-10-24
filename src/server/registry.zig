@@ -19,6 +19,7 @@ const removal = @import("../operations/removal.zig");
 const trash = @import("../operations/trash.zig");
 const identity = @import("../operations/identity.zig");
 const status = @import("../operations/status.zig");
+const flow_operations = @import("../operations/flow.zig");
 const job = @import("../operations/job.zig");
 const webhook = @import("../operations/webhook.zig");
 const role = @import("../operations/role.zig");
@@ -32,6 +33,7 @@ const view = @import("../operations/view.zig");
 const rail = @import("../operations/rail.zig");
 const internal = @import("../operations/internal.zig");
 const plugin_operations = @import("../operations/plugin.zig");
+const plugin_lifecycle = @import("../operations/plugin/lifecycle.zig");
 const plugin_types = @import("../sdk/plugin/types.zig");
 const plugin_contracts = @import("../model/plugin_contracts.zig");
 const remote_contract = @import("../sdk/plugin/remote_contract.zig");
@@ -70,7 +72,7 @@ pub const remotes_off = native_plugins.merged_remotes_off;
 const core_operations = heartbeat.operations ++ project.operations ++ custom_fields.operations ++
     user.operations ++
     sign_in.operations ++ sign_on.operations ++ device.operations ++ identity.operations ++
-    status.operations ++ job.operations ++ webhook.operations ++
+    status.operations ++ flow_operations.operations ++ job.operations ++ webhook.operations ++
     role.operations ++
     content_type.operations ++
     record.operations ++ taxonomy.operations ++ term.operations ++ media.operations ++
@@ -90,6 +92,7 @@ const core_namespaces = [_]sdk.operation.Namespace{
     device.namespace,
     identity.namespace,
     status.namespace,
+    flow_operations.namespace,
     job.namespace,
     webhook.namespace,
     operation_operations.namespace,
@@ -475,6 +478,7 @@ fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
     try media.bootstrap(ctx);
     try ai.bootstrap(ctx);
     try design_operations.bootstrap(ctx);
+    try queries_read(ctx);
     try plugin_types.apply_all(ctx);
     try apply_declared_roles(ctx);
 
@@ -482,6 +486,27 @@ fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
         if (comptime plugin_define.has(Plugin, "bootstrap")) {
             try plugin_define.get(Plugin, "bootstrap")(ctx);
         }
+    }
+}
+
+/// Each built-in plugin's prepared GROQ texts parse, as an installed plugin's do when it is
+/// installed: one that does not stops the boot, naming the plugin, the query and why.
+fn queries_read(ctx: *sdk.Ctx) sdk.Error!void {
+    @import("std").debug.assert(ctx.caller == .system);
+
+    inline for (native_plugins.all) |Plugin| {
+        const queries = comptime if (@hasDecl(Plugin, "docs"))
+            @import("../sdk/plugin/prepared_queries.zig").of(Plugin.docs)
+        else
+            &.{};
+
+        plugin_lifecycle.queries_read(ctx, Plugin.manifest.name, queries) catch |err| {
+            if (ctx.failure) |failure| {
+                std.log.err("{s}", .{failure.message});
+            }
+
+            return err;
+        };
     }
 }
 

@@ -11,6 +11,9 @@ const shapes = @import("../../model/contract.zig");
 
 /// The name of the custom section the manifest travels in.
 pub const section_name = "publr";
+/// The plugin's source a built module carries (`[{ "path", "text" }]`): what the install
+/// gate runs the plugin checks over.
+pub const source_section_name = "publr.source";
 pub const format = sandboxed_plugin.format;
 
 pub const Manifest = sandboxed_plugin.Manifest;
@@ -62,6 +65,11 @@ pub fn of(comptime Plugin: type) Manifest {
             // The rest of `main.zig`'s `//!`, past its first line: shown on its page.
             .about = Plugin.settings_text,
             .left_out = runtime.left_out(Plugin),
+            .queries = @import("prepared_queries.zig").of(docs_of(Plugin)),
+            .warnings = if (@hasDecl(docs_of(Plugin), "warnings"))
+                &docs_of(Plugin).warnings
+            else
+                &.{},
         };
     }
 }

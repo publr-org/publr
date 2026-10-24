@@ -82,6 +82,32 @@ pub const Deps = struct {
         deps.add(key);
     }
 
+    /// Where the reads of the SDK calls a render makes write their keys: plugins' code
+    /// reading on the page's way, besides the template's own reads.
+    pub fn reads(deps: *Deps) sdk.Reads {
+        std.debug.assert(deps.app.len > 0);
+        std.debug.assert(deps.keys.items.len <= keys_max);
+
+        return .{
+            .context = deps,
+            .read = read,
+        };
+    }
+
+    fn read(context: *anyopaque, key: []const u8) void {
+        const deps: *Deps = @ptrCast(@alignCast(context));
+
+        std.debug.assert(key.len > 0);
+        std.debug.assert(deps.keys.items.len <= keys_max);
+
+        if (key.len > changes.key_len_max) {
+            deps.complete = false;
+            return;
+        }
+
+        deps.add(key);
+    }
+
     pub fn record_type(deps: *Deps, handle: []const u8) void {
         std.debug.assert(handle.len > 0);
         std.debug.assert(deps.keys.items.len <= keys_max);
@@ -1216,6 +1242,10 @@ pub const Context = struct {
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;
         sdk_ctx.variant = ctx.place.variant;
+
+        if (ctx.deps) |deps| {
+            sdk_ctx.reads = deps.reads();
+        }
 
         return sdk_ctx;
     }

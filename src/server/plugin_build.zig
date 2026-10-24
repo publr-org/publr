@@ -55,13 +55,14 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     };
 
     const check = @import("plugin_build/check.zig");
-    const read = try doc_reader.source_of(
-        init.arena.allocator(),
-        try check.files_in(init, request.dir),
-    );
+    const files = try check.files_in(init, request.dir);
+    const read = try doc_reader.source_of(init.arena.allocator(), files);
 
-    if (read.problems.len > 0) {
-        check.reported(request.dir, read.problems);
+    const problems = try check.problems_of(init.arena.allocator(), read);
+
+    check.reported(request.dir, problems);
+
+    if (doc_reader.failing(problems)) {
         return 1;
     }
 
@@ -81,7 +82,8 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         return 1;
     }
 
-    const manifest = try write_manifest(init, built);
+    const source = try std.json.Stringify.valueAlloc(init.arena.allocator(), files, .{});
+    const manifest = try write_manifest(init, built, source);
 
     try warn_left_out(init, request.name, manifest);
 
@@ -364,8 +366,9 @@ fn stub_names(init: std.process.Init, sdk_dir: []const u8) ![]const []const u8 {
 }
 
 /// Reads the manifest by running the module's `publr_manifest` in the sandbox, with no
-/// grants and nothing it could call, and writes it into the module's `publr` section.
-fn write_manifest(init: std.process.Init, path: []const u8) ![]const u8 {
+/// grants and nothing it could call, and writes it into the module's `publr` section, and
+/// the plugin's source into `publr.source`, for the install gate's checks.
+fn write_manifest(init: std.process.Init, path: []const u8, source: []const u8) ![]const u8 {
     std.debug.assert(path.len > 0);
 
     const cwd = std.Io.Dir.cwd();
@@ -379,6 +382,7 @@ fn write_manifest(init: std.process.Init, path: []const u8) ![]const u8 {
 
     try output.writer.writeAll(module);
     try wasm.section.write(&output.writer, plugin_manifest.section_name, manifest);
+    try wasm.section.write(&output.writer, plugin_manifest.source_section_name, source);
     try cwd.writeFile(init.io, .{
         .sub_path = path,
         .data = output.written(),
