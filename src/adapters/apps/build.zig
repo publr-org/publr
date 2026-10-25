@@ -4,6 +4,7 @@
 //! `rebuild.zig`.
 
 const std = @import("std");
+const variants_module = @import("../../operations/variants.zig");
 const report = @import("../../lib/report.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
@@ -244,7 +245,10 @@ fn slugs_of(
             .order = .created_desc,
             .limit = record_operations.list_max,
             .offset = offset,
-            .variant = if (place.variant.len > 0) place.variant else null,
+            .dimensions = if (place.variant.len > 0)
+                variants_module.asked_in(&sdk_ctx, place.variant)
+            else
+                .{},
         }) catch |err| switch (err) {
             error.NotFound => return &.{},
             else => return err,

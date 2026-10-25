@@ -137,7 +137,9 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .default_columns = default_columns_of(arena, typed),
     };
     var list_in = try filters.list_in(arena, effective);
-    list_in.variant = @import("../variant.zig").chosen(&session);
+    list_in.dimensions = .{
+        .pairs = @import("../variant.zig").chosen_pairs(&session),
+    };
     list_in.count = true;
 
     const shown = listed_page(&session, &list_in) catch |err| {

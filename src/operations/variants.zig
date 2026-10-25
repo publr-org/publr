@@ -203,6 +203,25 @@ pub fn main(ctx: *Ctx) Error!?Variant {
     return null;
 }
 
+/// A read in `setting`'s dimension at `code` (the language of a page): nothing asked on a
+/// site with no dimension.
+pub fn asked_in(ctx: *const Ctx, code: []const u8) sdk.Dimensions {
+    std.debug.assert(code.len <= model_variant.code_len_max);
+
+    const dimension = setting(ctx) orelse return .{};
+    const one = ctx.arena.alloc(model_variant.Pair, 1) catch return .{};
+
+    std.debug.assert(dimension.name.len > 0);
+    one[0] = .{
+        .dimension = dimension.name,
+        .code = code,
+    };
+
+    return .{
+        .pairs = one,
+    };
+}
+
 /// `name`'s key in `setting`'s dimension at `code`: `title@language=pl`; `name` alone for
 /// the main value, or on a site with none.
 pub fn key_in(

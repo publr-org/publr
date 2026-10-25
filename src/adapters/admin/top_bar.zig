@@ -21,10 +21,10 @@ pub fn of(session: *const Session) ?Node {
     var count: u32 = 0;
     var reading = session.*;
 
-    if (@import("variant.zig").switcher(&reading)) |node| {
-        shown[count] = node;
-        count += 1;
-    }
+    // One per dimension, room left for the entries and the app picker after them.
+    const room = items_max - 2 - registry.app_picker_segment.len;
+
+    count += @import("variant.zig").switchers(&reading, shown[0..@min(room, 4)]);
 
     for (entries_of(session)) |node| {
         if (count + 2 + registry.app_picker_segment.len >= items_max) {

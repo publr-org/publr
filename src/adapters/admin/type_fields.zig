@@ -285,7 +285,6 @@ pub fn panel_node(
     const text = text_of(field.kind);
     const links = try links_of(arena, try spaces.hub(session, handle), field, parent, path);
     const set = field.options;
-    const dimension_offered = try translate_offered(session);
 
     return admin.render.view(arena, views.FieldPanel, .{
         .csrf = session.csrf_token(),
@@ -314,20 +313,10 @@ pub fn panel_node(
         .can_sort = model.field_filter.sortable(family_of(field.kind)) and !field.many,
         .sortable = field.sortable orelse
             model.field_filter.sorts_by_default(family_of(field.kind)),
-        .can_translate = dimension_offered != null and !model.field.is_layout(field.kind),
-        .translates = if (path == null)
-            translated_by_default(field.kind)
+        .dimensions = if (model.field.is_layout(field.kind))
+            &.{}
         else
-            field.dimensions.len > 0,
-        .dimension = if (dimension_offered) |dimension| dimension.name else "",
-        .translate_label = if (dimension_offered) |dimension|
-            try session.declared(dimension.label)
-        else
-            "",
-        .translate_help = if (dimension_offered) |dimension|
-            try session.declared(dimension.help)
-        else
-            "",
+            try switches_of(session, field, path == null),
         .can_title = text.title_allowed and parent.len == 0 and spaces.of(session) != .custom,
         .is_title = path != null and std.mem.eql(u8, def.title_field, field.name),
         .has_target = text.has.target,
@@ -676,30 +665,40 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-/// The variant setting's words, when a plugin declares the dimension and the site has more
-/// than one variant.
-const Offered = struct {
-    name: []const u8,
-    label: []const u8,
-    help: []const u8,
-};
-
-fn translate_offered(session: *Session) Error!?Offered {
+/// A switch per dimension with more than one value, in its own words: whether the field
+/// varies by it. A new field starts varying by the dimension with pages of its own when it
+/// holds words, by none of the others.
+fn switches_of(
+    session: *Session,
+    field: model.field.Def,
+    is_new: bool,
+) Error![]const views.FieldPanel.DimensionsItem {
     std.debug.assert(session.signed_in());
+    std.debug.assert(field.kind.len > 0);
 
-    const dimension = variants.setting(&session.ctx) orelse return null;
-    const setting: Offered = .{
-        .name = dimension.name,
-        .label = dimension.label,
-        .help = dimension.help,
-    };
-    const others = variants.others(&session.ctx) catch return null;
+    var out: std.ArrayList(views.FieldPanel.DimensionsItem) = .empty;
 
-    if (others.len == 0) {
-        return null;
+    for (variants.all(&session.ctx)) |dimension| {
+        const values = variants.values_of(&session.ctx, dimension) catch continue;
+
+        if (values.len < 2) {
+            continue;
+        }
+
+        const on = if (is_new)
+            dimension.addresses and translated_by_default(field.kind)
+        else
+            model.dimension.varies_by(field.dimensions, dimension.name);
+
+        try out.append(session.arena, .{
+            .name = dimension.name,
+            .label = try session.declared(dimension.label),
+            .help = try session.declared(dimension.help),
+            .on = on,
+        });
     }
 
-    return setting;
+    return out.items;
 }
 
 /// What a new field starts with: the words people read are translated, the facts shared.

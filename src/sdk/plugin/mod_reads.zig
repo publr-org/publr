@@ -176,7 +176,7 @@ fn plain_get(arena: std.mem.Allocator, entry: *const Entry) ?[]const u8 {
     const in = std.json.parseFromSliceLeaky(record.Get.In, arena, entry.input, .{
         .allocate = .alloc_always,
     }) catch return null;
-    const plain = in.purpose == .edit and in.slot == null and in.variant == null;
+    const plain = in.purpose == .edit and in.slot == null and in.dimensions.pairs.len == 0;
 
     return if (plain and in.id.len > 0) in.id else null;
 }

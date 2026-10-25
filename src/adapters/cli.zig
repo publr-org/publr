@@ -622,6 +622,56 @@ pub const ParseOptions = struct {
     password_env: ?[]const u8 = null,
 };
 
+/// A flag that is none of `In`'s own, taken as a dimension (`--language pl`) when `In` reads in
+/// a combination: false when it does not, or the flag cannot name one. The operation checks
+/// the name against the site's dimensions.
+fn gathered(
+    comptime In: type,
+    arena: std.mem.Allocator,
+    in: *In,
+    seen: []bool,
+    flag: []const u8,
+    value: []const u8,
+) Error!bool {
+    std.debug.assert(seen.len == std.meta.fields(In).len);
+
+    const found = comptime sdk.dimension_input.field_of(In);
+
+    if (found == null) {
+        return false;
+    }
+
+    const target = comptime found.?;
+    const name = arena.dupe(u8, flag) catch return error.OutOfMemory;
+
+    std.mem.replaceScalar(u8, name, '-', '_');
+
+    if (!@import("../model/dimension.zig").valid_name(name)) {
+        return false;
+    }
+
+    inline for (std.meta.fields(In), 0..) |field, index| {
+        if (comptime std.mem.eql(u8, field.name, target)) {
+            const before: []const sdk.dimension_input.Pair = if (seen[index])
+                @field(in.*, target).pairs
+            else
+                &.{};
+            const pair: sdk.dimension_input.Pair = .{
+                .dimension = name,
+                .code = value,
+            };
+            const pairs = std.mem.concat(arena, sdk.dimension_input.Pair, &.{ before, &.{pair} });
+
+            @field(in.*, target) = .{
+                .pairs = pairs catch return error.OutOfMemory,
+            };
+            seen[index] = true;
+        }
+    }
+
+    return true;
+}
+
 pub fn parse_in(
     comptime In: type,
     arena: std.mem.Allocator,
@@ -687,7 +737,7 @@ pub fn parse_in(
             }
         }
 
-        if (!matched) {
+        if (!matched and !try gathered(In, arena, &in, &seen, flag[2..], value)) {
             problem.set("unknown flag \"{s}\"", .{flag});
             return error.UnknownFlag;
         }

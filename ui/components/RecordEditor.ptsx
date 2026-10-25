@@ -95,8 +95,12 @@ export const state = Publr.reactive({
   values_near: false,
   values_over: false,
   values_text: "",
-  /** The language the translated fields show, by code; empty for the main one. */
+  /** The language the translated fields show, as its pair (`language=pl`); empty for the
+   * main one. */
   language: "",
+  /** The whole combination the fields show (`language=pl,variation=b`): the language with
+   * every other dimension as chosen top right. */
+  chosen: "",
   languages: [] as Array<{ code: string; label: string }>,
   /** What the last refused save said, under each top-level field by its name. */
   problems: {} as Record<string, string>,
@@ -152,12 +156,14 @@ export const form_ref = Publr.ref<HTMLFormElement>((form) => {
   };
 });
 export const root_ref = Publr.ref<HTMLElement>((root) => {
-  state.language = languageOfAddress();
+  state.chosen = chosenOfAddress();
+  state.language = languageIn(state.chosen);
   arrangeLayout(root);
   refreshConditions(root);
   // The visual editor switches the language from its own top bar; the form follows.
   const follow = (event: Event) => {
     state.language = String((event as CustomEvent).detail ?? "");
+    state.chosen = withPair(state.chosen, languageDimension(), state.language);
     refreshConditions(root);
   };
   window.addEventListener("publr:language", follow);
@@ -230,59 +236,84 @@ const conditionValue = (form: HTMLFormElement, name: string): unknown => {
   if (!many && kind === "boolean") return values[0] ?? false;
   return many ? values : values[0];
 };
-/** The language asked for in the address (`?lang=pl`), else the content language chosen
- * top right (`<html data-variant>`), when the site has it. */
-const languageOfAddress = () => {
-  const asked = new URLSearchParams(location.search).get("lang") ?? document.documentElement.dataset.variant ?? "";
-  return state.languages.some((language) => language.code === asked) ? asked : "";
+/** A key's combination as pairs: `language=pl,variation=b`. */
+const pairsOf = (text: string) => text === "" ? [] : text.split(",").map((part) => part.split("="));
+/** Pairs as a key's combination: the main values left out, sorted by dimension. */
+const textOf = (pairs: string[][]) => pairs.filter((pair) => pair[1] !== "")
+  .sort((left, right) => left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0)
+  .map((pair) => pair.join("=")).join(",");
+/** A field path's combination: `name@language=pl` gives `language=pl`; `name` gives none. */
+const combinationOfPath = (path: string) => {
+  const last = path.slice(path.lastIndexOf(".") + 1);
+  const at = last.indexOf("@");
+  return at < 0 ? null : last.slice(at + 1).replace(/\[.*$/, "");
 };
+/** The combination shown, narrowed to the dimensions a field varies by. */
+const shownFor = (dimensions: Set<string>, chosen: string) =>
+  textOf(pairsOf(chosen).filter((pair) => dimensions.has(pair[0])));
+/** `chosen` with `pair` (`language=pl`, or `language=` for its main value) in it. */
+const withPair = (chosen: string, dimension: string, pair: string) =>
+  textOf(pairsOf(chosen).filter((one) => one[0] !== dimension).concat(pair === "" ? [] : [pair.split("=")]));
+/** Each varied field's path and the dimensions its values are kept in. */
+const variedPaths = (root: HTMLElement) => {
+  const paths = new Map<string, Set<string>>();
+  for (const element of root.querySelectorAll<HTMLElement>("[data-field-path]")) {
+    const path = element.dataset.fieldPath ?? "";
+    const combination = combinationOfPath(path);
+    if (combination === null) continue;
+    const base = path.slice(0, path.lastIndexOf("@"));
+    const dimensions = paths.get(base) ?? new Set<string>();
+    for (const pair of pairsOf(combination)) dimensions.add(pair[0]);
+    paths.set(base, dimensions);
+  }
+  return paths;
+};
+/** The dimension the language switch is in: `language`. */
+const languageDimension = () => (state.languages.find((language) => language.code !== "")?.code ?? "").split("=")[0];
+/** The language pair in a combination, when it is one of the switch's. */
+const languageIn = (chosen: string) => {
+  const dimension = languageDimension();
+  const pair = pairsOf(chosen).find((one) => one[0] === dimension);
+  const code = pair ? pair.join("=") : "";
+  return state.languages.some((language) => language.code === code) ? code : "";
+};
+/** The combination asked for in the address (`?in=language=pl`), else the one chosen top
+ * right (`<html data-variant>`). */
+const chosenOfAddress = () =>
+  new URLSearchParams(location.search).get("in") ?? document.documentElement.dataset.variant ?? "";
 
-/** Switching the language the translated fields show: the address keeps it, so a reload,
- * a link or the editor drawn again stays in it. */
+/** Switching the language the translated fields show: the address keeps the combination,
+ * so a reload, a link or the editor drawn again stays in it. */
 export const onLanguage = (event: MouseEvent) => {
   const label = (event.currentTarget as HTMLElement).textContent?.trim() ?? "";
   state.language = state.languages.find((language) => language.label === label)?.code ?? "";
+  state.chosen = withPair(state.chosen, languageDimension(), state.language);
   const address = new URL(location.href);
-  if (state.language === "") address.searchParams.delete("lang");
-  else address.searchParams.set("lang", state.language);
+  if (state.chosen === "") address.searchParams.delete("in");
+  else address.searchParams.set("in", state.chosen);
   history.replaceState(history.state, "", address);
   const root = root_of();
   if (root) refreshConditions(root);
 };
 
-/** A field path's language: `name@pl` is Polish; `name` is none. */
-const languageOfPath = (path: string) => {
-  const last = path.slice(path.lastIndexOf(".") + 1);
-  const at = last.indexOf("@");
-  return at < 0 ? null : last.slice(at + 1).replace(/\[.*$/, "");
-};
-
-/** Whether a field is out of the language shown: another language's value, or the main
- * value of a translated field while another language is shown. Fields shared by every
- * language stay, marked as shared. */
-const outOfLanguage = (element: HTMLElement, translated: Set<string>) => {
+/** Whether a field is out of the combination shown: another combination's value, or the
+ * main value of a varied field while another is shown. Fields no dimension varies stay,
+ * marked as shared. */
+const outOfLanguage = (element: HTMLElement, varied: Map<string, Set<string>>) => {
   const path = element.dataset.fieldPath ?? "";
-  const own = languageOfPath(path);
-  const shared = own === null && !translated.has(path);
+  const own = combinationOfPath(path);
+  const base = own === null ? path : path.slice(0, path.lastIndexOf("@"));
+  const dimensions = varied.get(base);
   const mark = element.querySelector<HTMLElement>(':scope > [data-part="shared-mark"]');
-  if (mark) mark.hidden = !(shared && state.language !== "" && state.languages.length > 1);
-  if (own !== null) return own !== state.language;
-  return !shared && state.language !== "";
-};
-
-const translatedPaths = (root: HTMLElement) => {
-  const paths = new Set<string>();
-  for (const element of root.querySelectorAll<HTMLElement>("[data-field-path]")) {
-    const path = element.dataset.fieldPath ?? "";
-    if (languageOfPath(path) !== null) paths.add(path.slice(0, path.lastIndexOf("@")));
-  }
-  return paths;
+  if (mark) mark.hidden = !(dimensions === undefined && state.chosen !== "" && state.languages.length > 1);
+  if (dimensions === undefined) return false;
+  return (own ?? "") !== shownFor(dimensions, state.chosen);
 };
 
 const refreshConditions = (root: HTMLElement) => {
   const form = root.querySelector<HTMLFormElement>('[data-part="record-form"]');
   if (!form) return;
-  const translated = translatedPaths(root);
+  const translated = variedPaths(root);
   for (const element of root.querySelectorAll<HTMLElement>("[data-conditions]")) {
     const groups = JSON.parse(element.dataset.conditions ?? "[]") as Array<{
       rules: Array<{ field: string; operator: string; value: string }>

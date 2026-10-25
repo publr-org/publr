@@ -2032,36 +2032,66 @@ pub fn variant_codes(session: *Session) Error![]const []const u8 {
     return codes;
 }
 
-/// The declared dimension at each of its values but the main one, for the form.
-fn other_pairs(session: *Session) Error![]const model.dimension.Pair {
+/// Every combination of the site's dimensions but the main one, for the form: each
+/// dimension at its main value or one of its others, at most `combinations_max`.
+fn other_pairs(session: *Session) Error![]const []const model.dimension.Pair {
     std.debug.assert(session.signed_in());
 
-    const setting = variants_module.setting(&session.ctx) orelse return &.{};
-    const codes = try variant_codes(session);
-    const pairs = try session.arena.alloc(model.dimension.Pair, codes.len);
+    const Pair = model.dimension.Pair;
+    var combinations: std.ArrayList([]const Pair) = .empty;
 
-    std.debug.assert(setting.name.len > 0);
+    try combinations.append(session.arena, &.{});
 
-    for (codes, pairs) |code, *pair| {
-        pair.* = .{
-            .dimension = setting.name,
-            .code = code,
-        };
+    for (variants_module.all(&session.ctx)) |dimension| {
+        const values = variants_module.values_of(&session.ctx, dimension) catch continue;
+        var grown: std.ArrayList([]const Pair) = .empty;
+
+        for (combinations.items) |before| {
+            try grown.append(session.arena, before);
+
+            for (values) |value| {
+                if (value.main or grown.items.len >= combinations_max) {
+                    continue;
+                }
+
+                const pair: Pair = .{
+                    .dimension = dimension.name,
+                    .code = value.code,
+                };
+
+                try grown.append(session.arena, try std.mem.concat(session.arena, Pair, &.{
+                    before,
+                    &.{pair},
+                }));
+            }
+        }
+
+        combinations = grown;
     }
 
-    return pairs;
+    std.debug.assert(combinations.items.len >= 1);
+
+    return combinations.items[1..];
 }
+
+/// The most combinations a record's form draws a field for.
+const combinations_max: u32 = 256;
 
 /// The site's languages for the editor's switch, the main one first under an empty code.
 pub fn languages_of(comptime Item: type, session: *Session) Error![]const Item {
     std.debug.assert(session.signed_in());
 
+    const dimension = variants_module.setting(&session.ctx) orelse return &.{};
     const listed = variants_module.listed(&session.ctx) catch return &.{};
     const items = try session.arena.alloc(Item, listed.len);
 
+    // Each as the part of a key it is: `language=pl`; the main one empty.
     for (listed, items) |variant, *item| {
         item.* = .{
-            .code = if (variant.main) "" else variant.code,
+            .code = if (variant.main)
+                ""
+            else
+                try std.fmt.allocPrint(session.arena, "{s}={s}", .{ dimension.name, variant.code }),
             .label = variant.label,
         };
     }

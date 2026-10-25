@@ -55,15 +55,7 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
         field.sortable = if (wanted == usual) null else wanted;
     }
 
-    // Turned on and off only where the form offers it, for the dimension it names: a site
-    // with one language keeps what the field had.
-    const offered = form.text("variants_offered") orelse "";
-
-    if (model.dimension.valid_name(offered)) {
-        const on = !model.field.is_layout(field.kind) and form.get("variants") != null;
-
-        field.dimensions = if (on) try arena.dupe([]const u8, &.{offered}) else &.{};
-    }
+    field.dimensions = try dimensions_of(arena, form, field);
 
     field.help = form.text("help") orelse "";
 
@@ -94,6 +86,56 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
 
 /// The default as the text its control posts: a switch posts nothing when off; a date
 /// and time field may take the moment of creation instead.
+/// The dimensions the field varies by: each the form offers a switch for
+/// (`dimension_offered.<name>`) as ticked (`dimension.<name>`); each it does not offer as the
+/// field had it, so a site with one value in a dimension keeps what was there.
+fn dimensions_of(
+    arena: std.mem.Allocator,
+    form: *const Form,
+    field: FieldDef,
+) Error![]const []const u8 {
+    std.debug.assert(form.len <= admin.form_pairs_max);
+    std.debug.assert(field.dimensions.len <= model.dimension.dimensions_max + 1);
+
+    const prefix = "dimension_offered.";
+    var out: std.ArrayList([]const u8) = .empty;
+    var offered: std.ArrayList([]const u8) = .empty;
+
+    for (form.pairs[0..form.len]) |pair| {
+        if (!std.mem.startsWith(u8, pair.name, prefix)) {
+            continue;
+        }
+
+        const name = pair.name[prefix.len..];
+        const key = try std.mem.concat(arena, u8, &.{ "dimension.", name });
+
+        if (!model.dimension.valid_name(name) or offered.items.len == 4) {
+            continue;
+        }
+
+        try offered.append(arena, name);
+
+        if (!model.field.is_layout(field.kind) and form.get(key) != null) {
+            try out.append(arena, name);
+        }
+    }
+
+    for (field.dimensions) |kept| {
+        const shown = for (offered.items) |name| {
+            if (std.mem.eql(u8, name, kept)) {
+                break true;
+            }
+        } else false;
+        const every = std.mem.eql(u8, kept, model.dimension.every);
+
+        if (!shown and !(every and offered.items.len > 0)) {
+            try out.append(arena, kept);
+        }
+    }
+
+    return out.items;
+}
+
 fn default_of(kind: Kind, form: *const Form) []const u8 {
     std.debug.assert(kind.default_allowed);
     std.debug.assert(form.len <= admin.form_pairs_max);

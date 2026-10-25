@@ -21,12 +21,8 @@ export type FieldSettingsProps = {
   /** Lists can order by fields of the kind; whether this one is offered. */
   can_sort: boolean;
   sortable: boolean;
-  can_translate?: boolean;
-  translates?: boolean;
-  translate_label?: string;
-  /** The dimension the switch puts the field in: `language`. */
-  dimension?: string;
-  translate_help?: string;
+  /** A switch per dimension the field may vary by, in its own words. */
+  dimensions?: Array<{ name: string; label: string; help: string; on: boolean }>;
   has_target: boolean;
   targets: Array<{
     value: string;
@@ -56,11 +52,7 @@ export function FieldSettings({
   filterable,
   can_sort,
   sortable,
-  can_translate = false,
-  translates = false,
-  translate_label = "",
-  dimension = "",
-  translate_help = "",
+  dimensions = [],
   has_target,
   targets,
   has_taxonomy,
@@ -88,18 +80,18 @@ export function FieldSettings({
             />
           </div>
         )}
-        {can_translate && (
-          <div>
-            <input type="hidden" name="variants_offered" value={dimension} />
+        {dimensions.map((dimension) => (
+          <div key={dimension.name}>
+            <input type="hidden" name={"dimension_offered." + dimension.name} value="1" />
             <CheckboxField
-              id="variants"
-              name="variants"
-              checked={translates}
-              label={translate_label}
-              description={translate_help}
+              id={"dimension." + dimension.name}
+              name={"dimension." + dimension.name}
+              checked={dimension.on}
+              label={dimension.label}
+              description={dimension.help}
             />
           </div>
-        )}
+        ))}
         {can_search && (
           <CheckboxField
             id="searchable"

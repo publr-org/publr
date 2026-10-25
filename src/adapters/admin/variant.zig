@@ -1,79 +1,92 @@
-//! The content language in the admin (generally, the variant): the person's own choice,
-//! drawn top right where the plugin declaring variants names the picker; what lists, the
-//! editor and the visual editor open in.
+//! What content shows in, in the admin: the person's own choice in each dimension (the
+//! content language, an A/B test's variation), each drawn top right where its plugin names
+//! a picker; what lists, the editor and the visual editor open in.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const variant_operations = @import("../../operations/user/variant.zig");
-const variants = @import("../../operations/variants.zig");
+const model_dimension = @import("../../model/dimension.zig");
 
 const Session = admin.Session;
 const Node = admin.render.Node;
+const Pair = model_dimension.Pair;
 
-/// The code content shows in for this person; empty for the main variant, and while the
-/// site has no variants.
+/// The combination content shows in for this person, as a key's suffix
+/// (`language=pl,variation=b`): `<html data-variant>`, read by the editors. Empty for the
+/// main values, and while the site has no dimension.
 pub fn chosen(session: *Session) []const u8 {
     std.debug.assert(session.signed_in());
 
-    const read = registry.SDK.dispatch(&session.ctx, variant_operations.Variant, .{}) catch {
-        return "";
-    };
+    const pairs = chosen_pairs(session);
+    const key = model_dimension.key_of(session.arena, "_", pairs) catch return "";
 
-    return read.chosen;
+    std.debug.assert(key.len >= 1);
+
+    return if (key.len > 2) key[2..] else "";
 }
 
-/// The switcher, where the site has two variants or more and the dimension names a picker.
-pub fn switcher(session: *Session) ?Node {
+/// The same choice as the combination a read asks for.
+pub fn chosen_pairs(session: *Session) []const Pair {
     std.debug.assert(session.signed_in());
 
-    const dimension = variants.setting(&session.ctx) orelse return null;
-
-    if (dimension.picker.len == 0) {
-        return null;
-    }
-
-    const read = registry.SDK.dispatch(&session.ctx, variant_operations.Variant, .{}) catch {
-        return null;
-    };
-
-    if (read.variants.len < 2) {
-        return null;
-    }
-
-    return drawn(session, dimension.picker, read) catch null;
+    return variant_operations.chosen_pairs(&session.ctx) catch &.{};
 }
 
-fn drawn(session: *Session, picker: []const u8, read: variant_operations.Variant.Out) !Node {
-    std.debug.assert(read.variants.len >= 2);
+/// A switcher for each dimension with two values or more whose plugin names a picker.
+pub fn switchers(session: *Session, out: []Node) u32 {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(out.len > 0);
+
+    const read = registry.SDK.dispatch(&session.ctx, variant_operations.Variant, .{}) catch {
+        return 0;
+    };
+    var count: u32 = 0;
+
+    for (read.dimensions) |one| {
+        if (count == out.len or one.picker.len == 0 or one.values.len < 2) {
+            continue;
+        }
+
+        out[count] = drawn(session, one) catch continue;
+        count += 1;
+    }
+
+    return count;
+}
+
+fn drawn(session: *Session, one: variant_operations.Chosen) !Node {
+    std.debug.assert(one.values.len >= 2);
+    std.debug.assert(one.dimension.len > 0);
 
     const Choice = admin.views.VariantSwitcher.ChoicesItem;
-    const choices = try session.arena.alloc(Choice, read.variants.len);
-    var current: []const u8 = read.variants[0].label;
+    const choices = try session.arena.alloc(Choice, one.values.len);
+    var current: []const u8 = one.values[0].label;
 
-    for (read.variants, choices) |variant, *choice| {
-        const code = if (variant.main) "" else variant.code;
-        const picked = std.mem.eql(u8, code, read.chosen);
+    for (one.values, choices) |value, *choice| {
+        const code = if (value.main) "" else value.code;
+        const picked = std.mem.eql(u8, code, one.chosen);
 
         if (picked) {
-            current = variant.label;
+            current = value.label;
         }
 
         choice.* = .{
             .code = code,
-            .label = variant.label,
+            .label = value.label,
             .current = picked,
         };
     }
 
     return admin.render.view(session.arena, admin.views.VariantSwitcher, .{
-        .title = try session.declared(picker),
+        .dimension = one.dimension,
+        .title = try session.declared(one.picker),
         .current = current,
         .choices = choices,
         .back = session.request.path(),
     });
 }
 
-/// `POST /admin/variant`: the person's choice, then back where they were.
+/// `POST /admin/variant`: the person's choice in a dimension, then back where they were.
 pub fn choose(
     request: *admin.Request,
     response: *admin.Response,
@@ -88,6 +101,7 @@ pub fn choose(
     const local = back.len > 0 and back[0] == '/' and !std.mem.startsWith(u8, back, "//");
 
     _ = registry.SDK.dispatch(&session.ctx, variant_operations.SetVariant, .{
+        .dimension = post.form.text("dimension") orelse "",
         .variant = post.form.text("variant") orelse "",
     }) catch |err| return admin.fail(session, err, "/admin");
 

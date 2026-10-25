@@ -91,7 +91,7 @@ fn path_in(
     var sdk_ctx = ctx.sdk_context();
     const got = registry.SDK.dispatch(&sdk_ctx, record_operations.Get, .{
         .id = record,
-        .variant = variant,
+        .dimensions = variants.asked_in(&sdk_ctx, variant),
     }) catch return null;
     const slug = got.record.slug orelse return null;
 

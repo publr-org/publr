@@ -3,6 +3,7 @@
 //! records of public types. Every read is written down in `Deps` when a build asks for it.
 
 const std = @import("std");
+const variants_module = @import("../../operations/variants.zig");
 const jit = @import("publr_jit");
 const template_render = @import("../../template/render.zig");
 const sdk = @import("../../sdk.zig");
@@ -1242,6 +1243,10 @@ pub const Context = struct {
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;
         sdk_ctx.variant = ctx.place.variant;
+        sdk_ctx.dimensions = if (ctx.place.variant.len > 0)
+            variants_module.asked_in(&sdk_ctx, ctx.place.variant).pairs
+        else
+            &.{};
 
         if (ctx.deps) |deps| {
             sdk_ctx.reads = deps.reads();

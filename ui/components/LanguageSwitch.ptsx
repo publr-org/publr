@@ -11,7 +11,7 @@ export const state = Publr.reactive({
   languages: [] as Array<{ code: string; label: string }>,
 });
 
-/** A field path's language: `bio@pl` is Polish; `bio` is none. */
+/** A field path's language, as its pair: `bio@language=pl` is Polish; `bio` is none. */
 const languageOfPath = (path: string) => {
   const last = path.slice(path.lastIndexOf(".") + 1);
   const at = last.indexOf("@");
@@ -38,8 +38,9 @@ const apply = (form: HTMLElement) => {
 /** On the page's first draw, the content language chosen top right (`<html data-variant>`),
  * when the site has it; else the main language. */
 export const switch_ref = Publr.ref<HTMLElement>((element) => {
-  const chosen = document.documentElement.dataset.variant ?? "";
-  state.language = state.languages.some((language) => language.code === chosen) ? chosen : "";
+  // The combination chosen top right (`language=pl,variation=b`): its language part.
+  const chosen = (document.documentElement.dataset.variant ?? "").split(",");
+  state.language = state.languages.find((language) => language.code !== "" && chosen.includes(language.code))?.code ?? "";
   const form = element.closest<HTMLElement>("form");
   if (form) apply(form);
 });

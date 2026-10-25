@@ -1,4 +1,5 @@
 const std = @import("std");
+const variants_module = @import("../../operations/variants.zig");
 const report_module = @import("../../lib/report.zig");
 const registry = @import("../../server/registry.zig");
 const identity_module = @import("../rest/identity.zig");
@@ -181,7 +182,10 @@ pub fn record_pages(
             var sdk_ctx = identity_module.context(project, arena, .anonymous);
             const got = registry.SDK.dispatch(&sdk_ctx, record_operations.Get, .{
                 .id = key[prefix.len..],
-                .variant = if (place.variant.len > 0) place.variant else null,
+                .dimensions = if (place.variant.len > 0)
+                    variants_module.asked_in(&sdk_ctx, place.variant)
+                else
+                    .{},
             }) catch continue;
             const slug = got.record.slug orelse continue;
 

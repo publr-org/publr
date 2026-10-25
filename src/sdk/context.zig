@@ -256,9 +256,13 @@ pub const Ctx = struct {
     /// edit copy (pending changes, else the record as saved), drafts included, never the
     /// trash, so the site reads as it will once everything edited is published.
     preview: bool = false,
-    /// The variant a page for a visitor or a preview reads documents in (a language code, set
-    /// from the address by the plugin that declares the dimension); empty: the main values.
+    /// The language a page for a visitor or a preview is in (the code of the dimension with
+    /// pages of its own, set from the address); empty: the main one.
     variant: []const u8 = "",
+    /// The combination a page for a visitor or a preview reads documents in, highest
+    /// priority first: the addressed dimension's code from the address, the others as the
+    /// request chose them. Empty: the main values.
+    dimensions: []const @import("../model/dimension.zig").Pair = &.{},
     /// The app a request came through (`app.zon`'s `.name`), empty for the admin, the CLI and
     /// the API: a document created on the way belongs to it.
     app: []const u8 = "",

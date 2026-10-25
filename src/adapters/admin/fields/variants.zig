@@ -12,8 +12,8 @@ const Value = std.json.Value;
 
 pub const Error = error{OutOfMemory};
 
-/// `fields` with each varied field's values after it, for `others` (the dimension at each of
-/// its other values).
+/// `fields` with each varied field's values after it, one per combination in `others` (the
+/// site's combinations other than the main one) that the field varies by every part of.
 /// A group or repeater that is not varied as a whole has its varied fields expanded inside;
 /// one varied as a whole is a structure of its own per variant, inside which nothing more
 /// varies. `document` gives each variant its placeholder (the main value), at the top level
@@ -21,7 +21,7 @@ pub const Error = error{OutOfMemory};
 pub fn expanded(
     arena: std.mem.Allocator,
     fields: []const Def,
-    others: []const Pair,
+    others: []const []const Pair,
     document: ?Value,
 ) Error![]const Def {
     std.debug.assert(fields.len <= model.field.fields_max);
@@ -37,8 +37,7 @@ pub fn expanded(
         const current = if (document) |doc| object_get(doc, def.name) else null;
         var own = def;
 
-        const varied = others.len > 0 and
-            model.dimension.varies_by(def.dimensions, others[0].dimension);
+        const varied = others.len > 0 and def.dimensions.len > 0;
 
         if (model.field.is_container(def.kind) and !varied) {
             const inner = if (model.field.is_group(def.kind)) current else null;
@@ -53,20 +52,35 @@ pub fn expanded(
         }
 
         for (others) |other| {
-            try out.append(arena, try clone_of(arena, def, other, current));
+            if (covers(def.dimensions, other)) {
+                try out.append(arena, try clone_of(arena, def, other, current));
+            }
         }
     }
 
     return out.items;
 }
 
-fn clone_of(arena: std.mem.Allocator, def: Def, other: Pair, main: ?Value) Error!Def {
+/// Whether a field varying by `dimensions` holds a value in `combination`.
+fn covers(dimensions: []const []const u8, combination: []const Pair) bool {
+    std.debug.assert(combination.len > 0);
+
+    for (combination) |pair| {
+        if (!model.dimension.varies_by(dimensions, pair.dimension)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+fn clone_of(arena: std.mem.Allocator, def: Def, other: []const Pair, main: ?Value) Error!Def {
     std.debug.assert(def.dimensions.len > 0);
-    std.debug.assert(other.code.len > 0);
+    std.debug.assert(other.len > 0);
 
     var clone = def;
 
-    clone.name = try model.dimension.key_of(arena, def.name, &.{other});
+    clone.name = try model.dimension.key_of(arena, def.name, other);
     clone.validation.required = false;
     clone.validation.unique = false;
     clone.locked = false;
@@ -128,16 +142,19 @@ test "a varied field is followed by its variants; a group's varied fields inside
         },
     };
     const document = try std.json.parseFromSliceLeaky(Value, arena, "{\"name\":\"Mug\"}", .{});
-    const others = [_]Pair{
-        .{
-            .dimension = "language",
-            .code = "pl",
-        },
-        .{
-            .dimension = "language",
-            .code = "de",
-        },
-    };
+    const polish = [_]Pair{.{
+        .dimension = "language",
+        .code = "pl",
+    }};
+    const german = [_]Pair{.{
+        .dimension = "language",
+        .code = "de",
+    }};
+    const tested = [_]Pair{.{
+        .dimension = "variation",
+        .code = "b",
+    }};
+    const others = [_][]const Pair{ &polish, &german, &tested };
     const out = try expanded(arena, &fields, &others, document);
 
     try std.testing.expectEqual(@as(usize, 5), out.len);

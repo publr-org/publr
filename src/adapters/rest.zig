@@ -184,7 +184,9 @@ fn parse_body(comptime In: type, arena: std.mem.Allocator, body: []const u8) ?In
         return null;
     }
 
-    const text: []const u8 = if (body.len == 0) "{}" else body;
+    const given: []const u8 = if (body.len == 0) "{}" else body;
+    // A key per dimension beside the operation's own (`"language": "pl"`) is a read in it.
+    const text = sdk.dimension_input.lift(In, arena, given) catch return null;
     const options: std.json.ParseOptions = .{
         .allocate = .alloc_always,
         .ignore_unknown_fields = false,

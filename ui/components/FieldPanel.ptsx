@@ -73,12 +73,8 @@ export type FieldPanelProps = {
   sortable: boolean;
   /** The site has a second language (or another variant): the field may hold a value in
    * each. The setting's words are the plugin's: `Translate`. */
-  can_translate?: boolean;
-  translates?: boolean;
-  translate_label?: string;
-  /** The dimension the Translate switch puts the field in. */
-  dimension?: string;
-  translate_help?: string;
+  /** A switch per dimension the field may vary by, in its own words (`Translate`). */
+  dimensions?: Array<{ name: string; label: string; help: string; on: boolean }>;
   /** A top-level text field may be the record's title, the name it goes by in lists. */
   can_title: boolean;
   is_title: boolean;
@@ -150,11 +146,7 @@ export function FieldPanel({
   filterable,
   can_sort,
   sortable,
-  can_translate = false,
-  translates = false,
-  translate_label = "",
-  dimension = "",
-  translate_help = "",
+  dimensions = [],
   can_title,
   is_title,
   has_target,
@@ -219,13 +211,9 @@ export function FieldPanel({
             is_new={is_new}
           />
           {can_be_many && <FieldMultiplicity many={many} is_new={is_new} />}
-          {(can_title || can_search || can_filter || can_sort || can_translate || has_target || has_taxonomy || has_source || has_choices) && (
+          {(can_title || can_search || can_filter || can_sort || dimensions.length > 0 || has_target || has_taxonomy || has_source || has_choices) && (
             <FieldSettings
-              can_translate={can_translate}
-              translates={translates}
-              translate_label={translate_label}
-              dimension={dimension}
-              translate_help={translate_help}
+              dimensions={dimensions}
               can_title={can_title}
               can_be_many={can_be_many}
               is_title={is_title}
