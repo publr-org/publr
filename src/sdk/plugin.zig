@@ -768,7 +768,7 @@ pub fn Merged(comptime plugins: anytype) type {
                 }
 
                 if (dimension_list.len == @import("../model/dimension.zig").dimensions_max) {
-                    @compileError("more than 4 dimensions on one site");
+                    @compileError("more than 64 dimensions on one site");
                 }
 
                 var resolved = declared;

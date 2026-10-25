@@ -12,22 +12,33 @@ const Value = std.json.Value;
 
 pub const Error = error{OutOfMemory};
 
-/// `fields` with each varied field's values after it, one per combination in `others` (the
-/// site's combinations other than the main one) that the field varies by every part of.
-/// A group or repeater that is not varied as a whole has its varied fields expanded inside;
+/// A dimension of the site's as the form needs it: its name and its codes other than the
+/// main one, highest priority first.
+pub const SiteDimension = struct {
+    name: []const u8,
+    codes: []const []const u8,
+};
+
+/// The most combinations one field's form draws.
+pub const combinations_max: u32 = 256;
+
+/// `fields` with each varied field's values after it: one per combination of the dimensions
+/// that field varies by (each at its main value or one of its codes, at most
+/// `key_pairs_max` named), so a site with many dimensions costs a field only its own. A
+/// group or repeater that is not varied as a whole has its varied fields expanded inside;
 /// one varied as a whole is a structure of its own per combination, inside which nothing
 /// more varies. `document` gives each combination its placeholder (its fallback's value), at
 /// the top level and in groups.
 pub fn expanded(
     arena: std.mem.Allocator,
     fields: []const Def,
-    others: []const []const Pair,
+    site: []const SiteDimension,
     document: ?Value,
 ) Error![]const Def {
     std.debug.assert(fields.len <= model.field.fields_max);
-    std.debug.assert(others.len <= 64);
+    std.debug.assert(site.len <= model.dimension.dimensions_max);
 
-    if (others.len == 0) {
+    if (site.len == 0) {
         return fields;
     }
 
@@ -37,12 +48,12 @@ pub fn expanded(
         const current = if (document) |doc| object_get(doc, def.name) else null;
         var own = def;
 
-        const varied = others.len > 0 and def.dimensions.len > 0;
+        const varied = def.dimensions.len > 0;
 
         if (model.field.is_container(def.kind) and !varied) {
             const inner = if (model.field.is_group(def.kind)) current else null;
 
-            own.fields = try expanded(arena, def.fields, others, inner);
+            own.fields = try expanded(arena, def.fields, site, inner);
         }
 
         try out.append(arena, own);
@@ -51,29 +62,62 @@ pub fn expanded(
             continue;
         }
 
-        for (others) |other| {
-            if (covers(def.dimensions, other)) {
-                const shown = if (document) |doc| fallback_of(def, doc, other) else null;
+        for (try combinations_of(arena, def, site)) |other| {
+            const shown = if (document) |doc| fallback_of(def, doc, other) else null;
 
-                try out.append(arena, try clone_of(arena, def, other, shown));
-            }
+            try out.append(arena, try clone_of(arena, def, other, shown));
         }
     }
 
     return out.items;
 }
 
-/// Whether a field varying by `dimensions` holds a value in `combination`.
-fn covers(dimensions: []const []const u8, combination: []const Pair) bool {
-    std.debug.assert(combination.len > 0);
+/// Every combination of the dimensions `def` varies by, but the main one, highest priority
+/// first within each.
+fn combinations_of(
+    arena: std.mem.Allocator,
+    def: Def,
+    site: []const SiteDimension,
+) Error![]const []const Pair {
+    std.debug.assert(def.dimensions.len > 0);
+    std.debug.assert(site.len <= model.dimension.dimensions_max);
 
-    for (combination) |pair| {
-        if (!model.dimension.varies_by(dimensions, pair.dimension)) {
-            return false;
+    var found: std.ArrayList([]const Pair) = .empty;
+
+    try found.append(arena, &.{});
+
+    for (site) |dimension| {
+        if (!model.dimension.varies_by(def.dimensions, dimension.name)) {
+            continue;
         }
+
+        var grown: std.ArrayList([]const Pair) = .empty;
+
+        for (found.items) |before| {
+            try grown.append(arena, before);
+
+            if (before.len == model.dimension.key_pairs_max) {
+                continue;
+            }
+
+            for (dimension.codes) |code| {
+                if (grown.items.len >= combinations_max) {
+                    break;
+                }
+
+                try grown.append(arena, try std.mem.concat(arena, Pair, &.{ before, &.{.{
+                    .dimension = dimension.name,
+                    .code = code,
+                }} }));
+            }
+        }
+
+        found = grown;
     }
 
-    return true;
+    std.debug.assert(found.items.len >= 1);
+
+    return found.items[1..];
 }
 
 fn clone_of(arena: std.mem.Allocator, def: Def, other: []const Pair, main: ?Value) Error!Def {
@@ -99,8 +143,8 @@ fn clone_of(arena: std.mem.Allocator, def: Def, other: []const Pair, main: ?Valu
     return clone;
 }
 
-/// What a read in `other` shows when the field holds nothing there: the next value along
-/// its fallback, the combination's own key passed over.
+/// What a read in `other` shows when the field holds nothing there: the best value it holds
+/// for that combination, the combination's own key passed over.
 fn fallback_of(def: Def, document: Value, other: []const Pair) ?Value {
     std.debug.assert(other.len > 0);
     std.debug.assert(def.name.len > 0);
@@ -110,20 +154,11 @@ fn fallback_of(def: Def, document: Value, other: []const Pair) ?Value {
     }
 
     const resolve = model.dimension.resolve;
-    var fallback: resolve.Fallback = .of(def.name, def.dimensions, other);
+    const ranking: resolve.Ranking = .of(other);
     var buffer: [512]u8 = undefined;
+    const own = model.dimension.key_into(&buffer, def.name, other) orelse return null;
 
-    _ = fallback.next(&buffer);
-
-    while (fallback.next(&buffer)) |key| {
-        if (document.object.get(key)) |value| {
-            if (value != .null) {
-                return value;
-            }
-        }
-    }
-
-    return null;
+    return resolve.best(&def, document.object, &ranking, own);
 }
 
 fn object_get(value: Value, name: []const u8) ?Value {
@@ -171,20 +206,17 @@ test "a varied field is followed by its combinations; a group's varied fields in
         },
     };
     const document = try std.json.parseFromSliceLeaky(Value, arena, "{\"name\":\"Mug\"}", .{});
-    const polish = [_]Pair{.{
-        .dimension = "language",
-        .code = "pl",
-    }};
-    const german = [_]Pair{.{
-        .dimension = "language",
-        .code = "de",
-    }};
-    const tested = [_]Pair{.{
-        .dimension = "variation",
-        .code = "b",
-    }};
-    const others = [_][]const Pair{ &polish, &german, &tested };
-    const out = try expanded(arena, &fields, &others, document);
+    const site = [_]SiteDimension{
+        .{
+            .name = "language",
+            .codes = &.{ "pl", "de" },
+        },
+        .{
+            .name = "variation",
+            .codes = &.{"b"},
+        },
+    };
+    const out = try expanded(arena, &fields, &site, document);
 
     try std.testing.expectEqual(@as(usize, 5), out.len);
     try std.testing.expectEqualStrings("name@language=pl", out[1].name);

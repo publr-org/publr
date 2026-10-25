@@ -496,12 +496,14 @@ const variation = publr.dimension.define(.{
   (`code`, `label`, `address`, `main`), the main one first.
 - `.priority`: a read with no value in a combination drops the lowest priority dimension
   first. The languages plugin's `language` is 100.
-- `.addresses = true`: the values have pages of their own under their `address` (`/pl`),
-  and the admin's top bar offers the dimension. At most one on a site.
+- `.addresses = true`: the values have pages of their own under their `address` (`/pl`).
+  At most one on a site.
 - `.untranslated` names the type setting for records with no value in it.
 
-Up to four dimensions on a site, from different plugins, combine: a field varying by
-`language` and `variation` holds a value for each pair.
+Up to 64 dimensions on a site, from different plugins, combine: a field varying by
+`language` and `variation` holds a value for each pair, one value naming at most four of
+them. A read looks only at the values a field holds, so many dimensions cost a field no
+more than its own.
 
 ## Hooks and events
 

@@ -1121,7 +1121,7 @@ dimensions), whether its values have pages of their own (`addresses`, at most on
 dimension on a site), the words of the type setting for records with no value in it
 (`untranslated`), and a read of its own answering `values`, each
 `{ code, label, address, main }` in order, the main one first. Several plugins may declare
-one each, up to four on a site, and they combine. The core draws the switches, stores and
+one each, up to 64 on a site, and they combine (one value names at most four). The core draws the switches, stores and
 reads the values (see [Content](content.md#languages-and-other-dimensions)), offers a
 picker per dimension in its editors, takes each as a flag of its own (`--language pl`) and
 serves an addressed dimension's pages under its addresses. The languages plugin declares

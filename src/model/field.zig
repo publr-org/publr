@@ -505,7 +505,7 @@ fn validate_dimensions(def: Def, problems: *Problems) void {
     const names = def.dimensions;
 
     if (names.len > dimension.dimensions_max) {
-        problems.add(def.name, "at most 4 dimensions");
+        problems.add(def.name, "at most 64 dimensions");
 
         return;
     }

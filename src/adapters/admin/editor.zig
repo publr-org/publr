@@ -2013,9 +2013,9 @@ pub fn varied(
     std.debug.assert(session.signed_in());
     std.debug.assert(defs.len <= model.field.fields_max);
 
-    const others = try other_pairs(session);
+    const site = try site_dimensions_of(session);
 
-    return fields.dimensions.expanded(session.arena, defs, others, options.document);
+    return fields.dimensions.expanded(session.arena, defs, site, options.document);
 }
 
 /// The codes of the addressed dimension (a language) other than its main one; none on a
@@ -2033,50 +2033,33 @@ pub fn other_codes(session: *Session) Error![]const []const u8 {
     return codes;
 }
 
-/// Every combination of the site's dimensions but the main one, for the form: each
-/// dimension at its main value or one of its others, at most `combinations_max`.
-fn other_pairs(session: *Session) Error![]const []const model.dimension.Pair {
+/// The site's dimensions with their codes other than the main one, highest priority first:
+/// what the form makes each varied field's combinations of.
+fn site_dimensions_of(session: *Session) Error![]const fields.dimensions.SiteDimension {
     std.debug.assert(session.signed_in());
 
-    const Pair = model.dimension.Pair;
-    var combinations: std.ArrayList([]const Pair) = .empty;
-
-    try combinations.append(session.arena, &.{});
+    var out: std.ArrayList(fields.dimensions.SiteDimension) = .empty;
 
     for (site_dimensions.all(&session.ctx)) |dimension| {
         const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
-        var grown: std.ArrayList([]const Pair) = .empty;
+        var codes: std.ArrayList([]const u8) = .empty;
 
-        for (combinations.items) |before| {
-            try grown.append(session.arena, before);
-
-            for (values) |value| {
-                if (value.main or grown.items.len >= combinations_max) {
-                    continue;
-                }
-
-                const pair: Pair = .{
-                    .dimension = dimension.name,
-                    .code = value.code,
-                };
-
-                try grown.append(session.arena, try std.mem.concat(session.arena, Pair, &.{
-                    before,
-                    &.{pair},
-                }));
+        for (values) |value| {
+            if (!value.main) {
+                try codes.append(session.arena, value.code);
             }
         }
 
-        combinations = grown;
+        if (codes.items.len > 0) {
+            try out.append(session.arena, .{
+                .name = dimension.name,
+                .codes = codes.items,
+            });
+        }
     }
 
-    std.debug.assert(combinations.items.len >= 1);
-
-    return combinations.items[1..];
+    return out.items;
 }
-
-/// The most combinations a record's form draws a field for.
-const combinations_max: u32 = 256;
 
 /// The editor's pickers: each dimension with more than one value, in its picker's word (its
 /// label when it names none), its values the main one first under an empty code.

@@ -11,14 +11,17 @@ pub const resolve = @import("dimension/resolve.zig");
 
 pub const code_len_max: u32 = 16;
 pub const name_len_max: u32 = 32;
-/// The dimensions one site has, and so one combination names at most.
-pub const dimensions_max: u32 = 4;
+/// The dimensions one site has at most: a language and many A/B tests.
+pub const dimensions_max: u32 = 64;
+/// The dimensions one value names at most (`title@language=pl,hero=b`): a value is rarely in
+/// more than a language and a test or two, and this keeps keys short.
+pub const key_pairs_max: u32 = 4;
 /// The codes one dimension falls back through: the code, each shorter prefix, its main.
 pub const order_max: u32 = 5;
 pub const separator: u8 = '@';
 /// A field that varies by every dimension the site has, whichever they are.
 pub const every = "*";
-const combination_len_max: u32 = dimensions_max * (name_len_max + code_len_max + 2);
+const combination_len_max: u32 = key_pairs_max * (name_len_max + code_len_max + 2);
 
 /// The type setting for records with no value in a combination: shown in the main values
 /// (`keep`), or left out of it (`omit`). Unnamed: the setting is not offered.
@@ -53,13 +56,13 @@ pub const Pair = struct {
     code: []const u8,
 };
 
-/// The dimensions a key names, at most `dimensions_max`, sorted by name.
+/// The dimensions a key names, at most `key_pairs_max`, sorted by name.
 pub const Combination = struct {
-    pairs: [dimensions_max]Pair = undefined,
+    pairs: [key_pairs_max]Pair = undefined,
     len: u32 = 0,
 
     pub fn slice(combination: *const Combination) []const Pair {
-        std.debug.assert(combination.len <= dimensions_max);
+        std.debug.assert(combination.len <= key_pairs_max);
 
         return combination.pairs[0..combination.len];
     }
@@ -163,7 +166,7 @@ pub fn parse(text: []const u8) ?Combination {
             .code = part[equals + 1 ..],
         };
 
-        if (combination.len == dimensions_max or !valid_name(pair.dimension)) {
+        if (combination.len == key_pairs_max or !valid_name(pair.dimension)) {
             return null;
         }
 
@@ -230,17 +233,22 @@ pub fn key_of(
     return arena.dupe(u8, key);
 }
 
-/// `key_of` written into `buffer`; null when it does not fit.
+/// `key_of` written into `buffer`; null when it does not fit, or names more than
+/// `key_pairs_max` dimensions.
 pub fn key_into(buffer: []u8, name: []const u8, pairs: []const Pair) ?[]const u8 {
     std.debug.assert(name.len > 0);
     std.debug.assert(pairs.len <= dimensions_max);
 
-    var sorted: [dimensions_max]Pair = undefined;
+    var sorted: [key_pairs_max]Pair = undefined;
     var len: u32 = 0;
 
     for (pairs) |pair| {
         if (pair.code.len == 0) {
             continue;
+        }
+
+        if (len == key_pairs_max) {
+            return null;
         }
 
         var at = len;

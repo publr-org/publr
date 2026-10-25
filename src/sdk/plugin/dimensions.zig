@@ -92,7 +92,7 @@ pub fn of(comptime Plugin: type) []const Dimension {
         var resolved: []const Dimension = &.{};
 
         if (given.len > model_dimension.dimensions_max) {
-            @compileError("plugin " ++ name ++ ": at most 4 dimensions");
+            @compileError("plugin " ++ name ++ ": at most 64 dimensions");
         }
 
         for (given) |declared| {
