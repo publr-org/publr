@@ -96,11 +96,14 @@ pub const FieldMarkers = struct {
     record: @import("std").json.Value = .null,
     markers: []const Marker = &.{},
 };
-/// A marker beside a field's label: `Translated`, `2 of 3 languages`, `Varies in B`.
+/// A marker beside a field's label: `PL`, `Hero test • Variant B`. One naming a
+/// `dimension` is a link: clicking it shows the field at `code` there (empty: its main).
 pub const Marker = struct {
     label: []const u8,
     /// `outline` (the default), `neutral` or `success`.
     tone: []const u8 = "outline",
+    dimension: []const u8 = "",
+    code: []const u8 = "",
 };
 /// What a plugin calls when the data its modifier of a name answers from changed:
 /// `ctx.call(publr.mod_changed, .{ .name = "money.currencies" })` builds again the pages

@@ -1,18 +1,22 @@
 import { Badge } from "@publr/ui/Badge.ptsx";
-import { state as editor } from "../RecordEditor.ptsx";
+import { state as editor, onDimension } from "../RecordEditor.ptsx";
 
 export type FieldMarkersProps = {
   /** The field's name; a combination's copy (`headline@language=pl`) shows its field's. */
   name: string;
 };
 
-/** The markers plugins put beside a field's label (`Translated`, `Varies in B`), as the
- * editor last asked for them: they follow the values as they change. */
+/** The markers plugins put beside a field's label (`PL`, `Hero test • Variant B`), as the
+ * editor last asked for them: they follow the values as they change. One that names a
+ * dimension shows the field there when clicked. */
 export function FieldMarkers({ name }: FieldMarkersProps) {
   return (
     <span class="flex flex-wrap items-center gap-1" data-part="field-markers">
       {editor.markers.filter((marker) => marker.field === name.split("@")[0]).map((marker) => (
-        <Badge tone={marker.tone === "success" ? "success" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
+        <button type="button" class="cursor-pointer disabled:cursor-default" disabled={marker.dimension === ""}
+          data-dimension={marker.dimension} data-code={marker.code} onClick={onDimension}>
+          <Badge tone={marker.tone === "success" ? "success" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
+        </button>
       ))}
     </span>
   );

@@ -19,6 +19,9 @@ pub const Marker = struct {
     label: []const u8,
     /// `outline` (the default), `neutral` or `success`.
     tone: []const u8 = "outline",
+    /// What clicking it shows: the field in this dimension (empty: no link) at `code`.
+    dimension: []const u8 = "",
+    code: []const u8 = "",
 };
 
 pub const markers_max: u32 = 256;
@@ -164,6 +167,8 @@ fn collected(arena: std.mem.Allocator, items: []const Value) Error![]const Marke
                 .field = field.string,
                 .label = try mods.cleaned(arena, label),
                 .tone = tone_of(text_of(marker, "tone") orelse ""),
+                .dimension = text_of(marker, "dimension") orelse "",
+                .code = text_of(marker, "code") orelse "",
             }) catch return error.OutOfMemory;
         }
     }

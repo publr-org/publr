@@ -107,7 +107,7 @@ export const state = Publr.reactive({
    * first with an empty code. */
   dimensions: [] as Array<{ name: string; param: string; label: string; values: Array<{ code: string; label: string }> }>,
   /** The markers plugins put beside fields' labels, for the values as they stand. */
-  markers: [] as Array<{ field: string; label: string; tone: string }>,
+  markers: [] as Array<{ field: string; label: string; tone: string; dimension: string; code: string }>,
   /** What the last refused save said, under each top-level field by its name. */
   problems: {} as Record<string, string>,
 });
@@ -582,7 +582,7 @@ const refreshMarkers = async () => {
   try {
     const response = await post(`${state.base_url}/markers`, body_of(form, { type: state.type }), "json");
     if (!response.ok || response.redirected) return;
-    const answer = await response.json() as { markers?: Array<{ field: string; label: string; tone: string }> };
+    const answer = await response.json() as { markers?: Array<{ field: string; label: string; tone: string; dimension: string; code: string }> };
     if (!disposed && asked === markers_asked) state.markers = answer.markers ?? [];
   } catch {
     // Markers are a hint: without an answer the labels keep the ones they had.
