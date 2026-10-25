@@ -59,6 +59,8 @@ pub const Shape = struct {
     open: []const []const u8 = &.{},
     /// A preview drawn up to the fold only: past it, no field.
     cut: bool = false,
+    /// Over the problems, when they are not a refused save's: `Not published`.
+    problems_title: []const u8 = "",
 };
 
 pub const Domain = struct {
@@ -278,7 +280,7 @@ pub fn Editor(comptime domain: Domain) type {
                 _ = registry.SDK.dispatch(&session.ctx, operations.Publish, .{
                     .id = id,
                     .expected_version = expected,
-                }) catch |err| return admin.fail(session, err, location);
+                }) catch |err| return move_refused(session, id, err, location);
             } else if (std.mem.eql(u8, verb, "decline")) {
                 if (comptime !@hasDecl(operations, "DeclineRequest")) {
                     return admin.fail(session, error.Invalid, location);
@@ -317,7 +319,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .id = id,
                     .transition = transition,
                     .expected_version = expected,
-                }) catch |err| return admin.fail(session, err, location);
+                }) catch |err| return move_refused(session, id, err, location);
 
                 if (std.mem.eql(u8, moved.status, "destroyed")) {
                     if (fragment) {
@@ -333,6 +335,61 @@ pub fn Editor(comptime domain: Domain) type {
             }
 
             try response.redirect(.see_other, location);
+        }
+
+        /// A publish or transition refused: the editor again with each problem under its
+        /// field when the refusal names fields (a value a language requires), else the
+        /// message page.
+        fn move_refused(
+            session: *Session,
+            id: []const u8,
+            err: anyerror,
+            location: []const u8,
+        ) Error!void {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(location.len > 0);
+
+            const told = session.ctx.problems;
+
+            if (err != error.Invalid or told.len == 0) {
+                return admin.fail(session, err, location);
+            }
+
+            const shape = try load(session, id) orelse return;
+            const document = parse(session.arena, shape.loaded.?.document) orelse {
+                return admin.fail(session, error.Invalid, location);
+            };
+            const problems = try session.arena.alloc(Problem, told.len);
+            // An item or group past the fold holding a problem is drawn open, so it shows.
+            const open = try session.arena.alloc([]const u8, told.len);
+            var opened = shape;
+
+            // Each under its field's label: a value a dimension requires is named by the
+            // field it belongs to (`Body`), the message saying which value (`Polski`).
+            for (told, problems, open) |one, *problem, *code| {
+                const name = model.dimension.split(one.field).name;
+                const label = for (shape.def.fields) |field| {
+                    if (std.mem.eql(u8, field.name, name)) {
+                        break field.label;
+                    }
+                } else one.field;
+
+                problem.* = .{
+                    .code = label,
+                    .text = one.message,
+                };
+                code.* = one.field;
+            }
+
+            opened.open = open;
+            opened.problems_title = try session.translated(
+                "Not published: fill in what is marked, then publish again.",
+                .{},
+            );
+
+            const how: Answer = if (wants_fragment(session)) .fragment else .page;
+
+            try answer(session, opened, document, problems, how);
         }
 
         /// The definition a new document is of, from the query, or a not-found page.
@@ -1046,6 +1103,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .versions_href = versions_href,
                     .preview_href = preview_href,
                     .problems = problems,
+                    .problems_title = shape.problems_title,
                     .actions = actions,
                     .has_destructive = has_destructive(actions),
                     .fields = field_rows,

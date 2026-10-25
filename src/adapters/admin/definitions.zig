@@ -488,6 +488,7 @@ pub fn Pages(comptime domain: Domain) type {
                 .omit_label = try session.declared(untranslated.omit),
                 .omit_help = try session.declared(untranslated.omit_help),
                 .falls_back = def.fallback_to_main,
+                .requiring = try requiring_items(session, def),
                 .visual = model.editor.is_visual(def.editor),
                 .rich_fields = try type_editor.choices(arena, def),
                 .delete_action = delete_action,
@@ -1028,3 +1029,41 @@ fn untranslated_of(session: *Session) Error!Untranslated {
 }
 
 const Untranslated = @import("../../sdk/plugin/dimensions.zig").Untranslated;
+
+/// Each dimension with more than one value that offers requiring them, in its own words, as
+/// the type says; none for a type whose entries are not records.
+fn requiring_items(session: *Session, def: Def) Error![]const views.TypeForm.RequiringItem {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(def.required_in.len <= model.dimension.dimensions_max);
+
+    var out: std.ArrayList(views.TypeForm.RequiringItem) = .empty;
+
+    if (def.kind != .record) {
+        return out.items;
+    }
+
+    for (site_dimensions.all(&session.ctx)) |dimension| {
+        if (dimension.required_label.len == 0) {
+            continue;
+        }
+
+        const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
+
+        if (values.len < 2) {
+            continue;
+        }
+
+        try out.append(session.arena, .{
+            .name = dimension.name,
+            .label = try session.declared(dimension.required_label),
+            .required = if (model.dimension.lists(def.required_in, dimension.name))
+                "required"
+            else if (model.dimension.lists(def.optional_in, dimension.name))
+                "optional"
+            else
+                "",
+        });
+    }
+
+    return out.items;
+}

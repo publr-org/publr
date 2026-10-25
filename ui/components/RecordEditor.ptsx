@@ -775,6 +775,8 @@ export type RecordEditorProps = {
   preview_href: string;
   /** What was refused, by path, when the last post did not go through. */
   problems: Array<{ code: string; text: string }>;
+  /** Over the problems when they are not a refused save's: a refused publish. */
+  problems_title?: string;
   /** The status actions, each its own form to the record's action route; the primary one
    * is the split button's face, the rest its menu. */
   actions: Array<{
@@ -846,6 +848,7 @@ export function RecordEditor({
   versions_href,
   preview_href,
   problems,
+  problems_title = "",
   actions,
   has_destructive,
   fields,
@@ -1009,7 +1012,7 @@ export function RecordEditor({
           ) : undefined
         }
         problems={problems}
-        problems_title={Publr.t("The record was not saved.")}
+        problems_title={problems_title !== "" ? problems_title : Publr.t("The record was not saved.")}
         side={
           <RecordActions
             in_drawer={in_drawer}

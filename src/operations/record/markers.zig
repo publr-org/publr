@@ -6,6 +6,7 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
+const site_dimensions = @import("../dimensions.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -19,7 +20,7 @@ pub const Marker = struct {
     label: []const u8,
     /// What the markers of its dimension are of, drawn once before them: `Hero test`.
     group: []const u8 = "",
-    /// `outline` (the default), `neutral` or `success`.
+    /// `outline` (the default), `neutral`, `success` or `danger`.
     tone: []const u8 = "outline",
     /// What clicking it shows: the field in this dimension (empty: no link) at `code`.
     dimension: []const u8 = "",
@@ -92,7 +93,7 @@ pub fn Markers(comptime Domain: type) type {
                 .allocate = .alloc_always,
             }) catch return error.Invalid;
             var batch: mods.Batch = .{
-                .items = try items_of(ctx.arena, row.def.fields, record),
+                .items = try items_of(ctx, row.def, record),
             };
 
             try registry.SDK.modify(ctx, marked, &batch);
@@ -104,19 +105,37 @@ pub fn Markers(comptime Domain: type) type {
     };
 }
 
-/// One item per field: `{ field, varies_by, record, markers: [] }`.
+/// One item per field: `{ field, varies_by, required, record, markers: [] }`, `required`
+/// each value it must hold before going live (`{ dimension, code }`).
 fn items_of(
-    arena: std.mem.Allocator,
-    fields: []const @import("../../model.zig").field.Def,
+    ctx: *Ctx,
+    type_def: @import("../../model.zig").content_type.Def,
     record: Value,
 ) Error![]Value {
-    std.debug.assert(fields.len <= @import("../../model.zig").field.fields_max);
+    std.debug.assert(type_def.fields.len <= @import("../../model.zig").field.fields_max);
 
+    const arena = ctx.arena;
+    const fields = type_def.fields;
     const items = arena.alloc(Value, fields.len) catch return error.OutOfMemory;
 
     for (fields, items) |def, *item| {
         var object: std.json.ObjectMap = .empty;
         var varies_by = std.json.Array.init(arena);
+        var required = std.json.Array.init(arena);
+
+        for (try site_dimensions.required_of(ctx, type_def, def)) |one| {
+            var pair: std.json.ObjectMap = .empty;
+
+            pair.put(arena, "dimension", .{
+                .string = one.dimension,
+            }) catch return error.OutOfMemory;
+            pair.put(arena, "code", .{
+                .string = one.code,
+            }) catch return error.OutOfMemory;
+            required.append(.{
+                .object = pair,
+            }) catch return error.OutOfMemory;
+        }
 
         for (def.dimensions) |dimension| {
             varies_by.append(.{
@@ -129,6 +148,9 @@ fn items_of(
         }) catch return error.OutOfMemory;
         object.put(arena, "varies_by", .{
             .array = varies_by,
+        }) catch return error.OutOfMemory;
+        object.put(arena, "required", .{
+            .array = required,
         }) catch return error.OutOfMemory;
         object.put(arena, "record", record) catch return error.OutOfMemory;
         object.put(arena, "markers", .{
@@ -201,7 +223,7 @@ fn text_of(value: Value, key: []const u8) ?[]const u8 {
 fn tone_of(asked: []const u8) []const u8 {
     std.debug.assert(asked.len <= 64 << 10);
 
-    const known = [_][]const u8{ "outline", "neutral", "success" };
+    const known = [_][]const u8{ "outline", "neutral", "success", "danger" };
 
     for (known) |tone| {
         if (std.mem.eql(u8, tone, asked)) {

@@ -74,7 +74,7 @@ export type FieldPanelProps = {
   /** The site has a second language (or another variant): the field may hold a value in
    * each. The setting's words are the plugin's: `Translate`. */
   /** A switch per dimension the field may vary by, in its own words (`Translate`). */
-  dimensions?: Array<{ name: string; label: string; help: string; on: boolean }>;
+  dimensions?: Array<{ name: string; label: string; help: string; on: boolean; required_label: string; required: string }>;
   /** A top-level text field may be the record's title, the name it goes by in lists. */
   can_title: boolean;
   is_title: boolean;

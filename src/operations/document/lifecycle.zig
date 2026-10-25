@@ -61,6 +61,8 @@ pub fn Of(comptime Domain: type) type {
             return true;
         }
 
+        /// What going live asks of the values in `slot`: references to records that may be
+        /// pointed at, and every value a dimension makes required.
         pub fn check_references(ctx: *Ctx, row: Record, slot: []const u8) Error!void {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(slot.len > 0);
@@ -68,6 +70,7 @@ pub fn Of(comptime Domain: type) type {
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
             const parsed = try document.document_of(ctx, row.id, slot, type_row.def);
             try document.refuse_unpublished_targets(ctx, type_row.def, parsed);
+            try document.refuse_missing_required(ctx, type_row.def, parsed);
         }
 
         /// A slug or unique value in `slot` held live by another document is refused: a

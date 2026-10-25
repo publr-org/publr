@@ -39,7 +39,7 @@ export function FieldMarkers({ name }: FieldMarkersProps) {
           {group.markers.map((marker) => (
             <button type="button" class="inline-flex h-full cursor-pointer disabled:cursor-default" disabled={marker.dimension === ""}
               data-dimension={marker.dimension} data-code={marker.code} onClick={onDimension}>
-              <Badge shape="segment" selected={marker.selected} tone={marker.tone === "success" ? "success" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
+              <Badge shape="segment" selected={marker.selected} tone={marker.tone === "success" ? "success" : marker.tone === "danger" ? "danger" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
             </button>
           ))}
         </BadgeGroup>

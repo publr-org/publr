@@ -48,6 +48,10 @@ pub const Def = struct {
     /// The dimensions it holds a value per combination of, beside the main one
     /// (`name@language=pl`, see `dimension.zig`); `"*"` for every one the site has.
     dimensions: []const []const u8 = &.{},
+    /// The dimensions whose every value it must hold before its record goes live, whatever
+    /// the type or the dimension says; `optional_in` the ones it never must.
+    required_in: []const []const u8 = &.{},
+    optional_in: []const []const u8 = &.{},
     /// Declared in code by the type's owner: shown, never edited or removed by hand.
     locked: bool = false,
     many: bool = false,
@@ -530,6 +534,10 @@ fn validate_dimensions(def: Def, problems: *Problems) void {
 
     if (is_layout(def.kind) and names.len > 0) {
         problems.add(def.name, "a layout field holds no values to vary");
+    }
+
+    if (!dimension.valid_names(def.required_in) or !dimension.valid_names(def.optional_in)) {
+        problems.add(def.name, "a required dimension is named in lowercase letters, digits and _");
     }
 }
 

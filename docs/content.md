@@ -172,7 +172,7 @@ no dimension holds one value for all of them.
 
 What a dimension is belongs to the plugin that declares it; the languages plugin declares
 `language`, and labels the field setting Translate. The core stores, validates (a
-combination's value by the field's own rules, never required), reads and picks them:
+combination's value by the field's own rules, never required on a save), reads and picks them:
 
 - Read whole (the admin, the API, `record get`), a document carries every combination
   beside its field.
@@ -186,6 +186,11 @@ combination's value by the field's own rules, never required), reads and picks t
 - A type's `fallback_to_main` (default true) says what a record with nothing written in
   the language its page's address chose does there: shows in its main values, or is left
   out (not listed; not found).
+- A value may be **required** before a record goes live (the languages plugin's Required
+  per language). A type's `required_in` and `optional_in` list dimensions whose every value
+  its fields must, or never must, hold; a field's own lists say the same for it alone and
+  win over the type's. A missing one refuses publishing (or a move to a live status) under
+  its key, `Required in Polski`; a draft always saves.
 - Changing a type keeps every combination's value; taking a dimension off a field drops its
   values in that dimension, asked first as removing a field with content is
   (`--drop_content`).

@@ -34,6 +34,8 @@ const compiled = blk: {
             .picker = dimension.picker,
             .list = dimension.list.name,
             .untranslated = dimension.untranslated,
+            .required = dimension.required,
+            .required_label = dimension.required_label,
         }};
     }
 
@@ -41,7 +43,7 @@ const compiled = blk: {
 };
 
 /// Every dimension the site has, highest priority first (declared order among equals): the
-/// compiled-in plugins', then the installed ones' whose names are not taken, at most four.
+/// compiled-in plugins', then the installed ones' whose names are not taken, at most 64.
 pub fn all(ctx: *const Ctx) []const Setting {
     std.debug.assert(compiled.len <= model_dimension.dimensions_max);
 
@@ -281,4 +283,133 @@ pub fn code_in(ctx: *const Ctx, key: []const u8) []const u8 {
     std.debug.assert(combination.len <= model_dimension.dimensions_max);
 
     return combination.code_of(dimension.name);
+}
+
+/// Whether a field must hold a value of its own at `value` before its record goes live:
+/// what the field says, else the type, else the value, else its dimension. The main value is
+/// the field's own `required`, never this.
+pub fn required(
+    dimension: Setting,
+    value: Value,
+    type_def: @import("../model/content_type.zig").Def,
+    field: @import("../model/field.zig").Def,
+) bool {
+    std.debug.assert(dimension.name.len > 0);
+    std.debug.assert(field.name.len > 0);
+
+    const lists = model_dimension.lists;
+
+    if (value.main or !model_dimension.varies_by(field.dimensions, dimension.name)) {
+        return false;
+    }
+
+    if (lists(field.optional_in, dimension.name)) {
+        return false;
+    }
+
+    if (lists(field.required_in, dimension.name)) {
+        return true;
+    }
+
+    if (lists(type_def.optional_in, dimension.name)) {
+        return false;
+    }
+
+    if (lists(type_def.required_in, dimension.name)) {
+        return true;
+    }
+
+    return value.required orelse dimension.required;
+}
+
+/// One value a field must hold: `language` at `pl`, called `Polski`.
+pub const Required = struct {
+    dimension: []const u8,
+    code: []const u8,
+    label: []const u8,
+};
+
+/// Each value a field must hold before its record goes live, in the site's dimension order.
+pub fn required_of(
+    ctx: *Ctx,
+    type_def: @import("../model/content_type.zig").Def,
+    field: @import("../model/field.zig").Def,
+) Error![]const Required {
+    std.debug.assert(field.name.len > 0);
+    std.debug.assert(field.dimensions.len <= model_dimension.dimensions_max + 1);
+
+    var out: std.ArrayList(Required) = .empty;
+
+    if (field.dimensions.len == 0) {
+        return out.items;
+    }
+
+    for (all(ctx)) |dimension| {
+        if (!model_dimension.varies_by(field.dimensions, dimension.name)) {
+            continue;
+        }
+
+        for (try values_of(ctx, dimension)) |value| {
+            if (required(dimension, value, type_def, field)) {
+                try out.append(ctx.arena, .{
+                    .dimension = dimension.name,
+                    .code = value.code,
+                    .label = value.label,
+                });
+            }
+        }
+    }
+
+    return out.items;
+}
+
+test "required: the field over the type over the value over the dimension" {
+    const language: Setting = .{
+        .name = "language",
+        .label = "Translate",
+        .help = "A value in each language.",
+        .list = "languages.list",
+    };
+    const polish: Value = .{
+        .code = "pl",
+        .label = "Polski",
+    };
+    const body: @import("../model/field.zig").Def = .{
+        .name = "body",
+        .label = "Body",
+        .kind = "text",
+        .dimensions = &.{"language"},
+    };
+    const promo: @import("../model/content_type.zig").Def = .{
+        .handle = "promo",
+        .name = "Promo",
+        .fields = &.{body},
+    };
+
+    try std.testing.expect(!required(language, polish, promo, body));
+
+    var all_required = language;
+
+    all_required.required = true;
+    try std.testing.expect(required(all_required, polish, promo, body));
+
+    var not_polish = polish;
+
+    not_polish.required = false;
+    try std.testing.expect(!required(all_required, not_polish, promo, body));
+
+    var lenient = promo;
+
+    lenient.optional_in = &.{"language"};
+
+    var strict_body = body;
+
+    strict_body.required_in = &.{"language"};
+    try std.testing.expect(!required(all_required, polish, lenient, body));
+    try std.testing.expect(required(language, polish, lenient, strict_body));
+
+    var english = polish;
+
+    english.main = true;
+    try std.testing.expect(!required(all_required, english, promo, strict_body));
 }

@@ -32,6 +32,12 @@ pub const Dimension = struct {
     /// The type setting for records not written in a value: shown in the main values
     /// (`keep`), or left out of it (`omit`). Unnamed: the setting is not offered.
     untranslated: Untranslated = .{},
+    /// Every value must be filled before a record goes live, unless a value, the type or
+    /// the field says otherwise.
+    required: bool = false,
+    /// The type and field setting that makes its values required: `Required in every
+    /// language`. Empty: requiring is not offered.
+    required_label: []const u8 = "",
 };
 
 pub const Untranslated = model_dimension.Untranslated;
@@ -47,6 +53,9 @@ pub const Value = struct {
     /// dimension without pages of its own.
     address: []const u8 = "",
     main: bool = false,
+    /// Must be filled before a record goes live; null: as the dimension says. A type or
+    /// field may still say otherwise.
+    required: ?bool = null,
 };
 
 pub const values_max: u32 = 64;
@@ -135,6 +144,8 @@ pub fn declared_of(comptime Plugin: type) []const model_dimension.Declared {
                 .picker = dimension.picker,
                 .list = dimension.list.name,
                 .untranslated = dimension.untranslated,
+                .required = dimension.required,
+                .required_label = dimension.required_label,
             }};
         }
 

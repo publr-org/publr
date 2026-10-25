@@ -206,6 +206,11 @@ pub const Def = struct {
     /// A record with no value in the code its page's address chose (a language) still shows
     /// there, in its main values; false leaves it out there: not listed, its address not found.
     fallback_to_main: bool = true,
+    /// The dimensions whose every value its records' varying fields must hold before going
+    /// live, whatever the dimension says; `optional_in` the ones they never must. A field
+    /// may still say otherwise.
+    required_in: []const []const u8 = &.{},
+    optional_in: []const []const u8 = &.{},
     group: @import("field_group.zig").Options = .{},
     menu: Menu = .{},
     view: View = .{},
@@ -347,6 +352,14 @@ fn validate_placement(def: Def, problems: *field.Problems) void {
 
     if (def.app.len > 0 and !app_name(def.app)) {
         problems.add("app", "app must be an app's name, [a-z][a-z0-9_]*");
+    }
+
+    const names_valid = @import("dimension.zig").valid_names;
+
+    if (!names_valid(def.required_in) or !names_valid(def.optional_in)) {
+        const message = "a required dimension is named in lowercase letters, digits and _";
+
+        problems.add("required_in", message);
     }
 
     const role_model = @import("role.zig");

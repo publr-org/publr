@@ -56,6 +56,8 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
     }
 
     field.dimensions = try dimensions_of(arena, form, field);
+    field.required_in = try requiring_of(arena, form, field.required_in, "required");
+    field.optional_in = try requiring_of(arena, form, field.optional_in, "optional");
 
     field.help = form.text("help") orelse "";
 
@@ -130,6 +132,43 @@ fn dimensions_of(
 
         if (!shown and !(every and offered.items.len > 0)) {
             try out.append(arena, kept);
+        }
+    }
+
+    return out.items;
+}
+
+/// The dimensions a form says are `chosen` (`required` or `optional`) under
+/// `dimension_required.<name>`; each it does not offer kept from `kept`.
+pub fn requiring_of(
+    arena: std.mem.Allocator,
+    form: *const Form,
+    kept: []const []const u8,
+    chosen: []const u8,
+) Error![]const []const u8 {
+    std.debug.assert(form.len <= admin.form_pairs_max);
+    std.debug.assert(chosen.len > 0);
+
+    const prefix = "dimension_required.";
+    var out: std.ArrayList([]const u8) = .empty;
+
+    for (form.pairs[0..form.len]) |pair| {
+        if (!std.mem.startsWith(u8, pair.name, prefix)) {
+            continue;
+        }
+
+        const name = pair.name[prefix.len..];
+
+        if (model.dimension.valid_name(name) and std.mem.eql(u8, pair.value, chosen)) {
+            try out.append(arena, name);
+        }
+    }
+
+    for (kept) |name| {
+        const key = try std.mem.concat(arena, u8, &.{ prefix, name });
+
+        if (form.get(key) == null and !model.dimension.lists(out.items, name)) {
+            try out.append(arena, name);
         }
     }
 

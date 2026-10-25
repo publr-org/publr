@@ -92,6 +92,8 @@ pub const FieldMarkers = struct {
     field: []const u8,
     /// The dimensions the field varies by (`language`, a test's).
     varies_by: []const []const u8 = &.{},
+    /// Each value it must hold before its record goes live: `language` at `pl`.
+    required: []const @import("model/dimension.zig").Pair = &.{},
     /// The whole record as the editor holds it, every value beside its field.
     record: @import("std").json.Value = .null,
     markers: []const Marker = &.{},
@@ -103,7 +105,8 @@ pub const Marker = struct {
     label: []const u8,
     /// What its dimension's markers are of, drawn once before them: `Hero test`.
     group: []const u8 = "",
-    /// `outline` (the default), `neutral` or `success`.
+    /// `outline` (the default), `neutral`, `success`, or `danger` for a value that must be
+    /// filled before going live and is not.
     tone: []const u8 = "outline",
     dimension: []const u8 = "",
     code: []const u8 = "",

@@ -80,6 +80,8 @@ export type TypeFormProps = {
   omit_label?: string;
   omit_help?: string;
   falls_back?: boolean;
+  /** Each dimension that offers requiring its values: see TypePlacement. */
+  requiring?: Array<{ name: string; label: string; required: string }>;
   /** The name for more than one, and the name declined in the admin's other languages. */
   plural_name?: string;
   noun_languages?: Array<{
@@ -150,6 +152,7 @@ export function TypeForm({
   omit_label = "",
   omit_help = "",
   falls_back = true,
+  requiring = [],
   visual,
   rich_fields,
   delete_action,
@@ -245,6 +248,7 @@ export function TypeForm({
             omit_label={omit_label}
             omit_help={omit_help}
             falls_back={falls_back}
+            requiring={requiring}
           />
           {!is_taxonomy && is_record && (
             <TypeEditor visual={visual} is_new={is_new} rich_fields={rich_fields} />

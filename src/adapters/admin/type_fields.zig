@@ -695,6 +695,16 @@ fn switches_of(
             .label = try session.declared(dimension.label),
             .help = try session.declared(dimension.help),
             .on = on,
+            .required_label = if (dimension.required_label.len > 0)
+                try session.declared(dimension.required_label)
+            else
+                "",
+            .required = if (model.dimension.lists(field.required_in, dimension.name))
+                "required"
+            else if (model.dimension.lists(field.optional_in, dimension.name))
+                "optional"
+            else
+                "",
         });
     }
 

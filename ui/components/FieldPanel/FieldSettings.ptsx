@@ -21,8 +21,10 @@ export type FieldSettingsProps = {
   /** Lists can order by fields of the kind; whether this one is offered. */
   can_sort: boolean;
   sortable: boolean;
-  /** A switch per dimension the field may vary by, in its own words. */
-  dimensions?: Array<{ name: string; label: string; help: string; on: boolean }>;
+  /** A switch per dimension the field may vary by, in its own words; with `required_label`,
+   * whether each of its values must be filled before going live: `required`, `optional`,
+   * or empty for as the type says. */
+  dimensions?: Array<{ name: string; label: string; help: string; on: boolean; required_label: string; required: string }>;
   has_target: boolean;
   targets: Array<{
     value: string;
@@ -90,6 +92,17 @@ export function FieldSettings({
               label={dimension.label}
               description={dimension.help}
             />
+            {dimension.required_label !== "" && (
+              <Field classes="mt-3 pl-7">
+                <FieldLabel htmlFor={"dimension_required." + dimension.name}>{dimension.required_label}</FieldLabel>
+                <NativeSelect id={"dimension_required." + dimension.name} name={"dimension_required." + dimension.name}>
+                  <option value="" selected={dimension.required === ""}>{Publr.t("As the type says")}</option>
+                  <option value="required" selected={dimension.required === "required"}>{Publr.t("Required")}</option>
+                  <option value="optional" selected={dimension.required === "optional"}>{Publr.t("Not required")}</option>
+                </NativeSelect>
+                <FieldDescription>{Publr.t("Checked when the record is published; drafts always save.")}</FieldDescription>
+              </Field>
+            )}
           </div>
         ))}
         {can_search && (

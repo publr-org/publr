@@ -48,7 +48,43 @@ pub const Declared = struct {
     /// Its values have pages of their own, under their addresses.
     addresses: bool = false,
     untranslated: Untranslated = .{},
+    /// Every value must be filled before a record goes live, unless a value, the type or
+    /// the field says otherwise.
+    required: bool = false,
+    /// The type and field setting that makes its values required: `Required in every
+    /// language`. Empty: requiring is not offered.
+    required_label: []const u8 = "",
 };
+
+/// Each a dimension's name, at most as many as a site has.
+pub fn valid_names(names: []const []const u8) bool {
+    std.debug.assert(dimensions_max > 0);
+
+    if (names.len > dimensions_max) {
+        return false;
+    }
+
+    for (names) |name| {
+        if (!valid_name(name)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// Whether `names` lists `name`.
+pub fn lists(names: []const []const u8, name: []const u8) bool {
+    std.debug.assert(names.len <= dimensions_max);
+
+    for (names) |listed| {
+        if (std.mem.eql(u8, listed, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 /// One dimension at one value: `language` at `pl`. An empty code is its main value.
 pub const Pair = struct {

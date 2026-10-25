@@ -7,6 +7,7 @@ const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const registry = @import("../../server/registry.zig");
 const slugs = @import("../../lib/text.zig");
+const site_dimensions = @import("../dimensions.zig");
 const store = @import("../../store.zig");
 
 const Ctx = sdk.Ctx;
@@ -203,6 +204,48 @@ pub fn Of(comptime Domain: type) type {
 
                 return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
             };
+        }
+
+        /// A value a field must hold in a dimension (`site_dimensions.required_of`) left empty
+        /// is refused as the record goes live, each under its own key (`headline@language=pl`):
+        /// `Required in Polski`. Saving a draft never is.
+        pub fn refuse_missing_required(ctx: *Ctx, def: Def, document: Value) Error!void {
+            std.debug.assert(document == .object);
+            std.debug.assert(def.fields.len <= model.field.fields_max);
+
+            var problems: model.field.Problems = .{
+                .reader = ctx,
+            };
+
+            for (def.fields) |field| {
+                if (field.dimensions.len == 0 or model.field.is_layout(field.kind)) {
+                    continue;
+                }
+
+                for (try site_dimensions.required_of(ctx, def, field)) |required| {
+                    const pair: model.dimension.Pair = .{
+                        .dimension = required.dimension,
+                        .code = required.code,
+                    };
+                    const key = try model.dimension.key_of(ctx.arena, field.name, &.{pair});
+
+                    if (filled(document.object.get(key))) {
+                        continue;
+                    }
+
+                    const message = std.fmt.allocPrint(
+                        ctx.arena,
+                        "Required in {s}",
+                        .{required.label},
+                    ) catch return error.OutOfMemory;
+
+                    problems.add(key, message);
+                }
+            }
+
+            if (!problems.is_empty()) {
+                return ctx.refuse(try refusal_of(ctx, &problems));
+            }
         }
 
         fn refuse_target(ctx: *Ctx, field: model.field.Def, id: []const u8) Error!void {
@@ -504,4 +547,19 @@ pub fn copy_problems(ctx: *Ctx, problems: *const model.field.Problems) Error![]c
     }
 
     return copy;
+}
+
+/// A value that says something: not missing, null, an empty text or an empty list.
+pub fn filled(value: ?Value) bool {
+    const held = value orelse return false;
+
+    std.debug.assert(@intFromEnum(held) <= @intFromEnum(Value.object));
+
+    return switch (held) {
+        .null => false,
+        .string => |text| std.mem.trim(u8, text, " \t\r\n").len > 0,
+        .array => |items| items.items.len > 0,
+        .object => |object| object.count() > 0,
+        else => true,
+    };
 }

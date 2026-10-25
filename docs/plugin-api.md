@@ -499,11 +499,43 @@ const variation = publr.dimension.define(.{
 - `.addresses = true`: the values have pages of their own under their `address` (`/pl`).
   At most one on a site.
 - `.untranslated` names the type setting for records with no value in it.
+- `.required = true`: every value must be filled before a record goes live. A value says
+  otherwise with its own `required` (true or false), a type with `required_in` or
+  `optional_in`, a field the same way; the most specific one that says anything wins. The
+  main value is the field's own `required`. Checked when a record is published or moves to
+  a live status, each missing value refused under its key (`body@language=pl`,
+  `Required in Polski`); drafts always save.
+- `.required_label` names the type and field setting that requires the values (`Required
+  in every language`); without it, neither offers one.
 
 Up to 64 dimensions on a site, from different plugins, combine: a field varying by
 `language` and `variation` holds a value for each pair, one value naming at most four of
 them. A read looks only at the values a field holds, so many dimensions cost a field no
 more than its own.
+
+### Field markers
+
+Beside each field's label in the editor, plugins put markers: the languages plugin a pill
+per language, green where the field holds a value in it; an A/B test the variations that
+change it. The editor asks `record.markers` with the record as it stands, saved or not,
+as values change; it applies `<type>.markers`, one `publr.FieldMarkers` item per field
+(`field`, the dimensions it `varies_by`, the values it is `required` to hold, the whole
+`record`, the `markers` so far), for modifiers to add their own `publr.Marker`:
+
+```zig
+// in define:
+.hooks = &.{
+    publr.modify("*.markers", Markers.run),
+    publr.modify("*.*.markers", Markers.run),
+},
+```
+
+- `.label`, and `.tone`: `outline`, `neutral`, `success`, or `danger` for a value that must
+  be filled and is not.
+- `.dimension` and `.code` make it a link: clicking it shows the field there (an empty code
+  is the main value). Markers of one dimension are drawn together as one pill, `.group`
+  first when given (a test's name); the one the editor shows is drawn selected.
+- `.current = "hide"` leaves it out while the editor shows the field at its code.
 
 ## Hooks and events
 
