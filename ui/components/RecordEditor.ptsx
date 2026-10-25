@@ -651,6 +651,14 @@ export const cancel_destroy = () => {
   state.destroy_armed = false;
 };
 
+// The same record keeps the address's query: what the editor shows in (`?lang=pl`) stays
+// across a publish or a transition.
+const kept_query = (location: string) => {
+  const next = new URL(location, window.location.href);
+  if (next.pathname === window.location.pathname && next.search === "") next.search = window.location.search;
+  return next.pathname + next.search + next.hash;
+};
+
 const submit = mutation(async (
   url: string,
   params: URLSearchParams,
@@ -666,7 +674,7 @@ const submit = mutation(async (
     if (location) window.location.assign(location);
     return;
   }
-  if (location && !state.in_drawer) history.replaceState(null, "", location);
+  if (location && !state.in_drawer) history.replaceState(null, "", kept_query(location));
   replace(html, memo, then_save);
 });
 
