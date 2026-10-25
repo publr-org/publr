@@ -86,6 +86,22 @@ pub const modify = @import("sdk/plugin/hook_define.zig").modify;
 /// A record's title as core applies it, `<type>.title`: `.id`, the record's fields typed
 /// (`.record`), and the `.title` to change.
 pub const Title = @import("sdk/plugin/modify_define.zig").Title;
+/// What a `<type>.markers` modifier takes: one field of a record in the editor, with the
+/// markers beside its label so far; add yours to `markers`.
+pub const FieldMarkers = struct {
+    field: []const u8,
+    /// The dimensions the field varies by (`language`, a test's).
+    varies_by: []const []const u8 = &.{},
+    /// The whole record as the editor holds it, every value beside its field.
+    record: @import("std").json.Value = .null,
+    markers: []const Marker = &.{},
+};
+/// A marker beside a field's label: `Translated`, `2 of 3 languages`, `Varies in B`.
+pub const Marker = struct {
+    label: []const u8,
+    /// `outline` (the default), `neutral` or `success`.
+    tone: []const u8 = "outline",
+};
 /// What a plugin calls when the data its modifier of a name answers from changed:
 /// `ctx.call(publr.mod_changed, .{ .name = "money.currencies" })` builds again the pages
 /// made with those values.

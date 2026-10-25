@@ -17,6 +17,7 @@ import { RecordList } from "./RecordList.ptsx";
 import { RecordMedia } from "./RecordMedia.ptsx";
 import { RecordRepeater } from "./RecordRepeater.ptsx";
 import { RecordSingle } from "./RecordSingle.ptsx";
+import { FieldMarkers } from "./FieldMarkers.ptsx";
 
 export type RecordFieldsProps = {
   /** The field group's presentation: whether it applies here, and how labels and
@@ -267,6 +268,7 @@ export function RecordFields({
           description={field.help}
           hint={field.hint}
           error={editor.problems[field.name] ?? ""}
+          aside={<FieldMarkers name={field.name} />}
         >
         {field.shape === "tab" && <PanelTab id={`layout-tab-${field.name}`}
           panel={`layout-panel-${field.name}`} selected={false} label={field.label} onClick={onLayoutTab} />}

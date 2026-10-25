@@ -49,6 +49,7 @@ pub const edit = Editor.edit;
 pub const editor_fragment = Editor.editor;
 pub const create = Editor.create;
 pub const cells = Editor.cells;
+pub const markers = Editor.markers;
 pub const save = Editor.save;
 pub const action = Editor.action;
 pub const wants_fragment = Editor.wants_fragment;

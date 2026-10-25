@@ -866,6 +866,36 @@ pub fn Editor(comptime domain: Domain) type {
             };
         }
 
+        /// The markers beside each field's label (`record.markers`) for the form as it stands,
+        /// saved or not, as JSON for the editor to draw: asked again as its values change.
+        pub fn markers(request: *Request, response: *Response, ctx: *Context) Error!void {
+            std.debug.assert(request.method() == .post);
+            std.debug.assert(ctx.user_data != null);
+
+            var post = try admin.accept(request, response, ctx, back) orelse return;
+            var session = &post.session;
+            const form = &post.form;
+            const handle = form.text("type") orelse return admin.fail(session, error.Invalid, back);
+            const def = try definition_of(session, handle) orelse return;
+            const defs = try varied(session, def.fields, .{});
+            const document = fields.decode.document_of(session.arena, defs, form) orelse {
+                return admin.fail(session, error.Invalid, back);
+            };
+
+            if (comptime !@hasDecl(operations, "Markers")) {
+                return session.response.json(.ok, .{
+                    .markers = &[_]u8{},
+                }) catch error.OutOfMemory;
+            } else {
+                const found = registry.SDK.dispatch(&session.ctx, operations.Markers, .{
+                    .type = handle,
+                    .document = document,
+                }) catch |err| return admin.fail(session, err, back);
+
+                return session.response.json(.ok, found) catch error.OutOfMemory;
+            }
+        }
+
         /// The fields of an item, group or run drawn closed past the fold, as JSON for the
         /// browser to draw when it is opened: `path` (`faq[60]`, `seo`, `faq[59+]`) and
         /// `value`, what the form holds for it, saved or not.

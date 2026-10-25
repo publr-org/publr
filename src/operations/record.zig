@@ -737,6 +737,7 @@ pub const Validate = struct {
 };
 
 pub const Shown = @import("record/shown.zig").Shown(List, example_id);
+pub const Markers = @import("record/markers.zig").Markers(domain);
 pub const Query = @import("record/query.zig").Query;
 
 pub const Reach = @import("record/reach.zig").Reach;
@@ -753,7 +754,7 @@ test {
 pub const operations = [_]type{
     Create,    Get,    Save,           Transition,     Publish,      List,
     Referrers, Delete, DiscardChanges, Purge,          Validate,     Shown,
-    Query,     Reach,  TransitionMany, DeclineRequest, TransitionAt,
+    Query,     Reach,  TransitionMany, DeclineRequest, TransitionAt, Markers,
 };
 
 const SDK = registry.SDK;
