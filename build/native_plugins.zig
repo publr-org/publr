@@ -243,7 +243,12 @@ fn compiled_in(
     return storage[0..count];
 }
 
-pub fn add_tests(builder: *std.Build, library: *std.Build.Module, test_step: *std.Build.Step) void {
+pub fn add_tests(
+    builder: *std.Build,
+    library: *std.Build.Module,
+    test_step: *std.Build.Step,
+    filters: []const []const u8,
+) void {
     std.debug.assert(library.root_source_file != null);
     std.debug.assert(plugins_max > 0);
 
@@ -257,6 +262,7 @@ pub fn add_tests(builder: *std.Build, library: *std.Build.Module, test_step: *st
 
         const tests = builder.addTest(.{
             .root_module = module,
+            .filters = filters,
         });
 
         test_step.dependOn(&builder.addRunArtifact(tests).step);

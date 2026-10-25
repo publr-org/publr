@@ -47,8 +47,15 @@ pub fn add(
         .name = "publr-fixture",
         .root_module = core.add_entry(builder, "src/main.zig", fixture),
     });
+    // `-Dtest-filter=<text>`: only the tests whose names hold it, core's and the plugins'.
+    const filters = builder.option(
+        []const []const u8,
+        "test-filter",
+        "Run only the tests whose names contain this text",
+    ) orelse &.{};
     const tests = builder.addTest(.{
         .root_module = fixture,
+        .filters = filters,
     });
 
     for (fixture_plugins.names, fixture_plugins.files) |name, file| {
@@ -71,7 +78,7 @@ pub fn add(
     test_step.dependOn(&core_run.step);
     test_step.dependOn(plugins_step);
     scripts.add_tests(builder, test_step);
-    native_plugins.add_tests(builder, library, plugins_step);
+    native_plugins.add_tests(builder, library, plugins_step, filters);
     parity.add_tests(builder, fixture, test_step, fixture_plugins);
 
     return .{
