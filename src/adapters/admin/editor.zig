@@ -953,6 +953,49 @@ pub fn Editor(comptime domain: Domain) type {
             }
         }
 
+        /// The markers beside the fields' labels for `document` as it is drawn, so the editor
+        /// has them from its first frame and keeps them through a redraw. None when they
+        /// cannot be worked out: the editor asks for them again.
+        fn markers_drawn(
+            session: *Session,
+            handle: []const u8,
+            document: ?Value,
+        ) Error![]const views.RecordEditor.MarkersItem {
+            std.debug.assert(handle.len > 0);
+            std.debug.assert(session.signed_in());
+
+            if (comptime !@hasDecl(operations, "Markers")) {
+                return &.{};
+            } else {
+                const value = document orelse return &.{};
+                const text = std.json.Stringify.valueAlloc(session.arena, value, .{}) catch {
+                    return error.OutOfMemory;
+                };
+                const found = registry.SDK.dispatch(&session.ctx, operations.Markers, .{
+                    .type = handle,
+                    .document = text,
+                }) catch return &.{};
+                const items = try session.arena.alloc(
+                    views.RecordEditor.MarkersItem,
+                    found.markers.len,
+                );
+
+                for (found.markers, items) |marker, *item| {
+                    item.* = .{
+                        .field = marker.field,
+                        .label = marker.label,
+                        .group = marker.group,
+                        .tone = marker.tone,
+                        .dimension = marker.dimension,
+                        .code = marker.code,
+                        .current = marker.current,
+                    };
+                }
+
+                return items;
+            }
+        }
+
         /// The fields of an item, group or run drawn closed past the fold, as JSON for the
         /// browser to draw when it is opened: `path` (`faq[60]`, `seo`, `faq[59+]`) and
         /// `value`, what the form holds for it, saved or not.
@@ -1115,6 +1158,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .aside = aside,
                     .impact = null,
                     .dimensions = try pickers_of(session),
+                    .markers = try markers_drawn(session, def.handle, document),
                     .request_by = requested.by,
                     .request_label = requested.label,
                     .request_transition = requested.transition,

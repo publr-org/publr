@@ -408,9 +408,6 @@ const replace = (
   element.replaceWith(fragment);
   if (!next) return;
   Publr.hydrate(next);
-  // The server draws the markers empty: the ones already known stay drawn until the
-  // editor's next answer replaces them, so they do not blink.
-  state.markers = state.markers.slice();
   const form = next.querySelector<HTMLFormElement>('form[data-part="record-form"]');
   if (!form) return;
   queueMicrotask(() => {
@@ -815,6 +812,9 @@ export type RecordEditorProps = {
    * its picker's word and its values, the main one first with an empty code: a picker each
    * for which values the varied fields show. None: no pickers. */
   dimensions?: Array<{ name: string; param: string; label: string; values: Array<{ code: string; label: string }> }>;
+  /** The markers beside the fields' labels for the values drawn: the editor asks again as
+   * they change, and a redraw keeps them in place. */
+  markers?: Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string }>;
   /** One column: the record's editor in a visual record's Entry panel. */
   stacked?: boolean;
   /** The values the entry holds, and the most it may; 0 for no count shown. */
@@ -870,6 +870,7 @@ export function RecordEditor({
   aside,
   impact,
   dimensions = [],
+  markers = [],
   values_count = 0,
   values_max = 0,
   request_by = "",
@@ -903,6 +904,7 @@ export function RecordEditor({
   state.actions = actions;
   state.has_primary = actions.some((item) => item.primary);
   state.dimensions = dimensions;
+  state.markers = markers;
   state.problems = problems_by_field(problems.map((problem) => ({ field: problem.code, message: problem.text })));
 
   return (
