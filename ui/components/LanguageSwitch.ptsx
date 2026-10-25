@@ -35,12 +35,9 @@ const apply = (form: HTMLElement) => {
   }
 };
 
-/** On the page's first draw, the content language chosen top right (`<html data-dimensions>`),
- * when the site has it; else the main language. */
+/** On the page's first draw, the main language. */
 export const switch_ref = Publr.ref<HTMLElement>((element) => {
-  // The combination chosen top right (`language=pl,variation=b`): its language part.
-  const chosen = (document.documentElement.dataset.dimensions ?? "").split(",");
-  state.language = state.languages.find((language) => language.code !== "" && chosen.includes(language.code))?.code ?? "";
+  state.language = "";
   const form = element.closest<HTMLElement>("form");
   if (form) apply(form);
 });

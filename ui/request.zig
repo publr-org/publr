@@ -60,9 +60,6 @@ pub fn Shape(comptime Node: type) type {
             locale: []const u8 = "en",
             /// Where the catalogue's script is, with its version; empty for English.
             messages: []const u8 = "",
-            /// The combination content opens in, the person's choice (`language=pl`); empty
-            /// for the main values. `<html data-dimensions>`, read by the editors.
-            dimensions: []const u8 = "",
             /// The account menu's languages, while a plugin translates the admin.
             language_menu: ?Node = null,
         },

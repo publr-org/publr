@@ -199,10 +199,6 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
 
     @import("language.zig").apply(session, request);
 
-    var reading = session.*;
-
-    request.admin.dimensions = @import("dimension.zig").chosen(&reading);
-
     var choosing = session.*;
 
     request.admin.language_menu = try @import("language.zig").menu_of(&choosing);

@@ -24,7 +24,12 @@ import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
-import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuSubTrigger } from "@publr/ui/DropdownMenuSubTrigger.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 import { tell_problems } from "./PluginEditor.ptsx";
 
 /** The editor's client half. The form autosaves: every input marks it dirty and, after a
@@ -100,7 +105,7 @@ export const state = Publr.reactive({
   chosen: "",
   /** The site's dimensions with more than one value, each with its values, the main one
    * first with an empty code. */
-  dimensions: [] as Array<{ name: string; label: string; values: Array<{ code: string; label: string }> }>,
+  dimensions: [] as Array<{ name: string; param: string; label: string; values: Array<{ code: string; label: string }> }>,
   /** What the last refused save said, under each top-level field by its name. */
   problems: {} as Record<string, string>,
 });
@@ -268,24 +273,30 @@ const variedPaths = (root: HTMLElement) => {
   }
   return paths;
 };
-/** The combination asked for in the address (`?in=language=pl`), else the one chosen top
- * right (`<html data-dimensions>`). */
-const chosenOfAddress = () =>
-  new URLSearchParams(location.search).get("in") ?? document.documentElement.dataset.dimensions ?? "";
+/** The combination asked for in the address: each dimension under its own key
+ * (`?lang=pl&variation=b`); one left out is at its main value. */
+const chosenOfAddress = () => {
+  const asked = new URLSearchParams(location.search);
+  return textOf(state.dimensions.map((dimension) => [dimension.name, asked.get(dimension.param) ?? ""]));
+};
 
-/** A dimension's code in the combination shown; empty for its main value. */
-const codeIn = (dimension: string) => pairsOf(state.chosen).find((pair) => pair[0] === dimension)?.[1] ?? "";
+/** A dimension's value the fields show, by its label: `Polski`. */
+const labelIn = (dimension: { name: string; values: Array<{ code: string; label: string }> }, chosen: string) => {
+  const code = pairsOf(chosen).find((pair) => pair[0] === dimension.name)?.[1] ?? "";
+  return dimension.values.find((value) => value.code === code)?.label ?? dimension.values[0]?.label ?? "";
+};
 
 /** Switching a dimension the varied fields show: the address keeps the combination, so a
  * reload, a link or the editor drawn again stays in it. */
-export const onDimension = (event: Event) => {
-  const select = event.currentTarget as HTMLSelectElement;
-  const dimension = select.id.slice("dimension-".length);
-  const code = select.value;
+export const onDimension = (event: MouseEvent) => {
+  const item = event.currentTarget as HTMLElement;
+  const dimension = item.dataset.dimension ?? "";
+  const code = item.dataset.code ?? "";
   state.chosen = withPair(state.chosen, dimension, code === "" ? "" : `${dimension}=${code}`);
+  const param = state.dimensions.find((one) => one.name === dimension)?.param ?? dimension;
   const address = new URL(location.href);
-  if (state.chosen === "") address.searchParams.delete("in");
-  else address.searchParams.set("in", state.chosen);
+  if (code === "") address.searchParams.delete(param);
+  else address.searchParams.set(param, code);
   history.replaceState(history.state, "", address);
   const root = root_of();
   if (root) refreshConditions(root);
@@ -762,7 +773,7 @@ export type RecordEditorProps = {
   /** The site's dimensions with more than one value (a language, a variation), each with
    * its picker's word and its values, the main one first with an empty code: a picker each
    * for which values the varied fields show. None: no pickers. */
-  dimensions?: Array<{ name: string; label: string; values: Array<{ code: string; label: string }> }>;
+  dimensions?: Array<{ name: string; param: string; label: string; values: Array<{ code: string; label: string }> }>;
   /** One column: the record's editor in a visual record's Entry panel. */
   stacked?: boolean;
   /** The values the entry holds, and the most it may; 0 for no count shown. */
@@ -881,18 +892,28 @@ export function RecordEditor({
               {state.changed && <Status tone="warning">{Publr.t("unpublished changes")}</Status>}
             </StatusStrip>
             <Button hierarchy="tertiary" size="sm" hidden={!state.save_error} onClick={retrySave}>{Publr.t("Retry save")}</Button>
-            {state.dimensions.length > 0 && (
-              <div class="ml-auto flex items-center gap-2" data-part="dimension-pickers">
-                {state.dimensions.map((dimension) => (
-                  <label class="flex items-center gap-2" data-part="dimension-picker">
-                    <Text as="span" variant="body-sm" tone="muted">{dimension.label}</Text>
-                    <NativeSelect id={"dimension-" + dimension.name} label={dimension.label} size="sm" onChange={onDimension}>
-                      {dimension.values.map((value) => (
-                        <option value={value.code} selected={value.code === codeIn(dimension.name)}>{value.label}</option>
-                      ))}
-                    </NativeSelect>
-                  </label>
-                ))}
+            {dimensions.length > 0 && (
+              <div class="ml-auto shrink-0" data-part="dimension-picker">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" hierarchy="secondary" size="sm">
+                      <span>{state.dimensions.map((dimension) => labelIn(dimension, state.chosen)).join(" / ")}</span>
+                      <Icon name="chevron-down" size="sm" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="right" classes="min-w-56">
+                    {dimensions.map((dimension) => (
+                      <DropdownMenu sub>
+                        <DropdownMenuSubTrigger>{dimension.label}</DropdownMenuSubTrigger>
+                        <DropdownMenuContent align="sub" classes="min-w-48">
+                          {dimension.values.map((value) => (
+                            <DropdownMenuItem data-dimension={dimension.name} data-code={value.code} onClick={onDimension}>{value.label}</DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             )}
           </div>

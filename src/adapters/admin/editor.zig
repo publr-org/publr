@@ -2107,6 +2107,7 @@ fn pickers_of(session: *Session) Error![]const views.RecordEditor.DimensionsItem
 
         try out.append(session.arena, .{
             .name = dimension.name,
+            .param = if (dimension.param.len > 0) dimension.param else dimension.name,
             .label = try session.declared(word),
             .values = items,
         });

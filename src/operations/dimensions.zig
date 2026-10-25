@@ -26,6 +26,7 @@ const compiled = blk: {
     for (registry.dimensions) |dimension| {
         out = out ++ &[_]Setting{.{
             .name = dimension.name,
+            .param = dimension.param,
             .priority = dimension.priority,
             .addresses = dimension.addresses,
             .label = dimension.label,

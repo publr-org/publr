@@ -11,6 +11,9 @@ const model_dimension = @import("../../model/dimension.zig");
 pub const Dimension = struct {
     /// What it is called where values are stored and asked for: `language`.
     name: []const u8,
+    /// Its key in an address's query, where the admin keeps what a page shows (`?lang=pl`);
+    /// empty: its name.
+    param: []const u8 = "",
     /// Higher keeps its value longer when a read falls back across dimensions.
     priority: i32 = 0,
     /// The field setting that turns it on: `Translate`.
@@ -61,7 +64,18 @@ pub fn define(comptime dimension: Dimension) Dimension {
             @compileError("dimension `" ++ dimension.name ++ "` needs a label and help");
         }
 
-        return dimension;
+        if (dimension.param.len > 0 and !model_dimension.valid_name(dimension.param)) {
+            @compileError("dimension `" ++ dimension.name ++ "`: `param` is lowercase letters, " ++
+                "digits and _, a letter first");
+        }
+
+        var checked = dimension;
+
+        checked.param = if (dimension.param.len > 0) dimension.param else dimension.name;
+
+        const done = checked;
+
+        return done;
     }
 }
 
@@ -113,6 +127,7 @@ pub fn declared_of(comptime Plugin: type) []const model_dimension.Declared {
         for (of(Plugin)) |dimension| {
             out = out ++ &[_]model_dimension.Declared{.{
                 .name = dimension.name,
+                .param = dimension.param,
                 .priority = dimension.priority,
                 .addresses = dimension.addresses,
                 .label = dimension.label,

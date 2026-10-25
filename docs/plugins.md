@@ -1113,7 +1113,8 @@ in, install the skill), even at an address that looks like this machine.
 ### Dimensions
 
 A plugin may declare **dimensions** a field's value varies by (`.dimensions`, each made
-with `publr.dimension.define`), compiled in or installed: its `name` (`language`), the
+with `publr.dimension.define`), compiled in or installed: its `name` (`language`), its key
+in an address's query (`param`, `lang`; its name by default), the
 words of the switch every field then has (`label`, `help`), the editor's picker
 (`picker`), its `priority` (higher keeps its value longer when a read falls back across
 dimensions), whether its values have pages of their own (`addresses`, at most one

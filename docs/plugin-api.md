@@ -490,6 +490,8 @@ const variation = publr.dimension.define(.{
 ```
 
 - `.name` is what values are stored and asked for under: `--variation b`, `"variation": "b"`.
+- `.param` is its key in an address's query, where the editor keeps what it shows
+  (`?lang=pl`); its name when left out.
 - `.list` is a read of the plugin's own answering `values`, each a `publr.dimension.Value`
   (`code`, `label`, `address`, `main`), the main one first.
 - `.priority`: a read with no value in a combination drops the lowest priority dimension

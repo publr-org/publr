@@ -34,6 +34,8 @@ pub const Untranslated = struct {
 /// list an operation by full name (`languages.list`).
 pub const Declared = struct {
     name: []const u8,
+    /// Its key in an address's query (`lang`); empty: its name.
+    param: []const u8 = "",
     label: []const u8,
     help: []const u8,
     picker: []const u8 = "",

@@ -160,11 +160,3 @@ The language the admin speaks to the caller: `chosen` (empty: the site's), `site
 the `choices` (English and every language a plugin translates the admin into) and whether
 the caller ever `answered` (the admin's welcome screen asks once). `set_language
 --language <code>` chooses one of the choices, or empty for the site's.
-
-## `user dimensions` and `user set_dimension`
-
-What the caller reads and edits content in, in the admin (with the languages plugin: the
-content language): each of the site's dimensions, highest priority first, with its
-`values` and the caller's `chosen` code, empty for the main one. `set_dimension
---dimension language --code <code>` chooses one, or an empty code for the main one; lists,
-the editor and the visual editor open in it.
