@@ -408,6 +408,9 @@ const replace = (
   element.replaceWith(fragment);
   if (!next) return;
   Publr.hydrate(next);
+  // The server draws the markers empty: the ones already known stay drawn until the
+  // editor's next answer replaces them, so they do not blink.
+  state.markers = state.markers.slice();
   const form = next.querySelector<HTMLFormElement>('form[data-part="record-form"]');
   if (!form) return;
   queueMicrotask(() => {

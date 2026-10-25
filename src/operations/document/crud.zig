@@ -127,8 +127,9 @@ pub fn Of(comptime Domain: type) type {
 
             try access.check_status(row.def, status);
 
-            var parsed = try document.parse_document(ctx, row.def, text, true);
-            const title = try document_module.titled(ctx, row.def, parsed);
+            const drafting = document_module.drafts(row.def, status);
+            var parsed = try document.parse_document(ctx, row.def, text, true, drafting);
+            const title = try document_module.titled(ctx, row.def, parsed, drafting);
             const def = row.def;
             const slug = try document.unique_slug(ctx, row.id, def, &parsed, title, null, false);
 

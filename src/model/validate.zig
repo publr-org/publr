@@ -205,7 +205,7 @@ fn validate_field(
 
     if (!present) {
         if (def.validation.required or (def.validation.items_min orelse 0) > 0) {
-            problems.add(path, "required");
+            problems.missing(path);
         }
 
         return;
@@ -247,7 +247,7 @@ fn validate_many(
     }
 
     if (def.validation.required and items.len == 0) {
-        problems.add(path, "required");
+        problems.missing(path);
     }
 
     check_items(def, items, path, problems);

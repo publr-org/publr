@@ -25,8 +25,15 @@ pub fn Of(comptime Domain: type) type {
         const definitions = Domain.definition;
 
         /// The document text as a validated value; a new document (`fresh`) first takes
-        /// the defaults of the fields it leaves out.
-        pub fn parse_document(ctx: *Ctx, def: Def, text: []const u8, fresh: bool) Error!Value {
+        /// the defaults of the fields it leaves out. A draft (`drafting`) may leave required
+        /// values out: they are asked for when it goes live (`refuse_incomplete`).
+        pub fn parse_document(
+            ctx: *Ctx,
+            def: Def,
+            text: []const u8,
+            fresh: bool,
+            drafting: bool,
+        ) Error!Value {
             std.debug.assert(def.fields.len <= model.field.fields_max);
             std.debug.assert(ctx.now_ms >= 0);
 
@@ -42,9 +49,6 @@ pub fn Of(comptime Domain: type) type {
             ) catch {
                 return error.Invalid;
             };
-            var problems: model.field.Problems = .{
-                .reader = ctx,
-            };
             const known = registry.kinds(ctx);
 
             if (parsed == .object) {
@@ -55,6 +59,31 @@ pub fn Of(comptime Domain: type) type {
                 try model.defaults.apply(known, def.fields, ctx.arena, &parsed.object, ctx.now_ms);
             }
 
+            try refuse_problems(ctx, def, parsed, drafting);
+            try currencies.refuse_others(ctx, def.fields, parsed);
+
+            return parsed;
+        }
+
+        /// A document going live checked whole, a required value or the title left out among
+        /// the rest.
+        pub fn refuse_incomplete(ctx: *Ctx, def: Def, document: Value) Error!void {
+            std.debug.assert(document == .object);
+            std.debug.assert(def.fields.len <= model.field.fields_max);
+
+            try refuse_problems(ctx, def, document, false);
+            _ = try titled(ctx, def, document, false);
+        }
+
+        fn refuse_problems(ctx: *Ctx, def: Def, parsed: Value, drafting: bool) Error!void {
+            std.debug.assert(def.fields.len <= model.field.fields_max);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            var problems: model.field.Problems = .{
+                .reader = ctx,
+                .drafting = drafting,
+            };
+            const known = registry.kinds(ctx);
             const active = model.field_group.applies(def.group, .{
                 .destination = if (comptime std.mem.eql(
                     u8,
@@ -78,10 +107,6 @@ pub fn Of(comptime Domain: type) type {
             if (!problems.is_empty()) {
                 return ctx.refuse(try refusal_of(ctx, &problems));
             }
-
-            try currencies.refuse_others(ctx, def.fields, parsed);
-
-            return parsed;
         }
 
         pub fn document_of(
@@ -358,6 +383,12 @@ pub fn Of(comptime Domain: type) type {
                 base = try slugs.slugify(ctx.arena, source);
             }
 
+            // A draft with nothing to make one from has no slug yet: the first save that
+            // has a title makes it.
+            if (base.len == 0) {
+                return null;
+            }
+
             var candidate = base;
             var attempt: u32 = 1;
 
@@ -496,11 +527,25 @@ pub fn Of(comptime Domain: type) type {
 
 /// The document's title; an empty or missing one refused under the title field's name, as
 /// any other required field is.
-pub fn titled(ctx: *Ctx, def: Def, document: Value) Error![]const u8 {
+/// Whether a write in `status` is a draft, whose required values wait for it to go live: a
+/// record's, in a status that is not live. Settings and components are checked whole.
+pub fn drafts(def: Def, status: []const u8) bool {
+    std.debug.assert(def.handle.len > 0);
+    std.debug.assert(status.len > 0);
+
+    return def.kind == .record and !def.flow.is_live(status);
+}
+
+/// The document's title; a draft (`drafting`) may have none yet, and reads as empty.
+pub fn titled(ctx: *Ctx, def: Def, document: Value, drafting: bool) Error![]const u8 {
     std.debug.assert(document == .object);
     std.debug.assert(def.fields.len <= model.field.fields_max);
 
     return model.document.title_of(def, document) catch |err| {
+        if (drafting) {
+            return "";
+        }
+
         const title_field = model.content_type.title_field_of(def) orelse return err;
         const told = try ctx.arena.alloc(sdk.operation.Problem, 1);
 

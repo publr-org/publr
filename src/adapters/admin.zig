@@ -1287,12 +1287,10 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expect(std.mem.indexOf(u8, changed.body, publish_changes) != null);
     try std.testing.expect(std.mem.indexOf(u8, changed.body, discard_changes) != null);
 
-    const invalid_body = try std.fmt.allocPrint(arena, "csrf={s}&type=post", .{csrf_token});
-    const invalid = try flow.call("POST", "/admin/content/create", invalid_body);
-    const problem_path = ">title</code>";
-    const problem_message = ">required</span>";
-    try std.testing.expect(std.mem.indexOf(u8, invalid.body, problem_path) != null);
-    try std.testing.expect(std.mem.indexOf(u8, invalid.body, problem_message) != null);
+    // A draft without its required title saves; only publishing asks for it.
+    const untitled_body = try std.fmt.allocPrint(arena, "csrf={s}&type=post", .{csrf_token});
+    const untitled = try flow.call("POST", "/admin/content/create", untitled_body);
+    try std.testing.expect(std.mem.indexOf(u8, untitled.body, ">required</span>") == null);
 
     const apply_body = try std.fmt.allocPrint(
         arena,

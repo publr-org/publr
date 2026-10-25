@@ -60,8 +60,10 @@ pub fn Of(comptime Domain: type) type {
             const live = type_row.def.flow.is_live(row.status);
             const park = row.changed or live;
             const base = if (row.changed) values.pending else values.live;
-            var parsed = try merged(ctx, row, type_row.def, base, given);
-            const slug = try checked(ctx, row, type_row.def, &parsed, live);
+            // Written to the pending copy, or to a record that is not live: a draft.
+            const drafting = type_row.def.kind == .record;
+            var parsed = try merged(ctx, row, type_row.def, base, given, drafting);
+            const slug = try checked(ctx, row, type_row.def, &parsed, live, drafting);
             const actor = ctx.author();
             const slot = if (park) values.pending else values.live;
 
@@ -153,8 +155,9 @@ pub fn Of(comptime Domain: type) type {
             try lifecycle.check_move(ctx, row, def, to);
 
             const live = def.flow.is_live(row.status);
-            var parsed = try merged(ctx, row, def, values.live, given);
-            const slug = try checked(ctx, row, def, &parsed, live);
+            const drafting = @import("document.zig").drafts(def, to);
+            var parsed = try merged(ctx, row, def, values.live, given, drafting);
+            const slug = try checked(ctx, row, def, &parsed, live, drafting);
             const actor = ctx.author();
             const changed = row.changed;
             var version = try documents.save(ctx.db, row.id, actor, expected, ctx.now_ms, changed);
@@ -163,7 +166,7 @@ pub fn Of(comptime Domain: type) type {
             try write(ctx, row, def, values.live, parsed);
 
             if (row.changed) {
-                const pending = try merged(ctx, row, def, values.pending, given);
+                const pending = try merged(ctx, row, def, values.pending, given, true);
 
                 try write(ctx, row, def, values.pending, pending);
             }
@@ -216,8 +219,15 @@ pub fn Of(comptime Domain: type) type {
         }
 
         /// The copy in `slot`, with the given fields over it, parsed and validated as a whole
-        /// document: a field left out keeps its value.
-        fn merged(ctx: *Ctx, row: Record, def: Def, slot: []const u8, given: Value) Error!Value {
+        /// document: a field left out keeps its value. A draft may leave required ones out.
+        fn merged(
+            ctx: *Ctx,
+            row: Record,
+            def: Def,
+            slot: []const u8,
+            given: Value,
+            drafting: bool,
+        ) Error!Value {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(given == .object);
 
@@ -237,7 +247,7 @@ pub fn Of(comptime Domain: type) type {
                 return error.OutOfMemory;
             };
 
-            return document.parse_document(ctx, def, text, false);
+            return document.parse_document(ctx, def, text, false, drafting);
         }
 
         /// What every write checks before it lands: the title, a unique slug, taken values,
@@ -248,11 +258,12 @@ pub fn Of(comptime Domain: type) type {
             def: Def,
             parsed: *Value,
             live: bool,
+            drafting: bool,
         ) Error!?[]const u8 {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(parsed.* == .object);
 
-            const title = try @import("document.zig").titled(ctx, def, parsed.*);
+            const title = try @import("document.zig").titled(ctx, def, parsed.*, drafting);
             const type_id = row.type_id;
             const slug = try document.unique_slug(ctx, type_id, def, parsed, title, row.id, live);
 

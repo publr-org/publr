@@ -828,24 +828,31 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
     );
     try std.testing.expectError(error.Conflict, stale);
 
-    const invalid = SDK.dispatch(
-        &editor,
-        Save,
-        .{
-            .id = first.id,
-            .document = "{\"title\":\"\",\"body\":\"no title\"}",
-        },
-    );
-    try std.testing.expectError(error.Invalid, invalid);
-    // Refused with the field it was about, as every caller is answered.
+    // A draft saves with its required title left out; publishing it is refused with the
+    // field it was about, as every caller is answered.
+    _ = try SDK.dispatch(&editor, Save, .{
+        .id = first.id,
+        .document = "{\"title\":\"\",\"body\":\"no title\"}",
+    });
+
+    const incomplete = SDK.dispatch(&editor, Transition, .{
+        .id = first.id,
+        .transition = "publish",
+    });
+
+    try std.testing.expectError(error.Invalid, incomplete);
     try std.testing.expectEqualStrings("title", editor.problems[0].field);
+    _ = try SDK.dispatch(&editor, Save, .{
+        .id = first.id,
+        .document = "{\"title\":\"Hello again\",\"body\":\"x\"}",
+    });
 
     const published = try SDK.dispatch(&editor, Transition, .{
         .id = first.id,
         .transition = "publish",
     });
     try std.testing.expectEqualStrings("published", published.status);
-    try std.testing.expectEqual(@as(i64, 3), published.version);
+    try std.testing.expectEqual(@as(i64, 5), published.version);
     const bad_move = SDK.dispatch(&editor, Transition, .{
         .id = first.id,
         .transition = "nope",

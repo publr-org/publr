@@ -82,6 +82,18 @@ pub const Problems = struct {
     /// The caller's `*sdk.Ctx` while a write is checked: an installed plugin's kind checks
     /// its values in the sandbox with it. Without it those checks can't run, and say so.
     reader: ?*anyopaque = null,
+    /// A draft is checked: a value left out is fine until the record goes live, when the
+    /// whole document is checked again without this.
+    drafting: bool = false,
+
+    /// A required value left out: a problem, unless a draft is checked.
+    pub fn missing(problems: *Problems, path: []const u8) void {
+        std.debug.assert(path.len > 0);
+
+        if (!problems.drafting) {
+            problems.add(path, "required");
+        }
+    }
 
     pub fn add(problems: *Problems, path: []const u8, message: []const u8) void {
         std.debug.assert(message.len > 0);

@@ -62,7 +62,10 @@ a single rich text field is refused. The block editor is being rebuilt (`../edit
 it lands, a visual type's records open in the form and rich text in a plain box.
 
 A record is one record of one type in one status. Its document is a JSON
-object shaped by the type's fields. It is validated on every write and stored
+object shaped by the type's fields. It is validated on every write, except
+that a draft (a record not live, or the pending changes of a live one) may leave
+required values and the title empty: those are asked for when it goes live,
+published or moved to a live status, refused under each field. It is stored
 as rows, one row per field value (`records` + `record_values`). So every
 field can be filtered and sorted (a `many` field is a list of values of its
 kind, one row each), references and media are pointers to the
