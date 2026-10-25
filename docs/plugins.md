@@ -337,9 +337,8 @@ pub const plugin = publr.plugin.define(manifest, .{
   looks inside a file for a name.
 - **Decided but not built.** `define` refuses these options and names the gate that brings
   them: `register_taxonomies`, `register_columns`,
-  `register_components`, `register_location_rules`, `taxonomies`,
-  `jobs`, `webhooks`. Queued work, schedules, outside search engines and field
-  editors in the plugin frame come with later gates too.
+  `register_components`, `register_location_rules`, `taxonomies`. Outside search
+  engines and field editors in the plugin frame come with later gates too.
 
 ### Operations
 

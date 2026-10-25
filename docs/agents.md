@@ -206,7 +206,8 @@ pub const plugin = publr.plugin.define(manifest, .{
   `publr.job.define(In, .{ .name, .run })` in `.jobs`, queued with `ctx.enqueue(Job, in)` and
   run after the call by the worker, tried again when it fails. A schedule is
   `publr.job.define_recurring(.{ .name, .run, .every = .day, .at = .{ .hour = 3 } })`. What
-  another server sends comes in through `publr.webhook.define` in `.webhooks`.
+  another server sends comes in through `publr.webhook.define` in `.webhooks`; to test one
+  on your machine, expose the site with a tunnel (ngrok) and give the sender that address.
 - **Not built yet.** `define` has no `register_taxonomies`, `register_components` or
   `taxonomies` option and fails the build on one. There is no outside search engine for
   plugins yet. When a feature needs one, tell the person what is missing.

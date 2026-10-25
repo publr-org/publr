@@ -58,6 +58,7 @@ A missing one fails the build and says where it goes.
 | `hooks` | `&.{ ... }` of `publr.before`, `publr.after`, `publr.on` and `publr.modify` | both |
 | `events` | `&.{ ... }` of `publr.event.define` | both |
 | `jobs` | `&.{ ... }` of `publr.job.define` | both |
+| `webhooks` | `&.{ ... }` of `publr.webhook.define`, see [Webhooks](#webhooks) | both |
 | `permissions` | `&.{ .{ .key, flags, .reason } }` | both (checked at compile time, enforced installed) |
 | `secrets` | a struct of `publr.Secret` fields | both |
 | `limits` | `publr.plugin.Limits` | installed |
@@ -68,15 +69,15 @@ A missing one fails the build and says where it goes.
 | `roles` | `&.{ ... }` of `publr.plugin.Role` | both |
 | `pages`, `panels`, `menu`, `icons` | see [Admin entries](#admin-entries) | both |
 | `translations` | `&.{ .{ .locale, .label, .po } }` | both |
+| `variants` | `.{ .label, .help, .picker, .list, .untranslated }`: the one variant dimension | both |
 | `extend` | `fn (host: *publr.Host) publr.Error!void`, see [Built-in only](#built-in-only) | built-in |
 | `row_actions` | see [Built-in only](#built-in-only) | built-in |
 
 Any other option is a build error.
 
 Decided but not built: `define` refuses these and names the gate that brings them:
-`register_taxonomies`, `register_columns`, `register_components`, `register_location_rules`, `taxonomies`, `webhooks`. Jobs for
-installed plugins, `.due` and `transition_at`, outside calls from queued work, outside search engines and field editors
-in the plugin frame come with later gates too.
+`register_taxonomies`, `register_columns`, `register_components`, `register_location_rules`, `taxonomies`. Outside
+search engines and field editors in the plugin frame come with later gates too.
 
 ## Manifest
 
@@ -617,6 +618,92 @@ try ctx.enqueue_at(Show, .{ .greeting = .{ .id = id } }, ctx.now().add_minutes(1
   `*publr.QueueCtx` gets one too.
 - Installed plugins queue and run jobs as compiled-in ones do; their manifest lists them.
   `publr job list` shows what waits and what failed for good, `on` hooks' runs among them.
+
+## Webhooks
+
+What another server sends: a payment provider saying an order was paid, a courier saying a
+parcel moved. Publr takes it at `/_webhooks/<plugin>.<name>`, checks its signature and runs
+`run` as queued work.
+
+```zig
+/// What the shop's provider sends when a payment goes through.
+pub const Paid = struct {
+    /// The provider's id for this delivery
+    id: []const u8,
+    /// The order it pays for
+    order: []const u8,
+};
+
+fn paid(ctx: *publr.QueueCtx, event: Paid) publr.Error!void {
+    ctx.log(.info, "Order {s} paid", .{event.order});
+}
+
+/// Payments the provider confirms, at `/_webhooks/shop.paid`.
+pub const PaidHook = publr.webhook.define(Paid, .{
+    .name = "paid",
+    .secret = "SHOP_WEBHOOK_KEY",
+    .signature = .{ .timestamped = .{ .header = "Shop-Signature" } },
+    .delivery_id = .{ .field = "id" },
+    .run = paid,
+});
+
+// in define:
+.webhooks = &.{PaidHook},
+.secrets = struct {
+    /// The signing key, under Webhooks in the provider's dashboard
+    SHOP_WEBHOOK_KEY: publr.Secret,
+},
+```
+
+- `.secret` names one of the plugin's `secrets`, the key the sender signs with. Its value
+  is set under Settings, then Secrets, or in the environment.
+- `.signature` is how the sender signs:
+  - `.hmac`: an HMAC-SHA256 of the body in a header, with `.prefix` (`"sha256="`) and
+    `.encoding` (`.hex` or `.base64`).
+  - `.timestamped`: `t=<seconds>,v1=<hex>` over `<seconds>.<body>`, the way payment
+    providers sign. Refused when the time is more than five minutes off.
+  - `.token`: the secret itself, in a header.
+- `.body` is `.json` (the default) or `.form`, read as the event's struct. `.raw` hands
+  `run` a `publr.webhook.Delivery`: `.body` as it came and `.header(name)`.
+- `.delivery_id` says where the sender's own id is, a `.header` or a top-level `.field`.
+  A delivery sent again is answered 200 and not run twice.
+- Publr answers at once: 200 once the delivery is kept and its run queued, 401 when the
+  signature does not verify, 400 when the body does not read, 413 past 256 KiB. A sender
+  over the general rate limit gets 429. `run` fails and runs again like any job.
+- It is not an operation. It has no caller and no `.authorize`; the signature is its only
+  credential.
+- The plugin's Webhooks tab in the admin shows the address to give the sender and every
+  delivery: when it came, whether it verified, how its run ended and its log lines, with
+  Run again.
+- Installed plugins declare webhooks the same way; their manifest lists them.
+
+### Testing on your machine
+
+A sender can only reach an address on the internet. To send deliveries to a site running on
+your machine, expose it with a tunnel such as ngrok, and tell Publr the site's address:
+
+```bash
+ngrok http 8080
+publr serve --port 8080 --url https://<site-tunnel>.ngrok-free.app --admin-url http://admin.localhost:8080
+```
+
+Give the sender the address the plugin's Webhooks tab shows,
+`https://<site-tunnel>.ngrok-free.app/_webhooks/shop.paid`, and the same signing secret your
+site has. Deliveries then show on the tab as they would on a public site. `--url` also puts
+the tunnel's address in the sitemap and the language links.
+
+The admin never answers on the site's address: `/admin` there sends you to `--admin-url`,
+here the admin on your own machine. To reach the admin from another device too, open a
+second tunnel to the same port and name it instead:
+
+```bash
+ngrok http 8080   # the site:  https://<site-tunnel>.ngrok-free.app
+ngrok http 8080   # the admin: https://<admin-tunnel>.ngrok-free.app
+publr serve --port 8080 --url https://<site-tunnel>.ngrok-free.app --admin-url https://<admin-tunnel>.ngrok-free.app
+```
+
+Publr tells the two apart by the host each request comes in on, so the tunnel must pass its
+own host through, as ngrok does by default.
 
 ## Permissions, secrets, limits
 

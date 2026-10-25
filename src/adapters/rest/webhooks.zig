@@ -2,13 +2,15 @@
 //! is checked on the raw bytes with the plugin's declared secret, the body read as its event,
 //! a delivery seen before dropped; the delivery is kept, its run queued, and 200 answered at
 //! once. Unsigned or wrongly signed is refused with 401, a body that does not read with 400;
-//! both are kept, so the plugin's Webhooks tab shows them.
+//! both are kept, so the plugin's Webhooks tab shows them. The sender's address counts
+//! against the general rate limit before anything is read: past it, 429 and nothing kept.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const http = @import("../../lib/http.zig");
 const store = @import("../../store.zig");
 const secret = @import("../../operations/secret.zig");
 const identity = @import("identity.zig");
+const auth = @import("auth.zig");
 const webhook_define = @import("../../sdk/plugin/webhook_define.zig");
 const Project = @import("../../server/project.zig").Project;
 
@@ -117,6 +119,12 @@ fn take(target: Target, request: *Request, response: *Response, ctx: *Context) a
     const arena = ctx.arena;
     const project = Project.of(ctx);
     var system = identity.context(project, arena, .system);
+    const sender = sdk.limits.address_of(arena, request.peer(), request.header("x-forwarded-for"));
+
+    if (!counted(project, &system, sender)) {
+        return auth.respond_error(response, error.Throttled, &system);
+    }
+
     const headers = try headers_of(arena, request);
     const key = secret.value_of(&system, webhook.secret) catch null;
     var delivery: store.webhook_deliveries.Received = .{
@@ -124,7 +132,7 @@ fn take(target: Target, request: *Request, response: *Response, ctx: *Context) a
         .name = webhook.name,
         .delivery_id = "",
         .received_at = system.now_ms,
-        .sender = sdk.limits.address_of(arena, request.peer(), request.header("x-forwarded-for")),
+        .sender = sender,
         .verified = false,
         .body = "",
         .headers = "",
@@ -186,6 +194,23 @@ fn take(target: Target, request: *Request, response: *Response, ctx: *Context) a
     try keep(&system, owner, webhook.name, delivery);
 
     return response.text(.ok, "Received");
+}
+
+/// The sender counted against the general limit, like any caller known only by address;
+/// false past it, with where it stands on `system.rate`. Unknown or unlimited: true.
+fn counted(project: *const Project, system: *sdk.Ctx, sender: []const u8) bool {
+    std.debug.assert(system.caller == .system);
+    std.debug.assert(system.now_ms >= 0);
+
+    const table = project.limits orelse return true;
+
+    if (sender.len == 0) {
+        return true;
+    }
+
+    system.rate = table.take(sender, "", sdk.limits.general_per_minute, system.now_ms);
+
+    return system.rate.?.allowed;
 }
 
 /// The delivery kept and its run queued, together.
@@ -322,6 +347,81 @@ test "a signed delivery runs as queued work, a repeat is dropped, a forged one r
     try std.testing.expectEqualStrings("refused", listed[0].result);
     try std.testing.expectEqualStrings("ran", listed[1].result);
     try std.testing.expect(std.mem.indexOf(u8, listed[1].lines, "Order 1042 paid") != null);
+}
+
+test "a sender past the general limit is refused before its delivery is read" {
+    const Paid = struct {
+        id: []const u8,
+    };
+    const Probe = struct {
+        fn run(ctx: anytype, paid: Paid) sdk.Error!void {
+            _ = ctx;
+            std.debug.assert(paid.id.len > 0);
+        }
+    };
+    const Hook = webhook_define.define(Paid, .{
+        .name = "paid",
+        .secret = "SHOP_WEBHOOK_KEY",
+        .signature = .{
+            .token = .{
+                .header = "X-Shop-Token",
+            },
+        },
+        .run = Probe.run,
+    });
+    const Route = Receive(&.{Hook}, &.{"shop"});
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var table: sdk.limits.Limits = .{};
+    var project: Project = .{
+        .connection = &harness.fixture.connection,
+        .auth = &harness.auth,
+        .io = std.testing.io,
+        .limits = &table,
+    };
+    var app = http.App.offline(.{});
+    app.user_data = &project;
+    Route.register(app.router());
+
+    const now_ms = sdk.context.wall_clock_ms(std.testing.io);
+    const general = sdk.limits.general_per_minute;
+
+    for (0..general) |_| {
+        _ = table.take("203.0.113.9", "", general, now_ms);
+    }
+
+    const head = "POST /_webhooks/shop.paid HTTP/1.1\r\nHost: h\r\nX-Shop-Token: guess\r\n" ++
+        "Content-Length: 12\r\n\r\n";
+    var wire = (try http.parse(head)).complete;
+    var request: http.Request = .{
+        .inner = &wire,
+        .body = "{\"id\":\"e1\"}",
+    };
+
+    wire.peer = .{ 203, 0, 113, 9 };
+
+    const refused = app.handle(arena, &request);
+
+    try std.testing.expectEqual(429, refused.status.code());
+    try std.testing.expect(refused.header("Retry-After") != null);
+
+    // Another sender is counted on its own; its forged delivery reaches the signature check.
+    wire.peer = .{ 203, 0, 113, 10 };
+
+    try std.testing.expectEqual(401, app.handle(arena, &request).status.code());
+
+    const system = harness.ctx(.system);
+    const listed = try store.webhook_deliveries.list(system.db, arena, "shop", 8);
+
+    try std.testing.expectEqual(1, listed.len);
+    try std.testing.expectEqualStrings("203.0.113.10", listed[0].sender);
 }
 
 fn send(
