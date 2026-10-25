@@ -24,7 +24,11 @@ import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
-import { TextToggle } from "@publr/ui/TextToggle.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 import { tell_problems } from "./PluginEditor.ptsx";
 
 /** The editor's client half. The form autosaves: every input marks it dirty and, after a
@@ -95,13 +99,12 @@ export const state = Publr.reactive({
   values_near: false,
   values_over: false,
   values_text: "",
-  /** The language the translated fields show, as its pair (`language=pl`); empty for the
-   * main one. */
-  language: "",
-  /** The whole combination the fields show (`language=pl,variation=b`): the language with
-   * every other dimension as chosen top right. */
+  /** The combination the varied fields show (`language=pl,variation=b`); empty for the main
+   * values. */
   chosen: "",
-  languages: [] as Array<{ code: string; label: string }>,
+  /** The site's dimensions with more than one value, each with its values, the main one
+   * first with an empty code. */
+  dimensions: [] as Array<{ name: string; label: string; values: Array<{ code: string; label: string }> }>,
   /** What the last refused save said, under each top-level field by its name. */
   problems: {} as Record<string, string>,
 });
@@ -157,13 +160,14 @@ export const form_ref = Publr.ref<HTMLFormElement>((form) => {
 });
 export const root_ref = Publr.ref<HTMLElement>((root) => {
   state.chosen = chosenOfAddress();
-  state.language = languageIn(state.chosen);
   arrangeLayout(root);
   refreshConditions(root);
-  // The visual editor switches the language from its own top bar; the form follows.
+  // The visual editor switches the language from its own top bar (`language=pl`, empty
+  // for the main one); the form follows.
   const follow = (event: Event) => {
-    state.language = String((event as CustomEvent).detail ?? "");
-    state.chosen = withPair(state.chosen, languageDimension(), state.language);
+    const pair = String((event as CustomEvent).detail ?? "");
+    const dimension = pair === "" ? state.dimensions[0]?.name ?? "" : pair.split("=")[0];
+    state.chosen = withPair(state.chosen, dimension, pair);
     refreshConditions(root);
   };
   window.addEventListener("publr:language", follow);
@@ -268,26 +272,24 @@ const variedPaths = (root: HTMLElement) => {
   }
   return paths;
 };
-/** The dimension the language switch is in: `language`. */
-const languageDimension = () => (state.languages.find((language) => language.code !== "")?.code ?? "").split("=")[0];
-/** The language pair in a combination, when it is one of the switch's. */
-const languageIn = (chosen: string) => {
-  const dimension = languageDimension();
-  const pair = pairsOf(chosen).find((one) => one[0] === dimension);
-  const code = pair ? pair.join("=") : "";
-  return state.languages.some((language) => language.code === code) ? code : "";
-};
 /** The combination asked for in the address (`?in=language=pl`), else the one chosen top
  * right (`<html data-variant>`). */
 const chosenOfAddress = () =>
   new URLSearchParams(location.search).get("in") ?? document.documentElement.dataset.variant ?? "";
 
-/** Switching the language the translated fields show: the address keeps the combination,
- * so a reload, a link or the editor drawn again stays in it. */
-export const onLanguage = (event: MouseEvent) => {
-  const label = (event.currentTarget as HTMLElement).textContent?.trim() ?? "";
-  state.language = state.languages.find((language) => language.label === label)?.code ?? "";
-  state.chosen = withPair(state.chosen, languageDimension(), state.language);
+/** A dimension's code in the combination shown; empty for its main value. */
+const codeIn = (dimension: string) => pairsOf(state.chosen).find((pair) => pair[0] === dimension)?.[1] ?? "";
+/** What a dimension's picker says it shows now: `English`. */
+const currentOf = (dimension: { name: string; values: Array<{ code: string; label: string }> }) =>
+  dimension.values.find((value) => value.code === codeIn(dimension.name))?.label ?? dimension.values[0]?.label ?? "";
+
+/** Switching a dimension the varied fields show: the address keeps the combination, so a
+ * reload, a link or the editor drawn again stays in it. */
+export const onDimension = (event: MouseEvent) => {
+  const item = event.currentTarget as HTMLElement;
+  const dimension = item.dataset.dimension ?? "";
+  const code = item.dataset.code ?? "";
+  state.chosen = withPair(state.chosen, dimension, code === "" ? "" : `${dimension}=${code}`);
   const address = new URL(location.href);
   if (state.chosen === "") address.searchParams.delete("in");
   else address.searchParams.set("in", state.chosen);
@@ -305,7 +307,7 @@ const outOfLanguage = (element: HTMLElement, varied: Map<string, Set<string>>) =
   const base = own === null ? path : path.slice(0, path.lastIndexOf("@"));
   const dimensions = varied.get(base);
   const mark = element.querySelector<HTMLElement>(':scope > [data-part="shared-mark"]');
-  if (mark) mark.hidden = !(dimensions === undefined && state.chosen !== "" && state.languages.length > 1);
+  if (mark) mark.hidden = !(dimensions === undefined && state.chosen !== "" && state.dimensions.length > 0);
   if (dimensions === undefined) return false;
   return (own ?? "") !== shownFor(dimensions, state.chosen);
 };
@@ -764,9 +766,10 @@ export type RecordEditorProps = {
   aside?: JSX.Element;
   /** The dependency dialog for the aside, rendered by the adapter under `serve --dev`. */
   impact?: JSX.Element;
-  /** The site's languages, the main one first with an empty code: the switch between the
-   * values of translated fields. Fewer than two: no switch. */
-  languages?: Array<{ code: string; label: string }>;
+  /** The site's dimensions with more than one value (a language, a variation), each with
+   * its picker's word and its values, the main one first with an empty code: a picker each
+   * for which values the varied fields show. None: no pickers. */
+  dimensions?: Array<{ name: string; label: string; values: Array<{ code: string; label: string }> }>;
   /** One column: the record's editor in a visual record's Entry panel. */
   stacked?: boolean;
   /** The values the entry holds, and the most it may; 0 for no count shown. */
@@ -820,7 +823,7 @@ export function RecordEditor({
   focus = true,
   aside,
   impact,
-  languages = [],
+  dimensions = [],
   values_count = 0,
   values_max = 0,
   request_by = "",
@@ -853,7 +856,7 @@ export function RecordEditor({
   state.has_destructive = has_destructive;
   state.actions = actions;
   state.has_primary = actions.some((item) => item.primary);
-  state.languages = languages;
+  state.dimensions = dimensions;
   state.problems = problems_by_field(problems.map((problem) => ({ field: problem.code, message: problem.text })));
 
   return (
@@ -885,10 +888,22 @@ export function RecordEditor({
               {state.changed && <Status tone="warning">{Publr.t("unpublished changes")}</Status>}
             </StatusStrip>
             <Button hierarchy="tertiary" size="sm" hidden={!state.save_error} onClick={retrySave}>{Publr.t("Retry save")}</Button>
-            {state.languages.length > 1 && (
-              <div class="ml-auto flex items-center gap-3" role="group" aria-label={Publr.t("Language")} data-part="language-switch">
-                {state.languages.map((language) => (
-                  <TextToggle label={language.label} pressed={state.language === language.code} onClick={onLanguage} />
+            {state.dimensions.length > 0 && (
+              <div class="ml-auto flex items-center gap-2" data-part="dimension-pickers">
+                {state.dimensions.map((dimension) => (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" hierarchy="secondary" size="sm" data-part="dimension-picker" data-dimension={dimension.name}>
+                        <span>{Publr.t("{label}: {current}", { label: dimension.label, current: currentOf(dimension) })}</span>
+                        <Icon name="chevron-down" size="sm" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="right" classes="min-w-48">
+                      {dimension.values.map((value) => (
+                        <DropdownMenuItem data-dimension={dimension.name} data-code={value.code} onClick={onDimension}>{value.label}</DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 ))}
               </div>
             )}

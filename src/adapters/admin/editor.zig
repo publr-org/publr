@@ -1026,7 +1026,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .focus = def.kind != .settings,
                     .aside = aside,
                     .impact = null,
-                    .languages = try languages_of(views.RecordEditor.LanguagesItem, session),
+                    .dimensions = try pickers_of(session),
                     .request_by = requested.by,
                     .request_label = requested.label,
                     .request_transition = requested.transition,
@@ -2076,6 +2076,43 @@ fn other_pairs(session: *Session) Error![]const []const model.dimension.Pair {
 
 /// The most combinations a record's form draws a field for.
 const combinations_max: u32 = 256;
+
+/// The editor's pickers: each dimension with more than one value, in its picker's word (its
+/// label when it names none), its values the main one first under an empty code.
+fn pickers_of(session: *Session) Error![]const views.RecordEditor.DimensionsItem {
+    std.debug.assert(session.signed_in());
+
+    const Item = views.RecordEditor.DimensionsItem;
+    const Shown = @typeInfo(@FieldType(Item, "values")).pointer.child;
+    var out: std.ArrayList(Item) = .empty;
+
+    for (variants_module.all(&session.ctx)) |dimension| {
+        const values = variants_module.values_of(&session.ctx, dimension) catch continue;
+
+        if (values.len < 2) {
+            continue;
+        }
+
+        const items = try session.arena.alloc(Shown, values.len);
+
+        for (values, items) |value, *item| {
+            item.* = .{
+                .code = if (value.main) "" else value.code,
+                .label = value.label,
+            };
+        }
+
+        const word = if (dimension.picker.len > 0) dimension.picker else dimension.label;
+
+        try out.append(session.arena, .{
+            .name = dimension.name,
+            .label = try session.declared(word),
+            .values = items,
+        });
+    }
+
+    return out.items;
+}
 
 /// The site's languages for the editor's switch, the main one first under an empty code.
 pub fn languages_of(comptime Item: type, session: *Session) Error![]const Item {

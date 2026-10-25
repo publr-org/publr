@@ -32,7 +32,9 @@ pub fn chosen_pairs(session: *Session) []const Pair {
     return variant_operations.chosen_pairs(&session.ctx) catch &.{};
 }
 
-/// A switcher for each dimension with two values or more whose plugin names a picker.
+/// A switcher for each dimension that moves the whole site (its values have addresses: a
+/// language) with two values or more, whose plugin names a picker. Every other dimension is
+/// chosen in the editor.
 pub fn switchers(session: *Session, out: []Node) u32 {
     std.debug.assert(session.signed_in());
     std.debug.assert(out.len > 0);
@@ -43,7 +45,13 @@ pub fn switchers(session: *Session, out: []Node) u32 {
     var count: u32 = 0;
 
     for (read.dimensions) |one| {
-        if (count == out.len or one.picker.len == 0 or one.values.len < 2) {
+        const site_wide = for (one.values) |value| {
+            if (value.address.len > 0) {
+                break true;
+            }
+        } else false;
+
+        if (count == out.len or one.picker.len == 0 or one.values.len < 2 or !site_wide) {
             continue;
         }
 
