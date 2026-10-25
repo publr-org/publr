@@ -31,11 +31,11 @@ const groupsOf = (markers: Marker[], chosen: string, name: string) => {
  * as they change. A marker naming a dimension shows the field there when clicked. */
 export function FieldMarkers({ name }: FieldMarkersProps) {
   return (
-    <span class="flex flex-wrap items-center gap-1.5 self-center" data-part="field-markers">
+    <span class="flex h-5 flex-wrap items-center gap-1.5 overflow-visible" data-part="field-markers">
       {groupsOf(editor.markers, editor.chosen, name).map((group) => (
         <BadgeGroup label={group.label}>
           {group.markers.map((marker) => (
-            <button type="button" class="inline-flex cursor-pointer disabled:cursor-default" disabled={marker.dimension === ""}
+            <button type="button" class="inline-flex h-full cursor-pointer disabled:cursor-default" disabled={marker.dimension === ""}
               data-dimension={marker.dimension} data-code={marker.code} onClick={onDimension}>
               <Badge shape="segment" tone={marker.tone === "success" ? "success" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
             </button>
