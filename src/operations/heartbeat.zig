@@ -5,7 +5,7 @@ const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 
-pub const version = "0.4.0";
+pub const version = "0.4.1";
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "heartbeat",
