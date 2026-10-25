@@ -6,6 +6,7 @@ const Value = engine.Value;
 const api = engine.api;
 const escape = @import("../render.zig").escape;
 const printed_markup = @import("../render.zig").printed_markup;
+const json_script = @import("../json_script.zig");
 const address = @import("../../model/app/address.zig");
 
 pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
@@ -255,7 +256,7 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             if (set_markdown or !api.JS_IsUndefined(raw)) {
                 try write_raw(vm, &buffer.writer, if (set_markdown) markdown else raw, .{
                     .base = frame.ctx.url_base(),
-                    .markdown = set_markdown,
+                    .kind = if (set_markdown) .markdown else .html,
                 });
             } else try write_node(renderer, frame, buffer, children, depth);
 
@@ -363,8 +364,8 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
         pub const Raw = struct {
             /// The path the project is served under.
             base: []const u8,
-            /// `set:markdown`: the value is Markdown.
-            markdown: bool,
+            /// Markup, Markdown, or a script's JSON.
+            kind: @import("../ast.zig").RawKind,
         };
 
         /// A string printed as markup: Markdown converted, sanitized, its root paths under
@@ -376,13 +377,32 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
                 return;
             }
 
+            if (raw.kind == .json) {
+                const json = try vm.check(api.JS_JSONStringify(
+                    vm.context,
+                    value,
+                    api.publr_js_undefined(),
+                    api.publr_js_undefined(),
+                ));
+                defer vm.free(json);
+
+                // A value JSON cannot hold (a function, `undefined`) writes nothing.
+                if (api.JS_IsUndefined(json)) {
+                    return;
+                }
+
+                return json_script.write_json(writer, try vm.text(json));
+            }
+
             if (!api.JS_IsString(value)) {
                 return error.InvalidRawHTML;
             }
 
             const text = try vm.text(value);
 
-            try writer.writeAll(try printed_markup(vm.arena, text, raw.markdown, raw.base));
+            const markup = try printed_markup(vm.arena, text, raw.kind == .markdown, raw.base);
+
+            try writer.writeAll(markup);
         }
 
         /// An attribute's name, and the path the project is served under, which a root path

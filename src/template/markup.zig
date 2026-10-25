@@ -129,6 +129,10 @@ fn passthrough(compiler: *Compiler, rest: []const u8) Error!bool {
     const script = starts_with_tag(rest, "script");
     const style = starts_with_tag(rest, "style");
 
+    if (script and try @import("json_script.zig").take(compiler, rest)) {
+        return true;
+    }
+
     if (script or style) {
         const closing: []const u8 = if (script) "</script>" else "</style>";
         const end = std.mem.indexOf(u8, rest, closing) orelse {
@@ -520,10 +524,11 @@ fn is_attribute_char(byte: u8) bool {
     return !std.ascii.isWhitespace(byte) and byte != '=' and byte != '>' and byte != '/';
 }
 
-/// The markup an element's content is set to: `set:html={…}` or `set:markdown={…}`.
-const SetContent = struct {
+/// The markup an element's content is set to: `set:html={…}` or `set:markdown={…}`; a
+/// script's JSON (`set:json`) is `json_script.zig`'s.
+pub const SetContent = struct {
     expression: []const u8,
-    markdown: bool,
+    kind: ast.RawKind,
 };
 
 /// Writes an element's attributes; returns what `set:html` or `set:markdown` sets its
@@ -550,7 +555,7 @@ fn write_attributes(
                 .expression = attr.expression orelse {
                     return compiler.fail("{s} takes an {{expression}}", .{attr.name});
                 },
-                .markdown = markdown,
+                .kind = if (markdown) .markdown else .html,
             };
             continue;
         }
@@ -682,8 +687,9 @@ fn attribute_expression(compiler: *Compiler, name: []const u8, text: []const u8)
     }
 }
 
-/// `set:html={v}` or `set:markdown={v}`: the value written as markup, sanitized.
-fn write_raw(compiler: *Compiler, set: SetContent) Error!void {
+/// `set:html={v}` or `set:markdown={v}`: the value written as markup, sanitized; `set:json`,
+/// the value as JSON.
+pub fn write_raw(compiler: *Compiler, set: SetContent) Error!void {
     std.debug.assert(set.expression.len > 0);
 
     const value = try expression.expression(compiler, set.expression);
@@ -692,12 +698,12 @@ fn write_raw(compiler: *Compiler, set: SetContent) Error!void {
         .javascript, .string, .opt_string => try compiler.push(.{
             .raw = .{
                 .expr = value,
-                .markdown = set.markdown,
+                .kind = set.kind,
             },
         }),
         else => return compiler.fail(
-            "{s} needs a string; got a {s}",
-            .{ if (set.markdown) "set:markdown" else "set:html", @tagName(value.type) },
+            "set:{s} needs a string; got a {s}",
+            .{ @tagName(set.kind), @tagName(value.type) },
         ),
     }
 }

@@ -257,12 +257,21 @@ pub const PropArg = struct {
     };
 };
 
+/// What an element's content is set to: markup (sanitized), Markdown (converted, then
+/// sanitized), or a script's JSON.
+pub const RawKind = enum {
+    html,
+    markdown,
+    json,
+};
+
 pub const Node = union(enum) {
     /// Markup, exactly as authored (or collapsed, when the app is minified).
     text: []const u8,
     /// `{expr}`: written escaped by type.
     value: Expr,
-    /// `set:html={expr}`: written sanitized; `set:markdown={expr}`: converted, then the same.
+    /// `set:html={expr}`: written sanitized; `set:markdown={expr}`: converted, then the same;
+    /// `set:json={expr}` on a `<script>`: written as JSON a script cannot be closed by.
     raw: Raw,
     /// ` name="..."` from an `={expr}` attribute: strings escaped, an optional only when
     /// present, a boolean as a bare attribute, a number printed.
@@ -296,7 +305,7 @@ pub const Node = union(enum) {
     };
     pub const Raw = struct {
         expr: Expr,
-        markdown: bool,
+        kind: RawKind,
     };
     pub const Loop = struct {
         collection: []const u8,

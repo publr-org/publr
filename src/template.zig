@@ -1657,6 +1657,58 @@ test "set:html: whatever a page prints as markup is sanitized, natively and in s
     try testing.expect(!contains(scripted, "onerror"));
 }
 
+test "set:json: a script's data as JSON that cannot close it, natively and in script" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/posts/[slug].publr",
+            \\---
+            \\const post = Publr.build.getEntry();
+            \\---
+            \\<script type="application/ld+json" set:json={post.data.content} />
+        ),
+        source("content/scripted.publr",
+            \\---
+            \\const data = { '@type': 'Product', name: 'Sink </script><b>', price: 12 };
+            \\---
+            \\<script type="application/ld+json" set:json={data}></script>
+            \\<script type="application/ld+json" set:json={{ "@type": "Thing", price: 12 }} />
+            \\<p>after</p>
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const ctx: TestContext = .{
+        .arena = arena,
+        .slug = "first",
+    };
+    const native_index = program.find("content/posts/[slug].publr").?;
+    const native = try render_test(arena, program, native_index, &ctx);
+    try testing.expect(contains(
+        native,
+        "<script type=\"application/ld+json\">\"\\u003cp\\u003eOne\\u003c/p\\u003e",
+    ));
+    try testing.expect(!contains(native, "<script>alert"));
+
+    const scripted_index = program.find("content/scripted.publr").?;
+    try testing.expect(program.templates[scripted_index].javascript != null);
+    const scripted = try render_test(arena, program, scripted_index, &ctx);
+    try testing.expect(contains(scripted, "<script type=\"application/ld+json\">{\"@type\":" ++
+        "\"Product\",\"name\":\"Sink \\u003c/script\\u003e\\u003cb\\u003e\",\"price\":12}" ++
+        "</script>"));
+    try testing.expect(contains(scripted, "{\"@type\":\"Thing\",\"price\":12}</script>"));
+    try testing.expect(contains(scripted, "<p>after</p>"));
+
+    const with_content = try refuse(&.{
+        source("content/index.publr", "<script set:json={1}>x</script>"),
+    }, .{});
+    defer testing.allocator.free(with_content);
+
+    try testing.expect(contains(with_content, "takes no content"));
+}
+
 test "set:markdown: a field's Markdown printed as HTML, sanitized, natively and in script" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();

@@ -5,6 +5,7 @@
 const std = @import("std");
 const sanitize = @import("../lib/sanitize.zig");
 const markdown = @import("../lib/markdown.zig");
+const json_script = @import("json_script.zig");
 const ast = @import("ast.zig");
 const compile = @import("compile.zig");
 const time = @import("../lib/time.zig");
@@ -494,7 +495,7 @@ pub fn Renderer(comptime Ctx: type) type {
                 const value = try Bridge.eval(renderer, frame, expr.node.javascript);
                 return Bridge.write_raw(frame.execution.vm.?, writer, value, .{
                     .base = base,
-                    .markdown = raw.markdown,
+                    .kind = raw.kind,
                 });
             }
 
@@ -506,7 +507,13 @@ pub fn Renderer(comptime Ctx: type) type {
                 else => unreachable,
             };
 
-            try writer.writeAll(try printed_markup(renderer.arena, text, raw.markdown, base));
+            if (raw.kind == .json) {
+                return json_script.write_string(writer, text);
+            }
+
+            const markup = try printed_markup(renderer.arena, text, raw.kind == .markdown, base);
+
+            try writer.writeAll(markup);
         }
 
         fn write_attr(

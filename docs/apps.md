@@ -285,7 +285,12 @@ a handler, and `<style>` or `style` never reach the page. Nothing skips it. A pa
 app's own files (`public/`, linked from a template), an island or an approved plugin
 script, never from printed markup. `set:markdown` prints a string of Markdown (a text field
 set to Markdown) as that markup: it is converted to HTML first, then sanitized the same way.
-An element takes one of the two. Components receive `props`; children fill `<slot />`.
+An element takes one of the two. A `<script>` with `set:json={value}` and no content of its
+own holds the value as JSON, its `<`, `>` and `&` written as `\u003c`, `\u003e` and
+`\u0026` so it can never close the script: a page's structured data,
+`<script type="application/ld+json" set:json={{ "@type": "Product", name: product.title }} />`.
+Any other script is written as authored, with no expressions filled in. Components
+receive `props`; children fill `<slot />`.
 Data reads use the existing `Publr.build` / `Publr.request` context and permissions.
 Request access requires a dynamic template, including when reached through an alias.
 Use a seeded generator for repeatable patterns and `Publr.build.now()` or
