@@ -9,7 +9,7 @@ const languages = @import("languages.zig");
 
 const Project = @import("../../server/project.zig").Project;
 const Target = Project.Target;
-const Place = @import("../../model.zig").variant.Place;
+const Place = @import("../../model.zig").dimension.Place;
 const Request = http.Request;
 const Response = http.Response;
 

@@ -297,7 +297,7 @@ pub fn Of(comptime Domain: type) type {
                     return error.OutOfMemory;
                 };
 
-                renamed[0].field = model.variant.split(renamed[0].field).name;
+                renamed[0].field = model.dimension.split(renamed[0].field).name;
                 query.filters = renamed;
                 rows = try documents.list(ctx.db, ctx.arena, query);
             }
@@ -677,11 +677,11 @@ pub fn Of(comptime Domain: type) type {
             }
 
             const slug_field = model.document.slug_field_of(def) orelse return error.Invalid;
-            const varied = in.variant.len > 0 and slug_field.variants;
+            const varied = in.variant.len > 0 and slug_field.dimensions.len > 0;
 
             return .{
                 .field = if (varied)
-                    try model.variant.key_of(arena, slug_field.name, in.variant)
+                    try @import("../variants.zig").key_in(ctx, slug_field.name, in.variant)
                 else
                     slug_field.name,
                 .text = slug,

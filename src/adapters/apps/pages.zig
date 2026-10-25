@@ -27,7 +27,7 @@ const Request = http.Request;
 const Response = http.Response;
 const HttpContext = http.Context;
 const Context = context_module.Context;
-const model_variant = @import("../../model/variant.zig");
+const model_variant = @import("../../model/dimension.zig");
 
 pub const Renderer = engine.Renderer(Context);
 

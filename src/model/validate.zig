@@ -1,7 +1,7 @@
 const std = @import("std");
 const field = @import("field.zig");
 const kinds = @import("kinds.zig");
-const variant = @import("variant.zig");
+const dimension = @import("dimension.zig");
 
 const Def = field.Def;
 const Kind = kinds.Kind;
@@ -92,7 +92,7 @@ pub fn validate_document(
         validate_field(known, conditional(def, object), value, def.name, now_ms, problems);
     }
 
-    validate_variants(known, defs, object, "", now_ms, problems);
+    validate_combinations(known, defs, object, "", now_ms, problems);
 
     if (values_in(document, 0) > values_max) {
         problems.add("", too_many_values);
@@ -107,9 +107,9 @@ pub fn validate_document(
     }
 }
 
-/// Each value a field holds for a variant (`name@pl`) is checked as the field's own would
-/// be, except that none is required: a variant left out reads its fallback.
-fn validate_variants(
+/// Each value a field holds in a combination (`name@language=pl`) is checked as the field's
+/// own would be, except that none is required: a combination left out reads its fallback.
+fn validate_combinations(
     known: []const Kind,
     defs: []const Def,
     object: std.json.ObjectMap,
@@ -123,15 +123,15 @@ fn validate_variants(
     var keys = object.iterator();
 
     while (keys.next()) |entry| {
-        const key = variant.split(entry.key_ptr.*);
+        const key = dimension.split(entry.key_ptr.*);
 
-        if (key.code.len == 0) {
+        if (key.combination.len == 0) {
             continue;
         }
 
         const def = find(defs, key.name) orelse continue;
 
-        if (!def.variants or !variant.valid_code(key.code)) {
+        if (!dimension.fits(def.dimensions, key.combination)) {
             continue;
         }
 
@@ -150,19 +150,19 @@ fn validate_variants(
     }
 }
 
-/// The field a document key belongs to: its own name, or a variant of a field that holds them.
+/// The field a document key belongs to: its own name, or a combination the field may hold.
 fn find_key(defs: []const Def, key_text: []const u8) ?*const Def {
     std.debug.assert(key_text.len <= string_len_max);
     std.debug.assert(defs.len <= field.fields_max);
 
-    const key = variant.split(key_text);
+    const key = dimension.split(key_text);
     const def = find(defs, key.name) orelse return null;
 
-    if (key.code.len == 0) {
+    if (key.combination.len == 0) {
         return def;
     }
 
-    return if (def.variants and variant.valid_code(key.code)) def else null;
+    return if (dimension.fits(def.dimensions, key.combination)) def else null;
 }
 
 fn conditional(def: Def, object: std.json.ObjectMap) Def {
@@ -611,7 +611,7 @@ fn validate_group(
         );
     }
 
-    validate_variants(known, def.fields, object, path, now_ms, problems);
+    validate_combinations(known, def.fields, object, path, now_ms, problems);
 }
 
 fn validate_repeater(

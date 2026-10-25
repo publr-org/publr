@@ -315,7 +315,11 @@ pub fn panel_node(
         .sortable = field.sortable orelse
             model.field_filter.sorts_by_default(family_of(field.kind)),
         .can_translate = dimension_offered != null and !model.field.is_layout(field.kind),
-        .translates = if (path == null) translated_by_default(field.kind) else field.variants,
+        .translates = if (path == null)
+            translated_by_default(field.kind)
+        else
+            field.dimensions.len > 0,
+        .dimension = if (dimension_offered) |dimension| dimension.name else "",
         .translate_label = if (dimension_offered) |dimension|
             try session.declared(dimension.label)
         else
@@ -675,6 +679,7 @@ test {
 /// The variant setting's words, when a plugin declares the dimension and the site has more
 /// than one variant.
 const Offered = struct {
+    name: []const u8,
     label: []const u8,
     help: []const u8,
 };
@@ -684,6 +689,7 @@ fn translate_offered(session: *Session) Error!?Offered {
 
     const dimension = variants.setting(&session.ctx) orelse return null;
     const setting: Offered = .{
+        .name = dimension.name,
         .label = dimension.label,
         .help = dimension.help,
     };

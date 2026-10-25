@@ -1,13 +1,17 @@
 //! A variant dimension: what makes a field hold a value per variant (`name@pl`, see
-//! `model/variant.zig`). One plugin may declare it (the languages plugin: a language is a
+//! `model/dimension.zig`). One plugin may declare it (the languages plugin: a language is a
 //! variant); the core draws its setting on every field, reads the list where it shows or
 //! serves variants, and knows nothing else about what a variant is.
 const std = @import("std");
 const plugin_define = @import("define.zig");
-const model_variant = @import("../../model/variant.zig");
+const model_variant = @import("../../model/dimension.zig");
 
 /// What a plugin's `define` takes as `.variants`.
 pub const Dimension = struct {
+    /// What it is called where values are stored and asked for: `language`.
+    name: []const u8,
+    /// Higher keeps its value longer when a read falls back across dimensions.
+    priority: i32 = 0,
     /// The field setting that turns it on: `Translate`.
     label: []const u8,
     /// What the setting means, under it.
@@ -55,6 +59,11 @@ pub fn of(comptime Plugin: type) ?Dimension {
             @compileError("plugin " ++ name ++ ": `variants` needs a label and help");
         }
 
+        if (!model_variant.valid_name(declared.name)) {
+            @compileError("plugin " ++ name ++ ": `variants.name` is lowercase letters, " ++
+                "digits and _, a letter first");
+        }
+
         const kind = if (@hasDecl(List, "given")) List.given.kind else List.kind;
 
         if (kind != .read or !@hasField(List.Out, "variants")) {
@@ -75,6 +84,8 @@ pub fn declared_of(comptime Plugin: type) ?model_variant.Declared {
         const dimension = of(Plugin) orelse return null;
 
         return .{
+            .name = dimension.name,
+            .priority = dimension.priority,
             .label = dimension.label,
             .help = dimension.help,
             .picker = dimension.picker,

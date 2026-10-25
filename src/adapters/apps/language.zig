@@ -6,7 +6,7 @@ const std = @import("std");
 const runtime = @import("runtime");
 const languages = @import("../../server/languages.zig");
 const context_module = @import("context.zig");
-const model_variant = @import("../../model/variant.zig");
+const model_variant = @import("../../model/dimension.zig");
 
 const Context = context_module.Context;
 const Project = @import("../../server/project.zig").Project;

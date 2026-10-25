@@ -8,7 +8,7 @@ const identity_module = @import("../rest/identity.zig");
 
 const Project = @import("../../server/project.zig").Project;
 const Target = Project.Target;
-const Place = model.variant.Place;
+const Place = model.dimension.Place;
 
 /// Every language's place, the main one first; empty on a site without languages.
 pub fn places(project: *const Project, arena: std.mem.Allocator) ![]const Place {
@@ -46,7 +46,7 @@ pub fn locate(project: *const Project, arena: std.mem.Allocator, target: Target)
             continue;
         }
 
-        if (model.variant.beneath(place.address, target.path)) |rest| {
+        if (model.dimension.beneath(place.address, target.path)) |rest| {
             located.path = rest;
             located.place = place;
 

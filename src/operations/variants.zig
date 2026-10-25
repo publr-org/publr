@@ -5,7 +5,7 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const registry = @import("../server/registry.zig");
 const dimension_module = @import("../sdk/plugin/variants.zig");
-const model_variant = @import("../model/variant.zig");
+const model_variant = @import("../model/dimension.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -102,9 +102,45 @@ pub fn main(ctx: *Ctx) Error!?Variant {
     return null;
 }
 
+/// `name`'s key in the declared dimension's `code`: `title@language=pl`; `name` alone for the
+/// main value, or on a site that declares none.
+pub fn key_in(
+    ctx: *const Ctx,
+    name: []const u8,
+    code: []const u8,
+) Error![]const u8 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(code.len <= model_variant.code_len_max);
+
+    const dimension = setting(ctx) orelse return name;
+
+    return model_variant.key_of(ctx.arena, name, &.{.{
+        .dimension = dimension.name,
+        .code = code,
+    }});
+}
+
+/// The declared dimension's code `key` is in (`title@language=pl` gives `pl`); empty for a
+/// main value, another dimension's, or a site that declares none.
+pub fn code_in(ctx: *const Ctx, key: []const u8) []const u8 {
+    std.debug.assert(key.len > 0);
+
+    const dimension = setting(ctx) orelse return "";
+    const combination = model_variant.parse(model_variant.split(key).combination) orelse {
+        return "";
+    };
+
+    std.debug.assert(combination.len <= model_variant.dimensions_max);
+
+    return combination.code_of(dimension.name);
+}
+
 /// What the admin shows of the dimension: the field setting, the picker, the type setting
 /// for untranslated records.
 pub const Setting = struct {
+    /// The dimension's name: `language`.
+    name: []const u8,
+    priority: i32,
     label: []const u8,
     help: []const u8,
     picker: []const u8,
@@ -117,6 +153,8 @@ pub fn setting(ctx: *const Ctx) ?Setting {
 
     if (registry.variants) |dimension| {
         return .{
+            .name = dimension.name,
+            .priority = dimension.priority,
             .label = dimension.label,
             .help = dimension.help,
             .picker = dimension.picker,
@@ -127,6 +165,8 @@ pub fn setting(ctx: *const Ctx) ?Setting {
     const declared = installed(ctx) orelse return null;
 
     return .{
+        .name = declared.name,
+        .priority = declared.priority,
         .label = declared.label,
         .help = declared.help,
         .picker = declared.picker,

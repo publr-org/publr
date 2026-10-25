@@ -156,7 +156,7 @@ fn text_in(
     std.debug.assert(name.len > 0);
     std.debug.assert(code.len > 0);
 
-    const key = try model.variant.key_of(ctx.arena, name, code);
+    const key = try variants.key_in(ctx, name, code);
     const value = if (document == .object) document.object.get(key) else null;
 
     return if (value != null and value.? == .string) value.?.string else "";
@@ -314,7 +314,7 @@ pub const Changes = struct {
 fn write_translation(writer: anytype, translation: Translation) !void {
     std.debug.assert(translation.code.len > 0);
 
-    if (!model.variant.valid_code(translation.code)) {
+    if (!model.dimension.valid_code(translation.code)) {
         return error.WriteFailed;
     }
 

@@ -18,7 +18,7 @@ const build = @import("build.zig");
 const Project = @import("../../server/project.zig").Project;
 const identity_module = @import("../rest/identity.zig");
 const App = @import("state.zig").App;
-const Place = @import("../../model/variant.zig").Place;
+const Place = @import("../../model/dimension.zig").Place;
 const Island = @import("../../template.zig").Island;
 
 const Request = http.Request;

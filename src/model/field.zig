@@ -1,6 +1,7 @@
 const std = @import("std");
 const kinds = @import("kinds.zig");
 const defaults = @import("defaults.zig");
+const dimension = @import("dimension.zig");
 
 pub const options = @import("field/options.zig");
 pub const validation = @import("field/validation.zig");
@@ -44,9 +45,9 @@ pub const Def = struct {
     filterable: bool = true,
     /// Lists can order by it; null: as its kind does (numbers, money, dates, times).
     sortable: ?bool = null,
-    /// Holds a value per variant beside the main one (`name@pl`, see `variant.zig`): what a
-    /// variant is belongs to the plugin that declares the dimension, a language for one.
-    variants: bool = false,
+    /// The dimensions it holds a value per combination of, beside the main one
+    /// (`name@language=pl`, see `dimension.zig`); `"*"` for every one the site has.
+    dimensions: []const []const u8 = &.{},
     /// Declared in code by the type's owner: shown, never edited or removed by hand.
     locked: bool = false,
     many: bool = false,
@@ -383,6 +384,7 @@ fn validate_kind_rules(
     validate_bounds(def, problems);
     validate_shape(kind, def, problems);
     validate_lists(kind, def, problems);
+    validate_dimensions(def, problems);
 
     if (kind.has.media) {
         validate_media(def, problems);
@@ -492,6 +494,42 @@ fn validate_lists(kind: kinds.Kind, def: Def, problems: *Problems) void {
 
             return;
         }
+    }
+}
+
+/// Each a dimension's name (or `"*"`), once, at most as many as a site has.
+fn validate_dimensions(def: Def, problems: *Problems) void {
+    std.debug.assert(problems.len <= problems_max);
+    std.debug.assert(def.name.len > 0);
+
+    const names = def.dimensions;
+
+    if (names.len > dimension.dimensions_max) {
+        problems.add(def.name, "at most 4 dimensions");
+
+        return;
+    }
+
+    for (names, 0..) |name, index| {
+        const known = std.mem.eql(u8, name, dimension.every) or dimension.valid_name(name);
+
+        if (!known) {
+            problems.add(def.name, "a dimension is named in lowercase letters, digits and _");
+
+            return;
+        }
+
+        for (names[0..index]) |before| {
+            if (std.mem.eql(u8, before, name)) {
+                problems.add(def.name, "each dimension once");
+
+                return;
+            }
+        }
+    }
+
+    if (is_layout(def.kind) and names.len > 0) {
+        problems.add(def.name, "a layout field holds no values to vary");
     }
 }
 

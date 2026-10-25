@@ -158,19 +158,21 @@ it is about whether or when the record is live, it is a status; if it is a
 grouping or an editing state, it is derived from records (release membership
 via references, pending edits via `changed`).
 
-## Languages and other variants
+## Languages and other dimensions
 
-A field may hold a value per **variant** beside its own (`variants: true`): the value in a
-variant is stored under the field's name with the variant's code appended, `name@pl` beside
-`name`, in the same rows as any value; the plain name holds the main value. A nested field
-carries the code on its own segment (`faq.question@pl`), a group or repeater marked as a
-whole on its own (`sections@pl`, its items then a structure of their own). A record is
-one record in every variant: a field not marked holds one value for all of them.
+A field may hold a value per **combination of dimensions** beside its own: it lists the
+dimensions it varies by (`"dimensions": ["language"]`, or `["*"]` for every one the site
+has). A value in a combination is stored under the field's name with the combination
+appended, `name@language=pl` beside `name` (two dimensions: `name@language=pl,variation=b`,
+sorted by name), in the same rows as any value; the plain name holds the main value. A
+nested field carries the combination on its own segment (`faq.question@language=pl`), a
+group or repeater marked as a whole on its own (`sections@language=pl`, its items then a
+structure of their own). A record is one record in every combination: a field that lists
+no dimension holds one value for all of them.
 
-What a variant is belongs to the plugin that declares the dimension; the languages plugin
-makes each language a variant, and labels the field setting Translate. The core stores,
-validates (a variant's value by the field's own rules, never required), reads and picks
-them:
+What a dimension is belongs to the plugin that declares it; the languages plugin declares
+`language`, and labels the field setting Translate. The core stores, validates (a
+combination's value by the field's own rules, never required), reads and picks them:
 
 - Read whole (the admin, the API, `record get`), a document carries every variant beside
   its field.
@@ -180,8 +182,9 @@ them:
   slug follow. `--slug` with `--variant` matches the variant's slug first.
 - A type's `variant_fallback` (default true) says what a record with nothing written in a
   variant does there: shows in its main values, or is left out (not listed; not found).
-- Changing a type keeps every variant's value; turning a field's variants off drops them,
-  asked first as removing a field with content is (`--drop_content`).
+- Changing a type keeps every combination's value; taking a dimension off a field drops its
+  values in that dimension, asked first as removing a field with content is
+  (`--drop_content`).
 
 ## Taxonomies
 

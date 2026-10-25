@@ -31,7 +31,7 @@ pub const delete_references = Store.delete_references;
 pub const read_text = Store.read_text;
 pub const delete_field = Store.delete_field;
 pub const count_field = Store.count_field;
-pub const count_variants = Store.count_variants;
+pub const count_in_dimension = Store.count_in_dimension;
 
 test "term values live apart from record values" {
     var fixture: db.testing.Fixture = undefined;

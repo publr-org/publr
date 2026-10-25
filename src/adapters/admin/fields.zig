@@ -1877,16 +1877,21 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-/// The address before a slug: its language's, for a translated one (`slug@pl`).
+/// The address before a slug: its language's, for a translated one (`slug@language=pl`).
 fn slug_prefix_in(context: Context, name: []const u8) []const u8 {
     std.debug.assert(name.len > 0);
     std.debug.assert(context.slug_prefixes.len <= 64);
 
-    const code = model.variant.split(name).code;
+    const dimension = model.dimension;
+    const combination = dimension.parse(dimension.split(name).combination) orelse {
+        return context.slug_prefix;
+    };
 
     for (context.slug_prefixes) |entry| {
-        if (code.len > 0 and std.mem.eql(u8, entry.code, code)) {
-            return entry.prefix;
+        for (combination.slice()) |pair| {
+            if (std.mem.eql(u8, entry.code, pair.code)) {
+                return entry.prefix;
+            }
         }
     }
 

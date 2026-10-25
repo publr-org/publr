@@ -2013,9 +2013,9 @@ pub fn varied(
     std.debug.assert(session.signed_in());
     std.debug.assert(defs.len <= model.field.fields_max);
 
-    const codes = try variant_codes(session);
+    const others = try other_pairs(session);
 
-    return fields.variants.expanded(session.arena, defs, codes, options.document);
+    return fields.variants.expanded(session.arena, defs, others, options.document);
 }
 
 /// The codes of the site's variants other than the main one; none on a site with one.
@@ -2030,6 +2030,26 @@ pub fn variant_codes(session: *Session) Error![]const []const u8 {
     }
 
     return codes;
+}
+
+/// The declared dimension at each of its values but the main one, for the form.
+fn other_pairs(session: *Session) Error![]const model.dimension.Pair {
+    std.debug.assert(session.signed_in());
+
+    const setting = variants_module.setting(&session.ctx) orelse return &.{};
+    const codes = try variant_codes(session);
+    const pairs = try session.arena.alloc(model.dimension.Pair, codes.len);
+
+    std.debug.assert(setting.name.len > 0);
+
+    for (codes, pairs) |code, *pair| {
+        pair.* = .{
+            .dimension = setting.name,
+            .code = code,
+        };
+    }
+
+    return pairs;
 }
 
 /// The site's languages for the editor's switch, the main one first under an empty code.

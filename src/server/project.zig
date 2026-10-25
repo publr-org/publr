@@ -116,7 +116,7 @@ pub const Project = struct {
         /// The path in the app, without the language's address.
         path: []const u8,
         /// The language the page is in, and its address (`/pl`), on a site with languages.
-        place: @import("../model/variant.zig").Place = .{},
+        place: @import("../model/dimension.zig").Place = .{},
     };
 
     /// Which app answers `path` on `host`: the subdomain's app, else the longest path mount.

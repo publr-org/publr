@@ -8,7 +8,7 @@ const engine = @import("../../template.zig");
 const registry = @import("../../server/registry.zig");
 const variants = @import("../../operations/variants.zig");
 const record_operations = @import("../../operations/record.zig");
-const model_variant = @import("../../model/variant.zig");
+const model_variant = @import("../../model/dimension.zig");
 const context_module = @import("context.zig");
 
 const Context = context_module.Context;

@@ -12,7 +12,8 @@ const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 const Record = store.documents.Record;
 const Value = std.json.Value;
-const variant = model.variant;
+const variant = model.dimension;
+const variants_module = @import("../variants.zig");
 
 pub fn Of(comptime Domain: type) type {
     return struct {
@@ -52,7 +53,12 @@ pub fn Of(comptime Domain: type) type {
             const parsed = @import("../../lib/json.zig").parse(Value, ctx.arena, text, .{}) catch {
                 return error.Invalid;
             };
-            const resolved = try variant.resolve(ctx.arena, def.fields, parsed, code);
+            const resolved = try variant.resolve.resolve(
+                ctx.arena,
+                def.fields,
+                parsed,
+                wanted_of(ctx, code),
+            );
 
             return std.json.Stringify.valueAlloc(ctx.arena, resolved, .{}) catch {
                 return error.OutOfMemory;
@@ -103,12 +109,16 @@ pub fn Of(comptime Domain: type) type {
             const parsed = @import("../../lib/json.zig").parse(Value, ctx.arena, text, .{}) catch {
                 return error.Invalid;
             };
-            const held = try variant.codes_in(ctx.arena, def.fields, parsed);
+            const name = (variants_module.setting(ctx) orelse return true).name;
+            const held = try variant.resolve.held_in(ctx.arena, def.fields, parsed);
             var buffer: [variant.order_max][]const u8 = undefined;
 
             for (variant.order(code, &buffer)) |wanted| {
-                for (held) |code_held| {
-                    if (wanted.len > 0 and std.mem.eql(u8, wanted, code_held)) {
+                for (held) |pair| {
+                    const same = std.mem.eql(u8, pair.dimension, name) and
+                        std.mem.eql(u8, pair.code, wanted);
+
+                    if (wanted.len > 0 and same) {
                         return true;
                     }
                 }
@@ -152,6 +162,29 @@ pub fn Of(comptime Domain: type) type {
                 .records = kept_records.items,
                 .texts = kept_texts.items,
             };
+        }
+
+        /// `code` as the combination a read asks for: the declared dimension at it, or
+        /// nothing on a site that declares none.
+        fn wanted_of(ctx: *const Ctx, code: []const u8) []const variant.Pair {
+            std.debug.assert(code.len <= variant.code_len_max);
+
+            const setting = variants_module.setting(ctx) orelse return &.{};
+
+            std.debug.assert(setting.name.len > 0);
+
+            if (code.len == 0) {
+                return &.{};
+            }
+
+            const one = ctx.arena.alloc(variant.Pair, 1) catch return &.{};
+
+            one[0] = .{
+                .dimension = setting.name,
+                .code = code,
+            };
+
+            return one;
         }
 
         pub const Kept = struct {

@@ -55,9 +55,14 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
         field.sortable = if (wanted == usual) null else wanted;
     }
 
-    // Turned on and off only where the form offers it: a site with one language keeps it.
-    if (form.get("variants_offered") != null) {
-        field.variants = !model.field.is_layout(field.kind) and form.get("variants") != null;
+    // Turned on and off only where the form offers it, for the dimension it names: a site
+    // with one language keeps what the field had.
+    const offered = form.text("variants_offered") orelse "";
+
+    if (model.dimension.valid_name(offered)) {
+        const on = !model.field.is_layout(field.kind) and form.get("variants") != null;
+
+        field.dimensions = if (on) try arena.dupe([]const u8, &.{offered}) else &.{};
     }
 
     field.help = form.text("help") orelse "";

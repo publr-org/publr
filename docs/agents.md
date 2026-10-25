@@ -498,11 +498,11 @@ publr languages save --languages '[{"code":"pl","name":"Polski","main":true},
 ```
 
 The main language is at `/`, every other at its address. A content type's field holds a
-value per language when it has `"variants": true` (`content_type create` or `update`);
-a value in a language is the field's name with the code, `"title@en"`, written beside
-`title` in the same record. One template serves every language: `/en/about` is the
+value per language when it lists `"dimensions": ["language"]` (`content_type create` or
+`update`); a value in a language is the field's name with the language, `"title@language=en"`,
+written beside `title` in the same record. One template serves every language: `/en/about` is the
 `/about` page read in English, its links keep `/en`. A plugin's own records cannot be
-translated yet. Turning a field's variants off drops its translations, so `content_type
+translated yet. Taking `language` off a field drops its translations, so `content_type
 update` asks for `--drop_content`. `--language` on an account is the admin's language,
 not the site's.
 

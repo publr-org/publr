@@ -667,23 +667,27 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             return removed;
         }
 
-        /// The variant values (`path@code`, and anything under one) the field holds.
-        pub fn count_variants(
+        /// The values the field holds in a combination naming `dimension`
+        /// (`path@language=pl`, and anything under one); `"*"` counts every combination.
+        pub fn count_in_dimension(
             connection: *db.Db,
             type_id: []const u8,
             path: []const u8,
+            dimension: []const u8,
         ) db.Error!u32 {
             std.debug.assert(type_id.len > 0);
-            std.debug.assert(path.len > 0);
+            std.debug.assert(path.len > 0 and dimension.len > 0);
 
             var select = try connection.prepare(
                 "SELECT count(*) FROM " ++ table ++ " WHERE type_id = ?1 AND " ++
-                    "substr(field, 1, length(?2) + 1) = ?2 || '@'",
+                    "substr(field, 1, length(?2) + 1) = ?2 || '@' AND (?3 = '*' OR " ++
+                    "instr(',' || substr(field, length(?2) + 2), ',' || ?3 || '=') > 0)",
             );
             defer select.finalize();
 
             try select.bind_text(1, type_id);
             try select.bind_text(2, path);
+            try select.bind_text(3, dimension);
 
             std.debug.assert(try select.step());
 
