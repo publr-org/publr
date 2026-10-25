@@ -10,7 +10,7 @@ const managed = Publr.build.managed();
 </head>
 <body>
   <main class="starter">
-    <a class="brand" href="https://publr.dev" aria-label="Publr">
+    <a class="brand" href="https://publr.app" aria-label="Publr">
       <svg viewBox="0 0 34 34" width="28" height="28" fill="currentColor" aria-hidden="true">
         <path d="M19.598 18.5C18.7696 19.9349 16.9348 20.4265 15.4999 19.5981C14.065 18.7696 13.5734 16.9349 14.4018 15.5C15.2303 14.0651 17.065 13.5735 18.4999 14.4019C19.9348 15.2303 20.4264 17.0651 19.598 18.5Z" />
         <path d="M23.232 10.2058C22.6797 11.1623 21.4565 11.4901 20.4999 10.9378C19.5433 10.3855 19.2156 9.16235 19.7679 8.20576C20.3201 7.24918 21.5433 6.92143 22.4999 7.47371C23.4565 8.026 23.7842 9.24918 23.232 10.2058Z" />
@@ -37,21 +37,21 @@ const managed = Publr.build.managed();
     {managed ? (
       <div class="copy">
         <h1>To get started, open your dashboard.</h1>
-        <p>Edit your pages and content there, or ask your agent. Looking for more instructions? Head over to the <a href="https://publr.dev/docs">docs</a>.</p>
+        <p>Edit your pages and content there, or ask your agent. Looking for more instructions? Head over to the <a href="https://publr.app/docs">docs</a>.</p>
       </div>
     ) : (
       <div class="copy">
         <h1>To get started, edit the index.publr file.</h1>
-        <p>It&rsquo;s in <code>apps/www/content</code>. Looking for a starting point or more instructions? Head over to the <a href="https://publr.dev/docs">docs</a>.</p>
+        <p>It&rsquo;s in <code>apps/www/content</code>. Looking for a starting point or more instructions? Head over to the <a href="https://publr.app/docs">docs</a>.</p>
       </div>
     )}
     <div class="actions">
       {managed ? (
         <a class="button primary" href="/admin">Dashboard</a>
       ) : (
-        <a class="button primary" href="https://publr.dev/docs">Deploy now</a>
+        <a class="button primary" href="https://publr.app/docs">Deploy now</a>
       )}
-      <a class="button secondary" href="https://publr.dev/docs">Docs</a>
+      <a class="button secondary" href="https://publr.app/docs">Docs</a>
     </div>
   </main>
 </body>

@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://publr.dev"><b>publr.dev</b></a> ·
+  <a href="https://publr.app"><b>publr.app</b></a> ·
   <a href="docs/">Docs</a> ·
   <a href="https://github.com/publr-org/publr/releases">Releases</a>
 </p>
