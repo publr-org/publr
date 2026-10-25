@@ -82,8 +82,24 @@ fn drawn(session: *Session, one: variant_operations.Chosen) !Node {
         .title = try session.declared(one.picker),
         .current = current,
         .choices = choices,
-        .back = session.request.path(),
+        .back = try back_of(session),
     });
+}
+
+/// The page the switcher sends the person back to, its query kept (`?type=promo`).
+fn back_of(session: *Session) ![]const u8 {
+    std.debug.assert(session.signed_in());
+
+    const path = session.request.path();
+    const query = session.request.query();
+
+    std.debug.assert(path.len > 0);
+
+    if (query.len == 0) {
+        return path;
+    }
+
+    return std.mem.concat(session.arena, u8, &.{ path, "?", query });
 }
 
 /// `POST /admin/variant`: the person's choice in a dimension, then back where they were.

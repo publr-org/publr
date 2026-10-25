@@ -53,7 +53,9 @@ pub fn expanded(
 
         for (others) |other| {
             if (covers(def.dimensions, other)) {
-                try out.append(arena, try clone_of(arena, def, other, current));
+                const shown = if (document) |doc| fallback_of(def, doc, other) else null;
+
+                try out.append(arena, try clone_of(arena, def, other, shown));
             }
         }
     }
@@ -95,6 +97,33 @@ fn clone_of(arena: std.mem.Allocator, def: Def, other: []const Pair, main: ?Valu
     }
 
     return clone;
+}
+
+/// What a read in `other` shows when the field holds nothing there: the next value along
+/// its fallback, the combination's own key passed over.
+fn fallback_of(def: Def, document: Value, other: []const Pair) ?Value {
+    std.debug.assert(other.len > 0);
+    std.debug.assert(def.name.len > 0);
+
+    if (document != .object) {
+        return null;
+    }
+
+    const resolve = model.dimension.resolve;
+    var fallback: resolve.Fallback = .of(def.name, def.dimensions, other);
+    var buffer: [512]u8 = undefined;
+
+    _ = fallback.next(&buffer);
+
+    while (fallback.next(&buffer)) |key| {
+        if (document.object.get(key)) |value| {
+            if (value != .null) {
+                return value;
+            }
+        }
+    }
+
+    return null;
 }
 
 fn object_get(value: Value, name: []const u8) ?Value {
