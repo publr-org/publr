@@ -6,6 +6,7 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const trash = @import("trash.zig");
 const file_path = @import("../model/app/file_path.zig");
+const file_content = @import("../model/app/file_content.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -137,7 +138,7 @@ pub const Files = struct {
 
 pub const Read = struct {
     pub const name = "apps.read";
-    pub const description = "One file of the project's apps, as text";
+    pub const description = "One file of the project's apps";
     pub const details = "Administrators only. Not found when there is no such file.";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -146,6 +147,7 @@ pub const Read = struct {
     pub const Out = struct {
         path: []const u8,
         content: []const u8,
+        encoding: file_content.Encoding = .text,
     };
     pub const example: In = .{
         .path = "www/content/index.publr",
@@ -160,6 +162,7 @@ pub const Read = struct {
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .path = "The file",
         .content = "What it holds, up to 1 MiB",
+        .encoding = "`text`, or `base64` for a file that is not UTF-8 (an icon, an image)",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
@@ -182,9 +185,12 @@ pub const Read = struct {
 
         std.debug.assert(content.len <= file_path.bytes_max);
 
+        const sent = try file_content.carried(ctx.arena, content);
+
         return .{
             .path = in.path,
-            .content = content,
+            .content = sent.content,
+            .encoding = sent.encoding,
         };
     }
 };
@@ -193,14 +199,16 @@ pub const Write = struct {
     pub const name = "apps.write";
     pub const description = "Write one file of the project's apps; `apps load` makes it live";
     pub const details =
-        \\Administrators only. Creates the file and its folders, or replaces it. The text is
-        \\up to 1 MiB of UTF-8. It changes what visitors see once loaded, so a device that
-        \\may save drafts only is refused.
+        \\Administrators only. Creates the file and its folders, or replaces it: up to 1 MiB,
+        \\as UTF-8 text, or as base64 with `encoding` `base64` for any other file (an icon,
+        \\an image, a font). It changes what visitors see once loaded, so a device that may
+        \\save drafts only is refused.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         path: []const u8,
         content: []const u8,
+        encoding: file_content.Encoding = .text,
     };
     pub const Out = struct {
         path: []const u8,
@@ -216,7 +224,8 @@ pub const Write = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .path = "`<app>/<path>`",
-        .content = "The whole file, as text",
+        .content = "The whole file, as text or base64",
+        .encoding = "`text` (the default), or `base64` for a file that is not UTF-8",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .path = "The file",
@@ -226,13 +235,11 @@ pub const Write = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        if (!file_path.valid(in.path) or !std.unicode.utf8ValidateSlice(in.content)) {
+        if (!file_path.valid(in.path)) {
             return error.Invalid;
         }
 
-        if (in.content.len > file_path.bytes_max) {
-            return error.TooBig;
-        }
+        const bytes = try file_content.bytes_of(ctx.arena, in.content, in.encoding);
 
         // An app file is live once loaded: the call publishes, and a drafts device is refused
         // here, before anything reaches the folder, not only at commit.
@@ -248,14 +255,14 @@ pub const Write = struct {
 
         root.writeFile(ctx.io, .{
             .sub_path = in.path,
-            .data = in.content,
+            .data = bytes,
         }) catch {
             return error.Unavailable;
         };
 
         return .{
             .path = in.path,
-            .bytes = in.content.len,
+            .bytes = bytes.len,
         };
     }
 };
@@ -320,9 +327,11 @@ pub const Remove = struct {
         const held = root.readFileAlloc(ctx.io, in.path, ctx.arena, limit) catch |err| {
             return if (err == error.FileNotFound) error.NotFound else error.Unavailable;
         };
+        const kept = try file_content.carried(ctx.arena, held);
         const copy = std.json.Stringify.valueAlloc(ctx.arena, .{
             .path = in.path,
-            .content = held,
+            .content = kept.content,
+            .encoding = kept.encoding,
         }, .{}) catch return error.OutOfMemory;
 
         _ = try trash.keep(ctx, .{

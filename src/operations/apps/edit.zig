@@ -59,6 +59,12 @@ pub const Edit = struct {
         const read = try registry.SDK.dispatch(ctx, apps.Read, .{
             .path = in.path,
         });
+
+        // A file that is not text is replaced whole with `apps write`, never edited.
+        if (read.encoding != .text) {
+            return error.Invalid;
+        }
+
         const found = std.mem.count(u8, read.content, in.old);
 
         if (found == 0) {

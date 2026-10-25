@@ -15,16 +15,21 @@ Every file of every app, sorted, with its size.
 
 ## `read`
 
-One file, as text, up to 1 MiB.
+One file, up to 1 MiB: as text, or as base64 with `"encoding": "base64"` when it is not
+UTF-8 (an icon, an image, a font).
 
 ## `write`
 
-One file, created with its folders or replaced, as text up to 1 MiB. It changes what
-visitors see once loaded, so a device that may save drafts only is refused.
+One file, created with its folders or replaced, up to 1 MiB: as text, or as base64 with
+`--encoding base64` for any other file. It changes what visitors see once loaded, so a
+device that may save drafts only is refused.
 
 ```
 $ publr --site example.com apps write --path www/content/index.publr --content '<h1>Hi</h1>'
 { "path": "www/content/index.publr", "bytes": 11 }
+$ publr --site example.com apps write --path www/public/favicon.ico \
+    --content "$(base64 < favicon.ico)" --encoding base64
+{ "path": "www/public/favicon.ico", "bytes": 15086 }
 ```
 
 ## `edit`
